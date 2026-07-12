@@ -18,6 +18,11 @@ What to read next:
 - [Assets & Modes](../assets.md)
 - [Distributed and HPC](../distributed_hpc.md)
 
+## Julia version
+
+The root `Project.toml` pins `julia = "1.12"`. Install that Julia release
+before instantiating either project.
+
 ## The repository environments
 
 ### Root project (`--project=.`)

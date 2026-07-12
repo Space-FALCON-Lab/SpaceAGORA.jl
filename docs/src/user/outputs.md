@@ -156,3 +156,13 @@ SM.SimulationSettings(
 A crashed or interrupted run can be resumed by setting
 `resume_from_checkpoint = true` in `SimulationSettings`. The checkpoint
 directory defaults to `results_directory/checkpoints` when left empty.
+
+## Campaign and multi-process runs
+
+`run_monte_carlo` and `run_constellation_ensemble` samples each call
+`run_simulation` independently (per-sample `results_directory` and
+`SimulationSettings` come from whatever `SimulationConfiguration` your
+per-seed closure returns), so the file layout above applies per sample
+whether the outer route is serial, threaded, or process-backed. See
+[Parallel Execution](parallel_execution.md) for how to select and configure
+outer routing.

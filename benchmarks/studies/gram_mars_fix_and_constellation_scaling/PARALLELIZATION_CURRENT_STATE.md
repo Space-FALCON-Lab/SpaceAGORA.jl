@@ -9,9 +9,18 @@ from commit history and the two other docs in this folder
 `THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md`'s Findings 1-7), which
 remain the detailed, dated record this document summarizes.
 
-**Nothing described below as "uncommitted" has been pushed.** Only the GRAM
-constructor lock and CSPICE/SPICE lock unification (first bullet below) are
-committed and pushed.
+**Everything described in this document is now committed** (parent repo
+`1ba63a82` + `f857a41c`, submodule `c7b66e0`). Push status as of this
+writing: the parent repo's `parllelization_paper` branch is already in sync
+with `origin/parllelization_paper` (confirmed via `git fetch` + `git
+rev-list`) -- neither commit was pushed by an explicit `git push` in this
+session, so this was pushed some other way (auto-sync, or by the user
+directly) and is worth confirming with the user rather than assumed. The
+submodule's `c7b66e0` is *not* on `origin/main` yet (1 commit ahead locally)
+-- push it explicitly if the parent's submodule pointer update should
+resolve for anyone else who clones/pulls. Any "uncommitted" language left
+below is a holdover from when this doc was first written and should be read
+as historical, not current.
 
 ## 1. What's fixed
 
@@ -26,7 +35,7 @@ threads racing on what is, underneath, the *same* global CSPICE state.
 so every GRAM density call and every SPICE ephemeris call serialize against
 each other, not just against their own kind.
 
-### 1b. GRAM model construction thread-safety (uncommitted, in the `data/GRAMSuite.jl` submodule)
+### 1b. GRAM model construction thread-safety (committed: submodule `c7b66e0`)
 
 Density *sampling* (`getDensity`/`density_state`/`point_density_state`) was
 already correctly locked. Model *construction*
@@ -38,7 +47,7 @@ caused every native-GRAM Monte Carlo/ensemble campaign to crash outright at
 `outer_workers >= 2` before this work. Fixed by wrapping the constructor body
 in the same `_with_gram_lock`/`GRAM_LOCK` used for sampling.
 
-### 1c. World-age / `invokelatest` fixes (uncommitted, same submodule)
+### 1c. World-age / `invokelatest` fixes (committed: submodule `c7b66e0`)
 
 A second, unrelated bug surfaced only by the new `:process` route (section 2):
 GRAM's native wrapper module is dynamically `Base.include`d on first-ever
@@ -68,7 +77,7 @@ plain-data constructor arguments, reconstruct via the now-locked constructor
 on the receiving side) -- needed for a `SimulationConfiguration` carrying a
 GRAM density model to cross a `Distributed` process boundary at all.
 
-### 1d. Density-callback 16-thread auto-gate made density-model-aware (uncommitted)
+### 1d. Density-callback 16-thread auto-gate made density-model-aware (committed: parent `f857a41c`)
 
 Unrelated to the GRAM/CSPICE work above, but the same "parallelization
 correctness/tuning" family. `SPACEAGORA_DENSITY_CALLBACK_PARALLEL=auto`'s
@@ -88,7 +97,7 @@ unconditional 16-thread floor).
 ## 2. What's new: `SpaceAGORA.ParallelProcess`
 
 A shared, auto-bootstrapping `Distributed` worker pool
-(`src/parallel/process/`, uncommitted), wired into `run_monte_carlo` and
+(`src/parallel/process/`, committed: parent `1ba63a82`), wired into `run_monte_carlo` and
 `run_constellation_ensemble`'s adaptive `threads=:auto` routing as a real
 `:process` outer-parallel route -- separate OS processes, so there's no
 shared native GRAM/CSPICE global state to contend over in the first place.
@@ -237,21 +246,29 @@ folder; full before/after table in the handoff doc's Finding 6.
 
 | Change | Location | Status |
 |---|---|---|
-| GRAM/SPICE lock unification | parent repo + submodule | **committed, pushed** |
-| GRAM constructor lock | submodule | uncommitted |
-| World-age/`invokelatest` fixes | submodule | uncommitted |
-| Serialization for GRAM models | submodule | uncommitted |
-| `SpaceAGORA.ParallelProcess` | parent repo (`src/parallel/process/`) | uncommitted |
-| Adaptive routing `:process` wiring | parent repo | uncommitted |
-| New/extended benchmarks (this folder) | parent repo | uncommitted |
-| `export`/`@doc`/`checkdocs`/generated-API-page entries for `ParallelProcess` | parent repo (`src/SpaceAGORA.jl`, `docs/make.jl`, `docs/public_api_symbols.jl`) | uncommitted, **done and verified** (`docs/make.jl` builds clean) |
-| Density-callback lock-free auto-gate | parent repo (`src/parallel/policy/env_config.jl`, `src/core/types/runtime_types.jl`, `src/simulation/callbacks/density_callbacks/config.jl`) | uncommitted, **done and verified** |
-| Phase 3 fix: `outer_parallel_active` gating for `_rhs_execution_plan`'s 3 multi-worker branches | parent repo (`src/simulation/engine/setup.jl`, `src/core/types/runtime_types.jl`) | uncommitted, **done and verified** (direct repro + full test suite) |
+| GRAM/SPICE lock unification | parent repo + submodule | **committed** (submodule `b66e1b8`, parent `444a23c5`), **pushed** |
+| GRAM constructor lock | submodule | **committed** (`c7b66e0`, bundled with the row below) |
+| World-age/`invokelatest` fixes | submodule | **committed** (`c7b66e0`), **not pushed** (`origin/main` for the submodule is 1 commit behind) |
+| Serialization for GRAM models (both submodule and `ext/SpaceAGORAGRAMSuiteExt.jl` wrapper layers) | submodule + parent | **committed** (submodule `c7b66e0`, parent `1ba63a82`) |
+| `SpaceAGORA.ParallelProcess`, `warmup_fn` cold-start fix | parent repo (`src/parallel/process/`) | **committed** (`1ba63a82`) |
+| Adaptive routing `:process` wiring | parent repo | **committed** (`1ba63a82`) |
+| New/extended benchmarks (this folder) | parent repo | **committed** (`1ba63a82`) |
+| `export`/`@doc`/`checkdocs`/generated-API-page entries for `ParallelProcess` | parent repo (`src/SpaceAGORA.jl`, `docs/make.jl`, `docs/public_api_symbols.jl`) | **committed** (`1ba63a82`), verified (`docs/make.jl` builds clean) |
+| Density-callback lock-free auto-gate | parent repo (`src/parallel/policy/env_config.jl`, `src/core/types/runtime_types.jl`, `src/simulation/callbacks/density_callbacks/config.jl`) | **committed** (`1ba63a82`), verified |
+| Phase 3 fix: `outer_parallel_active` gating for `_rhs_execution_plan`'s 3 multi-worker branches | parent repo (`src/simulation/engine/setup.jl`, `src/core/types/runtime_types.jl`) | **committed** (`1ba63a82`), verified (direct repro + full test suite) |
+| Golden regression fixture (`test/golden/agora_earth_regression.csv`) for the previously-`@test_skip`'d "AGORA Earth Regression (Golden)" test | parent repo | **committed** (`1ba63a82`) |
 
-`test/suites/01_contract_and_api_tests.jl` has the user's own unrelated
-pre-existing WIP mixed into the same file -- committing the GRAM_LOCK
-contract-test fix needs patch-level staging (`git add -p`), not a whole-file
-add.
+`test/suites/01_contract_and_api_tests.jl` had the user's own unrelated
+pre-existing WIP (an `ODEParams{N}` -> `ODEParams(n_sats=N, ...)` refactor,
+removing `ODEParams`/`SharedBuffers`'s `N_sats` type parameter in favor of a
+runtime field) mixed into the same file as the GRAM_LOCK contract-test fix --
+resolved via patch-level staging (hand-built `git apply --cached` patches for
+the isolated hunks, not a whole-file add) so the two changes landed in
+separate commits: the GRAM_LOCK hunk is part of `1ba63a82`; the user's own
+refactor (touching many more files across `src/`, `test/`, and
+`benchmarks/studies/`, unrelated to this document's parallelization scope)
+was committed separately afterward as `f857a41c`, excluding two `.png` plot
+outputs left for regeneration.
 
 ## 6. Where to look next
 

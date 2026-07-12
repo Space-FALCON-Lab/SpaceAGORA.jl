@@ -206,6 +206,52 @@ inside another campaign's worker, where `SPACEAGORA_OUTER_PARALLEL_ACTIVE` is
 already set) yield to the enclosing split: they execute serially and record no
 feedback, so contended timings never poison the shared route statistics.
 
+The spherical-harmonics gravity SIMD batch route is a separate hot path that
+fires on every RHS/ODE step rather than once per sample, so historically it
+did not check `SPACEAGORA_OUTER_PARALLEL_ACTIVE` before spawning its own
+nested worker batch — under `:threads` outer parallelism this produced severe
+nested contention (anywhere from ~1x overhead to multi-minute hangs on
+otherwise-identical runs). It now defaults to running serially whenever outer
+parallelism is active. Only set `SPACEAGORA_HARMONICS_BATCH_ALLOW_WITH_OUTER=1`
+if you have measured that splitting the thread budget between outer workers
+and the harmonics batch is actually faster for your workload; the default is
+the safe choice.
+
+### Process-backend outer parallelism
+
+When the outer-route bandit picks `:process` (or when you want to control it
+directly), campaigns dispatch to `SpaceAGORA.ParallelProcess`, a small
+`Distributed`-based worker pool built for this purpose:
+
+```julia
+pool = campaign_process_pool()
+worker_ids = ensure_process_workers!(pool, 8)
+```
+
+- `campaign_process_pool()` returns the process-global `ProcessPool` that
+  `threads=:auto` campaigns already share; reusing it avoids repaying the
+  one-time `SpaceAGORA`/`GRAMSuite` worker precompilation cost on every call.
+- `ensure_process_workers!(pool, n; warmup_fn=nothing)` grows the pool to at
+  least `n` workers (spawning only the shortfall via `addprocs`), bootstraps
+  each new worker with `SpaceAGORA`, `GRAMSuite` (best-effort), and the
+  default SPICE kernel set, and returns the current worker ids. Pass
+  `warmup_fn` — a zero-argument closure that mirrors the real per-sample call
+  — to also pay a new worker's full JIT/specialization cost once up front
+  (measured at roughly 70 s cold vs. a fraction of a second warm) instead of
+  inside the first real, timed dispatch.
+- `shutdown_process_pool!(pool)` removes every worker via `rmprocs` and
+  clears the pool; mainly useful for tests, since campaign code otherwise
+  leaves the process-global pool warm across calls by design.
+
+Each process worker is started with `--threads=1`, so it does not share the
+coordinator's Julia thread pool: inner thread-based parallelism inside a
+worker's own `run_simulation` call is unaffected by how many process workers
+are active. A campaign built on a non-default SPICE kernel directory, or a
+non-Earth-primary mission whose kernels aren't in the shared default set,
+must still furnish its own kernels on the pool's workers (for example via
+`remotecall_wait` on `ensure_process_workers!`'s return value) before
+dispatching.
+
 ### GRAM atmosphere models in threaded campaigns
 
 Native GRAM calls are serialized through a single process-wide lock by default,
@@ -273,13 +319,22 @@ of paying per-timestep thread dispatch across satellites) and lets each
 satellite keep its own adaptive step size (instead of forcing every satellite
 to the global minimum step).
 
-Current limitation: with in-process worker threads, per-step
-environment-variable configuration reads in the RHS and callback plumbing
-serialize concurrent members (Julia `ENV` access is process-global), which can
-erase the outer-parallel gain for light dynamics. Until those reads are hoisted
-to run setup, prefer process-based outer parallelism for large campaigns — the
-per-satellite split applies the same way with one satellite per worker process
-(see [Distributed and HPC](../distributed_hpc.md)).
+Current limitation: with in-process worker threads (the `:threads` outer
+route), per-step environment-variable configuration reads in the RHS and
+callback plumbing serialize concurrent members (Julia `ENV` access is
+process-global), which can erase the outer-parallel gain for light dynamics.
+
+The `:process` outer route avoids this: each satellite is dispatched to its
+own OS process with its own `ENV`, GRAM lock, and thread pool, so members
+never contend on process-global state. Pass `threads=:auto` and the
+outer-route bandit (`select_outer_route!`) will pick `:process` itself for
+workload shapes where it wins, auto-bootstrapping a `Distributed` worker pool
+via `ensure_process_workers!` — no manual `addprocs` call or cluster setup is
+required for this library-level path. See
+[Process-backend outer parallelism](#process-backend-outer-parallelism)
+below. Multi-node/scheduler launches for benchmark and study scripts are a
+separate, explicit-`addprocs` path — see
+[Distributed and HPC](../distributed_hpc.md).
 
 The runner refuses configurations with guidance, navigation, or control
 effectors, because effectors that coordinate satellites cannot act across

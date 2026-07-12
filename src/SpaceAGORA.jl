@@ -5,6 +5,7 @@ module SpaceAGORA
 using PrecompileTools: @compile_workload, @setup_workload
 
 include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(@__DIR__, "parallel", "process", "parallel_process.jl"))
 include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "core", "simulation_model.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
@@ -19,6 +20,7 @@ using .ParallelProfiles: parse_parallel_profile, parallel_profile_name, profile_
 using .ParallelProfiles: OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
 using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
+using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
 import .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
@@ -390,6 +392,11 @@ calcControlMassFlowRate
 @doc (@doc ParallelProfiles.select_outer_route!) select_outer_route!
 @doc (@doc ParallelProfiles.record_outer_route_feedback!) record_outer_route_feedback!
 
+@doc (@doc ParallelProcess.ProcessPool) ProcessPool
+@doc (@doc ParallelProcess.campaign_process_pool) campaign_process_pool
+@doc (@doc ParallelProcess.ensure_process_workers!) ensure_process_workers!
+@doc (@doc ParallelProcess.shutdown_process_pool!) shutdown_process_pool!
+
 @doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest
 @doc (@doc TelemetryVerification.VerificationResult) VerificationResult
 @doc (@doc TelemetryVerification.run_verification) run_verification
@@ -404,6 +411,7 @@ export parse_parallel_profile, parallel_profile_name, profile_config, profile_en
 export OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
 export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
+export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!

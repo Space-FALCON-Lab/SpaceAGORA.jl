@@ -3,6 +3,8 @@ module SimulationEngine
 
 using ..SimulationModel
 import ..RuntimeServices
+import DiffEqBase
+import ADTypes: AutoFiniteDiff
 using SPICE
 using SparseArrays
 

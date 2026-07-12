@@ -50,6 +50,10 @@ Base.@kwdef struct OuterRouteTuning
     failure_penalty_s::Float64 = 120.0
     mc_process_min_samples::Int = 16
     mc_process_min_mission_s::Float64 = 3600.0
+    # Process workers run --threads=1 each and don't share the coordinator's
+    # thread pool, so they're capped by physical parallelism (Sys.CPU_THREADS),
+    # not Threads.nthreads() like the thread route.
+    process_max_workers::Int = Sys.CPU_THREADS
     trace::Bool = false
 end
 

@@ -4,6 +4,7 @@ using SpaceAGORA
 using GRAMSuite
 using StaticArrays
 using SPICE
+using Serialization
 
 const EM = SpaceAGORA.SimulationModel.EnvironmentModels
 const GRAM_LOCK = SpaceAGORA.RuntimeServices.GRAM_LOCK
@@ -183,6 +184,47 @@ function Base.deepcopy_internal(model::EM.GRAMAtmosphereModelSurrogate, stackdic
     end
     stackdict[model] = copied
     return copied
+end
+
+# ---------------------------------------------------------------------------
+# Custom Serialization -- same rationale as GRAMSuite.jl's own
+# GRAMAtmosphereModel/GRAMAtmosphereModelSurrogate methods: `core` wraps a live
+# native handle, and `instance_lock` is a ReentrantLock that must never be
+# serialized as-is (Task/condition-variable state has no meaning on another
+# process, mirroring why deepcopy_internal above never copies it either).
+# Serialize only `core` (which recurses into GRAMSuite's own serialize method)
+# and reconstruct with a fresh instance_lock on the receiving side -- the same
+# "fresh lock per construction" contract the single-arg constructor already
+# documents. This lets a SimulationConfiguration carrying one of these models
+# cross a Distributed process boundary (e.g. remotecall) transparently.
+# ---------------------------------------------------------------------------
+
+function Serialization.serialize(s::Serialization.AbstractSerializer, model::EM.GRAMAtmosphereModel)
+    Serialization.writetag(s.io, Serialization.OBJECT_TAG)
+    Serialization.serialize(s, EM.GRAMAtmosphereModel)
+    Serialization.serialize(s, model.core)
+    return nothing
+end
+
+function Serialization.deserialize(s::Serialization.AbstractSerializer, ::Type{EM.GRAMAtmosphereModel})
+    core = Serialization.deserialize(s)
+    return EM.GRAMAtmosphereModel(core)
+end
+
+function Serialization.serialize(s::Serialization.AbstractSerializer, model::EM.GRAMAtmosphereModelSurrogate)
+    Serialization.writetag(s.io, Serialization.OBJECT_TAG)
+    Serialization.serialize(s, EM.GRAMAtmosphereModelSurrogate)
+    Serialization.serialize(s, model.base_model)
+    Serialization.serialize(s, model.surrogate_file)
+    Serialization.serialize(s, model.point_fallback_below_m)
+    return nothing
+end
+
+function Serialization.deserialize(s::Serialization.AbstractSerializer, ::Type{EM.GRAMAtmosphereModelSurrogate})
+    base_model = Serialization.deserialize(s)
+    surrogate_file = Serialization.deserialize(s)
+    point_fallback_below_m = Serialization.deserialize(s)
+    return EM.GRAMAtmosphereModelSurrogate(base_model, surrogate_file, point_fallback_below_m)
 end
 
 # ---------------------------------------------------------------------------

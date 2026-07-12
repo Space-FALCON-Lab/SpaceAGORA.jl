@@ -576,6 +576,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         outer_parallel_active::Bool
         auto_min_budget_default::Int
         auto_min_budget_density::Int
+        auto_min_budget_density_lockfree::Int
         auto_min_budget_thermal::Int
         adaptive_enabled::Bool
     end
@@ -663,6 +664,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         harmonics_batch_enabled::Bool
         harmonics_batch_min_sats_per_worker::Int
         harmonics_batch_spin_barrier::Bool
+        harmonics_batch_allow_with_outer::Bool
         rhs_effector_cost_min_samples::Int
         flat_packet_target_min_ns::Float64
         flat_packet_scheduler_mode::Symbol

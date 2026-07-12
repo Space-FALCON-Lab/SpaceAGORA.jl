@@ -93,7 +93,13 @@ end
         findfirst("include(joinpath(@__DIR__, \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src)
     @test occursin("module RuntimeServices", runtime_services_src)
     @test occursin("const SPICE_LOCK = ReentrantLock()", runtime_services_src)
-    @test occursin("const GRAM_LOCK = ReentrantLock()", runtime_services_src)
+    # GRAM_LOCK must alias SPICE_LOCK, not be an independent ReentrantLock():
+    # libGRAM.dylib's statically-linked CSPICE globally exports the same
+    # internal symbol names as SpaceAGORA's own SPICE.jl bindings, so a
+    # native-GRAM call and a SpaceAGORA ephemerides call must never run
+    # concurrently under two different locks (see the comment on
+    # RuntimeServices.GRAM_LOCK/SPICE_LOCK).
+    @test occursin("const GRAM_LOCK = SPICE_LOCK", runtime_services_src)
     @test !occursin("const SPICE_LOCK", simulation_model_src)
     @test !occursin("const GRAM_LOCK", simulation_model_src)
     @test occursin("runtime_services.jl", simulation_model_src)

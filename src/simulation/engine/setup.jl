@@ -765,6 +765,22 @@ end
     )
 end
 
+# Unlike _dynamic_effector_thread_decision and the density/control/thermal
+# callback paths, the harmonics-batch flat-constellation route did not
+# previously consult outer_parallel_active() at all -- it fires on every
+# RHS/ODE step (not once per sample), so an outer worker already blocked in
+# Threads.@sync/Base.@sync repeatedly spawned its own nested batch of workers
+# throughout the whole integration. That's the mechanism behind the severe,
+# livelock-like nested outer+inner contention documented in
+# THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md Finding 3 (some points
+# ranged from ~1x overhead to a multi-minute hang on identical repeated
+# runs). Default false, matching _effector_allow_with_outer's default and
+# this codebase's own documented recommendation to never split the thread
+# budget between outer and inner parallelism.
+@inline function _harmonics_batch_allow_with_outer()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_HARMONICS_BATCH_ALLOW_WITH_OUTER", false)
+end
+
 """
     _snapshot_rhs_plan_env_config() -> SimulationModel.RhsPlanEnvConfig
 
@@ -799,6 +815,7 @@ function _snapshot_rhs_plan_env_config()::SimulationModel.RhsPlanEnvConfig
         _rhs_harmonics_batch_enabled(),
         _rhs_harmonics_batch_min_sats_per_worker(),
         SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled(),
+        _harmonics_batch_allow_with_outer(),
         _rhs_effector_cost_min_samples(),
         _rhs_flat_packet_target_min_ns(),
         _rhs_flat_packet_scheduler_mode(),
@@ -938,6 +955,8 @@ end
     end
     budget = penv === nothing ?
         SimulationModel.ParallelPolicy.effective_inner_thread_budget() : penv.inner_thread_budget
+    outer_active = penv === nothing ?
+        SimulationModel.ParallelPolicy.outer_parallel_active() : penv.outer_parallel_active
     # Compute the threading preference from the policy; route selection below may
     # override it via _with_serial_effector_decision when satellite_batch is chosen.
     effector_decision = _dynamic_effector_thread_decision(env, penv, args, p, dynamic_effectors, num_sats)
@@ -973,7 +992,14 @@ end
             effector_decision=effector_decision,
         )
     elseif forced_mode == :flat_constellation_effector_queue
-        if active_sats <= 1 || !_rhs_flat_supported(env, dynamic_effectors) || budget <= 1
+        # Same nested-outer-split hazard as the auto-routed flat/harmonics
+        # branches below -- an explicit SPACEAGORA_RHS_EXECUTION_MODE=flat
+        # request is still subject to it, since this route fires every RHS
+        # step and the other outer_parallel_active-aware call sites in this
+        # codebase (density/control/thermal callbacks, dynamic effectors)
+        # don't distinguish forced vs. auto requests either.
+        if active_sats <= 1 || !_rhs_flat_supported(env, dynamic_effectors) || budget <= 1 ||
+           (outer_active && !env.harmonics_batch_allow_with_outer)
             return (
                 mode=:satellite_batch,
                 allotment=1,
@@ -1005,6 +1031,23 @@ end
     # _accumulate_harmonics_flat_batch!, so this routing is safe at any thread budget.
     single_harmonics_flat = _rhs_single_harmonics_flat_supported(env, dynamic_effectors)
     if single_harmonics_flat && active_sats >= env.flat_min_sats && active_sats > 1
+        # A higher-level campaign (or benchmark harness) already owns an outer
+        # split -- this route fires on every RHS/ODE step, not once per
+        # sample, so nesting its own multi-worker batch here would repeatedly
+        # oversubscribe the same thread pool an already-blocked outer worker
+        # is waiting on, throughout the whole integration (see
+        # _harmonics_batch_allow_with_outer's docstring / Finding 3). Force
+        # serial instead, same as this function's other serial fallbacks.
+        if outer_active && !env.harmonics_batch_allow_with_outer
+            return (
+                mode=:satellite_batch,
+                allotment=1,
+                scheduler=:static,
+                dominant_axis=:satellite,
+                policy_applied=true,
+                effector_decision=_with_serial_effector_decision(effector_decision),
+            )
+        end
         min_sats_floor = env.harmonics_batch_spin_barrier ?
             1 : env.harmonics_batch_min_sats_per_worker
         viable_workers = fld(active_sats, max(1, min_sats_floor))
@@ -1029,6 +1072,19 @@ end
     # satellite_batch) already parallelizes.
     single_invsq_flat = _rhs_single_invsq_flat_supported(dynamic_effectors)
     if single_invsq_flat && active_sats >= _rhs_invsq_flat_min_sats() && active_sats > 1
+        # Same nested-outer-split hazard as the harmonics-batch route above --
+        # this also fires every RHS step and shares the same multi-worker flat
+        # batch kernel.
+        if outer_active && !env.harmonics_batch_allow_with_outer
+            return (
+                mode=:satellite_batch,
+                allotment=1,
+                scheduler=:static,
+                dominant_axis=:satellite,
+                policy_applied=true,
+                effector_decision=_with_serial_effector_decision(effector_decision),
+            )
+        end
         return (
             mode=:flat_constellation_effector_queue,
             allotment=min(max(1, budget), active_sats),
@@ -1082,6 +1138,18 @@ end
     if active_sats >= env.flat_min_sats &&
        (n_effectors >= env.flat_min_effectors || _rhs_flat_has_batch_privileged_effector(dynamic_effectors)) &&
        many_heavy_effectors
+        # Same nested-outer-split hazard as the harmonics-batch/single-invsq
+        # routes above.
+        if outer_active && !env.harmonics_batch_allow_with_outer
+            return (
+                mode=:satellite_batch,
+                allotment=1,
+                scheduler=:static,
+                dominant_axis=:satellite,
+                policy_applied=true,
+                effector_decision=_with_serial_effector_decision(effector_decision),
+            )
+        end
         return (
             mode=:flat_constellation_effector_queue,
             allotment=min(max(1, budget), active_sats * n_effectors),

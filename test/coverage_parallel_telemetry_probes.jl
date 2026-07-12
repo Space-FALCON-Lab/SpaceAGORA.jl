@@ -1155,6 +1155,56 @@ end
     )), "ctx")
 end
 
+@testset "Diagnostic replay scaling (flight apoapsis ratio)" begin
+    # Default: mode is delta_v, no flight-apoapsis data.
+    m0 = TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25], "delta_v_mps" => [0.1]
+    )), "ctx")
+    @test m0.replay_scale_mode == "delta_v"
+    @test isempty(m0.flight_apoapsis_alt_m)
+
+    # Diagnostic mode: altitudes parsed (km -> m) and filtered in sync with
+    # the pre-epoch burn drop.
+    m = TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [7, 25, 146],
+        "delta_v_mps" => [-0.5, 0.1, 1.0],
+        "orbit_number_offset" => 19,
+        "replay_scale_mode" => "flight_apoapsis_ratio",
+        "flight_apoapsis_alt_km" => [26000.0, 23000.0, 9000.0]
+    )), "ctx")
+    @test m.replay_scale_mode == "flight_apoapsis_ratio"
+    @test m.orbit_numbers == Int64[6, 127]
+    @test m.flight_apoapsis_alt_m == [23000.0e3, 9000.0e3]
+
+    # Length mismatch, bad values, and data-without-mode all reject.
+    @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25, 146], "delta_v_mps" => [0.1, 1.0],
+        "replay_scale_mode" => "flight_apoapsis_ratio",
+        "flight_apoapsis_alt_km" => [23000.0]
+    )), "ctx")
+    @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25], "delta_v_mps" => [0.1],
+        "replay_scale_mode" => "flight_apoapsis_ratio",
+        "flight_apoapsis_alt_km" => [-1.0]
+    )), "ctx")
+    @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25], "delta_v_mps" => [0.1],
+        "flight_apoapsis_alt_km" => [23000.0]
+    )), "ctx")
+    @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25], "delta_v_mps" => [0.1],
+        "replay_scale_mode" => "bogus"
+    )), "ctx")
+
+    # Scale math: flight/sim apoapsis-radius ratio, clamped, safe fallbacks.
+    GM = SimulationModel.GuidanceHooks
+    @test GM._flight_ratio_scale(2.0e7, 1.0e7) == 2.0
+    @test GM._flight_ratio_scale(1.0e7, 2.0e7) == 0.5
+    @test GM._flight_ratio_scale(1.0e7, NaN) == 1.0
+    @test GM._flight_ratio_scale(-1.0, 1.0e7) == 1.0
+    @test GM._flight_ratio_scale(1.0e9, 1.0) == 10.0
+end
+
 @testset "Robust calibration bias" begin
     # Early-orbit datum offset is recovered; late-mission drift is ignored.
     early = fill(-3.0, 10)

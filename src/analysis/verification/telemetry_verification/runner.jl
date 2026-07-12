@@ -328,6 +328,7 @@ function _run_verification(cfg::StudyConfig)::VerificationResult
                     value_units=_value_units(sc, row.event),
                     orbit_altitude_mode=_orbit_altitude_mode(sc),
                     maneuver_count=_maneuver_count(sc),
+                    maneuver_replay_scale_mode=_maneuver_replay_scale_mode(sc),
                     simulation_runtime_s=elapsed_s,
                     timestamp_utc=string(now(UTC)),
                     atmosphere_truth_id=sc.atmosphere_truth.assumption_id,

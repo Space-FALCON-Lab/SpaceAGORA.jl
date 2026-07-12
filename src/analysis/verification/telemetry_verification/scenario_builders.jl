@@ -308,9 +308,20 @@ function _with_campaign_maneuvers(args::SimulationConfiguration, cfg::OrbitEvent
         stop_burn_time=fill(-1.0, n_sats),
         Isp=fill(cfg.maneuver_isp_s, n_sats)
     )
+    # Diagnostic replay scaling: convert flight apoapsis altitudes to radii
+    # with the equatorial radius; the flight/sim RATIO is insensitive to the
+    # (identical) altitude-to-radius convention at the <0.2% level.
+    flight_apo_radius_m = if cfg.maneuver_replay_scale_mode == "flight_apoapsis_ratio"
+        planet = args.environment_model.planet
+        println("maneuver_replay_scale context=$(cfg.name) mode=flight_apoapsis_ratio burns=$(length(cfg.maneuver_flight_apoapsis_alt_m))")
+        Float64[alt + planet.Rp_e for alt in cfg.maneuver_flight_apoapsis_alt_m]
+    else
+        Float64[]
+    end
     guidance_effector = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
         maneuver_orbit_number=cfg.maneuver_orbit_numbers,
-        maneuver_Δv=cfg.maneuver_delta_v_mps
+        maneuver_Δv=cfg.maneuver_delta_v_mps,
+        maneuver_flight_apoapsis_radius_m=flight_apo_radius_m
     )
     return SimulationConfiguration(
         file_paths=args.file_paths,

@@ -193,6 +193,8 @@ function _parse_maneuver_config(tbl, context::String)
             orbit_numbers=Int64[],
             orbit_numbers_campaign=Int64[],
             delta_v_mps=Float64[],
+            replay_scale_mode="delta_v",
+            flight_apoapsis_alt_m=Float64[],
             thrust_n=0.0,
             isp_s=0.0,
             guidance_rate_s=30.0,
@@ -219,6 +221,27 @@ function _parse_maneuver_config(tbl, context::String)
     # The campaign-numbered list (including pre-epoch burns) is kept for
     # diagnostics that operate on campaign orbit axes — the truth curve carries
     # jumps at every campaign burn regardless of what the replay fires.
+    # Diagnostic replay scaling (see types.jl): flight apoapsis altitudes are
+    # required per burn in "flight_apoapsis_ratio" mode and follow the same
+    # pre-epoch drop filter as the burns themselves.
+    replay_scale_mode = _optional_str(mtbl, "replay_scale_mode", "delta_v")
+    replay_scale_mode in ("delta_v", "flight_apoapsis_ratio") || throw(ArgumentError(
+        "maneuvers.replay_scale_mode must be \"delta_v\" or \"flight_apoapsis_ratio\" in $context"
+    ))
+    flight_apo_alt_km = _optional_float64_vector(mtbl, "flight_apoapsis_alt_km")
+    if replay_scale_mode == "flight_apoapsis_ratio"
+        length(flight_apo_alt_km) == length(orbit_numbers) || throw(ArgumentError(
+            "maneuvers.flight_apoapsis_alt_km length ($(length(flight_apo_alt_km))) must match maneuvers.orbit_numbers length ($(length(orbit_numbers))) in $context"
+        ))
+        any(v -> !(isfinite(v) && v > 0.0), flight_apo_alt_km) && throw(ArgumentError(
+            "maneuvers.flight_apoapsis_alt_km entries must be positive and finite in $context"
+        ))
+    elseif !isempty(flight_apo_alt_km)
+        throw(ArgumentError(
+            "maneuvers.flight_apoapsis_alt_km requires replay_scale_mode = \"flight_apoapsis_ratio\" in $context"
+        ))
+    end
+
     orbit_numbers_campaign = copy(orbit_numbers)
     if offset > 0
         keep = findall(o -> o - offset >= 1, orbit_numbers)
@@ -228,11 +251,16 @@ function _parse_maneuver_config(tbl, context::String)
         )
         orbit_numbers = Int64[orbit_numbers[i] - offset for i in keep]
         delta_v_mps = delta_v_mps[keep]
+        if !isempty(flight_apo_alt_km)
+            flight_apo_alt_km = flight_apo_alt_km[keep]
+        end
     end
     return (
         orbit_numbers=orbit_numbers,
         orbit_numbers_campaign=orbit_numbers_campaign,
         delta_v_mps=delta_v_mps,
+        replay_scale_mode=replay_scale_mode,
+        flight_apoapsis_alt_m=Float64[v * 1000.0 for v in flight_apo_alt_km],
         thrust_n=_optional_float(mtbl, "thrust_n", 4.0),
         isp_s=_optional_float(mtbl, "isp_s", 220.0),
         guidance_rate_s=_optional_float(mtbl, "guidance_rate_s", 30.0),
@@ -491,6 +519,8 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 maneuver_orbit_numbers=maneuver.orbit_numbers,
                 maneuver_orbit_numbers_campaign=maneuver.orbit_numbers_campaign,
                 maneuver_delta_v_mps=maneuver.delta_v_mps,
+                maneuver_replay_scale_mode=maneuver.replay_scale_mode,
+                maneuver_flight_apoapsis_alt_m=maneuver.flight_apoapsis_alt_m,
                 maneuver_thrust_n=maneuver.thrust_n,
                 maneuver_isp_s=maneuver.isp_s,
                 maneuver_guidance_rate_s=maneuver.guidance_rate_s,

@@ -101,6 +101,12 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     maneuver_orbit_numbers::Vector{Int64} = Int64[]
     maneuver_orbit_numbers_campaign::Vector{Int64} = Int64[]
     maneuver_delta_v_mps::Vector{Float64} = Float64[]
+    # Diagnostic replay scaling: "delta_v" (benchmark default, replay flight
+    # dv verbatim) or "flight_apoapsis_ratio" (scale each burn by flight/sim
+    # apoapsis radius so it delivers the flight's periapsis change; injects
+    # flight truth — diagnostics only, recorded in the summary).
+    maneuver_replay_scale_mode::String = "delta_v"
+    maneuver_flight_apoapsis_alt_m::Vector{Float64} = Float64[]
     maneuver_thrust_n::Float64 = 0.0
     maneuver_isp_s::Float64 = 0.0
     maneuver_guidance_rate_s::Float64 = 30.0

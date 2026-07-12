@@ -180,7 +180,7 @@ function run_simulation(
     end
 
     # Define the ODE parameters and callbacks
-    p = SimulationModel.ODEParams{length(args.dynamics_model.spacecraft)}(args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
+    p = SimulationModel.ODEParams(n_sats=length(args.dynamics_model.spacecraft), args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
     _initialize_in_atmosphere_flags!(p, initial_conditions)
     # Snapshot env-derived runtime config (policy/RHS-plan/callback knobs) once,
     # inside the active SimulationEngineConfig override scope, so hot paths read

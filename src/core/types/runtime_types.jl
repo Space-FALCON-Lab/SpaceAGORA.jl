@@ -697,32 +697,39 @@ export RhsEffectorDecision, RhsExecutionPlan
         return out
     end
 
-    # A struct to hold the data shared between the callback and the integrator
-    @kwdef struct SharedBuffers{N_sats}
-        densities::Vector{Float64} = zeros(Float64, N_sats)
-        temperatures::Vector{Float64} = ones(Float64, N_sats)
-        winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:N_sats]
-        density_sample_t::Vector{Float64} = fill(NaN, N_sats)
-        density_batch_altitudes::Vector{Float64} = zeros(Float64, N_sats)
-        density_batch_latitudes::Vector{Float64} = zeros(Float64, N_sats)
-        density_batch_longitudes::Vector{Float64} = zeros(Float64, N_sats)
-        heat_rates::Vector{Vector{Float64}} = [Float64[] for _ in 1:N_sats]
+    # A struct to hold the data shared between the callback and the integrator.
+    # n_sats is a plain runtime field (not a type parameter): none of these
+    # buffers are StaticArrays sized by it, so making it part of the type
+    # bought no runtime performance and instead forced a fresh JIT
+    # specialization of the whole RHS/effector call graph per distinct
+    # satellite count -- ruinous for constellation-size sweeps (see
+    # benchmarks/studies/gram_mars_fix_and_constellation_scaling).
+    @kwdef struct SharedBuffers
+        n_sats::Int
+        densities::Vector{Float64} = zeros(Float64, n_sats)
+        temperatures::Vector{Float64} = ones(Float64, n_sats)
+        winds::Vector{SVector{3,Float64}} = [SVector{3,Float64}(0.0, 0.0, 0.0) for _ in 1:n_sats]
+        density_sample_t::Vector{Float64} = fill(NaN, n_sats)
+        density_batch_altitudes::Vector{Float64} = zeros(Float64, n_sats)
+        density_batch_latitudes::Vector{Float64} = zeros(Float64, n_sats)
+        density_batch_longitudes::Vector{Float64} = zeros(Float64, n_sats)
+        heat_rates::Vector{Vector{Float64}} = [Float64[] for _ in 1:n_sats]
         density_models::Vector{_PerSatDensityModel} = _PerSatDensityModel[]
-        gram_density_cache::Vector{Union{Nothing, GramTrackCache}} = _typed_nothing_vector(GramTrackCache, N_sats)
-        vacuum_gram_caches::Vector{Union{Nothing, VacuumPredictedGRAMCache}} = _typed_nothing_vector(VacuumPredictedGRAMCache, N_sats)
+        gram_density_cache::Vector{Union{Nothing, GramTrackCache}} = _typed_nothing_vector(GramTrackCache, n_sats)
+        vacuum_gram_caches::Vector{Union{Nothing, VacuumPredictedGRAMCache}} = _typed_nothing_vector(VacuumPredictedGRAMCache, n_sats)
         gram_isolated_pool_models::Vector{GRAMAtmosphereModel} = GRAMAtmosphereModel[]
         gram_isolated_pool_locks::Vector{ReentrantLock} = ReentrantLock[]
-        harmonics_workspaces::Vector{Union{Nothing, _HarmonicsWorkspaceMap}} = _typed_nothing_vector(_HarmonicsWorkspaceMap, N_sats)
-        nbody_workspaces::Vector{Union{Nothing, NBodyScratchWorkspace}} = _typed_nothing_vector(NBodyScratchWorkspace, N_sats)
-        aero_workspaces::Vector{Union{Nothing, AeroScratchWorkspace}} = _typed_nothing_vector(AeroScratchWorkspace, N_sats)
+        harmonics_workspaces::Vector{Union{Nothing, _HarmonicsWorkspaceMap}} = _typed_nothing_vector(_HarmonicsWorkspaceMap, n_sats)
+        nbody_workspaces::Vector{Union{Nothing, NBodyScratchWorkspace}} = _typed_nothing_vector(NBodyScratchWorkspace, n_sats)
+        aero_workspaces::Vector{Union{Nothing, AeroScratchWorkspace}} = _typed_nothing_vector(AeroScratchWorkspace, n_sats)
         nbody_ephemeris_cache::Base.RefValue{Union{Nothing, NBodyEphemerisCache}} = Ref{Union{Nothing, NBodyEphemerisCache}}(nothing)
         srp_sun_ephemeris_cache::Base.RefValue{Union{Nothing, SRPSunEphemerisCache}} = Ref{Union{Nothing, SRPSunEphemerisCache}}(nothing)
         planet_frame_ephemeris_cache::Base.RefValue{Union{Nothing, PlanetFrameEphemerisCache}} = Ref{Union{Nothing, PlanetFrameEphemerisCache}}(nothing)
         harmonics_lpi_lock::ReentrantLock = ReentrantLock()
         harmonics_lpi_key::Base.RefValue{Any} = Ref{Any}(nothing)
         harmonics_lpi::Base.RefValue{SMatrix{3,3,Float64,9}} = Ref(SMatrix{3,3,Float64,9}((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)))
-        maneuver_commands::Vector{PropulsiveManeuverCommand} = [PropulsiveManeuverCommand() for _ in 1:N_sats]
-        maneuver_burn_plans::Vector{PropulsiveBurnPlan} = [PropulsiveBurnPlan() for _ in 1:N_sats]
+        maneuver_commands::Vector{PropulsiveManeuverCommand} = [PropulsiveManeuverCommand() for _ in 1:n_sats]
+        maneuver_burn_plans::Vector{PropulsiveBurnPlan} = [PropulsiveBurnPlan() for _ in 1:n_sats]
         spice_runtime_counters::SpiceRuntimeCounters = SpiceRuntimeCounters()
         spice_rhs_memo_enabled::Base.RefValue{Bool} = Ref(true)
         spice_rhs_memo::SpiceRhsMemo = SpiceRhsMemo()
@@ -766,8 +773,8 @@ export RhsEffectorDecision, RhsExecutionPlan
         # Per-satellite atmosphere presence flag, maintained by get_drag_state_callback.
         # The timestamp is NaN until the callback has staged a value for a known
         # integrator time, so RHS code can distinguish current state from defaults.
-        in_atmosphere::Vector{Bool} = fill(false, N_sats)
-        in_atmosphere_sample_t::Vector{Float64} = fill(NaN, N_sats)
+        in_atmosphere::Vector{Bool} = fill(false, n_sats)
+        in_atmosphere_sample_t::Vector{Float64} = fill(NaN, n_sats)
         # Pre-solve calibration override: when non-nothing, _rhs_execution_plan returns
         # this plan directly, bypassing all heuristic routing logic.  Set by the
         # auto-calibration sweep in rhs_calibration.jl and cleared after the solve.
@@ -799,7 +806,23 @@ export RhsEffectorDecision, RhsExecutionPlan
     end
 
     
-    @kwdef struct ODEParams{N_sats, A <: SimulationConfiguration}
+    # n_sats is a plain runtime field, not a type parameter -- see the
+    # SharedBuffers docs above for why. `A` remains a genuine type parameter:
+    # it varies by density-model/config type, a legitimate multiple-dispatch
+    # axis (unlike n_sats, nothing dispatches on a *specific* n_sats value).
+    #
+    # Deliberately NOT @kwdef: with only one type parameter left, a @kwdef
+    # auto-generated keyword constructor (`ODEParams{A}(; ...) where A`, zero
+    # positional args, A free) has the exact same callable signature as a
+    # hand-written outer constructor that also leaves A free to be inferred
+    # from `args` -- Julia treats those as the same method and silently
+    # overwrites one, which is a hard error under module precompilation. So
+    # this struct declares plain fields (no inline defaults) and gets its
+    # positional inner constructor from Julia's normal default; the keyword
+    # constructor below (with defaults/validation) is the only public API and
+    # has a genuinely different signature (0 positional args vs. 6), so the
+    # two coexist without conflict.
+    struct ODEParams{A <: SimulationConfiguration}
         # m::Model = Model()                      # Model struct
         # cnf::Cnf = Cnf()            # Configuration parameters
         # solution::Solution = Solution() # Solution struct
@@ -814,23 +837,26 @@ export RhsEffectorDecision, RhsExecutionPlan
         # gram::Any = nothing              # GRAM object
         # numberofpassage::Int64 = 0       # Current passage number
         # orientation_sim::Bool = false    # Flag for orientation simulation
-        args::A = SimulationConfiguration() # Arguments dictionary
-        shared_buffers::SharedBuffers{N_sats} = SharedBuffers{N_sats}() # Shared buffers for callback and integrator
-        is_active::Vector{Bool} = [true for _ in 1:N_sats] # Vector to track which satellites are still active in the simulation
-        orbit_counter::Vector{Int64} = ones(Int64, N_sats) # Counter for the number of orbits completed
-        save_cache::SaveCache = SaveCache() # Cache for saving results
+        n_sats::Int
+        args::A # Arguments dictionary
+        shared_buffers::SharedBuffers # Shared buffers for callback and integrator
+        is_active::Vector{Bool} # Vector to track which satellites are still active in the simulation
+        orbit_counter::Vector{Int64} # Counter for the number of orbits completed
+        save_cache::SaveCache # Cache for saving results
     end
 
-    function ODEParams{N_sats}(;
+    function ODEParams(;
+        n_sats::Int,
         args=SimulationConfiguration(),
-        shared_buffers=SharedBuffers{N_sats}(),
-        is_active::Vector{Bool}=[true for _ in 1:N_sats],
-        orbit_counter::Vector{Int64}=ones(Int64, N_sats),
+        shared_buffers=SharedBuffers(n_sats=n_sats),
+        is_active::Vector{Bool}=[true for _ in 1:n_sats],
+        orbit_counter::Vector{Int64}=ones(Int64, n_sats),
         save_cache::SaveCache=SaveCache(),
-    ) where {N_sats}
+    )
         args isa SimulationConfiguration || throw(ArgumentError("ODEParams args must be a SimulationConfiguration."))
-        shared_buffers isa SharedBuffers{N_sats} || throw(ArgumentError("ODEParams shared_buffers must be SharedBuffers{$N_sats}."))
-        return ODEParams{N_sats, typeof(args)}(
+        shared_buffers isa SharedBuffers || throw(ArgumentError("ODEParams shared_buffers must be a SharedBuffers."))
+        return ODEParams{typeof(args)}(
+            n_sats,
             args,
             shared_buffers,
             is_active,

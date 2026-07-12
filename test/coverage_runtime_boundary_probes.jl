@@ -12,7 +12,7 @@
         )
         save_fields = SimulationModel.default_save_fields(args)
         u = build_initial_conditions(args)
-        p = ODEParams{1}(args=args)
+        p = ODEParams(n_sats=1, args=args)
         integrator = (p=p,)
 
         saved_values_probe = @timed SavedValues(Float64, SimulationModel.SaveData)

@@ -268,7 +268,7 @@ end
 end
 
 @testset "SharedBuffers Type Contract" begin
-    shared_buffers_type = SimulationModel.ConfigTypes.SharedBuffers{2}
+    shared_buffers_type = SimulationModel.ConfigTypes.SharedBuffers
 
     @test fieldtype(shared_buffers_type, :density_models) ==
         Vector{Union{SimulationModel.GRAMAtmosphereModel, SimulationModel.GRAMAtmosphereModelSurrogate}}
@@ -871,7 +871,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    force_nbody, torque_nbody = calcForceTorque(nbody_jupiter, nbody_state, ODEParams{1}(args=args_nbody), 1)
+    force_nbody, torque_nbody = calcForceTorque(nbody_jupiter, nbody_state, ODEParams(n_sats=1, args=args_nbody), 1)
     @test all(isfinite, force_nbody)
     @test torque_nbody == SVector{3, Float64}(0.0, 0.0, 0.0)
 
@@ -1007,13 +1007,13 @@ end
     u = build_initial_conditions(args)
     du = copy(u)
     du.sc[1].mass = 789.0
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     spacecraft_dynamics!(du, u, p, 0.0)
     @test du.sc[1].mass == 0.0
 
     du_inactive = copy(u)
     du_inactive.sc[1].mass = 123.0
-    p_inactive = ODEParams{1}(args=args, is_active=[false])
+    p_inactive = ODEParams(n_sats=1, args=args, is_active=[false])
     spacecraft_dynamics!(du_inactive, u, p_inactive, 0.0)
     @test du_inactive.sc[1].mass == 0.0
 end
@@ -1043,7 +1043,7 @@ end
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     u = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
 
     p.orbit_counter[1] = 3
@@ -1110,7 +1110,7 @@ end
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     u = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
 
     p.orbit_counter[1] = 7

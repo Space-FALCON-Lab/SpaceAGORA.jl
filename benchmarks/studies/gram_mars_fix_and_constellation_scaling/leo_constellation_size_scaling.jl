@@ -10,35 +10,37 @@
 #
 # across N_SATS = 1, 2, 4, 8, ..., 1024 (powers of 2).
 #
-# Julia's thread count is fixed at process startup, and each (N_SATS, mode)
-# combination is its own JIT specialization (ODEParams is parameterized on
-# both N_sats and the density-model type), so each point is run in a
-# separate `julia` subprocess via leo_constellation_size_scaling_worker.jl --
-# this avoids accumulating 33 distinct compiled specializations' worth of
-# memory in one process (see project findings on this machine's thin memory
-# margins). Expect the full sweep to take several minutes.
+# All 33 (N_SATS, mode) points run in ONE process (leo_constellation_size_scaling_point.jl's
+# run_scaling_point), not one subprocess per point. That subprocess-per-point
+# design used to be necessary because ODEParams was parameterized on N_sats as
+# well as the density-model type, so every distinct satellite count forced a
+# fresh JIT specialization of the whole RHS/solver pipeline -- accumulating 33
+# specializations' worth of compiled code in one process. N_sats is now a
+# runtime field (src/core/types/runtime_types.jl), so every n_sats value for a
+# given mode shares one compiled specialization; only the 3 modes still differ
+# in type. A single point's exception is caught and recorded as a failure
+# (status="failed" in the CSV) rather than aborting the whole sweep, since
+# there's no longer a process boundary to contain it.
 #
-#   julia --project=. benchmarks/studies/leo_constellation_size_scaling.jl
+#   julia --project=. --threads=4 benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
 #
-# Override the thread count used for every worker subprocess:
-#   SPACEAGORA_SCALING_THREADS=8 julia --project=. benchmarks/studies/leo_constellation_size_scaling.jl
+# Thread count is fixed at this process's own startup (no more per-worker
+# --threads flag to override, since there's no separate worker process) --
+# pass --threads=N directly to this invocation instead of via
+# SPACEAGORA_SCALING_THREADS.
 #
 # Produces two plots in benchmarks/studies/:
 #   leo_constellation_size_scaling_with_gram.png
 #   leo_constellation_size_scaling_without_gram.png
+# and the raw per-point results in:
+#   leo_constellation_size_scaling_summary.csv
 
 using Plots
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-const WORKER_SCRIPT = joinpath(@__DIR__, "leo_constellation_size_scaling_worker.jl")
+include(joinpath(@__DIR__, "leo_constellation_size_scaling_point.jl"))
+
 const N_SATS_LADDER = [2^k for k in 0:10]  # 1, 2, 4, ..., 1024
 const MODES = ("standard", "surrogate", "no_gram")
-# Defaults to 4 (not this driver process's own Threads.nthreads(), which is
-# silently 1 unless the driver itself is launched with --threads -- the
-# worker subprocesses each get their own --threads flag regardless of what
-# the driver was started with). 4 matches every other head-to-head timing
-# comparison run against this machine (11 physical cores) in this project.
-const THREADS = parse(Int, get(ENV, "SPACEAGORA_SCALING_THREADS", "4"))
 
 struct ScalingResult
     n_sats::Int
@@ -47,18 +49,20 @@ struct ScalingResult
     output::String
 end
 
-function run_worker(n_sats::Int, mode::String)::ScalingResult
-    julia_bin = Base.julia_cmd().exec[1]
-    cmd = Cmd([
-        julia_bin, "--project=$(REPO_ROOT)", "--threads=$(THREADS)",
-        WORKER_SCRIPT, string(n_sats), mode,
-    ])
-    io = IOBuffer()
-    run(pipeline(cmd; stdout=io, stderr=io); wait=true)
-    output = String(take!(io))
-    m = match(r"median wall time \(.*?\):\s*([\d.]+)\s*s", output)
-    median_s = m === nothing ? nothing : parse(Float64, m.captures[1])
-    return ScalingResult(n_sats, mode, median_s, output)
+function run_point(n_sats::Int, mode::String)::ScalingResult
+    # invokelatest sidesteps a Julia 1.12 world-age error on first-ever GRAM
+    # model construction in this process: GRAMSuite is loaded dynamically
+    # (ensure_gramsuite_loaded!'s `@eval import GRAMSuite`) and lazily defines
+    # some methods (e.g. `set_library!`) on first use, after this driver's own
+    # functions were already compiled against the pre-load world age. Only
+    # matters for standard/surrogate (both construct a GRAM model); no_gram
+    # never touches GRAMSuite so it was unaffected.
+    median_s = try
+        Base.invokelatest(run_scaling_point, n_sats, mode)
+    catch err
+        return ScalingResult(n_sats, mode, nothing, sprint(showerror, err))
+    end
+    return ScalingResult(n_sats, mode, median_s, "")
 end
 
 function run_sweep()::Vector{ScalingResult}
@@ -69,14 +73,14 @@ function run_sweep()::Vector{ScalingResult}
         done += 1
         print("[$(done)/$(total)] mode=$(mode) n_sats=$(n_sats) ... ")
         flush(stdout)
-        r = run_worker(n_sats, mode)
+        r = run_point(n_sats, mode)
         push!(results, r)
         if r.median_s === nothing
-            println("FAILED to parse median wall time; raw output follows:")
-            println(r.output)
+            println("FAILED: $(r.output)")
         else
             println("$(round(r.median_s; digits=4)) s")
         end
+        GC.gc()
     end
     return results
 end
@@ -98,6 +102,7 @@ end
 # line, so deviation of the real curve above/below this line is a visual
 # read of super-/sub-linear scaling with constellation size.
 function add_linear_reference!(plt, xs, ys)
+    isempty(xs) && return plt
     x1, y1 = xs[1], ys[1]
     ref_y = y1 .* (xs ./ x1)
     plot!(plt, xs, ref_y; label="linear (O(N)) reference", linestyle=:dash, color=:gray, marker=:none)
@@ -150,11 +155,43 @@ function make_plots(results::Vector{ScalingResult})
     return with_gram_plot, without_gram_plot
 end
 
+function save_csv(results::Vector{ScalingResult})
+    path = joinpath(@__DIR__, "leo_constellation_size_scaling_summary.csv")
+    open(path, "w") do io
+        println(io, "n_sats,mode,median_wall_time_s,status")
+        for r in results
+            status = r.median_s === nothing ? "failed" : "ok"
+            value = r.median_s === nothing ? "" : string(r.median_s)
+            println(io, "$(r.n_sats),$(r.mode),$(value),$(status)")
+        end
+    end
+    println("Saved: $(path)")
+end
+
+function prewarm_gram!()
+    # GRAMSuite's package-extension loading can itself trigger a *second*,
+    # later world-age bump partway through the very first GRAM/surrogate
+    # construction in this process -- after run_point's own invokelatest
+    # wrapper has already taken its snapshot, so that one wrapper doesn't
+    # cover it (this bit exactly the standard/N=1 point in an earlier run,
+    # while every later point was unaffected since the extension only loads
+    # once). Force that whole load-and-settle sequence to happen here, before
+    # the real (timed, recorded) sweep starts, discarding any result/error.
+    for mode in ("standard", "surrogate")
+        try
+            Base.invokelatest(build_constellation_config, 1, mode)
+        catch
+        end
+    end
+    return nothing
+end
+
 function main()
-    println("Constellation-size scaling sweep: N_SATS=$(N_SATS_LADDER), modes=$(MODES), threads=$(THREADS)")
-    println("Estimated total wall time: several minutes ($(length(N_SATS_LADDER) * length(MODES)) subprocess launches).")
+    println("Constellation-size scaling sweep: N_SATS=$(N_SATS_LADDER), modes=$(MODES), threads=$(Threads.nthreads())")
+    println("Running all $(length(N_SATS_LADDER) * length(MODES)) points in-process (no per-point subprocess).")
     println()
 
+    prewarm_gram!()
     results = run_sweep()
 
     println()
@@ -170,6 +207,7 @@ function main()
     end
 
     println()
+    save_csv(results)
     make_plots(results)
 end
 

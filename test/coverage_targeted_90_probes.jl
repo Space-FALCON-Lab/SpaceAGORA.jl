@@ -376,7 +376,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             EI_km=120.0,
             dynamic_effectors=(InverseSquaredGravityModel(),)
         )
-        p = ODEParams{1}(args=args)
+        p = ODEParams(n_sats=1, args=args)
 
         hs = [120_000.0, 150_000.0]
         lats = [0.1, 0.2]
@@ -454,7 +454,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             EI_km=120.0,
             dynamic_effectors=(InverseSquaredGravityModel(),)
         )
-        p_batch = ODEParams{2}(args=args_batch)
+        p_batch = ODEParams(n_sats=2, args=args_batch)
         empty!(p_batch.shared_buffers.density_models)
         push!(p_batch.shared_buffers.density_models, surrogate_no_traj)
         @test _TARGET_CALLBACKS._density_batch_model_for_callback(p_batch, 2) === nothing
@@ -495,7 +495,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             dynamic_effectors=(InverseSquaredGravityModel(),),
             keplerian=false
         )
-        p_gram = ODEParams{1}(args=args_gram)
+        p_gram = ODEParams(n_sats=1, args=args_gram)
         withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "on") do
             empty!(p_gram.shared_buffers.density_models)
             @test _TARGET_CALLBACKS._gram_isolated_pool_batch_model_for_callback(p_gram, 1) === gram_model
@@ -550,7 +550,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             EI_km=120.0,
             dynamic_effectors=(InverseSquaredGravityModel(),)
         )
-        p_cache = ODEParams{1}(args=args_cache)
+        p_cache = ODEParams(n_sats=1, args=args_cache)
         u_cache = build_initial_conditions(args_cache)
         pos = SVector{3, Float64}(u_cache.sc[1].pos)
         vel = SVector{3, Float64}(u_cache.sc[1].vel)
@@ -810,7 +810,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         ephemerides_model=SpiceEphemeridesModel()
     )
-    p_ephem = ODEParams{1}(args=args_ephem)
+    p_ephem = ODEParams(n_sats=1, args=args_ephem)
     u_ephem = build_initial_conditions(args_ephem)
     sc_ephem = u_ephem.sc[1]
     sample_ephem = build_state_sample(sc_ephem, args_ephem.dynamics_model.spacecraft[1], false)
@@ -849,7 +849,7 @@ end
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),)
     )
-    p_freeze = ODEParams{1}(args=args_freeze)
+    p_freeze = ODEParams(n_sats=1, args=args_freeze)
     u_freeze = build_initial_conditions(args_freeze)
     sc_freeze = u_freeze.sc[1]
     sample_freeze = build_state_sample(sc_freeze, args_freeze.dynamics_model.spacecraft[1], false)
@@ -883,7 +883,7 @@ end
 
     # Never-populated buffer (NaN sentinel): falls through to a fresh sample
     # regardless of freeze-per-step, guarding the pre-first-callback-firing case.
-    p_freeze_unset = ODEParams{1}(args=args_freeze)
+    p_freeze_unset = ODEParams(n_sats=1, args=args_freeze)
     withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "1") do
         @test !SimulationEngine._buffered_atmosphere_valid(p_freeze_unset, 1, 5.0)
     end
@@ -903,7 +903,7 @@ end
         ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_density = ODEParams{2}(args=args_density)
+    p_density = ODEParams(n_sats=2, args=args_density)
     u_density = build_initial_conditions(args_density)
     cache_cfg = _TARGET_CALLBACKS._gram_track_cache_config()
 
@@ -971,7 +971,7 @@ end
         ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_density_batch = ODEParams{2}(args=args_density_batch)
+    p_density_batch = ODEParams(n_sats=2, args=args_density_batch)
     u_density_batch = build_initial_conditions(args_density_batch)
     empty!(p_density_batch.shared_buffers.density_models)
     integrator_density_batch = (p=p_density_batch, u=u_density_batch, t=0.0, sol=(prob=(tspan=(0.0, 60.0),),))
@@ -1017,7 +1017,7 @@ end
         ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_aero = ODEParams{1}(args=args_aero)
+    p_aero = ODEParams(n_sats=1, args=args_aero)
     fresh_workspace = dyn._aero_workspace_for_sat!(p_aero, 5, 2)
     @test length(fresh_workspace.thread_force) == 2
 
@@ -1087,7 +1087,7 @@ end
         ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_legacy_aero = ODEParams{1}(args=args_legacy_aero)
+    p_legacy_aero = ODEParams(n_sats=1, args=args_legacy_aero)
     u_legacy_aero = build_initial_conditions(args_legacy_aero)
     p_legacy_aero.shared_buffers.current_time[] = 0.0
     force_legacy, torque_legacy = SimulationModel.calcForceTorque(
@@ -1129,7 +1129,7 @@ end
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
     u_rhs = build_initial_conditions(args_rhs)
-    p_rhs = ODEParams{2}(args=args_rhs)
+    p_rhs = ODEParams(n_sats=2, args=args_rhs)
     _initialize_heat_rate_buffers!(p_rhs)
     p_rhs.is_active[2] = false
 
@@ -1176,7 +1176,7 @@ end
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
     u_backbone_batch = build_initial_conditions(args_backbone_batch)
-    p_backbone_batch = ODEParams{2}(args=args_backbone_batch)
+    p_backbone_batch = ODEParams(n_sats=2, args=args_backbone_batch)
     p_backbone_batch.is_active[2] = false
     q_backbone, dq_backbone = _gravity_backbone_initial_states(u_backbone_batch, args_backbone_batch)
     ddu_backbone = copy(dq_backbone)

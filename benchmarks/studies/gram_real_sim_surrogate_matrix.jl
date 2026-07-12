@@ -261,7 +261,7 @@ function _evaluate_track_density(
     initial_time::InitialTime
 )
     args = _make_args(planet_name, scenario, initial_time)
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     density_model = args.environment_model.density_model
     EM.clear_gram_static_grid_cache!()
     EM.clear_gram_offline_surrogate_cache!()

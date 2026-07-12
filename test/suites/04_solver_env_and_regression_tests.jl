@@ -101,7 +101,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
         keplerian=true
     )
-    p_eff_single = ODEParams{1}(args=args_eff_single)
+    p_eff_single = ODEParams(n_sats=1, args=args_eff_single)
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
@@ -132,7 +132,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
         keplerian=true
     )
-    p_eff_multi = ODEParams{1}(args=args_eff_multi)
+    p_eff_multi = ODEParams(n_sats=1, args=args_eff_multi)
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
@@ -149,7 +149,7 @@
     end
 
     args_eff_constellation = args_eff_single
-    p_eff_constellation = ODEParams{1}(args=args_eff_constellation)
+    p_eff_constellation = ODEParams(n_sats=1, args=args_eff_constellation)
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
@@ -203,8 +203,8 @@
     du_flat_rhs = copy(u_flat_rhs)
     du_serial_rhs .= 0.0
     du_flat_rhs .= 0.0
-    p_serial_rhs = ODEParams{4}(args=args_flat_rhs)
-    p_flat_rhs = ODEParams{4}(args=args_flat_rhs)
+    p_serial_rhs = ODEParams(n_sats=4, args=args_flat_rhs)
+    p_flat_rhs = ODEParams(n_sats=4, args=args_flat_rhs)
     _initialize_heat_rate_buffers!(p_serial_rhs)
     _initialize_heat_rate_buffers!(p_flat_rhs)
     withenv(
@@ -256,8 +256,8 @@
     du_harmonics_flat = copy(u_harmonics_flat)
     du_harmonics_serial .= 0.0
     du_harmonics_flat .= 0.0
-    p_harmonics_serial = ODEParams{4}(args=args_harmonics_flat)
-    p_harmonics_flat = ODEParams{4}(args=args_harmonics_flat)
+    p_harmonics_serial = ODEParams(n_sats=4, args=args_harmonics_flat)
+    p_harmonics_flat = ODEParams(n_sats=4, args=args_harmonics_flat)
     _initialize_heat_rate_buffers!(p_harmonics_serial)
     _initialize_heat_rate_buffers!(p_harmonics_flat)
     _initialize_harmonics_workspace_buffers!(p_harmonics_serial)
@@ -420,7 +420,7 @@
     end
 
     u_alloc_probe = build_initial_conditions(solver_args)
-    p_alloc_probe = ODEParams{1}(args=solver_args)
+    p_alloc_probe = ODEParams(n_sats=1, args=solver_args)
     sc_alloc_probe = u_alloc_probe.sc[1]
     gravity_alloc_model = InverseSquaredGravityModel()
     j2_alloc_model = InverseSquaredJ2GravityModel()
@@ -470,7 +470,7 @@
         keplerian=true
     )
     u0_split_gravity = build_initial_conditions(args_split_gravity)
-    p_split_gravity = ODEParams{1}(args=args_split_gravity)
+    p_split_gravity = ODEParams(n_sats=1, args=args_split_gravity)
     _initialize_heat_rate_buffers!(p_split_gravity)
 
     withenv("SPACEAGORA_SOLVER_MODE" => "split_imex") do
@@ -750,7 +750,7 @@
     @test _gravity_backbone_eligible(args_backbone_custom) == true
 
     u0_backbone = build_initial_conditions(args_backbone)
-    p_backbone = ODEParams{1}(args=args_backbone)
+    p_backbone = ODEParams(n_sats=1, args=args_backbone)
     _initialize_heat_rate_buffers!(p_backbone)
     callbacks_backbone = CallbackSet()
     withenv("SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split") do
@@ -790,7 +790,7 @@
         ephemerides_model=SimpleEphemeridesModel()
     )
     u0_backbone_kicks = build_initial_conditions(args_backbone_kicks)
-    p_backbone_kicks = ODEParams{1}(args=args_backbone_kicks)
+    p_backbone_kicks = ODEParams(n_sats=1, args=args_backbone_kicks)
     _initialize_heat_rate_buffers!(p_backbone_kicks)
     _initialize_nbody_ephemeris_cache_buffer!(p_backbone_kicks)
     _initialize_srp_sun_cache_buffer!(p_backbone_kicks)
@@ -976,7 +976,7 @@
     u0_wrench_mix = build_initial_conditions(args_wrench_mix)
     du0_wrench_mix = copy(u0_wrench_mix)
     du0_wrench_mix .= 0.0
-    p_wrench_mix = ODEParams{1}(args=args_wrench_mix)
+    p_wrench_mix = ODEParams(n_sats=1, args=args_wrench_mix)
     spacecraft_dynamics!(du0_wrench_mix, u0_wrench_mix, p_wrench_mix, 0.0)
     expected_force_mix = legacy_force + typed_force
     @test isapprox(SVector{3, Float64}(du0_wrench_mix.sc[1].vel), expected_force_mix / u0_wrench_mix.sc[1].mass; atol=1e-12, rtol=1e-10)
@@ -1012,7 +1012,7 @@
         keplerian=true
     )
     u0_probe = build_initial_conditions(args_probe)
-    p_probe = ODEParams{1}(args=args_probe)
+    p_probe = ODEParams(n_sats=1, args=args_probe)
     state_probe = build_state_sample(u0_probe.sc[1], args_probe.dynamics_model.spacecraft[1], false)
     req_probe = environment_requirements(AtmosphereProbeWrenchModel())
     env_probe = sample_environment(req_probe, AtmosphereProbeWrenchModel(), u0_probe.sc[1], p_probe, 1, 0.0; write_buffers=false)
@@ -1151,7 +1151,7 @@
     @test decision_unsupported.use_threads == false
     @test decision_unsupported.policy_applied == false
 
-    p_workspace_resize = ODEParams{1}(args=args_eff_single)
+    p_workspace_resize = ODEParams(n_sats=1, args=args_eff_single)
     resize!(p_workspace_resize.shared_buffers.harmonics_workspaces, 0)
     resize!(p_workspace_resize.shared_buffers.nbody_workspaces, 0)
     resize!(p_workspace_resize.shared_buffers.aero_workspaces, 0)
@@ -1175,7 +1175,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_density_instances = ODEParams{1}(args=args_density_instances)
+    p_density_instances = ODEParams(n_sats=1, args=args_density_instances)
     withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "on") do
         SimulationEngine._initialize_density_model_instances!(p_density_instances)
     end
@@ -1217,7 +1217,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_density_surrogate = ODEParams{1}(args=args_density_surrogate)
+    p_density_surrogate = ODEParams(n_sats=1, args=args_density_surrogate)
     withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "on") do
         SimulationEngine._initialize_density_model_instances!(p_density_surrogate)
     end
@@ -1234,7 +1234,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(), SolarRadiationPressureModel(1.2, 12.0)),
         keplerian=true
     )
-    p_srp = ODEParams{1}(args=args_srp)
+    p_srp = ODEParams(n_sats=1, args=args_srp)
     _initialize_srp_sun_cache_buffer!(p_srp)
     withenv("SPACEAGORA_SRP_EPHEMERIS_CACHE" => "1") do
         _initialize_srp_sun_ephemeris_cache!(p_srp, 0.0, 0.0)
@@ -1250,8 +1250,8 @@
     @test p_srp.shared_buffers.srp_sun_ephemeris_cache[] === nothing
 
     _clear_ephemeris_reuse_cache!()
-    p_srp_reuse_a = ODEParams{1}(args=args_srp)
-    p_srp_reuse_b = ODEParams{1}(args=args_srp)
+    p_srp_reuse_a = ODEParams(n_sats=1, args=args_srp)
+    p_srp_reuse_b = ODEParams(n_sats=1, args=args_srp)
     _initialize_srp_sun_cache_buffer!(p_srp_reuse_a)
     _initialize_srp_sun_cache_buffer!(p_srp_reuse_b)
     _reset_spice_runtime_counters!(p_srp_reuse_a)
@@ -1288,7 +1288,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(), NBodyGravityModel(body_names=("moon",), primary_body_name="Earth")),
         keplerian=true
     )
-    p_nbody = ODEParams{1}(args=args_nbody)
+    p_nbody = ODEParams(n_sats=1, args=args_nbody)
     _initialize_nbody_ephemeris_cache_buffer!(p_nbody)
     withenv("SPACEAGORA_NBODY_EPHEMERIS_CACHE" => "1") do
         _initialize_nbody_ephemeris_cache!(p_nbody, 0.0, 0.0)
@@ -1360,7 +1360,7 @@
     end
     _clear_ephemeris_reuse_cache!()
 
-    p_planet_frame = ODEParams{1}(args=args_srp)
+    p_planet_frame = ODEParams(n_sats=1, args=args_srp)
     _initialize_planet_frame_cache_buffer!(p_planet_frame)
     withenv("SPACEAGORA_PLANET_FRAME_CACHE" => "1") do
         _initialize_planet_frame_ephemeris_cache!(p_planet_frame, 0.0, 0.0)
@@ -1388,7 +1388,7 @@
         ),
         keplerian=true
     )
-    p_nbody_srp = ODEParams{1}(args=args_nbody_srp)
+    p_nbody_srp = ODEParams(n_sats=1, args=args_nbody_srp)
     _initialize_nbody_ephemeris_cache_buffer!(p_nbody_srp)
     _initialize_srp_sun_cache_buffer!(p_nbody_srp)
     _reset_spice_runtime_counters!(p_nbody_srp)
@@ -1511,7 +1511,7 @@
                 keplerian=true,
                 ephemerides_model=SimpleEphemeridesModel()
             )
-            p_harmonics_compare = ODEParams{1}(args=args_harmonics_compare)
+            p_harmonics_compare = ODEParams(n_sats=1, args=args_harmonics_compare)
             _initialize_harmonics_workspace_buffers!(p_harmonics_compare)
 
             sample_positions_pp = (
@@ -1811,7 +1811,7 @@
     u_heat_copy = build_initial_conditions(args_heat_copy)
     du_heat_copy = copy(u_heat_copy)
     du_heat_copy .= 0.0
-    p_heat_copy = ODEParams{1}(args=args_heat_copy)
+    p_heat_copy = ODEParams(n_sats=1, args=args_heat_copy)
     _initialize_heat_rate_buffers!(p_heat_copy)
     expected_heat_rates = copy(
         SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
@@ -1859,7 +1859,7 @@ end
     u0 = build_initial_conditions(args)
     du0 = copy(u0)
     du0 .= 0.0
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     spacecraft_dynamics!(du0, u0, p, 0.0)
 
     ω = SVector{3, Float64}(u0.sc[1].ω)
@@ -1918,7 +1918,7 @@ end
 
         du0 = copy(u0)
         du0 .= 0.0
-        p = ODEParams{1}(args=args)
+        p = ODEParams(n_sats=1, args=args)
         spacecraft_dynamics!(du0, u0, p, 0.0)
         return SVector{3, Float64}(du0.sc[1].ω)
     end
@@ -1989,7 +1989,7 @@ end
     u0 = build_initial_conditions(args)
     du0 = copy(u0)
     du0 .= 0.0
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     spacecraft_dynamics!(du0, u0, p, 0.0)
 
     @test norm(SVector{3, Float64}(du0.sc[1].vel)) > 0.0
@@ -2033,7 +2033,7 @@ end
     du_implicit .= 0.0
     du_explicit .= 0.0
     du_sum .= 0.0
-    p_split = ODEParams{1}(args=args_split)
+    p_split = ODEParams(n_sats=1, args=args_split)
     _initialize_heat_rate_buffers!(p_split)
     p_split.shared_buffers.in_atmosphere[1] = false
     p_split.shared_buffers.in_atmosphere_sample_t[1] = -1.0
@@ -2084,7 +2084,7 @@ end
     u0_split_no_aero = build_initial_conditions(args_split_no_aero)
     du_explicit_no_aero = copy(u0_split_no_aero)
     du_explicit_no_aero .= 0.0
-    p_split_no_aero = ODEParams{1}(args=args_split_no_aero)
+    p_split_no_aero = ODEParams(n_sats=1, args=args_split_no_aero)
     _initialize_heat_rate_buffers!(p_split_no_aero)
     spacecraft_dynamics_explicit_remainder!(du_explicit_no_aero, u0_split_no_aero, p_split_no_aero, 0.0)
     @test isapprox(du_explicit.sc[1].ω, du_explicit_no_aero.sc[1].ω; atol=1e-12, rtol=1e-10)
@@ -2115,7 +2115,7 @@ end
     u0_outside = build_initial_conditions(args_outside)
     du_outside = copy(u0_outside)
     du_outside .= 0.0
-    p_outside = ODEParams{1}(args=args_outside)
+    p_outside = ODEParams(n_sats=1, args=args_outside)
     _initialize_heat_rate_buffers!(p_outside)
 
     p_outside.shared_buffers.in_atmosphere[1] = true
@@ -2159,7 +2159,7 @@ end
     u0_mixed = build_initial_conditions(args_mixed)
     du_mixed = copy(u0_mixed)
     du_mixed .= 0.0
-    p_mixed = ODEParams{2}(args=args_mixed)
+    p_mixed = ODEParams(n_sats=2, args=args_mixed)
     _initialize_heat_rate_buffers!(p_mixed)
     p_mixed.shared_buffers.in_atmosphere[1] = false
     p_mixed.shared_buffers.in_atmosphere[2] = true
@@ -2191,7 +2191,7 @@ end
         keplerian=true
     )
     u0_zero_implicit = build_initial_conditions(args_zero_implicit)
-    p_zero_implicit = ODEParams{1}(args=args_zero_implicit)
+    p_zero_implicit = ODEParams(n_sats=1, args=args_zero_implicit)
     _initialize_heat_rate_buffers!(p_zero_implicit)
     split_prob_zero_implicit = withenv("SPACEAGORA_SOLVER_MODE" => "split_imex") do
         _build_typed_solver_problem(u0_zero_implicit, (0.0, 30.0), p_zero_implicit, CallbackSet(), _solver_policy_mode())
@@ -2226,7 +2226,7 @@ end
     u0 = build_initial_conditions(args)
     du0 = copy(u0)
     du0 .= 0.0
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     _initialize_heat_rate_buffers!(p)
     spacecraft_dynamics!(du0, u0, p, 0.0)
     drag_force, drag_torque = SimulationModel.calcForceTorque(AerodynamicCoefficientfM(), u0.sc[1], p, 1)

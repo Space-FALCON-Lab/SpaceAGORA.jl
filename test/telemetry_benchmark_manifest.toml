@@ -99,7 +99,12 @@ fit_cd_scale = false
 cd_scale_min = 1.0
 cd_scale_max = 1.0
 cd_scale_steps = 3
-fit_cr = true
+fit_cr = false
+# Cr pinned at the scenario nominal: with geometry, registration, replay, and
+# the atmosphere all independently validated, the Cr search selected different
+# grid endpoints on near-identical inputs (residual absorption, not
+# measurement) and tripled the scenario cost. The datum-bias estimator and its
+# saturation alarm are retained.
 cr_min = 1.15
 cr_max = 1.45
 cr_steps = 3

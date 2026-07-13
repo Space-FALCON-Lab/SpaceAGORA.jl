@@ -28,6 +28,9 @@ struct AerobrakingEnergyDepletionConfig
     structural_load_limit_pa::Float64
     planning_horizon_s::Float64
     switch_recompute_interval_s::Float64
+    targeting_certification_samples::Int
+    targeting_energy_order_tolerance_jkg::Float64
+    targeting_heat_load_tolerance_j_cm2::Float64
 end
 
 function AerobrakingEnergyDepletionConfig(;
@@ -43,6 +46,9 @@ function AerobrakingEnergyDepletionConfig(;
     structural_load_limit_pa::Real=Inf,
     planning_horizon_s::Real=5_000.0,
     switch_recompute_interval_s::Real=30.0,
+    targeting_certification_samples::Integer=9,
+    targeting_energy_order_tolerance_jkg::Real=1e-3,
+    targeting_heat_load_tolerance_j_cm2::Real=1e-6,
 )
     guidance_modes_t = _edg_validate_symbol_set(_edg_symbol_tuple(guidance_modes), _EDG_GUIDANCE_MODES, "guidance_modes")
     max_energy_submodes_t = _edg_validate_symbol_set(_edg_symbol_tuple(max_energy_submodes), _EDG_MAX_ENERGY_SUBMODES, "max_energy_submodes")
@@ -60,6 +66,14 @@ function AerobrakingEnergyDepletionConfig(;
     recompute = Float64(switch_recompute_interval_s)
     isfinite(horizon) && horizon > 0.0 || throw(ArgumentError("planning_horizon_s must be finite and > 0.0."))
     isfinite(recompute) && recompute > 0.0 || throw(ArgumentError("switch_recompute_interval_s must be finite and > 0.0."))
+    certification_samples = Int(targeting_certification_samples)
+    certification_samples >= 2 || throw(ArgumentError("targeting_certification_samples must be >= 2."))
+    energy_order_tolerance = Float64(targeting_energy_order_tolerance_jkg)
+    heat_load_tolerance = Float64(targeting_heat_load_tolerance_j_cm2)
+    isfinite(energy_order_tolerance) && energy_order_tolerance >= 0.0 ||
+        throw(ArgumentError("targeting_energy_order_tolerance_jkg must be finite and >= 0.0."))
+    isfinite(heat_load_tolerance) && heat_load_tolerance >= 0.0 ||
+        throw(ArgumentError("targeting_heat_load_tolerance_j_cm2 must be finite and >= 0.0."))
 
     return AerobrakingEnergyDepletionConfig(
         guidance_modes_t,
@@ -74,6 +88,9 @@ function AerobrakingEnergyDepletionConfig(;
         Float64(structural_load_limit_pa),
         horizon,
         recompute,
+        certification_samples,
+        energy_order_tolerance,
+        heat_load_tolerance,
     )
 end
 

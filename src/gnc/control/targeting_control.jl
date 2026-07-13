@@ -104,6 +104,7 @@ function _edg_recompute_switches!(
             mass,
             t,
             i;
+            heat_load_j_cm2=heat_load_j_cm2,
             heat_rate_control=(:heat_rate in config.max_energy_submodes),
             structural_control=(:structural_load in config.max_energy_submodes),
         )
@@ -830,6 +831,108 @@ function _edg_targeting_bracket_outcomes(
     return low_drag, max_energy_depletion
 end
 
+function _edg_targeting_outcome_with_heat_load(
+    config::AerobrakingEnergyDepletionConfig,
+    p::ODEParams,
+    spacecraft,
+    pos::SVector{3, Float64},
+    vel::SVector{3, Float64},
+    mass::Float64,
+    t::Float64,
+    switch_time_s::Float64,
+    accumulated_heat_load_j_cm2::Float64;
+    heat_rate_control::Bool,
+    structural_control::Bool,
+)
+    outcome = _edg_predict_targeting_outcome(
+        config,
+        p,
+        spacecraft,
+        pos,
+        vel,
+        mass,
+        t,
+        switch_time_s;
+        heat_rate_control=heat_rate_control,
+        structural_control=structural_control,
+    )
+    future_heat_load = _edg_profile_heat_load(
+        config,
+        p,
+        outcome.track,
+        outcome.alpha_profile;
+        heat_rate_control=false,
+    )
+    return merge(outcome, (heat_load_j_cm2=accumulated_heat_load_j_cm2 + future_heat_load,))
+end
+
+function _edg_certify_targeting_candidates(
+    candidate_times::AbstractVector{<:Real},
+    evaluate_candidate;
+    heat_load_limit_j_cm2::Real,
+    energy_order_tolerance_jkg::Real,
+    heat_load_tolerance_j_cm2::Real,
+)
+    isempty(candidate_times) && throw(ArgumentError("candidate_times must not be empty."))
+    energy_tolerance = Float64(energy_order_tolerance_jkg)
+    heat_tolerance = Float64(heat_load_tolerance_j_cm2)
+    heat_limit = Float64(heat_load_limit_j_cm2)
+    energy_tolerance >= 0.0 || throw(ArgumentError("energy_order_tolerance_jkg must be >= 0.0."))
+    heat_tolerance >= 0.0 || throw(ArgumentError("heat_load_tolerance_j_cm2 must be >= 0.0."))
+
+    first_time = Float64(first(candidate_times))
+    first_outcome = evaluate_candidate(first_time)
+    certified_times = Float64[]
+    certified_outcomes = typeof(first_outcome)[]
+
+    if !isfinite(first_outcome.energy_jkg)
+        return (times=certified_times, outcomes=certified_outcomes, failure=:nonfinite_energy, failure_time_s=first_time)
+    end
+    if !(isfinite(first_outcome.heat_load_j_cm2) && first_outcome.heat_load_j_cm2 <= heat_limit + heat_tolerance)
+        return (times=certified_times, outcomes=certified_outcomes, failure=:heat_load, failure_time_s=first_time)
+    end
+
+    push!(certified_times, first_time)
+    push!(certified_outcomes, first_outcome)
+    previous_energy = first_outcome.energy_jkg
+
+    for candidate_time in Iterators.drop(candidate_times, 1)
+        time_s = Float64(candidate_time)
+        outcome = evaluate_candidate(time_s)
+        if !isfinite(outcome.energy_jkg)
+            return (times=certified_times, outcomes=certified_outcomes, failure=:nonfinite_energy, failure_time_s=time_s)
+        end
+        if !(isfinite(outcome.heat_load_j_cm2) && outcome.heat_load_j_cm2 <= heat_limit + heat_tolerance)
+            return (times=certified_times, outcomes=certified_outcomes, failure=:heat_load, failure_time_s=time_s)
+        end
+        if !(outcome.energy_jkg < previous_energy - energy_tolerance)
+            return (times=certified_times, outcomes=certified_outcomes, failure=:energy_order, failure_time_s=time_s)
+        end
+        push!(certified_times, time_s)
+        push!(certified_outcomes, outcome)
+        previous_energy = outcome.energy_jkg
+    end
+
+    return (times=certified_times, outcomes=certified_outcomes, failure=:none, failure_time_s=Inf)
+end
+
+function _edg_disable_uncertified_targeting!(
+    config::AerobrakingEnergyDepletionConfig,
+    state::AerobrakingEnergyDepletionState,
+    i::Int;
+    prefer_max_energy_depletion::Bool,
+)
+    state.targeting_active[i] = false
+    if prefer_max_energy_depletion && (:max_energy_depletion in config.guidance_modes)
+        state.selected_mode[i] = :max_energy_depletion
+        state.safe_low_drag[i] = false
+    else
+        state.selected_mode[i] = :safe_low_drag
+        state.safe_low_drag[i] = true
+    end
+    return Inf
+end
+
 function _edg_solve_targeting_switch(
     config::AerobrakingEnergyDepletionConfig,
     state::AerobrakingEnergyDepletionState,
@@ -840,12 +943,20 @@ function _edg_solve_targeting_switch(
     mass::Float64,
     t::Float64,
     i::Int;
+    heat_load_j_cm2::Float64=0.0,
     heat_rate_control::Bool,
     structural_control::Bool,
 )
     isfinite(state.target_energy_jkg[i]) || return t + 0.5 * config.planning_horizon_s
 
-    low_drag, high_drag = _edg_targeting_switch_outcomes(
+    predicted_mass = _edg_predict_mass(spacecraft, mass)
+    duration = _edg_drag_passage_duration(config, p, pos, vel, predicted_mass)
+    t_low = t
+    nominal_t_high = t + duration + 1.0
+    candidate_times = collect(range(t_low, nominal_t_high; length=config.targeting_certification_samples))
+    heat_load_limit = (:heat_load in config.max_energy_submodes) ? config.heat_load_limit_j_cm2 : Inf
+
+    evaluate_candidate(t_switch) = _edg_targeting_outcome_with_heat_load(
         config,
         p,
         spacecraft,
@@ -853,66 +964,82 @@ function _edg_solve_targeting_switch(
         vel,
         mass,
         t,
+        t_switch,
+        heat_load_j_cm2;
         heat_rate_control=heat_rate_control,
         structural_control=structural_control,
     )
-    t_low = t
-    t_high = t + low_drag.duration_s + 1.0
+    certification = _edg_certify_targeting_candidates(
+        candidate_times,
+        evaluate_candidate;
+        heat_load_limit_j_cm2=heat_load_limit,
+        energy_order_tolerance_jkg=config.targeting_energy_order_tolerance_jkg,
+        heat_load_tolerance_j_cm2=config.targeting_heat_load_tolerance_j_cm2,
+    )
+    if length(certification.times) < 2
+        return _edg_disable_uncertified_targeting!(
+            config,
+            state,
+            i;
+            prefer_max_energy_depletion=false,
+        )
+    end
+
+    low_drag = first(certification.outcomes)
+    certified_end = last(certification.outcomes)
+    t_high = last(certification.times)
     target_energy = state.target_energy_jkg[i]
     target_apoapsis = config.target_apoapsis_radius_m
+    state.bracket_min_energy_jkg[i] = certified_end.energy_jkg
+    state.bracket_max_energy_jkg[i] = low_drag.energy_jkg
+
+    energy_tolerance = config.targeting_energy_order_tolerance_jkg
+    if target_energy > low_drag.energy_jkg + energy_tolerance
+        return _edg_disable_uncertified_targeting!(
+            config,
+            state,
+            i;
+            prefer_max_energy_depletion=false,
+        )
+    elseif target_energy < certified_end.energy_jkg - energy_tolerance
+        return _edg_disable_uncertified_targeting!(
+            config,
+            state,
+            i;
+            prefer_max_energy_depletion=true,
+        )
+    end
 
     function energy_residual(t_switch)
-        outcome = _edg_predict_targeting_outcome(
-            config,
-            p,
-            spacecraft,
-            pos,
-            vel,
-            mass,
-            t,
-            t_switch;
-            heat_rate_control=heat_rate_control,
-            structural_control=structural_control,
-        )
+        outcome = evaluate_candidate(t_switch)
         return outcome.energy_jkg - target_energy
     end
 
     function apoapsis_residual(t_switch)
-        outcome = _edg_predict_targeting_outcome(
-            config,
-            p,
-            spacecraft,
-            pos,
-            vel,
-            mass,
-            t,
-            t_switch;
-            heat_rate_control=heat_rate_control,
-            structural_control=structural_control,
-        )
+        outcome = evaluate_candidate(t_switch)
         return outcome.apoapsis_radius_m - target_apoapsis
     end
 
     function solve_energy_switch()
-        f_low = energy_residual(t_low)
-        f_high = energy_residual(t_high)
+        f_low = low_drag.energy_jkg - target_energy
+        f_high = certified_end.energy_jkg - target_energy
         if !(isfinite(f_low) && isfinite(f_high)) || f_low * f_high > 0.0
-            denom = high_drag.energy_jkg - low_drag.energy_jkg
+            denom = certified_end.energy_jkg - low_drag.energy_jkg
             frac = abs(denom) > eps(Float64) ? (target_energy - low_drag.energy_jkg) / denom : 0.5
-            return t + clamp(frac, 0.0, 1.0) * low_drag.duration_s
+            return t_low + clamp(frac, 0.0, 1.0) * (t_high - t_low)
         end
         return Roots.find_zero(energy_residual, (t_low, t_high), Roots.Brent(); rtol=1e-7)
     end
 
     function solve_apoapsis_switch()
         isfinite(target_apoapsis) && target_apoapsis > 0.0 || return solve_energy_switch()
-        f_low = apoapsis_residual(t_low)
-        f_high = apoapsis_residual(t_high)
+        f_low = low_drag.apoapsis_radius_m - target_apoapsis
+        f_high = certified_end.apoapsis_radius_m - target_apoapsis
         if !(isfinite(f_low) && isfinite(f_high)) || f_low * f_high > 0.0
-            denom = high_drag.apoapsis_radius_m - low_drag.apoapsis_radius_m
+            denom = certified_end.apoapsis_radius_m - low_drag.apoapsis_radius_m
             if isfinite(denom) && abs(denom) > eps(Float64)
                 frac = (target_apoapsis - low_drag.apoapsis_radius_m) / denom
-                return t + clamp(frac, 0.0, 1.0) * low_drag.duration_s
+                return t_low + clamp(frac, 0.0, 1.0) * (t_high - t_low)
             end
             return solve_energy_switch()
         end
@@ -921,18 +1048,7 @@ function _edg_solve_targeting_switch(
 
     t_switch = solve_apoapsis_switch()
     for _ in 1:2
-        outcome = _edg_predict_targeting_outcome(
-            config,
-            p,
-            spacecraft,
-            pos,
-            vel,
-            mass,
-            t,
-            t_switch;
-            heat_rate_control=heat_rate_control,
-            structural_control=structural_control,
-        )
+        outcome = evaluate_candidate(t_switch)
         apo_error = outcome.apoapsis_radius_m - config.target_apoapsis_radius_m
         state.target_energy_jkg[i] = outcome.energy_jkg
         if isfinite(apo_error) && abs(apo_error) <= 25.0

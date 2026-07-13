@@ -69,25 +69,23 @@ guidance_rate_s = 30.0
 control_rate_s = 10.0
 
 [scenarios.atmosphere_truth]
-assumption_id = "odyssey_mars_gram_deterministic_2001storm_v2"
+assumption_id = "odyssey_mars_gram_tes_my25_v1"
 atmosphere_model = "GRAM"
-atmosphere_dataset = "MarsGRAM climatology + decaying 2001 global dust storm"
+atmosphere_dataset = "MarsGRAM TES Mapping Year 2 (observed MY25, 2001 storm year)"
 space_weather_model = "MarsGRAM deterministic (seeded, perturbations off)"
 solar_flux_model = "MarsGRAM epoch-fixed defaults"
 gram_seed = 1001
 gram_perturbation_scales = [0.0, 0.0, 0.0, 0.0]
-# The aerobraking campaign flew through the decaying tail of the 2001
-# planet-encircling dust storm. Restart-from-truth segment validation against
-# the NAV kernel inverts to a dust optical depth decaying from ~0.4 at the
-# campaign start (Ls ~267) toward the ~0.2 background by Ls ~307; MarsGRAM's
-# trapezoidal global storm over a lowered background reproduces that profile:
-# total tau = 0.40 plateau through Ls ~283, linear decay to 0.20 by Ls ~307.
-# Storm tuple: (longitude_sun, duration_Ls_deg, intensity, max_radius_km
-# [0 = global], latitude, longitude). Residuals after this setting are
-# per-orbit weather scatter (perturbations are intentionally off) and a
-# dust-insensitive model over-thickness at 105-112 km late in the campaign.
-mars_mgcm_dust_levels = [0.2, 0.2, 0.2]
-mars_dust_storm = [259.0, 48.0, 0.20, 0.0, 0.0, 0.0]
+# TES Mapping Year 2 selects the observed Mars Year 25 dust fields — the 2001
+# global-storm year as actually measured by MGS/TES, spatially and temporally
+# resolved. This replaces the hand-built storm trapezoid and manual MGCM dust
+# levels used previously: the per-pass accelerometer comparison (odya_0001)
+# and restart-from-truth segments both prefer the observed year across the
+# campaign. Native default F10.7 is retained on purpose — the TES fields
+# already carry the observed state, and forcing the flown F10.7 double-counts.
+# Known limit: TES map-edge thinning late in the campaign (documented in the
+# lab notes). Note TES data mode costs more per density query than MGCM.
+mars_map_year = 2
 gram_offline_surrogate = "off"
 gram_static_grid = false
 gram_track_cache = false

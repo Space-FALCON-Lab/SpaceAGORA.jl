@@ -660,6 +660,67 @@ end
     return atmo.total_density, atmo.temperature, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+"""
+TabulatedFlightAtmosphereModel — density from flight-measured per-pass
+profiles (e.g. accelerometer-derived), for labeled replication/certification
+diagnostics. Pure data: nearest pass in elapsed time, leg by side of that
+pass's periapsis, log-linear interpolation in altitude, exponential tails
+beyond each profile's coverage. `sigma_scale` shifts every point by that many
+measurement standard errors (envelope runs). Temperature is derived from the
+local log-density slope (scale height); winds are zero — the measurement
+carries neither, and this model never stands in for a predictive atmosphere.
+"""
+struct TabulatedFlightAtmosphereModel <: AbstractDensityModel
+    pass_peri_el_s::Vector{Float64}            # sorted periapsis elapsed times
+    # per pass: inbound/outbound profiles as (alt_m ascending, log_rho, sigma_log)
+    prof_alt_m::Vector{NTuple{2, Vector{Float64}}}
+    prof_logrho::Vector{NTuple{2, Vector{Float64}}}
+    prof_siglog::Vector{NTuple{2, Vector{Float64}}}
+    sigma_scale::Float64
+    g_ref_mps2::Float64
+    gas_constant::Float64
+end
+
+@inline function _tab_flight_interp(alts::Vector{Float64}, logs::Vector{Float64}, sigs::Vector{Float64}, h::Float64, sigma_scale::Float64)::Tuple{Float64, Float64}
+    n = length(alts)
+    if h <= alts[1]
+        H = n >= 2 ? (alts[2] - alts[1]) / max(logs[1] - logs[2], 1e-9) : 8000.0
+        return (logs[1] + (alts[1] - h) / H + sigma_scale * sigs[1]), H
+    elseif h >= alts[n]
+        H = n >= 2 ? (alts[n] - alts[n-1]) / max(logs[n-1] - logs[n], 1e-9) : 8000.0
+        return (logs[n] - (h - alts[n]) / H + sigma_scale * sigs[n]), H
+    end
+    j = searchsortedlast(alts, h)
+    t = (h - alts[j]) / (alts[j+1] - alts[j])
+    lr = logs[j] + t * (logs[j+1] - logs[j])
+    sg = sigs[j] + t * (sigs[j+1] - sigs[j])
+    H = (alts[j+1] - alts[j]) / max(logs[j] - logs[j+1], 1e-9)
+    return (lr + sigma_scale * sg), H
+end
+
+function getDensity(model::TabulatedFlightAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
+    ts = model.pass_peri_el_s
+    j = clamp(searchsortedlast(ts, el_time), 1, length(ts))
+    if j < length(ts) && abs(ts[j+1] - el_time) < abs(el_time - ts[j])
+        j += 1
+    end
+    leg = el_time < ts[j] ? 1 : 2
+    alts = model.prof_alt_m[j][leg]
+    if isempty(alts)
+        leg = leg == 1 ? 2 : 1
+        alts = model.prof_alt_m[j][leg]
+    end
+    isempty(alts) && return 0.0, 150.0, SVector{3, Float64}(0.0, 0.0, 0.0)
+    logrho, H_m = _tab_flight_interp(alts, model.prof_logrho[j][leg], model.prof_siglog[j][leg], h, model.sigma_scale)
+    rho = exp(logrho)
+    T = clamp(H_m * model.g_ref_mps2 / model.gas_constant, 80.0, 400.0)
+    return rho, T, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+@inline function getDensity(model::TabulatedFlightAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    return getDensity(model, h, lat, lon, el_time, wind)
+end
+
 function getDensity(model::NoAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
     rho = 0.0
     T = p.args.environment_model.planet.T_ref

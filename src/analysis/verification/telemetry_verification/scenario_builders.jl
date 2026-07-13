@@ -166,9 +166,64 @@ function _scenario_dynamic_effectors(
 end
 
 @inline function _scenario_density_model(cfg::AbstractScenarioConfig)
-    return cfg.drag_enabled ?
-        _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth) :
-        SimulationModel.NoAtmosphereModel()
+    cfg.drag_enabled || return SimulationModel.NoAtmosphereModel()
+    if cfg.atmosphere_truth.atmosphere_model == "tabulated_flight"
+        return _make_tabulated_flight_density_model(cfg.initial_time, cfg.atmosphere_truth)
+    end
+    return _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth)
+end
+
+# Flight-measured density table (see build script in the lab notes): one row
+# per (pass, leg, 1 km altitude bin) with mean density, its standard error,
+# and the pass periapsis UTC. Loaded into per-pass in/out profiles keyed by
+# elapsed time from the scenario epoch; nearest pass answers each query, so
+# archive gaps fall back to the neighboring pass (counted and logged here).
+function _make_tabulated_flight_density_model(
+    initial_time::InitialTime,
+    truth::AtmosphereTruthConfig
+)
+    path = truth.tabulated_flight_file
+    isfile(path) || throw(ArgumentError("tabulated_flight_file not found: $path"))
+    tbl = DataFrame(Arrow.Table(path))
+    for col in ("P", "leg", "alt_km", "rho_kgm3", "sigma_kgm3", "t_peri_utc")
+        hasproperty(tbl, Symbol(col)) || throw(ArgumentError("tabulated_flight_file missing column '$col'"))
+    end
+    epoch = DateTime(
+        Int(initial_time.year), Int(initial_time.month), Int(initial_time.day),
+        Int(initial_time.hour), Int(initial_time.minute)
+    ) + Millisecond(round(Int, 1000 * Float64(initial_time.second)))
+    pass_ids = sort(unique(Int.(tbl.P)))
+    peri_el = Float64[]
+    alt_pairs = NTuple{2, Vector{Float64}}[]
+    log_pairs = NTuple{2, Vector{Float64}}[]
+    sig_pairs = NTuple{2, Vector{Float64}}[]
+    for pid in pass_ids
+        sub = tbl[Int.(tbl.P) .== pid, :]
+        t_peri = DateTime(first(sub.t_peri_utc)[1:19])
+        push!(peri_el, Float64(Dates.value(t_peri - epoch)) / 1000.0)
+        alts = (Float64[], Float64[]); logs = (Float64[], Float64[]); sigs = (Float64[], Float64[])
+        for r in eachrow(sub)
+            li = r.leg == "in" ? 1 : 2
+            rho = Float64(r.rho_kgm3)
+            rho > 0.0 || continue
+            push!(alts[li], Float64(r.alt_km) * 1000.0)
+            push!(logs[li], log(rho))
+            push!(sigs[li], Float64(r.sigma_kgm3) / rho)   # sigma of log-density
+        end
+        for li in (1, 2)
+            ord = sortperm(alts[li])
+            permute!(alts[li], ord); permute!(logs[li], ord); permute!(sigs[li], ord)
+        end
+        push!(alt_pairs, alts); push!(log_pairs, logs); push!(sig_pairs, sigs)
+    end
+    ord = sortperm(peri_el)
+    n_gaps = isempty(pass_ids) ? 0 : (maximum(pass_ids) - minimum(pass_ids) + 1 - length(pass_ids))
+    println("tabulated_flight: $(length(pass_ids)) passes, $(nrow(tbl)) bins, " *
+            "$(n_gaps) archive gaps (nearest-pass fallback), sigma_scale=$(truth.tabulated_flight_sigma)")
+    return SimulationModel.TabulatedFlightAtmosphereModel(
+        peri_el[ord], alt_pairs[ord], log_pairs[ord], sig_pairs[ord],
+        truth.tabulated_flight_sigma, 3.4, 188.92
+    )
 end
 
 Base.@kwdef struct _GRAMOfflineSurrogateFallbackBase

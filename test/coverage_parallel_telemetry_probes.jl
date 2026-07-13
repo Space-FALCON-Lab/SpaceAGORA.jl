@@ -1155,6 +1155,51 @@ end
     )), "ctx")
 end
 
+@testset "Tabulated flight atmosphere (certification mode)" begin
+    # parse: model name validation and key coupling
+    @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(
+        "atmosphere_model" => "bogus", "atmosphere_dataset" => "d",
+        "space_weather_model" => "s", "solar_flux_model" => "f")), "ctx")
+    @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(
+        "atmosphere_model" => "tabulated_flight", "atmosphere_dataset" => "d",
+        "space_weather_model" => "s", "solar_flux_model" => "f")), "ctx")   # missing file
+    @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(
+        "atmosphere_model" => "GRAM", "atmosphere_dataset" => "d",
+        "space_weather_model" => "s", "solar_flux_model" => "f",
+        "tabulated_flight_file" => "x.feather")), "ctx")                    # file without mode
+    cfgt = TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(
+        "atmosphere_model" => "tabulated_flight", "atmosphere_dataset" => "d",
+        "space_weather_model" => "s", "solar_flux_model" => "f",
+        "tabulated_flight_file" => "x.feather", "tabulated_flight_sigma" => -1.0)), "ctx")
+    @test cfgt.atmosphere_model == "tabulated_flight"
+    @test cfgt.tabulated_flight_sigma == -1.0
+
+    # interpolation math: log-linear interior, exponential tails, sigma shift
+    alts = [100.0e3, 110.0e3, 120.0e3]
+    logs = [log(1e-7), log(1e-8), log(1e-9)]     # H = 10 km / ln(10)
+    sigs = [0.1, 0.2, 0.4]
+    m = SimulationModel.TabulatedFlightAtmosphereModel(
+        [0.0], [(alts, alts)], [(logs, logs)], [(sigs, sigs)], 0.0, 3.4, 188.92)
+    rho_mid, T_mid, w = SimulationModel.getDensity(m, 105.0e3, 0.0, 0.0, 10.0, false)
+    @test isapprox(rho_mid, sqrt(1e-7 * 1e-8); rtol=1e-10)                 # geometric mean
+    @test w == SimulationModel.SVector{3, Float64}(0.0, 0.0, 0.0)
+    rho_above, _, _ = SimulationModel.getDensity(m, 130.0e3, 0.0, 0.0, 10.0, false)
+    @test isapprox(rho_above, 1e-10; rtol=1e-6)                            # tail continues H
+    rho_below, _, _ = SimulationModel.getDensity(m, 90.0e3, 0.0, 0.0, 10.0, false)
+    @test isapprox(rho_below, 1e-6; rtol=1e-6)
+    mp = SimulationModel.TabulatedFlightAtmosphereModel(
+        [0.0], [(alts, alts)], [(logs, logs)], [(sigs, sigs)], 1.0, 3.4, 188.92)
+    rho_p, _, _ = SimulationModel.getDensity(mp, 105.0e3, 0.0, 0.0, 10.0, false)
+    @test isapprox(rho_p / rho_mid, exp(0.15); rtol=1e-10)                 # +1 sigma of interp sigma_log
+    # leg selection: before the pass periapsis uses inbound profile
+    logs_out = [log(2e-7), log(2e-8), log(2e-9)]
+    m2 = SimulationModel.TabulatedFlightAtmosphereModel(
+        [100.0], [(alts, alts)], [(logs, logs_out)], [(sigs, sigs)], 0.0, 3.4, 188.92)
+    rin, _, _ = SimulationModel.getDensity(m2, 105.0e3, 0.0, 0.0, 50.0, false)
+    rout, _, _ = SimulationModel.getDensity(m2, 105.0e3, 0.0, 0.0, 150.0, false)
+    @test isapprox(rout / rin, 2.0; rtol=1e-10)
+end
+
 @testset "Diagnostic replay scaling (flight apoapsis ratio)" begin
     # Default: mode is delta_v, no flight-apoapsis data.
     m0 = TV._parse_maneuver_config(Dict("maneuvers" => Dict(

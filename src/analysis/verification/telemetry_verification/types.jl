@@ -23,6 +23,12 @@ Base.@kwdef struct AtmosphereTruthConfig
     mars_wind_scales::Union{Nothing, NTuple{2, Float64}} = nothing
     mars_mola_heights::Union{Nothing, Bool} = nothing
     mars_min_max::Union{Nothing, Int} = nothing
+    # Labeled replication/certification mode: atmosphere_model = "tabulated_flight"
+    # flies the sim on flight-measured per-pass density profiles (see
+    # TabulatedFlightAtmosphereModel). Never the benchmark default; the mode is
+    # visible in the summary via the atmosphere_model column.
+    tabulated_flight_file::String = ""
+    tabulated_flight_sigma::Float64 = 0.0
 end
 
 Base.@kwdef struct CalibrationConfig

@@ -5,8 +5,16 @@ name = "odyssey"
 kind = "orbit_events"
 planet = "mars"
 events = ["peri", "apo"]
-telemetry_peri = "data/telemetry/Odyssey/True_Odyssey_periapsis_alts.feather"
-telemetry_apo = "data/telemetry/Odyssey/True_Odyssey_apoapsis_alts.feather"
+# Truth source: per-passage apsis series extracted from the reconstructed NAV
+# trajectory (m01_ab_v2.bsp — verified against JPL Horizons, the PDS
+# accelerometer archive time tags, and the NAIF archive copy). One row per
+# actual apsis passage, axis aligned to the harness event labeling by
+# construction. The historical NAV-solution summary files
+# (True_Odyssey_*_alts.feather) remain in-tree for reference; they carry
+# point scatter and axis jitter of their own and are no longer the graded
+# truth.
+telemetry_peri = "data/telemetry/Odyssey/True_Odyssey_periapsis_alts_kernel.feather"
+telemetry_apo = "data/telemetry/Odyssey/True_Odyssey_apoapsis_alts_kernel.feather"
 target_orbits_quick = 8
 target_orbits_full = 340
 compare_points_quick = 8
@@ -60,8 +68,12 @@ EI_km = 250.0
 # epoch-relative apoapsis N lies between P(18+N) and P(19+N): offset 18 places
 # burn B between P(B) and P(B+1), matching flight. Walk-in burns (7-16) are
 # already in the initial condition and are dropped by the offset filter.
-orbit_numbers = [7, 10, 12, 14, 16, 25, 32, 45, 49, 53, 66, 74, 88, 91, 99, 105, 129, 146, 179, 197, 213, 229, 241, 257, 270, 282, 295, 306, 318, 330]
-delta_v_mps = [-0.549, -0.549, -0.301, -0.151, -0.303, 0.145, -0.151, -0.099, -0.099, -0.2, -0.2, 0.297, -0.149, -0.149, -0.147, 0.144, 0.144, 1.0, 0.844, 0.6, 0.844, 0.6, 0.6, 1.2, 1.0, 1.2, 1.2, 1.0, 1.0, 1.2]
+orbit_numbers = [7, 10, 12, 14, 16, 25, 32, 45, 49, 53, 66, 74, 88, 91, 99, 105, 129, 146, 179, 197, 213, 229, 241, 257, 270, 282, 295, 306, 318, 330, 336]
+delta_v_mps = [-0.549, -0.549, -0.301, -0.151, -0.303, 0.145, -0.151, -0.099, -0.099, -0.2, -0.2, 0.297, -0.149, -0.149, -0.147, 0.144, 0.144, 1.0, 0.844, 0.6, 0.844, 0.6, 0.6, 1.2, 1.0, 1.2, 1.2, 1.0, 1.0, 1.2, 19.82]
+# The final entry is the terminal walk-out raise (kernel-measured: the apo
+# burn of 2002-01-11 lifts periapsis 115.0 -> 198.2 km; exact vis-viva at the
+# measured radii gives 19.82 m/s). Without it the sim keeps flying the
+# corridor after the real spacecraft has left it.
 orbit_number_offset = 18
 thrust_n = 4.0
 isp_s = 220.0

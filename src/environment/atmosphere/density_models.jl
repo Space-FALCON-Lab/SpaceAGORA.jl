@@ -681,13 +681,23 @@ struct TabulatedFlightAtmosphereModel <: AbstractDensityModel
     gas_constant::Float64
 end
 
+# Tail scale heights are clamped to the physical Mars thermosphere range:
+# noisy edge bins can invert (top of a profile is noise-dominated), and an
+# unclamped slope would extend a near-constant density blanket along the whole
+# orbit — integrated over an 18 h period that phantom drag exceeds the real
+# periapsis pass severalfold.
+const _TAB_FLIGHT_H_MIN_M = 2000.0
+const _TAB_FLIGHT_H_MAX_M = 12000.0
+
 @inline function _tab_flight_interp(alts::Vector{Float64}, logs::Vector{Float64}, sigs::Vector{Float64}, h::Float64, sigma_scale::Float64)::Tuple{Float64, Float64}
     n = length(alts)
     if h <= alts[1]
         H = n >= 2 ? (alts[2] - alts[1]) / max(logs[1] - logs[2], 1e-9) : 8000.0
+        H = clamp(H, _TAB_FLIGHT_H_MIN_M, _TAB_FLIGHT_H_MAX_M)
         return (logs[1] + (alts[1] - h) / H + sigma_scale * sigs[1]), H
     elseif h >= alts[n]
         H = n >= 2 ? (alts[n] - alts[n-1]) / max(logs[n-1] - logs[n], 1e-9) : 8000.0
+        H = clamp(H, _TAB_FLIGHT_H_MIN_M, _TAB_FLIGHT_H_MAX_M)
         return (logs[n] - (h - alts[n]) / H + sigma_scale * sigs[n]), H
     end
     j = searchsortedlast(alts, h)

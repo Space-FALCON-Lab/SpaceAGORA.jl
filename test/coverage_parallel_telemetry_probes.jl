@@ -1198,6 +1198,17 @@ end
     rin, _, _ = SimulationModel.getDensity(m2, 105.0e3, 0.0, 0.0, 50.0, false)
     rout, _, _ = SimulationModel.getDensity(m2, 105.0e3, 0.0, 0.0, 150.0, false)
     @test isapprox(rout / rin, 2.0; rtol=1e-10)
+
+    # noise-inverted top bins: the tail scale height clamps to the physical
+    # range and density still vanishes far above the profile (no constant
+    # blanket along the orbit).
+    logs_inv = [log(1e-7), log(1e-8), log(1.5e-8)]
+    m3 = SimulationModel.TabulatedFlightAtmosphereModel(
+        [0.0], [(alts, alts)], [(logs_inv, logs_inv)], [(sigs, sigs)], 0.0, 3.4, 188.92)
+    rho_top, _, _ = SimulationModel.getDensity(m3, 120.0e3, 0.0, 0.0, 10.0, false)
+    rho_far, _, _ = SimulationModel.getDensity(m3, 400.0e3, 0.0, 0.0, 10.0, false)
+    @test rho_far < rho_top * exp(-(400.0e3 - 120.0e3) / 12000.0) * 1.0001
+    @test rho_far < 1e-17
 end
 
 @testset "Diagnostic replay scaling (flight apoapsis ratio)" begin

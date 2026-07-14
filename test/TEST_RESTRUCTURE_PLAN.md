@@ -85,10 +85,12 @@ same lines as the 3 coverage-probe files; retire redundant probes, relocate
 genuinely-useful ones into `test/unit/`. See the progress log entry for what
 was actually feasible to do without a dedicated coverage-diff experiment.
 
-### Phase 5 (future) — Wire-up and docs
-Update `test/runtests.jl` and CI workflows for a fast (unit + fast golden)
-vs. slow (propagation-heavy + contracts + stress) split. Rewrite
-`test/README.md` as the definitive "how to add a test" doc.
+### Phase 5 — Wire-up and docs (done, see progress log)
+Original plan: update CI workflows for a fast/slow split, rewrite
+`test/README.md`. See the progress log for what was actually found and
+changed (the fast/slow split was already substantially in place from
+Phases 0-4; this phase mostly cleaned up genuine CI cruft that surfaced
+while checking).
 
 ## Progress log
 
@@ -336,3 +338,23 @@ vs. slow (propagation-heavy + contracts + stress) split. Rewrite
   paths. Verified via full `test/runtests.jl`: Coverage Probes still
   510/510 pass, identical to before the move (3787/3787 unit total
   unchanged) — confirms the relocation changed nothing behaviorally.
+- 2026-07-14: **Phase 5 done.** Asked before touching live CI workflow
+  behavior (bigger blast radius than anything else in this plan, since it's
+  team-visible pipeline behavior, not just `test/` internals). Investigated
+  `CI.yml` vs `julia-ci.yml` vs `nightly-stress.yml`: `CI.yml` was added
+  2026-04-26 as part of a sysimage-build experiment that was reverted soon
+  after (last touched 2026-05-01), only triggers on `push` to main/master
+  (never gates PRs), and its 2 jobs duplicate a subset of what the
+  actively-maintained `julia-ci.yml` (13 jobs, PR-triggered, last touched
+  2026-07-07) already does more completely — deleted it as dead weight.
+  Also initially proposed adding a `nightly-contracts` job to run
+  `test/contracts/nightly_runtests.jl`, having missed on a first pass that
+  `nightly-stress.yml` already has a "Contract suite" step doing exactly
+  that (line ~73) — caught this before making the change, so nothing
+  duplicated. Net Phase 5 CI change: just the one deletion.
+  Rewrote `test/README.md` as the definitive "how to add a test" doc
+  (unit / golden / contract-gate guidance) reflecting the final state of
+  Phases 0-4, and updated `test/integration/README.md` (was still
+  describing the now-deleted legacy harness). Final full-repo sanity pass:
+  all 101 `test/**/*.jl` files parse; all 5 remaining workflow YAML files
+  parse. **This closes out Phase 5 — the whole plan (Phases 0-5) is done.**

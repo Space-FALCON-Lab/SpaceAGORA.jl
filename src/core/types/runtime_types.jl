@@ -782,6 +782,19 @@ export RhsEffectorDecision, RhsExecutionPlan
         # as Any in the RHS, boxing every plan access and re-boxing ODEParams
         # (~1.6 KB inline) on each dynamics call — ~2/3 of solve-path allocations.
         rhs_plan_override::Base.RefValue{Union{Nothing, RhsExecutionPlan}} = Ref{Union{Nothing, RhsExecutionPlan}}(nothing)
+        # Per-accepted-step cache of _rhs_execution_plan's routing decision, active
+        # only when SPACEAGORA_RHS_PLAN_STEP_CACHE=on (_rhs_plan_step_cache_enabled,
+        # setup.jl). N_sats/thread policy don't change mid-step, so re-deriving the
+        # plan (active-satellite count, effector cost decision, routing heuristics)
+        # on every solver STAGE call is pure waste when a solve takes several stages
+        # per accepted step. Invalidated (set to `nothing`) once per accepted step by
+        # update_planet_frame_callback's affect! (planet_frame.jl), which -- like this
+        # cache -- already runs exactly once per accepted step via a DiscreteCallback
+        # with an always-true condition (OrdinaryDiffEq only invokes DiscreteCallback
+        # affect! on accepted steps, never per stage, never on rejected steps).
+        # Distinct from rhs_plan_override above: that one is a permanent, solve-wide
+        # pin from calibration; this one is refreshed every accepted step.
+        rhs_plan_step_cache::Base.RefValue{Union{Nothing, RhsExecutionPlan}} = Ref{Union{Nothing, RhsExecutionPlan}}(nothing)
         # Run-scoped env-config snapshots (see struct docs above).  `nothing`
         # until _initialize_runtime_env_config! runs at run_simulation setup;
         # hot-path accessors fall back to live ENV parsing when unset so

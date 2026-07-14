@@ -933,7 +933,54 @@ end
         heterogeneity >= heterogeneity_threshold
 end
 
+# Default off: this is a new, not-yet-broadly-validated optimization (see
+# rhs_plan_step_cache's docstring in runtime_types.jl for the mechanism). Every
+# other perf-sensitive toggle in this file defaults to today's proven behavior
+# and requires an explicit opt-in; this follows the same convention.
+@inline function _rhs_plan_step_cache_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_PLAN_STEP_CACHE", false)
+end
+
+# Tried and reverted: routing _spacecraft_dynamics_flat_constellation_effector_queue!'s
+# final per-satellite state-assembly pass (dynamics_rhs.jl) through
+# threaded_foreach_persistent instead of plain threaded_foreach (which spawns a fresh
+# Threads.@spawn/Threads.@sync task batch on every RHS call). Motivated by profiling a
+# no_gram/512-sat/monolithic scenario: Julia's own multiq/work-stealing scheduler
+# internals (multiq_deletemin, julia_multiq_check_empty) become a top-20 self-time
+# cost at 8 threads that's absent at 4, and thread 1's utilization jumps from 28% to
+# 64% between 4 and 8 threads -- well before any GRAM/lock/density-callback code is in
+# the picture. Measured directly (SPACEAGORA_RHS_FLAT_ASSEMBLY_PERSISTENT_DISPATCH,
+# same thread ladder, same scenario): correctness was clean (full test suite +
+# trajectory parity), but the persistent-pool path was slower, not faster --
+# 0.9x at 2 threads, 0.811x at 4 threads (worse at the previously-best point), ~1.0x
+# at 8 (no help at all). This assembly loop's per-item work (assigning already-
+# computed forces/torques into du) is cheap enough that the persistent pool's own
+# dispatch overhead (locked pool lookup, channel-based wake signaling) costs more
+# than plain Threads.@spawn for a payload this light. Root cause of the original
+# 4-vs-8-thread regression is still open; this specific fix doesn't work.
+
+# Thin caching wrapper around _rhs_execution_plan_uncached: when enabled, reuses
+# the same routing decision across every solver stage within one accepted step
+# instead of re-deriving it (active-satellite count, effector cost decision,
+# routing heuristics) on every single stage call. See rhs_plan_step_cache's
+# docstring (runtime_types.jl) for how/when the cache is invalidated.
 @inline function _rhs_execution_plan(
+    args::SimulationConfiguration,
+    p,
+    dynamic_effectors::Tuple,
+    num_sats::Int
+)::SimulationModel.RhsExecutionPlan
+    if p !== nothing && hasproperty(p, :shared_buffers) && _rhs_plan_step_cache_enabled()
+        cached = p.shared_buffers.rhs_plan_step_cache[]
+        cached === nothing || return cached
+        plan = _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats)
+        p.shared_buffers.rhs_plan_step_cache[] = plan
+        return plan
+    end
+    return _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats)
+end
+
+@inline function _rhs_execution_plan_uncached(
     args::SimulationConfiguration,
     p,
     dynamic_effectors::Tuple,

@@ -179,6 +179,17 @@ end
 # physics/retcode failure only warns (matching the original worker's
 # behavior: the timing is still meaningful and reported); only a thrown
 # exception propagates to the caller.
+#
+# The warmup run is NOT optional/skippable, despite N_sats being a runtime
+# field that in principle shares one JIT specialization per mode across every
+# n_sats value: measured directly (warm-once-per-mode-at-max-n_sats, skipping
+# warmup for every other point), every skipped-warmup point ballooned to
+# ~29-45s regardless of n_sats or mode -- including the lock-free "surrogate"
+# mode, which rules out a native-GRAM-lock-specific cause -- vs. sub-second
+# with warmup. Root cause not identified (plausibly a per-instance cold-start
+# cost inside the simulation engine unrelated to JIT), but the effect is
+# large, reproducible, and would silently corrupt exactly the scaling curves
+# this study exists to produce, so every point pays its own warmup.
 function run_scaling_point(n_sats::Int, mode::String, route::String="monolithic")
     args = build_constellation_config(n_sats, mode)
     pairs = env_pairs_for(mode, route)

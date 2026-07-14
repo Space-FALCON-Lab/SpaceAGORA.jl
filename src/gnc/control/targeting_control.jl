@@ -1,5 +1,12 @@
 using Roots
 
+"""
+    SolarPanelAngleOfAttackControlModel(; controlled_panel_links=(2, 3))
+
+Control effector that articulates the listed solar-panel links to realize a
+commanded angle of attack during aerobraking passes. Link indices must be
+positive and at least one link is required.
+"""
 struct SolarPanelAngleOfAttackControlModel <: AbstractControlEffectorModel
     controlled_panel_links::Tuple{Vararg{Int}}
 end
@@ -16,6 +23,15 @@ function SolarPanelAngleOfAttackControlModel(; controlled_panel_links=(2, 3))
     return SolarPanelAngleOfAttackControlModel(links)
 end
 
+"""
+    AerobrakingEnergyDepletionControlModel
+
+Control-side companion of the energy-depletion guidance strategy: tracks the
+guidance-selected mode and drives the panel angle-of-attack effector under
+the configured heat and structural limits. Holds the shared
+[`AerobrakingEnergyDepletionConfig`](@ref) / [`AerobrakingEnergyDepletionState`](@ref)
+and a [`SolarPanelAngleOfAttackControlModel`](@ref).
+"""
 struct AerobrakingEnergyDepletionControlModel <: AbstractControlEffectorModel
     config::AerobrakingEnergyDepletionConfig
     state::AerobrakingEnergyDepletionState

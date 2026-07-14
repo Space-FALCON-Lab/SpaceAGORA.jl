@@ -74,7 +74,9 @@ function _energy_depletion_struct_load_root_alpha(
     if drag_at_max <= drag_limit
         return max_alpha
     elseif drag_at_min > drag_limit
-        return max_alpha
+        # No panel angle can satisfy the structural limit. Command the
+        # minimum-drag configuration as the protective fallback.
+        return min_alpha
     end
 
     f(alpha) = q * _energy_depletion_struct_drag_area(

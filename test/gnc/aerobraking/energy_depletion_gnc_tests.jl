@@ -133,7 +133,13 @@ end
     )
     @test cfg.guidance_modes == (:max_energy_depletion,)
     @test cfg.max_energy_submodes == (:heat_rate,)
+    @test cfg.targeting_certification_samples == 9
+    @test cfg.targeting_energy_order_tolerance_jkg == 1e-3
+    @test cfg.targeting_heat_load_tolerance_j_cm2 == 1e-6
     @test_throws ArgumentError _EDG_SM.AerobrakingEnergyDepletionConfig(guidance_modes=(:not_a_mode,))
+    @test_throws ArgumentError _EDG_SM.AerobrakingEnergyDepletionConfig(targeting_certification_samples=1)
+    @test_throws ArgumentError _EDG_SM.AerobrakingEnergyDepletionConfig(targeting_energy_order_tolerance_jkg=-1.0)
+    @test_throws ArgumentError _EDG_SM.AerobrakingEnergyDepletionConfig(targeting_heat_load_tolerance_j_cm2=-1.0)
 
     ctx = _edg_test_context(guidance_modes=(:max_energy_depletion,))
     _EDG_SM.calcGuidanceEffect!(ctx.guidance, ctx.u, ctx.p, 0.0, 1)
@@ -208,7 +214,9 @@ end
     ctx_targeting.state.bracket_max_energy_jkg[1] = -9.0e6
     ctx_targeting.state.target_energy_jkg[1] = -9.5e6
     _EDG_SM.calcControlEffect!(ctx_targeting.control, ctx_targeting.u, ctx_targeting.p, 0.0, 1)
-    @test isfinite(ctx_targeting.state.targeting_switch_s[1])
+    @test !isfinite(ctx_targeting.state.targeting_switch_s[1])
+    @test !ctx_targeting.state.targeting_active[1]
+    @test ctx_targeting.state.selected_mode[1] == :safe_low_drag
     @test ctx_targeting.state.heat_load_switches_s[1] == (Inf, Inf)
 
     ctx_constraints = _edg_test_context(
@@ -226,7 +234,89 @@ end
     @test ctx_constraints.spacecraft.links[3].α == ctx_constraints.state.last_alpha_rad[1]
     @test ctx_constraints.spacecraft.links[1].q == root_q
 
+    infeasible_env = (
+        dynamic_pressure=1.0e6,
+        temperature=150.0,
+        molecular_speed_ratio=10.0,
+    )
+    reference_drag_area = _EDG_SM.ControlHooks._energy_depletion_struct_drag_area(
+        ctx_constraints.spacecraft,
+        infeasible_env.temperature,
+        infeasible_env.molecular_speed_ratio,
+        ctx_constraints.config.controlled_panel_links,
+        ctx_constraints.config.max_alpha_rad,
+        ctx_constraints.config,
+    )
+    minimum_drag = infeasible_env.dynamic_pressure * _EDG_SM.ControlHooks._energy_depletion_struct_drag_area(
+        ctx_constraints.spacecraft,
+        infeasible_env.temperature,
+        infeasible_env.molecular_speed_ratio,
+        ctx_constraints.config.controlled_panel_links,
+        ctx_constraints.config.min_alpha_rad,
+        ctx_constraints.config,
+    )
+    @test minimum_drag > ctx_constraints.config.structural_load_limit_pa * reference_drag_area
+    @test _EDG_SM.ControlHooks._energy_depletion_struct_load_root_alpha(
+        ctx_constraints.config,
+        infeasible_env,
+        ctx_constraints.spacecraft,
+        ctx_constraints.config.controlled_panel_links,
+        ctx_constraints.config.max_alpha_rad,
+    ) == ctx_constraints.config.min_alpha_rad
+
     force, torque = _EDG_SM.calcControlForceTorque(ctx_constraints.control, ctx_constraints.u.sc[1], ctx_constraints.p, 1, 0.0)
     @test force == SVector{3, Float64}(0.0, 0.0, 0.0)
     @test torque == SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+@testset "EDG-T candidate-map certification" begin
+    candidate_times = [0.0, 1.0, 2.0, 3.0]
+
+    ordered_energy = [10.0, 9.0, 8.0, 7.0]
+    feasible_heat = [1.0, 2.0, 3.0, 4.0]
+    ordered_evaluator(t) = begin
+        idx = round(Int, t) + 1
+        (energy_jkg=ordered_energy[idx], heat_load_j_cm2=feasible_heat[idx])
+    end
+    ordered = _EDG_SM.ControlHooks._edg_certify_targeting_candidates(
+        candidate_times,
+        ordered_evaluator;
+        heat_load_limit_j_cm2=5.0,
+        energy_order_tolerance_jkg=1e-6,
+        heat_load_tolerance_j_cm2=1e-6,
+    )
+    @test ordered.times == candidate_times
+    @test ordered.failure == :none
+
+    nonmonotone_energy = [10.0, 9.0, 9.5, 8.0]
+    nonmonotone_evaluator(t) = begin
+        idx = round(Int, t) + 1
+        (energy_jkg=nonmonotone_energy[idx], heat_load_j_cm2=feasible_heat[idx])
+    end
+    nonmonotone = _EDG_SM.ControlHooks._edg_certify_targeting_candidates(
+        candidate_times,
+        nonmonotone_evaluator;
+        heat_load_limit_j_cm2=5.0,
+        energy_order_tolerance_jkg=1e-6,
+        heat_load_tolerance_j_cm2=1e-6,
+    )
+    @test nonmonotone.times == candidate_times[1:2]
+    @test nonmonotone.failure == :energy_order
+    @test nonmonotone.failure_time_s == candidate_times[3]
+
+    infeasible_heat = [1.0, 2.0, 6.0, 4.0]
+    heat_evaluator(t) = begin
+        idx = round(Int, t) + 1
+        (energy_jkg=ordered_energy[idx], heat_load_j_cm2=infeasible_heat[idx])
+    end
+    heat_limited = _EDG_SM.ControlHooks._edg_certify_targeting_candidates(
+        candidate_times,
+        heat_evaluator;
+        heat_load_limit_j_cm2=5.0,
+        energy_order_tolerance_jkg=1e-6,
+        heat_load_tolerance_j_cm2=1e-6,
+    )
+    @test heat_limited.times == candidate_times[1:2]
+    @test heat_limited.failure == :heat_load
+    @test heat_limited.failure_time_s == candidate_times[3]
 end

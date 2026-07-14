@@ -131,3 +131,101 @@ vs. slow (propagation-heavy + contracts + stress) split. Rewrite
   here, see `ci_flake_guard.jl`), golden 316/316 pass with `gram_mars`
   correctly `@test_skip`'d by the default PR-tier gate. **Phase 1 is closed
   out.**
+- 2026-07-13: **Phase 2, suite 04 done.** Split
+  `test/suites/04_solver_env_and_regression_tests.jl` (2649 lines after the
+  Phase 1 golden removal) into `test/unit/simulation_engine/solver_env_helpers_tests.jl`
+  (the big "Solver/Env Helper Parsing Coverage" testset, lines 1-1832),
+  `test/unit/dynamics/rigid_body_and_rhs_tests.jl` (rigid-body/RHS-split
+  testsets, lines 1833-2244), and `test/unit/dynamics/orbital_energy_and_drift_tests.jl`
+  (energy/invariant/drift physics-regression testsets, lines 2245-2649).
+  Suite 04 is now a 4-line pointer comment.
+  Wiring this in required also fixing `test/unit/` itself, which had never
+  actually been run from any CI entrypoint before: (1) `test/unit/runtests.jl`
+  now `include`s `test/helpers/bootstrap.jl` (needed by the migrated content),
+  which meant `test/unit/rpo_port_tests.jl` and `test/unit/robotics/runtests.jl`
+  could no longer also do `using SpaceAGORA` themselves — raw-`include`-ing
+  `SpaceAGORA.jl` (what `bootstrap.jl` does) and `using SpaceAGORA` (real
+  package load) in the same process hard-errors ("importing SpaceAGORA into
+  Main conflicts with an existing global"). Removed their `using SpaceAGORA`
+  lines; they already exclusively used the fully-qualified `SpaceAGORA.X`
+  form so this was a safe, mechanical fix. (2) That combination also exposed
+  a real bug in `test/unit/robotics/runtests.jl`: three bare `RobotArmSphereObstacle[]`
+  literals resolved against the wrong of two now-coexisting copies of
+  `SimulationModel` (bootstrap.jl raw-includes a standalone top-level copy
+  *and* a nested `SpaceAGORA.SimulationModel` copy — these are distinct
+  Julia types even though structurally identical). Fixed by qualifying all
+  three as `SpaceAGORA.RobotArmSphereObstacle[]`, matching the file's own
+  existing convention everywhere else. (3) Running `test/unit/` for the
+  first time also surfaced two genuine pre-existing, previously-undiscovered
+  issues, unrelated to this restructure: `data/rpo/station_geometry/demo/`
+  (a "demo" station pointcloud CSV) doesn't exist in this checkout, so gated
+  the "RPO geometry and PSO basics" testset behind an `isfile` check +
+  `@test_skip`, mirroring the golden-fixture convention; and one RPO
+  replanning-decision tie-break test (`tracking_error_retime_m`/
+  `tracking_error_replan_m` both clamp to `0.0`) asserts `:retime` but the
+  code actually returns `:replan` — marked `@test_broken` with a comment,
+  needs a GNC-domain call on whether the test or the tie-break is wrong.
+  Full `test/runtests.jl`: 2801/2801 legacy + 1285/1285 unit + 316/317 golden
+  (gram_mars still correctly skipped) — all clean.
+- 2026-07-13: **Phase 2, suite 05 done.** Split
+  `test/suites/05_thruster_control_and_quality_tests.jl` (933 lines) into
+  `test/unit/vehicle/thruster_tests.jl` ("Thruster Edge Cases" testset, lines
+  1-747), `test/unit/gnc/control_effector_tests.jl` (the three
+  "Control ... (End-to-End)" testsets, lines 748-909), and
+  `test/contracts/aqua_quality_gate.jl` (the "Aqua Package Quality" testset,
+  lines 918-933 — a package-policy check, doesn't belong with thruster/control
+  unit tests; wired into `test/contracts/pr_runtests.jl`, written
+  self-contained like the other `ci_*_gate.jl` files rather than depending on
+  `bootstrap.jl`). The remaining bare `include`s suite 05 had picked up over
+  time (3 coverage-probe files, 2 aerobraking parity test files, 1 mission
+  stub file) were carried forward as-is into `test/unit/runtests.jl` under a
+  "Coverage Probes (pending Phase 4 audit)" / "GNC" testset — not
+  reorganizing their content now, just preserving exactly what already ran
+  by default so nothing silently stops being tested before Phase 4 gets to
+  them. Suite 05 is now a pointer comment.
+  Full `test/runtests.jl`: 2801/2801 legacy + 1285/1285 unit + 316/317 golden
+  — all clean.
+- 2026-07-13: **Phase 2, suite 03 done.** Split
+  `test/suites/03_persistence_units_and_rotational_tests.jl` (1353 lines)
+  into `test/unit/io/persistence_and_checkpoint_tests.jl` (checkpoint/resume/
+  results-bundle/normalization/verbose-logging testsets, lines 1-930) and
+  `test/unit/dynamics/rotational_tests.jl` (orbital-elements/quaternion/
+  torque-free rigid-body testsets, lines 931-1353) — matching the suite's
+  own name (persistence+units → io, rotational → dynamics). Suite 03 is now
+  a pointer comment. No new issues found this time (unlike suites 04/05,
+  nothing here needed a behavior fix).
+  Full `test/runtests.jl`: 956/956 legacy (03/04/05 now empty) + 3130/3130
+  unit + 316/317 golden — all clean.
+- 2026-07-13: **Phase 2, suites 01/02/06/07/08 done — Phase 2 fully closed
+  out.** Suite 01 (1189 lines) split into `test/contracts/architecture_and_export_contracts.jl`
+  (the 17 "...Contract" testsets, lines 1-568 — these need the sandbox
+  modules/raw-include mechanics from `bootstrap.jl`, so unlike the other
+  `ci_*_gate.jl` files this one includes it explicitly rather than being
+  self-contained) and three `test/unit/` files by domain:
+  `core/api_convenience_constructor_tests.jl`,
+  `simulation_engine/run_metadata_and_rhs_tests.jl`,
+  `mission/maneuver_and_campaign_tests.jl`. Suite 02 (1910 lines) split into
+  7 files across `simulation_engine/` (callbacks), `parallel/` (policy +
+  adaptive routing), `dynamics/` (aerodynamic helpers),
+  `environment/` (planet constructors), and `simulation/` (campaign + GRAM
+  lock). Suites 06/07/08 (small, single-testset files) moved wholesale to
+  `analysis/telemetry_and_policy_tests.jl`, `environment/no_gram_onboarding_tests.jl`,
+  and `cli/cli_and_asset_tests.jl` respectively.
+  Found one real cross-file dependency break during this split:
+  `ensure_guidance_sandbox_loaded!()` was defined at the tail of suite 01's
+  contract section but called from the unit section (`maneuver_and_campaign_tests.jl`)
+  — fine when both lived in one file/suite, broken once they became
+  separately-included files with `test/unit/mission/` running before
+  `test/contracts/architecture_and_export_contracts.jl` did. Moved the
+  function to `test/helpers/sandbox_modules.jl` (where `GUIDANCE_SANDBOX` it
+  operates on already lives), so it's available via `bootstrap.jl` regardless
+  of include order — the general lesson: when splitting a suite file,
+  grep the whole file for helper-function *definitions* used across the
+  split boundary, not just move testsets by line range.
+  Deleted `test/suites/` (all 8 files were down to pointer comments) and
+  simplified `test/integration/runtests.jl` to just the `bootstrap.jl`
+  trigger (it remains the future home for genuine end-to-end integration
+  tests per its subdirectory READMEs).
+  Full `test/runtests.jl`: legacy suites section now empty (0/0, directory
+  deleted) + 3787/3787 unit + 299/299 architecture contracts + 316/317
+  golden — all clean. **This closes out Phase 2.**

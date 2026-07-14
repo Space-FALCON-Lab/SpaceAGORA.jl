@@ -1,7 +1,10 @@
 using Test
 using LinearAlgebra
 using StaticArrays
-using SpaceAGORA
+# SpaceAGORA is already bound at Main scope by test/helpers/bootstrap.jl's
+# raw-include of src/SpaceAGORA.jl; `using SpaceAGORA` here would conflict
+# with that binding (raw-include and package-load can't coexist in one
+# process -- see test/TEST_RESTRUCTURE_PLAN.md Phase 2 notes).
 using Random
 using ComponentArrays
 
@@ -213,7 +216,7 @@ end
         target;
         planner_config=SpaceAGORA.RobotArmPlannerConfig(dt_s=0.1, duration_s=0.5, ik_tol_m=1.0e-3),
         hypr_config=warmstart_cfg,
-        obstacles=RobotArmSphereObstacle[],
+        obstacles=SpaceAGORA.RobotArmSphereObstacle[],
         rng=MersenneTwister(46),
     )
     @test warmstarted.components.rrt_warmstart_enabled === true
@@ -240,7 +243,7 @@ end
         target;
         planner_config=SpaceAGORA.RobotArmPlannerConfig(dt_s=0.1, duration_s=0.5, ik_tol_m=1.0e-3),
         hypr_config=retimed_cfg,
-        obstacles=RobotArmSphereObstacle[],
+        obstacles=SpaceAGORA.RobotArmSphereObstacle[],
         rng=MersenneTwister(44),
     )
     @test retimed.plan.t_ref_s[end] > 0.5
@@ -269,7 +272,7 @@ end
             retime_cloth_dt_s=0.05,
             early_stopping_enable=false,
         ),
-        obstacles=RobotArmSphereObstacle[],
+        obstacles=SpaceAGORA.RobotArmSphereObstacle[],
         rng=MersenneTwister(45),
     )
     @test cloth_retimed.plan.t_ref_s[end] > 0.5

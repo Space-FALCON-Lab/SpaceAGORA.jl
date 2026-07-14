@@ -229,3 +229,75 @@ vs. slow (propagation-heavy + contracts + stress) split. Rewrite
   Full `test/runtests.jl`: legacy suites section now empty (0/0, directory
   deleted) + 3787/3787 unit + 299/299 architecture contracts + 316/317
   golden — all clean. **This closes out Phase 2.**
+- 2026-07-13: **Phase 3 (contract-gate relocation) in progress.** `git mv`'d
+  all 42 root `test/ci_*.jl` files into `test/contracts/`. This had a bigger
+  blast radius than a pure internal test/ reorg: fixed each file's own
+  `REPO_ROOT` computation (one more `..` level after the move — 3 files used
+  `dirname(dirname(@__FILE__))`, 39 used `normpath(joinpath(@__DIR__, ".."))`);
+  updated 7 aggregator files' include paths
+  (`test/contracts/{pr,nightly,}runtests.jl`, `test/smoke/runtests.jl`,
+  `test/coverage/runtests.jl`, `test/stress/runtests.jl`,
+  `test/integration/examples/runtests.jl`); fixed 3 gates' self-exclusion
+  logic that matched on the literal prefix `"test/ci_"` (now stale --
+  `ci_canonical_path_contract_gate.jl`, `ci_no_src_benchmarks_root_gate.jl`,
+  `ci_no_dynamics_models_gate.jl` — changed to match `basename(rel)` instead
+  of the full relative path, so it's independent of directory); fixed one
+  gate's self-referential exclusion list entry (`ci_p1_findings_gate.jl`) and
+  one gate's read of another moved file's content
+  (`architecture_and_export_contracts.jl` reads `ci_clean_depot_smoke.jl` as
+  a string to check its content); updated the 2 exact command strings this
+  changed in `.github/pull_request_template.md` and
+  `test/contracts/ci_docs_contract_gate.jl`'s markers checking for them;
+  updated 3 CI workflow YAML files' direct `test/ci_X.jl` invocations
+  (`CI.yml`, `julia-ci.yml`, `nightly-stress.yml` — carefully avoided touching
+  the unrelated `SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl`,
+  a different subpackage's own file); updated path citations in 6 docs pages
+  (`docs/architecture/{canonical_topology_contract,shim_window_manifest,src_completeness_contract}.md`,
+  `docs/quality/{api_naming_contract,verification_contract}.md`,
+  `docs/src/documentation_policy.md`) and one benchmarks handoff doc
+  (left `test/ai_reviews/PR_*.md` untouched -- archival records of past PRs,
+  not living docs).
+  While validating (`test/contracts/pr_runtests.jl` had never been run before
+  either), found and fixed two more pre-existing, previously-undiscovered
+  bugs unrelated to the relocation itself: `ci_architecture_contract_gate.jl`
+  asserted `const GRAM_LOCK = ReentrantLock()` in
+  `src/simulation/runtime_services.jl`, which has actually read
+  `const GRAM_LOCK = SPICE_LOCK` since the GRAM/CSPICE-lock-unification fix
+  (see memory: `project_gram_cspice_symbol_collision`) — nobody had run this
+  gate since; and `ci_no_legacy_include_chains_gate.jl`'s allowlist was
+  missing `src/parallel/process/parallel_process.jl` (added during the
+  process-backend work, commit `1ba63a82`), which legitimately raw-includes
+  its sibling `worker_pool.jl` the same way already-allowlisted
+  `parallel_policy.jl`/`parallel_profiles.jl` do.
+  Also discovered `test/contracts/runtests.jl` (the "full superset" runner)
+  cannot include `architecture_and_export_contracts.jl` itself: several of
+  the other gates in that file `using SpaceAGORA` as a real package, which
+  conflicts with `architecture_and_export_contracts.jl`'s `bootstrap.jl`
+  raw-include in the same process (same class of bug as the Phase 2
+  `rpo_port_tests.jl`/`robotics` fix, but the *other* direction) —
+  removed it from that aggregator with an explanatory comment; it already
+  runs correctly via `test/unit/runtests.jl` (part of default
+  `test/runtests.jl`), which never mixes the two loading styles.
+  Validated, all clean: `test/contracts/pr_runtests.jl`,
+  `nightly_runtests.jl`, `runtests.jl` (full superset), `test/smoke/runtests.jl`
+  (33/33 examples + 3 other smokes), `test/integration/examples/runtests.jl`
+  (27/27), and the individual moved gates referenced from
+  `test/coverage/runtests.jl` (`ci_runtime_any_hotpath_gate.jl`,
+  `ci_runtime_analysis_copy_overhead_gate.jl` — `ci_coverage_quality_gate.jl`
+  itself needs a prior `--code-coverage=user` instrumented run to have
+  `.cov` files to check, an orthogonal precondition, not a bug).
+  `test/stress/runtests.jl` also uncovered a third pre-existing bug: unlike
+  everywhere else `SimulationModel` gets raw-included, `ci_flake_guard.jl`
+  and `ci_nightly_montecarlo_stress.jl` both raw-`include`d
+  `src/core/simulation_model.jl` *unconditionally* (no `isdefined` guard,
+  unlike the `SimulationEngine` include two lines below it in the same two
+  files, which *was* guarded) — running both gates in one process (exactly
+  what `test/stress/runtests.jl` does, and what `nightly-stress.yml` already
+  does in CI) redefines `Main.SimulationModel` and produces an ambiguous-
+  export error (`Earth` in this case). This is independent of the relocation
+  and would have broken nightly CI the same way at the old path; guarded
+  both includes the same way the adjacent `SimulationEngine` include already
+  was. Final full-repo re-check: `test/runtests.jl` still 3787/3787 unit +
+  299/299 architecture contracts + 316/317 golden after the `ci_architecture_contract_gate.jl`
+  and `ci_no_legacy_include_chains_gate.jl` fixes above. **Phase 3 is closed
+  out**, fully validated across every entrypoint that touches a moved file.

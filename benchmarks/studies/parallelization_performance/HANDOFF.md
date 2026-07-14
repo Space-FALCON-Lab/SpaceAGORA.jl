@@ -33,9 +33,9 @@ modes, subprocess execution, parity checks, reporting, plots, and shell protocol
 ## Updated Existing Benchmark Freshness
 
 - `docs/quality/performance_runtime_analysis.md`
-- `test/ci_benchmark_wrapper_parity_gate.jl`
-- `test/ci_thin_entry_files_gate.jl`
-- `test/ci_architecture_contract_gate.jl`
+- `test/contracts/ci_benchmark_wrapper_parity_gate.jl`
+- `test/contracts/ci_thin_entry_files_gate.jl`
+- `test/contracts/ci_architecture_contract_gate.jl`
 - `benchmarks/studies/performance_runtime_analysis/main.jl`
 - `benchmarks/studies/performance_runtime_analysis/case_catalog/env_workers_and_routes.jl`
 - `benchmarks/studies/performance_split_imex_compare.jl`
@@ -64,15 +64,15 @@ Passed:
 - `julia --project=. --startup-file=no -e 'include("benchmarks/studies/parallelization_performance.jl"); println("parallelization_suite_load_ok")'`
 - Narrow smoke run with serial and `full_smart`, including parity:
   `julia --project=. --startup-file=no benchmarks/studies/parallelization_performance.jl smoke --outdir=/tmp/spaceagora_ppc_smoke2 --cases=single_inverse_square_vacuum --parity-cases=single_harmonics_l20_vacuum --modes=serial,full_smart --threads=1,2 --repeats=1 --warmup=0`
-- `julia --project=. --startup-file=no test/ci_benchmark_wrapper_parity_gate.jl`
-- `julia --project=. --startup-file=no test/ci_thin_entry_files_gate.jl`
+- `julia --project=. --startup-file=no test/contracts/ci_benchmark_wrapper_parity_gate.jl`
+- `julia --project=. --startup-file=no test/contracts/ci_thin_entry_files_gate.jl`
 - Worker bootstrap for the reported failure path:
   `SPACEAGORA_PERF_PROCS=2 julia --project=. --startup-file=no -e 'include("benchmarks/studies/performance_runtime_analysis.jl"); ensure_perf_workers!(); println("workers_ok=", workers())'`
   produced `workers_ok=[2]`.
 
 Known pre-existing failure:
 
-- `julia --project=. --startup-file=no test/ci_architecture_contract_gate.jl`
+- `julia --project=. --startup-file=no test/contracts/ci_architecture_contract_gate.jl`
   still fails on unrelated existing `ENV` usage in
   `src/simulation/engine/solver_policy.jl`.
 

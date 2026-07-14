@@ -47,4 +47,4 @@ Removed in Wave 2:
 5. Function names: `snake_case`
 6. New canonical EOM identifiers use `eom` naming.
 
-CI gate: `test/ci_naming_contract_gate.jl`.
+CI gate: `test/contracts/ci_naming_contract_gate.jl`.

@@ -500,7 +500,7 @@ end
     root_project = TOML.parsefile(joinpath(REPO_ROOT, "Project.toml"))
     spaceagora_src = read(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"), String)
     precompile_src = read(joinpath(REPO_ROOT, "src", "precompile_workload.jl"), String)
-    clean_depot_smoke = read(joinpath(REPO_ROOT, "test", "ci_clean_depot_smoke.jl"), String)
+    clean_depot_smoke = read(joinpath(REPO_ROOT, "test", "contracts", "ci_clean_depot_smoke.jl"), String)
     legacy_nested_model_path = "SimulationEngine" * ".SimulationModel"
 
     @test get(get(root_project, "deps", Dict()), "PrecompileTools", nothing) == "aea7be01-6a6a-4083-8856-8a6e6704d82a"

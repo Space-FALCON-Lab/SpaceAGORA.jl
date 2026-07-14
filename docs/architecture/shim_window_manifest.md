@@ -27,5 +27,5 @@ Policy outcome: Wave 2 shim retirement completed.
 | `test/telemetry_orbit_accuracy_plots.jl` | `benchmarks/studies/telemetry_orbit_accuracy_plots.jl` |
 
 ## Enforcement
-1. `test/ci_architecture_contract_gate.jl` fails if retired wrappers reappear.
-2. `test/ci_benchmark_wrapper_parity_gate.jl` fails if retired wrappers reappear.
+1. `test/contracts/ci_architecture_contract_gate.jl` fails if retired wrappers reappear.
+2. `test/contracts/ci_benchmark_wrapper_parity_gate.jl` fails if retired wrappers reappear.

@@ -306,12 +306,12 @@ end
 # Solver save knobs go through the _engine_env_get adapter (overrides → ENV →
 # default), keeping ENV access out of this file per the architecture contract.
 @inline function _solver_save_everystep()::Bool
-    raw = lowercase(strip(_engine_env_get_with_env_fallback("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "true")))
+    raw = lowercase(strip(_engine_env_get("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "true")))
     return raw in ("1", "true", "yes", "on")
 end
 
 @inline function _solver_bool_env(name::String, default::Bool)::Bool
-    raw = lowercase(strip(_engine_env_get_with_env_fallback(name, default ? "true" : "false")))
+    raw = lowercase(strip(_engine_env_get(name, default ? "true" : "false")))
     return raw in ("1", "true", "yes", "on")
 end
 

@@ -1,0 +1,5 @@
+description = "AGORA Earth reference spacecraft, keplerian + J2 gravity only, no atmosphere, 6h mission. Original fixture predates the golden/ harness; provenance below is inherited from the commit that introduced it, not regenerated."
+tier = "pr"
+git_sha = "1ba63a82df1d3bef8228fe675de95c8da5e41c8d"
+julia_version = "unknown (predates provenance tracking)"
+generated_at = "unknown (predates provenance tracking)"

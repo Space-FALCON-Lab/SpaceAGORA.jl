@@ -2517,55 +2517,8 @@ end
     @test isapprox(ωdot_measured, ωdot_expected; rtol=0.25, atol=0.0)
 end
 
-@testset "AGORA Earth Regression (Golden)" begin
-    golden_path = joinpath(REPO_ROOT, "test", "golden", "agora_earth_regression.csv")
-    if !isfile(golden_path)
-        @test_skip "Golden regression fixture is not present in this checkout"
-        return
-    end
-    golden = CSV.read(golden_path, DataFrame)
-
-    sc = make_agora_earth_spacecraft()
-    args = build_config(
-        spacecraft=sc,
-        density_model=NoAtmosphereModel(),
-        orientation_sim=false,
-        mission_time=6.0 * 3600.0,
-        EI_km=300.0,
-        dynamic_effectors=(InverseSquaredJ2GravityModel(),),
-        keplerian=true,
-        initial_time=SimulationModel.InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0),
-        tolerances=IntegrationTolerances(
-            reltol_orbit=1e-8,
-            abstol_orbit=1e-8,
-            dt_max_orbit=15.0
-        )
-    )
-
-    df = run_case(args)
-    @test nrow(df) > 1000
-    times = Vector{Float64}(df.time)
-
-    for row in eachrow(golden)
-        t = Float64(row.time)
-        pos_atol = Float64(row.pos_atol_m)
-        vel_atol = Float64(row.vel_atol_mps)
-
-        pos1 = interp_linear(times, df.sc1_pos_1, t)
-        pos2 = interp_linear(times, df.sc1_pos_2, t)
-        pos3 = interp_linear(times, df.sc1_pos_3, t)
-        vel1 = interp_linear(times, df.sc1_vel_1, t)
-        vel2 = interp_linear(times, df.sc1_vel_2, t)
-        vel3 = interp_linear(times, df.sc1_vel_3, t)
-
-        @test isapprox(pos1, Float64(row.pos1); atol=pos_atol, rtol=0.0)
-        @test isapprox(pos2, Float64(row.pos2); atol=pos_atol, rtol=0.0)
-        @test isapprox(pos3, Float64(row.pos3); atol=pos_atol, rtol=0.0)
-        @test isapprox(vel1, Float64(row.vel1); atol=vel_atol, rtol=0.0)
-        @test isapprox(vel2, Float64(row.vel2); atol=vel_atol, rtol=0.0)
-        @test isapprox(vel3, Float64(row.vel3); atol=vel_atol, rtol=0.0)
-    end
-end
+# The AGORA Earth golden regression test now lives at test/golden/agora_earth/
+# and runs via test/golden/runtests.jl (see test/TEST_RESTRUCTURE_PLAN.md).
 
 @testset "N-Body Gravity Typed API Smoke" begin
     sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0)

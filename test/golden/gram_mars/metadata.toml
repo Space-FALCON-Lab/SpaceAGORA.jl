@@ -1,0 +1,5 @@
+julia_version = "1.12.1"
+git_sha = "d775502aa4435614aeeeb42bc80d185e271cb312"
+tier = "nightly"
+description = "Single spacecraft, 150km circular Mars orbit, EI=300km so it's always in the always-below-EI drag regime, GRAM Mars atmosphere + degree/order 20 gravity harmonics + aerodynamic drag effector, 600s mission. Proves the golden harness generalizes to GRAM-backed, non-Earth propagation and exercises the GRAM Mars ephemeris-state bypass (see memory: project_gram_mars_isolated_cspice_bug)."
+generated_at = "2026-07-13T17:09:06.016"

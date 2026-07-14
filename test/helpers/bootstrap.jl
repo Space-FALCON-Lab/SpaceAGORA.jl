@@ -234,6 +234,81 @@ if HAS_GRAMSUITE
             vacuum_temperature=p.args.environment_model.planet.T_ref
         )
     end
+
+    # GRAM's vendored native library statically links its own private,
+    # isolated CSPICE instance whose default kernels only resolve solar
+    # geometry for Earth/Venus (see memory: project_gram_mars_isolated_cspice_bug).
+    # ext/SpaceAGORAGRAMSuiteExt.jl's __init__ installs this bypass for real
+    # package loads; this test harness raw-`include`s SpaceAGORA.jl instead of
+    # `using` it as a package, so Julia's extension mechanism never triggers
+    # and the hook has to be reinstalled here too, identically to the
+    # extension, or any GRAM query for a non-Earth/Venus body fails with
+    # "GRAM update failed (code=1): Error: A Spice error occurred."
+    const _GRAM_AU_KM = 149_597_870.7
+    const _GRAM_EARTH_NAIF_ID = 399
+    const _GRAM_SECONDS_PER_SOL = Dict(
+        "VENUS" => 1.00872e7,
+        "EARTH" => 86400.00,
+        "MARS" => 88774.92,
+        "JUPITER" => 35733.24,
+        "URANUS" => 62064.0,
+        "NEPTUNE" => 57996.0,
+        "SATURN" => 38361.6,
+        "TITAN" => 1377648.0,
+    )
+
+    function _gram_utc_string(initial_time)::String
+        return string(
+            Int(initial_time.year), "-", Int(initial_time.month), "-", Int(initial_time.day), " ",
+            Int(initial_time.hour), ":", Int(initial_time.minute), ":", Float64(initial_time.second),
+            " UTC"
+        )
+    end
+
+    function _gram_spice_ephemeris_state(
+        planet_name::String,
+        initial_time,
+        el_time::Float64,
+        lat_deg::Float64,
+        lon_deg::Float64,
+    )
+        naif_name = uppercase(planet_name)
+        haskey(_GRAM_SECONDS_PER_SOL, naif_name) || return nothing
+
+        et = SPICE.utc2et(_gram_utc_string(initial_time)) + el_time
+        frame = "IAU_" * naif_name
+
+        pos_sun, _ = SPICE.spkpos(naif_name, et, "J2000", "NONE", "SUN")
+        orbital_radius_au = sqrt(sum(abs2, pos_sun)) / _GRAM_AU_KM
+
+        longitude_sun_deg = mod(rad2deg(SPICE.lspcn(naif_name, et, "NONE")), 360.0)
+
+        _, howlng = SPICE.ltime(et, SPICE.bodn2c(naif_name), "->", _GRAM_EARTH_NAIF_ID)
+        one_way_light_time_min = howlng / 60.0
+
+        spoint, _, _ = SPICE.subslr("NEAR POINT/ELLIPSOID", naif_name, et, frame, "NONE", naif_name)
+        _, subsolar_lon, subsolar_lat = SPICE.reclat(spoint)
+        subsolar_lon_deg = mod(rad2deg(subsolar_lon), 360.0)
+        subsolar_lat_deg = rad2deg(subsolar_lat)
+
+        hour_angle_deg = mod(lon_deg - subsolar_lon_deg + 180.0, 360.0) - 180.0
+        solar_time_hr = mod(12.0 + hour_angle_deg / 15.0, 24.0)
+
+        lat_r, sublat_r = deg2rad(lat_deg), deg2rad(subsolar_lat_deg)
+        dlon_r = deg2rad(lon_deg - subsolar_lon_deg)
+        cos_zenith = sin(lat_r) * sin(sublat_r) + cos(lat_r) * cos(sublat_r) * cos(dlon_r)
+        solar_zenith_deg = rad2deg(acos(clamp(cos_zenith, -1.0, 1.0)))
+
+        seconds_per_sol = _GRAM_SECONDS_PER_SOL[naif_name]
+
+        return (
+            solar_time_hr, longitude_sun_deg, subsolar_lat_deg, subsolar_lon_deg,
+            orbital_radius_au, one_way_light_time_min, solar_zenith_deg, seconds_per_sol
+        )
+    end
+
+    GRAMSuite._GRAM_EPHEMERIS_STATE_FN[] = _gram_spice_ephemeris_state
+    GRAMSuite._GRAM_DEFAULT_LOCK_HOOK[] = TEST_GRAM_LOCK
 end
 
 if !isdefined(@__MODULE__, :make_example_config)
@@ -342,5 +417,6 @@ include(joinpath(REPO_ROOT, "test", "helpers", "config_builders.jl"))
 include(joinpath(REPO_ROOT, "test", "helpers", "simulation_run_helpers.jl"))
 include(joinpath(REPO_ROOT, "test", "helpers", "persistence_fixtures.jl"))
 include(joinpath(REPO_ROOT, "test", "helpers", "sandbox_modules.jl"))
+include(joinpath(REPO_ROOT, "test", "helpers", "golden_harness.jl"))
 
 end # SPACEAGORA_TEST_BOOTSTRAP_LOADED

@@ -104,3 +104,30 @@ vs. slow (propagation-heavy + contracts + stress) split. Rewrite
   Verified with a full `test/runtests.jl` run: 4088 pass / 1 broken (the one
   broken test is pre-existing and unrelated) across all 8 suites — the
   extraction changed no behavior.
+- 2026-07-13: **Phase 1 done.** Built `test/helpers/golden_harness.jl`
+  (`run_and_compare_golden`, generalized to N spacecraft; PR/nightly tier
+  gating via `metadata.toml` + `SPACEAGORA_GOLDEN_TIER`) and
+  `scripts/regenerate_golden.jl`. Three scenarios now live under
+  `test/golden/`: `agora_earth` (migrated from the old buried suite-04 test),
+  `constellation` (new, 3 satellites via `build_config_multi`), and
+  `gram_mars` (new, GRAM-backed Mars drag case). All three pass end-to-end
+  (372/372 assertions with `SPACEAGORA_GOLDEN_TIER=all`).
+  Along the way, found and fixed a real gap in `test/helpers/bootstrap.jl`'s
+  GRAM re-patch block: it mirrored most of
+  `ext/SpaceAGORAGRAMSuiteExt.jl.__init__` but was missing the Mars/non-Earth
+  ephemeris-state bypass (`GRAMSuite._GRAM_EPHEMERIS_STATE_FN[]` /
+  `_GRAM_DEFAULT_LOCK_HOOK[]`) — because the test harness raw-`include`s
+  `SpaceAGORA.jl` rather than `using` it as a package, Julia's extension
+  auto-load never triggers, so this hook has to be reinstalled by hand just
+  like the rest of that block already was. No prior test exercised a live
+  Mars+GRAM query, so this had never surfaced before; see memory
+  `project_gram_mars_isolated_cspice_bug`. Also removed the old golden
+  testset from `test/suites/04_solver_env_and_regression_tests.jl` and the
+  superseded flat `test/golden/agora_earth_regression.csv`.
+  Wired `test/golden/runtests.jl` into the default `test/runtests.jl`.
+  Confirmed with a final default `julia --project=. test/runtests.jl` run:
+  legacy suites 4088/4088 pass (the earlier "1 broken" was a pre-existing,
+  unrelated flake — it doesn't appear in this run; not something introduced
+  here, see `ci_flake_guard.jl`), golden 316/316 pass with `gram_mars`
+  correctly `@test_skip`'d by the default PR-tier gate. **Phase 1 is closed
+  out.**

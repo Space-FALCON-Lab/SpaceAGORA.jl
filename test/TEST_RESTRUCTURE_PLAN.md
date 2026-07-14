@@ -79,12 +79,11 @@ Pure move of the ~40 root `ci_*_gate.jl` files into `test/contracts/`,
 updating include paths in `test/contracts/{pr,nightly,}runtests.jl`. No
 behavior change.
 
-### Phase 4 (future) — Coverage-probe audit
-For each of `coverage_parallel_telemetry_probes.jl`,
-`coverage_runtime_boundary_probes.jl`, `coverage_targeted_90_probes.jl`: check
-whether Phase 2's unit tests now naturally cover the same lines; retire
-redundant probes, relocate genuinely-useful ones into `test/unit/` next to the
-code they cover.
+### Phase 4 — Coverage-probe audit (done, see progress log)
+Original plan: check whether Phase 2's unit tests now naturally cover the
+same lines as the 3 coverage-probe files; retire redundant probes, relocate
+genuinely-useful ones into `test/unit/`. See the progress log entry for what
+was actually feasible to do without a dedicated coverage-diff experiment.
 
 ### Phase 5 (future) — Wire-up and docs
 Update `test/runtests.jl` and CI workflows for a fast (unit + fast golden)
@@ -301,3 +300,39 @@ vs. slow (propagation-heavy + contracts + stress) split. Rewrite
   299/299 architecture contracts + 316/317 golden after the `ci_architecture_contract_gate.jl`
   and `ci_no_legacy_include_chains_gate.jl` fixes above. **Phase 3 is closed
   out**, fully validated across every entrypoint that touches a moved file.
+- 2026-07-13: **Phase 4 done.** Read all three coverage-probe files in full
+  (`coverage_parallel_telemetry_probes.jl` 890 lines,
+  `coverage_runtime_boundary_probes.jl` 85 lines,
+  `coverage_targeted_90_probes.jl` 1189 lines) to assess redundancy against
+  the content migrated in Phase 2. Conclusion: **don't retire any of them.**
+  Every testset in these files is explicitly named around a specific branch
+  or edge case ("from_env override branch", "thermal contact branch",
+  "Aerodynamic Helper *Branch* Probes", etc.) — the naming itself is strong
+  evidence they were written *after* the main behavioral tests already
+  existed, specifically to close coverage gaps those tests don't reach.
+  Phase 2 didn't change any production code, only moved test files, so
+  whatever gap motivated each probe still exists; retiring them on a guess
+  risks silently reopening those exact gaps. Doing this rigorously (confirm
+  via an actual `--code-coverage=user` diff which lines are *uniquely*
+  covered by each probe) needs a dedicated experiment (~30-60 min of
+  instrumented runs plus line-level diffing) that wasn't a good fit to rush
+  alongside everything else in this session — if a future session wants to
+  pursue actual retirement, that coverage-diff methodology is the way to do
+  it credibly, not further reading-based guessing.
+  Did do the safe, mechanical half of the phase: `coverage_targeted_90_probes.jl`
+  in particular has a ~170-line shared mock-model preamble
+  (`CoverageBatchDensityModel`, `CoverageForceEffector`, `CoverageIndexArgs`,
+  ...) used across its 10 sub-testsets spanning many unrelated domains
+  (density/atmosphere, dynamics RHS, GNC bridge helpers, precompile
+  workload, ...) with no clean per-domain split boundary — splitting it the
+  way Phase 2 split the numbered suites would carry the same cross-file
+  world-age/module-collision risk already hit twice this session, for a
+  file whose contents I'm deliberately not trying to deeply understand
+  line-by-line. Relocated all three files as-is (zero content changes) from
+  `test/` root into `test/unit/coverage_probes/`, confirmed each already
+  depends only on `Main.REPO_ROOT` (set by whatever includes them) rather
+  than computing its own path, so no internal path fixes were needed.
+  Updated `test/unit/runtests.jl` and `test/coverage/runtests.jl` include
+  paths. Verified via full `test/runtests.jl`: Coverage Probes still
+  510/510 pass, identical to before the move (3787/3787 unit total
+  unchanged) — confirms the relocation changed nothing behaviorally.

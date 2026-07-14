@@ -57,10 +57,10 @@ include(joinpath(@__DIR__, "robotics", "runtests.jl"))
     @testset "Mission" begin
         include(joinpath(@__DIR__, "mission", "maneuver_and_campaign_tests.jl"))
     end
-    @testset "Coverage Probes (pending Phase 4 audit)" begin
-        include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
-        include(joinpath(REPO_ROOT, "test", "coverage_runtime_boundary_probes.jl"))
-        include(joinpath(REPO_ROOT, "test", "coverage_targeted_90_probes.jl"))
+    @testset "Coverage Probes" begin
+        include(joinpath(@__DIR__, "coverage_probes", "parallel_telemetry_probes.jl"))
+        include(joinpath(@__DIR__, "coverage_probes", "runtime_boundary_probes.jl"))
+        include(joinpath(@__DIR__, "coverage_probes", "targeted_90_probes.jl"))
     end
 end
 

@@ -15,6 +15,7 @@
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 include(joinpath(REPO_ROOT, "examples", "common.jl"))
+include(joinpath(@__DIR__, "resource_monitor.jl"))
 ensure_gramsuite_loaded!()
 const GRAMAtmosphereModel = SimulationModel.GRAMAtmosphereModel
 const GRAMAtmosphereModelSurrogate = SimulationModel.GRAMAtmosphereModelSurrogate
@@ -171,9 +172,13 @@ function report_outcome(label::String, result, route::String, n_sats::Int)
 end
 
 # Runs one (n_sats, mode) point (warmup + N_REPEATS timed repeats) and returns
-# its median wall time. A physics/retcode failure only warns (matching the
-# original worker's behavior: the timing is still meaningful and reported);
-# only a thrown exception propagates to the caller.
+# its median wall time plus a ResourceUsage (peak RSS, mean/peak CPU%) sampled
+# from this process (resource_monitor.jl) across the timed repeats only --
+# warmup is excluded since it also pays one-time JIT/specialization cost that
+# isn't representative of steady-state execution at this point. A
+# physics/retcode failure only warns (matching the original worker's
+# behavior: the timing is still meaningful and reported); only a thrown
+# exception propagates to the caller.
 function run_scaling_point(n_sats::Int, mode::String, route::String="monolithic")
     args = build_constellation_config(n_sats, mode)
     pairs = env_pairs_for(mode, route)
@@ -188,18 +193,21 @@ function run_scaling_point(n_sats::Int, mode::String, route::String="monolithic"
     GC.gc()
     times = Float64[]
     local last_result
-    for r in 1:N_REPEATS
-        GC.gc()
-        t = @elapsed begin
-            last_result = withenv(pairs...) do
-                run_once(args)
+    _, usage = measure_resource_usage() do
+        for r in 1:N_REPEATS
+            GC.gc()
+            t = @elapsed begin
+                last_result = withenv(pairs...) do
+                    run_once(args)
+                end
             end
+            push!(times, t)
+            report_outcome("repeat $(r) ($(round(t; digits=4)) s)", last_result, route, n_sats)
         end
-        push!(times, t)
-        report_outcome("repeat $(r) ($(round(t; digits=4)) s)", last_result, route, n_sats)
     end
     median_t = sort(times)[cld(length(times), 2)]
     println("median wall time (mode=$(mode), route=$(route), n_sat=$(n_sats), $(Threads.nthreads()) threads): $(round(median_t; digits=4)) s")
+    println("resource usage (mode=$(mode), n_sat=$(n_sats), $(Threads.nthreads()) threads): peak_rss=$(round(usage.peak_rss_mb; digits=1)) MB, mean_cpu=$(round(usage.mean_cpu_pct; digits=1))%, peak_cpu=$(round(usage.peak_cpu_pct; digits=1))% ($(usage.n_samples) samples)")
     flush(stdout)
-    return median_t
+    return median_t, usage
 end

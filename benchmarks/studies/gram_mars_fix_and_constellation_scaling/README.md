@@ -47,7 +47,8 @@ julia --project=. --threads=4 benchmarks/studies/gram_mars_fix_and_constellation
 ## Constellation size scaling
 
 `leo_constellation_size_scaling.jl` sweeps LEO constellation size (1, 2, 4,
-..., 1024 satellites -- powers of 2) at a fixed 600s mission, comparing:
+..., 1024 satellites -- powers of 2) **and** thread count (default 1, 2, 4,
+8, 16, 32, 64 -- capped at 64) at a fixed 600s mission, comparing:
 
 - **standard**: real/native GRAM, no vacuum-predicted lookahead cache
   (`SPACEAGORA_DENSITY_FREEZE_PER_STEP=1`, density calls serialized)
@@ -57,28 +58,40 @@ julia --project=. --threads=4 benchmarks/studies/gram_mars_fix_and_constellation
   entirely -- baseline gravity-only dynamics cost, isolating
   constellation-size scaling with zero atmosphere-model overhead
 
-Each `(N_SATS, mode)` point runs in its own subprocess
-(`leo_constellation_size_scaling_worker.jl`), rather than all 33 points in
-one process, because `ODEParams` is parameterized on both `N_sats` and the
-density-model type -- each distinct combination triggers its own JIT
-specialization of the whole RHS/solver pipeline, and accumulating 33 of those
-in one process risks the kind of memory pressure this project has repeatedly
-hit on constrained machines.
+All 33 `(N_SATS, mode)` points for one thread count run back-to-back in ONE
+process (`leo_constellation_size_scaling_point.jl`'s `run_scaling_point`) --
+`ODEParams`/`SharedBuffers`'s `N_sats` is a runtime field
+(`src/core/types/runtime_types.jl`), so every `N_sats` value for a given mode
+shares one compiled specialization and only the 3 modes still differ in
+type. Thread count, however, is fixed at Julia process startup, so each
+thread count in the ladder still runs as its own subprocess (this script
+re-invoking itself with `--threads=<N>`); a crashed thread-count subprocess
+only drops that thread count from the merged results rather than aborting
+the rest of the ladder.
+
+Each point also records its own resource footprint -- peak RSS and mean/peak
+CPU%, sampled from that process only via `ps -p <pid>` polling
+(`resource_monitor.jl`) so other load on the machine never pollutes the
+numbers.
 
 ```bash
 julia --project=. benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
 ```
 
-Override the thread count used for every worker subprocess (default 4):
+Override the thread ladder (comma-separated, values must be <= 64):
 
 ```bash
-SPACEAGORA_SCALING_THREADS=8 julia --project=. benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
+SPACEAGORA_SCALING_THREADS=1,8,64 julia --project=. benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
 ```
 
 Produces `leo_constellation_size_scaling_with_gram.png` (standard vs.
-surrogate, both GRAM-derived) and `leo_constellation_size_scaling_without_gram.png`
-(the no-GRAM baseline), each with a dashed O(N) linear-scaling reference line
-anchored at N=1 for visually judging super-/sub-linear scaling.
+surrogate, both GRAM-derived, one small-multiple panel per thread count) and
+`leo_constellation_size_scaling_without_gram.png` (the no-GRAM baseline, one
+line per thread count), each with a dashed O(N) linear-scaling reference line
+anchored at N=1 for visually judging super-/sub-linear scaling, plus
+`leo_constellation_size_scaling_resource_ram.png` and
+`leo_constellation_size_scaling_resource_cpu.png` (peak RSS / mean CPU%, one
+panel per mode, one line per thread count).
 
 **Key finding**: the lookahead/vacuum-predicted-cache GRAM mode -- used
 elsewhere in this repo's benchmarks as the default "fast path" -- is actually

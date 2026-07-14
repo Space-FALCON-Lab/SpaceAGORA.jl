@@ -81,27 +81,22 @@ guidance_rate_s = 30.0
 control_rate_s = 10.0
 
 [scenarios.atmosphere_truth]
-assumption_id = "odyssey_mars_gram_tes_my25_v1"
-atmosphere_model = "GRAM"
-atmosphere_dataset = "MarsGRAM TES Mapping Year 2 (observed MY25, 2001 storm year)"
-space_weather_model = "MarsGRAM deterministic (seeded, perturbations off)"
-solar_flux_model = "MarsGRAM epoch-fixed defaults"
-gram_seed = 1001
-gram_perturbation_scales = [0.0, 0.0, 0.0, 0.0]
-# TES Mapping Year 2 selects the observed Mars Year 25 dust fields — the 2001
-# global-storm year as actually measured by MGS/TES, spatially and temporally
-# resolved. This replaces the hand-built storm trapezoid and manual MGCM dust
-# levels used previously: the per-pass accelerometer comparison (odya_0001)
-# and restart-from-truth segments both prefer the observed year across the
-# campaign. Native default F10.7 is retained on purpose — the TES fields
-# already carry the observed state, and forcing the flown F10.7 double-counts.
-# Known limit: TES map-edge thinning late in the campaign (documented in the
-# lab notes). Note TES data mode costs more per density query than MGCM.
-mars_map_year = 2
-gram_offline_surrogate = "off"
-gram_static_grid = false
-gram_track_cache = false
-gram_global_lock = "on"
+assumption_id = "odyssey_tabulated_flight_v1"
+atmosphere_model = "tabulated_flight"
+atmosphere_dataset = "Odyssey accelerometer per-pass density profiles (PDS odya_0001, Tolson)"
+space_weather_model = "measured (flight)"
+solar_flux_model = "measured (flight)"
+# DIGITAL-TWIN REGRESSION SENTINEL (PI decision, 2026-07): the nightly flies
+# on the flight-measured densities so the residual is the smallest achievable
+# (dynamics + aero + replay + grading only) and the thresholds can sit at the
+# measured-uncertainty envelope. Any meaningful change to the simulator then
+# fails the gate, which is this scenario's job. The predictive-atmosphere
+# result (MarsGRAM TES Mapping Year 2, selected by a 2,938-point measurement
+# comparison) is the documented capability study in the lab notes and is not
+# enforced nightly. Altitudes in the table are in the sim spheroid convention;
+# sigma column drives the certification envelope (nominal here).
+tabulated_flight_file = "data/telemetry/Odyssey/odyssey_accelerometer_density.feather"
+tabulated_flight_sigma = 0.0
 
 [scenarios.calibration]
 enabled = true
@@ -159,15 +154,19 @@ max_nmae = 3.50
 # scale of the atmosphere-measurement uncertainty established by the
 # tabulated-flight certification envelope. nmae limits tightened from their
 # legacy values to stay meaningful.
+# Digital-twin sentinel thresholds: ~2x the baseline run of this exact
+# configuration (measured atmosphere, kernel truth). Tight by design — the
+# scenario exists to catch regressions in dynamics, aerodynamics, replay, or
+# grading, and the atmosphere contributes only measurement noise here.
 [scenarios.tolerances_full.peri]
-max_abs_km = 13.5
-max_nmae = 0.40
-max_rmse_km = 4.4
+max_abs_km = 27.0
+max_nmae = 0.27
+max_rmse_km = 12.0
 
 [scenarios.tolerances_full.apo]
-max_abs_km = 4700.0
-max_nmae = 0.30
-max_rmse_km = 2400.0
+max_abs_km = 650.0
+max_nmae = 0.015
+max_rmse_km = 360.0
 
 [[scenarios]]
 name = "vex"

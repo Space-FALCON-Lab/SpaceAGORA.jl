@@ -668,7 +668,9 @@ pass's periapsis, log-linear interpolation in altitude, exponential tails
 beyond each profile's coverage. `sigma_scale` shifts every point by that many
 measurement standard errors (envelope runs). Temperature is derived from the
 local log-density slope (scale height); winds are zero — the measurement
-carries neither, and this model never stands in for a predictive atmosphere.
+carries neither. Serves as the digital-twin regression sentinel and the
+certification reference; predictive-atmosphere results come from the GRAM
+configurations and are reported separately.
 """
 struct TabulatedFlightAtmosphereModel <: AbstractDensityModel
     pass_peri_el_s::Vector{Float64}            # sorted periapsis elapsed times

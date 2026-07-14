@@ -2035,6 +2035,10 @@ end
     du_sum .= 0.0
     p_split = ODEParams{1}(args=args_split)
     _initialize_heat_rate_buffers!(p_split)
+    p_split.shared_buffers.in_atmosphere[1] = false
+    p_split.shared_buffers.in_atmosphere_sample_t[1] = -1.0
+    @test !SimulationEngine._drag_state_buffer_current(p_split, 1, 0.0)
+    @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_split.sc, p_split, 0.0)
 
     spacecraft_dynamics!(du_full, u0_split, p_split, 0.0)
     spacecraft_dynamics_implicit_atmosphere!(du_implicit, u0_split, p_split, 0.0)
@@ -2084,6 +2088,96 @@ end
     _initialize_heat_rate_buffers!(p_split_no_aero)
     spacecraft_dynamics_explicit_remainder!(du_explicit_no_aero, u0_split_no_aero, p_split_no_aero, 0.0)
     @test isapprox(du_explicit.sc[1].ω, du_explicit_no_aero.sc[1].ω; atol=1e-12, rtol=1e-10)
+end
+
+@testset "Atmosphere-Implicit Fast Path Requires Current Outside Decision" begin
+    q0_outside = normalize(SVector{4, Float64}(0.1, 0.2, -0.05, 0.97))
+    ω0_outside = SVector{3, Float64}(0.01, 0.0, -0.015)
+    sc_outside = make_spacecraft(
+        ra_alt_m=500e3,
+        rp_alt_m=500e3,
+        orientation_state=(q0_outside, ω0_outside)
+    )
+    args_outside = build_config(
+        spacecraft=sc_outside,
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=true,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            AerodynamicCoefficientfM(),
+        ),
+        keplerian=true
+    )
+    args_outside.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+
+    u0_outside = build_initial_conditions(args_outside)
+    du_outside = copy(u0_outside)
+    du_outside .= 0.0
+    p_outside = ODEParams{1}(args=args_outside)
+    _initialize_heat_rate_buffers!(p_outside)
+
+    p_outside.shared_buffers.in_atmosphere[1] = true
+    p_outside.shared_buffers.in_atmosphere_sample_t[1] = -1.0
+    @test !SimulationEngine._drag_state_buffer_current(p_outside, 1, 0.0)
+    @test SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_outside.sc, p_outside, 0.0)
+
+    spacecraft_dynamics_implicit_atmosphere!(du_outside, u0_outside, p_outside, 0.0)
+    @test all(==(0.0), du_outside.sc[1].pos)
+    @test all(==(0.0), du_outside.sc[1].vel)
+    @test du_outside.sc[1].mass == 0.0
+    @test all(==(0.0), du_outside.sc[1].q)
+    @test all(==(0.0), du_outside.sc[1].ω)
+    @test all(==(0.0), du_outside.sc[1].heat_loads)
+
+    p_outside.shared_buffers.in_atmosphere[1] = false
+    p_outside.shared_buffers.in_atmosphere_sample_t[1] = 0.0
+    @test SimulationEngine._drag_state_buffer_current(p_outside, 1, 0.0)
+    @test SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_outside.sc, p_outside, 0.0)
+
+    p_outside.shared_buffers.in_atmosphere[1] = true
+    p_outside.shared_buffers.in_atmosphere_sample_t[1] = 0.0
+    @test SimulationEngine._drag_state_buffer_current(p_outside, 1, 0.0)
+    @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_outside.sc, p_outside, 0.0)
+
+    sc_mixed = [
+        make_spacecraft(ra_alt_m=220e3, rp_alt_m=100e3, ν_deg=0.0),
+        make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=0.0),
+    ]
+    args_mixed = build_config_multi(
+        spacecraft=sc_mixed,
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=false,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(AerodynamicCoefficientfM(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    args_mixed.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+    u0_mixed = build_initial_conditions(args_mixed)
+    du_mixed = copy(u0_mixed)
+    du_mixed .= 0.0
+    p_mixed = ODEParams{2}(args=args_mixed)
+    _initialize_heat_rate_buffers!(p_mixed)
+    p_mixed.shared_buffers.in_atmosphere[1] = false
+    p_mixed.shared_buffers.in_atmosphere[2] = true
+    p_mixed.shared_buffers.in_atmosphere_sample_t .= -1.0
+    @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_mixed.sc, p_mixed, 0.0)
+
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "flat",
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "off",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(max(1, Threads.nthreads()))
+    ) do
+        spacecraft_dynamics_implicit_atmosphere!(du_mixed, u0_mixed, p_mixed, 0.0)
+    end
+    @test norm(SVector{3, Float64}(du_mixed.sc[1].vel)) > 0.0
+    @test all(==(0.0), du_mixed.sc[2].pos)
+    @test all(==(0.0), du_mixed.sc[2].vel)
+    @test du_mixed.sc[2].mass == 0.0
+    @test all(==(0.0), du_mixed.sc[2].heat_loads)
 end
 
 @testset "Split IMEX Allows Zero Implicit Partition" begin
@@ -2599,4 +2693,51 @@ end
     df = run_case(args)
     eps = specific_energy(df, EARTH.μ)
     @test last(eps) < first(eps) - 1e5
+end
+
+@testset "Solver Cache Re-Initializes When Save Options Change" begin
+    # Regression (Codex review on PR #31): DiffEq bakes save_everystep/save_on
+    # into the integrator at init, so a SolverIntegratorCache first used by a
+    # no-output run (return_solution=false, results=false → save_on=false) must
+    # NOT serve its endpoints-only integrator to a later return_solution=true
+    # run.  The cache records its init-time save options and re-initializes
+    # when a call resolves different ones.
+    args_cache = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=600.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredJ2GravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    cache = SimulationEngine.SolverIntegratorCache()
+
+    # No-output run initializes the cache with storage disabled.
+    @test run_simulation(args_cache; return_solution=false, solver_cache=cache) === nothing
+    @test cache.integrator !== nothing
+    @test cache.save_on == false
+    @test cache.save_everystep == false
+    integ_no_output = cache.integrator
+
+    # Reusing the same cache for a full-solution run must re-init and return
+    # the whole trajectory, not the cached endpoints-only integrator.
+    sol_full = run_simulation(args_cache; return_solution=true, solver_cache=cache)
+    @test length(sol_full.t) > 2
+    @test cache.integrator !== integ_no_output
+    @test cache.save_on == true
+
+    # Matching options keep reusing the cached integrator (no churn).
+    integ_full = cache.integrator
+    sol_again = run_simulation(args_cache; return_solution=true, solver_cache=cache)
+    @test length(sol_again.t) > 2
+    @test cache.integrator === integ_full
+
+    # Downgrading back to a no-output run re-initializes again so campaign
+    # runs do not silently pay full-trajectory storage.
+    @test run_simulation(args_cache; return_solution=false, solver_cache=cache) === nothing
+    @test cache.integrator !== integ_full
+    @test cache.save_on == false
 end

@@ -233,9 +233,6 @@ function _aero_pure_wrench(
 
     sound_velocity = sqrt(planet.γ * planet.R * T)
     vel_pp = planet_frame.vel_pp
-    vel_pp_mag = norm(vel_pp)
-    mach = vel_pp_mag / sound_velocity
-    S = sqrt(planet.γ * 0.5) * mach
     h_pp = cross(planet_frame.pos_pp, vel_pp)
     h_pp_mag = norm(h_pp)
     if !isfinite(h_pp_mag) || h_pp_mag <= eps(Float64)
@@ -246,18 +243,23 @@ function _aero_pure_wrench(
     uD, uN, uE = latlongtoNED((planet_frame.alt_m, planet_frame.lat_rad, planet_frame.lon_rad))
     wE, wN, wU = wind
     wind_pp = wN * uN + wE * uE - wU * uD
-    vel_pp_rw = vel_pp + wind_pp
+    # Airspeed is spacecraft velocity minus the atmosphere's own velocity.
+    vel_pp_rw = vel_pp - wind_pp
     vel_pp_rw_mag = norm(vel_pp_rw)
     if vel_pp_rw_mag <= eps(Float64)
         return _AERO_ZERO5
     end
+    # Free-molecular coefficients use the same wind-relative flow as the force
+    # direction and dynamic pressure (the legacy calcForceTorque path already does).
+    mach = vel_pp_rw_mag / sound_velocity
+    S = sqrt(planet.γ * 0.5) * mach
 
     vel_pp_rw_hat = vel_pp_rw / vel_pp_rw_mag
     h_pp_hat = h_pp / h_pp_mag
     lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
     drag_pp_hat = -vel_pp_rw_hat
     cross_pp_hat = cross(drag_pp_hat, lift_pp_hat)
-    q = 0.5 * rho * vel_pp_mag^2
+    q = 0.5 * rho * vel_pp_rw_mag^2
     l_pi_t = planet_frame.l_pi'
     vel_pi = orientation_sim ? l_pi_t * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
     lift_scale = q * cos(bank_angle)
@@ -532,8 +534,8 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
 
     uD, uN, uE = latlongtoNED((alt, lat, lon))
     wE, wN, wU = wind # positive to the east , m / s
-    wind_pp = wN * uN + wE * uE - wU * uD         # wind velocity in pp frame, m / s 
-    vel_pp_rw = vel_pp + wind_pp                  # relative wind vector, m / s
+    wind_pp = wN * uN + wE * uE - wU * uD         # wind velocity in pp frame, m / s
+    vel_pp_rw = vel_pp - wind_pp                  # airspeed: spacecraft velocity minus atmosphere velocity, m / s
     vel_pp_rw_mag = norm(vel_pp_rw)
     if vel_pp_rw_mag <= eps(Float64)
         _store_aero_caches!(param, i, SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))

@@ -186,7 +186,7 @@ end
     @test !occursin(r"^\s+module\s+(GravityEffectors|AerodynamicEffectors|PerturbationEffectors|ThrusterModels|GuidanceModels)"m, force_torque_src)
 
     @test occursin("function calcForceTorque end", force_torque_src)
-    @test occursin("using ..EffectorSampling: wrench, environment_requirements, solver_partition", force_torque_src)
+    @test occursin("using ..EffectorSampling: wrench, wrench_caching!, environment_requirements, solver_partition", force_torque_src)
     @test occursin("using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel", force_torque_src)
     @test occursin("using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight", force_torque_src)
     @test occursin("using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel", force_torque_src)

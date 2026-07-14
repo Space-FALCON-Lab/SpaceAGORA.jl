@@ -34,6 +34,7 @@ What to read next:
 - [Quickstart](user/quickstart.md)
 - [Assets & Modes](assets.md)
 - [First Simulation](user/first_simulation.md)
+- [Examples Catalog](user/examples_catalog.md)
 
 ## Pick the next page
 
@@ -57,9 +58,21 @@ If you want the telemetry verification workflow:
 
 - go to [Verification Study](user/verification_study.md)
 
+If you want to choose from the repository example scripts:
+
+- go to [Examples Catalog](user/examples_catalog.md)
+
+If you want benchmark, tuning, or paper-study launchers:
+
+- go to [Studies and Benchmarks](user/studies_benchmarks.md)
+
 If you want copy-paste commands for common tasks:
 
 - go to [Recipes](user/recipes.md)
+
+If a command failed and you need a diagnostic page:
+
+- go to [Troubleshooting](user/troubleshooting.md)
 
 ## Before you dive deeper
 

@@ -10,6 +10,7 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "perturbation_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "thruster_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
 
     # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
     @eval GravityEffectors using ..PerturbationEffectors
@@ -30,6 +31,7 @@ module DynamicEffectors
     using .PerturbationEffectors: eclipse_area_calc
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
+    using .RobotArmReactionEffectors: RobotArmReactionEffector
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
@@ -39,4 +41,5 @@ module DynamicEffectors
     export wrench, wrench_caching!, environment_requirements, solver_partition
     export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
+    export RobotArmReactionEffector
 end

@@ -44,6 +44,13 @@ end
 if !isdefined(@__MODULE__, :TelemetryVerification)
     include(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
 end
+if !isdefined(@__MODULE__, :ParallelProfiles)
+    # SimulationCampaigns consumes the outer-route bandit via `..ParallelProfiles`.
+    include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+end
+if !isdefined(@__MODULE__, :SimulationCampaigns)
+    include(joinpath(REPO_ROOT, "src", "simulation", "campaigns", "simulation_campaigns.jl"))
+end
 if !isdefined(@__MODULE__, :SpaceAGORA)
     include(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
 end
@@ -1049,6 +1056,8 @@ module GuidanceSandbox
 using ..SimulationModel
 using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
 using ComponentArrays
+using LinearAlgebra
+using StaticArrays
 end
 const GUIDANCE_SANDBOX = GuidanceSandbox
 
@@ -1061,3 +1070,4 @@ include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_t
 include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "08_cli_and_assets_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "suites", "09_coverage_debt_probe_drivers.jl"))

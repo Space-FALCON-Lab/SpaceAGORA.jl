@@ -74,6 +74,74 @@ Run a tiny verification case:
 julia --project=. benchmarks/studies/aerobraking_perturbation_mc/main.jl --smoke --norbits 1
 ```
 
+Run the targeted inclination-by-argument-of-periapsis supplement used to fill
+poster regime-map slices:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/run_inclination_argp_supplement.jl --procs 8
+```
+
+This supplemental run covers nominal periapsis, one representative apoapsis per
+body (Mars 5 000 km, Venus 10 000 km, Earth 36 000 km, Titan 10 000 km),
+mass scale 1, `full_environment`, nominal density, and the full
+11-by-15 inclination/AOP grid. It writes to
+`output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp>/`.
+After it completes, regenerate poster products by passing both run directories:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl \
+  output/aerobraking_perturbation_mc/20260519_121929 \
+  output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp>
+```
+
+Run the matching shallow/deep inclination-by-argument-of-periapsis supplement
+to fill out the remaining `slice_atlas_omega_vs_inclination_reference_apo`
+panels:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/run_inclination_argp_periapsis_supplement.jl --procs 8
+```
+
+This supplemental run uses the same representative apoapses and full
+11-by-15 inclination/AOP grid as the nominal supplement, but covers shallow
+and deep periapsis only. It writes to
+`output/aerobraking_perturbation_mc_inclination_argp_periapsis_supplement/<timestamp>/`.
+
+Run the phase-dependence supplement for inclination-vs-apoapsis plots at
+argument of periapsis 0, 90, 180, and 270 deg:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/run_phase_inclination_apoapsis_supplement.jl --procs 8
+```
+
+This run covers Mars, Venus, Earth, and Titan at nominal periapsis, mass
+scale 1, `full_environment`, nominal density, 22 inclination levels, 21
+apoapsis levels per body, and the four AOP phases. It writes to
+`output/aerobraking_perturbation_mc_phase_inclination_apoapsis_supplement/<timestamp>/`.
+
+Run the targeted periapsis-altitude supplement used to make the
+`omega`-vs-periapsis-altitude poster slice less sparse:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/run_periapsis_altitude_supplement.jl --procs 8
+```
+
+This run covers one representative apoapsis per body, fixed inclination
+93 deg, the full AOP grid, seven periapsis altitude levels spanning the
+current deep-to-shallow range, `full_environment`, and nominal density. It
+writes to
+`output/aerobraking_perturbation_mc_periapsis_altitude_supplement/<timestamp>/`.
+After it completes, pass this third run directory to the poster generator:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl \
+  output/aerobraking_perturbation_mc/20260519_121929 \
+  output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp> \
+  output/aerobraking_perturbation_mc_inclination_argp_periapsis_supplement/<timestamp> \
+  output/aerobraking_perturbation_mc_phase_inclination_apoapsis_supplement/<timestamp> \
+  output/aerobraking_perturbation_mc_periapsis_altitude_supplement/<timestamp>
+```
+
 Override the apoapsis grid (applied to all planets):
 
 ```bash
@@ -116,12 +184,22 @@ you want to plot an older dataset.
 
 The plotting pass writes `plots/perturbation_force_ratio_summary.feather`,
 `plots/perturbation_force_ratio_summary.csv`, a filtered summary CSV, per-planet
-time-history PDFs, cross-planet heatmaps/comparison plots, and ranking tables.
+time-history PDFs, compact parameter-comparison PDFs, cross-planet heatmaps/comparison plots, and ranking tables.
 The force ratio is
 `active_perturbation_force_mag / (sc1_mass * GM / norm(sc1_pos)^2)`. Useful
 plotting options include `--metric peak|p95|p50|max_in_atmosphere`,
 `--plot-set all|time|heatmaps|rankings`, and
-`--density-case nominal|low|high|all`. Summary generation uses multiple threads
+`--density-case nominal|low|high|all` (default: `nominal`). Time-history plots include analytical
+basic perturbation-parameter overlays by default; use
+`--analytical-overlays none|basic` to control them. The plotting
+pass also writes one `analytical_parameter_comparison_nominal_planets_*.pdf`
+marker plot with apoapsis altitude on the horizontal axis and one nominal-periapsis
+panel per planet, with nominal-density aero only and separate J2, higher-degree
+harmonics, third-body, and aerodynamic analytical parameters. The simulated
+comparison marker uses saved perturbing force divided by central-body gravity at
+the same trajectory point: time-weighted orbit averages for J2 and third-body,
+recomputed with degree-2 harmonics removed then time-weighted for higher
+harmonics, and peak value for drag. Summary generation uses multiple threads
 by default: if the plotting script is launched from a single-threaded Julia
 process, it restarts itself with `--threads=auto`. Cap summary worker tasks with
 `--summary-threads N` or `SPACEAGORA_AERO_PERTURB_SUMMARY_THREADS=N` when memory

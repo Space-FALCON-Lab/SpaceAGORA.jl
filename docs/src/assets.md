@@ -126,6 +126,7 @@ This file is the machine-readable asset source of truth for:
 
 - baseline built-in mode
 - repository-owned open assets
+- RPO station reference geometry, including the Gateway Core STL
 - user-provided or licensed high-fidelity assets
 
 You can inspect it with either:

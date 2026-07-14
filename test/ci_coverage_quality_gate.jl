@@ -24,6 +24,7 @@ const MAIN_FILE_MIN_OVERRIDES = Dict(
     "src/simulation/engine/adapters/from_env.jl" => 70.0,
     # Dynamic RHS is branch-heavy across many mission/control combinations.
     "src/simulation/engine/dynamics_rhs.jl" => 70.0,
+
 )
 
 const CRITICAL_FILE_MIN_OVERRIDES = Dict(

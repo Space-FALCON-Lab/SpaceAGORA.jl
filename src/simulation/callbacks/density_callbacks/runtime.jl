@@ -94,19 +94,20 @@ function _density_state_from_kinematics!(
     target_include_j2::Bool,
     caches::Vector{Union{Nothing, GramTrackCache}}
 )::Tuple{Float64, Float64, SVector{3, Float64}}
+    env = _callback_env_config(p)
     # Vacuum-predicted GRAM density cache: interpolate from a pre-built spline on
     # log(ρ) along the drag-free trajectory.  Only active inside the atmosphere
     # (in_atmosphere flag) to avoid wasteful builds during coast arcs.
-    if _vacuum_gram_cache_enabled()
+    if env.vacuum_gram_cache_enabled
         in_atm = sat_idx <= length(p.shared_buffers.in_atmosphere) &&
                  p.shared_buffers.in_atmosphere[sat_idx]
         if in_atm
             vacuum_cache = _vacuum_gram_cache_for_sat!(p.shared_buffers.vacuum_gram_caches, sat_idx)
             return _query_vacuum_gram_cache!(
                 vacuum_cache, density_model, p, pos_ii, vel_ii, alt, t,
-                _vacuum_gram_cache_npoints(),
-                _vacuum_gram_cache_horizon_s(),
-                _vacuum_gram_cache_deviation_m()
+                env.vacuum_gram_cache_npoints,
+                env.vacuum_gram_cache_horizon_s,
+                env.vacuum_gram_cache_deviation_m
             )
         end
     end
@@ -126,7 +127,7 @@ function _density_state_from_kinematics!(
         cache_horizon_s, cache_alt_tol_m, cache_ang_tol_rad, cache_points = _gram_track_cache_profile(cache_cfg, p, alt)
         cache = _gram_density_cache_for_sat!(caches, sat_idx)
         seg = if stats_enabled
-            seg0 = _gram_track_cache_segment(cache, t)
+            seg0 = _gram_track_cache_segment(cache, t, env.gram_track_cache_ignore_time_window)
             if seg0 === nothing
                 _gram_runtime_stats_update!(s -> begin
                     s.cache_misses += 1
@@ -166,7 +167,7 @@ function _density_state_from_kinematics!(
                 end
             end
         else
-            _gram_track_cache_ready(cache, t, alt, lat, lon, cache_alt_tol_m, cache_ang_tol_rad)
+            _gram_track_cache_ready(cache, t, alt, lat, lon, cache_alt_tol_m, cache_ang_tol_rad, env.gram_track_cache_ignore_time_window)
         end
         if seg !== nothing
             idx, x = seg
@@ -218,10 +219,13 @@ end
 @inline _density_callback_et(p, t::Float64) = p.shared_buffers.et_start[] + t
 
 function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)
-    cache_cfg = _gram_track_cache_config()
-    stats_enabled = _gram_runtime_stats_enabled()
-    target_include_j2 = _gram_track_cache_target_use_j2() && _uses_j2_gravity_effector(effectors)
+    # GRAM knobs are read from the run-scoped env snapshot at invocation time
+    # (via _callback_env_config(p)) rather than captured from live ENV at
+    # callback construction, so the callback and the RHS-side atmosphere
+    # sampling always see the same run-start values.
+    has_j2_effector = _uses_j2_gravity_effector(effectors)
     function update_density_sat!(i::Int, p, u, t::Float64)
+        cb_env = _callback_env_config(p)
         density_model = _density_model_for_sat(p, i)
         caches = p.shared_buffers.gram_density_cache
         kin = _stage_environment_kinematics(u.sc[i], p, Float64(t))
@@ -236,9 +240,9 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
             kin.lon,
             Float64(t),
             density_model,
-            cache_cfg,
-            stats_enabled,
-            target_include_j2,
+            cb_env.gram_track_cache,
+            cb_env.gram_runtime_stats_enabled,
+            cb_env.gram_track_cache_target_use_j2 && has_j2_effector,
             caches,
         )
         _write_density_buffers!(p, i, rho, T, wind_vec, Float64(t))
@@ -252,20 +256,21 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         u = integrator.u
         density_models = p.shared_buffers.density_models
         fallback_density_model = p.args.environment_model.density_model
-        decision = _density_callback_thread_decision(args, num_sats)
+        cb_env = _callback_env_config(p)
+        decision = _density_callback_thread_decision(p, args, num_sats)
         use_threads = decision.use_threads
         use_batch = false
         batch_model = nothing
         use_gram_isolated_pool = false
-        if _density_batch_enabled(num_sats)
+        if _density_batch_enabled(cb_env, num_sats)
             batch_model = _density_batch_model_for_callback(density_models, fallback_density_model, num_sats)
-            if !(batch_model === nothing) && !_gram_track_cache_enabled(cache_cfg, batch_model)
+            if !(batch_model === nothing) && !_gram_track_cache_enabled(cb_env.gram_track_cache, batch_model)
                 use_batch = true
             end
         end
         if !use_batch
-            gram_pool_model = _gram_isolated_pool_batch_model_for_callback(density_models, fallback_density_model, num_sats)
-            if !(gram_pool_model === nothing) && !_gram_track_cache_enabled(cache_cfg, gram_pool_model)
+            gram_pool_model = _gram_isolated_pool_batch_model_for_callback(cb_env, density_models, fallback_density_model, num_sats)
+            if !(gram_pool_model === nothing) && !_gram_track_cache_enabled(cb_env.gram_track_cache, gram_pool_model)
                 use_batch = true
                 batch_model = gram_pool_model
                 use_gram_isolated_pool = true
@@ -278,7 +283,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         if use_batch
             # Batch calls are only used when the active density path can evaluate
             # all spacecraft together without per-satellite cache state.
-            if stats_enabled
+            if cb_env.gram_runtime_stats_enabled
                 _gram_runtime_stats_update!(s -> begin
                     s.density_calls += num_sats
                     s.direct_calls += num_sats

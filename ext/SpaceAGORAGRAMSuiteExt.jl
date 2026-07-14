@@ -7,6 +7,15 @@ using StaticArrays
 const EM = SpaceAGORA.SimulationModel.EnvironmentModels
 const GRAM_LOCK = SpaceAGORA.RuntimeServices.GRAM_LOCK
 
+# Lock used to serialize native GRAM calls for this model instance. With the
+# default global scope every call in the process contends on GRAM_LOCK; with
+# SPACEAGORA_GRAM_LOCK_SCOPE=model only calls on the same wrapper instance
+# serialize, so per-sample/per-worker model copies evaluate concurrently
+# (the same instance-isolation premise as the isolated-pool batch path).
+@inline function _gram_call_lock(model::EM.GRAMAtmosphereModel)::ReentrantLock
+    return EM._gram_lock_scope() === :model ? model.instance_lock : GRAM_LOCK
+end
+
 function __init__()
     EM._GRAM_USE_GLOBAL_LOCK_FN[] = () -> GRAMSuite.gram_use_global_lock()
     EM._GRAM_DEFAULT_SURROGATE_FILE_FN[] = planet -> GRAMSuite.gram_default_surrogate_file(planet)
@@ -119,7 +128,7 @@ end
     wind::Bool
 )::Tuple{Float64, Float64, SVector{3, Float64}}
     h_gram = max(h, -30.0)
-    return GRAMSuite.point_density_state(model.core, h_gram, lat, lon, el_time, wind; lock_obj=GRAM_LOCK)
+    return GRAMSuite.point_density_state(model.core, h_gram, lat, lon, el_time, wind; lock_obj=_gram_call_lock(model))
 end
 
 # ---------------------------------------------------------------------------
@@ -153,7 +162,7 @@ function EM.getDensity(
             lon,
             el_time,
             wind;
-            lock_obj=GRAM_LOCK,
+            lock_obj=_gram_call_lock(model),
             vacuum_temperature=p.args.environment_model.planet.T_ref
         )
     end
@@ -182,6 +191,7 @@ function EM.getDensity(
     base_model = model.base_model isa EM.GRAMAtmosphereModel ? model.base_model.core : model.base_model
     point_fallback = model.base_model isa EM.GRAMAtmosphereModel ? nothing :
         (m, h_i, lat_i, lon_i, t_i, w_i) -> EM._gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
+    lock_obj = model.base_model isa EM.GRAMAtmosphereModel ? _gram_call_lock(model.base_model) : GRAM_LOCK
     h_gram = max(h, -30.0)
 
     # println("GRAM density altitude = $(h) m ($(h / 1e3) km)")
@@ -194,7 +204,7 @@ function EM.getDensity(
         lon,
         el_time,
         wind;
-        lock_obj=GRAM_LOCK,
+        lock_obj=lock_obj,
         point_density_fallback=point_fallback,
         vacuum_temperature=p.args.environment_model.planet.T_ref
     )

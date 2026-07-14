@@ -36,6 +36,12 @@ const HAS_GRAMSUITE = let
             pushfirst!(LOAD_PATH, vendored_gramsuite)
         end
         @eval import GRAMSuite
+        # Importing the package is not enough: the GRAM-backed probes construct
+        # real models, which needs the native GRAM Suite root (Build/ + Julia/).
+        # Dev machines often have the Julia wrapper but no native build; skip
+        # cleanly there instead of erroring mid-testset. CI builds the root, so
+        # this changes nothing in CI.
+        @eval GRAMSuite._resolve_gram_root("", "")
         true
     catch err
         @info "Skipping GRAMSuite-backed threaded coverage probes" exception=(err, catch_backtrace())
@@ -391,9 +397,11 @@ end
     ) do
         @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
     end
+    # Pin the auto-mode budget floor (default 16 exceeds CI thread counts).
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
-        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "3"
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "3",
+        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
         @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
     end
@@ -408,6 +416,7 @@ end
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
@@ -427,10 +436,12 @@ end
     ) do
         @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
     end
+    # Pin the default auto-mode budget floor (4) at the 2-thread CI probe budget.
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "3",
-        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
+        "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
         @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
     end
@@ -447,6 +458,7 @@ end
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
+        "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
@@ -575,6 +587,7 @@ end
     withenv(
         "SPACEAGORA_MULTIBODY_PARALLEL" => "auto",
         "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "2",
+        "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
         "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "0"
     ) do
@@ -1779,9 +1792,11 @@ end
     ) do
         @test callbacks._thermal_callback_thread_decision(2).use_threads == false
     end
+    # Pin the auto-mode budget floor (default 16 exceeds CI thread counts).
     withenv(
         "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_THERMAL_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_THERMAL_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_THERMAL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do

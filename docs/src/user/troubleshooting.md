@@ -60,6 +60,9 @@ expected local path.
    julia --project=. src/cli/main.jl assets check
    ```
 
+If the submodule checkout fails with Git LFS `no space left on device`, free
+disk space and see [GRAMSuite Setup](gramsuite_setup.md#git-lfs-reports-no-space-left-on-device).
+
 ---
 
 ## Native GRAM library missing or stale

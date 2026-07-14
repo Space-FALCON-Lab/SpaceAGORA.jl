@@ -361,6 +361,45 @@ function _with_orbit_mission(
     )
 end
 
+# Body-mean-equator inertial axes expressed in J2000: z along the body pole,
+# x along the ascending node of the body equator on the J2000 equator.
+function _body_equator_frame_rotation(pole_j2000::SVector{3, Float64})::SMatrix{3, 3, Float64, 9}
+    ẑ = pole_j2000 / norm(pole_j2000)
+    node = SVector{3, Float64}(-ẑ[2], ẑ[1], 0.0)
+    node_mag = norm(node)
+    node_mag <= 1e-12 && return SMatrix{3, 3, Float64}(1.0I)
+    x̂ = node / node_mag
+    ŷ = cross(ẑ, x̂)
+    return hcat(x̂, ŷ, ẑ)
+end
+
+# Flight-dynamics products for Venus/Mars scenarios publish osculating elements
+# referenced to the body mean equator, while the engine propagates in J2000
+# (dynamics_rhs build_initial_conditions). Elements flagged body_equator_inertial
+# are therefore converted to a J2000 Cartesian state here, using the same pole
+# model (planet_frame_lpi) the propagation itself uses.
+function _initial_condition_in_j2000(
+    ic::InitialCondition,
+    planet,
+    initial_time,
+    element_frame::Symbol
+)::SimulationModel.AbstractInitialCondition
+    element_frame === :j2000 && return ic
+    element_frame === :body_equator_inertial || throw(ArgumentError(
+        "Unsupported element_frame=$element_frame for orbit-element initial conditions."
+    ))
+    model = SimulationModel.SpiceEphemeridesModel()
+    et = SimulationModel.ephemerides_time_seconds(initial_time, model)
+    l_pi = SimulationModel.planet_frame_lpi(planet, et, model)
+    pole_j2000 = SVector{3, Float64}(l_pi[3, 1], l_pi[3, 2], l_pi[3, 3])
+    rot = _body_equator_frame_rotation(pole_j2000)
+    r_body, v_body = SimulationEngine.orbitalelemtorv(ic, planet)
+    return CartesianInitialCondition(
+        rot * SVector{3, Float64}(r_body),
+        rot * SVector{3, Float64}(v_body)
+    )
+end
+
 function _make_orbit_args(
     cfg::OrbitEventsScenarioConfig,
     target_orbits::Int;
@@ -369,7 +408,7 @@ function _make_orbit_args(
 )::SimulationConfiguration
     planet = _planet_from_name(cfg.planet_name)
     rp_m = planet.Rp_e + cfg.rp_altitude_m
-    ic = InitialCondition(
+    ic_elements = InitialCondition(
         ra=cfg.ra_m,
         rp=rp_m,
         i=cfg.i_deg,
@@ -377,6 +416,7 @@ function _make_orbit_args(
         Ω=cfg.raan_deg,
         ν=cfg.ta_deg
     )
+    ic = _initial_condition_in_j2000(ic_elements, planet, cfg.initial_time, cfg.element_frame)
 
     spacecraft = _make_spacecraft(cfg.spacecraft, ic)
     dynamic_effectors = _scenario_dynamic_effectors(

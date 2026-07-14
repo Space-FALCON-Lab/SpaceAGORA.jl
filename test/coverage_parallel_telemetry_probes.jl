@@ -1,6 +1,8 @@
 using Test
 using TOML
 using DataFrames
+using LinearAlgebra
+using StaticArrays
 
 const _COV_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, ".."))
 
@@ -472,6 +474,12 @@ end
     @test TV._parse_time_aligned_comparison_mode("orbit_events", "ctx") == :orbit_events
     @test_throws ArgumentError TV._parse_time_aligned_comparison_mode("bad", "ctx")
 
+    @test TV._parse_element_frame("j2000", "ctx") == :j2000
+    @test TV._parse_element_frame("EME2000", "ctx") == :j2000
+    @test TV._parse_element_frame("body_equator_inertial", "ctx") == :body_equator_inertial
+    @test TV._parse_element_frame(" Body_Equator ", "ctx") == :body_equator_inertial
+    @test_throws ArgumentError TV._parse_element_frame("venus", "ctx")
+
     empty_maneuvers = TV._parse_maneuver_config(Dict{String, Any}(), "ctx")
     @test isempty(empty_maneuvers.orbit_numbers)
     valid_maneuvers = TV._parse_maneuver_config(
@@ -885,6 +893,169 @@ end
     )
 
     @test TV._default_plots_outdir("output/a.csv", :quick) == normpath("output/telemetry_plots_quick")
+end
+
+@testset "Element-frame transform (kernel-anchored)" begin
+    # Expected values below come from the mission SPICE kernels shipped in the
+    # GRAMSuite SPICE directory: VEX osculating elements at 2014-05-19T04:00 UTC
+    # from ORVV_T19_140501000000_00546.BSP and Odyssey's at 2001-11-06T19:00:32
+    # from m01_ab_v2.bsp, expressed in J2000 axes. The manifest stores the same
+    # states as body-mean-equator elements; the transform must map one to the other.
+
+    # Identity when the body pole is the J2000 pole (Earth-like scenarios).
+    R_id = TV._body_equator_frame_rotation(SVector(0.0, 0.0, 1.0))
+    @test isapprox(R_id, SMatrix{3, 3, Float64}(1.0I); atol=1e-14)
+
+    venus_pole = SVector(0.018691, -0.387709, 0.921592)  # IAU_VENUS +z in J2000 (pck00011)
+    R_v = TV._body_equator_frame_rotation(venus_pole)
+    @test isapprox(R_v' * R_v, SMatrix{3, 3, Float64}(1.0I); atol=1e-10)
+    @test isapprox(R_v[:, 3], venus_pole / norm(venus_pole); atol=1e-6)
+
+    j2000_elements = function (r_j::SVector{3, Float64}, v_j::SVector{3, Float64}, μ::Float64)
+        n̂ = normalize(cross(r_j, v_j))
+        inc = acosd(clamp(n̂[3], -1.0, 1.0))
+        node = normalize(SVector(-n̂[2], n̂[1], 0.0))
+        raan = mod(atand(node[2], node[1]), 360.0)
+        e_vec = ((dot(v_j, v_j) - μ / norm(r_j)) .* r_j .- dot(r_j, v_j) .* v_j) ./ μ
+        ê = normalize(e_vec)
+        aop = acosd(clamp(dot(node, ê), -1.0, 1.0))
+        e_vec[3] < 0.0 && (aop = 360.0 - aop)
+        return (i=inc, raan=raan, aop=aop, e=norm(e_vec))
+    end
+
+    μ_venus = 3.24858599e14
+    ic_vex = SimulationModel.InitialCondition(
+        ra=7.2651770e7, rp=6.0518e6 + 186600.0,
+        i=89.876, ω=75.505, Ω=104.115, ν=178.0
+    )
+    r_b, v_b = SimulationEngine.orbitalelemtorv(ic_vex, (μ=μ_venus,))
+    oe_vex = j2000_elements(R_v * SVector{3, Float64}(r_b), R_v * SVector{3, Float64}(v_b), μ_venus)
+    @test isapprox(oe_vex.i, 84.455; atol=0.05)
+    @test isapprox(oe_vex.raan, 105.768; atol=0.05)
+    @test isapprox(oe_vex.aop, 97.732; atol=0.06)
+    @test isapprox(oe_vex.e, 0.84175; atol=5e-4)
+
+    # Mars pole of date at the Odyssey epoch (IAU 2000 model).
+    T_cent = (2452220.2920 - 2451545.0) / 36525.0
+    ra_pole = deg2rad(317.68143 - 0.1061 * T_cent)
+    dec_pole = deg2rad(52.88650 - 0.0609 * T_cent)
+    mars_pole = SVector(cos(dec_pole) * cos(ra_pole), cos(dec_pole) * sin(ra_pole), sin(dec_pole))
+    R_m = TV._body_equator_frame_rotation(mars_pole)
+    μ_mars = 4.282837285418775e13
+    ic_ody = SimulationModel.InitialCondition(
+        ra=2.8559615e7, rp=3.396190e6 + 95000.0,
+        i=93.522, ω=109.7454, Ω=28.1517, ν=175.0
+    )
+    r_bm, v_bm = SimulationEngine.orbitalelemtorv(ic_ody, (μ=μ_mars,))
+    oe_ody = j2000_elements(R_m * SVector{3, Float64}(r_bm), R_m * SVector{3, Float64}(v_bm), μ_mars)
+    @test isapprox(oe_ody.i, 125.45; atol=0.2)
+    @test isapprox(oe_ody.raan, 83.0; atol=0.3)
+    @test isapprox(oe_ody.aop, 130.1; atol=0.4)
+
+    # Full builder path with the SPICE-derived pole, when kernels are available.
+    if isdir(joinpath(TV.SPICE_PATH, "lsk"))
+        planet = TV._planet_from_name("venus")
+        epoch = TV.InitialTime(year=2014, month=5, day=19, hour=4, minute=0, second=0.0f0)
+        @test TV._initial_condition_in_j2000(ic_vex, planet, epoch, :j2000) === ic_vex
+        cic = TV._initial_condition_in_j2000(ic_vex, planet, epoch, :body_equator_inertial)
+        @test cic isa SimulationModel.CartesianInitialCondition
+        r_expected = R_v * SVector{3, Float64}(SimulationEngine.orbitalelemtorv(ic_vex, planet)[1])
+        @test norm(cic.pos - r_expected) / norm(r_expected) < 1e-3
+        @test_throws ArgumentError TV._initial_condition_in_j2000(ic_vex, planet, epoch, :bogus)
+    else
+        @info "SPICE kernels not present; skipping SPICE-backed element-frame test"
+    end
+end
+
+@testset "Planet-frame transport term uses the body pole" begin
+    # planet.ω is the spin vector in planet-fixed axes; the co-rotation term must
+    # be applied after rotating into that frame. A point at rest in the rotating
+    # frame of a TILTED-pole planet must have zero planet-frame velocity.
+    θ = deg2rad(30.0)
+    L_PI = SMatrix{3, 3, Float64}(
+        1.0, 0.0, 0.0,
+        0.0, cos(θ), sin(θ),
+        0.0, -sin(θ), cos(θ)
+    )
+    ω_pf = SVector(0.0, 0.0, 7.0e-5)
+    planet_tilted = (L_PI=L_PI, ω=ω_pf)
+
+    r_i = SVector(7.0e6, 1.0e6, 2.0e6)
+    Ω_j2000 = L_PI' * ω_pf            # spin vector expressed in J2000
+    v_i = cross(Ω_j2000, r_i)         # inertial velocity of a frame-fixed point
+
+    r_p, v_p = SimulationEngine.r_intor_p!(r_i, v_i, planet_tilted)
+    @test isapprox(r_p, L_PI * r_i; atol=1e-9)
+    @test norm(v_p) < 1e-9 * norm(v_i)
+
+    # Round trip restores the inertial state.
+    r_back, v_back = SimulationEngine.r_pintor_i(r_p, v_p, planet_tilted)
+    @test isapprox(r_back, r_i; atol=1e-6)
+    @test isapprox(v_back, v_i; atol=1e-9)
+
+    # z-aligned pole reproduces the legacy behavior exactly.
+    planet_z = (L_PI=SMatrix{3, 3, Float64}(1.0I), ω=ω_pf)
+    r_pz, v_pz = SimulationEngine.r_intor_p!(r_i, v_i, planet_z)
+    @test isapprox(v_pz, v_i - cross(ω_pf, r_i); atol=1e-9)
+end
+
+@testset "Apoapsis decay-rate diagnostic" begin
+    # Sim decaying exactly twice as fast as telemetry: ratios must be 2.
+    orbits = collect(0.0:1.0:10.0)
+    tele = 1000.0 .- 10.0 .* orbits
+    sim = 1000.0 .- 20.0 .* orbits
+    d = TV._apo_decay_diagnostic(orbits, tele, orbits, sim, Float64[])
+    @test isapprox(d.drag_decay_ratio_median, 2.0; atol=1e-12)
+    @test isapprox(d.drag_decay_ratio_total, 2.0; atol=1e-12)
+    @test d.drag_decay_n == 10
+
+    # A maneuver inside an interval drops exactly that interval.
+    d_man = TV._apo_decay_diagnostic(orbits, tele, orbits, sim, [4.5])
+    @test d_man.drag_decay_n == 9
+    @test isapprox(d_man.drag_decay_ratio_median, 2.0; atol=1e-12)
+
+    # Truncated sim axis restricts the comparison to the overlap.
+    d_trunc = TV._apo_decay_diagnostic(orbits, tele, orbits[1:6], sim[1:6], Float64[])
+    @test d_trunc.drag_decay_n == 5
+
+    # Flat telemetry (below the rate floor) produces no ratios but a NaN-safe result.
+    flat = fill(1000.0, length(orbits))
+    d_flat = TV._apo_decay_diagnostic(orbits, flat, orbits, sim, Float64[])
+    @test isnan(d_flat.drag_decay_ratio_median)
+    @test d_flat.drag_decay_n == 0
+
+    # Too-short series return the schema placeholder.
+    d_short = TV._apo_decay_diagnostic([0.0, 1.0], [1.0, 2.0], orbits, sim, Float64[])
+    @test d_short.drag_decay_n == 0
+
+    # Uneven telemetry spacing: the total weights each interval by its span
+    # (sums altitude deltas), so a 3-orbit gap counts three times a 1-orbit one.
+    gap_orbit = [0.0, 1.0, 4.0]
+    gap_tele = [1000.0, 990.0, 960.0]        # rates -10, -10
+    gap_sim = [1000.0, 970.0, 940.0]         # rates -30, -10
+    d_gap = TV._apo_decay_diagnostic(gap_orbit, gap_tele, gap_orbit, gap_sim, Float64[])
+    @test isapprox(d_gap.drag_decay_ratio_total, 1.5; atol=1e-12)   # (-30-30)/(-10-30)
+    @test isapprox(d_gap.drag_decay_ratio_median, 2.0; atol=1e-12)  # median(3, 1)
+end
+
+@testset "Airspeed sign contract" begin
+    # Drag/heat models must use v_spacecraft MINUS v_atmosphere. The flipped
+    # form (`vel_pp + wind_pp`) was copy-pasted across six files; pin all of them.
+    files = [
+        joinpath(_COV_REPO_ROOT, "src", "dynamics", "coupled", "aerodynamic_wrench_models.jl"),
+        joinpath(_COV_REPO_ROOT, "src", "simulation", "callbacks", "thermal_callbacks.jl"),
+        joinpath(_COV_REPO_ROOT, "src", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl"),
+        joinpath(_COV_REPO_ROOT, "src", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"),
+        joinpath(_COV_REPO_ROOT, "src", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
+        joinpath(_COV_REPO_ROOT, "src", "gnc", "control", "aerobraking", "control_commands.jl"),
+    ]
+    for file in files
+        live = [line for line in eachline(file) if !startswith(strip(line), "#")]
+        @test !any(occursin(r"vel_pp_rw\s*=\s*(planet_frame\.)?vel_pp\s*\+\s*wind_pp", line) for line in live)
+    end
+    # Dynamic pressure in the coupled aero model must use the wind-relative speed.
+    aero_src = read(files[1], String)
+    @test !occursin("q = 0.5 * rho * vel_pp_mag^2", aero_src)
 end
 
 println("coverage_parallel_telemetry_probes_ok")

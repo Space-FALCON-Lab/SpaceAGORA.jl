@@ -30,6 +30,15 @@ function _orbit_rows_errors(
         extrema.apo.altitude .+ apo_bias;
         sim_axis=apo_sim_axis
     )
+    if length(extrema.apo.altitude) >= 3
+        apo_summary = merge(apo_summary, _apo_decay_diagnostic(
+            tele_apo.orbit,
+            tele_apo.altitude,
+            apo_sim_axis,
+            extrema.apo.altitude .+ apo_bias,
+            Float64.(cfg.maneuver_orbit_numbers)
+        ))
+    end
     return [peri_summary, apo_summary], [peri_errors, apo_errors]
 end
 
@@ -83,6 +92,15 @@ function _time_aligned_rows_errors(
             tele_extrema.apo.altitude,
             sim_extrema.apo.altitude .+ apo_bias
         )
+        if length(sim_extrema.apo.altitude) >= 3 && length(tele_extrema.apo.orbit) >= 3
+            apo_summary = merge(apo_summary, _apo_decay_diagnostic(
+                collect(Float64, tele_extrema.apo.orbit),
+                collect(Float64, tele_extrema.apo.altitude),
+                tele_extrema.apo.orbit[1] .+ collect(0.0:(length(sim_extrema.apo.altitude) - 1)),
+                collect(Float64, sim_extrema.apo.altitude .+ apo_bias),
+                Float64[]
+            ))
+        end
 
         peri_speed_summary, peri_speed_errors = _compare_orbit_curve(
             cfg.name,

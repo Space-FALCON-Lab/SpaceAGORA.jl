@@ -66,9 +66,10 @@ end
     write_buffers::Bool=true,
 )::AtmosphereSample
     callbacks = SimulationModel.SimulationCallbacks
-    cache_cfg = callbacks._gram_track_cache_config()
-    stats_enabled = callbacks._gram_runtime_stats_enabled()
-    target_include_j2 = callbacks._gram_track_cache_target_use_j2() &&
+    cb_env = callbacks._callback_env_config(p)
+    cache_cfg = cb_env.gram_track_cache
+    stats_enabled = cb_env.gram_runtime_stats_enabled
+    target_include_j2 = cb_env.gram_track_cache_target_use_j2 &&
         callbacks._uses_j2_gravity_effector(p.args.dynamics_model.dynamic_effectors)
     density_model = callbacks._density_model_for_sat(p, sat_idx)
     caches = p.shared_buffers.gram_density_cache

@@ -51,12 +51,10 @@ function _edg_weighted_aero_coefficients(spacecraft, temperature::Float64, speed
     area = _edg_total_ref_area(spacecraft)
     lift_area = 0.0
     drag_area = 0.0
-    aero_module = getfield(getfield(parentmodule(@__MODULE__), :DynamicEffectors), :AerodynamicEffectors)
-    aero_coeff = getfield(aero_module, :aerodynamic_coefficient_fM)
     for link in spacecraft.links
         link_area = max(0.0, Float64(link.ref_area))
         link_area == 0.0 && continue
-        coeffs = aero_coeff(link, temperature, speed_ratio, alpha, Float64(link.β), Float64(link.θ))
+        coeffs = aerodynamic_coefficient_fM(link, temperature, speed_ratio, alpha, Float64(link.β), Float64(link.θ))
         lift_area += Float64(coeffs[1]) * link_area
         drag_area += max(0.0, Float64(coeffs[2])) * link_area
     end

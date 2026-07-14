@@ -1155,6 +1155,33 @@ end
     )), "ctx")
 end
 
+@testset "Speed-event tolerance tables" begin
+    ttbl = Dict(
+        "tolerances_full" => Dict(
+            "peri" => Dict("max_abs_km" => 2.0, "max_nmae" => 0.04, "max_rmse_km" => 1.0),
+            "apo" => Dict("max_abs_km" => 184.0, "max_nmae" => 0.30),
+            "apo_speed" => Dict("max_abs_km" => 0.012, "max_nmae" => 0.80, "max_rmse_km" => 0.008)
+        )
+    )
+    tmap = TV._parse_tolerances(ttbl, "tolerances_full", ["peri", "apo"], "ctx")
+    # Explicit speed table is parsed alongside its base event...
+    @test tmap["apo_speed"].max_abs_km == 0.012
+    @test tmap["apo_speed"].max_nmae == 0.80
+    @test tmap["apo_speed"].max_rmse_km == 0.008
+    # ...while an absent one is simply not present (evaluation falls back to base).
+    @test !haskey(tmap, "peri_speed")
+    @test tmap["peri"].max_abs_km == 2.0
+    @test tmap["apo"].max_rmse_km == Inf
+
+    # A malformed explicit speed table still errors loudly.
+    bad = Dict("tolerances_full" => Dict(
+        "peri" => Dict("max_abs_km" => 2.0, "max_nmae" => 0.04),
+        "apo" => Dict("max_abs_km" => 184.0, "max_nmae" => 0.30),
+        "peri_speed" => Dict("max_abs_km" => 0.010)
+    ))
+    @test_throws ArgumentError TV._parse_tolerances(bad, "tolerances_full", ["peri", "apo"], "ctx")
+end
+
 @testset "Tabulated flight atmosphere (certification mode)" begin
     # parse: model name validation and key coupling
     @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(

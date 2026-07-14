@@ -445,16 +445,26 @@ function _parse_units(tbl, events::Vector{String}, context::String)::Tuple{Strin
     return x_units, y_units
 end
 
+function _parse_event_tolerance(ttbl, event::String, context::String)::EventTolerance
+    etbl = _require_table(ttbl, event, context)
+    return (
+        max_abs_km=_require_float(etbl, "max_abs_km", "$context.$event"),
+        max_nmae=_require_float(etbl, "max_nmae", "$context.$event"),
+        max_rmse_km=_optional_float(etbl, "max_rmse_km", Inf)
+    )
+end
+
 function _parse_tolerances(tbl, key::String, events::Vector{String}, context::String)::Dict{String, EventTolerance}
     ttbl = _require_table(tbl, key, context)
     out = Dict{String, EventTolerance}()
     for event in events
-        etbl = _require_table(ttbl, event, "$context.$key")
-        out[event] = (
-            max_abs_km=_require_float(etbl, "max_abs_km", "$context.$key.$event"),
-            max_nmae=_require_float(etbl, "max_nmae", "$context.$key.$event"),
-            max_rmse_km=_optional_float(etbl, "max_rmse_km", Inf)
-        )
+        out[event] = _parse_event_tolerance(ttbl, event, "$context.$key")
+        # Derived speed channels ("peri_speed"/"apo_speed") inherit the base
+        # event's tolerances unless an explicit table is given (limits in km/s).
+        speed_event = "$(event)_speed"
+        if haskey(ttbl, speed_event)
+            out[speed_event] = _parse_event_tolerance(ttbl, speed_event, "$context.$key")
+        end
     end
     return out
 end

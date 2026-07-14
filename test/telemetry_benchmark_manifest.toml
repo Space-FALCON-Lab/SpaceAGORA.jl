@@ -303,14 +303,17 @@ nbody_bodies = ["sun", "moon"]
 EI_km = 300.0
 
 [scenarios.atmosphere_truth]
-assumption_id = "earth_gmat_gram_deterministic_v1"
+assumption_id = "earth_gmat_gram_deterministic_v2"
 atmosphere_model = "GRAM"
 atmosphere_dataset = "MERRA2 All Mean"
 space_weather_model = "EarthGRAM MERRA2 climatology (deterministic)"
 solar_flux_model = "EarthGRAM/MERRA2 epoch-fixed defaults"
 gram_seed = 1001
 gram_perturbation_scales = [0.0, 0.0, 0.0, 0.0]
-gram_offline_surrogate = "auto"
+# "off" (not "auto"): the shipped Earth offline surrogate is a frozen-epoch grid
+# capped at 300 km that returns zero density above it; a missing native library
+# must fail loudly rather than silently degrade the benchmark.
+gram_offline_surrogate = "off"
 gram_static_grid = false
 gram_track_cache = false
 gram_global_lock = "on"
@@ -322,13 +325,17 @@ fit_cd_scale = false
 fit_cr = false
 fit_bias = false
 
+# Epoch of the GMAT reference itself: the truth file's first
+# DefaultSC.A1ModJulian row (26804.708739) is 2014-05-27T05:00:00 UTC.
+# The previous value here (2014-05-19T14:07:32) was inherited from the VEX
+# scenario and misplaced Sun/Moon geometry by 7.6 days.
 [scenarios.initial_time]
 year = 2014
 month = 5
-day = 19
-hour = 14
-minute = 7
-second = 32.0
+day = 27
+hour = 5
+minute = 0
+second = 0.0
 
 [scenarios.telemetry_columns]
 time = "DefaultSC.ElapsedSecs"
@@ -365,12 +372,28 @@ max_nmae = 0.35
 max_abs_km = 2500.0
 max_nmae = 1.50
 
+# Recalibrated at the corrected 2014-05-27 epoch: with the Moon in the right
+# place the periapsis series tracks the GMAT reference ~26x tighter, so the
+# peri gate tightens accordingly (limits ~4x the observed full-run errors).
 [scenarios.tolerances_full.peri]
-max_abs_km = 17.0
-max_nmae = 0.35
-max_rmse_km = 9.0
+max_abs_km = 2.0
+max_nmae = 0.04
+max_rmse_km = 1.0
 
 [scenarios.tolerances_full.apo]
 max_abs_km = 184.562
-max_nmae = 0.60
+max_nmae = 0.30
 max_rmse_km = 92.728
+
+# Speed events would otherwise inherit the (now tight) altitude blocks above;
+# these limits are km/s. The apo-speed nmae normalizes over a nearly flat
+# truth channel, hence the larger relative allowance.
+[scenarios.tolerances_full.peri_speed]
+max_abs_km = 0.010
+max_nmae = 0.25
+max_rmse_km = 0.006
+
+[scenarios.tolerances_full.apo_speed]
+max_abs_km = 0.012
+max_nmae = 0.80
+max_rmse_km = 0.008

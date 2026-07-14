@@ -10,33 +10,49 @@ function _orbit_rows_errors(
     tele_apo = _load_telemetry_curve(cfg.telemetry_apo_path, max_points)
     peri_bias = get(bias_by_event, "peri", 0.0)
     apo_bias = get(bias_by_event, "apo", 0.0)
-    peri_step = length(tele_peri.orbit) >= 2 ? median(diff(tele_peri.orbit)) : 1.0
-    apo_step = length(tele_apo.orbit) >= 2 ? median(diff(tele_apo.orbit)) : 1.0
-    peri_sim_axis = tele_peri.orbit[1] .+ peri_step .* collect(0:(length(extrema.peri.altitude)-1))
-    apo_sim_axis = tele_apo.orbit[1] .+ apo_step .* collect(0:(length(extrema.apo.altitude)-1))
+    # Sim apsis events occur once per orbit. With a known epoch orbit number the
+    # axis is anchored there with unit step and scoring is masked to the span the
+    # simulation actually reached; the legacy fallback stretches events across the
+    # telemetry sampling grid (median step) and clamp-scores beyond coverage.
+    mask_to_sim = cfg.epoch_orbit_offset !== nothing
+    if mask_to_sim
+        peri_sim_axis = cfg.epoch_orbit_offset .+ collect(0.0:(length(extrema.peri.altitude) - 1))
+        apo_sim_axis = cfg.epoch_orbit_offset .+ collect(0.0:(length(extrema.apo.altitude) - 1))
+    else
+        peri_step = length(tele_peri.orbit) >= 2 ? median(diff(tele_peri.orbit)) : 1.0
+        apo_step = length(tele_apo.orbit) >= 2 ? median(diff(tele_apo.orbit)) : 1.0
+        peri_sim_axis = tele_peri.orbit[1] .+ peri_step .* collect(0:(length(extrema.peri.altitude)-1))
+        apo_sim_axis = tele_apo.orbit[1] .+ apo_step .* collect(0:(length(extrema.apo.altitude)-1))
+    end
     peri_summary, peri_errors = _compare_orbit_curve(
         cfg.name,
         "peri",
         tele_peri.orbit,
         tele_peri.altitude,
-        extrema.peri.altitude .+ peri_bias;
-        sim_axis=peri_sim_axis
+        extrema.peri.altitude;
+        sim_axis=peri_sim_axis,
+        bias=peri_bias,
+        mask_to_sim_span=mask_to_sim
     )
     apo_summary, apo_errors = _compare_orbit_curve(
         cfg.name,
         "apo",
         tele_apo.orbit,
         tele_apo.altitude,
-        extrema.apo.altitude .+ apo_bias;
-        sim_axis=apo_sim_axis
+        extrema.apo.altitude;
+        sim_axis=apo_sim_axis,
+        bias=apo_bias,
+        mask_to_sim_span=mask_to_sim
     )
     if length(extrema.apo.altitude) >= 3
+        burn_orbits = isempty(cfg.maneuver_orbit_numbers_campaign) ?
+            cfg.maneuver_orbit_numbers : cfg.maneuver_orbit_numbers_campaign
         apo_summary = merge(apo_summary, _apo_decay_diagnostic(
             tele_apo.orbit,
             tele_apo.altitude,
             apo_sim_axis,
             extrema.apo.altitude .+ apo_bias,
-            Float64.(cfg.maneuver_orbit_numbers)
+            Float64.(burn_orbits)
         ))
     end
     return [peri_summary, apo_summary], [peri_errors, apo_errors]

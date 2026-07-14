@@ -24,6 +24,10 @@ ta_deg = 175.0
 # NAV-solution osculating elements are referenced to the Mars mean equator
 # (areocentric), not J2000: matched against m01_ab_v2.bsp to <=0.05 deg.
 element_frame = "body_equator_inertial"
+# The telemetry truth product numbers orbits from insertion (2001-10-24); the
+# scenario epoch sits at campaign orbit ~21 (kernel periapsis #17 occurs 16 min
+# before the epoch, so the first simulated periapsis is campaign orbit 21).
+epoch_orbit_offset = 21.0
 gravity_model = "inverse_squared"
 gravity_harmonics_degree = 20
 gravity_harmonics_order = 20
@@ -37,8 +41,16 @@ orbit_altitude_mode = "true"
 EI_km = 250.0
 
 [scenarios.maneuvers]
+# orbit_numbers use the flight campaign's numbering (from orbit insertion), the
+# same origin as the telemetry truth files — verified by aligning the NAV-kernel
+# periapsis-altitude jumps against this burn list. The scenario epoch sits at
+# campaign orbit ~21 and the replay fires at the Nth apoapsis after the epoch,
+# so orbit_number_offset converts to epoch-relative numbering; burns before the
+# epoch (the walk-in, orbits 7-16) are already in the initial condition and are
+# dropped by the offset filter instead of being applied a second time.
 orbit_numbers = [7, 10, 12, 14, 16, 25, 32, 45, 49, 53, 66, 74, 88, 91, 99, 105, 129, 146, 179, 197, 213, 229, 241, 257, 270, 282, 295, 306, 318, 330]
 delta_v_mps = [-0.549, -0.549, -0.301, -0.151, -0.303, 0.145, -0.151, -0.099, -0.099, -0.2, -0.2, 0.297, -0.149, -0.149, -0.147, 0.144, 0.144, 1.0, 0.844, 0.6, 0.844, 0.6, 0.6, 1.2, 1.0, 1.2, 1.2, 1.0, 1.0, 1.2]
+orbit_number_offset = 19
 thrust_n = 4.0
 isp_s = 220.0
 guidance_rate_s = 30.0

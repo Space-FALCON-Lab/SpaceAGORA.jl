@@ -23,6 +23,9 @@ function get_impact_callback(num_sats::Int)
                 if callback_verbose(integrator)
                     println("All satellites have impacted. Stopping simulation.")
                 end
+                # Terminated retcode is shared with the orbit-count stop; the cause
+                # matters when reading long-mission studies, so always say which.
+                println("termination_cause=impact sat=$idx t_s=$(integrator.t)")
                 terminate!(integrator)
             end
         end
@@ -67,6 +70,7 @@ function get_orbit_end_callback(num_sats::Int)
                 if callback_verbose(integrator)
                     println("Target orbit count reached for all active satellites. Stopping simulation.")
                 end
+                println("termination_cause=orbit_count sat=$idx orbits=$completed_orbits t_s=$(integrator.t)")
                 if applicable(terminate!, integrator)
                     terminate!(integrator)
                 end

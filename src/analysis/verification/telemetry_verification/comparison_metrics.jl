@@ -100,11 +100,27 @@ function _compare_orbit_curve(
     telemetry_axis::Vector{Float64},
     telemetry_values::Vector{Float64},
     sim_values::Vector{Float64};
-    sim_axis::Union{Nothing, Vector{Float64}}=nothing
+    sim_axis::Union{Nothing, Vector{Float64}}=nothing,
+    bias::Float64=0.0,
+    mask_to_sim_span::Bool=false
 )
     n_tel = length(telemetry_values)
     n_sim = length(sim_values)
     n_tel == 0 && error("Telemetry series for $scenario/$event is empty.")
+
+    # Scoring beyond the simulated span compares telemetry against the clamped
+    # final sim value — accumulation bookkeeping, not trajectory error. When
+    # masking is requested, only telemetry points inside the simulated span
+    # (plus half an orbit of grace) are scored; coverage reports the masked
+    # fraction of the full telemetry series.
+    tel_axis_used = telemetry_axis
+    tel_values_used = telemetry_values
+    if mask_to_sim_span && sim_axis !== nothing && n_sim > 0
+        sel = (telemetry_axis .>= (sim_axis[1] - 0.5)) .& (telemetry_axis .<= (sim_axis[end] + 0.5))
+        tel_axis_used = telemetry_axis[sel]
+        tel_values_used = telemetry_values[sel]
+    end
+    n_compared = length(tel_values_used)
 
     if n_sim == 0
         return (
@@ -130,31 +146,62 @@ function _compare_orbit_curve(
             telemetry_axis=Float64[],
             telemetry_value_km=Float64[],
             sim_interp_value_km=Float64[],
+            sim_raw_interp_value_km=Float64[],
             error_km=Float64[]
         )
     end
 
-    sim_interp = if sim_axis === nothing
-        u_tel = _normalized_axis(n_tel)
+    if n_compared == 0
+        return (
+            scenario=scenario,
+            event=event,
+            n_telemetry=n_tel,
+            n_sim=n_sim,
+            coverage=0.0,
+            mae_km=Inf,
+            rmse_km=Inf,
+            max_abs_km=Inf,
+            p95_abs_km=Inf,
+            bias_km=Inf,
+            nmae=Inf,
+            nrmse=Inf,
+            _DECAY_DIAGNOSTIC_EMPTY...,
+            telemetry_axis_start=telemetry_axis[1],
+            telemetry_axis_end=telemetry_axis[end]
+        ), DataFrame(
+            scenario=String[],
+            event=String[],
+            idx=Int[],
+            telemetry_axis=Float64[],
+            telemetry_value_km=Float64[],
+            sim_interp_value_km=Float64[],
+            sim_raw_interp_value_km=Float64[],
+            error_km=Float64[]
+        )
+    end
+
+    sim_raw_interp = if sim_axis === nothing
+        u_tel = _normalized_axis(n_compared)
         u_sim = _normalized_axis(n_sim)
         _interp_linear(u_sim, sim_values, u_tel)
     else
         length(sim_axis) == n_sim || throw(ArgumentError(
             "sim_axis length ($(length(sim_axis))) must match sim_values length ($n_sim) for $scenario/$event"
         ))
-        _interp_linear(sim_axis, sim_values, telemetry_axis)
+        _interp_linear(sim_axis, sim_values, tel_axis_used)
     end
+    sim_interp = sim_raw_interp .+ bias
 
-    err = sim_interp .- telemetry_values
+    err = sim_interp .- tel_values_used
     abs_err = abs.(err)
-    tel_range = max(maximum(telemetry_values) - minimum(telemetry_values), 1e-9)
+    tel_range = max(maximum(tel_values_used) - minimum(tel_values_used), 1e-9)
 
     return (
         scenario=scenario,
         event=event,
         n_telemetry=n_tel,
         n_sim=n_sim,
-        coverage=min(n_tel, n_sim) / n_tel,
+        coverage=mask_to_sim_span ? n_compared / n_tel : min(n_tel, n_sim) / n_tel,
         mae_km=mean(abs_err),
         rmse_km=sqrt(mean(err .^ 2)),
         max_abs_km=maximum(abs_err),
@@ -166,12 +213,13 @@ function _compare_orbit_curve(
         telemetry_axis_start=telemetry_axis[1],
         telemetry_axis_end=telemetry_axis[end]
     ), DataFrame(
-        scenario=fill(scenario, n_tel),
-        event=fill(event, n_tel),
-        idx=collect(1:n_tel),
-        telemetry_axis=telemetry_axis,
-        telemetry_value_km=telemetry_values,
+        scenario=fill(scenario, n_compared),
+        event=fill(event, n_compared),
+        idx=collect(1:n_compared),
+        telemetry_axis=tel_axis_used,
+        telemetry_value_km=tel_values_used,
         sim_interp_value_km=sim_interp,
+        sim_raw_interp_value_km=sim_raw_interp,
         error_km=err
     )
 end
@@ -212,6 +260,7 @@ function _compare_time_series(
             telemetry_axis=Float64[],
             telemetry_value_km=Float64[],
             sim_interp_value_km=Float64[],
+            sim_raw_interp_value_km=Float64[],
             error_km=Float64[]
         )
     end
@@ -244,6 +293,7 @@ function _compare_time_series(
         telemetry_axis=telemetry_time,
         telemetry_value_km=telemetry_values,
         sim_interp_value_km=sim_interp,
+        sim_raw_interp_value_km=sim_interp,
         error_km=err
     )
 end

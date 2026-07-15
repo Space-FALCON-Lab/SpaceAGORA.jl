@@ -908,9 +908,9 @@ end
     @test Δeps2 < -2e3
 end
 
-include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
-include(joinpath(REPO_ROOT, "test", "coverage_runtime_boundary_probes.jl"))
-include(joinpath(REPO_ROOT, "test", "coverage_targeted_90_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "probes", "coverage_parallel_telemetry_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "probes", "coverage_runtime_boundary_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "probes", "coverage_targeted_90_probes.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "e_edg_strategy_parity_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "t_edg_strategy_parity_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "mission", "aerobraking_policy_selector_stub_tests.jl"))

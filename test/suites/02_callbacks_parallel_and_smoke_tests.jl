@@ -895,7 +895,7 @@ end
     if Base.JLOptions().code_coverage == 0
         @test true
     else
-        probe_script = joinpath(REPO_ROOT, "test", "coverage_threaded_probes.jl")
+        probe_script = joinpath(REPO_ROOT, "test", "probes", "coverage_threaded_probes.jl")
         cmd = `$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(REPO_ROOT) --code-coverage=user --threads=2 $(probe_script)`
         cmd = addenv(
             cmd,

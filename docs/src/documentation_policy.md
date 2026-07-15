@@ -71,7 +71,7 @@ Examples already in the repo:
 
 - assets are anchored to `data/assets_manifest.toml`
 - public API docs are anchored to `docs/public_api_symbols.jl`
-- Wave 5 docs are anchored by `test/ci_hpc_extensibility_docs_gate.jl`
+- Wave 5 docs are anchored by `test/gates/ci_hpc_extensibility_docs_gate.jl`
 - terminal commands in user docs should use cross-platform entrypoints or
   provide shell-specific variants where syntax differs
 
@@ -90,8 +90,8 @@ Before merge to `main`, the documentation release gate is:
 
 ```text
 julia --project=. docs/make.jl
-julia --project=. test/ci_public_api_surface_gate.jl
-julia --project=. test/ci_hpc_extensibility_docs_gate.jl
+julia --project=. test/gates/ci_public_api_surface_gate.jl
+julia --project=. test/gates/ci_hpc_extensibility_docs_gate.jl
 ```
 
 These are treated as release blockers for the documentation surface.

@@ -24,8 +24,6 @@ on:
       - "data/Gravity_harmonics_data/**"
       - "test/telemetry_benchmark_manifest.toml"
       - "test/stress/**"
-      - "test/ci_flake_guard.jl"
-      - "test/ci_nightly_montecarlo_stress.jl"
       - "benchmarks/studies/telemetry_orbit_accuracy_study.jl"
       - "Project.toml"
       - "Manifest.toml"
@@ -86,7 +84,7 @@ jobs:
         run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
 
       - name: Coverage quality gate
-        run: julia --startup-file=no --project=. test/ci_coverage_quality_gate.jl
+        run: julia --startup-file=no --project=. test/gates/ci_coverage_quality_gate.jl
 
       - name: SpaceAGORACalibration tests with coverage
         run: julia --startup-file=no --project=. --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
@@ -102,10 +100,10 @@ jobs:
         env:
           SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
           SPACEAGORA_BASE_REF: ${{ github.base_ref }}
-        run: julia --startup-file=no --project=. test/ci_ai_review_artifact_gate.jl
+        run: julia --startup-file=no --project=. test/gates/ci_ai_review_artifact_gate.jl
 
       - name: Threaded smoke stress
-        run: julia --startup-file=no --depwarn=error --project=. test/ci_threaded_smoke.jl
+        run: julia --startup-file=no --depwarn=error --project=. test/smoke/ci_threaded_smoke.jl
 
       - name: Example regression stress
         run: julia --startup-file=no --depwarn=error --project=. test/integration/examples/runtests.jl

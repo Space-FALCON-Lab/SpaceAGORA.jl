@@ -43,8 +43,8 @@ This contract defines canonical ownership for the topology cleanup that answers 
    documentation.
 
 ## Enforcement Gates
-1. `test/ci_no_src_benchmarks_root_gate.jl`
-2. `test/ci_no_dynamics_models_gate.jl`
-3. `test/ci_vehicle_structure_boundary_gate.jl`
-4. `test/ci_canonical_path_contract_gate.jl`
-5. `test/ci_architecture_contract_gate.jl`
+1. `test/gates/ci_no_src_benchmarks_root_gate.jl`
+2. `test/gates/ci_no_dynamics_models_gate.jl`
+3. `test/gates/ci_vehicle_structure_boundary_gate.jl`
+4. `test/gates/ci_canonical_path_contract_gate.jl`
+5. `test/gates/ci_architecture_contract_gate.jl`

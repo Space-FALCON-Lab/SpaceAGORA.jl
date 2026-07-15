@@ -14,6 +14,8 @@ on:
       - "src/simulation/**"
       - "src/core/**"
       - "src/gnc/**"
+      - "src/vehicle/**"
+      - "src/mission/**"
       - "src/parallel/**"
       - "src/analysis/verification/**"
       - "ext/**"
@@ -26,6 +28,7 @@ on:
       - "test/ci_nightly_montecarlo_stress.jl"
       - "benchmarks/studies/telemetry_orbit_accuracy_study.jl"
       - "Project.toml"
+      - "Manifest.toml"
       - ".github/workflows/nightly-stress.yml"
   workflow_dispatch:
 

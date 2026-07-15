@@ -11,6 +11,8 @@
 include(joinpath(@__DIR__, "common.jl"))
 using Plots
 
+Plots.default(left_margin=10Plots.mm, bottom_margin=14Plots.mm)
+
 const T0 = 0.0
 const TEND = 3600.0
 

@@ -17,6 +17,7 @@ output/*
 GRAMpy/*
 *.pdf
 *.csv
+*.png
 .DS_Store
 *.cov
 docs/build/

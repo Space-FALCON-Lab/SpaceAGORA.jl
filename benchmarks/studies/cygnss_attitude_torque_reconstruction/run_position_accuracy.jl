@@ -13,6 +13,8 @@
 include(joinpath(@__DIR__, "common.jl"))
 using Plots
 
+Plots.default(left_margin=10Plots.mm, bottom_margin=8Plots.mm)
+
 const T0 = 0.0
 const TEND = 3600.0
 const HARMONICS_FILE = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")

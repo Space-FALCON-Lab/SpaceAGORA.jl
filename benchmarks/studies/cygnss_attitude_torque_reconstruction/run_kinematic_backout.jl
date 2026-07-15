@@ -14,6 +14,8 @@ include(joinpath(@__DIR__, "common.jl"))
 using Plots
 using Printf
 
+Plots.default(left_margin=10Plots.mm, bottom_margin=8Plots.mm)
+
 const T_CAL = 0.0
 const T_END = 3600.0
 

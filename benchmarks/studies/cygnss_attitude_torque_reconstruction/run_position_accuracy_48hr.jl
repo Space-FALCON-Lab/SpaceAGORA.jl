@@ -343,6 +343,8 @@ println("full summary written to: $(joinpath(STUDY_DIR, "data", "cygnss_48hr_ref
 
 using Plots
 
+Plots.default(left_margin=10Plots.mm, bottom_margin=8Plots.mm)
+
 function _extract_position_error_series(errors::DataFrame, scenario_name::String)
     rows = errors[errors.scenario .== scenario_name, :]
     xrow = sort(rows[rows.event .== "state_x_time", :], :idx)

@@ -15,6 +15,16 @@ end
     return values
 end
 
+"""
+    AerobrakingEnergyDepletionConfig
+
+Configuration for the energy-depletion aerobraking guidance strategy: the
+available guidance modes and max-energy submodes, the heat-load switch
+solver, the solar-panel links under angle-of-attack control, the target
+apoapsis, the commanded angle-of-attack bounds, the heat-rate / heat-load /
+structural-load limits, and the planning-horizon, switch-recompute, and
+targeting-certification settings.
+"""
 struct AerobrakingEnergyDepletionConfig
     guidance_modes::Tuple{Vararg{Symbol}}
     max_energy_submodes::Tuple{Vararg{Symbol}}
@@ -94,6 +104,13 @@ function AerobrakingEnergyDepletionConfig(;
     )
 end
 
+"""
+    AerobrakingEnergyDepletionState
+
+Per-spacecraft mutable state for energy-depletion guidance: the selected
+mode, targeting/bracketing activity flags and counters, and the target and
+bracket specific-energy values (J/kg) maintained across guidance calls.
+"""
 mutable struct AerobrakingEnergyDepletionState
     selected_mode::Vector{Symbol}
     targeting_active::Vector{Bool}
@@ -142,6 +159,15 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
     )
 end
 
+"""
+    AerobrakingEnergyDepletionGuidanceModel
+
+Guidance model implementing the energy-depletion aerobraking strategy:
+brackets the spacecraft's target specific energy each pass and selects the
+guidance mode subject to the configured heat and structural limits. Holds an
+[`AerobrakingEnergyDepletionConfig`](@ref) and its mutable
+[`AerobrakingEnergyDepletionState`](@ref).
+"""
 struct AerobrakingEnergyDepletionGuidanceModel <: AbstractGuidanceModel
     config::AerobrakingEnergyDepletionConfig
     state::AerobrakingEnergyDepletionState

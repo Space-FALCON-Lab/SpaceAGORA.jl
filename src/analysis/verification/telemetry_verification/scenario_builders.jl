@@ -166,9 +166,64 @@ function _scenario_dynamic_effectors(
 end
 
 @inline function _scenario_density_model(cfg::AbstractScenarioConfig)
-    return cfg.drag_enabled ?
-        _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth) :
-        SimulationModel.NoAtmosphereModel()
+    cfg.drag_enabled || return SimulationModel.NoAtmosphereModel()
+    if cfg.atmosphere_truth.atmosphere_model == "tabulated_flight"
+        return _make_tabulated_flight_density_model(cfg.initial_time, cfg.atmosphere_truth)
+    end
+    return _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth)
+end
+
+# Flight-measured density table (see build script in the lab notes): one row
+# per (pass, leg, 1 km altitude bin) with mean density, its standard error,
+# and the pass periapsis UTC. Loaded into per-pass in/out profiles keyed by
+# elapsed time from the scenario epoch; nearest pass answers each query, so
+# archive gaps fall back to the neighboring pass (counted and logged here).
+function _make_tabulated_flight_density_model(
+    initial_time::InitialTime,
+    truth::AtmosphereTruthConfig
+)
+    path = truth.tabulated_flight_file
+    isfile(path) || throw(ArgumentError("tabulated_flight_file not found: $path"))
+    tbl = DataFrame(Arrow.Table(path))
+    for col in ("P", "leg", "alt_km", "rho_kgm3", "sigma_kgm3", "t_peri_utc")
+        hasproperty(tbl, Symbol(col)) || throw(ArgumentError("tabulated_flight_file missing column '$col'"))
+    end
+    epoch = DateTime(
+        Int(initial_time.year), Int(initial_time.month), Int(initial_time.day),
+        Int(initial_time.hour), Int(initial_time.minute)
+    ) + Millisecond(round(Int, 1000 * Float64(initial_time.second)))
+    pass_ids = sort(unique(Int.(tbl.P)))
+    peri_el = Float64[]
+    alt_pairs = NTuple{2, Vector{Float64}}[]
+    log_pairs = NTuple{2, Vector{Float64}}[]
+    sig_pairs = NTuple{2, Vector{Float64}}[]
+    for pid in pass_ids
+        sub = tbl[Int.(tbl.P) .== pid, :]
+        t_peri = DateTime(first(sub.t_peri_utc)[1:19])
+        push!(peri_el, Float64(Dates.value(t_peri - epoch)) / 1000.0)
+        alts = (Float64[], Float64[]); logs = (Float64[], Float64[]); sigs = (Float64[], Float64[])
+        for r in eachrow(sub)
+            li = r.leg == "in" ? 1 : 2
+            rho = Float64(r.rho_kgm3)
+            rho > 0.0 || continue
+            push!(alts[li], Float64(r.alt_km) * 1000.0)
+            push!(logs[li], log(rho))
+            push!(sigs[li], Float64(r.sigma_kgm3) / rho)   # sigma of log-density
+        end
+        for li in (1, 2)
+            ord = sortperm(alts[li])
+            permute!(alts[li], ord); permute!(logs[li], ord); permute!(sigs[li], ord)
+        end
+        push!(alt_pairs, alts); push!(log_pairs, logs); push!(sig_pairs, sigs)
+    end
+    ord = sortperm(peri_el)
+    n_gaps = isempty(pass_ids) ? 0 : (maximum(pass_ids) - minimum(pass_ids) + 1 - length(pass_ids))
+    println("tabulated_flight: $(length(pass_ids)) passes, $(nrow(tbl)) bins, " *
+            "$(n_gaps) archive gaps (nearest-pass fallback), sigma_scale=$(truth.tabulated_flight_sigma)")
+    return SimulationModel.TabulatedFlightAtmosphereModel(
+        peri_el[ord], alt_pairs[ord], log_pairs[ord], sig_pairs[ord],
+        truth.tabulated_flight_sigma, 3.4, 188.92
+    )
 end
 
 Base.@kwdef struct _GRAMOfflineSurrogateFallbackBase
@@ -308,9 +363,20 @@ function _with_campaign_maneuvers(args::SimulationConfiguration, cfg::OrbitEvent
         stop_burn_time=fill(-1.0, n_sats),
         Isp=fill(cfg.maneuver_isp_s, n_sats)
     )
+    # Diagnostic replay scaling: convert flight apoapsis altitudes to radii
+    # with the equatorial radius; the flight/sim RATIO is insensitive to the
+    # (identical) altitude-to-radius convention at the <0.2% level.
+    flight_apo_radius_m = if cfg.maneuver_replay_scale_mode == "flight_apoapsis_ratio"
+        planet = args.environment_model.planet
+        println("maneuver_replay_scale context=$(cfg.name) mode=flight_apoapsis_ratio burns=$(length(cfg.maneuver_flight_apoapsis_alt_m))")
+        Float64[alt + planet.Rp_e for alt in cfg.maneuver_flight_apoapsis_alt_m]
+    else
+        Float64[]
+    end
     guidance_effector = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
         maneuver_orbit_number=cfg.maneuver_orbit_numbers,
-        maneuver_Δv=cfg.maneuver_delta_v_mps
+        maneuver_Δv=cfg.maneuver_delta_v_mps,
+        maneuver_flight_apoapsis_radius_m=flight_apo_radius_m
     )
     return SimulationConfiguration(
         file_paths=args.file_paths,
@@ -400,13 +466,22 @@ function _initial_condition_in_j2000(
     )
 end
 
-function _make_orbit_args(
+# Initial condition for an orbit-events scenario. The exact NAV-kernel Cartesian
+# state (initial_state_j2000_m) takes precedence when the manifest provides it;
+# the published osculating elements are then documentation only. Otherwise the
+# elements are used, converted to J2000 axes if flagged body_equator_inertial.
+function _scenario_initial_condition(
     cfg::OrbitEventsScenarioConfig,
-    target_orbits::Int;
-    cd_scale::Float64=1.0,
-    cr_override::Union{Nothing, Float64}=nothing
-)::SimulationConfiguration
-    planet = _planet_from_name(cfg.planet_name)
+    planet
+)::SimulationModel.AbstractInitialCondition
+    state = cfg.initial_state_j2000_m
+    if state !== nothing
+        println("initial_state_j2000: kernel Cartesian override active context=$(cfg.name)")
+        return CartesianInitialCondition(
+            SVector{3, Float64}(state[1], state[2], state[3]),
+            SVector{3, Float64}(state[4], state[5], state[6])
+        )
+    end
     rp_m = planet.Rp_e + cfg.rp_altitude_m
     ic_elements = InitialCondition(
         ra=cfg.ra_m,
@@ -416,7 +491,18 @@ function _make_orbit_args(
         Ω=cfg.raan_deg,
         ν=cfg.ta_deg
     )
-    ic = _initial_condition_in_j2000(ic_elements, planet, cfg.initial_time, cfg.element_frame)
+    return _initial_condition_in_j2000(ic_elements, planet, cfg.initial_time, cfg.element_frame)
+end
+
+function _make_orbit_args(
+    cfg::OrbitEventsScenarioConfig,
+    target_orbits::Int;
+    cd_scale::Float64=1.0,
+    cr_override::Union{Nothing, Float64}=nothing
+)::SimulationConfiguration
+    planet = _planet_from_name(cfg.planet_name)
+    rp_m = planet.Rp_e + cfg.rp_altitude_m
+    ic = _scenario_initial_condition(cfg, planet)
 
     spacecraft = _make_spacecraft(cfg.spacecraft, ic)
     dynamic_effectors = _scenario_dynamic_effectors(

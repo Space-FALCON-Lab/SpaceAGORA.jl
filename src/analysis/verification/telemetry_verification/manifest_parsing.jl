@@ -193,6 +193,8 @@ function _parse_maneuver_config(tbl, context::String)
             orbit_numbers=Int64[],
             orbit_numbers_campaign=Int64[],
             delta_v_mps=Float64[],
+            replay_scale_mode="delta_v",
+            flight_apoapsis_alt_m=Float64[],
             thrust_n=0.0,
             isp_s=0.0,
             guidance_rate_s=30.0,
@@ -219,6 +221,27 @@ function _parse_maneuver_config(tbl, context::String)
     # The campaign-numbered list (including pre-epoch burns) is kept for
     # diagnostics that operate on campaign orbit axes — the truth curve carries
     # jumps at every campaign burn regardless of what the replay fires.
+    # Diagnostic replay scaling (see types.jl): flight apoapsis altitudes are
+    # required per burn in "flight_apoapsis_ratio" mode and follow the same
+    # pre-epoch drop filter as the burns themselves.
+    replay_scale_mode = _optional_str(mtbl, "replay_scale_mode", "delta_v")
+    replay_scale_mode in ("delta_v", "flight_apoapsis_ratio") || throw(ArgumentError(
+        "maneuvers.replay_scale_mode must be \"delta_v\" or \"flight_apoapsis_ratio\" in $context"
+    ))
+    flight_apo_alt_km = _optional_float64_vector(mtbl, "flight_apoapsis_alt_km")
+    if replay_scale_mode == "flight_apoapsis_ratio"
+        length(flight_apo_alt_km) == length(orbit_numbers) || throw(ArgumentError(
+            "maneuvers.flight_apoapsis_alt_km length ($(length(flight_apo_alt_km))) must match maneuvers.orbit_numbers length ($(length(orbit_numbers))) in $context"
+        ))
+        any(v -> !(isfinite(v) && v > 0.0), flight_apo_alt_km) && throw(ArgumentError(
+            "maneuvers.flight_apoapsis_alt_km entries must be positive and finite in $context"
+        ))
+    elseif !isempty(flight_apo_alt_km)
+        throw(ArgumentError(
+            "maneuvers.flight_apoapsis_alt_km requires replay_scale_mode = \"flight_apoapsis_ratio\" in $context"
+        ))
+    end
+
     orbit_numbers_campaign = copy(orbit_numbers)
     if offset > 0
         keep = findall(o -> o - offset >= 1, orbit_numbers)
@@ -228,11 +251,16 @@ function _parse_maneuver_config(tbl, context::String)
         )
         orbit_numbers = Int64[orbit_numbers[i] - offset for i in keep]
         delta_v_mps = delta_v_mps[keep]
+        if !isempty(flight_apo_alt_km)
+            flight_apo_alt_km = flight_apo_alt_km[keep]
+        end
     end
     return (
         orbit_numbers=orbit_numbers,
         orbit_numbers_campaign=orbit_numbers_campaign,
         delta_v_mps=delta_v_mps,
+        replay_scale_mode=replay_scale_mode,
+        flight_apoapsis_alt_m=Float64[v * 1000.0 for v in flight_apo_alt_km],
         thrust_n=_optional_float(mtbl, "thrust_n", 4.0),
         isp_s=_optional_float(mtbl, "isp_s", 220.0),
         guidance_rate_s=_optional_float(mtbl, "guidance_rate_s", 30.0),
@@ -258,6 +286,23 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
     t = _require_table(tbl, "atmosphere_truth", context)
     assumption_id = _optional_str(t, "assumption_id", "gram_default")
     atmosphere_model = _require_str(t, "atmosphere_model", "$context.atmosphere_truth")
+    atmosphere_model in ("GRAM", "tabulated_flight") || throw(ArgumentError(
+        "Unsupported atmosphere_truth.atmosphere_model='$atmosphere_model' in $context; use GRAM|tabulated_flight."
+    ))
+    tabulated_flight_file = _optional_str(t, "tabulated_flight_file", "")
+    tabulated_flight_sigma = _optional_float(t, "tabulated_flight_sigma", 0.0)
+    if atmosphere_model == "tabulated_flight"
+        isempty(tabulated_flight_file) && throw(ArgumentError(
+            "atmosphere_truth.tabulated_flight_file is required when atmosphere_model=\"tabulated_flight\" in $context"
+        ))
+        abs(tabulated_flight_sigma) <= 3.0 || throw(ArgumentError(
+            "atmosphere_truth.tabulated_flight_sigma must be within +-3 in $context"
+        ))
+    elseif !isempty(tabulated_flight_file)
+        throw(ArgumentError(
+            "atmosphere_truth.tabulated_flight_file requires atmosphere_model=\"tabulated_flight\" in $context"
+        ))
+    end
     atmosphere_dataset = _require_str(t, "atmosphere_dataset", "$context.atmosphere_truth")
     space_weather_model = _require_str(t, "space_weather_model", "$context.atmosphere_truth")
     solar_flux_model = _require_str(t, "solar_flux_model", "$context.atmosphere_truth")
@@ -300,6 +345,8 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
         ),
         mars_f107=haskey(t, "mars_f107") ? _optional_float(t, "mars_f107", 0.0) : nothing,
         mars_wind_scales=mars_wind_raw === nothing ? nothing : (mars_wind_raw[1], mars_wind_raw[2]),
+        tabulated_flight_file=tabulated_flight_file,
+        tabulated_flight_sigma=tabulated_flight_sigma,
         mars_mola_heights=haskey(t, "mars_mola_heights") ? _optional_bool(t, "mars_mola_heights", true) : nothing,
         mars_min_max=haskey(t, "mars_min_max") ? _optional_int(t, "mars_min_max", 0) : nothing
     )
@@ -473,6 +520,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 raan_deg=_require_float(tbl, "raan_deg", context),
                 ta_deg=_require_float(tbl, "ta_deg", context),
                 element_frame=_parse_element_frame(_optional_str(tbl, "element_frame", "j2000"), context),
+                initial_state_j2000_m=_optional_float_tuple(tbl, "initial_state_j2000_m", 6, context),
                 epoch_orbit_offset=haskey(tbl, "epoch_orbit_offset") ?
                     _require_float(tbl, "epoch_orbit_offset", context) : nothing,
                 spacecraft=spacecraft,
@@ -490,6 +538,8 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 maneuver_orbit_numbers=maneuver.orbit_numbers,
                 maneuver_orbit_numbers_campaign=maneuver.orbit_numbers_campaign,
                 maneuver_delta_v_mps=maneuver.delta_v_mps,
+                maneuver_replay_scale_mode=maneuver.replay_scale_mode,
+                maneuver_flight_apoapsis_alt_m=maneuver.flight_apoapsis_alt_m,
                 maneuver_thrust_n=maneuver.thrust_n,
                 maneuver_isp_s=maneuver.isp_s,
                 maneuver_guidance_rate_s=maneuver.guidance_rate_s,

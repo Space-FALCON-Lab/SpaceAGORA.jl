@@ -48,6 +48,7 @@ CLAUDE.md
 
 # Binary data files
 *.feather
+!data/telemetry/Odyssey/*.feather
 *.hdf5
 *.arrow
 *.zip

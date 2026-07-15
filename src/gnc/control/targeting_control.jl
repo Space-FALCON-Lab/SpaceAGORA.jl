@@ -1,5 +1,12 @@
 using Roots
 
+"""
+    SolarPanelAngleOfAttackControlModel(; controlled_panel_links=(2, 3))
+
+Control effector that articulates the listed solar-panel links to realize a
+commanded angle of attack during aerobraking passes. Link indices must be
+positive and at least one link is required.
+"""
 struct SolarPanelAngleOfAttackControlModel <: AbstractControlEffectorModel
     controlled_panel_links::Tuple{Vararg{Int}}
 end
@@ -16,6 +23,15 @@ function SolarPanelAngleOfAttackControlModel(; controlled_panel_links=(2, 3))
     return SolarPanelAngleOfAttackControlModel(links)
 end
 
+"""
+    AerobrakingEnergyDepletionControlModel
+
+Control-side companion of the energy-depletion guidance strategy: tracks the
+guidance-selected mode and drives the panel angle-of-attack effector under
+the configured heat and structural limits. Holds the shared
+[`AerobrakingEnergyDepletionConfig`](@ref) / [`AerobrakingEnergyDepletionState`](@ref)
+and a [`SolarPanelAngleOfAttackControlModel`](@ref).
+"""
 struct AerobrakingEnergyDepletionControlModel <: AbstractControlEffectorModel
     config::AerobrakingEnergyDepletionConfig
     state::AerobrakingEnergyDepletionState
@@ -422,8 +438,6 @@ function _edg_targeting_aero_acceleration(
     drag_hat = -vel_hat
     q = env.dynamic_pressure
     controlled = Set{Int}(config.controlled_panel_links)
-    aero_module = getfield(getfield(parentmodule(@__MODULE__), :DynamicEffectors), :AerodynamicEffectors)
-    aero_coeff = getfield(aero_module, :aerodynamic_coefficient_fM)
 
     force_pp = MVector{3, Float64}(0.0, 0.0, 0.0)
     for (idx, link) in pairs(spacecraft.links)
@@ -431,7 +445,7 @@ function _edg_targeting_aero_acceleration(
         area == 0.0 && continue
         link_alpha = link.root ? (pi / 2) :
             (idx in controlled ? alpha : clamp(Float64(link.α), config.min_alpha_rad, config.max_alpha_rad))
-        coeffs = aero_coeff(link, env.temperature, max(env.molecular_speed_ratio, eps(Float64)), link_alpha, Float64(link.β), Float64(link.θ))
+        coeffs = aerodynamic_coefficient_fM(link, env.temperature, max(env.molecular_speed_ratio, eps(Float64)), link_alpha, Float64(link.β), Float64(link.θ))
         cl = Float64(coeffs[1])
         cd = max(0.0, Float64(coeffs[2]))
         force_pp .+= q * area * (cd * drag_hat + cl * lift_hat)

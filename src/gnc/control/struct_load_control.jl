@@ -10,8 +10,6 @@ function _energy_depletion_struct_drag_area(
 )::Float64
     controlled = Set{Int}(controlled_panel_links)
     drag_area = 0.0
-    aero_module = getfield(getfield(parentmodule(@__MODULE__), :DynamicEffectors), :AerodynamicEffectors)
-    aero_coeff = getfield(aero_module, :aerodynamic_coefficient_fM)
 
     for (idx, link) in pairs(spacecraft.links)
         area = max(0.0, Float64(link.ref_area))
@@ -20,7 +18,7 @@ function _energy_depletion_struct_drag_area(
         alpha = idx in controlled ?
             controlled_alpha :
             clamp(Float64(link.α), config.min_alpha_rad, config.max_alpha_rad)
-        coeffs = aero_coeff(link, temperature, speed_ratio, alpha, Float64(link.β), Float64(link.θ))
+        coeffs = aerodynamic_coefficient_fM(link, temperature, speed_ratio, alpha, Float64(link.β), Float64(link.θ))
         drag_area += max(0.0, Float64(coeffs[2])) * area
     end
     return drag_area

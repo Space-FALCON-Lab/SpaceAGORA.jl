@@ -8,6 +8,7 @@ module ControlHooks
     using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
     using ..GuidanceModels: RPOPlan, RPOPlanBuffer
     using ..GravityEffectors: aerobraking_gravity_force_ii
+    using ..AerodynamicEffectors: aerodynamic_coefficient_fM
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector

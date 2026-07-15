@@ -23,6 +23,14 @@ Base.@kwdef struct AtmosphereTruthConfig
     mars_wind_scales::Union{Nothing, NTuple{2, Float64}} = nothing
     mars_mola_heights::Union{Nothing, Bool} = nothing
     mars_min_max::Union{Nothing, Int} = nothing
+    # Flight-measured atmosphere mode: atmosphere_model = "tabulated_flight"
+    # flies the sim on per-pass measured density profiles (see
+    # TabulatedFlightAtmosphereModel). Used by the Odyssey nightly as a
+    # digital-twin regression sentinel (PI decision, 2026-07) and by the
+    # certification envelope; always visible in the summary via the
+    # atmosphere_model column, so rows are never ambiguous about their mode.
+    tabulated_flight_file::String = ""
+    tabulated_flight_sigma::Float64 = 0.0
 end
 
 Base.@kwdef struct CalibrationConfig
@@ -76,6 +84,11 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     raan_deg::Float64
     ta_deg::Float64
     element_frame::Symbol = :j2000
+    # Optional exact J2000 Cartesian state (x, y, z in m; vx, vy, vz in m/s)
+    # relative to the central body at initial_time, e.g. taken directly from the
+    # mission NAV kernel. When present it overrides the element-based initial
+    # condition above (the elements stay in the manifest as documentation).
+    initial_state_j2000_m::Union{Nothing, NTuple{6, Float64}} = nothing
     # Campaign orbit number of the scenario epoch (the truth product's numbering
     # origin may predate the epoch, e.g. counting from orbit insertion). When
     # set, sim apsis events are placed at epoch_orbit_offset + k with unit step
@@ -96,6 +109,12 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     maneuver_orbit_numbers::Vector{Int64} = Int64[]
     maneuver_orbit_numbers_campaign::Vector{Int64} = Int64[]
     maneuver_delta_v_mps::Vector{Float64} = Float64[]
+    # Diagnostic replay scaling: "delta_v" (benchmark default, replay flight
+    # dv verbatim) or "flight_apoapsis_ratio" (scale each burn by flight/sim
+    # apoapsis radius so it delivers the flight's periapsis change; injects
+    # flight truth — diagnostics only, recorded in the summary).
+    maneuver_replay_scale_mode::String = "delta_v"
+    maneuver_flight_apoapsis_alt_m::Vector{Float64} = Float64[]
     maneuver_thrust_n::Float64 = 0.0
     maneuver_isp_s::Float64 = 0.0
     maneuver_guidance_rate_s::Float64 = 30.0

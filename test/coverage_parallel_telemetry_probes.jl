@@ -967,6 +967,99 @@ end
     end
 end
 
+@testset "Kernel Cartesian initial-state override" begin
+    # Optional orbit-events key initial_state_j2000_m = [x, y, z, vx, vy, vz] (SI):
+    # when present the builder must use the exact Cartesian state and bypass the
+    # element-based initial condition; when absent the element path is preserved.
+    oe_scenario = Dict{String, Any}(
+        "name" => "ic_case",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2,
+        "target_orbits_full" => 3,
+        "compare_points_quick" => 2,
+        "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6,
+        "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0,
+        "aop_deg" => 20.0,
+        "raan_deg" => 10.0,
+        "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict(
+            "year" => 2020, "month" => 1, "day" => 1,
+            "hour" => 0, "minute" => 0, "second" => 0.0
+        ),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict(
+            "peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+            "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)
+        ),
+        "tolerances_full" => Dict(
+            "peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+            "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)
+        )
+    )
+    state = (-1.0e6, -4.3e6, -7.3e5, -2371.2, -764.6, -3175.1)
+
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = scenario -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[scenario]))
+        end
+
+        # Absent key: parser leaves the override empty and the builder follows
+        # the element path (j2000 elements pass through unchanged).
+        write_manifest(oe_scenario)
+        cfg_elements = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg_elements isa TV.OrbitEventsScenarioConfig
+        @test cfg_elements.initial_state_j2000_m === nothing
+        planet = TV._planet_from_name("earth")
+        ic_el = TV._scenario_initial_condition(cfg_elements, planet)
+        @test ic_el isa SimulationModel.InitialCondition
+        rp_expected = planet.Rp_e + 120000.0
+        @test isapprox(ic_el.a, (7.1e6 + rp_expected) / 2.0; rtol=1e-12)
+        @test isapprox(ic_el.e, (7.1e6 - rp_expected) / (7.1e6 + rp_expected); rtol=1e-12)
+        @test isapprox(ic_el.ν, deg2rad(170.0); rtol=1e-12)
+
+        # Key present: parser returns the 6-tuple and the builder produces a
+        # CartesianInitialCondition carrying exactly the manifest values.
+        oe_scenario["initial_state_j2000_m"] = collect(state)
+        write_manifest(oe_scenario)
+        cfg_state = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg_state.initial_state_j2000_m == state
+        ic_cart = TV._scenario_initial_condition(cfg_state, planet)
+        @test ic_cart isa SimulationModel.CartesianInitialCondition
+        @test ic_cart.pos == SVector{3, Float64}(state[1], state[2], state[3])
+        @test ic_cart.vel == SVector{3, Float64}(state[4], state[5], state[6])
+
+        # Malformed key: wrong arity is rejected at parse time.
+        oe_scenario["initial_state_j2000_m"] = [1.0, 2.0, 3.0]
+        write_manifest(oe_scenario)
+        @test_throws ArgumentError TV._load_scenarios_from_manifest(manifest_path)
+    end
+
+    # The shipped manifest carries the NAV-kernel state for the odyssey campaign.
+    shipped = TV._load_scenarios_from_manifest(TV.DEFAULT_MANIFEST_PATH)
+    ody = only(filter(s -> s.name == "odyssey", shipped))
+    @test ody.initial_state_j2000_m !== nothing
+    @test length(ody.initial_state_j2000_m) == 6
+end
+
 @testset "Planet-frame transport term uses the body pole" begin
     # planet.ω is the spin vector in planet-fixed axes; the co-rotation term must
     # be applied after rotating into that frame. A point at rest in the rotating
@@ -1060,6 +1153,112 @@ end
     @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
         "orbit_numbers" => [7], "delta_v_mps" => [1.0], "orbit_number_offset" => -1
     )), "ctx")
+end
+
+@testset "Tabulated flight atmosphere (certification mode)" begin
+    # parse: model name validation and key coupling
+    @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(
+        "atmosphere_model" => "bogus", "atmosphere_dataset" => "d",
+        "space_weather_model" => "s", "solar_flux_model" => "f")), "ctx")
+    @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(
+        "atmosphere_model" => "tabulated_flight", "atmosphere_dataset" => "d",
+        "space_weather_model" => "s", "solar_flux_model" => "f")), "ctx")   # missing file
+    @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(
+        "atmosphere_model" => "GRAM", "atmosphere_dataset" => "d",
+        "space_weather_model" => "s", "solar_flux_model" => "f",
+        "tabulated_flight_file" => "x.feather")), "ctx")                    # file without mode
+    cfgt = TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(
+        "atmosphere_model" => "tabulated_flight", "atmosphere_dataset" => "d",
+        "space_weather_model" => "s", "solar_flux_model" => "f",
+        "tabulated_flight_file" => "x.feather", "tabulated_flight_sigma" => -1.0)), "ctx")
+    @test cfgt.atmosphere_model == "tabulated_flight"
+    @test cfgt.tabulated_flight_sigma == -1.0
+
+    # interpolation math: log-linear interior, exponential tails, sigma shift
+    alts = [100.0e3, 110.0e3, 120.0e3]
+    logs = [log(1e-7), log(1e-8), log(1e-9)]     # H = 10 km / ln(10)
+    sigs = [0.1, 0.2, 0.4]
+    m = SimulationModel.TabulatedFlightAtmosphereModel(
+        [0.0], [(alts, alts)], [(logs, logs)], [(sigs, sigs)], 0.0, 3.4, 188.92)
+    rho_mid, T_mid, w = SimulationModel.getDensity(m, 105.0e3, 0.0, 0.0, 10.0, false)
+    @test isapprox(rho_mid, sqrt(1e-7 * 1e-8); rtol=1e-10)                 # geometric mean
+    @test w == SimulationModel.SVector{3, Float64}(0.0, 0.0, 0.0)
+    rho_above, _, _ = SimulationModel.getDensity(m, 130.0e3, 0.0, 0.0, 10.0, false)
+    @test isapprox(rho_above, 1e-10; rtol=1e-6)                            # tail continues H
+    rho_below, _, _ = SimulationModel.getDensity(m, 90.0e3, 0.0, 0.0, 10.0, false)
+    @test isapprox(rho_below, 1e-6; rtol=1e-6)
+    mp = SimulationModel.TabulatedFlightAtmosphereModel(
+        [0.0], [(alts, alts)], [(logs, logs)], [(sigs, sigs)], 1.0, 3.4, 188.92)
+    rho_p, _, _ = SimulationModel.getDensity(mp, 105.0e3, 0.0, 0.0, 10.0, false)
+    @test isapprox(rho_p / rho_mid, exp(0.15); rtol=1e-10)                 # +1 sigma of interp sigma_log
+    # leg selection: before the pass periapsis uses inbound profile
+    logs_out = [log(2e-7), log(2e-8), log(2e-9)]
+    m2 = SimulationModel.TabulatedFlightAtmosphereModel(
+        [100.0], [(alts, alts)], [(logs, logs_out)], [(sigs, sigs)], 0.0, 3.4, 188.92)
+    rin, _, _ = SimulationModel.getDensity(m2, 105.0e3, 0.0, 0.0, 50.0, false)
+    rout, _, _ = SimulationModel.getDensity(m2, 105.0e3, 0.0, 0.0, 150.0, false)
+    @test isapprox(rout / rin, 2.0; rtol=1e-10)
+
+    # noise-inverted top bins: the tail scale height clamps to the physical
+    # range and density still vanishes far above the profile (no constant
+    # blanket along the orbit).
+    logs_inv = [log(1e-7), log(1e-8), log(1.5e-8)]
+    m3 = SimulationModel.TabulatedFlightAtmosphereModel(
+        [0.0], [(alts, alts)], [(logs_inv, logs_inv)], [(sigs, sigs)], 0.0, 3.4, 188.92)
+    rho_top, _, _ = SimulationModel.getDensity(m3, 120.0e3, 0.0, 0.0, 10.0, false)
+    rho_far, _, _ = SimulationModel.getDensity(m3, 400.0e3, 0.0, 0.0, 10.0, false)
+    @test rho_far < rho_top * exp(-(400.0e3 - 120.0e3) / 12000.0) * 1.0001
+    @test rho_far < 1e-17
+end
+
+@testset "Diagnostic replay scaling (flight apoapsis ratio)" begin
+    # Default: mode is delta_v, no flight-apoapsis data.
+    m0 = TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25], "delta_v_mps" => [0.1]
+    )), "ctx")
+    @test m0.replay_scale_mode == "delta_v"
+    @test isempty(m0.flight_apoapsis_alt_m)
+
+    # Diagnostic mode: altitudes parsed (km -> m) and filtered in sync with
+    # the pre-epoch burn drop.
+    m = TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [7, 25, 146],
+        "delta_v_mps" => [-0.5, 0.1, 1.0],
+        "orbit_number_offset" => 19,
+        "replay_scale_mode" => "flight_apoapsis_ratio",
+        "flight_apoapsis_alt_km" => [26000.0, 23000.0, 9000.0]
+    )), "ctx")
+    @test m.replay_scale_mode == "flight_apoapsis_ratio"
+    @test m.orbit_numbers == Int64[6, 127]
+    @test m.flight_apoapsis_alt_m == [23000.0e3, 9000.0e3]
+
+    # Length mismatch, bad values, and data-without-mode all reject.
+    @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25, 146], "delta_v_mps" => [0.1, 1.0],
+        "replay_scale_mode" => "flight_apoapsis_ratio",
+        "flight_apoapsis_alt_km" => [23000.0]
+    )), "ctx")
+    @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25], "delta_v_mps" => [0.1],
+        "replay_scale_mode" => "flight_apoapsis_ratio",
+        "flight_apoapsis_alt_km" => [-1.0]
+    )), "ctx")
+    @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25], "delta_v_mps" => [0.1],
+        "flight_apoapsis_alt_km" => [23000.0]
+    )), "ctx")
+    @test_throws ArgumentError TV._parse_maneuver_config(Dict("maneuvers" => Dict(
+        "orbit_numbers" => [25], "delta_v_mps" => [0.1],
+        "replay_scale_mode" => "bogus"
+    )), "ctx")
+
+    # Scale math: flight/sim apoapsis-radius ratio, clamped, safe fallbacks.
+    GM = SimulationModel.GuidanceHooks
+    @test GM._flight_ratio_scale(2.0e7, 1.0e7) == 2.0
+    @test GM._flight_ratio_scale(1.0e7, 2.0e7) == 0.5
+    @test GM._flight_ratio_scale(1.0e7, NaN) == 1.0
+    @test GM._flight_ratio_scale(-1.0, 1.0e7) == 1.0
+    @test GM._flight_ratio_scale(1.0e9, 1.0) == 10.0
 end
 
 @testset "Robust calibration bias" begin

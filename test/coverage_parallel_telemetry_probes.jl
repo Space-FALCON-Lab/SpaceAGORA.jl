@@ -1182,6 +1182,30 @@ end
     @test_throws ArgumentError TV._parse_tolerances(bad, "tolerances_full", ["peri", "apo"], "ctx")
 end
 
+@testset "Libraryless surrogate honors off" begin
+    # The library-missing fallback must respect the scenario's opt-out even
+    # when the env gate would otherwise allow it.
+    env_key = "SPACEAGORA_TELEMETRY_ALLOW_GRAM_OFFLINE_NO_LIB"
+    old_env = get(ENV, env_key, nothing)
+    ENV[env_key] = "1"
+    try
+        truth_off = TV.AtmosphereTruthConfig(gram_offline_surrogate="off")
+        @test TV._try_libraryless_gram_surrogate("earth", truth_off) === nothing
+
+        # Non-"off" proceeds past the opt-out; in the test environment the
+        # surrogate payload is absent, so the file checks return nothing too —
+        # this asserts the gate ordering, not payload loading.
+        truth_auto = TV.AtmosphereTruthConfig(gram_offline_surrogate="auto")
+        @test TV._try_libraryless_gram_surrogate("nonexistent_planet", truth_auto) === nothing
+
+        # And the env gate still applies for non-"off" configs.
+        ENV[env_key] = "0"
+        @test TV._try_libraryless_gram_surrogate("earth", truth_auto) === nothing
+    finally
+        old_env === nothing ? delete!(ENV, env_key) : (ENV[env_key] = old_env)
+    end
+end
+
 @testset "Tabulated flight atmosphere (certification mode)" begin
     # parse: model name validation and key coupling
     @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(

@@ -251,7 +251,11 @@ end
     return _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_ALLOW_GRAM_OFFLINE_NO_LIB", "1"), true)
 end
 
-function _try_libraryless_gram_surrogate(planet_name::String)
+function _try_libraryless_gram_surrogate(planet_name::String, truth::AtmosphereTruthConfig)
+    # gram_offline_surrogate="off" opts the scenario out of every surrogate
+    # path, including this library-missing fallback: a benchmark pinned to the
+    # native model must fail rather than silently fly the frozen-epoch grid.
+    truth.gram_offline_surrogate == "off" && return nothing
     _libraryless_gram_surrogate_enabled() || return nothing
     planet_key = lowercase(strip(planet_name))
     surrogate_file = try
@@ -289,7 +293,7 @@ function _make_required_gram_density_model(
     catch err
         msg = sprint(showerror, err)
         if _is_gram_library_missing_error(err)
-            offline_model = _try_libraryless_gram_surrogate(planet_name)
+            offline_model = _try_libraryless_gram_surrogate(planet_name, truth)
             if offline_model !== nothing
                 @warn "GRAM shared library unavailable; using library-less GRAM offline surrogate fallback for telemetry." planet=planet_name surrogate_file=offline_model.surrogate_file
                 return offline_model

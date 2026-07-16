@@ -174,7 +174,29 @@ function _time_aligned_rows_errors(
         sim_time,
         sim_z_km
     )
-    return [altitude_summary, x_summary, y_summary, z_summary], [altitude_errors, x_errors, y_errors, z_errors]
+    summaries = [altitude_summary, x_summary, y_summary, z_summary]
+    errors = [altitude_errors, x_errors, y_errors, z_errors]
+
+    has_velocity_truth = !any(isnothing, (cfg.telemetry_vx_col, cfg.telemetry_vy_col, cfg.telemetry_vz_col))
+    if has_velocity_truth
+        sim_vx_kmps = sim_vx_mps .* 1e-3 .+ get(bias_by_event, "state_vx_time", 0.0)
+        sim_vy_kmps = sim_vy_mps .* 1e-3 .+ get(bias_by_event, "state_vy_time", 0.0)
+        sim_vz_kmps = sim_vz_mps .* 1e-3 .+ get(bias_by_event, "state_vz_time", 0.0)
+
+        vx_summary, vx_errors = _compare_time_series(
+            cfg.name, "state_vx_time", telemetry.time_s, telemetry.vx_kmps, sim_time, sim_vx_kmps
+        )
+        vy_summary, vy_errors = _compare_time_series(
+            cfg.name, "state_vy_time", telemetry.time_s, telemetry.vy_kmps, sim_time, sim_vy_kmps
+        )
+        vz_summary, vz_errors = _compare_time_series(
+            cfg.name, "state_vz_time", telemetry.time_s, telemetry.vz_kmps, sim_time, sim_vz_kmps
+        )
+        append!(summaries, [vx_summary, vy_summary, vz_summary])
+        append!(errors, [vx_errors, vy_errors, vz_errors])
+    end
+
+    return summaries, errors
 end
 
 @inline _tolerances_for(cfg::OrbitEventsScenarioConfig, profile::Symbol) = profile == :quick ? cfg.tolerances_quick : cfg.tolerances_full

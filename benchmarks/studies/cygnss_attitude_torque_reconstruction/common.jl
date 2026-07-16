@@ -19,7 +19,9 @@ setup_gram_example!()
 const STUDY_DIR = @__DIR__
 const DATA_DIR = joinpath(STUDY_DIR, "data")
 const PLOTS_DIR = joinpath(STUDY_DIR, "plots")
+const PLOT_DATA_DIR = joinpath(STUDY_DIR, "data", "plot_data")
 mkpath(PLOTS_DIR)
+mkpath(PLOT_DATA_DIR)
 
 planet = Earth("", SPICE_PATH)
 
@@ -475,6 +477,8 @@ function run_cygnss_case(;
     ts = range(t_cal, t_end, length=300)
     errs = Float64[]
     pos_errs_km = Float64[]
+    vel_errs_km_s = Float64[]
+    ang_vel_errs_deg_s = Float64[]
     for t in ts
         u = sol(t - t_cal)
         q_sim = SVector{4, Float64}(u.sc[1].q[1], u.sc[1].q[2], u.sc[1].q[3], u.sc[1].q[4]) # scalar-last
@@ -485,13 +489,30 @@ function run_cygnss_case(;
         pos_sim = SVector{3, Float64}(u.sc[1].pos)
         pos_gt = r_truth(t)
         push!(pos_errs_km, norm(pos_sim - pos_gt) / 1000.0)
+
+        vel_sim = SVector{3, Float64}(u.sc[1].vel)
+        vel_gt = v_truth(t)
+        push!(vel_errs_km_s, norm(vel_sim - vel_gt) / 1000.0)
+
+        ang_vel_sim = SVector{3, Float64}(u.sc[1].ω)
+        ang_vel_gt = ω_meas(t)
+        push!(ang_vel_errs_deg_s, rad2deg(norm(ang_vel_sim - ang_vel_gt)))
     end
 
-    println("[$label] t=$(t_cal)-$(t_end)s  attitude mean=$(mean(errs)) deg  max=$(maximum(errs)) deg  final=$(errs[end]) deg  |  position mean=$(mean(pos_errs_km)) km  max=$(maximum(pos_errs_km)) km  final=$(pos_errs_km[end]) km")
+    rmse_pos_km = sqrt(mean(pos_errs_km .^ 2))
+    rmse_vel_km_s = sqrt(mean(vel_errs_km_s .^ 2))
+    rmse_angle_deg = sqrt(mean(errs .^ 2))
+    rmse_ang_vel_deg_s = sqrt(mean(ang_vel_errs_deg_s .^ 2))
+
+    println("[$label] t=$(t_cal)-$(t_end)s  attitude mean=$(mean(errs)) deg  max=$(maximum(errs)) deg  final=$(errs[end]) deg  |  position mean=$(mean(pos_errs_km)) km  max=$(maximum(pos_errs_km)) km  final=$(pos_errs_km[end]) km  |  velocity mean=$(mean(vel_errs_km_s)) km/s  max=$(maximum(vel_errs_km_s)) km/s  final=$(vel_errs_km_s[end]) km/s")
+    println("[$label] RMSE  position=$(rmse_pos_km) km  velocity=$(rmse_vel_km_s) km/s  quaternion angle=$(rmse_angle_deg) deg  angular velocity=$(rmse_ang_vel_deg_s) deg/s")
     return (
         label=label,
         mean=mean(errs), max=maximum(errs), final=errs[end], errs=errs,
         pos_mean_km=mean(pos_errs_km), pos_max_km=maximum(pos_errs_km), pos_final_km=pos_errs_km[end], pos_errs_km=pos_errs_km,
+        vel_mean_km_s=mean(vel_errs_km_s), vel_max_km_s=maximum(vel_errs_km_s), vel_final_km_s=vel_errs_km_s[end], vel_errs_km_s=vel_errs_km_s,
+        ang_vel_errs_deg_s=ang_vel_errs_deg_s,
+        rmse_pos_km=rmse_pos_km, rmse_vel_km_s=rmse_vel_km_s, rmse_angle_deg=rmse_angle_deg, rmse_ang_vel_deg_s=rmse_ang_vel_deg_s,
         sol=sol,
     )
 end

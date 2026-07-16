@@ -45,7 +45,9 @@ const SM = SimulationModel
 
 const STUDY_DIR = @__DIR__
 const PLOTS_DIR = joinpath(STUDY_DIR, "plots")
+const PLOT_DATA_DIR = joinpath(STUDY_DIR, "data", "plot_data")
 mkpath(PLOTS_DIR)
+mkpath(PLOT_DATA_DIR)
 
 const _GMAT_HARMONICS_EARTH_FILE = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 const _CYGNSS_48HR_TELEMETRY_FEATHER = joinpath(REPO_ROOT, "data", "telemetry", "CYGNSS", "cygnss_data_48hr.feather")
@@ -103,7 +105,10 @@ function _base_scenario_dict(name::String, telemetry_path::String)
     return Dict{String, Any}(
         "name" => name,
         "kind" => "time_aligned_state",
-        "events" => Any["altitude_time", "state_x_time", "state_y_time", "state_z_time"],
+        "events" => Any[
+            "altitude_time", "state_x_time", "state_y_time", "state_z_time",
+            "state_vx_time", "state_vy_time", "state_vz_time",
+        ],
         "telemetry" => telemetry_path,
         "telemetry_columns" => Dict{String, Any}(
             "time" => "time_s",
@@ -116,7 +121,12 @@ function _base_scenario_dict(name::String, telemetry_path::String)
             "z_ic" => "z_ic_km",
             "vx_ic" => "vx_ic_kmps",
             "vy_ic" => "vy_ic_kmps",
-            "vz_ic" => "vz_ic_kmps"
+            "vz_ic" => "vz_ic_kmps",
+            # Real per-sample velocity ground truth (data/telemetry/CYGNSS's vel_ii_*),
+            # not to be confused with the single-value vx_ic/vy_ic/vz_ic IC above.
+            "vx" => "vx_km_s",
+            "vy" => "vy_km_s",
+            "vz" => "vz_km_s"
         ),
         "max_points_quick" => 10000,
         "max_points_full" => 100000,
@@ -126,19 +136,28 @@ function _base_scenario_dict(name::String, telemetry_path::String)
             "altitude_time" => "km",
             "state_x_time" => "km",
             "state_y_time" => "km",
-            "state_z_time" => "km"
+            "state_z_time" => "km",
+            "state_vx_time" => "km/s",
+            "state_vy_time" => "km/s",
+            "state_vz_time" => "km/s"
         ),
         "tolerances_quick" => Dict{String, Any}(
             "altitude_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
             "state_x_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
             "state_y_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
-            "state_z_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6)
+            "state_z_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
+            "state_vx_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
+            "state_vy_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
+            "state_vz_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6)
         ),
         "tolerances_full" => Dict{String, Any}(
             "altitude_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
             "state_x_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
             "state_y_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
-            "state_z_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6)
+            "state_z_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
+            "state_vx_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
+            "state_vy_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6),
+            "state_vz_time" => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6)
         ),
         "initial_time" => Dict{String, Any}(
             "year" => 2026,
@@ -181,6 +200,14 @@ function _scenario_rmse(summary::DataFrame, name::String)::Float64
     rows = summary[(summary.scenario .== name) .& in.(summary.event, Ref(["state_x_time", "state_y_time", "state_z_time"])), :]
     @assert nrow(rows) == 3
     rmse = mean(Float64.(rows.rmse_km))
+    @assert isfinite(rmse)
+    return rmse
+end
+
+function _scenario_velocity_rmse(summary::DataFrame, name::String)::Float64
+    rows = summary[(summary.scenario .== name) .& in.(summary.event, Ref(["state_vx_time", "state_vy_time", "state_vz_time"])), :]
+    @assert nrow(rows) == 3
+    rmse = mean(Float64.(rows.rmse_km)) # "rmse_km" column name is generic; here the underlying unit is km/s
     @assert isfinite(rmse)
     return rmse
 end
@@ -256,7 +283,8 @@ function _build_cygnss_48hr_reference(outdir::String, stem::String)
         z_ic_km=fill(z_ic_km, length(t_rel)),
         vx_ic_kmps=fill(vx_ic_kmps, length(t_rel)),
         vy_ic_kmps=fill(vy_ic_kmps, length(t_rel)),
-        vz_ic_kmps=fill(vz_ic_kmps, length(t_rel))
+        vz_ic_kmps=fill(vz_ic_kmps, length(t_rel)),
+        vx_km_s=vx_kmps, vy_km_s=vy_kmps, vz_km_s=vz_kmps
     )
 
     telemetry_path = joinpath(outdir, "$(stem)_time_aligned.arrow")
@@ -320,12 +348,19 @@ result = mktempdir() do tmp
 end
 
 pos_rmse = _scenario_rmse(result.summary, "cygnss_48hr_pvt")
+vel_rmse = _scenario_velocity_rmse(result.summary, "cygnss_48hr_pvt")
 println()
 println("cygnss_48hr_pvt mean position-axis RMSE [km]: $(pos_rmse)")
 println("(reference documented value: ~1.58 km)")
+println("cygnss_48hr_pvt mean velocity-axis RMSE [km/s]: $(vel_rmse)")
 
 CSV.write(joinpath(STUDY_DIR, "data", "cygnss_48hr_reference_summary.csv"), result.summary)
 println("full summary written to: $(joinpath(STUDY_DIR, "data", "cygnss_48hr_reference_summary.csv"))")
+
+rmse_out = DataFrame(key=["cygnss_48hr_pvt"], label=["CYGNSS 48hr reference replication"], rmse_pos_km=[pos_rmse], rmse_vel_km_s=[vel_rmse])
+rmse_path = joinpath(PLOT_DATA_DIR, "position_accuracy_48hr_rmse.arrow")
+Arrow.write(rmse_path, rmse_out)
+println("RMSE table data written to: $(rmse_path)")
 # result.errors (one row per telemetry sample per event, ~170k rows/event) is
 # used below for the plot but deliberately not persisted to disk -- it's
 # large (~100MB+) and trivially regenerated by re-running this script.
@@ -340,10 +375,6 @@ println("full summary written to: $(joinpath(STUDY_DIR, "data", "cygnss_48hr_ref
 # from the unfiltered errors table, so the 1.578 km RMSE figure is unaffected
 # by this filter.
 # ==============================================================================
-
-using Plots
-
-Plots.default(left_margin=10Plots.mm, bottom_margin=8Plots.mm)
 
 function _extract_position_error_series(errors::DataFrame, scenario_name::String)
     rows = errors[errors.scenario .== scenario_name, :]
@@ -406,17 +437,10 @@ series = _filter_position_series_for_plot(raw_series)
 println("IQR filter kept $(series.inlier_count)/$(series.total_count) samples (dropped $(series.total_count - series.inlier_count) spikes)")
 
 t_hr = series.t_s ./ 3600.0
-err_fig = plot(
-    t_hr, series.ex;
-    label="x error", lw=1.2, alpha=0.9, color=:steelblue,
-    title="CYGNSS 48hr Reference Replication: Per-Axis Position Error (IQR-Filtered)",
-    xlabel="Time (hr)", ylabel="Error (km)",
-    legend=:topleft, size=(1000, 550), titlefontsize=11,
+data_out = DataFrame(
+    t_hr=t_hr, ex=series.ex, ey=series.ey, ez=series.ez,
+    running_total_rmse=series.running_total_rmse,
 )
-plot!(err_fig, t_hr, series.ey; label="y error", lw=1.2, alpha=0.9, color=:darkorange)
-plot!(err_fig, t_hr, series.ez; label="z error", lw=1.2, alpha=0.9, color=:seagreen)
-plot!(err_fig, t_hr, series.running_total_rmse; label="total running RMSE", lw=2.0, color=:black)
-hline!(err_fig, [series.total_rmse]; label="total RMSE (unfiltered)", ls=:dash, color=:black)
-err_path = joinpath(PLOTS_DIR, "cygnss_48hr_reference_replication_error_timeseries.png")
-savefig(err_fig, err_path)
-println("error time series plot: $(err_path)")
+data_path = joinpath(PLOT_DATA_DIR, "position_accuracy_48hr.arrow")
+Arrow.write(data_path, data_out)
+println("plot data written to: $(data_path)")

@@ -18,6 +18,7 @@ GRAMpy/*
 *.pdf
 *.csv
 *.png
+*.tex
 .DS_Store
 *.cov
 docs/build/

@@ -5,13 +5,16 @@
 # combined. See README.md ("Independent-effect results") for the numbers and
 # interpretation.
 #
+# This script only runs the simulations and writes the plotted quantities to
+# data/plot_data/independent_effects_summary.arrow and
+# data/plot_data/independent_effects_position_timeseries.arrow -- run
+# make_plots.jl separately to generate the figures without re-running the
+# simulations.
+#
 # Usage: julia --project=. benchmarks/studies/cygnss_attitude_torque_reconstruction/run_independent_effects.jl
 ##
 
 include(joinpath(@__DIR__, "common.jl"))
-using Plots
-
-Plots.default(left_margin=10Plots.mm, bottom_margin=14Plots.mm)
 
 const T0 = 0.0
 const TEND = 3600.0
@@ -65,27 +68,12 @@ for k in order
         rpad(k, 15),
         " attitude mean=", round(r.mean, digits=3), " deg  max=", round(r.max, digits=3), " deg  final=", round(r.final, digits=3), " deg",
         "  |  position mean=", round(r.pos_mean_km, digits=4), " km  max=", round(r.pos_max_km, digits=4), " km  final=", round(r.pos_final_km, digits=4), " km",
+        "  |  velocity mean=", round(r.vel_mean_km_s, digits=6), " km/s  max=", round(r.vel_max_km_s, digits=6), " km/s  final=", round(r.vel_final_km_s, digits=6), " km/s",
     )
 end
 
 means = [results[k].mean for k in order]
 maxes = [results[k].max for k in order]
-
-# Plain Plots.jl has no native `groupedbar` (that's a StatsPlots recipe, not a
-# dependency here) -- dodge two bar series manually with offset x positions.
-xs = 1:length(order)
-bar_fig = bar(
-    xs .- 0.15, means;
-    bar_width=0.3, label="mean error", color=:steelblue,
-    title="CYGNSS Full-Hour Attitude Reconstruction Error by Effect (Omega_rw/J_RW Wheel Baseline)",
-    ylabel="Quaternion angle error (deg)", xlabel="",
-    xticks=(xs, labels), size=(1000, 550), titlefontsize=11, legend=:topright,
-    xrotation=15,
-)
-bar!(bar_fig, xs .+ 0.15, maxes; bar_width=0.3, label="max error", color=:darkorange)
-bar_path = joinpath(PLOTS_DIR, "cygnss_independent_effects_summary.png")
-savefig(bar_fig, bar_path)
-println("attitude summary bar chart: $(bar_path)")
 
 # ==============================================================================
 # Position comparison
@@ -99,31 +87,33 @@ println("attitude summary bar chart: $(bar_path)")
 
 pos_means_km = [results[k].pos_mean_km for k in order]
 pos_maxes_km = [results[k].pos_max_km for k in order]
+vel_means_km_s = [results[k].vel_mean_km_s for k in order]
+vel_maxes_km_s = [results[k].vel_max_km_s for k in order]
 
-pos_bar_fig = bar(
-    xs .- 0.15, pos_means_km;
-    bar_width=0.3, label="mean error", color=:steelblue,
-    title="CYGNSS Full-Hour Position Reconstruction Error by Effect",
-    ylabel="Position error (km)", xlabel="",
-    xticks=(xs, labels), size=(1000, 550), titlefontsize=11, legend=:topright,
-    xrotation=15,
+summary_out = DataFrame(
+    key=order, label=labels,
+    attitude_mean_deg=means, attitude_max_deg=maxes,
+    pos_mean_km=pos_means_km, pos_max_km=pos_maxes_km,
+    vel_mean_km_s=vel_means_km_s, vel_max_km_s=vel_maxes_km_s,
 )
-bar!(pos_bar_fig, xs .+ 0.15, pos_maxes_km; bar_width=0.3, label="max error", color=:darkorange)
-pos_bar_path = joinpath(PLOTS_DIR, "cygnss_independent_effects_position_summary.png")
-savefig(pos_bar_fig, pos_bar_path)
-println("position summary bar chart: $(pos_bar_path)")
+summary_path = joinpath(PLOT_DATA_DIR, "independent_effects_summary.arrow")
+Arrow.write(summary_path, summary_out)
+println("summary plot data written to: $(summary_path)")
 
 sample_t = range(T0, TEND, length=300)
 t_s = collect(sample_t) .- T0
-pos_ts_fig = plot(
-    title="CYGNSS Full-Hour Position Error vs. Time by Effect",
-    xlabel="Time since t=0s (s)", ylabel="Position error (km)",
-    legend=:topleft, size=(1000, 550), titlefontsize=11,
-)
-colors = (:steelblue, :darkorange, :seagreen, :purple, :firebrick)
-for (k, lbl, c) in zip(order, labels, colors)
-    plot!(pos_ts_fig, t_s, results[k].pos_errs_km; label=lbl, lw=1.4, color=c)
+ts_out = DataFrame(t_s=t_s)
+for k in order
+    ts_out[!, Symbol(k)] = results[k].pos_errs_km
 end
-pos_ts_path = joinpath(PLOTS_DIR, "cygnss_independent_effects_position_timeseries.png")
-savefig(pos_ts_fig, pos_ts_path)
-println("position error time series plot: $(pos_ts_path)")
+ts_path = joinpath(PLOT_DATA_DIR, "independent_effects_position_timeseries.arrow")
+Arrow.write(ts_path, ts_out)
+println("position error time series plot data written to: $(ts_path)")
+
+vel_ts_out = DataFrame(t_s=t_s)
+for k in order
+    vel_ts_out[!, Symbol(k)] = results[k].vel_errs_km_s
+end
+vel_ts_path = joinpath(PLOT_DATA_DIR, "independent_effects_velocity_timeseries.arrow")
+Arrow.write(vel_ts_path, vel_ts_out)
+println("velocity error time series plot data written to: $(vel_ts_path)")

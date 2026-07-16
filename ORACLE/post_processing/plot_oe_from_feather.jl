@@ -4,9 +4,9 @@
 # (Δa, Δe, Δi, ΔRAAN) in the same format as the prototype's
 # 6_OE_all_final_NxN_plot_v1.jl.
 #
-# Rows    = helper altitudes (HELPER_ALTITUDES_KM)
+# Rows    = target altitudes (TARGET_ALTITUDES_KM)
 # Columns = [Δa, Δe, Δi, ΔRAAN]
-# Curves  = inclination deltas (INCLINATION_DELTAS_DEG)
+# Curves  = inclination deltas (TARGET_INCLINATION_DELTAS_DEG)
 #
 # Run from the repository root:
 #   julia --project=. ORACLE/post_processing/plot_oe_from_feather.jl
@@ -25,10 +25,10 @@ const OUTPUT_DIR = joinpath(REPO_ROOT, "output", "paper_plot_mode")
 const MU         = 3.986004418e14   # Earth gravitational parameter [m³/s²]
 
 # ── Grid parameters — must match what was used in the simulation sweep ────────
-const TARGET_ALT_KM          = 1000.0
-const TARGET_INCLINATION_DEG = 0.0
-const HELPER_ALTITUDES_KM    = [1150.0, 1050.0, 1000.0, 950.0, 850.0]
-const INCLINATION_DELTAS_DEG = [0.0, 0.5, 1.0]
+const HELPER_ALT_KM                 = 1000.0
+const HELPER_INCLINATION_DEG        = 0.0
+const TARGET_ALTITUDES_KM           = [1150.0, 1050.0, 1000.0, 950.0, 850.0]
+const TARGET_INCLINATION_DELTAS_DEG = [0.0, 0.5, 1.0]
 const HELPER_COUNTS          = [1, 50, 100] #[1, 2, 3]   # must match PAPER_HELPER_COUNTS
 
 # ── Compute classical orbital elements from position + velocity ───────────────
@@ -134,9 +134,9 @@ col_titles = [L"\Delta a,\ \mathrm{m}", L"\Delta e",
 
 inc_colors = [:blue, :red, :green]
 inc_labels = [latexstring("\\Delta i=$(round(d, digits=1))^{\\circ}")
-              for d in INCLINATION_DELTAS_DEG]
+              for d in TARGET_INCLINATION_DELTAS_DEG]
 
-n_rows     = length(HELPER_ALTITUDES_KM)
+n_rows     = length(TARGET_ALTITUDES_KM)
 n_cols     = length(elements)
 fig_width  = 220 * n_cols + 80
 fig_height = 180 * n_rows + 50
@@ -144,7 +144,7 @@ fig_height = 180 * n_rows + 50
 # ── Build subplots (row-major: altitude × element) ────────────────────────────
 subplots = []
 
-for (row_idx, h_alt) in enumerate(HELPER_ALTITUDES_KM)
+for (row_idx, t_alt) in enumerate(TARGET_ALTITUDES_KM)
     is_top    = row_idx == 1
     is_bottom = row_idx == n_rows
 
@@ -154,13 +154,13 @@ for (row_idx, h_alt) in enumerate(HELPER_ALTITUDES_KM)
         all_xs  = Vector{Vector{Float64}}()
         all_dvs = Vector{Vector{Float64}}()
 
-        for delta_i in INCLINATION_DELTAS_DEG
-            h_inc = TARGET_INCLINATION_DEG + delta_i
+        for delta_i in TARGET_INCLINATION_DELTAS_DEG
+            t_inc = HELPER_INCLINATION_DEG + delta_i
             xs    = Float64[]
             dvs   = Float64[]
             for n in HELPER_COUNTS
-                res = read_final_oe_delta(OUTPUT_DIR, h_alt, TARGET_ALT_KM,
-                                          h_inc, TARGET_INCLINATION_DEG, n)
+                res = read_final_oe_delta(OUTPUT_DIR, HELPER_ALT_KM, t_alt,
+                                          HELPER_INCLINATION_DEG, t_inc, n)
                 res === nothing && continue
                 push!(xs, Float64(n))
                 val = elem == :a    ? res.da        :
@@ -174,7 +174,7 @@ for (row_idx, h_alt) in enumerate(HELPER_ALTITUDES_KM)
         end
 
         all_vals  = vcat(all_dvs...)
-        row_ylab  = is_left   ? latexstring("h_{\\mathrm{h}}=$(round(Int,h_alt))\\,\\mathrm{km}") : ""
+        row_ylab  = is_left   ? latexstring("h_{\\mathrm{t}}=$(round(Int,t_alt))\\,\\mathrm{km}") : ""
         col_title = is_top    ? col_titles[col_idx] : ""
         x_lab     = is_bottom ? main_xlabel : ""
 

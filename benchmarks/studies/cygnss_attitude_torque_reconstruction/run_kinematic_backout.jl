@@ -7,14 +7,14 @@
 # trajectory match. See README.md ("Kinematic torque back-out") for results
 # and interpretation.
 #
+# This script only runs the simulation and writes the plotted quantities to
+# data/plot_data/kinematic_backout.arrow -- run make_plots.jl separately to
+# generate the figures without re-running the simulation.
+#
 # Usage: julia --project=. benchmarks/studies/cygnss_attitude_torque_reconstruction/run_kinematic_backout.jl
 ##
 
 include(joinpath(@__DIR__, "common.jl"))
-using Plots
-using Printf
-
-Plots.default(left_margin=10Plots.mm, bottom_margin=8Plots.mm)
 
 const T_CAL = 0.0
 const T_END = 3600.0
@@ -58,128 +58,45 @@ pos_sim = [SVector{3, Float64}(sol(t - T_CAL).sc[1].pos) for t in sample_t]
 pos_gt = [r_truth(t) for t in sample_t]
 pos_err_km = [norm(pos_sim[i] - pos_gt[i]) / 1000.0 for i in eachindex(sample_t)]
 
+vel_sim = [SVector{3, Float64}(sol(t - T_CAL).sc[1].vel) for t in sample_t]
+vel_gt = [v_truth(t) for t in sample_t]
+vel_err_km_s = [norm(vel_sim[i] - vel_gt[i]) / 1000.0 for i in eachindex(sample_t)]
+
 println("Kinematic-derived torque magnitude: mean=$(mean(tau_mag)) N*m, max=$(maximum(tau_mag)) N*m")
 println("Reconstruction error vs telemetry (full hour): mean=$(mean(angle_err_deg)) deg, max=$(maximum(angle_err_deg)) deg")
 println("Position error vs telemetry (full hour, gravity-only propagation): mean=$(mean(pos_err_km)) km, max=$(maximum(pos_err_km)) km")
+println("Velocity error vs telemetry (full hour, gravity-only propagation): mean=$(mean(vel_err_km_s)) km/s, max=$(maximum(vel_err_km_s)) km/s")
 
 # ==============================================================================
-# Plot 1: kinematics-derived torque components
-# ==============================================================================
-
-torque_fig = plot(
-    t_s, tau_x;
-    label="tau_x", lw=1.4, color=:steelblue,
-    title="Kinematics-Derived Reaction-Wheel Torque (Torque-Free Back-Out)",
-    xlabel="Time since t=0s (s)", ylabel="Torque (N*m)",
-    legend=:topright, size=(1000, 550), titlefontsize=11,
-)
-plot!(torque_fig, t_s, tau_y; label="tau_y", lw=1.4, color=:darkorange)
-plot!(torque_fig, t_s, tau_z; label="tau_z", lw=1.4, color=:seagreen)
-torque_path = joinpath(PLOTS_DIR, "cygnss_kinematic_torque_components.png")
-savefig(torque_fig, torque_path)
-println("torque components plot: $(torque_path)")
-
-torque_mag_fig = plot(
-    t_s, tau_mag;
-    label="|tau|", lw=1.6, color=:purple,
-    title="Kinematics-Derived Reaction-Wheel Torque Magnitude",
-    xlabel="Time since t=0s (s)", ylabel="Torque magnitude (N*m)",
-    legend=:topright, size=(1000, 450), titlefontsize=11,
-)
-torque_mag_path = joinpath(PLOTS_DIR, "cygnss_kinematic_torque_magnitude.png")
-savefig(torque_mag_fig, torque_mag_path)
-println("torque magnitude plot: $(torque_mag_path)")
-
-# ==============================================================================
-# Plot 2: quaternion time series, kinematic-backout replay vs telemetry
-# ==============================================================================
-
-component_names = ("q1 (scalar)", "q2", "q3", "q4")
-quat_subplots = map(1:4) do i
-    sp = plot(
-        t_s, [q[i] for q in q_sim_sf];
-        label="kinematic-backout replay", lw=1.4, color=:steelblue,
-        title=component_names[i], xlabel="Time since t=0s (s)", ylabel="value",
-        legend=(i == 1 ? :best : false),
-    )
-    plot!(sp, t_s, [q[i] for q in q_gt_sf]; label="telemetry", lw=1.0, ls=:dash, color=:darkorange)
-    return sp
-end
-quat_fig = plot(quat_subplots...; layout=(2, 2), size=(1000, 700), plot_title="CYGNSS Full Hour: Kinematic Torque Back-Out Replay vs. Telemetry")
-quat_path = joinpath(PLOTS_DIR, "cygnss_kinematic_backout_quaternion_timeseries.png")
-savefig(quat_fig, quat_path)
-println("quaternion time series plot: $(quat_path)")
-
-# ==============================================================================
-# Plot 3: attitude error time series (full hour)
+# Save plotted quantities (see make_plots.jl for the figures)
 # ==============================================================================
 
 running_rms_deg = sqrt.(cumsum(angle_err_deg .^ 2) ./ collect(1:length(angle_err_deg)))
-err_fig = plot(
-    t_s, angle_err_deg;
-    label="angle error", lw=1.6, color=:steelblue,
-    title="CYGNSS Full-Hour Reconstruction Error: Kinematic Torque Back-Out vs. Telemetry",
-    xlabel="Time since t=0s (s)", ylabel="Quaternion angle error (deg)",
-    legend=:topleft, size=(1000, 500), titlefontsize=11,
+
+data_out = DataFrame(
+    t_s=t_s,
+    tau_x=tau_x, tau_y=tau_y, tau_z=tau_z, tau_mag=tau_mag,
+    q1_sim=[q[1] for q in q_sim_sf], q2_sim=[q[2] for q in q_sim_sf], q3_sim=[q[3] for q in q_sim_sf], q4_sim=[q[4] for q in q_sim_sf],
+    q1_gt=[q[1] for q in q_gt_sf], q2_gt=[q[2] for q in q_gt_sf], q3_gt=[q[3] for q in q_gt_sf], q4_gt=[q[4] for q in q_gt_sf],
+    angle_err_deg=angle_err_deg, running_rms_deg=running_rms_deg,
+    omega_x_sim=[w[1] for w in ω_sim], omega_y_sim=[w[2] for w in ω_sim], omega_z_sim=[w[3] for w in ω_sim],
+    omega_x_gt=[w[1] for w in ω_gt], omega_y_gt=[w[2] for w in ω_gt], omega_z_gt=[w[3] for w in ω_gt],
+    pos_x_sim=[p[1] / 1000.0 for p in pos_sim], pos_y_sim=[p[2] / 1000.0 for p in pos_sim], pos_z_sim=[p[3] / 1000.0 for p in pos_sim],
+    pos_x_gt=[p[1] / 1000.0 for p in pos_gt], pos_y_gt=[p[2] / 1000.0 for p in pos_gt], pos_z_gt=[p[3] / 1000.0 for p in pos_gt],
+    pos_err_km=pos_err_km,
+    vel_x_sim=[v[1] / 1000.0 for v in vel_sim], vel_y_sim=[v[2] / 1000.0 for v in vel_sim], vel_z_sim=[v[3] / 1000.0 for v in vel_sim],
+    vel_x_gt=[v[1] / 1000.0 for v in vel_gt], vel_y_gt=[v[2] / 1000.0 for v in vel_gt], vel_z_gt=[v[3] / 1000.0 for v in vel_gt],
+    vel_err_km_s=vel_err_km_s,
 )
-plot!(err_fig, t_s, running_rms_deg; label="running RMS", lw=1.6, ls=:dash, color=:black)
-hline!(err_fig, [sqrt(mean(angle_err_deg .^ 2))]; label="total RMS", lw=1.0, ls=:dot, color=:gray)
-err_path = joinpath(PLOTS_DIR, "cygnss_kinematic_backout_attitude_error_timeseries.png")
-savefig(err_fig, err_path)
-println("attitude error time series plot: $(err_path)")
+data_path = joinpath(PLOT_DATA_DIR, "kinematic_backout.arrow")
+Arrow.write(data_path, data_out)
+println("plot data written to: $(data_path)")
 
-# ==============================================================================
-# Plot 4: angular velocity comparison (sanity check on the back-out itself)
-# ==============================================================================
-
-ω_names = ("omega_x", "omega_y", "omega_z")
-ω_subplots = map(1:3) do i
-    sp = plot(
-        t_s, [w[i] for w in ω_sim];
-        label="replay", lw=1.4, color=:steelblue,
-        title=ω_names[i], xlabel="Time since t=0s (s)", ylabel="rad/s",
-        legend=(i == 1 ? :best : false),
-    )
-    plot!(sp, t_s, [w[i] for w in ω_gt]; label="telemetry", lw=1.0, ls=:dash, color=:darkorange)
-    return sp
-end
-ω_fig = plot(ω_subplots...; layout=(3, 1), size=(1000, 800), plot_title="CYGNSS Full Hour: Body Rate, Kinematic Torque Back-Out Replay vs. Telemetry")
-ω_path = joinpath(PLOTS_DIR, "cygnss_kinematic_backout_angular_rate_timeseries.png")
-savefig(ω_fig, ω_path)
-println("angular rate time series plot: $(ω_path)")
-
-# ==============================================================================
-# Plot 5: position comparison (translational dynamics is gravity-only here --
-# this checks the orbit propagation independent of the torque back-out, which
-# only affects attitude)
-# ==============================================================================
-
-pos_names = ("x", "y", "z")
-pos_subplots = map(1:3) do i
-    sp = plot(
-        t_s, [p[i] / 1000.0 for p in pos_sim];
-        label="simulated", lw=1.4, color=:steelblue,
-        title=pos_names[i], xlabel="Time since t=0s (s)", ylabel="km",
-        legend=(i == 1 ? :best : false),
-    )
-    plot!(sp, t_s, [p[i] / 1000.0 for p in pos_gt]; label="telemetry", lw=1.0, ls=:dash, color=:darkorange)
-    return sp
-end
-pos_fig = plot(pos_subplots...; layout=(3, 1), size=(1000, 800), plot_title="CYGNSS Full Hour: ECI Position, Simulated vs. Telemetry")
-pos_path = joinpath(PLOTS_DIR, "cygnss_kinematic_backout_position_timeseries.png")
-savefig(pos_fig, pos_path)
-println("position time series plot: $(pos_path)")
-
-pos_err_fig = plot(
-    t_s, pos_err_km;
-    label="position error", lw=1.6, color=:steelblue,
-    title="CYGNSS Full-Hour Position Error: Simulated vs. Telemetry",
-    xlabel="Time since t=0s (s)", ylabel="Position error (km)",
-    legend=:topleft, size=(1000, 500), titlefontsize=11,
+rmse_out = DataFrame(
+    key=["kinematic_backout"], label=["Kinematic torque back-out"],
+    rmse_pos_km=[result.rmse_pos_km], rmse_vel_km_s=[result.rmse_vel_km_s],
+    rmse_angle_deg=[result.rmse_angle_deg], rmse_ang_vel_deg_s=[result.rmse_ang_vel_deg_s],
 )
-pos_err_path = joinpath(PLOTS_DIR, "cygnss_kinematic_backout_position_error_timeseries.png")
-savefig(pos_err_fig, pos_err_path)
-println("position error time series plot: $(pos_err_path)")
-
-println()
-println("All plots written to: $(PLOTS_DIR)")
+rmse_path = joinpath(PLOT_DATA_DIR, "kinematic_backout_rmse.arrow")
+Arrow.write(rmse_path, rmse_out)
+println("RMSE table data written to: $(rmse_path)")

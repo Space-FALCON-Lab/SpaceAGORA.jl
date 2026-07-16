@@ -7,13 +7,15 @@
 # gets to that reference's ~1.2-1.6 km/48hr position RMSE. See README.md
 # ("Position accuracy replication") for the ablation table and result.
 #
+# This script only runs the simulations and writes the plotted quantities to
+# data/plot_data/position_accuracy_ablation.arrow and
+# data/plot_data/position_accuracy_best_case.arrow -- run make_plots.jl
+# separately to generate the figures without re-running the simulations.
+#
 # Usage: julia --project=. benchmarks/studies/cygnss_attitude_torque_reconstruction/run_position_accuracy.jl
 ##
 
 include(joinpath(@__DIR__, "common.jl"))
-using Plots
-
-Plots.default(left_margin=10Plots.mm, bottom_margin=8Plots.mm)
 
 const T0 = 0.0
 const TEND = 3600.0
@@ -72,27 +74,26 @@ results["sma_harmonics"] = run_cygnss_case(
 println()
 println("=== SUMMARY (position error only -- these all use the wheel-only attitude control channel; attitude numbers are the same 87.56 deg baseline throughout and not the point of this comparison) ===")
 order = ["raw_twobody", "raw_j2", "raw_harmonics", "sma_twobody", "sma_j2", "sma_harmonics"]
-labels = ["Raw IC\ntwo-body", "Raw IC\n+J2", "Raw IC\n+50x50 EGM", "SMA-corrected IC\ntwo-body", "SMA-corrected IC\n+J2", "SMA-corrected IC\n+50x50 EGM"]
+labels = ["Raw IC\ntwo-body", "Raw IC\n+J2", "Raw IC\n+50x50 EGM", "SMA IC\ntwo-body", "SMA IC\n+J2", "SMA IC\n+50x50 EGM"]
 for k in order
     r = results[k]
-    println(rpad(k, 16), " position mean=", round(r.pos_mean_km, digits=4), " km  max=", round(r.pos_max_km, digits=4), " km  final=", round(r.pos_final_km, digits=4), " km")
+    println(rpad(k, 16), " position mean=", round(r.pos_mean_km, digits=4), " km  max=", round(r.pos_max_km, digits=4), " km  final=", round(r.pos_final_km, digits=4), " km",
+        "  |  velocity mean=", round(r.vel_mean_km_s, digits=6), " km/s  max=", round(r.vel_max_km_s, digits=6), " km/s  final=", round(r.vel_final_km_s, digits=6), " km/s")
 end
 
 pos_means_km = [results[k].pos_mean_km for k in order]
 pos_maxes_km = [results[k].pos_max_km for k in order]
-xs = 1:length(order)
-bar_fig = bar(
-    xs .- 0.15, pos_means_km;
-    bar_width=0.3, label="mean error", color=:steelblue,
-    title="CYGNSS Full-Hour Position Error: IC Correction x Gravity Fidelity Ablation",
-    ylabel="Position error (km)", xlabel="",
-    xticks=(xs, labels), size=(1100, 550), titlefontsize=11, legend=:topright,
-    xtickfontsize=8,
+vel_means_km_s = [results[k].vel_mean_km_s for k in order]
+vel_maxes_km_s = [results[k].vel_max_km_s for k in order]
+
+ablation_out = DataFrame(
+    key=order, label=labels,
+    pos_mean_km=pos_means_km, pos_max_km=pos_maxes_km,
+    vel_mean_km_s=vel_means_km_s, vel_max_km_s=vel_maxes_km_s,
 )
-bar!(bar_fig, xs .+ 0.15, pos_maxes_km; bar_width=0.3, label="max error", color=:darkorange)
-bar_path = joinpath(PLOTS_DIR, "cygnss_position_accuracy_ablation.png")
-savefig(bar_fig, bar_path)
-println("ablation bar chart: $(bar_path)")
+ablation_path = joinpath(PLOT_DATA_DIR, "position_accuracy_ablation.arrow")
+Arrow.write(ablation_path, ablation_out)
+println("ablation plot data written to: $(ablation_path)")
 
 # ==============================================================================
 # Best-case position time series and component comparison
@@ -107,29 +108,19 @@ pos_sim = [SVector{3, Float64}(sol(t - T0).sc[1].pos) for t in sample_t]
 pos_gt = [r_truth(t) for t in sample_t]
 pos_err_km = [norm(pos_sim[i] - pos_gt[i]) / 1000.0 for i in eachindex(sample_t)]
 
-pos_names = ("x", "y", "z")
-pos_subplots = map(1:3) do i
-    sp = plot(
-        t_s, [p[i] / 1000.0 for p in pos_sim];
-        label="simulated (SMA-corrected IC, 50x50 EGM)", lw=1.4, color=:steelblue,
-        title=pos_names[i], xlabel="Time since t=0s (s)", ylabel="km",
-        legend=(i == 1 ? :best : false),
-    )
-    plot!(sp, t_s, [p[i] / 1000.0 for p in pos_gt]; label="telemetry", lw=1.0, ls=:dash, color=:darkorange)
-    return sp
-end
-pos_fig = plot(pos_subplots...; layout=(3, 1), size=(1000, 800), plot_title="CYGNSS Full Hour: ECI Position, Best-Case Replication vs. Telemetry")
-pos_path = joinpath(PLOTS_DIR, "cygnss_position_accuracy_best_case_timeseries.png")
-savefig(pos_fig, pos_path)
-println("best-case position time series plot: $(pos_path)")
+vel_sim = [SVector{3, Float64}(sol(t - T0).sc[1].vel) for t in sample_t]
+vel_gt = [v_truth(t) for t in sample_t]
+vel_err_km_s = [norm(vel_sim[i] - vel_gt[i]) / 1000.0 for i in eachindex(sample_t)]
 
-pos_err_fig = plot(
-    t_s, pos_err_km;
-    label="position error (SMA-corrected IC, 50x50 EGM)", lw=1.6, color=:steelblue,
-    title="CYGNSS Full-Hour Position Error: Best-Case Replication",
-    xlabel="Time since t=0s (s)", ylabel="Position error (km)",
-    legend=:topleft, size=(1000, 500), titlefontsize=11,
+best_case_out = DataFrame(
+    t_s=t_s,
+    pos_x_sim=[p[1] / 1000.0 for p in pos_sim], pos_y_sim=[p[2] / 1000.0 for p in pos_sim], pos_z_sim=[p[3] / 1000.0 for p in pos_sim],
+    pos_x_gt=[p[1] / 1000.0 for p in pos_gt], pos_y_gt=[p[2] / 1000.0 for p in pos_gt], pos_z_gt=[p[3] / 1000.0 for p in pos_gt],
+    pos_err_km=pos_err_km,
+    vel_x_sim=[v[1] / 1000.0 for v in vel_sim], vel_y_sim=[v[2] / 1000.0 for v in vel_sim], vel_z_sim=[v[3] / 1000.0 for v in vel_sim],
+    vel_x_gt=[v[1] / 1000.0 for v in vel_gt], vel_y_gt=[v[2] / 1000.0 for v in vel_gt], vel_z_gt=[v[3] / 1000.0 for v in vel_gt],
+    vel_err_km_s=vel_err_km_s,
 )
-pos_err_path = joinpath(PLOTS_DIR, "cygnss_position_accuracy_best_case_error_timeseries.png")
-savefig(pos_err_fig, pos_err_path)
-println("best-case position error time series plot: $(pos_err_path)")
+best_case_path = joinpath(PLOT_DATA_DIR, "position_accuracy_best_case.arrow")
+Arrow.write(best_case_path, best_case_out)
+println("best-case plot data written to: $(best_case_path)")

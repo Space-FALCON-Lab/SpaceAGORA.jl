@@ -207,10 +207,21 @@ const _AERO_ZERO3 = SVector{3, Float64}(0.0, 0.0, 0.0)
 const _AERO_ZERO5 = (_AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3)
 
 # Returns (force_ii, torque_body, drag_ii, lift_ii, cross_ii) all in the inertial frame.
+#
+# `link_atmosphere_fn`, when provided, is called as `link_atmosphere_fn(pos_pp_link)`
+# for every non-root link and must return `(rho_kg_m3, temperature_k, wind_pp)` for
+# that link's own planet-fixed position, rather than reusing the single spacecraft-level
+# sample for every link. Panel offsets are normally tiny compared to atmospheric density
+# scale heights, so this only matters for larger multi-body spacecraft or coarse density
+# fields, but it is the physically correct per-body treatment. Pass `nothing` (the
+# default) to keep the original single-sample-for-the-whole-spacecraft behavior, which
+# is all that's available to callers without access to the live density model (i.e. the
+# plain `wrench` methods below, which don't receive `p`).
 function _aero_pure_wrench(
     coefficient_mode::Symbol,
     x::StateSample,
     env::EnvironmentSample,
+    link_atmosphere_fn=nothing,
 )::NTuple{5, SVector{3, Float64}}
     x.spacecraft === nothing && throw(ArgumentError("Aerodynamic wrench evaluation requires StateSample.spacecraft."))
     planet_frame = env.planet_frame
@@ -231,7 +242,6 @@ function _aero_pure_wrench(
     orientation_sim = x.q_ib !== nothing
     planet = env.planet
 
-    sound_velocity = sqrt(planet.γ * planet.R * T)
     vel_pp = planet_frame.vel_pp
     h_pp = cross(planet_frame.pos_pp, vel_pp)
     h_pp_mag = norm(h_pp)
@@ -259,10 +269,8 @@ function _aero_pure_wrench(
     lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
     drag_pp_hat = -vel_pp_rw_hat
     cross_pp_hat = cross(drag_pp_hat, lift_pp_hat)
-    q = 0.5 * rho * vel_pp_rw_mag^2
     l_pi_t = planet_frame.l_pi'
     vel_pi = orientation_sim ? l_pi_t * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
-    lift_scale = q * cos(bank_angle)
     θ_body = acos(clamp(vel_pp_rw[1] / vel_pp_rw_mag, -1.0, 1.0))
 
     force_ii  = MVector{3, Float64}(0.0, 0.0, 0.0)
@@ -272,16 +280,32 @@ function _aero_pure_wrench(
     cross_ii  = MVector{3, Float64}(0.0, 0.0, 0.0)
     @inbounds for body in bodies
         α_body, β_body, R_body_to_inertial = _aero_link_angles(spacecraft, body, root_index, orientation_sim, vel_pi, θ_body)
+
+        rho_body, T_body = rho, T
+        if link_atmosphere_fn !== nothing && orientation_sim && !body.root && R_body_to_inertial !== nothing
+            pos_ii_body = x.pos_ii + R_body_to_inertial * SVector{3, Float64}(body.r)
+            pos_pp_body = planet_frame.l_pi * pos_ii_body
+            rho_link, T_link, _ = link_atmosphere_fn(pos_pp_body)
+            if isfinite(rho_link) && rho_link > eps(Float64) && isfinite(T_link) && T_link > 0.0
+                rho_body, T_body = rho_link, T_link
+            end
+        end
+        sound_velocity_body = sqrt(planet.γ * planet.R * T_body)
+        mach_body = vel_pp_rw_mag / sound_velocity_body
+        S_body = sqrt(planet.γ * 0.5) * mach_body
+        q_body = 0.5 * rho_body * vel_pp_rw_mag^2
+        lift_scale_body = q_body * cos(bank_angle)
+
         CL_body, CD_body, CS_body = if coefficient_mode == :fm
-            coeffs = aerodynamic_coefficient_fM(body, T, S, α_body, β_body, θ_body)
+            coeffs = aerodynamic_coefficient_fM(body, T_body, S_body, α_body, β_body, θ_body)
             coeffs[1], coeffs[2], coeffs[3]
         else
             0.0, _constant_drag_coefficient(α_body), 0.0
         end
 
-        drag_pp_body = q * CD_body * body.ref_area * drag_pp_hat
-        lift_pp_body = lift_scale * CL_body * body.ref_area * lift_pp_hat
-        cross_pp_body = orientation_sim ? (q * CS_body * body.ref_area * cross_pp_hat) : SVector{3, Float64}(0.0, 0.0, 0.0)
+        drag_pp_body = q_body * CD_body * body.ref_area * drag_pp_hat
+        lift_pp_body = lift_scale_body * CL_body * body.ref_area * lift_pp_hat
+        cross_pp_body = orientation_sim ? (q_body * CS_body * body.ref_area * cross_pp_hat) : SVector{3, Float64}(0.0, 0.0, 0.0)
         drag_ii_body  = l_pi_t * drag_pp_body
         lift_ii_body  = l_pi_t * lift_pp_body
         cross_ii_body = l_pi_t * cross_pp_body
@@ -302,6 +326,18 @@ function _aero_pure_wrench(
         SVector{3, Float64}(lift_ii),
         SVector{3, Float64}(cross_ii),
     )
+end
+
+# Direct (uncached) per-link density query used by `link_atmosphere_fn`. Bypasses the
+# satellite-level GRAM tracking/extrapolation cache in
+# SimulationCallbacks._density_state_from_kinematics! deliberately: that cache is keyed
+# and warmed per satellite trajectory point, and reusing it for a handful of link-offset
+# positions per RHS call would corrupt its trajectory-continuity assumptions. This costs
+# one extra raw density-model call per non-root link per wrench evaluation.
+@inline function _aero_link_atmosphere_query(p, sat_idx::Int, t::Float64, pos_pp_link::SVector{3, Float64}, planet)
+    alt, lat, lon = rtolatlong(pos_pp_link, planet)
+    density_model = SimulationModel.SimulationCallbacks._density_model_for_sat(p, sat_idx)
+    return SimulationModel.getDensity(density_model, alt, lat, lon, t, true, p)
 end
 
 @inline function wrench(
@@ -342,7 +378,8 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env)
+    link_atmosphere_fn = pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)
+    force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
     return force, torque
 end
@@ -355,7 +392,8 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:fm, x, env)
+    link_atmosphere_fn = pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)
+    force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:fm, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
     return force, torque
 end
@@ -368,7 +406,8 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env)
+    link_atmosphere_fn = pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)
+    force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
     return force, torque
 end

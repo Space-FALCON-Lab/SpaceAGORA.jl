@@ -800,6 +800,12 @@ export RhsEffectorDecision, RhsExecutionPlan
         # hot-path accessors fall back to live ENV parsing when unset so
         # hand-constructed ODEParams (unit tests, withenv probes) keep the
         # read-ENV-at-use behavior.
+        # Lazily-computed "any effector carries a robot-arm plan" flag.
+        # _apply_coupled_robot_arm_rhs! runs for every satellite on every RHS
+        # evaluation, and scanning the control + dynamic effector tuples per
+        # satellite is pure waste in the (overwhelmingly common) no-robot-arm
+        # case. Effector tuples are fixed for a run, so no invalidation needed.
+        robot_arm_present::Base.RefValue{Union{Nothing, Bool}} = Ref{Union{Nothing, Bool}}(nothing)
         policy_env_config::Base.RefValue{Union{Nothing, PolicyDecisionEnvConfig}} = Ref{Union{Nothing, PolicyDecisionEnvConfig}}(nothing)
         rhs_env_config::Base.RefValue{Union{Nothing, RhsPlanEnvConfig}} = Ref{Union{Nothing, RhsPlanEnvConfig}}(nothing)
         callback_env_config::Base.RefValue{Union{Nothing, CallbackEnvConfig}} = Ref{Union{Nothing, CallbackEnvConfig}}(nothing)

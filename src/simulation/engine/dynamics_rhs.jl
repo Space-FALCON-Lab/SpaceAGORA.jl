@@ -233,6 +233,10 @@ end
         partials = partials_ref[]
         if size(partials, 1) != 6 || size(partials, 2) < num_sats || size(partials, 3) < workers
             partials_ref[] = zeros(Float64, 6, num_sats, workers)
+        elseif size(partials, 2) == num_sats && size(partials, 3) == workers
+            # Exact-size buffer (the steady-state case): contiguous fill! is a
+            # straight memset, cheaper than the strided view broadcast below.
+            fill!(partials, 0.0)
         else
             partials[:, 1:num_sats, 1:workers] .= 0.0
         end
@@ -438,9 +442,17 @@ function _prepare_rhs_flat_work_items!(
     # it entirely in that case; only heterogeneous multi-effector residual queues
     # benefit from (and need) the sort.
     if count_items > 1 && _count_flat_queue_only_effectors(dynamic_effectors) > 1
+        # Item cost only depends on eff_idx, so there are just n_effectors distinct
+        # values. Resolve each effector's estimated cost once up front; the sort
+        # comparator then reads a small tuple instead of re-deriving the cost-model
+        # lookup O(n log n) times inside sort!.
+        eff_costs = ntuple(
+            eff_idx -> _rhs_effector_estimated_cost_ns(p.shared_buffers, dynamic_effectors, eff_idx),
+            length(dynamic_effectors),
+        )
         sort!(
             @view(work_items[1:count_items]);
-            by=item -> -_rhs_flat_item_estimated_cost_ns(p.shared_buffers, dynamic_effectors, item),
+            by=item -> -eff_costs[_constellation_node_eff_idx(item, n_effectors)],
             alg=Base.Sort.DEFAULT_STABLE,
         )
     end
@@ -996,7 +1008,14 @@ function _accumulate_dynamic_effectors_flat_batch!(
     num_items = num_sats * n_effectors
     num_items <= 0 && return nothing
     workers = SimulationModel.ParallelPolicy.thread_worker_count(num_items, plan.allotment)
-    _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, workers)
+    # Partials are only written by the flat queue itself; pre-pass-only effector
+    # sets (e.g. harmonics-only constellations, which take the batch-kernel
+    # shortcut below and write straight into totals) never touch them, so skip
+    # the O(6·N·W) zeroing sweep in that case. Partitioned calls always run the
+    # queue for their selected effectors.
+    needs_flat_queue = partition === nothing ?
+        _count_flat_queue_only_effectors(dynamic_effectors) > 0 : true
+    _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, workers; zero_partials=needs_flat_queue)
     selected_count = partition === nothing ? n_effectors : _partition_selected_count(dynamic_effectors, partition)
     selected_count <= 0 && return nothing
 
@@ -1140,8 +1159,11 @@ function _accumulate_dynamic_effectors_flat_batch!(
         end
     end
 
-    @inbounds for sat_idx in 1:num_sats
-        for worker_id in 1:exec_plan.workers
+    # Worker-major reduction: partials is column-major 6×N×W, so for a fixed
+    # worker the satellite dimension is contiguous (stride 6); satellite-major
+    # order with the worker innermost would jump 6N doubles per iteration.
+    @inbounds for worker_id in 1:exec_plan.workers
+        for sat_idx in 1:num_sats
             totals[1, sat_idx] += partials[1, sat_idx, worker_id]
             totals[2, sat_idx] += partials[2, sat_idx, worker_id]
             totals[3, sat_idx] += partials[3, sat_idx, worker_id]
@@ -1624,6 +1646,34 @@ end
     )
 end
 
+"""Return whether any configured effector carries a robot-arm plan at all."""
+function _any_robot_arm_effector(args)::Bool
+    if hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors)
+        @inbounds for effector in args.control_model.control_effectors
+            hasproperty(effector, :plan) &&
+                getproperty(effector, :plan) isa SimulationModel.RobotArmPlan && return true
+        end
+    end
+    if hasproperty(args, :dynamics_model) && hasproperty(args.dynamics_model, :dynamic_effectors)
+        @inbounds for effector in args.dynamics_model.dynamic_effectors
+            hasproperty(effector, :plan) &&
+                getproperty(effector, :plan) isa SimulationModel.RobotArmPlan && return true
+        end
+    end
+    return false
+end
+
+"""Cached robot-arm presence check for the RHS hot path (lazy, run-constant)."""
+@inline function _robot_arm_present(p)::Bool
+    (p !== nothing && hasproperty(p, :shared_buffers) &&
+        hasproperty(p.shared_buffers, :robot_arm_present)) || return true
+    cached = p.shared_buffers.robot_arm_present[]
+    cached === nothing || return cached
+    present = _any_robot_arm_effector(p.args)
+    p.shared_buffers.robot_arm_present[] = present
+    return present
+end
+
 """Find the active robot-arm coupling configuration for one spacecraft."""
 function _robot_arm_coupling(args, sat_idx::Int, t::Float64)
     if hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors)
@@ -1641,6 +1691,9 @@ end
 
 """Apply coupled cloth robot-arm state derivatives to one spacecraft RHS view."""
 @inline function _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, sat_idx::Int, t::Float64, forces, torques)
+    # Fast path: skip the per-satellite effector-tuple scan when the run has no
+    # robot-arm effector anywhere (cached in shared_buffers on first use).
+    _robot_arm_present(p) || return nothing
     coupling = _robot_arm_coupling(p.args, sat_idx, t)
     coupling === nothing && return nothing
     SimulationModel.assign_coupled_cloth_robot_arm_rhs!(

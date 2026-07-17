@@ -144,8 +144,9 @@ function _run_monte_carlo_threaded(f, seeds::Vector, spec::MonteCarloSpec, worke
         end
     end
 
+    # samples[index] writes plus the in-order filter above already leave
+    # `completed` sorted by index; no re-sort needed.
     completed = MonteCarloSampleResult[s for s in samples if s !== nothing]
-    sort!(completed; by=s -> s.index)
     if spec.fail_fast
         _throw_first_monte_carlo_failure(completed)
     end
@@ -154,14 +155,13 @@ end
 
 # Process-backend counterpart of `_run_monte_carlo_threaded`: identical
 # job-queue structure, but each sample runs via `remotecall_fetch` on one of
-# `worker_ids` instead of a local `Threads.@spawn` task. `_run_monte_carlo_sample`
-# is a genuine package-level function (not a closure), so it resolves cleanly
-# on a worker that has `using SpaceAGORA` loaded (see `ensure_process_workers!`)
-# -- Distributed only has trouble with closures capturing not-yet-defined
-# `Main`-scope globals, which a qualified package function is not. The
-# dispatch loop itself uses `@async`/`@sync` (not `Threads.@spawn`): each task
-# just blocks on IPC waiting for its worker's reply, so it should not occupy
-# an OS thread the way genuinely CPU-bound work would.
+# `worker_ids` instead of a local `Threads.@spawn` task. The remote callable is
+# a closure over `f` dispatched through a `CachingPool`, so the (potentially
+# large, configuration-capturing) closure is serialized to each worker once and
+# referenced by identity afterwards, instead of being re-serialized with every
+# sample. The dispatch loop itself uses `@async`/`@sync` (not `Threads.@spawn`):
+# each task just blocks on IPC waiting for a worker's reply, so it should not
+# occupy an OS thread the way genuinely CPU-bound work would.
 function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int})
     jobs = Channel{Tuple{Int, Any}}(length(seeds))
     for (index, seed) in enumerate(seeds)
@@ -172,24 +172,33 @@ function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker
     samples = Vector{Union{Nothing, MonteCarloSampleResult}}(nothing, length(seeds))
     stop_requested = Base.Threads.Atomic{Bool}(false)
 
-    Base.@sync begin
-        for worker in worker_ids
-            Base.@async begin
-                for (index, seed) in jobs
-                    spec.fail_fast && stop_requested[] && break
-                    sample = remotecall_fetch(_run_monte_carlo_sample, worker, f, index, seed)
-                    samples[index] = sample
-                    if spec.fail_fast && !sample.success
-                        Base.Threads.atomic_xchg!(stop_requested, true)
-                        break
+    pool = CachingPool(worker_ids)
+    run_sample = (index, seed) -> _run_monte_carlo_sample(f, index, seed)
+    try
+        Base.@sync begin
+            for _ in worker_ids
+                Base.@async begin
+                    for (index, seed) in jobs
+                        spec.fail_fast && stop_requested[] && break
+                        sample = remotecall_fetch(run_sample, pool, index, seed)
+                        samples[index] = sample
+                        if spec.fail_fast && !sample.success
+                            Base.Threads.atomic_xchg!(stop_requested, true)
+                            break
+                        end
                     end
                 end
             end
         end
+    finally
+        # Drop the cached closure on the workers; it can capture large
+        # configuration state that should not outlive the campaign.
+        Distributed.clear!(pool)
     end
 
+    # samples[index] writes plus the in-order filter above already leave
+    # `completed` sorted by index; no re-sort needed.
     completed = MonteCarloSampleResult[s for s in samples if s !== nothing]
-    sort!(completed; by=s -> s.index)
     if spec.fail_fast
         _throw_first_monte_carlo_failure(completed)
     end

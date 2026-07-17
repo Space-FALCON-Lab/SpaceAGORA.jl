@@ -269,9 +269,8 @@ function _aero_pure_wrench(
         return _AERO_ZERO5
     end
     # Free-molecular coefficients use the same wind-relative flow as the force
-    # direction and dynamic pressure (the legacy calcForceTorque path already does).
-    mach = vel_pp_rw_mag / sound_velocity
-    S = sqrt(planet.γ * 0.5) * mach
+    # direction and dynamic pressure (the legacy calcForceTorque path already
+    # does); mach_body/S_body are computed per link inside the loop below.
 
     vel_pp_rw_hat = vel_pp_rw / vel_pp_rw_mag
     h_pp_hat = h_pp / h_pp_mag

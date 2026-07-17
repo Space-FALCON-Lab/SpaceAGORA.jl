@@ -35,6 +35,10 @@ results["gg"] = run_cygnss_case(
     label="gravity_gradient", dt_max=1.0,
 )
 
+# Per-link atmosphere sampling is opt-in (defaults off so baseline simulation
+# physics matches the single-sample behavior); the aero cases here want it.
+SimulationModel.DynamicEffectors.AerodynamicEffectors.set_per_link_atmosphere!(true)
+
 println("=== FULL HOUR: + aero (GRAM, free-molecular, per-link density) only ===")
 results["aero"] = run_cygnss_case(
     t_cal=T0, t_end=TEND,
@@ -57,6 +61,8 @@ results["full"] = run_cygnss_case(
     label="full_combo", dt_max=1.0,
     density_model=GRAMAtmosphereModel(planet_name="earth"),
 )
+
+SimulationModel.DynamicEffectors.AerodynamicEffectors.set_per_link_atmosphere!(false)
 
 println()
 println("=== SUMMARY ===")

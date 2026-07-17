@@ -206,6 +206,15 @@ end
 const _AERO_ZERO3 = SVector{3, Float64}(0.0, 0.0, 0.0)
 const _AERO_ZERO5 = (_AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3)
 
+# Opt-in switch for per-link atmosphere sampling in the ODEParams-aware `wrench`
+# methods below. Default `false` preserves the long-standing single-sample
+# behavior (one atmosphere sample for the whole spacecraft), so default
+# simulation physics is identical to the pre-feature code path; callers that
+# want the per-link treatment (e.g. the CYGNSS attitude/torque reconstruction
+# study) enable it explicitly via `set_per_link_atmosphere!(true)`.
+const PER_LINK_ATMOSPHERE_ENABLED = Ref(false)
+set_per_link_atmosphere!(flag::Bool) = (PER_LINK_ATMOSPHERE_ENABLED[] = flag; nothing)
+
 # Returns (force_ii, torque_body, drag_ii, lift_ii, cross_ii) all in the inertial frame.
 #
 # `link_atmosphere_fn`, when provided, is called as `link_atmosphere_fn(pos_pp_link)`
@@ -378,7 +387,8 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    link_atmosphere_fn = pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)
+    link_atmosphere_fn = PER_LINK_ATMOSPHERE_ENABLED[] ?
+        (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
     return force, torque
@@ -392,7 +402,8 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    link_atmosphere_fn = pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)
+    link_atmosphere_fn = PER_LINK_ATMOSPHERE_ENABLED[] ?
+        (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:fm, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
     return force, torque
@@ -406,7 +417,8 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    link_atmosphere_fn = pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)
+    link_atmosphere_fn = PER_LINK_ATMOSPHERE_ENABLED[] ?
+        (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
     return force, torque

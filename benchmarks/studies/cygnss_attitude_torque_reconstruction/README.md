@@ -18,24 +18,40 @@ spacecraft (bus + 2 panels), and uses it to answer two separate questions:
 
 ```
 common.jl                       # telemetry loading, custom effectors, spacecraft, run_cygnss_case
-run_independent_effects.jl      # question 1
-run_kinematic_backout.jl        # question 2 + plots
+run_independent_effects.jl      # question 1 -- runs the 5 sims, writes data/plot_data/independent_effects_*.arrow
+run_kinematic_backout.jl        # question 2 -- runs the sim, writes data/plot_data/kinematic_backout*.arrow
 run_position_accuracy.jl        # position-accuracy ablation on the 1hr slew dataset (see below)
 run_position_accuracy_48hr.jl   # exact reference replication on the dedicated 48hr PVT dataset (see below)
+make_plots.jl                   # reads data/plot_data/*.arrow, writes plots/*.pdf -- no simulation, fast to re-run
+make_rmse_table.jl              # reads data/plot_data/*_rmse.arrow, writes tables/cygnss_rmse_tables.tex
 data/                           # pre-extracted telemetry (see "Data provenance" below)
-plots/                          # all output plots land here
+data/plot_data/                 # intermediate arrow files written by the run_*.jl scripts (gitignored)
+plots/                          # all output plots land here, PDF (gitignored)
+tables/                         # LaTeX RMSE table lands here (gitignored)
 ```
 
-Run any study script directly; each `include(common.jl)` itself (except
+Each `run_*.jl` script (`include`-ing `common.jl` itself, except
 `run_position_accuracy_48hr.jl`, which is self-contained -- see "Position
-accuracy" below for why):
+accuracy" below for why) only runs the simulation(s) and writes the plotted/
+tabulated quantities to `data/plot_data/*.arrow`; it does not generate any
+plots or tables itself. Run the ones you need, then `make_plots.jl` and/or
+`make_rmse_table.jl` to (re)generate output from whatever data is currently
+on disk:
 
 ```bash
 julia --project=. benchmarks/studies/cygnss_attitude_torque_reconstruction/run_independent_effects.jl
 julia --project=. benchmarks/studies/cygnss_attitude_torque_reconstruction/run_kinematic_backout.jl
 julia --project=. benchmarks/studies/cygnss_attitude_torque_reconstruction/run_position_accuracy.jl
 julia --project=. benchmarks/studies/cygnss_attitude_torque_reconstruction/run_position_accuracy_48hr.jl
+
+julia --project=. benchmarks/studies/cygnss_attitude_torque_reconstruction/make_plots.jl        # plots/*.pdf
+julia --project=. benchmarks/studies/cygnss_attitude_torque_reconstruction/make_rmse_table.jl   # tables/cygnss_rmse_tables.tex
 ```
+
+`make_plots.jl`/`make_rmse_table.jl` don't re-run any simulation, so they're
+fast (seconds) to re-run when only iterating on plot styling or table
+formatting -- only re-run the relevant `run_*.jl` script if the underlying
+data is stale.
 
 Each full-hour case takes roughly 1-2 minutes (GRAM cases somewhat longer:
 real MERRA2 atmosphere queries plus one extra raw density query per non-root
@@ -81,32 +97,33 @@ as A*m^2 -- see "dplCmd units" below) makes the fit *worse*, and stacking all
 three does not beat gravity-gradient alone. None of these come close to
 closing the gap to the maneuver-window fit's sub-1-degree accuracy.
 
-### Position, same five configurations
+### Position and velocity, same five configurations
 
-`run_cygnss_case` also compares simulated ECI position against ground truth
-(`plots/cygnss_independent_effects_position_summary.png`,
-`..._position_timeseries.png`). Ground truth here is the raw GPS receiver fix
+`run_cygnss_case` also compares simulated ECI position and velocity against
+ground truth (`plots/cygnss_independent_effects_position_summary.pdf`,
+`..._position_timeseries.pdf`, `..._velocity_summary.pdf`,
+`..._velocity_timeseries.pdf`). Ground truth here is the raw GPS receiver fix
 (`gpsData.PV_ecef`), converted to ECI via SpaceAGORA's own SPICE frame -- see
 "Position accuracy" below for why, this wasn't the original choice:
 
-| Configuration | mean error | max error |
-|---|---|---|
-| Wheel-only baseline | 23.876 km | 63.029 km |
-| + gravity-gradient | 23.876 km | 63.029 km |
-| + aero (GRAM, per-link density) | 23.857 km | 62.947 km |
-| + magnetic (real dplCmd telemetry) | 23.876 km | 63.029 km |
-| All combined | 23.857 km | 62.947 km |
+| Configuration | position mean | position max | velocity mean | velocity max |
+|---|---|---|---|---|
+| Wheel-only baseline | 23.876 km | 63.029 km | 0.02811 km/s | 0.06512 km/s |
+| + gravity-gradient | 23.876 km | 63.029 km | 0.02811 km/s | 0.06512 km/s |
+| + aero (GRAM, per-link density) | 23.857 km | 62.947 km | 0.02808 km/s | 0.06502 km/s |
+| + magnetic (real dplCmd telemetry) | 23.876 km | 63.029 km | 0.02811 km/s | 0.06512 km/s |
+| All combined | 23.857 km | 62.947 km | 0.02808 km/s | 0.06502 km/s |
 
-Position error is essentially identical across all five (as expected --
-gravity-gradient and magnetic torque are pure torques with no translational
-effect at all; only the two aero cases differ, and only slightly, from the
-real drag force `AerodynamicCoefficientfM` adds on top of its torque). Every
-case here uses bare `InverseSquaredGravityModel` (two-body only, no J2),
-deliberately, since this study's focus is attitude/torque, not orbit
-determination -- see "Position accuracy" below for how much of this ~24 km
-floor is the missing J2 term versus this specific GPS fix's own precision,
-and for an exact (not just close) reproduction of the 48hr reference's
-~1.58 km result.
+Position (and velocity) error is essentially identical across all five (as
+expected -- gravity-gradient and magnetic torque are pure torques with no
+translational effect at all; only the two aero cases differ, and only
+slightly, from the real drag force `AerodynamicCoefficientfM` adds on top of
+its torque). Every case here uses bare `InverseSquaredGravityModel`
+(two-body only, no J2), deliberately, since this study's focus is
+attitude/torque, not orbit determination -- see "Position accuracy" below for
+how much of this ~24 km floor is the missing J2 term versus this specific GPS
+fix's own precision, and for an exact (not just close) reproduction of the
+48hr reference's ~1.58 km result.
 
 ## Kinematic torque back-out
 
@@ -135,19 +152,27 @@ re-integrating from the same initial condition:
 | Kinematic back-out replay | **0.22 deg** | **0.42 deg** |
 | Omega_rw/J_RW wheel-only replay (for reference) | 87.56 deg | 179.72 deg |
 
-This is near-perfect reproduction (see `plots/cygnss_kinematic_backout_*`):
-the quaternion components are visually indistinguishable from telemetry for
-the full hour, and the error stays flat around 0.2-0.3 deg through the
-middle of the window rather than growing, which is the signature of
+This is near-perfect reproduction (see `plots/cygnss_kinematic_backout_quaternion_q1..4_timeseries.pdf`,
+one file per component since each is now its own untitled figure): the
+quaternion components are visually indistinguishable from telemetry for the
+full hour, and the error stays flat around 0.2-0.3 deg through the middle of
+the window rather than growing, which is the signature of
 spline-differentiation/integration noise, not a physical mismatch (it does
 climb to 0.42 deg by the very end, consistent with edge effects in the
-cubic-spline derivative near the boundary of the telemetry window).
+cubic-spline derivative near the boundary of the telemetry window; see
+`plots/cygnss_kinematic_backout_attitude_error_timeseries.pdf`).
 
 This run's translational dynamics are the same bare two-body gravity model as
 every case in the independent-effect sweep (torque back-out only touches
 attitude), so it shows the same ~24 km mean / ~63 km max position error for
-the same reason (`plots/cygnss_kinematic_backout_position_*.png`,
+the same reason (`plots/cygnss_kinematic_backout_position_x/y/z_timeseries.pdf`,
+`plots/cygnss_kinematic_backout_position_error_timeseries.pdf`,
 `position mean=23.863 km max=63.029 km`) -- see "Position accuracy" below.
+Velocity error is the matching translational quantity
+(`plots/cygnss_kinematic_backout_velocity_error_timeseries.pdf`,
+`velocity mean=0.02810 km/s max=0.06512 km/s`), computed the same way
+(`u.sc[1].vel` vs. the GPS-derived `v_truth(t)` in `common.jl`) for every case
+in this study, not just this one.
 
 **This proves the 87.56 deg residual is not missing environmental physics --
 gravity-gradient/aero/magnetic are all too small individually and combined to
@@ -158,7 +183,7 @@ alone and evidently doesn't generalize to the full hour, and/or Omega_rw
 telemetry itself has drift/bias over longer timescales that the linear wheel
 model doesn't capture.
 
-The backed-out torque magnitude (`plots/cygnss_kinematic_torque_magnitude.png`)
+The backed-out torque magnitude (`plots/cygnss_kinematic_torque_magnitude.pdf`)
 is a useful sanity check in its own right: mean 1.10e-4 N*m, max 4.67e-4 N*m,
 comfortably inside CYGNSS's actual reaction-wheel torque rating (6.55e-4 N*m
 max, from the wheel datasheet value used elsewhere in this repo) -- a
@@ -208,7 +233,12 @@ visible in the telemetry itself: this GPS receiver's own reported GDOP is
 the order of a km or two, setting a floor no amount of propagation fidelity
 can get under. `run_position_accuracy.jl` runs this full ablation (raw vs.
 N=5-SMA-corrected IC, x, two-body vs. J2 vs. 50x50 EGM harmonics) and writes
-`plots/cygnss_position_accuracy_*.png`.
+`plots/cygnss_position_accuracy_ablation.pdf` (mean/max position error bar
+chart) and its velocity-error counterpart
+`plots/cygnss_velocity_accuracy_ablation.pdf`, plus best-case (SMA-corrected
+IC, 50x50 EGM) time series:
+`plots/cygnss_position_accuracy_best_case_x/y/z_timeseries.pdf`,
+`..._error_timeseries.pdf`, and `..._velocity_error_timeseries.pdf`.
 
 ### Exact reference replication (48hr dedicated PVT dataset)
 
@@ -252,7 +282,7 @@ matching `_scenario_rmse`'s definition: the mean of three *separate*
 per-axis RMSEs, not one 3D Euclidean-distance RMSE -- an easy metric
 mismatch to fall into, and the first thing that needed fixing in the hand
 reimplementation before the spacecraft-defaults bug was found). See
-`plots/cygnss_48hr_reference_replication_error_timeseries.png` and
+`plots/cygnss_48hr_reference_replication_error_timeseries.pdf` and
 `data/cygnss_48hr_reference_summary.csv` (the per-sample errors table is
 ~100MB+ and deliberately not persisted -- re-run the script to regenerate it
 if needed).
@@ -265,7 +295,73 @@ isolated GPS-fix glitches in the 48hr telemetry itself rather than a
 propagation issue (the RMSE printed above is always computed from the
 *unfiltered* errors table, so 1.578 km is unaffected by this -- the filter
 is a plotting-only choice, applied after the number that matters was already
-computed).
+computed; the plot no longer draws that unfiltered-RMSE value as a reference
+line, only the per-axis errors and the running RMSE of the filtered series).
+
+**Velocity RMSE for this same 48hr case: `0.0017462593412124674 km/s`**,
+computed the same way (mean of the three per-axis `state_vx_time`/
+`state_vy_time`/`state_vz_time` RMSEs) against the real per-sample
+`vel_ii_1/2/3` ECI velocity telemetry already present in
+`cygnss_data_48hr.feather`. Getting this required extending the shared
+telemetry-verification framework itself
+(`src/analysis/verification/telemetry_verification/`): the
+`time_aligned_state` comparison path only ever computed `state_x/y/z_time`
+(position); velocity was available in `_load_time_aligned_telemetry` only as
+`_differentiate_series(x_km, time_s)` (numerically differentiated from
+position, used solely for the unrelated `orbit_events`
+perigee/apogee-speed comparison, never compared against directly). Added
+three new optional `TimeAlignedScenarioConfig` fields
+(`telemetry_vx_col`/`vy`/`vz`, distinct from the pre-existing single-value
+`vx_ic`/`vy_ic`/`vz_ic` IC columns) that, when a scenario's
+`telemetry_columns` sets them, make `_load_time_aligned_telemetry` read the
+real per-sample column instead of differentiating, and make
+`_time_aligned_rows_errors` additionally emit `state_vx_time`/`vy`/`vz`
+error rows compared against it. Strictly opt-in (new fields default to
+`nothing`), so every other scenario using this shared framework -- including
+`test/gmat_scenario_matrix.jl`'s own tests -- is unaffected; verified by
+re-parsing the existing manifest and confirming the new fields default to
+`nothing`, and by re-running this scenario and confirming the position RMSE
+is still exactly `1.5777521293524328` km after the change.
+
+## RMSE summary table
+
+`make_rmse_table.jl` reads `data/plot_data/*_rmse.arrow` and writes a single
+LaTeX table, `tables/cygnss_rmse_tables.tex` (gitignored, regenerate by
+re-running the script). It deliberately does *not* draw its four numbers
+from one common case -- each comes from whichever case in this folder
+actually exercises that quantity meaningfully:
+
+| Position RMSE (km) | Velocity RMSE (km/s) | Quaternion RMSE (deg) | Angular velocity RMSE (deg/s) |
+|---|---|---|---|
+| 1.578 | 0.00175 | 0.232 | 1.489e-6 |
+
+- **Position/velocity** come from the 48hr reference-replication case (see
+  above) -- the longer window and the validated `TV.run_verification`
+  pipeline make it the meaningful test of translational accuracy, not the
+  1-hour slew window (whose position error is dominated by using bare
+  two-body gravity by design, ~24 km, and isn't the point of that study).
+- **Quaternion/angular velocity** come from the kinematic torque back-out
+  case instead (the full-hour slew maneuver) -- the 48hr case and the other
+  1-hour studies (`run_independent_effects.jl`, `run_position_accuracy.jl`)
+  all drive attitude with the wheel-only Omega_rw/J_RW baseline, which the
+  independent-effects table above already shows floors at ~87-114 deg and
+  isn't a meaningful attitude-reconstruction result; the kinematic back-out
+  case is the one place in this study where attitude is actually
+  reconstructed well.
+
+Both RMSEs in the first two columns are the mean of three per-axis RMSEs
+(matching `_scenario_rmse`'s definition used throughout the 48hr section
+above), not a 3D Euclidean-norm RMSE. The quaternion RMSE is
+`sqrt(mean(angle_err_deg .^ 2))` where `angle_err_deg` is the same
+`2*acos(|q_sim . q_gt|)` magnitude error used everywhere else in this study
+(not an elementwise per-component quaternion RMSE). The angular velocity
+RMSE is `sqrt(mean(norm(w_sim - w_gt) .^ 2))`, `w_gt` from the same
+`ω_meas(t)` telemetry interpolant `run_kinematic_backout.jl` already used.
+The angular velocity number is genuinely `1.489e-6 deg/s`, not exactly zero
+-- expected, since `KinematicTorqueReplayControlModel` is inverse dynamics
+constructed specifically to reproduce the measured rate trajectory, so the
+residual is purely spline/differentiation/integration error, not a real
+mismatch.
 
 ## Lessons learned / bugs found and fixed this session
 
@@ -372,6 +468,21 @@ explain why some of the above numbers took several iterations to trust.
    duty-cycle fraction, the effective torque is being driven at whatever
    scale the true rod happens to sit at relative to the assumed 1 A*m^2 unit,
    not necessarily the right one.
+
+10. **Extending a shared, validated pipeline is safe when done strictly
+    opt-in.** Getting a real (not differentiated) velocity RMSE for the
+    48hr case (see "RMSE summary table" above) meant adding new capability
+    to `src/analysis/verification/telemetry_verification/`, code shared
+    with `test/gmat_scenario_matrix.jl` and other consumers. Every addition
+    (`TimeAlignedScenarioConfig`'s three new fields, the new
+    `state_vx/vy/vz_time` event rows) is gated behind those fields being
+    non-`nothing`, so scenarios that don't set them -- every existing one --
+    take the exact same code path as before. Verified concretely, not just
+    by inspection: re-parsed the existing test manifest and confirmed the
+    new fields default to `nothing`, and re-ran this exact scenario after
+    the change and confirmed the position RMSE was still
+    `1.5777521293524328` km to full float precision. Cheap insurance against
+    silently regressing a pipeline other tests depend on.
 
 ## Data provenance
 

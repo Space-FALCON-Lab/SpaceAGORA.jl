@@ -146,6 +146,14 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     telemetry_vx_ic_col::Union{Nothing, String} = nothing
     telemetry_vy_ic_col::Union{Nothing, String} = nothing
     telemetry_vz_ic_col::Union{Nothing, String} = nothing
+    # Optional: real per-sample velocity ground truth. When all three are present,
+    # state_vx_time/state_vy_time/state_vz_time error rows are computed against
+    # these telemetry columns instead of being omitted (the default vx_kmps/vy_kmps/
+    # vz_kmps fallback in _load_time_aligned_telemetry is numerically differentiated
+    # from position and is not compared against directly).
+    telemetry_vx_col::Union{Nothing, String} = nothing
+    telemetry_vy_col::Union{Nothing, String} = nothing
+    telemetry_vz_col::Union{Nothing, String} = nothing
     max_points_quick::Int
     max_points_full::Int
     min_eval_points::Int

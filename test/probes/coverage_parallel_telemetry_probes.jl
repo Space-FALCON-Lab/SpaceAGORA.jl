@@ -1377,9 +1377,15 @@ end
         live = [line for line in eachline(file) if !startswith(strip(line), "#")]
         @test !any(occursin(r"vel_pp_rw\s*=\s*(planet_frame\.)?vel_pp\s*\+\s*wind_pp", line) for line in live)
     end
-    # Dynamic pressure in the coupled aero model must use the wind-relative speed.
+    # Dynamic pressure in the coupled aero model must use the wind-relative speed,
+    # in both the spacecraft-level and the per-link (rho_body/q_body) forms.
     aero_src = read(files[1], String)
-    @test !occursin("q = 0.5 * rho * vel_pp_mag^2", aero_src)
+    @test !occursin(r"q(_body)?\s*=\s*0\.5\s*\*\s*rho(_body)?\s*\*\s*vel_pp_mag\^2", aero_src)
+    # The per-link Mach/molecular-speed-ratio in _aero_pure_wrench must also be
+    # wind-relative. (The legacy calcForceTorque paths' spacecraft-level `mach =
+    # vel_pp_mag / ...` is long-standing pinned behavior, deliberately not
+    # covered here.)
+    @test !occursin(r"mach_body\s*=\s*vel_pp_mag\s*/", aero_src)
 end
 
 println("coverage_parallel_telemetry_probes_ok")

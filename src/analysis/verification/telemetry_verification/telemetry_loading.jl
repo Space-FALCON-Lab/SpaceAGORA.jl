@@ -268,6 +268,19 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
     vy_ic_col    = has_cartesian_ic ? _require_column(df, [cfg.telemetry_vy_ic_col], "telemetry-vy_ic") : nothing
     vz_ic_col    = has_cartesian_ic ? _require_column(df, [cfg.telemetry_vz_ic_col], "telemetry-vz_ic") : nothing
 
+    # Optional real per-sample velocity ground truth (distinct from the single-value
+    # vx_ic/vy_ic/vz_ic above). When present, used instead of differentiated position.
+    has_velocity_truth = !any(isnothing, (cfg.telemetry_vx_col, cfg.telemetry_vy_col, cfg.telemetry_vz_col))
+    has_partial_velocity_truth = any(!isnothing, (cfg.telemetry_vx_col, cfg.telemetry_vy_col, cfg.telemetry_vz_col))
+    if has_partial_velocity_truth && !has_velocity_truth
+        throw(ArgumentError(
+            "Time-aligned scenario $(cfg.name) must provide either all three velocity telemetry columns (vx, vy, vz) or none of them."
+        ))
+    end
+    vx_true_kmps = has_velocity_truth ? _require_column(df, [cfg.telemetry_vx_col], "telemetry-vx") : nothing
+    vy_true_kmps = has_velocity_truth ? _require_column(df, [cfg.telemetry_vy_col], "telemetry-vy") : nothing
+    vz_true_kmps = has_velocity_truth ? _require_column(df, [cfg.telemetry_vz_col], "telemetry-vz") : nothing
+
     perm = sortperm(time_s)
     time_s = time_s[perm]
     altitude_km = altitude_km[perm]
@@ -280,6 +293,11 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
     aop_deg = aop_deg[perm]
     raan_deg = raan_deg[perm]
     ta_deg = ta_deg[perm]
+    if has_velocity_truth
+        vx_true_kmps = vx_true_kmps[perm]
+        vy_true_kmps = vy_true_kmps[perm]
+        vz_true_kmps = vz_true_kmps[perm]
+    end
 
     if max_points > 0 && length(time_s) > max_points
         keep = 1:max_points
@@ -294,6 +312,11 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
         aop_deg = aop_deg[keep]
         raan_deg = raan_deg[keep]
         ta_deg = ta_deg[keep]
+        if has_velocity_truth
+            vx_true_kmps = vx_true_kmps[keep]
+            vy_true_kmps = vy_true_kmps[keep]
+            vz_true_kmps = vz_true_kmps[keep]
+        end
     end
 
     length(time_s) >= 2 || throw(ArgumentError("Need at least 2 telemetry samples for $(cfg.name), got $(length(time_s))."))
@@ -306,9 +329,9 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
         x_km=x_km,
         y_km=y_km,
         z_km=z_km,
-        vx_kmps=_differentiate_series(x_km, time_s),
-        vy_kmps=_differentiate_series(y_km, time_s),
-        vz_kmps=_differentiate_series(z_km, time_s),
+        vx_kmps=has_velocity_truth ? vx_true_kmps : _differentiate_series(x_km, time_s),
+        vy_kmps=has_velocity_truth ? vy_true_kmps : _differentiate_series(y_km, time_s),
+        vz_kmps=has_velocity_truth ? vz_true_kmps : _differentiate_series(z_km, time_s),
         sma_km=has_keplerian_ic ? sma_km[1] : NaN,
         ecc=has_keplerian_ic ? ecc[1] : NaN,
         inc_deg=has_keplerian_ic ? inc_deg[1] : NaN,

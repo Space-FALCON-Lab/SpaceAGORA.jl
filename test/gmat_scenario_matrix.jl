@@ -49,6 +49,11 @@ const _GMAT_PLANETARY_KERNEL_CANDIDATES = (
 const _CYGNSS_48HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cygnss_data_48hr.feather")
 const _CYGNSS_96HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cyg04_nasa_pvt_96hr.feather")
 const _CYGNSS_CYG04_96HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cyg04_nasa_pvt_96hr.feather")
+# CYGNSS flight telemetry is access-restricted and gitignored (see
+# data/telemetry/PRIVATE_TELEMETRY.md). The CYGNSS testsets below skip cleanly
+# when it has not been synced into this checkout.
+_cygnss_private_data_available() =
+    isfile(_CYGNSS_48HR_TELEMETRY_FEATHER) && isfile(_CYGNSS_CYG04_96HR_TELEMETRY_FEATHER)
 const _CYGNSS_GMAT_COMPARISON_PATH = let
     basilisk_path = joinpath(_GMAT_EXAMPLES_DIR, "Sim_CYGNSS_Comparison.feather")
     isfile(basilisk_path) ? basilisk_path : joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "GMAT_Examples", "Sim_CYGNSS_Comparison.feather")
@@ -2269,6 +2274,12 @@ end
 
 end # SPACEAGORA_SKIP_GMAT_MATRIX (GMAT Early vs Full Error)
 
+if !_cygnss_private_data_available()
+    @testset "CYGNSS scenarios" begin
+        @test_skip "CYGNSS private telemetry not present under data/telemetry/CYGNSS/; run scripts/dev/fetch_private_telemetry.sh to sync it, then re-run."
+    end
+else
+
 @testset "CYGNSS Telemetry Folder Data" begin
     cygnss_feather_path = _CYGNSS_48HR_TELEMETRY_FEATHER
     @test isfile(cygnss_feather_path)
@@ -2727,6 +2738,8 @@ end
         println("cygnss drag tangential timeseries plot: $(tang_plot_path)")
     end
 end
+
+end # !_cygnss_private_data_available() guard around the CYGNSS testsets
 
 # ---------------------------------------------------------------------------
 # SpaceAGORA Examples Export

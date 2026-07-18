@@ -431,7 +431,8 @@ function _parse_spacecraft_config(tbl, context::String)::SpacecraftConfig
         panel_mass_each_kg=_require_float(stbl, "panel_mass_each_kg", "$context.spacecraft"),
         panel_offset_y_m=_require_float(stbl, "panel_offset_y_m", "$context.spacecraft"),
         prop_mass_kg=_require_float(stbl, "prop_mass_kg", "$context.spacecraft"),
-        id=Int64(_require_int(stbl, "id", "$context.spacecraft"))
+        id=Int64(_require_int(stbl, "id", "$context.spacecraft")),
+        bus_ram_face=Symbol(_optional_str(stbl, "bus_ram_face", "legacy"))
     )
 end
 

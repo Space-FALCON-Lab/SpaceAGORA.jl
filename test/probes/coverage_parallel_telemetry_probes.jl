@@ -1388,4 +1388,33 @@ end
     @test !occursin(r"mach_body\s*=\s*vel_pp_mag\s*/", aero_src)
 end
 
+@testset "Spacecraft builder ram-face convention" begin
+    # The Hart free-molecular coefficients are normalized by the flow-normal
+    # face; with the translational fixed attitude the flow runs along body +x,
+    # so the consistent bus reference area is dims[2]*dims[3] (:frontal).
+    # :legacy pins the historical dims[1]*dims[3] value so previously
+    # calibrated scenarios are unchanged, and it must stay the default.
+    ic = SimulationModel.InitialCondition(
+        7.0e6, 1.0e-3, 35.0, 0.0, 0.0, 0.0,
+        SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    )
+    dims = (0.2, 0.5, 0.6)
+    kw = (panel_dims=(0.4, 0.001, 0.5), bus_mass=29.0, panel_mass_each=0.0,
+          panel_offset_y=0.5, ic=ic)
+    legacy = TelemetryVerification.make_three_body_spacecraft(; bus_dims=dims, kw...)
+    @test legacy.links[1].ref_area ≈ dims[1] * dims[3]
+    frontal = TelemetryVerification.make_three_body_spacecraft(; bus_dims=dims, bus_ram_face=:frontal, kw...)
+    @test frontal.links[1].ref_area ≈ dims[2] * dims[3]
+    # Panels already use the flow-normal dims[2]*dims[3] face in both modes.
+    @test legacy.links[2].ref_area ≈ 0.001 * 0.5
+    @test frontal.links[2].ref_area ≈ 0.001 * 0.5
+    @test_throws ArgumentError TelemetryVerification.make_three_body_spacecraft(;
+        bus_dims=dims, bus_ram_face=:sideways, kw...)
+    # Manifest key default must remain :legacy.
+    @test TelemetryVerification.SpacecraftConfig(
+        bus_dims=dims, panel_dims=(0.4, 0.001, 0.5), bus_mass_kg=29.0,
+        panel_mass_each_kg=0.0, panel_offset_y_m=0.5, prop_mass_kg=0.0, id=1
+    ).bus_ram_face === :legacy
+end
+
 println("coverage_parallel_telemetry_probes_ok")

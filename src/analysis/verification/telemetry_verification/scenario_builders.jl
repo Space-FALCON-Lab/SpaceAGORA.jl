@@ -312,7 +312,8 @@ end
         panel_offset_y=cfg.panel_offset_y_m,
         ic=ic,
         prop_mass=cfg.prop_mass_kg,
-        id=cfg.id
+        id=cfg.id,
+        bus_ram_face=cfg.bus_ram_face
     )
 end
 

@@ -193,6 +193,16 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     atmosphere_truth::AtmosphereTruthConfig = AtmosphereTruthConfig()
     calibration::CalibrationConfig = CalibrationConfig()
     EI_km::Float64
+    # Constant offsets added to the Cartesian telemetry IC (J2000, after any
+    # frame conversion). The knobs behind differential-correction IC fitting
+    # (fit_initial_state) and offset sweeps; zero by default.
+    ic_offset_m::NTuple{3, Float64} = (0.0, 0.0, 0.0)
+    ic_offset_mps::NTuple{3, Float64} = (0.0, 0.0, 0.0)
+    # Illumination screen for single-frequency GNSS truth: ionospheric group
+    # delay biases the dayside radial by O(100 m) (measured -162 m mean on
+    # CYGNSS FM4), so :nightside keeps only samples with the position vector
+    # anti-sunward (cos(sun angle) < 0). :dayside keeps the complement.
+    truth_mask::Symbol = :none
 end
 
 Base.@kwdef struct StudyConfig

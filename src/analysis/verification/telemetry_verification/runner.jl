@@ -106,9 +106,14 @@ function _initial_condition_from_time_aligned_telemetry(cfg::TimeAlignedScenario
             r_m, v_mps = _planet_fixed_to_j2000_state(cfg.planet_name, et0, r_m, v_mps)
         end
         return CartesianInitialCondition(
-            collect(r_m),
-            collect(v_mps)
+            collect(r_m .+ SVector{3, Float64}(cfg.ic_offset_m)),
+            collect(v_mps .+ SVector{3, Float64}(cfg.ic_offset_mps))
         )
+    end
+    if any(!iszero, cfg.ic_offset_m) || any(!iszero, cfg.ic_offset_mps)
+        throw(ArgumentError(
+            "Scenario $(cfg.name) sets ic_offset_m/ic_offset_mps but provides no Cartesian IC columns; offsets apply to Cartesian ICs only."
+        ))
     end
     all(isfinite, (telemetry.sma_km, telemetry.ecc, telemetry.inc_deg, telemetry.aop_deg, telemetry.raan_deg, telemetry.ta_deg)) || throw(
         ArgumentError("Time-aligned telemetry is missing both Cartesian ICs and finite Keplerian initial-condition fields.")

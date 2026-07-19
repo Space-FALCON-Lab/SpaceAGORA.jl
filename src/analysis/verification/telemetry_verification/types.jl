@@ -58,6 +58,10 @@ Base.@kwdef struct SpacecraftConfig
     panel_offset_y_m::Float64
     prop_mass_kg::Float64
     id::Int64
+    # :legacy = historical bus ref_area dims[1]*dims[3]; :frontal = the flow-normal
+    # dims[2]*dims[3] face matching the Hart free-molecular coefficient
+    # normalization (see make_three_body_spacecraft).
+    bus_ram_face::Symbol = :legacy
 end
 
 abstract type AbstractScenarioConfig end

@@ -67,9 +67,19 @@ function make_three_body_spacecraft(;
     ic::SM.AbstractInitialCondition,
     reflection_coefficient::Float64=1.0,
     prop_mass::Float64=0.0,
-    id::Int64=1
+    id::Int64=1,
+    bus_ram_face::Symbol=:legacy
 )
-    main_bus = SM.Link{0}(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_dims[1] * bus_dims[3], reflection_coefficient=reflection_coefficient)
+    # The Hart free-molecular coefficients are normalized by the face NORMAL to
+    # the flow (for the translational fixed attitude the flow runs along body
+    # +x, so that is the dims[2]*dims[3] face — the convention the panel links
+    # below already use). :frontal selects that convention for the bus;
+    # :legacy keeps the historical dims[1]*dims[3] value so every previously
+    # calibrated scenario (odyssey, vex, earth_gmat) is bit-for-bit unchanged.
+    bus_ram_face in (:legacy, :frontal) ||
+        throw(ArgumentError("bus_ram_face must be :legacy or :frontal, got $bus_ram_face"))
+    bus_ref_area = bus_ram_face === :frontal ? bus_dims[2] * bus_dims[3] : bus_dims[1] * bus_dims[3]
+    main_bus = SM.Link{0}(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_ref_area, reflection_coefficient=reflection_coefficient)
     left_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
     right_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
 

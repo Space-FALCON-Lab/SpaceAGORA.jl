@@ -170,6 +170,13 @@ end
     if cfg.atmosphere_truth.atmosphere_model == "tabulated_flight"
         return _make_tabulated_flight_density_model(cfg.initial_time, cfg.atmosphere_truth)
     end
+    if cfg.atmosphere_truth.atmosphere_model == "nrlmsise00"
+        lowercase(strip(cfg.planet_name)) == "earth" || throw(ArgumentError(
+            "atmosphere_truth.atmosphere_model=\"nrlmsise00\" is Earth-only " *
+            "(scenario planet '$(cfg.planet_name)')."
+        ))
+        return SimulationModel.NRLMSISE00AtmosphereModel(use_space_indices=true)
+    end
     return _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth)
 end
 
@@ -312,7 +319,8 @@ end
         panel_offset_y=cfg.panel_offset_y_m,
         ic=ic,
         prop_mass=cfg.prop_mass_kg,
-        id=cfg.id
+        id=cfg.id,
+        bus_ram_face=cfg.bus_ram_face
     )
 end
 
@@ -546,6 +554,19 @@ function _make_time_aligned_args(
     cr_override::Union{Nothing, Float64}=nothing
 )::SimulationConfiguration
     planet = _planet_from_name(cfg.planet_name)
+    if cfg.drag_enabled && ic isa CartesianInitialCondition
+        ic_alt_km = (norm(ic.pos) - planet.Rp_e) * 1e-3
+        if ic_alt_km > cfg.EI_km
+            @warn(
+                "drag_enabled scenario starts above EI_km: aero forces are zeroed above " *
+                "the entry interface on the split/implicit solver paths, so drag silently " *
+                "vanishes. Set EI_km above the orbit altitude in the scenario manifest.",
+                EI_km = cfg.EI_km,
+                initial_altitude_km = round(ic_alt_km, digits=1),
+                maxlog = 1
+            )
+        end
+    end
     spacecraft = _make_spacecraft(cfg.spacecraft, ic)
     dynamic_effectors = _scenario_dynamic_effectors(
         cfg,
@@ -584,10 +605,21 @@ end
 
 function _with_study_settings(args::SimulationConfiguration; quick::Bool=false)::SimulationConfiguration
     hf = _has_high_fidelity_effectors(args)
-    rel_orbit = min(quick ? 5e-7 : 1e-7, STRICT_REL_ORBIT)
-    abs_orbit = min(quick ? 5e-9 : 1e-9, STRICT_ABS_ORBIT)
-    rel_atm = min(quick ? 1e-6 : 1e-7, STRICT_REL_ATM)
-    abs_atm = min(quick ? 1e-8 : 1e-9, STRICT_ABS_ATM)
+    rel_orbit_base = min(quick ? 5e-7 : 1e-7, STRICT_REL_ORBIT)
+    abs_orbit_base = min(quick ? 5e-9 : 1e-9, STRICT_ABS_ORBIT)
+    rel_atm_base = min(quick ? 1e-6 : 1e-7, STRICT_REL_ATM)
+    abs_atm_base = min(quick ? 1e-8 : 1e-9, STRICT_ABS_ATM)
+    # SPACEAGORA_TELEMETRY_{RELTOL,ABSTOL}_{ORBIT,ATM} may TIGHTEN the study
+    # tolerances but never loosen them past the study bases (these variables
+    # were historically accepted by callers and silently ignored here).
+    rel_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_RELTOL_ORBIT")
+    abs_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_ABSTOL_ORBIT")
+    rel_atm_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_RELTOL_ATM")
+    abs_atm_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_ABSTOL_ATM")
+    rel_orbit = rel_orbit_env === nothing ? rel_orbit_base : min(rel_orbit_env, rel_orbit_base)
+    abs_orbit = abs_orbit_env === nothing ? abs_orbit_base : min(abs_orbit_env, abs_orbit_base)
+    rel_atm = rel_atm_env === nothing ? rel_atm_base : min(rel_atm_env, rel_atm_base)
+    abs_atm = abs_atm_env === nothing ? abs_atm_base : min(abs_atm_env, abs_atm_base)
     dt_orbit_base = min(quick ? (hf ? 180.0 : 240.0) : (hf ? 60.0 : 120.0), STRICT_DT_ORBIT)
     dt_atm_base = min(quick ? (hf ? 2.0 : 5.0) : (hf ? 0.2 : 0.5), STRICT_DT_ATM)
     dt_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_DT_MAX_ORBIT")

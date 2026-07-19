@@ -1388,4 +1388,169 @@ end
     @test !occursin(r"mach_body\s*=\s*vel_pp_mag\s*/", aero_src)
 end
 
+@testset "Spacecraft builder ram-face convention" begin
+    # The Hart free-molecular coefficients are normalized by the flow-normal
+    # face; with the translational fixed attitude the flow runs along body +x,
+    # so the consistent bus reference area is dims[2]*dims[3] (:frontal).
+    # :legacy pins the historical dims[1]*dims[3] value so previously
+    # calibrated scenarios are unchanged, and it must stay the default.
+    ic = SimulationModel.InitialCondition(
+        7.0e6, 1.0e-3, 35.0, 0.0, 0.0, 0.0,
+        SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    )
+    dims = (0.2, 0.5, 0.6)
+    kw = (panel_dims=(0.4, 0.001, 0.5), bus_mass=29.0, panel_mass_each=0.0,
+          panel_offset_y=0.5, ic=ic)
+    legacy = TelemetryVerification.make_three_body_spacecraft(; bus_dims=dims, kw...)
+    @test legacy.links[1].ref_area ≈ dims[1] * dims[3]
+    frontal = TelemetryVerification.make_three_body_spacecraft(; bus_dims=dims, bus_ram_face=:frontal, kw...)
+    @test frontal.links[1].ref_area ≈ dims[2] * dims[3]
+    # Panels already use the flow-normal dims[2]*dims[3] face in both modes.
+    @test legacy.links[2].ref_area ≈ 0.001 * 0.5
+    @test frontal.links[2].ref_area ≈ 0.001 * 0.5
+    @test_throws ArgumentError TelemetryVerification.make_three_body_spacecraft(;
+        bus_dims=dims, bus_ram_face=:sideways, kw...)
+    # Manifest key default must remain :legacy.
+    @test TelemetryVerification.SpacecraftConfig(
+        bus_dims=dims, panel_dims=(0.4, 0.001, 0.5), bus_mass_kg=29.0,
+        panel_mass_each_kg=0.0, panel_offset_y_m=0.5, prop_mass_kg=0.0, id=1
+    ).bus_ram_face === :legacy
+end
+
+@testset "Replication guards: density source and tolerance env vars" begin
+    # 1) Manifest whitelist accepts the NRLMSISE-00 source and still rejects
+    #    unknown values.
+    atm_tbl(model) = Dict{String, Any}(
+        "atmosphere_truth" => Dict{String, Any}(
+            "atmosphere_model" => model,
+            "atmosphere_dataset" => "probe",
+            "space_weather_model" => "probe",
+            "solar_flux_model" => "probe"
+        )
+    )
+    @test TV._parse_atmosphere_truth_config(atm_tbl("nrlmsise00"), "probe").atmosphere_model == "nrlmsise00"
+    @test_throws ArgumentError TV._parse_atmosphere_truth_config(atm_tbl("msise"), "probe")
+
+    # 2) The scenario builder wires that manifest value to the native
+    #    NRLMSISE-00 model, and the source stays Earth-only.
+    mk_cfg(planet) = TV.TimeAlignedScenarioConfig(
+        name="probe", planet_name=planet, telemetry_path="",
+        telemetry_time_col="t", telemetry_altitude_col="alt",
+        telemetry_x_col="x", telemetry_y_col="y", telemetry_z_col="z",
+        max_points_quick=10, max_points_full=10, min_eval_points=1,
+        units_x="s", units_y=Dict{String, String}(),
+        tolerances_quick=Dict{String, TV.EventTolerance}(),
+        tolerances_full=Dict{String, TV.EventTolerance}(),
+        initial_time=SimulationModel.InitialTime(year=2025, month=6, day=6),
+        spacecraft=TV.SpacecraftConfig(
+            bus_dims=(0.2, 0.5, 0.6), panel_dims=(0.4, 0.001, 0.5),
+            bus_mass_kg=29.0, panel_mass_each_kg=0.0, panel_offset_y_m=0.5,
+            prop_mass_kg=0.0, id=1
+        ),
+        gravity_model=:inverse_squared_j2,
+        atmosphere_truth=TV.AtmosphereTruthConfig(atmosphere_model="nrlmsise00"),
+        EI_km=600.0
+    )
+    @test TV._scenario_density_model(mk_cfg("earth")) isa SimulationModel.NRLMSISE00AtmosphereModel
+    @test_throws ArgumentError TV._scenario_density_model(mk_cfg("mars"))
+
+    # 3) The SPACEAGORA_TELEMETRY_{RELTOL,ABSTOL}_{ORBIT,ATM} env vars tighten
+    #    the study tolerances but can never loosen them (they were historically
+    #    set by callers and silently ignored).
+    ic = SimulationModel.InitialCondition(
+        7.0e6, 1.0e-3, 35.0, 0.0, 0.0, 0.0,
+        SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    )
+    sc = TV.make_three_body_spacecraft(
+        bus_dims=(0.2, 0.5, 0.6), panel_dims=(0.4, 0.001, 0.5), bus_mass=29.0,
+        panel_mass_each=0.0, panel_offset_y=0.5, ic=ic
+    )
+    args = TV.make_example_config(
+        planet=TV._planet_from_name("earth"), spacecraft=sc, mission_time=60.0,
+        initial_time=SimulationModel.InitialTime(year=2025, month=6, day=6),
+        verbose=false
+    )
+    base = withenv(
+        "SPACEAGORA_TELEMETRY_RELTOL_ORBIT" => nothing,
+        "SPACEAGORA_TELEMETRY_ABSTOL_ORBIT" => nothing,
+        "SPACEAGORA_TELEMETRY_RELTOL_ATM" => nothing,
+        "SPACEAGORA_TELEMETRY_ABSTOL_ATM" => nothing
+    ) do
+        TV._with_study_settings(args)
+    end
+    @test base.integration_tolerances.reltol_orbit == 1.0e-7
+    @test base.integration_tolerances.abstol_atmosphere == 1.0e-9
+    tightened = withenv(
+        "SPACEAGORA_TELEMETRY_RELTOL_ORBIT" => "1e-9",
+        "SPACEAGORA_TELEMETRY_ABSTOL_ATM" => "1e-12"
+    ) do
+        TV._with_study_settings(args)
+    end
+    @test tightened.integration_tolerances.reltol_orbit == 1.0e-9
+    @test tightened.integration_tolerances.abstol_atmosphere == 1.0e-12
+    loosened = withenv("SPACEAGORA_TELEMETRY_RELTOL_ORBIT" => "1e-3") do
+        TV._with_study_settings(args)
+    end
+    @test loosened.integration_tolerances.reltol_orbit == 1.0e-7
+end
+
+@testset "Scenario builder branch probes (coverage backstop)" begin
+    # These branches are otherwise exercised only by the scenario suites, whose
+    # worker-process coverage can fall outside the CI gate's active window; pin
+    # them from this in-process probe file so the gate is deterministic.
+
+    # Planet and N-body primary name mappings.
+    @test TV._planet_from_name("mars") isa SimulationModel.Mars
+    @test TV._planet_from_name("venus") isa SimulationModel.Venus
+    @test TV._planet_from_name("moon") isa SimulationModel.Moon
+    @test_throws ArgumentError TV._planet_from_name("pluto")
+    @test TV._nbody_primary_name("earth") == "Earth"
+    @test TV._nbody_primary_name("mars") == "Mars"
+    @test TV._nbody_primary_name("venus") == "Venus"
+    @test TV._nbody_primary_name("moon") == "Moon"
+    @test TV._nbody_primary_name("titan") == "Titan"
+    @test_throws ArgumentError TV._nbody_primary_name("pluto")
+
+    # Tabulated-flight density builder on a synthetic two-pass table with an
+    # archive gap (P=1,3), both legs, and a nonpositive-density row that must
+    # be skipped.
+    mktempdir() do dir
+        path = joinpath(dir, "flight_table.arrow")
+        tbl = DataFrame(
+            P=[1, 1, 1, 3, 3, 3],
+            leg=["in", "out", "in", "in", "out", "out"],
+            alt_km=[120.0, 130.0, 110.0, 121.0, 131.0, 141.0],
+            rho_kgm3=[1.0e-9, 5.0e-10, 0.0, 1.1e-9, 6.0e-10, 3.0e-10],
+            sigma_kgm3=[1.0e-10, 5.0e-11, 0.0, 1.1e-10, 6.0e-11, 3.0e-11],
+            t_peri_utc=vcat(fill("2025-06-06T01:00:00", 3), fill("2025-06-06T03:00:00", 3))
+        )
+        TV.Arrow.write(path, tbl)
+        truth = TV.AtmosphereTruthConfig(
+            atmosphere_model="tabulated_flight",
+            tabulated_flight_file=path,
+            tabulated_flight_sigma=0.0
+        )
+        it = SimulationModel.InitialTime(year=2025, month=6, day=6)
+        model = TV._make_tabulated_flight_density_model(it, truth)
+        @test model isa SimulationModel.TabulatedFlightAtmosphereModel
+
+        @test_throws ArgumentError TV._make_tabulated_flight_density_model(
+            it,
+            TV.AtmosphereTruthConfig(
+                atmosphere_model="tabulated_flight",
+                tabulated_flight_file=joinpath(dir, "missing.arrow")
+            )
+        )
+        bad = joinpath(dir, "bad_columns.arrow")
+        TV.Arrow.write(bad, DataFrame(P=[1], leg=["in"]))
+        @test_throws ArgumentError TV._make_tabulated_flight_density_model(
+            it,
+            TV.AtmosphereTruthConfig(
+                atmosphere_model="tabulated_flight",
+                tabulated_flight_file=bad
+            )
+        )
+    end
+end
+
 println("coverage_parallel_telemetry_probes_ok")

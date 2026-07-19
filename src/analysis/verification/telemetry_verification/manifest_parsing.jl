@@ -286,8 +286,8 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
     t = _require_table(tbl, "atmosphere_truth", context)
     assumption_id = _optional_str(t, "assumption_id", "gram_default")
     atmosphere_model = _require_str(t, "atmosphere_model", "$context.atmosphere_truth")
-    atmosphere_model in ("GRAM", "tabulated_flight") || throw(ArgumentError(
-        "Unsupported atmosphere_truth.atmosphere_model='$atmosphere_model' in $context; use GRAM|tabulated_flight."
+    atmosphere_model in ("GRAM", "tabulated_flight", "nrlmsise00") || throw(ArgumentError(
+        "Unsupported atmosphere_truth.atmosphere_model='$atmosphere_model' in $context; use GRAM|tabulated_flight|nrlmsise00."
     ))
     tabulated_flight_file = _optional_str(t, "tabulated_flight_file", "")
     tabulated_flight_sigma = _optional_float(t, "tabulated_flight_sigma", 0.0)
@@ -431,7 +431,8 @@ function _parse_spacecraft_config(tbl, context::String)::SpacecraftConfig
         panel_mass_each_kg=_require_float(stbl, "panel_mass_each_kg", "$context.spacecraft"),
         panel_offset_y_m=_require_float(stbl, "panel_offset_y_m", "$context.spacecraft"),
         prop_mass_kg=_require_float(stbl, "prop_mass_kg", "$context.spacecraft"),
-        id=Int64(_require_int(stbl, "id", "$context.spacecraft"))
+        id=Int64(_require_int(stbl, "id", "$context.spacecraft")),
+        bus_ram_face=Symbol(_optional_str(stbl, "bus_ram_face", "legacy"))
     )
 end
 

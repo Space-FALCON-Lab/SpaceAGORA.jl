@@ -500,8 +500,17 @@ function _build_cygnss_48hr_reference(outdir::String, stem::String)
 
     t_rel = t .- t[1]
     planet = TV._planet_from_name("earth")
-    r_km = sqrt.(x_km .^ 2 .+ y_km .^ 2 .+ z_km .^ 2)
-    alt_km = r_km .- planet.Rp_e * 1.0e-3
+    # Altitude in the same (oblate/geodetic) convention the scenario scoring
+    # uses; the vacuum r - Rp_e form carries a latitude-dependent bias of up
+    # to ~21 km against the oblate channel.
+    alt_km = [
+        TV._telemetry_altitude_km(
+            SVector{3, Float64}(x_km[i], y_km[i], z_km[i]) .* 1.0e3,
+            SVector{3, Float64}(vx_kmps[i], vy_kmps[i], vz_kmps[i]) .* 1.0e3,
+            planet,
+            :oblate
+        ) for i in eachindex(t_rel)
+    ]
 
     # Use the first measured Cartesian state as the CYGNSS initial condition
     # and derive the corresponding orbital elements from that same sample.
@@ -569,8 +578,15 @@ function _build_cygnss_96hr_reference(outdir::String, stem::String)
     vy_kmps = series.vy_kmps
     vz_kmps = series.vz_kmps
     planet = TV._planet_from_name("earth")
-    r_km = sqrt.(x_km .^ 2 .+ y_km .^ 2 .+ z_km .^ 2)
-    alt_km = r_km .- planet.Rp_e * 1.0e-3
+    # Same oblate/geodetic altitude convention as the scenario scoring channel.
+    alt_km = [
+        TV._telemetry_altitude_km(
+            SVector{3, Float64}(x_km[i], y_km[i], z_km[i]) .* 1.0e3,
+            SVector{3, Float64}(vx_kmps[i], vy_kmps[i], vz_kmps[i]) .* 1.0e3,
+            planet,
+            :oblate
+        ) for i in eachindex(x_km)
+    ]
 
     oe0 = TV.rvtoorbitalelement(
         SVector{3, Float64}(x_km[1], y_km[1], z_km[1]) .* 1.0e3,
@@ -638,8 +654,17 @@ function _build_cygnss_cyg04_96hr_inertial_reference(outdir::String, stem::Strin
     z_km = series.z_km
 
     planet = TV._planet_from_name("earth")
-    r_km = sqrt.(x_km .^ 2 .+ y_km .^ 2 .+ z_km .^ 2)
-    alt_km = r_km .- planet.Rp_e * 1.0e-3
+    # Same oblate/geodetic altitude convention as the scenario scoring channel.
+    # The planet-fixed rotation of position does not depend on velocity, so a
+    # zero velocity is passed for this position-only product.
+    alt_km = [
+        TV._telemetry_altitude_km(
+            SVector{3, Float64}(x_km[i], y_km[i], z_km[i]) .* 1.0e3,
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            planet,
+            :oblate
+        ) for i in eachindex(x_km)
+    ]
 
     # Use the 48hr IC: the cygnss_data_48hr.feather velocity is orbit-determined
     # and gives a much more accurate initial orbital energy than the raw GPS

@@ -31,6 +31,14 @@ Base.@kwdef struct AtmosphereTruthConfig
     # atmosphere_model column, so rows are never ambiguous about their mode.
     tabulated_flight_file::String = ""
     tabulated_flight_sigma::Float64 = 0.0
+    # Time-tabulated atmosphere mode: atmosphere_model = "tabulated_time" flies
+    # the sim on an externally supplied rho(t) table in scenario elapsed time
+    # (see TimeTabulatedAtmosphereModel) — the orbital-arc counterpart of
+    # tabulated_flight, used for flight-inferred along-track density replay
+    # (digital-twin runs) and assimilated-product sampling.
+    tabulated_time_file::String = ""
+    tabulated_time_scale::Float64 = 1.0
+    tabulated_time_temperature_k::Float64 = 900.0
 end
 
 Base.@kwdef struct CalibrationConfig

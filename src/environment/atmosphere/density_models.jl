@@ -733,6 +733,74 @@ end
     return getDensity(model, h, lat, lon, el_time, wind)
 end
 
+"""
+TimeTabulatedAtmosphereModel — density as a pure function of scenario elapsed
+time, log-linearly interpolated from a sorted (t_s, rho) table and held
+constant beyond the table's ends. The orbital-arc counterpart of
+[`TabulatedFlightAtmosphereModel`](@ref) (which is keyed by altitude within
+periapsis passes): use it to replay a flight-inferred along-track density
+history, an assimilated product sampled along the trajectory, or any other
+externally supplied rho(t), e.g. as the drag channel of a digital-twin run.
+`scale` multiplies every density; `temperature_k` is reported as the constant
+gas temperature; winds are zero — the table carries neither.
+"""
+struct TimeTabulatedAtmosphereModel <: AbstractDensityModel
+    t_el_s::Vector{Float64}     # sorted elapsed times from the scenario epoch
+    log_rho::Vector{Float64}    # log density at each node [log(kg/m^3)]
+    scale::Float64
+    temperature_k::Float64
+end
+
+function TimeTabulatedAtmosphereModel(
+    t_el_s::AbstractVector{<:Real},
+    rho_kgm3::AbstractVector{<:Real};
+    scale::Real=1.0,
+    temperature_k::Real=900.0
+)
+    n = length(t_el_s)
+    n == length(rho_kgm3) || throw(ArgumentError(
+        "TimeTabulatedAtmosphereModel time and density vectors must have equal length, got $n vs $(length(rho_kgm3))."
+    ))
+    n >= 2 || throw(ArgumentError("TimeTabulatedAtmosphereModel needs at least 2 table nodes, got $n."))
+    t = Float64.(t_el_s)
+    issorted(t) || throw(ArgumentError("TimeTabulatedAtmosphereModel times must be sorted ascending."))
+    all(isfinite, t) || throw(ArgumentError("TimeTabulatedAtmosphereModel times must be finite."))
+    rho = Float64.(rho_kgm3)
+    all(x -> isfinite(x) && x > 0.0, rho) || throw(ArgumentError(
+        "TimeTabulatedAtmosphereModel densities must be finite and > 0."
+    ))
+    scale_f = Float64(scale)
+    isfinite(scale_f) && scale_f > 0.0 || throw(ArgumentError(
+        "TimeTabulatedAtmosphereModel scale must be finite and > 0, got $scale_f."
+    ))
+    temp_f = Float64(temperature_k)
+    isfinite(temp_f) && temp_f > 0.0 || throw(ArgumentError(
+        "TimeTabulatedAtmosphereModel temperature_k must be finite and > 0, got $temp_f."
+    ))
+    return TimeTabulatedAtmosphereModel(t, log.(rho), scale_f, temp_f)
+end
+
+function getDensity(model::TimeTabulatedAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
+    ts = model.t_el_s
+    logs = model.log_rho
+    n = length(ts)
+    local logrho
+    if el_time <= ts[1]
+        logrho = logs[1]
+    elseif el_time >= ts[n]
+        logrho = logs[n]
+    else
+        j = searchsortedlast(ts, el_time)
+        f = (el_time - ts[j]) / (ts[j+1] - ts[j])
+        logrho = logs[j] + f * (logs[j+1] - logs[j])
+    end
+    return model.scale * exp(logrho), model.temperature_k, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+@inline function getDensity(model::TimeTabulatedAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    return getDensity(model, h, lat, lon, el_time, wind)
+end
+
 function getDensity(model::NoAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
     rho = 0.0
     T = p.args.environment_model.planet.T_ref

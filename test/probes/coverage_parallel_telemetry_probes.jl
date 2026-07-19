@@ -1553,4 +1553,132 @@ end
     end
 end
 
+@testset "Time-tabulated density source (tabulated_time)" begin
+    # Direct model semantics: log-linear interpolation in elapsed time, held
+    # ends, multiplicative scale, constant temperature, zero wind.
+    m = SimulationModel.TimeTabulatedAtmosphereModel(
+        [0.0, 100.0], [1.0e-12, 4.0e-12]; scale=2.0, temperature_k=800.0
+    )
+    rho0, T0, w0 = SimulationModel.getDensity(m, 4.0e5, 0.0, 0.0, 0.0, false)
+    @test rho0 ≈ 2.0e-12
+    @test T0 == 800.0
+    @test w0 == SVector{3, Float64}(0.0, 0.0, 0.0)
+    rho_mid, _, _ = SimulationModel.getDensity(m, 4.0e5, 0.0, 0.0, 50.0, false)
+    @test rho_mid ≈ 2.0 * exp(0.5 * (log(1.0e-12) + log(4.0e-12)))  # log-linear midpoint
+    rho_end, _, _ = SimulationModel.getDensity(m, 4.0e5, 0.0, 0.0, 1.0e6, false)
+    @test rho_end ≈ 8.0e-12  # held past the last node
+    @test_throws ArgumentError SimulationModel.TimeTabulatedAtmosphereModel([0.0], [1.0e-12])
+    @test_throws ArgumentError SimulationModel.TimeTabulatedAtmosphereModel([100.0, 0.0], [1.0e-12, 2.0e-12])
+    @test_throws ArgumentError SimulationModel.TimeTabulatedAtmosphereModel([0.0, 1.0], [1.0e-12, -1.0e-12])
+    @test_throws ArgumentError SimulationModel.TimeTabulatedAtmosphereModel([0.0, 1.0], [1.0e-12, 2.0e-12]; scale=0.0)
+
+    # Manifest contract: whitelisted, file required with the mode, file key
+    # rejected without the mode.
+    atm_tbl(extra) = Dict{String, Any}(
+        "atmosphere_truth" => merge(Dict{String, Any}(
+            "atmosphere_model" => "tabulated_time",
+            "atmosphere_dataset" => "probe",
+            "space_weather_model" => "probe",
+            "solar_flux_model" => "probe"
+        ), extra)
+    )
+    @test_throws ArgumentError TV._parse_atmosphere_truth_config(atm_tbl(Dict{String, Any}()), "probe")
+    parsed = TV._parse_atmosphere_truth_config(
+        atm_tbl(Dict{String, Any}("tabulated_time_file" => "some.csv", "tabulated_time_scale" => 1.5)), "probe"
+    )
+    @test parsed.atmosphere_model == "tabulated_time"
+    @test parsed.tabulated_time_scale == 1.5
+    @test_throws ArgumentError TV._parse_atmosphere_truth_config(
+        Dict{String, Any}("atmosphere_truth" => Dict{String, Any}(
+            "atmosphere_model" => "GRAM", "atmosphere_dataset" => "probe",
+            "space_weather_model" => "probe", "solar_flux_model" => "probe",
+            "tabulated_time_file" => "some.csv"
+        )), "probe"
+    )
+
+    # Builder loads a CSV table through the scenario dispatch.
+    mktempdir() do dir
+        path = joinpath(dir, "rho_t.csv")
+        write(path, "time_s,rho_kgm3\n0.0,1.0e-12\n3600.0,2.0e-12\n")
+        truth = TV.AtmosphereTruthConfig(
+            atmosphere_model="tabulated_time",
+            tabulated_time_file=path,
+            tabulated_time_scale=1.0
+        )
+        model = TV._make_time_tabulated_density_model(truth)
+        @test model isa SimulationModel.TimeTabulatedAtmosphereModel
+        rho, _, _ = SimulationModel.getDensity(model, 4.0e5, 0.0, 0.0, 0.0, false)
+        @test rho ≈ 1.0e-12
+        bad = joinpath(dir, "bad.csv")
+        write(bad, "t,rho\n0.0,1.0e-12\n")
+        @test_throws ArgumentError TV._make_time_tabulated_density_model(
+            TV.AtmosphereTruthConfig(atmosphere_model="tabulated_time", tabulated_time_file=bad)
+        )
+        @test_throws ArgumentError TV._make_time_tabulated_density_model(
+            TV.AtmosphereTruthConfig(atmosphere_model="tabulated_time", tabulated_time_file=joinpath(dir, "missing.csv"))
+        )
+    end
+end
+
+@testset "Decay diagnostics: synthetic injection" begin
+    # Synthetic 48 h LEO arc with gaps, a drifting-amplitude 2/rev harmonic
+    # (the J2-precession leakage mechanism), and a known injected decay.
+    mu = 3.98600436233e14
+    a0 = 6.82e6
+    P = 2.0 * pi * sqrt(a0^3 / mu)
+    t_full = collect(0.0:10.0:172800.0)
+    keep = [(mod(ti, 9000.0) > 1800.0) for ti in t_full]   # periodic gaps
+    t = t_full[keep]
+    harm(ti) = (1800.0 + 0.004 * ti) * sin(2.0 * pi * 2.0 * ti / P + 0.7) +
+               400.0 * sin(2.0 * pi * 1.0 * ti / P - 0.3) +
+               3.0 * sin(31.7 * ti)                         # deterministic "noise"
+    slope_true_mpd = -55.0
+    sma_meas = [a0 + (slope_true_mpd / 86400.0) * ti + harm(ti) for ti in t]
+    sma_ref = [a0 + harm(ti) for ti in t]
+
+    # The hazard: the drag-free reference alone shows a nonzero apparent slope
+    # (drifting-amplitude leakage through the fixed-amplitude fit).
+    ref_raw = TV.secular_sma_slope(t, sma_ref; period_s=P)
+    @test abs(ref_raw) > 0.5
+
+    # Zero-reference subtraction recovers the injected decay.
+    z = TV.zero_referenced_decay(t, sma_meas, t, sma_ref; period_s=P)
+    @test abs(z.decay_m_per_day - slope_true_mpd) < 0.02
+    @test z.reference_m_per_day ≈ ref_raw
+
+    # Estimator invariance of the corrected number (fixed vs drifting fit).
+    zd = TV.zero_referenced_decay(t, sma_meas, t, sma_ref; period_s=P, drifting_amplitudes=true)
+    @test abs(zd.decay_m_per_day - z.decay_m_per_day) < 0.1
+
+    # vis-viva helper round-trip.
+    v0 = sqrt(mu / a0)
+    @test TV.visviva_sma(a0, v0, mu) ≈ a0
+    @test TV.visviva_sma([a0, a0], [v0, v0], mu) ≈ [a0, a0]
+
+    # Windowed density extraction: constant-density decay in, density out —
+    # and the emitted table drives the tabulated_time source directly.
+    rho_true = 2.0e-12
+    cd_area = 0.167
+    mass = 28.94
+    adot = -rho_true * cd_area / mass * sqrt(mu * a0)      # m/s
+    sma_decay = [a0 + adot * ti + harm(ti) for ti in t]
+    tbl = TV.flight_density_table(
+        t, sma_decay, t, sma_ref;
+        mu=mu, cd_area_m2=cd_area, mass_kg=mass, period_s=P
+    )
+    @test names(tbl) == ["time_s", "rho_kgm3"]
+    @test nrow(tbl) > 20
+    @test all(abs.(tbl.rho_kgm3 .- rho_true) ./ rho_true .< 0.05)
+    m = SimulationModel.TimeTabulatedAtmosphereModel(tbl.time_s, tbl.rho_kgm3)
+    rho_mid, _, _ = SimulationModel.getDensity(m, 4.0e5, 0.0, 0.0, 86400.0, false)
+    @test abs(rho_mid - rho_true) / rho_true < 0.05
+
+    # Error paths.
+    @test_throws ArgumentError TV.secular_sma_slope(t[1:5], sma_ref[1:5]; period_s=P)
+    @test_throws ArgumentError TV.secular_sma_slope(t, sma_ref[1:10]; period_s=P)
+    @test_throws ArgumentError TV.flight_density_table(
+        t, sma_decay, t, sma_ref; mu=mu, cd_area_m2=0.0, mass_kg=mass, period_s=P
+    )
+end
+
 println("coverage_parallel_telemetry_probes_ok")

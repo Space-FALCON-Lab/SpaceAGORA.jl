@@ -40,11 +40,36 @@ Results land in `results/<hostname>/sN_*.csv` plus one `.log` per point. Run the
 suite on each paper machine (M3 Pro MacBook Pro, Zen 5 Ryzen 9 / 64 GB,
 Threadripper 64-thread / 256 GB); the hostname keys the per-machine tables.
 
+**Status:** `space-falcon-1` (Zen 5 Ryzen 9, 12c/24t) and
+`space-falcon-lab-TRX50-AERO-D` (Threadripper, 64c/128t, run at
+`PS_THREADS=64`) both have full S1–S5 data. The M3 Pro MacBook Pro is still
+outstanding.
+
+### Running on a remote box
+
+`scripts/remote/spaceagora-remote` mirrors this repo to a remote host and runs
+a job there detached (config: `scripts/remote/remotes.conf`, gitignored — copy
+`scripts/remote/remotes.conf.example`). It syncs the full local working tree
+(gitignore-aware, so uncommitted edits and untracked scripts ship too — not
+just `git ls-files`) and runs `Pkg.instantiate()` before every job, so a stale
+shared package depot fails fast with one clear log instead of every scenario
+point silently erroring on a missing package. GRAM/SPICE data (~20G) is opt-in
+via `spaceagora-remote seed-data --remote <name>` (or `push --sync-data`) — run
+it once per remote before the first job that needs it. Its auto-pull only
+captures a release's top-level `output/`/`results/` dirs, not the nested
+`benchmarks/studies/paper_scenarios/results/<hostname>/` path this suite
+writes to, so pull that manually once the job finishes:
+
+```bash
+rsync -az <ssh-alias>:<remote-base>/releases/<job-id>/benchmarks/studies/paper_scenarios/results/<hostname>/ \
+  benchmarks/studies/paper_scenarios/results/<hostname>/
+```
+
 ## Knobs
 
 | Env var | Meaning | Default |
 |---|---|---|
-| `PS_THREADS` | Parallel thread budget per point — **set to physical core count for paper numbers** | `Sys.CPU_THREADS` |
+| `PS_THREADS` | Parallel thread budget per point — **set to physical core count for paper numbers**. S1 also accepts a comma-separated ladder (e.g. `1,2,4,8,12`): serial runs once per size regardless of ladder length (thread-count-independent), and each ladder value adds one more `parallel` row for that size, distinguished by `julia_threads` — a full thread-count sweep is one invocation/CSV write, not one per thread value | `Sys.CPU_THREADS` |
 | `PS_REPEATS` / `PS_WARMUP` | Timed repeats / warmup solves per point | 3 / 1 |
 | `PS_MISSION_S` | Mission length override | 1800 s (S1), 600 s (S2–S5) |
 | `PS_SIZES` | Constellation size ladder (S1, S2) | `1,4,16,64,256,1024,2048,4096` / `4,16,64` |
@@ -53,6 +78,7 @@ Threadripper 64-thread / 256 GB); the hostname keys the per-machine tables.
 | `PS_PROC_WORKERS` | S2 process-mode worker count | `min(8, PS_THREADS)` |
 | `PS_TIMEOUT_S` | Per-point kill deadline | 3600 s |
 | `PS_GRAVITY` / `PS_DENSITY` | S1-only: force-model override (`invsq\|l20\|l50` / `none\|gram_standard\|gram_lookahead\|gram_surrogate`), isolates per-satellite cost as a variable | `l20` / `none` |
+| `PS_RESULTS_SUFFIX` | Appended to `results/<hostname>` — use for exploratory runs (e.g. a thread-count sweep, or a one-off thread-budget override) so they land in their own pseudo-host directory instead of overwriting the canonical per-host baseline CSV | (empty) |
 
 Mission lengths were chosen so each point is long enough that per-step work
 dominates dispatch overhead (hundreds of accepted steps) but a full scenario stays
@@ -81,6 +107,53 @@ smoke: set `PS_SIZES=1,4 PS_MC_SAMPLES=4 PS_WORKERS=1,2 PS_MISSION_S=60 PS_REPEA
   confirmed against hardware cache-miss counters. See "S1 Force-Model Sensitivity
   Finding" in `docs/architecture/parallelization_paper_notes.md` for the full data
   and the caveat to state alongside it in the paper.
+
+## S1 finding: TRX50 thread-count sensitivity at N=2048/4096
+
+Both `l20` and `l50` full ladders (N=1…4096) are now collected on both paper
+machines at their native thread budget (12 on `space-falcon-1`, 64 on
+`space-falcon-lab-TRX50-AERO-D`). At those native budgets, TRX50 badly
+underutilizes its larger thread count at N=2048/4096 relative to
+`min(N, threads)` ideal — e.g. `l20`/N=2048 is 3.86x speedup on TRX50 (64
+threads, 6% of ideal) vs. 8.96x on `space-falcon-1` (12 threads, 75% of
+ideal).
+
+Two follow-up runs isolate why:
+
+- **Matched thread count.** Re-running TRX50 capped to `PS_THREADS=12`
+  (matching `space-falcon-1`) shows TRX50 *matches or exceeds* local's
+  efficiency at every (N, gravity) point tested — e.g. `l50`/N=4096: 27.6x vs.
+  21.6x. This rules out a raw hardware/per-core-speed deficit: serial timing
+  is consistent between the 64-thread and 12-thread TRX50 runs (as expected,
+  since `PS_THREADS` only affects parallel mode).
+- **Full thread-count sweep.** `PS_THREADS=1,2,4,8,16,32,64` (TRX50) /
+  `1,2,4,8,12` (`space-falcon-1`) at N=2048/4096, both gravities, shows TRX50's
+  speedup curve peaking around **T=16–32** and *degrading* out to T=64 in
+  every case (e.g. `l20`/N=4096: 13.90x at T=16 → 8.54x at T=64), while
+  `space-falcon-1`'s curve is still rising or flat at its 12-thread ceiling.
+
+Conclusion: N=2048/4096 doesn't carry enough work to keep more than ~16–32
+threads fed on TRX50 at this per-satellite cost; past that point,
+dispatch/synchronization overhead across the extra threads exceeds the
+marginal parallel benefit. **Any TRX50/64-thread S1 number used in the paper
+should carry this caveat** — the headline speedup depends on matching thread
+budget to problem size, not simply "more threads is better."
+
+Raw data:
+
+- `results/<hostname>/s1_constellation_scaling{,_l50_none}.csv` — full ladder
+  at each machine's native/paper thread budget (the baseline table).
+- `results/space-falcon-lab-TRX50-AERO-D_PS_THREADS12/` — TRX50 re-run at
+  `PS_THREADS=12`, N=2048/4096 only, for the matched-thread-count comparison.
+- `results/<hostname>_thread_ladder/` — the full `PS_THREADS` sweep,
+  N=2048/4096 only, both gravities, on each machine.
+
+The `_PS_THREADS12`/`_thread_ladder` directories are exploratory pseudo-hosts
+(via `PS_RESULTS_SUFFIX`), not part of the paper-baseline table, and
+`plot_results.jl`'s auto-generated per-host S1 plot isn't built for multiple
+`parallel` rows sharing one `n_sats` (it draws a connect-the-dots line across
+thread values at that N) — treat its output for these directories as
+diagnostic only, not a paper figure.
 
 ## GRAM safety conventions (inherited from prior studies)
 

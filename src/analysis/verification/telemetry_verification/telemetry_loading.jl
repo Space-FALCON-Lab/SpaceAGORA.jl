@@ -323,6 +323,12 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
     t0 = time_s[1]
     time_s = time_s .- t0
 
+    # IC values must come from the original first sample regardless of any
+    # truth_mask screening below (the Cartesian IC already reads perm[1]).
+    kep_first = has_keplerian_ic ?
+        (sma_km[1], ecc[1], inc_deg[1], aop_deg[1], raan_deg[1], ta_deg[1]) :
+        (NaN, NaN, NaN, NaN, NaN, NaN)
+
     if cfg.truth_mask !== :none
         cfg.comparison_frame === :inertial || throw(ArgumentError(
             "truth_mask requires comparison_frame=inertial in $(cfg.name) (the illumination screen works on J2000 positions)."
@@ -367,12 +373,12 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
         vx_kmps=has_velocity_truth ? vx_true_kmps : _differentiate_series(x_km, time_s),
         vy_kmps=has_velocity_truth ? vy_true_kmps : _differentiate_series(y_km, time_s),
         vz_kmps=has_velocity_truth ? vz_true_kmps : _differentiate_series(z_km, time_s),
-        sma_km=has_keplerian_ic ? sma_km[1] : NaN,
-        ecc=has_keplerian_ic ? ecc[1] : NaN,
-        inc_deg=has_keplerian_ic ? inc_deg[1] : NaN,
-        aop_deg=has_keplerian_ic ? aop_deg[1] : NaN,
-        raan_deg=has_keplerian_ic ? raan_deg[1] : NaN,
-        ta_deg=has_keplerian_ic ? ta_deg[1] : NaN,
+        sma_km=kep_first[1],
+        ecc=kep_first[2],
+        inc_deg=kep_first[3],
+        aop_deg=kep_first[4],
+        raan_deg=kep_first[5],
+        ta_deg=kep_first[6],
         x_ic_km=has_cartesian_ic ? Float64(x_ic_km_col[perm[1]]) : nothing,
         y_ic_km=has_cartesian_ic ? Float64(y_ic_km_col[perm[1]]) : nothing,
         z_ic_km=has_cartesian_ic ? Float64(z_ic_km_col[perm[1]]) : nothing,

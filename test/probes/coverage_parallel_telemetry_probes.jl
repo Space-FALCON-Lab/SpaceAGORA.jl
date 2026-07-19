@@ -1820,6 +1820,62 @@ else
         open(manifest_path, "w") do io
             TOML.print(io, Dict{String, Any}("scenarios" => Any[scenario]))
         end
+        # P1 regressions (Codex review): a mask that screens out the EARLY
+        # samples must not shorten the propagation (the mission runs through
+        # the last retained timestamp with the IC still anchored at t=0), and
+        # a Keplerian-IC scenario must keep its original-epoch elements.
+        masked = deepcopy(scenario)
+        masked["name"] = "icfit_probe_masked"
+        masked["truth_mask"] = "nightside"   # first samples are dayside -> dropped
+        masked["ic_offset_m"] = Any[0.0, 0.0, 0.0]
+        masked["ic_offset_mps"] = Any[0.0, 0.0, 0.0]
+        masked_manifest = joinpath(dir, "masked_manifest.toml")
+        open(masked_manifest, "w") do io
+            TOML.print(io, Dict{String, Any}("scenarios" => Any[masked]))
+        end
+        req = TV.VerificationRequest(
+            profile=:quick,
+            out_summary=joinpath(dir, "masked_summary.csv"),
+            out_errors=joinpath(dir, "masked_errors.csv"),
+            manifest_path=masked_manifest, enforce=false, generate_plots=false)
+        rmask = TV.run_verification(req)
+        rows = rmask.summary[in.(rmask.summary.event, Ref(["state_x_time", "state_y_time", "state_z_time"])), :]
+        # With the exact IC and pure two-body dynamics the masked comparison must
+        # be tight EVERYWHERE — a shortened propagation clamps late samples to the
+        # final state and produces km-scale garbage.
+        @test maximum(Float64.(rows.max_abs_km)) < 0.01
+        ed = TV.CSV.read(joinpath(dir, "masked_errors.csv"), DataFrame)
+        ed = ed[ed.event .== "state_x_time", :]
+        t_last = maximum(Float64.(ed.telemetry_axis))
+        @test t_last > 0.75 * t_samp[end]     # late retained samples were compared
+        @test abs(Float64(ed.error_km[argmax(Float64.(ed.telemetry_axis))])) < 0.01
+
+        # Keplerian elements survive a first-sample-dropping mask at original
+        # values (loader-level check with per-row varying element columns).
+        kep = DataFrame(
+            time_s=t_samp,
+            altitude_km=(sqrt.(xs .^ 2 .+ ys .^ 2 .+ zs .^ 2) .- planet.Rp_e) .* 1e-3,
+            x_km=xs .* 1e-3, y_km=ys .* 1e-3, z_km=zs .* 1e-3,
+            sma_km=fill(7000.0, length(t_samp)) .+ collect(0:length(t_samp)-1),
+            ecc=fill(0.001, length(t_samp)),
+            inc_deg=fill(30.0, length(t_samp)),
+            aop_deg=fill(0.0, length(t_samp)),
+            raan_deg=fill(0.0, length(t_samp)),
+            ta_deg=fill(0.0, length(t_samp))
+        )
+        kep_path = joinpath(dir, "synthetic_kep.arrow")
+        TV.Arrow.write(kep_path, kep)
+        cfg_kep = mk_cfg(; truth_mask=:nightside,
+            telemetry_path=kep_path, telemetry_time_col="time_s",
+            telemetry_altitude_col="altitude_km",
+            telemetry_x_col="x_km", telemetry_y_col="y_km", telemetry_z_col="z_km",
+            telemetry_sma_col="sma_km", telemetry_ecc_col="ecc",
+            telemetry_inc_col="inc_deg", telemetry_aop_col="aop_deg",
+            telemetry_raan_col="raan_deg", telemetry_ta_col="ta_deg")
+        loaded_kep = TV._load_time_aligned_telemetry(cfg_kep, 0)
+        @test loaded_kep.time_s[1] > 0.0       # the mask did drop the first samples
+        @test loaded_kep.sma_km == 7000.0      # row 1 of the ORIGINAL data
+
         fitwork = joinpath(dir, "fitwork")
         mkpath(fitwork)
         fit = TV.fit_initial_state(manifest_path, "icfit_probe"; workdir=fitwork)

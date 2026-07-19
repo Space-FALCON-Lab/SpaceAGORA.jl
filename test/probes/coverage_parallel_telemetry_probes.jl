@@ -1494,4 +1494,63 @@ end
     @test loosened.integration_tolerances.reltol_orbit == 1.0e-7
 end
 
+@testset "Scenario builder branch probes (coverage backstop)" begin
+    # These branches are otherwise exercised only by the scenario suites, whose
+    # worker-process coverage can fall outside the CI gate's active window; pin
+    # them from this in-process probe file so the gate is deterministic.
+
+    # Planet and N-body primary name mappings.
+    @test TV._planet_from_name("mars") isa SimulationModel.Mars
+    @test TV._planet_from_name("venus") isa SimulationModel.Venus
+    @test TV._planet_from_name("moon") isa SimulationModel.Moon
+    @test_throws ArgumentError TV._planet_from_name("pluto")
+    @test TV._nbody_primary_name("earth") == "Earth"
+    @test TV._nbody_primary_name("mars") == "Mars"
+    @test TV._nbody_primary_name("venus") == "Venus"
+    @test TV._nbody_primary_name("moon") == "Moon"
+    @test TV._nbody_primary_name("titan") == "Titan"
+    @test_throws ArgumentError TV._nbody_primary_name("pluto")
+
+    # Tabulated-flight density builder on a synthetic two-pass table with an
+    # archive gap (P=1,3), both legs, and a nonpositive-density row that must
+    # be skipped.
+    mktempdir() do dir
+        path = joinpath(dir, "flight_table.arrow")
+        tbl = DataFrame(
+            P=[1, 1, 1, 3, 3, 3],
+            leg=["in", "out", "in", "in", "out", "out"],
+            alt_km=[120.0, 130.0, 110.0, 121.0, 131.0, 141.0],
+            rho_kgm3=[1.0e-9, 5.0e-10, 0.0, 1.1e-9, 6.0e-10, 3.0e-10],
+            sigma_kgm3=[1.0e-10, 5.0e-11, 0.0, 1.1e-10, 6.0e-11, 3.0e-11],
+            t_peri_utc=vcat(fill("2025-06-06T01:00:00", 3), fill("2025-06-06T03:00:00", 3))
+        )
+        TV.Arrow.write(path, tbl)
+        truth = TV.AtmosphereTruthConfig(
+            atmosphere_model="tabulated_flight",
+            tabulated_flight_file=path,
+            tabulated_flight_sigma=0.0
+        )
+        it = SimulationModel.InitialTime(year=2025, month=6, day=6)
+        model = TV._make_tabulated_flight_density_model(it, truth)
+        @test model isa SimulationModel.TabulatedFlightAtmosphereModel
+
+        @test_throws ArgumentError TV._make_tabulated_flight_density_model(
+            it,
+            TV.AtmosphereTruthConfig(
+                atmosphere_model="tabulated_flight",
+                tabulated_flight_file=joinpath(dir, "missing.arrow")
+            )
+        )
+        bad = joinpath(dir, "bad_columns.arrow")
+        TV.Arrow.write(bad, DataFrame(P=[1], leg=["in"]))
+        @test_throws ArgumentError TV._make_tabulated_flight_density_model(
+            it,
+            TV.AtmosphereTruthConfig(
+                atmosphere_model="tabulated_flight",
+                tabulated_flight_file=bad
+            )
+        )
+    end
+end
+
 println("coverage_parallel_telemetry_probes_ok")

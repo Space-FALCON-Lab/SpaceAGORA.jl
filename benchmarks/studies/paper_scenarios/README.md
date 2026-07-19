@@ -47,11 +47,12 @@ Threadripper 64-thread / 256 GB); the hostname keys the per-machine tables.
 | `PS_THREADS` | Parallel thread budget per point — **set to physical core count for paper numbers** | `Sys.CPU_THREADS` |
 | `PS_REPEATS` / `PS_WARMUP` | Timed repeats / warmup solves per point | 3 / 1 |
 | `PS_MISSION_S` | Mission length override | 1800 s (S1), 600 s (S2–S5) |
-| `PS_SIZES` | Constellation size ladder (S1, S2) | `1,4,16,64,256` / `4,16,64` |
+| `PS_SIZES` | Constellation size ladder (S1, S2) | `1,4,16,64,256,1024,2048,4096` / `4,16,64` |
 | `PS_WORKERS` | S3 process-worker ladder | `1,2,4,8` (extend to `16,32` on the Threadripper) |
 | `PS_MC_SAMPLES` | Samples per campaign (S3, S4) | 32 / 8 |
 | `PS_PROC_WORKERS` | S2 process-mode worker count | `min(8, PS_THREADS)` |
 | `PS_TIMEOUT_S` | Per-point kill deadline | 3600 s |
+| `PS_GRAVITY` / `PS_DENSITY` | S1-only: force-model override (`invsq\|l20\|l50` / `none\|gram_standard\|gram_lookahead\|gram_surrogate`), isolates per-satellite cost as a variable | `l20` / `none` |
 
 Mission lengths were chosen so each point is long enough that per-step work
 dominates dispatch overhead (hundreds of accepted steps) but a full scenario stays
@@ -68,6 +69,18 @@ smoke: set `PS_SIZES=1,4 PS_MC_SAMPLES=4 PS_WORKERS=1,2 PS_MISSION_S=60 PS_REPEA
   thread route avoids.
 - Speedup for S1/S2 = serial median / mode median at the same size. S3's headline
   is per-sample time (`median_s / samples`) vs. workers, which should stay ~flat.
+- `PS_GRAVITY`/`PS_DENSITY` overrides in S1 write a suffixed CSV
+  (`s1_constellation_scaling_<gravity>_<density>.csv`) instead of overwriting the
+  (`l20`, vacuum) baseline; `plot_results.jl` picks up every such file automatically
+  and tags rows with a `variant` column. A logged finding from an `l50` comparison
+  run: at low N the baseline's cheap per-satellite cost makes fixed dispatch
+  overhead dominate (including a specific dip at N=16, where
+  `SPACEAGORA_RHS_BATCH_THREAD_THRESHOLD` first turns batched RHS threading on);
+  a heavier force model shrinks that overhead fraction and produces *superlinear*
+  speedup at N >= 1024 (up to 21.6x on a 12-thread budget) — reproducible but not
+  confirmed against hardware cache-miss counters. See "S1 Force-Model Sensitivity
+  Finding" in `docs/architecture/parallelization_paper_notes.md` for the full data
+  and the caveat to state alongside it in the paper.
 
 ## GRAM safety conventions (inherited from prior studies)
 

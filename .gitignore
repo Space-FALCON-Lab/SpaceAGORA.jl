@@ -107,3 +107,7 @@ texput.log
 *.dll
 *.dylib
 SpaceAGORA.so
+
+# Remote job push tool
+scripts/remote/remotes.conf
+remote_runs/

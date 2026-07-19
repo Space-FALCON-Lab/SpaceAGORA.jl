@@ -30,8 +30,13 @@ ps_repeats()::Int = ps_env_int("PS_REPEATS", 3)
 ps_warmup()::Int = ps_env_int("PS_WARMUP", 1)
 ps_timeout_s()::Float64 = ps_env_float("PS_TIMEOUT_S", 3600.0)
 
+"""Results directory for this host, optionally suffixed via PS_RESULTS_SUFFIX
+(e.g. "_thread_ladder") so an exploratory run's CSVs land in their own
+pseudo-host directory -- auto-discovered by plot_results.jl as a separate
+host -- instead of overwriting the canonical per-host baseline data that
+lives under the bare hostname."""
 function ps_results_dir()::String
-    dir = joinpath(PS_DIR, "results", gethostname())
+    dir = joinpath(PS_DIR, "results", gethostname() * ps_env_str("PS_RESULTS_SUFFIX", ""))
     mkpath(dir)
     return dir
 end

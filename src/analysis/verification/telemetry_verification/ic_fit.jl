@@ -96,6 +96,7 @@ function fit_initial_state(
     pos_step_m > 0.0 && vel_step_mps > 0.0 || throw(ArgumentError(
         "fit_initial_state: perturbation steps must be > 0."
     ))
+    mkpath(workdir)
     manifest = TOML.parsefile(manifest_path)
     haskey(manifest, "scenarios") || throw(ArgumentError("fit_initial_state: no scenarios in $manifest_path"))
     idx = findfirst(s -> String(get(s, "name", "")) == scenario_name, manifest["scenarios"])

@@ -286,8 +286,8 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
     t = _require_table(tbl, "atmosphere_truth", context)
     assumption_id = _optional_str(t, "assumption_id", "gram_default")
     atmosphere_model = _require_str(t, "atmosphere_model", "$context.atmosphere_truth")
-    atmosphere_model in ("GRAM", "tabulated_flight", "nrlmsise00") || throw(ArgumentError(
-        "Unsupported atmosphere_truth.atmosphere_model='$atmosphere_model' in $context; use GRAM|tabulated_flight|nrlmsise00."
+    atmosphere_model in ("GRAM", "tabulated_flight", "nrlmsise00", "tabulated_time") || throw(ArgumentError(
+        "Unsupported atmosphere_truth.atmosphere_model='$atmosphere_model' in $context; use GRAM|tabulated_flight|nrlmsise00|tabulated_time."
     ))
     tabulated_flight_file = _optional_str(t, "tabulated_flight_file", "")
     tabulated_flight_sigma = _optional_float(t, "tabulated_flight_sigma", 0.0)
@@ -301,6 +301,21 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
     elseif !isempty(tabulated_flight_file)
         throw(ArgumentError(
             "atmosphere_truth.tabulated_flight_file requires atmosphere_model=\"tabulated_flight\" in $context"
+        ))
+    end
+    tabulated_time_file = _optional_str(t, "tabulated_time_file", "")
+    tabulated_time_scale = _optional_float(t, "tabulated_time_scale", 1.0)
+    tabulated_time_temperature_k = _optional_float(t, "tabulated_time_temperature_k", 900.0)
+    if atmosphere_model == "tabulated_time"
+        isempty(tabulated_time_file) && throw(ArgumentError(
+            "atmosphere_truth.tabulated_time_file is required when atmosphere_model=\"tabulated_time\" in $context"
+        ))
+        tabulated_time_scale > 0.0 || throw(ArgumentError(
+            "atmosphere_truth.tabulated_time_scale must be > 0 in $context"
+        ))
+    elseif !isempty(tabulated_time_file)
+        throw(ArgumentError(
+            "atmosphere_truth.tabulated_time_file requires atmosphere_model=\"tabulated_time\" in $context"
         ))
     end
     atmosphere_dataset = _require_str(t, "atmosphere_dataset", "$context.atmosphere_truth")
@@ -347,6 +362,9 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
         mars_wind_scales=mars_wind_raw === nothing ? nothing : (mars_wind_raw[1], mars_wind_raw[2]),
         tabulated_flight_file=tabulated_flight_file,
         tabulated_flight_sigma=tabulated_flight_sigma,
+        tabulated_time_file=tabulated_time_file,
+        tabulated_time_scale=tabulated_time_scale,
+        tabulated_time_temperature_k=tabulated_time_temperature_k,
         mars_mola_heights=haskey(t, "mars_mola_heights") ? _optional_bool(t, "mars_mola_heights", true) : nothing,
         mars_min_max=haskey(t, "mars_min_max") ? _optional_int(t, "mars_min_max", 0) : nothing
     )

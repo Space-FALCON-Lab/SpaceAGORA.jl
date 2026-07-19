@@ -170,6 +170,9 @@ end
     if cfg.atmosphere_truth.atmosphere_model == "tabulated_flight"
         return _make_tabulated_flight_density_model(cfg.initial_time, cfg.atmosphere_truth)
     end
+    if cfg.atmosphere_truth.atmosphere_model == "tabulated_time"
+        return _make_time_tabulated_density_model(cfg.atmosphere_truth)
+    end
     if cfg.atmosphere_truth.atmosphere_model == "nrlmsise00"
         lowercase(strip(cfg.planet_name)) == "earth" || throw(ArgumentError(
             "atmosphere_truth.atmosphere_model=\"nrlmsise00\" is Earth-only " *
@@ -230,6 +233,32 @@ function _make_tabulated_flight_density_model(
     return SimulationModel.TabulatedFlightAtmosphereModel(
         peri_el[ord], alt_pairs[ord], log_pairs[ord], sig_pairs[ord],
         truth.tabulated_flight_sigma, 3.4, 188.92
+    )
+end
+
+# Loads a rho(t) table (CSV or Arrow; columns time_s, rho_kgm3) for the
+# "tabulated_time" scenario density source. Times are scenario elapsed seconds,
+# so the table's epoch must equal the scenario initial_time — document the
+# epoch alongside the table.
+function _make_time_tabulated_density_model(truth::AtmosphereTruthConfig)
+    path = truth.tabulated_time_file
+    isfile(path) || throw(ArgumentError("tabulated_time_file not found: $path"))
+    tbl = endswith(lowercase(path), ".csv") ?
+        DataFrame(CSV.File(path)) : DataFrame(Arrow.Table(path))
+    for col in ("time_s", "rho_kgm3")
+        hasproperty(tbl, Symbol(col)) || throw(ArgumentError(
+            "tabulated_time_file missing column '$col' (needs time_s, rho_kgm3)"
+        ))
+    end
+    ord = sortperm(Float64.(tbl.time_s))
+    println("tabulated_time: $(nrow(tbl)) nodes spanning " *
+            "$(round((maximum(tbl.time_s) - minimum(tbl.time_s)) / 3600.0, digits=2)) h, " *
+            "scale=$(truth.tabulated_time_scale)")
+    return SimulationModel.TimeTabulatedAtmosphereModel(
+        Float64.(tbl.time_s)[ord],
+        Float64.(tbl.rho_kgm3)[ord];
+        scale=truth.tabulated_time_scale,
+        temperature_k=truth.tabulated_time_temperature_k
     )
 end
 

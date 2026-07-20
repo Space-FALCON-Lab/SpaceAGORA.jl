@@ -37,10 +37,10 @@ const PSP_S2_MODE_COLOR = Dict(
     "threads_lookahead" => :steelblue, "process_members" => :firebrick,
 )
 const PSP_S2_MODE_LABEL = Dict(
-    "serial_standard" => "serial (native GRAM)",
-    "threads_standard" => "threads (lock-bound)",
-    "threads_lookahead" => "threads + look-ahead cache",
-    "process_members" => "process pool (1 GRAM/worker)",
+    "serial_standard" => "Serial (native GRAM)",
+    "threads_standard" => "Threaded (native GRAM)",
+    "threads_lookahead" => "Threaded + look-ahead cache",
+    "process_members" => "Process pool (1 GRAM/worker)",
 )
 const PSP_S2_MODE_MARKER = Dict(
     "threads_standard" => :diamond, "threads_lookahead" => :circle, "process_members" => :square,
@@ -51,6 +51,29 @@ const PSP_S5_PROFILE_COLOR = Dict(
     "R0" => :grey40, "R1_a" => :darkorange, "R2" => :seagreen,
     "R3" => :steelblue, "R4" => :purple, "R5" => :firebrick,
 )
+# Display forms for identifiers that appear verbatim in the source CSVs but
+# read as internal code names rather than plot-ready labels.
+const PSP_S5_PROFILE_DISPLAY = Dict("R1_a" => "R1a")
+psp_profile_display(p::AbstractString)::String = get(PSP_S5_PROFILE_DISPLAY, p, p)
+
+const PSP_S1_VARIANT_LABEL = Dict(
+    "baseline" => "L20 gravity (baseline)",
+    "l50_none" => "L50 gravity (heavier)",
+)
+psp_variant_label(v::AbstractString)::String = get(PSP_S1_VARIANT_LABEL, v, v)
+
+const PSP_S5_WORKLOAD_LABEL = Dict(
+    "const16_l20_vacuum" => "16-sat, L20 vacuum",
+    "const16_gram_cache" => "16-sat, GRAM cache",
+    "single_l50_vacuum" => "1-sat, L50",
+)
+psp_workload_label(w::AbstractString)::String = get(PSP_S5_WORKLOAD_LABEL, w, w)
+
+const PSP_HOST_LABEL = Dict(
+    "space-falcon-1" => "12-thread machine",
+    "space-falcon-lab-TRX50-AERO-D" => "64-thread machine",
+)
+psp_host_label(h::AbstractString)::String = get(PSP_HOST_LABEL, h, h)
 
 # ── Discovery / loading ─────────────────────────────────────────────────────
 
@@ -167,22 +190,20 @@ function psp_plot_s1_variant(df::DataFrame, outdir::String, host::String, varian
     tag = variant == "baseline" ? "" : " [$(variant)]"
 
     p1 = Plots.plot(; psp_style(
-        title="S1 -- Constellation Scaling ($(host))$(tag)",
         xlabel="Satellites (N)", ylabel="Median wall time (s)",
         xscale=:log10, yscale=:log10, legend=:topleft)...)
-    Plots.plot!(p1, serial.n_sats, serial.median_s; label="serial", marker=:circle, linewidth=2, color=:grey40)
-    Plots.plot!(p1, par.n_sats, par.median_s; label="parallel (T=$(threads))", marker=:circle, linewidth=2, color=:steelblue)
-    path1 = joinpath(outdir, "s1_walltime$(suffix).png")
+    Plots.plot!(p1, serial.n_sats, serial.median_s; label="Serial", marker=:circle, linewidth=2, color=:grey40)
+    Plots.plot!(p1, par.n_sats, par.median_s; label="Parallel (T=$(threads))", marker=:circle, linewidth=2, color=:steelblue)
+    path1 = joinpath(outdir, "s1_walltime$(suffix).pdf")
     Plots.savefig(p1, path1)
     push!(paths, path1)
 
     p2 = Plots.plot(; psp_style(
-        title="S1 -- Speedup vs. Serial ($(host))$(tag)",
         xlabel="Satellites (N)", ylabel="Speedup (x)", xscale=:log10, legend=:topleft)...)
     Plots.plot!(p2, joined.n_sats, min.(joined.n_sats, threads);
-        label="ideal (min(N,T), T=$(threads))", linestyle=:dash, color=:grey, linewidth=1)
-    Plots.plot!(p2, joined.n_sats, joined.speedup; label="measured", marker=:circle, linewidth=2, color=:steelblue)
-    path2 = joinpath(outdir, "s1_speedup$(suffix).png")
+        label="Ideal scaling (T=$(threads))", linestyle=:dash, color=:grey, linewidth=1)
+    Plots.plot!(p2, joined.n_sats, joined.speedup; label="Measured", marker=:circle, linewidth=2, color=:steelblue)
+    path2 = joinpath(outdir, "s1_speedup$(suffix).pdf")
     Plots.savefig(p2, path2)
     push!(paths, path2)
     return paths
@@ -197,7 +218,6 @@ function psp_plot_s1_overhead_sensitivity(df::DataFrame, outdir::String, host::S
     length(variants) < 2 && return String[]
 
     p = Plots.plot(; psp_style(
-        title="S1 -- Force-model Overhead Sensitivity ($(host))",
         xlabel="Satellites (N)", ylabel="Speedup vs. serial (x)", xscale=:log10, legend=:topleft)...)
     colors = Plots.palette(:tab10)
     drawn = false
@@ -205,11 +225,11 @@ function psp_plot_s1_overhead_sensitivity(df::DataFrame, outdir::String, host::S
         curve = psp_s1_speedup_curve(df[df.variant .== v, :])
         curve === nothing && continue
         Plots.plot!(p, curve.joined.n_sats, curve.joined.speedup;
-            label=v, marker=:circle, linewidth=2, color=colors[mod1(i, 10)])
+            label=psp_variant_label(v), marker=:circle, linewidth=2, color=colors[mod1(i, 10)])
         drawn = true
     end
     drawn || return String[]
-    path = joinpath(outdir, "s1_overhead_sensitivity.png")
+    path = joinpath(outdir, "s1_overhead_sensitivity.pdf")
     Plots.savefig(p, path)
     return [path]
 end
@@ -233,7 +253,6 @@ function psp_plot_s2(df::DataFrame, outdir::String, host::String)::Vector{String
     isempty(modes) && return paths
 
     p1 = Plots.plot(; psp_style(
-        title="S2 -- Wall Time by Density Mode ($(host))",
         xlabel="Satellites (N)", ylabel="Median wall time (s)",
         xscale=:log10, yscale=:log10, legend=:topleft)...)
     for m in modes
@@ -242,7 +261,7 @@ function psp_plot_s2(df::DataFrame, outdir::String, host::String)::Vector{String
         Plots.plot!(p1, sub.n_sats, sub.median_s;
             label=PSP_S2_MODE_LABEL[m], marker=:circle, linewidth=2, color=PSP_S2_MODE_COLOR[m])
     end
-    path1 = joinpath(outdir, "s2_walltime.png")
+    path1 = joinpath(outdir, "s2_walltime.pdf")
     Plots.savefig(p1, path1)
     push!(paths, path1)
 
@@ -251,10 +270,9 @@ function psp_plot_s2(df::DataFrame, outdir::String, host::String)::Vector{String
     rename!(base, :median_s => :t_base)
 
     p2 = Plots.plot(; psp_style(
-        title="S2 -- Speedup vs. Native-GRAM Serial ($(host))",
         xlabel="Satellites (N)", ylabel="Speedup (x)", xscale=:log10, legend=:topleft)...)
     Plots.plot!(p2, base.n_sats, fill(1.0, nrow(base));
-        label="serial baseline", linestyle=:dash, color=:grey, linewidth=1)
+        label="Serial baseline", linestyle=:dash, color=:grey, linewidth=1)
     for m in modes
         m == "serial_standard" && continue
         sub = sort(df[df.mode .== m, [:n_sats, :median_s]], :n_sats)
@@ -265,7 +283,7 @@ function psp_plot_s2(df::DataFrame, outdir::String, host::String)::Vector{String
         Plots.plot!(p2, joined.n_sats, joined.speedup;
             label=PSP_S2_MODE_LABEL[m], marker=:circle, linewidth=2, color=PSP_S2_MODE_COLOR[m])
     end
-    path2 = joinpath(outdir, "s2_speedup.png")
+    path2 = joinpath(outdir, "s2_speedup.pdf")
     Plots.savefig(p2, path2)
     push!(paths, path2)
 
@@ -273,9 +291,8 @@ function psp_plot_s2(df::DataFrame, outdir::String, host::String)::Vector{String
     # process-route speedup without paying the process-pool's per-GRAM-instance
     # RAM cost?
     p3 = Plots.plot(; psp_style(
-        title="S2 -- Speed vs. Memory Trade-off ($(host))",
         xlabel="Peak memory, coordinator + workers (GB)", ylabel="Speedup vs. serial (x)",
-        legend=:outertopright, size=(880, 520), right_margin=2Plots.PlotMeasures.mm)...)
+        legend=:topleft)...)
     any_points = false
     for m in modes
         m == "serial_standard" && continue
@@ -295,7 +312,7 @@ function psp_plot_s2(df::DataFrame, outdir::String, host::String)::Vector{String
         any_points = true
     end
     if any_points
-        path3 = joinpath(outdir, "s2_speed_per_memory.png")
+        path3 = joinpath(outdir, "s2_speed_per_memory.pdf")
         Plots.savefig(p3, path3)
         push!(paths, path3)
     end
@@ -314,30 +331,27 @@ function psp_plot_s3(df::DataFrame, outdir::String, host::String)::Vector{String
     t1 = t1_rows[1]
 
     p1 = Plots.plot(; psp_style(
-        title="S3 -- MC Total Time vs. Workers ($(host))",
         xlabel="Process workers", ylabel="Median wall time (s)",
         xscale=:log10, yscale=:log10, legend=:topright)...)
-    Plots.plot!(p1, df.workers, t1 ./ df.workers; label="ideal linear", linestyle=:dash, color=:grey, linewidth=1)
-    Plots.plot!(p1, df.workers, df.median_s; label="measured", marker=:circle, linewidth=2, color=:steelblue)
-    path1 = joinpath(outdir, "s3_total_time.png")
+    Plots.plot!(p1, df.workers, t1 ./ df.workers; label="Ideal linear scaling", linestyle=:dash, color=:grey, linewidth=1)
+    Plots.plot!(p1, df.workers, df.median_s; label="Measured", marker=:circle, linewidth=2, color=:steelblue)
+    path1 = joinpath(outdir, "s3_total_time.pdf")
     Plots.savefig(p1, path1)
     push!(paths, path1)
 
     p2 = Plots.plot(; psp_style(
-        title="S3 -- Per-sample Time vs. Workers ($(host))",
         xlabel="Process workers", ylabel="Time per sample (s)", xscale=:log10, legend=:topright)...)
     Plots.plot!(p2, df.workers, df.median_s ./ samples;
-        label="$(samples) samples/campaign", marker=:circle, linewidth=2, color=:steelblue)
-    path2 = joinpath(outdir, "s3_per_sample_time.png")
+        label="$(samples) samples per campaign", marker=:circle, linewidth=2, color=:steelblue)
+    path2 = joinpath(outdir, "s3_per_sample_time.pdf")
     Plots.savefig(p2, path2)
     push!(paths, path2)
 
     p3 = Plots.plot(; psp_style(
-        title="S3 -- Worker Pool Memory vs. Workers ($(host))",
         xlabel="Process workers", ylabel="Summed worker peak RSS (GB)", legend=:topleft)...)
     Plots.plot!(p3, df.workers, df.workers_rss_mb ./ 1024;
-        label="workers_rss", marker=:circle, linewidth=2, color=:firebrick)
-    path3 = joinpath(outdir, "s3_memory.png")
+        label="Summed worker memory", marker=:circle, linewidth=2, color=:firebrick)
+    path3 = joinpath(outdir, "s3_memory.pdf")
     Plots.savefig(p3, path3)
     push!(paths, path3)
     return paths
@@ -352,25 +366,24 @@ function psp_plot_s4(df::DataFrame, outdir::String, host::String)::Vector{String
     total_budget = thr.total_budget[1]
 
     p1 = Plots.plot(; psp_style(
-        title="S4 -- Hybrid Outer/Inner Partition ($(host))",
         xlabel="Outer (MC) workers  [inner budget = $(total_budget) / outer]",
         ylabel="Median wall time (s)", xscale=:log10, yscale=:log10, legend=:topright,
         xticks=(thr.outer_workers, string.(thr.outer_workers)))...)
     Plots.plot!(p1, thr.outer_workers, thr.median_s;
-        label="threads (outer x inner = $(total_budget))", marker=:circle, linewidth=2, color=:steelblue)
+        label="Threads (outer × inner = $(total_budget))", marker=:circle, linewidth=2, color=:steelblue)
 
     proc = df[df.backend .== "process", :]
     if nrow(proc) > 0
         Plots.scatter!(p1, proc.outer_workers, proc.median_s;
-            label="process (outer=$(proc.outer_workers[1]))", marker=:diamond, markersize=8, color=:firebrick)
+            label="Process route (outer=$(proc.outer_workers[1]))", marker=:diamond, markersize=8, color=:firebrick)
     end
 
     best_idx = argmin(thr.median_s)
     Plots.scatter!(p1, [thr.outer_workers[best_idx]], [thr.median_s[best_idx]];
-        label="best split (outer=$(thr.outer_workers[best_idx]), inner=$(thr.inner_budget[best_idx]))",
+        label="Best split (outer=$(thr.outer_workers[best_idx]), inner=$(thr.inner_budget[best_idx]))",
         marker=:star5, markersize=11, color=:gold)
 
-    path1 = joinpath(outdir, "s4_partition.png")
+    path1 = joinpath(outdir, "s4_partition.pdf")
     Plots.savefig(p1, path1)
     push!(paths, path1)
     return paths
@@ -408,9 +421,8 @@ function psp_plot_s5(df::DataFrame, outdir::String, host::String)::Vector{String
     group_centers = collect(1:n_wl)
 
     p1 = Plots.plot(; psp_style(
-        title="S5 -- Routing Profile Ladder ($(host))",
         ylabel="Speedup vs. R0 (serial) (x)", legend=:outertopright,
-        xticks=(group_centers, workloads), xrotation=15,
+        xticks=(group_centers, psp_workload_label.(workloads)), xrotation=15,
         tickfont=Plots.font(8), size=(860, 520),
         left_margin=14Plots.PlotMeasures.mm, bottom_margin=20Plots.PlotMeasures.mm,
         right_margin=4Plots.PlotMeasures.mm)...)
@@ -421,9 +433,9 @@ function psp_plot_s5(df::DataFrame, outdir::String, host::String)::Vector{String
             isempty(sub) ? 0.0 : sub[1]
         end for wl in workloads]
         Plots.bar!(p1, group_centers .+ offset, heights;
-            bar_width=bar_width * 0.92, label=pr, color=PSP_S5_PROFILE_COLOR[pr], linecolor=:black)
+            bar_width=bar_width * 0.92, label=psp_profile_display(pr), color=PSP_S5_PROFILE_COLOR[pr], linecolor=:black)
     end
-    path1 = joinpath(outdir, "s5_profile_speedup.png")
+    path1 = joinpath(outdir, "s5_profile_speedup.pdf")
     Plots.savefig(p1, path1)
     push!(paths, path1)
     return paths
@@ -440,7 +452,6 @@ function psp_plot_cross_machine(all_data::Dict{String, Dict{String, DataFrame}},
 
     paths_p1 = psp_safe("s1_speedup_by_machine") do
         p = Plots.plot(; psp_style(
-            title="S1 -- Constellation Speedup Across Machines",
             xlabel="Satellites (N)", ylabel="Speedup vs. serial (x)", xscale=:log10, legend=:topleft)...)
         drawn = false
         for (i, h) in enumerate(hosts)
@@ -454,11 +465,11 @@ function psp_plot_cross_machine(all_data::Dict{String, Dict{String, DataFrame}},
             curve = psp_s1_speedup_curve(d)
             curve === nothing && continue
             Plots.plot!(p, curve.joined.n_sats, curve.joined.speedup;
-                label=h, marker=:circle, linewidth=2, color=host_colors[mod1(i, 10)])
+                label=psp_host_label(h), marker=:circle, linewidth=2, color=host_colors[mod1(i, 10)])
             drawn = true
         end
         drawn || return String[]
-        path = joinpath(outdir, "s1_speedup_by_machine.png")
+        path = joinpath(outdir, "s1_speedup_by_machine.pdf")
         Plots.savefig(p, path)
         return [path]
     end
@@ -466,7 +477,6 @@ function psp_plot_cross_machine(all_data::Dict{String, Dict{String, DataFrame}},
 
     paths_p2 = psp_safe("s3_per_sample_by_machine") do
         p = Plots.plot(; psp_style(
-            title="S3 -- MC Per-sample Time Across Machines",
             xlabel="Process workers", ylabel="Time per sample (s)",
             xscale=:log10, yscale=:log10, legend=:topright)...)
         drawn = false
@@ -475,11 +485,11 @@ function psp_plot_cross_machine(all_data::Dict{String, Dict{String, DataFrame}},
             d = sort(all_data[h]["s3"], :workers)
             nrow(d) == 0 && continue
             Plots.plot!(p, d.workers, d.median_s ./ d.samples;
-                label=h, marker=:circle, linewidth=2, color=host_colors[mod1(i, 10)])
+                label=psp_host_label(h), marker=:circle, linewidth=2, color=host_colors[mod1(i, 10)])
             drawn = true
         end
         drawn || return String[]
-        path = joinpath(outdir, "s3_per_sample_by_machine.png")
+        path = joinpath(outdir, "s3_per_sample_by_machine.pdf")
         Plots.savefig(p, path)
         return [path]
     end
@@ -488,7 +498,6 @@ function psp_plot_cross_machine(all_data::Dict{String, Dict{String, DataFrame}},
     paths_p3 = psp_safe("s5_profile_portability") do
         workload = "const16_l20_vacuum"
         p = Plots.plot(; psp_style(
-            title="S5 -- Adaptive Profile Portability ($(workload))",
             xlabel="Profile", ylabel="Speedup vs. R0 (x)", legend=:topleft)...)
         drawn = false
         for (i, h) in enumerate(hosts)
@@ -502,11 +511,12 @@ function psp_plot_cross_machine(all_data::Dict{String, Dict{String, DataFrame}},
             profiles = [pr for pr in PSP_S5_PROFILE_ORDER if pr in unique(sub.profile)]
             isempty(profiles) && continue
             sp = [t0 / sub[sub.profile .== pr, :median_s][1] for pr in profiles]
-            Plots.plot!(p, profiles, sp; label=h, marker=:circle, linewidth=2, color=host_colors[mod1(i, 10)])
+            Plots.plot!(p, psp_profile_display.(profiles), sp;
+                label=psp_host_label(h), marker=:circle, linewidth=2, color=host_colors[mod1(i, 10)])
             drawn = true
         end
         drawn || return String[]
-        path = joinpath(outdir, "s5_profile_portability.png")
+        path = joinpath(outdir, "s5_profile_portability.pdf")
         Plots.savefig(p, path)
         return [path]
     end

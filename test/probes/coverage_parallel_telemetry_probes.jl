@@ -1890,4 +1890,23 @@ else
 end
 end
 
+@testset "Per-link atmosphere scoping (PR 49 review follow-up)" begin
+    AE = SimulationModel.DynamicEffectors.AerodynamicEffectors
+    # Defaults unchanged: field false, global false -> disabled.
+    m = AerodynamicCoefficientfM()
+    @test m.per_link_atmosphere === false
+    @test AE._per_link_enabled(m) === false
+    # Model-scoped enable works without touching the process-wide switch.
+    m_on = AerodynamicCoefficientfM(per_link_atmosphere=true)
+    @test AE._per_link_enabled(m_on) === true
+    @test AE.PER_LINK_ATMOSPHERE_ENABLED[] === false
+    # The process-wide switch still works (compatibility) and resets.
+    AE.set_per_link_atmosphere!(true)
+    @test AE._per_link_enabled(m) === true
+    AE.set_per_link_atmosphere!(false)
+    @test AE._per_link_enabled(m) === false
+    # Field-less models fall back to the global without erroring.
+    @test AE._per_link_enabled(AerodynamicCoefficientConstant()) === false
+end
+
 println("coverage_parallel_telemetry_probes_ok")

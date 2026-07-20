@@ -228,17 +228,6 @@ set_per_link_atmosphere!(flag::Bool) = (PER_LINK_ATMOSPHERE_ENABLED[] = flag; no
     (hasfield(typeof(model), :per_link_atmosphere) && model.per_link_atmosphere) ||
     PER_LINK_ATMOSPHERE_ENABLED[]
 
-# Per-link atmosphere currently applies the link-local density/temperature
-# only; the link-local WIND sample is not used (Mach/dynamic pressure keep
-# the spacecraft-level wind-relative velocity). Warn once when that
-# combination is actually exercised so wind-enabled users are not silently
-# handed partially per-link physics.
-@inline function _warn_per_link_wind(p)::Nothing
-    if p.args.environment_model.wind
-        @warn "per-link atmosphere ignores per-link WIND: Mach and dynamic pressure use the spacecraft-level wind-relative velocity (link-local sampling applies to density/temperature only)." maxlog = 1
-    end
-    return nothing
-end
 
 # Returns (force_ii, torque_body, drag_ii, lift_ii, cross_ii) all in the inertial frame.
 #
@@ -318,9 +307,18 @@ function _aero_pure_wrench(
         if link_atmosphere_fn !== nothing && orientation_sim && !body.root && R_body_to_inertial !== nothing
             pos_ii_body = x.pos_ii + R_body_to_inertial * SVector{3, Float64}(body.r)
             pos_pp_body = planet_frame.l_pi * pos_ii_body
-            rho_link, T_link, _ = link_atmosphere_fn(pos_pp_body)
+            rho_link, T_link, wind_link = link_atmosphere_fn(pos_pp_body)
             if isfinite(rho_link) && rho_link > eps(Float64) && isfinite(T_link) && T_link > 0.0
                 rho_body, T_body = rho_link, T_link
+                # Per-link sampling applies density/temperature only; a
+                # link-local WIND sample is discarded here (Mach and dynamic
+                # pressure keep the spacecraft-level wind-relative velocity).
+                # Warn exactly when nonzero wind data is actually thrown away,
+                # so the maxlog budget cannot be consumed by runs that never
+                # sample a link (Codex review on PR #62).
+                if wind_link !== nothing && any(!iszero, wind_link)
+                    @warn "per-link atmosphere discards the link-local WIND sample: Mach/dynamic pressure use the spacecraft-level wind-relative velocity (per-link sampling covers density/temperature only)." maxlog = 1
+                end
             end
         end
         sound_velocity_body = sqrt(planet.γ * planet.R * T_body)
@@ -411,9 +409,7 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    per_link = _per_link_enabled(model)
-    per_link && _warn_per_link_wind(p)
-    link_atmosphere_fn = per_link ?
+    link_atmosphere_fn = _per_link_enabled(model) ?
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
@@ -428,9 +424,7 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    per_link = _per_link_enabled(model)
-    per_link && _warn_per_link_wind(p)
-    link_atmosphere_fn = per_link ?
+    link_atmosphere_fn = _per_link_enabled(model) ?
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:fm, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
@@ -445,9 +439,7 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    per_link = _per_link_enabled(model)
-    per_link && _warn_per_link_wind(p)
-    link_atmosphere_fn = per_link ?
+    link_atmosphere_fn = _per_link_enabled(model) ?
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)

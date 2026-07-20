@@ -187,6 +187,21 @@ end
     ))
 end
 
+@inline function _parse_ic_offset(tbl, key::String, context::String)::NTuple{3, Float64}
+    raw = _optional_float_tuple(tbl, key, 3, context)
+    raw === nothing && return (0.0, 0.0, 0.0)
+    all(isfinite, raw) || throw(ArgumentError("$key must be finite in $context"))
+    return (raw[1], raw[2], raw[3])
+end
+
+@inline function _parse_truth_mask(raw::String, context::String)::Symbol
+    key = lowercase(strip(raw))
+    key in ("none", "") && return :none
+    key == "nightside" && return :nightside
+    key == "dayside" && return :dayside
+    throw(ArgumentError("Unsupported truth_mask='$raw' in $context; use none|nightside|dayside."))
+end
+
 function _parse_maneuver_config(tbl, context::String)
     if !haskey(tbl, "maneuvers")
         return (
@@ -360,9 +375,9 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
         ),
         mars_f107=haskey(t, "mars_f107") ? _optional_float(t, "mars_f107", 0.0) : nothing,
         mars_wind_scales=mars_wind_raw === nothing ? nothing : (mars_wind_raw[1], mars_wind_raw[2]),
-        tabulated_flight_file=tabulated_flight_file,
+        tabulated_flight_file=isempty(tabulated_flight_file) ? "" : _resolve_repo_path(tabulated_flight_file),
         tabulated_flight_sigma=tabulated_flight_sigma,
-        tabulated_time_file=tabulated_time_file,
+        tabulated_time_file=isempty(tabulated_time_file) ? "" : _resolve_repo_path(tabulated_time_file),
         tabulated_time_scale=tabulated_time_scale,
         tabulated_time_temperature_k=tabulated_time_temperature_k,
         mars_mola_heights=haskey(t, "mars_mola_heights") ? _optional_bool(t, "mars_mola_heights", true) : nothing,
@@ -643,7 +658,10 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 extrema_min_separation_s=extrema_min_separation_s,
                 atmosphere_truth=atmosphere_truth,
                 calibration=calibration,
-                EI_km=EI_km
+                EI_km=EI_km,
+                ic_offset_m=_parse_ic_offset(tbl, "ic_offset_m", context),
+                ic_offset_mps=_parse_ic_offset(tbl, "ic_offset_mps", context),
+                truth_mask=_parse_truth_mask(_optional_str(tbl, "truth_mask", "none"), context)
             ))
         else
             throw(ArgumentError("Unsupported scenario kind '$kind' in $context"))

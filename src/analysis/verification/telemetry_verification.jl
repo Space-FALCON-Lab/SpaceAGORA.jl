@@ -42,6 +42,7 @@ include(joinpath(@__DIR__, "telemetry_verification", "calibration.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "error_tables.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "reporting.jl"))
 include(joinpath(@__DIR__, "telemetry_verification", "runner.jl"))
+include(joinpath(@__DIR__, "telemetry_verification", "ic_fit.jl"))
 
 # Architecture contract: runner delegates simulation execution to SimulationEngine.run_simulation.
 end # module TelemetryVerification

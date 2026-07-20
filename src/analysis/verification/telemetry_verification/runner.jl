@@ -106,9 +106,14 @@ function _initial_condition_from_time_aligned_telemetry(cfg::TimeAlignedScenario
             r_m, v_mps = _planet_fixed_to_j2000_state(cfg.planet_name, et0, r_m, v_mps)
         end
         return CartesianInitialCondition(
-            collect(r_m),
-            collect(v_mps)
+            collect(r_m .+ SVector{3, Float64}(cfg.ic_offset_m)),
+            collect(v_mps .+ SVector{3, Float64}(cfg.ic_offset_mps))
         )
+    end
+    if any(!iszero, cfg.ic_offset_m) || any(!iszero, cfg.ic_offset_mps)
+        throw(ArgumentError(
+            "Scenario $(cfg.name) sets ic_offset_m/ic_offset_mps but provides no Cartesian IC columns; offsets apply to Cartesian ICs only."
+        ))
     end
     all(isfinite, (telemetry.sma_km, telemetry.ecc, telemetry.inc_deg, telemetry.aop_deg, telemetry.raan_deg, telemetry.ta_deg)) || throw(
         ArgumentError("Time-aligned telemetry is missing both Cartesian ICs and finite Keplerian initial-condition fields.")
@@ -209,14 +214,17 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
     final_points = final_is_quick ? cfg.max_points_quick : cfg.max_points_full
     final_telemetry = _load_time_aligned_telemetry(cfg, final_points)
     final_ic = _initial_condition_from_time_aligned_telemetry(cfg, final_telemetry)
-    final_mission_time_s = max(final_telemetry.time_s[end] - final_telemetry.time_s[1], 1.0)
+    # The IC is anchored at t=0 (the pre-mask first sample); a truth_mask may
+    # screen out early samples leaving time_s[1] > 0, so the duration must run
+    # through the LAST retained timestamp, not the retained span.
+    final_mission_time_s = max(final_telemetry.time_s[end], 1.0)
 
     eval_profile = (use_calibration && cal.search_on_quick_subset && profile == :full) ? :quick : profile
     eval_is_quick = eval_profile == :quick
     eval_points = eval_is_quick ? cfg.max_points_quick : cfg.max_points_full
     eval_telemetry = _load_time_aligned_telemetry(cfg, eval_points)
     eval_ic = _initial_condition_from_time_aligned_telemetry(cfg, eval_telemetry)
-    eval_mission_time_s = max(eval_telemetry.time_s[end] - eval_telemetry.time_s[1], 1.0)
+    eval_mission_time_s = max(eval_telemetry.time_s[end], 1.0)
 
     cd_candidates = (use_calibration && cal.fit_cd_scale) ?
         _grid_values(cal.cd_scale_min, cal.cd_scale_max, cal.cd_scale_steps) : [1.0]

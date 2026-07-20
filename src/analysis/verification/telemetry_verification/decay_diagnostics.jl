@@ -128,6 +128,7 @@ function flight_density_table(
     window_s::Real=21600.0,
     step_s::Real=3600.0,
     n_harmonics::Int=3,
+    drifting_amplitudes::Bool=false,
     kwargs...
 )::DataFrame
     cd_area_m2 > 0.0 || throw(ArgumentError("flight_density_table: cd_area_m2 must be > 0."))
@@ -137,7 +138,7 @@ function flight_density_table(
     ))
     t = Float64.(t_s)
     tr = Float64.(t_ref_s)
-    min_pts = 2 + 2 * n_harmonics + 1
+    min_pts = 2 + 2 * n_harmonics * (drifting_amplitudes ? 2 : 1) + 1
     centers = Float64[]
     rhos = Float64[]
     c = minimum(t) + window_s / 2.0
@@ -150,7 +151,8 @@ function flight_density_table(
         if count(m) > min_pts && count(mr) > min_pts
             adot = zero_referenced_decay(
                 t[m], Float64.(sma_m)[m], tr[mr], Float64.(sma_ref_m)[mr];
-                period_s=period_s, n_harmonics=n_harmonics, kwargs...
+                period_s=period_s, n_harmonics=n_harmonics,
+                drifting_amplitudes=drifting_amplitudes, kwargs...
             ).decay_m_per_day / 86400.0
             a_mean = sum(Float64.(sma_m)[m]) / count(m)
             rho = -adot * Float64(mass_kg) / (Float64(cd_area_m2) * sqrt(Float64(mu) * a_mean))

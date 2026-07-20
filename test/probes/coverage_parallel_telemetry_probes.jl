@@ -1681,4 +1681,213 @@ end
     )
 end
 
+# Under --code-coverage this testset is skipped: it executes the full
+# verification pipeline in-process, which would pull telemetry_loading.jl,
+# runner.jl, and error_tables.jl into the coverage gate's active window at
+# the partial coverage of this file's calls (the per-file floors are meant
+# for the scenario suites' coverage of those files, not this integration
+# probe). The testset runs in the plain tests and tests-matrix jobs.
+if Base.JLOptions().code_coverage != 0
+    @info "Skipping IC-offset/mask/fit integration probes under coverage instrumentation (see comment)"
+else
+@testset "IC offsets, illumination mask, differential-correction fit" begin
+    # Solar direction helper vs the CYGNSS campaign's screening values
+    # (2025-06-06: RA 75.6 deg, dec 22.8 deg from ephemerides).
+    it = SimulationModel.InitialTime(year=2025, month=6, day=6)
+    s_hat = TV._sun_unit_vector_j2000(it, 0.0)
+    ra = rad2deg(atan(s_hat[2], s_hat[1]))
+    dec = rad2deg(asin(s_hat[3]))
+    @test abs(ra - 75.6) < 1.5
+    @test abs(dec - 22.8) < 0.5
+
+    # IC offsets apply on the Cartesian path and throw on the Keplerian path.
+    mk_cfg(; kw...) = TV.TimeAlignedScenarioConfig(;
+        name="probe", planet_name="earth", telemetry_path="",
+        telemetry_time_col="t", telemetry_altitude_col="alt",
+        telemetry_x_col="x", telemetry_y_col="y", telemetry_z_col="z",
+        max_points_quick=10, max_points_full=10, min_eval_points=1,
+        units_x="s", units_y=Dict{String, String}(),
+        tolerances_quick=Dict{String, TV.EventTolerance}(),
+        tolerances_full=Dict{String, TV.EventTolerance}(),
+        initial_time=it,
+        spacecraft=TV.SpacecraftConfig(
+            bus_dims=(0.2, 0.5, 0.6), panel_dims=(0.4, 0.001, 0.5),
+            bus_mass_kg=29.0, panel_mass_each_kg=0.0, panel_offset_y_m=0.5,
+            prop_mass_kg=0.0, id=1
+        ),
+        gravity_model=:inverse_squared_j2, EI_km=600.0, kw...
+    )
+    tel_cart = (x_ic_km=7000.0, y_ic_km=0.0, z_ic_km=0.0,
+                vx_ic_kmps=0.0, vy_ic_kmps=7.5, vz_ic_kmps=0.0,
+                sma_km=NaN, ecc=NaN, inc_deg=NaN, aop_deg=NaN, raan_deg=NaN, ta_deg=NaN)
+    cfg_off = mk_cfg(ic_offset_m=(150.0, 0.0, -20.0), ic_offset_mps=(0.0, -0.003, 0.0))
+    ic = TV._initial_condition_from_time_aligned_telemetry(cfg_off, tel_cart)
+    @test ic isa SimulationModel.CartesianInitialCondition
+    @test ic.pos[1] ≈ 7000.0e3 + 150.0
+    @test ic.pos[3] ≈ -20.0
+    @test ic.vel[2] ≈ 7500.0 - 0.003
+    tel_kep = (x_ic_km=nothing, y_ic_km=nothing, z_ic_km=nothing,
+               vx_ic_kmps=nothing, vy_ic_kmps=nothing, vz_ic_kmps=nothing,
+               sma_km=7000.0, ecc=0.001, inc_deg=30.0, aop_deg=0.0, raan_deg=0.0, ta_deg=0.0)
+    @test_throws ArgumentError TV._initial_condition_from_time_aligned_telemetry(cfg_off, tel_kep)
+    @test_throws ArgumentError TV._parse_truth_mask("twilight", "probe")
+    @test TV._parse_truth_mask("nightside", "probe") === :nightside
+
+    # Synthetic circular two-body scenario shared by the mask and fit checks.
+    planet = TV._planet_from_name("earth")
+    mu = planet.μ
+    a = 7.0e6
+    n_mm = sqrt(mu / a^3)
+    inc = deg2rad(30.0)
+    t_samp = collect(0.0:60.0:2.0 * 2.0 * pi / n_mm)
+    ci, si = cos(inc), sin(inc)
+    xs = similar(t_samp); ys = similar(t_samp); zs = similar(t_samp)
+    vxs = similar(t_samp); vys = similar(t_samp); vzs = similar(t_samp)
+    for (i, ti) in enumerate(t_samp)
+        th = n_mm * ti
+        xs[i] = a * cos(th); ys[i] = a * sin(th) * ci; zs[i] = a * sin(th) * si
+        v = a * n_mm
+        vxs[i] = -v * sin(th); vys[i] = v * cos(th) * ci; vzs[i] = v * cos(th) * si
+    end
+    mktempdir() do dir
+        tele = DataFrame(
+            time_s=t_samp,
+            altitude_km=(sqrt.(xs .^ 2 .+ ys .^ 2 .+ zs .^ 2) .- planet.Rp_e) .* 1e-3,
+            x_km=xs .* 1e-3, y_km=ys .* 1e-3, z_km=zs .* 1e-3,
+            x_ic_km=fill(xs[1] * 1e-3, length(t_samp)),
+            y_ic_km=fill(ys[1] * 1e-3, length(t_samp)),
+            z_ic_km=fill(zs[1] * 1e-3, length(t_samp)),
+            vx_ic_kmps=fill(vxs[1] * 1e-3, length(t_samp)),
+            vy_ic_kmps=fill(vys[1] * 1e-3, length(t_samp)),
+            vz_ic_kmps=fill(vzs[1] * 1e-3, length(t_samp))
+        )
+        tele_path = joinpath(dir, "synthetic_circular.arrow")
+        TV.Arrow.write(tele_path, tele)
+
+        # Illumination mask splits the samples into complementary sets whose
+        # kept members satisfy the screen's sign convention.
+        cols = Dict(
+            :telemetry_path => tele_path, :telemetry_time_col => "time_s",
+            :telemetry_altitude_col => "altitude_km",
+            :telemetry_x_col => "x_km", :telemetry_y_col => "y_km", :telemetry_z_col => "z_km",
+            :telemetry_x_ic_col => "x_ic_km", :telemetry_y_ic_col => "y_ic_km",
+            :telemetry_z_ic_col => "z_ic_km", :telemetry_vx_ic_col => "vx_ic_kmps",
+            :telemetry_vy_ic_col => "vy_ic_kmps", :telemetry_vz_ic_col => "vz_ic_kmps"
+        )
+        cfg_none = mk_cfg(; cols...)
+        cfg_night = mk_cfg(; truth_mask=:nightside, cols...)
+        cfg_day = mk_cfg(; truth_mask=:dayside, cols...)
+        full = TV._load_time_aligned_telemetry(cfg_none, 0)
+        night = TV._load_time_aligned_telemetry(cfg_night, 0)
+        day = TV._load_time_aligned_telemetry(cfg_day, 0)
+        @test length(night.time_s) + length(day.time_s) == length(full.time_s)
+        @test 0.3 < length(night.time_s) / length(full.time_s) < 0.7
+        for i in eachindex(night.time_s)
+            sh = TV._sun_unit_vector_j2000(it, night.time_s[i])
+            r = SVector{3, Float64}(night.x_km[i], night.y_km[i], night.z_km[i])
+            @test dot(r, sh) <= 0.0
+        end
+
+        # Differential-correction fit recovers a deliberately wrong IC.
+        tol6 = Dict{String, Any}(k => Dict("max_abs_km" => 1.0e6, "max_nmae" => 1.0e6, "max_rmse_km" => 1.0e6)
+            for k in ("altitude_time", "state_x_time", "state_y_time", "state_z_time"))
+        scenario = Dict{String, Any}(
+            "name" => "icfit_probe", "kind" => "time_aligned_state",
+            "events" => Any["altitude_time", "state_x_time", "state_y_time", "state_z_time"],
+            "telemetry" => tele_path,
+            "telemetry_columns" => Dict{String, Any}(
+                "time" => "time_s", "altitude" => "altitude_km",
+                "x" => "x_km", "y" => "y_km", "z" => "z_km",
+                "x_ic" => "x_ic_km", "y_ic" => "y_ic_km", "z_ic" => "z_ic_km",
+                "vx_ic" => "vx_ic_kmps", "vy_ic" => "vy_ic_kmps", "vz_ic" => "vz_ic_kmps"),
+            "max_points_quick" => 1000, "max_points_full" => 1000, "min_eval_points" => 2,
+            "units" => Dict{String, Any}("x" => "s", "altitude_time" => "km",
+                "state_x_time" => "km", "state_y_time" => "km", "state_z_time" => "km"),
+            "tolerances_quick" => tol6, "tolerances_full" => tol6,
+            "planet" => "earth", "gravity_model" => "inverse_squared",
+            "nbody_bodies" => Any[], "drag_enabled" => false, "include_wind" => false,
+            "EI_km" => 600.0,
+            "spacecraft" => Dict{String, Any}(
+                "bus_dims_m" => Any[0.2, 0.5, 0.6], "panel_dims_m" => Any[0.4, 0.001, 0.5],
+                "bus_mass_kg" => 29.0, "panel_mass_each_kg" => 0.0,
+                "panel_offset_y_m" => 0.5, "prop_mass_kg" => 0.0, "id" => 1),
+            "initial_time" => Dict{String, Any}("year" => 2025, "month" => 6, "day" => 6,
+                "hour" => 0, "minute" => 0, "second" => 0.0),
+            "ic_offset_m" => Any[150.0, -80.0, 40.0],
+            "ic_offset_mps" => Any[0.0, -0.003, 0.001]
+        )
+        manifest_path = joinpath(dir, "icfit_manifest.toml")
+        open(manifest_path, "w") do io
+            TOML.print(io, Dict{String, Any}("scenarios" => Any[scenario]))
+        end
+        # P1 regressions (Codex review): a mask that screens out the EARLY
+        # samples must not shorten the propagation (the mission runs through
+        # the last retained timestamp with the IC still anchored at t=0), and
+        # a Keplerian-IC scenario must keep its original-epoch elements.
+        masked = deepcopy(scenario)
+        masked["name"] = "icfit_probe_masked"
+        masked["truth_mask"] = "nightside"   # first samples are dayside -> dropped
+        masked["ic_offset_m"] = Any[0.0, 0.0, 0.0]
+        masked["ic_offset_mps"] = Any[0.0, 0.0, 0.0]
+        masked_manifest = joinpath(dir, "masked_manifest.toml")
+        open(masked_manifest, "w") do io
+            TOML.print(io, Dict{String, Any}("scenarios" => Any[masked]))
+        end
+        req = TV.VerificationRequest(
+            profile=:quick,
+            out_summary=joinpath(dir, "masked_summary.csv"),
+            out_errors=joinpath(dir, "masked_errors.csv"),
+            manifest_path=masked_manifest, enforce=false, generate_plots=false)
+        rmask = TV.run_verification(req)
+        rows = rmask.summary[in.(rmask.summary.event, Ref(["state_x_time", "state_y_time", "state_z_time"])), :]
+        # With the exact IC and pure two-body dynamics the masked comparison must
+        # be tight EVERYWHERE — a shortened propagation clamps late samples to the
+        # final state and produces km-scale garbage.
+        @test maximum(Float64.(rows.max_abs_km)) < 0.01
+        ed = TV.CSV.read(joinpath(dir, "masked_errors.csv"), DataFrame)
+        ed = ed[ed.event .== "state_x_time", :]
+        t_last = maximum(Float64.(ed.telemetry_axis))
+        @test t_last > 0.75 * t_samp[end]     # late retained samples were compared
+        @test abs(Float64(ed.error_km[argmax(Float64.(ed.telemetry_axis))])) < 0.01
+
+        # Keplerian elements survive a first-sample-dropping mask at original
+        # values (loader-level check with per-row varying element columns).
+        kep = DataFrame(
+            time_s=t_samp,
+            altitude_km=(sqrt.(xs .^ 2 .+ ys .^ 2 .+ zs .^ 2) .- planet.Rp_e) .* 1e-3,
+            x_km=xs .* 1e-3, y_km=ys .* 1e-3, z_km=zs .* 1e-3,
+            sma_km=fill(7000.0, length(t_samp)) .+ collect(0:length(t_samp)-1),
+            ecc=fill(0.001, length(t_samp)),
+            inc_deg=fill(30.0, length(t_samp)),
+            aop_deg=fill(0.0, length(t_samp)),
+            raan_deg=fill(0.0, length(t_samp)),
+            ta_deg=fill(0.0, length(t_samp))
+        )
+        kep_path = joinpath(dir, "synthetic_kep.arrow")
+        TV.Arrow.write(kep_path, kep)
+        cfg_kep = mk_cfg(; truth_mask=:nightside,
+            telemetry_path=kep_path, telemetry_time_col="time_s",
+            telemetry_altitude_col="altitude_km",
+            telemetry_x_col="x_km", telemetry_y_col="y_km", telemetry_z_col="z_km",
+            telemetry_sma_col="sma_km", telemetry_ecc_col="ecc",
+            telemetry_inc_col="inc_deg", telemetry_aop_col="aop_deg",
+            telemetry_raan_col="raan_deg", telemetry_ta_col="ta_deg")
+        loaded_kep = TV._load_time_aligned_telemetry(cfg_kep, 0)
+        @test loaded_kep.time_s[1] > 0.0       # the mask did drop the first samples
+        @test loaded_kep.sma_km == 7000.0      # row 1 of the ORIGINAL data
+
+        fitwork = joinpath(dir, "fitwork")
+        mkpath(fitwork)
+        fit = TV.fit_initial_state(manifest_path, "icfit_probe"; workdir=fitwork)
+        @test fit.rmse_before_km > 0.05                       # the injected error is visible
+        @test all(abs.(fit.offsets_total_m) .< 10.0)          # fit cancels the position offset
+        # Position/velocity trade along the orbit (a ~0.15 m residual position
+        # offset exchanges against ~0.5 mm/s over this 2-orbit two-body arc),
+        # so the velocity gate is the degeneracy scale, not measurement zero.
+        @test all(abs.(fit.offsets_total_mps) .< 1.0e-3)
+        @test fit.rmse_after_km < 0.05 * fit.rmse_before_km   # validated propagation confirms
+    end
+end
+end
+
 println("coverage_parallel_telemetry_probes_ok")

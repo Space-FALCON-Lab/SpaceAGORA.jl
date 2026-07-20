@@ -23,6 +23,7 @@ include(joinpath(@__DIR__, "robotics", "runtests.jl"))
         include(joinpath(@__DIR__, "dynamics", "rigid_body_and_rhs_tests.jl"))
         include(joinpath(@__DIR__, "dynamics", "orbital_energy_and_drift_tests.jl"))
         include(joinpath(@__DIR__, "dynamics", "rotational_tests.jl"))
+        include(joinpath(@__DIR__, "dynamics", "reaction_wheel_coupling_tests.jl"))
         include(joinpath(@__DIR__, "dynamics", "aerodynamic_helper_tests.jl"))
     end
     @testset "Vehicle" begin

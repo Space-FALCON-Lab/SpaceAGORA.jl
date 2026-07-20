@@ -201,6 +201,7 @@ end
 @inline function _accumulate_control_effectors!(
     forces::MVector{3, Float64},
     torques::MVector{3, Float64},
+    rw_torque_body::MVector{3, Float64},
     sc_view,
     p,
     sat_idx::Int,
@@ -211,12 +212,14 @@ end
     @inbounds for control_effector in p.args.control_model.control_effectors
         control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, sat_idx, t)
         control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, sat_idx, t)
+        rw_torque = SimulationModel.calcReactionWheelTorque(control_effector, sc_view, p, sat_idx, t)
         if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
             println("Applying control effect for spacecraft $sat_idx at time $t seconds:")
             println("  Control force: $control_force")
         end
         forces .+= control_force
         torques .+= control_torque
+        rw_torque === nothing || (rw_torque_body .+= rw_torque)
         mass_rate += isfinite(control_mass_rate) ? control_mass_rate : 0.0
     end
     return mass_rate
@@ -1378,6 +1381,7 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
                 du_view.heat_loads .= 0.0
@@ -1403,13 +1407,17 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
                 _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
             else
-                mass_rate = rhs_kind == :explicit || rhs_kind == :full ?
-                    _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control) :
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = if rhs_kind == :explicit || rhs_kind == :full
+                    _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                else
                     0.0
+                end
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -1432,6 +1440,8 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
                 _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
@@ -1596,6 +1606,8 @@ end
     torques::AbstractVector{<:Real};
     propagate_quaternion::Bool,
     include_gyroscopic::Bool,
+    rw_assembly=nothing,
+    rw_torque_body::SVector{3, Float64}=SVector{3, Float64}(0.0, 0.0, 0.0),
 )
     omega_body = SimulationModel.DynamicsRotational.body_angular_velocity(sc_view.ω)
     tau_body = SimulationModel.DynamicsRotational.body_torque(torques)
@@ -1606,11 +1618,18 @@ end
         du_view.q .= 0.0
     end
 
+    h_wheel_body = SVector{3, Float64}(0.0, 0.0, 0.0)
+    if rw_assembly !== nothing && rw_assembly.n_wheels > 0
+        h_wheel_body = rw_assembly.J_rw * SVector{rw_assembly.n_wheels, Float64}(sc_view.h_wheels)
+        du_view.h_wheels .= rw_assembly.J_rw_pinv * (-rw_torque_body)
+    end
+
     du_view.ω .= SimulationModel.DynamicsRotational.angular_acceleration(
         omega_body,
         inertia_tensor,
         tau_body;
         include_gyroscopic=include_gyroscopic,
+        h_wheel_body=h_wheel_body,
     )
     return nothing
 end
@@ -1742,7 +1761,8 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
@@ -1768,6 +1788,8 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -1786,7 +1808,8 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
@@ -1812,6 +1835,8 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -1874,6 +1899,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
 
@@ -1916,6 +1942,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
 
@@ -2012,6 +2039,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
 
@@ -2046,6 +2074,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
 
@@ -2093,7 +2122,8 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
@@ -2119,6 +2149,8 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -2137,7 +2169,8 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
@@ -2163,6 +2196,8 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -2191,7 +2226,8 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
 
                 SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
@@ -2210,6 +2246,8 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -2227,7 +2265,8 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
 
                 SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
@@ -2246,6 +2285,8 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -2279,6 +2320,8 @@ function build_initial_conditions(args)::ComponentVector
                 heat_loads = zeros(n_bodies)
             )
         end
+        n_rw = args.mission_configuration.orientation_sim ? sc.root.rw_assembly.n_wheels : 0
+        base_shape = n_rw > 0 ? merge(base_shape, (h_wheels = zeros(n_rw),)) : base_shape
         coupling = _robot_arm_coupling(args, i, 0.0)
         coupling === nothing && return base_shape
         return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan))
@@ -2304,6 +2347,9 @@ function build_initial_conditions(args)::ComponentVector
         if args.mission_configuration.orientation_sim
             sc_view.q .= SimulationModel.project_unit_quaternion(spacecraft.initial_condition.q)
             sc_view.ω .= spacecraft.initial_condition.ang_vel
+            if spacecraft.root.rw_assembly.n_wheels > 0
+                sc_view.h_wheels .= spacecraft.root.rw_assembly.h_wheels
+            end
         end
         coupling = _robot_arm_coupling(args, i, 0.0)
         if coupling !== nothing

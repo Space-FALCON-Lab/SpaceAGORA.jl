@@ -176,6 +176,12 @@ end
     ωdot_no_gyro = rotational.angular_acceleration(ω, J, τ; include_gyroscopic=false)
     @test isapprox(ωdot_no_gyro, J \ τ; atol=1e-12, rtol=1e-12)
 
+    h_wheel = SVector{3, Float64}(0.01, -0.02, 0.005)
+    ωdot_with_wheel = rotational.angular_acceleration(ω, J, τ; include_gyroscopic=true, h_wheel_body=h_wheel)
+    ωdot_with_wheel_legacy = J \ (τ - cross(ω, J * ω + h_wheel))
+    @test isapprox(ωdot_with_wheel, ωdot_with_wheel_legacy; atol=1e-12, rtol=1e-12)
+    @test !isapprox(ωdot_with_wheel, ωdot_new; atol=1e-12, rtol=1e-12)
+
     @test rotational.body_torque(MVector{3, Float64}(τ)) == τ
     @test rotational.body_angular_velocity(MVector{3, Float64}(ω)) == ω
     @test rotational.combine_torques(τ, -τ) == SVector{3, Float64}(0.0, 0.0, 0.0)

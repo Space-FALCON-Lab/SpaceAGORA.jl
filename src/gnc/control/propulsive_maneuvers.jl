@@ -342,6 +342,23 @@ function calcControlMassFlowRate(controlModel, u::AbstractVector, p::ODEParams, 
 end
 
 """
+calcReactionWheelTorque(controlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+
+Optional hook: return the portion of an effector's commanded body torque that is
+produced *through a reaction wheel* (i.e. reacts against stored wheel angular
+momentum) rather than an idealized direct-body actuator. Effectors that don't
+drive reaction wheels return `nothing` (the default for any effector type that
+doesn't override this method).
+"""
+function calcReactionWheelTorque(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+    return nothing
+end
+
+function calcReactionWheelTorque(controlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+    return nothing
+end
+
+"""
 calcControlForceTorque(controlModel::BaseThrusterModel, x::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
 
 Calculate the control force and torque based on the thruster model and current state, called in the dynamics loop to get the current thruster force

@@ -59,11 +59,15 @@ end
 end
 
 @kwdef struct AerodynamicCoefficientfM <: AbstractForceTorqueModel
-
+    # Per-model opt-in for per-link atmosphere sampling (preferred over the
+    # process-wide set_per_link_atmosphere!, which leaks across simulations).
+    per_link_atmosphere::Bool = false
 end
 
 @kwdef struct AerodynamicCoefficientNoBallisticFlight <: AbstractForceTorqueModel
-
+    # Per-model opt-in for per-link atmosphere sampling (preferred over the
+    # process-wide set_per_link_atmosphere!, which leaks across simulations).
+    per_link_atmosphere::Bool = false
 end
 
 @inline function _make_aero_scratch_workspace(n_threads::Int)::AeroScratchWorkspace
@@ -213,7 +217,28 @@ const _AERO_ZERO5 = (_AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3, _AERO_ZERO3, _AERO_Z
 # want the per-link treatment (e.g. the CYGNSS attitude/torque reconstruction
 # study) enable it explicitly via `set_per_link_atmosphere!(true)`.
 const PER_LINK_ATMOSPHERE_ENABLED = Ref(false)
+# NOTE: process-wide switch, kept for compatibility; it affects every
+# aerodynamic effector in the Julia process, including concurrent or later
+# simulations. Prefer the per-model field
+# `AerodynamicCoefficientfM(per_link_atmosphere=true)` (idem
+# NoBallisticFlight), which scopes the behavior to one effector instance.
 set_per_link_atmosphere!(flag::Bool) = (PER_LINK_ATMOSPHERE_ENABLED[] = flag; nothing)
+
+@inline _per_link_enabled(model)::Bool =
+    (hasfield(typeof(model), :per_link_atmosphere) && model.per_link_atmosphere) ||
+    PER_LINK_ATMOSPHERE_ENABLED[]
+
+# Per-link atmosphere currently applies the link-local density/temperature
+# only; the link-local WIND sample is not used (Mach/dynamic pressure keep
+# the spacecraft-level wind-relative velocity). Warn once when that
+# combination is actually exercised so wind-enabled users are not silently
+# handed partially per-link physics.
+@inline function _warn_per_link_wind(p)::Nothing
+    if p.args.environment_model.wind
+        @warn "per-link atmosphere ignores per-link WIND: Mach and dynamic pressure use the spacecraft-level wind-relative velocity (link-local sampling applies to density/temperature only)." maxlog = 1
+    end
+    return nothing
+end
 
 # Returns (force_ii, torque_body, drag_ii, lift_ii, cross_ii) all in the inertial frame.
 #
@@ -386,7 +411,9 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    link_atmosphere_fn = PER_LINK_ATMOSPHERE_ENABLED[] ?
+    per_link = _per_link_enabled(model)
+    per_link && _warn_per_link_wind(p)
+    link_atmosphere_fn = per_link ?
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
@@ -401,7 +428,9 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    link_atmosphere_fn = PER_LINK_ATMOSPHERE_ENABLED[] ?
+    per_link = _per_link_enabled(model)
+    per_link && _warn_per_link_wind(p)
+    link_atmosphere_fn = per_link ?
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:fm, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
@@ -416,7 +445,9 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    link_atmosphere_fn = PER_LINK_ATMOSPHERE_ENABLED[] ?
+    per_link = _per_link_enabled(model)
+    per_link && _warn_per_link_wind(p)
+    link_atmosphere_fn = per_link ?
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)

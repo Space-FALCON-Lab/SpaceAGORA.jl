@@ -19,7 +19,7 @@ jobs:
       JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -99,7 +99,7 @@ jobs:
         run: echo "JULIA_DEPOT_PATH=${RUNNER_TEMP}/julia-clean-depot" >> "$GITHUB_ENV"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -151,7 +151,7 @@ jobs:
       JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -206,7 +206,7 @@ jobs:
       JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -260,7 +260,7 @@ jobs:
       JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -320,7 +320,7 @@ jobs:
       JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -378,7 +378,7 @@ jobs:
       JULIA_NUM_THREADS: "4"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -449,7 +449,7 @@ jobs:
       SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -513,7 +513,7 @@ jobs:
       SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -569,7 +569,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -622,7 +622,7 @@ jobs:
       # token it attempts the gh-pages push on main and fails with 403.
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -652,7 +652,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
           fetch-depth: 0

@@ -108,11 +108,15 @@ jobs:
       - name: Example regression stress
         run: julia --startup-file=no --depwarn=error --project=. test/integration/examples/runtests.jl
 
+      # --heap-size-hint keeps Julia's GC high-water mark well under the
+      # 7 GB hosted-runner ceiling: without it this step intermittently
+      # starves the runner agent ("runner lost communication with the
+      # server") and the job dies mid-step.
       - name: Telemetry full regression (GRAM deterministic)
-        run: julia --startup-file=no --depwarn=error --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
+        run: julia --startup-file=no --depwarn=error --heap-size-hint=3G --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
 
       - name: Stress suite
-        run: julia --startup-file=no --depwarn=error --project=. test/stress/runtests.jl
+        run: julia --startup-file=no --depwarn=error --heap-size-hint=3G --project=. test/stress/runtests.jl
 
       - name: Upload telemetry nightly artifacts
         if: always()

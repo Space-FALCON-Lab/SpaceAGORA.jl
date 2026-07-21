@@ -1861,8 +1861,13 @@ struct MagneticTorqueRodModel <: AbstractForceTorqueModel
     function MagneticTorqueRodModel(; field_model::Symbol=:dipole, igrf_year::Real=NaN)
         field_model in (:dipole, :igrf) ||
             throw(ArgumentError("field_model must be :dipole or :igrf, got $(repr(field_model))"))
-        if field_model === :igrf && !(isfinite(igrf_year) && 1900.0 <= igrf_year <= 2100.0)
-            throw(ArgumentError("field_model=:igrf requires igrf_year (finite decimal year, e.g. 2025.4)"))
+        # SatelliteToolboxGeomagneticField's IGRF hard-rejects epochs outside
+        # [1900, 2035) (and warns about reduced accuracy past 2030), so reject
+        # unsupported epochs here at configuration time instead of at the
+        # first wrench evaluation.
+        if field_model === :igrf && !(isfinite(igrf_year) && 1900.0 <= igrf_year < 2035.0)
+            throw(ArgumentError(
+                "field_model=:igrf requires igrf_year in [1900, 2035) (decimal year, e.g. 2025.4)"))
         end
         return new(field_model, Float64(igrf_year))
     end

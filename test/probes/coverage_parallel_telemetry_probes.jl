@@ -1919,6 +1919,10 @@ end
     @test m_igrf.igrf_year == 2025.4
     @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf)
     @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:wmm)
+    # The IGRF library hard-rejects epochs outside [1900, 2035); the
+    # constructor must catch that at configuration time (Codex P2, PR 64).
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=2050.0)
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=1899.0)
 
     # Tilted-dipole SIGN pins. The pre-fix implementation used the north-pole
     # axis as the dipole moment and returned the antiparallel field (~170 deg

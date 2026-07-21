@@ -151,6 +151,18 @@ end
     ))
 end
 
+@inline function _parse_element_frame(raw::String, context::String)::Symbol
+    key = lowercase(strip(raw))
+    if key in ("j2000", "eme2000")
+        return :j2000
+    elseif key in ("body_equator_inertial", "body_equator", "planet_equator")
+        return :body_equator_inertial
+    end
+    throw(ArgumentError(
+        "Unsupported element_frame='$raw' in $context; use j2000|body_equator_inertial."
+    ))
+end
+
 @inline function _parse_time_aligned_comparison_mode(raw::String, context::String)::Symbol
     key = lowercase(strip(raw))
     if key in ("time_aligned_state", "time_aligned", "state")
@@ -175,11 +187,29 @@ end
     ))
 end
 
+@inline function _parse_ic_offset(tbl, key::String, context::String)::NTuple{3, Float64}
+    raw = _optional_float_tuple(tbl, key, 3, context)
+    raw === nothing && return (0.0, 0.0, 0.0)
+    all(isfinite, raw) || throw(ArgumentError("$key must be finite in $context"))
+    return (raw[1], raw[2], raw[3])
+end
+
+@inline function _parse_truth_mask(raw::String, context::String)::Symbol
+    key = lowercase(strip(raw))
+    key in ("none", "") && return :none
+    key == "nightside" && return :nightside
+    key == "dayside" && return :dayside
+    throw(ArgumentError("Unsupported truth_mask='$raw' in $context; use none|nightside|dayside."))
+end
+
 function _parse_maneuver_config(tbl, context::String)
     if !haskey(tbl, "maneuvers")
         return (
             orbit_numbers=Int64[],
+            orbit_numbers_campaign=Int64[],
             delta_v_mps=Float64[],
+            replay_scale_mode="delta_v",
+            flight_apoapsis_alt_m=Float64[],
             thrust_n=0.0,
             isp_s=0.0,
             guidance_rate_s=30.0,
@@ -194,9 +224,58 @@ function _parse_maneuver_config(tbl, context::String)
         "maneuvers.delta_v_mps length ($(length(delta_v_mps))) must match maneuvers.orbit_numbers length ($(length(orbit_numbers))) in $context"
     ))
     any(v -> v <= 0, orbit_numbers) && throw(ArgumentError("maneuvers.orbit_numbers must be positive integers in $context"))
+
+    # Flight maneuver histories are often numbered from the campaign origin
+    # (e.g. orbit insertion), while the replay fires at the Nth apoapsis after
+    # the scenario epoch. orbit_number_offset converts campaign numbers to
+    # epoch-relative ones; burns that executed before the epoch (shifted
+    # number < 1) are already represented by the initial condition and are
+    # dropped here rather than replayed a second time.
+    offset = _optional_int(mtbl, "orbit_number_offset", 0)
+    offset >= 0 || throw(ArgumentError("maneuvers.orbit_number_offset must be >= 0 in $context"))
+    # The campaign-numbered list (including pre-epoch burns) is kept for
+    # diagnostics that operate on campaign orbit axes — the truth curve carries
+    # jumps at every campaign burn regardless of what the replay fires.
+    # Diagnostic replay scaling (see types.jl): flight apoapsis altitudes are
+    # required per burn in "flight_apoapsis_ratio" mode and follow the same
+    # pre-epoch drop filter as the burns themselves.
+    replay_scale_mode = _optional_str(mtbl, "replay_scale_mode", "delta_v")
+    replay_scale_mode in ("delta_v", "flight_apoapsis_ratio") || throw(ArgumentError(
+        "maneuvers.replay_scale_mode must be \"delta_v\" or \"flight_apoapsis_ratio\" in $context"
+    ))
+    flight_apo_alt_km = _optional_float64_vector(mtbl, "flight_apoapsis_alt_km")
+    if replay_scale_mode == "flight_apoapsis_ratio"
+        length(flight_apo_alt_km) == length(orbit_numbers) || throw(ArgumentError(
+            "maneuvers.flight_apoapsis_alt_km length ($(length(flight_apo_alt_km))) must match maneuvers.orbit_numbers length ($(length(orbit_numbers))) in $context"
+        ))
+        any(v -> !(isfinite(v) && v > 0.0), flight_apo_alt_km) && throw(ArgumentError(
+            "maneuvers.flight_apoapsis_alt_km entries must be positive and finite in $context"
+        ))
+    elseif !isempty(flight_apo_alt_km)
+        throw(ArgumentError(
+            "maneuvers.flight_apoapsis_alt_km requires replay_scale_mode = \"flight_apoapsis_ratio\" in $context"
+        ))
+    end
+
+    orbit_numbers_campaign = copy(orbit_numbers)
+    if offset > 0
+        keep = findall(o -> o - offset >= 1, orbit_numbers)
+        n_dropped = length(orbit_numbers) - length(keep)
+        n_dropped > 0 && println(
+            "maneuver_offset context=$context offset=$offset dropped_pre_epoch_burns=$n_dropped"
+        )
+        orbit_numbers = Int64[orbit_numbers[i] - offset for i in keep]
+        delta_v_mps = delta_v_mps[keep]
+        if !isempty(flight_apo_alt_km)
+            flight_apo_alt_km = flight_apo_alt_km[keep]
+        end
+    end
     return (
         orbit_numbers=orbit_numbers,
+        orbit_numbers_campaign=orbit_numbers_campaign,
         delta_v_mps=delta_v_mps,
+        replay_scale_mode=replay_scale_mode,
+        flight_apoapsis_alt_m=Float64[v * 1000.0 for v in flight_apo_alt_km],
         thrust_n=_optional_float(mtbl, "thrust_n", 4.0),
         isp_s=_optional_float(mtbl, "isp_s", 220.0),
         guidance_rate_s=_optional_float(mtbl, "guidance_rate_s", 30.0),
@@ -222,6 +301,38 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
     t = _require_table(tbl, "atmosphere_truth", context)
     assumption_id = _optional_str(t, "assumption_id", "gram_default")
     atmosphere_model = _require_str(t, "atmosphere_model", "$context.atmosphere_truth")
+    atmosphere_model in ("GRAM", "tabulated_flight", "nrlmsise00", "tabulated_time") || throw(ArgumentError(
+        "Unsupported atmosphere_truth.atmosphere_model='$atmosphere_model' in $context; use GRAM|tabulated_flight|nrlmsise00|tabulated_time."
+    ))
+    tabulated_flight_file = _optional_str(t, "tabulated_flight_file", "")
+    tabulated_flight_sigma = _optional_float(t, "tabulated_flight_sigma", 0.0)
+    if atmosphere_model == "tabulated_flight"
+        isempty(tabulated_flight_file) && throw(ArgumentError(
+            "atmosphere_truth.tabulated_flight_file is required when atmosphere_model=\"tabulated_flight\" in $context"
+        ))
+        abs(tabulated_flight_sigma) <= 3.0 || throw(ArgumentError(
+            "atmosphere_truth.tabulated_flight_sigma must be within +-3 in $context"
+        ))
+    elseif !isempty(tabulated_flight_file)
+        throw(ArgumentError(
+            "atmosphere_truth.tabulated_flight_file requires atmosphere_model=\"tabulated_flight\" in $context"
+        ))
+    end
+    tabulated_time_file = _optional_str(t, "tabulated_time_file", "")
+    tabulated_time_scale = _optional_float(t, "tabulated_time_scale", 1.0)
+    tabulated_time_temperature_k = _optional_float(t, "tabulated_time_temperature_k", 900.0)
+    if atmosphere_model == "tabulated_time"
+        isempty(tabulated_time_file) && throw(ArgumentError(
+            "atmosphere_truth.tabulated_time_file is required when atmosphere_model=\"tabulated_time\" in $context"
+        ))
+        tabulated_time_scale > 0.0 || throw(ArgumentError(
+            "atmosphere_truth.tabulated_time_scale must be > 0 in $context"
+        ))
+    elseif !isempty(tabulated_time_file)
+        throw(ArgumentError(
+            "atmosphere_truth.tabulated_time_file requires atmosphere_model=\"tabulated_time\" in $context"
+        ))
+    end
     atmosphere_dataset = _require_str(t, "atmosphere_dataset", "$context.atmosphere_truth")
     space_weather_model = _require_str(t, "space_weather_model", "$context.atmosphere_truth")
     solar_flux_model = _require_str(t, "solar_flux_model", "$context.atmosphere_truth")
@@ -264,6 +375,11 @@ function _parse_atmosphere_truth_config(tbl, context::String)::AtmosphereTruthCo
         ),
         mars_f107=haskey(t, "mars_f107") ? _optional_float(t, "mars_f107", 0.0) : nothing,
         mars_wind_scales=mars_wind_raw === nothing ? nothing : (mars_wind_raw[1], mars_wind_raw[2]),
+        tabulated_flight_file=isempty(tabulated_flight_file) ? "" : _resolve_repo_path(tabulated_flight_file),
+        tabulated_flight_sigma=tabulated_flight_sigma,
+        tabulated_time_file=isempty(tabulated_time_file) ? "" : _resolve_repo_path(tabulated_time_file),
+        tabulated_time_scale=tabulated_time_scale,
+        tabulated_time_temperature_k=tabulated_time_temperature_k,
         mars_mola_heights=haskey(t, "mars_mola_heights") ? _optional_bool(t, "mars_mola_heights", true) : nothing,
         mars_min_max=haskey(t, "mars_min_max") ? _optional_int(t, "mars_min_max", 0) : nothing
     )
@@ -348,7 +464,8 @@ function _parse_spacecraft_config(tbl, context::String)::SpacecraftConfig
         panel_mass_each_kg=_require_float(stbl, "panel_mass_each_kg", "$context.spacecraft"),
         panel_offset_y_m=_require_float(stbl, "panel_offset_y_m", "$context.spacecraft"),
         prop_mass_kg=_require_float(stbl, "prop_mass_kg", "$context.spacecraft"),
-        id=Int64(_require_int(stbl, "id", "$context.spacecraft"))
+        id=Int64(_require_int(stbl, "id", "$context.spacecraft")),
+        bus_ram_face=Symbol(_optional_str(stbl, "bus_ram_face", "legacy"))
     )
 end
 
@@ -362,16 +479,26 @@ function _parse_units(tbl, events::Vector{String}, context::String)::Tuple{Strin
     return x_units, y_units
 end
 
+function _parse_event_tolerance(ttbl, event::String, context::String)::EventTolerance
+    etbl = _require_table(ttbl, event, context)
+    return (
+        max_abs_km=_require_float(etbl, "max_abs_km", "$context.$event"),
+        max_nmae=_require_float(etbl, "max_nmae", "$context.$event"),
+        max_rmse_km=_optional_float(etbl, "max_rmse_km", Inf)
+    )
+end
+
 function _parse_tolerances(tbl, key::String, events::Vector{String}, context::String)::Dict{String, EventTolerance}
     ttbl = _require_table(tbl, key, context)
     out = Dict{String, EventTolerance}()
     for event in events
-        etbl = _require_table(ttbl, event, "$context.$key")
-        out[event] = (
-            max_abs_km=_require_float(etbl, "max_abs_km", "$context.$key.$event"),
-            max_nmae=_require_float(etbl, "max_nmae", "$context.$key.$event"),
-            max_rmse_km=_optional_float(etbl, "max_rmse_km", Inf)
-        )
+        out[event] = _parse_event_tolerance(ttbl, event, "$context.$key")
+        # Derived speed channels ("peri_speed"/"apo_speed") inherit the base
+        # event's tolerances unless an explicit table is given (limits in km/s).
+        speed_event = "$(event)_speed"
+        if haskey(ttbl, speed_event)
+            out[speed_event] = _parse_event_tolerance(ttbl, speed_event, "$context.$key")
+        end
     end
     return out
 end
@@ -436,6 +563,10 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 aop_deg=_require_float(tbl, "aop_deg", context),
                 raan_deg=_require_float(tbl, "raan_deg", context),
                 ta_deg=_require_float(tbl, "ta_deg", context),
+                element_frame=_parse_element_frame(_optional_str(tbl, "element_frame", "j2000"), context),
+                initial_state_j2000_m=_optional_float_tuple(tbl, "initial_state_j2000_m", 6, context),
+                epoch_orbit_offset=haskey(tbl, "epoch_orbit_offset") ?
+                    _require_float(tbl, "epoch_orbit_offset", context) : nothing,
                 spacecraft=spacecraft,
                 gravity_model=gravity_model,
                 gravity_harmonics_degree=gravity_harmonics_degree,
@@ -449,7 +580,10 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 include_wind=include_wind,
                 orbit_altitude_mode=orbit_altitude_mode,
                 maneuver_orbit_numbers=maneuver.orbit_numbers,
+                maneuver_orbit_numbers_campaign=maneuver.orbit_numbers_campaign,
                 maneuver_delta_v_mps=maneuver.delta_v_mps,
+                maneuver_replay_scale_mode=maneuver.replay_scale_mode,
+                maneuver_flight_apoapsis_alt_m=maneuver.flight_apoapsis_alt_m,
                 maneuver_thrust_n=maneuver.thrust_n,
                 maneuver_isp_s=maneuver.isp_s,
                 maneuver_guidance_rate_s=maneuver.guidance_rate_s,
@@ -524,7 +658,10 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 extrema_min_separation_s=extrema_min_separation_s,
                 atmosphere_truth=atmosphere_truth,
                 calibration=calibration,
-                EI_km=EI_km
+                EI_km=EI_km,
+                ic_offset_m=_parse_ic_offset(tbl, "ic_offset_m", context),
+                ic_offset_mps=_parse_ic_offset(tbl, "ic_offset_mps", context),
+                truth_mask=_parse_truth_mask(_optional_str(tbl, "truth_mask", "none"), context)
             ))
         else
             throw(ArgumentError("Unsupported scenario kind '$kind' in $context"))

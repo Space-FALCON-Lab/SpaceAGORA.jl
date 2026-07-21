@@ -53,6 +53,7 @@ include(joinpath(@__DIR__, "robotics", "runtests.jl"))
         include(joinpath(@__DIR__, "gnc", "control_effector_tests.jl"))
         include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "e_edg_strategy_parity_tests.jl"))
         include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "t_edg_strategy_parity_tests.jl"))
+        include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_gnc_tests.jl"))
         include(joinpath(REPO_ROOT, "test", "mission", "aerobraking_policy_selector_stub_tests.jl"))
     end
     @testset "Mission" begin

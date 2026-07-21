@@ -56,7 +56,7 @@ end
     θ = atan(z * planet.Rp_e, p_xy * planet.Rp_p)
     lat = atan(z + ep2 * planet.Rp_p * sin(θ)^3, p_xy - e2 * planet.Rp_e * cos(θ)^3)
     N = planet.Rp_e / sqrt(1.0 - e2 * sin(lat)^2)
-    return p_xy * cos(lat) + (z + e2 * N * sin(lat)^2) * sin(lat) - N
+    return p_xy * cos(lat) + (z + e2 * N * sin(lat)) * sin(lat) - N
 end
 
 @inline function _oblate_surface_radius(u_pp::SVector{3, Float64}, planet)::Float64
@@ -81,6 +81,33 @@ function _radius_for_oblate_altitude(target_altitude_m::Float64, u_pp::SVector{3
     return 0.5 * (lo + hi)
 end
 
+@inline _flight_ratio_scale(r_a_flight_m::Float64, r_a_sim_m::Float64)::Float64 =
+    (isfinite(r_a_flight_m) && r_a_flight_m > 0.0 &&
+     isfinite(r_a_sim_m) && r_a_sim_m > 0.0) ? clamp(r_a_flight_m / r_a_sim_m, 0.1, 10.0) : 1.0
+
+# The control layer locks the burn plan at the first tick after atmosphere
+# exit (pre-apoapsis), where the osculating apoapsis already equals the
+# post-drag apo radius, so the last command before plan lock carries the
+# correctly scaled Δv.
+function _flight_apoapsis_ratio_scale(
+    guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuidanceModel,
+    maneuver_idx::Int,
+    u::ComponentVector,
+    p::ODEParams,
+    i::Int64
+)::Float64
+    flight = guidanceAlg.maneuver_flight_apoapsis_radius_m
+    isempty(flight) && return 1.0
+    (maneuver_idx < 1 || maneuver_idx > length(flight)) && return 1.0
+    pos = SVector{3, Float64}(u.sc[i].pos)
+    vel = SVector{3, Float64}(u.sc[i].vel)
+    planet = p.args.environment_model.planet
+    elements = _osculating_elements_and_periapsis_direction(pos, vel, planet)
+    elements === nothing && return 1.0
+    r_a_sim_m = elements.a * (1.0 + elements.e)
+    return _flight_ratio_scale(Float64(flight[maneuver_idx]), r_a_sim_m)
+end
+
 function calcGuidanceEffect!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
     if i < 1 || i > length(p.shared_buffers.maneuver_commands)
         return nothing
@@ -95,6 +122,7 @@ function calcGuidanceEffect!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverG
         PropulsiveManeuverCommand(valid=true, source_orbit=orbit_counter)
     else
         delta_v_cmd = Float64(guidanceAlg.maneuver_Δv[maneuver_idx])
+        delta_v_cmd *= _flight_apoapsis_ratio_scale(guidanceAlg, maneuver_idx, u, p, i)
         PropulsiveManeuverCommand(
             valid=true,
             delta_v_mps=abs(delta_v_cmd),

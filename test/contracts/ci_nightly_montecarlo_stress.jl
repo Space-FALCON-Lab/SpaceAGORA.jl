@@ -7,6 +7,9 @@ using Random
 using SPICE
 using StaticArrays
 
+# Guarded like SimulationEngine below: when CI scripts share one process
+# (test/stress/runtests.jl), a second include replaces the module and makes
+# its exports (e.g. Earth) ambiguous in Main under Julia 1.12.
 if !isdefined(@__MODULE__, :SimulationModel)
     include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
 end

@@ -1062,7 +1062,8 @@ end
     @test torque_zero_h == SVector{3, Float64}(0.0, 0.0, 0.0)
 
     uD, uN, uE = latlongtoNED((planet_frame.alt_m, planet_frame.lat_rad, planet_frame.lon_rad))
-    desired_wind_pp = -planet_frame.vel_pp
+    # Zero airspeed means the atmosphere moves WITH the spacecraft: v_rel = v - w = 0.
+    desired_wind_pp = planet_frame.vel_pp
     wind_components = SVector{3, Float64}(
         dot(desired_wind_pp, uE),
         dot(desired_wind_pp, uN),

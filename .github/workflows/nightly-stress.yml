@@ -3,13 +3,39 @@ name: Nightly Stress
 on:
   schedule:
     - cron: "0 7 * * *"
+  # On pull requests this heavy tier (~3.5 h: full suite + coverage + full
+  # telemetry regression + stress suite) auto-triggers only when the change
+  # can move the spacecraft or change the grading. Everything else gets the
+  # fast tier (Julia CI) and the nightly run on main stands guard.
   pull_request:
+    paths:
+      - "src/dynamics/**"
+      - "src/environment/**"
+      - "src/simulation/**"
+      - "src/core/**"
+      - "src/gnc/**"
+      - "src/vehicle/**"
+      - "src/mission/**"
+      - "src/parallel/**"
+      - "src/analysis/verification/**"
+      - "ext/**"
+      - "data/GRAMSuite.jl"
+      - "data/telemetry/**"
+      - "data/Gravity_harmonics_data/**"
+      - "test/telemetry_benchmark_manifest.toml"
+      - "test/stress/**"
+      - "benchmarks/studies/telemetry_orbit_accuracy_study.jl"
+      - "Project.toml"
+      - "Manifest.toml"
+      - ".github/workflows/nightly-stress.yml"
   workflow_dispatch:
 
 jobs:
   nightly-stress:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    # Observed green runs take 3h14-3h25 and hosted-runner speed swings ~1.6x
+    # between hosts; 240 left ~35 min of headroom and would flake on slow hosts.
+    timeout-minutes: 300
     env:
       JULIA_NUM_THREADS: "4"
       # Coverage debt (July 2026): first real gate run after the CI dark
@@ -23,7 +49,7 @@ jobs:
       SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
           fetch-depth: 0

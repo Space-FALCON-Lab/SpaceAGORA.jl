@@ -17,6 +17,8 @@ output/*
 GRAMpy/*
 *.pdf
 *.csv
+# ...but gravity-coefficient assets are versioned (see test/gmat_scenario_matrix.jl)
+!data/Gravity_harmonics_data/*.csv
 *.png
 *.tex
 .DS_Store
@@ -51,6 +53,7 @@ CLAUDE.md
 
 # Binary data files
 *.feather
+!data/telemetry/Odyssey/*.feather
 *.hdf5
 *.arrow
 *.zip

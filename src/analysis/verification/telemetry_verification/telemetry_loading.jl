@@ -323,6 +323,47 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
     t0 = time_s[1]
     time_s = time_s .- t0
 
+    # IC values must come from the original first sample regardless of any
+    # truth_mask screening below (the Cartesian IC already reads perm[1]).
+    kep_first = has_keplerian_ic ?
+        (sma_km[1], ecc[1], inc_deg[1], aop_deg[1], raan_deg[1], ta_deg[1]) :
+        (NaN, NaN, NaN, NaN, NaN, NaN)
+
+    if cfg.truth_mask !== :none
+        cfg.comparison_frame === :inertial || throw(ArgumentError(
+            "truth_mask requires comparison_frame=inertial in $(cfg.name) (the illumination screen works on J2000 positions)."
+        ))
+        keep = falses(length(time_s))
+        for i in eachindex(time_s)
+            s_hat = _sun_unit_vector_j2000(cfg.initial_time, time_s[i])
+            r = SVector{3, Float64}(x_km[i], y_km[i], z_km[i])
+            cosang = dot(r, s_hat) / norm(r)
+            lit = cosang > 0.0
+            keep[i] = cfg.truth_mask === :nightside ? !lit : lit
+        end
+        n_dropped = length(time_s) - count(keep)
+        println("truth_mask=$(cfg.truth_mask): keeping $(count(keep))/$(length(time_s)) samples ($(n_dropped) screened) for $(cfg.name)")
+        count(keep) >= 2 || throw(ArgumentError(
+            "truth_mask=$(cfg.truth_mask) leaves fewer than 2 samples for $(cfg.name)."
+        ))
+        time_s = time_s[keep]
+        altitude_km = altitude_km[keep]
+        x_km = x_km[keep]
+        y_km = y_km[keep]
+        z_km = z_km[keep]
+        sma_km = sma_km[keep]
+        ecc = ecc[keep]
+        inc_deg = inc_deg[keep]
+        aop_deg = aop_deg[keep]
+        raan_deg = raan_deg[keep]
+        ta_deg = ta_deg[keep]
+        if has_velocity_truth
+            vx_true_kmps = vx_true_kmps[keep]
+            vy_true_kmps = vy_true_kmps[keep]
+            vz_true_kmps = vz_true_kmps[keep]
+        end
+    end
+
     return (
         time_s=time_s,
         altitude_km=altitude_km,
@@ -332,12 +373,12 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
         vx_kmps=has_velocity_truth ? vx_true_kmps : _differentiate_series(x_km, time_s),
         vy_kmps=has_velocity_truth ? vy_true_kmps : _differentiate_series(y_km, time_s),
         vz_kmps=has_velocity_truth ? vz_true_kmps : _differentiate_series(z_km, time_s),
-        sma_km=has_keplerian_ic ? sma_km[1] : NaN,
-        ecc=has_keplerian_ic ? ecc[1] : NaN,
-        inc_deg=has_keplerian_ic ? inc_deg[1] : NaN,
-        aop_deg=has_keplerian_ic ? aop_deg[1] : NaN,
-        raan_deg=has_keplerian_ic ? raan_deg[1] : NaN,
-        ta_deg=has_keplerian_ic ? ta_deg[1] : NaN,
+        sma_km=kep_first[1],
+        ecc=kep_first[2],
+        inc_deg=kep_first[3],
+        aop_deg=kep_first[4],
+        raan_deg=kep_first[5],
+        ta_deg=kep_first[6],
         x_ic_km=has_cartesian_ic ? Float64(x_ic_km_col[perm[1]]) : nothing,
         y_ic_km=has_cartesian_ic ? Float64(y_ic_km_col[perm[1]]) : nothing,
         z_ic_km=has_cartesian_ic ? Float64(z_ic_km_col[perm[1]]) : nothing,
@@ -345,6 +386,26 @@ function _load_time_aligned_telemetry(cfg::TimeAlignedScenarioConfig, max_points
         vy_ic_kmps=has_cartesian_ic ? Float64(vy_ic_col[perm[1]]) : nothing,
         vz_ic_kmps=has_cartesian_ic ? Float64(vz_ic_col[perm[1]]) : nothing
     )
+end
+
+"""
+    _sun_unit_vector_j2000(initial_time, el_s) -> SVector{3, Float64}
+
+Low-precision analytic solar direction in J2000 (Meeus mean-element formula,
+accuracy ~0.01 deg — ample for illumination screening) at `el_s` seconds past
+the scenario `initial_time`.
+"""
+function _sun_unit_vector_j2000(initial_time, el_s::Float64)::SVector{3, Float64}
+    epoch = DateTime(
+        Int(initial_time.year), Int(initial_time.month), Int(initial_time.day),
+        Int(initial_time.hour), Int(initial_time.minute)
+    ) + Millisecond(round(Int, 1000.0 * Float64(initial_time.second)))
+    n_days = Float64(Dates.value(epoch - DateTime(2000, 1, 1, 12))) / 86400.0e3 + el_s / 86400.0
+    L = deg2rad(mod(280.460 + 0.9856474 * n_days, 360.0))
+    g = deg2rad(mod(357.528 + 0.9856003 * n_days, 360.0))
+    lam = L + deg2rad(1.915) * sin(g) + deg2rad(0.020) * sin(2.0 * g)
+    eps_ = deg2rad(23.439 - 4.0e-7 * n_days)
+    return SVector{3, Float64}(cos(lam), cos(eps_) * sin(lam), sin(eps_) * sin(lam))
 end
 
 function _differentiate_series(values::Vector{Float64}, time_s::Vector{Float64})::Vector{Float64}

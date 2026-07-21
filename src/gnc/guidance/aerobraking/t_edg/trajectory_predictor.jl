@@ -245,7 +245,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
         wU = wind[3] # positive up , m / s
 
         wind_pp = wN * uN + wE * uE - wU * uD         # wind velocity in pp frame, m / s 
-        vel_pp_rw = vel_pp + wind_pp                  # relative wind vector, m / s
+        vel_pp_rw = vel_pp - wind_pp                  # airspeed: spacecraft velocity minus atmosphere velocity, m / s
         vel_pp_rw_hat = vel_pp_rw / norm(vel_pp_rw)   # relative wind unit vector 
 
         # Dynamic Pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY

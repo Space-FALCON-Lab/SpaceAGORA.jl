@@ -21,14 +21,20 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Prefer the dev tree: the public GRAMSuite's LFS bandwidth is easily
+      # exhausted by CI (persistent 502s on the batch endpoint), while the
+      # dev repo stores its data without LFS. Fall back to the public tree
+      # when the read token cannot reach the dev repo.
       - name: Update GRAMSuite submodule to latest main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: bash .github/scripts/update_gramsuite_submodule.sh regular
+        run: |
+          bash .github/scripts/update_gramsuite_submodule.sh dev \
+            || bash .github/scripts/update_gramsuite_submodule.sh regular
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2

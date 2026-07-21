@@ -67,6 +67,17 @@ using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleratio
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
+using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
+using .SimulationModel: SolarPanelAngleOfAttackControlModel
+# Forward the docstrings onto this module's bindings: the docs build resolves
+# `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
+# CI environment does not follow the explicit-import alias for these.
+@doc (@doc SimulationModel.AerobrakingEnergyDepletionConfig) AerobrakingEnergyDepletionConfig
+@doc (@doc SimulationModel.AerobrakingEnergyDepletionState) AerobrakingEnergyDepletionState
+@doc (@doc SimulationModel.AerobrakingEnergyDepletionGuidanceModel) AerobrakingEnergyDepletionGuidanceModel
+@doc (@doc SimulationModel.AerobrakingEnergyDepletionControlModel) AerobrakingEnergyDepletionControlModel
+@doc (@doc SimulationModel.SolarPanelAngleOfAttackControlModel) SolarPanelAngleOfAttackControlModel
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
@@ -453,6 +464,9 @@ export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
+export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
+export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

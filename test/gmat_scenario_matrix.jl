@@ -40,7 +40,9 @@ const _STK_RESULTS_DIR = joinpath(
 )
 
 const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/EarthGGM05C.csv" # For internal GMAT parity, matches the file used in the GMAT scenarios
-const _GMAT_HARMONICS_MARS_FILE = "data/Gravity_harmonics_data/GGM2B.csv"
+# Must match data/telemetry/gmat_matrix_parity_locked.py, which generated the
+# locked Mars references with Mars-50c (GMM2B.csv stays available as an asset).
+const _GMAT_HARMONICS_MARS_FILE = "data/Gravity_harmonics_data/Mars50c.csv"
 const _GMAT_HARMONICS_VENUS_FILE = "data/Gravity_harmonics_data/MGNP180U.csv"
 const _GMAT_HARMONICS_MOON_FILE = "data/Gravity_harmonics_data/LP165P.csv"
 const _GMAT_PLANETARY_KERNEL_CANDIDATES = (
@@ -49,6 +51,11 @@ const _GMAT_PLANETARY_KERNEL_CANDIDATES = (
 const _CYGNSS_48HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cygnss_data_48hr.feather")
 const _CYGNSS_96HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cyg04_nasa_pvt_96hr.feather")
 const _CYGNSS_CYG04_96HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "CYGNSS", "cyg04_nasa_pvt_96hr.feather")
+# CYGNSS flight telemetry is access-restricted and gitignored (see
+# data/telemetry/PRIVATE_TELEMETRY.md). The CYGNSS testsets below skip cleanly
+# when it has not been synced into this checkout.
+_cygnss_private_data_available() =
+    isfile(_CYGNSS_48HR_TELEMETRY_FEATHER) && isfile(_CYGNSS_CYG04_96HR_TELEMETRY_FEATHER)
 const _CYGNSS_GMAT_COMPARISON_PATH = let
     basilisk_path = joinpath(_GMAT_EXAMPLES_DIR, "Sim_CYGNSS_Comparison.feather")
     isfile(basilisk_path) ? basilisk_path : joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "GMAT_Examples", "Sim_CYGNSS_Comparison.feather")
@@ -500,8 +507,37 @@ function _build_cygnss_48hr_reference(outdir::String, stem::String)
 
     t_rel = t .- t[1]
     planet = TV._planet_from_name("earth")
-    r_km = sqrt.(x_km .^ 2 .+ y_km .^ 2 .+ z_km .^ 2)
-    alt_km = r_km .- planet.Rp_e * 1.0e-3
+    # Altitude in the same (oblate/geodetic) convention the scenario scoring
+    # uses; the vacuum r - Rp_e form carries a latitude-dependent bias of up
+    # to ~21 km against the oblate channel.
+    alt_km = [
+        TV._telemetry_altitude_km(
+            SVector{3, Float64}(x_km[i], y_km[i], z_km[i]) .* 1.0e3,
+            SVector{3, Float64}(vx_kmps[i], vy_kmps[i], vz_kmps[i]) .* 1.0e3,
+            planet,
+            :oblate
+        ) for i in eachindex(t_rel)
+    ]
+
+    # Published CYGNSS IC recipe: average the vis-viva SMA over the first 5
+    # samples and scale the first-sample velocity to that orbital energy. The
+    # single-sample GPS state carries ~63 m of SMA noise (~3.5 cm/s velocity
+    # noise at 1786 m SMA per m/s), which drifts ~18 km along-track over 48 h
+    # and quadruples the entry-point RMSE (6.2 km vs the published 1.578 km).
+    mu_kmc = planet.μ * 1.0e-9
+    a_samples_km = [
+        let r = sqrt(x_km[i]^2 + y_km[i]^2 + z_km[i]^2),
+            v = sqrt(vx_kmps[i]^2 + vy_kmps[i]^2 + vz_kmps[i]^2)
+            1.0 / (2.0 / r - v^2 / mu_kmc)
+        end for i in 1:5
+    ]
+    a_target_km = sum(a_samples_km) / length(a_samples_km)
+    r0_km = sqrt(x_km[1]^2 + y_km[1]^2 + z_km[1]^2)
+    v_target_kmps = sqrt(mu_kmc * (2.0 / r0_km - 1.0 / a_target_km))
+    v_scale = v_target_kmps / sqrt(vx_kmps[1]^2 + vy_kmps[1]^2 + vz_kmps[1]^2)
+    vx_ic = vx_kmps[1] * v_scale
+    vy_ic = vy_kmps[1] * v_scale
+    vz_ic = vz_kmps[1] * v_scale
 
     # The raw single-sample IC (x_km[1], v_km[1]) carries real telemetry noise: the
     # vis-viva semi-major axis (an exact constant of unperturbed 2-body motion) jitters
@@ -617,8 +653,15 @@ function _build_cygnss_96hr_reference(outdir::String, stem::String)
     vy_kmps = series.vy_kmps
     vz_kmps = series.vz_kmps
     planet = TV._planet_from_name("earth")
-    r_km = sqrt.(x_km .^ 2 .+ y_km .^ 2 .+ z_km .^ 2)
-    alt_km = r_km .- planet.Rp_e * 1.0e-3
+    # Same oblate/geodetic altitude convention as the scenario scoring channel.
+    alt_km = [
+        TV._telemetry_altitude_km(
+            SVector{3, Float64}(x_km[i], y_km[i], z_km[i]) .* 1.0e3,
+            SVector{3, Float64}(vx_kmps[i], vy_kmps[i], vz_kmps[i]) .* 1.0e3,
+            planet,
+            :oblate
+        ) for i in eachindex(x_km)
+    ]
 
     oe0 = TV.rvtoorbitalelement(
         SVector{3, Float64}(x_km[1], y_km[1], z_km[1]) .* 1.0e3,
@@ -686,8 +729,17 @@ function _build_cygnss_cyg04_96hr_inertial_reference(outdir::String, stem::Strin
     z_km = series.z_km
 
     planet = TV._planet_from_name("earth")
-    r_km = sqrt.(x_km .^ 2 .+ y_km .^ 2 .+ z_km .^ 2)
-    alt_km = r_km .- planet.Rp_e * 1.0e-3
+    # Same oblate/geodetic altitude convention as the scenario scoring channel.
+    # The planet-fixed rotation of position does not depend on velocity, so a
+    # zero velocity is passed for this position-only product.
+    alt_km = [
+        TV._telemetry_altitude_km(
+            SVector{3, Float64}(x_km[i], y_km[i], z_km[i]) .* 1.0e3,
+            SVector{3, Float64}(0.0, 0.0, 0.0),
+            planet,
+            :oblate
+        ) for i in eachindex(x_km)
+    ]
 
     # Use the 48hr IC: the cygnss_data_48hr.feather velocity is orbit-determined
     # and gives a much more accurate initial orbital energy than the raw GPS
@@ -2326,6 +2378,12 @@ end
 
 end # SPACEAGORA_SKIP_GMAT_MATRIX (GMAT Early vs Full Error)
 
+if !_cygnss_private_data_available()
+    @testset "CYGNSS scenarios" begin
+        @test_skip "CYGNSS private telemetry not present under data/telemetry/CYGNSS/; run scripts/dev/fetch_private_telemetry.sh to sync it, then re-run."
+    end
+else
+
 @testset "CYGNSS Telemetry Folder Data" begin
     cygnss_feather_path = _CYGNSS_48HR_TELEMETRY_FEATHER
     @test isfile(cygnss_feather_path)
@@ -2407,6 +2465,10 @@ end
 
     pos_rmse = _scenario_rmse(summary, "cygnss_48hr_pvt")
     println("cygnss_48hr_pvt mean position-axis RMSE [km]: $(pos_rmse)")
+    # Pin the published drag-free baseline (IEEE Aerospace 2026 Table 5 lineage,
+    # reproduced during the July 2026 verification campaign to 3 mm). A drift
+    # here means the reference builder's IC recipe or the force model changed.
+    @test abs(pos_rmse - 1.5777551) < 0.005
     println("cygnss_48hr error plot: $(plot_path)")
     println("cygnss_48hr RTN error plot: $(plot_path_rtn)")
     println("cygnss_48hr orbital elements plot: $(plot_path_oe)")
@@ -2784,6 +2846,8 @@ end
         println("cygnss drag tangential timeseries plot: $(tang_plot_path)")
     end
 end
+
+end # !_cygnss_private_data_available() guard around the CYGNSS testsets
 
 # ---------------------------------------------------------------------------
 # SpaceAGORA Examples Export

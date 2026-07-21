@@ -164,6 +164,11 @@ const PUBLIC_API_SECTIONS = [
         title = "Guidance and RPO Assets",
         items = [
             (owner = :SpaceAGORA, symbol = :ApoapsisTargetPeriapsisRaiseGuidanceModel, rendered = "SpaceAGORA.ApoapsisTargetPeriapsisRaiseGuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingEnergyDepletionConfig, rendered = "SpaceAGORA.AerobrakingEnergyDepletionConfig"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingEnergyDepletionControlModel, rendered = "SpaceAGORA.AerobrakingEnergyDepletionControlModel"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingEnergyDepletionGuidanceModel, rendered = "SpaceAGORA.AerobrakingEnergyDepletionGuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :AerobrakingEnergyDepletionState, rendered = "SpaceAGORA.AerobrakingEnergyDepletionState"),
+            (owner = :SpaceAGORA, symbol = :SolarPanelAngleOfAttackControlModel, rendered = "SpaceAGORA.SolarPanelAngleOfAttackControlModel"),
             (owner = :SpaceAGORA, symbol = :station_geometry_path, rendered = "SpaceAGORA.station_geometry_path"),
             (owner = :SpaceAGORA, symbol = :station_cad_path, rendered = "SpaceAGORA.station_cad_path"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_pointcloud, rendered = "SpaceAGORA.load_rpo_station_pointcloud"),

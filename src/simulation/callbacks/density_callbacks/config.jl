@@ -159,6 +159,10 @@ end
     model isa EnvironmentModels.GRAMAtmosphereModel ||
     model isa EnvironmentModels.GRAMAtmosphereModelSurrogate
 
+# The wrapper types forward properties to the GRAMSuite core, whose `gram`
+# field holds the native GRAM Julia wrapper module. `hasproperty` on a Module
+# only sees exported names, so module drivers are probed with `isdefined` —
+# the same capability check GRAMSuite itself uses (e.g. for `get_winds_state`).
 @inline function _gram_track_trajectory_supported(density_model)::Bool
     _is_gram_density_model(density_model) || return false
     hasproperty(density_model, :gram) || return false
@@ -167,6 +171,9 @@ end
         getproperty(density_model, :gram)
     catch
         return false
+    end
+    if gram_driver isa Module
+        return isdefined(gram_driver, :generate_trajectory)
     end
     return hasproperty(gram_driver, :generate_trajectory)
 end

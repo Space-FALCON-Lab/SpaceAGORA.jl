@@ -34,8 +34,12 @@
         @test nrow(errors) == 3
         @test isapprox(summary.bias_km, 0.5; atol=1e-12)
 
-        bias_map = TV._estimate_event_biases([errors], 0.25)
-        @test bias_map["peri"] == -0.25
+        # A bias within the cap is the (early-orbit median) datum offset;
+        # a bias at/beyond the cap signals model mismatch and is NOT applied.
+        bias_map = TV._estimate_event_biases([errors], 1.0)
+        @test bias_map["peri"] == -0.5
+        bias_map_saturated = TV._estimate_event_biases([errors], 0.25)
+        @test bias_map_saturated["peri"] == 0.0
 
         rows = [(nmae=0.3, rmse_km=2.0), (nmae=0.5, rmse_km=4.0)]
         @test TV._calibration_score(rows, "mean_nmae") == 0.4

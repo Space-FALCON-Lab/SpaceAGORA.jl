@@ -1,0 +1,5 @@
+RANK 0
+N Nodes 7
+Namespace(algo='dqn', batch_size=256, checkpoint_freq=5000, data_dir='data_eval/', discount=0.996, ent_coef=0.1, env='Aerobraking', eps_decay=3000, load='breakout/1100000.pth', log='log_testing_Ody_exp.txt', lr=1e-05, niter=2000, nominal=1, nproc=1, ntest=100, output='NN', parallel_env=1, phase='Main', print_freq=200, replay_size=20000, save_dir='breakout/', sim=0, target_update=1000, test=1, train_freq=20, train_start=0, value_coef=0.5)
+running on device cpu
+-- Start Testing --

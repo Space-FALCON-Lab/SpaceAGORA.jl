@@ -1,0 +1,76 @@
+[scenario]
+phase = "Main"
+backend_mode = "paper_surrogate"
+training = true
+
+[reward]
+heat_low_w_cm2 = 0.05
+heat_high_w_cm2 = 0.25
+heat_medium_w_cm2 = 0.30
+heat_hard_w_cm2 = 0.45
+
+[termination]
+impact_periapsis_altitude_m = 85000.0
+out_of_passage_periapsis_altitude_m = 135000.0
+max_passes = 80
+terminal_on_thermal_violation = true
+
+[randomization]
+nominal = true
+apoapsis_jitter_m = 2500.0
+periapsis_jitter_m = 1000.0
+angle_jitter_deg = 0.25
+process_noise = false
+process_noise_scale = 0.0
+aerodynamic_coefficient_dispersion = true
+aerodynamic_coefficient_span = 0.10
+marsgram_perturbation_scale = 1.0
+marsgram_seed_base = 1001
+
+[ddqn]
+learning_rate = 1.0e-4
+discount = 0.95
+batch_size = 256
+train_frequency = 5
+train_start = 10000
+replay_size = 20000
+target_update = 10000
+gradient_clip_norm = 10.0
+adam_epsilon = 1.0e-6
+hidden_dim = 1024
+
+[a2c]
+learning_rate = 1.0e-4
+discount = 0.95
+segment_length = 10
+train_start = 0
+entropy_coef = 0.1
+value_coef = 0.5
+gradient_clip_norm = 0.5
+adam_epsilon = 1.0e-6
+hidden_dim = 1024
+
+[epsilon]
+start = 1.0
+stop = 0.01
+decay_steps = 5000
+decay_start_step = 10000
+
+[training]
+seed = 42
+algorithm = "ddqn"
+device = "cpu"
+# Training stops by global DDQN environment steps when this is positive.
+global_steps = 1100000
+# Kept for evaluation scripts and explicit episode-capped training calls.
+episodes = 25000
+max_passes_per_campaign = 1000
+n_workers = 16
+checkpoint_frequency = 5000
+progress_frequency = 10000
+output_dir = "SpaceAGORA_RL.jl/outputs/runs"
+
+[reports]
+output_dir = "SpaceAGORA_RL.jl/outputs/reports"
+write_csv = true
+write_plots = true

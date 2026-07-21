@@ -1,0 +1,799 @@
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 28532.52 Ra 28384.382 Raf 4906.0 hp0 119.1885 hp 119.1963 OMEGA 151.345 INC 97.326 omega 4.13 action [0.0, 0] maxrate 0.0775
+d_cap 0.9940906120485037 hr_cap 0.18312682597426463 deltav_cap 0.0 r 0.000632055455711311
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 28533.794 Ra 28388.172 Raf 4906.0 hp0 116.4624 hp 116.4347 OMEGA 19.809 INC 93.47 omega 3.417 action [0.0, 0] maxrate 0.0861
+d_cap 0.9942510727002266 hr_cap 0.2406098762816233 deltav_cap 0.0 r 0.0007383202662385979
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 28535.988 Ra 28491.495 Raf 4906.0 hp0 117.1854 hp 117.0987 OMEGA 335.513 INC 88.416 omega 0.619 action [0.0, 0] maxrate 0.0369
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 28529.731 Ra 27629.558 Raf 4906.0 hp0 108.1653 hp 108.205 OMEGA 65.393 INC 88.988 omega 4.972 action [0.0, 0] maxrate 0.612
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 28376.168 Ra 28176.471 Raf 4906.0 hp0 119.1963 hp 118.4916 OMEGA 151.313 INC 97.246 omega 4.227 action [0.05, 0] maxrate 0.1205
+d_cap 0.9852875119265552 hr_cap 0.47011432241991724 deltav_cap 0.05 r 0.0029027749105465803
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 28382.337 Ra 28246.925 Raf 4906.0 hp0 116.4347 hp 116.4212 OMEGA 19.564 INC 93.238 omega 3.497 action [0.0, 0] maxrate 0.0763
+d_cap 0.988270554246792 hr_cap 0.17549803705272063 deltav_cap 0.0 r 0.0012201472664673195
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 28490.0 Ra 28433.179 Raf 4906.0 hp0 117.0987 hp 117.2305 OMEGA 335.538 INC 88.317 omega 0.752 action [0.01, 180] maxrate 0.0436
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 27618.822 Ra 26623.166 Raf 4906.0 hp0 108.205 hp 107.4961 OMEGA 65.527 INC 89.058 omega 5.049 action [0.05, 0] maxrate 0.7427
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 28168.015 Ra 27955.756 Raf 4906.0 hp0 118.4916 hp 117.7938 OMEGA 151.28 INC 97.166 omega 4.325 action [0.05, 0] maxrate 0.1322
+d_cap 0.9759422962517779 hr_cap 0.5477574763473558 deltav_cap 0.05 r 0.005481185124119636
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 28241.015 Ra 28132.672 Raf 4906.0 hp0 116.4212 hp 115.7197 OMEGA 19.318 INC 93.005 omega 3.578 action [0.05, 0] maxrate 0.0571
+d_cap 0.9834330408564282 hr_cap 0.04765555800359796 deltav_cap 0.05 r 0.0005548707836066498
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 28431.348 Ra 28380.525 Raf 4906.0 hp0 117.2305 hp 117.0875 OMEGA 335.563 INC 88.218 omega 0.886 action [0.01, 0] maxrate 0.0396
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 27948.181 Ra 27736.969 Raf 4906.0 hp0 117.7938 hp 117.0951 OMEGA 151.248 INC 97.086 omega 4.422 action [0.05, 0] maxrate 0.142
+d_cap 0.9666786765674541 hr_cap 0.6132130061056287 deltav_cap 0.05 r 0.008531630543865847
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 26613.568 Ra 25724.289 Raf 4906.0 hp0 107.4961 hp 107.5884 OMEGA 65.66 INC 89.128 omega 5.125 action [0.01, 180] maxrate 0.7032
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 28126.832 Ra 27973.955 Raf 4906.0 hp0 115.7197 hp 115.7059 OMEGA 19.072 INC 92.772 omega 3.659 action [0.0, 0] maxrate 0.0893
+d_cap 0.9767128233814308 hr_cap 0.2623172010993213 deltav_cap 0.0 r 0.003181249598978175
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 28378.928 Ra 28334.618 Raf 4906.0 hp0 117.0875 hp 116.9461 OMEGA 335.587 INC 88.119 omega 1.019 action [0.01, 0] maxrate 0.0333
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 27728.849 Ra 27485.902 Raf 4906.0 hp0 117.0951 hp 116.9408 OMEGA 151.215 INC 97.006 omega 4.52 action [0.01, 0] maxrate 0.1535
+d_cap 0.9560483335162888 hr_cap 0.6902359858280579 deltav_cap 0.01 r 0.013310073542774295
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 27967.801 Ra 27820.57 Raf 4906.0 hp0 115.7059 hp 115.8211 OMEGA 18.826 INC 92.539 omega 3.739 action [0.01, 180] maxrate 0.0843
+d_cap 0.9702184277646968 hr_cap 0.22846890535176528 deltav_cap 0.01 r 0.0036867472285662026
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 25715.282 Ra 24866.656 Raf 4906.0 hp0 107.5884 hp 107.5458 OMEGA 65.794 INC 89.198 omega 5.201 action [0.0, 0] maxrate 0.7266
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 28332.552 Ra 28264.207 Raf 4906.0 hp0 116.9461 hp 116.2586 OMEGA 335.612 INC 88.02 omega 1.153 action [0.05, 0] maxrate 0.0553
+d_cap 0.9890023207793955 hr_cap 0.03505160061426264 deltav_cap 0.05 r 0.0002723832397018647
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 27477.452 Ra 27244.484 Raf 4906.0 hp0 116.9408 hp 116.9207 OMEGA 151.183 INC 96.927 omega 4.617 action [0.0, 0] maxrate 0.1529
+d_cap 0.9458265346194643 hr_cap 0.6859138108473273 deltav_cap 0.0 r 0.016516351412946922
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 27814.423 Ra 27701.593 Raf 4906.0 hp0 115.8211 hp 115.1256 OMEGA 18.58 INC 92.307 omega 3.82 action [0.05, 0] maxrate 0.0606
+d_cap 0.965180834875149 hr_cap 0.07071982898786396 deltav_cap 0.05 r 0.0016851261625326927
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 27236.705 Ra 27029.755 Raf 4906.0 hp0 116.9207 hp 117.0314 OMEGA 151.15 INC 96.847 omega 4.713 action [0.01, 180] maxrate 0.1397
+d_cap 0.9367347823652593 hr_cap 0.5981218548076647 deltav_cap 0.01 r 0.01660685902442691
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 28261.884 Ra 28196.041 Raf 4906.0 hp0 116.2586 hp 116.247 OMEGA 335.636 INC 87.921 omega 1.286 action [0.0, 0] maxrate 0.0543
+d_cap 0.9861160981593814 hr_cap 0.028793690463196627 deltav_cap 0.0 r 0.00029649246669219366
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 24857.431 Ra 24106.742 Raf 4906.0 hp0 107.5458 hp 108.7361 OMEGA 65.928 INC 89.269 omega 5.275 action [0.1, 180] maxrate 0.6389
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 27695.564 Ra 27533.909 Raf 4906.0 hp0 115.1256 hp 115.1067 OMEGA 18.334 INC 92.074 omega 3.9 action [0.0, 0] maxrate 0.096
+d_cap 0.9580809885675288 hr_cap 0.3067071549521926 deltav_cap 0.0 r 0.006382910225476701
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 27021.314 Ra 26825.393 Raf 4906.0 hp0 117.0314 hp 118.3243 OMEGA 151.118 INC 96.767 omega 4.809 action [0.1, 180] maxrate 0.1223
+d_cap 0.928081946454883 hr_cap 0.4819696549200059 deltav_cap 0.1 r 0.013985382430318076
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 28193.857 Ra 28133.632 Raf 4906.0 hp0 116.247 hp 116.2418 OMEGA 335.661 INC 87.822 omega 1.42 action [0.0, 0] maxrate 0.0522
+d_cap 0.9834736862429043 hr_cap 0.014396147239818661 deltav_cap 0.0 r 0.00016389557062200372
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 24098.486 Ra 23517.808 Raf 4906.0 hp0 108.7361 hp 108.7058 OMEGA 66.062 INC 89.341 omega 5.349 action [0.0, 0] maxrate 0.5437
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 26816.477 Ra 26628.833 Raf 4906.0 hp0 118.3243 hp 118.3038 OMEGA 151.085 INC 96.688 omega 4.905 action [0.0, 0] maxrate 0.1252
+d_cap 0.9197594633534352 hr_cap 0.5014129219250205 deltav_cap 0.0 r 0.018013419667848123
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 27527.572 Ra 27363.686 Raf 4906.0 hp0 115.1067 hp 115.087 OMEGA 18.087 INC 91.84 omega 3.98 action [0.0, 0] maxrate 0.0957
+d_cap 0.9508736338203874 hr_cap 0.30493728960757793 deltav_cap 0.0 r 0.007468298443633785
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 28130.9 Ra 28035.918 Raf 4906.0 hp0 116.2418 hp 114.8692 OMEGA 335.685 INC 87.722 omega 1.554 action [0.1, 0] maxrate 0.074
+d_cap 0.9793363838847395 hr_cap 0.15981678750382594 deltav_cap 0.1 r 0.001815418699336732
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 23509.68 Ra 22804.261 Raf 4906.0 hp0 108.7058 hp 108.5455 OMEGA 66.196 INC 89.411 omega 5.423 action [0.01, 0] maxrate 0.7045
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 26620.592 Ra 26451.188 Raf 4906.0 hp0 118.3038 hp 118.151 OMEGA 151.052 INC 96.608 omega 5.001 action [0.01, 0] maxrate 0.1193
+d_cap 0.912237865563974 hr_cap 0.4621263749471593 deltav_cap 0.01 r 0.018190653419161984
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 27357.57 Ra 27247.898 Raf 4906.0 hp0 115.087 hp 115.0716 OMEGA 17.84 INC 91.608 omega 4.06 action [0.0, 0] maxrate 0.0586
+d_cap 0.9459711042128951 hr_cap 0.05720969220488531 deltav_cap 0.0 r 0.002286601321174111
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 28032.953 Ra 27943.091 Raf 4906.0 hp0 114.8692 hp 114.8633 OMEGA 335.709 INC 87.623 omega 1.688 action [0.0, 0] maxrate 0.0709
+d_cap 0.9754060436061597 hr_cap 0.13908049646191595 deltav_cap 0.0 r 0.0021711333039047855
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 22796.124 Ra 22150.52 Raf 4906.0 hp0 108.5455 hp 108.5036 OMEGA 66.33 INC 89.482 omega 5.496 action [0.0, 0] maxrate 0.6248
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 26442.418 Ra 26278.09 Raf 4906.0 hp0 118.151 hp 119.4249 OMEGA 151.02 INC 96.528 omega 5.096 action [0.1, 180] maxrate 0.1034
+d_cap 0.9049087767386371 hr_cap 0.3559474337254106 deltav_cap 0.1 r 0.014674636454664384
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 27241.664 Ra 27096.139 Raf 4906.0 hp0 115.0716 hp 115.7102 OMEGA 17.592 INC 91.375 omega 4.14 action [0.05, 180] maxrate 0.0835
+d_cap 0.9395455086048423 hr_cap 0.22325977507784725 deltav_cap 0.05 r 0.007140689138496213
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 27940.123 Ra 27853.026 Raf 4906.0 hp0 114.8633 hp 114.9902 OMEGA 335.733 INC 87.524 omega 1.822 action [0.01, 180] maxrate 0.0732
+d_cap 0.9715926039220835 hr_cap 0.1544843495184733 deltav_cap 0.01 r 0.002685316449392768
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 22142.744 Ra 21515.849 Raf 4906.0 hp0 108.5036 hp 108.5773 OMEGA 66.464 INC 89.552 omega 5.569 action [0.01, 180] maxrate 0.6825
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 26269.027 Ra 26112.018 Raf 4906.0 hp0 119.4249 hp 119.5336 OMEGA 150.987 INC 96.449 omega 5.191 action [0.01, 180] maxrate 0.1049
+d_cap 0.8978771663622713 hr_cap 0.3657046665127719 deltav_cap 0.01 r 0.017713669475039495
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 27089.698 Ra 26937.829 Raf 4906.0 hp0 115.7102 hp 115.557 OMEGA 17.345 INC 91.142 omega 4.22 action [0.01, 0] maxrate 0.0897
+d_cap 0.9328425580764463 hr_cap 0.2649642721844419 deltav_cap 0.01 r 0.009267858309339905
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 27849.784 Ra 27755.373 Raf 4906.0 hp0 114.9902 hp 114.978 OMEGA 335.757 INC 87.424 omega 1.956 action [0.0, 0] maxrate 0.0731
+d_cap 0.9674579474142261 hr_cap 0.15369228655787795 deltav_cap 0.0 r 0.0030996063131570038
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 21508.718 Ra 20986.576 Raf 4906.0 hp0 108.5773 hp 108.5398 OMEGA 66.599 INC 89.623 omega 5.641 action [0.0, 0] maxrate 0.5852
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 26931.496 Ra 26817.557 Raf 4906.0 hp0 115.557 hp 114.2236 OMEGA 17.097 INC 90.909 omega 4.3 action [0.1, 0] maxrate 0.0617
+d_cap 0.9277501443550151 hr_cap 0.07787968153475598 deltav_cap 0.1 r 0.0036467582907702034
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 26103.551 Ra 25969.917 Raf 4906.0 hp0 119.5336 hp 119.5131 OMEGA 150.954 INC 96.37 omega 5.285 action [0.0, 0] maxrate 0.0866
+d_cap 0.8918605071913212 hr_cap 0.24407651613408998 deltav_cap 0.0 r 0.014476737905142175
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 27751.77 Ra 27651.932 Raf 4906.0 hp0 114.978 hp 114.2932 OMEGA 335.781 INC 87.325 omega 2.091 action [0.05, 0] maxrate 0.0768
+d_cap 0.963078174553337 hr_cap 0.17854542084809194 deltav_cap 0.05 r 0.003721341319455141
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 20979.586 Ra 20386.991 Raf 4906.0 hp0 108.5398 hp 108.4946 OMEGA 66.733 INC 89.693 omega 5.713 action [0.0, 0] maxrate 0.6815
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 26811.382 Ra 26645.944 Raf 4906.0 hp0 114.2236 hp 114.2041 OMEGA 16.849 INC 90.676 omega 4.38 action [0.0, 0] maxrate 0.1005
+d_cap 0.9204839522946937 hr_cap 0.33678914085622796 deltav_cap 0.0 r 0.013052560156879056
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 25961.096 Ra 25799.506 Raf 4906.0 hp0 119.5131 hp 119.3619 OMEGA 150.921 INC 96.29 omega 5.38 action [0.01, 0] maxrate 0.1094
+d_cap 0.884645205527101 hr_cap 0.39596740107533257 deltav_cap 0.01 r 0.021308344405086665
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 20380.089 Ra 19855.299 Raf 4906.0 hp0 108.4946 hp 108.5597 OMEGA 66.867 INC 89.764 omega 5.785 action [0.01, 180] maxrate 0.5792
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 27648.569 Ra 27524.266 Raf 4906.0 hp0 114.2932 hp 113.6147 OMEGA 335.804 INC 87.225 omega 2.225 action [0.05, 0] maxrate 0.1177
+d_cap 0.9576727112269242 hr_cap 0.45109381565526724 deltav_cap 0.05 r 0.00813081644238626
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 26639.297 Ra 26482.765 Raf 4906.0 hp0 114.2041 hp 114.3092 OMEGA 16.601 INC 90.443 omega 4.459 action [0.01, 180] maxrate 0.0918
+d_cap 0.9135748654073501 hr_cap 0.2785199936838786 deltav_cap 0.01 r 0.012398214039850973
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 25790.434 Ra 25628.787 Raf 4906.0 hp0 119.3619 hp 119.4665 OMEGA 150.888 INC 96.211 omega 5.474 action [0.01, 180] maxrate 0.115
+d_cap 0.8774168180830342 hr_cap 0.4334064194310426 deltav_cap 0.01 r 0.024361665992107463
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 19848.658 Ra 19297.401 Raf 4906.0 hp0 108.5597 hp 108.5123 OMEGA 67.002 INC 89.834 omega 5.855 action [0.0, 0] maxrate 0.6495
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 27520.586 Ra 27390.279 Raf 4906.0 hp0 113.6147 hp 113.601 OMEGA 335.828 INC 87.126 omega 2.359 action [0.0, 0] maxrate 0.1162
+d_cap 0.9519995937876489 hr_cap 0.4411216994790072 deltav_cap 0.0 r 0.00954419630582314
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 26476.379 Ra 26362.204 Raf 4906.0 hp0 114.3092 hp 114.157 OMEGA 16.352 INC 90.21 omega 4.539 action [0.01, 0] maxrate 0.0627
+d_cap 0.9084701934616296 hr_cap 0.08483340931914328 deltav_cap 0.01 r 0.005502682471588555
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 25619.862 Ra 25496.577 Raf 4906.0 hp0 119.4665 hp 120.0751 OMEGA 150.855 INC 96.131 omega 5.567 action [0.05, 180] maxrate 0.0739
+d_cap 0.8718189673780242 hr_cap 0.15900015827087663 deltav_cap 0.05 r 0.012256035226511003
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 19291.138 Ra 18923.349 Raf 4906.0 hp0 108.5123 hp 109.4774 OMEGA 67.136 INC 89.906 omega 5.925 action [0.1, 180] maxrate 0.445
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 27386.454 Ra 27262.237 Raf 4906.0 hp0 113.601 hp 113.454 OMEGA 335.851 INC 87.026 omega 2.494 action [0.01, 0] maxrate 0.118
+d_cap 0.9465782301794761 hr_cap 0.45358838320537387 deltav_cap 0.01 r 0.010780926256093655
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 26355.771 Ra 26190.49 Raf 4906.0 hp0 114.157 hp 114.1352 OMEGA 16.103 INC 89.977 omega 4.618 action [0.0, 0] maxrate 0.1028
+d_cap 0.9011997150415466 hr_cap 0.3517576430678566 deltav_cap 0.0 r 0.016820440740204494
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 25487.665 Ra 25347.26 Raf 4906.0 hp0 120.0751 hp 119.9293 OMEGA 150.822 INC 96.052 omega 5.661 action [0.01, 0] maxrate 0.0959
+d_cap 0.8654967737952546 hr_cap 0.30628884154830327 deltav_cap 0.01 r 0.020870479670692433
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 18917.286 Ra 18502.88 Raf 4906.0 hp0 109.4774 hp 109.5307 OMEGA 67.271 INC 89.977 omega 5.994 action [0.01, 180] maxrate 0.525
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 27258.189 Ra 27123.218 Raf 4906.0 hp0 113.454 hp 113.4444 OMEGA 335.874 INC 86.927 omega 2.628 action [0.0, 0] maxrate 0.1312
+d_cap 0.9406920715018602 hr_cap 0.5414553502486599 deltav_cap 0.0 r 0.01421889364690885
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 18496.788 Ra 18142.934 Raf 4906.0 hp0 109.5307 hp 110.4618 OMEGA 67.406 INC 90.049 omega 6.062 action [0.1, 180] maxrate 0.4589
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 26183.815 Ra 26038.337 Raf 4906.0 hp0 114.1352 hp 113.9812 OMEGA 15.854 INC 89.744 omega 4.698 action [0.01, 0] maxrate 0.0829
+d_cap 0.8947574828025446 hr_cap 0.21911467092899525 deltav_cap 0.01 r 0.012979502023663428
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 25338.035 Ra 25190.197 Raf 4906.0 hp0 119.9293 hp 120.0286 OMEGA 150.789 INC 95.973 omega 5.754 action [0.01, 180] maxrate 0.0971
+d_cap 0.8588466550018794 hr_cap 0.3140762287816479 deltav_cap 0.01 r 0.022322915259944447
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 27118.899 Ra 26986.232 Raf 4906.0 hp0 113.4444 hp 113.561 OMEGA 335.897 INC 86.827 omega 2.762 action [0.01, 180] maxrate 0.1256
+d_cap 0.9348919664305203 hr_cap 0.5039863497891786 deltav_cap 0.01 r 0.014468400074181605
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 26031.772 Ra 25906.493 Raf 4906.0 hp0 113.9812 hp 113.9577 OMEGA 15.604 INC 89.511 omega 4.777 action [0.0, 0] maxrate 0.071
+d_cap 0.8891750862640714 hr_cap 0.13985118137556465 deltav_cap 0.0 r 0.010095919916598537
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 18136.764 Ra 17785.224 Raf 4906.0 hp0 110.4618 hp 110.4203 OMEGA 67.541 INC 90.12 omega 6.13 action [0.0, 0] maxrate 0.454
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 25180.909 Ra 25068.577 Raf 4906.0 hp0 120.0286 hp 121.2531 OMEGA 150.756 INC 95.893 omega 5.846 action [0.1, 180] maxrate 0.0624
+d_cap 0.8536971497048965 hr_cap 0.08291058804100261 deltav_cap 0.1 r 0.007984554430660751
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 26981.786 Ra 26853.225 Raf 4906.0 hp0 113.561 hp 113.4165 OMEGA 335.92 INC 86.727 omega 2.896 action [0.01, 0] maxrate 0.1168
+d_cap 0.9292603666029832 hr_cap 0.4452696631256153 deltav_cap 0.01 r 0.014133648514119081
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 25899.774 Ra 25739.759 Raf 4906.0 hp0 113.9577 hp 113.807 OMEGA 15.355 INC 89.277 omega 4.857 action [0.01, 0] maxrate 0.098
+d_cap 0.8821154663993521 hr_cap 0.3202600947038026 deltav_cap 0.01 r 0.018743303504190782
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 17779.317 Ra 17464.906 Raf 4906.0 hp0 110.4203 hp 111.3195 OMEGA 67.676 INC 90.192 omega 6.197 action [0.1, 180] maxrate 0.4384
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 25059.421 Ra 24959.044 Raf 4906.0 hp0 121.2531 hp 121.8509 OMEGA 150.723 INC 95.814 omega 5.938 action [0.05, 180] maxrate 0.0582
+d_cap 0.8490594445321596 hr_cap 0.05443295429253799 deltav_cap 0.05 r 0.005981635730638835
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 26848.753 Ra 26709.583 Raf 4906.0 hp0 113.4165 hp 113.2752 OMEGA 335.943 INC 86.627 omega 3.031 action [0.01, 0] maxrate 0.1301
+d_cap 0.9231784561442424 hr_cap 0.5339480848745826 deltav_cap 0.01 r 0.01808977162807244
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 25733.046 Ra 25602.366 Raf 4906.0 hp0 113.807 hp 113.6546 OMEGA 15.105 INC 89.044 omega 4.936 action [0.01, 0] maxrate 0.0743
+d_cap 0.8762981751085323 hr_cap 0.16232035904502393 deltav_cap 0.01 r 0.012491028767215173
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 17459.245 Ra 17215.511 Raf 4906.0 hp0 111.3195 hp 111.3726 OMEGA 67.812 INC 90.265 omega 6.264 action [0.01, 180] maxrate 0.3336
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 24949.397 Ra 24828.955 Raf 4906.0 hp0 121.8509 hp 121.7037 OMEGA 150.69 INC 95.735 omega 6.03 action [0.01, 0] maxrate 0.0709
+d_cap 0.843551398620369 hr_cap 0.13942936220579596 deltav_cap 0.01 r 0.014294504803122875
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 26704.864 Ra 26566.255 Raf 4906.0 hp0 113.2752 hp 113.3856 OMEGA 335.965 INC 86.528 omega 3.165 action [0.01, 180] maxrate 0.122
+d_cap 0.917109862099286 hr_cap 0.48126070589674325 deltav_cap 0.01 r 0.017769967726966235
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 25595.67 Ra 25447.631 Raf 4906.0 hp0 113.6546 hp 113.5028 OMEGA 14.854 INC 88.811 omega 5.015 action [0.01, 0] maxrate 0.0902
+d_cap 0.869746579122795 hr_cap 0.26826793431158064 deltav_cap 0.01 r 0.018496548796937913
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 24819.047 Ra 24708.629 Raf 4906.0 hp0 121.7037 hp 121.8066 OMEGA 150.656 INC 95.656 omega 6.122 action [0.01, 180] maxrate 0.064
+d_cap 0.8384567323425574 hr_cap 0.09311712543740061 deltav_cap 0.01 r 0.01075060361889542
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 17210.047 Ra 16942.685 Raf 4906.0 hp0 111.3726 hp 111.4286 OMEGA 67.947 INC 90.338 omega 6.33 action [0.01, 180] maxrate 0.3816
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 26561.425 Ra 26406.452 Raf 4906.0 hp0 113.3856 hp 112.7221 OMEGA 335.988 INC 86.428 omega 3.299 action [0.05, 0] maxrate 0.1449
+d_cap 0.9103436974560383 hr_cap 0.6326865825800024 deltav_cap 0.05 r 0.02413843123309089
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 25440.883 Ra 25303.695 Raf 4906.0 hp0 113.5028 hp 113.4766 OMEGA 14.604 INC 88.578 omega 5.094 action [0.0, 0] maxrate 0.083
+d_cap 0.8636522073322213 hr_cap 0.2197374599813766 deltav_cap 0.0 r 0.017193672658705226
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 24699.135 Ra 24603.73 Raf 4906.0 hp0 121.8066 hp 121.9065 OMEGA 150.623 INC 95.577 omega 6.213 action [0.01, 180] maxrate 0.0528
+d_cap 0.8340152120837274 hr_cap 0.018832664967779973 deltav_cap 0.01 r 0.002333380906047593
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 16937.164 Ra 16690.008 Raf 4906.0 hp0 111.4286 hp 112.2948 OMEGA 68.083 INC 90.41 omega 6.395 action [0.1, 180] maxrate 0.3606
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 26401.676 Ra 26239.552 Raf 4906.0 hp0 112.7221 hp 112.7109 OMEGA 336.01 INC 86.328 omega 3.433 action [0.0, 0] maxrate 0.1534
+d_cap 0.9032770344059171 hr_cap 0.6890020001873239 deltav_cap 0.0 r 0.03003074765845446
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 25296.819 Ra 25166.142 Raf 4906.0 hp0 113.4766 hp 113.4531 OMEGA 14.353 INC 88.345 omega 5.173 action [0.0, 0] maxrate 0.0771
+d_cap 0.8578281511740169 hr_cap 0.18070692217439258 deltav_cap 0.0 r 0.015735422580458975
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 24594.046 Ra 24481.431 Raf 4906.0 hp0 121.9065 hp 121.885 OMEGA 150.59 INC 95.498 omega 6.305 action [0.0, 0] maxrate 0.0665
+d_cap 0.8288370174425372 hr_cap 0.11000037745293861 deltav_cap 0.0 r 0.013221925244837257
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 16684.345 Ra 16448.178 Raf 4906.0 hp0 112.2948 hp 112.1663 OMEGA 68.218 INC 90.483 omega 6.46 action [0.01, 0] maxrate 0.3343
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 26234.459 Ra 26067.053 Raf 4906.0 hp0 112.7109 hp 112.5618 OMEGA 336.032 INC 86.228 omega 3.567 action [0.01, 0] maxrate 0.1493
+d_cap 0.89597330758614 hr_cap 0.6618542221623686 deltav_cap 0.01 r 0.030737343702247164
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 25159.267 Ra 25000.144 Raf 4906.0 hp0 113.4531 hp 113.4214 OMEGA 14.102 INC 88.111 omega 5.252 action [0.0, 0] maxrate 0.1001
+d_cap 0.8507996562988341 hr_cap 0.3341413450310559 deltav_cap 0.0 r 0.024924023608362243
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 24471.485 Ra 24360.005 Raf 4906.0 hp0 121.885 hp 121.9831 OMEGA 150.556 INC 95.418 omega 6.396 action [0.01, 180] maxrate 0.0658
+d_cap 0.8236957512908543 hr_cap 0.10504636929776266 deltav_cap 0.01 r 0.013016879505832281
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 16442.659 Ra 16191.381 Raf 4906.0 hp0 112.1663 hp 112.2098 OMEGA 68.354 INC 90.555 omega 6.525 action [0.01, 180] maxrate 0.3717
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 24993.292 Ra 24886.703 Raf 4906.0 hp0 113.4214 hp 113.2702 OMEGA 13.85 INC 87.878 omega 5.331 action [0.01, 0] maxrate 0.0603
+d_cap 0.8459964803225151 hr_cap 0.06869410456901531 deltav_cap 0.01 r 0.00786742446255905
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 26061.813 Ra 25871.351 Raf 4906.0 hp0 112.5618 hp 111.9088 OMEGA 336.054 INC 86.128 omega 3.702 action [0.05, 0] maxrate 0.1684
+d_cap 0.8876871641769933 hr_cap 0.7895377605162238 deltav_cap 0.05 r 0.038030022753915795
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 24350.21 Ra 24262.904 Raf 4906.0 hp0 121.9831 hp 123.1734 OMEGA 150.523 INC 95.339 omega 6.486 action [0.1, 180] maxrate 0.0516
+d_cap 0.8195844202754473 hr_cap 0.01094311177458266 deltav_cap 0.1 r 0.0012078566263729804
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 24252.865 Ra 24175.211 Raf 4906.0 hp0 123.1734 hp 124.3587 OMEGA 150.489 INC 95.26 omega 6.575 action [0.1, 180] maxrate 0.0472
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 24880.01 Ra 24733.705 Raf 4906.0 hp0 113.2702 hp 113.2423 OMEGA 13.598 INC 87.645 omega 5.41 action [0.0, 0] maxrate 0.0952
+d_cap 0.8395184716011328 hr_cap 0.3015445368256866 deltav_cap 0.0 r 0.025113333410603136
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 16186.108 Ra 15994.446 Raf 4906.0 hp0 112.2098 hp 113.0532 OMEGA 68.49 INC 90.628 omega 6.589 action [0.1, 180] maxrate 0.2898
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 25866.462 Ra 25694.422 Raf 4906.0 hp0 111.9088 hp 111.7587 OMEGA 336.076 INC 86.028 omega 3.836 action [0.01, 0] maxrate 0.1505
+d_cap 0.8801958526533142 hr_cap 0.6703099123103953 deltav_cap 0.01 r 0.03605808463646824
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 24164.598 Ra 24069.113 Raf 4906.0 hp0 124.3587 hp 123.7386 OMEGA 150.455 INC 95.181 omega 6.665 action [0.05, 0] maxrate 0.0602
+d_cap 0.8113791727551382 hr_cap 0.06801992077040597 deltav_cap 0.05 r 0.009276244259422008
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 24726.731 Ra 24589.603 Raf 4906.0 hp0 113.2423 hp 113.8263 OMEGA 13.346 INC 87.411 omega 5.488 action [0.05, 180] maxrate 0.0836
+d_cap 0.8334171014067961 hr_cap 0.22411789107597332 deltav_cap 0.05 r 0.0204274743715913
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 24058.481 Ra 23970.757 Raf 4906.0 hp0 123.7386 hp 123.718 OMEGA 150.422 INC 95.102 omega 6.754 action [0.0, 0] maxrate 0.0545
+d_cap 0.8072147444254543 hr_cap 0.02985869569427997 deltav_cap 0.0 r 0.004531635253063489
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 25689.008 Ra 25505.21 Raf 4906.0 hp0 111.7587 hp 111.7394 OMEGA 336.098 INC 85.927 omega 3.97 action [0.0, 0] maxrate 0.1573
+d_cap 0.8721844973446812 hr_cap 0.7150612173103645 deltav_cap 0.0 r 0.041648467314877216
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 15989.192 Ra 15819.427 Raf 4906.0 hp0 113.0532 hp 113.1038 OMEGA 68.627 INC 90.702 omega 6.653 action [0.01, 180] maxrate 0.255
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 24582.516 Ra 24472.695 Raf 4906.0 hp0 113.8263 hp 113.6754 OMEGA 13.094 INC 87.178 omega 5.567 action [0.01, 0] maxrate 0.0644
+d_cap 0.8284671104940945 hr_cap 0.09617645396300398 deltav_cap 0.01 r 0.01176558427613533
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23960.608 Ra 23883.044 Raf 4906.0 hp0 123.718 hp 123.6939 OMEGA 150.388 INC 95.023 omega 6.843 action [0.0, 0] maxrate 0.0452
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 15814.306 Ra 15620.534 Raf 4906.0 hp0 113.1038 hp 113.1445 OMEGA 68.763 INC 90.775 omega 6.716 action [0.01, 180] maxrate 0.3062
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 24465.63 Ra 24325.172 Raf 4906.0 hp0 113.6754 hp 113.7679 OMEGA 12.841 INC 86.945 omega 5.645 action [0.01, 180] maxrate 0.0903
+d_cap 0.822220875977591 hr_cap 0.26843500608224263 deltav_cap 0.01 r 0.025668114602381012
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 25499.646 Ra 25302.793 Raf 4906.0 hp0 111.7394 hp 111.726 OMEGA 336.119 INC 85.827 omega 4.104 action [0.0, 0] maxrate 0.1742
+d_cap 0.863614046972012 hr_cap 0.8282685708986638 deltav_cap 0.0 r 0.05096216453251106
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23872.61 Ra 23781.546 Raf 4906.0 hp0 123.6939 hp 123.674 OMEGA 150.354 INC 94.944 omega 6.933 action [0.0, 0] maxrate 0.0569
+d_cap 0.7992033916743513 hr_cap 0.046092385681784635 deltav_cap 0.0 r 0.007284899448395511
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 24317.93 Ra 24204.81 Raf 4906.0 hp0 113.7679 hp 113.744 OMEGA 12.588 INC 86.711 omega 5.724 action [0.0, 0] maxrate 0.0666
+d_cap 0.8171247059076049 hr_cap 0.11041506751015662 deltav_cap 0.0 r 0.014226954965983326
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 15615.291 Ra 15424.433 Raf 4906.0 hp0 113.1445 hp 113.1065 OMEGA 68.9 INC 90.848 omega 6.779 action [0.0, 0] maxrate 0.2901
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 25297.46 Ra 25137.784 Raf 4906.0 hp0 111.726 hp 111.5795 OMEGA 336.141 INC 85.727 omega 4.238 action [0.01, 0] maxrate 0.1356
+d_cap 0.8566274576928609 hr_cap 0.5704738818166005 deltav_cap 0.01 r 0.03682075964475871
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23770.833 Ra 23679.592 Raf 4906.0 hp0 123.674 hp 123.6496 OMEGA 150.32 INC 94.865 omega 7.021 action [0.0, 0] maxrate 0.0576
+d_cap 0.7948865873804818 hr_cap 0.050394521206498 deltav_cap 0.0 r 0.008112262705054276
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 24197.505 Ra 24064.769 Raf 4906.0 hp0 113.744 hp 114.9124 OMEGA 12.334 INC 86.478 omega 5.801 action [0.1, 180] maxrate 0.083
+d_cap 0.8111952481381425 hr_cap 0.22029105302278063 deltav_cap 0.1 r 0.021853741006147218
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 15419.107 Ra 15248.346 Raf 4906.0 hp0 113.1065 hp 113.9126 OMEGA 69.037 INC 90.921 omega 6.841 action [0.1, 180] maxrate 0.2631
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23668.902 Ra 23584.621 Raf 4906.0 hp0 123.6496 hp 123.509 OMEGA 150.286 INC 94.786 omega 7.11 action [0.01, 0] maxrate 0.0507
+d_cap 0.7908654817443809 hr_cap 0.004950430293101982 deltav_cap 0.01 r 0.0004343463415106908
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 25131.931 Ra 24971.58 Raf 4906.0 hp0 111.5795 hp 112.7987 OMEGA 336.162 INC 85.627 omega 4.371 action [0.1, 180] maxrate 0.1495
+d_cap 0.8495902490891347 hr_cap 0.6636658982516545 deltav_cap 0.1 r 0.04114820429462867
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 24057.531 Ra 23959.679 Raf 4906.0 hp0 114.9124 hp 114.7643 OMEGA 12.081 INC 86.245 omega 5.879 action [0.01, 0] maxrate 0.0554
+d_cap 0.8067456638694381 hr_cap 0.03602072267402066 deltav_cap 0.01 r 0.005440072109272735
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 15243.096 Ra 15080.141 Raf 4906.0 hp0 113.9126 hp 114.7146 OMEGA 69.174 INC 90.995 omega 6.903 action [0.1, 180] maxrate 0.2676
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23574.313 Ra 23494.642 Raf 4906.0 hp0 123.509 hp 123.4853 OMEGA 150.252 INC 94.707 omega 7.199 action [0.0, 0] maxrate 0.0466
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 23952.399 Ra 23827.759 Raf 4906.0 hp0 114.7643 hp 114.7366 OMEGA 11.827 INC 86.011 omega 5.957 action [0.0, 0] maxrate 0.08
+d_cap 0.8011600783846575 hr_cap 0.19968152490466126 deltav_cap 0.0 r 0.02403078619185708
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23483.922 Ra 23388.972 Raf 4906.0 hp0 123.4853 hp 123.4645 OMEGA 150.217 INC 94.628 omega 7.288 action [0.0, 0] maxrate 0.0601
+d_cap 0.7825815381952753 hr_cap 0.06717885592125197 deltav_cap 0.0 r 0.011245897543340438
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 15075.035 Ra 14940.845 Raf 4906.0 hp0 114.7146 hp 115.0927 OMEGA 69.311 INC 91.069 omega 6.964 action [0.05, 180] maxrate 0.2216
+d_cap 0.42488213342311376 hr_cap 1.14408259730327 deltav_cap 0.05 r 0.19762103194816524
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 24965.754 Ra 24775.937 Raf 4906.0 hp0 112.7987 hp 111.5392 OMEGA 336.183 INC 85.526 omega 4.505 action [0.1, 0] maxrate 0.1647
+d_cap 0.8413065880190618 hr_cap 0.7649631508523178 deltav_cap 0.1 r 0.05024081807403907
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 23820.234 Ra 23698.792 Raf 4906.0 hp0 114.7366 hp 114.7081 OMEGA 11.572 INC 85.778 omega 6.035 action [0.0, 0] maxrate 0.0752
+d_cap 0.795699535450639 hr_cap 0.16794848541359197 deltav_cap 0.0 r 0.021949403390516906
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23377.917 Ra 23290.154 Raf 4906.0 hp0 123.4645 hp 123.5567 OMEGA 150.183 INC 94.549 omega 7.376 action [0.01, 180] maxrate 0.0546
+d_cap 0.7783975229834911 hr_cap 0.030744704537742636 deltav_cap 0.01 r 0.005369257173336214
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 14935.879 Ra 14815.626 Raf 4906.0 hp0 115.0927 hp 115.0543 OMEGA 69.448 INC 91.143 omega 7.025 action [0.0, 0] maxrate 0.1929
+d_cap 0.41958027144970517 hr_cap 0.9528544312232544 deltav_cap 0.0 r 0.278946149842585
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 24770.048 Ra 24617.896 Raf 4906.0 hp0 111.5392 hp 112.1333 OMEGA 336.204 INC 85.426 omega 4.638 action [0.05, 180] maxrate 0.1328
+d_cap 0.8346150432371398 hr_cap 0.5518345929681819 deltav_cap 0.05 r 0.039734070104379064
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 23691.44 Ra 23593.961 Raf 4906.0 hp0 114.7081 hp 115.2688 OMEGA 11.317 INC 85.545 omega 6.112 action [0.05, 180] maxrate 0.0559
+d_cap 0.7912609342194858 hr_cap 0.03940801193220197 deltav_cap 0.05 r 0.00619749153619512
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23279.431 Ra 23206.974 Raf 4906.0 hp0 123.5567 hp 124.7005 OMEGA 150.149 INC 94.47 omega 7.463 action [0.1, 180] maxrate 0.0426
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 14810.776 Ra 14676.789 Raf 4906.0 hp0 115.0543 hp 115.0153 OMEGA 69.586 INC 91.217 omega 7.085 action [0.0, 0] maxrate 0.2277
+d_cap 0.4137018438096361 hr_cap 1.184779018291648 deltav_cap 0.0 r 0.1749395256750661
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23196.131 Ra 23119.585 Raf 4906.0 hp0 124.7005 hp 124.5636 OMEGA 150.114 INC 94.391 omega 7.551 action [0.01, 0] maxrate 0.0469
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 23586.537 Ra 23474.46 Raf 4906.0 hp0 115.2688 hp 115.8295 OMEGA 11.062 INC 85.311 omega 6.19 action [0.05, 180] maxrate 0.0716
+d_cap 0.7862011810342255 hr_cap 0.14417137702395524 deltav_cap 0.05 r 0.01960717245409365
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 24611.896 Ra 24444.072 Raf 4906.0 hp0 112.1333 hp 112.1075 OMEGA 336.225 INC 85.326 omega 4.771 action [0.0, 0] maxrate 0.1524
+d_cap 0.8272552144136459 hr_cap 0.6827062068701112 deltav_cap 0.0 r 0.05449685621223934
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 14671.824 Ra 14533.258 Raf 4906.0 hp0 115.0153 hp 114.9755 OMEGA 69.723 INC 91.291 omega 7.146 action [0.0, 0] maxrate 0.2327
+d_cap 0.40762463980488445 hr_cap 1.2181528821754979 deltav_cap 0.0 r 0.13698878036347345
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23108.335 Ra 23023.673 Raf 4906.0 hp0 124.5636 hp 124.6559 OMEGA 150.08 INC 94.312 omega 7.638 action [0.01, 180] maxrate 0.0544
+d_cap 0.7671145585562918 hr_cap 0.0290750375696773 deltav_cap 0.01 r 0.005349420816735332
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 23466.911 Ra 23369.833 Raf 4906.0 hp0 115.8295 hp 115.9182 OMEGA 10.807 INC 85.078 omega 6.267 action [0.01, 180] maxrate 0.0562
+d_cap 0.7817711743496205 hr_cap 0.041232263562221975 deltav_cap 0.01 r 0.0070821400873505615
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 14528.117 Ra 14377.163 Raf 4906.0 hp0 114.9755 hp 114.116 OMEGA 69.861 INC 91.364 omega 7.207 action [0.1, 0] maxrate 0.2519
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 24437.992 Ra 24277.844 Raf 4906.0 hp0 112.1075 hp 112.2049 OMEGA 336.245 INC 85.226 omega 4.904 action [0.01, 180] maxrate 0.139
+d_cap 0.8202169865018728 hr_cap 0.5932990272717267 deltav_cap 0.01 r 0.04864589426757213
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 23012.303 Ra 22934.848 Raf 4906.0 hp0 124.6559 hp 124.6324 OMEGA 150.045 INC 94.233 omega 7.725 action [0.0, 0] maxrate 0.0484
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 14372.121 Ra 14209.736 Raf 4906.0 hp0 114.116 hp 114.0704 OMEGA 69.999 INC 91.437 omega 7.268 action [0.0, 0] maxrate 0.3044
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 23362.065 Ra 23242.051 Raf 4906.0 hp0 115.9182 hp 115.8881 OMEGA 10.551 INC 84.844 omega 6.344 action [0.0, 0] maxrate 0.0779
+d_cap 0.7763608011525275 hr_cap 0.18581999432119325 deltav_cap 0.0 r 0.025963841957865847
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22923.983 Ra 22846.843 Raf 4906.0 hp0 124.6324 hp 123.4547 OMEGA 150.01 INC 94.154 omega 7.813 action [0.1, 0] maxrate 0.0445
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 24271.511 Ra 24102.778 Raf 4906.0 hp0 112.2049 hp 112.1819 OMEGA 336.265 INC 85.125 omega 5.037 action [0.0, 0] maxrate 0.1518
+d_cap 0.8128045793751079 hr_cap 0.6785115890908405 deltav_cap 0.0 r 0.05897504192031514
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22835.816 Ra 22747.356 Raf 4906.0 hp0 123.4547 hp 123.429 OMEGA 149.976 INC 94.075 omega 7.9 action [0.0, 0] maxrate 0.0544
+d_cap 0.7554150885560591 hr_cap 0.029069306956253968 deltav_cap 0.0 r 0.005698301711692665
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 14204.834 Ra 14025.452 Raf 4906.0 hp0 114.0704 hp 113.2212 OMEGA 70.137 INC 91.51 omega 7.329 action [0.1, 0] maxrate 0.3634
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 23234.449 Ra 23153.534 Raf 4906.0 hp0 115.8881 hp 115.8595 OMEGA 10.295 INC 84.611 omega 6.422 action [0.0, 0] maxrate 0.0429
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 24096.763 Ra 23974.256 Raf 4906.0 hp0 112.1819 hp 113.356 OMEGA 336.286 INC 85.025 omega 5.17 action [0.1, 180] maxrate 0.1126
+d_cap 0.8073628895502989 hr_cap 0.4175738458896773 deltav_cap 0.1 r 0.03460298189449802
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22736.038 Ra 22644.407 Raf 4906.0 hp0 123.429 hp 123.4058 OMEGA 149.941 INC 93.995 omega 7.987 action [0.0, 0] maxrate 0.0563
+d_cap 0.751056186697055 hr_cap 0.042058800740010636 deltav_cap 0.0 r 0.008414173768523167
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 14020.731 Ra 13887.103 Raf 4906.0 hp0 113.2212 hp 113.9717 OMEGA 70.276 INC 91.584 omega 7.389 action [0.1, 180] maxrate 0.2658
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 23145.943 Ra 23033.964 Raf 4906.0 hp0 115.8595 hp 116.4096 OMEGA 10.039 INC 84.377 omega 6.499 action [0.05, 180] maxrate 0.0736
+d_cap 0.7675502556994724 hr_cap 0.15745832158895465 deltav_cap 0.05 r 0.02288908958439746
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22633.185 Ra 22550.004 Raf 4906.0 hp0 123.4058 hp 123.4917 OMEGA 149.906 INC 93.916 omega 8.074 action [0.01, 180] maxrate 0.0503
+d_cap 0.7470590780119231 hr_cap 0.0019428182916813213 deltav_cap 0.01 r -0.00017277715919843066
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 23967.777 Ra 23826.389 Raf 4906.0 hp0 113.356 hp 113.3368 OMEGA 336.306 INC 84.925 omega 5.302 action [0.0, 0] maxrate 0.1328
+d_cap 0.8011020750013829 hr_cap 0.5521937579217565 deltav_cap 0.0 r 0.050926051966019334
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 13882.461 Ra 13747.784 Raf 4906.0 hp0 113.9717 hp 113.925 OMEGA 70.414 INC 91.658 omega 7.449 action [0.0, 0] maxrate 0.2729
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 23025.92 Ra 22938.443 Raf 4906.0 hp0 116.4096 hp 117.5398 OMEGA 9.782 INC 84.144 omega 6.575 action [0.1, 180] maxrate 0.0499
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22539.211 Ra 22462.621 Raf 4906.0 hp0 123.4917 hp 123.4656 OMEGA 149.871 INC 93.837 omega 8.161 action [0.0, 0] maxrate 0.0435
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 13743.228 Ra 13590.64 Raf 4906.0 hp0 113.925 hp 113.7981 OMEGA 70.553 INC 91.731 omega 7.509 action [0.01, 0] maxrate 0.3198
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 23819.743 Ra 23674.249 Raf 4906.0 hp0 113.3368 hp 113.1939 OMEGA 336.326 INC 84.825 omega 5.434 action [0.01, 0] maxrate 0.1344
+d_cap 0.7946603717561728 hr_cap 0.5627558431210659 deltav_cap 0.01 r 0.053154760913704704
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22930.429 Ra 22830.994 Raf 4906.0 hp0 117.5398 hp 117.3926 OMEGA 9.525 INC 83.91 omega 6.652 action [0.01, 0] maxrate 0.0637
+d_cap 0.7589564066329502 hr_cap 0.09135927736060394 deltav_cap 0.01 r 0.016241931531901014
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22451.489 Ra 22360.222 Raf 4906.0 hp0 123.4656 hp 123.3262 OMEGA 149.836 INC 93.758 omega 8.248 action [0.01, 0] maxrate 0.056
+d_cap 0.7390235978233332 hr_cap 0.0399563468592493 deltav_cap 0.01 r 0.008343712541370542
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 13586.033 Ra 13437.806 Raf 4906.0 hp0 113.7981 hp 113.7503 OMEGA 70.692 INC 91.804 omega 7.569 action [0.0, 0] maxrate 0.3059
+ 
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22348.871 Ra 22263.884 Raf 4906.0 hp0 123.3262 hp 123.8656 OMEGA 149.8 INC 93.679 omega 8.334 action [0.05, 180] maxrate 0.0533
+d_cap 0.7349445760150584 hr_cap 0.021743626173790633 deltav_cap 0.05 r 0.004343898228667335
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22823.123 Ra 22747.35 Raf 4906.0 hp0 117.3926 hp 117.9422 OMEGA 9.267 INC 83.677 omega 6.728 action [0.05, 180] maxrate 0.0409
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 23667.523 Ra 23536.971 Raf 4906.0 hp0 113.1939 hp 113.0527 OMEGA 336.345 INC 84.725 omega 5.566 action [0.01, 0] maxrate 0.1163
+d_cap 0.7888479370599707 hr_cap 0.4420621377465419 deltav_cap 0.01 r 0.04397053834342461
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22252.568 Ra 22174.195 Raf 4906.0 hp0 123.8656 hp 123.8394 OMEGA 149.765 INC 93.6 omega 8.42 action [0.0, 0] maxrate 0.047
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 13433.066 Ra 13289.736 Raf 4906.0 hp0 113.7503 hp 113.6974 OMEGA 70.831 INC 91.877 omega 7.629 action [0.0, 0] maxrate 0.2837
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22739.375 Ra 22643.159 Raf 4906.0 hp0 117.9422 hp 117.7976 OMEGA 9.009 INC 83.443 omega 6.805 action [0.01, 0] maxrate 0.0617
+d_cap 0.7510033134734958 hr_cap 0.07770990472925865 deltav_cap 0.01 r 0.014662636432418802
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 23530.403 Ra 23412.569 Raf 4906.0 hp0 113.0527 hp 114.1991 OMEGA 336.365 INC 84.625 omega 5.698 action [0.1, 180] maxrate 0.1163
+d_cap 0.7835806665947639 hr_cap 0.4417151146582426 deltav_cap 0.1 r 0.04102161549185987
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22163.227 Ra 22089.799 Raf 4906.0 hp0 123.8394 hp 123.8129 OMEGA 149.73 INC 93.521 omega 8.506 action [0.0, 0] maxrate 0.0422
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 13285.085 Ra 13132.336 Raf 4906.0 hp0 113.6974 hp 113.6446 OMEGA 70.971 INC 91.95 omega 7.688 action [0.0, 0] maxrate 0.3095
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 23405.611 Ra 23304.266 Raf 4906.0 hp0 114.1991 hp 115.3493 OMEGA 336.384 INC 84.525 omega 5.829 action [0.1, 180] maxrate 0.0946
+d_cap 0.7789950615192522 hr_cap 0.29753571795872197 deltav_cap 0.1 r 0.031516528203803226
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22634.843 Ra 22548.984 Raf 4906.0 hp0 117.7976 hp 118.3402 OMEGA 8.751 INC 83.21 omega 6.881 action [0.05, 180] maxrate 0.049
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 22078.434 Ra 21982.562 Raf 4906.0 hp0 123.8129 hp 122.6647 OMEGA 149.694 INC 93.442 omega 8.592 action [0.1, 0] maxrate 0.0581
+d_cap 0.7230331971403653 hr_cap 0.0542250240579233 deltav_cap 0.1 r 0.010843232160174146
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 13127.794 Ra 12975.074 Raf 4906.0 hp0 113.6446 hp 113.5919 OMEGA 71.11 INC 92.023 omega 7.747 action [0.0, 0] maxrate 0.3654
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 23297.0 Ra 23189.326 Raf 4906.0 hp0 115.3493 hp 115.3242 OMEGA 336.403 INC 84.425 omega 5.96 action [0.0, 0] maxrate 0.1107
+d_cap 0.7741283862998694 hr_cap 0.4048539718230119 deltav_cap 0.0 r 0.04453630984270221
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22540.696 Ra 22457.329 Raf 4906.0 hp0 118.3402 hp 118.1928 OMEGA 8.493 INC 82.976 omega 6.958 action [0.01, 0] maxrate 0.049
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21971.31 Ra 21878.137 Raf 4906.0 hp0 122.6647 hp 122.7471 OMEGA 149.659 INC 93.362 omega 8.678 action [0.01, 180] maxrate 0.0563
+d_cap 0.7186117630396774 hr_cap 0.04176078101669866 deltav_cap 0.01 r 0.009466448263482011
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 23182.154 Ra 23100.971 Raf 4906.0 hp0 115.3242 hp 115.8836 OMEGA 336.422 INC 84.325 omega 6.09 action [0.05, 180] maxrate 0.0718
+d_cap 0.7703873984556212 hr_cap 0.1453617025220453 deltav_cap 0.05 r 0.021307612762520866
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 12970.663 Ra 12840.591 Raf 4906.0 hp0 113.5919 hp 113.537 OMEGA 71.25 INC 92.097 omega 7.806 action [0.0, 0] maxrate 0.2954
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22449.226 Ra 22376.029 Raf 4906.0 hp0 118.1928 hp 119.3022 OMEGA 8.234 INC 82.743 omega 7.034 action [0.1, 180] maxrate 0.0427
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21866.874 Ra 21782.924 Raf 4906.0 hp0 122.7471 hp 122.8282 OMEGA 149.623 INC 93.283 omega 8.764 action [0.01, 180] maxrate 0.0492
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 23093.579 Ra 23009.192 Raf 4906.0 hp0 115.8836 hp 116.4364 OMEGA 336.441 INC 84.225 omega 6.221 action [0.05, 180] maxrate 0.0775
+d_cap 0.7665014311241237 hr_cap 0.18326121245711663 deltav_cap 0.05 r 0.02560005670670587
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 12836.277 Ra 12723.937 Raf 4906.0 hp0 113.537 hp 114.2339 OMEGA 71.391 INC 92.171 omega 7.864 action [0.1, 180] maxrate 0.26
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21771.976 Ra 21691.574 Raf 4906.0 hp0 122.8282 hp 122.7989 OMEGA 149.587 INC 93.204 omega 8.85 action [0.0, 0] maxrate 0.0452
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22367.61 Ra 22288.743 Raf 4906.0 hp0 119.3022 hp 119.2688 OMEGA 7.975 INC 82.509 omega 7.11 action [0.0, 0] maxrate 0.0485
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 23001.574 Ra 22924.687 Raf 4906.0 hp0 116.4364 hp 116.9936 OMEGA 336.46 INC 84.125 omega 6.35 action [0.05, 180] maxrate 0.0657
+d_cap 0.7629234051581556 hr_cap 0.10439956092783595 deltav_cap 0.05 r 0.017080494902526503
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 12719.67 Ra 12594.077 Raf 4906.0 hp0 114.2339 hp 114.2556 OMEGA 71.531 INC 92.244 omega 7.923 action [0.01, 180] maxrate 0.3027
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21680.316 Ra 21591.197 Raf 4906.0 hp0 122.7989 hp 123.3212 OMEGA 149.551 INC 93.125 omega 8.935 action [0.05, 180] maxrate 0.0547
+d_cap 0.7064625375318278 hr_cap 0.031147074804916634 deltav_cap 0.05 r 0.00710599031090222
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 22916.895 Ra 22839.545 Raf 4906.0 hp0 116.9936 hp 116.9686 OMEGA 336.479 INC 84.026 omega 6.48 action [0.0, 0] maxrate 0.0684
+d_cap 0.7593184339669171 hr_cap 0.1229088910273653 deltav_cap 0.0 r 0.02079570503222037
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22280.106 Ra 22197.678 Raf 4906.0 hp0 119.2688 hp 119.2405 OMEGA 7.715 INC 82.276 omega 7.186 action [0.0, 0] maxrate 0.0506
+d_cap 0.7321413748305813 hr_cap 0.003683000093308667 deltav_cap 0.0 r 0.00025524271177223857
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21579.538 Ra 21496.624 Raf 4906.0 hp0 123.3212 hp 123.8413 OMEGA 149.515 INC 93.046 omega 9.02 action [0.05, 180] maxrate 0.0508
+d_cap 0.7024582774618927 hr_cap 0.005397466558510661 deltav_cap 0.05 r 0.0007325789388232665
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 12589.744 Ra 12465.007 Raf 4906.0 hp0 114.2556 hp 114.5748 OMEGA 71.672 INC 92.318 omega 7.98 action [0.05, 180] maxrate 0.3051
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 22831.907 Ra 22764.531 Raf 4906.0 hp0 116.9686 hp 117.0578 OMEGA 336.497 INC 83.926 omega 6.61 action [0.01, 180] maxrate 0.0552
+d_cap 0.756142306286683 hr_cap 0.0346006567359373 deltav_cap 0.01 r 0.006715494321988291
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21485.028 Ra 21408.51 Raf 4906.0 hp0 123.8413 hp 123.814 OMEGA 149.479 INC 92.967 omega 9.104 action [0.0, 0] maxrate 0.0456
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22189.361 Ra 22119.175 Raf 4906.0 hp0 119.2405 hp 119.3253 OMEGA 7.455 INC 82.042 omega 7.263 action [0.01, 180] maxrate 0.0396
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 12460.55 Ra 12338.16 Raf 4906.0 hp0 114.5748 hp 114.4435 OMEGA 71.812 INC 92.391 omega 8.038 action [0.01, 0] maxrate 0.2774
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 22756.659 Ra 22686.543 Raf 4906.0 hp0 117.0578 hp 117.6064 OMEGA 336.515 INC 83.826 omega 6.74 action [0.05, 180] maxrate 0.0549
+d_cap 0.7528402267203844 hr_cap 0.03271241779712066 deltav_cap 0.05 r 0.00617937807631725
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21397.311 Ra 21326.049 Raf 4906.0 hp0 123.814 hp 123.8926 OMEGA 149.443 INC 92.888 omega 9.189 action [0.01, 180] maxrate 0.0402
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22110.81 Ra 22035.329 Raf 4906.0 hp0 119.3253 hp 119.2963 OMEGA 7.195 INC 81.808 omega 7.339 action [0.0, 0] maxrate 0.0459
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 12333.708 Ra 12213.806 Raf 4906.0 hp0 114.4435 hp 114.7541 OMEGA 71.953 INC 92.465 omega 8.096 action [0.05, 180] maxrate 0.2726
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21314.495 Ra 21231.151 Raf 4906.0 hp0 123.8926 hp 123.7542 OMEGA 149.407 INC 92.808 omega 9.273 action [0.01, 0] maxrate 0.0512
+d_cap 0.6912179659459138 hr_cap 0.00788937669655663 deltav_cap 0.01 r 0.0015150896128253298
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 22678.185 Ra 22620.222 Raf 4906.0 hp0 117.6064 hp 118.7295 OMEGA 336.533 INC 83.726 omega 6.868 action [0.1, 180] maxrate 0.0386
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 22026.852 Ra 21950.779 Raf 4906.0 hp0 119.2963 hp 119.2664 OMEGA 6.934 INC 81.575 omega 7.416 action [0.0, 0] maxrate 0.0457
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21219.382 Ra 21136.714 Raf 4906.0 hp0 123.7542 hp 123.8317 OMEGA 149.371 INC 92.729 omega 9.357 action [0.01, 180] maxrate 0.0512
+d_cap 0.6872194418187 hr_cap 0.008238136139059325 deltav_cap 0.01 r 0.0016386059088576588
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 12209.426 Ra 12090.649 Raf 4906.0 hp0 114.7541 hp 115.0626 OMEGA 72.095 INC 92.538 omega 8.153 action [0.05, 180] maxrate 0.2854
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 22611.851 Ra 22554.72 Raf 4906.0 hp0 118.7295 hp 118.7022 OMEGA 336.551 INC 83.627 omega 6.997 action [0.0, 0] maxrate 0.0362
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21125.05 Ra 21047.844 Raf 4906.0 hp0 123.8317 hp 123.6949 OMEGA 149.334 INC 92.65 omega 9.441 action [0.01, 0] maxrate 0.0459
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 21941.995 Ra 21858.79 Raf 4906.0 hp0 119.2664 hp 119.1272 OMEGA 6.673 INC 81.341 omega 7.493 action [0.01, 0] maxrate 0.0513
+d_cap 0.7177925902228391 hr_cap 0.008854643566684656 deltav_cap 0.01 r 0.0016203488785152653
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 21036.651 Ra 20965.805 Raf 4906.0 hp0 123.6949 hp 123.7707 OMEGA 149.298 INC 92.571 omega 9.524 action [0.01, 180] maxrate 0.0394
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 12086.402 Ra 11987.088 Raf 4906.0 hp0 115.0626 hp 115.7223 OMEGA 72.236 INC 92.612 omega 8.209 action [0.1, 180] maxrate 0.2449
+d_cap 0.299818054721146 hr_cap 1.2993191577047372 deltav_cap 0.1 r 0.002301543025288716
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 22546.307 Ra 22501.014 Raf 4906.0 hp0 118.7022 hp 119.8193 OMEGA 336.569 INC 83.527 omega 7.125 action [0.1, 180] maxrate 0.0211
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 21850.278 Ra 21783.725 Raf 4906.0 hp0 119.1272 hp 119.6484 OMEGA 6.411 INC 81.107 omega 7.57 action [0.05, 180] maxrate 0.0363
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 20954.315 Ra 20878.1 Raf 4906.0 hp0 123.7707 hp 124.2771 OMEGA 149.261 INC 92.492 omega 9.608 action [0.05, 180] maxrate 0.047
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim8.csv
+Ra0 11982.883 Ra 11894.853 Raf 4906.0 hp0 115.7223 hp 115.6018 OMEGA 72.378 INC 92.687 omega 8.265 action [0.01, 0] maxrate 0.2042
+d_cap 0.2959127657705108 hr_cap 1.027920635423045 deltav_cap 0.01 r 0.35097506989434546
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim7.csv
+Ra0 22492.332 Ra 22441.293 Raf 4906.0 hp0 119.8193 hp 119.794 OMEGA 336.587 INC 83.427 omega 7.253 action [0.0, 0] maxrate 0.0277
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim5.csv
+Ra0 21775.19 Ra 21700.793 Raf 4906.0 hp0 119.6484 hp 119.5095 OMEGA 6.149 INC 80.873 omega 7.647 action [0.01, 0] maxrate 0.0454
+ 
+/Users/Josephine/Research/DRLAerobraking/DRLModel/data_eval/Sim6.csv
+Ra0 20866.089 Ra 20786.699 Raf 4906.0 hp0 124.2771 hp 124.2462 OMEGA 149.224 INC 92.413 omega 9.691 action [0.0, 0] maxrate 0.0497

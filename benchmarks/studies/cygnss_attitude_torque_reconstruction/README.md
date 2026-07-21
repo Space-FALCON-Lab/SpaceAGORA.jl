@@ -86,15 +86,27 @@ telemetry via a J_RW allocation matrix regressed from the maneuver window).
 | Wheel-only baseline | 87.56 deg | 179.72 deg | -- |
 | + gravity-gradient | 59.21 deg | 109.12 deg | **-28.3 deg** (dominant) |
 | + aero (GRAM, per-link density) | 87.56 deg | 179.73 deg | ~0 deg (negligible) |
-| + magnetic (real dplCmd telemetry) | 90.38 deg | 179.69 deg | +2.82 deg (worse) |
-| All combined | 101.61 deg | 179.78 deg | +14.05 deg (worse than any single addition) |
+| + magnetic (real dplCmd telemetry) | 81.22 deg | 179.97 deg | **-6.3 deg** (helps) |
+| All combined | 69.18 deg | 179.02 deg | -18.4 deg |
 
-Gravity-gradient is the only one of the three that meaningfully helps.
-Aerodynamic torque is real (confirmed via GRAM's actual MERRA2 density
-queries, not a stub) but utterly negligible at CYGNSS's ~500-540 km altitude
-and panel scale. The magnetic dipole telemetry (`dplCmd`, taken at face value
-as A*m^2 -- see "dplCmd units" below) makes the fit *worse*, and stacking all
-three does not beat gravity-gradient alone. None of these come close to
+(Rerun 2026-07-21 after the `get_magnetic_field_dipole` sign fix; the
+wheel-only, gravity-gradient, and aero rows reproduce the pre-fix table to the
+last digit, so the magnetic-row change is attributable to the field sign
+alone. Before the fix this table read "+ magnetic: 90.38 deg (+2.82, worse)"
+and "All combined: 101.61 deg (+14.05, worse than any single addition)" -- the
+built-in tilted-dipole field was antiparallel, so every dplCmd-driven torque
+was applied with the wrong sign.)
+
+Gravity-gradient is the dominant single effect. Aerodynamic torque is real
+(confirmed via GRAM's actual MERRA2 density queries, not a stub) but utterly
+negligible at CYGNSS's ~500-540 km altitude and panel scale. With the
+correctly-signed field the magnetic dipole telemetry (`dplCmd`, taken at face
+value as A*m^2 -- see "dplCmd units" below) now *helps* (-6.3 deg alone), and
+the full combination improves on the wheel-only baseline by 18.4 deg -- though
+it still does not beat gravity-gradient alone, consistent with the remaining
+dplCmd unit/geometry approximations (the duty-cycle-to-moment conversion and
+rod DCMs documented in the private campaign) and with the general
+ill-posedness of hour-scale open-loop replay. None of these come close to
 closing the gap to the maneuver-window fit's sub-1-degree accuracy.
 
 ### Position and velocity, same five configurations

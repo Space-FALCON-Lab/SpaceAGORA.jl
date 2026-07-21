@@ -22,9 +22,11 @@ _HAS_GLMAKIE && include(joinpath(@__DIR__, "10_Animation_ver2.jl"))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output")
 
 # 5. define paper grid parameters (overridden by --paper-grid flag)
-const PAPER_HELPER_ALTITUDES_KM       = (1150.0, 1050.0, 1000.0, 950.0, 850.0)
-const PAPER_HELPER_INCLINATION_DELTAS_DEG = (0.0, 0.5, 1.0)
-const PAPER_HELPER_COUNTS             = (200, 250, 300) #(50, 100) #(150, 200, 250, 300) #(1, 2, 3)
+const PAPER_TARGET_ALTITUDES_KM       = (1150.0, 1050.0, 1000.0, 950.0, 850.0)
+const PAPER_TARGET_INCLINATIONS_DEG   = (0.0, 0.5, 1.0)
+const PAPER_HELPER_COUNTS             =  (25, 75, 125, 175, 225, 275) #(1, 50, 100, 150, 200, 250, 300)  # (25, 75, 125, 175, 225, 275) #(250, 300) #, 250, 300) #(50, 100) #(150, 200, 250, 300) #(1, 2, 3)
+const PAPER_FIXED_HELPER_ALTITUDE_KM  = 1000.0
+const PAPER_FIXED_HELPER_INCLINATION_DEG = 0.0
 
 # 6. settings container & default values
 Base.@kwdef struct OracleCase2Options
@@ -103,7 +105,7 @@ const _FLOAT_OPTS  = (
     :mass_kg, :dt_max_s,
 )
 
-# 8. Reads what the user typed on the command line and turns it into an OracleCase2Options struct
+# 8. Reads what the user typed on the command line and turns it into an OracleCase2Options struct.
 function _parse_options(argv)::OracleCase2Options
     opts = Dict{Symbol, Any}()
     i = 1
@@ -156,36 +158,33 @@ function main(argv=ARGS)
 
     if opts.paper_grid
         # --- Paper-grid mode: sweep over all (helper_altitude, inclination_delta) combinations ---
-        # Flatten the 3×5×3 = 45 independent cases into a single vector so that
-        # Threads.@threads can distribute them across available threads.
-        # :dynamic scheduling is used because cases with more helpers take longer,
-        # so static/even splitting would leave threads idle at the end.
-        cases = [
-            (n_helpers, helper_alt, helper_inclination_delta)
-            for n_helpers              in PAPER_HELPER_COUNTS
-            for helper_alt             in PAPER_HELPER_ALTITUDES_KM
-            for helper_inclination_delta in PAPER_HELPER_INCLINATION_DELTAS_DEG
-        ]
-        print_lock = ReentrantLock()
-        Threads.@threads :dynamic for (n_helpers, helper_alt, helper_inclination_delta) in cases
-            case_opts = _with(opts;
-                helpers=n_helpers,
-                helper_altitude_km=helper_alt,
-                helper_inclination_deg=opts.target_inclination_deg + helper_inclination_delta,
-                output_dir=joinpath(opts.output_dir, "paper_plot_mode"),
-                animate=false,
-            )
-            elapsed = @elapsed begin
-                result = run_open_cavity_case_native(case_opts)
-            end
-            s = result.summary
-            lock(print_lock) do
-                println("  → $(result.results_dir)")
-                @printf(
-                    "helpers=%d helper_alt_km=%.1f helper_inc_deg=%.1f dv_R=%.6e dv_T=%.6e dv_N=%.6e activations=%d  [%.1f s]\n",
-                    s.helpers, s.helper_altitude_km, s.helper_inclination_deg,
-                    s.dv_r_mps, s.dv_t_mps, s.dv_n_mps, s.activations, elapsed
-                )
+
+        for n_helpers in PAPER_HELPER_COUNTS                        # outermost loop: helper counts
+            for target_alt in PAPER_TARGET_ALTITUDES_KM               # middle loop: 5 target altitudes
+                for target_inclination in PAPER_TARGET_INCLINATIONS_DEG  # inner loop: 3 target inclinations
+                    case_opts = _with(opts;
+                        helpers=n_helpers,
+                        target_altitude_km=target_alt,
+                        target_inclination_deg=target_inclination,
+                        helper_altitude_km=PAPER_FIXED_HELPER_ALTITUDE_KM,
+                        helper_inclination_deg=PAPER_FIXED_HELPER_INCLINATION_DEG,
+                        output_dir=joinpath(opts.output_dir, "paper_plot_mode"),
+                        animate=false,
+                    )
+                    elapsed = @elapsed begin
+                        result = run_open_cavity_case_native(case_opts)
+                    end
+                    s = result.summary
+                    results_dir = result.results_dir
+                    println("  → $results_dir")
+                    @printf(
+                        "helpers=%d target_alt_km=%.1f target_inc_deg=%.1f dv_R=%.6e dv_T=%.6e dv_N=%.6e activations=%d  [%.1f s]\n",
+                        s.helpers, s.target_altitude_km, s.target_inclination_deg,
+                        s.dv_r_mps, s.dv_t_mps, s.dv_n_mps, s.activations, elapsed
+                    )
+                    result = nothing  # release the large sol object before the next scenario
+                    GC.gc()
+                end
             end
         end
         println("Output directory: $(opts.output_dir)")

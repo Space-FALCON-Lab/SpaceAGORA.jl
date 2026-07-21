@@ -24,7 +24,7 @@ const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output")
 # 5. define paper grid parameters (overridden by --paper-grid flag)
 const PAPER_HELPER_ALTITUDES_KM       = (1150.0, 1050.0, 1000.0, 950.0, 850.0)
 const PAPER_HELPER_INCLINATION_DELTAS_DEG = (0.0, 0.5, 1.0)
-const PAPER_HELPER_COUNTS             = (200, 250, 300) #(50, 100) #(150, 200, 250, 300) #(1, 2, 3)
+const PAPER_HELPER_COUNTS             = (200) #, 250, 300) #(50, 100) #(150, 200, 250, 300) #(1, 2, 3)
 
 # 6. settings container & default values
 Base.@kwdef struct OracleCase2Options

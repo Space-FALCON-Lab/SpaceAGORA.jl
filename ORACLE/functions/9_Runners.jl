@@ -162,20 +162,34 @@ function run_open_cavity_case_native(opts::OracleCase2Options)
     all_save_fields = vcat(SimulationModel.default_save_fields(args), laser_fields)
 
     # --- Block 5: run — SpaceAGORA writes feather + csv + manifest automatically ---
-    result = run_simulation(
-        args;
-        isolate_state=false,
-        return_solution=true,
-        return_solver_metadata=true,
-        extra_callbacks=(impulse_cb, scheduler_cb),
-        save_fields=all_save_fields,
-    )
+    # SPACEAGORA_SOLVER_SAVE_EVERYSTEP=false: the ODE solver keeps only start+end
+    # in the sol object (System 1).  The feather file (System 2, SavedValues callback)
+    # still captures all 1001 output points independently — no data is lost.
+    result = withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => "false") do
+        run_simulation(
+            args;
+            isolate_state=false,
+            return_solution=true,
+            return_solver_metadata=true,
+            extra_callbacks=(impulse_cb, scheduler_cb),
+            save_fields=all_save_fields,
+        )
+    end
 
-    # --- Block 6: post-simulation quantities (same as run_open_cavity_case) ---
-    sol            = result.solution
-    orbit_counts   = _orbit_count_from_sol(sol, args.environment_model.planet.μ)
+    # --- Block 6: post-simulation quantities ---
+    sol = result.solution   # minimal 2-point sol (start + end only; used for retcode/solver)
+
+    # Read the feather written by SpaceAGORA's native pipeline (System 2 — 1001 points)
+    feather_path = joinpath(results_dir, "simulation_results.feather")
+    feather_df   = DataFrame(Arrow.Table(feather_path))
+    flat_sol     = _make_flat_sol_from_feather(feather_df, opts.helpers + 1)
+
+    # Orbit count from feather (1001 evenly-spaced points → accurate varying-period integration)
+    orbit_counts   = _orbit_count_from_flat_sol(flat_sol, args.environment_model.planet.μ)
     orbits_elapsed = orbit_counts[end]
-    final_state    = sol.u[end].sc[1]
+
+    # Final orbital state from sol.u[end] (save_end=true guarantees this is always present)
+    final_state = sol.u[end].sc[1]
     rf  = SVector{3, Float64}(final_state.pos)
     vf  = SVector{3, Float64}(final_state.vel)
     oef = _rv_to_elements(rf, vf, args.environment_model.planet.μ)
@@ -216,7 +230,7 @@ function run_open_cavity_case_native(opts::OracleCase2Options)
     # Write the one-row summary CSV (skipped when feather_only=true)
     opts.feather_only || _write_csv!(joinpath(results_dir, "summary.csv"), [summary])
 
-    return (summary=summary, sol=sol,
+    return (summary=summary, flat_sol=flat_sol, sol=sol,
             helper_num=opts.helpers, impulse_tracker=impulse_tracker,
             mu=args.environment_model.planet.μ, results_dir=results_dir)
 end
@@ -253,15 +267,10 @@ function plot_open_cavity_results(result, opts::OracleCase2Options;
                                                "oracle_case2_laser_links")), "images"),
                                   target_only::Bool = false)
 
-    sa_sol  = result.sol           # SpaceAGORA structured solution
+    flat_sol = result.flat_sol     # feather-backed _FlatSol (System 2 — 1001 points)
     tracker = result.impulse_tracker
     mu      = result.mu            # gravitational parameter [m³/s²]
     N       = opts.helpers + 1     # total spacecraft: 1 target + N helpers
-
-    # -----------------------------------------------------------------
-    # 1. Build flat-vector sol adapter (N total spacecraft)
-    # -----------------------------------------------------------------
-    flat_sol = _make_flat_sol(sa_sol, N)
 
     # -----------------------------------------------------------------
     # 2. Build a plotting-compatible parameter dictionary
@@ -282,7 +291,7 @@ function plot_open_cavity_results(result, opts::OracleCase2Options;
         :min_range    => 0.0,
         :max_range    => opts.laser_range_km * 1e3,
         :tracker      => tracker,    # used by delta_v / force / laser-exchange functions
-        :sa_sol       => sa_sol,     # SpaceAGORA structured sol for velocity lookup in energy calc
+        :sa_sol       => nothing,    # feather data used instead; energy ΔE calc skipped
     )
 
     target_ids = [1]
@@ -323,7 +332,7 @@ function plot_open_cavity_results(result, opts::OracleCase2Options;
     # 5. Energy audit (print to console)
     # -----------------------------------------------------------------
     Eorb    = [sum(orbital_energy(u, mvec, mu)) for u in flat_sol.u]
-    ΔPdict, ΔEdict = evaluate_laser_exchanges(sa_sol, p)
+    ΔPdict, ΔEdict = evaluate_laser_exchanges(flat_sol, p)
     ΔE_mech = sum(values(ΔEdict))
     println("\n=================== Energy audit ==================")
     println("  ΔE_orb_total (MJ)        = ", (Eorb[end]-Eorb[1])/1e6)

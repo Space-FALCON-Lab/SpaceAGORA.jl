@@ -37,6 +37,51 @@ function _make_flat_sol(sa_sol, N::Int)::_FlatSol
     return _FlatSol(t, u)
 end
 
+# Build a _FlatSol directly from a feather/Arrow DataFrame written by SpaceAGORA's
+# native output pipeline (System 2 — SavedValues callback).
+# Column naming follows SpaceAGORA's convention:
+#   sc{i}_pos_1/2/3  ← ECI position x/y/z [m] for satellite i
+#   sc{i}_vel_1/2/3  ← ECI velocity x/y/z [m/s] for satellite i
+# Use this instead of _make_flat_sol when the ODE solution object is not
+# needed (e.g. when SPACEAGORA_SOLVER_SAVE_EVERYSTEP=false).
+function _make_flat_sol_from_feather(df::DataFrame, N::Int)::_FlatSol
+    t = Float64.(df.time)
+    nrows = length(t)
+    # Pre-extract column arrays to avoid repeated column-name lookups in the inner loop
+    pos_cols = [(df[!, "sc$(i)_pos_1"], df[!, "sc$(i)_pos_2"], df[!, "sc$(i)_pos_3"]) for i in 1:N]
+    vel_cols = [(df[!, "sc$(i)_vel_1"], df[!, "sc$(i)_vel_2"], df[!, "sc$(i)_vel_3"]) for i in 1:N]
+    u = Vector{Vector{Float64}}(undef, nrows)
+    for k in 1:nrows
+        flat = Vector{Float64}(undef, 6N)
+        for i in 1:N
+            flat[idx(i,1)] = pos_cols[i][1][k]
+            flat[idx(i,2)] = pos_cols[i][2][k]
+            flat[idx(i,3)] = pos_cols[i][3][k]
+            flat[idx(i,4)] = vel_cols[i][1][k]
+            flat[idx(i,5)] = vel_cols[i][2][k]
+            flat[idx(i,6)] = vel_cols[i][3][k]
+        end
+        u[k] = flat
+    end
+    return _FlatSol(t, u)
+end
+
+# Orbit counter that works on _FlatSol (System 2 / feather data).
+# Mirrors _orbit_count_from_sol but reads the flat-vector u layout instead of
+# SpaceAGORA's structured state.  With 1001 feather points this is as accurate
+# as the full-solution version at a fraction of the memory cost.
+function _orbit_count_from_flat_sol(flat_sol::_FlatSol, mu::Float64)
+    T_series = [begin
+        r = SVector{3,Float64}(u[idx(1,1)], u[idx(1,2)], u[idx(1,3)])
+        v = SVector{3,Float64}(u[idx(1,4)], u[idx(1,5)], u[idx(1,6)])
+        a = _rv_to_elements(r, v, mu).a
+        2pi * sqrt(a^3 / mu)
+    end for u in flat_sol.u]
+    dt    = diff(flat_sol.t)
+    T_mid = (T_series[1:end-1] .+ T_series[2:end]) ./ 2
+    return cumsum([0.0; dt ./ T_mid])
+end
+
 # =============================================================================
 # Orbital mechanics diagnostics — work on flat-vector u (compatible with _FlatSol)
 # =============================================================================

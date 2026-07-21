@@ -29,7 +29,7 @@ const HELPER_ALT_KM                 = 1000.0
 const HELPER_INCLINATION_DEG        = 0.0
 const TARGET_ALTITUDES_KM           = [1150.0, 1050.0, 1000.0, 950.0, 850.0]
 const TARGET_INCLINATION_DELTAS_DEG = [0.0, 0.5, 1.0]
-const HELPER_COUNTS          = [1, 50, 100] #[1, 2, 3]   # must match PAPER_HELPER_COUNTS
+const HELPER_COUNTS          = [1, 50, 100, 150, 200, 250, 300] #[1, 2, 3]   # must match PAPER_HELPER_COUNTS
 
 # ── Compute classical orbital elements from position + velocity ───────────────
 # Returns (a [m], e, i [rad], raan [rad])

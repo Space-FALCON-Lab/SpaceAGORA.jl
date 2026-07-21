@@ -9,6 +9,10 @@ module PerturbationEffectors
     using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo
     using ...SimulationModel: ephemerides_cache_key, ephemerides_requires_spice, planet_frame_lpi
     using ..AerodynamicEffectors: _multibody_thread_decision
+    # Geodetic conversion for the IGRF field option; AerodynamicEffectors owns
+    # a reference_system.jl include, so reuse its binding rather than adding
+    # another include copy (the module-replacement bug class).
+    using ..AerodynamicEffectors: rtolatlong
     using StaticArrays
     import ..DynamicEffectors: calcForceTorque, wrench, environment_requirements
     import ...EffectorSampling: gravity_backbone_structure, gravity_backbone_acceleration_ii

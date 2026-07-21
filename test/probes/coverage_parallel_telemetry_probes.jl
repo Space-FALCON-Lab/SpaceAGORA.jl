@@ -1909,4 +1909,74 @@ end
     @test AE._per_link_enabled(AerodynamicCoefficientConstant()) === false
 end
 
+@testset "Magnetic field: dipole sign fix + IGRF source option" begin
+    PE = SimulationModel.DynamicEffectors.PerturbationEffectors
+    ES = parentmodule(PE.StateSample)
+    # Constructor contract: default stays the tilted dipole; :igrf requires a
+    # finite decimal year; unknown sources are rejected.
+    @test PE.MagneticTorqueRodModel().field_model === :dipole
+    m_igrf = PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=2025.4)
+    @test m_igrf.igrf_year == 2025.4
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf)
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:wmm)
+    # The IGRF library hard-rejects epochs outside [1900, 2035); the
+    # constructor must catch that at configuration time (Codex P2, PR 64).
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=2050.0)
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=1899.0)
+
+    # Tilted-dipole SIGN pins. The pre-fix implementation used the north-pole
+    # axis as the dipole moment and returned the antiparallel field (~170 deg
+    # from IGRF at LEO). Physical pins: at the magnetic equator B = +B0 along
+    # the pole axis (north); above the north magnetic pole B = -2 B0 (down).
+    l_pi = SMatrix{3, 3, Float64, 9}(I)
+    n_hat = SVector{3, Float64}(PE.M_HAT_ECEF)
+    r_eq = 6.3712e6 * normalize(cross(n_hat, SVector(0.0, 0.0, 1.0)))
+    @test isapprox(PE.get_magnetic_field_dipole(r_eq, MMatrix{3, 3, Float64}(l_pi)),
+                   3.12e-5 * n_hat; atol=1e-9)
+    @test isapprox(PE.get_magnetic_field_dipole(6.3712e6 * n_hat, MMatrix{3, 3, Float64}(l_pi)),
+                   -2 * 3.12e-5 * n_hat; atol=1e-9)
+
+    # IGRF-vs-dipole cross-validation at LEO sample points: LEO-band magnitude
+    # and the two models roughly aligned (< 35 deg) — this catches any future
+    # sign/frame regression in either path.
+    earth = PE.Earth()
+    m_dip = PE.MagneticTorqueRodModel()
+    for (latd, lond) in ((0.0, 10.0), (30.0, 45.0), (-30.0, 135.0), (55.0, -100.0))
+        r = 6898e3 * SVector(cosd(latd) * cosd(lond), cosd(latd) * sind(lond), sind(latd))
+        alt, lat, lon = PE.rtolatlong(r, earth)
+        B_i = PE._magnetic_field_inertial(m_igrf, l_pi, r, lat, lon, alt)
+        B_d = PE._magnetic_field_inertial(m_dip, l_pi, r, lat, lon, alt)
+        @test 1.5e-5 < norm(B_i) < 7e-5
+        @test B_d == PE.get_magnetic_field_dipole(r, MMatrix{3, 3, Float64}(l_pi))
+        @test acosd(clamp(dot(B_i, B_d) / (norm(B_i) * norm(B_d)), -1, 1)) < 35
+    end
+
+    # wrench plumbing: one magnet, identity attitude -> torque = m x B_ii for
+    # BOTH field sources, zero force, and tau ⊥ m.
+    ic = SimulationModel.InitialCondition(
+        7.0e6, 1.0e-3, 35.0, 0.0, 0.0, 0.0,
+        SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    )
+    sc = TV.make_three_body_spacecraft(
+        bus_dims=(0.2, 0.5, 0.6), panel_dims=(0.4, 0.001, 0.5), bus_mass=29.0,
+        panel_mass_each=0.0, panel_offset_y=0.5, ic=ic
+    )
+    MT = eltype(sc.links[1].magnets)
+    m_vec = SVector(0.0, 0.0, 1.5)
+    push!(sc.links[1].magnets, MT(m=MVector{3, Float64}(m_vec)))
+    r = 6898e3 * SVector(cosd(20.0) * cosd(30.0), cosd(20.0) * sind(30.0), sind(20.0))
+    alt, lat, lon = PE.rtolatlong(r, earth)
+    pf = ES.PlanetFrameSample(l_pi, r, SVector(0.0, 0.0, 0.0), alt, lat, lon)
+    x = PE.StateSample(r, SVector(7.6e3, 0.0, 0.0), 29.0;
+                       q_ib=SVector(0.0, 0.0, 0.0, 1.0), spacecraft=sc)
+    env = PE.EnvironmentSample(earth; planet_frame=pf)
+    for model in (m_dip, m_igrf)
+        B_ii = PE._magnetic_field_inertial(model, l_pi, r, lat, lon, alt)
+        f, tq = PE.wrench(model, x, env, 0.0)
+        @test f == SVector(0.0, 0.0, 0.0)
+        @test isapprox(tq, cross(m_vec, B_ii); atol=1e-12)
+        @test abs(dot(tq, m_vec)) < 1e-15
+    end
+end
+
 println("coverage_parallel_telemetry_probes_ok")

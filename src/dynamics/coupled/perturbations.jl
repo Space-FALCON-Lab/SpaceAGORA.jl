@@ -1756,36 +1756,40 @@ function get_magnetic_field_dipole(r_ecef::AbstractVector, L_PI::MMatrix{3, 3, F
     # Cosine of the magnetic colatitude
     cos_colat = dot(r_hat, M_HAT_ECEF)
 
-    # Dipole field equation. This is a standard formulation.
-    B_ecef = -B0_2020 * (R_EARTH_MODEL / r_norm)^3 * (M_HAT_ECEF - 3 * cos_colat * r_hat)
+    # Dipole field equation with Earth's dipole MOMENT pointing toward the
+    # geomagnetic SOUTH pole (m_hat = -M_HAT_ECEF):
+    #   B = B0 (R/r)^3 [3 (m_hat.r_hat) r_hat - m_hat]
+    #     = B0 (R/r)^3 [M_HAT_ECEF - 3 cos_colat r_hat]
+    # Checks: equator (cos_colat = 0) gives B = B0 * M_HAT_ECEF (north, B0);
+    # north pole gives -2 B0 M_HAT_ECEF (down). The pre-2026-07 sign returned
+    # the ANTIPARALLEL field (170 deg from IGRF at LEO).
+    B_ecef = B0_2020 * (R_EARTH_MODEL / r_norm)^3 * (M_HAT_ECEF - 3 * cos_colat * r_hat)
 
     return L_PI' * B_ecef
 end
 
 """
-    get_magnetic_field(date::DateTime, lat_deg::Number, lon_deg::Number, alt_m::Number)
+    get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
 
-Computes the Earth's magnetic field vector in the local North-East-Down (NED)
-frame using the World Magnetic Model (WMM).
-
-The function automatically uses the correct WMM version based on the input `date`.
+Computes the Earth's magnetic field vector in the inertial frame using the
+International Geomagnetic Reference Field (IGRF).
 
 # Args
 
-- `date`: The `DateTime` of the measurement.
-- `lat_deg`: The geodetic latitude of the observer [degrees].
-- `lon_deg`: The longitude of the observer [degrees].
+- `date`: The `DateTime` of the measurement (sets the IGRF epoch).
+- `lat_rad`: The geodetic latitude of the observer [radians].
+- `lon_rad`: The longitude of the observer [radians].
 - `alt_m`: The altitude above the WGS84 ellipsoid [meters].
+- `L_PI`: The inertial-to-planet-fixed rotation matrix.
 
 # Returns
 
-- A 3-element `SVector` representing the magnetic field `[B_north, B_east, B_down]`
-  in nanoTeslas [nT].
+- A 3-element vector representing the magnetic field in the inertial frame in
+  nanoTeslas [nT]. Note the unit: [`get_magnetic_field_dipole`](@ref) returns
+  Tesla, so the two are NOT drop-in interchangeable.
 """
 function get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
-    # println("Calculating magnetic field at lat: $lat_rad, lon: $lon_rad, alt: $alt_m, date: $date")
-    # Calculate the magnetic field vector using the World Magnetic Model.
-    # The result is in the NED frame and has units of nT.
+    # The IGRF evaluation returns NED components in nT.
     B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geodetic))
     B_pp = ned_to_ecef(B_ned, lat_rad, lon_rad, alt_m)
     B_ii = L_PI' * B_pp
@@ -1832,13 +1836,65 @@ Dynamic effector for spacecraft magnetic torque rods / magnetorquers.
 
 Sums the body-frame dipole moment `m` over every [`Magnet`](@ref) attached to
 any link of the spacecraft, samples the Earth magnetic field at the
-spacecraft's current position via the tilted-dipole model
-([`get_magnetic_field_dipole`](@ref)), and returns the resulting body-frame
-torque `τ = m × B` ([`calculate_magnetic_torque`](@ref)). Produces zero force
-and zero torque when the spacecraft carries no magnets or when attitude state
-is unavailable (`orientation_sim=false`).
+spacecraft's current position, and returns the resulting body-frame torque
+`τ = m × B` ([`calculate_magnetic_torque`](@ref)). Produces zero force and
+zero torque when the spacecraft carries no magnets or when attitude state is
+unavailable (`orientation_sim=false`).
+
+Field source (`field_model`):
+
+- `:dipole` (default): fast tilted-dipole approximation
+  ([`get_magnetic_field_dipole`](@ref)), epoch-2020 constants, typically good
+  to 10-20% at LEO. Bit-identical to the pre-option behavior.
+- `:igrf`: the International Geomagnetic Reference Field evaluated at the
+  spacecraft's geodetic position. Requires `igrf_year` (decimal year, e.g.
+  `2025.4`) — the secular field drift over a single simulation is negligible,
+  so one epoch per model is deliberate and keeps the integrator hot loop free
+  of calendar conversions.
+
+Both sources are Earth models; neither is meaningful at another central body.
 """
-struct MagneticTorqueRodModel <: AbstractForceTorqueModel end
+struct MagneticTorqueRodModel <: AbstractForceTorqueModel
+    field_model::Symbol
+    igrf_year::Float64
+
+    function MagneticTorqueRodModel(; field_model::Symbol=:dipole, igrf_year::Real=NaN)
+        field_model in (:dipole, :igrf) ||
+            throw(ArgumentError("field_model must be :dipole or :igrf, got $(repr(field_model))"))
+        # SatelliteToolboxGeomagneticField's IGRF hard-rejects epochs outside
+        # [1900, 2035) (and warns about reduced accuracy past 2030), so reject
+        # unsupported epochs here at configuration time instead of at the
+        # first wrench evaluation.
+        if field_model === :igrf && !(isfinite(igrf_year) && 1900.0 <= igrf_year < 2035.0)
+            throw(ArgumentError(
+                "field_model=:igrf requires igrf_year in [1900, 2035) (decimal year, e.g. 2025.4)"))
+        end
+        return new(field_model, Float64(igrf_year))
+    end
+end
+
+"""
+    _magnetic_field_inertial(model, l_pi, pos_pp, lat_rad, lon_rad, alt_m)
+
+Inertial-frame magnetic field [Tesla] for the model's configured field source.
+The IGRF branch converts from the library's nT to Tesla here so both branches
+share one unit contract.
+"""
+@inline function _magnetic_field_inertial(
+    model::MagneticTorqueRodModel,
+    l_pi::SMatrix{3, 3, Float64, 9},
+    pos_pp::SVector{3, Float64},
+    lat_rad::Float64,
+    lon_rad::Float64,
+    alt_m::Float64,
+)::SVector{3, Float64}
+    if model.field_model === :igrf
+        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic))
+        B_pp_nT = ned_to_ecef(B_ned_nT, lat_rad, lon_rad, alt_m)
+        return SVector{3, Float64}(l_pi' * B_pp_nT) .* 1e-9
+    end
+    return get_magnetic_field_dipole(pos_pp, MMatrix{3, 3, Float64}(l_pi))
+end
 
 @inline function _total_dipole_moment_body(spacecraft)::SVector{3, Float64}
     m_total = SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -1868,9 +1924,15 @@ function calcForceTorque(model::MagneticTorqueRodModel, x::AbstractVector{Float6
 
     pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
-    l_pi = planet_frame_lpi(param.args.environment_model.planet, et, param.args.environment_model.ephemerides_model)
+    planet = param.args.environment_model.planet
+    l_pi = planet_frame_lpi(planet, et, param.args.environment_model.ephemerides_model)
     pos_pp = l_pi * pos_ii
-    B_ii = get_magnetic_field_dipole(pos_pp, MMatrix{3, 3, Float64}(l_pi))
+    if model.field_model === :igrf
+        alt_m, lat_rad, lon_rad = rtolatlong(pos_pp, planet)
+        B_ii = _magnetic_field_inertial(model, SMatrix{3, 3, Float64, 9}(l_pi), pos_pp, lat_rad, lon_rad, alt_m)
+    else
+        B_ii = get_magnetic_field_dipole(pos_pp, MMatrix{3, 3, Float64}(l_pi))
+    end
 
     q_ib = getproperty(x, :q)
     q_body = SVector{4, Float64}(Float64(q_ib[1]), Float64(q_ib[2]), Float64(q_ib[3]), Float64(q_ib[4]))
@@ -1898,7 +1960,14 @@ end
     planet_frame = env.planet_frame
     planet_frame === nothing && throw(ArgumentError("MagneticTorqueRodModel wrench requires env.planet_frame."))
 
-    B_ii = get_magnetic_field_dipole(planet_frame.pos_pp, MMatrix{3, 3, Float64}(planet_frame.l_pi))
+    B_ii = _magnetic_field_inertial(
+        model,
+        planet_frame.l_pi,
+        planet_frame.pos_pp,
+        planet_frame.lat_rad,
+        planet_frame.lon_rad,
+        planet_frame.alt_m,
+    )
     B_body = rot(x.q_ib) * B_ii
     torque_body = calculate_magnetic_torque(m_body, B_body)
     return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body

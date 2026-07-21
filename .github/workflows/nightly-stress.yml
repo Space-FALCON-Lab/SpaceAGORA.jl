@@ -108,15 +108,18 @@ jobs:
       - name: Example regression stress
         run: julia --startup-file=no --depwarn=error --project=. test/integration/examples/runtests.jl
 
-      # --heap-size-hint keeps Julia's GC high-water mark well under the
-      # 7 GB hosted-runner ceiling: without it this step intermittently
-      # starves the runner agent ("runner lost communication with the
-      # server") and the job dies mid-step.
+      # --heap-size-hint keeps Julia's GC high-water mark under the hosted
+      # runner's physical memory (public-repo ubuntu-latest: 4 vCPU/16 GB):
+      # without it this step intermittently starves the runner agent
+      # ("runner lost communication with the server") and the job dies
+      # mid-step. 3G was over-tight: the step went 115 -> 218+ min in GC
+      # thrash and hit the job timeout. 10G leaves room for native GRAM
+      # and the OS while restoring throughput.
       - name: Telemetry full regression (GRAM deterministic)
-        run: julia --startup-file=no --depwarn=error --heap-size-hint=3G --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
+        run: julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
 
       - name: Stress suite
-        run: julia --startup-file=no --depwarn=error --heap-size-hint=3G --project=. test/stress/runtests.jl
+        run: julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=. test/stress/runtests.jl
 
       - name: Upload telemetry nightly artifacts
         if: always()

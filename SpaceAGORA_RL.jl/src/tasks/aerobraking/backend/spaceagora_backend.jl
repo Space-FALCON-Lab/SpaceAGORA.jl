@@ -390,6 +390,15 @@ function _spaceagora_orbital_elements(spaceagora, pos, vel, planet)
     return Base.invokelatest(getproperty(control_hooks, :rvtoorbitalelement), pos, vel, planet)
 end
 
+function _spaceagora_orbital_element(oe, idx::Int)
+    if hasfield(typeof(oe), :data)
+        data = getfield(oe, :data)
+        1 <= idx <= length(data) || throw(BoundsError(oe, idx))
+        return data[idx]
+    end
+    return oe[idx]
+end
+
 function _spaceagora_physics_next_state_from_u(spaceagora,
                                                config::AerobrakingScenarioConfig,
                                                state::AerobrakingDecisionState,
@@ -404,8 +413,8 @@ function _spaceagora_physics_next_state_from_u(spaceagora,
     pos = Base.invokelatest(Base.invokelatest(getproperty, engine, :_state_position_ii), final_u, 1)
     vel = Base.invokelatest(Base.invokelatest(getproperty, engine, :_state_velocity_ii), final_u, 1)
     oe = _spaceagora_orbital_elements(spaceagora, pos, vel, planet)
-    a = Float64(oe[1])
-    e = Float64(oe[2])
+    a = Float64(_spaceagora_orbital_element(oe, 1))
+    e = Float64(_spaceagora_orbital_element(oe, 2))
     apoapsis_radius = a * (1.0 + e)
     periapsis_altitude = a * (1.0 - e) - planet.Rp_e
     drag_time = if isfinite(stats.drag_entry_time_s) && isfinite(stats.drag_exit_time_s)
@@ -419,9 +428,9 @@ function _spaceagora_physics_next_state_from_u(spaceagora,
         pass_index = state.pass_index + 1,
         apoapsis_radius_m = apoapsis_radius,
         periapsis_altitude_m = periapsis_altitude,
-        inclination_rad = Float64(oe[3]),
-        raan_rad = Float64(oe[5]),
-        argument_of_periapsis_rad = Float64(oe[4]),
+        inclination_rad = Float64(_spaceagora_orbital_element(oe, 3)),
+        raan_rad = Float64(_spaceagora_orbital_element(oe, 5)),
+        argument_of_periapsis_rad = Float64(_spaceagora_orbital_element(oe, 4)),
         epoch = next_epoch,
         mission_elapsed_s = state.mission_elapsed_s + elapsed_s,
         total_delta_v_mps = state.total_delta_v_mps + action.magnitude_mps,

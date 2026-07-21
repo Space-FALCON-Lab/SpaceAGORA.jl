@@ -63,6 +63,7 @@ include(joinpath(@__DIR__, "robotics", "runtests.jl"))
         include(joinpath(@__DIR__, "coverage_probes", "parallel_telemetry_probes.jl"))
         include(joinpath(@__DIR__, "coverage_probes", "runtime_boundary_probes.jl"))
         include(joinpath(@__DIR__, "coverage_probes", "targeted_90_probes.jl"))
+        include(joinpath(@__DIR__, "coverage_probes", "probe_drivers.jl"))
     end
 end
 

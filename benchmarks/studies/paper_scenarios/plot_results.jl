@@ -312,6 +312,10 @@ function psp_plot_s2(df::DataFrame, outdir::String, host::String)::Vector{String
         any_points = true
     end
     if any_points
+        # Left-aligned "  N=<n>" annotations extend to the right of their point;
+        # widen the auto x-range so the rightmost label isn't clipped by the axis edge.
+        xmin, xmax = Plots.xlims(p3)
+        Plots.plot!(p3, xlims=(xmin, xmax + 0.18 * (xmax - xmin)))
         path3 = joinpath(outdir, "s2_speed_per_memory.pdf")
         Plots.savefig(p3, path3)
         push!(paths, path3)

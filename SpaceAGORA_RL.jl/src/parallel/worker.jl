@@ -374,9 +374,10 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
             extra_callbacks = (stats_callback, apoapsis_callback),
         )
     catch err
+        bt = catch_backtrace()
         throw(ErrorException(
             "SpaceAGORA physics campaign rollout failed while propagating a continuous aerobraking campaign. " *
-            "Original error: $(sprint(showerror, err))"
+            "Original error:\n$(sprint(showerror, err, bt))"
         ))
     end
 
@@ -469,8 +470,9 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
         end
         return finalize_episode_summary(rollout.summary, config), rollout.transitions
     catch err
+        bt = catch_backtrace()
         message = "SpaceAGORA physics campaign rollout failed while propagating a continuous aerobraking campaign. " *
-                  "Original error: $(sprint(showerror, err))"
+                  "Original error:\n$(sprint(showerror, err, bt))"
         if rollout === nothing
             put!(event_channel, SpaceAGORAPhysicsPassEvent(
                 worker_id = worker_id,

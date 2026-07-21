@@ -319,6 +319,12 @@ function _aero_pure_wrench(
                 # wind (the link then wrongly inherits the spacecraft wind)
                 # and false-alarms when the two agree, where the physics is
                 # correct (Codex reviews on PRs #62/#63).
+                # The triples are local E/N/U components at each sample point,
+                # but link offsets are spacecraft-scale (body.r, meters), so
+                # the two bases differ by <= |body.r|/R_planet ~ 1e-6 rad —
+                # comparing raw components is exact to ~ppm, and a
+                # frame-resolved comparison would put a per-link geodetic
+                # conversion in the aero hot loop for a maxlog=1 diagnostic.
                 if wind_link !== nothing && !all(wind_link .== wind)
                     @warn "per-link atmosphere discards the link-local WIND sample where it differs from the spacecraft-level wind: Mach/dynamic pressure use the spacecraft-level wind-relative velocity (per-link sampling covers density/temperature only)." maxlog = 1
                 end

@@ -79,7 +79,7 @@ episodes = 25000
 max_passes_per_campaign = 1000
 n_workers = 16
 checkpoint_frequency = 5000
-progress_frequency = 1000
+progress_frequency = 100
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 
 [reports]

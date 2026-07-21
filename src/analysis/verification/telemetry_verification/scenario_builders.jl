@@ -187,7 +187,7 @@ end
 # per (pass, leg, 1 km altitude bin) with mean density, its standard error,
 # and the pass periapsis UTC. Loaded into per-pass in/out profiles keyed by
 # elapsed time from the scenario epoch; nearest pass answers each query, so
-# archive gaps fall back to the neighboring pass (counted and logged here).
+# archive gaps fall back to the neighboring pass.
 function _make_tabulated_flight_density_model(
     initial_time::InitialTime,
     truth::AtmosphereTruthConfig
@@ -227,9 +227,6 @@ function _make_tabulated_flight_density_model(
         push!(alt_pairs, alts); push!(log_pairs, logs); push!(sig_pairs, sigs)
     end
     ord = sortperm(peri_el)
-    n_gaps = isempty(pass_ids) ? 0 : (maximum(pass_ids) - minimum(pass_ids) + 1 - length(pass_ids))
-    println("tabulated_flight: $(length(pass_ids)) passes, $(nrow(tbl)) bins, " *
-            "$(n_gaps) archive gaps (nearest-pass fallback), sigma_scale=$(truth.tabulated_flight_sigma)")
     return SimulationModel.TabulatedFlightAtmosphereModel(
         peri_el[ord], alt_pairs[ord], log_pairs[ord], sig_pairs[ord],
         truth.tabulated_flight_sigma, 3.4, 188.92

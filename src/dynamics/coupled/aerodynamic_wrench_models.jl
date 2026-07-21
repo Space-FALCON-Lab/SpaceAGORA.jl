@@ -310,14 +310,17 @@ function _aero_pure_wrench(
             rho_link, T_link, wind_link = link_atmosphere_fn(pos_pp_body)
             if isfinite(rho_link) && rho_link > eps(Float64) && isfinite(T_link) && T_link > 0.0
                 rho_body, T_body = rho_link, T_link
-                # Per-link sampling applies density/temperature only; a
+                # Per-link sampling applies density/temperature only; the
                 # link-local WIND sample is discarded here (Mach and dynamic
                 # pressure keep the spacecraft-level wind-relative velocity).
-                # Warn exactly when nonzero wind data is actually thrown away,
-                # so the maxlog budget cannot be consumed by runs that never
-                # sample a link (Codex review on PR #62).
-                if wind_link !== nothing && any(!iszero, wind_link)
-                    @warn "per-link atmosphere discards the link-local WIND sample: Mach/dynamic pressure use the spacecraft-level wind-relative velocity (per-link sampling covers density/temperature only)." maxlog = 1
+                # Warn exactly when the discard changes the answer — the link
+                # wind DISAGREES with the spacecraft-level sample. A nonzero
+                # test alone misses a calm link inside a nonzero spacecraft
+                # wind (the link then wrongly inherits the spacecraft wind)
+                # and false-alarms when the two agree, where the physics is
+                # correct (Codex reviews on PRs #62/#63).
+                if wind_link !== nothing && !all(wind_link .== wind)
+                    @warn "per-link atmosphere discards the link-local WIND sample where it differs from the spacecraft-level wind: Mach/dynamic pressure use the spacecraft-level wind-relative velocity (per-link sampling covers density/temperature only)." maxlog = 1
                 end
             end
         end

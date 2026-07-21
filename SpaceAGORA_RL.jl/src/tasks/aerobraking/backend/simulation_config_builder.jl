@@ -1,4 +1,7 @@
 const _SPACEAGORA_RL_LIVE_BACKEND_MODES = (:spaceagora_physics, :spaceagora_full_physics, :spaceagora_marsgram)
+const _SPACEAGORA_RL_LOAD_LOCK = ReentrantLock()
+const _SPACEAGORA_RL_SPICE_SETUP_LOCK = ReentrantLock()
+const _SPACEAGORA_RL_MARS_CACHE = Dict{String,Any}()
 
 _spaceagora_base_root() = dirname(package_root())
 _spaceagora_spice_path() = joinpath(_spaceagora_base_root(), "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
@@ -19,18 +22,20 @@ end
 _is_spaceagora_live_backend(mode::Symbol) = mode in _SPACEAGORA_RL_LIVE_BACKEND_MODES
 
 function _load_spaceagora!(; load_gramsuite::Bool=true)
-    base_root = _spaceagora_base_root()
-    gram_project = joinpath(base_root, "data", "GRAMSuite.jl")
-    paths = load_gramsuite ? (gram_project, base_root) : (base_root,)
-    for path in paths
-        if !(path in LOAD_PATH)
-            pushfirst!(LOAD_PATH, path)
+    lock(_SPACEAGORA_RL_LOAD_LOCK) do
+        base_root = _spaceagora_base_root()
+        gram_project = joinpath(base_root, "data", "GRAMSuite.jl")
+        paths = load_gramsuite ? (gram_project, base_root) : (base_root,)
+        for path in paths
+            if !(path in LOAD_PATH)
+                pushfirst!(LOAD_PATH, path)
+            end
         end
+        if load_gramsuite
+            Base.require(Base.PkgId(Base.UUID("b50455af-6a46-4eae-bf92-8039261dd674"), "GRAMSuite"))
+        end
+        return Base.require(Base.PkgId(Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540"), "SpaceAGORA"))
     end
-    if load_gramsuite
-        Base.require(Base.PkgId(Base.UUID("b50455af-6a46-4eae-bf92-8039261dd674"), "GRAMSuite"))
-    end
-    return Base.require(Base.PkgId(Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540"), "SpaceAGORA"))
 end
 
 function _initial_time_from_datetime(dt::DateTime; spaceagora=nothing)
@@ -105,6 +110,16 @@ end
 
 _spaceagora_live_needs_gramsuite(config) = config.spaceagora_atmosphere_model in (:gram, :marsgram)
 
+function _spaceagora_mars(spaceagora, spice_path::AbstractString)
+    key = normpath(String(spice_path))
+    return lock(_SPACEAGORA_RL_SPICE_SETUP_LOCK) do
+        get!(_SPACEAGORA_RL_MARS_CACHE, key) do
+            SM = getproperty(spaceagora, :SimulationModel)
+            Base.invokelatest(getproperty(SM, :Mars), "", key)
+        end
+    end
+end
+
 function _spaceagora_physics_simulation_configuration(config,
                                                       state,
                                                       action::AerobrakingAction;
@@ -115,7 +130,7 @@ function _spaceagora_physics_simulation_configuration(config,
     TV = getproperty(spaceagora, :TelemetryVerification)
 
     spice_path = _spaceagora_spice_path()
-    planet = Base.invokelatest(getproperty(SM, :Mars), "", spice_path)
+    planet = _spaceagora_mars(spaceagora, spice_path)
     initial_time = _initial_time_from_datetime(state.epoch; spaceagora=spaceagora)
     periapsis_after_action = clamp(periapsis_after_action_m(config, state, action), 50e3, 180e3)
     ic = _spaceagora_initial_condition(spaceagora, config, state, action, planet)

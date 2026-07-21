@@ -1,6 +1,6 @@
 [scenario]
 phase = "Main"
-backend_mode = "paper_surrogate"
+backend_mode = "spaceagora_physics"
 training = true
 
 [reward]
@@ -27,7 +27,7 @@ nonnominal_aop_high_deg = 90.0
 nonnominal_raan_low_deg = 110.0
 nonnominal_raan_high_deg = 120.0
 process_noise = true
-process_noise_scale = 0.4
+process_noise_scale = 1.0
 aerodynamic_coefficient_dispersion = true
 aerodynamic_coefficient_span = 0.10
 marsgram_perturbation_scale = 1.0
@@ -65,13 +65,13 @@ decay_start_step = 10000
 [training]
 seed = 42
 algorithm = "pr_drl"
-device = "cpu"
-global_steps = 20
-episodes = 4
+device = "cuda"
+global_steps = 1100000
+episodes = 25000
 max_passes_per_campaign = 1000
-n_workers = 1
-checkpoint_frequency = 500
-progress_frequency = 5
+n_workers = 16
+checkpoint_frequency = 5000
+progress_frequency = 1000
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 
 [reports]

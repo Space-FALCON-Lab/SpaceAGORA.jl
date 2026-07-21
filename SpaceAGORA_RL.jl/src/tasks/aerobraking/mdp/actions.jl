@@ -21,6 +21,13 @@ function action_from_index(index::Integer)
     return AerobrakingAction(index, delta_v, magnitude, phi, delta_v < 0, delta_v > 0)
 end
 
+function action_from_delta_v(delta_v_mps::Real)
+    delta_v = Float64(delta_v_mps)
+    magnitude = abs(delta_v)
+    phi = delta_v <= 0 ? 0.0 : 180.0
+    return AerobrakingAction(0, delta_v, magnitude, phi, delta_v < 0, delta_v > 0)
+end
+
 function nearest_action_index(delta_v_mps::Real)
     _, idx = findmin(abs.(PAPER_ACTIONS_MPS .- Float64(delta_v_mps)))
     return idx

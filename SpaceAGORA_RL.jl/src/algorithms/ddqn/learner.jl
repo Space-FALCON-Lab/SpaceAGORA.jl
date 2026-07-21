@@ -77,6 +77,12 @@ end
 
 compute_ddqn_targets(args...; kwargs...) = selected_q_targets(args...; kwargs...)
 
+function greedy_action_index(learner::DDQNLearner, observation::AbstractVector{<:Real})
+    obs = reshape(Float32.(observation), :, 1)
+    q = to_cpu_array(predict_q(learner.online, to_device_array(learner.device, obs)))
+    return argmax(view(q, :, 1))
+end
+
 function select_action(learner::DDQNLearner, observation::AbstractVector{<:Real};
                        rng::AbstractRNG=Random.default_rng(), test::Bool=false)
     learner.global_step += 1
@@ -84,7 +90,7 @@ function select_action(learner::DDQNLearner, observation::AbstractVector{<:Real}
     if !test && rand(rng) < eps
         return rand(rng, 1:learner.config.action_dim)
     end
-    return argmax(predict_q(learner.online, observation))
+    return greedy_action_index(learner, observation)
 end
 
 function observe!(learner::DDQNLearner, transition::Transition)

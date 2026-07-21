@@ -81,10 +81,85 @@ function _print_training_progress(session::TrainingSession, summaries::Vector{Ep
     flush(stdout)
 end
 
-function train_parallel!(session::TrainingSession{<:DDQNLearner};
-                         global_steps::Int=session.config.training.global_steps,
-                         episodes::Union{Nothing,Int}=nothing,
-                         n_workers::Int=session.config.training.n_workers)
+mutable struct SpaceAGORAPhysicsActiveWorker
+    worker_id::Int
+    episode_index::Int
+    seed::Int
+    handle::SpaceAGORAPhysicsWorkerHandle
+end
+
+function _spaceagora_physics_streaming_worker_seed(base_seed::Int, worker_id::Int,
+                                                   episode_index::Int)
+    return base_seed + 10_000 * worker_id + episode_index
+end
+
+function _ddqn_master_action(learner::DDQNLearner, observation::Vector{Float32},
+                             rng::AbstractRNG; test::Bool=false)
+    step = learner.global_step + 1
+    eps = test ? 0.0 : epsilon_value(learner.schedule, step)
+    if !test && rand(rng) < eps
+        return rand(rng, 1:learner.config.action_dim)
+    end
+    return greedy_action_index(learner, observation)
+end
+
+function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<:DDQNLearner},
+                                                      event_channel::Channel{Any},
+                                                      worker_id::Int,
+                                                      episode_index::Int)
+    seed = _spaceagora_physics_streaming_worker_seed(session.config.training.seed,
+                                                     worker_id,
+                                                     episode_index)
+    rng = MersenneTwister(seed)
+    config = session.config.scenario
+    state = reset_scenario(config, rng)
+    norm_obs = normalize_observation(observe_state(config, state), config.normalization_bounds)
+    action_index = _ddqn_master_action(session.learner, norm_obs, session.rng)
+    summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
+    handle = start_spaceagora_physics_campaign_worker!(
+        event_channel,
+        config,
+        session.learner.schedule,
+        session.learner.config,
+        cpu_network(session.learner.online),
+        state,
+        norm_obs,
+        action_index,
+        summary,
+        episode_index,
+        worker_id,
+        seed,
+        session.config.training.max_passes_per_campaign,
+        session.learner.global_step,
+    )
+    return SpaceAGORAPhysicsActiveWorker(worker_id, episode_index, seed, handle)
+end
+
+function _finish_spaceagora_physics_streaming_worker!(worker::SpaceAGORAPhysicsActiveWorker)
+    fetch(worker.handle.task)
+    return nothing
+end
+
+function _stop_spaceagora_physics_streaming_workers!(active::Dict{Int,SpaceAGORAPhysicsActiveWorker},
+                                                     event_channel::Channel{Any})
+    while !isempty(active)
+        event = take!(event_channel)
+        worker = get(active, event.worker_id, nothing)
+        worker === nothing && continue
+        event.error === nothing || @warn "SpaceAGORA physics worker stopped with an error during shutdown" worker_id=event.worker_id error=event.error
+        if !event.done
+            put!(worker.handle.action_channel, nothing)
+        end
+        _finish_spaceagora_physics_streaming_worker!(worker)
+        delete!(active, event.worker_id)
+    end
+    return nothing
+end
+
+function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{<:DDQNLearner};
+                                                       global_steps::Int=session.config.training.global_steps,
+                                                       episodes::Union{Nothing,Int}=nothing,
+                                                       n_workers::Int=session.config.training.n_workers)
     summaries = EpisodeSummary[]
     transitions = Transition[]
     requested_workers = max(1, n_workers)
@@ -105,9 +180,208 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
     start_global_step = session.learner.global_step
     last_progress_step = -1
     last_progress_episode = -1
+    printed_initial_progress = false
 
     @printf(
-        "starting DDQN training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d julia_threads=%d train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d\n",
+        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d julia_threads=%d train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d architecture=paper_pass_streaming\n",
+        algorithm_display_name(session.config.training.algorithm),
+        target_global_step == typemax(Int) ? "none" : string(target_global_step),
+        _budget_label(episode_budget),
+        requested_workers,
+        active_workers,
+        Threads.nthreads(),
+        session.learner.config.train_start,
+        session.learner.config.batch_size,
+        checkpoint_frequency,
+        progress_frequency,
+    )
+    @printf("output_dir=%s\n", session.output_dir)
+    flush(stdout)
+
+    event_channel = Channel{Any}(max(32, 2 * active_workers))
+    active = Dict{Int,SpaceAGORAPhysicsActiveWorker}()
+    next_episode = 1
+    for worker_id in 1:min(active_workers, episode_budget)
+        active[worker_id] = _launch_spaceagora_physics_streaming_worker!(
+            session,
+            event_channel,
+            worker_id,
+            next_episode,
+        )
+        next_episode += 1
+    end
+
+    while session.learner.global_step < target_global_step &&
+          length(summaries) < episode_budget &&
+          !isempty(active)
+        event = take!(event_channel)
+        worker = get(active, event.worker_id, nothing)
+        worker === nothing && continue
+
+        if event.error !== nothing
+            delete!(active, event.worker_id)
+            _finish_spaceagora_physics_streaming_worker!(worker)
+            _stop_spaceagora_physics_streaming_workers!(active, event_channel)
+            throw(ErrorException(event.error))
+        end
+
+        if event.transition !== nothing && session.learner.global_step < target_global_step
+            transition = event.transition
+            push!(transitions, transition)
+            session.learner.global_step += 1
+            observe!(session.learner, transition)
+            maybe_train!(session.learner, session.rng)
+            while session.learner.global_step >= next_checkpoint_step
+                checkpoint_path = joinpath(session.output_dir, "checkpoint_$(next_checkpoint_step).jls")
+                save_checkpoint(checkpoint_path, session.learner; manifest=session.manifest)
+                @printf("checkpoint step=%d path=%s\n", next_checkpoint_step, checkpoint_path)
+                flush(stdout)
+                next_checkpoint_step += checkpoint_frequency
+            end
+        end
+
+        reached_limits = session.learner.global_step >= target_global_step ||
+                         length(summaries) >= episode_budget
+        if event.done
+            length(summaries) < episode_budget &&
+                push!(summaries, finalize_episode_summary(event.summary, session.config.scenario))
+            _finish_spaceagora_physics_streaming_worker!(worker)
+            delete!(active, event.worker_id)
+            if !reached_limits && next_episode <= episode_budget
+                active[event.worker_id] = _launch_spaceagora_physics_streaming_worker!(
+                    session,
+                    event_channel,
+                    event.worker_id,
+                    next_episode,
+                )
+                next_episode += 1
+            end
+        else
+            if reached_limits
+                put!(worker.handle.action_channel, nothing)
+                _finish_spaceagora_physics_streaming_worker!(worker)
+                delete!(active, event.worker_id)
+            else
+                next_action = _ddqn_master_action(
+                    session.learner,
+                    (event.transition::Transition).next_observation,
+                    session.rng,
+                )
+                put!(worker.handle.action_channel, next_action)
+            end
+        end
+
+        if progress_frequency > 0 && !printed_initial_progress &&
+           session.learner.global_step > start_global_step
+            _print_training_progress(session, summaries, episode_budget,
+                                     target_global_step, active_workers,
+                                     start_time, start_global_step)
+            printed_initial_progress = true
+            if target_global_step != typemax(Int)
+                last_progress_step = session.learner.global_step
+                while next_progress_step <= session.learner.global_step &&
+                      next_progress_step < target_global_step
+                    next_progress_step += progress_frequency
+                end
+                next_progress_step = min(next_progress_step, target_global_step)
+            else
+                last_progress_episode = length(summaries)
+                while next_progress_episode <= length(summaries)
+                    next_progress_episode += progress_frequency
+                end
+            end
+        elseif progress_frequency > 0 && target_global_step != typemax(Int) &&
+               session.learner.global_step >= next_progress_step
+            _print_training_progress(session, summaries, episode_budget,
+                                     target_global_step, active_workers,
+                                     start_time, start_global_step)
+            last_progress_step = session.learner.global_step
+            while next_progress_step <= session.learner.global_step &&
+                  next_progress_step < target_global_step
+                next_progress_step += progress_frequency
+            end
+            next_progress_step = min(next_progress_step, target_global_step)
+        elseif progress_frequency > 0 && target_global_step == typemax(Int) &&
+               length(summaries) >= next_progress_episode
+            _print_training_progress(session, summaries, episode_budget,
+                                     target_global_step, active_workers,
+                                     start_time, start_global_step)
+            last_progress_episode = length(summaries)
+            while next_progress_episode <= length(summaries)
+                next_progress_episode += progress_frequency
+            end
+        end
+    end
+
+    if !isempty(active)
+        _stop_spaceagora_physics_streaming_workers!(active, event_channel)
+    end
+
+    if target_global_step != typemax(Int)
+        if last_progress_step != session.learner.global_step
+            _print_training_progress(session, summaries, episode_budget,
+                                     target_global_step, active_workers,
+                                     start_time, start_global_step)
+        end
+    elseif last_progress_episode != length(summaries)
+        _print_training_progress(session, summaries, episode_budget,
+                                 target_global_step, active_workers,
+                                 start_time, start_global_step)
+    end
+
+    final_checkpoint_path = joinpath(session.output_dir, "checkpoint_final.jls")
+    save_checkpoint(final_checkpoint_path, session.learner; manifest=session.manifest)
+    @printf("training complete final_checkpoint=%s elapsed=%s\n",
+            final_checkpoint_path, _format_duration(time() - start_time))
+    flush(stdout)
+    return (summaries=summaries, transitions=transitions,
+            metrics=[episode_metrics(s; policy_name=algorithm_report_name(session.config.training.algorithm)) for s in summaries],
+            aggregate=aggregate_metrics(summaries; policy_name=algorithm_report_name(session.config.training.algorithm)),
+            global_step=session.learner.global_step,
+            target_global_step=target_global_step == typemax(Int) ? nothing : target_global_step,
+            output_dir=session.output_dir)
+end
+
+function train_parallel!(session::TrainingSession{<:DDQNLearner};
+                         global_steps::Int=session.config.training.global_steps,
+                         episodes::Union{Nothing,Int}=nothing,
+                         n_workers::Int=session.config.training.n_workers)
+    if session.config.training.algorithm == :pr_drl &&
+       (session.config.scenario.backend_mode == :spaceagora_physics ||
+        session.config.scenario.backend_mode == :spaceagora_full_physics)
+        return _train_parallel_spaceagora_physics_streaming!(
+            session;
+            global_steps = global_steps,
+            episodes = episodes,
+            n_workers = n_workers,
+        )
+    end
+
+    summaries = EpisodeSummary[]
+    transitions = Transition[]
+    requested_workers = max(1, n_workers)
+    active_workers = min(requested_workers, Threads.nthreads())
+    active_workers < requested_workers && @warn "n_workers exceeds available Julia threads; using Threads.nthreads()" requested_workers active_workers
+    target_global_step = global_steps > 0 ? global_steps : typemax(Int)
+    episode_budget = episodes === nothing ? (global_steps > 0 ? typemax(Int) : session.config.training.episodes) : max(0, episodes)
+    checkpoint_frequency = session.config.training.checkpoint_frequency
+    next_checkpoint_step = checkpoint_frequency > 0 ? checkpoint_frequency : typemax(Int)
+    progress_frequency = max(0, session.config.training.progress_frequency)
+    next_progress_step = progress_frequency > 0 && target_global_step != typemax(Int) ?
+                         min(target_global_step, session.learner.global_step + progress_frequency) :
+                         typemax(Int)
+    next_progress_episode = progress_frequency > 0 && target_global_step == typemax(Int) ?
+                            min(progress_frequency, episode_budget) :
+                            typemax(Int)
+    start_time = time()
+    start_global_step = session.learner.global_step
+    last_progress_step = -1
+    last_progress_episode = -1
+    printed_initial_progress = false
+
+    @printf(
+        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d julia_threads=%d train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d\n",
+        algorithm_display_name(session.config.training.algorithm),
         target_global_step == typemax(Int) ? "none" : string(target_global_step),
         _budget_label(episode_budget),
         requested_workers,
@@ -124,7 +398,7 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
     episode = 1
     while session.learner.global_step < target_global_step && episode <= episode_budget
         batch_episodes = episode:min(episode_budget, episode + active_workers - 1)
-        policy_snapshot = copy(session.learner.online)
+        policy_snapshot = cpu_network(session.learner.online)
         global_step_start = session.learner.global_step
         tasks = map(enumerate(batch_episodes)) do (local_worker_id, episode_index)
             seed = session.config.training.seed + 10_000 * local_worker_id + episode_index
@@ -164,8 +438,27 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
                     next_checkpoint_step += checkpoint_frequency
                 end
             end
-            if progress_frequency > 0 && target_global_step != typemax(Int) &&
-               session.learner.global_step >= next_progress_step
+            if progress_frequency > 0 && !printed_initial_progress &&
+               session.learner.global_step > start_global_step
+                _print_training_progress(session, summaries, episode_budget,
+                                         target_global_step, active_workers,
+                                         start_time, start_global_step)
+                printed_initial_progress = true
+                if target_global_step != typemax(Int)
+                    last_progress_step = session.learner.global_step
+                    while next_progress_step <= session.learner.global_step &&
+                          next_progress_step < target_global_step
+                        next_progress_step += progress_frequency
+                    end
+                    next_progress_step = min(next_progress_step, target_global_step)
+                else
+                    last_progress_episode = length(summaries)
+                    while next_progress_episode <= length(summaries)
+                        next_progress_episode += progress_frequency
+                    end
+                end
+            elseif progress_frequency > 0 && target_global_step != typemax(Int) &&
+                   session.learner.global_step >= next_progress_step
                 _print_training_progress(session, summaries, episode_budget,
                                          target_global_step, active_workers,
                                          start_time, start_global_step)
@@ -210,8 +503,8 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
             final_checkpoint_path, _format_duration(time() - start_time))
     flush(stdout)
     return (summaries=summaries, transitions=transitions,
-            metrics=[episode_metrics(s; policy_name="ddqn") for s in summaries],
-            aggregate=aggregate_metrics(summaries; policy_name="ddqn"),
+            metrics=[episode_metrics(s; policy_name=algorithm_report_name(session.config.training.algorithm)) for s in summaries],
+            aggregate=aggregate_metrics(summaries; policy_name=algorithm_report_name(session.config.training.algorithm)),
             global_step=session.learner.global_step,
             target_global_step=target_global_step == typemax(Int) ? nothing : target_global_step,
             output_dir=session.output_dir)
@@ -402,6 +695,7 @@ function train_parallel!(session::TrainingSession{<:A2CLearner};
     start_global_step = session.learner.global_step
     last_progress_step = -1
     last_progress_episode = -1
+    printed_initial_progress = false
 
     @printf(
         "starting A2C training global_steps=%s campaign_cap=%s n_workers=%d active_workers=%d julia_threads=%d segment_length=%d train_start=%d checkpoint_frequency=%d progress_frequency=%d device=%s\n",
@@ -444,8 +738,26 @@ function train_parallel!(session::TrainingSession{<:A2CLearner};
             next_checkpoint_step += checkpoint_frequency
         end
 
-        if progress_frequency > 0 && target_global_step != typemax(Int) &&
-           session.learner.global_step >= next_progress_step
+        if progress_frequency > 0 && !printed_initial_progress &&
+           session.learner.global_step > start_global_step
+            _print_a2c_progress(session, summaries, episode_budget, target_global_step,
+                                active_workers, start_time, start_global_step)
+            printed_initial_progress = true
+            if target_global_step != typemax(Int)
+                last_progress_step = session.learner.global_step
+                while next_progress_step <= session.learner.global_step &&
+                      next_progress_step < target_global_step
+                    next_progress_step += progress_frequency
+                end
+                next_progress_step = min(next_progress_step, target_global_step)
+            else
+                last_progress_episode = length(summaries)
+                while next_progress_episode <= length(summaries)
+                    next_progress_episode += progress_frequency
+                end
+            end
+        elseif progress_frequency > 0 && target_global_step != typemax(Int) &&
+               session.learner.global_step >= next_progress_step
             _print_a2c_progress(session, summaries, episode_budget, target_global_step,
                                 active_workers, start_time, start_global_step)
             last_progress_step = session.learner.global_step

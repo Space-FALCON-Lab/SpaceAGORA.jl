@@ -5,8 +5,9 @@ end
 
 function save_checkpoint(path::AbstractString, learner::DDQNLearner; manifest=nothing)
     mkpath(dirname(path))
+    algorithm = manifest isa RunManifest ? manifest.algorithm : :ddqn
     payload = Dict(
-        :algorithm => :ddqn,
+        :algorithm => algorithm,
         :online => cpu_network(learner.online),
         :target => cpu_network(learner.target),
         :optimizer => cpu_adam_state(learner.optimizer),

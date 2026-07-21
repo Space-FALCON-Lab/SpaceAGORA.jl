@@ -1,6 +1,6 @@
 Base.@kwdef struct TerminationConfig
     impact_periapsis_altitude_m::Float64 = 85e3
-    out_of_passage_periapsis_altitude_m::Float64 = 145e3
+    out_of_passage_periapsis_altitude_m::Float64 = 135e3
     max_passes::Int = 200
     terminal_on_thermal_violation::Bool = true
 end

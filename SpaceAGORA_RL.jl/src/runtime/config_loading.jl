@@ -1,6 +1,6 @@
 Base.@kwdef struct TrainingConfig
     seed::Int = 42
-    algorithm::Symbol = :ddqn
+    algorithm::Symbol = :pr_drl
     device::Symbol = :cpu
     global_steps::Int = 0
     episodes::Int = 4
@@ -10,6 +10,13 @@ Base.@kwdef struct TrainingConfig
     progress_frequency::Int = 50
     output_dir::String = joinpath(package_root(), "outputs", "runs")
 end
+
+const DDQN_FAMILY_ALGORITHMS = (:ddqn, :pr_drl)
+
+canonical_algorithm(value) = Symbol(replace(lowercase(String(value)), "-" => "_"))
+is_ddqn_family_algorithm(algorithm::Symbol) = algorithm in DDQN_FAMILY_ALGORITHMS
+algorithm_report_name(algorithm::Symbol) = algorithm == :pr_drl ? "pr_drl" : string(algorithm)
+algorithm_display_name(algorithm::Symbol) = algorithm == :pr_drl ? "PR-DRL" : uppercase(string(algorithm))
 
 Base.@kwdef struct ReportConfig
     output_dir::String = joinpath(package_root(), "outputs", "reports")
@@ -67,7 +74,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     reward = reward_config_from_table(reward_table)
     termination = TerminationConfig(
         impact_periapsis_altitude_m = Float64(_get(term_table, "impact_periapsis_altitude_m", 85e3)),
-        out_of_passage_periapsis_altitude_m = Float64(_get(term_table, "out_of_passage_periapsis_altitude_m", 145e3)),
+        out_of_passage_periapsis_altitude_m = Float64(_get(term_table, "out_of_passage_periapsis_altitude_m", 135e3)),
         max_passes = Int(_get(term_table, "max_passes", 80)),
         terminal_on_thermal_violation = Bool(_get(term_table, "terminal_on_thermal_violation", true)),
     )
@@ -76,8 +83,20 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         apoapsis_jitter_m = Float64(_get(random_table, "apoapsis_jitter_m", 2.5e3)),
         periapsis_jitter_m = Float64(_get(random_table, "periapsis_jitter_m", 1.0e3)),
         angle_jitter_deg = Float64(_get(random_table, "angle_jitter_deg", 0.25)),
+        nonnominal_inclination_low_deg = Float64(_get(random_table, "nonnominal_inclination_low_deg", 88.6)),
+        nonnominal_inclination_high_deg = Float64(_get(random_table, "nonnominal_inclination_high_deg", 98.6)),
+        nonnominal_aop_low_deg = Float64(_get(random_table, "nonnominal_aop_low_deg", 60.0)),
+        nonnominal_aop_high_deg = Float64(_get(random_table, "nonnominal_aop_high_deg", 90.0)),
+        nonnominal_raan_low_deg = Float64(_get(random_table, "nonnominal_raan_low_deg",
+                                                _get(random_table, "nonnominal_angle_low_deg", 110.0))),
+        nonnominal_raan_high_deg = Float64(_get(random_table, "nonnominal_raan_high_deg",
+                                                 _get(random_table, "nonnominal_angle_high_deg", 120.0))),
         process_noise = Bool(_get(random_table, "process_noise", false)),
         process_noise_scale = Float64(_get(random_table, "process_noise_scale", 0.0)),
+        aerodynamic_coefficient_dispersion = Bool(_get(random_table, "aerodynamic_coefficient_dispersion", false)),
+        aerodynamic_coefficient_span = Float64(_get(random_table, "aerodynamic_coefficient_span", 0.10)),
+        marsgram_perturbation_scale = Float64(_get(random_table, "marsgram_perturbation_scale", 1.0)),
+        marsgram_seed_base = Int(_get(random_table, "marsgram_seed_base", 1001)),
     )
     scenario = default_aerobraking_config(
         phase = phase,
@@ -121,7 +140,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     )
     training = TrainingConfig(
         seed = Int(_get(train_table, "seed", 42)),
-        algorithm = Symbol(lowercase(String(_get(train_table, "algorithm", "ddqn")))),
+        algorithm = canonical_algorithm(_get(train_table, "algorithm", "pr_drl")),
         device = Symbol(lowercase(String(_get(train_table, "device", "cpu")))),
         global_steps = Int(_get(train_table, "global_steps", 0)),
         episodes = Int(_get(train_table, "episodes", 4)),
@@ -137,8 +156,8 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         write_csv = Bool(_get(report_table, "write_csv", true)),
         write_plots = Bool(_get(report_table, "write_plots", true)),
     )
-    training.algorithm in (:ddqn, :a2c) ||
-        throw(ArgumentError("training.algorithm must be \"ddqn\" or \"a2c\""))
+    (is_ddqn_family_algorithm(training.algorithm) || training.algorithm == :a2c) ||
+        throw(ArgumentError("training.algorithm must be \"pr_drl\", \"ddqn\", or \"a2c\""))
     return ResolvedConfig(source_path, raw, scenario, ddqn, a2c, epsilon, training, reports)
 end
 

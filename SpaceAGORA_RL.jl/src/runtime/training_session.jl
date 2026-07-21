@@ -11,7 +11,17 @@ function build_training_session(config::ResolvedConfig=resolve_config(); run_id:
     rng = MersenneTwister(config.training.seed)
     backend = SpaceAGORAAerobrakingBackend(config.scenario)
     device = resolve_training_device(config.training.device)
-    learner = if config.training.algorithm == :ddqn
+    if device isa CUDATrainingDevice
+        return Base.invokelatest(_build_training_session, config, run_id, rng, backend, device)
+    end
+    return _build_training_session(config, run_id, rng, backend, device)
+end
+
+function _build_training_session(config::ResolvedConfig, run_id::Union{Nothing,String},
+                                 rng::MersenneTwister,
+                                 backend::SpaceAGORAAerobrakingBackend,
+                                 device::AbstractTrainingDevice)
+    learner = if is_ddqn_family_algorithm(config.training.algorithm)
         DDQNLearner(rng, config.ddqn; schedule=config.epsilon, device=device)
     elseif config.training.algorithm == :a2c
         A2CLearner(rng, config.a2c; device=device)

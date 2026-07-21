@@ -1,14 +1,43 @@
 Base.@kwdef struct AADSHeuristicPolicy <: AbstractPolicy
     target_heat_rate_w_cm2::Float64 = 0.15
+    bisection_iterations::Int = 40
 end
 
 function predicted_heat_rate(config, state, action_index::Integer)
-    action = action_from_index(action_index)
-    next_hp = clamp(apply_apoapsis_maneuver(config, state, action), 50e3, 180e3)
-    rp = config.mars_radius_m + next_hp
-    a = (state.apoapsis_radius_m + rp) / 2
-    v = sqrt(config.mu_m3_s2 * (2 / rp - 1 / a))
-    return paper_heat_rate_w_cm2(config, next_hp, v)
+    return deterministic_predicted_heat_rate(config, state, action_from_index(action_index))
+end
+
+function predicted_heat_rate(config, state, action::AerobrakingAction)
+    return deterministic_predicted_heat_rate(config, state, action)
+end
+
+function _aads_bisection_delta_v(policy::AADSHeuristicPolicy, config, state,
+                                 lo::Real, hi::Real)
+    lo_f = Float64(lo)
+    hi_f = Float64(hi)
+    target = policy.target_heat_rate_w_cm2
+    f_lo = predicted_heat_rate(config, state, action_from_delta_v(lo_f)) - target
+    f_hi = predicted_heat_rate(config, state, action_from_delta_v(hi_f)) - target
+
+    if sign(f_lo) == sign(f_hi)
+        return abs(f_lo) <= abs(f_hi) ? lo_f : hi_f
+    end
+
+    left = lo_f
+    right = hi_f
+    f_left = f_lo
+    for _ in 1:policy.bisection_iterations
+        mid = 0.5 * (left + right)
+        f_mid = predicted_heat_rate(config, state, action_from_delta_v(mid)) - target
+        abs(f_mid) <= 1e-8 && return mid
+        if sign(f_mid) == sign(f_left)
+            left = mid
+            f_left = f_mid
+        else
+            right = mid
+        end
+    end
+    return 0.5 * (left + right)
 end
 
 function policy_action_index(policy::AADSHeuristicPolicy, config, state, observation::PaperObservation, rng::AbstractRNG)
@@ -18,12 +47,8 @@ function policy_action_index(policy::AADSHeuristicPolicy, config, state, observa
         return zero_idx
     end
 
-    candidates = zero_heat < config.reward_config.heat_low_w_cm2 ?
-                 findall(<(0.0), PAPER_ACTIONS_MPS) :
-                 findall(>(0.0), PAPER_ACTIONS_MPS)
-    isempty(candidates) && return zero_idx
-
-    _, local_idx = findmin(abs.(predicted_heat_rate.(Ref(config), Ref(state), candidates) .-
-                                policy.target_heat_rate_w_cm2))
-    return candidates[local_idx]
+    delta_v = zero_heat < config.reward_config.heat_low_w_cm2 ?
+              _aads_bisection_delta_v(policy, config, state, minimum(PAPER_ACTIONS_MPS), 0.0) :
+              _aads_bisection_delta_v(policy, config, state, 0.0, maximum(PAPER_ACTIONS_MPS))
+    return action_from_delta_v(delta_v)
 end

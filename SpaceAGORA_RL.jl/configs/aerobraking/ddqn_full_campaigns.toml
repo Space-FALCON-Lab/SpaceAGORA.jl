@@ -16,18 +16,12 @@ max_passes = 80
 terminal_on_thermal_violation = true
 
 [randomization]
-nominal = false
+nominal = true
 apoapsis_jitter_m = 2500.0
 periapsis_jitter_m = 1000.0
 angle_jitter_deg = 0.25
-nonnominal_inclination_low_deg = 88.6
-nonnominal_inclination_high_deg = 98.6
-nonnominal_aop_low_deg = 60.0
-nonnominal_aop_high_deg = 90.0
-nonnominal_raan_low_deg = 110.0
-nonnominal_raan_high_deg = 120.0
-process_noise = true
-process_noise_scale = 0.4
+process_noise = false
+process_noise_scale = 0.0
 aerodynamic_coefficient_dispersion = true
 aerodynamic_coefficient_span = 0.10
 marsgram_perturbation_scale = 1.0
@@ -64,14 +58,15 @@ decay_start_step = 10000
 
 [training]
 seed = 42
-algorithm = "pr_drl"
-device = "cpu"
-global_steps = 20
-episodes = 4
+algorithm = "ddqn"
+device = "cuda"
+# Episode-capped mode: one episode is one complete aerobraking campaign.
+global_steps = 0
+episodes = 1100000
 max_passes_per_campaign = 1000
-n_workers = 1
-checkpoint_frequency = 500
-progress_frequency = 5
+n_workers = 16
+checkpoint_frequency = 50000
+progress_frequency = 1000
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 
 [reports]

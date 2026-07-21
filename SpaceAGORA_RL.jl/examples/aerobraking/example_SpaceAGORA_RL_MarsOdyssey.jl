@@ -4,6 +4,7 @@ using CSV
 using DataFrames
 using Printf
 using Plots
+using Statistics
 using SpaceAGORA_RL
 
 function _example_output_dir()
@@ -39,6 +40,185 @@ function _plot_episode_metrics(metrics::DataFrame, output_dir::AbstractString)
             legend=false,
             xrotation=20)
     savefig(p, joinpath(output_dir, "target_error_by_policy.png"))
+end
+
+_paper_policy_label(policy) =
+    String(policy) == "trained_pr_drl" ? "PR-DRL" :
+    String(policy) == "aads_heuristic" ? "AADS" :
+    replace(String(policy), "_" => " ")
+
+function _paper_policy_order(policies)
+    preferred = ["trained_pr_drl", "aads_heuristic"]
+    names = String.(collect(policies))
+    ordered = String[]
+    for policy in preferred
+        policy in names && push!(ordered, policy)
+    end
+    append!(ordered, sort(setdiff(names, ordered)))
+    return ordered
+end
+
+_mean_or_nan(values) = isempty(values) ? NaN : mean(values)
+_std_or_zero(values) = length(values) > 1 ? std(values) : 0.0
+
+function _thermal_class_counts(pass_group::AbstractDataFrame, config)
+    low = high = medium = hard = 0
+    for row in eachrow(pass_group)
+        target_error_m = Float64(row.apoapsis_radius_km) * 1000 - config.final_apoapsis_radius_m
+        status = thermal_status(row.heat_rate_w_cm2, target_error_m, config.reward_config)
+        status == thermal_low && (low += 1)
+        status == thermal_high && (high += 1)
+        status == thermal_medium && (medium += 1)
+        status == thermal_hard && (hard += 1)
+    end
+    return (low=low, high=high, medium=medium, hard=hard, total=low + high + medium + hard)
+end
+
+function _paper_table_v_rows(metrics::DataFrame, pass_logs::DataFrame, config)
+    thermal_counts = Dict{Tuple{String, Int}, NamedTuple}()
+    for group in groupby(pass_logs, [:policy, :episode])
+        key = (String(group.policy[1]), Int(group.episode[1]))
+        thermal_counts[key] = _thermal_class_counts(group, config)
+    end
+
+    rows = NamedTuple[]
+    for policy in _paper_policy_order(unique(metrics.policy))
+        policy_metrics = metrics[metrics.policy .== policy, :]
+        isempty(policy_metrics) && continue
+        rewards = Float64.(policy_metrics.episode_reward)
+        target_errors = abs.(Float64.(policy_metrics.target_error_km))
+        episodes = Int.(policy_metrics.episode)
+        counts = [get(thermal_counts, (policy, episode),
+                      (low=0, high=0, medium=0, hard=0, total=0)) for episode in episodes]
+        push!(rows, (
+            policy = _paper_policy_label(policy),
+            episodes = nrow(policy_metrics),
+            mean_reward = _mean_or_nan(rewards),
+            std_reward = _std_or_zero(rewards),
+            mean_low_thermal_violations = _mean_or_nan(Float64[getfield(c, :low) for c in counts]),
+            mean_high_thermal_violations = _mean_or_nan(Float64[getfield(c, :high) for c in counts]),
+            mean_medium_thermal_violations = _mean_or_nan(Float64[getfield(c, :medium) for c in counts]),
+            mean_hard_thermal_violations = _mean_or_nan(Float64[getfield(c, :hard) for c in counts]),
+            mean_total_thermal_violations = _mean_or_nan(Float64[getfield(c, :total) for c in counts]),
+            goal_within_10km_percent = 100 * count(<=(10.0), target_errors) / nrow(policy_metrics),
+            goal_within_5km_percent = 100 * count(<=(5.0), target_errors) / nrow(policy_metrics),
+            mean_abs_target_error_km = _mean_or_nan(target_errors),
+            std_abs_target_error_km = _std_or_zero(target_errors),
+        ))
+    end
+    return rows
+end
+
+function _write_paper_table_v(metrics::DataFrame, pass_logs::DataFrame, output_dir::AbstractString, config)
+    rows = _paper_table_v_rows(metrics, pass_logs, config)
+    path = joinpath(output_dir, "paper_table_v_pr_drl_vs_aads.csv")
+    CSV.write(path, DataFrame(rows))
+    return path
+end
+
+function _paper_trace_groups(pass_logs::DataFrame; max_episodes_per_policy::Int=10)
+    groups = Tuple{String, Int, DataFrame}[]
+    for policy in _paper_policy_order(unique(pass_logs.policy))
+        policy_rows = pass_logs[pass_logs.policy .== policy, :]
+        episodes = sort(unique(Int.(policy_rows.episode)))
+        for episode in first(episodes, min(length(episodes), max_episodes_per_policy))
+            rows = policy_rows[policy_rows.episode .== episode, :]
+            push!(groups, (policy, episode, rows))
+        end
+    end
+    return groups
+end
+
+function _write_paper_fig10(pass_logs::DataFrame, output_dir::AbstractString, config;
+                            max_episodes_per_policy::Int=10)
+    groups = _paper_trace_groups(pass_logs; max_episodes_per_policy=max_episodes_per_policy)
+    colors = Dict("trained_pr_drl" => :steelblue, "aads_heuristic" => :darkorange)
+    p_heat = plot(xlabel="Atmospheric passage", ylabel="Heat rate (W/cm^2)",
+                  title="(a) Heat rate", legend=:outerright)
+    p_action = plot(xlabel="Atmospheric passage", ylabel="ABM ΔV (m/s)",
+                    title="(b) Apoapsis maneuver", legend=:outerright)
+    hline!(p_heat,
+           [config.reward_config.heat_low_w_cm2, config.reward_config.heat_high_w_cm2],
+           label=["low corridor" "high corridor"], linestyle=:dash, color=[:gray :red])
+    hline!(p_action, [0.0], label=false, linestyle=:dot, color=:gray)
+
+    labeled = Set{String}()
+    for (policy, episode, rows) in groups
+        label = policy in labeled ? "" : _paper_policy_label(policy)
+        push!(labeled, policy)
+        color = get(colors, policy, :black)
+        plot!(p_heat, rows.pass, rows.heat_rate_w_cm2;
+              label=label, color=color, seriesalpha=0.45, linewidth=1.4)
+        plot!(p_action, rows.pass, rows.action_delta_v_mps;
+              label=label, color=color, seriesalpha=0.45, linewidth=1.4, seriestype=:steppre)
+    end
+
+    path = joinpath(output_dir, "paper_fig10_heat_rate_and_delta_v.png")
+    savefig(plot(p_heat, p_action; layout=(2, 1), size=(950, 760)), path)
+    return path
+end
+
+function _bar_stats(metrics::DataFrame, field::Symbol, policies)
+    means = Float64[]
+    stds = Float64[]
+    for policy in policies
+        rows = metrics[metrics.policy .== policy, :]
+        values = Float64.(rows[!, field])
+        push!(means, _mean_or_nan(values))
+        push!(stds, _std_or_zero(values))
+    end
+    return means, stds
+end
+
+function _write_paper_fig11(metrics::DataFrame, output_dir::AbstractString)
+    policies = _paper_policy_order(unique(metrics.policy))
+    labels = _paper_policy_label.(policies)
+    specs = [
+        (:maneuver_count, "Number of ABMs"),
+        (:mission_duration_days, "Duration (days)"),
+        (:total_mission_delta_v_mps, "Total ΔV (m/s)"),
+        (:thermal_violations, "Thermal violations"),
+    ]
+    panels = Plots.Plot[]
+    for (field, ylabel) in specs
+        means, stds = _bar_stats(metrics, field, policies)
+        push!(panels, bar(labels, means; yerror=stds, ylabel=ylabel,
+                          legend=false, xrotation=20, title=ylabel))
+    end
+    path = joinpath(output_dir, "paper_fig11_flight_performance_summary.png")
+    savefig(plot(panels...; layout=(2, 2), size=(980, 760)), path)
+    return path
+end
+
+function _write_paper_fig12(pass_logs::DataFrame, output_dir::AbstractString, config)
+    preferred = "trained_pr_drl" in String.(unique(pass_logs.policy)) ? "trained_pr_drl" :
+                String(first(unique(pass_logs.policy)))
+    rows = pass_logs[pass_logs.policy .== preferred, :]
+    episode = minimum(Int.(rows.episode))
+    rows = rows[rows.episode .== episode, :]
+    p = plot(rows.pass, rows.heat_rate_w_cm2;
+             xlabel="Orbit / atmospheric passage",
+             ylabel="Heat rate (W/cm^2)",
+             label=_paper_policy_label(preferred),
+             linewidth=2,
+             title="Heat rate comparison example")
+    hline!(p,
+           [config.reward_config.heat_low_w_cm2, config.reward_config.heat_high_w_cm2],
+           label=["low corridor" "high corridor"], linestyle=:dash, color=[:gray :red])
+    path = joinpath(output_dir, "paper_fig12_heat_rate_example.png")
+    savefig(p, path)
+    return path
+end
+
+function _write_paper_comparison_artifacts(metrics::DataFrame, pass_logs::DataFrame,
+                                           output_dir::AbstractString, config)
+    mkpath(output_dir)
+    return (
+        table_v = _write_paper_table_v(metrics, pass_logs, output_dir, config),
+        fig10 = _write_paper_fig10(pass_logs, output_dir, config),
+        fig11 = _write_paper_fig11(metrics, output_dir),
+        fig12 = _write_paper_fig12(pass_logs, output_dir, config),
+    )
 end
 
 function _js_number_array(values)
@@ -341,11 +521,11 @@ function _comparison_results(config, episodes::Int, seed::Int,
     end
 
     if checkpoint_path !== nothing
-        policy = load_trained_ddqn_policy(checkpoint_path)
-        results["trained_ddqn"] = evaluate_policy(policy, config;
-                                                  episodes=episodes,
-                                                  seed=seed,
-                                                  policy_name="trained_ddqn")
+        policy = load_trained_pr_drl_policy(checkpoint_path)
+        results["trained_pr_drl"] = evaluate_policy(policy, config;
+                                                    episodes=episodes,
+                                                    seed=seed,
+                                                    policy_name="trained_pr_drl")
     end
     return results
 end
@@ -354,8 +534,9 @@ function run_example(; episodes::Int=3,
                      seed::Int=7,
                      checkpoint_path::Union{Nothing,AbstractString}=nothing,
                      include_all_baselines::Bool=true,
+                     backend_mode::Symbol=:spaceagora_physics,
                      output_dir::AbstractString=_example_output_dir())
-    config = default_aerobraking_config(phase="Main", nominal=true, max_passes=80, training=false)
+    config = paper_pr_drl_evaluation_config(training=false, backend_mode=backend_mode)
     results = _comparison_results(config, episodes, seed, checkpoint_path;
                                   include_all_baselines=include_all_baselines)
     paths = write_evaluation_artifacts(output_dir, results)
@@ -364,22 +545,54 @@ function run_example(; episodes::Int=3,
     pass_logs = DataFrame(CSV.File(paths.pass_logs))
     _plot_pass_logs(pass_logs, output_dir)
     _plot_episode_metrics(metrics, output_dir)
+    paper_paths = _write_paper_comparison_artifacts(metrics, pass_logs, output_dir, config)
     orbit_html = _write_orbit_html(pass_logs, output_dir, config)
 
     println("wrote CSV and plot artifacts to ", output_dir)
     println("wrote interactive 3D orbit HTML to ", orbit_html)
-    return (results=results, paths=merge(paths, (; orbit_html=orbit_html)), output_dir=output_dir)
+    return (results=results, paths=merge(paths, (; orbit_html=orbit_html, paper=paper_paths)), output_dir=output_dir)
 end
 
 function run_trained_comparison(checkpoint_path::AbstractString;
                                 episodes::Int=40,
                                 seed::Int=42,
-                                output_dir::AbstractString=joinpath(_example_output_dir(), "trained_vs_heuristic"))
-    return run_example(episodes=episodes,
-                       seed=seed,
-                       checkpoint_path=checkpoint_path,
-                       include_all_baselines=false,
-                       output_dir=output_dir)
+                                backend_mode::Symbol=:spaceagora_physics,
+                                output_dir::AbstractString=joinpath(_example_output_dir(), "pr_drl_vs_aads_spaceagora_physics"))
+    config = paper_pr_drl_evaluation_config(training=false, backend_mode=backend_mode)
+    results = _comparison_results(config, episodes, seed, checkpoint_path;
+                                  include_all_baselines=false)
+    paths = write_evaluation_artifacts(output_dir, results)
+    metrics = DataFrame(CSV.File(paths.metrics))
+    pass_logs = DataFrame(CSV.File(paths.pass_logs))
+    _plot_pass_logs(pass_logs, output_dir)
+    _plot_episode_metrics(metrics, output_dir)
+    paper_paths = _write_paper_comparison_artifacts(metrics, pass_logs, output_dir, config)
+    orbit_html = _write_orbit_html(pass_logs, output_dir, config)
+    println("wrote PR-DRL/AADS comparison artifacts using backend ", backend_mode, " to ", output_dir)
+    println("wrote interactive 3D orbit HTML to ", orbit_html)
+    return (results=results, paths=merge(paths, (; orbit_html=orbit_html, paper=paper_paths)), output_dir=output_dir)
+end
+
+run_trained_pr_drl_comparison(args...; kwargs...) = run_trained_comparison(args...; kwargs...)
+
+function run_odyssey_flight_comparison(checkpoint_path::AbstractString;
+                                       episodes::Int=100,
+                                       seed::Int=42,
+                                       backend_mode::Symbol=:spaceagora_physics,
+                                       output_dir::AbstractString=joinpath(_example_output_dir(), "pr_drl_vs_aads_odyssey_flight_physics"))
+    config = paper_odyssey_flight_evaluation_config(training=false, backend_mode=backend_mode)
+    results = _comparison_results(config, episodes, seed, checkpoint_path;
+                                  include_all_baselines=false)
+    paths = write_evaluation_artifacts(output_dir, results)
+    metrics = DataFrame(CSV.File(paths.metrics))
+    pass_logs = DataFrame(CSV.File(paths.pass_logs))
+    _plot_pass_logs(pass_logs, output_dir)
+    _plot_episode_metrics(metrics, output_dir)
+    paper_paths = _write_paper_comparison_artifacts(metrics, pass_logs, output_dir, config)
+    orbit_html = _write_orbit_html(pass_logs, output_dir, config)
+    println("wrote Odyssey flight-geometry PR-DRL/AADS artifacts using backend ", backend_mode, " to ", output_dir)
+    println("wrote interactive 3D orbit HTML to ", orbit_html)
+    return (results=results, paths=merge(paths, (; orbit_html=orbit_html, paper=paper_paths)), output_dir=output_dir)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

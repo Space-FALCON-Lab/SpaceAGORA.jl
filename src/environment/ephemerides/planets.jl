@@ -6,6 +6,7 @@ module Planets
     using SPICE
     export Earth, Mars, Venus, Moon, Titan
     const SPICE_LOCK = parentmodule(parentmodule(@__MODULE__)).RuntimeServices.SPICE_LOCK
+    const _FURNSHED_KERNELS = Set{String}()
     const MARS_MU_M3S2 = 0.4282837285418775e5 * 1e9
     δ(i, j) = ==(i, j)
 
@@ -160,19 +161,28 @@ module Planets
         polyfit_coeffs::Vector{Float64} = [0.0]
     end # struct Moon
 
+    function _furnsh_kernel(kernel_path::String)
+        path = abspath(kernel_path)
+        return lock(SPICE_LOCK) do
+            if !(path in _FURNSHED_KERNELS)
+                furnsh(path)
+                push!(_FURNSHED_KERNELS, path)
+            end
+            path
+        end
+    end
+
     @inline function _furnsh_required(spice_path::String, relpath::String)
         kernel_path = joinpath(spice_path, relpath)
         isfile(kernel_path) || throw(ArgumentError("Required SPICE kernel not found: $kernel_path"))
-        furnsh(kernel_path)
-        return kernel_path
+        return _furnsh_kernel(kernel_path)
     end
 
     function _furnsh_first_existing(spice_path::String, relpaths::NTuple{N, String}) where {N}
         for relpath in relpaths
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
-                return kernel_path
+                return _furnsh_kernel(kernel_path)
             end
         end
         throw(ArgumentError("Unable to find required SPICE kernel in $(spice_path). Tried: $(join(relpaths, ", "))"))
@@ -182,8 +192,7 @@ module Planets
         for relpath in relpaths
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
-                return kernel_path
+                return _furnsh_kernel(kernel_path)
             end
         end
         return nothing
@@ -218,8 +227,7 @@ module Planets
         )
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
-                return kernel_path
+                return _furnsh_kernel(kernel_path)
             end
         end
         return nothing
@@ -282,8 +290,7 @@ module Planets
         for relpath in ("pck/pck00011.tpc", "pck/pck00010.tpc")
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
-                return kernel_path
+                return _furnsh_kernel(kernel_path)
             end
         end
 

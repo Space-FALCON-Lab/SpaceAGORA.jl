@@ -66,12 +66,12 @@ decay_start_step = 10000
 seed = 42
 algorithm = "pr_drl"
 device = "cpu"
-global_steps = 20
-episodes = 4
+global_steps = 1100000
+episodes = 25000
 max_passes_per_campaign = 1000
-n_workers = 1
-checkpoint_frequency = 500
-progress_frequency = 5
+n_workers = 16
+checkpoint_frequency = 5000
+progress_frequency = 10000
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 
 [reports]

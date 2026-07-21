@@ -21,6 +21,10 @@ Base.@kwdef struct EpisodeSummary
     target_error_m::Float64 = NaN
     mission_duration_days::Float64 = 0.0
     total_delta_v_mps::Float64 = 0.0
+    abm_delta_v_mps::Float64 = 0.0
+    apoapsis_correction_delta_v_mps::Float64 = 0.0
+    periapsis_raise_delta_v_mps::Float64 = 0.0
+    total_mission_delta_v_mps::Float64 = 0.0
     maneuver_count::Int = 0
     solver_failures::Int = 0
     heat_rate_trace::Vector{Float64} = Float64[]

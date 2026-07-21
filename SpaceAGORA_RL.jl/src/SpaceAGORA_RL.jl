@@ -66,7 +66,7 @@ export AbstractMDP, AbstractRLBackend, AbstractPolicy
 export reset_scenario, step_scenario, observe_state, normalize_observation
 export policy_action_index, Transition, EpisodeSummary, empty_episode_summary
 
-export PAPER_ACTIONS_MPS, AerobrakingAction, action_from_index, nearest_action_index
+export PAPER_ACTIONS_MPS, AerobrakingAction, action_from_index, action_from_delta_v, nearest_action_index
 export zero_action_index, action_count
 export PaperObservation, paper_observation_names, raw_observation_vector
 export NormalizationBounds, paper_normalization_bounds, normalize_value
@@ -81,6 +81,8 @@ export reset_scenario, step_scenario
 export NoManeuverPolicy, RandomActionPolicy, FixedCorridorPolicy, AADSHeuristicPolicy
 
 export evaluate_policy, evaluate_baselines, episode_metrics, aggregate_metrics
+export paper_pr_drl_evaluation_config, paper_pr_drl_marsgram_evaluation_config
+export paper_pr_drl_physics_evaluation_config, paper_odyssey_flight_evaluation_config
 export generalization_suite_configs, write_evaluation_artifacts
 export default_aerobraking_config, mars_odyssey_phase_constants
 
@@ -89,7 +91,8 @@ export QNetwork, init_q_network, predict_q, copy_network!
 export EpsilonSchedule, epsilon_value
 export DDQNConfig, DDQNLearner, select_action, observe!, maybe_train!, compute_ddqn_targets
 export A2CConfig, A2CLearner, A2CRolloutBatch, compute_discounted_returns
-export save_checkpoint, load_checkpoint, GreedyDDQNPolicy, load_trained_ddqn_policy
+export save_checkpoint, load_checkpoint, GreedyDDQNPolicy, GreedyPRDRLPolicy
+export load_trained_ddqn_policy, load_trained_pr_drl_policy
 export GreedyA2CPolicy, load_trained_a2c_policy
 export CPUTrainingDevice, CUDATrainingDevice, resolve_training_device, training_device_name
 

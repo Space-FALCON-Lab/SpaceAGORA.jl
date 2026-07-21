@@ -21,8 +21,31 @@ function config_sha256(path::Union{Nothing,String})
     return bytes2hex(sha256(read(path)))
 end
 
+function _run_config_name(config_path::Union{Nothing,String})
+    config_path === nothing && return "inline_config"
+    stem = splitext(basename(config_path))[1]
+    return isempty(stem) ? "inline_config" : stem
+end
+
+function run_title(config::ResolvedConfig)
+    return string(_run_config_name(config.source_path), "-", config.training.algorithm)
+end
+
+function run_title(manifest::RunManifest)
+    return string(_run_config_name(manifest.config_path), "-", manifest.algorithm)
+end
+
+function _run_title_slug(title::AbstractString)
+    slug = replace(lowercase(String(title)), r"[^a-z0-9_-]+" => "-")
+    slug = replace(slug, r"^-+|-+$" => "")
+    return isempty(slug) ? "run" : slug
+end
+
 function RunManifest(config::ResolvedConfig; run_id::Union{Nothing,String}=nothing)
-    rid = run_id === nothing ? Dates.format(now(UTC), dateformat"yyyymmddTHHMMSS") : run_id
+    title = run_title(config)
+    rid = run_id === nothing ?
+          string(Dates.format(now(UTC), dateformat"yyyymmddTHHMMSS"), "_", _run_title_slug(title)) :
+          run_id
     return RunManifest(
         rid,
         now(UTC),
@@ -44,6 +67,7 @@ end
 function manifest_dict(manifest::RunManifest)
     return Dict{String,Any}(
         "run_id" => manifest.run_id,
+        "title" => run_title(manifest),
         "created_utc" => string(manifest.created_utc),
         "phase" => manifest.phase,
         "seed" => manifest.seed,

@@ -2,6 +2,8 @@ const _SPACEAGORA_RL_LIVE_BACKEND_MODES = (:spaceagora_physics, :spaceagora_full
 const _SPACEAGORA_RL_LOAD_LOCK = ReentrantLock()
 const _SPACEAGORA_RL_SPICE_SETUP_LOCK = ReentrantLock()
 const _SPACEAGORA_RL_MARS_CACHE = Dict{String,Any}()
+const _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_FLOOR = 5_000_000
+const _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_PER_PASS = 250_000
 
 _spaceagora_base_root() = dirname(package_root())
 _spaceagora_spice_path() = joinpath(_spaceagora_base_root(), "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
@@ -110,6 +112,24 @@ end
 
 _spaceagora_live_needs_gramsuite(config) = config.spaceagora_atmosphere_model in (:gram, :marsgram)
 
+function _spaceagora_physics_solver_maxiters(campaign_max_passes::Integer)
+    pass_cap = max(1, Int(campaign_max_passes))
+    default_maxiters = max(
+        _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_FLOOR,
+        _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_PER_PASS * pass_cap,
+    )
+    raw = strip(get(ENV, "SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS",
+                    get(ENV, "SPACEAGORA_SOLVER_MAXITERS", "")))
+    isempty(raw) && return default_maxiters
+    parsed = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS must be a positive integer, got '$raw'."))
+    end
+    parsed > 0 || throw(ArgumentError("SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS must be a positive integer, got $parsed."))
+    return parsed
+end
+
 function _spaceagora_mars(spaceagora, spice_path::AbstractString)
     key = normpath(String(spice_path))
     return lock(_SPACEAGORA_RL_SPICE_SETUP_LOCK) do
@@ -189,6 +209,7 @@ function _spaceagora_physics_simulation_configuration(config,
     solver_cfg = Base.invokelatest(
         getproperty(SM, :SolverConfig);
         solver_mode=:split_imex,
+        maxiters=_spaceagora_physics_solver_maxiters(campaign_max_passes),
         split_imex_solver=:kencarp4,
     )
     base_args = Base.invokelatest(

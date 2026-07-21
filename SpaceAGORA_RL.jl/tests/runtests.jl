@@ -160,6 +160,22 @@ end
     )
 end
 
+@testset "spaceagora physics solver maxiters budget" begin
+    @test SpaceAGORA_RL._spaceagora_physics_solver_maxiters(1) == 5_000_000
+    @test SpaceAGORA_RL._spaceagora_physics_solver_maxiters(80) == 20_000_000
+    withenv("SPACEAGORA_SOLVER_MAXITERS" => "1234",
+            "SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS" => nothing) do
+        @test SpaceAGORA_RL._spaceagora_physics_solver_maxiters(80) == 1234
+    end
+    withenv("SPACEAGORA_SOLVER_MAXITERS" => "1234",
+            "SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS" => "5678") do
+        @test SpaceAGORA_RL._spaceagora_physics_solver_maxiters(80) == 5678
+    end
+    withenv("SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS" => "0") do
+        @test_throws ArgumentError SpaceAGORA_RL._spaceagora_physics_solver_maxiters(80)
+    end
+end
+
 @testset "replay buffer wraparound" begin
     buffer = ReplayBuffer(9, 3)
     for i in 1:5

@@ -116,7 +116,7 @@ Run [GRAMSuite Setup](gramsuite_setup.md) before using GRAM-backed studies.
 |---|---|
 | GRAM fidelity | `gram_full_vs_trajectory_density_compare.jl`, `gram_interpolation_vs_point_to_point_analysis.jl`, `gram_single_call_vs_point_to_point_analysis.jl`, `gram_offline_db_accuracy_study.jl`, `gram_planet_rho_altitude_sweep.jl`, `gram_real_sim_runtime_compare.jl`, `gram_real_sim_surrogate_matrix.jl`, `gram_real_sim_surrogate_decision_table.jl`, `gram_trajectory_lookahead_fidelity/main.jl` |
 | Performance support | `performance_effector_reduction_microbench.jl`, `performance_split_imex_compare.jl`, `performance_static_vs_parallel.jl`, `performance_thread_scaling_1024.jl`, `performance_thread_scaling_64_aero_gram.jl`, `performance_hybrid_scaling_64_aero_gram.jl`, `performance_mc_thread_scaling.jl`, `performance_smart_parallel_ladder_cross_machine.jl` |
-| Tuning and validation | `telemetry_hybrid_tuner.jl`, `telemetry_odyssey_tuner.jl`, `cygnss_estimator_validation.jl` |
+| Tuning and validation | `telemetry_hybrid_tuner.jl`, `telemetry_odyssey_tuner.jl` |
 
 For long studies, set an explicit output directory and keep the terminal log with
 the artifacts.

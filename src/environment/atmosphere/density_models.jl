@@ -683,6 +683,23 @@ struct TabulatedFlightAtmosphereModel <: AbstractDensityModel
     gas_constant::Float64
 end
 
+function Base.deepcopy_internal(model::TabulatedFlightAtmosphereModel, stackdict::IdDict)
+    if haskey(stackdict, model)
+        return stackdict[model]
+    end
+    copied = TabulatedFlightAtmosphereModel(
+        copy(model.pass_peri_el_s),
+        model.prof_alt_m,
+        model.prof_logrho,
+        model.prof_siglog,
+        model.sigma_scale,
+        model.g_ref_mps2,
+        model.gas_constant,
+    )
+    stackdict[model] = copied
+    return copied
+end
+
 # Tail scale heights are clamped to the physical Mars thermosphere range:
 # noisy edge bins can invert (top of a profile is noise-dominated), and an
 # unclamped slope would extend a near-constant density blanket along the whole

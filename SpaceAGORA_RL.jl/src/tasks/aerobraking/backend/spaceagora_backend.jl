@@ -348,35 +348,66 @@ function _spaceagora_solution_satellite_state(u)
     return u
 end
 
+@inline function _max_heat_rate_w_cm2(rates)::Float64
+    max_rate = 0.0
+    @inbounds for rate in rates
+        value = Float64(rate)
+        if isfinite(value) && value > max_rate
+            max_rate = value
+        end
+    end
+    return max_rate / 1.0e4
+end
+
+function _buffered_heat_rate_w_cm2(integrator, sat_idx::Int)
+    try
+        p = integrator.p
+        sample_times = p.shared_buffers.density_sample_t
+        sat_idx <= length(sample_times) || return nothing
+        sample_times[sat_idx] == Float64(integrator.t) || return nothing
+        heat_rates = p.shared_buffers.heat_rates
+        sat_idx <= length(heat_rates) || return nothing
+        rates = heat_rates[sat_idx]
+        isempty(rates) && return 0.0
+        return _max_heat_rate_w_cm2(rates)
+    catch
+        return nothing
+    end
+end
+
 function _state_heat_rate_w_cm2(spaceagora, integrator, sat_idx::Int)
+    buffered = _buffered_heat_rate_w_cm2(integrator, sat_idx)
+    buffered === nothing || return buffered
     callbacks = getproperty(getproperty(spaceagora, :SimulationModel), :SimulationCallbacks)
     try
-        rates = Base.invokelatest(
-            getproperty(callbacks, :_compute_stage_heat_rates!),
+        compute_stage_heat_rates! = getproperty(callbacks, :_compute_stage_heat_rates!)
+        rates = compute_stage_heat_rates!(
             integrator.p,
             getproperty(integrator.u, :sc)[sat_idx],
             sat_idx,
             Float64(integrator.t);
-            use_buffered_density=false,
+            use_buffered_density=true,
         )
         isempty(rates) && return 0.0
-        return maximum(Float64.(rates)) / 1.0e4
+        return _max_heat_rate_w_cm2(rates)
     catch
         try
             heat_rates = integrator.p.shared_buffers.heat_rates
             sat_idx <= length(heat_rates) || return 0.0
             rates = heat_rates[sat_idx]
             isempty(rates) && return 0.0
-            return maximum(Float64.(rates)) / 1.0e4
+            return _max_heat_rate_w_cm2(rates)
         catch
             return 0.0
         end
     end
 end
 
-function _record_spaceagora_physics_sample!(spaceagora, stats::SpaceAGORAPhysicsPassStats, integrator)
-    engine = getproperty(spaceagora, :SimulationEngine)
-    pos = Base.invokelatest(Base.invokelatest(getproperty, engine, :_state_position_ii), integrator.u, 1)
+function _record_spaceagora_physics_sample!(spaceagora_state_position_ii,
+                                            spaceagora,
+                                            stats::SpaceAGORAPhysicsPassStats,
+                                            integrator)
+    pos = spaceagora_state_position_ii(integrator.u, 1)
     planet = integrator.p.args.environment_model.planet
     altitude = norm(pos) - planet.Rp_e
     t = Float64(integrator.t)
@@ -405,6 +436,12 @@ function _record_spaceagora_physics_sample!(spaceagora, stats::SpaceAGORAPhysics
         stats.in_drag_passage = false
     end
     return nothing
+end
+
+function _record_spaceagora_physics_sample!(spaceagora, stats::SpaceAGORAPhysicsPassStats, integrator)
+    engine = getproperty(spaceagora, :SimulationEngine)
+    state_position_ii = getproperty(engine, :_state_position_ii)
+    return _record_spaceagora_physics_sample!(state_position_ii, spaceagora, stats, integrator)
 end
 
 function _spaceagora_orbital_elements(spaceagora, pos, vel, planet)
@@ -502,11 +539,12 @@ end
 
 function _spaceagora_single_pass_stats_callback(spaceagora, stats::SpaceAGORAPhysicsPassStats)
     callbacks = getproperty(getproperty(spaceagora, :SimulationModel), :SimulationCallbacks)
-    discrete_callback = Base.invokelatest(getproperty, callbacks, :DiscreteCallback)
+    discrete_callback = getproperty(callbacks, :DiscreteCallback)
+    state_position_ii = getproperty(getproperty(spaceagora, :SimulationEngine), :_state_position_ii)
     condition(u, t, integrator) = true
-    affect!(integrator) = _record_spaceagora_physics_sample!(spaceagora, stats, integrator)
+    affect!(integrator) = _record_spaceagora_physics_sample!(state_position_ii, spaceagora, stats, integrator)
     initialize = (cb, u, t, integrator) -> affect!(integrator)
-    return Base.invokelatest(discrete_callback, condition, affect!; initialize=initialize)
+    return discrete_callback(condition, affect!; initialize=initialize)
 end
 
 function step_scenario(config::AerobrakingScenarioConfig, state::AerobrakingDecisionState,

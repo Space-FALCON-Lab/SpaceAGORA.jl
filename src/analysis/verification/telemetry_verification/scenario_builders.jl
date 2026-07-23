@@ -201,34 +201,38 @@ end
     return _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth)
 end
 
-# Flight-measured density table (see build script in the lab notes): one row
-# per (pass, leg, 1 km altitude bin) with mean density, its standard error,
-# and the pass periapsis UTC. Loaded into per-pass in/out profiles keyed by
-# elapsed time from the scenario epoch; nearest pass answers each query, so
-# archive gaps fall back to the neighboring pass.
-function _make_tabulated_flight_density_model(
-    initial_time::InitialTime,
-    truth::AtmosphereTruthConfig
-)
-    path = truth.tabulated_flight_file
+const _TABULATED_FLIGHT_PROFILE_CACHE_LOCK = ReentrantLock()
+const _TABULATED_FLIGHT_PROFILE_CACHE = Dict{Tuple{String,Int64,Float64},NamedTuple}()
+
+function _tabulated_flight_profile_cache_key(path::AbstractString)
+    resolved = normpath(String(path))
+    return (resolved, Int64(filesize(resolved)), mtime(resolved))
+end
+
+function _load_tabulated_flight_profiles(path::AbstractString)
     isfile(path) || throw(ArgumentError("tabulated_flight_file not found: $path"))
+    key = _tabulated_flight_profile_cache_key(path)
+    return lock(_TABULATED_FLIGHT_PROFILE_CACHE_LOCK) do
+        get!(_TABULATED_FLIGHT_PROFILE_CACHE, key) do
+            _parse_tabulated_flight_profiles(path)
+        end
+    end
+end
+
+function _parse_tabulated_flight_profiles(path::AbstractString)
     tbl = DataFrame(Arrow.Table(path))
     for col in ("P", "leg", "alt_km", "rho_kgm3", "sigma_kgm3", "t_peri_utc")
         hasproperty(tbl, Symbol(col)) || throw(ArgumentError("tabulated_flight_file missing column '$col'"))
     end
-    epoch = DateTime(
-        Int(initial_time.year), Int(initial_time.month), Int(initial_time.day),
-        Int(initial_time.hour), Int(initial_time.minute)
-    ) + Millisecond(round(Int, 1000 * Float64(initial_time.second)))
     pass_ids = sort(unique(Int.(tbl.P)))
-    peri_el = Float64[]
+    peri_utc = DateTime[]
     alt_pairs = NTuple{2, Vector{Float64}}[]
     log_pairs = NTuple{2, Vector{Float64}}[]
     sig_pairs = NTuple{2, Vector{Float64}}[]
     for pid in pass_ids
         sub = tbl[Int.(tbl.P) .== pid, :]
         t_peri = DateTime(first(sub.t_peri_utc)[1:19])
-        push!(peri_el, Float64(Dates.value(t_peri - epoch)) / 1000.0)
+        push!(peri_utc, t_peri)
         alts = (Float64[], Float64[]); logs = (Float64[], Float64[]); sigs = (Float64[], Float64[])
         for r in eachrow(sub)
             li = r.leg == "in" ? 1 : 2
@@ -244,9 +248,33 @@ function _make_tabulated_flight_density_model(
         end
         push!(alt_pairs, alts); push!(log_pairs, logs); push!(sig_pairs, sigs)
     end
-    ord = sortperm(peri_el)
+    ord = sortperm(peri_utc)
+    return (
+        peri_utc=peri_utc[ord],
+        alt_pairs=alt_pairs[ord],
+        log_pairs=log_pairs[ord],
+        sig_pairs=sig_pairs[ord],
+    )
+end
+
+# Flight-measured density table (see build script in the lab notes): one row
+# per (pass, leg, 1 km altitude bin) with mean density, its standard error,
+# and the pass periapsis UTC. Loaded into per-pass in/out profiles keyed by
+# elapsed time from the scenario epoch; nearest pass answers each query, so
+# archive gaps fall back to the neighboring pass.
+function _make_tabulated_flight_density_model(
+    initial_time::InitialTime,
+    truth::AtmosphereTruthConfig
+)
+    path = truth.tabulated_flight_file
+    profiles = _load_tabulated_flight_profiles(path)
+    epoch = DateTime(
+        Int(initial_time.year), Int(initial_time.month), Int(initial_time.day),
+        Int(initial_time.hour), Int(initial_time.minute)
+    ) + Millisecond(round(Int, 1000 * Float64(initial_time.second)))
+    peri_el = [Float64(Dates.value(t_peri - epoch)) / 1000.0 for t_peri in profiles.peri_utc]
     return SimulationModel.TabulatedFlightAtmosphereModel(
-        peri_el[ord], alt_pairs[ord], log_pairs[ord], sig_pairs[ord],
+        peri_el, profiles.alt_pairs, profiles.log_pairs, profiles.sig_pairs,
         truth.tabulated_flight_sigma, 3.4, 188.92
     )
 end

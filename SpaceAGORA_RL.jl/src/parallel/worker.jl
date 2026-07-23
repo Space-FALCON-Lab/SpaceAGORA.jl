@@ -270,7 +270,8 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
     elapsed_since_pass_start = t_now - rollout.pass_start_time_s
     elapsed_since_pass_start > 1.0 || return nothing
     engine = getproperty(spaceagora, :SimulationEngine)
-    pos = Base.invokelatest(Base.invokelatest(getproperty, engine, :_state_position_ii), getproperty(integrator, :u), 1)
+    state_position_ii = getproperty(engine, :_state_position_ii)
+    pos = state_position_ii(getproperty(integrator, :u), 1)
     planet = getproperty(getproperty(getproperty(integrator, :p), :args), :environment_model).planet
     # The radial-velocity root fires at periapsis and apoapsis; the RL decision
     # point is the high-altitude apoapsis root only.
@@ -328,26 +329,29 @@ function _spaceagora_physics_campaign_apoapsis_callback(spaceagora,
                                                         rollout::SpaceAGORAPhysicsCampaignRollout)
     engine = getproperty(spaceagora, :SimulationEngine)
     callbacks = getproperty(getproperty(spaceagora, :SimulationModel), :SimulationCallbacks)
-    vector_callback = Base.invokelatest(getproperty, callbacks, :VectorContinuousCallback)
+    vector_callback = getproperty(callbacks, :VectorContinuousCallback)
+    state_position_ii = getproperty(engine, :_state_position_ii)
+    state_velocity_ii = getproperty(engine, :_state_velocity_ii)
     function condition!(out, u, t, integrator)
-        pos = Base.invokelatest(Base.invokelatest(getproperty, engine, :_state_position_ii), u, 1)
-        vel = Base.invokelatest(Base.invokelatest(getproperty, engine, :_state_velocity_ii), u, 1)
+        pos = state_position_ii(u, 1)
+        vel = state_velocity_ii(u, 1)
         out[1] = -dot(pos, vel)
         return nothing
     end
     affect!(integrator, idx::Int64) =
         _spaceagora_physics_campaign_record_apoapsis!(spaceagora, rollout, integrator, idx)
-    return Base.invokelatest(vector_callback, condition!, affect!, nothing, 1)
+    return vector_callback(condition!, affect!, nothing, 1)
 end
 
 function _spaceagora_physics_campaign_stats_callback(spaceagora,
                                                      rollout::SpaceAGORAPhysicsCampaignRollout)
     callbacks = getproperty(getproperty(spaceagora, :SimulationModel), :SimulationCallbacks)
-    discrete_callback = Base.invokelatest(getproperty, callbacks, :DiscreteCallback)
+    discrete_callback = getproperty(callbacks, :DiscreteCallback)
+    state_position_ii = getproperty(getproperty(spaceagora, :SimulationEngine), :_state_position_ii)
     condition(u, t, integrator) = true
-    affect!(integrator) = _record_spaceagora_physics_sample!(spaceagora, rollout.stats, integrator)
+    affect!(integrator) = _record_spaceagora_physics_sample!(state_position_ii, spaceagora, rollout.stats, integrator)
     initialize = (cb, u, t, integrator) -> affect!(integrator)
-    return Base.invokelatest(discrete_callback, condition, affect!; initialize=initialize)
+    return discrete_callback(condition, affect!; initialize=initialize)
 end
 
 function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScenarioConfig,

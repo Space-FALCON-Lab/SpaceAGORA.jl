@@ -21,6 +21,7 @@ Base.@kwdef struct SpaceAGORAPhysicsPassEvent
     summary::EpisodeSummary = EpisodeSummary()
     result::Union{AerobrakingStepResult,Nothing} = nothing
     done::Bool = false
+    protected::Bool = false
     error::Union{Nothing,String} = nothing
 end
 
@@ -53,6 +54,8 @@ Base.@kwdef mutable struct SpaceAGORAPhysicsCampaignRollout
     streaming::Bool = false
     event_channel::Union{Nothing,Channel{Any}} = nothing
     action_channel::Union{Nothing,Channel{Any}} = nothing
+    protected_next_transition::Bool = false
+    protected_suppress_thermal_terminal::Bool = true
 end
 
 function _spaceagora_physics_campaign_mission_pass_cap(config::AerobrakingScenarioConfig,
@@ -73,6 +76,16 @@ function _spaceagora_physics_campaign_set_action!(rollout::SpaceAGORAPhysicsCamp
     return rollout.action
 end
 
+function _spaceagora_physics_campaign_decode_action_command(command)
+    if command isa NamedTuple
+        hasproperty(command, :action_index) ||
+            throw(ArgumentError("SpaceAGORA physics action command is missing action_index."))
+        protected = hasproperty(command, :protected) ? Bool(getproperty(command, :protected)) : false
+        return Int(getproperty(command, :action_index)), protected
+    end
+    return Int(command), false
+end
+
 function _spaceagora_physics_campaign_select_action!(rollout::SpaceAGORAPhysicsCampaignRollout)
     step = _spaceagora_physics_campaign_step_index(rollout)
     action_index = snapshot_policy_action(
@@ -91,6 +104,7 @@ function _spaceagora_physics_campaign_emit!(rollout::SpaceAGORAPhysicsCampaignRo
                                             transition::Union{Transition,Nothing},
                                             result::Union{AerobrakingStepResult,Nothing},
                                             done::Bool;
+                                            protected::Bool=false,
                                             error::Union{Nothing,String}=nothing)
     rollout.streaming || return nothing
     channel = rollout.event_channel
@@ -103,9 +117,29 @@ function _spaceagora_physics_campaign_emit!(rollout::SpaceAGORAPhysicsCampaignRo
         summary = rollout.summary,
         result = result,
         done = done,
+        protected = protected,
         error = error,
     ))
     return nothing
+end
+
+function _spaceagora_protected_first_pass_flags(flags::TerminationFlags)
+    thermal_only_terminal = flags.thermal_violation &&
+                            flags.terminated &&
+                            !(flags.success ||
+                              flags.target_undershoot ||
+                              flags.impact ||
+                              flags.out_of_drag_passage)
+    thermal_only_terminal || return flags
+    return TerminationFlags(
+        flags.success,
+        flags.target_undershoot,
+        flags.impact,
+        flags.out_of_drag_passage,
+        flags.thermal_violation,
+        false,
+        flags.truncated,
+    )
 end
 
 function _spaceagora_physics_campaign_mark_modified!(spaceagora, integrator)
@@ -186,6 +220,9 @@ function _spaceagora_physics_campaign_push_transition!(spaceagora,
     flags = classify_termination(obs, rollout.config;
                                   training=rollout.config.training,
                                   pass_count=next_state.pass_index)
+    if rollout.protected_next_transition && rollout.protected_suppress_thermal_terminal
+        flags = _spaceagora_protected_first_pass_flags(flags)
+    end
     if force_truncated && !(flags.terminated || flags.truncated)
         flags = TerminationFlags(
             flags.success,
@@ -239,6 +276,7 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
     # point is the high-altitude apoapsis root only.
     norm(pos) > planet.Rp_e + 250e3 || return nothing
     args = getproperty(getproperty(integrator, :p), :args)
+    protected_transition = rollout.protected_next_transition
     result = _spaceagora_physics_campaign_push_transition!(
         spaceagora,
         rollout,
@@ -251,12 +289,13 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
         _spaceagora_physics_campaign_emit!(rollout, nothing, nothing, true)
         return _spaceagora_physics_campaign_terminate!(spaceagora, integrator)
     end
+    rollout.protected_next_transition = false
 
     done = result.flags.terminated ||
            result.flags.truncated ||
            length(rollout.transitions) >= rollout.max_passes_per_campaign
     transition = last(rollout.transitions)
-    _spaceagora_physics_campaign_emit!(rollout, transition, result, done)
+    _spaceagora_physics_campaign_emit!(rollout, transition, result, done; protected=protected_transition)
 
     if done
         rollout.terminated = true
@@ -275,7 +314,9 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
             rollout.terminated = true
             return _spaceagora_physics_campaign_terminate!(spaceagora, integrator)
         end
-        _spaceagora_physics_campaign_set_action!(rollout, command)
+        action_index, protected_next = _spaceagora_physics_campaign_decode_action_command(command)
+        rollout.protected_next_transition = protected_next
+        _spaceagora_physics_campaign_set_action!(rollout, action_index)
     else
         _spaceagora_physics_campaign_select_action!(rollout)
     end
@@ -409,7 +450,9 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
                                                                   worker_id::Int,
                                                                   seed::Int,
                                                                   max_passes_per_campaign::Int,
-                                                                  global_step_start::Int)
+                                                                  global_step_start::Int;
+                                                                  protected_first_pass::Bool=false,
+                                                                  protected_suppress_thermal_terminal::Bool=true)
     rollout = nothing
     try
         pass_cap = _spaceagora_physics_campaign_mission_pass_cap(config, max_passes_per_campaign)
@@ -434,6 +477,8 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
             streaming = true,
             event_channel = event_channel,
             action_channel = action_channel,
+            protected_next_transition = protected_first_pass,
+            protected_suppress_thermal_terminal = protected_suppress_thermal_terminal,
         )
 
         spaceagora = _load_spaceagora!(; load_gramsuite=_spaceagora_live_needs_gramsuite(config))
@@ -465,7 +510,15 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
                 force_truncated = true,
             )
             if result !== nothing
-                _spaceagora_physics_campaign_emit!(rollout, last(rollout.transitions), result, true)
+                protected_transition = rollout.protected_next_transition
+                rollout.protected_next_transition = false
+                _spaceagora_physics_campaign_emit!(
+                    rollout,
+                    last(rollout.transitions),
+                    result,
+                    true;
+                    protected=protected_transition,
+                )
             end
         end
         return finalize_episode_summary(rollout.summary, config), rollout.transitions
@@ -502,7 +555,9 @@ function start_spaceagora_physics_campaign_worker!(event_channel::Channel{Any},
                                                    worker_id::Int,
                                                    seed::Int,
                                                    max_passes_per_campaign::Int,
-                                                   global_step_start::Int)
+                                                   global_step_start::Int;
+                                                   protected_first_pass::Bool=false,
+                                                   protected_suppress_thermal_terminal::Bool=true)
     action_channel = Channel{Any}(1)
     task = Threads.@spawn run_spaceagora_physics_campaign_streaming_worker_episode(
         $event_channel,
@@ -519,7 +574,9 @@ function start_spaceagora_physics_campaign_worker!(event_channel::Channel{Any},
         $worker_id,
         $seed,
         $max_passes_per_campaign,
-        $global_step_start,
+        $global_step_start;
+        protected_first_pass = $protected_first_pass,
+        protected_suppress_thermal_terminal = $protected_suppress_thermal_terminal,
     )
     return SpaceAGORAPhysicsWorkerHandle(task, action_channel)
 end

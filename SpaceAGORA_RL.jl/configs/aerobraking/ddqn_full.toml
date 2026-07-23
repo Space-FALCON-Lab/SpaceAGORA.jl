@@ -18,12 +18,14 @@ terminal_on_thermal_violation = true
 [randomization]
 nominal = true
 apoapsis_jitter_m = 2500.0
-periapsis_jitter_m = 1000.0
+periapsis_jitter_m = 2500.0
 angle_jitter_deg = 0.25
 process_noise = false
 process_noise_scale = 0.0
 aerodynamic_coefficient_dispersion = true
 aerodynamic_coefficient_span = 0.10
+aerodynamic_cd_span = 0.10
+aerodynamic_cl_span = 0.10
 marsgram_perturbation_scale = 1.0
 marsgram_seed_base = 1001
 

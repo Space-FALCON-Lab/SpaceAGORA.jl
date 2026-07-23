@@ -18,7 +18,7 @@ terminal_on_thermal_violation = true
 [randomization]
 nominal = false
 apoapsis_jitter_m = 2500.0
-periapsis_jitter_m = 1000.0
+periapsis_jitter_m = 2500.0
 angle_jitter_deg = 0.25
 nonnominal_inclination_low_deg = 88.6
 nonnominal_inclination_high_deg = 98.6
@@ -26,10 +26,16 @@ nonnominal_aop_low_deg = 60.0
 nonnominal_aop_high_deg = 90.0
 nonnominal_raan_low_deg = 110.0
 nonnominal_raan_high_deg = 120.0
+initial_date_start = "2001-12-01"
+initial_date_days = 31
+randomize_initial_time_of_day = true
+initial_true_anomaly_jitter_deg = 0.025
 process_noise = true
 process_noise_scale = 1.0
 aerodynamic_coefficient_dispersion = true
 aerodynamic_coefficient_span = 0.10
+aerodynamic_cd_span = 0.10
+aerodynamic_cl_span = 0.10
 marsgram_perturbation_scale = 1.0
 marsgram_seed_base = 1001
 
@@ -81,6 +87,11 @@ n_workers = 16
 checkpoint_frequency = 5000
 progress_frequency = 100
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
+protected_first_pass = true
+protected_initial_corridor_maneuver = true
+protected_first_pass_suppress_thermal_terminal = true
+protected_corridor_low_w_cm2 = 0.025
+protected_corridor_high_w_cm2 = 0.40
 
 [reports]
 output_dir = "SpaceAGORA_RL.jl/outputs/reports"

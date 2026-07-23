@@ -1,3 +1,4 @@
+using Dates
 using Random
 using Test
 using SpaceAGORA_RL
@@ -30,14 +31,21 @@ end
     @test !config.scenario.randomization_config.nominal
     @test config.scenario.randomization_config.process_noise
     @test config.scenario.termination_config.out_of_passage_periapsis_altitude_m == 135e3
+    @test config.scenario.randomization_config.periapsis_jitter_m == 2500.0
+    @test config.scenario.randomization_config.initial_date_start == Date(2001, 12, 1)
+    @test config.scenario.randomization_config.initial_date_days == 31
+    @test config.scenario.randomization_config.initial_true_anomaly_jitter_deg == 0.025
     rng = MersenneTwister(4)
     state = reset_scenario(config.scenario, rng)
     @test 88.6 <= rad2deg(state.inclination_rad) <= 98.6
     @test 60.0 <= rad2deg(state.argument_of_periapsis_rad) <= 90.0
     @test 110.0 <= rad2deg(state.raan_rad) <= 120.0
+    @test Date(2001, 12, 1) <= Date(state.epoch) <= Date(2001, 12, 31)
+    @test abs(rad2deg(state.true_anomaly_rad) - 180.0) <= 0.025
     @test abs(state.periapsis_altitude_m - config.scenario.nominal_periapsis_altitude_m) <=
           config.scenario.randomization_config.periapsis_jitter_m
     @test 0.9 <= state.aerodynamic_cd_scale <= 1.1
+    @test 0.9 <= state.aerodynamic_cl_scale <= 1.1
     @test config.scenario.randomization_config.marsgram_seed_base <= state.gram_seed <=
           config.scenario.randomization_config.marsgram_seed_base + 1_000_000
 
@@ -151,6 +159,9 @@ end
     @test physics.scenario.spaceagora_gravity_harmonics_order == 20
     @test physics.scenario.spaceagora_gravity_harmonics_file ==
           "data/Gravity_harmonics_data/Mars50c.csv"
+    @test physics.training.protected_first_pass
+    @test physics.training.protected_initial_corridor_maneuver
+    @test physics.training.protected_first_pass_suppress_thermal_terminal
     @test_throws ArgumentError SpaceAGORA_RL.propagate_pass(
         SpaceAGORA_RL.SpaceAGORACoreAdapter(:unsupported_backend),
         config,

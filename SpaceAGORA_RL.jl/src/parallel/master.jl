@@ -86,6 +86,7 @@ mutable struct SpaceAGORAPhysicsActiveWorker
     episode_index::Int
     seed::Int
     handle::SpaceAGORAPhysicsWorkerHandle
+    protected_events_seen::Int
 end
 
 function _spaceagora_physics_streaming_worker_seed(base_seed::Int, worker_id::Int,
@@ -103,6 +104,19 @@ function _ddqn_master_action(learner::DDQNLearner, observation::Vector{Float32},
     return greedy_action_index(learner, observation)
 end
 
+function _protected_corridor_action_index(training::TrainingConfig,
+                                          result::Union{AerobrakingStepResult,Nothing})
+    training.protected_initial_corridor_maneuver || return nothing
+    result === nothing && return nothing
+    heat_rate = result.raw_observation.max_heat_rate_w_cm2
+    if heat_rate > training.protected_corridor_high_w_cm2
+        return action_count()
+    elseif heat_rate < training.protected_corridor_low_w_cm2
+        return 1
+    end
+    return nothing
+end
+
 function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<:DDQNLearner},
                                                       event_channel::Channel{Any},
                                                       worker_id::Int,
@@ -114,7 +128,10 @@ function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<
     config = session.config.scenario
     state = reset_scenario(config, rng)
     norm_obs = normalize_observation(observe_state(config, state), config.normalization_bounds)
-    action_index = _ddqn_master_action(session.learner, norm_obs, session.rng)
+    protected_first_pass = session.config.training.protected_first_pass
+    action_index = protected_first_pass ?
+                   zero_action_index() :
+                   _ddqn_master_action(session.learner, norm_obs, session.rng)
     summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
     handle = start_spaceagora_physics_campaign_worker!(
         event_channel,
@@ -131,8 +148,11 @@ function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<
         seed,
         session.config.training.max_passes_per_campaign,
         session.learner.global_step,
+        protected_first_pass = protected_first_pass,
+        protected_suppress_thermal_terminal =
+            session.config.training.protected_first_pass_suppress_thermal_terminal,
     )
-    return SpaceAGORAPhysicsActiveWorker(worker_id, episode_index, seed, handle)
+    return SpaceAGORAPhysicsActiveWorker(worker_id, episode_index, seed, handle, 0)
 end
 
 function _finish_spaceagora_physics_streaming_worker!(worker::SpaceAGORAPhysicsActiveWorker)
@@ -225,7 +245,13 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
             throw(ErrorException(event.error))
         end
 
-        if event.transition !== nothing && session.learner.global_step < target_global_step
+        if event.protected
+            worker.protected_events_seen += 1
+        end
+
+        if event.transition !== nothing &&
+           !event.protected &&
+           session.learner.global_step < target_global_step
             transition = event.transition
             push!(transitions, transition)
             session.learner.global_step += 1
@@ -262,12 +288,19 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
                 _finish_spaceagora_physics_streaming_worker!(worker)
                 delete!(active, event.worker_id)
             else
-                next_action = _ddqn_master_action(
-                    session.learner,
-                    (event.transition::Transition).next_observation,
-                    session.rng,
-                )
-                put!(worker.handle.action_channel, next_action)
+                corridor_action = event.protected && worker.protected_events_seen == 1 ?
+                                  _protected_corridor_action_index(session.config.training, event.result) :
+                                  nothing
+                if corridor_action === nothing
+                    next_action = _ddqn_master_action(
+                        session.learner,
+                        (event.transition::Transition).next_observation,
+                        session.rng,
+                    )
+                    put!(worker.handle.action_channel, next_action)
+                else
+                    put!(worker.handle.action_channel, (action_index=corridor_action, protected=true))
+                end
             end
         end
 

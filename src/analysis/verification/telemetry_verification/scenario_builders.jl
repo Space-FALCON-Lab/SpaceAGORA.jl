@@ -88,13 +88,25 @@ end
 struct ScaledAerodynamicCoefficientfM <: AbstractForceTorqueModel
     model::AerodynamicCoefficientfM
     cd_scale::Float64
+    cl_scale::Float64
+    uniform_scale::Bool
     function ScaledAerodynamicCoefficientfM(model::AerodynamicCoefficientfM, cd_scale::Float64)
         cd_scale > 0.0 || throw(ArgumentError("ScaledAerodynamicCoefficientfM.cd_scale must be > 0.0, got $cd_scale"))
-        return new(model, cd_scale)
+        return new(model, cd_scale, cd_scale, true)
+    end
+    function ScaledAerodynamicCoefficientfM(model::AerodynamicCoefficientfM, cd_scale::Float64, cl_scale::Float64)
+        cd_scale > 0.0 || throw(ArgumentError("ScaledAerodynamicCoefficientfM.cd_scale must be > 0.0, got $cd_scale"))
+        cl_scale > 0.0 || throw(ArgumentError("ScaledAerodynamicCoefficientfM.cl_scale must be > 0.0, got $cl_scale"))
+        return new(model, cd_scale, cl_scale, false)
     end
 end
 
 @inline _dynamic_effector_threadsafe(::ScaledAerodynamicCoefficientfM)::Bool = true
+
+@inline function _cached_aero_component(cache, i::Int64)
+    zero_force = SVector{3, Float64}(0.0, 0.0, 0.0)
+    return i <= length(cache) ? cache[i] : zero_force
+end
 
 function SimulationModel.calcForceTorque(
     model::ScaledAerodynamicCoefficientfM,
@@ -103,7 +115,13 @@ function SimulationModel.calcForceTorque(
     i::Int64
 )
     f, τ = SimulationModel.calcForceTorque(model.model, x, param, i)
-    return model.cd_scale .* f, model.cd_scale .* τ
+    if model.uniform_scale
+        return model.cd_scale .* f, model.cd_scale .* τ
+    end
+    drag = _cached_aero_component(param.save_cache.drag_cache, i)
+    lift = _cached_aero_component(param.save_cache.lift_cache, i)
+    scaled_force = f + (model.cd_scale - 1.0) .* drag + (model.cl_scale - 1.0) .* lift
+    return scaled_force, τ
 end
 
 function _scenario_dynamic_effectors(

@@ -62,7 +62,7 @@ function _spaceagora_initial_condition(spaceagora, config, state, action::Aerobr
         i=rad2deg(state.inclination_rad),
         ω=rad2deg(state.argument_of_periapsis_rad),
         Ω=rad2deg(state.raan_rad),
-        ν=180.0,
+        ν=rad2deg(state.true_anomaly_rad),
     )
 end
 
@@ -191,12 +191,14 @@ function _spaceagora_physics_simulation_configuration(config,
         spacecraft.root.ref_area,
     )
     aero_base = Base.invokelatest(getproperty(SM, :AerodynamicCoefficientfM))
-    aero = isapprox(state.aerodynamic_cd_scale, 1.0; rtol=0.0, atol=1e-12) ?
+    aero = (isapprox(state.aerodynamic_cd_scale, 1.0; rtol=0.0, atol=1e-12) &&
+            isapprox(state.aerodynamic_cl_scale, 1.0; rtol=0.0, atol=1e-12)) ?
            aero_base :
            Base.invokelatest(
                getproperty(TV, :ScaledAerodynamicCoefficientfM),
                aero_base,
                state.aerodynamic_cd_scale,
+               state.aerodynamic_cl_scale,
            )
     density_model = _spaceagora_density_model(spaceagora, config, state)
     mission_time = _spaceagora_campaign_mission_time_s(
@@ -284,6 +286,8 @@ function _spaceagora_physics_simulation_configuration(config,
                               "",
         tabulated_flight_sigma=config.spaceagora_tabulated_flight_sigma,
         aerodynamic_cd_scale=state.aerodynamic_cd_scale,
+        aerodynamic_cl_scale=state.aerodynamic_cl_scale,
+        initial_true_anomaly_deg=rad2deg(state.true_anomaly_rad),
         solver_mode=:split_imex,
         split_imex_solver=:kencarp4,
     )

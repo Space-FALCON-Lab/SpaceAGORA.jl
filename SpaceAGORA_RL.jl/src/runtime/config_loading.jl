@@ -9,6 +9,11 @@ Base.@kwdef struct TrainingConfig
     checkpoint_frequency::Int = 500
     progress_frequency::Int = 50
     output_dir::String = joinpath(package_root(), "outputs", "runs")
+    protected_first_pass::Bool = false
+    protected_initial_corridor_maneuver::Bool = false
+    protected_first_pass_suppress_thermal_terminal::Bool = true
+    protected_corridor_low_w_cm2::Float64 = 0.025
+    protected_corridor_high_w_cm2::Float64 = 0.40
 end
 
 const DDQN_FAMILY_ALGORITHMS = (:ddqn, :pr_drl)
@@ -47,6 +52,20 @@ end
 
 _get(table::Dict, key::String, default) = haskey(table, key) ? table[key] : default
 
+function _optional_date_from_table(table::Dict, key::String)
+    haskey(table, key) || return nothing
+    value = table[key]
+    value === nothing && return nothing
+    value isa Date && return value
+    value isa DateTime && return Date(value)
+    if value isa AbstractString
+        parsed = tryparse(Date, strip(String(value)))
+        parsed === nothing && throw(ArgumentError("config value $key must be an ISO date, got $(repr(value))"))
+        return parsed
+    end
+    throw(ArgumentError("config value $key must be an ISO date string, got $(typeof(value))"))
+end
+
 function load_config(path::AbstractString=default_config_path())
     return TOML.parsefile(path)
 end
@@ -83,7 +102,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     randomization = AerobrakingRandomizationConfig(
         nominal = Bool(_get(random_table, "nominal", true)),
         apoapsis_jitter_m = Float64(_get(random_table, "apoapsis_jitter_m", 2.5e3)),
-        periapsis_jitter_m = Float64(_get(random_table, "periapsis_jitter_m", 1.0e3)),
+        periapsis_jitter_m = Float64(_get(random_table, "periapsis_jitter_m", 2.5e3)),
         angle_jitter_deg = Float64(_get(random_table, "angle_jitter_deg", 0.25)),
         nonnominal_inclination_low_deg = Float64(_get(random_table, "nonnominal_inclination_low_deg", 88.6)),
         nonnominal_inclination_high_deg = Float64(_get(random_table, "nonnominal_inclination_high_deg", 98.6)),
@@ -93,10 +112,18 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
                                                 _get(random_table, "nonnominal_angle_low_deg", 110.0))),
         nonnominal_raan_high_deg = Float64(_get(random_table, "nonnominal_raan_high_deg",
                                                  _get(random_table, "nonnominal_angle_high_deg", 120.0))),
+        initial_date_start = _optional_date_from_table(random_table, "initial_date_start"),
+        initial_date_days = Int(_get(random_table, "initial_date_days", 0)),
+        randomize_initial_time_of_day = Bool(_get(random_table, "randomize_initial_time_of_day", true)),
+        initial_true_anomaly_jitter_deg = Float64(_get(random_table, "initial_true_anomaly_jitter_deg", 0.0)),
         process_noise = Bool(_get(random_table, "process_noise", false)),
         process_noise_scale = Float64(_get(random_table, "process_noise_scale", 0.0)),
         aerodynamic_coefficient_dispersion = Bool(_get(random_table, "aerodynamic_coefficient_dispersion", false)),
         aerodynamic_coefficient_span = Float64(_get(random_table, "aerodynamic_coefficient_span", 0.10)),
+        aerodynamic_cd_span = Float64(_get(random_table, "aerodynamic_cd_span",
+                                           _get(random_table, "aerodynamic_coefficient_span", 0.10))),
+        aerodynamic_cl_span = Float64(_get(random_table, "aerodynamic_cl_span",
+                                           _get(random_table, "aerodynamic_coefficient_span", 0.10))),
         marsgram_perturbation_scale = Float64(_get(random_table, "marsgram_perturbation_scale", 1.0)),
         marsgram_seed_base = Int(_get(random_table, "marsgram_seed_base", 1001)),
     )
@@ -170,6 +197,11 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         checkpoint_frequency = Int(_get(train_table, "checkpoint_frequency", 500)),
         progress_frequency = Int(_get(train_table, "progress_frequency", 50)),
         output_dir = String(_get(train_table, "output_dir", joinpath(package_root(), "outputs", "runs"))),
+        protected_first_pass = Bool(_get(train_table, "protected_first_pass", false)),
+        protected_initial_corridor_maneuver = Bool(_get(train_table, "protected_initial_corridor_maneuver", false)),
+        protected_first_pass_suppress_thermal_terminal = Bool(_get(train_table, "protected_first_pass_suppress_thermal_terminal", true)),
+        protected_corridor_low_w_cm2 = Float64(_get(train_table, "protected_corridor_low_w_cm2", 0.025)),
+        protected_corridor_high_w_cm2 = Float64(_get(train_table, "protected_corridor_high_w_cm2", 0.40)),
     )
     reports = ReportConfig(
         output_dir = String(_get(report_table, "output_dir", joinpath(package_root(), "outputs", "reports"))),

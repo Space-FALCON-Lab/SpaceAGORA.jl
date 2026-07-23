@@ -154,6 +154,7 @@ Base.@kwdef struct AerobrakingDecisionState
     inclination_rad::Float64
     raan_rad::Float64
     argument_of_periapsis_rad::Float64
+    true_anomaly_rad::Float64 = pi
     epoch::DateTime
     mission_elapsed_s::Float64 = 0.0
     total_delta_v_mps::Float64 = 0.0
@@ -163,6 +164,7 @@ Base.@kwdef struct AerobrakingDecisionState
     last_drag_passage_time_s::Float64 = 400.0
     gram_seed::Int = 1001
     aerodynamic_cd_scale::Float64 = 1.0
+    aerodynamic_cl_scale::Float64 = 1.0
 end
 
 struct AerobrakingStepResult
@@ -198,14 +200,31 @@ function observe_state(config::AerobrakingScenarioConfig, state::AerobrakingDeci
     )
 end
 
+function _randomized_nonnominal_epoch(config::AerobrakingScenarioConfig,
+                                      rand_cfg::AerobrakingRandomizationConfig,
+                                      rng::AbstractRNG)
+    if rand_cfg.initial_date_start !== nothing && rand_cfg.initial_date_days > 0
+        date = rand_cfg.initial_date_start::Date
+        epoch = DateTime(date + Day(rand(rng, 0:(rand_cfg.initial_date_days - 1))))
+    else
+        epoch = config.nominal_epoch + Day(rand(rng, 0:27))
+    end
+    if rand_cfg.randomize_initial_time_of_day
+        epoch += Hour(rand(rng, 0:23)) + Minute(rand(rng, 0:59)) + Second(rand(rng, 0:59))
+    end
+    return epoch
+end
+
 function reset_scenario(config::AerobrakingScenarioConfig, rng::AbstractRNG)
     rand_cfg = config.randomization_config
-    aero_scale = if rand_cfg.aerodynamic_coefficient_dispersion
-        1.0 + uniform_jitter(rng, rand_cfg.aerodynamic_coefficient_span)
+    aero_cd_scale, aero_cl_scale = if rand_cfg.aerodynamic_coefficient_dispersion
+        1.0 + uniform_jitter(rng, randomized_cd_span(rand_cfg)),
+        1.0 + uniform_jitter(rng, randomized_cl_span(rand_cfg))
     else
-        1.0
+        1.0, 1.0
     end
     gram_seed = rand_cfg.marsgram_seed_base + rand(rng, 0:1_000_000)
+    true_anomaly = pi + deg2rad(uniform_jitter(rng, rand_cfg.initial_true_anomaly_jitter_deg))
     if rand_cfg.nominal
         ra = config.initial_apoapsis_radius_m + uniform_jitter(rng, rand_cfg.apoapsis_jitter_m)
         hp = config.nominal_periapsis_altitude_m + uniform_jitter(rng, rand_cfg.periapsis_jitter_m)
@@ -225,7 +244,7 @@ function reset_scenario(config::AerobrakingScenarioConfig, rng::AbstractRNG)
         omega = deg2rad(rand_cfg.nonnominal_aop_low_deg +
                         rand(rng) * (rand_cfg.nonnominal_aop_high_deg -
                                      rand_cfg.nonnominal_aop_low_deg))
-        epoch = config.nominal_epoch + Day(rand(rng, 0:27)) + Hour(rand(rng, 0:23))
+        epoch = _randomized_nonnominal_epoch(config, rand_cfg, rng)
     end
     return AerobrakingDecisionState(
         apoapsis_radius_m = ra,
@@ -233,9 +252,11 @@ function reset_scenario(config::AerobrakingScenarioConfig, rng::AbstractRNG)
         inclination_rad = inc,
         raan_rad = raan,
         argument_of_periapsis_rad = omega,
+        true_anomaly_rad = true_anomaly,
         epoch = epoch,
         gram_seed = gram_seed,
-        aerodynamic_cd_scale = aero_scale,
+        aerodynamic_cd_scale = aero_cd_scale,
+        aerodynamic_cl_scale = aero_cl_scale,
     )
 end
 
@@ -305,6 +326,7 @@ function paper_surrogate_pass(config::AerobrakingScenarioConfig, state::Aerobrak
         last_drag_passage_time_s = drag_time,
         gram_seed = state.gram_seed,
         aerodynamic_cd_scale = state.aerodynamic_cd_scale,
+        aerodynamic_cl_scale = state.aerodynamic_cl_scale,
     )
     return next_state
 end
@@ -440,6 +462,7 @@ function _spaceagora_physics_next_state_from_u(spaceagora,
         last_drag_passage_time_s = drag_time,
         gram_seed = state.gram_seed,
         aerodynamic_cd_scale = state.aerodynamic_cd_scale,
+        aerodynamic_cl_scale = state.aerodynamic_cl_scale,
     )
 end
 

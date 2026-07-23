@@ -17,7 +17,7 @@ args = Dict(# Misc Simulation
             :directory_Spice => "/workspaces/SpaceAGORA.jl_deprecated/GRAM_Data/SPICE",                                    # Directory where SPICE files are located
             :Gram_version => 1,                                                                                 # MarsGram x file to use
             :montecarlo_analysis => 0,                                                                          # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 0,                                                                                         # Generate pdf plots of results True=1, False=0
+            :plot => 1,                                                                                         # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -82,18 +82,18 @@ args = Dict(# Misc Simulation
             # Control Mode
             :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
-            :second_switch_reevaluation => 0,                       # Reevaluation of the second switch time when the time is closer to it
+            :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 1,                        # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :flash2_through_integration => 0,                        # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :struct_ctrl => 0,                                      # Structural Load Control True=1, False=0
-            :targeting_ctrl => 1,                                   # Targeting Control True=1, False=0
+            :targeting_ctrl => 0,                                   # Targeting Control True=1, False=0
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 9800e3, # 8000e3, # 9840e3, # 28523.95e3,                  # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 20000e3, # 8000e3, # 9840e3, # 28523.95e3,                  # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 50000e3,                               # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e10,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 100e3, # 100e3,                                  # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 90e3, # 100e3,                                  # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 159000.0,                              # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 4200.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma

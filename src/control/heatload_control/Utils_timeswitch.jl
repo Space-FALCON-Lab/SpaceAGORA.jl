@@ -22,7 +22,7 @@ function lambdas(m, aoa, k, t, h, γ, v, coeff, nu_E)
     lambdah[end] = nu_E * μ / (Rp + h[end])^2
 
     # ρ = density_exp(h, m.planet)[1]
-    ρ = density_polyfit(h, m.planet)[1]
+    ρ = density_cheby_norm(h, m.planet)[1]
 
     g = g0 * Rp^2 ./ (Rp .+ h).^2
 
@@ -82,7 +82,7 @@ function func(k_cf, m, args, coeff, position, heat_rate_control, approx_sol, aoa
         a = sqrt(m.planet.γ * m.planet.R * T)
         M = v_cf / a
         S = sqrt(m.planet.γ/2) * M
-        ρ = density_exp(h_cf, m.planet)[1]  # density calculated through exponential density
+        ρ = density_cheby_norm(h_cf, m.planet)[1]  # density calculated through exponential density
 
         heat_rate = heat_rate_calc(args[:multiplicative_factor_heatload] * m.aerodynamics.thermal_accomodation_factor, ρ, T, T, m.planet.R, m.planet.γ, S, aoa_cf)
 

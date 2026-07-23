@@ -94,7 +94,7 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
             return Q_past
         end
 
-        ρ = density_exp(h_cf, m.planet)[1]
+        ρ = density_cheby_norm(h_cf, m.planet)[1]
 
         ρ_tilltsw = ρ[index_tilltsw]
         ρ_remaining = ρ[index_remaining]

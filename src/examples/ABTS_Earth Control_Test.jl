@@ -85,14 +85,14 @@ args = Dict(# Misc Simulation
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :struct_ctrl => 0,                                      # Structural control, True=1, False=0
-            :targeting_ctrl => 1,                                    # Targeting control True=1, False=0
+            :targeting_ctrl => 0,                                    # Targeting control True=1, False=0
 
 
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
-            :ra_initial_a => 55800e3, # 56378e3,                    # Initial Apoapsis Radius for for-loop in m
+            :ra_initial_a => 56378e3, # 56378e3,                    # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                                  # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
             :hp_initial_a => 110e3,   #200590.0,#                   # Initial Periapsis Altitude for for-loop in m

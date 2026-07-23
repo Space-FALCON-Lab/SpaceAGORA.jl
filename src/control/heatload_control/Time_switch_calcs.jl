@@ -80,13 +80,27 @@ function switch_calculation(ip, m, position, args, t, heat_rate_control, reevalu
 
     coeff = (CD_slope, CL_0, CD_0)
 
+    if m.planet.name == "mars"
+        low_lim = 0.0
+        high_lim = 10.0
+    elseif m.planet.name == "venus"
+        low_lim = 0.0
+        high_lim = 100.0
+    elseif m.planet.name == "earth"
+        low_lim = 0.0
+        high_lim = 10.0
+    elseif m.planet.name == "titan"
+        low_lim = 0.0
+        high_lim = 10.0 
+    end
+
     # Evaluates max Q
-    aoa_cf = aoa(m, 0.1, t_cf, h_cf, γ_cf, v_cf, coeff, 1)[1]
+    aoa_cf = aoa(m, high_lim, t_cf, h_cf, γ_cf, v_cf, coeff, 1)[1]
 
     approx_sol = (t_cf, h_cf, γ_cf, v_cf)
 
-    delta_Q_max = func(0.1, m, args, coeff, position, heat_rate_control, approx_sol, aoa_cf)
-    delta_Q_min = func(0.0, m, args, coeff, position, heat_rate_control, approx_sol, zeros(length(aoa_cf)))
+    delta_Q_max = func(high_lim, m, args, coeff, position, heat_rate_control, approx_sol, aoa_cf)
+    delta_Q_min = func(low_lim, m, args, coeff, position, heat_rate_control, approx_sol, zeros(length(aoa_cf)))
 
     if delta_Q_max * delta_Q_min < 0
         k_cf = fzero(k -> func(k, m, args, coeff, position, heat_rate_control, approx_sol, aoa_cf), [0.0, 0.1], Roots.Brent())

@@ -56,7 +56,7 @@ args = Dict(# Misc Simulation
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.29,                                 # Max heat rate the heat rate control will start to react to
-            :max_heat_load => 50.0,                                 # Max heat load the heat load control will not be overcomed
+            :max_heat_load => 40.0,                                 # Max heat load the heat load control will not be overcomed
             :max_dyn_press => 0.3,                                  # Max dynamic pressure the control will not be overcomed
             :dry_mass => 2400.0,                                    # Initial dry mass of body in kg
             :prop_mass => 500.0,                                    # Initial propellant mass of body in kg
@@ -84,9 +84,9 @@ args = Dict(# Misc Simulation
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :struct_ctrl => 0,                                      # Structural thermal control, True=1, False=0
-            :targeting_ctrl => 1,                                   # Targeting control True=1, False=0
+            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
@@ -107,8 +107,8 @@ args = Dict(# Misc Simulation
             :inclination => 85.37,                                  # Inclination Orbit, deg
             :ω => 90.0,                                             # AOP, deg
             :Ω => 64.495,                                           # RAAN, deg
-            :EI => 1200.0,                                           # Entry Interface, km
-            :AE => 1200.0,                                           # Atmospheric Exit, km
+            :EI => 900.0,                                           # Entry Interface, km
+            :AE => 900.0,                                           # Atmospheric Exit, km
             :year => 2031,                                          # Mission year
             :month => 10,                                           # Mission month
             :day => 15,                                             # Mission day

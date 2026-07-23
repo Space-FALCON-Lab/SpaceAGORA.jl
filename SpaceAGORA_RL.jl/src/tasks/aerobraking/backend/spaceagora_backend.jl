@@ -544,7 +544,7 @@ function _spaceagora_single_pass_stats_callback(spaceagora, stats::SpaceAGORAPhy
     condition(u, t, integrator) = true
     affect!(integrator) = _record_spaceagora_physics_sample!(state_position_ii, spaceagora, stats, integrator)
     initialize = (cb, u, t, integrator) -> affect!(integrator)
-    return discrete_callback(condition, affect!; initialize=initialize)
+    return Base.invokelatest(discrete_callback, condition, affect!; initialize=initialize)
 end
 
 function step_scenario(config::AerobrakingScenarioConfig, state::AerobrakingDecisionState,

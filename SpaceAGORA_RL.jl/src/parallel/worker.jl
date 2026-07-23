@@ -340,7 +340,7 @@ function _spaceagora_physics_campaign_apoapsis_callback(spaceagora,
     end
     affect!(integrator, idx::Int64) =
         _spaceagora_physics_campaign_record_apoapsis!(spaceagora, rollout, integrator, idx)
-    return vector_callback(condition!, affect!, nothing, 1)
+    return Base.invokelatest(vector_callback, condition!, affect!, nothing, 1)
 end
 
 function _spaceagora_physics_campaign_stats_callback(spaceagora,
@@ -351,7 +351,7 @@ function _spaceagora_physics_campaign_stats_callback(spaceagora,
     condition(u, t, integrator) = true
     affect!(integrator) = _record_spaceagora_physics_sample!(state_position_ii, spaceagora, rollout.stats, integrator)
     initialize = (cb, u, t, integrator) -> affect!(integrator)
-    return discrete_callback(condition, affect!; initialize=initialize)
+    return Base.invokelatest(discrete_callback, condition, affect!; initialize=initialize)
 end
 
 function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScenarioConfig,

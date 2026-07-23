@@ -50,7 +50,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         gram_atmosphere = param[10]
         gram = param[11]
         t_switch = param[12]
-        
+
         ## Counters
         # Counter for all along the simulation of all passages
         config.cnf.count_aerobraking = config.cnf.count_aerobraking + 1
@@ -154,19 +154,19 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         #     end
         # end
 
-        if aerobraking_phase == 2 || aerobraking_phase == 0
-            if args[:control_mode] == 1
-                x = 120
-            else
-                x = 140
-            end
+        # if aerobraking_phase == 2 || aerobraking_phase == 0
+        #     if args[:control_mode] == 1
+        #         x = 120
+        #     else
+        #         x = 140
+        #     end
 
-            if (config.cnf.heat_rate_prev > 0.005 || abs(pos_ii_mag - m.planet.Rp_e <= x*1e3)) && config.cnf.sensible_loads == false && config.cnf.ascending_phase == false
-                config.cnf.sensible_loads = true
-            elseif config.cnf.heat_rate_prev > 0.005 && config.cnf.sensible_loads == true && config.cnf.ascending_phase
-                config.cnf.sensible_loads = false
-            end
-        end
+        #     if (config.cnf.heat_rate_prev > 0.005 || abs(pos_ii_mag - m.planet.Rp_e <= x*1e3)) && config.cnf.sensible_loads == false && config.cnf.ascending_phase == false
+        #         config.cnf.sensible_loads = true
+        #     elseif config.cnf.heat_rate_prev > 0.005 && config.cnf.sensible_loads == true && config.cnf.ascending_phase
+        #         config.cnf.sensible_loads = false
+        #     end
+        # end
 
         # Compute NED basis unit vectors
         uD, uN, uE = latlongtoNED(LatLong)
@@ -178,18 +178,18 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
 
         # Get density, pressure , temperature and winds
         config.cnf.Gram_justrecalled = 0
-        if ip.dm == 0
-            ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 1
-            ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 2
-            ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 3
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
+        # if ip.dm == 0
+        #     ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 1
+        #     ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 2
+        #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 3
+            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, false, wind_m, args, el_time, gram_atmosphere, gram)
             ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float32, T_p), SVector{3, Float32}([pyconvert(Float32, wind[1]), pyconvert(Float32, wind[2]), pyconvert(Float32, wind[3])])
-        elseif ip.dm == 4
-            ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
-        end
+        # elseif ip.dm == 4
+        #     ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
+        # end
 
         # Define output.txt containing density data
         p = 0.0
@@ -260,18 +260,19 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         # Dynamic Pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY
         q = 0.5 * ρ * norm(vel_pp_rw)^2               # dynamic pressure based on wind, Pa
 
-        if args[:struct_ctrl] == 1
-            α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
 
-            config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
-        end
-
-        if t0 >= t_switch
+        if t0 - time_0 >= t_switch
             config.cnf.α = 0
         else
             state = [T_p, ρ, S]
             index_ratio = [1,1]
             config.cnf.α = control_solarpanels_heatrate(ip, m, args, index_ratio, state, t0 - config.cnf.t_switch_targeting, config.cnf.initial_position_closed_form, OE)
+
+            if args[:struct_ctrl] == 1
+                α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
+
+                config.cnf.α = min(config.cnf.α, α_struct) # limit the angle of attack to the structural load control
+            end
         end
 
         α = config.cnf.α
@@ -294,15 +295,15 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         end
                
         # Nominal gravity calculation
-        if ip.gm == 0
-            gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
-        elseif ip.gm == 2
-            gravity_ii = mass * (args[:gravity_harmonics] == 1 ? gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii) : gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii))
-        elseif ip.gm == 3
-            gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
-        end
+        # if ip.gm == 0
+        #     gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+        # elseif ip.gm == 1
+        #     gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+        # elseif ip.gm == 2
+            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+        # elseif ip.gm == 3
+        #     gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
+        # end
 
         if length(args[:n_bodies]) != 0
             for k = 1:length(args[:n_bodies])  
@@ -421,7 +422,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
 
     # Run simulation
     prob = ODEProblem(f_ctrl_rf!, in_cond, (initial_time, final_time), param)
-    sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+    sol = solve(prob, method, save_everystep = false, abstol=a_tol, reltol=r_tol, callback=events)
 
     return sol
 end

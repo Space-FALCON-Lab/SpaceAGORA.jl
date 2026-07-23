@@ -21,11 +21,6 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
         return Q - m.aerodynamics.heat_load_limit
     end
 
-    delta_Q_max = func(5)
-    delta_Q_min = func(0)
-
-    # println("time_switch 3: ", time_switch)
-
     if m.planet.name == "mars"
         low_lim = 3.3
         high_lim = 10.0
@@ -40,17 +35,22 @@ function switch_calculation_with_integration(ip, m, position, args, t, heat_rate
         high_lim = 10.0 
     end
 
+    delta_Q_max = func(high_lim)
+    delta_Q_min = func(low_lim)
+
+    # println("time_switch 3: ", time_switch)
+
     if delta_Q_max * delta_Q_min < 0
-        find_zero(k -> func(k), [low_lim, high_lim], Bisection(), rtol=1e-5)
+        find_zero(k -> func(k), [low_lim, high_lim], Roots.Brent(), rtol=1e-5)
         # println("time_switch 4: ", time_switch)
     elseif delta_Q_max < 0
-        if args[:heat_load_sol] == 0 && args[:heat_load_sol] == 3
+        if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
             return [0, 0]
         elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2
             return [0, 1000]
         end
     elseif delta_Q_min > 0
-        if args[:heat_load_sol] == 0 && args[:heat_load_sol] == 3
+        if args[:heat_load_sol] == 0 || args[:heat_load_sol] == 3
             return [0, 1000]
         elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2
             return [0, 0]

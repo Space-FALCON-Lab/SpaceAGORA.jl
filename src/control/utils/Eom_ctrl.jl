@@ -167,7 +167,7 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         # elseif ip.dm == 2
         #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
         # elseif ip.dm == 3
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
+            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, false, wind_m, args, el_time, gram_atmosphere, gram)
             ρ, T_p, wind = pyconvert(Float64, ρ), pyconvert(Float32, T_p), SVector{3, Float32}([pyconvert(Float32, wind[1]), pyconvert(Float32, wind[2]), pyconvert(Float32, wind[3])])
         # elseif ip.dm == 4
         #     ρ, T_p, wind = density_nrlmsise(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, time_real)
@@ -253,9 +253,9 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         # if ip.gm == 0
         #     gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         # elseif ip.gm == 1
-            gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            # gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         # elseif ip.gm == 2
-            # gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         # elseif ip.gm == 3
         #     gravity_ii = mass * gravity_GRAM(pos_ii, lat, lon, alt, m.planet, mass, vel_ii, el_time, gram_atmosphere, args, gram)
         # end
@@ -337,7 +337,7 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         y_dot[8] = lambdag_dot
         y_dot[9] = lambdah_dot
         y_dot[10] = heat_rate
-        y_dot[11] = dot(vel_ii, force_ii - mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)) / mass
+        y_dot[11] = dot(vel_ii, force_ii - drag_ii - lift_ii - mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)) / mass
 
         return y_dot
     end

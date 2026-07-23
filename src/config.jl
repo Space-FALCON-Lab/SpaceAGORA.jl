@@ -121,6 +121,8 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         time_OEI::Float64 = 0.0
         time_switch_1::Float64 = 0.0
         time_switch_2::Float64 = 0.0
+        time_switch_intervals::Vector{Tuple{Float64, Float64}} = Tuple{Float64, Float64}[]
+        heat_load_k_cf::Float64 = NaN
         state_inner_boundary_atmosphere::Vector{Float64} = []
         count_aerobraking::Int64 = 0
         count_dori::Int64 = 0
@@ -193,9 +195,14 @@ export model, cnf, solution, Body, Planet, Initial_condition, Aerodynamics, Engi
         t_time_switch_targ::Vector{Float64} = []
         ts_targ_1::Float64 = 0.0
         ts_targ_2::Float64 = 0.0
+        last_targeting_revaluation::Float64 = -Inf
         energy_f::Float64 = 0.0
+        energy_inc::Float64 = 0.0
         once_entered::Bool = false
         energy_start_dp::Float64 = 0.0
+        mc::Bool = false
+        CL_factor_mc::Float64 = 1.0
+        CD_factor_mc::Float64 = 1.0
 
         n_bodies_list::Vector{Planet} = []
         DU::Float64 = 0.0

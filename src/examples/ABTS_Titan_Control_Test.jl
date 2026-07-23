@@ -9,10 +9,10 @@ args = Dict(# Misc Simulation
             :results => 1,                                                     # Generate csv file for results True=1, False=0
             :passresults => 1,                                                 # Pass results as output True=1, False=0
             :print_res => 1,                                                   # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl/output/titan_edg_e",       # Directory where to save the results
-            :directory_Gram => "/workspaces/SpaceAGORA.jl/GRAMpy",                   # Directory where Gram is
-            :directory_Gram_data => "/workspaces/SpaceAGORA.jl/GRAM_Data",           # Directory where Gram data is
-            :directory_Spice => "/workspaces/SpaceAGORA.jl/GRAM_Data/SPICE",         # Directory where SPICE files are located
+            :directory_results => "/workspaces/SpaceAGORA.jl_deprecated/journal_output/titan_edgt_one_switch_J2_poly_mc_test",       # Directory where to save the results
+            :directory_Gram => "/workspaces/SpaceAGORA.jl_deprecated/GRAMpy",                   # Directory where Gram is
+            :directory_Gram_data => "/workspaces/SpaceAGORA.jl_deprecated/GRAM_Data",           # Directory where Gram data is
+            :directory_Spice => "/workspaces/SpaceAGORA.jl_deprecated/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                # MarsGram x file to use
             :montecarlo_analysis => 0,                                         # Generate csv file for Montecarlo results True=1, False=0
             :plot => 1,                                                        # Generate pdf plots of results True=1, False=0
@@ -23,7 +23,7 @@ args = Dict(# Misc Simulation
             :closed_form => 1,                                      # Closed form solution for the drag passage True=1, False=0
 
             # Type of Mission
-            :type_of_mission => "Drag Passage",             # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
+            :type_of_mission => "Orbits",             # choices=['Drag Passage' , 'Orbits' , 'Aerobraking Campaign']
             :keplerian => 0,                                        # Do not include drag passage: True=1, False=0
             :number_of_orbits => 1,                                 # Number of aerobraking passage
 
@@ -32,12 +32,12 @@ args = Dict(# Misc Simulation
             :planettime => 0.0,                                     # Initial time of the mission, sec. Important for J2 effect and rotation of the planet
             :gravity_model => "Inverse Squared and J2 effect",      # choices=['Constant' , 'Inverse Squared' , 'Inverse Squared and J2 effect']
             :gravity_harmonics => 0,                                # Gravity Harmonics True=1, False=0
-            :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl/Gravity_harmonics_data/titan5.csv",                  # Gravity Harmonics file to use
+            :gravity_harmonics_file => "/workspaces/SpaceAGORA.jl_deprecated/Gravity_harmonics_data/titan5.csv",                  # Gravity Harmonics file to use
             :L => 50,                                               # Maximum degree of gravity harmonics
             :M => 50,                                               # Maximum order of gravity harmonics
 
             :topography_model => "None",                            # choices=['None' , 'Spherical Harmonics']
-            :topography_harmonics_file => "/workspaces/SpaceAGORA.jl/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
+            :topography_harmonics_file => "/workspaces/SpaceAGORA.jl_deprecated/Topography_harmonics_data/Earth2012.csv", # File with the topography harmonics coefficients
             :topo_degree => 50,                                     # Maximum degree of the topography harmonics (Defined in the file)
             :topo_order => 50,                                      # Maximum order of the topography harmonics (Defined in the file)
 
@@ -56,7 +56,7 @@ args = Dict(# Misc Simulation
             # Body
             :body_shape => "Spacecraft",                            # choices=['Spacecraft' , 'Blunted Cone']
             :max_heat_rate => 0.29,                                 # Max heat rate the heat rate control will start to react to
-            :max_heat_load => 40.0,                                 # Max heat load the heat load control will not be overcomed
+            :max_heat_load => 50.0,                                 # Max heat load the heat load control will not be overcomed
             :max_dyn_press => 0.3,                                  # Max dynamic pressure the control will not be overcomed
             :dry_mass => 2400.0,                                    # Initial dry mass of body in kg
             :prop_mass => 500.0,                                    # Initial propellant mass of body in kg
@@ -80,20 +80,20 @@ args = Dict(# Misc Simulation
             :thrust => 4.0,                                         # Maximum magnitude thrust in N
             
             # Control Mode
-            :control_mode => 0,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
+            :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
             :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :struct_ctrl => 0,                                      # Structural thermal control, True=1, False=0
-            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
+            :targeting_ctrl => 1,                                   # Targeting control True=1, False=0
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
             :ra_initial_a => 17575e3, # 15000e3 + 2.575e6, # 28523.95e3,      # Initial Apoapsis Radius for for-loop in m
             :ra_initial_b => 1e21,                                  # Final Apoapsis Radius for for-loop in m
             :ra_step => 5e21,                                       # Step Apoapsis Radius for for-loop in m
-            :hp_initial_a => 610e3, #176590.0,#188140.0             # Initial Periapsis Altitude for for-loop in m
+            :hp_initial_a => 500e3, #176590.0,#188140.0             # Initial Periapsis Altitude for for-loop in m
             :hp_initial_b => 1590000.0,                             # Final Periapsis Altitude for for-loop in m
             :hp_step => 10000000.0,                                 # Step Periapsis Radius for for-loop in m
             :v_initial_a => 2100.0,                                 # Initial Velocity (m/s) for for-loop if initial conditions are in v and gamma
@@ -107,8 +107,8 @@ args = Dict(# Misc Simulation
             :inclination => 85.37,                                  # Inclination Orbit, deg
             :ω => 90.0,                                             # AOP, deg
             :Ω => 64.495,                                           # RAAN, deg
-            :EI => 900.0,                                           # Entry Interface, km
-            :AE => 900.0,                                           # Atmospheric Exit, km
+            :EI => 1200.0,                                           # Entry Interface, km
+            :AE => 1200.0,                                           # Atmospheric Exit, km
             :year => 2031,                                          # Mission year
             :month => 10,                                           # Mission month
             :day => 15,                                             # Mission day
@@ -125,7 +125,7 @@ args = Dict(# Misc Simulation
             :phi => 180.0,                                          # Thrust Angle, deg
             :delta_v => 0,                                          # Delta-v of Aerobraking Manuver,m/s
             :apoapsis_targeting => 0,                               # Apoapsis Targeting Enabled
-            :ra_fin_orbit => 17200e3,# 17420e3 and 17100e3 # 14837.5e3 + 2.5755e6,                  # Target final apoapsis for the orbit, m
+            :ra_fin_orbit => 17300e3,# 17420e3 and 17100e3 # 14837.5e3 + 2.5755e6,                  # Target final apoapsis for the orbit, m
             :maneuver_plan => titan_firing_plan,                    # Maneuver Plan for the mission
             
             # Monte Carlo Simulations
@@ -168,7 +168,7 @@ t = @elapsed begin
     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
-    # furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+    furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
             
     # Run the simulation

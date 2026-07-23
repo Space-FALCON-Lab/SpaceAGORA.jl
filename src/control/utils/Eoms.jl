@@ -19,7 +19,7 @@ sys = pyimport("sys")
 
 
 function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch_eval=false, gram_atmosphere=nothing, time_switch_2=0, reevaluation_mode=1)
-    heat_rate_control = false
+
     sys.path.append(args[:directory_Gram])
     gram = pyimport("gram")
 
@@ -158,16 +158,16 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         uN = uDuNuE[2]
 
         # Get density, pressure , temperature and winds
-        if ip.dm == 0
-            ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 1
-            ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 2
-            ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
-        elseif ip.dm == 3
-            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, MonteCarlo, wind_m, args, el_time, gram_atmosphere, gram)
+        # if ip.dm == 0
+        #     ρ, T_p, wind = density_constant(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 1
+        #     ρ, T_p, wind = density_exp(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 2
+        #     ρ, T_p, wind = density_no(alt, m.planet, lat, lon, timereal, t0, t_prev, MonteCarlo, wind_m, args)
+        # elseif ip.dm == 3
+            ρ, T_p, wind = density_gram(alt, m.planet, lat, lon, false, wind_m, args, el_time, gram_atmosphere, gram)
             ρ, T_p, wind = pyconvert(Any, ρ), pyconvert(Any, T_p), [pyconvert(Any, wind[1]), pyconvert(Any, wind[2]), pyconvert(Any, wind[3])]
-        end
+        # end
 
         # Mach Number
         sound_velocity = sqrt(γ * m.planet.R * T_p)
@@ -197,9 +197,12 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                     state = [T_p, ρ, S]
                     index_ratio = [1,1]
                     aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
-                    aoa_struct = control_struct_load(ip, m, args, S, T_p, q)
 
-                    aoa = min(aoa, aoa_struct)
+                    if args[:struct_ctrl] == 1
+                        aoa_struct = control_struct_load(ip, m, args, S, T_p, q)
+
+                        aoa = min(aoa, aoa_struct)
+                    end
                     
                     # aoa = m.aerodynamics.α
                 end
@@ -218,9 +221,12 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
                     state = [T_p, ρ, S]
                     index_ratio = [1,1]
                     aoa = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
-                    aoa_struct = control_struct_load(ip, m, args, S, T_p, q)
+                    
+                    if args[:struct_ctrl] == 1
+                        aoa_struct = control_struct_load(ip, m, args, S, T_p, q)
 
-                    aoa = min(aoa, aoa_struct)
+                        aoa = min(aoa, aoa_struct)
+                    end
                     # aoa = m.aerodynamics.α
                 end
             elseif args[:heat_load_sol] == 1 || args[:heat_load_sol] == 2

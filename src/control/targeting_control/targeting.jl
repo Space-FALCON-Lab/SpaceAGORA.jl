@@ -73,9 +73,12 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     println("Energy difference due to perturbations during drag passage (zero aoa case): ", energy_del_pert_dp)
 
     # apoapsis propagation without aero forces
-    time_0 = initial_time
+    OE_exit = rvtoorbitalelement(SVector{3, Float64}(sol_pert_dp[1:3,end]),
+                                 SVector{3, Float64}(sol_pert_dp[4:6,end]),
+                                 OE[7], m.planet)
+    time_0 = sol_pert_dp.t[end]
     gram_atmosphere = param[10]
-    sol_apoapsis = asim_ctrl_rf(ip, m, time_0, OE, args, 0.0, 1.0, false, gram_atmosphere, true, 0.0, false, true)
+    sol_apoapsis = asim_ctrl_rf(ip, m, time_0, OE_exit, args, 0.0, 1.0, true, gram_atmosphere, true, 0.0, false, true)
 
     OE_apoapsis = rvtoorbitalelement(SVector{3, Float64}(sol_apoapsis[1:3,end]), SVector{3, Float64}(sol_apoapsis[4:6,end]), sol_apoapsis[7,end], m.planet)
 
@@ -129,9 +132,17 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     println("Apoapsis  target max: ", ra_targ_max)
     println("")
 
-    h0 = norm(cross(r0, v0))
+    # h0 = norm(cross(r0, v0))
     # r_p = h0^2 / (m.planet.μ * (1 + OE[2]))
-    r_p = (minimum( [norm(sol_max_dratio[1:3,k]) for k=1:length(sol_max_dratio.t)] ) + minimum( [norm(sol_min_dratio[1:3,k]) for k=1:length(sol_min_dratio.t)] ))/2
+    # r_p = (minimum( [norm(sol_max_dratio[1:3,k]) for k=1:length(sol_max_dratio.t)] ) + minimum( [norm(sol_min_dratio[1:3,k]) for k=1:length(sol_min_dratio.t)] ))/2
+
+    # h_apoapsis = norm(cross(sol_apoapsis[1:3,end], sol_apoapsis[4:6,end]))
+    # r_p = h_apoapsis^2 / (m.planet.μ * (1 + OE_apoapsis[2]))
+
+    r_p = OE_apoapsis[1] * (1 - OE_apoapsis[2])
+
+    # r_p = (minimum( [norm(sol_apoapsis[1:3,k]) for k=1:length(sol_apoapsis.t)] ) + minimum( [norm(sol_apoapsis[1:3,k]) for k=1:length(sol_apoapsis.t)] ))/2
+    
 
     # println("Current periapsis: ", r_p - m.planet.Rp_e)
 
@@ -142,7 +153,7 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     println("drag pass energy diff min dratio: ", sol_min_dratio[end,end] - sol_min_dratio[end,1])
     println("drag pass energy diff max dratio: ", sol_max_dratio[end,end] - sol_max_dratio[end,1])
 
-    energy_inc_pert = sol_apoapsis[end,end] - config.cnf.energy_start_dp # sol_pert_dp[end,end] # energy_target_max
+    energy_inc_pert = sol_apoapsis[end,end] - sol_apoapsis[end,1]
     # energy_inc_pert = norm(sol_apoapsis[4:6,end])^2/2 - m.planet.μ / norm(sol_apoapsis[1:3,end]) - energy_target_max
 
     println("Energy at apoapsis propagation: ", sol_apoapsis[end,end])
@@ -153,7 +164,7 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     target_energy = -m.planet.μ / (args[:ra_fin_orbit] + r_p) # change to current periapsis
 
     # target_energy -= target_energy_inc
-    # target_energy -= energy_inc_pert
+    target_energy -= energy_inc_pert
     # target_energy -= energy_del_pert_dp
 
     println("Target energy: ", target_energy)
@@ -212,7 +223,23 @@ function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
         return (energy_fin - energy_f) / 1e6
     end
 
-    t_switch = find_zero(ts -> func_targeting_num_int(ts), [0, 600], Roots.Brent(), verbose=true, rtol=1e-5)
+    min_switch_delay = 0.0
+    max_switch_delay = 2000.0
+    min_delay_error = func_targeting_num_int(min_switch_delay)
+    max_delay_error = func_targeting_num_int(max_switch_delay)
+
+    if min_delay_error == 0.0
+        t_switch = min_switch_delay
+    elseif max_delay_error == 0.0
+        t_switch = max_switch_delay
+    elseif signbit(min_delay_error) != signbit(max_delay_error)
+        t_switch = find_zero(ts -> func_targeting_num_int(ts),
+                             [min_switch_delay, max_switch_delay], Roots.Brent(),
+                             verbose=true, rtol=1e-8, abstol=1e-8)
+    else
+        t_switch = abs(min_delay_error) <= abs(max_delay_error) ? min_switch_delay : max_switch_delay
+        @warn "Target energy is outside the range reachable from the current state; using the closest switch-delay limit" time_0 min_delay_error max_delay_error t_switch
+    end
 
     return t_switch 
 end

@@ -168,6 +168,96 @@ function density_polyfit(h, p, lat::Float64=0.0, lon::Float64=0.0, montecarlo::B
     end
 end
 
+function density_cheby_norm(h, p, lat::Float64=0.0, lon::Float64=0.0, montecarlo::Bool=false, Wind::Bool=false, args::Dict=Dict(), el_time::Float64=0.0, atmosphere=nothing, gram=nothing)
+    if p.name == "mars"
+        h_c = 175.0
+        delta_h = 125.0
+    elseif p.name == "venus"
+        h_c = 150.0
+        delta_h = 100.0
+    elseif p.name == "earth"
+        h_c = 275.5
+        delta_h = 225.0
+    elseif p.name == "titan"
+        h_c = 1025.0
+        delta_h = 975.0
+    end
+
+    if typeof(h) != Float64
+        # Now contains d_0, d_1, ..., d_n.
+        polyfit = p.polyfit_coeffs
+        power = zeros(length(polyfit), length(h))
+
+        # Convert height from meters to kilometers.
+        h = h * 1e-3
+
+        # Normalize altitude to [-1, 1].
+        h_tilde = (h .- h_c) ./ delta_h
+
+        # Chebyshev basis:
+        # T_0(x) = 1
+        # T_1(x) = x
+        # T_n(x) = 2x*T_{n-1}(x) - T_{n-2}(x)
+        power[1, :] .= 1.0
+
+        if length(polyfit) >= 2
+            power[2, :] = h_tilde
+        end
+
+        for i = 3:length(polyfit)
+            power[i, :] =
+                2.0 .* h_tilde .* power[i - 1, :] .- power[i - 2, :]
+        end
+
+        # Evaluate log(rho/rho_ref).
+        exponent = zeros(length(h))
+        for j = 1:length(h)
+            exponent[j] = sum(polyfit .* power[:, j])
+        end
+
+        # rho_ref = 1 kg/m^3.
+        ρ = 1.0 .* exp.(exponent)
+        T = temperature_linear(h, p)
+
+        wind = [0, 0, 0]
+
+        return ρ, T, wind
+    else
+        # Now contains d_0, d_1, ..., d_n.
+        polyfit = p.polyfit_coeffs
+        power = zeros(length(polyfit))
+
+        # Convert height from meters to kilometers.
+        h = h * 1e-3
+
+        # Normalize altitude to [-1, 1].
+        h_tilde = (h - h_c) / delta_h
+
+        # Construct the Chebyshev basis.
+        power[1] = 1.0
+
+        if length(polyfit) >= 2
+            power[2] = h_tilde
+        end
+
+        for i = 3:length(polyfit)
+            power[i] =
+                2.0 * h_tilde * power[i - 1] - power[i - 2]
+        end
+
+        # Evaluate log(rho/rho_ref).
+        exponent = sum(polyfit .* power)
+
+        # rho_ref = 1 kg/m^3.
+        ρ = 1.0 * exp(exponent)
+        T = temperature_linear(h, p)
+
+        wind = [0, 0, 0]
+
+        return ρ, T, wind
+    end
+end
+
 function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Bool, Wind::Bool, args::Dict, el_time::Float64, atmosphere=nothing, gram=nothing)
     """
 
@@ -186,21 +276,34 @@ function density_gram(h::Float64, p, lat::Float64, lon::Float64, montecarlo::Boo
             rho, T, wind = density_polyfit(h, p)
         else
             position = gram.Position()
-            position.height = h * 1e-3
-            lat = rad2deg(lat)
-            lon = rad2deg(lon)
-            position.latitude = lat
-            position.longitude = lon
-            
-            position.elapsedTime = el_time # Time since start in s
-            atmosphere.setPosition(position)
-            atmosphere.update()
-            atmos = atmosphere.getAtmosphereState()
-            rho = atmos.density # atmos.perturbedDensity # atmos.density
-            T = atmos.temperature
-            wind = [montecarlo ? atmos.perturbedEWWind : atmos.ewWind,
-                    montecarlo ? atmos.perturbedNSWind : atmos.nsWind,
-                    atmos.verticalWind]
+            try
+                position.height = h * 1e-3
+                lat = rad2deg(lat)
+                lon = rad2deg(lon)
+                position.latitude = lat
+                position.longitude = lon
+                position.elapsedTime = el_time # Time since start in s
+                atmosphere.setPosition(position)
+                atmosphere.update()
+
+                atmos = atmosphere.getAtmosphereState()
+                try
+                    if montecarlo == true
+                        rho = pyconvert(Float64, atmos.perturbedDensity)
+                    else
+                        rho = pyconvert(Float64, atmos.density)
+                    end
+
+                    T = pyconvert(Float64, atmos.temperature)
+                    wind = [pyconvert(Float64, montecarlo ? atmos.perturbedEWWind : atmos.ewWind),
+                            pyconvert(Float64, montecarlo ? atmos.perturbedNSWind : atmos.nsWind),
+                            pyconvert(Float64, atmos.verticalWind)]
+                finally
+                    PythonCall.pydel!(atmos)
+                end
+            finally
+                PythonCall.pydel!(position)
+            end
         end
     end
 

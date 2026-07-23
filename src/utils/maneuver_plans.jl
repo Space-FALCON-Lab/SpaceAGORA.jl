@@ -84,6 +84,33 @@ function Odyssey_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0
     return args
 end
 
+function Odyssey_firing_plan_edg(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
+    if numberofpassage == 7
+        args[:delta_v] = 0.14
+        args[:phi] = deg2rad(180)
+    elseif numberofpassage == 14
+        args[:delta_v] = 0.15
+        args[:phi] = 0
+    elseif numberofpassage == 26
+        args[:delta_v] = 0.1
+        args[:phi] = 0
+    elseif numberofpassage == 30
+        args[:delta_v] = 0.1
+        args[:phi] = 0
+    elseif numberofpassage == 35
+        args[:delta_v] = 0.2
+        args[:phi] = 0
+    elseif numberofpassage == 47
+        args[:delta_v] = 0.2
+        args[:phi] = 0
+    else
+        args[:delta_v] = 0.0
+        args[:phi] = 0.0
+    end
+
+    return args
+end
+
 # Use when starting from true beginning
 function Odyssey_firing_plan_true_beginning(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
     if numberofpassage == 7

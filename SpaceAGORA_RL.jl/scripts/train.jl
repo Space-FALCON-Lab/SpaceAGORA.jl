@@ -79,12 +79,19 @@ function _with_terminal_log(f::Function, output_dir::AbstractString)
     end
 end
 
+function _train_session(session)
+    if session.learner.device isa CUDATrainingDevice
+        return Base.invokelatest(train_parallel!, session)
+    end
+    return train_parallel!(session)
+end
+
 function main(args=ARGS)
     config_path = isempty(args) ? default_config_path() : args[1]
     config = resolve_config(config_path)
     session = build_training_session(config)
     return _with_terminal_log(session.output_dir) do _
-        result = train_parallel!(session)
+        result = _train_session(session)
         println("wrote run artifacts to ", result.output_dir)
         println("episodes: ", length(result.summaries),
                 " transitions: ", length(result.transitions),

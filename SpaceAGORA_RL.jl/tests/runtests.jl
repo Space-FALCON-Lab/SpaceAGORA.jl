@@ -23,8 +23,28 @@ end
 
 @testset "normalization" begin
     bounds = paper_normalization_bounds("Main")
-    low_obs = PaperObservation(400, bounds.lower[2], 85e3, 0, 1.57, 1.39, 730486, 0, 0)
-    high_obs = PaperObservation(1200, 10100e3, 145e3, pi, 3.14, 1.75, 731216, 1.5e-7, 0.5)
+    low_obs = PaperObservation(
+        400,
+        bounds.lower[2],
+        85e3,
+        deg2rad(0.0),
+        deg2rad(90.0),
+        deg2rad(79.0),
+        730486,
+        0,
+        0,
+    )
+    high_obs = PaperObservation(
+        1200,
+        bounds.upper[2],
+        145e3,
+        deg2rad(360.0),
+        deg2rad(180.0),
+        deg2rad(100.0),
+        731216,
+        1.5e-7,
+        0.5,
+    )
     @test normalize_observation(low_obs, bounds) ≈ zeros(Float32, 9)
     @test normalize_observation(high_obs, bounds) ≈ ones(Float32, 9)
 end
@@ -107,6 +127,27 @@ end
     success_obs = PaperObservation(800, config.final_apoapsis_radius_m + 2e3, 92e3, 1, 2, 1.5, 730700, 1e-8, 0.15)
     success_flags = TerminationFlags(true, false, false, false, false, true, false)
     @test paper_reward(success_obs, config, action, success_flags, config.reward_config) > 9
+    @test config.reward_config.low_heat_action_cap_mps == 1.0
+
+    rounded_success_obs = PaperObservation(
+        800,
+        config.final_apoapsis_radius_m + 2.6e3,
+        92e3,
+        1,
+        2,
+        1.5,
+        730700,
+        1e-8,
+        0.50,
+    )
+    rounded_success_flags = TerminationFlags(true, false, false, false, true, true, false)
+    @test paper_reward(
+        rounded_success_obs,
+        config,
+        action,
+        rounded_success_flags,
+        config.reward_config,
+    ) ≈ 2.8
 
     undershoot_obs = PaperObservation(800, config.final_apoapsis_radius_m - 20e3, 92e3, 1, 2, 1.5, 730700, 1e-8, 0.15)
     undershoot_flags = TerminationFlags(false, true, false, false, false, true, false)
@@ -164,11 +205,16 @@ end
         training=true,
         max_passes=3,
     )
+    tolerant_config = paper_evaluation_scenario(
+        training_config;
+        terminal_on_thermal_violation=false,
+    )
     evaluation = evaluate_policy(
         NoManeuverPolicy(),
-        training_config;
+        tolerant_config;
         episodes=1,
         seed=31,
+        paper_protocol=false,
         protected_initialization=ProtectedInitializationConfig(
             corridor_maneuver=false,
         ),
@@ -184,10 +230,39 @@ end
 @testset "paper evaluation protocol defaults" begin
     @test PAPER_IID_EVALUATION_EPISODES == 40
     @test PAPER_GENERALIZATION_EVALUATION_EPISODES == 100
+    @test PAPER_EVALUATION_MODES == ("conservative", "tolerant")
     config = default_aerobraking_config(training=true, max_passes=7)
     evaluation_config = paper_evaluation_scenario(config)
     @test !evaluation_config.training
     @test evaluation_config.termination_config.max_passes == 7
+    mode_scenarios = paper_evaluation_mode_scenarios(evaluation_config)
+    @test mode_scenarios["conservative"].termination_config.terminal_on_thermal_violation
+    @test !mode_scenarios["tolerant"].termination_config.terminal_on_thermal_violation
+    thermal_observation = PaperObservation(
+        800,
+        evaluation_config.final_apoapsis_radius_m + 500e3,
+        92e3,
+        1,
+        2,
+        1.5,
+        730700,
+        1e-8,
+        0.50,
+    )
+    conservative_flags = classify_termination(
+        thermal_observation,
+        mode_scenarios["conservative"];
+        training=false,
+    )
+    tolerant_flags = classify_termination(
+        thermal_observation,
+        mode_scenarios["tolerant"];
+        training=false,
+    )
+    @test conservative_flags.thermal_violation
+    @test conservative_flags.terminated
+    @test tolerant_flags.thermal_violation
+    @test !tolerant_flags.terminated
     suites = generalization_suite_configs(evaluation_config)
     @test all(!scenario.training for scenario in values(suites))
     @test suites["nominal"].randomization_config.nominal
@@ -197,7 +272,28 @@ end
     )
     @test paper_training.training.protected_first_pass
     @test paper_training.training.protected_initial_corridor_maneuver
-    @test paper_training.scenario.termination_config.max_passes == 250
+    @test paper_training.scenario.termination_config.max_passes == 1000
+end
+
+@testset "paper finite 4 N burn duration" begin
+    @test SpaceAGORA_RL.PAPER_ABM_THRUST_N == 4.0
+    @test SpaceAGORA_RL.paper_finite_burn_duration_s(461.0, 1.0) ≈ 115.25
+    @test SpaceAGORA_RL.paper_finite_burn_duration_s(461.0, -0.5) ≈ 57.625
+    @test SpaceAGORA_RL.paper_finite_burn_duration_s(461.0, 0.0) == 0.0
+end
+
+@testset "frozen checkpoint discovery" begin
+    mktempdir() do directory
+        for name in ("checkpoint_10000.jls", "checkpoint_5000.jls", "checkpoint_final.jls",
+                     "manifest.toml")
+            touch(joinpath(directory, name))
+        end
+        @test basename.(frozen_checkpoint_paths(directory)) == [
+            "checkpoint_5000.jls",
+            "checkpoint_10000.jls",
+            "checkpoint_final.jls",
+        ]
+    end
 end
 
 @testset "aads prediction is nominal under randomized actual pass" begin
@@ -270,7 +366,7 @@ end
     )
     @test coverage.start == DateTime(2001, 12, 1)
     @test coverage.latest_start == DateTime(2002, 1, 1)
-    @test coverage.pass_cap == 250
+    @test coverage.pass_cap == 1000
     @test coverage.dt_s == 30.0
     @test coverage.sample_count == max(2, ceil(Int, coverage.total_span_s / coverage.dt_s) + 1)
     @test coverage.total_span_s ==

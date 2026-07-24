@@ -10,7 +10,7 @@ function main(args=ARGS)
                PAPER_IID_EVALUATION_EPISODES
     scenario = paper_evaluation_scenario(
         config.scenario;
-        max_passes=max(250, config.scenario.termination_config.max_passes),
+        max_passes=max(1000, config.scenario.termination_config.max_passes),
     )
     results = evaluate_baselines(scenario; episodes=episodes, seed=config.training.seed)
     paths = write_evaluation_artifacts(config.reports.output_dir, results)

@@ -1,5 +1,6 @@
 const PAPER_IID_EVALUATION_EPISODES = 40
 const PAPER_GENERALIZATION_EVALUATION_EPISODES = 100
+const PAPER_EVALUATION_MODES = ("conservative", "tolerant")
 
 function _paper_pr_drl_reward_config()
     return RewardConfig(
@@ -52,7 +53,7 @@ function paper_pr_drl_evaluation_config(; process_noise_scale::Real=0.4,
                                         training::Bool=false,
                                         backend_mode::Symbol=:paper_surrogate,
                                         phase::AbstractString="Main",
-                                        max_passes::Integer=250)
+                                        max_passes::Integer=1000)
     return default_aerobraking_config(
         phase=phase,
         nominal=false,
@@ -79,7 +80,7 @@ function paper_odyssey_flight_evaluation_config(; process_noise_scale::Real=0.0,
                                                 training::Bool=false,
                                                 backend_mode::Symbol=:paper_surrogate,
                                                 phase::AbstractString="Main",
-                                                max_passes::Integer=250)
+                                                max_passes::Integer=1000)
     return default_aerobraking_config(
         phase=phase,
         nominal=true,
@@ -100,13 +101,15 @@ function paper_evaluation_scenario(
     config::AerobrakingScenarioConfig;
     max_passes::Integer=config.termination_config.max_passes,
     randomization_config::AerobrakingRandomizationConfig=config.randomization_config,
+    terminal_on_thermal_violation::Bool=
+        config.termination_config.terminal_on_thermal_violation,
 )
     term = config.termination_config
     evaluation_termination = TerminationConfig(
         impact_periapsis_altitude_m=term.impact_periapsis_altitude_m,
         out_of_passage_periapsis_altitude_m=term.out_of_passage_periapsis_altitude_m,
         max_passes=Int(max_passes),
-        terminal_on_thermal_violation=term.terminal_on_thermal_violation,
+        terminal_on_thermal_violation=terminal_on_thermal_violation,
     )
     return default_aerobraking_config(
         phase=config.phase,
@@ -123,6 +126,19 @@ function paper_evaluation_scenario(
         reward_config=config.reward_config,
         termination_config=evaluation_termination,
         randomization_config=randomization_config,
+    )
+end
+
+function paper_evaluation_mode_scenarios(config::AerobrakingScenarioConfig)
+    return Dict(
+        "conservative" => paper_evaluation_scenario(
+            config;
+            terminal_on_thermal_violation=true,
+        ),
+        "tolerant" => paper_evaluation_scenario(
+            config;
+            terminal_on_thermal_violation=false,
+        ),
     )
 end
 

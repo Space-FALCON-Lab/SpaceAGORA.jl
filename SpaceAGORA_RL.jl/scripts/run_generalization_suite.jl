@@ -10,7 +10,7 @@ function main(args=ARGS)
                PAPER_GENERALIZATION_EVALUATION_EPISODES
     scenario = paper_evaluation_scenario(
         config.scenario;
-        max_passes=max(250, config.scenario.termination_config.max_passes),
+        max_passes=max(1000, config.scenario.termination_config.max_passes),
     )
     outputs = Dict{String,Any}()
     for (name, suite_scenario) in generalization_suite_configs(scenario)

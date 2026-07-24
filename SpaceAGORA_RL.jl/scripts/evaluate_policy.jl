@@ -15,7 +15,7 @@ function main(args=ARGS)
     policy_name = checkpoint_path === nothing ? "aads_heuristic" : "pr_drl"
     scenario = paper_evaluation_scenario(
         config.scenario;
-        max_passes=max(250, config.scenario.termination_config.max_passes),
+        max_passes=max(1000, config.scenario.termination_config.max_passes),
     )
     result = evaluate_policy(policy, scenario;
                              episodes=episodes,

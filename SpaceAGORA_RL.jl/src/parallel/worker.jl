@@ -174,14 +174,26 @@ function _spaceagora_physics_campaign_apply_action!(spaceagora,
                                                     rollout::SpaceAGORAPhysicsCampaignRollout,
                                                     integrator)
     _spaceagora_physics_campaign_reset_pass_state!(integrator)
-    abs(rollout.action.delta_v_mps) <= 1e-12 && return nothing
     sc = _spaceagora_solution_satellite_state(getproperty(integrator, :u))
-    vel = getproperty(sc, :vel)
-    speed = norm(vel)
-    speed > 0.0 || throw(ErrorException("SpaceAGORA campaign action cannot be applied to a zero-velocity state."))
-    new_speed = max(speed + rollout.action.delta_v_mps, eps(Float64))
-    vel .*= new_speed / speed
-    _spaceagora_physics_campaign_mark_modified!(spaceagora, integrator)
+    mass = Float64(getproperty(sc, :mass))
+    control_effectors = getproperty(
+        getproperty(getproperty(integrator, :p), :args),
+        :control_model,
+    ).control_effectors
+    length(control_effectors) == 1 ||
+        throw(ErrorException("paper finite-burn propagation requires exactly one control effector"))
+    thruster = only(control_effectors)
+    duration = _configure_paper_finite_burn!(
+        thruster,
+        rollout.action,
+        Float64(getproperty(integrator, :t)),
+        mass,
+    )
+    if duration > 0.0
+        callbacks = getproperty(getproperty(spaceagora, :SimulationModel), :SimulationCallbacks)
+        register_tstops! = getproperty(callbacks, :_register_control_tstops!)
+        Base.invokelatest(register_tstops!, integrator, thruster, 1)
+    end
     return nothing
 end
 

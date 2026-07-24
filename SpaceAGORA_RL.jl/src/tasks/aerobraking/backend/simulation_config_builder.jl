@@ -6,6 +6,8 @@ const _SPACEAGORA_RL_SPACEAGORA_MODULE = Ref{Union{Nothing,Module}}(nothing)
 const _SPACEAGORA_RL_GRAMSUITE_LOADED = Ref(false)
 const _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_FLOOR = 5_000_000
 const _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_PER_PASS = 250_000
+const PAPER_ABM_THRUST_N = 4.0
+const _PAPER_ABM_CONTROL_RATE_S = 1.0
 
 _spaceagora_base_root() = dirname(package_root())
 _spaceagora_spice_path() = joinpath(_spaceagora_base_root(), "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
@@ -59,18 +61,48 @@ function _initial_time_from_datetime(dt::DateTime; spaceagora=nothing)
     )
 end
 
-function _spaceagora_initial_condition(spaceagora, config, state, action::AerobrakingAction, planet)
+function _spaceagora_initial_condition(spaceagora, state, planet)
     SM = getproperty(spaceagora, :SimulationModel)
-    hp = clamp(periapsis_after_action_m(config, state, action), 50e3, 180e3)
     return Base.invokelatest(
         getproperty(SM, :InitialCondition);
         ra=state.apoapsis_radius_m,
-        rp=planet.Rp_e + hp,
+        rp=planet.Rp_e + state.periapsis_altitude_m,
         i=rad2deg(state.inclination_rad),
         ω=rad2deg(state.argument_of_periapsis_rad),
         Ω=rad2deg(state.raan_rad),
         ν=rad2deg(state.true_anomaly_rad),
     )
+end
+
+function paper_finite_burn_duration_s(mass_kg::Real, delta_v_mps::Real;
+                                      thrust_n::Real=PAPER_ABM_THRUST_N)
+    mass = Float64(mass_kg)
+    delta_v = abs(Float64(delta_v_mps))
+    thrust = Float64(thrust_n)
+    isfinite(mass) && mass > 0.0 ||
+        throw(ArgumentError("finite-burn spacecraft mass must be finite and positive"))
+    isfinite(delta_v) ||
+        throw(ArgumentError("finite-burn delta-v must be finite"))
+    isfinite(thrust) && thrust > 0.0 ||
+        throw(ArgumentError("finite-burn thrust must be finite and positive"))
+    return mass * delta_v / thrust
+end
+
+function _configure_paper_finite_burn!(thruster, action::AerobrakingAction,
+                                       start_time_s::Real, mass_kg::Real)
+    start_time = Float64(start_time_s)
+    duration = paper_finite_burn_duration_s(mass_kg, action.magnitude_mps)
+    thruster.thrust[1] = PAPER_ABM_THRUST_N
+    thruster.direction[1] = action.delta_v_mps < 0.0 ? pi : 0.0
+    thruster.Δv[1] = action.magnitude_mps
+    if duration <= 0.0
+        thruster.start_burn_time[1] = -1.0
+        thruster.stop_burn_time[1] = -1.0
+    else
+        thruster.start_burn_time[1] = start_time
+        thruster.stop_burn_time[1] = start_time + duration
+    end
+    return duration
 end
 
 function _spaceagora_campaign_mission_time_s(config, state, initial_periapsis_altitude_m::Real,
@@ -150,6 +182,7 @@ end
 mutable struct SpaceAGORAPhysicsSimulationTemplate
     planet::Any
     spacecraft::Any
+    thruster::Any
     sun_gravity::Any
     harmonics::Any
     srp::Any
@@ -167,7 +200,7 @@ function _spaceagora_physics_simulation_template(
     SM = getproperty(spaceagora, :SimulationModel)
     TV = getproperty(spaceagora, :TelemetryVerification)
     planet = deepcopy(_spaceagora_mars(spaceagora, _spaceagora_spice_path()))
-    ic = _spaceagora_initial_condition(spaceagora, config, state, action, planet)
+    ic = _spaceagora_initial_condition(spaceagora, state, planet)
     spacecraft = Base.invokelatest(
         getproperty(TV, :make_three_body_spacecraft);
         bus_dims=(2.2, 2.6, 1.7),
@@ -179,6 +212,23 @@ function _spaceagora_physics_simulation_template(
         reflection_coefficient=0.9,
         prop_mass=50.0,
         id=100,
+    )
+    thruster = Base.invokelatest(
+        getproperty(SM, :BaseThrusterModel);
+        thrust=[PAPER_ABM_THRUST_N],
+        direction=[0.0],
+        Δv=[0.0],
+        start_burn_time=[-1.0],
+        stop_burn_time=[-1.0],
+        # The paper models finite 4 N burns at constant vehicle mass and does
+        # not specify an Isp. Inf disables propellant depletion in this model.
+        Isp=[Inf],
+    )
+    _configure_paper_finite_burn!(
+        thruster,
+        action,
+        0.0,
+        spacecraft.dry_mass + spacecraft.prop_mass,
     )
     sun_gravity = Base.invokelatest(
         getproperty(SM, :NBodyGravityModel);
@@ -213,6 +263,7 @@ function _spaceagora_physics_simulation_template(
     return SpaceAGORAPhysicsSimulationTemplate(
         planet,
         spacecraft,
+        thruster,
         sun_gravity,
         harmonics,
         srp,
@@ -242,9 +293,16 @@ function _spaceagora_physics_simulation_configuration(config,
     planet = template.planet
     initial_time = _initial_time_from_datetime(state.epoch; spaceagora=spaceagora)
     periapsis_after_action = clamp(periapsis_after_action_m(config, state, action), 50e3, 180e3)
-    ic = _spaceagora_initial_condition(spaceagora, config, state, action, planet)
+    ic = _spaceagora_initial_condition(spaceagora, state, planet)
     spacecraft = template.spacecraft
     spacecraft.initial_condition = ic
+    thruster = template.thruster
+    first_burn_duration_s = _configure_paper_finite_burn!(
+        thruster,
+        action,
+        0.0,
+        spacecraft.dry_mass + spacecraft.prop_mass,
+    )
     sun_gravity = template.sun_gravity
     harmonics = template.harmonics
     srp = template.srp
@@ -302,7 +360,11 @@ function _spaceagora_physics_simulation_configuration(config,
         dynamics_model=base_args.dynamics_model,
         guidance_model=base_args.guidance_model,
         navigation_model=base_args.navigation_model,
-        control_model=base_args.control_model,
+        control_model=Base.invokelatest(
+            getproperty(SM, :ControlModel);
+            control_effectors=(thruster,),
+            control_rates=[_PAPER_ABM_CONTROL_RATE_S],
+        ),
         initial_time=base_args.initial_time,
         integration_tolerances=Base.invokelatest(
             getproperty(SM, :IntegrationTolerances);
@@ -320,7 +382,11 @@ function _spaceagora_physics_simulation_configuration(config,
         backend_mode=config.backend_mode,
         prediction=prediction,
         first_action_delta_v_mps=action.delta_v_mps,
-        initial_periapsis_altitude_m=periapsis_after_action,
+        initial_periapsis_altitude_m=state.periapsis_altitude_m,
+        commanded_periapsis_altitude_m=periapsis_after_action,
+        finite_burn=true,
+        maneuver_thrust_n=PAPER_ABM_THRUST_N,
+        first_burn_duration_s=first_burn_duration_s,
         campaign_max_passes=Int(campaign_max_passes),
         mission_time_s=mission_time,
         gravity_harmonics_degree=config.spaceagora_gravity_harmonics_degree,

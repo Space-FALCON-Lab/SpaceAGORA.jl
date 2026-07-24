@@ -69,3 +69,97 @@ function evaluate_baselines(config::AerobrakingScenarioConfig;
                 )
                 for (name, policy) in policies)
 end
+
+function evaluate_policy_modes(
+    policy::AbstractPolicy,
+    config::AerobrakingScenarioConfig;
+    episodes::Int=PAPER_IID_EVALUATION_EPISODES,
+    seed::Int=1,
+    policy_name::AbstractString=string(nameof(typeof(policy))),
+    protected_initialization::ProtectedInitializationConfig=ProtectedInitializationConfig(),
+)
+    scenarios = paper_evaluation_mode_scenarios(config)
+    return Dict(
+        mode => evaluate_policy(
+            policy,
+            scenarios[mode];
+            episodes=episodes,
+            seed=seed,
+            policy_name="$(policy_name)_$(mode)",
+            paper_protocol=false,
+            protected_initialization=protected_initialization,
+        )
+        for mode in PAPER_EVALUATION_MODES
+    )
+end
+
+function evaluate_frozen_checkpoint_modes(
+    checkpoint_path::AbstractString,
+    config::AerobrakingScenarioConfig;
+    episodes::Int=PAPER_IID_EVALUATION_EPISODES,
+    seed::Int=1,
+    protected_initialization::ProtectedInitializationConfig=ProtectedInitializationConfig(),
+)
+    policy = load_trained_pr_drl_policy(checkpoint_path)
+    checkpoint_name = splitext(basename(checkpoint_path))[1]
+    return evaluate_policy_modes(
+        policy,
+        config;
+        episodes=episodes,
+        seed=seed,
+        policy_name=checkpoint_name,
+        protected_initialization=protected_initialization,
+    )
+end
+
+function frozen_checkpoint_paths(checkpoint_directory::AbstractString)
+    isdir(checkpoint_directory) ||
+        throw(ArgumentError("checkpoint directory does not exist: $(checkpoint_directory)"))
+    paths = filter(readdir(checkpoint_directory; join=true)) do path
+        occursin(r"^checkpoint_(?:\d+|final)\.jls$", basename(path))
+    end
+    sort!(paths; by=path -> begin
+        token = replace(splitext(basename(path))[1], "checkpoint_" => "")
+        token == "final" ? typemax(Int) : parse(Int, token)
+    end)
+    return paths
+end
+
+function evaluate_frozen_checkpoints(
+    checkpoint_paths::AbstractVector{<:AbstractString},
+    config::AerobrakingScenarioConfig;
+    episodes::Int=PAPER_IID_EVALUATION_EPISODES,
+    seed::Int=1,
+    output_dir::Union{Nothing,AbstractString}=nothing,
+    protected_initialization::ProtectedInitializationConfig=ProtectedInitializationConfig(),
+)
+    isempty(checkpoint_paths) && throw(ArgumentError("no frozen checkpoints were provided"))
+    evaluations = Dict{String,Any}()
+    for checkpoint_path in checkpoint_paths
+        path = String(checkpoint_path)
+        modes = evaluate_frozen_checkpoint_modes(
+            path,
+            config;
+            episodes=episodes,
+            seed=seed,
+            protected_initialization=protected_initialization,
+        )
+        evaluations[path] = modes
+        if output_dir !== nothing
+            checkpoint_name = splitext(basename(path))[1]
+            write_evaluation_artifacts(joinpath(output_dir, checkpoint_name), modes)
+        end
+    end
+    return evaluations
+end
+
+function evaluate_frozen_checkpoints(
+    checkpoint_directory::AbstractString,
+    config::AerobrakingScenarioConfig;
+    kwargs...,
+)
+    paths = frozen_checkpoint_paths(checkpoint_directory)
+    isempty(paths) &&
+        throw(ArgumentError("no checkpoint_*.jls files found in $(checkpoint_directory)"))
+    return evaluate_frozen_checkpoints(paths, config; kwargs...)
+end

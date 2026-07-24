@@ -91,7 +91,7 @@ end
 
 function default_aerobraking_config(; phase::AbstractString="Main",
                                     nominal::Bool=true,
-                                    max_passes::Int=250,
+                                    max_passes::Int=1000,
                                     backend_mode::Symbol=:paper_surrogate,
                                     training::Bool=true,
                                     spaceagora_atmosphere_model::Symbol=:gram,

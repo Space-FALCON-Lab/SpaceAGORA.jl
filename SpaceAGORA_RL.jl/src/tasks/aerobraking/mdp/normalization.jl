@@ -14,8 +14,28 @@ end
 function paper_normalization_bounds(phase::AbstractString)
     constants = mars_odyssey_phase_constants(phase)
     names = paper_observation_names()
-    lower = [400.0, constants.mars_radius_m, 85e3, 0.0, 1.57, 1.39, 730486.0, 0.0, 0.0]
-    upper = [1200.0, constants.r_norm_m, 145e3, pi, 3.14, 1.75, 731216.0, 1.5e-7, 0.5]
+    lower = [
+        400.0,
+        constants.mars_radius_m,
+        85e3,
+        deg2rad(0.0),
+        deg2rad(90.0),
+        deg2rad(79.0),
+        730486.0,
+        0.0,
+        0.0,
+    ]
+    upper = [
+        1200.0,
+        constants.r_norm_m,
+        145e3,
+        deg2rad(360.0),
+        deg2rad(180.0),
+        deg2rad(100.0),
+        731216.0,
+        1.5e-7,
+        0.5,
+    ]
     return NormalizationBounds(names, lower, upper)
 end
 

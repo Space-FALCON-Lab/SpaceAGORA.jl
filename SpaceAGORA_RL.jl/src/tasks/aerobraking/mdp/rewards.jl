@@ -18,7 +18,7 @@ Base.@kwdef struct RewardConfig
     heat_sigma::Float64 = 0.1
     step_penalty::Float64 = -0.1
     action_penalty_scale::Float64 = 0.1
-    low_heat_action_cap_mps::Float64 = 1.5
+    low_heat_action_cap_mps::Float64 = 1.0
 end
 
 @enum ThermalStatus thermal_low thermal_nominal thermal_high thermal_medium thermal_hard
@@ -60,8 +60,9 @@ function paper_reward(obs::PaperObservation, scenario_config, action::Aerobrakin
         elseif flags.out_of_drag_passage
             reward += config.out_of_passage_penalty
         elseif flags.success
-            dist_km_floor = floor(abs(ra - target) / 1000)
-            reward += -dist_km_floor * config.success_distance_scale + config.success_reward_base
+            dist_km_nearest = round(Int, abs(ra - target) / 1000)
+            reward += -dist_km_nearest * config.success_distance_scale +
+                      config.success_reward_base
         elseif flags.target_undershoot
             reward += config.undershoot_penalty
         end

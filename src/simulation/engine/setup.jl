@@ -1283,6 +1283,30 @@ function _build_nbody_ephemeris_cache(
     return _nbody_ephemeris_cache_from_samples(primary_body_name, copy(body_query_names), ets, positions)
 end
 
+function _srp_sun_cache_from_nbody_cache(
+    nbody_cache::SimulationModel.NBodyEphemerisCache,
+    primary_body_name::String,
+    et_start::Float64,
+    mission_end_s::Float64,
+    dt_s::Float64,
+)::Union{Nothing, SimulationModel.SRPSunEphemerisCache}
+    nbody_cache.primary_body_name == primary_body_name || return nothing
+    sun_idx = get(nbody_cache.body_index_by_name, "sun", 0)
+    sun_idx > 0 || return nothing
+
+    ets = nbody_cache.ets
+    n_samples = max(2, Int(ceil(mission_end_s / dt_s)) + 1)
+    length(ets) == n_samples || return nothing
+    first(ets) == et_start || return nothing
+    last(ets) == et_start + mission_end_s || return nothing
+
+    positions = Vector{SVector{3, Float64}}(undef, n_samples)
+    @inbounds for sample_idx in 1:n_samples
+        positions[sample_idx] = nbody_cache.positions_j2000_m[sample_idx, sun_idx]
+    end
+    return SimulationModel.SRPSunEphemerisCache(ets, positions)
+end
+
 @inline function _prewarmed_nbody_ephemeris_lookup(primary_body_name::String, body_query_names::Vector{String}, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
     reuse_key = _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
     return _ephemeris_reuse_lookup(_NBODY_EPHEMERIS_PREWARMED_CACHE, reuse_key)
@@ -1475,14 +1499,38 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
     end
 
     primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
+    reuse_key = _srp_ephemeris_reuse_key(primary_body_name, et_start, mission_end_s, dt_s)
     if _ephemeris_reuse_enabled()
-        reuse_key = _srp_ephemeris_reuse_key(primary_body_name, et_start, mission_end_s, dt_s)
         reused = _ephemeris_reuse_lookup(_SRP_EPHEMERIS_REUSE_CACHE, reuse_key)
         if reused isa SimulationModel.SRPSunEphemerisCache
             p.shared_buffers.srp_sun_ephemeris_cache[] = reused
             return nothing
         end
     end
+
+    nbody_cache = p.shared_buffers.nbody_ephemeris_cache[]
+    if nbody_cache isa SimulationModel.NBodyEphemerisCache
+        cache_value = _srp_sun_cache_from_nbody_cache(
+            nbody_cache,
+            primary_body_name,
+            et_start,
+            mission_end_s,
+            dt_s,
+        )
+        if cache_value isa SimulationModel.SRPSunEphemerisCache
+            if _ephemeris_reuse_enabled()
+                cache_value = _ephemeris_reuse_store!(
+                    _SRP_EPHEMERIS_REUSE_CACHE,
+                    reuse_key,
+                    cache_value,
+                    _ephemeris_reuse_max_entries(),
+                )
+            end
+            p.shared_buffers.srp_sun_ephemeris_cache[] = cache_value
+            return nothing
+        end
+    end
+
     ets = Vector{Float64}(undef, n_samples)
     positions = Vector{SVector{3, Float64}}(undef, n_samples)
 
@@ -1497,7 +1545,6 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
 
     cache_value = SimulationModel.SRPSunEphemerisCache(ets, positions)
     if _ephemeris_reuse_enabled()
-        reuse_key = _srp_ephemeris_reuse_key(primary_body_name, et_start, mission_end_s, dt_s)
         cache_value = _ephemeris_reuse_store!(_SRP_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, _ephemeris_reuse_max_entries())
     end
     p.shared_buffers.srp_sun_ephemeris_cache[] = cache_value

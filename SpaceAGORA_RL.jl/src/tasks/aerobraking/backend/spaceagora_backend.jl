@@ -521,6 +521,7 @@ function _spaceagora_physics_propagate_single_pass(config::AerobrakingScenarioCo
         run_simulation_fn,
         args;
         return_solution=true,
+        isolate_state=false,
         extra_callbacks=(stats_callback,),
     )
     isempty(sol.u) && throw(ErrorException("SpaceAGORA physics propagation returned an empty solution."))

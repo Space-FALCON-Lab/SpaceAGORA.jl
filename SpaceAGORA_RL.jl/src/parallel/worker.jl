@@ -416,6 +416,7 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
             run_simulation_fn,
             args;
             return_solution = true,
+            isolate_state = false,
             extra_callbacks = (stats_callback, apoapsis_callback),
         )
     catch err
@@ -500,6 +501,7 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
             run_simulation_fn,
             args;
             return_solution = true,
+            isolate_state = false,
             extra_callbacks = (stats_callback, apoapsis_callback),
         )
 

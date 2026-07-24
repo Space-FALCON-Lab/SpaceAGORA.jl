@@ -2,6 +2,8 @@ const _SPACEAGORA_RL_LIVE_BACKEND_MODES = (:spaceagora_physics, :spaceagora_full
 const _SPACEAGORA_RL_LOAD_LOCK = ReentrantLock()
 const _SPACEAGORA_RL_SPICE_SETUP_LOCK = ReentrantLock()
 const _SPACEAGORA_RL_MARS_CACHE = Dict{String,Any}()
+const _SPACEAGORA_RL_SPACEAGORA_MODULE = Ref{Union{Nothing,Module}}(nothing)
+const _SPACEAGORA_RL_GRAMSUITE_LOADED = Ref(false)
 const _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_FLOOR = 5_000_000
 const _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_PER_PASS = 250_000
 
@@ -33,10 +35,15 @@ function _load_spaceagora!(; load_gramsuite::Bool=true)
                 pushfirst!(LOAD_PATH, path)
             end
         end
-        if load_gramsuite
+        if load_gramsuite && !_SPACEAGORA_RL_GRAMSUITE_LOADED[]
             Base.require(Base.PkgId(Base.UUID("b50455af-6a46-4eae-bf92-8039261dd674"), "GRAMSuite"))
+            _SPACEAGORA_RL_GRAMSUITE_LOADED[] = true
         end
-        return Base.require(Base.PkgId(Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540"), "SpaceAGORA"))
+        if _SPACEAGORA_RL_SPACEAGORA_MODULE[] === nothing
+            _SPACEAGORA_RL_SPACEAGORA_MODULE[] =
+                Base.require(Base.PkgId(Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540"), "SpaceAGORA"))
+        end
+        return _SPACEAGORA_RL_SPACEAGORA_MODULE[]::Module
     end
 end
 
@@ -150,7 +157,7 @@ function _spaceagora_physics_simulation_configuration(config,
     TV = getproperty(spaceagora, :TelemetryVerification)
 
     spice_path = _spaceagora_spice_path()
-    planet = _spaceagora_mars(spaceagora, spice_path)
+    planet = deepcopy(_spaceagora_mars(spaceagora, spice_path))
     initial_time = _initial_time_from_datetime(state.epoch; spaceagora=spaceagora)
     periapsis_after_action = clamp(periapsis_after_action_m(config, state, action), 50e3, 180e3)
     ic = _spaceagora_initial_condition(spaceagora, config, state, action, planet)

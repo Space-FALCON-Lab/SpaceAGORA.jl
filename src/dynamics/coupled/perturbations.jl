@@ -54,6 +54,8 @@ const _THIRD_BODY_MU = Dict{String, Float64}(
     "pluto" => 8.71e11,
     "titan" => 8.981e12
 )
+const _HARMONICS_STATIC_CACHE_LOCK = ReentrantLock()
+const _HARMONICS_STATIC_CACHE = Dict{Any, NamedTuple}()
 
 @inline _canonical_spice_name(name::String) = replace(lowercase(strip(name)), ' ' => '_')
 @inline _mu_lookup_name(name::String) = replace(_canonical_spice_name(name), "_barycenter" => "")
@@ -223,18 +225,219 @@ end
     return planet.Rp_e
 end
 
-@inline function _make_harmonics_scratch_workspace(model::GravitationalHarmonicsModel)::HarmonicsScratchWorkspace
-    L = model.L
+function _harmonics_scratch_arrays(L::Int64)
     A = zeros(Float64, L + 4, L + 4)
     R = zeros(Float64, L + 4)
     I = zeros(Float64, L + 4)
-
-    # Keep the same static diagonal initialization used by the legacy shared workspace.
     A[1, 1] = 1.0
     @inbounds for l = 1:(L + 2)
         i = l + 1
         A[i, i] = sqrt((2 * l + 1) / (2 * l)) * A[i - 1, i - 1]
     end
+    return A, R, I
+end
+
+function _harmonics_static_cache_key(
+    L::Int64,
+    M::Int64,
+    coefficients_file::String,
+    planet::AbstractPlanet,
+    normalized_source::Symbol,
+    coefficients_normalized::Bool,
+    j2_source::Symbol,
+    reference_radius_m::Float64,
+)
+    resolved_file = normpath(coefficients_file)
+    return (
+        resolved_file,
+        filesize(resolved_file),
+        mtime(resolved_file),
+        L,
+        M,
+        normalized_source,
+        coefficients_normalized,
+        j2_source,
+        reference_radius_m,
+        string(planet.name),
+        planet.J2,
+        planet.Rp_e,
+    )
+end
+
+function _build_harmonics_static_terms(
+    L::Int64,
+    M::Int64,
+    coefficients_file::String,
+    planet::AbstractPlanet,
+    normalized_source::Symbol,
+    coefficients_normalized::Bool,
+    j2_source::Symbol,
+)
+    # Use CSV.Rows for streaming/lazy reading instead of materializing entire file.
+    # This is critical for large files like Venus MGNP180U.csv (16K+ rows).
+    # We process rows on-the-fly and skip those beyond our requested degree/order.
+
+    # First: Quick structure validation using CSV.File to detect headers (minimal overhead for small inspection)
+    test_parse = CSV.File(coefficients_file; delim=',', stripwhitespace=true, ignorerepeated=true, limit=1)
+    has_degree_header = hasproperty(test_parse, :degree)
+
+    # Now do the expensive iteration with streaming to avoid materializing full columns
+    C_dict = Dict{Tuple{Int,Int}, Float64}()  # Temporary storage - only entries we need
+    S_dict = Dict{Tuple{Int,Int}, Float64}()
+    max_degree_file = 0
+
+    # Parse the entire file row-by-row using CSV.Rows (lazy evaluation)
+    open(coefficients_file) do io
+        rows = CSV.Rows(io; delim=',', stripwhitespace=true, ignorerepeated=true)
+        for (row_num, row) in enumerate(rows)
+            # Skip header row if it exists
+            if row_num == 1 && has_degree_header
+                continue
+            end
+
+            try
+                # Extract values by column position (works for both header and headerless files)
+                l = Int(floor(parse(Float64, string(row[1])))) + 1  # degree (0-based in file)
+                m = Int(floor(parse(Float64, string(row[2])))) + 1  # order (0-based in file)
+                c = parse(Float64, string(row[3]))
+                s = parse(Float64, string(row[4]))
+
+                # Track max degree found
+                max_degree_file = max(max_degree_file, l)
+
+                # Only store coefficients within requested range
+                if l <= L + 1 && m <= M + 1
+                    C_dict[(l, m)] = c
+                    S_dict[(l, m)] = s
+                end
+            catch
+                # Skip rows with parsing errors
+                continue
+            end
+        end
+    end
+
+    if max_degree_file == 0
+        throw(ArgumentError("No valid harmonic coefficients found in $coefficients_file"))
+    end
+
+    if L + 1 > max_degree_file
+        throw(ArgumentError(
+            "Requested harmonics degree L=$L exceeds coefficients file support (max degree=$(max_degree_file - 1))."
+        ))
+    end
+    if M + 1 > max_degree_file
+        throw(ArgumentError(
+            "Requested harmonics order M=$M exceeds coefficients file support (max order=$(max_degree_file - 1))."
+        ))
+    end
+
+    # Cap the degree to only what we need to reduce memory allocation.
+    # This is critical for files like Venus MGNP180U.csv which has degree 180 but we often only use degree 50.
+    degree = L + 1
+
+    C = zeros(Float64, degree, degree)
+    S = zeros(Float64, degree, degree)
+
+    # Convert unnormalized coefficients to fully normalized form when requested.
+    # This follows the GMAT HarmonicGravity V(n,m) recurrence used during file load.
+    norm_factor = nothing
+    if !coefficients_normalized
+        norm_factor = zeros(Float64, L + 1, M + 1)
+        @inbounds for n = 0:L
+            i = n + 1
+            norm_factor[i, 1] = sqrt(2n + 1)
+            if M >= 1
+                vnm = sqrt(2 * (2n + 1))
+                @inbounds for m = 1:min(M, n)
+                    vnm /= sqrt((n + m) * (n - m + 1))
+                    norm_factor[i, m + 1] = vnm
+                end
+            end
+        end
+    end
+
+    # Transfer coefficients from dict to matrices, applying normalization if needed
+    for ((l, m), c) in pairs(C_dict)
+        s = S_dict[(l, m)]
+        if !coefficients_normalized
+            vnm = norm_factor[l, m]
+            if vnm != 0.0
+                c /= vnm
+                s /= vnm
+            else
+                c = 0.0
+                s = 0.0
+            end
+        end
+        C[l, m] = c
+        S[l, m] = s
+    end
+
+    if j2_source == :planet_j2 && L >= 2
+        C[3, 1] = -planet.J2 / sqrt(5.0)
+        S[3, 1] = 0.0
+    end
+    _convert_harmonics_coefficients_to_full!(C, S, L, M, normalized_source)
+
+    N1 = zeros(Float64, L+4, L+4)
+    N2 = zeros(Float64, L+4, L+4)
+    VR01 = zeros(Float64, L+1, L+1)
+    VR11 = zeros(Float64, L+1, L+1)
+    @inbounds for m = 0:M+2
+        j = m + 1
+        @inbounds for l = m+2:L+2
+            i = l + 1
+            N1[i, j] = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
+            N2[i, j] = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
+        end
+    end
+
+    @inbounds for l = 0:L
+        i = l + 1
+        @inbounds for m = 0:min(M, l)
+            j = m + 1
+            divisor = (m == 0 ? sqrt_2 : 1)
+            VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
+            VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
+        end
+    end
+
+    # Precalculate the values of √(2n+3)
+    sqrt_2n_plus_3 = Vector{Float64}(zeros(L+1))
+    @inbounds for n = 1:L+1
+        sqrt_2n_plus_3[n] = sqrt(2*n + 3)
+    end
+
+    C_trunc = C[1:(L + 1), 1:(M + 1)]
+    S_trunc = S[1:(L + 1), 1:(M + 1)]
+
+    active_orders_by_degree = [Int[] for _ in 1:(L + 1)]
+    @inbounds for l = 1:L
+        i = l + 1
+        active = active_orders_by_degree[i]
+        @inbounds for m = 1:min(M, l)
+            j = m + 1
+            if C_trunc[i, j] != 0.0 || S_trunc[i, j] != 0.0
+                push!(active, m)
+            end
+        end
+    end
+
+    return (
+        C=C_trunc,
+        S=S_trunc,
+        VR01=VR01,
+        VR11=VR11,
+        N1=N1,
+        N2=N2,
+        sqrt_2n_plus_3=sqrt_2n_plus_3,
+        active_orders_by_degree=active_orders_by_degree,
+    )
+end
+
+@inline function _make_harmonics_scratch_workspace(model::GravitationalHarmonicsModel)::HarmonicsScratchWorkspace
+    A, R, I = _harmonics_scratch_arrays(model.L)
     return HarmonicsScratchWorkspace(A, R, I)
 end
 
@@ -680,186 +883,53 @@ function GravitationalHarmonicsModel(
     end
     normalized_source = _canonical_harmonics_normalization(coefficient_normalization)
 
-    # Use CSV.Rows for streaming/lazy reading instead of materializing entire file.
-    # This is critical for large files like Venus MGNP180U.csv (16K+ rows).
-    # We process rows on-the-fly and skip those beyond our requested degree/order.
-
-    # First: Quick structure validation using CSV.File to detect headers (minimal overhead for small inspection)
-    test_parse = CSV.File(coefficients_file; delim=',', stripwhitespace=true, ignorerepeated=true, limit=1)
-    has_degree_header = hasproperty(test_parse, :degree)
-
-    # Now do the expensive iteration with streaming to avoid materializing full columns
-    C_dict = Dict{Tuple{Int,Int}, Float64}()  # Temporary storage - only entries we need
-    S_dict = Dict{Tuple{Int,Int}, Float64}()
-    max_degree_file = 0
-
-    # Parse the entire file row-by-row using CSV.Rows (lazy evaluation)
-    open(coefficients_file) do io
-        rows = CSV.Rows(io; delim=',', stripwhitespace=true, ignorerepeated=true)
-        for (row_num, row) in enumerate(rows)
-            # Skip header row if it exists
-            if row_num == 1 && has_degree_header
-                continue
-            end
-
-            try
-                # Extract values by column position (works for both header and headerless files)
-                l = Int(floor(parse(Float64, string(row[1])))) + 1  # degree (0-based in file)
-                m = Int(floor(parse(Float64, string(row[2])))) + 1  # order (0-based in file)
-                c = parse(Float64, string(row[3]))
-                s = parse(Float64, string(row[4]))
-
-                # Track max degree found
-                max_degree_file = max(max_degree_file, l)
-
-                # Only store coefficients within requested range
-                if l <= L + 1 && m <= M + 1
-                    C_dict[(l, m)] = c
-                    S_dict[(l, m)] = s
-                end
-            catch
-                # Skip rows with parsing errors
-                continue
-            end
-        end
-    end
-
-    if max_degree_file == 0
-        throw(ArgumentError("No valid harmonic coefficients found in $coefficients_file"))
-    end
-
-    if L + 1 > max_degree_file
-        throw(ArgumentError(
-            "Requested harmonics degree L=$L exceeds coefficients file support (max degree=$(max_degree_file - 1))."
-        ))
-    end
-    if M + 1 > max_degree_file
-        throw(ArgumentError(
-            "Requested harmonics order M=$M exceeds coefficients file support (max order=$(max_degree_file - 1))."
-        ))
-    end
-
-    # Cap the degree to only what we need to reduce memory allocation.
-    # This is critical for files like Venus MGNP180U.csv which has degree 180 but we often only use degree 50.
-    degree = L + 1
-
-    C = zeros(Float64, degree, degree)
-    S = zeros(Float64, degree, degree)
-
-    # Convert unnormalized coefficients to fully normalized form when requested.
-    # This follows the GMAT HarmonicGravity V(n,m) recurrence used during file load.
-    norm_factor = nothing
-    if !coefficients_normalized
-        norm_factor = zeros(Float64, L + 1, M + 1)
-        @inbounds for n = 0:L
-            i = n + 1
-            norm_factor[i, 1] = sqrt(2n + 1)
-            if M >= 1
-                vnm = sqrt(2 * (2n + 1))
-                @inbounds for m = 1:min(M, n)
-                    vnm /= sqrt((n + m) * (n - m + 1))
-                    norm_factor[i, m + 1] = vnm
-                end
-            end
-        end
-    end
-
-    # Transfer coefficients from dict to matrices, applying normalization if needed
-    for ((l, m), c) in pairs(C_dict)
-        s = S_dict[(l, m)]
-        if !coefficients_normalized
-            vnm = norm_factor[l, m]
-            if vnm != 0.0
-                c /= vnm
-                s /= vnm
-            else
-                c = 0.0
-                s = 0.0
-            end
-        end
-        C[l, m] = c
-        S[l, m] = s
-    end
-
     if !(j2_source in (:file_c20, :planet_j2))
         throw(ArgumentError("Unsupported j2_source=$(j2_source). Expected :file_c20 or :planet_j2."))
     end
-    if j2_source == :planet_j2 && L >= 2
-        C[3, 1] = -planet.J2 / sqrt(5.0)
-        S[3, 1] = 0.0
-    end
-    _convert_harmonics_coefficients_to_full!(C, S, L, M, normalized_source)
-
-    N1 = zeros(Float64, L+4, L+4)
-    N2 = zeros(Float64, L+4, L+4)
-    VR01 = zeros(Float64, L+1, L+1)
-    VR11 = zeros(Float64, L+1, L+1)
-    @inbounds for m = 0:M+2
-        j = m + 1
-        @inbounds for l = m+2:L+2
-            i = l + 1
-            N1[i, j] = √((2*l+1)*(2*l-1)/(l+m)/(l-m))
-            N2[i, j] = √((l+m-1)*(2*l+1)*(l-m-1)/(2*l-3)/(l+m)/(l-m))
+    reference_radius_value = reference_radius_m === nothing ?
+        _infer_harmonics_reference_radius_m(coefficients_file, planet) :
+        reference_radius_m
+    cache_key = _harmonics_static_cache_key(
+        L,
+        M,
+        coefficients_file,
+        planet,
+        normalized_source,
+        coefficients_normalized,
+        j2_source,
+        reference_radius_value,
+    )
+    static_terms = lock(_HARMONICS_STATIC_CACHE_LOCK) do
+        get!(_HARMONICS_STATIC_CACHE, cache_key) do
+            _build_harmonics_static_terms(
+                L,
+                M,
+                coefficients_file,
+                planet,
+                normalized_source,
+                coefficients_normalized,
+                j2_source,
+            )
         end
     end
-    
-    @inbounds for l = 0:L
-        i = l + 1
-        @inbounds for m = 0:min(M, l)
-            j = m + 1
-            divisor = (m == 0 ? sqrt_2 : 1)
-            VR01[i, j] = sqrt((l-m)*(l+m+1)) / divisor
-            VR11[i, j] = sqrt((2*l+1)*(l+m+2)*(l+m+1)/(2*l+3)) / divisor
-        end
-    end
-
-    A = Matrix{Float64}(zeros(L+4, L+4))
-    R = Vector{Float64}(zeros(L+4))
-    I = Vector{Float64}(zeros(L+4))
-    A[1, 1] = 1
-    # Fill the diagonal elements of A
-    @inbounds for l = 1:L+2
-        i = l + 1
-        A[i, i] = sqrt((2*l+1)/(2*l))*A[i-1, i-1]
-    end
-
-    # Precalculate the values of √(2n+3)
-    sqrt_2n_plus_3 = Vector{Float64}(zeros(L+1))
-    @inbounds for n = 1:L+1
-        sqrt_2n_plus_3[n] = sqrt(2*n + 3)
-    end
-
-    C_trunc = C[1:(L + 1), 1:(M + 1)]
-    S_trunc = S[1:(L + 1), 1:(M + 1)]
-
-    active_orders_by_degree = [Int[] for _ in 1:(L + 1)]
-    @inbounds for l = 1:L
-        i = l + 1
-        active = active_orders_by_degree[i]
-        @inbounds for m = 1:min(M, l)
-            j = m + 1
-            if C_trunc[i, j] != 0.0 || S_trunc[i, j] != 0.0
-                push!(active, m)
-            end
-        end
-    end
+    A, R, I = _harmonics_scratch_arrays(L)
 
     return GravitationalHarmonicsModel(
         L,
         M,
-        C_trunc,
-        S_trunc,
+        static_terms.C,
+        static_terms.S,
         A,
         R,
         I,
-        VR01,
-        VR11,
-        N1,
-        N2,
-        sqrt_2n_plus_3,
+        static_terms.VR01,
+        static_terms.VR11,
+        static_terms.N1,
+        static_terms.N2,
+        static_terms.sqrt_2n_plus_3,
         normalized_source,
-        active_orders_by_degree,
-        reference_radius_m === nothing ? _infer_harmonics_reference_radius_m(coefficients_file, planet) : reference_radius_m,
+        static_terms.active_orders_by_degree,
+        reference_radius_value,
         include_central,
         planet
     )

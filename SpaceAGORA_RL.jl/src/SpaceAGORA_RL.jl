@@ -27,6 +27,7 @@ include("tasks/aerobraking/backend/pass_metrics.jl")
 include("tasks/aerobraking/backend/paper_heat_rate_metrics.jl")
 include("tasks/aerobraking/backend/spaceagora_core_adapter.jl")
 include("tasks/aerobraking/backend/spaceagora_backend.jl")
+include("tasks/aerobraking/backend/shared_ephemeris_cache.jl")
 
 include("tasks/aerobraking/baselines/no_maneuver.jl")
 include("tasks/aerobraking/baselines/random_policy.jl")

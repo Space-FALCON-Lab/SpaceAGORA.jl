@@ -410,6 +410,11 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
     )
     stats_callback = _spaceagora_physics_campaign_stats_callback(spaceagora, rollout)
     apoapsis_callback = _spaceagora_physics_campaign_apoapsis_callback(spaceagora, rollout)
+    ephemeris_callback =
+        _spaceagora_rl_shared_ephemeris_callback(spaceagora, config, pass_cap)
+    extra_callbacks = ephemeris_callback === nothing ?
+                      (stats_callback, apoapsis_callback) :
+                      (ephemeris_callback, stats_callback, apoapsis_callback)
     run_simulation_fn = Base.invokelatest(getproperty, spaceagora, :run_simulation)
     sol = try
         Base.invokelatest(
@@ -417,7 +422,7 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
             args;
             return_solution = true,
             isolate_state = false,
-            extra_callbacks = (stats_callback, apoapsis_callback),
+            extra_callbacks = extra_callbacks,
         )
     catch err
         bt = catch_backtrace()
@@ -496,13 +501,18 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
         )
         stats_callback = _spaceagora_physics_campaign_stats_callback(spaceagora, rollout)
         apoapsis_callback = _spaceagora_physics_campaign_apoapsis_callback(spaceagora, rollout)
+        ephemeris_callback =
+            _spaceagora_rl_shared_ephemeris_callback(spaceagora, config, pass_cap)
+        extra_callbacks = ephemeris_callback === nothing ?
+                          (stats_callback, apoapsis_callback) :
+                          (ephemeris_callback, stats_callback, apoapsis_callback)
         run_simulation_fn = Base.invokelatest(getproperty, spaceagora, :run_simulation)
         sol = Base.invokelatest(
             run_simulation_fn,
             args;
             return_solution = true,
             isolate_state = false,
-            extra_callbacks = (stats_callback, apoapsis_callback),
+            extra_callbacks = extra_callbacks,
         )
 
         if !rollout.terminated && length(rollout.transitions) < pass_cap && !isempty(sol.u)

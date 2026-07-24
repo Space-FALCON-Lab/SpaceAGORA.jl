@@ -3,6 +3,11 @@ using Random
 using Test
 using SpaceAGORA_RL
 
+mutable struct FakeEphemerisGrowthState
+    enabled::Bool
+    next_growth_t_s::Float64
+end
+
 @testset "actions" begin
     @test action_count() == 13
     @test zero_action_index() == 7
@@ -187,22 +192,102 @@ end
     end
 end
 
+@testset "RL shared ephemeris coverage and injection" begin
+    physics = resolve_config(
+        joinpath(dirname(default_config_path()), "pr_drl_spaceagora_physics.toml"),
+    )
+    coverage = SpaceAGORA_RL._spaceagora_rl_ephemeris_coverage(
+        physics.scenario,
+        physics.training.max_passes_per_campaign,
+    )
+    @test coverage.start == DateTime(2001, 12, 1)
+    @test coverage.latest_start == DateTime(2002, 1, 1)
+    @test coverage.pass_cap == 80
+    @test coverage.dt_s == 30.0
+    @test coverage.sample_count == max(2, ceil(Int, coverage.total_span_s / coverage.dt_s) + 1)
+    @test coverage.total_span_s ==
+          Dates.value(coverage.latest_start - coverage.start) / 1.0e3 +
+          coverage.mission_duration_s
+
+    nominal = default_aerobraking_config(phase="Main", nominal=true, max_passes=5)
+    nominal_coverage = SpaceAGORA_RL._spaceagora_rl_ephemeris_coverage(nominal, 20)
+    @test nominal_coverage.start == nominal.nominal_epoch
+    @test nominal_coverage.latest_start == nominal.nominal_epoch
+    @test nominal_coverage.pass_cap == 5
+    @test SpaceAGORA_RL._spaceagora_rl_shared_ephemeris_cache(
+        nominal,
+        5;
+        build_if_missing=false,
+    ) === nothing
+
+    cache = SpaceAGORA_RL.SpaceAGORARLSharedEphemerisCache(
+        :nbody,
+        :srp,
+        :frame,
+        100.0,
+        200.0,
+        30.0,
+        4,
+    )
+    growth = FakeEphemerisGrowthState(true, 150.0)
+    shared_buffers = (
+        et_start=Ref(120.0),
+        nbody_ephemeris_cache=Ref{Any}(nothing),
+        srp_sun_ephemeris_cache=Ref{Any}(nothing),
+        planet_frame_ephemeris_cache=Ref{Any}(nothing),
+        ephemeris_cache_growth_state=growth,
+    )
+    params = (
+        shared_buffers=shared_buffers,
+        args=(mission_configuration=(mission_time=50.0,),),
+    )
+    SpaceAGORA_RL._install_spaceagora_rl_shared_ephemeris_cache!(params, cache)
+    @test shared_buffers.nbody_ephemeris_cache[] == :nbody
+    @test shared_buffers.srp_sun_ephemeris_cache[] == :srp
+    @test shared_buffers.planet_frame_ephemeris_cache[] == :frame
+    @test !growth.enabled
+    @test growth.next_growth_t_s == Inf
+
+    out_of_range = (
+        shared_buffers=merge(shared_buffers, (et_start=Ref(175.0),)),
+        args=(mission_configuration=(mission_time=50.0,),),
+    )
+    @test_throws ArgumentError SpaceAGORA_RL._install_spaceagora_rl_shared_ephemeris_cache!(
+        out_of_range,
+        cache,
+    )
+end
+
 @testset "spaceagora physics outer parallel routing" begin
-    withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing,
-            "SPACEAGORA_INNER_THREAD_BUDGET" => nothing) do
+    withenv("SPACEAGORA_RL_SHARED_EPHEMERIS_CACHE" => "1",
+            "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing,
+            "SPACEAGORA_INNER_THREAD_BUDGET" => nothing,
+            "SPACEAGORA_NBODY_EPHEMERIS_CACHE" => nothing,
+            "SPACEAGORA_SRP_EPHEMERIS_CACHE" => nothing,
+            "SPACEAGORA_PLANET_FRAME_CACHE" => nothing) do
         observed = SpaceAGORA_RL._with_spaceagora_physics_outer_parallelism(2) do
             (
                 outer = ENV["SPACEAGORA_OUTER_PARALLEL_ACTIVE"],
                 inner = ENV["SPACEAGORA_INNER_THREAD_BUDGET"],
+                nbody_cache = ENV["SPACEAGORA_NBODY_EPHEMERIS_CACHE"],
+                srp_cache = ENV["SPACEAGORA_SRP_EPHEMERIS_CACHE"],
+                planet_frame_cache = ENV["SPACEAGORA_PLANET_FRAME_CACHE"],
             )
         end
         @test observed.outer == "1"
         @test parse(Int, observed.inner) == max(1, Threads.nthreads() ÷ 2)
+        @test observed.nbody_cache == "0"
+        @test observed.srp_cache == "0"
+        @test observed.planet_frame_cache == "0"
         @test !haskey(ENV, "SPACEAGORA_OUTER_PARALLEL_ACTIVE")
         @test !haskey(ENV, "SPACEAGORA_INNER_THREAD_BUDGET")
+        @test !haskey(ENV, "SPACEAGORA_NBODY_EPHEMERIS_CACHE")
+        @test !haskey(ENV, "SPACEAGORA_SRP_EPHEMERIS_CACHE")
+        @test !haskey(ENV, "SPACEAGORA_PLANET_FRAME_CACHE")
     end
 
-    withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
+    withenv("SPACEAGORA_RL_SHARED_EPHEMERIS_CACHE" => "1",
+            "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
             "SPACEAGORA_INNER_THREAD_BUDGET" => "3") do
         observed = SpaceAGORA_RL._with_spaceagora_physics_outer_parallelism(2) do
             (
@@ -213,6 +298,14 @@ end
         @test observed == (outer = "1", inner = "3")
         @test ENV["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "0"
         @test ENV["SPACEAGORA_INNER_THREAD_BUDGET"] == "3"
+    end
+
+    withenv("SPACEAGORA_RL_SHARED_EPHEMERIS_CACHE" => "0",
+            "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing) do
+        observed = SpaceAGORA_RL._with_spaceagora_physics_outer_parallelism(1) do
+            haskey(ENV, "SPACEAGORA_OUTER_PARALLEL_ACTIVE")
+        end
+        @test !observed
     end
 end
 

@@ -177,12 +177,15 @@ function _stop_spaceagora_physics_streaming_workers!(active::Dict{Int,SpaceAGORA
 end
 
 function _with_spaceagora_physics_outer_parallelism(f::Function, active_workers::Int)
-    active_workers > 1 || return f()
-    env_pairs = Pair{String,String}["SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"]
-    if isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))
+    env_pairs = _spaceagora_rl_core_ephemeris_env_pairs()
+    if active_workers > 1
+        push!(env_pairs, "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1")
+    end
+    if active_workers > 1 && isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))
         inner_budget = max(1, fld(Threads.nthreads(), active_workers))
         push!(env_pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(inner_budget))
     end
+    isempty(env_pairs) && return f()
     return withenv(env_pairs...) do
         f()
     end
@@ -397,6 +400,10 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
        _is_spaceagora_live_backend(session.config.scenario.backend_mode)
         active_workers = min(max(1, n_workers), Threads.nthreads())
         return _with_spaceagora_physics_outer_parallelism(active_workers) do
+            _prewarm_spaceagora_rl_shared_ephemeris_cache!(
+                session.config.scenario,
+                session.config.training.max_passes_per_campaign,
+            )
             _train_parallel_spaceagora_physics_streaming!(
                 session;
                 global_steps = global_steps,

@@ -187,6 +187,35 @@ end
     end
 end
 
+@testset "spaceagora physics outer parallel routing" begin
+    withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing,
+            "SPACEAGORA_INNER_THREAD_BUDGET" => nothing) do
+        observed = SpaceAGORA_RL._with_spaceagora_physics_outer_parallelism(2) do
+            (
+                outer = ENV["SPACEAGORA_OUTER_PARALLEL_ACTIVE"],
+                inner = ENV["SPACEAGORA_INNER_THREAD_BUDGET"],
+            )
+        end
+        @test observed.outer == "1"
+        @test parse(Int, observed.inner) == max(1, Threads.nthreads() ÷ 2)
+        @test !haskey(ENV, "SPACEAGORA_OUTER_PARALLEL_ACTIVE")
+        @test !haskey(ENV, "SPACEAGORA_INNER_THREAD_BUDGET")
+    end
+
+    withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
+            "SPACEAGORA_INNER_THREAD_BUDGET" => "3") do
+        observed = SpaceAGORA_RL._with_spaceagora_physics_outer_parallelism(2) do
+            (
+                outer = ENV["SPACEAGORA_OUTER_PARALLEL_ACTIVE"],
+                inner = ENV["SPACEAGORA_INNER_THREAD_BUDGET"],
+            )
+        end
+        @test observed == (outer = "1", inner = "3")
+        @test ENV["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "0"
+        @test ENV["SPACEAGORA_INNER_THREAD_BUDGET"] == "3"
+    end
+end
+
 @testset "replay buffer wraparound" begin
     buffer = ReplayBuffer(9, 3)
     for i in 1:5

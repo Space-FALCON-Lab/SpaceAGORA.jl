@@ -176,6 +176,18 @@ function _stop_spaceagora_physics_streaming_workers!(active::Dict{Int,SpaceAGORA
     return nothing
 end
 
+function _with_spaceagora_physics_outer_parallelism(f::Function, active_workers::Int)
+    active_workers > 1 || return f()
+    env_pairs = Pair{String,String}["SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"]
+    if isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))
+        inner_budget = max(1, fld(Threads.nthreads(), active_workers))
+        push!(env_pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(inner_budget))
+    end
+    return withenv(env_pairs...) do
+        f()
+    end
+end
+
 function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{<:DDQNLearner};
                                                        global_steps::Int=session.config.training.global_steps,
                                                        episodes::Union{Nothing,Int}=nothing,
@@ -203,13 +215,15 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
     printed_initial_progress = false
 
     @printf(
-        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d julia_threads=%d train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d architecture=paper_pass_streaming\n",
+        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d julia_threads=%d outer_parallel=%s inner_thread_budget=%s train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d architecture=paper_pass_streaming\n",
         algorithm_display_name(session.config.training.algorithm),
         target_global_step == typemax(Int) ? "none" : string(target_global_step),
         _budget_label(episode_budget),
         requested_workers,
         active_workers,
         Threads.nthreads(),
+        get(ENV, "SPACEAGORA_OUTER_PARALLEL_ACTIVE", "0"),
+        get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "auto"),
         session.learner.config.train_start,
         session.learner.config.batch_size,
         checkpoint_frequency,
@@ -381,12 +395,15 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
                          n_workers::Int=session.config.training.n_workers)
     if session.config.training.algorithm == :pr_drl &&
        _is_spaceagora_live_backend(session.config.scenario.backend_mode)
-        return _train_parallel_spaceagora_physics_streaming!(
-            session;
-            global_steps = global_steps,
-            episodes = episodes,
-            n_workers = n_workers,
-        )
+        active_workers = min(max(1, n_workers), Threads.nthreads())
+        return _with_spaceagora_physics_outer_parallelism(active_workers) do
+            _train_parallel_spaceagora_physics_streaming!(
+                session;
+                global_steps = global_steps,
+                episodes = episodes,
+                n_workers = n_workers,
+            )
+        end
     end
 
     summaries = EpisodeSummary[]

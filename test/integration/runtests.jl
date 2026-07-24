@@ -281,6 +281,14 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _ephemeris_reuse_enabled = SimulationEngine._ephemeris_reuse_enabled
     const _ephemeris_reuse_max_entries = SimulationEngine._ephemeris_reuse_max_entries
     const _ephemeris_reuse_store! = SimulationEngine._ephemeris_reuse_store!
+    const _ephemeris_cache_lazy_enabled = SimulationEngine._ephemeris_cache_lazy_enabled
+    const _ephemeris_cache_initial_span_s = SimulationEngine._ephemeris_cache_initial_span_s
+    const _ephemeris_cache_growth_span_s = SimulationEngine._ephemeris_cache_growth_span_s
+    const _ephemeris_initial_sample_count = SimulationEngine._ephemeris_initial_sample_count
+    const _ephemeris_required_sample_count = SimulationEngine._ephemeris_required_sample_count
+    const _ephemeris_sample_et = SimulationEngine._ephemeris_sample_et
+    const _ensure_ephemeris_cache_horizon! = SimulationEngine._ensure_ephemeris_cache_horizon!
+    const _build_nbody_ephemeris_cache = SimulationEngine._build_nbody_ephemeris_cache
     const _find_sample_value = SimulationEngine._find_sample_value
     const _has_active_srp_effector = SimulationEngine._has_active_srp_effector
     const _initialize_aero_workspace_buffers! = SimulationEngine._initialize_aero_workspace_buffers!

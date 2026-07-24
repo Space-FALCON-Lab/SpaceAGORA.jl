@@ -26,7 +26,7 @@ using Reexport
 
 export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams, IntermediateSolution, Mission, InitialParameters
 export SaveCache, SaveData
-export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
+export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, EphemerisCacheGrowthState, SpiceRuntimeCounters, SpiceRhsMemo
 export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
 export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig
 export RhsEffectorDecision, RhsExecutionPlan
@@ -483,6 +483,24 @@ export RhsEffectorDecision, RhsExecutionPlan
         quaternions::Vector{SVector{4, Float64}}
     end
 
+    @kwdef mutable struct EphemerisCacheGrowthState
+        enabled::Bool = false
+        lock::ReentrantLock = ReentrantLock()
+        et_start::Float64 = NaN
+        mission_end_s::Float64 = NaN
+        initial_span_s::Float64 = NaN
+        growth_span_s::Float64 = NaN
+        reuse_enabled::Bool = true
+        reuse_max_entries::Int = 32
+        next_growth_t_s::Float64 = Inf
+        nbody_dt_s::Float64 = NaN
+        srp_dt_s::Float64 = NaN
+        planet_frame_dt_s::Float64 = NaN
+        nbody_total_samples::Int = 0
+        srp_total_samples::Int = 0
+        planet_frame_total_samples::Int = 0
+    end
+
     @kwdef struct SpiceRuntimeCounters
         nbody_spkpos_runtime_calls::Base.Threads.Atomic{Int64} = Base.Threads.Atomic{Int64}(0)
         nbody_spkpos_cache_build_calls::Base.Threads.Atomic{Int64} = Base.Threads.Atomic{Int64}(0)
@@ -703,6 +721,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         nbody_ephemeris_cache::Base.RefValue{Union{Nothing, NBodyEphemerisCache}} = Ref{Union{Nothing, NBodyEphemerisCache}}(nothing)
         srp_sun_ephemeris_cache::Base.RefValue{Union{Nothing, SRPSunEphemerisCache}} = Ref{Union{Nothing, SRPSunEphemerisCache}}(nothing)
         planet_frame_ephemeris_cache::Base.RefValue{Union{Nothing, PlanetFrameEphemerisCache}} = Ref{Union{Nothing, PlanetFrameEphemerisCache}}(nothing)
+        ephemeris_cache_growth_state::EphemerisCacheGrowthState = EphemerisCacheGrowthState()
         harmonics_lpi_lock::ReentrantLock = ReentrantLock()
         harmonics_lpi_key::Base.RefValue{Any} = Ref{Any}(nothing)
         harmonics_lpi::Base.RefValue{SMatrix{3,3,Float64,9}} = Ref(SMatrix{3,3,Float64,9}((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)))

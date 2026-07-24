@@ -1216,6 +1216,7 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
     dynamic_effectors = p.args.dynamics_model.dynamic_effectors
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
+    _ensure_ephemeris_cache_horizon!(p, t)
 
     # Phase 1 (serial): warm SpiceRhsMemo for solar/N-body bodies before workers start.
     _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
@@ -1428,6 +1429,7 @@ function _gravity_backbone_half_kick!(u_state, p, t::Float64, half_dt::Float64)
     dynamic_effectors = p.args.dynamics_model.dynamic_effectors
     vel_state = _gravity_backbone_velocity_state(u_state)
     p.shared_buffers.current_time[] = t
+    _ensure_ephemeris_cache_horizon!(p, t)
     use_rhs_batch = _rhs_batch_parallel_enabled(p, length(vel_state.sc))
 
     if use_rhs_batch
@@ -1459,6 +1461,7 @@ function spacecraft_dynamics_gravity_backbone!(ddu, dq, q, p, t::Float64)
     ddu_state = ddu.sc
     dynamic_effectors = p.args.dynamics_model.dynamic_effectors
     p.shared_buffers.current_time[] = t
+    _ensure_ephemeris_cache_horizon!(p, t)
     use_rhs_batch = _rhs_batch_parallel_enabled(p, length(q_state))
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(q_state) / Polyester.num_cores())))
@@ -1583,6 +1586,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     spacecraft = dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
+    _ensure_ephemeris_cache_horizon!(p, t)
     plan = _rhs_execution_plan(p.args, p, dynamic_effectors, length(spacecraft))
     if plan.mode == :flat_constellation_effector_queue
         return _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:full)
@@ -1691,6 +1695,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
+    _ensure_ephemeris_cache_horizon!(p, t)
     plan = _rhs_execution_plan(p.args, p, dynamic_effectors, length(spacecraft))
     if plan.mode == :flat_constellation_effector_queue
         return _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:slow)
@@ -1820,6 +1825,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
+    _ensure_ephemeris_cache_horizon!(p, t)
     # Fast path: if the current state proves that no active spacecraft is inside
     # the atmosphere, all implicit drag terms are zero.  We only trust the staged
     # drag-state flag when it was stamped for this RHS time; otherwise we derive
@@ -1926,6 +1932,7 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
     spacecraft = dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
+    _ensure_ephemeris_cache_horizon!(p, t)
     plan = _rhs_execution_plan(p.args, p, dynamic_effectors, length(spacecraft))
     if plan.mode == :flat_constellation_effector_queue
         return _spacecraft_dynamics_flat_constellation_effector_queue!(
@@ -2041,6 +2048,7 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
     spacecraft = p.args.dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
+    _ensure_ephemeris_cache_horizon!(p, t)
     use_rhs_batch = _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))

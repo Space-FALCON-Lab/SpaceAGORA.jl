@@ -194,6 +194,18 @@ end
     return _parse_nonnegative_int_env("SPACEAGORA_EPHEMERIS_CACHE_REUSE_MAX_ENTRIES", 32)
 end
 
+@inline function _ephemeris_cache_lazy_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_EPHEMERIS_CACHE_LAZY", true)
+end
+
+@inline function _ephemeris_cache_initial_span_s()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EPHEMERIS_CACHE_INITIAL_SPAN_S", 86_400.0)
+end
+
+@inline function _ephemeris_cache_growth_span_s()::Float64
+    return _parse_positive_float_env("SPACEAGORA_EPHEMERIS_CACHE_GROWTH_SPAN_S", 86_400.0)
+end
+
 @inline function _cache_time_key(x::Float64)::Int64
     return round(Int64, x * 1e6)
 end
@@ -1225,6 +1237,101 @@ end
     return max(2, Int(ceil(mission_end_s / dt_s)) + 1)
 end
 
+@inline function _ephemeris_sample_et(
+    et_start::Float64,
+    mission_end_s::Float64,
+    dt_s::Float64,
+    sample_idx::Int,
+)::Float64
+    return et_start + min((sample_idx - 1) * dt_s, mission_end_s)
+end
+
+@inline function _ephemeris_required_sample_count(
+    t_s::Float64,
+    dt_s::Float64,
+    total_samples::Int,
+    lookahead_samples::Int=2,
+)::Int
+    total_samples <= 2 && return total_samples
+    clamped_t_s = max(0.0, t_s)
+    clamped_t_s >= (total_samples - 1) * dt_s && return total_samples
+    interval_idx = floor(Int, clamped_t_s / dt_s) + 1
+    return min(total_samples, max(2, interval_idx + lookahead_samples))
+end
+
+@inline function _ephemeris_initial_sample_count(
+    total_samples::Int,
+    dt_s::Float64,
+    initial_span_s::Float64,
+    lazy_enabled::Bool,
+    lookahead_samples::Int=2,
+)::Int
+    lazy_enabled || return total_samples
+    return _ephemeris_required_sample_count(initial_span_s, dt_s, total_samples, lookahead_samples)
+end
+
+function _configure_ephemeris_cache_growth!(
+    p,
+    et_start::Float64,
+    mission_end_s::Float64,
+)::SimulationModel.EphemerisCacheGrowthState
+    state = p.shared_buffers.ephemeris_cache_growth_state
+    if state.et_start != et_start || state.mission_end_s != mission_end_s
+        state.et_start = et_start
+        state.mission_end_s = mission_end_s
+        state.next_growth_t_s = Inf
+        state.nbody_dt_s = NaN
+        state.srp_dt_s = NaN
+        state.planet_frame_dt_s = NaN
+        state.nbody_total_samples = 0
+        state.srp_total_samples = 0
+        state.planet_frame_total_samples = 0
+    end
+    state.enabled = _ephemeris_cache_lazy_enabled()
+    state.initial_span_s = state.enabled ? _ephemeris_cache_initial_span_s() : mission_end_s
+    state.growth_span_s = state.enabled ? _ephemeris_cache_growth_span_s() : mission_end_s
+    state.reuse_enabled = _ephemeris_reuse_enabled()
+    state.reuse_max_entries = state.reuse_enabled ? _ephemeris_reuse_max_entries() : 0
+    return state
+end
+
+@inline function _ephemeris_cache_next_growth_t_s(
+    cache,
+    dt_s::Float64,
+    total_samples::Int,
+    lookahead_samples::Int,
+)::Float64
+    cache === nothing && return Inf
+    current_samples = length(cache.ets)
+    total_samples > current_samples || return Inf
+    return max(0.0, (current_samples - lookahead_samples) * dt_s)
+end
+
+function _refresh_ephemeris_cache_growth_horizon!(p)::Nothing
+    state = p.shared_buffers.ephemeris_cache_growth_state
+    state.next_growth_t_s = min(
+        _ephemeris_cache_next_growth_t_s(
+            p.shared_buffers.nbody_ephemeris_cache[],
+            state.nbody_dt_s,
+            state.nbody_total_samples,
+            2,
+        ),
+        _ephemeris_cache_next_growth_t_s(
+            p.shared_buffers.srp_sun_ephemeris_cache[],
+            state.srp_dt_s,
+            state.srp_total_samples,
+            2,
+        ),
+        _ephemeris_cache_next_growth_t_s(
+            p.shared_buffers.planet_frame_ephemeris_cache[],
+            state.planet_frame_dt_s,
+            state.planet_frame_total_samples,
+            1,
+        ),
+    )
+    return nothing
+end
+
 function _nbody_ephemeris_body_index_by_name(body_query_names::Vector{String})::Dict{String, Int}
     body_index_by_name = Dict{String, Int}()
     @inbounds for (idx, body_name) in pairs(body_query_names)
@@ -1261,16 +1368,20 @@ function _build_nbody_ephemeris_cache(
     et_start::Float64,
     mission_end_s::Float64,
     dt_s::Float64;
-    counter=nothing
+    counter=nothing,
+    n_samples::Int=_nbody_ephemeris_cache_sample_count(mission_end_s, dt_s),
 )::SimulationModel.NBodyEphemerisCache
-    n_samples = _nbody_ephemeris_cache_sample_count(mission_end_s, dt_s)
+    total_samples = _nbody_ephemeris_cache_sample_count(mission_end_s, dt_s)
+    2 <= n_samples <= total_samples || throw(ArgumentError(
+        "N-body ephemeris cache sample count must be in 2:$total_samples, got $n_samples."
+    ))
     n_bodies = length(body_query_names)
     ets = Vector{Float64}(undef, n_samples)
     positions = Matrix{SVector{3, Float64}}(undef, n_samples, n_bodies)
 
     lock(RuntimeServices.SPICE_LOCK) do
         @inbounds for sample_idx in 1:n_samples
-            et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
+            et = _ephemeris_sample_et(et_start, mission_end_s, dt_s, sample_idx)
             ets[sample_idx] = et
             for body_idx in 1:n_bodies
                 body_query = body_query_names[body_idx]
@@ -1289,22 +1400,26 @@ function _srp_sun_cache_from_nbody_cache(
     et_start::Float64,
     mission_end_s::Float64,
     dt_s::Float64,
+    n_samples::Int=length(nbody_cache.ets),
 )::Union{Nothing, SimulationModel.SRPSunEphemerisCache}
     nbody_cache.primary_body_name == primary_body_name || return nothing
     sun_idx = get(nbody_cache.body_index_by_name, "sun", 0)
     sun_idx > 0 || return nothing
 
     ets = nbody_cache.ets
-    n_samples = max(2, Int(ceil(mission_end_s / dt_s)) + 1)
-    length(ets) == n_samples || return nothing
-    first(ets) == et_start || return nothing
-    last(ets) == et_start + mission_end_s || return nothing
+    total_samples = _nbody_ephemeris_cache_sample_count(mission_end_s, dt_s)
+    2 <= n_samples <= total_samples || return nothing
+    length(ets) >= n_samples || return nothing
+    size(nbody_cache.positions_j2000_m, 1) >= n_samples || return nothing
+    @inbounds for sample_idx in 1:n_samples
+        ets[sample_idx] == _ephemeris_sample_et(et_start, mission_end_s, dt_s, sample_idx) || return nothing
+    end
 
     positions = Vector{SVector{3, Float64}}(undef, n_samples)
     @inbounds for sample_idx in 1:n_samples
         positions[sample_idx] = nbody_cache.positions_j2000_m[sample_idx, sun_idx]
     end
-    return SimulationModel.SRPSunEphemerisCache(ets, positions)
+    return SimulationModel.SRPSunEphemerisCache(copy(@view(ets[1:n_samples])), positions)
 end
 
 @inline function _prewarmed_nbody_ephemeris_lookup(primary_body_name::String, body_query_names::Vector{String}, et_start::Float64, mission_end_s::Float64, dt_s::Float64)
@@ -1491,19 +1606,29 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
     end
 
     dt_s = _srp_ephemeris_cache_dt_s()
-    n_samples = max(2, Int(ceil(mission_end_s / dt_s)) + 1)
+    total_samples = _nbody_ephemeris_cache_sample_count(mission_end_s, dt_s)
     max_samples = _srp_ephemeris_cache_max_samples()
-    if n_samples > max_samples
-        @warn "SRP ephemeris cache disabled: required samples=$n_samples exceeds SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES=$max_samples."
+    if total_samples > max_samples
+        @warn "SRP ephemeris cache disabled: required samples=$total_samples exceeds SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES=$max_samples."
         return nothing
     end
+    growth_state = _configure_ephemeris_cache_growth!(p, et_start, mission_end_s)
+    growth_state.srp_dt_s = dt_s
+    growth_state.srp_total_samples = total_samples
+    n_samples = _ephemeris_initial_sample_count(
+        total_samples,
+        dt_s,
+        growth_state.initial_span_s,
+        growth_state.enabled,
+    )
 
     primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
     reuse_key = _srp_ephemeris_reuse_key(primary_body_name, et_start, mission_end_s, dt_s)
-    if _ephemeris_reuse_enabled()
+    if growth_state.reuse_enabled
         reused = _ephemeris_reuse_lookup(_SRP_EPHEMERIS_REUSE_CACHE, reuse_key)
         if reused isa SimulationModel.SRPSunEphemerisCache
             p.shared_buffers.srp_sun_ephemeris_cache[] = reused
+            _refresh_ephemeris_cache_growth_horizon!(p)
             return nothing
         end
     end
@@ -1516,17 +1641,19 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
             et_start,
             mission_end_s,
             dt_s,
+            n_samples,
         )
         if cache_value isa SimulationModel.SRPSunEphemerisCache
-            if _ephemeris_reuse_enabled()
+            if n_samples == total_samples && growth_state.reuse_enabled
                 cache_value = _ephemeris_reuse_store!(
                     _SRP_EPHEMERIS_REUSE_CACHE,
                     reuse_key,
                     cache_value,
-                    _ephemeris_reuse_max_entries(),
+                    growth_state.reuse_max_entries,
                 )
             end
             p.shared_buffers.srp_sun_ephemeris_cache[] = cache_value
+            _refresh_ephemeris_cache_growth_horizon!(p)
             return nothing
         end
     end
@@ -1536,7 +1663,7 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
 
     lock(RuntimeServices.SPICE_LOCK) do
         @inbounds for sample_idx in 1:n_samples
-            et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
+            et = _ephemeris_sample_et(et_start, mission_end_s, dt_s, sample_idx)
             ets[sample_idx] = et
             positions[sample_idx] = SimulationModel.EphemeridesModels._spice_position_j2000_m_unlocked("sun", et, primary_body_name)
             Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.srp_spkpos_cache_build_calls, 1)
@@ -1544,13 +1671,14 @@ function _initialize_srp_sun_ephemeris_cache!(p, et_start::Float64, mission_end_
     end
 
     cache_value = SimulationModel.SRPSunEphemerisCache(ets, positions)
-    if _ephemeris_reuse_enabled()
-        cache_value = _ephemeris_reuse_store!(_SRP_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, _ephemeris_reuse_max_entries())
+    if n_samples == total_samples && growth_state.reuse_enabled
+        cache_value = _ephemeris_reuse_store!(_SRP_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, growth_state.reuse_max_entries)
     end
     p.shared_buffers.srp_sun_ephemeris_cache[] = cache_value
+    _refresh_ephemeris_cache_growth_horizon!(p)
     if p.args.simulation_settings.verbose
         println(
-            "Initialized SRP Sun ephemeris cache: samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
+            "Initialized SRP Sun ephemeris cache: samples=$(n_samples)/$(total_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
         )
     end
     return nothing
@@ -1567,27 +1695,38 @@ function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s:
     isempty(body_query_names) && return nothing
 
     dt_s = _nbody_ephemeris_cache_dt_s()
-    n_samples = _nbody_ephemeris_cache_sample_count(mission_end_s, dt_s)
+    total_samples = _nbody_ephemeris_cache_sample_count(mission_end_s, dt_s)
     max_samples = _nbody_ephemeris_cache_max_samples()
-    if n_samples > max_samples
-        @warn "N-body ephemeris cache disabled: required samples=$n_samples exceeds SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES=$max_samples."
+    if total_samples > max_samples
+        @warn "N-body ephemeris cache disabled: required samples=$total_samples exceeds SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES=$max_samples."
         return nothing
     end
+    growth_state = _configure_ephemeris_cache_growth!(p, et_start, mission_end_s)
+    growth_state.nbody_dt_s = dt_s
+    growth_state.nbody_total_samples = total_samples
 
     primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
     prewarmed = _prewarmed_nbody_ephemeris_lookup(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
     if prewarmed isa SimulationModel.NBodyEphemerisCache
         p.shared_buffers.nbody_ephemeris_cache[] = prewarmed
+        _refresh_ephemeris_cache_growth_horizon!(p)
         return nothing
     end
-    if _ephemeris_reuse_enabled()
+    if growth_state.reuse_enabled
         reuse_key = _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
         reused = _ephemeris_reuse_lookup(_NBODY_EPHEMERIS_REUSE_CACHE, reuse_key)
         if reused isa SimulationModel.NBodyEphemerisCache
             p.shared_buffers.nbody_ephemeris_cache[] = reused
+            _refresh_ephemeris_cache_growth_horizon!(p)
             return nothing
         end
     end
+    n_samples = _ephemeris_initial_sample_count(
+        total_samples,
+        dt_s,
+        growth_state.initial_span_s,
+        growth_state.enabled,
+    )
     n_bodies = length(body_query_names)
     cache_value = _build_nbody_ephemeris_cache(
         primary_body_name,
@@ -1595,16 +1734,18 @@ function _initialize_nbody_ephemeris_cache!(p, et_start::Float64, mission_end_s:
         et_start,
         mission_end_s,
         dt_s;
-        counter=p.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls
+        counter=p.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls,
+        n_samples=n_samples,
     )
-    if _ephemeris_reuse_enabled()
+    if n_samples == total_samples && growth_state.reuse_enabled
         reuse_key = _nbody_ephemeris_reuse_key(primary_body_name, body_query_names, et_start, mission_end_s, dt_s)
-        cache_value = _ephemeris_reuse_store!(_NBODY_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, _ephemeris_reuse_max_entries())
+        cache_value = _ephemeris_reuse_store!(_NBODY_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, growth_state.reuse_max_entries)
     end
     p.shared_buffers.nbody_ephemeris_cache[] = cache_value
+    _refresh_ephemeris_cache_growth_horizon!(p)
     if p.args.simulation_settings.verbose
         println(
-            "Initialized N-body ephemeris cache: bodies=$(n_bodies), samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
+            "Initialized N-body ephemeris cache: bodies=$(n_bodies), samples=$(n_samples)/$(total_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
         )
     end
     return nothing
@@ -1617,28 +1758,39 @@ function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission
     end
 
     dt_s = _planet_frame_cache_dt_s()
-    n_samples = max(2, Int(ceil(mission_end_s / dt_s)) + 1)
+    total_samples = _nbody_ephemeris_cache_sample_count(mission_end_s, dt_s)
     max_samples = _planet_frame_cache_max_samples()
-    if n_samples > max_samples
-        @warn "Planet frame cache disabled: required samples=$n_samples exceeds SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES=$max_samples."
+    if total_samples > max_samples
+        @warn "Planet frame cache disabled: required samples=$total_samples exceeds SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES=$max_samples."
         return nothing
     end
+    growth_state = _configure_ephemeris_cache_growth!(p, et_start, mission_end_s)
+    growth_state.planet_frame_dt_s = dt_s
+    growth_state.planet_frame_total_samples = total_samples
 
     planet = p.args.environment_model.planet
     ephemerides_model = p.args.environment_model.ephemerides_model
-    if _ephemeris_reuse_enabled()
+    if growth_state.reuse_enabled
         reuse_key = _planet_frame_ephemeris_reuse_key(planet, ephemerides_model, et_start, mission_end_s, dt_s)
         reused = _ephemeris_reuse_lookup(_PLANET_FRAME_EPHEMERIS_REUSE_CACHE, reuse_key)
         if reused isa SimulationModel.PlanetFrameEphemerisCache
             p.shared_buffers.planet_frame_ephemeris_cache[] = reused
+            _refresh_ephemeris_cache_growth_horizon!(p)
             return nothing
         end
     end
+    n_samples = _ephemeris_initial_sample_count(
+        total_samples,
+        dt_s,
+        growth_state.initial_span_s,
+        growth_state.enabled,
+        1,
+    )
     ets = Vector{Float64}(undef, n_samples)
     quaternions = Vector{SVector{4, Float64}}(undef, n_samples)
 
     @inbounds for sample_idx in 1:n_samples
-        et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
+        et = _ephemeris_sample_et(et_start, mission_end_s, dt_s, sample_idx)
         ets[sample_idx] = et
         l_pi = SimulationModel.planet_frame_lpi(planet, et, ephemerides_model)
         quaternions[sample_idx] = SimulationModel.dcm_to_quaternion(l_pi)
@@ -1648,15 +1800,247 @@ function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission
     end
 
     cache_value = SimulationModel.PlanetFrameEphemerisCache(ets, quaternions)
-    if _ephemeris_reuse_enabled()
+    if n_samples == total_samples && growth_state.reuse_enabled
         reuse_key = _planet_frame_ephemeris_reuse_key(planet, ephemerides_model, et_start, mission_end_s, dt_s)
-        cache_value = _ephemeris_reuse_store!(_PLANET_FRAME_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, _ephemeris_reuse_max_entries())
+        cache_value = _ephemeris_reuse_store!(_PLANET_FRAME_EPHEMERIS_REUSE_CACHE, reuse_key, cache_value, growth_state.reuse_max_entries)
     end
     p.shared_buffers.planet_frame_ephemeris_cache[] = cache_value
+    _refresh_ephemeris_cache_growth_horizon!(p)
     if p.args.simulation_settings.verbose
         println(
-            "Initialized planet frame cache: samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
+            "Initialized planet frame cache: samples=$(n_samples)/$(total_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
         )
+    end
+    return nothing
+end
+
+@inline function _ephemeris_cache_needs_growth(
+    cache,
+    t_s::Float64,
+    dt_s::Float64,
+    total_samples::Int,
+    lookahead_samples::Int=2,
+)::Bool
+    cache === nothing && return false
+    total_samples > length(cache.ets) || return false
+    return length(cache.ets) < _ephemeris_required_sample_count(t_s, dt_s, total_samples, lookahead_samples)
+end
+
+@inline function _ephemeris_cache_growth_target(
+    current_samples::Int,
+    t_s::Float64,
+    dt_s::Float64,
+    total_samples::Int,
+    growth_span_s::Float64,
+    lookahead_samples::Int=2,
+)::Int
+    required_samples = _ephemeris_required_sample_count(t_s, dt_s, total_samples, lookahead_samples)
+    growth_samples = max(1, ceil(Int, growth_span_s / dt_s))
+    return min(total_samples, max(required_samples, current_samples + growth_samples))
+end
+
+function _extend_nbody_ephemeris_cache!(p, t_s::Float64, state)::Nothing
+    cache = p.shared_buffers.nbody_ephemeris_cache[]
+    cache isa SimulationModel.NBodyEphemerisCache || return nothing
+    current_samples = length(cache.ets)
+    total_samples = state.nbody_total_samples
+    dt_s = state.nbody_dt_s
+    _ephemeris_cache_needs_growth(cache, t_s, dt_s, total_samples) || return nothing
+
+    new_samples = _ephemeris_cache_growth_target(
+        current_samples,
+        t_s,
+        dt_s,
+        total_samples,
+        state.growth_span_s,
+    )
+    n_bodies = length(cache.body_query_names)
+    ets = Vector{Float64}(undef, new_samples)
+    positions = Matrix{SVector{3, Float64}}(undef, new_samples, n_bodies)
+    copyto!(ets, 1, cache.ets, 1, current_samples)
+    @views positions[1:current_samples, :] .= cache.positions_j2000_m
+
+    lock(RuntimeServices.SPICE_LOCK) do
+        @inbounds for sample_idx in (current_samples + 1):new_samples
+            et = _ephemeris_sample_et(state.et_start, state.mission_end_s, dt_s, sample_idx)
+            ets[sample_idx] = et
+            for body_idx in 1:n_bodies
+                positions[sample_idx, body_idx] = SimulationModel.EphemeridesModels._spice_position_j2000_m_unlocked(
+                    cache.body_query_names[body_idx],
+                    et,
+                    cache.primary_body_name,
+                )
+                _increment_atomic_counter!(p.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls)
+            end
+        end
+    end
+
+    cache_value = _nbody_ephemeris_cache_from_samples(
+        cache.primary_body_name,
+        copy(cache.body_query_names),
+        ets,
+        positions,
+    )
+    if new_samples == total_samples && state.reuse_enabled
+        reuse_key = _nbody_ephemeris_reuse_key(
+            cache.primary_body_name,
+            cache.body_query_names,
+            state.et_start,
+            state.mission_end_s,
+            dt_s,
+        )
+        cache_value = _ephemeris_reuse_store!(
+            _NBODY_EPHEMERIS_REUSE_CACHE,
+            reuse_key,
+            cache_value,
+            state.reuse_max_entries,
+        )
+    end
+    p.shared_buffers.nbody_ephemeris_cache[] = cache_value
+    return nothing
+end
+
+function _extend_srp_sun_ephemeris_cache!(p, t_s::Float64, state)::Nothing
+    cache = p.shared_buffers.srp_sun_ephemeris_cache[]
+    cache isa SimulationModel.SRPSunEphemerisCache || return nothing
+    current_samples = length(cache.ets)
+    total_samples = state.srp_total_samples
+    dt_s = state.srp_dt_s
+    _ephemeris_cache_needs_growth(cache, t_s, dt_s, total_samples) || return nothing
+
+    new_samples = _ephemeris_cache_growth_target(
+        current_samples,
+        t_s,
+        dt_s,
+        total_samples,
+        state.growth_span_s,
+    )
+    primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(p.args.environment_model.planet.name)
+    nbody_cache = p.shared_buffers.nbody_ephemeris_cache[]
+    cache_value = if nbody_cache isa SimulationModel.NBodyEphemerisCache
+        _srp_sun_cache_from_nbody_cache(
+            nbody_cache,
+            primary_body_name,
+            state.et_start,
+            state.mission_end_s,
+            dt_s,
+            new_samples,
+        )
+    else
+        nothing
+    end
+
+    if !(cache_value isa SimulationModel.SRPSunEphemerisCache)
+        ets = Vector{Float64}(undef, new_samples)
+        positions = Vector{SVector{3, Float64}}(undef, new_samples)
+        copyto!(ets, 1, cache.ets, 1, current_samples)
+        copyto!(positions, 1, cache.positions_j2000_m, 1, current_samples)
+        lock(RuntimeServices.SPICE_LOCK) do
+            @inbounds for sample_idx in (current_samples + 1):new_samples
+                et = _ephemeris_sample_et(state.et_start, state.mission_end_s, dt_s, sample_idx)
+                ets[sample_idx] = et
+                positions[sample_idx] = SimulationModel.EphemeridesModels._spice_position_j2000_m_unlocked(
+                    "sun",
+                    et,
+                    primary_body_name,
+                )
+                _increment_atomic_counter!(p.shared_buffers.spice_runtime_counters.srp_spkpos_cache_build_calls)
+            end
+        end
+        cache_value = SimulationModel.SRPSunEphemerisCache(ets, positions)
+    end
+
+    if new_samples == total_samples && state.reuse_enabled
+        reuse_key = _srp_ephemeris_reuse_key(
+            primary_body_name,
+            state.et_start,
+            state.mission_end_s,
+            dt_s,
+        )
+        cache_value = _ephemeris_reuse_store!(
+            _SRP_EPHEMERIS_REUSE_CACHE,
+            reuse_key,
+            cache_value,
+            state.reuse_max_entries,
+        )
+    end
+    p.shared_buffers.srp_sun_ephemeris_cache[] = cache_value
+    return nothing
+end
+
+function _extend_planet_frame_ephemeris_cache!(p, t_s::Float64, state)::Nothing
+    cache = p.shared_buffers.planet_frame_ephemeris_cache[]
+    cache isa SimulationModel.PlanetFrameEphemerisCache || return nothing
+    current_samples = length(cache.ets)
+    total_samples = state.planet_frame_total_samples
+    dt_s = state.planet_frame_dt_s
+    _ephemeris_cache_needs_growth(cache, t_s, dt_s, total_samples, 1) || return nothing
+
+    new_samples = _ephemeris_cache_growth_target(
+        current_samples,
+        t_s,
+        dt_s,
+        total_samples,
+        state.growth_span_s,
+        1,
+    )
+    ets = Vector{Float64}(undef, new_samples)
+    quaternions = Vector{SVector{4, Float64}}(undef, new_samples)
+    copyto!(ets, 1, cache.ets, 1, current_samples)
+    copyto!(quaternions, 1, cache.quaternions, 1, current_samples)
+
+    planet = p.args.environment_model.planet
+    ephemerides_model = p.args.environment_model.ephemerides_model
+    @inbounds for sample_idx in (current_samples + 1):new_samples
+        et = _ephemeris_sample_et(state.et_start, state.mission_end_s, dt_s, sample_idx)
+        ets[sample_idx] = et
+        l_pi = SimulationModel.planet_frame_lpi(planet, et, ephemerides_model)
+        quaternions[sample_idx] = SimulationModel.dcm_to_quaternion(l_pi)
+        if SimulationModel.ephemerides_requires_spice(ephemerides_model)
+            _increment_atomic_counter!(p.shared_buffers.spice_runtime_counters.planet_pxform_cache_build_calls)
+        end
+    end
+
+    cache_value = SimulationModel.PlanetFrameEphemerisCache(ets, quaternions)
+    if new_samples == total_samples && state.reuse_enabled
+        reuse_key = _planet_frame_ephemeris_reuse_key(
+            planet,
+            ephemerides_model,
+            state.et_start,
+            state.mission_end_s,
+            dt_s,
+        )
+        cache_value = _ephemeris_reuse_store!(
+            _PLANET_FRAME_EPHEMERIS_REUSE_CACHE,
+            reuse_key,
+            cache_value,
+            state.reuse_max_entries,
+        )
+    end
+    p.shared_buffers.planet_frame_ephemeris_cache[] = cache_value
+    return nothing
+end
+
+function _ensure_ephemeris_cache_horizon!(p, t_s::Float64)::Nothing
+    state = p.shared_buffers.ephemeris_cache_growth_state
+    state.enabled || return nothing
+    isfinite(t_s) || return nothing
+    t_s < state.next_growth_t_s && return nothing
+
+    nbody_cache = p.shared_buffers.nbody_ephemeris_cache[]
+    srp_cache = p.shared_buffers.srp_sun_ephemeris_cache[]
+    planet_frame_cache = p.shared_buffers.planet_frame_ephemeris_cache[]
+    needs_growth =
+        _ephemeris_cache_needs_growth(nbody_cache, t_s, state.nbody_dt_s, state.nbody_total_samples) ||
+        _ephemeris_cache_needs_growth(srp_cache, t_s, state.srp_dt_s, state.srp_total_samples) ||
+        _ephemeris_cache_needs_growth(planet_frame_cache, t_s, state.planet_frame_dt_s, state.planet_frame_total_samples, 1)
+    needs_growth || return nothing
+
+    lock(state.lock) do
+        _extend_nbody_ephemeris_cache!(p, t_s, state)
+        _extend_srp_sun_ephemeris_cache!(p, t_s, state)
+        _extend_planet_frame_ephemeris_cache!(p, t_s, state)
+        _refresh_ephemeris_cache_growth_horizon!(p)
     end
     return nothing
 end

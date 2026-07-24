@@ -1123,6 +1123,24 @@
     withenv("SPACEAGORA_EPHEMERIS_CACHE_REUSE_MAX_ENTRIES" => "-1") do
         @test_throws ArgumentError _ephemeris_reuse_max_entries()
     end
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_LAZY" => "1") do
+        @test _ephemeris_cache_lazy_enabled()
+    end
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_LAZY" => "0") do
+        @test !_ephemeris_cache_lazy_enabled()
+    end
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_INITIAL_SPAN_S" => "123.5") do
+        @test _ephemeris_cache_initial_span_s() == 123.5
+    end
+    withenv("SPACEAGORA_EPHEMERIS_CACHE_GROWTH_SPAN_S" => "456.5") do
+        @test _ephemeris_cache_growth_span_s() == 456.5
+    end
+    @test [_ephemeris_sample_et(1000.0, 25.0, 10.0, i) for i in 1:4] == [1000.0, 1010.0, 1020.0, 1025.0]
+    @test _ephemeris_initial_sample_count(11, 10.0, 20.0, true) == 5
+    @test _ephemeris_initial_sample_count(11, 10.0, 20.0, true, 1) == 4
+    @test _ephemeris_initial_sample_count(11, 10.0, 20.0, false) == 11
+    @test _ephemeris_required_sample_count(45.0, 10.0, 11) == 7
+    @test _ephemeris_required_sample_count(100.0, 10.0, 11) == 11
     withenv("SPACEAGORA_EFFECTOR_LONG_ORBIT_THRESHOLD" => "9") do
         @test _effector_long_orbit_threshold() == 9
         args_orbit_mission = (
@@ -1318,6 +1336,47 @@
         @test cache.positions_j2000_m[1, 1] == raw_moon_j2000_km * 1.0e3
     end
 
+    p_nbody_lazy = ODEParams{1}(args=args_nbody)
+    _initialize_nbody_ephemeris_cache_buffer!(p_nbody_lazy)
+    _reset_spice_runtime_counters!(p_nbody_lazy)
+    withenv(
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE" => "1",
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "10.0",
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES" => "100",
+        "SPACEAGORA_EPHEMERIS_CACHE_LAZY" => "1",
+        "SPACEAGORA_EPHEMERIS_CACHE_INITIAL_SPAN_S" => "20.0",
+        "SPACEAGORA_EPHEMERIS_CACHE_GROWTH_SPAN_S" => "20.0",
+        "SPACEAGORA_EPHEMERIS_CACHE_REUSE" => "0",
+    ) do
+        _initialize_nbody_ephemeris_cache!(p_nbody_lazy, 0.0, 100.0)
+        initial_cache = p_nbody_lazy.shared_buffers.nbody_ephemeris_cache[]
+        @test length(initial_cache.ets) == 5
+        @test p_nbody_lazy.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls[] == 5
+
+        _ensure_ephemeris_cache_horizon!(p_nbody_lazy, 19.0)
+        @test p_nbody_lazy.shared_buffers.nbody_ephemeris_cache[] === initial_cache
+
+        _ensure_ephemeris_cache_horizon!(p_nbody_lazy, 45.0)
+        grown_cache = p_nbody_lazy.shared_buffers.nbody_ephemeris_cache[]
+        @test length(grown_cache.ets) == 7
+        @test grown_cache.ets[1:5] == initial_cache.ets
+        @test grown_cache.positions_j2000_m[1:5, :] == initial_cache.positions_j2000_m
+        @test p_nbody_lazy.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls[] == 7
+
+        _ensure_ephemeris_cache_horizon!(p_nbody_lazy, 100.0)
+        completed_cache = p_nbody_lazy.shared_buffers.nbody_ephemeris_cache[]
+        full_cache = _build_nbody_ephemeris_cache(
+            completed_cache.primary_body_name,
+            completed_cache.body_query_names,
+            0.0,
+            100.0,
+            10.0,
+        )
+        @test completed_cache.ets == full_cache.ets
+        @test completed_cache.positions_j2000_m == full_cache.positions_j2000_m
+        @test p_nbody_lazy.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls[] == 11
+    end
+
     et_start_nbody = SimulationModel.ephemerides_time_seconds(args_nbody.initial_time, args_nbody.environment_model.ephemerides_model)
     _clear_ephemeris_reuse_cache!()
     withenv(
@@ -1375,6 +1434,31 @@
     end
     @test p_planet_frame.shared_buffers.planet_frame_ephemeris_cache[] === nothing
 
+    p_planet_frame_lazy = ODEParams{1}(args=args_srp)
+    _initialize_planet_frame_cache_buffer!(p_planet_frame_lazy)
+    _reset_spice_runtime_counters!(p_planet_frame_lazy)
+    withenv(
+        "SPACEAGORA_PLANET_FRAME_CACHE" => "1",
+        "SPACEAGORA_PLANET_FRAME_CACHE_DT_S" => "10.0",
+        "SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES" => "100",
+        "SPACEAGORA_EPHEMERIS_CACHE_LAZY" => "1",
+        "SPACEAGORA_EPHEMERIS_CACHE_INITIAL_SPAN_S" => "20.0",
+        "SPACEAGORA_EPHEMERIS_CACHE_GROWTH_SPAN_S" => "20.0",
+        "SPACEAGORA_EPHEMERIS_CACHE_REUSE" => "0",
+    ) do
+        _initialize_planet_frame_ephemeris_cache!(p_planet_frame_lazy, 0.0, 100.0)
+        initial_cache = p_planet_frame_lazy.shared_buffers.planet_frame_ephemeris_cache[]
+        @test length(initial_cache.ets) == 4
+        @test p_planet_frame_lazy.shared_buffers.spice_runtime_counters.planet_pxform_cache_build_calls[] == 4
+
+        _ensure_ephemeris_cache_horizon!(p_planet_frame_lazy, 45.0)
+        grown_cache = p_planet_frame_lazy.shared_buffers.planet_frame_ephemeris_cache[]
+        @test length(grown_cache.ets) == 6
+        @test grown_cache.ets[1:4] == initial_cache.ets
+        @test grown_cache.quaternions[1:4] == initial_cache.quaternions
+        @test p_planet_frame_lazy.shared_buffers.spice_runtime_counters.planet_pxform_cache_build_calls[] == 6
+    end
+
     args_nbody_srp = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
         density_model=NoAtmosphereModel(),
@@ -1388,6 +1472,41 @@
         ),
         keplerian=true
     )
+    p_nbody_srp_lazy = ODEParams{1}(args=args_nbody_srp)
+    _initialize_nbody_ephemeris_cache_buffer!(p_nbody_srp_lazy)
+    _initialize_srp_sun_cache_buffer!(p_nbody_srp_lazy)
+    _reset_spice_runtime_counters!(p_nbody_srp_lazy)
+    withenv(
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE" => "1",
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "10.0",
+        "SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES" => "100",
+        "SPACEAGORA_SRP_EPHEMERIS_CACHE" => "1",
+        "SPACEAGORA_SRP_EPHEMERIS_CACHE_DT_S" => "10.0",
+        "SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES" => "100",
+        "SPACEAGORA_EPHEMERIS_CACHE_LAZY" => "1",
+        "SPACEAGORA_EPHEMERIS_CACHE_INITIAL_SPAN_S" => "20.0",
+        "SPACEAGORA_EPHEMERIS_CACHE_GROWTH_SPAN_S" => "20.0",
+        "SPACEAGORA_EPHEMERIS_CACHE_REUSE" => "0",
+    ) do
+        _initialize_nbody_ephemeris_cache!(p_nbody_srp_lazy, 0.0, 100.0)
+        _initialize_srp_sun_ephemeris_cache!(p_nbody_srp_lazy, 0.0, 100.0)
+        @test length(p_nbody_srp_lazy.shared_buffers.nbody_ephemeris_cache[].ets) == 5
+        @test length(p_nbody_srp_lazy.shared_buffers.srp_sun_ephemeris_cache[].ets) == 5
+        @test p_nbody_srp_lazy.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls[] == 10
+        @test p_nbody_srp_lazy.shared_buffers.spice_runtime_counters.srp_spkpos_cache_build_calls[] == 0
+
+        _ensure_ephemeris_cache_horizon!(p_nbody_srp_lazy, 45.0)
+        nbody_cache = p_nbody_srp_lazy.shared_buffers.nbody_ephemeris_cache[]
+        srp_cache = p_nbody_srp_lazy.shared_buffers.srp_sun_ephemeris_cache[]
+        sun_idx = nbody_cache.body_index_by_name["sun"]
+        @test length(nbody_cache.ets) == 7
+        @test length(srp_cache.ets) == 7
+        @test srp_cache.ets == nbody_cache.ets
+        @test srp_cache.positions_j2000_m == nbody_cache.positions_j2000_m[:, sun_idx]
+        @test p_nbody_srp_lazy.shared_buffers.spice_runtime_counters.nbody_spkpos_cache_build_calls[] == 14
+        @test p_nbody_srp_lazy.shared_buffers.spice_runtime_counters.srp_spkpos_cache_build_calls[] == 0
+    end
+
     p_nbody_srp = ODEParams{1}(args=args_nbody_srp)
     _initialize_nbody_ephemeris_cache_buffer!(p_nbody_srp)
     _initialize_srp_sun_cache_buffer!(p_nbody_srp)

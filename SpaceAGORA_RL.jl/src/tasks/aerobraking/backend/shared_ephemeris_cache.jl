@@ -30,7 +30,7 @@ function _spaceagora_rl_shared_ephemeris_dt_s()
 end
 
 function _spaceagora_rl_shared_ephemeris_max_samples()
-    raw = strip(get(ENV, "SPACEAGORA_RL_SHARED_EPHEMERIS_MAX_SAMPLES", "500000"))
+    raw = strip(get(ENV, "SPACEAGORA_RL_SHARED_EPHEMERIS_MAX_SAMPLES", "1000000"))
     max_samples = tryparse(Int, raw)
     max_samples !== nothing && max_samples >= 2 ||
         throw(ArgumentError("SPACEAGORA_RL_SHARED_EPHEMERIS_MAX_SAMPLES must be an integer >= 2, got '$raw'."))

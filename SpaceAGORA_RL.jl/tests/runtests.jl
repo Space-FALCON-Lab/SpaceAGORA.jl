@@ -369,6 +369,14 @@ end
     @test coverage.pass_cap == 1000
     @test coverage.dt_s == 30.0
     @test coverage.sample_count == max(2, ceil(Int, coverage.total_span_s / coverage.dt_s) + 1)
+    withenv("SPACEAGORA_RL_SHARED_EPHEMERIS_MAX_SAMPLES" => nothing) do
+        @test SpaceAGORA_RL._spaceagora_rl_shared_ephemeris_max_samples() == 1_000_000
+        @test coverage.sample_count <=
+              SpaceAGORA_RL._spaceagora_rl_shared_ephemeris_max_samples()
+    end
+    withenv("SPACEAGORA_RL_SHARED_EPHEMERIS_MAX_SAMPLES" => "500000") do
+        @test SpaceAGORA_RL._spaceagora_rl_shared_ephemeris_max_samples() == 500_000
+    end
     @test coverage.total_span_s ==
           Dates.value(coverage.latest_start - coverage.start) / 1.0e3 +
           coverage.mission_duration_s

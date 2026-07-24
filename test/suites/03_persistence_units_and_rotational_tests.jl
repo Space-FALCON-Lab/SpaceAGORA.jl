@@ -1093,7 +1093,11 @@ end
     ω = SVector{3, Float64}(0.02, -0.03, 0.01)
 
     qdot_new = rotational.quaternion_derivative(ω, q)
-    qdot_legacy = 0.5 * SVector{4, Float64}(SimulationModel.quat_mult(SVector{4, Float64}(ω..., 0.0), q))
+    # Body-rate composition q ⊗ [ω, 0] (the pre-2026-07 pin used the
+    # inertial-rate [ω, 0] ⊗ q form, which broke rigid-body angular-momentum
+    # conservation against angular_acceleration's body-frame Euler equations;
+    # see the attitude-kinematics fix and its conservation probe).
+    qdot_legacy = 0.5 * SVector{4, Float64}(SimulationModel.quat_mult(q, SVector{4, Float64}(ω..., 0.0)))
     @test isapprox(qdot_new, qdot_legacy; atol=1e-12, rtol=1e-12)
     @test abs(dot(q, qdot_new)) < 1e-12
 

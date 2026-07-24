@@ -1979,4 +1979,130 @@ end
     end
 end
 
+@testset "LVLH cascade attitude controller" begin
+    PE = SimulationModel.DynamicEffectors.PerturbationEffectors
+    ES = parentmodule(PE.StateSample)
+    # Generic round-number gains: probe values are NOT mission calibrations.
+    mk(; kw...) = PE.LVLHCascadeAttitudeControlModel(;
+        k_out=[0.01, 0.01, 0.01], w_max=1.5e-3, k_rate=[0.05, 0.05, 0.05], tau_max=1.0e-3, kw...)
+    m = mk()
+    @test m.q_cmd_lb == SVector(0.0, 0.0, 0.0, 1.0)
+    @test_throws ArgumentError mk(w_max=0.0)
+    @test_throws ArgumentError mk(tau_max=-1.0)
+    @test_throws ArgumentError mk(k_out=[-0.01, 0.0, 0.0])
+    @test_throws ArgumentError mk(q_cmd_lb=[0.0, 0.0, 0.0, 0.0])
+
+    # Quaternion q with PE.rot(q) == R: Shepperd on the TRANSPOSE (PE.rot is
+    # the transpose of the standard scalar-last DCM; pinned below).
+    function dcm_to_quat(R_target)
+        R = R_target'
+        tr = R[1, 1] + R[2, 2] + R[3, 3]
+        if tr > 0
+            s = sqrt(tr + 1.0) * 2
+            q = SVector((R[3, 2] - R[2, 3]) / s, (R[1, 3] - R[3, 1]) / s, (R[2, 1] - R[1, 2]) / s, s / 4)
+        elseif R[1, 1] > R[2, 2] && R[1, 1] > R[3, 3]
+            s = sqrt(1.0 + R[1, 1] - R[2, 2] - R[3, 3]) * 2
+            q = SVector(s / 4, (R[1, 2] + R[2, 1]) / s, (R[1, 3] + R[3, 1]) / s, (R[3, 2] - R[2, 3]) / s)
+        elseif R[2, 2] > R[3, 3]
+            s = sqrt(1.0 + R[2, 2] - R[1, 1] - R[3, 3]) * 2
+            q = SVector((R[1, 2] + R[2, 1]) / s, s / 4, (R[2, 3] + R[3, 2]) / s, (R[1, 3] - R[3, 1]) / s)
+        else
+            s = sqrt(1.0 + R[3, 3] - R[1, 1] - R[2, 2]) * 2
+            q = SVector((R[1, 3] + R[3, 1]) / s, (R[2, 3] + R[3, 2]) / s, s / 4, (R[2, 1] - R[1, 2]) / s)
+        end
+        return q / norm(q)
+    end
+    lvlh_dcm(r, v) = begin
+        z_l = -r / norm(r); y_l = normalize(cross(z_l, v)); x_l = cross(y_l, z_l)
+        SMatrix{3, 3, Float64, 9}(x_l[1], y_l[1], z_l[1], x_l[2], y_l[2], z_l[2], x_l[3], y_l[3], z_l[3])
+    end
+    r0 = SVector(6.9e6, 0.0, 0.0)
+    v0 = SVector(0.0, sqrt(3.98600436233e14 / 6.9e6), 0.0)
+    R_li = lvlh_dcm(r0, v0)
+    q_aligned = dcm_to_quat(R_li)
+    @test maximum(abs.(PE.rot(q_aligned) - R_li)) < 1e-12    # dcm_to_quat consistent with rot
+    w_lvlh_body = PE.rot(q_aligned) * (cross(r0, v0) / dot(r0, r0))
+
+    # equilibrium: LVLH-aligned, LVLH-matched rates -> zero torque, zero force
+    x_eq = PE.StateSample(r0, v0, 29.0; q_ib=q_aligned, ω_body=w_lvlh_body)
+    env = PE.EnvironmentSample(nothing)
+    f, tq = PE.wrench(m, x_eq, env, 0.0)
+    @test f == SVector(0.0, 0.0, 0.0)
+    @test norm(tq) < 1e-15
+
+    # restoring: small roll offset (body vs LVLH), LVLH-matched rates ->
+    # torque opposes the error, and only that axis responds
+    q_off = SVector(sind(1.0), 0.0, 0.0, cosd(1.0))          # 2 deg about body x
+    q_ib = dcm_to_quat(PE.rot(q_off) * R_li)
+    @test maximum(abs.(PE.rot(q_ib) - PE.rot(q_off) * R_li)) < 1e-12  # composition pin
+    # rate consistent with the PERTURBED attitude, so w_rel = 0 and the
+    # response is purely the outer loop acting on the roll error
+    x_roll = PE.StateSample(r0, v0, 29.0; q_ib=q_ib,
+                            ω_body=PE.rot(q_ib) * (cross(r0, v0) / dot(r0, r0)))
+    _, tq_r = PE.wrench(m, x_roll, env, 0.0)
+    th_err = 2.0 * sind(1.0)  # small-angle error magnitude, rad-ish
+    @test tq_r[1] * th_err < 0                                # restoring on the error axis
+    @test abs(tq_r[2]) < 0.05 * abs(tq_r[1]) && abs(tq_r[3]) < 0.05 * abs(tq_r[1])
+
+    # rate damping: aligned attitude, extra body rate -> tau = -k_rate .* dw
+    dw = SVector(2.0e-4, -1.0e-4, 5.0e-5)
+    x_rate = PE.StateSample(r0, v0, 29.0; q_ib=q_aligned, ω_body=w_lvlh_body + dw)
+    _, tq_w = PE.wrench(m, x_rate, env, 0.0)
+    @test isapprox(tq_w, -m.k_rate .* dw; rtol=1e-10)
+
+    # saturation: large error saturates the rate command; torque respects tau_max
+    q_big = dcm_to_quat(PE.rot(SVector(sind(45.0), 0.0, 0.0, cosd(45.0))) * R_li)
+    x_big = PE.StateSample(r0, v0, 29.0; q_ib=q_big, ω_body=w_lvlh_body)
+    _, tq_b = PE.wrench(m, x_big, env, 0.0)
+    @test all(abs.(tq_b) .<= m.tau_max + 1e-18)
+    @test abs(tq_b[1]) <= m.k_rate[1] * m.w_max * (1 + 1e-9) + m.k_rate[1] * norm(w_lvlh_body)
+
+    # no attitude state -> zero wrench
+    x_noq = PE.StateSample(r0, v0, 29.0)
+    @test PE.wrench(m, x_noq, env, 0.0) == (SVector(0.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0))
+
+    # rigid-body invariant pin for the frame-consistency fix: torque-free
+    # asymmetric tumble under the ENGINE's own kinematics + Euler equations
+    # must conserve inertial angular momentum (the pre-fix inertial-rate
+    # quaternion composition drifted it by ~68% on this exact test).
+    DR = SimulationModel.DynamicsRotational
+    I_ten = SMatrix{3, 3, Float64, 9}(1.5, 0, 0, 0, 1.0, 0, 0, 0, 2.0)
+    q_t = SVector(0.0, 0.0, 0.0, 1.0); w_t = SVector(0.02, 0.03, 0.01)
+    L0 = PE.rot(q_t)' * (I_ten * w_t)
+    for _ in 1:40000
+        w_t = w_t + DR.angular_acceleration(w_t, I_ten, SVector(0.0, 0.0, 0.0)) * 0.05
+        q_t = q_t + DR.quaternion_derivative(w_t, q_t) * 0.05
+        q_t = q_t / norm(q_t)
+    end
+    @test norm(PE.rot(q_t)' * (I_ten * w_t) - L0) / norm(L0) < 0.01
+
+    # end-to-end convergence pin: rigid body + the engine's quaternion
+    # kinematics + this controller, closed loop from a 5 deg offset.
+    qdot(w, q) = DR.quaternion_derivative(SVector{3, Float64}(w), q)
+    I_diag = SVector(1.5, 1.0, 2.0)
+    n_orb = norm(cross(r0, v0)) / dot(r0, r0)
+    q = dcm_to_quat(PE.rot(SVector(sind(2.5), 0.0, 0.0, cosd(2.5))) * R_li)  # 5 deg roll offset
+    w_state = cross(r0, v0) / dot(r0, r0)
+    dt = 0.5
+    # circular-orbit propagation in the equatorial plane
+    orbit_r(tK) = SVector(6.9e6 * cos(n_orb * tK), 6.9e6 * sin(n_orb * tK), 0.0)
+    orbit_v(tK) = SVector(-v0[2] * sin(n_orb * tK), v0[2] * cos(n_orb * tK), 0.0)
+    err_angle(q, r, v) = begin
+        R_e = PE.rot(q) * lvlh_dcm(r, v)'
+        acosd(clamp((R_e[1, 1] + R_e[2, 2] + R_e[3, 3] - 1) / 2, -1, 1))
+    end
+    e_start = err_angle(q, r0, v0)
+    for k in 0:Int(2000 / dt)
+        tK = k * dt
+        r, v = orbit_r(tK), orbit_v(tK)
+        tau = PE._lvlh_cascade_torque(m, r, v, q, w_state)
+        w_state = w_state + (tau ./ I_diag) * dt
+        q = q + qdot(w_state, q) * dt
+        q = q / norm(q)
+    end
+    e_end = err_angle(q, orbit_r(2000.0), orbit_v(2000.0))
+    @test e_start > 4.5
+    @test e_end < 0.35                                        # >10x collapse, no divergence
+end
+
 println("coverage_parallel_telemetry_probes_ok")

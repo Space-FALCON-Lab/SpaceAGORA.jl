@@ -132,6 +132,74 @@ end
     @test final_summary.total_delta_v_mps >= final_summary.abm_delta_v_mps
 end
 
+@testset "SpaceAGORA heat rates retain W/cm2 units" begin
+    @test SpaceAGORA_RL._max_heat_rate_w_cm2([0.04, 0.18, 0.11]) == 0.18
+    @test SpaceAGORA_RL._max_heat_rate_w_cm2([NaN, -1.0, 0.25]) == 0.25
+end
+
+@testset "protected initialization accounting and exclusion" begin
+    config = default_aerobraking_config(phase="Main", training=false, max_passes=3)
+    rng = MersenneTwister(27)
+    state = reset_scenario(config, rng)
+    summary = empty_episode_summary()
+    initial = SpaceAGORA_RL.run_protected_initializer(
+        config,
+        state,
+        rng,
+        summary;
+        settings=ProtectedInitializationConfig(corridor_maneuver=false),
+    )
+
+    @test length(initial.results) == 1
+    @test initial.summary.pass_count == 1
+    @test initial.summary.protected_passes == 1
+    @test initial.summary.episode_reward == 0.0
+    @test initial.summary.thermal_violations == 0
+    @test initial.summary.protected_trace == [true]
+    @test isnan(only(initial.summary.reward_trace))
+    @test length(initial.summary.heat_rate_trace) == 1
+
+    training_config = default_aerobraking_config(
+        phase="Main",
+        training=true,
+        max_passes=3,
+    )
+    evaluation = evaluate_policy(
+        NoManeuverPolicy(),
+        training_config;
+        episodes=1,
+        seed=31,
+        protected_initialization=ProtectedInitializationConfig(
+            corridor_maneuver=false,
+        ),
+    )
+    evaluated = only(evaluation.summaries)
+    @test evaluated.pass_count == 3
+    @test evaluated.protected_passes == 1
+    @test length(evaluation.transitions) == 2
+    @test count(row -> row.protected, evaluation.pass_rows) == 1
+    @test isnan(first(evaluation.pass_rows).reward)
+end
+
+@testset "paper evaluation protocol defaults" begin
+    @test PAPER_IID_EVALUATION_EPISODES == 40
+    @test PAPER_GENERALIZATION_EVALUATION_EPISODES == 100
+    config = default_aerobraking_config(training=true, max_passes=7)
+    evaluation_config = paper_evaluation_scenario(config)
+    @test !evaluation_config.training
+    @test evaluation_config.termination_config.max_passes == 7
+    suites = generalization_suite_configs(evaluation_config)
+    @test all(!scenario.training for scenario in values(suites))
+    @test suites["nominal"].randomization_config.nominal
+    @test !suites["iid_randomized"].randomization_config.nominal
+    paper_training = resolve_config(
+        joinpath(dirname(default_config_path()), "pr_drl_paper_surrogate.toml"),
+    )
+    @test paper_training.training.protected_first_pass
+    @test paper_training.training.protected_initial_corridor_maneuver
+    @test paper_training.scenario.termination_config.max_passes == 250
+end
+
 @testset "aads prediction is nominal under randomized actual pass" begin
     config = paper_pr_drl_evaluation_config(process_noise_scale=0.4)
     rng = MersenneTwister(12)
@@ -202,7 +270,7 @@ end
     )
     @test coverage.start == DateTime(2001, 12, 1)
     @test coverage.latest_start == DateTime(2002, 1, 1)
-    @test coverage.pass_cap == 80
+    @test coverage.pass_cap == 250
     @test coverage.dt_s == 30.0
     @test coverage.sample_count == max(2, ceil(Int, coverage.total_span_s / coverage.dt_s) + 1)
     @test coverage.total_span_s ==
@@ -456,6 +524,7 @@ end
     @test updated === summary
     @test updated.heat_rate_trace === heat_trace
     @test updated.heat_rate_trace == [result.metrics.max_heat_rate_w_cm2]
+    @test updated.protected_trace == [false]
 end
 
 @testset "float32 network forward reuses its input" begin

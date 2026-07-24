@@ -56,6 +56,8 @@ Base.@kwdef mutable struct SpaceAGORAPhysicsCampaignRollout
     action_channel::Union{Nothing,Channel{Any}} = nothing
     protected_next_transition::Bool = false
     protected_suppress_thermal_terminal::Bool = true
+    protected_initialization::ProtectedInitializationConfig =
+        ProtectedInitializationConfig(enabled=false)
     last_integrator::Any = nothing
 end
 
@@ -67,7 +69,8 @@ function _spaceagora_physics_campaign_mission_pass_cap(config::AerobrakingScenar
 end
 
 function _spaceagora_physics_campaign_step_index(rollout::SpaceAGORAPhysicsCampaignRollout)
-    return rollout.global_step_start + length(rollout.transitions) + 1
+    learned_transitions = length(rollout.transitions) - rollout.summary.protected_passes
+    return rollout.global_step_start + learned_transitions + 1
 end
 
 function _spaceagora_physics_campaign_set_action!(rollout::SpaceAGORAPhysicsCampaignRollout,
@@ -128,21 +131,9 @@ function _spaceagora_physics_campaign_emit!(rollout::SpaceAGORAPhysicsCampaignRo
 end
 
 function _spaceagora_protected_first_pass_flags(flags::TerminationFlags)
-    thermal_only_terminal = flags.thermal_violation &&
-                            flags.terminated &&
-                            !(flags.success ||
-                              flags.target_undershoot ||
-                              flags.impact ||
-                              flags.out_of_drag_passage)
-    thermal_only_terminal || return flags
-    return TerminationFlags(
-        flags.success,
-        flags.target_undershoot,
-        flags.impact,
-        flags.out_of_drag_passage,
-        flags.thermal_violation,
-        false,
-        flags.truncated,
+    return protected_initialization_flags(
+        flags,
+        ProtectedInitializationConfig(suppress_thermal_terminal=true),
     )
 end
 
@@ -258,7 +249,11 @@ function _spaceagora_physics_campaign_push_transition!(spaceagora,
         length(rollout.transitions) + 1,
     )
     push!(rollout.transitions, transition)
-    rollout.summary = update_episode_summary(rollout.summary, result)
+    rollout.summary = update_episode_summary(
+        rollout.summary,
+        result;
+        protected=rollout.protected_next_transition,
+    )
     rollout.state = next_state
     rollout.norm_obs = normalized
     return result
@@ -323,7 +318,18 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
         rollout.protected_next_transition = protected_next
         _spaceagora_physics_campaign_set_action!(rollout, action_index)
     else
-        _spaceagora_physics_campaign_select_action!(rollout)
+        corridor_action = protected_transition ?
+                          protected_corridor_action_index(
+                              rollout.protected_initialization,
+                              result,
+                          ) :
+                          nothing
+        if corridor_action === nothing
+            _spaceagora_physics_campaign_select_action!(rollout)
+        else
+            rollout.protected_next_transition = true
+            _spaceagora_physics_campaign_set_action!(rollout, corridor_action)
+        end
     end
     _spaceagora_physics_campaign_apply_action!(spaceagora, rollout, integrator)
     return nothing
@@ -375,22 +381,29 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
                                                         seed::Int,
                                                         max_passes_per_campaign::Int,
                                                         global_step_start::Int;
-                                                        train::Bool=true)
+                                                        train::Bool=true,
+                                                        protected_initialization::
+                                                            ProtectedInitializationConfig=
+                                                                ProtectedInitializationConfig(
+                                                                    enabled=false,
+                                                                ))
     rng = MersenneTwister(seed)
     state = reset_scenario(config, rng)
     obs = observe_state(config, state)
     norm_obs = normalize_observation(obs, config.normalization_bounds)
     summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
     pass_cap = _spaceagora_physics_campaign_mission_pass_cap(config, max_passes_per_campaign)
-    action_index = snapshot_policy_action(
-        policy_snapshot,
-        schedule,
-        ddqn_config,
-        norm_obs,
-        global_step_start + 1,
-        rng;
-        test = !train,
-    )
+    action_index = protected_initialization.enabled ?
+                   zero_action_index() :
+                   snapshot_policy_action(
+                       policy_snapshot,
+                       schedule,
+                       ddqn_config,
+                       norm_obs,
+                       global_step_start + 1,
+                       rng;
+                       test = !train,
+                   )
     action = action_from_index(action_index)
     rollout = SpaceAGORAPhysicsCampaignRollout(
         config = config,
@@ -410,6 +423,10 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
         action = action,
         summary = summary,
         transitions = Transition[],
+        protected_next_transition = protected_initialization.enabled,
+        protected_suppress_thermal_terminal =
+            protected_initialization.suppress_thermal_terminal,
+        protected_initialization = protected_initialization,
     )
 
     spaceagora = _load_spaceagora!(; load_gramsuite=_spaceagora_live_needs_gramsuite(config))
@@ -458,7 +475,11 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
             force_truncated = true,
         )
     end
-    return finalize_episode_summary(rollout.summary, config), rollout.transitions
+    protected_count = rollout.summary.protected_passes
+    learned_transitions = protected_count == 0 ?
+                          rollout.transitions :
+                          rollout.transitions[(protected_count + 1):end]
+    return finalize_episode_summary(rollout.summary, config), learned_transitions
 end
 
 function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel::Channel{Any},
@@ -628,8 +649,23 @@ function run_worker_episode!(session::TrainingSession, episode_index::Int, worke
     norm_obs = normalize_observation(obs, config.normalization_bounds)
     summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
     transitions = Transition[]
+    initial = run_protected_initializer(
+        config,
+        state,
+        rng,
+        summary;
+        settings=protected_initialization_config(session.config.training),
+    )
+    state = initial.state
+    obs = initial.observation
+    norm_obs = initial.normalized_observation
+    summary = initial.summary
 
-    while length(transitions) < session.config.training.max_passes_per_campaign
+    pass_cap = min(
+        session.config.training.max_passes_per_campaign,
+        config.termination_config.max_passes,
+    )
+    while !initial.done && summary.pass_count < pass_cap
         action_index = learner_policy_action!(session.learner, norm_obs, rng; test=!train)
         result = step_scenario(session.backend, state, action_index, rng)
         transition = transition_from_step(norm_obs, action_index, result, length(transitions) + 1)
@@ -659,7 +695,9 @@ function run_threaded_worker_episode(config::AerobrakingScenarioConfig,
                                      seed::Int,
                                      max_passes_per_campaign::Int,
                                      global_step_start::Int;
-                                     train::Bool=true)
+                                     train::Bool=true,
+                                     protected_initialization::ProtectedInitializationConfig=
+                                         ProtectedInitializationConfig(enabled=false))
     if _is_spaceagora_live_backend(config.backend_mode)
         return run_spaceagora_physics_campaign_worker_episode(
             config,
@@ -672,6 +710,7 @@ function run_threaded_worker_episode(config::AerobrakingScenarioConfig,
             max_passes_per_campaign,
             global_step_start;
             train=train,
+            protected_initialization=protected_initialization,
         )
     end
 
@@ -681,8 +720,20 @@ function run_threaded_worker_episode(config::AerobrakingScenarioConfig,
     norm_obs = normalize_observation(obs, config.normalization_bounds)
     summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
     transitions = Transition[]
+    initial = run_protected_initializer(
+        config,
+        state,
+        rng,
+        summary;
+        settings=protected_initialization,
+    )
+    state = initial.state
+    obs = initial.observation
+    norm_obs = initial.normalized_observation
+    summary = initial.summary
+    pass_cap = min(max_passes_per_campaign, config.termination_config.max_passes)
 
-    while length(transitions) < max_passes_per_campaign
+    while !initial.done && summary.pass_count < pass_cap
         step = global_step_start + length(transitions) + 1
         action_index = snapshot_policy_action(policy_snapshot, schedule, ddqn_config, norm_obs, step, rng; test=!train)
         result = step_scenario(config, state, action_index, rng)

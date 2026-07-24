@@ -5,6 +5,8 @@ function episode_metrics(summary::EpisodeSummary; policy_name::AbstractString=""
         worker_id = summary.worker_id,
         seed = summary.seed,
         pass_count = summary.pass_count,
+        decision_passes = summary.pass_count - summary.protected_passes,
+        protected_passes = summary.protected_passes,
         episode_reward = summary.episode_reward,
         success = summary.success,
         impact = summary.impact,
@@ -31,6 +33,7 @@ function aggregate_metrics(summaries::AbstractVector{<:EpisodeSummary}; policy_n
     delta_v_sum = 0.0
     abm_delta_v_sum = 0.0
     pass_count_sum = 0
+    protected_passes_sum = 0
     thermal_violations_sum = 0
     solver_failures = 0
     for summary in summaries
@@ -39,6 +42,7 @@ function aggregate_metrics(summaries::AbstractVector{<:EpisodeSummary}; policy_n
         delta_v_sum += summary.total_delta_v_mps
         abm_delta_v_sum += summary.abm_delta_v_mps
         pass_count_sum += summary.pass_count
+        protected_passes_sum += summary.protected_passes
         thermal_violations_sum += summary.thermal_violations
         solver_failures += summary.solver_failures
     end
@@ -51,6 +55,8 @@ function aggregate_metrics(summaries::AbstractVector{<:EpisodeSummary}; policy_n
         mean_delta_v_mps = delta_v_sum / episodes,
         mean_abm_delta_v_mps = abm_delta_v_sum / episodes,
         mean_pass_count = pass_count_sum / episodes,
+        mean_decision_passes = (pass_count_sum - protected_passes_sum) / episodes,
+        mean_protected_passes = protected_passes_sum / episodes,
         mean_thermal_violations = thermal_violations_sum / episodes,
         solver_failures = solver_failures,
     )
@@ -63,6 +69,7 @@ Base.@kwdef mutable struct EpisodeAggregateAccumulator
     delta_v_sum::Float64 = 0.0
     abm_delta_v_sum::Float64 = 0.0
     pass_count_sum::Int = 0
+    protected_passes_sum::Int = 0
     thermal_violations_sum::Int = 0
     solver_failures::Int = 0
 end
@@ -74,6 +81,7 @@ function accumulate_episode!(accumulator::EpisodeAggregateAccumulator, summary::
     accumulator.delta_v_sum += summary.total_delta_v_mps
     accumulator.abm_delta_v_sum += summary.abm_delta_v_mps
     accumulator.pass_count_sum += summary.pass_count
+    accumulator.protected_passes_sum += summary.protected_passes
     accumulator.thermal_violations_sum += summary.thermal_violations
     accumulator.solver_failures += summary.solver_failures
     return accumulator
@@ -90,6 +98,9 @@ function aggregate_metrics(accumulator::EpisodeAggregateAccumulator; policy_name
         mean_delta_v_mps = accumulator.delta_v_sum / episodes,
         mean_abm_delta_v_mps = accumulator.abm_delta_v_sum / episodes,
         mean_pass_count = accumulator.pass_count_sum / episodes,
+        mean_decision_passes =
+            (accumulator.pass_count_sum - accumulator.protected_passes_sum) / episodes,
+        mean_protected_passes = accumulator.protected_passes_sum / episodes,
         mean_thermal_violations = accumulator.thermal_violations_sum / episodes,
         solver_failures = accumulator.solver_failures,
     )
@@ -110,6 +121,7 @@ function pass_log_rows(summary::EpisodeSummary; policy_name::AbstractString="")
             raan_rad = summary.raan_trace_rad[i],
             inclination_rad = summary.inclination_trace_rad[i],
             reward = summary.reward_trace[i],
+            protected = summary.protected_trace[i],
         ))
     end
     return rows

@@ -13,6 +13,7 @@ Base.@kwdef mutable struct EpisodeSummary
     worker_id::Int = 1
     seed::Int = 0
     pass_count::Int = 0
+    protected_passes::Int = 0
     episode_reward::Float64 = 0.0
     success::Bool = false
     impact::Bool = false
@@ -35,6 +36,7 @@ Base.@kwdef mutable struct EpisodeSummary
     raan_trace_rad::Vector{Float64} = Float64[]
     inclination_trace_rad::Vector{Float64} = Float64[]
     reward_trace::Vector{Float64} = Float64[]
+    protected_trace::Vector{Bool} = Bool[]
 end
 
 empty_episode_summary(; episode_index::Int=0, worker_id::Int=1, seed::Int=0) =

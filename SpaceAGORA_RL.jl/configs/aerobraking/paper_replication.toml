@@ -12,7 +12,7 @@ heat_hard_w_cm2 = 0.45
 [termination]
 impact_periapsis_altitude_m = 85000.0
 out_of_passage_periapsis_altitude_m = 135000.0
-max_passes = 80
+max_passes = 250
 terminal_on_thermal_violation = true
 
 [randomization]
@@ -79,6 +79,11 @@ n_workers = 1
 checkpoint_frequency = 500
 progress_frequency = 5
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
+protected_first_pass = true
+protected_initial_corridor_maneuver = true
+protected_first_pass_suppress_thermal_terminal = true
+protected_corridor_low_w_cm2 = 0.025
+protected_corridor_high_w_cm2 = 0.40
 
 [reports]
 output_dir = "SpaceAGORA_RL.jl/outputs/reports"

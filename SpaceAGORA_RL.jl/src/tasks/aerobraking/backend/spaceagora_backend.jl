@@ -91,7 +91,7 @@ end
 
 function default_aerobraking_config(; phase::AbstractString="Main",
                                     nominal::Bool=true,
-                                    max_passes::Int=80,
+                                    max_passes::Int=250,
                                     backend_mode::Symbol=:paper_surrogate,
                                     training::Bool=true,
                                     spaceagora_atmosphere_model::Symbol=:gram,
@@ -356,7 +356,8 @@ end
             max_rate = value
         end
     end
-    return max_rate / 1.0e4
+    # SpaceAGORA.getHeatRate already returns W/cm^2.
+    return max_rate
 end
 
 function _buffered_heat_rate_w_cm2(integrator, sat_idx::Int)

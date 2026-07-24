@@ -35,9 +35,10 @@ include("tasks/aerobraking/baselines/fixed_corridor.jl")
 include("tasks/aerobraking/baselines/aads_heuristic.jl")
 
 include("tasks/aerobraking/evaluation/episode_logs.jl")
+include("tasks/aerobraking/evaluation/protected_initialization.jl")
 include("tasks/aerobraking/evaluation/metrics.jl")
-include("tasks/aerobraking/evaluation/odyssey_comparison.jl")
 include("tasks/aerobraking/evaluation/generalization_suites.jl")
+include("tasks/aerobraking/evaluation/odyssey_comparison.jl")
 include("tasks/aerobraking/evaluation/reports.jl")
 
 include("tasks/aerobraking/AerobrakingMDP.jl")
@@ -83,6 +84,8 @@ export reset_scenario, step_scenario
 export NoManeuverPolicy, RandomActionPolicy, FixedCorridorPolicy, AADSHeuristicPolicy
 
 export evaluate_policy, evaluate_baselines, episode_metrics, aggregate_metrics
+export ProtectedInitializationConfig, PAPER_IID_EVALUATION_EPISODES
+export PAPER_GENERALIZATION_EVALUATION_EPISODES, paper_evaluation_scenario
 export paper_pr_drl_evaluation_config, paper_pr_drl_marsgram_evaluation_config
 export paper_pr_drl_physics_evaluation_config, paper_odyssey_flight_evaluation_config
 export generalization_suite_configs, write_evaluation_artifacts

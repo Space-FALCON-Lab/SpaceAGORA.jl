@@ -1,3 +1,6 @@
+const PAPER_IID_EVALUATION_EPISODES = 40
+const PAPER_GENERALIZATION_EVALUATION_EPISODES = 100
+
 function _paper_pr_drl_reward_config()
     return RewardConfig(
         heat_low_w_cm2=0.05,
@@ -49,7 +52,7 @@ function paper_pr_drl_evaluation_config(; process_noise_scale::Real=0.4,
                                         training::Bool=false,
                                         backend_mode::Symbol=:paper_surrogate,
                                         phase::AbstractString="Main",
-                                        max_passes::Integer=80)
+                                        max_passes::Integer=250)
     return default_aerobraking_config(
         phase=phase,
         nominal=false,
@@ -76,7 +79,7 @@ function paper_odyssey_flight_evaluation_config(; process_noise_scale::Real=0.0,
                                                 training::Bool=false,
                                                 backend_mode::Symbol=:paper_surrogate,
                                                 phase::AbstractString="Main",
-                                                max_passes::Integer=80)
+                                                max_passes::Integer=250)
     return default_aerobraking_config(
         phase=phase,
         nominal=true,
@@ -93,17 +96,58 @@ function paper_odyssey_flight_evaluation_config(; process_noise_scale::Real=0.0,
     )
 end
 
+function paper_evaluation_scenario(
+    config::AerobrakingScenarioConfig;
+    max_passes::Integer=config.termination_config.max_passes,
+    randomization_config::AerobrakingRandomizationConfig=config.randomization_config,
+)
+    term = config.termination_config
+    evaluation_termination = TerminationConfig(
+        impact_periapsis_altitude_m=term.impact_periapsis_altitude_m,
+        out_of_passage_periapsis_altitude_m=term.out_of_passage_periapsis_altitude_m,
+        max_passes=Int(max_passes),
+        terminal_on_thermal_violation=term.terminal_on_thermal_violation,
+    )
+    return default_aerobraking_config(
+        phase=config.phase,
+        nominal=randomization_config.nominal,
+        max_passes=Int(max_passes),
+        backend_mode=config.backend_mode,
+        training=false,
+        spaceagora_atmosphere_model=config.spaceagora_atmosphere_model,
+        spaceagora_tabulated_flight_file=config.spaceagora_tabulated_flight_file,
+        spaceagora_tabulated_flight_sigma=config.spaceagora_tabulated_flight_sigma,
+        spaceagora_gravity_harmonics_degree=config.spaceagora_gravity_harmonics_degree,
+        spaceagora_gravity_harmonics_order=config.spaceagora_gravity_harmonics_order,
+        spaceagora_gravity_harmonics_file=config.spaceagora_gravity_harmonics_file,
+        reward_config=config.reward_config,
+        termination_config=evaluation_termination,
+        randomization_config=randomization_config,
+    )
+end
+
 function generalization_suite_configs(config::AerobrakingScenarioConfig)
+    evaluation_config = paper_evaluation_scenario(config)
+    iid_randomization = config.randomization_config.nominal ?
+                        _paper_pr_drl_randomization_config(
+                            nominal=false,
+                            process_noise_scale=0.4,
+                            aerodynamic_coefficient_dispersion=true,
+                        ) :
+                        config.randomization_config
+    nominal_randomization = _paper_pr_drl_randomization_config(
+        nominal=true,
+        process_noise_scale=0.0,
+        aerodynamic_coefficient_dispersion=false,
+    )
     return Dict(
-        "nominal" => config,
-        "iid_randomized" => default_aerobraking_config(
-            phase=config.phase,
-            nominal=false,
-            max_passes=config.termination_config.max_passes,
-            backend_mode=config.backend_mode,
-            training=config.training,
-            reward_config=config.reward_config,
-            termination_config=config.termination_config,
+        "nominal" => paper_evaluation_scenario(
+            evaluation_config;
+            randomization_config=nominal_randomization,
+        ),
+        "iid_randomized" => paper_evaluation_scenario(
+            evaluation_config;
+            randomization_config=iid_randomization,
         ),
     )
 end

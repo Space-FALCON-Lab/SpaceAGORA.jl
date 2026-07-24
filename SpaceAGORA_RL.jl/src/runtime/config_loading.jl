@@ -96,7 +96,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     termination = TerminationConfig(
         impact_periapsis_altitude_m = Float64(_get(term_table, "impact_periapsis_altitude_m", 85e3)),
         out_of_passage_periapsis_altitude_m = Float64(_get(term_table, "out_of_passage_periapsis_altitude_m", 135e3)),
-        max_passes = Int(_get(term_table, "max_passes", 80)),
+        max_passes = Int(_get(term_table, "max_passes", 250)),
         terminal_on_thermal_violation = Bool(_get(term_table, "terminal_on_thermal_violation", true)),
     )
     randomization = AerobrakingRandomizationConfig(

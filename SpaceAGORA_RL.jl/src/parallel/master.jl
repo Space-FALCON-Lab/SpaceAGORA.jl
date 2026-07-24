@@ -107,15 +107,10 @@ end
 
 function _protected_corridor_action_index(training::TrainingConfig,
                                           result::Union{AerobrakingStepResult,Nothing})
-    training.protected_initial_corridor_maneuver || return nothing
-    result === nothing && return nothing
-    heat_rate = result.raw_observation.max_heat_rate_w_cm2
-    if heat_rate > training.protected_corridor_high_w_cm2
-        return action_count()
-    elseif heat_rate < training.protected_corridor_low_w_cm2
-        return 1
-    end
-    return nothing
+    return protected_corridor_action_index(
+        protected_initialization_config(training),
+        result,
+    )
 end
 
 function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<:DDQNLearner},
@@ -500,6 +495,8 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
                 session.config.training.max_passes_per_campaign,
                 global_step_start;
                 train=true,
+                protected_initialization=
+                    protected_initialization_config(session.config.training),
             )
         end
 

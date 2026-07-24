@@ -5,14 +5,19 @@ function transition_from_step(previous_obs::Vector{Float32}, action_index::Int,
                       result.flags.truncated, info_index)
 end
 
-function update_episode_summary(summary::EpisodeSummary, result::AerobrakingStepResult)
+function update_episode_summary(summary::EpisodeSummary, result::AerobrakingStepResult;
+                                protected::Bool=false)
     metrics = result.metrics
     summary.pass_count = metrics.pass_index
-    summary.episode_reward += result.reward
     summary.success = result.flags.success
     summary.impact = result.flags.impact
     summary.out_of_drag_passage = result.flags.out_of_drag_passage
-    summary.thermal_violations += result.flags.thermal_violation ? 1 : 0
+    if protected
+        summary.protected_passes += 1
+    else
+        summary.episode_reward += result.reward
+        summary.thermal_violations += result.flags.thermal_violation ? 1 : 0
+    end
     summary.target_error_m = NaN
     summary.mission_duration_days = metrics.mission_elapsed_s / 86400
     summary.total_delta_v_mps = metrics.total_delta_v_mps
@@ -29,7 +34,8 @@ function update_episode_summary(summary::EpisodeSummary, result::AerobrakingStep
     push!(summary.omega_trace_rad, metrics.argument_of_periapsis_rad)
     push!(summary.raan_trace_rad, metrics.raan_rad)
     push!(summary.inclination_trace_rad, metrics.inclination_rad)
-    push!(summary.reward_trace, result.reward)
+    push!(summary.reward_trace, protected ? NaN : result.reward)
+    push!(summary.protected_trace, protected)
     return summary
 end
 
@@ -41,6 +47,7 @@ function finalize_episode_summary(summary::EpisodeSummary, config)
         worker_id = summary.worker_id,
         seed = summary.seed,
         pass_count = summary.pass_count,
+        protected_passes = summary.protected_passes,
         episode_reward = summary.episode_reward,
         success = summary.success,
         impact = summary.impact,
@@ -63,5 +70,6 @@ function finalize_episode_summary(summary::EpisodeSummary, config)
         raan_trace_rad = summary.raan_trace_rad,
         inclination_trace_rad = summary.inclination_trace_rad,
         reward_trace = summary.reward_trace,
+        protected_trace = summary.protected_trace,
     )
 end

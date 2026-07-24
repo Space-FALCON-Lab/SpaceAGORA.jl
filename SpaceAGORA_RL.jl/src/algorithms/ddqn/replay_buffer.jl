@@ -57,12 +57,12 @@ function sample_batch(buffer::ReplayBuffer, batch_size::Integer, rng::AbstractRN
     buffer.size >= batch_size || throw(ArgumentError("not enough replay samples"))
     idx = rand(rng, 1:buffer.size, batch_size)
     return ReplayBatch(
-        copy(buffer.observations[:, idx]),
-        copy(buffer.actions[idx]),
-        copy(buffer.rewards[idx]),
-        copy(buffer.next_observations[:, idx]),
-        copy(buffer.terminated[idx]),
-        copy(buffer.truncated[idx]),
-        copy(buffer.info_index[idx]),
+        buffer.observations[:, idx],
+        buffer.actions[idx],
+        buffer.rewards[idx],
+        buffer.next_observations[:, idx],
+        buffer.terminated[idx],
+        buffer.truncated[idx],
+        buffer.info_index[idx],
     )
 end

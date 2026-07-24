@@ -758,12 +758,42 @@ end
     )
 end
 
+@inline function _harmonics_lpi_from_ephemeris_cache(
+    cache::PlanetFrameEphemerisCache,
+    et::Float64,
+)::Union{Nothing,SMatrix{3,3,Float64,9}}
+    ets = cache.ets
+    n_samples = length(ets)
+    n_samples >= 2 || return nothing
+    (ets[1] <= et <= ets[n_samples]) || return nothing
+
+    idx = searchsortedlast(ets, et)
+    idx <= 0 && return nothing
+    idx >= n_samples && return SMatrix{3,3,Float64,9}(rot(cache.quaternions[n_samples]))
+
+    et0 = ets[idx]
+    et1 = ets[idx + 1]
+    et1 <= et0 && return SMatrix{3,3,Float64,9}(rot(cache.quaternions[idx]))
+
+    alpha = (et - et0) / (et1 - et0)
+    q0 = cache.quaternions[idx]
+    q1 = cache.quaternions[idx + 1]
+    dot(q0, q1) < 0.0 && (q1 = -q1)
+    q_interp = normalize((1.0 - alpha) * q0 + alpha * q1)
+    return SMatrix{3,3,Float64,9}(rot(q_interp))
+end
+
 function _harmonics_lpi_at!(
     model::GravitationalHarmonicsModel,
     param::ODEParams,
     et::Float64
 )::SMatrix{3, 3, Float64, 9}
     shared = param.shared_buffers
+    ephemeris_cache = shared.planet_frame_ephemeris_cache[]
+    if ephemeris_cache isa PlanetFrameEphemerisCache
+        cached = _harmonics_lpi_from_ephemeris_cache(ephemeris_cache, et)
+        cached === nothing || return cached
+    end
     key = _harmonics_lpi_cache_key(model, param, et)
 
     # The RHS evaluates all spacecraft at the same t. Avoid repeating the same
@@ -945,7 +975,11 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize force vector
     n_bodies = length(model.body_names)
-    decision = _multibody_thread_decision(n_bodies; heavy_work=true)
+    decision = _multibody_thread_decision(
+        n_bodies;
+        heavy_work=true,
+        env=param.shared_buffers.policy_env_config[],
+    )
     use_threads = decision.use_threads
     n_workers = use_threads ? ParallelPolicy.thread_worker_count(n_bodies, decision.allotment) : 1
     workspace = _nbody_workspace_for_sat!(param, i, n_bodies, n_workers)
@@ -964,7 +998,7 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
         pos_primary_k_all[k] = pos_primary_body_j2000_m
     end
 
-    started_ns = time_ns()
+    started_ns = decision.policy_applied ? time_ns() : UInt64(0)
     if use_threads
         thread_force = workspace.thread_force
         @inbounds for worker_id in 1:n_workers
@@ -993,13 +1027,15 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             )
         end
     end
-    ParallelPolicy.record_policy_observation!(
-        :multibody;
-        mode=decision.mode,
-        num_items=n_bodies,
-        use_threads=use_threads,
-        elapsed_ns=(time_ns() - started_ns)
-    )
+    if decision.policy_applied
+        ParallelPolicy.record_policy_observation!(
+            :multibody;
+            mode=decision.mode,
+            num_items=n_bodies,
+            use_threads=use_threads,
+            elapsed_ns=(time_ns() - started_ns)
+        )
+    end
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end

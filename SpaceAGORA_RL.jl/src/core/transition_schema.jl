@@ -8,7 +8,7 @@ struct Transition
     info_index::Int
 end
 
-Base.@kwdef struct EpisodeSummary
+Base.@kwdef mutable struct EpisodeSummary
     episode_index::Int = 0
     worker_id::Int = 1
     seed::Int = 0

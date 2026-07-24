@@ -34,7 +34,7 @@ Base.@kwdef mutable struct SpaceAGORAPhysicsCampaignRollout
     config::AerobrakingScenarioConfig
     schedule::EpsilonSchedule
     ddqn_config::DDQNConfig
-    policy_snapshot::QNetwork
+    policy_snapshot::Union{Nothing,QNetwork}
     rng::MersenneTwister
     episode_index::Int
     worker_id::Int
@@ -56,6 +56,7 @@ Base.@kwdef mutable struct SpaceAGORAPhysicsCampaignRollout
     action_channel::Union{Nothing,Channel{Any}} = nothing
     protected_next_transition::Bool = false
     protected_suppress_thermal_terminal::Bool = true
+    last_integrator::Any = nothing
 end
 
 function _spaceagora_physics_campaign_mission_pass_cap(config::AerobrakingScenarioConfig,
@@ -88,8 +89,11 @@ end
 
 function _spaceagora_physics_campaign_select_action!(rollout::SpaceAGORAPhysicsCampaignRollout)
     step = _spaceagora_physics_campaign_step_index(rollout)
+    policy_snapshot = rollout.policy_snapshot
+    policy_snapshot === nothing &&
+        throw(ArgumentError("non-streaming campaign rollout requires a policy snapshot"))
     action_index = snapshot_policy_action(
-        rollout.policy_snapshot,
+        policy_snapshot,
         rollout.schedule,
         rollout.ddqn_config,
         rollout.norm_obs,
@@ -349,7 +353,15 @@ function _spaceagora_physics_campaign_stats_callback(spaceagora,
     discrete_callback = getproperty(callbacks, :DiscreteCallback)
     state_position_ii = getproperty(getproperty(spaceagora, :SimulationEngine), :_state_position_ii)
     condition(u, t, integrator) = true
-    affect!(integrator) = _record_spaceagora_physics_sample!(state_position_ii, spaceagora, rollout.stats, integrator)
+    function affect!(integrator)
+        rollout.last_integrator = integrator
+        return _record_spaceagora_physics_sample!(
+            state_position_ii,
+            spaceagora,
+            rollout.stats,
+            integrator,
+        )
+    end
     initialize = (cb, u, t, integrator) -> affect!(integrator)
     return Base.invokelatest(discrete_callback, condition, affect!; initialize=initialize)
 end
@@ -416,11 +428,11 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
                       (stats_callback, apoapsis_callback) :
                       (ephemeris_callback, stats_callback, apoapsis_callback)
     run_simulation_fn = Base.invokelatest(getproperty, spaceagora, :run_simulation)
-    sol = try
+    try
         Base.invokelatest(
             run_simulation_fn,
             args;
-            return_solution = true,
+            return_solution = false,
             isolate_state = false,
             extra_callbacks = extra_callbacks,
         )
@@ -432,14 +444,17 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
         ))
     end
 
-    if !rollout.terminated && length(rollout.transitions) < pass_cap && !isempty(sol.u)
-        args = getproperty(getproperty(getproperty(sol, :prob), :p), :args)
+    if !rollout.terminated && length(rollout.transitions) < pass_cap
+        integrator = rollout.last_integrator
+        integrator === nothing &&
+            throw(ErrorException("SpaceAGORA physics campaign did not expose a final integrator state"))
+        args = getproperty(getproperty(integrator, :p), :args)
         _spaceagora_physics_campaign_push_transition!(
             spaceagora,
             rollout,
             args,
-            sol.u[end],
-            Float64(sol.t[end]);
+            getproperty(integrator, :u),
+            Float64(getproperty(integrator, :t));
             force_truncated = true,
         )
     end
@@ -451,7 +466,8 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
                                                                   config::AerobrakingScenarioConfig,
                                                                   schedule::EpsilonSchedule,
                                                                   ddqn_config::DDQNConfig,
-                                                                  policy_snapshot::QNetwork,
+                                                                  policy_snapshot::Union{Nothing,QNetwork},
+                                                                  simulation_template::SpaceAGORAPhysicsSimulationTemplate,
                                                                   state::AerobrakingDecisionState,
                                                                   norm_obs::Vector{Float32},
                                                                   action_index::Int,
@@ -498,6 +514,7 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
             rollout.action;
             prediction = false,
             campaign_max_passes = pass_cap,
+            simulation_template = simulation_template,
         )
         stats_callback = _spaceagora_physics_campaign_stats_callback(spaceagora, rollout)
         apoapsis_callback = _spaceagora_physics_campaign_apoapsis_callback(spaceagora, rollout)
@@ -507,22 +524,25 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
                           (stats_callback, apoapsis_callback) :
                           (ephemeris_callback, stats_callback, apoapsis_callback)
         run_simulation_fn = Base.invokelatest(getproperty, spaceagora, :run_simulation)
-        sol = Base.invokelatest(
+        Base.invokelatest(
             run_simulation_fn,
             args;
-            return_solution = true,
+            return_solution = false,
             isolate_state = false,
             extra_callbacks = extra_callbacks,
         )
 
-        if !rollout.terminated && length(rollout.transitions) < pass_cap && !isempty(sol.u)
-            args = getproperty(getproperty(getproperty(sol, :prob), :p), :args)
+        if !rollout.terminated && length(rollout.transitions) < pass_cap
+            integrator = rollout.last_integrator
+            integrator === nothing &&
+                throw(ErrorException("SpaceAGORA physics campaign did not expose a final integrator state"))
+            args = getproperty(getproperty(integrator, :p), :args)
             result = _spaceagora_physics_campaign_push_transition!(
                 spaceagora,
                 rollout,
                 args,
-                sol.u[end],
-                Float64(sol.t[end]);
+                getproperty(integrator, :u),
+                Float64(getproperty(integrator, :t));
                 force_truncated = true,
             )
             if result !== nothing
@@ -562,7 +582,8 @@ function start_spaceagora_physics_campaign_worker!(event_channel::Channel{Any},
                                                    config::AerobrakingScenarioConfig,
                                                    schedule::EpsilonSchedule,
                                                    ddqn_config::DDQNConfig,
-                                                   policy_snapshot::QNetwork,
+                                                   policy_snapshot::Union{Nothing,QNetwork},
+                                                   simulation_template::SpaceAGORAPhysicsSimulationTemplate,
                                                    state::AerobrakingDecisionState,
                                                    norm_obs::Vector{Float32},
                                                    action_index::Int,
@@ -582,6 +603,7 @@ function start_spaceagora_physics_campaign_worker!(event_channel::Channel{Any},
         $schedule,
         $ddqn_config,
         $policy_snapshot,
+        $simulation_template,
         $state,
         $norm_obs,
         $action_index,

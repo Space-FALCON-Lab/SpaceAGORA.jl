@@ -420,3 +420,49 @@ end
     @test getfield.(a, :max_heat_rate_w_cm2) == getfield.(b, :max_heat_rate_w_cm2)
     @test getfield.(a, :periapsis_altitude_m) == getfield.(b, :periapsis_altitude_m)
 end
+
+@testset "training history stays disk backed" begin
+    mktempdir() do directory
+        summaries = SpaceAGORA_RL.DiskBackedHistory(
+            EpisodeSummary,
+            joinpath(directory, "summaries.jls"),
+        )
+        first_summary = EpisodeSummary(episode_index=1, episode_reward=2.5)
+        second_summary = EpisodeSummary(episode_index=2, episode_reward=-1.0)
+        push!(summaries, first_summary)
+        push!(summaries, second_summary)
+
+        @test length(summaries) == 2
+        @test summaries[1].episode_reward == 2.5
+        @test getfield.(summaries[1:2], :episode_index) == [1, 2]
+        @test getfield.(collect(summaries), :episode_reward) == [2.5, -1.0]
+
+        metrics = SpaceAGORA_RL.MappedHistory(summaries, summary -> summary.episode_reward)
+        @test collect(metrics) == [2.5, -1.0]
+        SpaceAGORA_RL.close_history!(summaries)
+        @test summaries[2].episode_index == 2
+    end
+end
+
+@testset "episode traces update in place" begin
+    config = default_aerobraking_config(phase="Main", training=false, max_passes=2)
+    rng = MersenneTwister(123)
+    state = reset_scenario(config, rng)
+    result = step_scenario(config, state, zero_action_index(), rng)
+    summary = empty_episode_summary()
+    heat_trace = summary.heat_rate_trace
+
+    updated = SpaceAGORA_RL.update_episode_summary(summary, result)
+    @test updated === summary
+    @test updated.heat_rate_trace === heat_trace
+    @test updated.heat_rate_trace == [result.metrics.max_heat_rate_w_cm2]
+end
+
+@testset "float32 network forward reuses its input" begin
+    rng = MersenneTwister(8)
+    network = init_q_network(rng; input_dim=3, hidden_dim=4, output_dim=2)
+    observations = rand(rng, Float32, 3, 5)
+    cache = SpaceAGORA_RL.forward_cache(network, observations)
+    @test cache[1] === observations
+    @test predict_q(network, observations) == cache[end]
+end

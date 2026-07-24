@@ -2860,3 +2860,40 @@ end
     @test cache.integrator !== integ_full
     @test cache.save_on == false
 end
+
+@testset "RL hot-path ephemeris and serial policy fast paths" begin
+    identity_lpi = @SMatrix [
+        1.0 0.0 0.0
+        0.0 1.0 0.0
+        0.0 0.0 1.0
+    ]
+    quarter_turn_lpi = @SMatrix [
+        0.0 1.0 0.0
+       -1.0 0.0 0.0
+        0.0 0.0 1.0
+    ]
+    frame_cache = PlanetFrameEphemerisCache(
+        [0.0, 10.0],
+        [
+            SimulationModel.dcm_to_quaternion(identity_lpi),
+            SimulationModel.dcm_to_quaternion(quarter_turn_lpi),
+        ],
+    )
+    perturbations = SimulationModel.DynamicEffectors.PerturbationEffectors
+    callbacks = SimulationModel.SimulationCallbacks
+    for ephemeris_time in (0.0, 2.5, 5.0, 10.0)
+        harmonics_lpi = perturbations._harmonics_lpi_from_ephemeris_cache(
+            frame_cache,
+            ephemeris_time,
+        )
+        callback_lpi = callbacks._planet_lpi_from_cache(frame_cache, ephemeris_time)
+        @test harmonics_lpi ≈ callback_lpi atol=1e-14 rtol=1e-14
+    end
+
+    policy_env = PolicyDecisionEnvConfig(1, true, 4, 16, 16, false)
+    aerodynamics = SimulationModel.DynamicEffectors.AerodynamicEffectors
+    decision = aerodynamics._multibody_thread_decision(3; env=policy_env)
+    @test !decision.use_threads
+    @test decision.allotment == 1
+    @test !decision.policy_applied
+end

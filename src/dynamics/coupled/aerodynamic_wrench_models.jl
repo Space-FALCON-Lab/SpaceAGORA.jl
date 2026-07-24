@@ -32,10 +32,22 @@ end
     return _multibody_thread_decision(num_items; heavy_work=heavy_work).use_threads
 end
 
-@inline function _multibody_thread_decision(num_items::Int; heavy_work::Bool=true)
+@inline function _multibody_thread_decision(
+    num_items::Int;
+    heavy_work::Bool=true,
+    env::Union{Nothing,ParallelPolicy.PolicyDecisionEnvConfig}=nothing,
+)
+    if env !== nothing && env.inner_thread_budget <= 1
+        return (
+            use_threads=false,
+            allotment=1,
+            mode=:off,
+            policy_applied=false,
+        )
+    end
     mode = _multibody_parallel_mode()
     threshold = _multibody_thread_threshold()
-    outer_active = _multibody_outer_parallel_hint()
+    outer_active = env === nothing ? _multibody_outer_parallel_hint() : env.outer_parallel_active
     allow_with_outer = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER", false)
     heavy_only = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY", true)
     policy = ParallelPolicy.thread_policy_decision(
@@ -46,11 +58,17 @@ end
         heavy_only=heavy_only,
         outer_active=outer_active,
         allow_with_outer=allow_with_outer,
-        source=:multibody
+        source=:multibody,
+        env=env,
     )
     allotment = min(policy.allotment, _multibody_max_threads())
     use_threads = policy.use_threads && allotment > 1
-    return (use_threads=use_threads, allotment=use_threads ? allotment : 1, mode=mode)
+    return (
+        use_threads=use_threads,
+        allotment=use_threads ? allotment : 1,
+        mode=mode,
+        policy_applied=true,
+    )
 end
 
 # Aerodynamic models
@@ -630,7 +648,11 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
     total_area = 0.0 # Initialize total area
     θ_body = acos(clamp(vel_pp_rw[1] * vel_pp_rw_inv_mag, -1.0, 1.0))
-    decision = _multibody_thread_decision(length(bodies); heavy_work=true)
+    decision = _multibody_thread_decision(
+        length(bodies);
+        heavy_work=true,
+        env=param.shared_buffers.policy_env_config[],
+    )
     use_threads = decision.use_threads
     n_workers = use_threads ? ParallelPolicy.thread_worker_count(length(bodies), decision.allotment) : 1
 
@@ -682,7 +704,7 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     lift_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
     cross_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
 
-    started_ns = time_ns()
+    started_ns = decision.policy_applied ? time_ns() : UInt64(0)
     if use_threads
         workspace = _aero_workspace_for_sat!(param, i, n_workers)
         thread_force = workspace.thread_force
@@ -734,13 +756,15 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
             total_area += area
         end
     end
-    ParallelPolicy.record_policy_observation!(
-        :multibody;
-        mode=decision.mode,
-        num_items=length(bodies),
-        use_threads=use_threads,
-        elapsed_ns=(time_ns() - started_ns)
-    )
+    if decision.policy_applied
+        ParallelPolicy.record_policy_observation!(
+            :multibody;
+            mode=decision.mode,
+            num_items=length(bodies),
+            use_threads=use_threads,
+            elapsed_ns=(time_ns() - started_ns)
+        )
+    end
 
     if total_area > 0.0
         CL = CL / total_area

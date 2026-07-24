@@ -57,6 +57,7 @@ include("algorithms/a2c/policy.jl")
 include("runtime/config_loading.jl")
 include("runtime/run_manifest.jl")
 include("runtime/training_session.jl")
+include("runtime/training_history.jl")
 
 include("parallel/rollout_protocol.jl")
 include("parallel/worker.jl")

@@ -24,19 +24,74 @@ function episode_metrics(summary::EpisodeSummary; policy_name::AbstractString=""
     )
 end
 
-function aggregate_metrics(summaries::Vector{EpisodeSummary}; policy_name::AbstractString="")
+function aggregate_metrics(summaries::AbstractVector{<:EpisodeSummary}; policy_name::AbstractString="")
     isempty(summaries) && return NamedTuple()
-    success_rate = count(s -> s.success, summaries) / length(summaries)
+    successes = 0
+    target_error_sum = 0.0
+    delta_v_sum = 0.0
+    abm_delta_v_sum = 0.0
+    pass_count_sum = 0
+    thermal_violations_sum = 0
+    solver_failures = 0
+    for summary in summaries
+        successes += summary.success ? 1 : 0
+        target_error_sum += abs(summary.target_error_m)
+        delta_v_sum += summary.total_delta_v_mps
+        abm_delta_v_sum += summary.abm_delta_v_mps
+        pass_count_sum += summary.pass_count
+        thermal_violations_sum += summary.thermal_violations
+        solver_failures += summary.solver_failures
+    end
+    episodes = length(summaries)
     return (
         policy = policy_name,
-        episodes = length(summaries),
-        success_rate = success_rate,
-        mean_target_error_km = mean(abs.(getfield.(summaries, :target_error_m))) / 1000,
-        mean_delta_v_mps = mean(getfield.(summaries, :total_delta_v_mps)),
-        mean_abm_delta_v_mps = mean(getfield.(summaries, :abm_delta_v_mps)),
-        mean_pass_count = mean(getfield.(summaries, :pass_count)),
-        mean_thermal_violations = mean(getfield.(summaries, :thermal_violations)),
-        solver_failures = sum(getfield.(summaries, :solver_failures)),
+        episodes = episodes,
+        success_rate = successes / episodes,
+        mean_target_error_km = target_error_sum / episodes / 1000,
+        mean_delta_v_mps = delta_v_sum / episodes,
+        mean_abm_delta_v_mps = abm_delta_v_sum / episodes,
+        mean_pass_count = pass_count_sum / episodes,
+        mean_thermal_violations = thermal_violations_sum / episodes,
+        solver_failures = solver_failures,
+    )
+end
+
+Base.@kwdef mutable struct EpisodeAggregateAccumulator
+    episodes::Int = 0
+    successes::Int = 0
+    target_error_sum::Float64 = 0.0
+    delta_v_sum::Float64 = 0.0
+    abm_delta_v_sum::Float64 = 0.0
+    pass_count_sum::Int = 0
+    thermal_violations_sum::Int = 0
+    solver_failures::Int = 0
+end
+
+function accumulate_episode!(accumulator::EpisodeAggregateAccumulator, summary::EpisodeSummary)
+    accumulator.episodes += 1
+    accumulator.successes += summary.success ? 1 : 0
+    accumulator.target_error_sum += abs(summary.target_error_m)
+    accumulator.delta_v_sum += summary.total_delta_v_mps
+    accumulator.abm_delta_v_sum += summary.abm_delta_v_mps
+    accumulator.pass_count_sum += summary.pass_count
+    accumulator.thermal_violations_sum += summary.thermal_violations
+    accumulator.solver_failures += summary.solver_failures
+    return accumulator
+end
+
+function aggregate_metrics(accumulator::EpisodeAggregateAccumulator; policy_name::AbstractString="")
+    accumulator.episodes == 0 && return NamedTuple()
+    episodes = accumulator.episodes
+    return (
+        policy = policy_name,
+        episodes = episodes,
+        success_rate = accumulator.successes / episodes,
+        mean_target_error_km = accumulator.target_error_sum / episodes / 1000,
+        mean_delta_v_mps = accumulator.delta_v_sum / episodes,
+        mean_abm_delta_v_mps = accumulator.abm_delta_v_sum / episodes,
+        mean_pass_count = accumulator.pass_count_sum / episodes,
+        mean_thermal_violations = accumulator.thermal_violations_sum / episodes,
+        solver_failures = accumulator.solver_failures,
     )
 end
 

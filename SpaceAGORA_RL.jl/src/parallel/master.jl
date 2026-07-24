@@ -6,7 +6,7 @@ function _format_duration(seconds::Real)
     return @sprintf("%02d:%02d:%02d", hours, minutes, secs)
 end
 
-function _recent_training_stats(summaries::Vector{EpisodeSummary}, window::Int)
+function _recent_training_stats(summaries::AbstractVector{<:EpisodeSummary}, window::Int)
     isempty(summaries) && return (mean_reward=NaN, success_rate=NaN, mean_passes=NaN)
     first_idx = max(1, length(summaries) - max(1, window) + 1)
     recent = summaries[first_idx:end]
@@ -21,7 +21,7 @@ function _budget_label(budget::Int)
     return budget == typemax(Int) ? "none" : string(budget)
 end
 
-function _print_training_progress(session::TrainingSession, summaries::Vector{EpisodeSummary},
+function _print_training_progress(session::TrainingSession, summaries::AbstractVector{<:EpisodeSummary},
                                   episode_budget::Int, target_global_step::Int,
                                   active_workers::Int, start_time::Float64,
                                   start_global_step::Int)
@@ -87,6 +87,7 @@ mutable struct SpaceAGORAPhysicsActiveWorker
     seed::Int
     handle::SpaceAGORAPhysicsWorkerHandle
     protected_events_seen::Int
+    simulation_template::SpaceAGORAPhysicsSimulationTemplate
 end
 
 function _spaceagora_physics_streaming_worker_seed(base_seed::Int, worker_id::Int,
@@ -120,7 +121,8 @@ end
 function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<:DDQNLearner},
                                                       event_channel::Channel{Any},
                                                       worker_id::Int,
-                                                      episode_index::Int)
+                                                      episode_index::Int;
+                                                      simulation_template::Union{Nothing,SpaceAGORAPhysicsSimulationTemplate}=nothing)
     seed = _spaceagora_physics_streaming_worker_seed(session.config.training.seed,
                                                      worker_id,
                                                      episode_index)
@@ -132,13 +134,26 @@ function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<
     action_index = protected_first_pass ?
                    zero_action_index() :
                    _ddqn_master_action(session.learner, norm_obs, session.rng)
+    action = action_from_index(action_index)
+    template = simulation_template === nothing ?
+               _spaceagora_physics_simulation_template(
+                   config,
+                   state,
+                   action;
+                   campaign_max_passes=_spaceagora_physics_campaign_mission_pass_cap(
+                       config,
+                       session.config.training.max_passes_per_campaign,
+                   ),
+               ) :
+               simulation_template
     summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
     handle = start_spaceagora_physics_campaign_worker!(
         event_channel,
         config,
         session.learner.schedule,
         session.learner.config,
-        cpu_network(session.learner.online),
+        nothing,
+        template,
         state,
         norm_obs,
         action_index,
@@ -152,7 +167,7 @@ function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<
         protected_suppress_thermal_terminal =
             session.config.training.protected_first_pass_suppress_thermal_terminal,
     )
-    return SpaceAGORAPhysicsActiveWorker(worker_id, episode_index, seed, handle, 0)
+    return SpaceAGORAPhysicsActiveWorker(worker_id, episode_index, seed, handle, 0, template)
 end
 
 function _finish_spaceagora_physics_streaming_worker!(worker::SpaceAGORAPhysicsActiveWorker)
@@ -195,8 +210,15 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
                                                        global_steps::Int=session.config.training.global_steps,
                                                        episodes::Union{Nothing,Int}=nothing,
                                                        n_workers::Int=session.config.training.n_workers)
-    summaries = EpisodeSummary[]
-    transitions = Transition[]
+    summaries = DiskBackedHistory(
+        EpisodeSummary,
+        joinpath(session.output_dir, "training_episode_summaries.jls"),
+    )
+    transitions = DiskBackedHistory(
+        Transition,
+        joinpath(session.output_dir, "training_transitions.jls"),
+    )
+    aggregate_accumulator = EpisodeAggregateAccumulator()
     requested_workers = max(1, n_workers)
     active_workers = min(requested_workers, Threads.nthreads())
     active_workers < requested_workers && @warn "n_workers exceeds available Julia threads; using Threads.nthreads()" requested_workers active_workers
@@ -259,6 +281,8 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
             delete!(active, event.worker_id)
             _finish_spaceagora_physics_streaming_worker!(worker)
             _stop_spaceagora_physics_streaming_workers!(active, event_channel)
+            close_history!(summaries)
+            close_history!(transitions)
             throw(ErrorException(event.error))
         end
 
@@ -286,8 +310,11 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
         reached_limits = session.learner.global_step >= target_global_step ||
                          length(summaries) >= episode_budget
         if event.done
-            length(summaries) < episode_budget &&
-                push!(summaries, finalize_episode_summary(event.summary, session.config.scenario))
+            if length(summaries) < episode_budget
+                final_summary = finalize_episode_summary(event.summary, session.config.scenario)
+                push!(summaries, final_summary)
+                accumulate_episode!(aggregate_accumulator, final_summary)
+            end
             _finish_spaceagora_physics_streaming_worker!(worker)
             delete!(active, event.worker_id)
             if !reached_limits && next_episode <= episode_budget
@@ -296,6 +323,7 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
                     event_channel,
                     event.worker_id,
                     next_episode,
+                    simulation_template=worker.simulation_template,
                 )
                 next_episode += 1
             end
@@ -381,12 +409,15 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
 
     final_checkpoint_path = joinpath(session.output_dir, "checkpoint_final.jls")
     save_checkpoint(final_checkpoint_path, session.learner; manifest=session.manifest)
+    close_history!(summaries)
+    close_history!(transitions)
     @printf("training complete final_checkpoint=%s elapsed=%s\n",
             final_checkpoint_path, _format_duration(time() - start_time))
     flush(stdout)
+    policy_name = algorithm_report_name(session.config.training.algorithm)
     return (summaries=summaries, transitions=transitions,
-            metrics=[episode_metrics(s; policy_name=algorithm_report_name(session.config.training.algorithm)) for s in summaries],
-            aggregate=aggregate_metrics(summaries; policy_name=algorithm_report_name(session.config.training.algorithm)),
+            metrics=MappedHistory(summaries, summary -> episode_metrics(summary; policy_name=policy_name)),
+            aggregate=aggregate_metrics(aggregate_accumulator; policy_name=policy_name),
             global_step=session.learner.global_step,
             target_global_step=target_global_step == typemax(Int) ? nothing : target_global_step,
             output_dir=session.output_dir)

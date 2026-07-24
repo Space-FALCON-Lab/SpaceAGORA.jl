@@ -147,19 +147,26 @@ function _spaceagora_mars(spaceagora, spice_path::AbstractString)
     end
 end
 
-function _spaceagora_physics_simulation_configuration(config,
-                                                      state,
-                                                      action::AerobrakingAction;
-                                                      prediction::Bool=false,
-                                                      campaign_max_passes::Integer=config.termination_config.max_passes)
+mutable struct SpaceAGORAPhysicsSimulationTemplate
+    planet::Any
+    spacecraft::Any
+    sun_gravity::Any
+    harmonics::Any
+    srp::Any
+    aero_base::Any
+    solver_cfg::Any
+end
+
+function _spaceagora_physics_simulation_template(
+    config,
+    state,
+    action::AerobrakingAction;
+    campaign_max_passes::Integer=config.termination_config.max_passes,
+)
     spaceagora = _load_spaceagora!(; load_gramsuite=_spaceagora_live_needs_gramsuite(config))
     SM = getproperty(spaceagora, :SimulationModel)
     TV = getproperty(spaceagora, :TelemetryVerification)
-
-    spice_path = _spaceagora_spice_path()
-    planet = deepcopy(_spaceagora_mars(spaceagora, spice_path))
-    initial_time = _initial_time_from_datetime(state.epoch; spaceagora=spaceagora)
-    periapsis_after_action = clamp(periapsis_after_action_m(config, state, action), 50e3, 180e3)
+    planet = deepcopy(_spaceagora_mars(spaceagora, _spaceagora_spice_path()))
     ic = _spaceagora_initial_condition(spaceagora, config, state, action, planet)
     spacecraft = Base.invokelatest(
         getproperty(TV, :make_three_body_spacecraft);
@@ -173,7 +180,6 @@ function _spaceagora_physics_simulation_configuration(config,
         prop_mass=50.0,
         id=100,
     )
-
     sun_gravity = Base.invokelatest(
         getproperty(SM, :NBodyGravityModel);
         body_names=("Sun",),
@@ -198,6 +204,51 @@ function _spaceagora_physics_simulation_configuration(config,
         spacecraft.root.ref_area,
     )
     aero_base = Base.invokelatest(getproperty(SM, :AerodynamicCoefficientfM))
+    solver_cfg = Base.invokelatest(
+        getproperty(SM, :SolverConfig);
+        solver_mode=:split_imex,
+        maxiters=_spaceagora_physics_solver_maxiters(campaign_max_passes),
+        split_imex_solver=:kencarp4,
+    )
+    return SpaceAGORAPhysicsSimulationTemplate(
+        planet,
+        spacecraft,
+        sun_gravity,
+        harmonics,
+        srp,
+        aero_base,
+        solver_cfg,
+    )
+end
+
+function _spaceagora_physics_simulation_configuration(config,
+                                                      state,
+                                                      action::AerobrakingAction;
+                                                      prediction::Bool=false,
+                                                      campaign_max_passes::Integer=config.termination_config.max_passes,
+                                                      simulation_template::Union{Nothing,SpaceAGORAPhysicsSimulationTemplate}=nothing)
+    spaceagora = _load_spaceagora!(; load_gramsuite=_spaceagora_live_needs_gramsuite(config))
+    SM = getproperty(spaceagora, :SimulationModel)
+    TV = getproperty(spaceagora, :TelemetryVerification)
+
+    template = simulation_template === nothing ?
+               _spaceagora_physics_simulation_template(
+                   config,
+                   state,
+                   action;
+                   campaign_max_passes=campaign_max_passes,
+               ) :
+               simulation_template
+    planet = template.planet
+    initial_time = _initial_time_from_datetime(state.epoch; spaceagora=spaceagora)
+    periapsis_after_action = clamp(periapsis_after_action_m(config, state, action), 50e3, 180e3)
+    ic = _spaceagora_initial_condition(spaceagora, config, state, action, planet)
+    spacecraft = template.spacecraft
+    spacecraft.initial_condition = ic
+    sun_gravity = template.sun_gravity
+    harmonics = template.harmonics
+    srp = template.srp
+    aero_base = template.aero_base
     aero = (isapprox(state.aerodynamic_cd_scale, 1.0; rtol=0.0, atol=1e-12) &&
             isapprox(state.aerodynamic_cl_scale, 1.0; rtol=0.0, atol=1e-12)) ?
            aero_base :
@@ -215,12 +266,7 @@ function _spaceagora_physics_simulation_configuration(config,
         campaign_max_passes,
     )
 
-    solver_cfg = Base.invokelatest(
-        getproperty(SM, :SolverConfig);
-        solver_mode=:split_imex,
-        maxiters=_spaceagora_physics_solver_maxiters(campaign_max_passes),
-        split_imex_solver=:kencarp4,
-    )
+    solver_cfg = template.solver_cfg
     base_args = Base.invokelatest(
         getproperty(TV, :make_example_config);
         planet=planet,

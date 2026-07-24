@@ -6,7 +6,7 @@ module PerturbationEffectors
     using ...EphemeridesModels: spice_position_j2000_m
     using ...ParallelPolicy
     using ....RuntimeServices: SPICE_LOCK
-    using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo
+    using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRhsMemo
     using ...SimulationModel: ephemerides_cache_key, ephemerides_requires_spice, planet_frame_lpi
     using ..AerodynamicEffectors: _multibody_thread_decision
     using StaticArrays

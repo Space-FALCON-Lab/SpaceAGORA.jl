@@ -78,7 +78,7 @@ end
 compute_ddqn_targets(args...; kwargs...) = selected_q_targets(args...; kwargs...)
 
 function greedy_action_index(learner::DDQNLearner, observation::AbstractVector{<:Real})
-    obs = reshape(Float32.(observation), :, 1)
+    obs = reshape(_as_float32_array(observation), :, 1)
     q = to_cpu_array(predict_q(learner.online, to_device_array(learner.device, obs)))
     return argmax(view(q, :, 1))
 end
@@ -104,9 +104,10 @@ function adam_update_array!(param, grad, m, v, opt::AdamState)
     b2 = opt.beta2
     m .= b1 .* m .+ (1f0 - b1) .* grad
     v .= b2 .* v .+ (1f0 - b2) .* (grad .* grad)
-    mhat = m ./ (1f0 - b1^opt.t)
-    vhat = v ./ (1f0 - b2^opt.t)
-    param .-= opt.learning_rate .* mhat ./ (sqrt.(vhat) .+ opt.epsilon)
+    one_minus_b1t = 1f0 - b1^opt.t
+    one_minus_b2t = 1f0 - b2^opt.t
+    param .-= opt.learning_rate .* (m ./ one_minus_b1t) ./
+              (sqrt.(v ./ one_minus_b2t) .+ opt.epsilon)
     return param
 end
 

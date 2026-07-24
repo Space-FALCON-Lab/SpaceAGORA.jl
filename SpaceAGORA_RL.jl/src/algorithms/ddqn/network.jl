@@ -69,8 +69,11 @@ zero_network_like(net::QNetwork) =
 
 relu_derivative(x) = x > 0 ? Float32(1) : Float32(0)
 
+@inline _as_float32_array(values::AbstractArray{Float32}) = values
+@inline _as_float32_array(values::AbstractArray{<:Real}) = Float32.(values)
+
 function forward_cache(net::QNetwork, observations::AbstractMatrix{<:Real})
-    x = Float32.(observations)
+    x = _as_float32_array(observations)
     z1 = net.W1 * x .+ net.b1
     a1 = max.(z1, Float32(0))
     z2 = net.W2 * a1 .+ net.b2
@@ -81,11 +84,14 @@ end
 
 predict_q(net::QNetwork, observations::AbstractMatrix{<:Real}) = forward_cache(net, observations)[end]
 predict_q(net::QNetwork, observation::AbstractVector{<:Real}) =
-    vec(predict_q(net, reshape(Float32.(observation), :, 1)))
+    vec(predict_q(net, reshape(_as_float32_array(observation), :, 1)))
 
-function network_gradients_from_output_delta(net::QNetwork, observations::AbstractMatrix{Float32},
-                                             dY::AbstractMatrix{Float32})
-    x, z1, a1, z2, a2, q = forward_cache(net, observations)
+function _network_gradients_from_output_delta(
+    net::QNetwork,
+    cache::Tuple,
+    dY::AbstractMatrix{Float32},
+)
+    x, z1, a1, z2, a2, q = cache
     size(dY) == size(q) || throw(DimensionMismatch("output delta must match network output size"))
     dW3 = dY * transpose(a2)
     db3 = vec(sum(dY; dims=2))
@@ -101,6 +107,11 @@ function network_gradients_from_output_delta(net::QNetwork, observations::Abstra
     return QNetworkGradients(dW1, db1, dW2, db2, dW3, db3)
 end
 
+function network_gradients_from_output_delta(net::QNetwork, observations::AbstractMatrix{Float32},
+                                             dY::AbstractMatrix{Float32})
+    return _network_gradients_from_output_delta(net, forward_cache(net, observations), dY)
+end
+
 function onehot_actions(actions::Vector{Int}, action_dim::Integer)
     encoded = zeros(Float32, Int(action_dim), length(actions))
     for (col, action) in pairs(actions)
@@ -113,17 +124,18 @@ end
 function network_loss_and_gradients(net::QNetwork, observations::AbstractMatrix{Float32},
                                     actions::Vector{Int}, targets::AbstractVector{Float32};
                                     device::AbstractTrainingDevice=CPUTrainingDevice())
-    _, _, _, _, _, q = forward_cache(net, observations)
+    cache = forward_cache(net, observations)
+    q = cache[end]
     batch_size = size(observations, 2)
     length(actions) == batch_size || throw(DimensionMismatch("actions length must match batch size"))
     length(targets) == batch_size || throw(DimensionMismatch("targets length must match batch size"))
     encoded = to_device_array(device, onehot_actions(actions, size(q, 1)))
-    target_row = reshape(to_device_array(device, Float32.(targets)), 1, :)
+    target_row = reshape(to_device_array(device, _as_float32_array(targets)), 1, :)
     selected_q = sum(q .* encoded; dims=1)
     err = selected_q .- target_row
     loss = mean(abs2, err)
     dQ = (2f0 / Float32(batch_size)) .* err .* encoded
-    return Float64(cpu_scalar(loss)), network_gradients_from_output_delta(net, observations, dQ)
+    return Float64(cpu_scalar(loss)), _network_gradients_from_output_delta(net, cache, dQ)
 end
 
 function gradient_norm(grads::QNetworkGradients)

@@ -5,6 +5,122 @@ end
 using .MarsHardLanderPrelim
 
 @testset "Mars Hard-Lander Preliminary Analysis" begin
+    @testset "Grant-Braun Sphere-Cone CN/CA" begin
+        area = π * 1.25^2
+        regular_body = MarsHardLanderPrelim.SphereConeReferenceBody(
+            area,
+            0.30,
+            1.25,
+            70.0,
+            :regular_newtonian,
+        )
+        regular_alias_body = MarsHardLanderPrelim.SphereConeReferenceBody(
+            area,
+            0.30,
+            1.25,
+            70.0,
+            :newtonian,
+        )
+        modified_body = MarsHardLanderPrelim.SphereConeReferenceBody(
+            area,
+            0.30,
+            1.25,
+            70.0,
+            :modified_newtonian,
+        )
+        alpha_rad = deg2rad(10.0)
+        gamma = 1.29
+
+        CN_regular, CA_regular = MarsHardLanderPrelim._sphere_cone_cn_ca(
+            alpha_rad,
+            regular_body,
+            5.0,
+            gamma,
+        )
+        CN_alias, CA_alias = MarsHardLanderPrelim._sphere_cone_cn_ca(
+            alpha_rad,
+            regular_alias_body,
+            20.0,
+            gamma,
+        )
+        @test CN_regular ≈ 0.03987396864691749 rtol=1e-12
+        @test CA_regular ≈ 1.7170715355728225 rtol=1e-12
+        @test CN_alias ≈ CN_regular rtol=1e-14
+        @test CA_alias ≈ CA_regular rtol=1e-14
+
+        CN_regular_zero, CA_regular_zero = MarsHardLanderPrelim._sphere_cone_cn_ca(
+            0.0,
+            regular_body,
+            5.0,
+            gamma,
+        )
+        delta_rad = deg2rad(regular_body.cone_half_angle_deg)
+        bluntness = regular_body.nose_radius / regular_body.base_radius
+        @test CN_regular_zero ≈ 0.0 atol=1e-13
+        @test CA_regular_zero ≈ 2.0 * sin(delta_rad)^2 + bluntness^2 * cos(delta_rad)^4 rtol=1e-14
+
+        cp_max_m5 = MarsHardLanderPrelim._modified_newtonian_cp_max(5.0, gamma)
+        @test cp_max_m5 ≈ 1.8443468538239867 rtol=1e-13
+        CN_modified, CA_modified = MarsHardLanderPrelim._sphere_cone_cn_ca(
+            alpha_rad,
+            modified_body,
+            5.0,
+            gamma,
+        )
+        @test CN_modified / CN_regular ≈ cp_max_m5 / 2.0 rtol=1e-13
+        @test CA_modified / CA_regular ≈ cp_max_m5 / 2.0 rtol=1e-13
+
+        CL, CD = MarsHardLanderPrelim._sphere_cone_cl_cd(
+            alpha_rad,
+            modified_body,
+            5.0,
+            gamma,
+        )
+        @test CL ≈ CN_modified * cos(alpha_rad) - CA_modified * sin(alpha_rad) rtol=1e-14
+        @test CD ≈ CA_modified * cos(alpha_rad) + CN_modified * sin(alpha_rad) rtol=1e-14
+
+        cp_at_zero = MarsHardLanderPrelim._modified_newtonian_cp_max(0.0, gamma)
+        cp_below_one = MarsHardLanderPrelim._modified_newtonian_cp_max(1.0 - 1e-8, gamma)
+        cp_above_one = MarsHardLanderPrelim._modified_newtonian_cp_max(1.0 + 1e-8, gamma)
+        @test cp_at_zero == 1.0
+        @test cp_below_one ≈ cp_above_one rtol=1e-7
+
+        sharp_cone = MarsHardLanderPrelim.SphereConeReferenceBody(
+            π,
+            0.0,
+            1.0,
+            45.0,
+            :regular_newtonian,
+        )
+        CN_zero, CA_zero = MarsHardLanderPrelim._sphere_cone_cn_ca(0.0, sharp_cone, 10.0, 1.4)
+        @test CN_zero ≈ 0.0 atol=1e-13
+        @test CA_zero ≈ 1.0 atol=1e-14
+
+        unsupported_body = MarsHardLanderPrelim.SphereConeReferenceBody(
+            area,
+            0.30,
+            1.25,
+            70.0,
+            :unsupported,
+        )
+        @test_throws ArgumentError MarsHardLanderPrelim._sphere_cone_cn_ca(
+            alpha_rad,
+            unsupported_body,
+            5.0,
+            gamma,
+        )
+        @test_throws DomainError MarsHardLanderPrelim._modified_newtonian_cp_max(-1.0, gamma)
+        @test_throws DomainError MarsHardLanderPrelim._modified_newtonian_cp_max(5.0, 1.0)
+        CN_shadowed, CA_shadowed = MarsHardLanderPrelim._sphere_cone_cn_ca(
+            deg2rad(71.0),
+            regular_body,
+            5.0,
+            gamma,
+        )
+        @test isfinite(CN_shadowed)
+        @test isfinite(CA_shadowed)
+    end
+
     @testset "Atmosphere And Aero Calibration" begin
         cfg = default_config(
             atmosphere_mode=:exponential,

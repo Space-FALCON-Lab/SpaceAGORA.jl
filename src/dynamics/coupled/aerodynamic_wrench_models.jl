@@ -61,13 +61,59 @@ end
 
 end
 
+"""
+    AerodynamicCoefficientfM()
+
+Legacy Hart rectangular-prism free-molecular effector retained for backward
+compatibility. It derives geometry from each spacecraft link's `dims` and does
+not use the shared surface representation. New work should use
+[`AerodynamicSurfaceModel`](@ref) with `flow_regime=:free_molecular` or
+`:automatic`.
+"""
 @kwdef struct AerodynamicCoefficientfM <: AbstractForceTorqueModel
 
 end
 
-@kwdef struct AerodynamicCoefficientNoBallisticFlight <: AbstractForceTorqueModel
+"""
+    AerodynamicSurfaceModel(;
+        geometry,
+        flow_regime=:continuum,
+        pressure_model=:regular_newtonian,
+        fixed_alpha_rad=0.0,
+        fixed_beta_rad=0.0,
+    )
 
+Unified surface aerodynamic effector. Construct a closed shared `geometry`
+with [`sphere_cone_aerodynamic_geometry`](@ref) or
+[`combine_aerodynamic_surfaces`](@ref), then select `:continuum`,
+`:free_molecular`, `:transitional`, or `:automatic` flow. The default remains
+Grant-Braun regular Newtonian continuum behavior for compatibility.
+
+Automatic and transitional operation compute Knudsen number from the sampled
+density and temperature, the planet's (or overridden) dynamic viscosity, and
+the geometry reference length unless a separate characteristic length or
+Knudsen override is supplied. Any regime with a nonzero free-molecular weight
+requires an explicit positive `wall_temperature_k`.
+"""
+@kwdef struct AerodynamicSurfaceModel <: AbstractForceTorqueModel
+    geometry::Union{Nothing, AerodynamicGeometry} = nothing
+    flow_regime::Symbol = :continuum
+    pressure_model::Symbol = :regular_newtonian
+    fixed_alpha_rad::Float64 = 0.0
+    fixed_beta_rad::Float64 = 0.0
+    wall_temperature_k::Union{Nothing, Float64} = nothing
+    normal_accommodation::Float64 = 1.0
+    tangential_accommodation::Float64 = 1.0
+    dynamic_viscosity_pa_s::Union{Nothing, Float64} = nothing
+    knudsen_characteristic_length_m::Union{Nothing, Float64} = nothing
+    knudsen_number_override::Union{Nothing, Float64} = nothing
+    continuum_knudsen_limit::Float64 = 1.0e-3
+    free_molecular_knudsen_limit::Float64 = 10.0
 end
+
+# Preserve the historical constructor and dispatch surface while giving the
+# regime-neutral implementation an accurate public name.
+const AerodynamicCoefficientNoBallisticFlight = AerodynamicSurfaceModel
 
 @inline function _make_aero_scratch_workspace(n_threads::Int)::AeroScratchWorkspace
     n_threads >= 1 || throw(ArgumentError("Aerodynamic scratch workspace thread count must be >= 1, got $n_threads"))
@@ -286,6 +332,145 @@ function _aero_pure_wrench(
     return SVector{3, Float64}(force_ii), SVector{3, Float64}(torque_body)
 end
 
+function _surface_aerodynamic_pure_wrench(
+    model::AerodynamicCoefficientNoBallisticFlight,
+    x::StateSample,
+    env::EnvironmentSample,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    planet_frame = env.planet_frame
+    atmosphere = env.atmosphere
+    planet = env.planet
+    planet_frame === nothing && throw(ArgumentError(
+        "Surface aerodynamic wrench evaluation requires env.planet_frame.",
+    ))
+    atmosphere === nothing && throw(ArgumentError(
+        "Surface aerodynamic wrench evaluation requires env.atmosphere.",
+    ))
+    planet === nothing && throw(ArgumentError(
+        "Surface aerodynamic wrench evaluation requires env.planet.",
+    ))
+
+    rho = atmosphere.rho_kg_m3
+    temperature = atmosphere.temperature_k
+    if !isfinite(rho) || rho <= 0.0 ||
+       !isfinite(temperature) || temperature <= 0.0
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    uD, uN, uE = latlongtoNED((planet_frame.alt_m, planet_frame.lat_rad, planet_frame.lon_rad))
+    wE, wN, wU = atmosphere.wind_pp
+    wind_pp = wN * uN + wE * uE - wU * uD
+    relative_velocity_pp = planet_frame.vel_pp + wind_pp
+    relative_speed = norm(relative_velocity_pp)
+    if !isfinite(relative_speed) || relative_speed <= eps(Float64)
+        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    geometry = model.geometry
+    geometry === nothing && throw(ArgumentError(
+        "AerodynamicCoefficientNoBallisticFlight requires an aerodynamic geometry; " *
+        "construct one with `sphere_cone_aerodynamic_geometry` or `combine_aerodynamic_surfaces`.",
+    ))
+    isfinite(model.fixed_alpha_rad) || throw(DomainError(
+        model.fixed_alpha_rad,
+        "fixed angle of attack must be finite.",
+    ))
+    isfinite(model.fixed_beta_rad) || throw(DomainError(
+        model.fixed_beta_rad,
+        "fixed sideslip must be finite.",
+    ))
+
+    gamma = Float64(planet.γ)
+    gas_constant = Float64(planet.R)
+    sound_speed = sqrt(gamma * gas_constant * temperature)
+    mach = relative_speed / sound_speed
+    speed_ratio = sqrt(0.5 * gamma) * mach
+    knudsen_number = if model.knudsen_number_override !== nothing
+        model.knudsen_number_override
+    elseif model.flow_regime === :automatic || model.flow_regime === :transitional
+        dynamic_viscosity = model.dynamic_viscosity_pa_s === nothing ?
+            Float64(planet.μ_fluid) : model.dynamic_viscosity_pa_s
+        characteristic_length = model.knudsen_characteristic_length_m === nothing ?
+            geometry.reference_length_m : model.knudsen_characteristic_length_m
+        gas_knudsen_number(
+            rho,
+            temperature,
+            gas_constant,
+            dynamic_viscosity,
+            characteristic_length,
+        )
+    else
+        nothing
+    end
+    dynamic_pressure = 0.5 * rho * relative_speed^2
+    force_scale = dynamic_pressure * geometry.reference_area_m2
+    moment_scale = force_scale * geometry.reference_length_m
+    l_pi_transpose = planet_frame.l_pi'
+
+    if x.q_ib !== nothing
+        body_to_inertial = rot(x.q_ib)'
+        relative_velocity_ii = l_pi_transpose * relative_velocity_pp
+        freestream_body = body_to_inertial' * (-relative_velocity_ii / relative_speed)
+        regime_result = aerodynamic_regime_coefficients(
+            geometry,
+            freestream_body;
+            flow_regime=model.flow_regime,
+            knudsen_number=knudsen_number,
+            continuum_limit=model.continuum_knudsen_limit,
+            free_molecular_limit=model.free_molecular_knudsen_limit,
+            pressure_model=model.pressure_model,
+            mach=mach,
+            gamma=gamma,
+            speed_ratio=speed_ratio,
+            temperature_inf_k=temperature,
+            wall_temperature_k=model.wall_temperature_k,
+            normal_accommodation=model.normal_accommodation,
+            tangential_accommodation=model.tangential_accommodation,
+        )
+        coefficients = regime_result.coefficients
+        force_ii = body_to_inertial * (force_scale * coefficients.force_body)
+        torque_body = moment_scale * coefficients.moment_body
+        return SVector{3, Float64}(force_ii), SVector{3, Float64}(torque_body)
+    end
+
+    regime_result = aerodynamic_regime_coefficients(
+        geometry,
+        model.fixed_alpha_rad,
+        model.fixed_beta_rad;
+        flow_regime=model.flow_regime,
+        knudsen_number=knudsen_number,
+        continuum_limit=model.continuum_knudsen_limit,
+        free_molecular_limit=model.free_molecular_knudsen_limit,
+        pressure_model=model.pressure_model,
+        mach=mach,
+        gamma=gamma,
+        speed_ratio=speed_ratio,
+        temperature_inf_k=temperature,
+        wall_temperature_k=model.wall_temperature_k,
+        normal_accommodation=model.normal_accommodation,
+        tangential_accommodation=model.tangential_accommodation,
+    )
+    coefficients = regime_result.coefficients
+    velocity_unit_pp = relative_velocity_pp / relative_speed
+    drag_unit_pp = -velocity_unit_pp
+    angular_momentum_pp = cross(planet_frame.pos_pp, relative_velocity_pp)
+    angular_momentum_magnitude = norm(angular_momentum_pp)
+    angular_momentum_magnitude > eps(Float64) || throw(DomainError(
+        angular_momentum_pp,
+        "a nondegenerate planet-relative trajectory plane is required for 3-DOF aerodynamic lift.",
+    ))
+    lift_unit_pp = normalize(cross(angular_momentum_pp / angular_momentum_magnitude, velocity_unit_pp))
+    side_unit_pp = cross(drag_unit_pp, lift_unit_pp)
+    force_pp = force_scale * (
+        coefficients.CD * drag_unit_pp +
+        coefficients.CL * lift_unit_pp +
+        coefficients.CY_wind * side_unit_pp
+    )
+    force_ii = l_pi_transpose * force_pp
+    torque_body = moment_scale * coefficients.moment_body
+    return SVector{3, Float64}(force_ii), SVector{3, Float64}(torque_body)
+end
+
 @inline function wrench(
     model::AerodynamicCoefficientConstant,
     x::StateSample,
@@ -310,7 +495,7 @@ end
     env::EnvironmentSample,
     t::Float64,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    return _aero_pure_wrench(:constant, x, env)
+    return _surface_aerodynamic_pure_wrench(model, x, env)
 end
 
 # Calculate force/torque functions
@@ -655,137 +840,6 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     return SVector{3, Float64}(force_ii), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function calcForceTorque(model::AerodynamicCoefficientNoBallisticFlight, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    # m = param.m
-    # cnf = param.cnf
-    # orientation_sim = param.orientation_sim
-    planet = param.args.environment_model.planet
-    ephemerides_model = param.args.environment_model.ephemerides_model
-    orientation_sim = param.args.mission_configuration.orientation_sim
-    # bodies, root_index = traverse_bodies(m.body, m.body.roots[1]) # Get all bodies in the simulation
-    spacecraft = param.args.dynamics_model.spacecraft[i]
-    bodies = spacecraft.links # Include the root body of the spacecraft
-    root = spacecraft.root
-    root_index = 1
-    pos_ii = SVector{3, Float64}(x.pos)
-    vel_ii = SVector{3, Float64}(x.vel)
-
-    h_ii = cross(pos_ii, vel_ii)    # Inertial angular momentum vector [m ^ 2 / s]
-
-    h_ii_mag = norm(h_ii)           # Magnitude of the inertial angular momentum [m ^ 2 / s]
-
-    # Inertial to planet relative transformation
-    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
-    println("ephemerides_model: ", ephemerides_model)
-    pos_pp, vel_pp = r_intor_p!(pos_ii, vel_ii, planet, et, ephemerides_model) # Position vector planet / planet[m] # Velocity vector planet / planet[m / s]
-    pos_pp_mag = norm(pos_pp) # Magnitude of the planet relative position
-
-    vel_pp_mag = norm(vel_pp)
-
-    h_pp = cross(pos_pp, vel_pp)
-    
-    h_pp_mag = norm(h_pp)
-    h_pp_hat = normalize(h_pp) # Unit vector of the planet relative angular momentum
-    
-    bank_angle = deg2rad(0.0)
-        
-    lift_pp_hat = normalize(cross(h_pp_hat, vel_pp_rw_hat))
-    # lift_pp_hat /= norm(lift_pp_hat) # Normalize the lift vector in planet relative frame
-    drag_pp_hat = -vel_pp_rw_hat # Planet relative drag force direction
-    cross_pp_hat = cross(drag_pp_hat, lift_pp_hat) # Cross product of the drag and lift vectors in planet relative frame
-
-    if orientation_sim
-        Rot = [MMatrix{3,3,Float64}(zeros(3, 3)) for i in eachindex(bodies)] # Rotation matrix from the root body to the spacecraft link
-        @inbounds for (i, b) in enumerate(bodies)
-            Rot[i] .= rotate_to_inertial(spacecraft, b, root_index) # Rotation matrix from the spacecraft link to the inertial frame
-        end
-    end
-    
-    CL, CD = 0.0, 0.0 # Initialize aerodynamic coefficients
-    total_area = 0.0 # Initialize total area
-
-    α = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize angle of attack vector
-    β = MVector{length(bodies), Float64}(zeros(length(bodies))) # Initialize sideslip angle vector
-    R = MMatrix{3, 3, Float64}(zeros(3, 3)) # Rotation matrix from the root body to the spacecraft link
-    # Determine angle of attack (α) and sideslip angle (β)
-    # Vehicle Aerodynamic Forces
-    # CL and CD
-    @inbounds for (i, b) in enumerate(bodies)
-        if orientation_sim
-            R .= Rot[i] # Rotation matrix from the spacecraft link to the inertial frame
-            body_frame_velocity = R' * planet.L_PI' * vel_pp_rw # Velocity of the spacecraft link in inertial frame
-            
-            α_body = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack in radians
-            β_body = atan(body_frame_velocity[2], norm([body_frame_velocity[1], body_frame_velocity[3]])) # Sideslip angle in radians
-            α[i] = α_body # Angle of attack for the spacecraft link
-            β[i] = β_body # Sideslip angle for the spacecraft link
-            b.α = α_body
-            b.β = β_body
-            b.θ = acos(clamp(vel_pp_rw[1]/norm(vel_pp_rw), -1.0, 1.0)) # Elevation angle for the spacecraft link
-        else
-            # TODO: Change this so that it just uses above code even with orientation_sim = false
-            if b.root
-                # if the body is the root body, then the angle of attack is 90 degrees
-                α[i] = pi/2
-                b.α = pi/2 # Angle of attack for the root body
-            else
-                body_frame_velocity = rot(b.q) * SVector{3, Float64}(1.0, 0.0, 0.0) # Velocity of the spacecraft link in inertial frame
-                α[i] = atan(body_frame_velocity[1], body_frame_velocity[3]) # Angle of attack for the spacecraft link
-                # α[i] = pi/2 # Angle of attack for the spacecraft link, temporary hard code for testing
-                b.α = α[i] # Angle of attack for the spacecraft link
-            end
-        end
-
-        CL_body = 0.0
-        CD_body = 2 * (2.2 - 0.8)/pi * args.α + 0.8
-
-            # if montecarlo == true
-            #     CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)
-            # end
-        
-        drag_pp_body = q * CD_body * b.ref_area * drag_pp_hat                       # Planet relative drag force vector
-        lift_pp_body = q * CL_body * b.ref_area * lift_pp_hat * cos(bank_angle)     # Planet relative lift force vector
-
-        if orientation_sim
-            cross_pp_body = q * CS_body * b.ref_area * cross_pp_hat # Planet relative cross force vector
-            cross_body = planet.L_PI' * cross_pp_body # Inertial cross force vector
-        else
-            cross_pp_body = SVector{3, Float64}(0.0, 0.0, 0.0) # Planet relative cross force vector
-            cross_body = SVector{3, Float64}(0.0, 0.0, 0.0) # Inertial cross force vector
-        end
-
-        drag_body = planet.L_PI' * drag_pp_body   # Inertial drag force vector
-        lift_body = planet.L_PI' * lift_pp_body   # Inertial lift force vector
-
-        # Update the force on the spacecraft link
-        b.net_force .+= drag_body + lift_body + cross_body # Update the force on the spacecraft link, inertial frame
-        # aero_torque = q * Cl_body * b.ref_area * b.dims[1] * SVector{3, Float64}(1.0, 0.0, 0.0) + # Aerodynamic roll torque, body frame
-        #               q * Cm_body * b.ref_area * b.dims[2] * SVector{3, Float64}(0.0, 1.0, 0.0) + # Aerodynamic pitch torque, body frame
-        #               q * Cn_body * b.ref_area * b.dims[3] * SVector{3, Float64}(0.0, 0.0, 1.0)   # Aerodynamic yaw torque, body frame
-        # b.net_torque .+= aero_torque # Update the torque on the spacecraft link, body frame
-        b.net_torque .+= cross(b.r, rot_body_to_inertial' * (drag_body + lift_body + cross_body)) # Update the torque on the spacecraft link, body frame
-        # Update the total CL/CD
-        CL += CL_body * b.ref_area
-        CD += CD_body * b.ref_area
-        total_area += b.ref_area # Update the total area
-        drag_ii += drag_body # Update the total drag force
-        lift_ii += lift_body # Update the total lift force
-        drag_pp += drag_pp_body # Update the total drag force in planet relative frame
-        lift_pp += lift_pp_body # Update the total lift force in planet relative frame
-    end
-    
-    # Normalize the aerodynamic coefficients
-    # CL = CL / total_area
-    # CD = CD / total_area
-
-    # cnf.β = β
-
-    force_ii, torque_ii = collect_and_reset_link_wrenches!(bodies)
-
-    return force_ii, torque_ii
-end
-
-
 function aerodynamic_coefficient_constant(α, body, T, S, args, montecarlo=false)
     """
 
@@ -976,25 +1030,56 @@ function aerodynamic_coefficient_fM(
     # return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 end
 
-function aerodynamic_coefficient_no_ballistic_flight(α, body, args, T=0, S=0, a=0, montecarlo=false)
-    """
+"""
+    aerodynamic_coefficient_no_ballistic_flight(
+        alpha, body, args, T=0, S=0, aero=0, montecarlo=false;
+        pressure_model=:regular_newtonian, mach=nothing, gamma=nothing,
+        beta=0, geometry=nothing,
+    ) -> (CL, CD)
 
-    """
-
-    # Newtonian flow
-    NoseRadius = body.nose_radius
-    BaseRadius = body.base_radius
-
-    k = NoseRadius / BaseRadius
-
-    Cp_max = 2
-    δ = body.δ
-
-    CA_body = (1 - sin(δ)^4)*k^2 + (2*sin(δ)^2*cos(α)^2 + cos(δ)^2*sin(α)^2) * (1 - (k*cos(δ))^2)
-    CN_body = (1 - (k*cos(δ))^2) * cos(δ^2) *sin(2*α)
-    
-    CD_body = CA_body*cos(α) + CN_body*sin(α) - 0.15
-    CL_body = CN_body*cos(α) - CA_body*sin(α)
+Compatibility wrapper for the zero-sideslip Grant-Braun sphere-cone model.
+`body.nose_radius`, `body.base_radius`, and `body.δ` are required, with `body.δ`
+in radians. The full surface evaluator supports sideslip and shadowing; pass a
+prebuilt `geometry` to avoid reconstructing quadrature in repeated calls.
+Existing positional calls use regular Newtonian theory. Select
+`:modified_newtonian` explicitly and provide `mach` and `gamma` to apply the
+stagnation-pressure correction.
+"""
+function aerodynamic_coefficient_no_ballistic_flight(
+    α,
+    body,
+    args,
+    T=0,
+    S=0,
+    a=0,
+    montecarlo=false;
+    pressure_model::Symbol=:regular_newtonian,
+    mach::Union{Nothing, Real}=nothing,
+    gamma::Union{Nothing, Real}=nothing,
+    beta::Real=0.0,
+    geometry::Union{Nothing, NewtonianAerodynamicGeometry}=nothing,
+)
+    newtonian_geometry = if geometry !== nothing
+        geometry
+    elseif hasproperty(body, :newtonian_geometry)
+        getproperty(body, :newtonian_geometry)
+    else
+        sphere_cone_newtonian_geometry(
+            body.nose_radius,
+            body.base_radius,
+            body.δ,
+        )
+    end
+    coefficients = newtonian_aerodynamic_coefficients(
+        newtonian_geometry,
+        α,
+        beta;
+        pressure_model=pressure_model,
+        mach=mach,
+        gamma=gamma,
+    )
+    CL_body = coefficients.CL
+    CD_body = coefficients.CD
 
     if montecarlo == true
         CL_body, CD_body = monte_carlo_aerodynamics(CL_body, CD_body, args)

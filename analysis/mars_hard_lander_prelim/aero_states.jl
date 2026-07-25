@@ -9,6 +9,33 @@ struct SphereConeReferenceBody
     base_radius::Float64
     cone_half_angle_deg::Float64
     hypersonic_pressure_model::Symbol
+    newtonian_geometry::AERO.NewtonianAerodynamicGeometry
+end
+
+function SphereConeReferenceBody(
+    ref_area::Real,
+    nose_radius::Real,
+    base_radius::Real,
+    cone_half_angle_deg::Real,
+    hypersonic_pressure_model::Symbol,
+)
+    area = Float64(ref_area)
+    rn = Float64(nose_radius)
+    rb = Float64(base_radius)
+    delta_deg = Float64(cone_half_angle_deg)
+    expected_area = π * rb^2
+    isapprox(area, expected_area; rtol=1e-12, atol=0.0) || throw(ArgumentError(
+        "sphere-cone reference area must equal the base area pi*base_radius^2.",
+    ))
+    geometry = AERO.sphere_cone_newtonian_geometry(rn, rb, deg2rad(delta_deg))
+    return SphereConeReferenceBody(
+        area,
+        rn,
+        rb,
+        delta_deg,
+        hypersonic_pressure_model,
+        geometry,
+    )
 end
 
 struct FlatPlateReferenceBody
@@ -112,25 +139,55 @@ end
     return CL, CD
 end
 
-@inline function _sphere_cone_cl_cd(alpha_rad::Float64, body::SphereConeReferenceBody)
-    k = body.nose_radius / body.base_radius
-    ratio_sq = k^2
-    δ = deg2rad(body.cone_half_angle_deg)
-    frustum_factor = 1.0 - ratio_sq * cos(δ)^2
-    CN = frustum_factor * cos(δ)^2 * sin(2.0 * alpha_rad)
-    CA = (1.0 - sin(δ)^4) * ratio_sq +
-         (2.0 * sin(δ)^2 * cos(alpha_rad)^2 + cos(δ)^2 * sin(alpha_rad)^2) * frustum_factor
-    CL = CN * cos(alpha_rad) - CA * sin(alpha_rad)
-    CD = CA * cos(alpha_rad) + CN * sin(alpha_rad)
-    return CL, CD
+@inline _modified_newtonian_cp_max(mach::Float64, gamma::Float64) =
+    AERO.modified_newtonian_cp_max(mach, gamma)
+
+@inline function _sphere_cone_cn_ca_regular(
+    alpha_rad::Float64,
+    body::SphereConeReferenceBody,
+)
+    coefficients = AERO.newtonian_aerodynamic_coefficients(
+        body.newtonian_geometry,
+        alpha_rad,
+        0.0;
+        pressure_model=:regular_newtonian,
+    )
+    return coefficients.CN, coefficients.CA
 end
 
-function _component_cl_cd(link::FlatPlateReferenceBody, alpha_rad::Float64, mach::Float64, gamma::Float64)
+@inline function _sphere_cone_cn_ca(
+    alpha_rad::Float64,
+    body::SphereConeReferenceBody,
+    mach::Float64,
+    gamma::Float64,
+)
+    coefficients = AERO.newtonian_aerodynamic_coefficients(
+        body.newtonian_geometry,
+        alpha_rad,
+        0.0;
+        pressure_model=body.hypersonic_pressure_model,
+        mach=mach,
+        gamma=gamma,
+    )
+    return coefficients.CN, coefficients.CA
+end
+
+@inline function _sphere_cone_cl_cd(
+    alpha_rad::Float64,
+    body::SphereConeReferenceBody,
+    mach::Float64,
+    gamma::Float64,
+)
+    CN, CA = _sphere_cone_cn_ca(alpha_rad, body, mach, gamma)
+    return AERO.cn_ca_to_cl_cd(alpha_rad, CN, CA)
+end
+
+function _component_cl_cd(link::FlatPlateReferenceBody, alpha_rad::Float64, _mach::Float64, _gamma::Float64)
     return _flat_plate_cl_cd(alpha_rad, link)
 end
 
 function _component_cl_cd(link::SphereConeReferenceBody, alpha_rad::Float64, mach::Float64, gamma::Float64)
-    return _sphere_cone_cl_cd(alpha_rad, link)
+    return _sphere_cone_cl_cd(alpha_rad, link, mach, gamma)
 end
 
 function _component_cla_cda(link, alpha_rad::Float64, mach::Float64, gamma::Float64)

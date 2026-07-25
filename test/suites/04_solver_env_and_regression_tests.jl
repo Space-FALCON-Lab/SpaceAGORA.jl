@@ -1,3 +1,641 @@
+using SpecialFunctions: erf
+
+@testset "Grant-Braun Regular And Modified Newtonian Sphere-Cone" begin
+    alpha_rad = deg2rad(10.0)
+    delta_rad = deg2rad(70.0)
+    nose_radius = 0.30
+    base_radius = 1.25
+    mach = 5.0
+    gamma = 1.29
+    geometry = SimulationModel.sphere_cone_newtonian_geometry(
+        nose_radius,
+        base_radius,
+        delta_rad,
+    )
+    junction_radius = nose_radius * cos(delta_rad)
+    expected_surface_area =
+        2.0 * π * nose_radius^2 * (1.0 - sin(delta_rad)) +
+        π * (base_radius^2 - junction_radius^2) / sin(delta_rad)
+    integrated_surface_area = sum(geometry.surface.area_weights_m2)
+    integrated_reference_area = sum(
+        geometry.surface.area_weights_m2[index] *
+        dot(geometry.surface.inward_normals_body[index], SVector{3, Float64}(-1.0, 0.0, 0.0))
+        for index in eachindex(geometry.surface.area_weights_m2)
+    )
+    expected_reference_length =
+        nose_radius - (nose_radius / sin(delta_rad) - base_radius / tan(delta_rad))
+    @test integrated_surface_area ≈ expected_surface_area rtol=1e-14
+    @test integrated_reference_area ≈ π * base_radius^2 rtol=1e-14
+    @test geometry.reference_length_m ≈ expected_reference_length rtol=1e-14
+
+    CN_regular, CA_regular = SimulationModel.regular_newtonian_sphere_cone_cn_ca(
+        alpha_rad,
+        nose_radius,
+        base_radius,
+        delta_rad,
+    )
+    @test CN_regular ≈ 0.03987396864691749 rtol=1e-12
+    @test CA_regular ≈ 1.7170715355728225 rtol=1e-12
+    complete_regular = SimulationModel.newtonian_aerodynamic_coefficients(
+        geometry,
+        alpha_rad,
+        0.0,
+    )
+    @test complete_regular.CN ≈ CN_regular rtol=1e-13
+    @test complete_regular.CA ≈ CA_regular rtol=1e-13
+    legacy_compact = SimulationModel.DynamicEffectors.AerodynamicEffectors._legacy_unshadowed_sphere_cone_cn_ca(
+        alpha_rad,
+        nose_radius,
+        base_radius,
+        delta_rad,
+    )
+    @test !isapprox(legacy_compact[1], CN_regular; rtol=1e-4)
+    @test !isapprox(legacy_compact[2], CA_regular; rtol=1e-4)
+    regular_alias = SimulationModel.sphere_cone_cn_ca(
+        alpha_rad,
+        nose_radius,
+        base_radius,
+        delta_rad;
+        pressure_model=:newtonian,
+    )
+    @test all(isapprox.(regular_alias, (CN_regular, CA_regular); rtol=1e-14))
+
+    cp_max = SimulationModel.modified_newtonian_cp_max(mach, gamma)
+    @test cp_max ≈ 1.8443468538239867 rtol=1e-13
+    CN_modified, CA_modified = SimulationModel.modified_newtonian_sphere_cone_cn_ca(
+        alpha_rad,
+        nose_radius,
+        base_radius,
+        delta_rad,
+        mach,
+        gamma,
+    )
+    @test CN_modified / CN_regular ≈ cp_max / 2.0 rtol=1e-13
+    @test CA_modified / CA_regular ≈ cp_max / 2.0 rtol=1e-13
+    selected_modified = SimulationModel.sphere_cone_cn_ca(
+        alpha_rad,
+        nose_radius,
+        base_radius,
+        delta_rad;
+        pressure_model=:modified_newtonian,
+        mach=mach,
+        gamma=gamma,
+    )
+    @test all(isapprox.(selected_modified, (CN_modified, CA_modified); rtol=1e-14))
+
+    CL_modified, CD_modified = SimulationModel.cn_ca_to_cl_cd(
+        alpha_rad,
+        CN_modified,
+        CA_modified,
+    )
+    selected_cl_cd = SimulationModel.sphere_cone_cl_cd(
+        alpha_rad,
+        nose_radius,
+        base_radius,
+        delta_rad;
+        pressure_model=:modified_newtonian,
+        mach=mach,
+        gamma=gamma,
+    )
+    @test all(isapprox.(selected_cl_cd, (CL_modified, CD_modified); rtol=1e-14))
+
+    zero_CN, zero_CA = SimulationModel.regular_newtonian_sphere_cone_cn_ca(
+        0.0,
+        nose_radius,
+        base_radius,
+        delta_rad,
+    )
+    radius_ratio = nose_radius / base_radius
+    @test zero_CN ≈ 0.0 atol=1e-13
+    @test zero_CA ≈ 2.0 * sin(delta_rad)^2 + radius_ratio^2 * cos(delta_rad)^4 rtol=1e-14
+
+    paper_beta_case = SimulationModel.newtonian_aerodynamic_coefficients(
+        geometry,
+        0.0,
+        deg2rad(20.0),
+    )
+    @test paper_beta_case.CA ≈ 1.573790174570077 rtol=1e-12
+    @test paper_beta_case.CS ≈ -0.0749385481979149 rtol=1e-12
+    @test paper_beta_case.CN ≈ 0.0 atol=1e-13
+    @test paper_beta_case.moment_body[3] ≈ 0.39249004341406024 rtol=1e-12
+    opposite_beta_case = SimulationModel.newtonian_aerodynamic_coefficients(
+        geometry,
+        0.0,
+        deg2rad(-20.0),
+    )
+    @test opposite_beta_case.CA ≈ paper_beta_case.CA rtol=1e-12
+    @test opposite_beta_case.CS ≈ -paper_beta_case.CS rtol=1e-12
+    @test opposite_beta_case.moment_body[3] ≈ -paper_beta_case.moment_body[3] rtol=1e-12
+    stability = SimulationModel.newtonian_stability_derivatives(geometry, 0.0, 0.0)
+    @test stability.Cm_alpha < 0.0
+    @test stability.Cn_beta > 0.0
+    @test stability.Cm_alpha ≈ -stability.Cn_beta rtol=1e-10
+    derivative_step = 1.0e-5
+    pitch_plus = SimulationModel.newtonian_aerodynamic_coefficients(
+        geometry,
+        derivative_step,
+        0.0,
+    ).moment_body[2]
+    pitch_minus = SimulationModel.newtonian_aerodynamic_coefficients(
+        geometry,
+        -derivative_step,
+        0.0,
+    ).moment_body[2]
+    yaw_plus = SimulationModel.newtonian_aerodynamic_coefficients(
+        geometry,
+        0.0,
+        derivative_step,
+    ).moment_body[3]
+    yaw_minus = SimulationModel.newtonian_aerodynamic_coefficients(
+        geometry,
+        0.0,
+        -derivative_step,
+    ).moment_body[3]
+    @test stability.Cm_alpha ≈ (pitch_plus - pitch_minus) / (2.0 * derivative_step) rtol=1e-9
+    @test stability.Cn_beta ≈ (yaw_plus - yaw_minus) / (2.0 * derivative_step) rtol=1e-9
+
+    shadowed_case = SimulationModel.newtonian_aerodynamic_coefficients(
+        geometry,
+        deg2rad(80.0),
+        deg2rad(20.0),
+    )
+    fine_geometry = SimulationModel.sphere_cone_newtonian_geometry(
+        nose_radius,
+        base_radius,
+        delta_rad;
+        quadrature_order_meridional=18,
+        quadrature_order_azimuth=96,
+    )
+    fine_shadowed_case = SimulationModel.newtonian_aerodynamic_coefficients(
+        fine_geometry,
+        deg2rad(80.0),
+        deg2rad(20.0),
+    )
+    @test 0.0 < shadowed_case.exposed_area_fraction < 1.0
+    @test shadowed_case.CA ≈ fine_shadowed_case.CA rtol=3e-5
+    @test shadowed_case.CS ≈ fine_shadowed_case.CS rtol=1e-4
+    @test shadowed_case.CN ≈ fine_shadowed_case.CN rtol=3e-5
+
+    plate_delta = deg2rad(30.0)
+    plate_alpha = deg2rad(15.0)
+    plate_beta = deg2rad(10.0)
+    plate_normal = SVector{3, Float64}(-sin(plate_delta), 0.0, -cos(plate_delta))
+    plate_surface = SimulationModel.NewtonianSurfaceQuadrature(
+        [SVector{3, Float64}(0.0, 0.0, 0.0)],
+        [plate_normal],
+        [2.0],
+    )
+    plate_geometry = SimulationModel.NewtonianAerodynamicGeometry(plate_surface, 2.0, 1.0)
+    plate_coefficients = SimulationModel.newtonian_aerodynamic_coefficients(
+        plate_geometry,
+        plate_alpha,
+        plate_beta,
+    )
+    plate_incidence = cos(plate_beta) * sin(plate_delta + plate_alpha)
+    @test plate_coefficients.CA ≈ 2.0 * plate_incidence^2 * sin(plate_delta) rtol=1e-14
+    @test plate_coefficients.CS == 0.0
+    @test plate_coefficients.CN ≈ 2.0 * plate_incidence^2 * cos(plate_delta) rtol=1e-14
+    @test plate_coefficients.moment_body == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    legacy_body = (nose_radius=nose_radius, base_radius=base_radius, δ=delta_rad)
+    legacy_regular = SimulationModel.DynamicEffectors.AerodynamicEffectors.aerodynamic_coefficient_no_ballistic_flight(
+        alpha_rad,
+        legacy_body,
+        nothing,
+    )
+    expected_legacy_regular = SimulationModel.cn_ca_to_cl_cd(alpha_rad, CN_regular, CA_regular)
+    @test all(isapprox.(legacy_regular, expected_legacy_regular; rtol=1e-14))
+    legacy_modified = SimulationModel.DynamicEffectors.AerodynamicEffectors.aerodynamic_coefficient_no_ballistic_flight(
+        alpha_rad,
+        legacy_body,
+        nothing;
+        pressure_model=:modified_newtonian,
+        mach=mach,
+        gamma=gamma,
+    )
+    @test all(isapprox.(legacy_modified, (CL_modified, CD_modified); rtol=1e-14))
+
+    identity_lpi = SMatrix{3, 3, Float64}(I)
+    relative_speed = 5000.0
+    density = 0.01
+    temperature = 200.0
+    state = SimulationModel.StateSample(
+        SVector{3, Float64}(7.0e6, 0.0, 0.0),
+        SVector{3, Float64}(relative_speed, 0.0, 0.0),
+        1000.0;
+        q_ib=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+    )
+    planet_frame = SimulationModel.PlanetFrameSample(
+        identity_lpi,
+        state.pos_ii,
+        state.vel_ii,
+        100e3,
+        0.0,
+        0.0,
+    )
+    atmosphere = SimulationModel.AtmosphereSample(
+        density,
+        temperature,
+        SVector{3, Float64}(0.0, 0.0, 0.0),
+    )
+    test_planet = (γ=1.4, R=287.0)
+    environment = SimulationModel.EnvironmentSample(
+        test_planet;
+        planet_frame=planet_frame,
+        atmosphere=atmosphere,
+    )
+    wrench_model = SimulationModel.AerodynamicCoefficientNoBallisticFlight(
+        geometry=geometry,
+        pressure_model=:modified_newtonian,
+    )
+    force_ii, torque_body = SimulationModel.wrench(wrench_model, state, environment, 0.0)
+    wrench_mach = relative_speed / sqrt(test_planet.γ * test_planet.R * temperature)
+    expected_wrench_coefficients = SimulationModel.newtonian_aerodynamic_coefficients(
+        geometry,
+        SVector{3, Float64}(-1.0, 0.0, 0.0);
+        pressure_model=:modified_newtonian,
+        mach=wrench_mach,
+        gamma=test_planet.γ,
+    )
+    force_scale = 0.5 * density * relative_speed^2 * geometry.reference_area_m2
+    moment_scale = force_scale * geometry.reference_length_m
+    @test force_ii ≈ force_scale * expected_wrench_coefficients.force_body rtol=1e-12
+    @test torque_body ≈ moment_scale * expected_wrench_coefficients.moment_body atol=1e-10
+    @test_throws ArgumentError SimulationModel.wrench(
+        SimulationModel.AerodynamicCoefficientNoBallisticFlight(),
+        state,
+        environment,
+        0.0,
+    )
+
+    cp_below_one = SimulationModel.modified_newtonian_cp_max(1.0 - 1e-8, gamma)
+    cp_above_one = SimulationModel.modified_newtonian_cp_max(1.0 + 1e-8, gamma)
+    @test SimulationModel.modified_newtonian_cp_max(0.0, gamma) == 1.0
+    @test cp_below_one ≈ cp_above_one rtol=1e-7
+    @test SimulationModel.modified_newtonian_cp_max(1.0e8, 1.4) ≈ 1.8393710511306662 rtol=1e-14
+
+    @test_throws ArgumentError SimulationModel.sphere_cone_cn_ca(
+        alpha_rad,
+        nose_radius,
+        base_radius,
+        delta_rad;
+        pressure_model=:modified_newtonian,
+    )
+    @test_throws ArgumentError SimulationModel.sphere_cone_cn_ca(
+        alpha_rad,
+        nose_radius,
+        base_radius,
+        delta_rad;
+        pressure_model=:unsupported,
+    )
+    @test_throws DomainError SimulationModel.modified_newtonian_cp_max(-1.0, gamma)
+    @test_throws DomainError SimulationModel.modified_newtonian_cp_max(mach, 1.0)
+    above_cone_angle = SimulationModel.regular_newtonian_sphere_cone_cn_ca(
+        deg2rad(71.0),
+        nose_radius,
+        base_radius,
+        delta_rad,
+    )
+    @test all(isfinite, above_cone_angle)
+end
+
+@testset "Shared Surface Free-Molecular And Transitional Aerodynamics" begin
+    nose_radius = 0.30
+    base_radius = 1.25
+    cone_half_angle = deg2rad(70.0)
+    forebody = SimulationModel.sphere_cone_newtonian_geometry(
+        nose_radius,
+        base_radius,
+        cone_half_angle,
+    )
+    closed_geometry = SimulationModel.sphere_cone_aerodynamic_geometry(
+        nose_radius,
+        base_radius,
+        cone_half_angle,
+    )
+    @test closed_geometry isa SimulationModel.AerodynamicGeometry
+    @test forebody isa SimulationModel.AerodynamicGeometry
+    @test SimulationModel.NewtonianAerodynamicGeometry === SimulationModel.AerodynamicGeometry
+    @test SimulationModel.NewtonianSurfaceQuadrature === SimulationModel.AerodynamicSurfaceQuadrature
+    @test SimulationModel.AerodynamicCoefficientNoBallisticFlight ===
+          SimulationModel.AerodynamicSurfaceModel
+    @test sum(closed_geometry.surface.area_weights_m2) -
+          sum(forebody.surface.area_weights_m2) ≈ π * base_radius^2 rtol=1e-14
+
+    continuum_forebody = SimulationModel.newtonian_aerodynamic_coefficients(
+        forebody,
+        0.0,
+        0.0,
+    )
+    continuum_closed = SimulationModel.newtonian_aerodynamic_coefficients(
+        closed_geometry,
+        0.0,
+        0.0,
+    )
+    @test continuum_closed.force_body ≈ continuum_forebody.force_body atol=1e-14
+    @test continuum_closed.moment_body ≈ continuum_forebody.moment_body atol=1e-14
+
+    source_pressure, source_tangential =
+        SimulationModel.free_molecular_surface_coefficients(2.0, 0.3, 1.5, 0.7, 0.4)
+    # NASA CR-182076 page 133 pressure/shear equations, independently evaluated.
+    @test source_pressure ≈ 0.7825876024470204 rtol=1e-14
+    @test source_tangential ≈ 0.2711870740731798 rtol=1e-14
+
+    specular_normal, specular_tangential_multiplier =
+        SimulationModel.free_molecular_surface_coefficients(100.0, 1.0, 1.0, 0.0, 0.0)
+    diffuse_normal, diffuse_tangential_multiplier =
+        SimulationModel.free_molecular_surface_coefficients(100.0, 1.0, 1.0, 1.0, 1.0)
+    @test specular_normal ≈ 4.0 rtol=6e-5
+    @test specular_tangential_multiplier == 0.0
+    @test diffuse_normal ≈ 2.0 rtol=0.01
+    @test diffuse_tangential_multiplier ≈ 2.0 rtol=1e-14
+
+    sphere_radius = 1.0
+    sphere_position = function (u, v)
+        transverse_radius = sqrt(max(0.0, sphere_radius^2 - u^2))
+        return SVector{3, Float64}(
+            u,
+            transverse_radius * cos(v),
+            -transverse_radius * sin(v),
+        )
+    end
+    sphere_surface = SimulationModel.aerodynamic_surface_quadrature(
+        sphere_position,
+        (u, v) -> -sphere_position(u, v),
+        (-sphere_radius, sphere_radius),
+        (0.0, 2.0 * π);
+        quadrature_order_u=64,
+        quadrature_order_v=16,
+    )
+    sphere_geometry = SimulationModel.AerodynamicGeometry(
+        sphere_surface,
+        π * sphere_radius^2,
+        2.0 * sphere_radius,
+    )
+    sphere_speed_ratio = 2.0
+    sphere_temperature_ratio = 1.5
+    sphere_coefficients = SimulationModel.free_molecular_aerodynamic_coefficients(
+        sphere_geometry,
+        SVector{3, Float64}(-1.0, 0.0, 0.0);
+        speed_ratio=sphere_speed_ratio,
+        temperature_inf_k=200.0,
+        wall_temperature_k=200.0 * sphere_temperature_ratio,
+        normal_accommodation=1.0,
+        tangential_accommodation=1.0,
+    )
+    # Closed-form Schaaf-Chambre diffuse-sphere drag coefficient.
+    expected_sphere_drag =
+        (2.0 * sphere_speed_ratio^2 + 1.0) /
+        (sqrt(π) * sphere_speed_ratio^3) * exp(-sphere_speed_ratio^2) +
+        (4.0 * sphere_speed_ratio^4 + 4.0 * sphere_speed_ratio^2 - 1.0) /
+        (2.0 * sphere_speed_ratio^4) * erf(sphere_speed_ratio) +
+        2.0 * sqrt(π) / (3.0 * sphere_speed_ratio) * sqrt(sphere_temperature_ratio)
+    @test sum(sphere_surface.area_weights_m2) ≈ 4.0 * π * sphere_radius^2 rtol=1e-14
+    @test sphere_coefficients.CD ≈ expected_sphere_drag rtol=2e-14
+    @test sphere_coefficients.force_body[2:3] ≈ SVector{2, Float64}(0.0, 0.0) atol=1e-14
+    @test sphere_coefficients.moment_body ≈ SVector{3, Float64}(0.0, 0.0, 0.0) atol=1e-13
+
+    plate_area = 2.0
+    plate_position = SVector{3, Float64}(0.0, 2.0, 0.0)
+    plate_normal = SVector{3, Float64}(-1.0, 0.0, 0.0)
+    plate_surface = SimulationModel.aerodynamic_plate_surface(
+        plate_position,
+        SVector{3, Float64}(0.0, 2.0, 0.0),
+        SVector{3, Float64}(0.0, 0.0, 1.0);
+        inward_normal_body=plate_normal,
+    )
+    @test plate_surface.area_weights_m2 == [plate_area]
+    @test plate_surface.inward_normals_body == [plate_normal]
+    plate_geometry = SimulationModel.AerodynamicGeometry(
+        plate_surface,
+        plate_area,
+        1.0,
+    )
+    plate_coefficients = SimulationModel.free_molecular_aerodynamic_coefficients(
+        plate_geometry,
+        SVector{3, Float64}(-1.0, 0.0, 0.0);
+        speed_ratio=2.0,
+        temperature_inf_k=200.0,
+        wall_temperature_k=300.0,
+        normal_accommodation=0.7,
+        tangential_accommodation=0.4,
+    )
+    @test plate_coefficients.force_body ≈
+          SVector{3, Float64}(-3.684842670963155, 0.0, 0.0) rtol=1e-14
+    @test plate_coefficients.moment_body ≈
+          SVector{3, Float64}(0.0, 0.0, 7.36968534192631) rtol=1e-14
+
+    sphere_cone_fm = SimulationModel.free_molecular_aerodynamic_coefficients(
+        closed_geometry,
+        deg2rad(12.0),
+        deg2rad(-7.0);
+        speed_ratio=8.0,
+        temperature_inf_k=180.0,
+        wall_temperature_k=300.0,
+        normal_accommodation=0.9,
+        tangential_accommodation=0.8,
+    )
+    @test all(isfinite, sphere_cone_fm.force_body)
+    @test all(isfinite, sphere_cone_fm.moment_body)
+    @test sphere_cone_fm.CD > 0.0
+    @test sphere_cone_fm.exposed_area_fraction == 1.0
+
+    continuum_limit = 1.0e-3
+    free_molecular_limit = 10.0
+    midpoint_knudsen = sqrt(continuum_limit * free_molecular_limit)
+    @test SimulationModel.transitional_free_molecular_weight(0.0) == 0.0
+    @test SimulationModel.transitional_free_molecular_weight(continuum_limit) == 0.0
+    @test SimulationModel.transitional_free_molecular_weight(midpoint_knudsen) ≈ 0.5 atol=2e-16
+    @test SimulationModel.transitional_free_molecular_weight(free_molecular_limit) == 1.0
+    @test SimulationModel.transitional_free_molecular_weight(100.0) == 1.0
+    @test SimulationModel.transitional_free_molecular_weight(Inf) == 1.0
+    @test SimulationModel.transitional_free_molecular_weight(continuum_limit * (1.0 + 1.0e-6)) < 2.0e-13
+    @test 1.0 - SimulationModel.transitional_free_molecular_weight(
+        free_molecular_limit / (1.0 + 1.0e-6),
+    ) < 2.0e-13
+    transition_weights = SimulationModel.transitional_free_molecular_weight.(
+        10.0 .^ range(-3.0, 1.0; length=101),
+    )
+    @test issorted(transition_weights)
+
+    freestream = SVector{3, Float64}(-1.0, 0.0, 0.0)
+    transition = SimulationModel.aerodynamic_regime_coefficients(
+        closed_geometry,
+        freestream;
+        flow_regime=:automatic,
+        knudsen_number=midpoint_knudsen,
+        pressure_model=:modified_newtonian,
+        mach=12.0,
+        gamma=1.29,
+        speed_ratio=sqrt(1.29 / 2.0) * 12.0,
+        temperature_inf_k=180.0,
+        wall_temperature_k=300.0,
+        normal_accommodation=0.9,
+        tangential_accommodation=0.8,
+    )
+    transition_continuum = SimulationModel.newtonian_aerodynamic_coefficients(
+        closed_geometry,
+        freestream;
+        pressure_model=:modified_newtonian,
+        mach=12.0,
+        gamma=1.29,
+    )
+    transition_fm = SimulationModel.free_molecular_aerodynamic_coefficients(
+        closed_geometry,
+        freestream;
+        speed_ratio=sqrt(1.29 / 2.0) * 12.0,
+        temperature_inf_k=180.0,
+        wall_temperature_k=300.0,
+        normal_accommodation=0.9,
+        tangential_accommodation=0.8,
+    )
+    @test transition.regime === :transitional
+    @test transition.free_molecular_weight ≈ 0.5 atol=2e-16
+    @test transition.coefficients.force_body ≈
+          0.5 * (transition_continuum.force_body + transition_fm.force_body) rtol=1e-14
+    @test transition.coefficients.moment_body ≈
+          0.5 * (transition_continuum.moment_body + transition_fm.moment_body) atol=1e-13
+    automatic_continuum = SimulationModel.aerodynamic_regime_coefficients(
+        closed_geometry,
+        freestream;
+        flow_regime=:automatic,
+        knudsen_number=1.0e-4,
+        pressure_model=:modified_newtonian,
+        mach=12.0,
+        gamma=1.29,
+    )
+    @test automatic_continuum.regime === :continuum
+    @test automatic_continuum.free_molecular_weight == 0.0
+    @test automatic_continuum.coefficients.force_body == transition_continuum.force_body
+    automatic_free_molecular = SimulationModel.aerodynamic_regime_coefficients(
+        closed_geometry,
+        freestream;
+        flow_regime=:automatic,
+        knudsen_number=100.0,
+        speed_ratio=sqrt(1.29 / 2.0) * 12.0,
+        temperature_inf_k=180.0,
+        wall_temperature_k=300.0,
+        normal_accommodation=0.9,
+        tangential_accommodation=0.8,
+    )
+    @test automatic_free_molecular.regime === :free_molecular
+    @test automatic_free_molecular.free_molecular_weight == 1.0
+    @test automatic_free_molecular.coefficients.force_body == transition_fm.force_body
+
+    density = 1.0e-6
+    temperature = 200.0
+    gas_constant = 188.92
+    dynamic_viscosity = 13.06e-6
+    expected_mean_free_path = dynamic_viscosity / density *
+                              sqrt(π / (2.0 * gas_constant * temperature))
+    @test SimulationModel.gas_mean_free_path(
+        density,
+        temperature,
+        gas_constant,
+        dynamic_viscosity,
+    ) ≈ expected_mean_free_path rtol=1e-15
+    @test SimulationModel.gas_knudsen_number(
+        density,
+        temperature,
+        gas_constant,
+        dynamic_viscosity,
+        2.0,
+    ) ≈ expected_mean_free_path / 2.0 rtol=1e-15
+
+    identity_lpi = SMatrix{3, 3, Float64}(I)
+    relative_speed = 4000.0
+    target_knudsen = midpoint_knudsen
+    operational_temperature = 180.0
+    operational_planet = (γ=1.29, R=gas_constant, μ_fluid=dynamic_viscosity)
+    operational_density = dynamic_viscosity /
+                          (target_knudsen * closed_geometry.reference_length_m) *
+                          sqrt(π / (2.0 * gas_constant * operational_temperature))
+    state = SimulationModel.StateSample(
+        SVector{3, Float64}(7.0e6, 0.0, 0.0),
+        SVector{3, Float64}(relative_speed, 0.0, 0.0),
+        1000.0;
+        q_ib=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+    )
+    planet_frame = SimulationModel.PlanetFrameSample(
+        identity_lpi,
+        state.pos_ii,
+        state.vel_ii,
+        100e3,
+        0.0,
+        0.0,
+    )
+    atmosphere = SimulationModel.AtmosphereSample(
+        operational_density,
+        operational_temperature,
+        SVector{3, Float64}(0.0, 0.0, 0.0),
+    )
+    environment = SimulationModel.EnvironmentSample(
+        operational_planet;
+        planet_frame=planet_frame,
+        atmosphere=atmosphere,
+    )
+    operational_model = SimulationModel.AerodynamicSurfaceModel(
+        geometry=closed_geometry,
+        flow_regime=:automatic,
+        pressure_model=:modified_newtonian,
+        wall_temperature_k=300.0,
+        normal_accommodation=0.9,
+        tangential_accommodation=0.8,
+    )
+    force_ii, torque_body = SimulationModel.wrench(
+        operational_model,
+        state,
+        environment,
+        0.0,
+    )
+    operational_mach = relative_speed /
+                       sqrt(operational_planet.γ * operational_planet.R * operational_temperature)
+    operational_result = SimulationModel.aerodynamic_regime_coefficients(
+        closed_geometry,
+        freestream;
+        flow_regime=:automatic,
+        knudsen_number=target_knudsen,
+        pressure_model=:modified_newtonian,
+        mach=operational_mach,
+        gamma=operational_planet.γ,
+        speed_ratio=sqrt(operational_planet.γ / 2.0) * operational_mach,
+        temperature_inf_k=operational_temperature,
+        wall_temperature_k=300.0,
+        normal_accommodation=0.9,
+        tangential_accommodation=0.8,
+    )
+    force_scale = 0.5 * operational_density * relative_speed^2 *
+                  closed_geometry.reference_area_m2
+    moment_scale = force_scale * closed_geometry.reference_length_m
+    @test force_ii ≈ force_scale * operational_result.coefficients.force_body rtol=1e-12
+    @test torque_body ≈ moment_scale * operational_result.coefficients.moment_body atol=1e-10
+
+    @test_throws ArgumentError SimulationModel.aerodynamic_regime_coefficients(
+        closed_geometry,
+        freestream;
+        flow_regime=:automatic,
+    )
+    @test_throws ArgumentError SimulationModel.aerodynamic_regime_coefficients(
+        closed_geometry,
+        freestream;
+        flow_regime=:free_molecular,
+        speed_ratio=2.0,
+        temperature_inf_k=200.0,
+    )
+    @test_throws DomainError SimulationModel.free_molecular_surface_coefficients(
+        2.0,
+        0.3,
+        1.0,
+        1.1,
+        0.5,
+    )
+    @test_throws DomainError SimulationModel.transitional_free_molecular_weight(
+        0.1;
+        continuum_limit=1.0,
+        free_molecular_limit=0.1,
+    )
+end
+
 @testset "Solver/Env Helper Parsing Coverage" begin
     withenv("SPACEAGORA_SOLVER_MODE" => nothing) do
         @test _solver_policy_mode() == :tsit5

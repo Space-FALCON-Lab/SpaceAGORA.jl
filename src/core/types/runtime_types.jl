@@ -116,6 +116,7 @@ export GramTrackCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScr
     @kwdef mutable struct Aerodynamics
         δ::Float64 = 0.0
         α::Float64 = 0.0
+        newtonian_pressure_model::Symbol = :regular_newtonian
         thermal_accomodation_factor::Float64 = 0.0
         reflection_coefficient::Float64 = 0.0
         thermal_contact::Float64 = 0.0

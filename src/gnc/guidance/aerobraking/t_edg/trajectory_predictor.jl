@@ -319,7 +319,18 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond; cnf=nothing)
         elseif ip.am == 1
             CL, CD = aerodynamic_coefficient_fM(α, m.body, T_p, S, m.aerodynamics, MonteCarlo)
         elseif ip.am == 2
-            CL, CD = aerodynamic_coefficient_no_ballistic_flight(α, m.body, args, T_p, S, m.aerodynamics, MonteCarlo)
+            CL, CD = aerodynamic_coefficient_no_ballistic_flight(
+                α,
+                m.body,
+                args,
+                T_p,
+                S,
+                m.aerodynamics,
+                MonteCarlo;
+                pressure_model=m.aerodynamics.newtonian_pressure_model,
+                mach=Mach,
+                gamma=γ,
+            )
         end
 
         β = mass / (CD*area_tot)    # ballistic coefficient, kg / m ^ 2

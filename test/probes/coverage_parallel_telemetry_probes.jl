@@ -2115,6 +2115,33 @@ end
     e_end = err_angle(q, orbit_r(2000.0), orbit_v(2000.0))
     @test e_start > 4.5
     @test e_end < 0.35                                        # >10x collapse, no divergence
+
+    # tau_ff: default is zero and bit-identical; a constant disturbance holds
+    # a steady PD offset of |tau_d|/(k_rate*k_out), and the matching
+    # feedforward nulls it (closed-loop mini-sim below reuses the engine
+    # kinematics; disturbance 2e-6 N m about x -> predicted offset ~0.23 deg).
+    m_ff = mk(tau_ff=[2.0e-6, 0.0, 0.0])
+    @test mk().tau_ff == SVector(0.0, 0.0, 0.0)
+    @test PE.wrench(mk(), x_eq, env, 0.0)[2] == PE.wrench(m, x_eq, env, 0.0)[2]
+    @test_throws ArgumentError mk(tau_ff=[Inf, 0.0, 0.0])
+    function settle(ctrl, tau_d)
+        qs = dcm_to_quat(R_li); ws = cross(r0, v0) / dot(r0, r0)
+        for k in 0:Int(3000 / 0.5)
+            tK = k * 0.5
+            r, v = orbit_r(tK), orbit_v(tK)
+            tau = PE._lvlh_cascade_torque(ctrl, r, v, qs, ws) + tau_d
+            ws = ws + (tau ./ I_diag) * 0.5
+            qs = qs + qdot(ws, qs) * 0.5
+            qs = qs / norm(qs)
+        end
+        return err_angle(qs, orbit_r(3000.0), orbit_v(3000.0))
+    end
+    tau_d = SVector(-2.0e-6, 0.0, 0.0)
+    off_pd = settle(mk(), tau_d)
+    off_ff = settle(m_ff, tau_d)
+    @test off_pd > 0.15                       # PD alone holds a steady offset
+    @test off_ff < 0.2 * off_pd               # matching feedforward nulls it
+
 end
 
 println("coverage_parallel_telemetry_probes_ok")

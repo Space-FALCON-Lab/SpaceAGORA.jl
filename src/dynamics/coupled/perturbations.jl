@@ -2009,6 +2009,7 @@ struct LVLHCascadeAttitudeControlModel <: AbstractForceTorqueModel
     w_max::Float64
     k_rate::SVector{3, Float64}
     tau_max::Float64
+    tau_ff::SVector{3, Float64}
 
     function LVLHCascadeAttitudeControlModel(;
         q_cmd_lb::AbstractVector{<:Real}=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
@@ -2016,6 +2017,7 @@ struct LVLHCascadeAttitudeControlModel <: AbstractForceTorqueModel
         w_max::Real,
         k_rate::AbstractVector{<:Real},
         tau_max::Real,
+        tau_ff::AbstractVector{<:Real}=SVector{3, Float64}(0.0, 0.0, 0.0),
     )
         q = SVector{4, Float64}(q_cmd_lb...)
         qn = norm(q)
@@ -2031,7 +2033,10 @@ struct LVLHCascadeAttitudeControlModel <: AbstractForceTorqueModel
             throw(ArgumentError("w_max must be finite and positive [rad/s]"))
         (isfinite(tau_max) && tau_max > 0) ||
             throw(ArgumentError("tau_max must be finite and positive [N m]"))
-        return new(q / qn, ko, Float64(w_max), kr, Float64(tau_max))
+        tf = SVector{3, Float64}(tau_ff...)
+        all(isfinite, tf) ||
+            throw(ArgumentError("tau_ff must be finite [N m]"))
+        return new(q / qn, ko, Float64(w_max), kr, Float64(tau_max), tf)
     end
 end
 
@@ -2104,7 +2109,13 @@ degenerate orbits (near-zero radius or angular momentum).
     w_lvlh_body = R_bi * (h_ii / r2)
     w_rel = w_body - w_lvlh_body
     w_cmd = clamp.(-model.k_out .* theta_err, -model.w_max, model.w_max)
-    return clamp.(model.k_rate .* (w_cmd - w_rel), -model.tau_max, model.tau_max)
+    # tau_ff: constant body-frame feedforward torque, the stateless equivalent
+    # of converged integral action against a quasi-steady disturbance (a pure
+    # PD cascade holds a steady offset error of |tau_dist| / (k_rate*k_out)
+    # under a constant torque; the feedforward nulls it). True discrete-rate
+    # integral action belongs in a stateful control effector - a continuous
+    # wrench cannot hold accumulator state correctly under adaptive stepping.
+    return clamp.(model.k_rate .* (w_cmd - w_rel) + model.tau_ff, -model.tau_max, model.tau_max)
 end
 
 function calcForceTorque(model::LVLHCascadeAttitudeControlModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}

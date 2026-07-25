@@ -2057,6 +2057,18 @@ end
     @test all(abs.(tq_b) .<= m.tau_max + 1e-18)
     @test abs(tq_b[1]) <= m.k_rate[1] * m.w_max * (1 + 1e-9) + m.k_rate[1] * norm(w_lvlh_body)
 
+    # antipodal robustness (Codex review): at 180 deg error the vee-map
+    # vanishes, but the rotation-log extraction must keep full authority —
+    # nonzero, axis-dominant, restoring, rate command saturated.
+    for ang in (180.0, 170.0)
+        q_flip = dcm_to_quat(PE.rot(SVector(sind(ang / 2), 0.0, 0.0, cosd(ang / 2))) * R_li)
+        x_flip = PE.StateSample(r0, v0, 29.0; q_ib=q_flip,
+                                ω_body=PE.rot(q_flip) * (cross(r0, v0) / dot(r0, r0)))
+        _, tq_f = PE.wrench(m, x_flip, env, 0.0)
+        @test norm(tq_f) > 0.5 * m.k_rate[1] * m.w_max
+        @test abs(tq_f[1]) > 5 * max(abs(tq_f[2]), abs(tq_f[3]))
+    end
+
     # no attitude state -> zero wrench
     x_noq = PE.StateSample(r0, v0, 29.0)
     @test PE.wrench(m, x_noq, env, 0.0) == (SVector(0.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0))

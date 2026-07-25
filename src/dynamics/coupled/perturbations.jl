@@ -2066,16 +2066,37 @@ degenerate orbits (near-zero radius or angular momentum).
     R_bi = rot(q_ib)                     # inertial -> body
     R_bl = R_bi * R_li'                  # LVLH -> body
     R_e = R_bl * rot(model.q_cmd_lb)'    # commanded -> current, body coords
-    # Engine conventions (pinned empirically and in the probe suite): rotating
-    # the body by +theta with the engine's quaternion kinematics yields
-    # rot(q) ≈ I - S(theta), so the physical rotation vector from commanded to
-    # current attitude is extracted with this index order (the opposite order
-    # returns -theta and turns the attitude loop into positive feedback).
-    theta_err = SVector{3, Float64}(
-        0.5 * (R_e[2, 3] - R_e[3, 2]),
-        0.5 * (R_e[3, 1] - R_e[1, 3]),
-        0.5 * (R_e[1, 2] - R_e[2, 1]),
-    )
+    # Rotation-log error extraction. The plain vee-map (0.5*(R_e[2,3]-R_e[3,2]),
+    # ...) returns sin(theta)*axis, which vanishes at a half-turn — an
+    # undesired zero-command equilibrium at 180 deg and weak authority near it
+    # (Codex review). The quaternion log 2*atan2(|qv|, qs)*qv/|qv| equals the
+    # vee-map to second order at small angles (2*qs*qv == sin(theta)*axis)
+    # but grows monotonically to pi*axis at the antipode. Index order/signs
+    # follow the engine conventions pinned empirically in the probe suite:
+    # rotating the body by +theta yields rot(q) ≈ I - S(theta); the opposite
+    # sign turns the attitude loop into positive feedback.
+    tr_e = R_e[1, 1] + R_e[2, 2] + R_e[3, 3]
+    q_e = if tr_e > 0.0
+        s = sqrt(tr_e + 1.0) * 2
+        SVector{4, Float64}((R_e[2, 3] - R_e[3, 2]) / s, (R_e[3, 1] - R_e[1, 3]) / s,
+                            (R_e[1, 2] - R_e[2, 1]) / s, s / 4)
+    elseif R_e[1, 1] > R_e[2, 2] && R_e[1, 1] > R_e[3, 3]
+        s = sqrt(1.0 + R_e[1, 1] - R_e[2, 2] - R_e[3, 3]) * 2
+        SVector{4, Float64}(s / 4, (R_e[1, 2] + R_e[2, 1]) / s,
+                            (R_e[1, 3] + R_e[3, 1]) / s, (R_e[2, 3] - R_e[3, 2]) / s)
+    elseif R_e[2, 2] > R_e[3, 3]
+        s = sqrt(1.0 + R_e[2, 2] - R_e[1, 1] - R_e[3, 3]) * 2
+        SVector{4, Float64}((R_e[1, 2] + R_e[2, 1]) / s, s / 4,
+                            (R_e[2, 3] + R_e[3, 2]) / s, (R_e[3, 1] - R_e[1, 3]) / s)
+    else
+        s = sqrt(1.0 + R_e[3, 3] - R_e[1, 1] - R_e[2, 2]) * 2
+        SVector{4, Float64}((R_e[1, 3] + R_e[3, 1]) / s, (R_e[2, 3] + R_e[3, 2]) / s,
+                            s / 4, (R_e[1, 2] - R_e[2, 1]) / s)
+    end
+    q_e = q_e[4] < 0.0 ? -q_e : q_e      # shortest rotation (qs >= 0)
+    qv = SVector{3, Float64}(q_e[1], q_e[2], q_e[3])
+    sv = norm(qv)
+    theta_err = sv > 1e-12 ? (2.0 * atan(sv, q_e[4]) / sv) * qv : 2.0 * qv
     # Body-frame LVLH feed-forward: with the body-rate quaternion kinematics
     # (see quaternion_derivative), the state that tracks the LVLH frame is
     # its rotation rate expressed in BODY coordinates — pinned by the

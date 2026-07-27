@@ -616,6 +616,52 @@ end
     end
 end
 
+@testset "recent training stats use paper outcome metrics" begin
+    summaries = [
+        EpisodeSummary(
+            episode_index=1,
+            episode_reward=-2.0,
+            thermal_violations=4,
+            pass_count=10,
+            target_error_m=-50e3,
+        ),
+        EpisodeSummary(
+            episode_index=2,
+            episode_reward=6.0,
+            success=false, # Intentionally inconsistent: the final distance drives this metric.
+            thermal_violations=1,
+            pass_count=8,
+            target_error_m=5e3,
+        ),
+        EpisodeSummary(
+            episode_index=3,
+            episode_reward=2.0,
+            success=true,
+            thermal_violations=3,
+            pass_count=6,
+            target_error_m=15e3,
+        ),
+    ]
+
+    stats = SpaceAGORA_RL._recent_training_stats(summaries, 2)
+    @test stats.mean_reward == 4.0
+    @test stats.reached_goal_percent == 50.0
+    @test stats.mean_thermal_violations == 2.0
+    @test stats.mean_passes_to_end == 7.0
+    @test stats.mean_end_distance_km == 10.0
+    @test SpaceAGORA_RL._recent_training_stats(
+        summaries,
+        2;
+        target_tolerance_m=4e3,
+    ).reached_goal_percent == 0.0
+
+    empty_stats = SpaceAGORA_RL._recent_training_stats(EpisodeSummary[], 100)
+    @test isnan(empty_stats.reached_goal_percent)
+    @test isnan(empty_stats.mean_thermal_violations)
+    @test isnan(empty_stats.mean_passes_to_end)
+    @test isnan(empty_stats.mean_end_distance_km)
+end
+
 @testset "episode traces update in place" begin
     config = default_aerobraking_config(phase="Main", training=false, max_passes=2)
     rng = MersenneTwister(123)

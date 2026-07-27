@@ -1,0 +1,1167 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{microtype}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{xurl}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!60!black,
+  pdftitle={Current SpaceAGORA_RL Implementation},
+  pdfauthor={SpaceAGORA Contributors}
+}
+\urlstyle{same}
+\setlist{nosep,leftmargin=*}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlength{\LTpre}{0.25em}
+\setlength{\LTpost}{0.75em}
+\renewcommand{\arraystretch}{1.12}
+
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\unit}[1]{\ensuremath{\mathrm{#1}}}
+\newcommand{\yes}{yes}
+\newcommand{\no}{no}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\title{Current \code{SpaceAGORA_RL.jl} Implementation\\
+\large Architecture, Algorithms, Backends, and Parameter Reference}
+\author{SpaceAGORA Contributors}
+\date{July 25, 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\begin{abstract}
+This document describes the implementation currently present in
+\code{SpaceAGORA_RL.jl}.  The package implements a Mars Odyssey aerobraking
+Markov decision process (MDP), paper-compatible PR-DRL/DDQN training, an
+advantage actor--critic (A2C) alternative, threaded rollout orchestration,
+CPU and optional CUDA learning, a fast paper surrogate, and continuous
+high-fidelity SpaceAGORA propagation.  It also provides protected campaign
+initialization, reusable full-physics templates, shared ephemeris caches,
+checkpoints, manifests, baseline policies, and evaluation/reporting tools.
+
+The emphasis is operational: the document traces data from TOML
+configuration through scenario reset, pass propagation, transition
+construction, learning, checkpointing, and evaluation.  Parameter tables
+distinguish TOML-resolved defaults from lower-level Julia constructor
+defaults where they intentionally differ.
+\end{abstract}
+
+\section{Scope and implementation status}
+
+The package is a Julia 1.12 project with package version \code{0.1.0}.  It is
+located beneath the parent SpaceAGORA repository and uses the parent package
+for live dynamics.  Its principal implemented capabilities are:
+
+\begin{itemize}
+  \item a nine-feature, thirteen-action aerobraking MDP;
+  \item the four Mars Odyssey phases \emph{Walkout}, \emph{Endgame},
+        \emph{Campaign}, and \emph{Main};
+  \item three accepted training algorithms: \code{pr_drl}, \code{ddqn}, and
+        \code{a2c};
+  \item a deterministic/stochastic \code{paper_surrogate} backend;
+  \item live backend modes \code{spaceagora_physics},
+        \code{spaceagora_full_physics}, and \code{spaceagora_marsgram};
+  \item GRAM/Mars-GRAM or tabulated Odyssey flight-density atmospheres;
+  \item threaded rollout workers with a central learner and a specialized
+        pass-streaming path for PR-DRL with live physics;
+  \item CPU learning and an optional CUDA extension;
+  \item run manifests, serialized checkpoints, disk-backed training history,
+        baselines, frozen-checkpoint evaluation, and generalization suites.
+\end{itemize}
+
+The Python files beneath \code{Reference Code (ABTS)} are research reference
+material.  They are not imported by the Julia module and are not on the
+runtime path.
+
+\section{Source architecture}
+
+\subsection{Layered organization}
+
+\begin{longtable}{P{0.27\linewidth}P{0.66\linewidth}}
+\toprule
+Source area & Responsibility \\
+\midrule
+\endhead
+\code{src/core} &
+Minimal extension contracts for MDPs, simulation backends, and policies;
+the learner-facing \code{Transition}; and the evaluation-facing
+\code{EpisodeSummary}. \\
+\code{src/tasks/aerobraking/mdp} &
+Discrete actions, raw observations, affine normalization, thermal
+classification, reward, termination, and reset randomization. \\
+\code{src/tasks/aerobraking/backend} &
+Two-body maneuver conversion, paper surrogate propagation, live SpaceAGORA
+configuration, finite burns, pass statistics, full-physics state extraction,
+and shared ephemeris caching. \\
+\code{src/tasks/aerobraking/baselines} &
+No-maneuver, random, fixed-corridor, and AADS heat-targeting policies. \\
+\code{src/tasks/aerobraking/evaluation} &
+Protected initialization, policy rollouts, frozen-checkpoint modes,
+generalization suites, episode/pass metrics, Odyssey comparisons, and CSV
+artifact generation. \\
+\code{src/algorithms/ddqn} &
+Typed replay buffer, hand-coded fully connected network and gradients,
+epsilon schedule, online/target networks, Adam, checkpoints, and greedy
+policies.  Both \code{pr_drl} and \code{ddqn} select this learner family. \\
+\code{src/algorithms/a2c} &
+Actor and critic networks, segmented multi-worker rollout collection,
+discounted returns, entropy regularization, value loss, Adam, and greedy
+evaluation policy. \\
+\code{src/runtime} &
+TOML loading and resolution, device selection, training-session assembly,
+run identity and manifest writing, and disk-backed histories. \\
+\code{src/parallel} &
+Threaded worker protocols, ordinary snapshot rollouts, continuous
+full-physics campaign workers, the pass-streaming master, A2C segments, and
+an auxiliary \code{Distributed.addprocs} setup helper. \\
+\code{ext/SpaceAGORA_RLCUDAExt.jl} &
+CUDA array transfers and CPU extraction, loaded through Julia's package
+extension mechanism when CUDA is functional. \\
+\code{scripts} &
+Training, baseline evaluation, single-policy evaluation, generalization
+suites, and frozen-checkpoint evaluation. \\
+\bottomrule
+\end{longtable}
+
+\subsection{End-to-end control and data flow}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=11mm and 13mm,
+  box/.style={draw,rounded corners,align=center,minimum height=9mm,
+              minimum width=29mm,fill=blue!5},
+  data/.style={draw,rounded corners,align=center,minimum height=9mm,
+               minimum width=29mm,fill=green!7},
+  arrow/.style={-{Latex[length=2.2mm]},thick}
+]
+\node[box] (toml) {TOML\\configuration};
+\node[box,right=of toml] (resolved) {\code{ResolvedConfig}\\and manifest};
+\node[box,right=of resolved] (session) {\code{TrainingSession}\\backend + learner};
+\node[data,right=of session] (reset) {randomized\\decision state};
+\node[data,below=of reset] (obs) {raw + normalized\\observation};
+\node[box,left=of obs] (policy) {central policy\\action selection};
+\node[box,left=of policy] (backend) {surrogate or live\\pass propagation};
+\node[data,below=of backend] (transition) {\code{Transition}\\and pass result};
+\node[box,right=of transition] (learner) {replay/rollout\\learner update};
+\node[data,right=of learner] (artifact) {checkpoint, history,\\metrics, reports};
+
+\draw[arrow] (toml) -- (resolved);
+\draw[arrow] (resolved) -- (session);
+\draw[arrow] (session) -- (reset);
+\draw[arrow] (reset) -- (obs);
+\draw[arrow] (obs) -- (policy);
+\draw[arrow] (policy) -- node[above]{action index} (backend);
+\draw[arrow] (backend) -- (transition);
+\draw[arrow] (transition) -- (learner);
+\draw[arrow] (learner) -- (artifact);
+\draw[arrow] (transition.east) |- node[pos=0.28,right]{next observation} (policy.south);
+\end{tikzpicture}}
+\caption{Logical training flow.  In live PR-DRL streaming, propagation occurs
+inside long-lived worker tasks and pass events cross channels; the central
+learner still owns action choice and parameter updates.}
+\end{figure}
+
+The public entry point \code{build_training_session} creates a seeded RNG,
+the backend, the selected learner, a run manifest, and a run directory.
+\code{train_parallel!} dispatches by learner type and, for DDQN-family
+learners, by algorithm label and backend mode.
+
+\subsection{Core contracts and records}
+
+\begin{itemize}
+  \item \code{AbstractMDP} is the task marker; \code{AerobrakingMDP} contains
+        an \code{AerobrakingScenarioConfig}.
+  \item \code{AbstractRLBackend} defines \code{reset_scenario} and
+        \code{step_scenario}; \code{SpaceAGORAAerobrakingBackend} binds a
+        scenario to a \code{SpaceAGORACoreAdapter}.
+  \item \code{AbstractPolicy} defines \code{policy_action_index}, returning a
+        Julia 1-based action index.
+  \item \code{Transition} stores normalized current/next observations,
+        action, \code{Float32} reward, separate \code{terminated} and
+        \code{truncated} flags, and an information index.
+  \item \code{AerobrakingStepResult} groups the next decision state, decoded
+        action, raw and normalized observations, reward, termination flags,
+        pass metrics, and backend metadata.
+  \item \code{EpisodeSummary} accumulates pass/reward counts, protected-pass
+        counts, outcomes, target error, mission duration, three delta-V
+        accounting categories, maneuvers, solver failures, and per-pass
+        traces.
+\end{itemize}
+
+\section{Aerobraking MDP}
+
+\subsection{Mars Odyssey phase constants}
+
+\begin{longtable}{lrrrrrr}
+\toprule
+Phase & Target $r_a$ & Norm.\ $r_a$ & Initial $r_a$ & Nominal $h_p$ &
+$i$ & Epoch \\
+ & (km) & (km) & (km) & (km) & (deg) & \\
+\midrule
+\endhead
+Walkout & 3900 & 5000 & 4906 & 86.0 & 93.6 & 2002-01-03 \\
+Endgame & 4906 & 10100 & 6000 & 86.0 & 93.6 & 2001-12-26 \\
+Campaign & 3900 & 30000 & 28533 & 87.5 & 93.6 & 2001-11-06 \\
+Main & 3900 & 10100 & 10038 & 92.0 & 93.6 & 2001-12-18 \\
+\bottomrule
+\end{longtable}
+
+Walkout, Endgame, and Main use nominal RAAN $115^\circ$; Campaign uses
+$114^\circ$.  Nominal arguments of periapsis are $66^\circ$, $66^\circ$,
+$109^\circ$, and $89^\circ$ respectively in the order shown above.
+
+\subsection{Programmatic physical constants}
+
+The following fields are fixed by \code{default_aerobraking_config}; they are
+not exposed through the TOML resolver.
+
+\begin{longtable}{P{0.34\linewidth}P{0.20\linewidth}P{0.37\linewidth}}
+\toprule
+Scenario field & Value & Use \\
+\midrule
+\endhead
+\code{mars_radius_m} & 3,396,190 m & Equatorial Mars radius and altitude reference. \\
+\code{j2} & $1.96045\times10^{-3}$ & Surrogate secular precession. \\
+\code{mu_m3_s2} & $4.2828372854\times10^{13}$ & Mars gravitational parameter. \\
+\code{rho_ref_kg_m3} & $8.7489231\times10^{-7}$ & Exponential-density reference. \\
+\code{h_ref_m} & 90,000 m & Exponential-density reference altitude. \\
+\code{scale_height_m} & 6308.278108 m & Exponential scale height. \\
+\code{gas_constant_j_kg_k} & 188.92 J/(kg K) & Stored Mars gas constant. \\
+\code{gamma} & 1.33 & Stored ratio of specific heats. \\
+\code{temperature_k} & 150 K & Stored reference temperature. \\
+\code{g_ref_m_s2} & 3.72076 m/s$^2$ & Stored reference gravity. \\
+\code{base_apoapsis_decay_m} & 20,000 m & Surrogate base decay per pass. \\
+\code{heat_decay_gain_m} & 130,000 m & Surrogate heat-scaled decay gain. \\
+\code{heat_nominal_altitude_m} & 92,000 m & Nominal heat-model altitude. \\
+\code{heat_nominal_velocity_mps} & 3450 m/s & Nominal heat-model speed. \\
+\code{heat_nominal_w_cm2} & 0.15 W/cm$^2$ & Nominal heat-model rate. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Decision state}
+
+\code{AerobrakingDecisionState} is the backend-independent state carried
+between apoapsis decisions.  It contains pass index, apoapsis radius,
+periapsis altitude, inclination, RAAN, argument of periapsis, true anomaly,
+absolute epoch, elapsed mission time, accumulated maneuver magnitude,
+maneuver count, the preceding pass's maximum density and heat rate, drag
+passage time, a GRAM seed, and multiplicative $C_D$/$C_L$ scales.
+
+The decision point is apoapsis.  An action commands an apoapsis burn, the
+backend propagates through the subsequent atmospheric passage and orbit, and
+the next transition is recorded at the following high-altitude apoapsis.
+
+\subsection{Observation space and normalization}
+
+The raw \code{PaperObservation} is a nine-element vector.  Normalization is
+componentwise affine,
+\[
+  \hat{x}_i = \frac{x_i-\ell_i}{u_i-\ell_i}.
+\]
+The implementation deliberately does not clamp: an out-of-range physical
+value produces a normalized value outside $[0,1]$.
+
+\begin{longtable}{P{0.30\linewidth}P{0.13\linewidth}P{0.24\linewidth}P{0.25\linewidth}}
+\toprule
+Feature & Unit & Lower bound & Upper bound \\
+\midrule
+\endhead
+\code{drag_passage_time_s} & s & 400 & 1200 \\
+\code{apoapsis_radius_m} & m & Mars equatorial radius & phase \code{r_norm_m} \\
+\code{periapsis_altitude_m} & m & 85,000 & 145,000 \\
+\code{argument_of_periapsis_rad} & rad & $0^\circ$ & $360^\circ$ \\
+\code{raan_rad} & rad & $90^\circ$ & $180^\circ$ \\
+\code{inclination_rad} & rad & $79^\circ$ & $100^\circ$ \\
+\code{date_ordinal} & day & 730486 & 731216 \\
+\code{max_density_kg_m3} & $\unit{kg\,m^{-3}}$ & 0 & $1.5\times10^{-7}$ \\
+\code{max_heat_rate_w_cm2} & $\unit{W\,cm^{-2}}$ & 0 & 0.5 \\
+\bottomrule
+\end{longtable}
+
+Date ordinals match Python's proleptic Gregorian ordinal convention:
+January 1 of year 1 is day 1.
+
+\subsection{Action space and maneuver convention}
+
+The executable action table is
+\[
+[-1.0,-0.5,-0.3,-0.2,-0.1,-0.05,0.0,
+  0.05,0.1,0.2,0.3,0.5,1.0]\ \unit{m\,s^{-1}}.
+\]
+Index 7 is no maneuver.  Negative values lower periapsis and positive values
+raise periapsis.  \code{AerobrakingAction} stores signed delta-V, magnitude,
+paper angle $\phi$ ($0^\circ$ for non-positive and $180^\circ$ for positive
+actions), and Boolean direction flags.  The live thruster's low-level
+direction convention is the opposite numerical angle: negative delta-V uses
+$\pi$ and positive delta-V uses $0$.
+
+The two-body maneuver conversion changes apoapsis speed and recovers the new
+periapsis from specific orbital energy:
+\[
+ v_a=\sqrt{\mu\left(\frac{2}{r_a}-\frac{1}{a}\right)},\quad
+ \mathcal{E}=\frac{v_a'^2}{2}-\frac{\mu}{r_a},\quad
+ a'=-\frac{\mu}{2\mathcal{E}},\quad
+ h_p'=2a'-r_a-R_M.
+\]
+Both backends clamp the commanded periapsis used for propagation to
+$50$--$180$ km.
+
+\subsection{Reset and domain randomization}
+
+For a nominal reset, apoapsis, periapsis, and all three orientation angles
+receive symmetric uniform jitter about phase constants; the epoch remains
+nominal.  For a nonnominal reset, apoapsis and periapsis retain symmetric
+jitter, while inclination, RAAN, and argument of periapsis are sampled
+uniformly from configured intervals.  The epoch is sampled from the
+configured date window (or nominal epoch plus 0--27 days), optionally with a
+uniform time of day.  True anomaly is jittered about $\pi$.
+
+Each episode also receives a deterministic-from-RNG GRAM seed.  If
+aerodynamic dispersion is enabled, independent scales
+$1+U(-s_D,s_D)$ and $1+U(-s_L,s_L)$ multiply drag and lift coefficients.
+Surrogate process noise multiplies the modeled apoapsis drop by
+$1+\sigma_p N(0,1)$; the final drop is floored at zero.
+
+\subsection{Reward model}
+
+Thermal classes are ordered by the following logic:
+
+\begin{enumerate}
+  \item above \code{heat_hard_w_cm2}: hard;
+  \item else above \code{heat_medium_w_cm2}: medium;
+  \item else above \code{heat_high_w_cm2}: high;
+  \item else below \code{heat_low_w_cm2} while more than
+        \code{near_target_band_m} from the target: low;
+  \item otherwise nominal.
+\end{enumerate}
+
+Terminal contributions are $-6$ for impact, $-6$ for leaving the drag
+passage, $-4$ for target undershoot, and for success
+\[
+  10 - 0.4\,
+  \operatorname{round}\!\left(\frac{|r_a-r_{a,\mathrm{target}}|}{1000}\right).
+\]
+The implementation uses Julia's \code{round(Int,...)} rather than a floor.
+Hard, medium, and other nonnominal thermal classes add $-6$, $-5$, and $-4$
+respectively.
+
+For nominal thermal status and nonnegative normalized target distance, the
+running term is
+\[
+\begin{split}
+d &= \frac{r_a-r_{a,\mathrm{target}}}
+          {r_{\mathrm{norm}}-r_{a,\mathrm{target}}},\\
+c_q &= \frac{\dot q-q_{\mathrm{low}}}
+            {q_{\mathrm{high}}-q_{\mathrm{low}}},\\
+r_{\mathrm{run}} &=
+(1-d^{0.4})
+\frac{g}{\sigma_q\sqrt{2\pi}}
+\exp\!\left[-\frac{1}{2}
+\left(\frac{c_q-c_0}{\sigma_q}\right)^2\right]
++r_{\mathrm{step}}-\lambda_{\Delta v}c_{\Delta v},
+\end{split}
+\]
+where defaults are $g=0.025$, $\sigma_q=0.1$, $c_0=0.5$,
+$r_{\mathrm{step}}=-0.1$, and $\lambda_{\Delta v}=0.1$.  Normally
+$c_{\Delta v}=|\Delta v|$.  Below the low heat threshold, $c_q$ is set to
+zero and $c_{\Delta v}=||\Delta v|-1.0|$, favoring the strongest available
+periapsis-lowering action.
+
+\subsection{Termination and truncation}
+
+\code{classify_termination} computes independent flags, then combines them:
+
+\begin{itemize}
+  \item success if $|r_a-r_{a,\mathrm{target}}|\leq10$ km;
+  \item target undershoot if $r_a-r_{a,\mathrm{target}}<-10$ km;
+  \item impact if $h_p$ is below the lower threshold;
+  \item out of drag passage if $h_p$ is above the upper threshold;
+  \item optionally terminal on any nonnominal thermal class;
+  \item truncated when pass count reaches \code{max_passes}.
+\end{itemize}
+
+\code{terminated} and \code{truncated} remain separate in replay.  By default
+DDQN bootstraps across truncation but never across true termination.
+
+\subsection{Protected initialization}
+
+Protected initialization can precede learned control:
+
+\begin{enumerate}
+  \item propagate one forced zero-action pass;
+  \item optionally suppress a terminal condition caused \emph{only} by the
+        thermal flag during protected passes;
+  \item optionally command action 13 ($+1$ m/s) above the protected high
+        corridor or action 1 ($-1$ m/s) below the protected low corridor;
+  \item mark these passes in \code{EpisodeSummary.protected_trace}.
+\end{enumerate}
+
+Protected transitions are excluded from learned step accounting in the live
+streaming path.  The ordinary worker initializer also executes them before
+the learned rollout begins.  A bare \code{ProtectedInitializationConfig()}
+defaults to enabled initialization, enabled corridor correction, thermal-only
+terminal suppression, and a 0.025--0.40 W/cm$^2$ protected corridor; this is
+the default used by evaluation APIs.  Training instead maps the
+\code{training.protected_*} keys, whose resolver defaults disable the
+protected first pass and corridor action.
+
+\section{Propagation backends}
+
+\subsection{Backend selection}
+
+\begin{longtable}{P{0.25\linewidth}P{0.17\linewidth}P{0.50\linewidth}}
+\toprule
+\code{backend_mode} & Class & Behavior \\
+\midrule
+\endhead
+\code{paper_surrogate} & lightweight &
+In-package two-body/J2/exponential-atmosphere approximation.  Fast enough for
+large tests and algorithm development; supports optional stochastic
+apoapsis-drop noise. \\
+\code{spaceagora_physics} & live &
+Loads the parent SpaceAGORA module and executes continuous, callback-driven,
+split-IMEX propagation. \\
+\code{spaceagora_full_physics} & live &
+Accepted alias routed through the same live configuration and propagation
+path. \\
+\code{spaceagora_marsgram} & live &
+Accepted live mode; atmospheric implementation is ultimately selected by
+\code{spaceagora_physics.atmosphere_model}. \\
+\bottomrule
+\end{longtable}
+
+An unsupported symbol fails in \code{SpaceAGORACoreAdapter.propagate_pass}.
+The configuration resolver accepts atmosphere names \code{gram},
+\code{marsgram}, and \code{tabulated_flight}.
+
+\subsection{Paper surrogate}
+
+The surrogate executes one complete pass per call:
+
+\begin{enumerate}
+  \item convert the apoapsis action to a post-burn periapsis;
+  \item compute periapsis speed from vis-viva;
+  \item evaluate exponential density and the paper heat-rate approximation;
+  \item estimate drag-passage duration;
+  \item compute heat-scaled apoapsis decay, optionally with process noise;
+  \item advance by the larger of orbital period and drag-passage duration;
+  \item update RAAN and argument of periapsis using J2 secular rates;
+  \item accumulate delta-V, maneuver count, epoch, and pass metrics.
+\end{enumerate}
+
+The Mars density model is
+\[
+  \rho(h)=\rho_{\mathrm{ref}}
+  \exp\!\left[-(h-h_{\mathrm{ref}})/H\right],
+\]
+and the heat approximation scales nominal heat by square-root density and
+cubic velocity ratio.  Surrogate defaults include a $20$ km base apoapsis
+decay, $130$ km heat gain, nominal altitude $92$ km, nominal speed
+$3450$ m/s, and nominal heat $0.15$ W/cm$^2$.
+
+\subsection{Live SpaceAGORA physics model}
+
+The live template contains a Mars planet, three-body spacecraft, finite-burn
+thruster, solar third-body gravity, Mars gravitational harmonics, solar
+radiation pressure, aerodynamic coefficients, and a solver policy.  The
+current spacecraft fixture uses:
+
+\begin{itemize}
+  \item bus dimensions $(2.2,2.6,1.7)$ m and bus mass 391 kg;
+  \item two 10 kg panels, 50 kg propellant, reflection coefficient 0.9;
+  \item one 4 N apoapsis-maneuver thruster with infinite $I_{sp}$ so the
+        paper's constant-mass burn does not deplete propellant;
+  \item burn duration $t_b=m|\Delta v|/4$;
+  \item Sun N-body gravity, normalized Mars harmonics with J2 from file
+        coefficient $C_{20}$, SRP, and aerodynamic force;
+  \item atmospheric entry interface at 160 km and state data rate 10 s;
+  \item orbital tolerances $10^{-8}$ with maximum step 30 s, atmospheric
+        tolerances $10^{-8}$ with maximum step 5 s;
+  \item split-IMEX mode with \code{kencarp4}.
+\end{itemize}
+
+For \code{tabulated_flight}, the backend constructs an Odyssey flight-density
+truth model from the configured Feather file and sigma.  For \code{gram} or
+\code{marsgram}, it initializes \code{GRAMAtmosphereModel} from the parent
+repository's GRAM Suite and SPICE directories, using the episode seed and
+configured perturbation scale.
+
+Pass statistics are sampled by callback.  The implementation records maximum
+density, maximum stage heat rate in W/cm$^2$, minimum altitude, and atmospheric
+entry/exit times.  At each high-altitude radial-velocity root (apoapsis),
+SpaceAGORA Cartesian state is converted to orbital elements and a transition
+is produced.  The low-altitude periapsis root is ignored as a decision point.
+
+\subsection{Continuous campaign and reusable templates}
+
+Live PR-DRL does not rebuild and solve an independent problem for every pass.
+Each worker runs a continuous campaign integrator.  At an apoapsis callback
+it emits the completed transition, waits for the master's next action, updates
+the finite burn and solver stops, and resumes the same integration.  The
+worker's \code{SpaceAGORAPhysicsSimulationTemplate} is reused for subsequent
+episodes, with initial conditions, atmosphere, aerodynamic scales, and burn
+schedule updated per campaign.
+
+Campaign horizon is
+\[
+  \max\!\left(2T,\;1.25(N_{\mathrm{pass}}+1)T\right),
+\]
+where $T$ is the initial orbital period.  The pass cap is the minimum of the
+training cap and termination cap.
+
+\subsection{Shared ephemeris cache}
+
+Before live PR-DRL training, the master can precompute one thread-safe cache
+covering all possible randomized campaign start dates and the maximum
+campaign duration.  The cache holds Sun N-body positions, SRP Sun positions,
+and Mars planet-frame quaternions.  It is installed into each integrator at
+initialization, after coverage validation.  When this cache is active, the
+three corresponding SpaceAGORA core caches are disabled to avoid redundant
+per-worker construction.
+
+\section{Learning algorithms}
+
+\subsection{PR-DRL and DDQN}
+
+\code{pr_drl} and \code{ddqn} construct the same \code{DDQNLearner}.  The
+algorithm label controls reporting and selects the specialized streaming
+architecture only when \code{pr_drl} is paired with a live backend.
+
+The network is a hand-coded fully connected model:
+\[
+  9 \longrightarrow H \longrightarrow H \longrightarrow 13,
+\]
+with $H=1024$ by default, ReLU after both hidden layers, orthogonal weights
+with gain $\sqrt{2}$, zero biases, and a linear Q output.  The implementation
+uses explicit matrix operations and hand-coded backpropagation, not an
+automatic differentiation package.
+
+For sample $i$, Double-DQN selects the bootstrap action with the online
+network and values it with the target network:
+\[
+  a_i^\star=\arg\max_a Q_\theta(s'_i,a),\qquad
+  y_i=r_i+\gamma\,m_i Q_{\bar\theta}(s'_i,a_i^\star),
+\]
+where $m_i=0$ for termination and, by default, $m_i=1$ for truncation.
+Selected-action mean squared error is optimized with Adam.  Gradients are
+clipped by global norm.  The target network is copied after the configured
+number of \emph{learner update steps}, not environment steps.
+
+The replay buffer is a preallocated circular structure of column-major
+\code{Float32} observations and next observations plus typed vectors for
+actions, rewards, flags, and information indices.  Uniform sampling is with
+replacement from the populated prefix.
+
+Exploration is piecewise linear:
+\[
+\epsilon(t)=
+\begin{cases}
+\epsilon_{\mathrm{start}}, & t\leq t_0,\\
+\max\left(\epsilon_{\mathrm{stop}},
+\epsilon_{\mathrm{start}}+
+(\epsilon_{\mathrm{stop}}-\epsilon_{\mathrm{start}})
+\dfrac{t-t_0}{T_\epsilon}\right), & t>t_0.
+\end{cases}
+\]
+
+\subsection{A2C}
+
+A2C uses separate actor and critic instances of the same two-hidden-layer
+network.  The actor output dimension is 13 and the critic output dimension is
+1.  Each active worker advances one pass at a time; pass propagations at a
+segment time index are threaded.  After up to \code{segment_length} steps,
+the learner computes bootstrapped discounted returns backward through valid
+worker slots and flattens them into one batch.
+
+Actor actions are sampled from a numerically stabilized softmax; greedy
+evaluation uses the largest logit.  Let $R$ be the return and $V$ the critic
+prediction.  The implementation scales advantages as
+\[
+  A = \frac{R-V}{1+\operatorname{std}(R-V)}
+\]
+and optimizes policy loss minus entropy bonus plus weighted value loss.
+Actor and critic have separate Adam states and separately clipped gradient
+norms.  A2C uses ordinary in-memory histories and the threaded segment
+collector; it does not use DDQN replay or the live PR-DRL channel protocol.
+
+\subsection{Device model}
+
+\code{device="cpu"} keeps parameters and batches in standard Julia arrays.
+\code{device="cuda"} requires the CUDA extension to load and
+\code{CUDA.functional()} to be true; otherwise device resolution throws an
+error.  The extension transfers network parameters and batches to
+\code{CuArray}, while replay storage and checkpoint serialization remain
+CPU-compatible.  Checkpoints explicitly convert networks and Adam states back
+to CPU arrays.
+
+\section{Parallel execution architecture}
+
+\subsection{Ordinary DDQN snapshot rollouts}
+
+For surrogate DDQN-family training, the master limits active workers to
+\code{min(n_workers, Threads.nthreads())}.  It snapshots the current online
+network to CPU, launches a batch of episode tasks, and gives every task a
+deterministic seed
+\[
+  s_{\mathrm{worker}}=s_{\mathrm{base}}+10000\,i_{\mathrm{worker}}
+  +i_{\mathrm{episode}}.
+\]
+Workers choose actions from the frozen snapshot and return an episode summary
+and transitions.  The master ingests transitions in task order, increments
+the authoritative global step, updates replay and learner, writes checkpoints,
+and then launches the next snapshot batch.  Consequently, workers within a
+batch do not observe parameter updates made during that batch.
+
+\subsection{Live PR-DRL pass streaming}
+
+For \code{pr_drl} with a live backend, each worker task owns a long-running
+SpaceAGORA campaign and an action channel.  All workers publish
+\code{SpaceAGORAPhysicsPassEvent} records to a shared event channel.  The
+central master:
+
+\begin{enumerate}
+  \item receives a pass transition and optional completed summary;
+  \item excludes protected passes from learning;
+  \item increments the global step and performs replay/training;
+  \item writes any crossed checkpoint thresholds;
+  \item selects the next epsilon-greedy action with the latest online network;
+  \item sends that action back to the blocked worker;
+  \item recycles completed workers into new episodes using the reusable
+        template until the step or episode budget is reached.
+\end{enumerate}
+
+This preserves online master action selection while allowing expensive
+propagation to proceed concurrently.  With more than one worker, the wrapper
+sets \code{SPACEAGORA_OUTER_PARALLEL_ACTIVE=1}; if no inner budget is supplied
+it selects
+\code{max(1, fld(Threads.nthreads(), active_workers))}.
+
+\subsection{A2C segmented workers}
+
+A2C maintains mutable worker campaigns rather than complete episode tasks.
+For each segment position, it snapshots the actor, chooses all actions, and
+spawns one pass propagation per available worker.  Completed campaigns are
+finalized and immediately reset while budgets remain.  After segment
+collection, the central learner computes returns and applies one actor/critic
+update.
+
+\subsection{Stop budgets and cadence}
+
+A positive \code{training.global_steps} makes global learned transitions the
+primary stop budget.  If it is zero, training is episode/campaign-capped by
+\code{training.episodes}.  An explicit \code{episodes} keyword can add an
+episode cap.  Checkpoint and progress frequencies are compared to global
+steps in step-limited mode and progress switches to episode cadence in
+episode-limited mode.  A final checkpoint is always written.
+
+\section{Configuration system}
+
+\subsection{Resolution pipeline}
+
+\code{load_config} parses TOML into a dictionary.  \code{resolve_config}
+reads ten tables---\code{scenario}, \code{reward}, \code{termination},
+\code{randomization}, \code{spaceagora_physics}, \code{ddqn}, \code{a2c},
+\code{epsilon}, \code{training}, and \code{reports}---and constructs a typed
+\code{ResolvedConfig}.  Missing tables are treated as empty.
+
+The package default path is
+\code{configs/aerobraking/paper_replication.toml}.  Values documented as
+``resolved default'' below are the fallbacks used when keys are absent.
+Shipped configuration files may deliberately override them.  Relative
+SpaceAGORA data paths are resolved against the parent SpaceAGORA repository.
+
+\subsection{Scenario and reward parameters}
+
+\begin{longtable}{P{0.25\linewidth}P{0.16\linewidth}P{0.16\linewidth}P{0.35\linewidth}}
+\toprule
+Key & Type/unit & Resolved default & Meaning \\
+\midrule
+\endhead
+\code{scenario.phase} & string & \code{Main} &
+Selects phase constants; case-insensitive. \\
+\code{scenario.backend_mode} & string/symbol & \code{paper_surrogate} &
+Propagation adapter mode.  Live modes are listed in Section 4. \\
+\code{scenario.training} & Boolean & \code{true} &
+Stored in the scenario; termination logic is primarily controlled by the
+termination configuration. \\
+\code{reward.heat_low_w_cm2} & W/cm$^2$ & 0.05 &
+Lower useful-thermal-corridor threshold while far from target. \\
+\code{reward.heat_high_w_cm2} & W/cm$^2$ & 0.25 &
+High thermal threshold. \\
+\code{reward.heat_medium_w_cm2} & W/cm$^2$ & 0.30 &
+Medium-violation threshold. \\
+\code{reward.heat_hard_w_cm2} & W/cm$^2$ & 0.45 &
+Hard-violation threshold. \\
+\bottomrule
+\end{longtable}
+
+Only the four heat thresholds are TOML-resolved.  Other
+\code{RewardConfig} fields are programmatic parameters:
+
+\begin{longtable}{P{0.32\linewidth}P{0.16\linewidth}P{0.43\linewidth}}
+\toprule
+Field & Constructor default & Meaning \\
+\midrule
+\endhead
+\code{target_tolerance_m} & 10,000 & Success half-width. \\
+\code{near_target_band_m} & 100,000 & Disables low-heat violation near target. \\
+\code{impact_penalty} & $-6$ & Terminal impact reward. \\
+\code{out_of_passage_penalty} & $-6$ & Terminal high-periapsis reward. \\
+\code{undershoot_penalty} & $-4$ & Target undershoot reward. \\
+\code{low_thermal_penalty} & $-4$ & Low or high thermal-class penalty. \\
+\code{medium_thermal_penalty} & $-5$ & Medium-class penalty. \\
+\code{hard_thermal_penalty} & $-6$ & Hard-class penalty. \\
+\code{success_reward_base} & 10 & Success reward intercept. \\
+\code{success_distance_scale} & 0.4 & Penalty per rounded kilometre of error. \\
+\code{gaussian_scale} & 0.025 & Thermal shaping amplitude. \\
+\code{heat_center} & 0.5 & Center in normalized corridor coordinates. \\
+\code{heat_sigma} & 0.1 & Thermal shaping width. \\
+\code{step_penalty} & $-0.1$ & Per-pass nominal reward offset. \\
+\code{action_penalty_scale} & 0.1 & Delta-V cost coefficient. \\
+\code{low_heat_action_cap_mps} & 1.0 & Preferred magnitude below low heat. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Termination parameters}
+
+\begin{longtable}{P{0.32\linewidth}P{0.16\linewidth}P{0.15\linewidth}P{0.28\linewidth}}
+\toprule
+Key & Type/unit & Resolved default & Meaning \\
+\midrule
+\endhead
+\code{termination.impact_periapsis_altitude_m} & m & 85,000 &
+Strict lower bound; equality is not impact. \\
+\code{termination.out_of_passage_periapsis_altitude_m} & m & 135,000 &
+Strict upper bound for TOML-resolved scenarios. \\
+\code{termination.max_passes} & integer & 1000 &
+Truncation limit and upper campaign cap. \\
+\code{termination.terminal_on_thermal_violation} & Boolean & \code{true} &
+Whether any nonnominal thermal class terminates. \\
+\bottomrule
+\end{longtable}
+
+\textbf{Constructor distinction.}  A bare \code{TerminationConfig()} uses
+145,000 m as the upper bound, while \code{resolve_config} falls back to
+135,000 m and the paper/evaluation fixtures use 135,000 m.  Configuration-file
+runs therefore use 135 km unless explicitly overridden.
+
+\subsection{Randomization parameters}
+
+\begin{longtable}{P{0.34\linewidth}P{0.13\linewidth}P{0.15\linewidth}P{0.29\linewidth}}
+\toprule
+Key & Type/unit & Resolved default & Meaning \\
+\midrule
+\endhead
+\code{randomization.nominal} & Boolean & \code{true} & Nominal versus broad reset distribution. \\
+\code{apoapsis_jitter_m} & m & 2500 & Symmetric uniform half-span. \\
+\code{periapsis_jitter_m} & m & 2500 & Symmetric uniform half-span. \\
+\code{angle_jitter_deg} & deg & 0.25 & Nominal angle half-span. \\
+\code{nonnominal_inclination_low_deg} & deg & 88.6 & Broad inclination lower bound. \\
+\code{nonnominal_inclination_high_deg} & deg & 98.6 & Broad inclination upper bound. \\
+\code{nonnominal_aop_low_deg} & deg & 60 & Argument-of-periapsis lower bound. \\
+\code{nonnominal_aop_high_deg} & deg & 90 & Argument-of-periapsis upper bound. \\
+\code{nonnominal_raan_low_deg} & deg & 110 & RAAN lower bound. \\
+\code{nonnominal_raan_high_deg} & deg & 120 & RAAN upper bound. \\
+\code{initial_date_start} & ISO date & unset & First date in explicit nonnominal window. \\
+\code{initial_date_days} & integer days & 0 & Number of selectable dates. \\
+\code{randomize_initial_time_of_day} & Boolean & \code{true} & Add random hour/minute/second. \\
+\code{initial_true_anomaly_jitter_deg} & deg & 0 & Symmetric jitter about $180^\circ$. \\
+\code{process_noise} & Boolean & \code{false} & Enable surrogate apoapsis-drop noise. \\
+\code{process_noise_scale} & scalar & 0 & Standard-normal multiplier scale. \\
+\code{aerodynamic_coefficient_dispersion} & Boolean & \code{false} & Enable episode $C_D/C_L$ scales. \\
+\code{aerodynamic_coefficient_span} & fraction & 0.10 & Legacy common fallback span. \\
+\code{aerodynamic_cd_span} & fraction & 0.10 & Independent drag half-span. \\
+\code{aerodynamic_cl_span} & fraction & 0.10 & Independent lift half-span. \\
+\code{marsgram_perturbation_scale} & scalar & 1.0 & GRAM perturbation amplitude. \\
+\code{marsgram_seed_base} & integer & 1001 & Base added to random episode seed offset. \\
+\bottomrule
+\end{longtable}
+
+For backward compatibility, \code{nonnominal_angle_low_deg} and
+\code{nonnominal_angle_high_deg} are accepted as fallbacks for missing RAAN
+keys.  Programmatic construction uses \code{NaN} for the independent
+$C_D/C_L$ spans, which means ``fall back to
+\code{aerodynamic_coefficient_span}''; TOML resolution materializes both as
+0.10 by default.
+
+\subsection{Live SpaceAGORA parameters}
+
+\begin{longtable}{P{0.37\linewidth}P{0.14\linewidth}P{0.19\linewidth}P{0.21\linewidth}}
+\toprule
+Key & Type & Resolved default & Meaning \\
+\midrule
+\endhead
+\code{spaceagora_physics.atmosphere_model} & string & \code{gram} &
+\code{gram}, \code{marsgram}, or \code{tabulated_flight}. \\
+\code{tabulated_flight_file} & path &
+\code{data/telemetry/Odyssey/odyssey_accelerometer_density.feather} &
+Parent-repository-relative flight-density file. \\
+\code{tabulated_flight_sigma} & scalar & 0 & Tabulated-density perturbation sigma. \\
+\code{gravity_harmonics_degree} & integer & 50 & Requested harmonic degree. \\
+\code{gravity_harmonics_order} & integer & 50 & Requested order, clamped to degree. \\
+\code{gravity_harmonics_file} & path &
+\code{data/Gravity_harmonics_data/Mars50c.csv} &
+Normalized coefficient file. \\
+\bottomrule
+\end{longtable}
+
+The full-physics shipped profiles use degree/order 20 for faster runs, while
+the resolver and programmatic scenario constructor default to 50.
+
+\subsection{DDQN parameters}
+
+\begin{longtable}{P{0.27\linewidth}P{0.14\linewidth}P{0.15\linewidth}P{0.35\linewidth}}
+\toprule
+Key & Type & Resolved default & Meaning \\
+\midrule
+\endhead
+\code{ddqn.learning_rate} & float & $10^{-4}$ & Adam learning rate. \\
+\code{ddqn.discount} & float & 0.95 & Bootstrap discount $\gamma$. \\
+\code{ddqn.batch_size} & integer & 256 & Replay minibatch size. \\
+\code{ddqn.train_frequency} & steps & 5 & Environment-step divisibility gate. \\
+\code{ddqn.train_start} & steps & 10,000 & Earliest global training step. \\
+\code{ddqn.replay_size} & transitions & 1,000,000 & Circular replay capacity. \\
+\code{ddqn.target_update} & updates & 10,000 & Online-to-target copy cadence in learner updates. \\
+\code{ddqn.gradient_clip_norm} & float & 10 & Global gradient norm ceiling. \\
+\code{ddqn.adam_epsilon} & float & $10^{-6}$ & Adam denominator epsilon. \\
+\code{ddqn.hidden_dim} & integer & 1024 & Width of both hidden layers. \\
+\bottomrule
+\end{longtable}
+
+Shipped paper profiles use \code{replay_size=20000}, not the one-million
+fallback.  Programmatic-only defaults are
+\code{adam_beta1=0.9}, \code{adam_beta2=0.999}, \code{obs_dim=9},
+\code{action_dim=13}, and \code{bootstrap_truncated=true}.
+
+\subsection{A2C parameters}
+
+\begin{longtable}{P{0.29\linewidth}P{0.14\linewidth}P{0.15\linewidth}P{0.33\linewidth}}
+\toprule
+Key & Type & Resolved default & Meaning \\
+\midrule
+\endhead
+\code{a2c.learning_rate} & float & $10^{-4}$ & Actor and critic Adam rate. \\
+\code{a2c.discount} & float & 0.95 & Return discount. \\
+\code{a2c.segment_length} & steps/worker & 10 & Maximum segment horizon. \\
+\code{a2c.train_start} & steps & 0 & Earliest update step. \\
+\code{a2c.entropy_coef} & float & 0.1 & Entropy-bonus coefficient. \\
+\code{a2c.value_coef} & float & 0.5 & Value-loss coefficient. \\
+\code{a2c.gradient_clip_norm} & float & 0.5 & Per-network gradient ceiling. \\
+\code{a2c.adam_epsilon} & float & $10^{-6}$ & Adam denominator epsilon. \\
+\code{a2c.hidden_dim} & integer & 1024 & Actor and critic hidden width. \\
+\bottomrule
+\end{longtable}
+
+Programmatic-only defaults are \code{adam_beta1=0.9},
+\code{adam_beta2=0.99}, \code{obs_dim=9}, and \code{action_dim=13}.
+
+\subsection{Epsilon parameters}
+
+\begin{longtable}{P{0.30\linewidth}P{0.14\linewidth}P{0.16\linewidth}P{0.31\linewidth}}
+\toprule
+Key & Type & Resolved default & Meaning \\
+\midrule
+\endhead
+\code{epsilon.start} & probability & 1.0 & Initial exploration. \\
+\code{epsilon.stop} & probability & 0.01 & Lower exploration bound. \\
+\code{epsilon.decay_steps} & steps & 500,000 & Linear-decay duration. \\
+\code{epsilon.decay_start_step} & step & \code{ddqn.train_start} & Last step at start epsilon. \\
+\bottomrule
+\end{longtable}
+
+The shipped paper profiles override \code{decay_steps} to 5000 and usually
+start at step 10,000.
+
+\subsection{Training parameters}
+
+\begin{longtable}{P{0.37\linewidth}P{0.13\linewidth}P{0.15\linewidth}P{0.26\linewidth}}
+\toprule
+Key & Type & Resolved default & Meaning \\
+\midrule
+\endhead
+\code{training.seed} & integer & 42 & Master seed and worker-seed base. \\
+\code{training.algorithm} & string & \code{pr_drl} & \code{pr_drl}, \code{ddqn}, or \code{a2c}; hyphens canonicalize to underscores. \\
+\code{training.device} & string & \code{cpu} & \code{cpu} or functional \code{cuda}. \\
+\code{training.global_steps} & integer & 0 & Positive value enables step-limited training. \\
+\code{training.episodes} & integer & 4 & Campaign limit when global steps are zero. \\
+\code{training.max_passes_per_campaign} & integer & 1000 & Training-side pass cap; legacy \code{max_steps} is a fallback. \\
+\code{training.n_workers} & integer & 1 & Requested rollout concurrency. \\
+\code{training.checkpoint_frequency} & steps & 500 & Periodic checkpoint cadence; non-positive disables periodic checkpoints. \\
+\code{training.progress_frequency} & steps/episodes & 50 & Progress cadence; zero disables periodic progress. \\
+\code{training.output_dir} & path & \code{outputs/runs} & Parent directory for run-specific output. \\
+\code{training.protected_first_pass} & Boolean & \code{false} & Enable protected zero-action pass. \\
+\code{training.protected_initial_corridor_maneuver} & Boolean & \code{false} & Allow a second protected extreme action. \\
+\code{training.protected_first_pass_suppress_thermal_terminal} & Boolean & \code{true} & Ignore thermal-only terminal during protected passes. \\
+\code{training.protected_corridor_low_w_cm2} & W/cm$^2$ & 0.025 & Threshold for action 1. \\
+\code{training.protected_corridor_high_w_cm2} & W/cm$^2$ & 0.40 & Threshold for action 13. \\
+\bottomrule
+\end{longtable}
+
+Paths supplied in TOML are used as strings relative to the process working
+directory; default paths are absolute paths derived from the package root.
+
+\subsection{Reporting parameters}
+
+\begin{longtable}{P{0.30\linewidth}P{0.14\linewidth}P{0.17\linewidth}P{0.30\linewidth}}
+\toprule
+Key & Type & Resolved default & Meaning \\
+\midrule
+\endhead
+\code{reports.output_dir} & path & \code{outputs/reports} & Evaluation artifact directory. \\
+\code{reports.write_csv} & Boolean & \code{true} & Stored report preference. \\
+\code{reports.write_plots} & Boolean & \code{true} & Stored report preference. \\
+\bottomrule
+\end{longtable}
+
+The core \code{write_evaluation_artifacts} implementation writes CSV data;
+the example script additionally creates PNG and HTML visualizations.
+
+\subsection{Environment variables and runtime tuning}
+
+\begin{longtable}{P{0.39\linewidth}P{0.17\linewidth}P{0.35\linewidth}}
+\toprule
+Variable & Default & Purpose \\
+\midrule
+\endhead
+\code{SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS} &
+$\max(5{,}000{,}000,250{,}000N_{\mathrm{pass}})$ &
+Positive-integer live solver iteration limit. \\
+\code{SPACEAGORA_SOLVER_MAXITERS} & unset &
+Fallback read only when the RL-specific value is absent. \\
+\code{SPACEAGORA_RL_SHARED_EPHEMERIS_CACHE} & enabled &
+Boolean accepting 1/0, true/false, yes/no, or on/off. \\
+\code{SPACEAGORA_RL_SHARED_EPHEMERIS_DT_S} & 30.0 &
+Positive ephemeris sample interval in seconds. \\
+\code{SPACEAGORA_RL_SHARED_EPHEMERIS_MAX_SAMPLES} & 1,000,000 &
+Memory/safety ceiling, integer at least 2. \\
+\code{SPACEAGORA_OUTER_PARALLEL_ACTIVE} & set by wrapper &
+Set to 1 during multi-worker live PR-DRL. \\
+\code{SPACEAGORA_INNER_THREAD_BUDGET} & automatic &
+SpaceAGORA inner concurrency budget; wrapper supplies threads/workers if
+unset. \\
+\code{SPACEAGORA_NBODY_EPHEMERIS_CACHE},
+\code{SPACEAGORA_SRP_EPHEMERIS_CACHE},
+\code{SPACEAGORA_PLANET_FRAME_CACHE} & set to 0 &
+Core-cache controls disabled inside the wrapper when the RL shared cache is
+enabled. \\
+\bottomrule
+\end{longtable}
+
+\section{Runtime artifacts and reproducibility}
+
+\subsection{Run directory}
+
+\code{build_training_session} creates
+\[
+  \code{training.output_dir}/
+  \code{yyyymmddTHHMMSS_config-algorithm}.
+\]
+The manifest records run ID, UTC time, phase, seed, source config path and
+SHA-256, backend, algorithm, device, action table, normalization field names,
+the four heat thresholds, and selected DDQN/A2C settings.
+
+Typical training artifacts are:
+
+\begin{itemize}
+  \item \code{manifest.toml};
+  \item \code{terminal_output.txt} when using \code{scripts/train.jl};
+  \item \code{checkpoint_<step>.jls} at crossed thresholds;
+  \item \code{checkpoint_final.jls};
+  \item for live PR-DRL streaming,
+        \code{training_episode_summaries.jls} and
+        \code{training_transitions.jls} as disk-backed serialized histories.
+\end{itemize}
+
+DDQN checkpoints contain CPU online/target networks, replay, epsilon schedule,
+configuration, optimizer state, global/train steps, last loss, device name,
+and optional manifest.  A2C checkpoints contain actor/critic networks,
+configuration, both optimizer states, counters, losses, device name, and
+optional manifest.
+
+\subsection{History memory behavior}
+
+Ordinary DDQN and A2C return in-memory vectors.  Live streaming uses
+\code{DiskBackedHistory}, an indexed serialization stream with byte offsets,
+so long campaigns do not retain every summary and transition object in RAM.
+\code{MappedHistory} lazily derives episode metrics from stored summaries.
+The caller should close writable histories after manual use; the trainer does
+so before returning.
+
+\section{Evaluation and baselines}
+
+\subsection{Policies}
+
+\begin{longtable}{P{0.28\linewidth}P{0.63\linewidth}}
+\toprule
+Policy & Rule \\
+\midrule
+\endhead
+\code{NoManeuverPolicy} & Always action 7. \\
+\code{RandomActionPolicy} & Uniformly sample one of 13 actions. \\
+\code{FixedCorridorPolicy} &
+Default action $-0.2$ m/s for low heat, $+0.2$ m/s for high/medium/hard heat,
+and zero for nominal heat. \\
+\code{AADSHeuristicPolicy} &
+Predict candidate heat with the surrogate predictor; keep zero if it is in
+the configured corridor, otherwise search only lowering or raising actions
+and select the prediction closest to 0.15 W/cm$^2$. \\
+\code{GreedyDDQNPolicy}/\code{GreedyPRDRLPolicy} &
+Select the largest Q value from a loaded checkpoint. \\
+\code{GreedyA2CPolicy} &
+Select the largest actor logit from a loaded A2C checkpoint. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Evaluation protocols}
+
+The standard IID count is 40 episodes and the generalization count is 100.
+Evaluation converts the scenario to \code{training=false} while preserving
+the physical backend and most configuration.  Two thermal modes are
+available:
+
+\begin{itemize}
+  \item \code{conservative}: thermal violations remain terminal;
+  \item \code{tolerant}: thermal violations are recorded but not terminal.
+\end{itemize}
+
+Generalization suites contain a nominal deterministic reset and an IID
+randomized reset.  Frozen-checkpoint discovery accepts filenames matching
+\code{checkpoint_<integer>.jls} plus \code{checkpoint_final.jls}, sorted with
+the final checkpoint last.
+
+Episode metrics include reward, success and failure modes, target error,
+thermal violations, pass count, protected passes, mission duration, ABM
+delta-V, correction delta-V, total mission delta-V, maneuver count, and
+solver failures.  Pass logs include orbital elements, heat, density, reward,
+and action traces.
+
+\section{Operation}
+
+From the parent SpaceAGORA repository:
+
+\begin{verbatim}
+julia --project=SpaceAGORA_RL.jl -e \
+  'using Pkg; Pkg.instantiate()'
+
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/train.jl \
+  SpaceAGORA_RL.jl/configs/aerobraking/paper_replication.toml
+
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/run_baselines.jl CONFIG_PATH [EPISODES]
+
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/evaluate_policy.jl \
+  [CONFIG_PATH] [CHECKPOINT_PATH] [EPISODES]
+
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/evaluate_frozen_checkpoints.jl \
+  CONFIG_PATH CHECKPOINT_DIR [OUTPUT_DIR] [EPISODES]
+
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/run_generalization_suite.jl \
+  [CONFIG_PATH] [EPISODES]
+\end{verbatim}
+
+Threaded training should be launched with enough Julia threads for the
+requested workers, for example \code{julia -t auto}.  If
+\code{n_workers > Threads.nthreads()}, the trainer warns and caps active
+workers.  The \code{setup_distributed_workers} helper can add processes, but
+the implemented \code{train_parallel!} methods use threads and channels, not
+distributed processes.
+
+\section{Extension points and implementation cautions}
+
+\begin{itemize}
+  \item A new task implements the small MDP/backend/policy contracts, but the
+        current trainers and typed records are aerobraking-specific.
+  \item A new propagation backend extends \code{SpaceAGORACoreAdapter} and
+        should return a complete \code{AerobrakingDecisionState}.
+  \item A new atmosphere for live physics extends the density-model builder
+        and should update accepted configuration validation.
+  \item \code{pr_drl} is not a distinct neural learner class; it is the DDQN
+        learner plus PR-DRL naming and, for live physics, central pass-streaming
+        execution.
+  \item The AADS predictor is the paper surrogate heat model even when the
+        evaluation backend is live physics.
+  \item TOML resolution validates table types, algorithm names, atmosphere
+        names, and date syntax, but most numeric ranges are not globally
+        validated.  Physically nonsensical values may fail later or produce
+        invalid simulations.
+  \item The normalization bounds are fixed paper ranges and are not learned
+        from data.
+  \item Checkpoints use Julia \code{Serialization}; they are intended for
+        compatible Julia/package environments, not as a language-neutral
+        interchange format.
+  \item Live SpaceAGORA loading and SPICE setup are protected by locks.
+        Shared templates and caches reduce repeated setup but do not remove
+        the need to size thread and memory budgets carefully.
+\end{itemize}
+
+\section{Shipped configuration profiles}
+
+\begin{longtable}{P{0.38\linewidth}P{0.19\linewidth}P{0.34\linewidth}}
+\toprule
+Profile & Primary mode & Intended use \\
+\midrule
+\endhead
+\code{paper_replication.toml} & PR-DRL, surrogate, CPU &
+Small default invocation with nonnominal paper randomization and protected
+initialization. \\
+\code{pr_drl_paper_surrogate.toml} & PR-DRL, surrogate, CPU &
+Large 1.1-million-step paper-surrogate training profile. \\
+\code{pr_drl_spaceagora_physics.toml} & PR-DRL, live, CUDA &
+Large continuous live-physics profile with tabulated flight atmosphere and
+20x20 harmonics. \\
+\code{pr_drl_spaceagora_marsgram.toml} & PR-DRL, live, CPU &
+Large live profile using the Mars-GRAM backend mode. \\
+\code{pr_drl_spaceagora_physics_smoke.toml} & PR-DRL, live, CPU &
+Two-pass/four-step end-to-end smoke configuration. \\
+\code{pr_drl_spaceagora_physics_training_check.toml} & PR-DRL, live, CUDA &
+Shorter 1200-step training-path verification. \\
+\code{ddqn_full.toml} & DDQN, surrogate, CPU &
+1.1-million-global-step ordinary DDQN profile. \\
+\code{ddqn_full_campaigns.toml} & DDQN, surrogate, CUDA &
+Episode-limited campaign profile with \code{global_steps=0}. \\
+\bottomrule
+\end{longtable}
+
+\section{Summary}
+
+\code{SpaceAGORA_RL.jl} is organized around a stable aerobraking MDP and two
+interchangeable propagation fidelity levels.  A typed configuration resolves
+paper parameters, reset distributions, algorithm settings, and runtime
+budgets.  DDQN-family and A2C learners consume the same normalized
+observations and discrete actions.  The key architectural specialization is
+live PR-DRL: long-running SpaceAGORA campaign workers stream pass transitions
+to one authoritative learner, which updates the network and returns the next
+action without restarting propagation.  Reusable simulation templates,
+shared ephemerides, protected initialization, CUDA transfer boundaries,
+manifests, and disk-backed histories make that architecture practical and
+reproducible for long aerobraking campaigns.
+
+\end{document}

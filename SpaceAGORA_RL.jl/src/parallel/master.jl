@@ -6,14 +6,30 @@ function _format_duration(seconds::Real)
     return @sprintf("%02d:%02d:%02d", hours, minutes, secs)
 end
 
-function _recent_training_stats(summaries::AbstractVector{<:EpisodeSummary}, window::Int)
-    isempty(summaries) && return (mean_reward=NaN, success_rate=NaN, mean_passes=NaN)
+function _recent_training_stats(summaries::AbstractVector{<:EpisodeSummary}, window::Int;
+                                target_tolerance_m::Real=10e3)
+    isempty(summaries) && return (
+        mean_reward=NaN,
+        reached_goal_percent=NaN,
+        mean_thermal_violations=NaN,
+        mean_passes_to_end=NaN,
+        mean_end_distance_km=NaN,
+    )
     first_idx = max(1, length(summaries) - max(1, window) + 1)
     recent = summaries[first_idx:end]
+    final_errors_m = getfield.(recent, :target_error_m)
+    finite_final_errors_m = filter(isfinite, final_errors_m)
     return (
         mean_reward = mean(getfield.(recent, :episode_reward)),
-        success_rate = count(summary -> summary.success, recent) / length(recent),
-        mean_passes = mean(getfield.(recent, :pass_count)),
+        reached_goal_percent = 100 *
+            count(error_m -> isfinite(error_m) &&
+                             abs(error_m) <= target_tolerance_m, final_errors_m) /
+            length(recent),
+        mean_thermal_violations = mean(getfield.(recent, :thermal_violations)),
+        mean_passes_to_end = mean(getfield.(recent, :pass_count)),
+        mean_end_distance_km = isempty(finite_final_errors_m) ?
+                               NaN :
+                               mean(abs, finite_final_errors_m) / 1000,
     )
 end
 
@@ -38,12 +54,16 @@ function _print_training_progress(session::TrainingSession, summaries::AbstractV
     end
     work_rate = elapsed > 0 ? work_done / elapsed : 0.0
     eta = work_rate > 0 && (step_limited || episode_budget != typemax(Int)) ? work_remaining / work_rate : Inf
-    stats = _recent_training_stats(summaries, 100)
+    stats = _recent_training_stats(
+        summaries,
+        100;
+        target_tolerance_m=session.config.scenario.reward_config.target_tolerance_m,
+    )
     eps = epsilon_value(session.learner.schedule, session.learner.global_step)
     loss = isfinite(session.learner.last_loss) ? @sprintf("%.6g", session.learner.last_loss) : "n/a"
     if step_limited
         @printf(
-            "progress ep=%d steps=%d/%d replay=%d train_steps=%d loss=%s eps=%.4f recent_reward=%.3f recent_success=%.1f%% recent_passes=%.1f workers=%d/%d elapsed=%s eta=%s\n",
+            "progress ep=%d steps=%d/%d replay=%d train_steps=%d loss=%s eps=%.4f recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal=%.1f%% recent_mean_end_distance_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
             completed_episodes,
             session.learner.global_step,
             target_global_step,
@@ -52,8 +72,10 @@ function _print_training_progress(session::TrainingSession, summaries::AbstractV
             loss,
             eps,
             stats.mean_reward,
-            100 * stats.success_rate,
-            stats.mean_passes,
+            stats.mean_thermal_violations,
+            stats.mean_passes_to_end,
+            stats.reached_goal_percent,
+            stats.mean_end_distance_km,
             active_workers,
             Threads.nthreads(),
             _format_duration(elapsed),
@@ -61,7 +83,7 @@ function _print_training_progress(session::TrainingSession, summaries::AbstractV
         )
     else
         @printf(
-            "progress ep=%d/%s steps=%d replay=%d train_steps=%d loss=%s eps=%.4f recent_reward=%.3f recent_success=%.1f%% recent_passes=%.1f workers=%d/%d elapsed=%s eta=%s\n",
+            "progress ep=%d/%s steps=%d replay=%d train_steps=%d loss=%s eps=%.4f recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal=%.1f%% recent_mean_end_distance_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
             completed_episodes,
             _budget_label(episode_budget),
             session.learner.global_step,
@@ -70,8 +92,10 @@ function _print_training_progress(session::TrainingSession, summaries::AbstractV
             loss,
             eps,
             stats.mean_reward,
-            100 * stats.success_rate,
-            stats.mean_passes,
+            stats.mean_thermal_violations,
+            stats.mean_passes_to_end,
+            stats.reached_goal_percent,
+            stats.mean_end_distance_km,
             active_workers,
             Threads.nthreads(),
             _format_duration(elapsed),
@@ -734,10 +758,14 @@ function _print_a2c_progress(session::TrainingSession{<:A2CLearner},
                      max(0, episode_budget - completed_episodes)
     work_rate = elapsed > 0 ? work_done / elapsed : 0.0
     eta = work_rate > 0 ? work_remaining / work_rate : Inf
-    stats = _recent_training_stats(summaries, 100)
+    stats = _recent_training_stats(
+        summaries,
+        100;
+        target_tolerance_m=session.config.scenario.reward_config.target_tolerance_m,
+    )
     loss = isfinite(session.learner.last_loss) ? @sprintf("%.6g", session.learner.last_loss) : "n/a"
     @printf(
-        "progress algo=a2c ep=%d/%s steps=%d%s train_steps=%d loss=%s recent_reward=%.3f recent_success=%.1f%% recent_passes=%.1f workers=%d/%d elapsed=%s eta=%s\n",
+        "progress algo=a2c ep=%d/%s steps=%d%s train_steps=%d loss=%s recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal=%.1f%% recent_mean_end_distance_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
         completed_episodes,
         _budget_label(episode_budget),
         session.learner.global_step,
@@ -745,8 +773,10 @@ function _print_a2c_progress(session::TrainingSession{<:A2CLearner},
         session.learner.train_steps,
         loss,
         stats.mean_reward,
-        100 * stats.success_rate,
-        stats.mean_passes,
+        stats.mean_thermal_violations,
+        stats.mean_passes_to_end,
+        stats.reached_goal_percent,
+        stats.mean_end_distance_km,
         active_workers,
         Threads.nthreads(),
         _format_duration(elapsed),

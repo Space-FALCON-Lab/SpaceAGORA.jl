@@ -2144,4 +2144,95 @@ end
 
 end
 
+@testset "Magnetic momentum manager (discrete ZOH control effector)" begin
+    CH = SimulationModel.ControlHooks
+    # mock integrator state: duck-typed sc accessor (pos/vel/q/ω), one sat
+    r0 = SVector(6.9e6, 0.0, 0.0)
+    v0 = SVector(0.0, 7.6e3, 0.0)
+    q_id = SVector(0.0, 0.0, 0.0, 1.0)          # identity: body == inertial
+    w0 = SVector(0.0, 0.0, 0.0)
+    mock_u(q) = (sc = [(pos = r0, vel = v0, q = q, ω = w0)],)
+    B0 = SVector(0.0, 0.0, 3.0e-5)              # +z inertial field, 30 uT
+    bfun = (t, r) -> B0
+    tau_const = SVector(1.0e-6, 0.0, 0.0)       # constant commanded torque
+    taufun = (t, r, v, q, w) -> tau_const
+
+    mk(; kw...) = CH.MagneticMomentumManagerModel(;
+        mu_gain=0.01, h_wheels_0=SVector(0.02, 0.0, 0.0),
+        commanded_torque=taufun, b_field_ii=bfun, kw...)
+
+    # 1) first tick initializes the accumulator (no advance) and holds a command
+    m = mk()
+    CH.calcControlEffect!(m, mock_u(q_id), nothing, 0.0, 1)
+    @test m.h_wheels == SVector(0.02, 0.0, 0.0)
+    @test m.initialized
+    f, tq = CH.calcControlForceTorque(m, nothing, nothing, 1, 0.0)
+    @test f == SVector(0.0, 0.0, 0.0)
+    # unloading: tau_rod = -mu * H_perp; H = (0.02,0,0) fully perp to +z field
+    @test isapprox(tq, SVector(-0.01 * 0.02, 0.0, 0.0); rtol=1e-12)
+    @test dot(tq, m.h_wheels) < 0.0
+
+    # 2) ZOH: held command unchanged until the next tick
+    tq_held = m.held_torque_body
+    @test CH.calcControlForceTorque(m, nothing, nothing, 1, 0.37)[2] == tq_held
+
+    # 3) accumulator advance: dH = -tau_cmd * dt at the tick
+    CH.calcControlEffect!(m, mock_u(q_id), nothing, 1.0, 1)
+    @test isapprox(m.h_wheels, SVector(0.02, 0.0, 0.0) - tau_const * 1.0; rtol=1e-12)
+
+    # 4) field-parallel momentum is untouched by the law (tau ⟂ H_parallel)
+    mpar = mk(h_wheels_0=SVector(0.0, 0.0, 0.05))     # H along +z == B direction
+    CH.calcControlEffect!(mpar, mock_u(q_id), nothing, 0.0, 1)
+    @test norm(mpar.held_torque_body) < 1e-15
+
+    # 5) dipole cap: |m| clamped, torque scales down accordingly
+    mcap = mk(m_max_am2=1.0)
+    CH.calcControlEffect!(mcap, mock_u(q_id), nothing, 0.0, 1)
+    @test isapprox(norm(mcap.held_dipole_am2), 1.0; rtol=1e-12)
+    muncap = mk()
+    CH.calcControlEffect!(muncap, mock_u(q_id), nothing, 0.0, 1)
+    @test norm(muncap.held_dipole_am2) > 1.0   # confirms the cap actually bound
+
+    # 6) body-frame consistency: rotated attitude gives the same PHYSICAL torque
+    #    (rotate body 90 deg about +z; field/momentum vectors fixed in inertial
+    #    space => body components rotate, torque back-rotated must match)
+    ang = pi / 2
+    q_z90 = SVector(0.0, 0.0, sin(ang / 2), cos(ang / 2))
+    PE = SimulationModel.DynamicEffectors.PerturbationEffectors
+    R = PE.rot(q_z90)
+    mrot = mk(h_wheels_0=SVector{3, Float64}(R * SVector(0.02, 0.0, 0.0)))
+    CH.calcControlEffect!(mrot, mock_u(q_z90), nothing, 0.0, 1)
+    m0 = mk()
+    CH.calcControlEffect!(m0, mock_u(q_id), nothing, 0.0, 1)
+    @test isapprox(R' * mrot.held_torque_body, m0.held_torque_body; atol=1e-18)
+
+    # 7) other-sat and degenerate-field guards; no propellant
+    moff = mk(sat_idx=2)
+    CH.calcControlEffect!(moff, mock_u(q_id), nothing, 0.0, 1)
+    @test !moff.initialized
+    @test CH.calcControlForceTorque(moff, nothing, nothing, 1, 0.0)[2] == SVector(0.0, 0.0, 0.0)
+    mzero = mk(b_field_ii=(t, r) -> SVector(0.0, 0.0, 0.0))
+    CH.calcControlEffect!(mzero, mock_u(q_id), nothing, 0.0, 1)
+    @test mzero.held_torque_body == SVector(0.0, 0.0, 0.0)
+
+    # 8) discrete boundedness of the law itself: constant secular disturbance,
+    #    ticked at 1 Hz — with the manager the accumulated momentum plateaus at
+    #    tau/mu; with mu=0 it grows linearly (drift = the unmanaged twin).
+    #    (commanded torque = disturbance counter, i.e. wheels absorb +tau_d)
+    tau_d = SVector(2.0e-6, 0.0, 0.0)
+    # emulate the closed loop: at each tick the commanded torque the wheels
+    # absorb is the disturbance counter MINUS the rod torque counter
+    hold = SVector(0.0, 0.0, 0.0)
+    mgr2 = mk(h_wheels_0=SVector(0.0, 0.0, 0.0),
+              commanded_torque=(t, r, v, q, w) -> -tau_d - hold)
+    drift = SVector(0.0, 0.0, 0.0)
+    for k in 0:2000
+        CH.calcControlEffect!(mgr2, mock_u(q_id), nothing, Float64(k), 1)
+        hold = mgr2.held_torque_body
+        drift = drift + tau_d * 1.0          # unmanaged accumulator, same ticks
+    end
+    @test norm(mgr2.h_wheels) < 0.5 * norm(drift)
+    @test norm(mgr2.h_wheels) < 1.5 * norm(tau_d) / 0.01   # plateau ~ tau/mu
+end
+
 println("coverage_parallel_telemetry_probes_ok")

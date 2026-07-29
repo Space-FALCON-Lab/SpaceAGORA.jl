@@ -1909,4 +1909,330 @@ end
     @test AE._per_link_enabled(AerodynamicCoefficientConstant()) === false
 end
 
+@testset "Magnetic field: dipole sign fix + IGRF source option" begin
+    PE = SimulationModel.DynamicEffectors.PerturbationEffectors
+    ES = parentmodule(PE.StateSample)
+    # Constructor contract: default stays the tilted dipole; :igrf requires a
+    # finite decimal year; unknown sources are rejected.
+    @test PE.MagneticTorqueRodModel().field_model === :dipole
+    m_igrf = PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=2025.4)
+    @test m_igrf.igrf_year == 2025.4
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf)
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:wmm)
+    # The IGRF library hard-rejects epochs outside [1900, 2035); the
+    # constructor must catch that at configuration time (Codex P2, PR 64).
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=2050.0)
+    @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=1899.0)
+
+    # Tilted-dipole SIGN pins. The pre-fix implementation used the north-pole
+    # axis as the dipole moment and returned the antiparallel field (~170 deg
+    # from IGRF at LEO). Physical pins: at the magnetic equator B = +B0 along
+    # the pole axis (north); above the north magnetic pole B = -2 B0 (down).
+    l_pi = SMatrix{3, 3, Float64, 9}(I)
+    n_hat = SVector{3, Float64}(PE.M_HAT_ECEF)
+    r_eq = 6.3712e6 * normalize(cross(n_hat, SVector(0.0, 0.0, 1.0)))
+    @test isapprox(PE.get_magnetic_field_dipole(r_eq, MMatrix{3, 3, Float64}(l_pi)),
+                   3.12e-5 * n_hat; atol=1e-9)
+    @test isapprox(PE.get_magnetic_field_dipole(6.3712e6 * n_hat, MMatrix{3, 3, Float64}(l_pi)),
+                   -2 * 3.12e-5 * n_hat; atol=1e-9)
+
+    # IGRF-vs-dipole cross-validation at LEO sample points: LEO-band magnitude
+    # and the two models roughly aligned (< 35 deg) — this catches any future
+    # sign/frame regression in either path.
+    earth = PE.Earth()
+    m_dip = PE.MagneticTorqueRodModel()
+    for (latd, lond) in ((0.0, 10.0), (30.0, 45.0), (-30.0, 135.0), (55.0, -100.0))
+        r = 6898e3 * SVector(cosd(latd) * cosd(lond), cosd(latd) * sind(lond), sind(latd))
+        alt, lat, lon = PE.rtolatlong(r, earth)
+        B_i = PE._magnetic_field_inertial(m_igrf, l_pi, r, lat, lon, alt)
+        B_d = PE._magnetic_field_inertial(m_dip, l_pi, r, lat, lon, alt)
+        @test 1.5e-5 < norm(B_i) < 7e-5
+        @test B_d == PE.get_magnetic_field_dipole(r, MMatrix{3, 3, Float64}(l_pi))
+        @test acosd(clamp(dot(B_i, B_d) / (norm(B_i) * norm(B_d)), -1, 1)) < 35
+    end
+
+    # wrench plumbing: one magnet, identity attitude -> torque = m x B_ii for
+    # BOTH field sources, zero force, and tau ⊥ m.
+    ic = SimulationModel.InitialCondition(
+        7.0e6, 1.0e-3, 35.0, 0.0, 0.0, 0.0,
+        SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    )
+    sc = TV.make_three_body_spacecraft(
+        bus_dims=(0.2, 0.5, 0.6), panel_dims=(0.4, 0.001, 0.5), bus_mass=29.0,
+        panel_mass_each=0.0, panel_offset_y=0.5, ic=ic
+    )
+    MT = eltype(sc.links[1].magnets)
+    m_vec = SVector(0.0, 0.0, 1.5)
+    push!(sc.links[1].magnets, MT(m=MVector{3, Float64}(m_vec)))
+    r = 6898e3 * SVector(cosd(20.0) * cosd(30.0), cosd(20.0) * sind(30.0), sind(20.0))
+    alt, lat, lon = PE.rtolatlong(r, earth)
+    pf = ES.PlanetFrameSample(l_pi, r, SVector(0.0, 0.0, 0.0), alt, lat, lon)
+    x = PE.StateSample(r, SVector(7.6e3, 0.0, 0.0), 29.0;
+                       q_ib=SVector(0.0, 0.0, 0.0, 1.0), spacecraft=sc)
+    env = PE.EnvironmentSample(earth; planet_frame=pf)
+    for model in (m_dip, m_igrf)
+        B_ii = PE._magnetic_field_inertial(model, l_pi, r, lat, lon, alt)
+        f, tq = PE.wrench(model, x, env, 0.0)
+        @test f == SVector(0.0, 0.0, 0.0)
+        @test isapprox(tq, cross(m_vec, B_ii); atol=1e-12)
+        @test abs(dot(tq, m_vec)) < 1e-15
+    end
+end
+
+@testset "LVLH cascade attitude controller" begin
+    PE = SimulationModel.DynamicEffectors.PerturbationEffectors
+    ES = parentmodule(PE.StateSample)
+    # Generic round-number gains: probe values are NOT mission calibrations.
+    mk(; kw...) = PE.LVLHCascadeAttitudeControlModel(;
+        k_out=[0.01, 0.01, 0.01], w_max=1.5e-3, k_rate=[0.05, 0.05, 0.05], tau_max=1.0e-3, kw...)
+    m = mk()
+    @test m.q_cmd_lb == SVector(0.0, 0.0, 0.0, 1.0)
+    @test_throws ArgumentError mk(w_max=0.0)
+    @test_throws ArgumentError mk(tau_max=-1.0)
+    @test_throws ArgumentError mk(k_out=[-0.01, 0.0, 0.0])
+    @test_throws ArgumentError mk(q_cmd_lb=[0.0, 0.0, 0.0, 0.0])
+
+    # Quaternion q with PE.rot(q) == R: Shepperd on the TRANSPOSE (PE.rot is
+    # the transpose of the standard scalar-last DCM; pinned below).
+    function dcm_to_quat(R_target)
+        R = R_target'
+        tr = R[1, 1] + R[2, 2] + R[3, 3]
+        if tr > 0
+            s = sqrt(tr + 1.0) * 2
+            q = SVector((R[3, 2] - R[2, 3]) / s, (R[1, 3] - R[3, 1]) / s, (R[2, 1] - R[1, 2]) / s, s / 4)
+        elseif R[1, 1] > R[2, 2] && R[1, 1] > R[3, 3]
+            s = sqrt(1.0 + R[1, 1] - R[2, 2] - R[3, 3]) * 2
+            q = SVector(s / 4, (R[1, 2] + R[2, 1]) / s, (R[1, 3] + R[3, 1]) / s, (R[3, 2] - R[2, 3]) / s)
+        elseif R[2, 2] > R[3, 3]
+            s = sqrt(1.0 + R[2, 2] - R[1, 1] - R[3, 3]) * 2
+            q = SVector((R[1, 2] + R[2, 1]) / s, s / 4, (R[2, 3] + R[3, 2]) / s, (R[1, 3] - R[3, 1]) / s)
+        else
+            s = sqrt(1.0 + R[3, 3] - R[1, 1] - R[2, 2]) * 2
+            q = SVector((R[1, 3] + R[3, 1]) / s, (R[2, 3] + R[3, 2]) / s, s / 4, (R[2, 1] - R[1, 2]) / s)
+        end
+        return q / norm(q)
+    end
+    lvlh_dcm(r, v) = begin
+        z_l = -r / norm(r); y_l = normalize(cross(z_l, v)); x_l = cross(y_l, z_l)
+        SMatrix{3, 3, Float64, 9}(x_l[1], y_l[1], z_l[1], x_l[2], y_l[2], z_l[2], x_l[3], y_l[3], z_l[3])
+    end
+    r0 = SVector(6.9e6, 0.0, 0.0)
+    v0 = SVector(0.0, sqrt(3.98600436233e14 / 6.9e6), 0.0)
+    R_li = lvlh_dcm(r0, v0)
+    q_aligned = dcm_to_quat(R_li)
+    @test maximum(abs.(PE.rot(q_aligned) - R_li)) < 1e-12    # dcm_to_quat consistent with rot
+    w_lvlh_body = PE.rot(q_aligned) * (cross(r0, v0) / dot(r0, r0))
+
+    # equilibrium: LVLH-aligned, LVLH-matched rates -> zero torque, zero force
+    x_eq = PE.StateSample(r0, v0, 29.0; q_ib=q_aligned, ω_body=w_lvlh_body)
+    env = PE.EnvironmentSample(nothing)
+    f, tq = PE.wrench(m, x_eq, env, 0.0)
+    @test f == SVector(0.0, 0.0, 0.0)
+    @test norm(tq) < 1e-15
+
+    # restoring: small roll offset (body vs LVLH), LVLH-matched rates ->
+    # torque opposes the error, and only that axis responds
+    q_off = SVector(sind(1.0), 0.0, 0.0, cosd(1.0))          # 2 deg about body x
+    q_ib = dcm_to_quat(PE.rot(q_off) * R_li)
+    @test maximum(abs.(PE.rot(q_ib) - PE.rot(q_off) * R_li)) < 1e-12  # composition pin
+    # rate consistent with the PERTURBED attitude, so w_rel = 0 and the
+    # response is purely the outer loop acting on the roll error
+    x_roll = PE.StateSample(r0, v0, 29.0; q_ib=q_ib,
+                            ω_body=PE.rot(q_ib) * (cross(r0, v0) / dot(r0, r0)))
+    _, tq_r = PE.wrench(m, x_roll, env, 0.0)
+    th_err = 2.0 * sind(1.0)  # small-angle error magnitude, rad-ish
+    @test tq_r[1] * th_err < 0                                # restoring on the error axis
+    @test abs(tq_r[2]) < 0.05 * abs(tq_r[1]) && abs(tq_r[3]) < 0.05 * abs(tq_r[1])
+
+    # rate damping: aligned attitude, extra body rate -> tau = -k_rate .* dw
+    dw = SVector(2.0e-4, -1.0e-4, 5.0e-5)
+    x_rate = PE.StateSample(r0, v0, 29.0; q_ib=q_aligned, ω_body=w_lvlh_body + dw)
+    _, tq_w = PE.wrench(m, x_rate, env, 0.0)
+    @test isapprox(tq_w, -m.k_rate .* dw; rtol=1e-10)
+
+    # saturation: large error saturates the rate command; torque respects tau_max
+    q_big = dcm_to_quat(PE.rot(SVector(sind(45.0), 0.0, 0.0, cosd(45.0))) * R_li)
+    x_big = PE.StateSample(r0, v0, 29.0; q_ib=q_big, ω_body=w_lvlh_body)
+    _, tq_b = PE.wrench(m, x_big, env, 0.0)
+    @test all(abs.(tq_b) .<= m.tau_max + 1e-18)
+    @test abs(tq_b[1]) <= m.k_rate[1] * m.w_max * (1 + 1e-9) + m.k_rate[1] * norm(w_lvlh_body)
+
+    # antipodal robustness (Codex review): at 180 deg error the vee-map
+    # vanishes, but the rotation-log extraction must keep full authority —
+    # nonzero, axis-dominant, restoring, rate command saturated.
+    for ang in (180.0, 170.0)
+        q_flip = dcm_to_quat(PE.rot(SVector(sind(ang / 2), 0.0, 0.0, cosd(ang / 2))) * R_li)
+        x_flip = PE.StateSample(r0, v0, 29.0; q_ib=q_flip,
+                                ω_body=PE.rot(q_flip) * (cross(r0, v0) / dot(r0, r0)))
+        _, tq_f = PE.wrench(m, x_flip, env, 0.0)
+        @test norm(tq_f) > 0.5 * m.k_rate[1] * m.w_max
+        @test abs(tq_f[1]) > 5 * max(abs(tq_f[2]), abs(tq_f[3]))
+    end
+
+    # no attitude state -> zero wrench
+    x_noq = PE.StateSample(r0, v0, 29.0)
+    @test PE.wrench(m, x_noq, env, 0.0) == (SVector(0.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0))
+
+    # rigid-body invariant pin for the frame-consistency fix: torque-free
+    # asymmetric tumble under the ENGINE's own kinematics + Euler equations
+    # must conserve inertial angular momentum (the pre-fix inertial-rate
+    # quaternion composition drifted it by ~68% on this exact test).
+    DR = SimulationModel.DynamicsRotational
+    I_ten = SMatrix{3, 3, Float64, 9}(1.5, 0, 0, 0, 1.0, 0, 0, 0, 2.0)
+    q_t = SVector(0.0, 0.0, 0.0, 1.0); w_t = SVector(0.02, 0.03, 0.01)
+    L0 = PE.rot(q_t)' * (I_ten * w_t)
+    for _ in 1:40000
+        w_t = w_t + DR.angular_acceleration(w_t, I_ten, SVector(0.0, 0.0, 0.0)) * 0.05
+        q_t = q_t + DR.quaternion_derivative(w_t, q_t) * 0.05
+        q_t = q_t / norm(q_t)
+    end
+    @test norm(PE.rot(q_t)' * (I_ten * w_t) - L0) / norm(L0) < 0.01
+
+    # end-to-end convergence pin: rigid body + the engine's quaternion
+    # kinematics + this controller, closed loop from a 5 deg offset.
+    qdot(w, q) = DR.quaternion_derivative(SVector{3, Float64}(w), q)
+    I_diag = SVector(1.5, 1.0, 2.0)
+    n_orb = norm(cross(r0, v0)) / dot(r0, r0)
+    q = dcm_to_quat(PE.rot(SVector(sind(2.5), 0.0, 0.0, cosd(2.5))) * R_li)  # 5 deg roll offset
+    w_state = cross(r0, v0) / dot(r0, r0)
+    dt = 0.5
+    # circular-orbit propagation in the equatorial plane
+    orbit_r(tK) = SVector(6.9e6 * cos(n_orb * tK), 6.9e6 * sin(n_orb * tK), 0.0)
+    orbit_v(tK) = SVector(-v0[2] * sin(n_orb * tK), v0[2] * cos(n_orb * tK), 0.0)
+    err_angle(q, r, v) = begin
+        R_e = PE.rot(q) * lvlh_dcm(r, v)'
+        acosd(clamp((R_e[1, 1] + R_e[2, 2] + R_e[3, 3] - 1) / 2, -1, 1))
+    end
+    e_start = err_angle(q, r0, v0)
+    for k in 0:Int(2000 / dt)
+        tK = k * dt
+        r, v = orbit_r(tK), orbit_v(tK)
+        tau = PE._lvlh_cascade_torque(m, r, v, q, w_state)
+        w_state = w_state + (tau ./ I_diag) * dt
+        q = q + qdot(w_state, q) * dt
+        q = q / norm(q)
+    end
+    e_end = err_angle(q, orbit_r(2000.0), orbit_v(2000.0))
+    @test e_start > 4.5
+    @test e_end < 0.35                                        # >10x collapse, no divergence
+
+    # tau_ff: default is zero and bit-identical; a constant disturbance holds
+    # a steady PD offset of |tau_d|/(k_rate*k_out), and the matching
+    # feedforward nulls it (closed-loop mini-sim below reuses the engine
+    # kinematics; disturbance 2e-6 N m about x -> predicted offset ~0.23 deg).
+    m_ff = mk(tau_ff=[2.0e-6, 0.0, 0.0])
+    @test mk().tau_ff == SVector(0.0, 0.0, 0.0)
+    @test PE.wrench(mk(), x_eq, env, 0.0)[2] == PE.wrench(m, x_eq, env, 0.0)[2]
+    @test_throws ArgumentError mk(tau_ff=[Inf, 0.0, 0.0])
+    function settle(ctrl, tau_d)
+        qs = dcm_to_quat(R_li); ws = cross(r0, v0) / dot(r0, r0)
+        for k in 0:Int(3000 / 0.5)
+            tK = k * 0.5
+            r, v = orbit_r(tK), orbit_v(tK)
+            tau = PE._lvlh_cascade_torque(ctrl, r, v, qs, ws) + tau_d
+            ws = ws + (tau ./ I_diag) * 0.5
+            qs = qs + qdot(ws, qs) * 0.5
+            qs = qs / norm(qs)
+        end
+        return err_angle(qs, orbit_r(3000.0), orbit_v(3000.0))
+    end
+    tau_d = SVector(-2.0e-6, 0.0, 0.0)
+    off_pd = settle(mk(), tau_d)
+    off_ff = settle(m_ff, tau_d)
+    @test off_pd > 0.15                       # PD alone holds a steady offset
+    @test off_ff < 0.2 * off_pd               # matching feedforward nulls it
+
+end
+
+@testset "Magnetic momentum manager (discrete ZOH control effector)" begin
+    CH = SimulationModel.ControlHooks
+    # mock integrator state: duck-typed sc accessor (pos/vel/q/ω), one sat
+    r0 = SVector(6.9e6, 0.0, 0.0)
+    v0 = SVector(0.0, 7.6e3, 0.0)
+    q_id = SVector(0.0, 0.0, 0.0, 1.0)          # identity: body == inertial
+    w0 = SVector(0.0, 0.0, 0.0)
+    mock_u(q) = (sc = [(pos = r0, vel = v0, q = q, ω = w0)],)
+    B0 = SVector(0.0, 0.0, 3.0e-5)              # +z inertial field, 30 uT
+    bfun = (t, r) -> B0
+    tau_const = SVector(1.0e-6, 0.0, 0.0)       # constant commanded torque
+    taufun = (t, r, v, q, w) -> tau_const
+
+    mk(; kw...) = CH.MagneticMomentumManagerModel(;
+        mu_gain=0.01, h_wheels_0=SVector(0.02, 0.0, 0.0),
+        commanded_torque=taufun, b_field_ii=bfun, kw...)
+
+    # 1) first tick initializes the accumulator (no advance) and holds a command
+    m = mk()
+    CH.calcControlEffect!(m, mock_u(q_id), nothing, 0.0, 1)
+    @test m.h_wheels == SVector(0.02, 0.0, 0.0)
+    @test m.initialized
+    f, tq = CH.calcControlForceTorque(m, nothing, nothing, 1, 0.0)
+    @test f == SVector(0.0, 0.0, 0.0)
+    # unloading: tau_rod = -mu * H_perp; H = (0.02,0,0) fully perp to +z field
+    @test isapprox(tq, SVector(-0.01 * 0.02, 0.0, 0.0); rtol=1e-12)
+    @test dot(tq, m.h_wheels) < 0.0
+
+    # 2) ZOH: held command unchanged until the next tick
+    tq_held = m.held_torque_body
+    @test CH.calcControlForceTorque(m, nothing, nothing, 1, 0.37)[2] == tq_held
+
+    # 3) accumulator advance: dH = -tau_cmd * dt at the tick
+    CH.calcControlEffect!(m, mock_u(q_id), nothing, 1.0, 1)
+    @test isapprox(m.h_wheels, SVector(0.02, 0.0, 0.0) - tau_const * 1.0; rtol=1e-12)
+
+    # 4) field-parallel momentum is untouched by the law (tau ⟂ H_parallel)
+    mpar = mk(h_wheels_0=SVector(0.0, 0.0, 0.05))     # H along +z == B direction
+    CH.calcControlEffect!(mpar, mock_u(q_id), nothing, 0.0, 1)
+    @test norm(mpar.held_torque_body) < 1e-15
+
+    # 5) dipole cap: |m| clamped, torque scales down accordingly
+    mcap = mk(m_max_am2=1.0)
+    CH.calcControlEffect!(mcap, mock_u(q_id), nothing, 0.0, 1)
+    @test isapprox(norm(mcap.held_dipole_am2), 1.0; rtol=1e-12)
+    muncap = mk()
+    CH.calcControlEffect!(muncap, mock_u(q_id), nothing, 0.0, 1)
+    @test norm(muncap.held_dipole_am2) > 1.0   # confirms the cap actually bound
+
+    # 6) body-frame consistency: rotated attitude gives the same PHYSICAL torque
+    #    (rotate body 90 deg about +z; field/momentum vectors fixed in inertial
+    #    space => body components rotate, torque back-rotated must match)
+    ang = pi / 2
+    q_z90 = SVector(0.0, 0.0, sin(ang / 2), cos(ang / 2))
+    PE = SimulationModel.DynamicEffectors.PerturbationEffectors
+    R = PE.rot(q_z90)
+    mrot = mk(h_wheels_0=SVector{3, Float64}(R * SVector(0.02, 0.0, 0.0)))
+    CH.calcControlEffect!(mrot, mock_u(q_z90), nothing, 0.0, 1)
+    m0 = mk()
+    CH.calcControlEffect!(m0, mock_u(q_id), nothing, 0.0, 1)
+    @test isapprox(R' * mrot.held_torque_body, m0.held_torque_body; atol=1e-18)
+
+    # 7) other-sat and degenerate-field guards; no propellant
+    moff = mk(sat_idx=2)
+    CH.calcControlEffect!(moff, mock_u(q_id), nothing, 0.0, 1)
+    @test !moff.initialized
+    @test CH.calcControlForceTorque(moff, nothing, nothing, 1, 0.0)[2] == SVector(0.0, 0.0, 0.0)
+    mzero = mk(b_field_ii=(t, r) -> SVector(0.0, 0.0, 0.0))
+    CH.calcControlEffect!(mzero, mock_u(q_id), nothing, 0.0, 1)
+    @test mzero.held_torque_body == SVector(0.0, 0.0, 0.0)
+
+    # 8) discrete boundedness of the law itself: constant secular disturbance,
+    #    ticked at 1 Hz — with the manager the accumulated momentum plateaus at
+    #    tau/mu; with mu=0 it grows linearly (drift = the unmanaged twin).
+    #    (commanded torque = disturbance counter, i.e. wheels absorb +tau_d)
+    tau_d = SVector(2.0e-6, 0.0, 0.0)
+    # emulate the closed loop: at each tick the commanded torque the wheels
+    # absorb is the disturbance counter MINUS the rod torque counter
+    hold = SVector(0.0, 0.0, 0.0)
+    mgr2 = mk(h_wheels_0=SVector(0.0, 0.0, 0.0),
+              commanded_torque=(t, r, v, q, w) -> -tau_d - hold)
+    drift = SVector(0.0, 0.0, 0.0)
+    for k in 0:2000
+        CH.calcControlEffect!(mgr2, mock_u(q_id), nothing, Float64(k), 1)
+        hold = mgr2.held_torque_body
+        drift = drift + tau_d * 1.0          # unmanaged accumulator, same ticks
+    end
+    @test norm(mgr2.h_wheels) < 0.5 * norm(drift)
+    @test norm(mgr2.h_wheels) < 1.5 * norm(tau_d) / 0.01   # plateau ~ tau/mu
+end
+
 println("coverage_parallel_telemetry_probes_ok")

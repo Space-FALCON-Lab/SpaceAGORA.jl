@@ -228,17 +228,6 @@ set_per_link_atmosphere!(flag::Bool) = (PER_LINK_ATMOSPHERE_ENABLED[] = flag; no
     (hasfield(typeof(model), :per_link_atmosphere) && model.per_link_atmosphere) ||
     PER_LINK_ATMOSPHERE_ENABLED[]
 
-# Per-link atmosphere currently applies the link-local density/temperature
-# only; the link-local WIND sample is not used (Mach/dynamic pressure keep
-# the spacecraft-level wind-relative velocity). Warn once when that
-# combination is actually exercised so wind-enabled users are not silently
-# handed partially per-link physics.
-@inline function _warn_per_link_wind(p)::Nothing
-    if p.args.environment_model.wind
-        @warn "per-link atmosphere ignores per-link WIND: Mach and dynamic pressure use the spacecraft-level wind-relative velocity (link-local sampling applies to density/temperature only)." maxlog = 1
-    end
-    return nothing
-end
 
 # Returns (force_ii, torque_body, drag_ii, lift_ii, cross_ii) all in the inertial frame.
 #
@@ -318,9 +307,27 @@ function _aero_pure_wrench(
         if link_atmosphere_fn !== nothing && orientation_sim && !body.root && R_body_to_inertial !== nothing
             pos_ii_body = x.pos_ii + R_body_to_inertial * SVector{3, Float64}(body.r)
             pos_pp_body = planet_frame.l_pi * pos_ii_body
-            rho_link, T_link, _ = link_atmosphere_fn(pos_pp_body)
+            rho_link, T_link, wind_link = link_atmosphere_fn(pos_pp_body)
             if isfinite(rho_link) && rho_link > eps(Float64) && isfinite(T_link) && T_link > 0.0
                 rho_body, T_body = rho_link, T_link
+                # Per-link sampling applies density/temperature only; the
+                # link-local WIND sample is discarded here (Mach and dynamic
+                # pressure keep the spacecraft-level wind-relative velocity).
+                # Warn exactly when the discard changes the answer — the link
+                # wind DISAGREES with the spacecraft-level sample. A nonzero
+                # test alone misses a calm link inside a nonzero spacecraft
+                # wind (the link then wrongly inherits the spacecraft wind)
+                # and false-alarms when the two agree, where the physics is
+                # correct (Codex reviews on PRs #62/#63).
+                # The triples are local E/N/U components at each sample point,
+                # but link offsets are spacecraft-scale (body.r, meters), so
+                # the two bases differ by <= |body.r|/R_planet ~ 1e-6 rad —
+                # comparing raw components is exact to ~ppm, and a
+                # frame-resolved comparison would put a per-link geodetic
+                # conversion in the aero hot loop for a maxlog=1 diagnostic.
+                if wind_link !== nothing && !all(wind_link .== wind)
+                    @warn "per-link atmosphere discards the link-local WIND sample where it differs from the spacecraft-level wind: Mach/dynamic pressure use the spacecraft-level wind-relative velocity (per-link sampling covers density/temperature only)." maxlog = 1
+                end
             end
         end
         sound_velocity_body = sqrt(planet.γ * planet.R * T_body)
@@ -411,9 +418,7 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    per_link = _per_link_enabled(model)
-    per_link && _warn_per_link_wind(p)
-    link_atmosphere_fn = per_link ?
+    link_atmosphere_fn = _per_link_enabled(model) ?
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
@@ -428,9 +433,7 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    per_link = _per_link_enabled(model)
-    per_link && _warn_per_link_wind(p)
-    link_atmosphere_fn = per_link ?
+    link_atmosphere_fn = _per_link_enabled(model) ?
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:fm, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
@@ -445,9 +448,7 @@ end
     p::ODEParams,
     sat_idx::Int,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    per_link = _per_link_enabled(model)
-    per_link && _warn_per_link_wind(p)
-    link_atmosphere_fn = per_link ?
+    link_atmosphere_fn = _per_link_enabled(model) ?
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)

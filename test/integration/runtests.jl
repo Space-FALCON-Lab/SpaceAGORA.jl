@@ -48,6 +48,10 @@ if !isdefined(@__MODULE__, :ParallelProfiles)
     # SimulationCampaigns consumes the outer-route bandit via `..ParallelProfiles`.
     include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
 end
+if !isdefined(@__MODULE__, :ParallelProcess)
+    # SimulationCampaigns consumes the process-route outer pool via `..ParallelProcess`.
+    include(joinpath(REPO_ROOT, "src", "parallel", "process", "parallel_process.jl"))
+end
 if !isdefined(@__MODULE__, :SimulationCampaigns)
     include(joinpath(REPO_ROOT, "src", "simulation", "campaigns", "simulation_campaigns.jl"))
 end

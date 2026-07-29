@@ -237,10 +237,14 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
         @test cfg_invalid.artifacts.save_bundle === false
         @test cfg_invalid.artifacts.warn_deprecated_config === true
 
-        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_SOLVER_MAXITERS" => "not_an_int"))
-        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "not_a_float"))
-        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "not_an_int"))
-        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "vern9"))
+        # simulation_engine_config_from_env defaults to solver_strict=false (a
+        # malformed solver knob falls back to its default instead of crashing
+        # the whole config build, see the strict= doc comment in from_env.jl);
+        # solver_strict=true restores the throwing behavior these probes check.
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_SOLVER_MAXITERS" => "not_an_int"); solver_strict=true)
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "not_a_float"); solver_strict=true)
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "not_an_int"); solver_strict=true)
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "vern9"); solver_strict=true)
 
         env_valid = Dict{String, String}(
             "SPACEAGORA_SOLVER_MAXITERS" => "321",

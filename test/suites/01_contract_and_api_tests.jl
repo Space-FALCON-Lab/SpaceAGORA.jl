@@ -93,7 +93,7 @@ end
         findfirst("include(joinpath(@__DIR__, \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src)
     @test occursin("module RuntimeServices", runtime_services_src)
     @test occursin("const SPICE_LOCK = ReentrantLock()", runtime_services_src)
-    @test occursin("const GRAM_LOCK = ReentrantLock()", runtime_services_src)
+    @test occursin("const GRAM_LOCK = SPICE_LOCK", runtime_services_src)
     @test !occursin("const SPICE_LOCK", simulation_model_src)
     @test !occursin("const GRAM_LOCK", simulation_model_src)
     @test occursin("runtime_services.jl", simulation_model_src)

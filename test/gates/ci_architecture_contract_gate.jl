@@ -57,7 +57,7 @@ occursin("module RuntimeServices", runtime_services_src) ||
     error("RuntimeServices owner module is missing.")
 occursin("const SPICE_LOCK = ReentrantLock()", runtime_services_src) ||
     error("RuntimeServices is not the canonical owner of SPICE_LOCK.")
-occursin("const GRAM_LOCK = ReentrantLock()", runtime_services_src) ||
+occursin("const GRAM_LOCK = SPICE_LOCK", runtime_services_src) ||
     error("RuntimeServices is not the canonical owner of GRAM_LOCK.")
 !occursin("const SPICE_LOCK", simulation_model_src) ||
     error("SimulationModel still owns SPICE_LOCK.")

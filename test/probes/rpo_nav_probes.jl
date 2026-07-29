@@ -286,8 +286,8 @@ end
     # Shared fixtures for control / cloth-arm tests
     # ---------------------------------------------------------------
     min_config = build_min_config()
-    P1 = SM.ODEParams(n_sats=1, args=min_config)
-    P2 = SM.ODEParams(n_sats=2, args=min_config)
+    P1 = SM.ODEParams{1}(args=min_config)
+    P2 = SM.ODEParams{2}(args=min_config)
 
     arm = SM.default_cloth_arm_model()
     base_pose = SM.ClothArmBasePose(SVector{3, Float64}(0.0, 0.0, 0.0), SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))

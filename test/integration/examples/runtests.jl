@@ -1,1 +1,1 @@
-include(joinpath(@__DIR__, "..", "..", "contracts", "ci_examples_regression.jl"))
+include(joinpath(@__DIR__, "..", "..", "smoke", "ci_examples_regression.jl"))

@@ -262,7 +262,7 @@ end
         @test CB._density_model_for_sat(models, fallback_probe, 2) === gram_b
         @test CB._density_model_for_sat(models, fallback_probe, 3) === fallback_probe
 
-        p = ODEParams(n_sats=2, args=cfg_gram)
+        p = ODEParams{2}(args=cfg_gram)
         @test CB._density_model_for_sat(p, 1) === cfg_gram.environment_model.density_model
         push!(p.shared_buffers.density_models, gram_a, gram_b)
         @test CB._density_model_for_sat(p, 2) === gram_b
@@ -278,7 +278,7 @@ end
         uniform = EM.GRAMAtmosphereModel[gram_a, gram_a]
         @test CB._density_batch_model_for_callback(uniform, fallback_probe, 2) === gram_a
 
-        p_uniform = ODEParams(n_sats=2, args=cfg_gram)
+        p_uniform = ODEParams{2}(args=cfg_gram)
         push!(p_uniform.shared_buffers.density_models, gram_a, gram_a)
         @test CB._density_batch_model_for_callback(p_uniform, 2) === gram_a
 
@@ -314,7 +314,7 @@ end
             @test CB._gram_isolated_pool_batch_model_for_callback(env, empty_models, fallback_probe, 2) === nothing
             @test CB._gram_isolated_pool_batch_model_for_callback(env, SimulationModel.AbstractDensityModel[gram_a], gram_fallback, 2) === nothing
 
-            p = ODEParams(n_sats=2, args=cfg_gram)
+            p = ODEParams{2}(args=cfg_gram)
             @test CB._gram_isolated_pool_batch_model_for_callback(p, 2) === cfg_gram.environment_model.density_model
         end
 
@@ -352,7 +352,7 @@ end
     end
 
     @testset "model_selection: isolated pool lifecycle" begin
-        p = ODEParams(n_sats=2, args=cfg_gram)
+        p = ODEParams{2}(args=cfg_gram)
         template = make_fake_gram(rho=3.0e-9, T=222.0)
 
         models0, locks0 = CB._ensure_gram_isolated_pool!(p, template, 0)
@@ -374,7 +374,7 @@ end
     end
 
     @testset "model_selection: isolated pool density state" begin
-        p_kep = ODEParams(n_sats=1, args=cfg_gram)
+        p_kep = ODEParams{1}(args=cfg_gram)
         model = make_fake_gram(rho=4.0e-9, T=233.0)
         lk = ReentrantLock()
 
@@ -395,7 +395,7 @@ end
         @test rho == 4.0e-9
 
         # Non-keplerian run above EI uses the analytic polyfit shortcut.
-        p_nk = ODEParams(n_sats=1, args=cfg_nonkeplerian)
+        p_nk = ODEParams{1}(args=cfg_nonkeplerian)
         rho_nk, T_nk, _ = CB._gram_isolated_pool_density_state(model, 500.0e3, 0.0, 0.0, 0.0, true, p_nk, lk)
         rho_ref, T_ref_poly, _ = EM.density_polyfit(500.0e3, p_nk)
         @test rho_nk == rho_ref
@@ -404,7 +404,7 @@ end
     end
 
     @testset "model_selection: isolated pool batch eval" begin
-        p = ODEParams(n_sats=1, args=cfg_gram)
+        p = ODEParams{1}(args=cfg_gram)
         model = make_fake_gram(rho=6.0e-9, T=240.0)
         n = 4
         hs = [2.5e6, 2.6e6, 80.0e3, 90.0e3]
@@ -566,7 +566,7 @@ end
     end
 
     @testset "vacuum_predicted_gram: cache build and query" begin
-        p = ODEParams(n_sats=1, args=cfg_nongram)
+        p = ODEParams{1}(args=cfg_nongram)
         model = fallback_probe
         pos, vel = circular_state(300e3)
         t = 0.0
@@ -752,20 +752,20 @@ end
     end
 
     @testset "targeting: entry ballistic model" begin
-        p = ODEParams(n_sats=1, args=cfg_gram)
+        p = ODEParams{1}(args=cfg_gram)
 
         # Reference area: sum of positive link areas.
         @test CB._gram_entry_reference_area_m2(p, 1) == 18.0
         # All-zero link areas: final floor of 1 m².
         sc_zero = make_probe_spacecraft(root_area=0.0, panel_area=0.0)
-        p_zero = ODEParams(n_sats=1, args=probe_config(density_model=make_fake_gram(), spacecraft=[sc_zero]))
+        p_zero = ODEParams{1}(args=probe_config(density_model=make_fake_gram(), spacecraft=[sc_zero]))
         @test CB._gram_entry_reference_area_m2(p_zero, 1) == 1.0
         # Links empty of area but positive root area: root fallback.
         root_pos = Link{0}(root=true, m=500.0, ref_area=7.5)
         panel_zero = Link{0}(root=false, m=30.0, ref_area=0.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
         sc_root = SpacecraftModel(Joint[], [panel_zero], root_pos, true, 530.0, 0.0, root_pos.inertia, 0, 0,
                                   InitialCondition(ra=EARTH.Rp_e + 500e3, rp=EARTH.Rp_e + 450e3, i=35.0, ω=40.0, Ω=10.0, ν=175.0), 1)
-        p_root = ODEParams(n_sats=1, args=probe_config(density_model=make_fake_gram(), spacecraft=[sc_root]))
+        p_root = ODEParams{1}(args=probe_config(density_model=make_fake_gram(), spacecraft=[sc_root]))
         @test CB._gram_entry_reference_area_m2(p_root, 1) == 7.5
         # Out-of-range satellite index: guarded fallback.
         @test CB._gram_entry_reference_area_m2(p, 99) == 1.0
@@ -854,7 +854,7 @@ end
 
     @testset "refresh: track cache segments" begin
         model = fallback_probe
-        p_time = ODEParams(n_sats=1, args=cfg_nongram)
+        p_time = ODEParams{1}(args=cfg_nongram)
         horizon = 60.0
         n_points = 8
 
@@ -921,7 +921,7 @@ end
 
         # 7. Orbit mission out of the band: one full orbital period.
         cfg_orbit = probe_config(density_model=fallback_probe, mission_type=MissionOrbits)
-        p_orbit = ODEParams(n_sats=1, args=cfg_orbit)
+        p_orbit = ODEParams{1}(args=cfg_orbit)
         cache7, _ = run_refresh(p_orbit, pos_c, vel_c, 500e3, 0.0)
         @test cache7.valid == true
         @test isapprox(cache7.t1, period_c; rtol=0.05)
@@ -944,7 +944,7 @@ end
     @testset "refresh: isolated-pool batch path" begin
         if Threads.nthreads() > 1
             model = make_fake_gram(rho=7.0e-9, T=250.0)
-            p = ODEParams(n_sats=1, args=cfg_gram)
+            p = ODEParams{1}(args=cfg_gram)
             pos_e, vel_e = elliptical_apoapsis_state(60e3, 300e3)
             withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
                     "SPACEAGORA_GRAM_TRACK_CACHE_MAX_NPOS" => "16") do
@@ -978,7 +978,7 @@ end
         @test CB._gram_track_trajectory_supported(fallback_probe) == false
         @test CB._gram_track_trajectory_supported(make_fake_gram()) == false  # no :gram property
 
-        p = ODEParams(n_sats=1, args=probe_config(density_model=surrogate))
+        p = ODEParams{1}(args=probe_config(density_model=surrogate))
         pos_c, vel_c = circular_state(500e3)
         withenv("SPACEAGORA_GRAM_TRACK_CACHE_MAX_NPOS" => "12",
                 "SPACEAGORA_GRAM_ISOLATED_POOL" => "off") do
@@ -1011,7 +1011,7 @@ end
 
     @testset "refresh: failure fallback" begin
         model = BatchThrowDensityModel()
-        p = ODEParams(n_sats=1, args=probe_config(density_model=model))
+        p = ODEParams{1}(args=probe_config(density_model=model))
         pos_c, vel_c = circular_state(500e3)
 
         withenv("SPACEAGORA_GRAM_TRACK_CACHE_MAX_NPOS" => "16",

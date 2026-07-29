@@ -250,7 +250,7 @@ end
             maneuver_Δv=[5.0, -3.0, 0.0]
         )
         args = make_probe_config(n_sc=2, guidance_effecters=(campaign,), guidance_rates=[1.0])
-        p = ODEParams(n_sats=2, args=args)
+        p = ODEParams{2}(args=args)
         u = build_initial_conditions(args)
 
         # Out-of-range spacecraft indices are ignored.
@@ -307,7 +307,7 @@ end
             target_apoapsis_radius_m=EARTH.Rp_e + 600e3,
             target_periapsis_altitude_m=200e3
         )
-        p = ODEParams(n_sats=1, args=args)
+        p = ODEParams{1}(args=args)
         u = build_initial_conditions(args)
         ν_burn = deg2rad(160.0)
         pos, vel = equatorial_state(ra_m, rp_m, ν_burn)
@@ -360,7 +360,7 @@ end
 
         # ---- Degenerate state: osculating-element extraction fails, no command ----
         model_bad = ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=EARTH.Rp_e + 600e3)
-        p_bad = ODEParams(n_sats=1, args=args)
+        p_bad = ODEParams{1}(args=args)
         u_bad = build_initial_conditions(args)
         set_state!(u_bad, 1, pos, SVector(0.0, 0.0, 0.0))
         calcGuidanceEffect!(model_bad, u_bad, p_bad, 0.0, 1)
@@ -369,7 +369,7 @@ end
 
         # ---- Non-finite target apoapsis radius: rejected before windowing ----
         model_naninf = ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=Inf)
-        p_naninf = ODEParams(n_sats=1, args=args)
+        p_naninf = ODEParams{1}(args=args)
         u_naninf = build_initial_conditions(args)
         set_state!(u_naninf, 1, pos, vel)
         calcGuidanceEffect!(model_naninf, u_naninf, p_naninf, 0.0, 1)
@@ -381,7 +381,7 @@ end
             target_apoapsis_radius_m=EARTH.Rp_e + 300e3,
             apoapsis_tolerance_m=0.0
         )
-        p_high = ODEParams(n_sats=1, args=args)
+        p_high = ODEParams{1}(args=args)
         u_high = build_initial_conditions(args)
         set_state!(u_high, 1, pos, vel)
         calcGuidanceEffect!(model_high, u_high, p_high, 0.0, 1)
@@ -394,7 +394,7 @@ end
             apoapsis_tolerance_m=250e3,
             target_periapsis_altitude_m=200e3
         )
-        p_tol = ODEParams(n_sats=1, args=args)
+        p_tol = ODEParams{1}(args=args)
         u_tol = build_initial_conditions(args)
         set_state!(u_tol, 1, pos, vel)
         calcGuidanceEffect!(model_tol, u_tol, p_tol, 0.0, 1)
@@ -403,7 +403,7 @@ end
 
         # ---- Pre-apoapsis but outside the anomaly window: no command ----
         model_early = ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=EARTH.Rp_e + 600e3)
-        p_early = ODEParams(n_sats=1, args=args)
+        p_early = ODEParams{1}(args=args)
         u_early = build_initial_conditions(args)
         pos_e, vel_e = equatorial_state(ra_m, rp_m, deg2rad(90.0))
         set_state!(u_early, 1, pos_e, vel_e)
@@ -413,7 +413,7 @@ end
 
         # ---- Post-apoapsis: no command even close to apoapsis ----
         model_late = ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=EARTH.Rp_e + 600e3)
-        p_late = ODEParams(n_sats=1, args=args)
+        p_late = ODEParams{1}(args=args)
         u_late = build_initial_conditions(args)
         pos_l, vel_l = equatorial_state(ra_m, rp_m, deg2rad(185.0))
         set_state!(u_late, 1, pos_l, vel_l)
@@ -426,7 +426,7 @@ end
             target_apoapsis_radius_m=EARTH.Rp_e + 600e3,
             target_periapsis_altitude_m=5_000e3
         )
-        p_inf = ODEParams(n_sats=1, args=args)
+        p_inf = ODEParams{1}(args=args)
         u_inf = build_initial_conditions(args)
         set_state!(u_inf, 1, pos, vel)
         calcGuidanceEffect!(model_infeasible, u_inf, p_inf, 0.0, 1)
@@ -438,7 +438,7 @@ end
             target_apoapsis_radius_m=EARTH.Rp_e + 600e3,
             target_periapsis_altitude_m=0.0
         )
-        p_low = ODEParams(n_sats=1, args=args)
+        p_low = ODEParams{1}(args=args)
         u_low = build_initial_conditions(args)
         set_state!(u_low, 1, pos, vel)
         p_low.shared_buffers.maneuver_commands[1] = CT.PropulsiveManeuverCommand(valid=true, delta_v_mps=1.0)

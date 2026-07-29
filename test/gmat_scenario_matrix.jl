@@ -539,59 +539,9 @@ function _build_cygnss_48hr_reference(outdir::String, stem::String)
     vy_ic = vy_kmps[1] * v_scale
     vz_ic = vz_kmps[1] * v_scale
 
-    # The raw single-sample IC (x_km[1], v_km[1]) carries real telemetry noise: the
-    # vis-viva semi-major axis (an exact constant of unperturbed 2-body motion) jitters
-    # by ~O(100 m) sample-to-sample in this file, and the first sample alone differs from
-    # a short-window local average by several hundred meters -- enough, via mean-motion
-    # sensitivity (da/dv ~ 1800 for this orbit), to explain the multi-km/day along-track
-    # drift confirmed by an RTN error decomposition against this reference (radial/normal
-    # error stay small and bounded; along-track/transverse error grows ~linearly to >10km).
-    #
-    # Fix attempt #1 (rejected): fit a local quadratic to position(t) and use its analytic
-    # derivative as velocity. This is WORSE than the raw sample -- the fitted velocity
-    # implies an SMA 1.6 km off (vs. only ~0.5 km off for the raw sample), because a
-    # quadratic (constant-acceleration) model over a 30 s window has enough truncation
-    # error against the true (non-quadratic) trajectory to swamp any noise it removes;
-    # the resulting IC alone drove the 48hr propagation ~150 km off, confirming just how
-    # sensitive this orbit's along-track behavior is to velocity-magnitude/SMA error.
-    #
-    # Fix actually used: keep the raw sample's position AND velocity DIRECTION unchanged
-    # (the RTN decomposition already showed direction/plane are fine), and correct only
-    # the velocity MAGNITUDE so vis-viva SMA matches a short-window average of per-sample
-    # SMAs computed directly from telemetry's own reported (r, v) pairs (no differentiation
-    # or curve-fitting involved, so no truncation-error bias -- just noise averaging).
-    #
-    # Window size N was swept directly against the 48hr position RMSE rather than assumed
-    # (N=1 is the unmodified baseline):
-    #   N= 1 (raw): 6.21 km   N= 4: 1.36 km   N= 8: 1.22 km
-    #   N= 3:       3.32 km   N= 5: 1.58 km   N=12: 3.70 km
-    #                         N= 6: 1.27 km   N=20: 5.93 km
-    # N=4..8 forms a consistent, non-fragile plateau at ~1.2-1.6 km (a ~4-5x improvement,
-    # even beating the ~1.94 km previously achieved via a since-removed frame-composition
-    # fix -- see CYGNSS_STATE_REVERSION_NOTES.md); N=1..3 under-corrects and N>=12
-    # over-corrects into real short-period/secular dynamics rather than pure noise. The
-    # landscape is not smooth/monotonic in N (consistent with the underlying noise not
-    # being simple white noise -- plausibly telemetry Kalman/GPS-filter update structure),
-    # so N=5 was kept as a small, round, mid-plateau value rather than chasing the single
-    # best-scoring N=8, which risks being overfit to this one 48hr trajectory.
-    _n_sma_avg = min(5, length(x_km))
-    _a_samples = [
-        1.0 / (2.0 / sqrt(x_km[k]^2 + y_km[k]^2 + z_km[k]^2) - (vx_kmps[k]^2 + vy_kmps[k]^2 + vz_kmps[k]^2) / (planet.μ * 1.0e-9))
-        for k in 1:_n_sma_avg
-    ]
-    _a_target_km = mean(_a_samples)
-    _r0_km = sqrt(x_km[1]^2 + y_km[1]^2 + z_km[1]^2)
-    _v0_kmps = sqrt(vx_kmps[1]^2 + vy_kmps[1]^2 + vz_kmps[1]^2)
-    _v_target_kmps = sqrt((planet.μ * 1.0e-9) * (2.0 / _r0_km - 1.0 / _a_target_km))
-    _v_scale = _v_target_kmps / _v0_kmps
-
-    x_ic_km, y_ic_km, z_ic_km = x_km[1], y_km[1], z_km[1]
-    vx_ic_kmps, vy_ic_kmps, vz_ic_kmps = vx_kmps[1] * _v_scale, vy_kmps[1] * _v_scale, vz_kmps[1] * _v_scale
-
-    # Derive the corresponding orbital elements from that same (SMA-corrected) state.
     oe0 = TV.rvtoorbitalelement(
-        SVector{3, Float64}(x_ic_km, y_ic_km, z_ic_km) .* 1.0e3,
-        SVector{3, Float64}(vx_ic_kmps, vy_ic_kmps, vz_ic_kmps) .* 1.0e3,
+        SVector{3, Float64}(x_km[1], y_km[1], z_km[1]) .* 1.0e3,
+        SVector{3, Float64}(vx_ic, vy_ic, vz_ic) .* 1.0e3,
         planet
     )
     sma_km = oe0[1] * 1.0e-3
@@ -613,12 +563,12 @@ function _build_cygnss_48hr_reference(outdir::String, stem::String)
         aop_deg=fill(aop_deg, length(t_rel)),
         raan_deg=fill(raan_deg, length(t_rel)),
         ta_deg=fill(ta_deg, length(t_rel)),
-        x_ic_km=fill(x_ic_km, length(t_rel)),
-        y_ic_km=fill(y_ic_km, length(t_rel)),
-        z_ic_km=fill(z_ic_km, length(t_rel)),
-        vx_ic_kmps=fill(vx_ic_kmps, length(t_rel)),
-        vy_ic_kmps=fill(vy_ic_kmps, length(t_rel)),
-        vz_ic_kmps=fill(vz_ic_kmps, length(t_rel))
+        x_ic_km=fill(x_km[1], length(t_rel)),
+        y_ic_km=fill(y_km[1], length(t_rel)),
+        z_ic_km=fill(z_km[1], length(t_rel)),
+        vx_ic_kmps=fill(vx_ic, length(t_rel)),
+        vy_ic_kmps=fill(vy_ic, length(t_rel)),
+        vz_ic_kmps=fill(vz_ic, length(t_rel))
     )
 
     telemetry_path = joinpath(outdir, "$(stem)_time_aligned.arrow")
@@ -628,12 +578,12 @@ function _build_cygnss_48hr_reference(outdir::String, stem::String)
         telemetry_path=telemetry_path,
         t0_s=t_rel[1],
         tf_s=t_rel[end],
-        x_ic_km=x_ic_km,
-        y_ic_km=y_ic_km,
-        z_ic_km=z_ic_km,
-        vx_ic_kmps=vx_ic_kmps,
-        vy_ic_kmps=vy_ic_kmps,
-        vz_ic_kmps=vz_ic_kmps,
+        x_ic_km=x_km[1],
+        y_ic_km=y_km[1],
+        z_ic_km=z_km[1],
+        vx_ic_kmps=vx_ic,
+        vy_ic_kmps=vy_ic,
+        vz_ic_kmps=vz_ic,
         sma_km=sma_km,
         ecc=ecc,
         inc_deg=inc_deg,
@@ -746,15 +696,6 @@ function _build_cygnss_cyg04_96hr_inertial_reference(outdir::String, stem::Strin
     # Doppler velocity in the CYG04 file.  A ~0.6 m/s along-track error in the
     # CYG04 raw velocity shifts the SMA by ~1 km, producing ~120 km along-track
     # drift at 48 hours even though the reference positions agree to < 2 m.
-    #
-    # NOTE: the matching single-sample-noise fix applied to _build_cygnss_48hr_reference
-    # above (average vis-viva SMA over a short window, rescale velocity magnitude to
-    # match) was ALSO tried here and made this scenario noticeably worse (RMSE 3.70km ->
-    # 15.44km against the CYG04 96hr reference), even though it substantially improved
-    # the 48hr_pvt scenario against ITS OWN reference. The two scenarios compare against
-    # different, independently-sourced reference trajectories with evidently different
-    # noise/bias characteristics, so a correction tuned against one is not safe to reuse
-    # against the other -- reverted here; kept only where it was actually validated.
     df48 = DataFrame(Arrow.Table(_CYGNSS_48HR_TELEMETRY_FEATHER))
     sort!(df48, _required_column(df48, ["TIME OFFSET", "time"]))
     x_ic_km   = Float64(df48[!, _required_column(df48, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_X (m)", "pos_ii_1"])][1]) * 1.0e-3

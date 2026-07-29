@@ -114,7 +114,7 @@ function _edg_test_context(;
             second=_ODYSSEY_EPOCH.second,
         ),
     )
-    p = _EDG_SM.ODEParams(n_sats=1, args=args)
+    p = _EDG_SM.ODEParams{1}(args=args)
     p.shared_buffers.et_start[] = _EDG_SM.ephemerides_time_seconds(args.initial_time, args.environment_model.ephemerides_model)
     u = ComponentVector(sc=[(pos=collect(pos), vel=collect(vel), mass=461.0, heat_loads=zeros(3))])
     return (; config, state, guidance, control, args, p, u, spacecraft)

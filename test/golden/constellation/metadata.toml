@@ -1,5 +1,0 @@
-julia_version = "1.12.1"
-git_sha = "bc85e8ba4176cdca963a95839c7fa0719276b5e1"
-tier = "pr"
-description = "Three-satellite constellation (distinct orbital planes/phasing), keplerian + J2 gravity only, no atmosphere, 1h mission. Proves the golden harness generalizes to multi-spacecraft configs (build_config_multi)."
-generated_at = "2026-07-20T21:10:04.045"

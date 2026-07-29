@@ -398,10 +398,14 @@ end
         @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
     end
     # Pin the auto-mode budget floor (default 16 exceeds CI thread counts).
+    # thread_safe_args uses NoAtmosphereModel, which routes through the
+    # lock-free density-callback source (see the source= selection in
+    # _density_callback_thread_decision), not the GRAM-locked one -- so the
+    # lock-free-specific knob is what actually gates this decision.
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "3",
-        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2"
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
         @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
     end
@@ -416,7 +420,7 @@ end
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
-        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2",
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do

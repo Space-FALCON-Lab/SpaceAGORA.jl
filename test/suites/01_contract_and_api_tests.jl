@@ -262,7 +262,7 @@ end
 end
 
 @testset "SharedBuffers Type Contract" begin
-    shared_buffers_type = SimulationModel.ConfigTypes.SharedBuffers{2}
+    shared_buffers_type = SimulationModel.ConfigTypes.SharedBuffers
 
     @test fieldtype(shared_buffers_type, :density_models) ==
         Vector{Union{SimulationModel.GRAMAtmosphereModel, SimulationModel.GRAMAtmosphereModelSurrogate}}

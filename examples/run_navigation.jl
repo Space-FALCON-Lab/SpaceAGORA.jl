@@ -1,6 +1,6 @@
 const EDITOR_RUN_CONFIG = (
     mode="single",
-    case="independent_local_da",
+    case="proposed",
     output="",
     mission_time=600,
     targets=300,

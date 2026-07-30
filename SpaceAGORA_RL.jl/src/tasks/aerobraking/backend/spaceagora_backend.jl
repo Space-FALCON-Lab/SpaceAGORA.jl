@@ -77,6 +77,7 @@ struct AerobrakingScenarioConfig
     heat_nominal_w_cm2::Float64
     backend_mode::Symbol
     spaceagora_atmosphere_model::Symbol
+    spaceagora_gram_once_per_step::Bool
     spaceagora_tabulated_flight_file::String
     spaceagora_tabulated_flight_sigma::Float64
     spaceagora_gravity_harmonics_degree::Int
@@ -95,6 +96,7 @@ function default_aerobraking_config(; phase::AbstractString="Main",
                                     backend_mode::Symbol=:paper_surrogate,
                                     training::Bool=true,
                                     spaceagora_atmosphere_model::Symbol=:gram,
+                                    spaceagora_gram_once_per_step::Bool=false,
                                     spaceagora_tabulated_flight_file::AbstractString="data/telemetry/Odyssey/odyssey_accelerometer_density.feather",
                                     spaceagora_tabulated_flight_sigma::Real=0.0,
                                     spaceagora_gravity_harmonics_degree::Int=50,
@@ -134,6 +136,7 @@ function default_aerobraking_config(; phase::AbstractString="Main",
         0.15,
         backend_mode,
         spaceagora_atmosphere_model,
+        spaceagora_gram_once_per_step,
         String(spaceagora_tabulated_flight_file),
         Float64(spaceagora_tabulated_flight_sigma),
         spaceagora_gravity_harmonics_degree,
@@ -489,8 +492,8 @@ function _spaceagora_physics_next_state_from_u(spaceagora,
         apoapsis_radius_m = apoapsis_radius,
         periapsis_altitude_m = periapsis_altitude,
         inclination_rad = Float64(_spaceagora_orbital_element(oe, 3)),
-        raan_rad = Float64(_spaceagora_orbital_element(oe, 5)),
-        argument_of_periapsis_rad = Float64(_spaceagora_orbital_element(oe, 4)),
+        raan_rad = Float64(_spaceagora_orbital_element(oe, 4)),
+        argument_of_periapsis_rad = Float64(_spaceagora_orbital_element(oe, 5)),
         epoch = next_epoch,
         mission_elapsed_s = state.mission_elapsed_s + elapsed_s,
         total_delta_v_mps = state.total_delta_v_mps + action.magnitude_mps,

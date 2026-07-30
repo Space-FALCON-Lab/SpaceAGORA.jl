@@ -1,6 +1,7 @@
 module SpaceAGORA_RL
 
 using Dates
+using Distributed
 using LinearAlgebra
 using Printf
 using Random

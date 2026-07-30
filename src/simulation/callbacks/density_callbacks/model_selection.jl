@@ -17,6 +17,9 @@ end
     )
 end
 
+@inline _is_native_gram_model(model)::Bool =
+    model isa EnvironmentModels.GRAMAtmosphereModel
+
 @inline function _density_batch_model_for_callback(
     density_models::AbstractVector{<:AbstractDensityModel},
     fallback_model::AbstractDensityModel,

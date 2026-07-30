@@ -72,6 +72,15 @@ end
     target_include_j2 = cb_env.gram_track_cache_target_use_j2 &&
         callbacks._uses_j2_gravity_effector(p.args.dynamics_model.dynamic_effectors)
     density_model = callbacks._density_model_for_sat(p, sat_idx)
+    if cb_env.gram_once_per_step &&
+       callbacks._is_native_gram_model(density_model) &&
+       sat_idx <= length(p.shared_buffers.density_sample_t) &&
+       isfinite(p.shared_buffers.density_sample_t[sat_idx])
+        rho = p.shared_buffers.densities[sat_idx]
+        T = p.shared_buffers.temperatures[sat_idx]
+        wind_vec = p.shared_buffers.winds[sat_idx]
+        return AtmosphereSample(rho, T, wind_vec)
+    end
     caches = p.shared_buffers.gram_density_cache
     pos_ii, vel_ii = _extract_sample_pos_vel(x)
     current_mass_kg = _extract_sample_mass_kg(x)

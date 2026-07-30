@@ -257,6 +257,15 @@ end
     cfg_nonkeplerian = probe_config(density_model=make_fake_gram(), keplerian=false)
 
     @testset "model_selection: per-sat and batch model resolution" begin
+        @test CB._is_native_gram_model(gram_a)
+        @test !CB._is_native_gram_model(fallback_probe)
+        withenv("SPACEAGORA_GRAM_ONCE_PER_STEP" => "1") do
+            @test CB._snapshot_callback_env_config().gram_once_per_step
+        end
+        withenv("SPACEAGORA_GRAM_ONCE_PER_STEP" => "0") do
+            @test !CB._snapshot_callback_env_config().gram_once_per_step
+        end
+
         models = EM.GRAMAtmosphereModel[gram_a, gram_b]
         @test CB._density_model_for_sat(models, fallback_probe, 1) === gram_a
         @test CB._density_model_for_sat(models, fallback_probe, 2) === gram_b

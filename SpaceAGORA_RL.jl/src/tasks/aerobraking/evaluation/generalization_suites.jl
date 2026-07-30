@@ -118,6 +118,7 @@ function paper_evaluation_scenario(
         backend_mode=config.backend_mode,
         training=false,
         spaceagora_atmosphere_model=config.spaceagora_atmosphere_model,
+        spaceagora_gram_once_per_step=config.spaceagora_gram_once_per_step,
         spaceagora_tabulated_flight_file=config.spaceagora_tabulated_flight_file,
         spaceagora_tabulated_flight_sigma=config.spaceagora_tabulated_flight_sigma,
         spaceagora_gravity_harmonics_degree=config.spaceagora_gravity_harmonics_degree,

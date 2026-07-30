@@ -178,6 +178,58 @@ end
     @test SpaceAGORA_RL._max_heat_rate_w_cm2([NaN, -1.0, 0.25]) == 0.25
 end
 
+@testset "SpaceAGORA propagated orbital-element ordering" begin
+    semimajor_axis_m = 4.0e6
+    eccentricity = 0.1
+    inclination_rad = 0.3
+    raan_rad = 1.2
+    argument_of_periapsis_rad = 2.4
+    true_anomaly_rad = 0.5
+    orbital_elements = [
+        semimajor_axis_m,
+        eccentricity,
+        inclination_rad,
+        raan_rad,
+        argument_of_periapsis_rad,
+        true_anomaly_rad,
+    ]
+    fake_spaceagora = (
+        SimulationEngine = (
+            _state_position_ii = (state, spacecraft_index) -> :position,
+            _state_velocity_ii = (state, spacecraft_index) -> :velocity,
+        ),
+        SimulationModel = (
+            ControlHooks = (
+                rvtoorbitalelement = (position, velocity, planet) -> orbital_elements,
+            ),
+        ),
+    )
+    planet = (Rp_e = 3.4e6,)
+    args = (environment_model = (planet = planet,),)
+    config = default_aerobraking_config()
+    state = reset_scenario(config, MersenneTwister(12))
+    stats = SpaceAGORA_RL.SpaceAGORAPhysicsPassStats(
+        max_density_kg_m3 = 1.0e-8,
+        max_heat_rate_w_cm2 = 0.1,
+    )
+
+    next_state = SpaceAGORA_RL._spaceagora_physics_next_state_from_u(
+        fake_spaceagora,
+        config,
+        state,
+        action_from_index(zero_action_index()),
+        args,
+        stats,
+        nothing,
+        100.0,
+        state.periapsis_altitude_m,
+    )
+
+    @test next_state.inclination_rad == inclination_rad
+    @test next_state.raan_rad == raan_rad
+    @test next_state.argument_of_periapsis_rad == argument_of_periapsis_rad
+end
+
 @testset "protected initialization accounting and exclusion" begin
     config = default_aerobraking_config(phase="Main", training=false, max_passes=3)
     rng = MersenneTwister(27)
@@ -406,6 +458,24 @@ end
     @test physics.training.protected_first_pass
     @test physics.training.protected_initial_corridor_maneuver
     @test physics.training.protected_first_pass_suppress_thermal_terminal
+    @test physics.training.worker_backend == :threads
+    @test !physics.scenario.spaceagora_gram_once_per_step
+    native_gram = resolve_config(
+        joinpath(dirname(default_config_path()), "pr_drl_spaceagora_physics_marsgram.toml"),
+    )
+    @test native_gram.scenario.spaceagora_atmosphere_model == :marsgram
+    @test native_gram.scenario.spaceagora_gram_once_per_step
+    @test native_gram.training.worker_backend == :processes
+    @test native_gram.scenario.randomization_config.marsgram_perturbation_scale == 1.0
+    invalid = deepcopy(load_config(default_config_path()))
+    invalid["training"]["worker_backend"] = "tasks"
+    @test_throws ArgumentError resolve_config(invalid)
+    invalid = deepcopy(load_config(default_config_path()))
+    invalid["spaceagora_physics"] = Dict(
+        "atmosphere_model" => "tabulated_flight",
+        "gram_once_per_step" => true,
+    )
+    @test_throws ArgumentError resolve_config(invalid)
     @test_throws ArgumentError SpaceAGORA_RL.propagate_pass(
         SpaceAGORA_RL.SpaceAGORACoreAdapter(:unsupported_backend),
         config,
@@ -553,6 +623,27 @@ end
             haskey(ENV, "SPACEAGORA_OUTER_PARALLEL_ACTIVE")
         end
         @test !observed
+    end
+
+    gram_config = default_aerobraking_config(
+        backend_mode=:spaceagora_physics,
+        spaceagora_atmosphere_model=:marsgram,
+        spaceagora_gram_once_per_step=true,
+    )
+    withenv("SPACEAGORA_GRAM_ONCE_PER_STEP" => nothing,
+            "SPACEAGORA_INNER_THREAD_BUDGET" => nothing) do
+        observed = SpaceAGORA_RL._with_spaceagora_physics_outer_parallelism(
+            2,
+            gram_config,
+            :processes,
+        ) do
+            (
+                once_per_step=ENV["SPACEAGORA_GRAM_ONCE_PER_STEP"],
+                inner=ENV["SPACEAGORA_INNER_THREAD_BUDGET"],
+            )
+        end
+        @test observed == (once_per_step="1", inner="1")
+        @test !haskey(ENV, "SPACEAGORA_GRAM_ONCE_PER_STEP")
     end
 end
 

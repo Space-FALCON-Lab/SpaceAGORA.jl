@@ -1,4 +1,6 @@
-const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
+if !isdefined(@__MODULE__, :REPO_ROOT)
+    const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
+end
 
 using SpaceAGORA
 

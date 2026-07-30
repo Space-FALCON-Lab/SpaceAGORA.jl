@@ -31,9 +31,8 @@ function _sha256_hex(path::String)::String
     end
 end
 
-function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version; solver_mode::Union{Nothing, String}=nothing)
-    paths = IOConfig._checkpoint_paths(args)
-    payload = (
+function _checkpoint_payload(t::Float64, u_state, checkpoint_schema_version; solver_mode::Union{Nothing, String}=nothing, runtime_state=nothing)
+    base = (
         schema_version=checkpoint_schema_version,
         created_utc=string(now(UTC)),
         t=t,
@@ -56,7 +55,7 @@ function _write_checkpoint_payload!(args, payload)
         "schema_version" => schema_version,
         "created_utc" => haskey(payload, :created_utc) ? string(payload[:created_utc]) : string(now(UTC)),
         "time_s" => t,
-        "solver_mode" => solver_mode,
+        "solver_mode" => haskey(payload, :solver_mode) && payload[:solver_mode] !== nothing ? string(payload[:solver_mode]) : "",
         "data_path" => paths.data,
         "data_size_bytes" => filesize(paths.data),
         "data_sha256" => _sha256_hex(paths.data)
@@ -67,8 +66,14 @@ function _write_checkpoint_payload!(args, payload)
     return nothing
 end
 
-function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version; runtime_state=nothing)
-    payload = _checkpoint_payload(t, u_state, checkpoint_schema_version; runtime_state=runtime_state)
+function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version; solver_mode::Union{Nothing, String}=nothing, runtime_state=nothing)
+    payload = _checkpoint_payload(
+        t,
+        u_state,
+        checkpoint_schema_version;
+        solver_mode=solver_mode,
+        runtime_state=runtime_state
+    )
     return _write_checkpoint_payload!(args, payload)
 end
 
@@ -88,6 +93,7 @@ function _load_checkpoint(args)
         t=Float64(payload[:t]),
         u=payload[:u],
         solver_mode=solver_mode === nothing ? nothing : String(solver_mode),
+        runtime_state=haskey(payload, :runtime_state) ? payload[:runtime_state] : nothing,
         data_path=paths.data,
         manifest_path=paths.manifest
     )

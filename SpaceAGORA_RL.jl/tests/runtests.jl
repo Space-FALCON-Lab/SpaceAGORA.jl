@@ -339,8 +339,19 @@ end
     @test epsilon_value(schedule, 15_000) == 0.0
     @test epsilon_value(schedule, 1_100_000) == 0.0
 
+    config_directory = dirname(default_config_path())
+    for filename in (
+        "pr_drl_spaceagora_physics.toml",
+        "pr_drl_spaceagora_physics_marsgram.toml",
+    )
+        live_physics = resolve_config(joinpath(config_directory, filename))
+        @test live_physics.epsilon.stop == 0.0
+        @test epsilon_value(live_physics.epsilon, 15_000) == 0.0
+        @test epsilon_value(live_physics.epsilon, 1_100_000) == 0.0
+    end
+
     marsgram = resolve_config(
-        joinpath(dirname(default_config_path()), "pr_drl_spaceagora_marsgram.toml"),
+        joinpath(config_directory, "pr_drl_spaceagora_marsgram.toml"),
     )
     @test marsgram.epsilon.stop == 0.0
     @test marsgram.training.validate_checkpoints

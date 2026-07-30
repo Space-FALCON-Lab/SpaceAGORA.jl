@@ -274,6 +274,13 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
         progress_frequency,
     )
     @printf("output_dir=%s\n", session.output_dir)
+    @printf(
+        "epsilon start=%.4f stop=%.4f decay_steps=%d decay_start_step=%d\n",
+        session.learner.schedule.start,
+        session.learner.schedule.stop,
+        session.learner.schedule.decay_steps,
+        session.learner.schedule.decay_start_step,
+    )
     flush(stdout)
 
     event_channel = Channel{Any}(max(32, 2 * active_workers))
@@ -499,6 +506,13 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
         progress_frequency,
     )
     @printf("output_dir=%s\n", session.output_dir)
+    @printf(
+        "epsilon start=%.4f stop=%.4f decay_steps=%d decay_start_step=%d\n",
+        session.learner.schedule.start,
+        session.learner.schedule.stop,
+        session.learner.schedule.decay_steps,
+        session.learner.schedule.decay_start_step,
+    )
     flush(stdout)
 
     episode = 1

@@ -86,6 +86,7 @@ export NoManeuverPolicy, RandomActionPolicy, FixedCorridorPolicy, AADSHeuristicP
 
 export evaluate_policy, evaluate_baselines, episode_metrics, aggregate_metrics
 export ProtectedInitializationConfig, PAPER_IID_EVALUATION_EPISODES
+export protected_initialization_config
 export PAPER_GENERALIZATION_EVALUATION_EPISODES, PAPER_EVALUATION_MODES
 export paper_evaluation_scenario, paper_evaluation_mode_scenarios
 export paper_pr_drl_evaluation_config, paper_pr_drl_marsgram_evaluation_config
@@ -93,6 +94,9 @@ export paper_pr_drl_physics_evaluation_config, paper_odyssey_flight_evaluation_c
 export generalization_suite_configs, write_evaluation_artifacts
 export evaluate_policy_modes, evaluate_frozen_checkpoint_modes
 export frozen_checkpoint_paths, evaluate_frozen_checkpoints
+export thermal_violation_breakdown, terminal_thermal_violation_type
+export episode_thermal_violation_metrics, aggregate_thermal_violation_metrics
+export select_best_validation_checkpoint, validate_frozen_checkpoints
 export default_aerobraking_config, mars_odyssey_phase_constants
 
 export ReplayBuffer, ReplayBatch, sample_batch

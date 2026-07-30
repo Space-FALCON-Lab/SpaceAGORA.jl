@@ -72,7 +72,7 @@ hidden_dim = 1024
 
 [epsilon]
 start = 1.0
-stop = 0.01
+stop = 0.0
 decay_steps = 1000
 decay_start_step = 256
 

@@ -86,17 +86,33 @@ function _train_session(session)
     return train_parallel!(session)
 end
 
+function _validate_checkpoints(session)
+    config = session.config
+    config.training.validate_checkpoints || return nothing
+    config.training.algorithm in (:pr_drl, :ddqn) || return nothing
+    output_dir = joinpath(session.output_dir, "checkpoint_validation")
+    return validate_frozen_checkpoints(
+        session.output_dir,
+        config.scenario;
+        episodes=config.training.validation_episodes,
+        seed=config.training.validation_seed,
+        output_dir=output_dir,
+        protected_initialization=protected_initialization_config(config.training),
+    )
+end
+
 function main(args=ARGS)
     config_path = isempty(args) ? default_config_path() : args[1]
     config = resolve_config(config_path)
     session = build_training_session(config)
     return _with_terminal_log(session.output_dir) do _
         result = _train_session(session)
+        validation = _validate_checkpoints(session)
         println("wrote run artifacts to ", result.output_dir)
         println("episodes: ", length(result.summaries),
                 " transitions: ", length(result.transitions),
                 " global_step: ", result.global_step)
-        return result
+        return merge(result, (validation=validation,))
     end
 end
 

@@ -275,6 +275,81 @@ end
     @test paper_training.scenario.termination_config.max_passes == 1000
 end
 
+@testset "epsilon decays fully to greedy behavior" begin
+    schedule = EpsilonSchedule(
+        start=1.0,
+        stop=0.0,
+        decay_steps=5_000,
+        decay_start_step=10_000,
+    )
+    @test epsilon_value(schedule, 10_000) == 1.0
+    @test epsilon_value(schedule, 12_500) == 0.5
+    @test epsilon_value(schedule, 15_000) == 0.0
+    @test epsilon_value(schedule, 1_100_000) == 0.0
+
+    marsgram = resolve_config(
+        joinpath(dirname(default_config_path()), "pr_drl_spaceagora_marsgram.toml"),
+    )
+    @test marsgram.epsilon.stop == 0.0
+    @test marsgram.training.validate_checkpoints
+    @test marsgram.training.validation_episodes == PAPER_IID_EVALUATION_EPISODES
+end
+
+@testset "validation thermal attribution and checkpoint selection" begin
+    config = default_aerobraking_config(training=false)
+    target = config.final_apoapsis_radius_m
+    summary = EpisodeSummary(
+        success=false,
+        target_error_m=500e3,
+        thermal_violations=3,
+        heat_rate_trace=[0.01, 0.04, 0.27, 0.35, 0.50],
+        apoapsis_trace_m=fill(target + 500e3, 5),
+        protected_trace=[true, false, false, false, false],
+    )
+    counts = thermal_violation_breakdown(summary, config)
+    @test counts == (low=1, high=1, medium=1, hard=1, total=4)
+    @test terminal_thermal_violation_type(summary, config) == thermal_hard
+    episode = episode_thermal_violation_metrics(summary, config)
+    @test episode.soft_thermal_violations == 1
+    @test episode.terminal_thermal_violation_type == "hard"
+
+    aggregate = aggregate_thermal_violation_metrics([summary], config)
+    @test aggregate.mean_low_thermal_violations == 1.0
+    @test aggregate.mean_soft_thermal_violations == 1.0
+    @test aggregate.terminal_hard_violation_rate == 1.0
+    @test aggregate.thermal_terminal_failure_rate == 1.0
+
+    records = [
+        (
+            checkpoint="checkpoint_5000.jls",
+            mode="conservative",
+            success_rate=0.6,
+            thermal_terminal_failure_rate=0.3,
+            mean_target_error_km=100.0,
+            mean_thermal_violations=0.3,
+        ),
+        (
+            checkpoint="checkpoint_10000.jls",
+            mode="conservative",
+            success_rate=0.6,
+            thermal_terminal_failure_rate=0.2,
+            mean_target_error_km=120.0,
+            mean_thermal_violations=0.2,
+        ),
+        (
+            checkpoint="checkpoint_10000.jls",
+            mode="tolerant",
+            success_rate=0.8,
+            thermal_terminal_failure_rate=0.0,
+            mean_target_error_km=20.0,
+            mean_thermal_violations=0.5,
+        ),
+    ]
+    best = select_best_validation_checkpoint(records)
+    @test best.checkpoint == "checkpoint_10000.jls"
+    @test best.mode == "conservative"
+end
+
 @testset "paper finite 4 N burn duration" begin
     @test SpaceAGORA_RL.PAPER_ABM_THRUST_N == 4.0
     @test SpaceAGORA_RL.paper_finite_burn_duration_s(461.0, 1.0) ≈ 115.25

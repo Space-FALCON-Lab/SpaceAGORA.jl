@@ -64,7 +64,7 @@ hidden_dim = 1024
 
 [epsilon]
 start = 1.0
-stop = 0.01
+stop = 0.0
 decay_steps = 5000
 decay_start_step = 10000
 
@@ -78,6 +78,9 @@ max_passes_per_campaign = 1000
 n_workers = 16
 checkpoint_frequency = 5000
 progress_frequency = 10000
+validate_checkpoints = true
+validation_episodes = 40
+validation_seed = 1
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 protected_first_pass = true
 protected_initial_corridor_maneuver = true

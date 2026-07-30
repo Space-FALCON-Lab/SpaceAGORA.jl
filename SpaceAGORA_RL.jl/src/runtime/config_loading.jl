@@ -8,6 +8,9 @@ Base.@kwdef struct TrainingConfig
     n_workers::Int = 1
     checkpoint_frequency::Int = 500
     progress_frequency::Int = 50
+    validate_checkpoints::Bool = false
+    validation_episodes::Int = PAPER_IID_EVALUATION_EPISODES
+    validation_seed::Int = 1
     output_dir::String = joinpath(package_root(), "outputs", "runs")
     protected_first_pass::Bool = false
     protected_initial_corridor_maneuver::Bool = false
@@ -181,7 +184,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     )
     epsilon = EpsilonSchedule(
         start = Float64(_get(eps_table, "start", 1.0)),
-        stop = Float64(_get(eps_table, "stop", 0.01)),
+        stop = Float64(_get(eps_table, "stop", 0.0)),
         decay_steps = Int(_get(eps_table, "decay_steps", 500_000)),
         decay_start_step = Int(_get(eps_table, "decay_start_step", ddqn.train_start)),
     )
@@ -196,6 +199,13 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         n_workers = Int(_get(train_table, "n_workers", 1)),
         checkpoint_frequency = Int(_get(train_table, "checkpoint_frequency", 500)),
         progress_frequency = Int(_get(train_table, "progress_frequency", 50)),
+        validate_checkpoints = Bool(_get(train_table, "validate_checkpoints", false)),
+        validation_episodes = Int(_get(
+            train_table,
+            "validation_episodes",
+            PAPER_IID_EVALUATION_EPISODES,
+        )),
+        validation_seed = Int(_get(train_table, "validation_seed", 1)),
         output_dir = String(_get(train_table, "output_dir", joinpath(package_root(), "outputs", "runs"))),
         protected_first_pass = Bool(_get(train_table, "protected_first_pass", false)),
         protected_initial_corridor_maneuver = Bool(_get(train_table, "protected_initial_corridor_maneuver", false)),

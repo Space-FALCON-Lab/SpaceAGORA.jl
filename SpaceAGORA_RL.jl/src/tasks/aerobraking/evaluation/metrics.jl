@@ -26,6 +26,120 @@ function episode_metrics(summary::EpisodeSummary; policy_name::AbstractString=""
     )
 end
 
+function thermal_violation_breakdown(summary::EpisodeSummary,
+                                     config::AerobrakingScenarioConfig)
+    low = high = medium = hard = 0
+    trace_length = min(length(summary.heat_rate_trace), length(summary.apoapsis_trace_m))
+    for index in 1:trace_length
+        protected = index <= length(summary.protected_trace) &&
+                    summary.protected_trace[index]
+        protected && continue
+        target_error_m = summary.apoapsis_trace_m[index] -
+                         config.final_apoapsis_radius_m
+        status = thermal_status(
+            summary.heat_rate_trace[index],
+            target_error_m,
+            config.reward_config,
+        )
+        status == thermal_low && (low += 1)
+        status == thermal_high && (high += 1)
+        status == thermal_medium && (medium += 1)
+        status == thermal_hard && (hard += 1)
+    end
+    return (
+        low = low,
+        high = high,
+        medium = medium,
+        hard = hard,
+        total = low + high + medium + hard,
+    )
+end
+
+function terminal_thermal_violation_type(summary::EpisodeSummary,
+                                         config::AerobrakingScenarioConfig)
+    config.termination_config.terminal_on_thermal_violation || return nothing
+    summary.success && return nothing
+    summary.impact && return nothing
+    summary.out_of_drag_passage && return nothing
+    summary.target_error_m < -config.reward_config.target_tolerance_m && return nothing
+    isempty(summary.heat_rate_trace) && return nothing
+    last_index = length(summary.heat_rate_trace)
+    protected = last_index <= length(summary.protected_trace) &&
+                summary.protected_trace[last_index]
+    protected && return nothing
+    last_index <= length(summary.apoapsis_trace_m) || return nothing
+    status = thermal_status(
+        summary.heat_rate_trace[last_index],
+        summary.apoapsis_trace_m[last_index] - config.final_apoapsis_radius_m,
+        config.reward_config,
+    )
+    return thermal_violation(status) ? status : nothing
+end
+
+function episode_thermal_violation_metrics(summary::EpisodeSummary,
+                                           config::AerobrakingScenarioConfig)
+    counts = thermal_violation_breakdown(summary, config)
+    terminal_type = terminal_thermal_violation_type(summary, config)
+    terminal_label =
+        terminal_type === thermal_low ? "low" :
+        terminal_type === thermal_high ? "soft" :
+        terminal_type === thermal_medium ? "medium" :
+        terminal_type === thermal_hard ? "hard" :
+        "none"
+    return (
+        low_thermal_violations = counts.low,
+        soft_thermal_violations = counts.high,
+        medium_thermal_violations = counts.medium,
+        hard_thermal_violations = counts.hard,
+        terminal_thermal_violation_type = terminal_label,
+    )
+end
+
+function aggregate_thermal_violation_metrics(
+    summaries::AbstractVector{<:EpisodeSummary},
+    config::AerobrakingScenarioConfig,
+)
+    isempty(summaries) && return NamedTuple()
+    counts = thermal_violation_breakdown.(summaries, Ref(config))
+    terminal_types = terminal_thermal_violation_type.(summaries, Ref(config))
+    episodes = length(summaries)
+    failed = [!summary.success for summary in summaries]
+
+    mean_count(field::Symbol) = sum(getfield(count, field) for count in counts) / episodes
+    episode_rate(field::Symbol) =
+        count(counts_for_episode -> getfield(counts_for_episode, field) > 0, counts) / episodes
+    failed_episode_rate(field::Symbol) =
+        count(index -> failed[index] && getfield(counts[index], field) > 0,
+              eachindex(summaries)) / episodes
+    terminal_rate(status::ThermalStatus) = count(==(status), terminal_types) / episodes
+
+    terminal_low_rate = terminal_rate(thermal_low)
+    terminal_high_rate = terminal_rate(thermal_high)
+    terminal_medium_rate = terminal_rate(thermal_medium)
+    terminal_hard_rate = terminal_rate(thermal_hard)
+    return (
+        mean_low_thermal_violations = mean_count(:low),
+        mean_soft_thermal_violations = mean_count(:high),
+        mean_medium_thermal_violations = mean_count(:medium),
+        mean_hard_thermal_violations = mean_count(:hard),
+        low_violation_episode_rate = episode_rate(:low),
+        soft_violation_episode_rate = episode_rate(:high),
+        medium_violation_episode_rate = episode_rate(:medium),
+        hard_violation_episode_rate = episode_rate(:hard),
+        failed_with_low_violation_rate = failed_episode_rate(:low),
+        failed_with_soft_violation_rate = failed_episode_rate(:high),
+        failed_with_medium_violation_rate = failed_episode_rate(:medium),
+        failed_with_hard_violation_rate = failed_episode_rate(:hard),
+        terminal_low_violation_rate = terminal_low_rate,
+        terminal_soft_violation_rate = terminal_high_rate,
+        terminal_medium_violation_rate = terminal_medium_rate,
+        terminal_hard_violation_rate = terminal_hard_rate,
+        thermal_terminal_failure_rate =
+            terminal_low_rate + terminal_high_rate +
+            terminal_medium_rate + terminal_hard_rate,
+    )
+end
+
 function aggregate_metrics(summaries::AbstractVector{<:EpisodeSummary}; policy_name::AbstractString="")
     isempty(summaries) && return NamedTuple()
     successes = 0

@@ -19,21 +19,16 @@ function main(args=ARGS)
         config.scenario;
         max_passes=max(1000, config.scenario.termination_config.max_passes),
     )
-    results = evaluate_frozen_checkpoints(
+    validation = validate_frozen_checkpoints(
         checkpoint_dir,
         scenario;
         episodes=episodes,
-        seed=config.training.seed,
+        seed=config.training.validation_seed,
         output_dir=output_dir,
+        protected_initialization=protected_initialization_config(config.training),
     )
-    for checkpoint_path in sort(collect(keys(results)))
-        for mode in PAPER_EVALUATION_MODES
-            println(basename(checkpoint_path), " ", mode, ": ",
-                    results[checkpoint_path][mode].aggregate)
-        end
-    end
     println("wrote frozen-checkpoint evaluation artifacts to ", output_dir)
-    return results
+    return validation
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

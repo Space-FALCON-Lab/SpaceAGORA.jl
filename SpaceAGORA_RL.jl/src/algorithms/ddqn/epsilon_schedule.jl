@@ -1,6 +1,6 @@
 Base.@kwdef struct EpsilonSchedule
     start::Float64 = 1.0
-    stop::Float64 = 0.01
+    stop::Float64 = 0.0
     decay_steps::Int = 500_000
     decay_start_step::Int = 10_000
 end

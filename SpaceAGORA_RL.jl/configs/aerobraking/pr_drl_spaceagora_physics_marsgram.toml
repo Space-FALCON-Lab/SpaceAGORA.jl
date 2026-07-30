@@ -40,9 +40,10 @@ marsgram_perturbation_scale = 1.0
 marsgram_seed_base = 1001
 
 [spaceagora_physics]
-atmosphere_model = "tabulated_flight"
-tabulated_flight_file = "data/telemetry/Odyssey/odyssey_accelerometer_density.feather"
-tabulated_flight_sigma = 0.0
+atmosphere_model = "marsgram"
+# Refresh native GRAM at initialization and after each accepted solver step.
+# Internal KenCarp4 stages use the held density, temperature, and wind sample.
+gram_once_per_step = true
 gravity_harmonics_degree = 20
 gravity_harmonics_order = 20
 gravity_harmonics_file = "data/Gravity_harmonics_data/Mars50c.csv"
@@ -84,6 +85,9 @@ global_steps = 1100000
 episodes = 25000
 max_passes_per_campaign = 1000
 n_workers = 16
+# Each rollout worker owns an OS process and therefore an independent native
+# GRAM runtime/lock. The learner remains in the parent process.
+worker_backend = "processes"
 checkpoint_frequency = 5000
 progress_frequency = 100
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"

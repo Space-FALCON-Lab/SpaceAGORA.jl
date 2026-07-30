@@ -185,6 +185,7 @@ function _snapshot_callback_env_config()::CallbackEnvConfig
     return CallbackEnvConfig(
         _gram_track_cache_config(),
         _gram_runtime_stats_enabled(),
+        _parse_bool_env("SPACEAGORA_GRAM_ONCE_PER_STEP", false),
         _gram_track_cache_ignore_time_window(),
         _gram_track_cache_target_use_j2(),
         _vacuum_gram_cache_enabled(),

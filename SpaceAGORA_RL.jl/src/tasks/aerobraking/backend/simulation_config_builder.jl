@@ -134,9 +134,20 @@ function _spaceagora_density_model(spaceagora, config, state)
             truth,
         )
     end
-    model in (:gram, :marsgram) ||
+    model in (:gram, :marsgram, :marsgram_surrogate) ||
         throw(ArgumentError("unsupported SpaceAGORA atmosphere model: $(config.spaceagora_atmosphere_model)"))
     rand_cfg = config.randomization_config
+    if model == :marsgram_surrogate
+        return Base.invokelatest(
+            getproperty(SM, :GRAMAtmosphereModelSurrogate);
+            planet_name="mars",
+            gram_root_directory=_spaceagora_gram_root(),
+            spice_directory=_spaceagora_spice_path(),
+            seed=state.gram_seed,
+            initial_time=_initial_time_from_datetime(state.epoch; spaceagora=spaceagora),
+            point_fallback_below_m=nothing,
+        )
+    end
     perturbation_scale = rand_cfg.marsgram_perturbation_scale
     return Base.invokelatest(
         getproperty(SM, :GRAMAtmosphereModel);
@@ -149,7 +160,8 @@ function _spaceagora_density_model(spaceagora, config, state)
     )
 end
 
-_spaceagora_live_needs_gramsuite(config) = config.spaceagora_atmosphere_model in (:gram, :marsgram)
+_spaceagora_live_needs_gramsuite(config) =
+    config.spaceagora_atmosphere_model in (:gram, :marsgram, :marsgram_surrogate)
 
 function _spaceagora_physics_solver_maxiters(campaign_max_passes::Integer)
     pass_cap = max(1, Int(campaign_max_passes))
@@ -399,6 +411,8 @@ function _spaceagora_physics_simulation_configuration(config,
         gravity_harmonics_j2_source=:file_c20,
         density_model=config.spaceagora_atmosphere_model == :tabulated_flight ?
                       :TabulatedFlightAtmosphereModel :
+                      config.spaceagora_atmosphere_model == :marsgram_surrogate ?
+                      :GRAMAtmosphereModelSurrogate :
                       :GRAMAtmosphereModel,
         tabulated_flight_file=config.spaceagora_atmosphere_model == :tabulated_flight ?
                               _spaceagora_repo_path(config.spaceagora_tabulated_flight_file) :

@@ -111,7 +111,8 @@ mutable struct SpaceAGORAPhysicsActiveWorker
     seed::Int
     handle::SpaceAGORAPhysicsWorkerHandle
     protected_events_seen::Int
-    simulation_template::SpaceAGORAPhysicsSimulationTemplate
+    simulation_template::Union{Nothing,SpaceAGORAPhysicsSimulationTemplate}
+    process_id::Union{Nothing,Int}
 end
 
 function _spaceagora_physics_streaming_worker_seed(base_seed::Int, worker_id::Int,
@@ -138,10 +139,11 @@ function _protected_corridor_action_index(training::TrainingConfig,
 end
 
 function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<:DDQNLearner},
-                                                      event_channel::Channel{Any},
+                                                      event_channel,
                                                       worker_id::Int,
                                                       episode_index::Int;
-                                                      simulation_template::Union{Nothing,SpaceAGORAPhysicsSimulationTemplate}=nothing)
+                                                      simulation_template::Union{Nothing,SpaceAGORAPhysicsSimulationTemplate}=nothing,
+                                                      process_id::Union{Nothing,Int}=nothing)
     seed = _spaceagora_physics_streaming_worker_seed(session.config.training.seed,
                                                      worker_id,
                                                      episode_index)
@@ -154,39 +156,74 @@ function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<
                    zero_action_index() :
                    _ddqn_master_action(session.learner, norm_obs, session.rng)
     action = action_from_index(action_index)
-    template = simulation_template === nothing ?
-               _spaceagora_physics_simulation_template(
-                   config,
-                   state,
-                   action;
-                   campaign_max_passes=_spaceagora_physics_campaign_mission_pass_cap(
-                       config,
-                       session.config.training.max_passes_per_campaign,
-                   ),
-               ) :
-               simulation_template
     summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
-    handle = start_spaceagora_physics_campaign_worker!(
-        event_channel,
-        config,
-        session.learner.schedule,
-        session.learner.config,
-        nothing,
-        template,
-        state,
-        norm_obs,
-        action_index,
-        summary,
-        episode_index,
+    template = nothing
+    handle = if process_id === nothing
+        template = simulation_template === nothing ?
+                   _spaceagora_physics_simulation_template(
+                       config,
+                       state,
+                       action;
+                       campaign_max_passes=_spaceagora_physics_campaign_mission_pass_cap(
+                           config,
+                           session.config.training.max_passes_per_campaign,
+                       ),
+                   ) :
+                   simulation_template
+        start_spaceagora_physics_campaign_worker!(
+            event_channel,
+            config,
+            session.learner.schedule,
+            session.learner.config,
+            nothing,
+            template,
+            state,
+            norm_obs,
+            action_index,
+            summary,
+            episode_index,
+            worker_id,
+            seed,
+            session.config.training.max_passes_per_campaign,
+            session.learner.global_step,
+            protected_first_pass = protected_first_pass,
+            protected_suppress_thermal_terminal =
+                session.config.training.protected_first_pass_suppress_thermal_terminal,
+        )
+    else
+        action_channel = RemoteChannel(() -> Channel{Any}(1), process_id)
+        future = remotecall(
+            run_spaceagora_physics_campaign_process_worker_episode,
+            process_id,
+            event_channel,
+            action_channel,
+            config,
+            session.learner.schedule,
+            session.learner.config,
+            state,
+            norm_obs,
+            action_index,
+            summary,
+            episode_index,
+            worker_id,
+            seed,
+            session.config.training.max_passes_per_campaign,
+            session.learner.global_step;
+            protected_first_pass = protected_first_pass,
+            protected_suppress_thermal_terminal =
+                session.config.training.protected_first_pass_suppress_thermal_terminal,
+        )
+        SpaceAGORAPhysicsWorkerHandle(future, action_channel)
+    end
+    return SpaceAGORAPhysicsActiveWorker(
         worker_id,
+        episode_index,
         seed,
-        session.config.training.max_passes_per_campaign,
-        session.learner.global_step,
-        protected_first_pass = protected_first_pass,
-        protected_suppress_thermal_terminal =
-            session.config.training.protected_first_pass_suppress_thermal_terminal,
+        handle,
+        0,
+        template,
+        process_id,
     )
-    return SpaceAGORAPhysicsActiveWorker(worker_id, episode_index, seed, handle, 0, template)
 end
 
 function _finish_spaceagora_physics_streaming_worker!(worker::SpaceAGORAPhysicsActiveWorker)
@@ -195,7 +232,7 @@ function _finish_spaceagora_physics_streaming_worker!(worker::SpaceAGORAPhysicsA
 end
 
 function _stop_spaceagora_physics_streaming_workers!(active::Dict{Int,SpaceAGORAPhysicsActiveWorker},
-                                                     event_channel::Channel{Any})
+                                                     event_channel)
     while !isempty(active)
         event = take!(event_channel)
         worker = get(active, event.worker_id, nothing)
@@ -210,13 +247,23 @@ function _stop_spaceagora_physics_streaming_workers!(active::Dict{Int,SpaceAGORA
     return nothing
 end
 
-function _with_spaceagora_physics_outer_parallelism(f::Function, active_workers::Int)
+function _with_spaceagora_physics_outer_parallelism(f::Function,
+                                                    active_workers::Int,
+                                                    config::AerobrakingScenarioConfig,
+                                                    worker_backend::Symbol)
     env_pairs = _spaceagora_rl_core_ephemeris_env_pairs()
+    push!(
+        env_pairs,
+        "SPACEAGORA_GRAM_ONCE_PER_STEP" =>
+            (config.spaceagora_gram_once_per_step ? "1" : "0"),
+    )
     if active_workers > 1
         push!(env_pairs, "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1")
     end
     if active_workers > 1 && isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))
-        inner_budget = max(1, fld(Threads.nthreads(), active_workers))
+        inner_budget = worker_backend == :processes ?
+                       1 :
+                       max(1, fld(Threads.nthreads(), active_workers))
         push!(env_pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(inner_budget))
     end
     isempty(env_pairs) && return f()
@@ -225,10 +272,20 @@ function _with_spaceagora_physics_outer_parallelism(f::Function, active_workers:
     end
 end
 
+function _with_spaceagora_physics_outer_parallelism(f::Function, active_workers::Int)
+    return _with_spaceagora_physics_outer_parallelism(
+        f,
+        active_workers,
+        default_aerobraking_config(backend_mode=:spaceagora_physics),
+        :threads,
+    )
+end
+
 function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{<:DDQNLearner};
                                                        global_steps::Int=session.config.training.global_steps,
                                                        episodes::Union{Nothing,Int}=nothing,
-                                                       n_workers::Int=session.config.training.n_workers)
+                                                       n_workers::Int=session.config.training.n_workers,
+                                                       process_ids::Vector{Int}=Int[])
     summaries = DiskBackedHistory(
         EpisodeSummary,
         joinpath(session.output_dir, "training_episode_summaries.jls"),
@@ -239,8 +296,13 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
     )
     aggregate_accumulator = EpisodeAggregateAccumulator()
     requested_workers = max(1, n_workers)
-    active_workers = min(requested_workers, Threads.nthreads())
-    active_workers < requested_workers && @warn "n_workers exceeds available Julia threads; using Threads.nthreads()" requested_workers active_workers
+    worker_backend = isempty(process_ids) ? :threads : :processes
+    active_workers = worker_backend == :threads ?
+                     min(requested_workers, Threads.nthreads()) :
+                     min(requested_workers, length(process_ids))
+    if worker_backend == :threads && active_workers < requested_workers
+        @warn "n_workers exceeds available Julia threads; using Threads.nthreads()" requested_workers active_workers
+    end
     target_global_step = global_steps > 0 ? global_steps : typemax(Int)
     episode_budget = episodes === nothing ? (global_steps > 0 ? typemax(Int) : session.config.training.episodes) : max(0, episodes)
     checkpoint_frequency = session.config.training.checkpoint_frequency
@@ -259,12 +321,13 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
     printed_initial_progress = false
 
     @printf(
-        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d julia_threads=%d outer_parallel=%s inner_thread_budget=%s train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d architecture=paper_pass_streaming\n",
+        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d worker_backend=%s julia_threads=%d outer_parallel=%s inner_thread_budget=%s train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d architecture=paper_pass_streaming\n",
         algorithm_display_name(session.config.training.algorithm),
         target_global_step == typemax(Int) ? "none" : string(target_global_step),
         _budget_label(episode_budget),
         requested_workers,
         active_workers,
+        string(worker_backend),
         Threads.nthreads(),
         get(ENV, "SPACEAGORA_OUTER_PARALLEL_ACTIVE", "0"),
         get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "auto"),
@@ -276,7 +339,9 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
     @printf("output_dir=%s\n", session.output_dir)
     flush(stdout)
 
-    event_channel = Channel{Any}(max(32, 2 * active_workers))
+    event_channel = worker_backend == :processes ?
+                    RemoteChannel(() -> Channel{Any}(max(32, 2 * active_workers)), myid()) :
+                    Channel{Any}(max(32, 2 * active_workers))
     active = Dict{Int,SpaceAGORAPhysicsActiveWorker}()
     next_episode = 1
     for worker_id in 1:min(active_workers, episode_budget)
@@ -285,6 +350,7 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
             event_channel,
             worker_id,
             next_episode,
+            process_id=worker_backend == :processes ? process_ids[worker_id] : nothing,
         )
         next_episode += 1
     end
@@ -343,6 +409,7 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
                     event.worker_id,
                     next_episode,
                     simulation_template=worker.simulation_template,
+                    process_id=worker.process_id,
                 )
                 next_episode += 1
             end
@@ -448,18 +515,48 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
                          n_workers::Int=session.config.training.n_workers)
     if session.config.training.algorithm == :pr_drl &&
        _is_spaceagora_live_backend(session.config.scenario.backend_mode)
-        active_workers = min(max(1, n_workers), Threads.nthreads())
-        return _with_spaceagora_physics_outer_parallelism(active_workers) do
-            _prewarm_spaceagora_rl_shared_ephemeris_cache!(
-                session.config.scenario,
-                session.config.training.max_passes_per_campaign,
-            )
-            _train_parallel_spaceagora_physics_streaming!(
-                session;
-                global_steps = global_steps,
-                episodes = episodes,
-                n_workers = n_workers,
-            )
+        worker_backend = session.config.training.worker_backend
+        active_workers = worker_backend == :processes ?
+                         max(1, n_workers) :
+                         min(max(1, n_workers), Threads.nthreads())
+        return _with_spaceagora_physics_outer_parallelism(
+            active_workers,
+            session.config.scenario,
+            worker_backend,
+        ) do
+            if worker_backend == :processes
+                process_ids = setup_isolated_process_workers(active_workers)
+                try
+                    for process_id in process_ids
+                        remotecall_wait(
+                            _prewarm_spaceagora_rl_shared_ephemeris_cache!,
+                            process_id,
+                            session.config.scenario,
+                            session.config.training.max_passes_per_campaign,
+                        )
+                    end
+                    return _train_parallel_spaceagora_physics_streaming!(
+                        session;
+                        global_steps = global_steps,
+                        episodes = episodes,
+                        n_workers = n_workers,
+                        process_ids = process_ids,
+                    )
+                finally
+                    rmprocs(process_ids)
+                end
+            else
+                _prewarm_spaceagora_rl_shared_ephemeris_cache!(
+                    session.config.scenario,
+                    session.config.training.max_passes_per_campaign,
+                )
+                return _train_parallel_spaceagora_physics_streaming!(
+                    session;
+                    global_steps = global_steps,
+                    episodes = episodes,
+                    n_workers = n_workers,
+                )
+            end
         end
     end
 

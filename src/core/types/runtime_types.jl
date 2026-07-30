@@ -618,6 +618,7 @@ export RhsEffectorDecision, RhsExecutionPlan
     struct CallbackEnvConfig
         gram_track_cache::GramTrackCacheConfig
         gram_runtime_stats_enabled::Bool
+        gram_once_per_step::Bool
         gram_track_cache_ignore_time_window::Bool
         gram_track_cache_target_use_j2::Bool
         vacuum_gram_cache_enabled::Bool

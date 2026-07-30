@@ -6,6 +6,7 @@ Base.@kwdef struct TrainingConfig
     episodes::Int = 4
     max_passes_per_campaign::Int = 1_000
     n_workers::Int = 1
+    worker_backend::Symbol = :threads
     checkpoint_frequency::Int = 500
     progress_frequency::Int = 50
     output_dir::String = joinpath(package_root(), "outputs", "runs")
@@ -20,6 +21,7 @@ const DDQN_FAMILY_ALGORITHMS = (:ddqn, :pr_drl)
 
 canonical_algorithm(value) = Symbol(replace(lowercase(String(value)), "-" => "_"))
 canonical_spaceagora_atmosphere_model(value) = Symbol(replace(lowercase(strip(String(value))), "-" => "_"))
+canonical_worker_backend(value) = Symbol(replace(lowercase(strip(String(value))), "-" => "_"))
 is_ddqn_family_algorithm(algorithm::Symbol) = algorithm in DDQN_FAMILY_ALGORITHMS
 algorithm_report_name(algorithm::Symbol) = algorithm == :pr_drl ? "pr_drl" : string(algorithm)
 algorithm_display_name(algorithm::Symbol) = algorithm == :pr_drl ? "PR-DRL" : uppercase(string(algorithm))
@@ -136,6 +138,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         spaceagora_atmosphere_model = canonical_spaceagora_atmosphere_model(
             _get(spaceagora_table, "atmosphere_model", "gram")
         ),
+        spaceagora_gram_once_per_step = Bool(_get(spaceagora_table, "gram_once_per_step", false)),
         spaceagora_tabulated_flight_file = String(_get(
             spaceagora_table,
             "tabulated_flight_file",
@@ -153,8 +156,17 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         termination_config = termination,
         randomization_config = randomization,
     )
-    scenario.spaceagora_atmosphere_model in (:gram, :marsgram, :tabulated_flight) ||
-        throw(ArgumentError("spaceagora_physics.atmosphere_model must be \"gram\" or \"tabulated_flight\""))
+    scenario.spaceagora_atmosphere_model in (:gram, :marsgram, :marsgram_surrogate, :tabulated_flight) ||
+        throw(ArgumentError(
+            "spaceagora_physics.atmosphere_model must be \"gram\", \"marsgram\", " *
+            "\"marsgram_surrogate\", or \"tabulated_flight\""
+        ))
+    if scenario.spaceagora_gram_once_per_step &&
+       !(scenario.spaceagora_atmosphere_model in (:gram, :marsgram))
+        throw(ArgumentError(
+            "spaceagora_physics.gram_once_per_step is only valid with native \"gram\" or \"marsgram\""
+        ))
+    end
 
     ddqn = DDQNConfig(
         learning_rate = Float64(_get(ddqn_table, "learning_rate", 1e-4)),
@@ -194,6 +206,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         max_passes_per_campaign = Int(_get(train_table, "max_passes_per_campaign",
                                            _get(train_table, "max_steps", 1_000))),
         n_workers = Int(_get(train_table, "n_workers", 1)),
+        worker_backend = canonical_worker_backend(_get(train_table, "worker_backend", "threads")),
         checkpoint_frequency = Int(_get(train_table, "checkpoint_frequency", 500)),
         progress_frequency = Int(_get(train_table, "progress_frequency", 50)),
         output_dir = String(_get(train_table, "output_dir", joinpath(package_root(), "outputs", "runs"))),
@@ -210,6 +223,8 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     )
     (is_ddqn_family_algorithm(training.algorithm) || training.algorithm == :a2c) ||
         throw(ArgumentError("training.algorithm must be \"pr_drl\", \"ddqn\", or \"a2c\""))
+    training.worker_backend in (:threads, :processes) ||
+        throw(ArgumentError("training.worker_backend must be \"threads\" or \"processes\""))
     return ResolvedConfig(source_path, raw, scenario, ddqn, a2c, epsilon, training, reports)
 end
 

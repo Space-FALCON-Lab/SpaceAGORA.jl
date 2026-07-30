@@ -34,6 +34,12 @@ end
     _requires_density_for_rhs(effectors, args) || return false
     # Explicit compatibility/debug override.
     ParallelPolicy.parse_bool_env("SPACEAGORA_FORCE_DENSITY_CALLBACK", false) && return true
+    # Once-per-step native GRAM sampling is implemented by the accepted-step
+    # density callback; RHS stages consume the held shared-buffer value.
+    if ParallelPolicy.parse_bool_env("SPACEAGORA_GRAM_ONCE_PER_STEP", false) &&
+       _is_native_gram_model(args.environment_model.density_model)
+        return true
+    end
     # Thermal callback fires at each step and reads shared_buffers.densities.
     _requires_thermal_callback(effectors, args) && return true
     # Drag-state switching uses staged density to pick the next tolerance set.

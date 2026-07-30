@@ -26,8 +26,8 @@ Base.@kwdef struct SpaceAGORAPhysicsPassEvent
 end
 
 struct SpaceAGORAPhysicsWorkerHandle
-    task::Task
-    action_channel::Channel{Any}
+    task::Any
+    action_channel::Any
 end
 
 Base.@kwdef mutable struct SpaceAGORAPhysicsCampaignRollout
@@ -52,8 +52,8 @@ Base.@kwdef mutable struct SpaceAGORAPhysicsCampaignRollout
     pass_start_time_s::Float64 = 0.0
     terminated::Bool = false
     streaming::Bool = false
-    event_channel::Union{Nothing,Channel{Any}} = nothing
-    action_channel::Union{Nothing,Channel{Any}} = nothing
+    event_channel::Any = nothing
+    action_channel::Any = nothing
     protected_next_transition::Bool = false
     protected_suppress_thermal_terminal::Bool = true
     protected_initialization::ProtectedInitializationConfig =
@@ -318,7 +318,7 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
     rollout.pass_start_time_s = Float64(getproperty(integrator, :t))
     if rollout.streaming
         command = try
-            take!(rollout.action_channel::Channel{Any})
+            take!(rollout.action_channel)
         catch
             nothing
         end
@@ -494,8 +494,8 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
     return finalize_episode_summary(rollout.summary, config), learned_transitions
 end
 
-function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel::Channel{Any},
-                                                                  action_channel::Channel{Any},
+function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel,
+                                                                  action_channel,
                                                                   config::AerobrakingScenarioConfig,
                                                                   schedule::EpsilonSchedule,
                                                                   ddqn_config::DDQNConfig,
@@ -611,7 +611,54 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel:
     end
 end
 
-function start_spaceagora_physics_campaign_worker!(event_channel::Channel{Any},
+function run_spaceagora_physics_campaign_process_worker_episode(event_channel,
+                                                                action_channel,
+                                                                config::AerobrakingScenarioConfig,
+                                                                schedule::EpsilonSchedule,
+                                                                ddqn_config::DDQNConfig,
+                                                                state::AerobrakingDecisionState,
+                                                                norm_obs::Vector{Float32},
+                                                                action_index::Int,
+                                                                summary::EpisodeSummary,
+                                                                episode_index::Int,
+                                                                worker_id::Int,
+                                                                seed::Int,
+                                                                max_passes_per_campaign::Int,
+                                                                global_step_start::Int;
+                                                                protected_first_pass::Bool=false,
+                                                                protected_suppress_thermal_terminal::Bool=true)
+    template = _spaceagora_physics_simulation_template(
+        config,
+        state,
+        action_from_index(action_index);
+        campaign_max_passes=_spaceagora_physics_campaign_mission_pass_cap(
+            config,
+            max_passes_per_campaign,
+        ),
+    )
+    return run_spaceagora_physics_campaign_streaming_worker_episode(
+        event_channel,
+        action_channel,
+        config,
+        schedule,
+        ddqn_config,
+        nothing,
+        template,
+        state,
+        norm_obs,
+        action_index,
+        summary,
+        episode_index,
+        worker_id,
+        seed,
+        max_passes_per_campaign,
+        global_step_start;
+        protected_first_pass=protected_first_pass,
+        protected_suppress_thermal_terminal=protected_suppress_thermal_terminal,
+    )
+end
+
+function start_spaceagora_physics_campaign_worker!(event_channel,
                                                    config::AerobrakingScenarioConfig,
                                                    schedule::EpsilonSchedule,
                                                    ddqn_config::DDQNConfig,

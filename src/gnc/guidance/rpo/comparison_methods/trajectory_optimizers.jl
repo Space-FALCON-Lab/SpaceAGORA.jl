@@ -1,4 +1,26 @@
-import PlotlyJS
+const _RPO_PLOTLYJS_MODULE = Ref{Union{Nothing,Module}}(nothing)
+const _RPO_PLOTLYJS_LOAD_LOCK = ReentrantLock()
+
+"""
+Load PlotlyJS only when an RPO plotting function is called.
+
+This keeps the optional WebIO/PlotlyJS visualization stack out of headless
+simulation processes, where another dependency may already have loaded a newer
+and WebIO-incompatible JSON.jl version.
+"""
+function _rpo_plotlyjs()
+    return lock(_RPO_PLOTLYJS_LOAD_LOCK) do
+        if _RPO_PLOTLYJS_MODULE[] === nothing
+            _RPO_PLOTLYJS_MODULE[] = Base.require(
+                Base.PkgId(
+                    Base.UUID("f0f68f2c-4968-5e81-91da-67840de0976a"),
+                    "PlotlyJS",
+                ),
+            )
+        end
+        return _RPO_PLOTLYJS_MODULE[]::Module
+    end
+end
 
 """CHOMP-like trajectory optimizer settings for RPO comparison planning."""
 Base.@kwdef struct RPOCHOMPSettings

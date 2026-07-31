@@ -726,6 +726,7 @@ end
 
 """Create summary bar plots for planner comparison metrics."""
 function rpo_comparison_metric_summary_plot(batch)
+    PlotlyJS = _rpo_plotlyjs()
     specs = rpo_comparison_metric_specs()
     traces = PlotlyJS.GenericTrace[]
     rows = 3
@@ -811,6 +812,7 @@ end
 
 """Build a Plotly mesh trace for the station keepout geometry."""
 function rpo_comparison_station_mesh_trace(triangles)
+    PlotlyJS = _rpo_plotlyjs()
     tris = Matrix{Float64}(triangles)
     ntri = size(tris, 2) ÷ 3
     vertices = zeros(Float64, 3, 3 * ntri)
@@ -843,6 +845,7 @@ end
 
 """Build a downsampled Plotly station point-cloud trace."""
 function rpo_comparison_station_trace(batch; max_points::Integer=2_000)
+    PlotlyJS = _rpo_plotlyjs()
     if hasproperty(batch, :station_triangles) && batch.station_triangles !== nothing
         return rpo_comparison_station_mesh_trace(batch.station_triangles)
     end
@@ -862,6 +865,7 @@ end
 
 """Create a 3D Plotly view of planner paths for all comparison cases."""
 function rpo_comparison_path_family_plot(batch; planner=nothing)
+    PlotlyJS = _rpo_plotlyjs()
     traces = PlotlyJS.GenericTrace[rpo_comparison_station_trace(batch)]
     planners = planner === nothing ? batch.planner_types : [normalize_rpo_comparison_planner_type(planner)]
     for planner_type in planners
@@ -922,6 +926,7 @@ end
 
 """Create a 3D Plotly view for one planner/case path."""
 function rpo_comparison_single_path_plot(batch, plan; planner)
+    PlotlyJS = _rpo_plotlyjs()
     planner_type = normalize_rpo_comparison_planner_type(planner)
     label = rpo_comparison_planner_label(planner_type)
     case_label = plan.case.label
@@ -988,6 +993,7 @@ end
 
 """Create a 3D Plotly view containing all failed paths for one planner."""
 function rpo_comparison_failed_paths_plot(batch; planner, failed_indices)
+    PlotlyJS = _rpo_plotlyjs()
     planner_type = normalize_rpo_comparison_planner_type(planner)
     label = rpo_comparison_planner_label(planner_type)
     traces = PlotlyJS.GenericTrace[rpo_comparison_station_trace(batch)]
@@ -1070,6 +1076,7 @@ end
 
 """Create cost-versus-iteration traces for planners that report histories."""
 function rpo_comparison_cost_iteration_plot(batch; planner)
+    PlotlyJS = _rpo_plotlyjs()
     planner_type = normalize_rpo_comparison_planner_type(planner)
     haskey(batch.plans_by_planner, planner_type) ||
         throw(ArgumentError("No planner results found for $(planner_type)."))
@@ -1131,6 +1138,7 @@ end
 
 """Write one path HTML per planner containing all failed planner/case results."""
 function rpo_write_failed_path_outputs(batch, output_dir::AbstractString)
+    PlotlyJS = _rpo_plotlyjs()
     failed_dir = joinpath(output_dir, "rpo_failed_path_plots")
     failed_path_plots = Dict{Symbol, String}()
     for planner in batch.planner_types
@@ -1152,6 +1160,9 @@ function rpo_write_planner_comparison_outputs(
     write_plotly_outputs::Bool=batch.config.write_plotly_outputs,
     write_failed_path_outputs::Bool=batch.config.write_failed_path_outputs,
 )
+    PlotlyJS = (write_plotly_outputs || write_failed_path_outputs) ?
+               _rpo_plotlyjs() :
+               nothing
     mkpath(output_dir)
     rows = rpo_flatten_planner_results(batch)
     csv_path = rpo_write_namedtuple_csv(joinpath(output_dir, "rpo_planner_comparison_results.csv"), rows)

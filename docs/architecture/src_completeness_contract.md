@@ -61,15 +61,15 @@ This contract defines how canonical source files are classified and what is forb
 8. `experimental/vehicle/laser_terminal/laser_terminal.jl`
 
 ## Enforced Gates
-1. `test/contracts/ci_src_completeness_contract_gate.jl`
-2. `test/contracts/ci_no_legacy_include_chains_gate.jl`
-3. `test/contracts/ci_no_inert_force_terms_gate.jl`
-4. `test/contracts/ci_scaffold_interface_gate.jl`
-5. `test/contracts/ci_translational_ownership_gate.jl`
-6. `test/contracts/ci_no_src_benchmarks_root_gate.jl`
-7. `test/contracts/ci_no_dynamics_models_gate.jl`
-8. `test/contracts/ci_vehicle_structure_boundary_gate.jl`
-9. `test/contracts/ci_gnc_aerobraking_boundary_gate.jl`
-10. `test/contracts/ci_no_guidance_control_cross_include_gate.jl`
-11. `test/contracts/ci_gnc_typed_command_boundary_gate.jl`
-12. `test/contracts/ci_aerobraking_strategy_contract_gate.jl`
+1. `test/gates/ci_src_completeness_contract_gate.jl`
+2. `test/gates/ci_no_legacy_include_chains_gate.jl`
+3. `test/gates/ci_no_inert_force_terms_gate.jl`
+4. `test/gates/ci_scaffold_interface_gate.jl`
+5. `test/gates/ci_translational_ownership_gate.jl`
+6. `test/gates/ci_no_src_benchmarks_root_gate.jl`
+7. `test/gates/ci_no_dynamics_models_gate.jl`
+8. `test/gates/ci_vehicle_structure_boundary_gate.jl`
+9. `test/gates/ci_gnc_aerobraking_boundary_gate.jl`
+10. `test/gates/ci_no_guidance_control_cross_include_gate.jl`
+11. `test/gates/ci_gnc_typed_command_boundary_gate.jl`
+12. `test/gates/ci_aerobraking_strategy_contract_gate.jl`

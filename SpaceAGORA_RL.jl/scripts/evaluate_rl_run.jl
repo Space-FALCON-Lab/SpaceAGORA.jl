@@ -14,6 +14,7 @@ ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
 
 using CSV
 using DataFrames
+using Distributed
 using Plots
 using Printf
 using SHA
@@ -65,6 +66,12 @@ Options:
   --checkpoint-episodes N     Episodes per mode and checkpoint for Figs. 7-8
                               (default: 40).
   --checkpoint-stride N       Evaluate every Nth numbered checkpoint (default: 1).
+  --processes N               Worker processes for final-flight comparison
+                              (default: min(4, available CPU threads)).
+  --threads-per-process N     Julia threads available inside each worker process
+                              (default: 1).
+  --progress-every N          Print progress every N completed campaigns
+                              (default: 1).
   --skip-checkpoint-sweep     Skip Figs. 7-8 checkpoint evaluation.
   --skip-generalization       Skip Table VI generalization evaluation.
   --help                      Show this message.
@@ -94,6 +101,9 @@ function _parse_cli(args)
         :generalization_episodes => PAPER_GENERALIZATION_EVALUATION_EPISODES,
         :checkpoint_episodes => PAPER_IID_EVALUATION_EPISODES,
         :checkpoint_stride => 1,
+        :processes => max(1, min(4, Sys.CPU_THREADS)),
+        :threads_per_process => 1,
+        :progress_every => 1,
         :checkpoint_sweep => true,
         :generalization => true,
     )
@@ -106,6 +116,9 @@ function _parse_cli(args)
         "--generalization-episodes" => :generalization_episodes,
         "--checkpoint-episodes" => :checkpoint_episodes,
         "--checkpoint-stride" => :checkpoint_stride,
+        "--processes" => :processes,
+        "--threads-per-process" => :threads_per_process,
+        "--progress-every" => :progress_every,
     )
     integer_options = Set([
         :episodes,
@@ -113,6 +126,9 @@ function _parse_cli(args)
         :generalization_episodes,
         :checkpoint_episodes,
         :checkpoint_stride,
+        :processes,
+        :threads_per_process,
+        :progress_every,
     ])
 
     index = 2
@@ -209,6 +225,221 @@ function _load_policy(checkpoint_path::AbstractString)
 end
 
 _std(values) = length(values) > 1 ? std(values) : 0.0
+
+function _format_wall_time(seconds::Real)
+    total = max(0, round(Int, seconds))
+    hours, remainder = divrem(total, 3600)
+    minutes, secs = divrem(remainder, 60)
+    return hours > 0 ? @sprintf("%02d:%02d:%02d", hours, minutes, secs) :
+           @sprintf("%02d:%02d", minutes, secs)
+end
+
+function _start_evaluation_workers(processes::Int, threads_per_process::Int)
+    project_file = Base.active_project()
+    project_file === nothing &&
+        error("cannot start evaluation workers without an active Julia project")
+    project_dir = dirname(project_file)
+    @printf(
+        "starting evaluation workers processes=%d threads_per_process=%d project=%s\n",
+        processes,
+        threads_per_process,
+        project_dir,
+    )
+    flush(stdout)
+    process_ids = addprocs(
+        processes;
+        exeflags=Cmd([
+            "--project=$(project_dir)",
+            "--threads=$(threads_per_process)",
+        ]),
+    )
+    try
+        @sync for process_id in process_ids
+            @async begin
+                @printf("evaluation worker initializing pid=%d\n", process_id)
+                flush(stdout)
+                remotecall_wait(process_id, threads_per_process, length(process_ids)) do thread_count, process_count
+                    ENV["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] =
+                        process_count > 1 ? "1" : "0"
+                    ENV["SPACEAGORA_INNER_THREAD_BUDGET"] = string(thread_count)
+                    return nothing
+                end
+                remotecall_wait(
+                    Base.eval,
+                    process_id,
+                    Main,
+                    :(using Distributed; using SpaceAGORA_RL),
+                )
+                actual_threads = remotecall_fetch(process_id) do
+                    Threads.nthreads()
+                end
+                @printf(
+                    "evaluation worker ready pid=%d threads=%d\n",
+                    process_id,
+                    actual_threads,
+                )
+                flush(stdout)
+            end
+        end
+    catch
+        rmprocs(process_ids)
+        rethrow()
+    end
+    return process_ids
+end
+
+function _result_from_summaries(summaries, scenario, policy_name::AbstractString)
+    sort!(summaries; by=summary -> summary.episode_index)
+    pass_rows = NamedTuple[]
+    for summary in summaries
+        append!(
+            pass_rows,
+            SpaceAGORA_RL.pass_log_rows(summary; policy_name=policy_name),
+        )
+    end
+    metrics = [
+        merge(
+            episode_metrics(summary; policy_name=policy_name),
+            episode_thermal_violation_metrics(summary, scenario),
+        )
+        for summary in summaries
+    ]
+    aggregate = merge(
+        aggregate_metrics(summaries; policy_name=policy_name),
+        aggregate_thermal_violation_metrics(summaries, scenario),
+    )
+    return (
+        summaries=summaries,
+        transitions=Transition[],
+        pass_rows=pass_rows,
+        metrics=metrics,
+        aggregate=aggregate,
+    )
+end
+
+function _evaluate_pair_parallel(
+    policy,
+    scenario,
+    episodes::Int,
+    seed::Int,
+    protected_initialization,
+    process_ids::Vector{Int};
+    paper_protocol::Bool=true,
+    progress_every::Int=1,
+)
+    isempty(process_ids) &&
+        throw(ArgumentError("parallel evaluation requires at least one worker process"))
+    policies = Dict{String,Any}(
+        "aads_heuristic" => AADSHeuristicPolicy(),
+        "trained_pr_drl" => policy,
+    )
+    jobs = [
+        (
+            policy_name=policy_name,
+            episode=episode,
+            campaign_seed=seed + episode - 1,
+        )
+        for policy_name in ("aads_heuristic", "trained_pr_drl")
+        for episode in 1:episodes
+    ]
+    total = length(jobs)
+    progress = RemoteChannel(() -> Channel{Any}(total), myid())
+    pool = CachingPool(process_ids)
+    start_time = time()
+    @printf(
+        "campaign evaluation starting total=%d policies=2 campaigns_per_policy=%d workers=%d\n",
+        total,
+        episodes,
+        length(process_ids),
+    )
+    flush(stdout)
+
+    evaluation_task = @async pmap(pool, jobs; batch_size=1) do job
+        episode_result = SpaceAGORA_RL.evaluate_policy(
+            policies[job.policy_name],
+            scenario;
+            episodes=1,
+            seed=job.campaign_seed,
+            policy_name=job.policy_name,
+            paper_protocol=paper_protocol,
+            protected_initialization=protected_initialization,
+        )
+        summary = only(episode_result.summaries)
+        summary.episode_index = job.episode
+        summary.worker_id = Distributed.myid()
+        put!(
+            progress,
+            (
+                policy_name=job.policy_name,
+                episode=job.episode,
+                worker_id=summary.worker_id,
+                pass_count=summary.pass_count,
+                thermal_violations=summary.thermal_violations,
+                target_error_km=abs(summary.target_error_m) / 1000,
+            ),
+        )
+        return (policy_name=job.policy_name, summary=summary)
+    end
+
+    completed = 0
+    last_status_time = time()
+    while completed < total
+        if isready(progress)
+            message = take!(progress)
+            completed += 1
+            last_status_time = time()
+            if completed % progress_every == 0 || completed == total
+                elapsed = time() - start_time
+                eta = completed == 0 ? Inf :
+                      elapsed * (total - completed) / completed
+                @printf(
+                    "evaluation progress=%d/%d (%.1f%%) policy=%s campaign=%d/%d worker=%d passes=%d thermal_violations=%d end_distance_km=%.3f elapsed=%s eta=%s\n",
+                    completed,
+                    total,
+                    100 * completed / total,
+                    message.policy_name,
+                    message.episode,
+                    episodes,
+                    message.worker_id,
+                    message.pass_count,
+                    message.thermal_violations,
+                    message.target_error_km,
+                    _format_wall_time(elapsed),
+                    _format_wall_time(eta),
+                )
+                flush(stdout)
+            end
+        elseif istaskdone(evaluation_task)
+            break
+        else
+            if time() - last_status_time >= 30
+                @printf(
+                    "evaluation active completed=%d/%d workers=%d elapsed=%s waiting_for_campaigns=true\n",
+                    completed,
+                    total,
+                    length(process_ids),
+                    _format_wall_time(time() - start_time),
+                )
+                flush(stdout)
+                last_status_time = time()
+            end
+            sleep(0.1)
+        end
+    end
+    evaluated = fetch(evaluation_task)
+    summaries = Dict(
+        "aads_heuristic" => EpisodeSummary[],
+        "trained_pr_drl" => EpisodeSummary[],
+    )
+    for item in evaluated
+        push!(summaries[item.policy_name], item.summary)
+    end
+    return Dict(
+        policy_name =>
+            _result_from_summaries(summaries[policy_name], scenario, policy_name)
+        for policy_name in ("aads_heuristic", "trained_pr_drl")
+    )
+end
 
 function _evaluate_pair(policy, scenario, episodes, seed, protected_initialization;
                         paper_protocol::Bool=true)
@@ -834,22 +1065,38 @@ function evaluate_final_flight_comparison(options)
     protected = protected_initialization_config(resolved.training)
 
     @printf(
-        "final flight comparison run=%s algorithm=%s checkpoint=%s campaigns_per_policy=%d thermal_terminal=false config=%s output=%s\n",
+        "final flight comparison run=%s algorithm=%s checkpoint=%s campaigns_per_policy=%d thermal_terminal=false processes=%d threads_per_process=%d progress_every=%d config=%s output=%s\n",
         run_dir,
         algorithm,
         checkpoint_path,
         options.episodes,
+        options.processes,
+        options.threads_per_process,
+        options.progress_every,
         config_path,
         output_dir,
     )
-    results = _evaluate_pair(
-        policy,
-        scenario,
-        options.episodes,
-        seed,
-        protected;
-        paper_protocol=false,
+    flush(stdout)
+    process_ids = _start_evaluation_workers(
+        options.processes,
+        options.threads_per_process,
     )
+    results = try
+        _evaluate_pair_parallel(
+            policy,
+            scenario,
+            options.episodes,
+            seed,
+            protected,
+            process_ids;
+            paper_protocol=false,
+            progress_every=options.progress_every,
+        )
+    finally
+        println("stopping evaluation workers")
+        flush(stdout)
+        rmprocs(process_ids)
+    end
     raw_paths = write_evaluation_artifacts(
         joinpath(output_dir, "final_policy_vs_aads"),
         results,
@@ -874,6 +1121,9 @@ function evaluate_final_flight_comparison(options)
         "config_sha256" => config_digest,
         "algorithm" => String(algorithm),
         "campaigns_per_policy" => options.episodes,
+        "worker_processes" => options.processes,
+        "threads_per_process" => options.threads_per_process,
+        "progress_every_campaigns" => options.progress_every,
         "seed" => seed,
         "terminal_on_thermal_violation" => false,
         "policy_action_selection" => "greedy",

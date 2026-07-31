@@ -234,7 +234,11 @@ function _format_wall_time(seconds::Real)
            @sprintf("%02d:%02d", minutes, secs)
 end
 
-function _start_evaluation_workers(processes::Int, threads_per_process::Int)
+function _start_evaluation_workers(
+    processes::Int,
+    threads_per_process::Int,
+    scenario::AerobrakingScenarioConfig,
+)
     project_file = Base.active_project()
     project_file === nothing &&
         error("cannot start evaluation workers without an active Julia project")
@@ -246,6 +250,8 @@ function _start_evaluation_workers(processes::Int, threads_per_process::Int)
         project_dir,
     )
     flush(stdout)
+    gram_once_per_step =
+        SpaceAGORA_RL._spaceagora_physics_gram_once_per_step(scenario)
     process_ids = addprocs(
         processes;
         exeflags=Cmd([
@@ -258,10 +264,17 @@ function _start_evaluation_workers(processes::Int, threads_per_process::Int)
             @async begin
                 @printf("evaluation worker initializing pid=%d\n", process_id)
                 flush(stdout)
-                remotecall_wait(process_id, threads_per_process, length(process_ids)) do thread_count, process_count
+                remotecall_wait(
+                    process_id,
+                    threads_per_process,
+                    length(process_ids),
+                    gram_once_per_step,
+                ) do thread_count, process_count, use_gram_once_per_step
                     ENV["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] =
                         process_count > 1 ? "1" : "0"
                     ENV["SPACEAGORA_INNER_THREAD_BUDGET"] = string(thread_count)
+                    ENV["SPACEAGORA_GRAM_ONCE_PER_STEP"] =
+                        use_gram_once_per_step ? "1" : "0"
                     return nothing
                 end
                 remotecall_wait(
@@ -274,9 +287,10 @@ function _start_evaluation_workers(processes::Int, threads_per_process::Int)
                     Threads.nthreads()
                 end
                 @printf(
-                    "evaluation worker ready pid=%d threads=%d\n",
+                    "evaluation worker ready pid=%d threads=%d gram_once_per_step=%s\n",
                     process_id,
                     actual_threads,
+                    gram_once_per_step,
                 )
                 flush(stdout)
             end
@@ -355,16 +369,31 @@ function _evaluate_pair_parallel(
     flush(stdout)
 
     evaluation_task = @async pmap(pool, jobs; batch_size=1) do job
-        episode_result = SpaceAGORA_RL.evaluate_policy(
-            policies[job.policy_name],
-            scenario;
-            episodes=1,
-            seed=job.campaign_seed,
-            policy_name=job.policy_name,
-            paper_protocol=paper_protocol,
-            protected_initialization=protected_initialization,
-        )
-        summary = only(episode_result.summaries)
+        evaluation_policy = policies[job.policy_name]
+        summary = if SpaceAGORA_RL._is_spaceagora_live_backend(scenario.backend_mode)
+            campaign_summary, _ =
+                SpaceAGORA_RL.run_spaceagora_physics_policy_campaign_episode(
+                    evaluation_policy,
+                    scenario,
+                    job.episode,
+                    Distributed.myid(),
+                    job.campaign_seed;
+                    max_passes_per_campaign=scenario.termination_config.max_passes,
+                    protected_initialization=protected_initialization,
+                )
+            campaign_summary
+        else
+            episode_result = SpaceAGORA_RL.evaluate_policy(
+                evaluation_policy,
+                scenario;
+                episodes=1,
+                seed=job.campaign_seed,
+                policy_name=job.policy_name,
+                paper_protocol=paper_protocol,
+                protected_initialization=protected_initialization,
+            )
+            only(episode_result.summaries)
+        end
         summary.episode_index = job.episode
         summary.worker_id = Distributed.myid()
         put!(
@@ -1080,6 +1109,7 @@ function evaluate_final_flight_comparison(options)
     process_ids = _start_evaluation_workers(
         options.processes,
         options.threads_per_process,
+        scenario,
     )
     results = try
         _evaluate_pair_parallel(

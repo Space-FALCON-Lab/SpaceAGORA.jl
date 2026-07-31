@@ -1,3 +1,43 @@
+function _evaluate_spaceagora_physics_policy(
+    policy::AbstractPolicy,
+    scenario::AerobrakingScenarioConfig;
+    episodes::Int,
+    seed::Int,
+    policy_name::AbstractString,
+    protected_initialization::ProtectedInitializationConfig,
+)
+    summaries = EpisodeSummary[]
+    transitions = Transition[]
+    pass_rows = NamedTuple[]
+    for episode in 1:episodes
+        summary, episode_transitions =
+            run_spaceagora_physics_policy_campaign_episode(
+                policy,
+                scenario,
+                episode,
+                Distributed.myid(),
+                seed + episode - 1;
+                max_passes_per_campaign=scenario.termination_config.max_passes,
+                protected_initialization=protected_initialization,
+            )
+        append!(transitions, episode_transitions)
+        append!(pass_rows, pass_log_rows(summary; policy_name=policy_name))
+        push!(summaries, summary)
+    end
+    metrics = [
+        merge(
+            episode_metrics(summary; policy_name=policy_name),
+            episode_thermal_violation_metrics(summary, scenario),
+        )
+        for summary in summaries
+    ]
+    aggregate = merge(
+        aggregate_metrics(summaries; policy_name=policy_name),
+        aggregate_thermal_violation_metrics(summaries, scenario),
+    )
+    return (; summaries, transitions, pass_rows, metrics, aggregate)
+end
+
 function evaluate_policy(policy::AbstractPolicy, config::AerobrakingScenarioConfig;
                          episodes::Int=PAPER_IID_EVALUATION_EPISODES,
                          seed::Int=1,
@@ -6,6 +46,17 @@ function evaluate_policy(policy::AbstractPolicy, config::AerobrakingScenarioConf
                          protected_initialization::ProtectedInitializationConfig=
                              ProtectedInitializationConfig())
     scenario = paper_protocol ? paper_evaluation_scenario(config) : config
+    if _is_spaceagora_live_backend(scenario.backend_mode)
+        return _evaluate_spaceagora_physics_policy(
+            policy,
+            scenario;
+            episodes=episodes,
+            seed=seed,
+            policy_name=policy_name,
+            protected_initialization=protected_initialization,
+        )
+    end
+
     summaries = EpisodeSummary[]
     transitions = Transition[]
     pass_rows = NamedTuple[]

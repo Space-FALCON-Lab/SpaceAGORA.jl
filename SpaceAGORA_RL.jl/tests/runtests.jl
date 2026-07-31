@@ -230,6 +230,52 @@ end
     @test next_state.argument_of_periapsis_rad == argument_of_periapsis_rad
 end
 
+@testset "continuous physics campaign evaluation policy selection" begin
+    config = default_aerobraking_config(
+        backend_mode=:spaceagora_physics,
+        spaceagora_atmosphere_model=:marsgram,
+        spaceagora_gram_once_per_step=true,
+        training=false,
+        max_passes=3,
+    )
+    state = reset_scenario(config, MersenneTwister(12))
+    rollout = SpaceAGORA_RL.SpaceAGORAPhysicsCampaignRollout(
+        config = config,
+        schedule = EpsilonSchedule(),
+        ddqn_config = DDQNConfig(),
+        policy_snapshot = nothing,
+        evaluation_policy = NoManeuverPolicy(),
+        rng = MersenneTwister(12),
+        episode_index = 1,
+        worker_id = 2,
+        seed = 12,
+        max_passes_per_campaign = 3,
+        global_step_start = 0,
+        train = false,
+        state = state,
+        norm_obs = normalize_observation(
+            observe_state(config, state),
+            config.normalization_bounds,
+        ),
+        action_index = 1,
+        action = action_from_index(1),
+        summary = empty_episode_summary(),
+        transitions = Transition[],
+    )
+
+    selected = SpaceAGORA_RL._spaceagora_physics_campaign_select_action!(rollout)
+    @test selected.index == zero_action_index()
+    @test rollout.action_index == zero_action_index()
+    @test SpaceAGORA_RL._spaceagora_physics_gram_once_per_step(config)
+
+    surrogate_config = default_aerobraking_config(
+        backend_mode=:spaceagora_physics,
+        spaceagora_atmosphere_model=:marsgram_surrogate,
+        spaceagora_gram_once_per_step=false,
+    )
+    @test !SpaceAGORA_RL._spaceagora_physics_gram_once_per_step(surrogate_config)
+end
+
 @testset "protected initialization accounting and exclusion" begin
     config = default_aerobraking_config(phase="Main", training=false, max_passes=3)
     rng = MersenneTwister(27)

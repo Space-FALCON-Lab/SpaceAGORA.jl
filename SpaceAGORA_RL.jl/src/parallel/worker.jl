@@ -35,6 +35,7 @@ Base.@kwdef mutable struct SpaceAGORAPhysicsCampaignRollout
     schedule::EpsilonSchedule
     ddqn_config::DDQNConfig
     policy_snapshot::Union{Nothing,QNetwork}
+    evaluation_policy::Union{Nothing,AbstractPolicy} = nothing
     rng::MersenneTwister
     episode_index::Int
     worker_id::Int
@@ -68,6 +69,11 @@ function _spaceagora_physics_campaign_mission_pass_cap(config::AerobrakingScenar
     return min(requested, configured)
 end
 
+function _spaceagora_physics_gram_once_per_step(config::AerobrakingScenarioConfig)
+    native_gram = config.spaceagora_atmosphere_model in (:gram, :marsgram)
+    return native_gram && config.spaceagora_gram_once_per_step
+end
+
 function _spaceagora_physics_campaign_step_index(rollout::SpaceAGORAPhysicsCampaignRollout)
     learned_transitions = length(rollout.transitions) - rollout.summary.protected_passes
     return rollout.global_step_start + learned_transitions + 1
@@ -91,10 +97,26 @@ function _spaceagora_physics_campaign_decode_action_command(command)
 end
 
 function _spaceagora_physics_campaign_select_action!(rollout::SpaceAGORAPhysicsCampaignRollout)
+    evaluation_policy = rollout.evaluation_policy
+    if evaluation_policy !== nothing
+        observation = observe_state(rollout.config, rollout.state)
+        selected = policy_action_index(
+            evaluation_policy,
+            rollout.config,
+            rollout.state,
+            observation,
+            rollout.rng,
+        )
+        action_index = selected isa AerobrakingAction ? selected.index : Int(selected)
+        return _spaceagora_physics_campaign_set_action!(rollout, action_index)
+    end
+
     step = _spaceagora_physics_campaign_step_index(rollout)
     policy_snapshot = rollout.policy_snapshot
     policy_snapshot === nothing &&
-        throw(ArgumentError("non-streaming campaign rollout requires a policy snapshot"))
+        throw(ArgumentError(
+            "non-streaming campaign rollout requires a policy snapshot or evaluation policy",
+        ))
     action_index = snapshot_policy_action(
         policy_snapshot,
         rollout.schedule,
@@ -384,6 +406,123 @@ function _spaceagora_physics_campaign_stats_callback(spaceagora,
     return Base.invokelatest(discrete_callback, condition, affect!; initialize=initialize)
 end
 
+function _run_spaceagora_physics_campaign_rollout!(
+    rollout::SpaceAGORAPhysicsCampaignRollout,
+)
+    config = rollout.config
+    pass_cap = rollout.max_passes_per_campaign
+    spaceagora = _load_spaceagora!(; load_gramsuite=_spaceagora_live_needs_gramsuite(config))
+    args, _ = _spaceagora_physics_simulation_configuration(
+        config,
+        rollout.state,
+        rollout.action;
+        prediction = false,
+        campaign_max_passes = pass_cap,
+    )
+    stats_callback = _spaceagora_physics_campaign_stats_callback(spaceagora, rollout)
+    apoapsis_callback = _spaceagora_physics_campaign_apoapsis_callback(spaceagora, rollout)
+    ephemeris_callback =
+        _spaceagora_rl_shared_ephemeris_callback(spaceagora, config, pass_cap)
+    extra_callbacks = ephemeris_callback === nothing ?
+                      (stats_callback, apoapsis_callback) :
+                      (ephemeris_callback, stats_callback, apoapsis_callback)
+    run_simulation_fn = Base.invokelatest(getproperty, spaceagora, :run_simulation)
+    try
+        Base.invokelatest(
+            run_simulation_fn,
+            args;
+            return_solution = false,
+            isolate_state = false,
+            extra_callbacks = extra_callbacks,
+        )
+    catch err
+        bt = catch_backtrace()
+        throw(ErrorException(
+            "SpaceAGORA physics campaign rollout failed while propagating a continuous aerobraking campaign. " *
+            "Original error:\n$(sprint(showerror, err, bt))"
+        ))
+    end
+
+    if !rollout.terminated && length(rollout.transitions) < pass_cap
+        integrator = rollout.last_integrator
+        integrator === nothing &&
+            throw(ErrorException("SpaceAGORA physics campaign did not expose a final integrator state"))
+        args = getproperty(getproperty(integrator, :p), :args)
+        _spaceagora_physics_campaign_push_transition!(
+            spaceagora,
+            rollout,
+            args,
+            getproperty(integrator, :u),
+            Float64(getproperty(integrator, :t));
+            force_truncated = true,
+        )
+    end
+    protected_count = rollout.summary.protected_passes
+    learned_transitions = protected_count == 0 ?
+                          rollout.transitions :
+                          rollout.transitions[(protected_count + 1):end]
+    return finalize_episode_summary(rollout.summary, config), learned_transitions
+end
+
+function run_spaceagora_physics_policy_campaign_episode(
+    policy::AbstractPolicy,
+    config::AerobrakingScenarioConfig,
+    episode_index::Int,
+    worker_id::Int,
+    seed::Int;
+    max_passes_per_campaign::Int=config.termination_config.max_passes,
+    protected_initialization::ProtectedInitializationConfig=
+        ProtectedInitializationConfig(enabled=false),
+)
+    rng = MersenneTwister(seed)
+    state = reset_scenario(config, rng)
+    observation = observe_state(config, state)
+    norm_obs = normalize_observation(observation, config.normalization_bounds)
+    summary = empty_episode_summary(
+        episode_index=episode_index,
+        worker_id=worker_id,
+        seed=seed,
+    )
+    pass_cap = _spaceagora_physics_campaign_mission_pass_cap(
+        config,
+        max_passes_per_campaign,
+    )
+    selected = protected_initialization.enabled ?
+               zero_action_index() :
+               policy_action_index(policy, config, state, observation, rng)
+    action_index = selected isa AerobrakingAction ? selected.index : Int(selected)
+    rollout = SpaceAGORAPhysicsCampaignRollout(
+        config = config,
+        schedule = EpsilonSchedule(),
+        ddqn_config = DDQNConfig(),
+        policy_snapshot = nothing,
+        evaluation_policy = policy,
+        rng = rng,
+        episode_index = episode_index,
+        worker_id = worker_id,
+        seed = seed,
+        max_passes_per_campaign = pass_cap,
+        global_step_start = 0,
+        train = false,
+        state = state,
+        norm_obs = norm_obs,
+        action_index = action_index,
+        action = action_from_index(action_index),
+        summary = summary,
+        transitions = Transition[],
+        protected_next_transition = protected_initialization.enabled,
+        protected_suppress_thermal_terminal =
+            protected_initialization.suppress_thermal_terminal,
+        protected_initialization = protected_initialization,
+    )
+    gram_once_per_step = _spaceagora_physics_gram_once_per_step(config)
+    return withenv(
+        "SPACEAGORA_GRAM_ONCE_PER_STEP" => (gram_once_per_step ? "1" : "0"),
+    ) do
+        _run_spaceagora_physics_campaign_rollout!(rollout)
+    end
+end
+
 function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScenarioConfig,
                                                         schedule::EpsilonSchedule,
                                                         ddqn_config::DDQNConfig,
@@ -440,58 +579,7 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
             protected_initialization.suppress_thermal_terminal,
         protected_initialization = protected_initialization,
     )
-
-    spaceagora = _load_spaceagora!(; load_gramsuite=_spaceagora_live_needs_gramsuite(config))
-    args, _ = _spaceagora_physics_simulation_configuration(
-        config,
-        state,
-        action;
-        prediction = false,
-        campaign_max_passes = pass_cap,
-    )
-    stats_callback = _spaceagora_physics_campaign_stats_callback(spaceagora, rollout)
-    apoapsis_callback = _spaceagora_physics_campaign_apoapsis_callback(spaceagora, rollout)
-    ephemeris_callback =
-        _spaceagora_rl_shared_ephemeris_callback(spaceagora, config, pass_cap)
-    extra_callbacks = ephemeris_callback === nothing ?
-                      (stats_callback, apoapsis_callback) :
-                      (ephemeris_callback, stats_callback, apoapsis_callback)
-    run_simulation_fn = Base.invokelatest(getproperty, spaceagora, :run_simulation)
-    try
-        Base.invokelatest(
-            run_simulation_fn,
-            args;
-            return_solution = false,
-            isolate_state = false,
-            extra_callbacks = extra_callbacks,
-        )
-    catch err
-        bt = catch_backtrace()
-        throw(ErrorException(
-            "SpaceAGORA physics campaign rollout failed while propagating a continuous aerobraking campaign. " *
-            "Original error:\n$(sprint(showerror, err, bt))"
-        ))
-    end
-
-    if !rollout.terminated && length(rollout.transitions) < pass_cap
-        integrator = rollout.last_integrator
-        integrator === nothing &&
-            throw(ErrorException("SpaceAGORA physics campaign did not expose a final integrator state"))
-        args = getproperty(getproperty(integrator, :p), :args)
-        _spaceagora_physics_campaign_push_transition!(
-            spaceagora,
-            rollout,
-            args,
-            getproperty(integrator, :u),
-            Float64(getproperty(integrator, :t));
-            force_truncated = true,
-        )
-    end
-    protected_count = rollout.summary.protected_passes
-    learned_transitions = protected_count == 0 ?
-                          rollout.transitions :
-                          rollout.transitions[(protected_count + 1):end]
-    return finalize_episode_summary(rollout.summary, config), learned_transitions
+    return _run_spaceagora_physics_campaign_rollout!(rollout)
 end
 
 function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel,

@@ -98,6 +98,8 @@ function _validate_checkpoints(session)
         seed=config.training.validation_seed,
         output_dir=output_dir,
         protected_initialization=protected_initialization_config(config.training),
+        checkpoint_stride=config.training.validation_checkpoint_stride,
+        write_plots=config.reports.write_plots,
     )
 end
 

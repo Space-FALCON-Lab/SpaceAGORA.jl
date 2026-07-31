@@ -23,6 +23,8 @@ mutable struct A2CLearner
     global_step::Int
     train_steps::Int
     last_loss::Float64
+    loss_sum::Float64
+    loss_count::Int
     last_policy_loss::Float64
     last_entropy::Float64
     last_value_loss::Float64
@@ -46,6 +48,8 @@ function A2CLearner(rng::AbstractRNG, config::A2CConfig=A2CConfig();
         0,
         0,
         NaN,
+        0.0,
+        0,
         NaN,
         NaN,
         NaN,
@@ -145,14 +149,18 @@ function train_step!(learner::A2CLearner, batch::A2CRolloutBatch)
     adam_update!(learner.critic, critic_grads, learner.critic_optimizer)
     learner.train_steps += 1
     learner.last_loss = loss
+    learner.loss_sum += loss
+    learner.loss_count += 1
     learner.last_policy_loss = policy_loss
     learner.last_entropy = entropy_loss
     learner.last_value_loss = value_loss
     return loss
 end
 
+mean_training_loss(learner::A2CLearner) =
+    learner.loss_count == 0 ? NaN : learner.loss_sum / learner.loss_count
+
 function maybe_train!(learner::A2CLearner, batch::A2CRolloutBatch)
     learner.global_step >= learner.config.train_start || return nothing
     return train_step!(learner, batch)
 end
-

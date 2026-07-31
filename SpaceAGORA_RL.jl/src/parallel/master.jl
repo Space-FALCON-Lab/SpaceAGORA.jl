@@ -17,14 +17,17 @@ function _recent_training_stats(summaries::AbstractVector{<:EpisodeSummary}, win
     )
     first_idx = max(1, length(summaries) - max(1, window) + 1)
     recent = summaries[first_idx:end]
-    final_errors_m = getfield.(recent, :target_error_m)
+    thermal_free = filter(summary -> summary.thermal_violations == 0, recent)
+    final_errors_m = getfield.(thermal_free, :target_error_m)
     finite_final_errors_m = filter(isfinite, final_errors_m)
     return (
         mean_reward = mean(getfield.(recent, :episode_reward)),
-        reached_goal_percent = 100 *
+        reached_goal_percent = isempty(thermal_free) ?
+                               NaN :
+                               100 *
             count(error_m -> isfinite(error_m) &&
                              abs(error_m) <= target_tolerance_m, final_errors_m) /
-            length(recent),
+            length(thermal_free),
         mean_thermal_violations = mean(getfield.(recent, :thermal_violations)),
         mean_passes_to_end = mean(getfield.(recent, :pass_count)),
         mean_end_distance_km = isempty(finite_final_errors_m) ?
@@ -63,7 +66,7 @@ function _print_training_progress(session::TrainingSession, summaries::AbstractV
     loss = isfinite(session.learner.last_loss) ? @sprintf("%.6g", session.learner.last_loss) : "n/a"
     if step_limited
         @printf(
-            "progress ep=%d steps=%d/%d replay=%d train_steps=%d loss=%s eps=%.4f recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal=%.1f%% recent_mean_end_distance_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
+            "progress ep=%d steps=%d/%d replay=%d train_steps=%d loss=%s eps=%.4f recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal_no_thermal=%.1f%% recent_mean_end_distance_no_thermal_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
             completed_episodes,
             session.learner.global_step,
             target_global_step,
@@ -83,7 +86,7 @@ function _print_training_progress(session::TrainingSession, summaries::AbstractV
         )
     else
         @printf(
-            "progress ep=%d/%s steps=%d replay=%d train_steps=%d loss=%s eps=%.4f recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal=%.1f%% recent_mean_end_distance_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
+            "progress ep=%d/%s steps=%d replay=%d train_steps=%d loss=%s eps=%.4f recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal_no_thermal=%.1f%% recent_mean_end_distance_no_thermal_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
             completed_episodes,
             _budget_label(episode_budget),
             session.learner.global_step,
@@ -876,7 +879,7 @@ function _print_a2c_progress(session::TrainingSession{<:A2CLearner},
     )
     loss = isfinite(session.learner.last_loss) ? @sprintf("%.6g", session.learner.last_loss) : "n/a"
     @printf(
-        "progress algo=a2c ep=%d/%s steps=%d%s train_steps=%d loss=%s recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal=%.1f%% recent_mean_end_distance_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
+        "progress algo=a2c ep=%d/%s steps=%d%s train_steps=%d loss=%s recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal_no_thermal=%.1f%% recent_mean_end_distance_no_thermal_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
         completed_episodes,
         _budget_label(episode_budget),
         session.learner.global_step,

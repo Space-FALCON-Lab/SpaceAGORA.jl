@@ -98,6 +98,7 @@ export frozen_checkpoint_paths, evaluate_frozen_checkpoints
 export thermal_violation_breakdown, terminal_thermal_violation_type
 export episode_thermal_violation_metrics, aggregate_thermal_violation_metrics
 export select_best_validation_checkpoint, validate_frozen_checkpoints
+export write_checkpoint_training_plots
 export default_aerobraking_config, mars_odyssey_phase_constants
 
 export ReplayBuffer, ReplayBatch, sample_batch

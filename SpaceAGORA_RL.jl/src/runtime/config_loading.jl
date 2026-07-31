@@ -12,6 +12,7 @@ Base.@kwdef struct TrainingConfig
     validate_checkpoints::Bool = false
     validation_episodes::Int = PAPER_IID_EVALUATION_EPISODES
     validation_seed::Int = 1
+    validation_checkpoint_stride::Int = 1
     output_dir::String = joinpath(package_root(), "outputs", "runs")
     protected_first_pass::Bool = false
     protected_initial_corridor_maneuver::Bool = false
@@ -219,6 +220,11 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
             PAPER_IID_EVALUATION_EPISODES,
         )),
         validation_seed = Int(_get(train_table, "validation_seed", 1)),
+        validation_checkpoint_stride = Int(_get(
+            train_table,
+            "validation_checkpoint_stride",
+            1,
+        )),
         output_dir = String(_get(train_table, "output_dir", joinpath(package_root(), "outputs", "runs"))),
         protected_first_pass = Bool(_get(train_table, "protected_first_pass", false)),
         protected_initial_corridor_maneuver = Bool(_get(train_table, "protected_initial_corridor_maneuver", false)),
@@ -235,6 +241,8 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         throw(ArgumentError("training.algorithm must be \"pr_drl\", \"ddqn\", or \"a2c\""))
     training.worker_backend in (:threads, :processes) ||
         throw(ArgumentError("training.worker_backend must be \"threads\" or \"processes\""))
+    training.validation_checkpoint_stride > 0 ||
+        throw(ArgumentError("training.validation_checkpoint_stride must be positive"))
     return ResolvedConfig(source_path, raw, scenario, ddqn, a2c, epsilon, training, reports)
 end
 

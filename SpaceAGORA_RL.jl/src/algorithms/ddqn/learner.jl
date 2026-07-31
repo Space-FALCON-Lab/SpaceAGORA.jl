@@ -42,6 +42,8 @@ mutable struct DDQNLearner
     global_step::Int
     train_steps::Int
     last_loss::Float64
+    loss_sum::Float64
+    loss_count::Int
     device::AbstractTrainingDevice
 end
 
@@ -54,7 +56,20 @@ function DDQNLearner(rng::AbstractRNG, config::DDQNConfig=DDQNConfig();
     target = copy(online)
     replay = ReplayBuffer(config.obs_dim, config.replay_size)
     optimizer = AdamState(online, config)
-    return DDQNLearner(online, target, replay, schedule, config, optimizer, 0, 0, NaN, device)
+    return DDQNLearner(
+        online,
+        target,
+        replay,
+        schedule,
+        config,
+        optimizer,
+        0,
+        0,
+        NaN,
+        0.0,
+        0,
+        device,
+    )
 end
 
 function selected_q_targets(online_q_next::AbstractMatrix{<:Real},
@@ -141,9 +156,14 @@ function train_step!(learner::DDQNLearner, rng::AbstractRNG)
     adam_update!(learner.online, grads, learner.optimizer)
     learner.train_steps += 1
     learner.last_loss = loss
+    learner.loss_sum += loss
+    learner.loss_count += 1
     maybe_update_target!(learner)
     return loss
 end
+
+mean_training_loss(learner::DDQNLearner) =
+    learner.loss_count == 0 ? NaN : learner.loss_sum / learner.loss_count
 
 function maybe_train!(learner::DDQNLearner, rng::AbstractRNG)
     if length(learner.replay) >= learner.config.batch_size &&

@@ -48,14 +48,19 @@ Required:
   RUN_DIR                     RL run containing manifest.toml and checkpoints.
 
 Options:
-  --output DIR                Output directory (default: RUN_DIR/paper_evaluation).
+  --output DIR                Output directory (default: RUN_DIR/paper_evaluation,
+                              or RUN_DIR/final_flight_comparison in comparison mode).
   --config PATH               Override the config recorded in the run manifest.
   --checkpoint PATH|final     Policy checkpoint (default: checkpoint_final.jls,
                               otherwise the largest numbered checkpoint).
+  --final-flight-comparison   Only evaluate checkpoint_final.jls against AADS and
+                              the Mars Odyssey mission reference. Uses the
+                              thermal-tolerant protocol and --episodes campaigns
+                              (default: 40).
   --episodes N                IID PR-DRL/AADS episodes for Table V/Fig. 10
                               (default: 40).
   --flight-episodes N         Odyssey-geometry episodes for Figs. 11-12
-                              (default: 100).
+                              (default: 40).
   --generalization-episodes N Episodes per Table VI case (default: 100).
   --checkpoint-episodes N     Episodes per mode and checkpoint for Figs. 7-8
                               (default: 40).
@@ -67,6 +72,8 @@ Options:
 Outputs include the raw episode/pass CSVs, checkpoint_metrics.csv,
 paper_table_v_pr_drl_vs_aads.csv, paper_table_vi_generalization.csv,
 paper_fig07_*.png through paper_fig12_*.png, and evaluation_manifest.toml.
+Final-flight-comparison mode writes its four-panel PNG, comparison CSV, raw
+episode/pass CSVs, and evaluation_manifest.toml only.
 """)
 end
 
@@ -81,8 +88,9 @@ function _parse_cli(args)
         :output => nothing,
         :config => nothing,
         :checkpoint => nothing,
+        :final_flight_comparison => false,
         :episodes => PAPER_IID_EVALUATION_EPISODES,
-        :flight_episodes => PAPER_GENERALIZATION_EVALUATION_EPISODES,
+        :flight_episodes => PAPER_IID_EVALUATION_EPISODES,
         :generalization_episodes => PAPER_GENERALIZATION_EVALUATION_EPISODES,
         :checkpoint_episodes => PAPER_IID_EVALUATION_EPISODES,
         :checkpoint_stride => 1,
@@ -112,6 +120,9 @@ function _parse_cli(args)
         arg = args[index]
         if arg == "--skip-checkpoint-sweep"
             options[:checkpoint_sweep] = false
+            index += 1
+        elseif arg == "--final-flight-comparison"
+            options[:final_flight_comparison] = true
             index += 1
         elseif arg == "--skip-generalization"
             options[:generalization] = false
@@ -181,6 +192,13 @@ function _checkpoint_path(run_dir::AbstractString, requested)
     return last(numbered)
 end
 
+function _final_checkpoint_path(run_dir::AbstractString)
+    path = joinpath(run_dir, "checkpoint_final.jls")
+    isfile(path) ||
+        throw(ArgumentError("final-policy comparison requires $path"))
+    return path
+end
+
 function _load_policy(checkpoint_path::AbstractString)
     payload = load_checkpoint(checkpoint_path)
     algorithm = Symbol(get(payload, :algorithm, haskey(payload, :actor) ? :a2c : :pr_drl))
@@ -192,7 +210,8 @@ end
 
 _std(values) = length(values) > 1 ? std(values) : 0.0
 
-function _evaluate_pair(policy, scenario, episodes, seed, protected_initialization)
+function _evaluate_pair(policy, scenario, episodes, seed, protected_initialization;
+                        paper_protocol::Bool=true)
     return Dict(
         "aads_heuristic" => evaluate_policy(
             AADSHeuristicPolicy(),
@@ -200,6 +219,7 @@ function _evaluate_pair(policy, scenario, episodes, seed, protected_initializati
             episodes=episodes,
             seed=seed,
             policy_name="aads_heuristic",
+            paper_protocol=paper_protocol,
             protected_initialization=protected_initialization,
         ),
         "trained_pr_drl" => evaluate_policy(
@@ -208,6 +228,7 @@ function _evaluate_pair(policy, scenario, episodes, seed, protected_initializati
             episodes=episodes,
             seed=seed,
             policy_name="trained_pr_drl",
+            paper_protocol=paper_protocol,
             protected_initialization=protected_initialization,
         ),
     )
@@ -293,18 +314,75 @@ function _metric_stats(metrics::DataFrame, policy::String, field::Symbol)
     return mean(values), _std(values)
 end
 
+function _flight_performance_table(metrics::DataFrame)
+    rows = NamedTuple[]
+    for (policy, label) in (
+        ("trained_pr_drl", "PR-DRL"),
+        ("aads_heuristic", "AADS"),
+    )
+        maneuvers = _metric_stats(metrics, policy, :maneuver_count)
+        duration = _metric_stats(metrics, policy, :mission_duration_days)
+        delta_v = _metric_stats(metrics, policy, :total_mission_delta_v_mps)
+        thermal = _metric_stats(metrics, policy, :thermal_violations)
+        push!(rows, (
+            policy=label,
+            episodes=count(==(policy), metrics.policy),
+            mean_maneuver_count=maneuvers[1],
+            std_maneuver_count=maneuvers[2],
+            mean_duration_days=duration[1],
+            std_duration_days=duration[2],
+            mean_total_delta_v_mps=delta_v[1],
+            std_total_delta_v_mps=delta_v[2],
+            mean_thermal_violations=thermal[1],
+            std_thermal_violations=thermal[2],
+        ))
+    end
+    push!(rows, (
+        policy="Mars Odyssey",
+        episodes=1,
+        mean_maneuver_count=ODYSSEY_REFERENCE.maneuver_count,
+        std_maneuver_count=0.0,
+        mean_duration_days=ODYSSEY_REFERENCE.mission_duration_days,
+        std_duration_days=0.0,
+        mean_total_delta_v_mps=ODYSSEY_REFERENCE.total_mission_delta_v_mps,
+        std_total_delta_v_mps=0.0,
+        mean_thermal_violations=ODYSSEY_REFERENCE.thermal_violations,
+        std_thermal_violations=0.0,
+    ))
+    return DataFrame(rows)
+end
+
 function _paper_figure_11(metrics::DataFrame, path::AbstractString)
     policies = ["trained_pr_drl", "aads_heuristic", "odyssey_flight"]
     labels = ["PR-DRL", "AADS", "Mars Odyssey"]
     specs = [
-        (:maneuver_count, "Number of ABMs", ODYSSEY_REFERENCE.maneuver_count),
-        (:mission_duration_days, "Duration (days)", ODYSSEY_REFERENCE.mission_duration_days),
-        (:total_mission_delta_v_mps, "Total Delta-V (m/s)",
-         ODYSSEY_REFERENCE.total_mission_delta_v_mps),
-        (:thermal_violations, "Thermal violations", ODYSSEY_REFERENCE.thermal_violations),
+        (
+            :maneuver_count,
+            "Number of maneuvers",
+            ODYSSEY_REFERENCE.maneuver_count,
+            "(a) Number of maneuvers",
+        ),
+        (
+            :mission_duration_days,
+            "Duration (days)",
+            ODYSSEY_REFERENCE.mission_duration_days,
+            "(b) Campaign duration",
+        ),
+        (
+            :total_mission_delta_v_mps,
+            "Total ΔV (m/s)",
+            ODYSSEY_REFERENCE.total_mission_delta_v_mps,
+            "(c) Total ΔV",
+        ),
+        (
+            :thermal_violations,
+            "Thermal violations",
+            ODYSSEY_REFERENCE.thermal_violations,
+            "(d) Thermal violations",
+        ),
     ]
     panels = Plots.Plot[]
-    for (field, ylabel, reference) in specs
+    for (field, ylabel, reference, title) in specs
         means = Float64[]
         errors = Float64[]
         for policy in policies[1:2]
@@ -314,10 +392,23 @@ function _paper_figure_11(metrics::DataFrame, path::AbstractString)
         end
         push!(means, reference)
         push!(errors, 0.0)
-        push!(panels, bar(labels, means; yerror=errors, ylabel=ylabel,
-                          legend=false, xrotation=15, title=ylabel))
+        push!(panels, bar(
+            labels,
+            means;
+            yerror=errors,
+            ylabel=ylabel,
+            legend=false,
+            xrotation=15,
+            title=title,
+        ))
     end
-    savefig(plot(panels...; layout=(2, 2), size=(1000, 780)), path)
+    campaigns = count(==("trained_pr_drl"), metrics.policy)
+    savefig(plot(
+        panels...;
+        layout=(2, 2),
+        size=(1000, 820),
+        plot_title="$(campaigns)-campaign thermal-tolerant flight comparison",
+    ), path)
     return path
 end
 
@@ -348,7 +439,8 @@ function _checkpoint_record(checkpoint_path, mode, result, payload)
     stat(field) = (mean(Float64.(metrics[!, field])),
                    _std(Float64.(metrics[!, field])))
     reward = stat(:episode_reward)
-    target = stat(:target_error_km)
+    target_errors_km = abs.(Float64.(metrics.target_error_km))
+    target = (mean(target_errors_km), _std(target_errors_km))
     thermal = stat(:thermal_violations)
     delta_v = stat(:total_delta_v_mps)
     maneuvers = stat(:maneuver_count)
@@ -359,7 +451,13 @@ function _checkpoint_record(checkpoint_path, mode, result, payload)
         global_step=step,
         mode=mode,
         episodes=nrow(metrics),
-        checkpoint_loss=Float64(get(payload, :last_loss, NaN)),
+        checkpoint_loss=Float64(get(
+            payload,
+            :mean_training_loss,
+            get(payload, :last_loss, NaN),
+        )),
+        training_loss_sum=Float64(get(payload, :training_loss_sum, NaN)),
+        training_loss_count=Int(get(payload, :training_loss_count, 0)),
         mean_reward=reward[1], std_reward=reward[2],
         success_percent=100 * mean(metrics.success),
         impact_percent=100 * mean(metrics.impact),
@@ -414,9 +512,31 @@ function _checkpoint_figures(data::DataFrame, output_dir::AbstractString)
     paths = String[]
     colors = Dict("conservative" => :seagreen, "tolerant" => :darkorange)
 
-    loss_rows = unique(data[:, [:global_step, :checkpoint_loss]], :global_step)
-    p_loss = plot(loss_rows.global_step, loss_rows.checkpoint_loss;
-                  xlabel="Training step", ylabel="Checkpoint loss",
+    loss_rows = unique(
+        data[:, [
+            :global_step,
+            :checkpoint_loss,
+            :training_loss_sum,
+            :training_loss_count,
+        ]],
+        :global_step,
+    )
+    sort!(loss_rows, :global_step)
+    interval_loss = copy(loss_rows.checkpoint_loss)
+    previous_sum = 0.0
+    previous_count = 0
+    for index in eachindex(interval_loss)
+        current_sum = loss_rows.training_loss_sum[index]
+        current_count = loss_rows.training_loss_count[index]
+        if isfinite(current_sum) && current_count > previous_count
+            interval_loss[index] =
+                (current_sum - previous_sum) / (current_count - previous_count)
+            previous_sum = current_sum
+            previous_count = current_count
+        end
+    end
+    p_loss = plot(loss_rows.global_step, interval_loss;
+                  xlabel="Training step", ylabel="Average optimizer loss",
                   label="training loss", color=:steelblue, marker=:circle)
     loss_path = joinpath(output_dir, "paper_fig07a_checkpoint_loss.png")
     savefig(p_loss, loss_path)
@@ -445,7 +565,7 @@ function _checkpoint_figures(data::DataFrame, output_dir::AbstractString)
                       title="(a) Episode completion", marker=:circle)
     target = plot(rows.global_step, rows.mean_target_error_km;
                   ribbon=rows.std_target_error_km, label=false,
-                  xlabel="Training step", ylabel="Target error (km)",
+                  xlabel="Training step", ylabel="Absolute target distance (km)",
                   title="(b) Final target distance", marker=:circle)
     thermal = plot(rows.global_step, rows.mean_thermal_violations;
                    ribbon=rows.std_thermal_violations, label=false,
@@ -670,7 +790,126 @@ function _write_manifest(output_dir; run_dir, config_path, config_sha256,
     return path
 end
 
+function _final_flight_scenario(resolved)
+    max_passes = max(1000, resolved.scenario.termination_config.max_passes)
+    odyssey_defaults = paper_odyssey_flight_evaluation_config(
+        backend_mode=resolved.scenario.backend_mode,
+        max_passes=max_passes,
+    )
+    return paper_evaluation_scenario(
+        resolved.scenario;
+        max_passes=max_passes,
+        randomization_config=odyssey_defaults.randomization_config,
+        terminal_on_thermal_violation=false,
+    )
+end
+
+function evaluate_final_flight_comparison(options)
+    run_dir = abspath(options.run_dir)
+    isdir(run_dir) || throw(ArgumentError("run directory does not exist: $run_dir"))
+    options.checkpoint in (nothing, "final") ||
+        throw(ArgumentError("--final-flight-comparison always uses checkpoint_final.jls"))
+
+    manifest_path = joinpath(run_dir, "manifest.toml")
+    isfile(manifest_path) || throw(ArgumentError("run has no manifest.toml: $run_dir"))
+    run_manifest = TOML.parsefile(manifest_path)
+    config_path = _config_path(run_dir, run_manifest, options.config)
+    config_digest = bytes2hex(sha256(read(config_path)))
+    recorded_digest = strip(String(get(run_manifest, "config_sha256", "")))
+    if !isempty(recorded_digest) && recorded_digest != config_digest
+        @warn "evaluation config differs from the config recorded by the training run" config_path recorded_digest config_digest
+    end
+
+    resolved = resolve_config(config_path)
+    checkpoint_path = _final_checkpoint_path(run_dir)
+    policy, algorithm, _ = _load_policy(checkpoint_path)
+    output_dir = abspath(options.output === nothing ?
+                        joinpath(run_dir, "final_flight_comparison") :
+                        options.output)
+    mkpath(output_dir)
+    scenario = _final_flight_scenario(resolved)
+    scenario.termination_config.terminal_on_thermal_violation &&
+        error("final flight comparison must use thermal-tolerant termination")
+    seed = resolved.training.validation_seed
+    protected = protected_initialization_config(resolved.training)
+
+    @printf(
+        "final flight comparison run=%s algorithm=%s checkpoint=%s campaigns_per_policy=%d thermal_terminal=false config=%s output=%s\n",
+        run_dir,
+        algorithm,
+        checkpoint_path,
+        options.episodes,
+        config_path,
+        output_dir,
+    )
+    results = _evaluate_pair(
+        policy,
+        scenario,
+        options.episodes,
+        seed,
+        protected;
+        paper_protocol=false,
+    )
+    raw_paths = write_evaluation_artifacts(
+        joinpath(output_dir, "final_policy_vs_aads"),
+        results,
+    )
+    metrics, _ = _result_frames(results)
+    comparison_path = joinpath(
+        output_dir,
+        "final_flight_performance_comparison.csv",
+    )
+    CSV.write(comparison_path, _flight_performance_table(metrics))
+    figure_path = _paper_figure_11(
+        metrics,
+        joinpath(output_dir, "final_flight_performance_comparison.png"),
+    )
+
+    evaluation_manifest = joinpath(output_dir, "evaluation_manifest.toml")
+    manifest = Dict{String,Any}(
+        "evaluation_mode" => "final_flight_comparison",
+        "run_dir" => run_dir,
+        "checkpoint_path" => abspath(checkpoint_path),
+        "config_path" => abspath(config_path),
+        "config_sha256" => config_digest,
+        "algorithm" => String(algorithm),
+        "campaigns_per_policy" => options.episodes,
+        "seed" => seed,
+        "terminal_on_thermal_violation" => false,
+        "policy_action_selection" => "greedy",
+        "odyssey_reference" => Dict(
+            "maneuver_count" => ODYSSEY_REFERENCE.maneuver_count,
+            "mission_duration_days" => ODYSSEY_REFERENCE.mission_duration_days,
+            "total_mission_delta_v_mps" =>
+                ODYSSEY_REFERENCE.total_mission_delta_v_mps,
+            "thermal_violations" => ODYSSEY_REFERENCE.thermal_violations,
+        ),
+        "artifacts" => Dict(
+            "episode_metrics" => raw_paths.metrics,
+            "summary_metrics" => raw_paths.aggregate,
+            "pass_logs" => raw_paths.pass_logs,
+            "comparison_csv" => comparison_path,
+            "comparison_figure" => figure_path,
+        ),
+    )
+    open(evaluation_manifest, "w") do io
+        TOML.print(io, manifest)
+    end
+    println("final flight comparison complete: ", output_dir)
+    println("comparison figure: ", figure_path)
+    println("comparison metrics: ", comparison_path)
+    return (
+        output_dir=output_dir,
+        checkpoint=checkpoint_path,
+        metrics=comparison_path,
+        figure=figure_path,
+        manifest=evaluation_manifest,
+    )
+end
+
 function evaluate_run(options)
+    options.final_flight_comparison &&
+        return evaluate_final_flight_comparison(options)
     run_dir = abspath(options.run_dir)
     isdir(run_dir) || throw(ArgumentError("run directory does not exist: $run_dir"))
     manifest_path = joinpath(run_dir, "manifest.toml")
@@ -712,12 +951,16 @@ function evaluate_run(options)
     )
     fig9 = _paper_figure_9(iid_pass_logs, output_dir)
 
-    flight_scenario = paper_odyssey_flight_evaluation_config(
-        backend_mode=scenario.backend_mode,
-        max_passes=max(1000, scenario.termination_config.max_passes),
-    )
+    flight_scenario = _final_flight_scenario(resolved)
     flight_dir = joinpath(output_dir, "odyssey_flight_comparison")
-    flight = _evaluate_pair(policy, flight_scenario, options.flight_episodes, seed, protected)
+    flight = _evaluate_pair(
+        policy,
+        flight_scenario,
+        options.flight_episodes,
+        seed,
+        protected;
+        paper_protocol=false,
+    )
     flight_paths = write_evaluation_artifacts(flight_dir, flight)
     flight_metrics, flight_pass_logs = _result_frames(flight)
     fig11_path = _paper_figure_11(

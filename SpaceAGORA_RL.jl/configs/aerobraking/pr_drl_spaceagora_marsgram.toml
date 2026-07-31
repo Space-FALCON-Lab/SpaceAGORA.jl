@@ -81,6 +81,8 @@ progress_frequency = 10000
 validate_checkpoints = true
 validation_episodes = 40
 validation_seed = 1
+# Evaluate every 25,000 training steps; the final checkpoint is always included.
+validation_checkpoint_stride = 5
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 protected_first_pass = true
 protected_initial_corridor_maneuver = true

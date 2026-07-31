@@ -174,17 +174,86 @@ function evaluate_frozen_checkpoints(
     return evaluate_frozen_checkpoints(paths, config; kwargs...)
 end
 
+_evaluation_std(values) = length(values) > 1 ? std(values) : 0.0
+
+function _checkpoint_step_from_name(checkpoint_path::AbstractString)
+    matched = match(r"^checkpoint_(\d+)\.jls$", basename(checkpoint_path))
+    return matched === nothing ? 0 : parse(Int, matched.captures[1])
+end
+
 function _checkpoint_validation_record(checkpoint_path::AbstractString,
                                        mode::AbstractString,
-                                       aggregate::NamedTuple)
+                                       result,
+                                       payload::AbstractDict)
+    aggregate = result.aggregate
+    metrics = result.metrics
+    values(field::Symbol) = Float64[getfield(metric, field) for metric in metrics]
+    statistic(field::Symbol) = let samples = values(field)
+        (mean(samples), _evaluation_std(samples))
+    end
+    reward = statistic(:episode_reward)
+    target_distances_km = abs.(values(:target_error_km))
+    thermal = statistic(:thermal_violations)
+    delta_v = statistic(:total_delta_v_mps)
+    maneuvers = statistic(:maneuver_count)
+    passages = statistic(:pass_count)
+    duration = statistic(:mission_duration_days)
+    successes = getfield.(metrics, :success)
+    impacts = getfield.(metrics, :impact)
+    out_of_passage = getfield.(metrics, :out_of_drag_passage)
+    surpassed = [
+        !successes[index] &&
+        !impacts[index] &&
+        !out_of_passage[index] &&
+        metrics[index].target_error_km < 0
+        for index in eachindex(metrics)
+    ]
+    unfinished = .!successes .& .!impacts .& .!out_of_passage .& .!surpassed
+    episodes = length(metrics)
+    global_step = Int(get(
+        payload,
+        :global_step,
+        _checkpoint_step_from_name(checkpoint_path),
+    ))
+    mean_loss = Float64(get(
+        payload,
+        :mean_training_loss,
+        get(payload, :last_loss, NaN),
+    ))
     return merge(
         (
             checkpoint = basename(checkpoint_path),
             checkpoint_path = abspath(checkpoint_path),
+            global_step = global_step,
             mode = String(mode),
             greedy = true,
+            mean_training_loss = mean_loss,
+            training_loss_sum = Float64(get(payload, :training_loss_sum, NaN)),
+            training_loss_count = Int(get(payload, :training_loss_count, 0)),
         ),
         aggregate,
+        (
+            mean_reward = reward[1],
+            std_reward = reward[2],
+            success_percent = 100 * count(identity, successes) / episodes,
+            impact_percent = 100 * count(identity, impacts) / episodes,
+            out_of_drag_passage_percent =
+                100 * count(identity, out_of_passage) / episodes,
+            surpassed_target_percent = 100 * count(identity, surpassed) / episodes,
+            unfinished_percent = 100 * count(identity, unfinished) / episodes,
+            mean_target_error_km = mean(target_distances_km),
+            std_target_error_km = _evaluation_std(target_distances_km),
+            mean_thermal_violations = thermal[1],
+            std_thermal_violations = thermal[2],
+            mean_delta_v_mps = delta_v[1],
+            std_delta_v_mps = delta_v[2],
+            mean_maneuver_count = maneuvers[1],
+            std_maneuver_count = maneuvers[2],
+            mean_pass_count = passages[1],
+            std_pass_count = passages[2],
+            mean_mission_duration_days = duration[1],
+            std_mission_duration_days = duration[2],
+        ),
     )
 end
 
@@ -291,13 +360,22 @@ function validate_frozen_checkpoints(
     output_dir::AbstractString=joinpath(checkpoint_directory, "checkpoint_validation"),
     protected_initialization::ProtectedInitializationConfig=ProtectedInitializationConfig(),
     selection_mode::AbstractString="conservative",
+    checkpoint_stride::Int=1,
+    write_plots::Bool=true,
 )
-    paths = frozen_checkpoint_paths(checkpoint_directory)
-    isempty(paths) &&
+    checkpoint_stride > 0 ||
+        throw(ArgumentError("checkpoint_stride must be positive"))
+    all_paths = frozen_checkpoint_paths(checkpoint_directory)
+    isempty(all_paths) &&
         throw(ArgumentError("no checkpoint_*.jls files found in $(checkpoint_directory)"))
+    numbered_paths = filter(path -> basename(path) != "checkpoint_final.jls", all_paths)
+    paths = numbered_paths[1:checkpoint_stride:end]
+    final_path = findfirst(path -> basename(path) == "checkpoint_final.jls", all_paths)
+    final_path === nothing || push!(paths, all_paths[final_path])
     episodes > 0 || throw(ArgumentError("validation episodes must be positive"))
     records = NamedTuple[]
     previous_by_mode = Dict{String,NamedTuple}()
+    seen_global_steps = Set{Int}()
     @printf(
         "checkpoint validation starting checkpoints=%d modes=%s episodes_per_mode=%d seed=%d greedy=true output_dir=%s\n",
         length(paths),
@@ -309,6 +387,14 @@ function validate_frozen_checkpoints(
     flush(stdout)
 
     for checkpoint_path in paths
+        payload = load_checkpoint(checkpoint_path)
+        global_step = Int(get(
+            payload,
+            :global_step,
+            _checkpoint_step_from_name(checkpoint_path),
+        ))
+        global_step in seen_global_steps && continue
+        push!(seen_global_steps, global_step)
         modes = evaluate_frozen_checkpoint_modes(
             checkpoint_path,
             config;
@@ -322,7 +408,8 @@ function validate_frozen_checkpoints(
             record = _checkpoint_validation_record(
                 checkpoint_path,
                 mode,
-                modes[mode].aggregate,
+                modes[mode],
+                payload,
             )
             push!(records, record)
             _print_validation_result(record, get(previous_by_mode, mode, nothing))
@@ -332,6 +419,10 @@ function validate_frozen_checkpoints(
 
     best = select_best_validation_checkpoint(records; mode=selection_mode)
     artifacts = write_checkpoint_validation_artifacts(output_dir, records, best)
+    plot_paths = write_plots ?
+                 write_checkpoint_training_plots(output_dir, records) :
+                 String[]
+    artifacts = merge(artifacts, (plots=plot_paths,))
     @printf(
         "best validation checkpoint=%s path=%s selection_mode=%s greedy=true criterion=success_rate_then_thermal_failures_then_target_error success=%.1f%% mean_target_error_km=%.2f thermal_terminal_failure_rate=%.1f%%\n",
         best.checkpoint,
@@ -342,9 +433,10 @@ function validate_frozen_checkpoints(
         100 * best.thermal_terminal_failure_rate,
     )
     @printf(
-        "checkpoint validation complete summary=%s best=%s\n",
+        "checkpoint validation complete summary=%s best=%s plots=%s\n",
         artifacts.summary,
         artifacts.best,
+        isempty(artifacts.plots) ? "disabled" : dirname(first(artifacts.plots)),
     )
     flush(stdout)
     return (records=records, best=best, artifacts=artifacts)

@@ -356,6 +356,7 @@ end
     @test marsgram.epsilon.stop == 0.0
     @test marsgram.training.validate_checkpoints
     @test marsgram.training.validation_episodes == PAPER_IID_EVALUATION_EPISODES
+    @test marsgram.training.validation_checkpoint_stride == 5
 end
 
 @testset "validation thermal attribution and checkpoint selection" begin
@@ -411,6 +412,60 @@ end
     best = select_best_validation_checkpoint(records)
     @test best.checkpoint == "checkpoint_10000.jls"
     @test best.mode == "conservative"
+
+    checkpoint_metrics = [
+        (
+            episode_reward=1.0,
+            target_error_km=5.0,
+            thermal_violations=0,
+            total_delta_v_mps=20.0,
+            maneuver_count=4,
+            pass_count=100,
+            mission_duration_days=10.0,
+            success=true,
+            impact=false,
+            out_of_drag_passage=false,
+        ),
+        (
+            episode_reward=-1.0,
+            target_error_km=-20.0,
+            thermal_violations=2,
+            total_delta_v_mps=30.0,
+            maneuver_count=6,
+            pass_count=150,
+            mission_duration_days=15.0,
+            success=false,
+            impact=false,
+            out_of_drag_passage=false,
+        ),
+    ]
+    checkpoint_result = (
+        metrics=checkpoint_metrics,
+        aggregate=(
+            episodes=2,
+            success_rate=0.5,
+            mean_target_error_km=12.5,
+            mean_thermal_violations=1.0,
+            thermal_terminal_failure_rate=0.0,
+        ),
+    )
+    checkpoint_record = SpaceAGORA_RL._checkpoint_validation_record(
+        "checkpoint_5000.jls",
+        "tolerant",
+        checkpoint_result,
+        Dict(
+            :global_step => 5_000,
+            :mean_training_loss => 2.0,
+            :training_loss_sum => 20.0,
+            :training_loss_count => 10,
+        ),
+    )
+    @test checkpoint_record.global_step == 5_000
+    @test checkpoint_record.success_percent == 50.0
+    @test checkpoint_record.surpassed_target_percent == 50.0
+    @test checkpoint_record.mean_target_error_km == 12.5
+    @test checkpoint_record.mean_maneuver_count == 5.0
+    @test checkpoint_record.training_loss_count == 10
 end
 
 @testset "paper finite 4 N burn duration" begin
@@ -469,6 +524,8 @@ end
     @test physics.training.protected_first_pass
     @test physics.training.protected_initial_corridor_maneuver
     @test physics.training.protected_first_pass_suppress_thermal_terminal
+    @test physics.training.validate_checkpoints
+    @test physics.training.validation_checkpoint_stride == 5
     @test physics.training.worker_backend == :threads
     @test !physics.scenario.spaceagora_gram_once_per_step
     native_gram = resolve_config(
@@ -477,6 +534,8 @@ end
     @test native_gram.scenario.spaceagora_atmosphere_model == :marsgram
     @test native_gram.scenario.spaceagora_gram_once_per_step
     @test native_gram.training.worker_backend == :processes
+    @test native_gram.training.validate_checkpoints
+    @test native_gram.training.validation_checkpoint_stride == 5
     @test native_gram.scenario.randomization_config.marsgram_perturbation_scale == 1.0
     invalid = deepcopy(load_config(default_config_path()))
     invalid["training"]["worker_backend"] = "tasks"
@@ -693,6 +752,7 @@ end
     loss = SpaceAGORA_RL.train_step!(learner, rng)
     @test isfinite(loss)
     @test learner.train_steps == 1
+    @test SpaceAGORA_RL.mean_training_loss(learner) == loss
     @test learner.online.W1 != before
 end
 
@@ -719,6 +779,7 @@ end
     loss = SpaceAGORA_RL.train_step!(learner, batch)
     @test isfinite(loss)
     @test learner.train_steps == 1
+    @test SpaceAGORA_RL.mean_training_loss(learner) == loss
     @test learner.actor.W1 != before
 end
 
@@ -806,7 +867,7 @@ end
             episode_index=2,
             episode_reward=6.0,
             success=false, # Intentionally inconsistent: the final distance drives this metric.
-            thermal_violations=1,
+            thermal_violations=0,
             pass_count=8,
             target_error_m=5e3,
         ),
@@ -822,15 +883,18 @@ end
 
     stats = SpaceAGORA_RL._recent_training_stats(summaries, 2)
     @test stats.mean_reward == 4.0
-    @test stats.reached_goal_percent == 50.0
-    @test stats.mean_thermal_violations == 2.0
+    @test stats.reached_goal_percent == 100.0
+    @test stats.mean_thermal_violations == 1.5
     @test stats.mean_passes_to_end == 7.0
-    @test stats.mean_end_distance_km == 10.0
+    @test stats.mean_end_distance_km == 5.0
     @test SpaceAGORA_RL._recent_training_stats(
         summaries,
         2;
         target_tolerance_m=4e3,
     ).reached_goal_percent == 0.0
+    thermal_only_stats = SpaceAGORA_RL._recent_training_stats(summaries, 1)
+    @test isnan(thermal_only_stats.reached_goal_percent)
+    @test isnan(thermal_only_stats.mean_end_distance_km)
 
     empty_stats = SpaceAGORA_RL._recent_training_stats(EpisodeSummary[], 100)
     @test isnan(empty_stats.reached_goal_percent)

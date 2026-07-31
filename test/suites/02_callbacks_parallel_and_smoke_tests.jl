@@ -1536,23 +1536,27 @@ end
     end
 end
 
+function _no_gram_ring_sat(planet_ng, id::Int, raan_deg::Float64)
+    root = Link{0}(root=true, m=100.0, ref_area=2.0)
+    ic = InitialCondition(
+        ra=planet_ng.Rp_e + 700e3,
+        rp=planet_ng.Rp_e + 650e3,
+        i=45.0,
+        ω=0.0,
+        Ω=raan_deg,
+        ν=10.0
+    )
+    return SpacecraftModel(Joint[], [root], root, true, root.m, 0.0, root.inertia, 0, 0, ic, id)
+end
+
 @testset "Constellation Ensemble Campaign" begin
     planet_ng = SimulationModel.make_no_gram_planet(:earth)
 
-    function _ensemble_test_sat(id::Int, raan_deg::Float64)
-        root = Link{0}(root=true, m=100.0, ref_area=2.0)
-        ic = InitialCondition(
-            ra=planet_ng.Rp_e + 700e3,
-            rp=planet_ng.Rp_e + 650e3,
-            i=45.0,
-            ω=0.0,
-            Ω=raan_deg,
-            ν=10.0
-        )
-        return SpacecraftModel(Joint[], [root], root, true, root.m, 0.0, root.inertia, 0, 0, ic, id)
-    end
-
-    sats = [_ensemble_test_sat(11, 0.0), _ensemble_test_sat(22, 40.0), _ensemble_test_sat(33, 80.0)]
+    sats = [
+        _no_gram_ring_sat(planet_ng, 11, 0.0),
+        _no_gram_ring_sat(planet_ng, 22, 40.0),
+        _no_gram_ring_sat(planet_ng, 33, 80.0),
+    ]
     results_dir = mktempdir()
     cfg = build_config_multi(
         spacecraft=sats,
@@ -1711,20 +1715,7 @@ end
     # ── Features derived from a SimulationConfiguration ───────────────────────
     planet_ng = SimulationModel.make_no_gram_planet(:earth)
 
-    function _adaptive_test_sat(id::Int, raan_deg::Float64)
-        root = Link{0}(root=true, m=100.0, ref_area=2.0)
-        ic = InitialCondition(
-            ra=planet_ng.Rp_e + 700e3,
-            rp=planet_ng.Rp_e + 650e3,
-            i=45.0,
-            ω=0.0,
-            Ω=raan_deg,
-            ν=10.0
-        )
-        return SpacecraftModel(Joint[], [root], root, true, root.m, 0.0, root.inertia, 0, 0, ic, id)
-    end
-
-    adaptive_sats = [_adaptive_test_sat(1, 0.0), _adaptive_test_sat(2, 120.0)]
+    adaptive_sats = [_no_gram_ring_sat(planet_ng, 1, 0.0), _no_gram_ring_sat(planet_ng, 2, 120.0)]
     cfg = build_config_multi(
         spacecraft=adaptive_sats,
         density_model=SimulationModel.NoAtmosphereModel(),

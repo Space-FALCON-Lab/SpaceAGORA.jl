@@ -5,6 +5,7 @@ const CANONICAL_AGGREGATOR_FILES = Set([
     joinpath("src", "simulation", "engine", "simulation_engine.jl"),
     joinpath("src", "simulation", "callbacks", "callbacks.jl"),
     joinpath("src", "parallel", "routing", "parallel_profiles.jl"),
+    joinpath("src", "parallel", "process", "parallel_process.jl"),
     joinpath("src", "core", "simulation_model.jl")
 ])
 const RETIRED_SOURCE_DIRS = Set([

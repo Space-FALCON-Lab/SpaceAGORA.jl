@@ -73,7 +73,7 @@ hidden_dim = 1024
 
 [epsilon]
 start = 1.0
-stop = 0.0
+stop = 0.01
 decay_steps = 5000
 decay_start_step = 10000
 
@@ -95,6 +95,8 @@ validation_episodes = 40
 validation_seed = 1
 # Evaluate every 25,000 training steps; the final checkpoint is always included.
 validation_checkpoint_stride = 5
+# After a successful campaign, rerun the same randomized scenario nine times.
+successful_case_repetitions = 9
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 protected_first_pass = true
 protected_initial_corridor_maneuver = true

@@ -81,6 +81,36 @@ end
     @test rad2deg(flight_state.argument_of_periapsis_rad) ≈ 89.0
 end
 
+@testset "successful case repetition scheduling" begin
+    @test SpaceAGORA_RL._next_successful_case_repeat(17, 0, false, 9) === nothing
+    @test SpaceAGORA_RL._next_successful_case_repeat(17, 0, true, 0) === nothing
+    @test SpaceAGORA_RL._next_successful_case_repeat(17, 0, true, 9) ==
+          (seed=17, repeat_index=1)
+    @test SpaceAGORA_RL._next_successful_case_repeat(17, 1, false, 9) ==
+          (seed=17, repeat_index=2)
+    @test SpaceAGORA_RL._next_successful_case_repeat(17, 8, true, 9) ==
+          (seed=17, repeat_index=9)
+    @test SpaceAGORA_RL._next_successful_case_repeat(17, 9, true, 9) === nothing
+
+    active_config_path = joinpath(
+        dirname(default_config_path()),
+        "pr_drl_spaceagora_physics.toml",
+    )
+    active_config = resolve_config(active_config_path)
+    @test active_config.ddqn.target_update == 10_000
+    @test active_config.epsilon.stop == 0.01
+    @test active_config.training.successful_case_repetitions == 9
+
+    marsgram_config_path = joinpath(
+        dirname(default_config_path()),
+        "pr_drl_spaceagora_physics_marsgram.toml",
+    )
+    marsgram_config = resolve_config(marsgram_config_path)
+    @test marsgram_config.ddqn.target_update == 10_000
+    @test marsgram_config.epsilon.stop == 0.01
+    @test marsgram_config.training.successful_case_repetitions == 9
+end
+
 @testset "paper AADS uses bisection maneuver" begin
     config = default_aerobraking_config(phase="Main", training=false)
     state = AerobrakingDecisionState(
@@ -373,7 +403,7 @@ end
     @test paper_training.scenario.termination_config.max_passes == 1000
 end
 
-@testset "epsilon decays fully to greedy behavior" begin
+@testset "epsilon schedule floors" begin
     schedule = EpsilonSchedule(
         start=1.0,
         stop=0.0,
@@ -386,15 +416,19 @@ end
     @test epsilon_value(schedule, 1_100_000) == 0.0
 
     config_directory = dirname(default_config_path())
-    for filename in (
-        "pr_drl_spaceagora_physics.toml",
-        "pr_drl_spaceagora_physics_marsgram.toml",
+    active_physics = resolve_config(
+        joinpath(config_directory, "pr_drl_spaceagora_physics.toml"),
     )
-        live_physics = resolve_config(joinpath(config_directory, filename))
-        @test live_physics.epsilon.stop == 0.0
-        @test epsilon_value(live_physics.epsilon, 15_000) == 0.0
-        @test epsilon_value(live_physics.epsilon, 1_100_000) == 0.0
-    end
+    @test active_physics.epsilon.stop == 0.01
+    @test epsilon_value(active_physics.epsilon, 15_000) ≈ 0.01
+    @test epsilon_value(active_physics.epsilon, 1_100_000) ≈ 0.01
+
+    marsgram_physics = resolve_config(
+        joinpath(config_directory, "pr_drl_spaceagora_physics_marsgram.toml"),
+    )
+    @test marsgram_physics.epsilon.stop == 0.01
+    @test epsilon_value(marsgram_physics.epsilon, 15_000) ≈ 0.01
+    @test epsilon_value(marsgram_physics.epsilon, 1_100_000) ≈ 0.01
 
     marsgram = resolve_config(
         joinpath(config_directory, "pr_drl_spaceagora_marsgram.toml"),

@@ -533,16 +533,22 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
                                                         max_passes_per_campaign::Int,
                                                         global_step_start::Int;
                                                         train::Bool=true,
+                                                        scenario_seed::Int=seed,
                                                         protected_initialization::
                                                             ProtectedInitializationConfig=
                                                                 ProtectedInitializationConfig(
                                                                     enabled=false,
                                                                 ))
-    rng = MersenneTwister(seed)
-    state = reset_scenario(config, rng)
+    action_rng = MersenneTwister(seed)
+    scenario_rng = scenario_seed == seed ? action_rng : MersenneTwister(scenario_seed)
+    state = reset_scenario(config, scenario_rng)
     obs = observe_state(config, state)
     norm_obs = normalize_observation(obs, config.normalization_bounds)
-    summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
+    summary = empty_episode_summary(
+        episode_index=episode_index,
+        worker_id=worker_id,
+        seed=scenario_seed,
+    )
     pass_cap = _spaceagora_physics_campaign_mission_pass_cap(config, max_passes_per_campaign)
     action_index = protected_initialization.enabled ?
                    zero_action_index() :
@@ -552,7 +558,7 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
                        ddqn_config,
                        norm_obs,
                        global_step_start + 1,
-                       rng;
+                       action_rng;
                        test = !train,
                    )
     action = action_from_index(action_index)
@@ -561,10 +567,10 @@ function run_spaceagora_physics_campaign_worker_episode(config::AerobrakingScena
         schedule = schedule,
         ddqn_config = ddqn_config,
         policy_snapshot = policy_snapshot,
-        rng = rng,
+        rng = action_rng,
         episode_index = episode_index,
         worker_id = worker_id,
-        seed = seed,
+        seed = scenario_seed,
         max_passes_per_campaign = pass_cap,
         global_step_start = global_step_start,
         train = train,
@@ -843,6 +849,7 @@ function run_threaded_worker_episode(config::AerobrakingScenarioConfig,
                                      max_passes_per_campaign::Int,
                                      global_step_start::Int;
                                      train::Bool=true,
+                                     scenario_seed::Int=seed,
                                      protected_initialization::ProtectedInitializationConfig=
                                          ProtectedInitializationConfig(enabled=false))
     if _is_spaceagora_live_backend(config.backend_mode)
@@ -857,20 +864,26 @@ function run_threaded_worker_episode(config::AerobrakingScenarioConfig,
             max_passes_per_campaign,
             global_step_start;
             train=train,
+            scenario_seed=scenario_seed,
             protected_initialization=protected_initialization,
         )
     end
 
-    rng = MersenneTwister(seed)
-    state = reset_scenario(config, rng)
+    action_rng = MersenneTwister(seed)
+    scenario_rng = scenario_seed == seed ? action_rng : MersenneTwister(scenario_seed)
+    state = reset_scenario(config, scenario_rng)
     obs = observe_state(config, state)
     norm_obs = normalize_observation(obs, config.normalization_bounds)
-    summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
+    summary = empty_episode_summary(
+        episode_index=episode_index,
+        worker_id=worker_id,
+        seed=scenario_seed,
+    )
     transitions = Transition[]
     initial = run_protected_initializer(
         config,
         state,
-        rng,
+        scenario_rng,
         summary;
         settings=protected_initialization,
     )
@@ -882,8 +895,16 @@ function run_threaded_worker_episode(config::AerobrakingScenarioConfig,
 
     while !initial.done && summary.pass_count < pass_cap
         step = global_step_start + length(transitions) + 1
-        action_index = snapshot_policy_action(policy_snapshot, schedule, ddqn_config, norm_obs, step, rng; test=!train)
-        result = step_scenario(config, state, action_index, rng)
+        action_index = snapshot_policy_action(
+            policy_snapshot,
+            schedule,
+            ddqn_config,
+            norm_obs,
+            step,
+            action_rng;
+            test=!train,
+        )
+        result = step_scenario(config, state, action_index, scenario_rng)
         transition = transition_from_step(norm_obs, action_index, result, length(transitions) + 1)
         push!(transitions, transition)
         summary = update_episode_summary(summary, result)

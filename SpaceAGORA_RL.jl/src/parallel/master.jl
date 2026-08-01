@@ -116,6 +116,17 @@ mutable struct SpaceAGORAPhysicsActiveWorker
     protected_events_seen::Int
     simulation_template::Union{Nothing,SpaceAGORAPhysicsSimulationTemplate}
     process_id::Union{Nothing,Int}
+    successful_case_repeat_index::Int
+end
+
+function _next_successful_case_repeat(seed::Int, repeat_index::Int, success::Bool,
+                                      max_repetitions::Int)
+    max_repetitions <= 0 && return nothing
+    if repeat_index == 0
+        return success ? (seed=seed, repeat_index=1) : nothing
+    end
+    repeat_index < max_repetitions || return nothing
+    return (seed=seed, repeat_index=repeat_index + 1)
 end
 
 function _spaceagora_physics_streaming_worker_seed(base_seed::Int, worker_id::Int,
@@ -146,10 +157,14 @@ function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<
                                                       worker_id::Int,
                                                       episode_index::Int;
                                                       simulation_template::Union{Nothing,SpaceAGORAPhysicsSimulationTemplate}=nothing,
-                                                      process_id::Union{Nothing,Int}=nothing)
-    seed = _spaceagora_physics_streaming_worker_seed(session.config.training.seed,
+                                                      process_id::Union{Nothing,Int}=nothing,
+                                                      scenario_seed::Union{Nothing,Int}=nothing,
+                                                      successful_case_repeat_index::Int=0)
+    seed = scenario_seed === nothing ?
+           _spaceagora_physics_streaming_worker_seed(session.config.training.seed,
                                                      worker_id,
-                                                     episode_index)
+                                                     episode_index) :
+           Int(scenario_seed)
     rng = MersenneTwister(seed)
     config = session.config.scenario
     state = reset_scenario(config, rng)
@@ -226,6 +241,7 @@ function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<
         0,
         template,
         process_id,
+        successful_case_repeat_index,
     )
 end
 
@@ -324,7 +340,7 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
     printed_initial_progress = false
 
     @printf(
-        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d worker_backend=%s julia_threads=%d outer_parallel=%s inner_thread_budget=%s train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d architecture=paper_pass_streaming\n",
+        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d worker_backend=%s julia_threads=%d outer_parallel=%s inner_thread_budget=%s train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d successful_case_repetitions=%d architecture=paper_pass_streaming\n",
         algorithm_display_name(session.config.training.algorithm),
         target_global_step == typemax(Int) ? "none" : string(target_global_step),
         _budget_label(episode_budget),
@@ -338,6 +354,7 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
         session.learner.config.batch_size,
         checkpoint_frequency,
         progress_frequency,
+        session.config.training.successful_case_repetitions,
     )
     @printf("output_dir=%s\n", session.output_dir)
     @printf(
@@ -405,10 +422,17 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
         reached_limits = session.learner.global_step >= target_global_step ||
                          length(summaries) >= episode_budget
         if event.done
+            repeat_plan = nothing
             if length(summaries) < episode_budget
                 final_summary = finalize_episode_summary(event.summary, session.config.scenario)
                 push!(summaries, final_summary)
                 accumulate_episode!(aggregate_accumulator, final_summary)
+                repeat_plan = _next_successful_case_repeat(
+                    worker.seed,
+                    worker.successful_case_repeat_index,
+                    final_summary.success,
+                    session.config.training.successful_case_repetitions,
+                )
             end
             _finish_spaceagora_physics_streaming_worker!(worker)
             delete!(active, event.worker_id)
@@ -420,7 +444,21 @@ function _train_parallel_spaceagora_physics_streaming!(session::TrainingSession{
                     next_episode,
                     simulation_template=worker.simulation_template,
                     process_id=worker.process_id,
+                    scenario_seed=repeat_plan === nothing ? nothing : repeat_plan.seed,
+                    successful_case_repeat_index=
+                        repeat_plan === nothing ? 0 : repeat_plan.repeat_index,
                 )
+                if repeat_plan !== nothing
+                    @printf(
+                        "successful_case_repeat worker=%d scenario_seed=%d repeat=%d/%d episode=%d\n",
+                        event.worker_id,
+                        repeat_plan.seed,
+                        repeat_plan.repeat_index,
+                        session.config.training.successful_case_repetitions,
+                        next_episode,
+                    )
+                    flush(stdout)
+                end
                 next_episode += 1
             end
         else
@@ -593,7 +631,7 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
     printed_initial_progress = false
 
     @printf(
-        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d julia_threads=%d train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d\n",
+        "starting %s training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d julia_threads=%d train_start=%d batch_size=%d checkpoint_frequency=%d progress_frequency=%d successful_case_repetitions=%d\n",
         algorithm_display_name(session.config.training.algorithm),
         target_global_step == typemax(Int) ? "none" : string(target_global_step),
         _budget_label(episode_budget),
@@ -604,6 +642,7 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
         session.learner.config.batch_size,
         checkpoint_frequency,
         progress_frequency,
+        session.config.training.successful_case_repetitions,
     )
     @printf("output_dir=%s\n", session.output_dir)
     @printf(
@@ -616,30 +655,64 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
     flush(stdout)
 
     episode = 1
+    repeat_seeds = Union{Nothing,Int}[nothing for _ in 1:active_workers]
+    repeat_indices = zeros(Int, active_workers)
     while session.learner.global_step < target_global_step && episode <= episode_budget
         batch_episodes = episode:min(episode_budget, episode + active_workers - 1)
         policy_snapshot = cpu_network(session.learner.online)
         global_step_start = session.learner.global_step
-        tasks = map(enumerate(batch_episodes)) do (local_worker_id, episode_index)
-            seed = session.config.training.seed + 10_000 * local_worker_id + episode_index
+        jobs = map(enumerate(batch_episodes)) do (local_worker_id, episode_index)
+            action_seed = session.config.training.seed + 10_000 * local_worker_id + episode_index
+            scenario_seed = repeat_indices[local_worker_id] == 0 ?
+                            action_seed :
+                            (repeat_seeds[local_worker_id]::Int)
+            return (
+                worker_id=local_worker_id,
+                episode_index=episode_index,
+                action_seed=action_seed,
+                scenario_seed=scenario_seed,
+                repeat_index=repeat_indices[local_worker_id],
+            )
+        end
+        tasks = map(jobs) do job
             Threads.@spawn run_threaded_worker_episode(
                 session.config.scenario,
                 session.learner.schedule,
                 session.learner.config,
                 $policy_snapshot,
-                $episode_index,
-                $local_worker_id,
-                $seed,
+                $(job.episode_index),
+                $(job.worker_id),
+                $(job.action_seed),
                 session.config.training.max_passes_per_campaign,
                 global_step_start;
                 train=true,
+                scenario_seed=$(job.scenario_seed),
                 protected_initialization=
                     protected_initialization_config(session.config.training),
             )
         end
 
-        for task in tasks
+        for (job, task) in zip(jobs, tasks)
             summary, episode_transitions = fetch(task)
+            repeat_plan = _next_successful_case_repeat(
+                job.scenario_seed,
+                job.repeat_index,
+                summary.success,
+                session.config.training.successful_case_repetitions,
+            )
+            repeat_seeds[job.worker_id] = repeat_plan === nothing ? nothing : repeat_plan.seed
+            repeat_indices[job.worker_id] = repeat_plan === nothing ? 0 : repeat_plan.repeat_index
+            if repeat_plan !== nothing
+                @printf(
+                    "successful_case_repeat worker=%d scenario_seed=%d next_repeat=%d/%d after_episode=%d\n",
+                    job.worker_id,
+                    repeat_plan.seed,
+                    repeat_plan.repeat_index,
+                    session.config.training.successful_case_repetitions,
+                    job.episode_index,
+                )
+                flush(stdout)
+            end
             remaining_steps = target_global_step - session.learner.global_step
             remaining_steps <= 0 && continue
             ingest_count = min(length(episode_transitions), remaining_steps)

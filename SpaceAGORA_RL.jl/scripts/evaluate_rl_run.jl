@@ -78,7 +78,8 @@ Options:
 
 Outputs include the raw episode/pass CSVs, checkpoint_metrics.csv,
 paper_table_v_pr_drl_vs_aads.csv, paper_table_vi_generalization.csv,
-paper_fig07_*.png through paper_fig12_*.png, and evaluation_manifest.toml.
+paper_fig07_*.png through paper_fig12_*.png, the dedicated episode-completion
+and final-target-distance chart, and evaluation_manifest.toml.
 Final-flight-comparison mode writes its four-panel PNG, comparison CSV, raw
 episode/pass CSVs, and evaluation_manifest.toml only.
 """)
@@ -693,7 +694,16 @@ end
 
 function _checkpoint_record(checkpoint_path, mode, result, payload)
     metrics = DataFrame(result.metrics)
-    not_goal = .!metrics.success .& .!metrics.impact .& .!metrics.out_of_drag_passage
+    surpassed_target =
+        .!metrics.success .&
+        .!metrics.impact .&
+        .!metrics.out_of_drag_passage .&
+        (metrics.target_error_km .< 0)
+    unfinished =
+        .!metrics.success .&
+        .!metrics.impact .&
+        .!metrics.out_of_drag_passage .&
+        .!surpassed_target
     step = Int(get(payload, :global_step,
                    something(_numeric_checkpoint_step(checkpoint_path), 0)))
     stat(field) = (mean(Float64.(metrics[!, field])),
@@ -720,9 +730,11 @@ function _checkpoint_record(checkpoint_path, mode, result, payload)
         training_loss_count=Int(get(payload, :training_loss_count, 0)),
         mean_reward=reward[1], std_reward=reward[2],
         success_percent=100 * mean(metrics.success),
+        surpassed_target_percent=100 * mean(surpassed_target),
         impact_percent=100 * mean(metrics.impact),
         out_of_drag_passage_percent=100 * mean(metrics.out_of_drag_passage),
-        not_reached_goal_percent=100 * mean(not_goal),
+        unfinished_percent=100 * mean(unfinished),
+        not_reached_goal_percent=100 * mean(surpassed_target .| unfinished),
         mean_target_error_km=target[1], std_target_error_km=target[2],
         mean_thermal_violations=thermal[1], std_thermal_violations=thermal[2],
         mean_delta_v_mps=delta_v[1], std_delta_v_mps=delta_v[2],
@@ -815,18 +827,30 @@ function _checkpoint_figures(data::DataFrame, output_dir::AbstractString)
     rows = data[data.mode .== "tolerant", :]
     completion_values = hcat(
         rows.success_percent,
+        rows.surpassed_target_percent,
         rows.impact_percent,
         rows.out_of_drag_passage_percent,
-        rows.not_reached_goal_percent,
+        rows.unfinished_percent,
     )
     completion = plot(rows.global_step, completion_values;
                       xlabel="Training step", ylabel="Episodes (%)",
-                      label=["goal" "impact" "out of passage" "not reached"],
-                      title="(a) Episode completion", marker=:circle)
+                      label=permutedims([
+                          "reached goal",
+                          "surpassed target",
+                          "impact",
+                          "out of passage",
+                          "unfinished",
+                      ]),
+                      title="(a) Episode completion", marker=:circle,
+                      linewidth=2, ylims=(0, 100))
     target = plot(rows.global_step, rows.mean_target_error_km;
-                  ribbon=rows.std_target_error_km, label=false,
+                  ribbon=(
+                      min.(rows.std_target_error_km, rows.mean_target_error_km),
+                      rows.std_target_error_km,
+                  ), label="mean ± standard deviation",
                   xlabel="Training step", ylabel="Absolute target distance (km)",
-                  title="(b) Final target distance", marker=:circle)
+                  title="(b) Final distance to target apoapsis radius",
+                  color=:steelblue, linewidth=2, marker=:circle)
     thermal = plot(rows.global_step, rows.mean_thermal_violations;
                    ribbon=rows.std_thermal_violations, label=false,
                    xlabel="Training step", ylabel="Violations",
@@ -847,6 +871,24 @@ function _checkpoint_figures(data::DataFrame, output_dir::AbstractString)
     savefig(plot(completion, target, thermal, performance, duration;
                  layout=(3, 2), size=(1100, 1050)), figure8_path)
     push!(paths, figure8_path)
+
+    completion_target_path = joinpath(
+        output_dir,
+        "episode_completion_and_final_target_distance.png",
+    )
+    savefig(
+        plot(
+            completion,
+            target;
+            layout=(1, 2),
+            size=(1200, 480),
+            plot_title="Greedy thermal-tolerant checkpoint evaluation",
+            left_margin=8Plots.mm,
+            bottom_margin=5Plots.mm,
+        ),
+        completion_target_path,
+    )
+    push!(paths, completion_target_path)
     return paths
 end
 
@@ -1296,6 +1338,8 @@ function evaluate_run(options)
         paper_fig07a=length(checkpoint_figure_paths) >= 1 ? checkpoint_figure_paths[1] : "",
         paper_fig07b=length(checkpoint_figure_paths) >= 2 ? checkpoint_figure_paths[2] : "",
         paper_fig08=length(checkpoint_figure_paths) >= 3 ? checkpoint_figure_paths[3] : "",
+        episode_completion_and_final_target_distance=
+            length(checkpoint_figure_paths) >= 4 ? checkpoint_figure_paths[4] : "",
         paper_fig09=fig9.figure,
         paper_fig10=fig10_path,
         paper_fig11=fig11_path,

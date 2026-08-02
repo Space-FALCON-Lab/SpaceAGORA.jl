@@ -26,6 +26,11 @@ The default paper protocol runs:
   (Figs. 7-8);
 - repeated-action analysis of the selected policy (Fig. 9).
 
+The checkpoint sweep also writes
+`episode_completion_and_final_target_distance.png`, a dedicated two-panel
+chart of episode completion percentages and mean absolute final distance to
+the target apoapsis radius with a one-standard-deviation band.
+
 Raw episode, summary, and pass-level CSVs are retained alongside the figures.
 `evaluation_manifest.toml` records the exact run, config, checkpoint, episode
 counts, case mappings, reference values, and artifact paths.

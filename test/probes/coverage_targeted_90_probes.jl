@@ -835,6 +835,59 @@ end
     @test all(isfinite, third_body.positions_ii[1])
 end
 
+@testset "Density Freeze Per Step Branch Probes" begin
+    # See CallbackEnvConfig.density_freeze_per_step: without freeze-per-step,
+    # the RHS-side atmosphere buffer is only trusted on an exact time match;
+    # with it, the once-per-accepted-step sample (from the density
+    # DiscreteCallback) is reused for every stage evaluation within the step.
+    args_freeze = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),)
+    )
+    p_freeze = ODEParams(n_sats=1, args=args_freeze)
+    u_freeze = build_initial_conditions(args_freeze)
+    sc_freeze = u_freeze.sc[1]
+    sample_freeze = build_state_sample(sc_freeze, args_freeze.dynamics_model.spacecraft[1], false)
+
+    p_freeze.shared_buffers.densities[1] = 42.0
+    p_freeze.shared_buffers.temperatures[1] = 111.0
+    p_freeze.shared_buffers.winds[1] = SVector{3, Float64}(1.0, 1.0, 1.0)
+    p_freeze.shared_buffers.density_sample_t[1] = 0.0
+
+    withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "0") do
+        @test _TARGET_CALLBACKS._snapshot_callback_env_config().density_freeze_per_step === false
+        # Stale (mismatched) timestamp: not trusted without freeze-per-step.
+        @test !SimulationEngine._buffered_atmosphere_valid(p_freeze, 1, 5.0)
+    end
+    withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "1") do
+        @test _TARGET_CALLBACKS._snapshot_callback_env_config().density_freeze_per_step === true
+        # Same stale timestamp: trusted once freeze-per-step is enabled, since
+        # the buffer was populated (finite) at least once.
+        @test SimulationEngine._buffered_atmosphere_valid(p_freeze, 1, 5.0)
+
+        planet_frame_freeze = SimulationEngine.sample_planet_frame(sample_freeze, p_freeze, 1, 5.0)
+        reused = SimulationEngine._sample_atmosphere_from_planet_frame(
+            sample_freeze, planet_frame_freeze, p_freeze, 1, 5.0; write_buffers=false
+        )
+        # Reuses the buffered values (42.0/111.0/[1,1,1]) rather than recomputing
+        # against NoAtmosphereModel (which would return rho=0.0).
+        @test reused.rho_kg_m3 == 42.0
+        @test reused.temperature_k == 111.0
+        @test reused.wind_pp == SVector{3, Float64}(1.0, 1.0, 1.0)
+    end
+
+    # Never-populated buffer (NaN sentinel): falls through to a fresh sample
+    # regardless of freeze-per-step, guarding the pre-first-callback-firing case.
+    p_freeze_unset = ODEParams(n_sats=1, args=args_freeze)
+    withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "1") do
+        @test !SimulationEngine._buffered_atmosphere_valid(p_freeze_unset, 1, 5.0)
+    end
+end
+
 @testset "Density Runtime Helper Branch Probes" begin
     args_density = build_config_multi(
         spacecraft=[

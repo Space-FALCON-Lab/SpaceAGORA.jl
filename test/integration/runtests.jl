@@ -758,12 +758,16 @@ function make_single_link_spacecraft(;
     i_deg::Float64=35.0,
     ω_deg::Float64=40.0,
     Ω_deg::Float64=10.0,
-    ν_deg::Float64=175.0
+    ν_deg::Float64=175.0,
+    planet=EARTH,
+    id::Int=1,
+    m::Float64=500.0,
+    ref_area::Float64=12.0
 )
-    root = Link{0}(root=true, m=500.0, ref_area=12.0)
+    root = Link{0}(root=true, m=m, ref_area=ref_area)
     ic = InitialCondition(
-        ra=EARTH.Rp_e + ra_alt_m,
-        rp=EARTH.Rp_e + rp_alt_m,
+        ra=planet.Rp_e + ra_alt_m,
+        rp=planet.Rp_e + rp_alt_m,
         i=i_deg,
         ω=ω_deg,
         Ω=Ω_deg,
@@ -781,7 +785,7 @@ function make_single_link_spacecraft(;
         0,
         0,
         ic,
-        1
+        id
     )
 end
 

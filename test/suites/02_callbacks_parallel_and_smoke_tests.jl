@@ -360,11 +360,15 @@
         @test density_use_threads(args_control, 8) == false
     end
     # Pin the auto-mode budget floor so this branch check is independent of the
-    # default (16), which exceeds the CI thread count.
+    # default (16), which exceeds the CI thread count. args_control uses
+    # NoAtmosphereModel, which routes through the lock-free density-callback
+    # source (see the source= selection in
+    # src/simulation/callbacks/density_callbacks/config.jl), so the
+    # lock-free-specific knob is what actually gates this decision.
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
-        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2"
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
         @test density_use_threads(args_control, 8) == has_worker_threads
     end
@@ -385,7 +389,7 @@
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
-        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2",
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
@@ -1537,16 +1541,10 @@ end
 end
 
 function _no_gram_ring_sat(planet_ng, id::Int, raan_deg::Float64)
-    root = Link{0}(root=true, m=100.0, ref_area=2.0)
-    ic = InitialCondition(
-        ra=planet_ng.Rp_e + 700e3,
-        rp=planet_ng.Rp_e + 650e3,
-        i=45.0,
-        ω=0.0,
-        Ω=raan_deg,
-        ν=10.0
+    return make_single_link_spacecraft(
+        ra_alt_m=700e3, rp_alt_m=650e3, i_deg=45.0, ω_deg=0.0, Ω_deg=raan_deg, ν_deg=10.0,
+        planet=planet_ng, id=id, m=100.0, ref_area=2.0
     )
-    return SpacecraftModel(Joint[], [root], root, true, root.m, 0.0, root.inertia, 0, 0, ic, id)
 end
 
 @testset "Constellation Ensemble Campaign" begin

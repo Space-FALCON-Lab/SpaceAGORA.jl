@@ -696,6 +696,15 @@ function _build_cygnss_cyg04_96hr_inertial_reference(outdir::String, stem::Strin
     # Doppler velocity in the CYG04 file.  A ~0.6 m/s along-track error in the
     # CYG04 raw velocity shifts the SMA by ~1 km, producing ~120 km along-track
     # drift at 48 hours even though the reference positions agree to < 2 m.
+    #
+    # NOTE: the matching single-sample-noise fix applied to _build_cygnss_48hr_reference
+    # above (average vis-viva SMA over a short window, rescale velocity magnitude to
+    # match) was ALSO tried here and made this scenario noticeably worse (RMSE 3.70km ->
+    # 15.44km against the CYG04 96hr reference), even though it substantially improved
+    # the 48hr_pvt scenario against ITS OWN reference. The two scenarios compare against
+    # different, independently-sourced reference trajectories with evidently different
+    # noise/bias characteristics, so a correction tuned against one is not safe to reuse
+    # against the other -- reverted here; kept only where it was actually validated.
     df48 = DataFrame(Arrow.Table(_CYGNSS_48HR_TELEMETRY_FEATHER))
     sort!(df48, _required_column(df48, ["TIME OFFSET", "time"]))
     x_ic_km   = Float64(df48[!, _required_column(df48, ["OBS4.ENG_PVT.DDMI_PVT_SCPOS_X (m)", "pos_ii_1"])][1]) * 1.0e-3

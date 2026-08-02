@@ -15,6 +15,7 @@ This contract defines how canonical source files are classified and what is forb
      - `src/simulation/engine/simulation_engine.jl`
      - `src/simulation/callbacks/callbacks.jl`
      - `src/parallel/routing/parallel_profiles.jl`
+     - `src/parallel/process/parallel_process.jl`
      - `src/core/simulation_model.jl`
 3. `Experimental Interface`
    - Typed contracts for planned subsystems.

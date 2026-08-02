@@ -1,8 +1,7 @@
 # Test Layout
 
-This directory is being migrated from a flat, CI-oriented layout to a purpose-oriented layout.
-
-Current intent:
+Current layout (flat, CI-oriented — a prior purpose-oriented restructure was
+reverted to keep this repo mergeable with its upstream):
 
 - `test/runtests.jl`
   Default package test entrypoint. Delegates to `test/integration/runtests.jl`,
@@ -28,7 +27,16 @@ Current intent:
 - `test/stress/`
   Long-running determinism, Monte Carlo, and flake-resistance checks.
 - `test/coverage/`
-  Coverage quality gates and targeted probe suites.
+  Coverage quality gate plus two runtime-analysis gates. The probe suites it
+  measures coverage of live in `test/probes/`, not here.
+- `test/probes/`
+  Standalone (`using SpaceAGORA`) coverage-targeted probe files. Three are
+  raw-included directly from `test/suites/05_thruster_control_and_quality_tests.jl`;
+  most of the rest are dispatched as subprocesses from
+  `test/suites/09_probe_drivers.jl`, every run (not just under coverage).
+  `coverage_threaded_probes.jl` is the one exception — its
+  `test/suites/02_callbacks_parallel_and_smoke_tests.jl` driver only
+  dispatches it when running with `--code-coverage=user`.
 - `test/helpers/`
   Currently unused (placeholder); no shared harness code lives here.
 

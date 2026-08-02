@@ -29,6 +29,7 @@ const ODYSSEY_REFERENCE = (
     thermal_violations = 9.0,
     pass_count = 210.0,
 )
+const PAPER_TARGET_TOLERANCE_KM = 10.0
 
 const PAPER_GENERALIZATION_CASES = (
     "nominal",
@@ -57,7 +58,8 @@ Options:
   --final-flight-comparison   Only evaluate checkpoint_final.jls against AADS and
                               the Mars Odyssey mission reference. Uses the
                               thermal-tolerant protocol and --episodes campaigns
-                              (default: 40).
+                              (default: 40), including the percentage that finish
+                              within ±10 km of the target apoapsis radius.
   --episodes N                IID PR-DRL/AADS episodes for Table V/Fig. 10
                               (default: 40).
   --flight-episodes N         Odyssey-geometry episodes for Figs. 11-12
@@ -575,6 +577,26 @@ function _metric_stats(metrics::DataFrame, policy::String, field::Symbol)
     return mean(values), _std(values)
 end
 
+function _target_reached_stats(metrics::DataFrame, policy::String;
+                               tolerance_km::Real=PAPER_TARGET_TOLERANCE_KM)
+    rows = metrics[metrics.policy .== policy, :]
+    episodes = nrow(rows)
+    episodes > 0 || return (
+        count=0,
+        percent=NaN,
+        mean_abs_error_km=NaN,
+        std_abs_error_km=NaN,
+    )
+    target_errors_km = abs.(Float64.(rows.target_error_km))
+    reached = count(<=(Float64(tolerance_km)), target_errors_km)
+    return (
+        count=reached,
+        percent=100 * reached / episodes,
+        mean_abs_error_km=mean(target_errors_km),
+        std_abs_error_km=_std(target_errors_km),
+    )
+end
+
 function _flight_performance_table(metrics::DataFrame)
     rows = NamedTuple[]
     for (policy, label) in (
@@ -585,6 +607,7 @@ function _flight_performance_table(metrics::DataFrame)
         duration = _metric_stats(metrics, policy, :mission_duration_days)
         delta_v = _metric_stats(metrics, policy, :total_mission_delta_v_mps)
         thermal = _metric_stats(metrics, policy, :thermal_violations)
+        target_reached = _target_reached_stats(metrics, policy)
         push!(rows, (
             policy=label,
             episodes=count(==(policy), metrics.policy),
@@ -596,6 +619,10 @@ function _flight_performance_table(metrics::DataFrame)
             std_total_delta_v_mps=delta_v[2],
             mean_thermal_violations=thermal[1],
             std_thermal_violations=thermal[2],
+            target_reached_10km_count=target_reached.count,
+            target_reached_10km_percent=target_reached.percent,
+            mean_abs_final_target_error_km=target_reached.mean_abs_error_km,
+            std_abs_final_target_error_km=target_reached.std_abs_error_km,
         ))
     end
     push!(rows, (
@@ -609,6 +636,10 @@ function _flight_performance_table(metrics::DataFrame)
         std_total_delta_v_mps=0.0,
         mean_thermal_violations=ODYSSEY_REFERENCE.thermal_violations,
         std_thermal_violations=0.0,
+        target_reached_10km_count=missing,
+        target_reached_10km_percent=NaN,
+        mean_abs_final_target_error_km=NaN,
+        std_abs_final_target_error_km=NaN,
     ))
     return DataFrame(rows)
 end
@@ -663,12 +694,33 @@ function _paper_figure_11(metrics::DataFrame, path::AbstractString)
             title=title,
         ))
     end
+    target_reached_percent = [
+        _target_reached_stats(metrics, policy).percent
+        for policy in policies[1:2]
+    ]
+    target_panel = bar(
+        labels[1:2],
+        target_reached_percent;
+        ylabel="Campaigns (%)",
+        legend=false,
+        xrotation=15,
+        ylims=(0, 105),
+        yticks=0:20:100,
+        title="(e) Target reached (±10 km)",
+    )
+    for (index, percentage) in pairs(target_reached_percent)
+        annotate!(target_panel, index, min(102.0, percentage + 4),
+                  text(@sprintf("%.1f%%", percentage), 9))
+    end
+    push!(panels, target_panel)
     campaigns = count(==("trained_pr_drl"), metrics.policy)
     savefig(plot(
         panels...;
-        layout=(2, 2),
-        size=(1000, 820),
+        layout=(2, 3),
+        size=(1300, 820),
         plot_title="$(campaigns)-campaign thermal-tolerant flight comparison",
+        left_margin=8Plots.mm,
+        bottom_margin=5Plots.mm,
     ), path)
     return path
 end
@@ -1178,7 +1230,20 @@ function evaluate_final_flight_comparison(options)
         output_dir,
         "final_flight_performance_comparison.csv",
     )
-    CSV.write(comparison_path, _flight_performance_table(metrics))
+    comparison = _flight_performance_table(metrics)
+    CSV.write(comparison_path, comparison)
+    for policy in ("PR-DRL", "AADS")
+        row = only(eachrow(comparison[comparison.policy .== policy, :]))
+        @printf(
+            "final checkpoint target reached policy=%s tolerance_km=%.1f campaigns=%d/%d percent=%.1f%%\n",
+            policy,
+            PAPER_TARGET_TOLERANCE_KM,
+            row.target_reached_10km_count,
+            row.episodes,
+            row.target_reached_10km_percent,
+        )
+    end
+    flush(stdout)
     figure_path = _paper_figure_11(
         metrics,
         joinpath(output_dir, "final_flight_performance_comparison.png"),
@@ -1198,6 +1263,7 @@ function evaluate_final_flight_comparison(options)
         "progress_every_campaigns" => options.progress_every,
         "seed" => seed,
         "terminal_on_thermal_violation" => false,
+        "target_reached_tolerance_km" => PAPER_TARGET_TOLERANCE_KM,
         "policy_action_selection" => "greedy",
         "odyssey_reference" => Dict(
             "maneuver_count" => ODYSSEY_REFERENCE.maneuver_count,

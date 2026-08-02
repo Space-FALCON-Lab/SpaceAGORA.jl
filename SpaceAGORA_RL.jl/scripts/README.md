@@ -31,6 +31,11 @@ The checkpoint sweep also writes
 chart of episode completion percentages and mean absolute final distance to
 the target apoapsis radius with a one-standard-deviation band.
 
+For a focused evaluation of only the final checkpoint, run
+`--final-flight-comparison`. Its 40-campaign thermal-tolerant comparison CSV,
+figure, and terminal summary include the count and percentage of campaigns
+finishing within ±10 km of the target apoapsis radius.
+
 Raw episode, summary, and pass-level CSVs are retained alongside the figures.
 `evaluation_manifest.toml` records the exact run, config, checkpoint, episode
 counts, case mappings, reference values, and artifact paths.

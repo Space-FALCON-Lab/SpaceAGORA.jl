@@ -694,10 +694,11 @@ function _paper_figure_11(metrics::DataFrame, path::AbstractString)
             title=title,
         ))
     end
-    target_reached_percent = [
-        _target_reached_stats(metrics, policy).percent
+    target_stats = [
+        _target_reached_stats(metrics, policy)
         for policy in policies[1:2]
     ]
+    target_reached_percent = getfield.(target_stats, :percent)
     target_panel = bar(
         labels[1:2],
         target_reached_percent;
@@ -713,6 +714,19 @@ function _paper_figure_11(metrics::DataFrame, path::AbstractString)
                   text(@sprintf("%.1f%%", percentage), 9))
     end
     push!(panels, target_panel)
+    target_distance_means = getfield.(target_stats, :mean_abs_error_km)
+    target_distance_errors = getfield.(target_stats, :std_abs_error_km)
+    target_distance_upper = maximum(target_distance_means .+ target_distance_errors)
+    push!(panels, bar(
+        labels[1:2],
+        target_distance_means;
+        yerror=target_distance_errors,
+        ylabel="Absolute final distance (km)",
+        legend=false,
+        xrotation=15,
+        ylims=(0, 1.1 * target_distance_upper),
+        title="(f) Final target distance",
+    ))
     campaigns = count(==("trained_pr_drl"), metrics.policy)
     savefig(plot(
         panels...;

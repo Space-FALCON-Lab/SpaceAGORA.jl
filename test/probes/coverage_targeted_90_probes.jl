@@ -1174,16 +1174,35 @@ end
     # ConstantTorqueModel isn't in _dynamic_effector_threadsafe's allowlist, so
     # _rhs_flat_supported(...) is false for that effector tuple and the forced
     # mode silently falls back to :satellite_batch instead.
+    #
+    # gravity_gradient=true (not the default AerodynamicCoefficientfM pairing):
+    # _batchable_effector diverts the default-gravity_gradient=false gravity
+    # models into a pre-pass that never reaches the per-item packet queue at
+    # all, and AerodynamicCoefficientfM's wrench_caching! writes through a
+    # shared, lazily-`resize!`d per-satellite cache (_store_vector_cache! in
+    # aerodynamic_wrench_models.jl) that is not actually safe under real
+    # concurrent packet workers -- confirmed via a CI failure
+    # (ConcurrencyViolationError: "Vector can not be resized concurrently")
+    # that a single-worker local run never surfaced. gravity_gradient=true
+    # makes both gravity models non-batchable so they DO reach the packet
+    # queue's generic per-item dispatch, but neither defines its own
+    # `wrench_caching!` (only the aero models do), so both fall through to
+    # the generic, cache-free `wrench_caching!(model,x,env,t,p,i) = wrench(...)`
+    # default in core/types/effector_sampling.jl -- exercising the same
+    # packet-scheduler lines without the aero cache's concurrency hazard.
     args_flat_packets = build_config_multi(
         spacecraft=[
             make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=170.0),
             make_single_link_spacecraft(ra_alt_m=520e3, rp_alt_m=520e3, ν_deg=165.0),
         ],
-        density_model=ExponentialAtmosphereModel(EARTH),
+        density_model=NoAtmosphereModel(),
         orientation_sim=false,
         mission_time=5.0,
         EI_km=120.0,
-        dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+        dynamic_effectors=(
+            InverseSquaredGravityModel(gravity_gradient=true),
+            InverseSquaredJ2GravityModel(gravity_gradient=true),
+        ),
         ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )

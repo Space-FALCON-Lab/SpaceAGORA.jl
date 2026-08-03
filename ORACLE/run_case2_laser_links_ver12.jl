@@ -22,9 +22,9 @@ _HAS_GLMAKIE && include(joinpath(@__DIR__, "10_Animation_ver2.jl"))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output")
 
 # 5. define paper grid parameters (overridden by --paper-grid flag)
-const PAPER_TARGET_ALTITUDES_KM       = (1150.0, 1050.0, 1000.0, 950.0, 850.0)
+const PAPER_TARGET_ALTITUDES_KM       = (1050.0, 950.0, 850.0) #(1150.0, 1050.0, 1000.0, 950.0, 850.0)
 const PAPER_TARGET_INCLINATIONS_DEG   = (0.0, 0.5, 1.0)
-const PAPER_HELPER_COUNTS             = (1, 50, 100, 150, 200, 250, 300) #(50, 100, 200, 300) #(1, 100, 200) #(1, 50, 100, 150, 200, 250, 300)
+const PAPER_HELPER_COUNTS             = 300 #(1, 50, 100, 150, 200, 250, 300)
 const PAPER_FIXED_HELPER_ALTITUDE_KM  = 1000.0
 const PAPER_FIXED_HELPER_INCLINATION_DEG = 0.0
 
@@ -35,8 +35,6 @@ Base.@kwdef struct OracleCase2Options
     target_altitude_km::Float64 = 1000.0
     target_inclination_deg::Float64 = 0.0
     helper_inclination_deg::Float64 = 0.0
-    target_nu_deg::Float64 = 0.0
-    target_ecc::Float64 = 0.0
     orbits::Float64 = 80.0
     schedule::Symbol = :naive_next_entering
     laser_range_km::Float64 = 200.0
@@ -78,10 +76,8 @@ function _usage()
       --target-altitude-km KM
       --target-inclination-deg DEG
       --helper-inclination-deg DEG
-      --target-nu-deg DEG
-      --target-ecc VALUE        Initial eccentricity of target orbit (default: 0.0)
       --orbits N
-      --schedule naive_next_entering|positive_along_track|gve_sma|gve_ecc|gve_inc|gve_raan|gve_argp
+      --schedule naive_next_entering|positive_along_track
       --laser-range-km KM
       --laser-power-w W
       --magnification B
@@ -104,7 +100,7 @@ const _SYMBOL_OPTS = (:schedule,)
 const _PATH_OPTS   = (:output_dir,)
 const _FLOAT_OPTS  = (
     :helper_altitude_km, :target_altitude_km, :target_inclination_deg,
-    :helper_inclination_deg, :target_nu_deg, :target_ecc, :orbits,
+    :helper_inclination_deg, :orbits,
     :laser_range_km, :laser_power_w, :magnification, :beta, :eta,
     :mass_kg, :dt_max_s,
 )
@@ -139,7 +135,6 @@ function _validate_options(opts::OracleCase2Options)
     opts.helpers >= 1 || throw(ArgumentError("--helpers must be >= 1."))
     opts.helper_altitude_km > 0.0 || throw(ArgumentError("--helper-altitude-km must be positive."))
     opts.target_altitude_km > 0.0 || throw(ArgumentError("--target-altitude-km must be positive."))
-    (0.0 <= opts.target_ecc < 1.0) || throw(ArgumentError("--target-ecc must be in [0, 1)."))
     opts.orbits > 0.0 || throw(ArgumentError("--orbits must be positive."))
     opts.schedule in (:naive_next_entering, :positive_along_track,
                       :gve_sma, :gve_ecc, :gve_inc, :gve_raan, :gve_argp) ||
@@ -204,22 +199,6 @@ function main(argv=ARGS)
         _print_summary(s)
         @printf("  run time: %.1f s\n", elapsed)
         println("Output directory: $(result.results_dir)")
-
-        # --- Mirror feather + toml into paper_plot_mode for use by plotting scripts ---
-        let
-            single_root  = joinpath(opts.output_dir, "single_case_mode")
-            rel_path     = relpath(result.results_dir, single_root)
-            paper_dest   = joinpath(opts.output_dir, "paper_plot_mode", rel_path)
-            mkpath(paper_dest)
-            for f in readdir(result.results_dir)
-                (endswith(f, ".feather") || endswith(f, ".toml")) || continue
-                src = joinpath(result.results_dir, f)
-                dst = joinpath(paper_dest, f)
-                cp(src, dst; force=true)
-            end
-            println("Mirrored feather/toml → $(paper_dest)")
-        end
-
         img_dir = joinpath(result.results_dir, "images")
 
         # --- Diagnostic plots (skipped when --feather-only) ---

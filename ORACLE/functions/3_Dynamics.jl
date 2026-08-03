@@ -54,7 +54,7 @@ function build_case_config(opts::OracleCase2Options)
     # 3. Build the spacecraft array
     spacecraft = SpacecraftModel[]
     push!(spacecraft, _spacecraft(1, opts.mass_kg, InitialCondition(
-        target_radius_m, 0.0, opts.target_inclination_deg, 0.0, 0.0, 0.0
+        target_radius_m, opts.target_ecc, opts.target_inclination_deg, 0.0, 0.0, opts.target_nu_deg
     ))) # 3.1. Creates one target satellite (ID 1)
 
     helper_inclination_deg = opts.helper_inclination_deg
@@ -140,7 +140,7 @@ function build_case_config_native(opts::OracleCase2Options, results_directory::S
 
     spacecraft = SpacecraftModel[]
     push!(spacecraft, _spacecraft(1, opts.mass_kg, InitialCondition(
-        target_radius_m, 0.0, opts.target_inclination_deg, 0.0, 0.0, 0.0
+        target_radius_m, opts.target_ecc, opts.target_inclination_deg, 0.0, 0.0, opts.target_nu_deg
     )))
     helper_inclination_deg = opts.helper_inclination_deg
     for helper in 1:opts.helpers

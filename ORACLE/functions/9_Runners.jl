@@ -141,6 +141,7 @@ function run_open_cavity_case_native(opts::OracleCase2Options)
         @sprintf("ih%.1fdeg_it%.1fdeg",     opts.helper_inclination_deg, opts.target_inclination_deg),
         @sprintf("N%d",                     opts.helpers),
         @sprintf("T%ds",                    _T_s),
+        @sprintf("%s_e%.4f_nu%.4f",        string(opts.schedule), opts.target_ecc, opts.target_nu_deg),
     )
 
     # --- Block 1: build config with native output enabled ---

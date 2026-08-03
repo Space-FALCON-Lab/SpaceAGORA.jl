@@ -228,11 +228,13 @@ end
 # Generate a unique case ID string based on the options (used for labeling output)
 function _case_id(opts::OracleCase2Options)::String
     return @sprintf(
-        "Nh%d_h%.0fkm_ti%.1fdeg_hi%.1fdeg",
+        "Nh%d_h%.0fkm_ti%.1fdeg_hi%.1fdeg_e%.4f_%s",
         opts.helpers,
         opts.helper_altitude_km,
         opts.target_inclination_deg,
         opts.helper_inclination_deg,
+        opts.target_ecc,
+        opts.schedule,
     )
 end
 

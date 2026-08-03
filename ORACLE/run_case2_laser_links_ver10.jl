@@ -22,11 +22,9 @@ _HAS_GLMAKIE && include(joinpath(@__DIR__, "10_Animation_ver2.jl"))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output")
 
 # 5. define paper grid parameters (overridden by --paper-grid flag)
-const PAPER_TARGET_ALTITUDES_KM       = (1150.0, 1050.0, 1000.0, 950.0, 850.0)
-const PAPER_TARGET_INCLINATIONS_DEG   = (0.0, 0.5, 1.0)
-const PAPER_HELPER_COUNTS             = (1, 50, 100, 150, 200, 250, 300) #(50, 100, 200, 300) #(1, 100, 200) #(1, 50, 100, 150, 200, 250, 300)
-const PAPER_FIXED_HELPER_ALTITUDE_KM  = 1000.0
-const PAPER_FIXED_HELPER_INCLINATION_DEG = 0.0
+const PAPER_HELPER_ALTITUDES_KM       = (1150.0, 1050.0, 1000.0, 950.0, 850.0)
+const PAPER_HELPER_INCLINATION_DELTAS_DEG = (0.0, 0.5, 1.0)
+const PAPER_HELPER_COUNTS             = (25, 75, 125, 175, 225, 275) #(250, 300) #, 250, 300) #(50, 100) #(150, 200, 250, 300) #(1, 2, 3)
 
 # 6. settings container & default values
 Base.@kwdef struct OracleCase2Options
@@ -35,8 +33,6 @@ Base.@kwdef struct OracleCase2Options
     target_altitude_km::Float64 = 1000.0
     target_inclination_deg::Float64 = 0.0
     helper_inclination_deg::Float64 = 0.0
-    target_nu_deg::Float64 = 0.0
-    target_ecc::Float64 = 0.0
     orbits::Float64 = 80.0
     schedule::Symbol = :naive_next_entering
     laser_range_km::Float64 = 200.0
@@ -78,10 +74,8 @@ function _usage()
       --target-altitude-km KM
       --target-inclination-deg DEG
       --helper-inclination-deg DEG
-      --target-nu-deg DEG
-      --target-ecc VALUE        Initial eccentricity of target orbit (default: 0.0)
       --orbits N
-      --schedule naive_next_entering|positive_along_track|gve_sma|gve_ecc|gve_inc|gve_raan|gve_argp
+      --schedule naive_next_entering|positive_along_track
       --laser-range-km KM
       --laser-power-w W
       --magnification B
@@ -104,7 +98,7 @@ const _SYMBOL_OPTS = (:schedule,)
 const _PATH_OPTS   = (:output_dir,)
 const _FLOAT_OPTS  = (
     :helper_altitude_km, :target_altitude_km, :target_inclination_deg,
-    :helper_inclination_deg, :target_nu_deg, :target_ecc, :orbits,
+    :helper_inclination_deg, :orbits,
     :laser_range_km, :laser_power_w, :magnification, :beta, :eta,
     :mass_kg, :dt_max_s,
 )
@@ -139,11 +133,9 @@ function _validate_options(opts::OracleCase2Options)
     opts.helpers >= 1 || throw(ArgumentError("--helpers must be >= 1."))
     opts.helper_altitude_km > 0.0 || throw(ArgumentError("--helper-altitude-km must be positive."))
     opts.target_altitude_km > 0.0 || throw(ArgumentError("--target-altitude-km must be positive."))
-    (0.0 <= opts.target_ecc < 1.0) || throw(ArgumentError("--target-ecc must be in [0, 1)."))
     opts.orbits > 0.0 || throw(ArgumentError("--orbits must be positive."))
-    opts.schedule in (:naive_next_entering, :positive_along_track,
-                      :gve_sma, :gve_ecc, :gve_inc, :gve_raan, :gve_argp) ||
-        throw(ArgumentError("--schedule must be naive_next_entering, positive_along_track, gve_sma, gve_ecc, gve_inc, gve_raan, or gve_argp."))
+    opts.schedule in (:naive_next_entering, :positive_along_track) ||
+        throw(ArgumentError("--schedule must be naive_next_entering or positive_along_track."))
     opts.laser_range_km >= 0.0 || throw(ArgumentError("--laser-range-km must be nonnegative."))
     opts.laser_power_w >= 0.0 || throw(ArgumentError("--laser-power-w must be nonnegative."))
     opts.magnification >= 0.0 || throw(ArgumentError("--magnification must be nonnegative."))
@@ -166,14 +158,12 @@ function main(argv=ARGS)
         # --- Paper-grid mode: sweep over all (helper_altitude, inclination_delta) combinations ---
 
         for n_helpers in PAPER_HELPER_COUNTS                        # outermost loop: helper counts
-            for target_alt in PAPER_TARGET_ALTITUDES_KM               # middle loop: 5 target altitudes
-                for target_inclination in PAPER_TARGET_INCLINATIONS_DEG  # inner loop: 3 target inclinations
+            for helper_alt in PAPER_HELPER_ALTITUDES_KM               # middle loop: 5 altitudes
+                for helper_inclination_delta in PAPER_HELPER_INCLINATION_DELTAS_DEG  # inner loop: 3 inclination deltas
                     case_opts = _with(opts;
                         helpers=n_helpers,
-                        target_altitude_km=target_alt,
-                        target_inclination_deg=target_inclination,
-                        helper_altitude_km=PAPER_FIXED_HELPER_ALTITUDE_KM,
-                        helper_inclination_deg=PAPER_FIXED_HELPER_INCLINATION_DEG,
+                        helper_altitude_km=helper_alt,
+                        helper_inclination_deg=opts.target_inclination_deg + helper_inclination_delta,
                         output_dir=joinpath(opts.output_dir, "paper_plot_mode"),
                         animate=false,
                     )
@@ -184,8 +174,8 @@ function main(argv=ARGS)
                     results_dir = result.results_dir
                     println("  → $results_dir")
                     @printf(
-                        "helpers=%d target_alt_km=%.1f target_inc_deg=%.1f dv_R=%.6e dv_T=%.6e dv_N=%.6e activations=%d  [%.1f s]\n",
-                        s.helpers, s.target_altitude_km, s.target_inclination_deg,
+                        "helpers=%d helper_alt_km=%.1f helper_inc_deg=%.1f dv_R=%.6e dv_T=%.6e dv_N=%.6e activations=%d  [%.1f s]\n",
+                        s.helpers, s.helper_altitude_km, s.helper_inclination_deg,
                         s.dv_r_mps, s.dv_t_mps, s.dv_n_mps, s.activations, elapsed
                     )
                     result = nothing  # release the large sol object before the next scenario
@@ -204,22 +194,6 @@ function main(argv=ARGS)
         _print_summary(s)
         @printf("  run time: %.1f s\n", elapsed)
         println("Output directory: $(result.results_dir)")
-
-        # --- Mirror feather + toml into paper_plot_mode for use by plotting scripts ---
-        let
-            single_root  = joinpath(opts.output_dir, "single_case_mode")
-            rel_path     = relpath(result.results_dir, single_root)
-            paper_dest   = joinpath(opts.output_dir, "paper_plot_mode", rel_path)
-            mkpath(paper_dest)
-            for f in readdir(result.results_dir)
-                (endswith(f, ".feather") || endswith(f, ".toml")) || continue
-                src = joinpath(result.results_dir, f)
-                dst = joinpath(paper_dest, f)
-                cp(src, dst; force=true)
-            end
-            println("Mirrored feather/toml → $(paper_dest)")
-        end
-
         img_dir = joinpath(result.results_dir, "images")
 
         # --- Diagnostic plots (skipped when --feather-only) ---

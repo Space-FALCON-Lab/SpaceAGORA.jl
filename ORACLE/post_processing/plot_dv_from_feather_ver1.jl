@@ -1,17 +1,18 @@
 #!/usr/bin/env julia
 # Reads simulation_results.feather files produced by run_case2_laser_links.jl
-# (--paper-grid --feather-only) and plots a 4×5 orbital-element change grid.
+# (--paper-grid --feather-only) and plots a 5×3 ΔvRTN grid in the same
+# format as the prototype's 7_dv_all_final_NxN_plot_v1.jl.
 #
-# Rows    = [Δa, Δe, Δi, ΔRAAN]
-# Columns = target altitude h_t  [km]
-# X-axis  = N_helpers  (one curve per inclination delta)
+# Rows    = helper altitudes  (HELPER_ALTITUDES_KM)
+# Columns = [ΔvR, ΔvT, ΔvN]
+# Curves  = inclination deltas (INCLINATION_DELTAS_DEG), one colour each
 #
 # Run from the repository root:
-#   julia --project=. ORACLE/post_processing/plot_oe_from_feather.jl
+#   julia --project=. ORACLE/post_processing/plot_dv_from_feather.jl
 
 using Arrow
-using LinearAlgebra
-get!(ENV, "GKSwstype", "100")   # headless rendering (remove for interactive window)
+using DataFrames
+get!(ENV, "GKSwstype", "100")   # headless rendering (remove if you want a window)
 using Plots
 using LaTeXStrings
 using Printf
@@ -20,60 +21,26 @@ gr()
 
 const REPO_ROOT  = normpath(joinpath(@__DIR__, "..", ".."))
 const OUTPUT_DIR = joinpath(REPO_ROOT, "output", "paper_plot_mode")
-const MU         = 3.986004418e14   # Earth gravitational parameter [m³/s²]
 
 # ── Schedule argument: --schedule positive_along_track (default: naive_next_entering) ─
 _sched_idx = findfirst(==("--schedule"), ARGS)
 const SCHEDULE = _sched_idx !== nothing ? ARGS[_sched_idx + 1] : "naive_next_entering"
 
-# ── Target eccentricity argument: --target-ecc 0.01 (default: 0.0) ───────────
-_ecc_idx = findfirst(==("--target-ecc"), ARGS)
-const TARGET_ECC = _ecc_idx !== nothing ? parse(Float64, ARGS[_ecc_idx + 1]) : 0.0
-
-# ── Target true anomaly argument: --target-nu-deg 1.0 (default: 0.0) ────────
-_nu_idx = findfirst(==("--target-nu-deg"), ARGS)
-const TARGET_NU_DEG = _nu_idx !== nothing ? parse(Float64, ARGS[_nu_idx + 1]) : 0.0
-
 # ── Grid parameters — must match what was used in the simulation sweep ────────
-const HELPER_ALT_KM                 = 1000.0
-const HELPER_INCLINATION_DEG        = 0.0
-const TARGET_ALTITUDES_KM           = [1150.0, 1050.0, 1000.0, 950.0, 850.0]
-const TARGET_INCLINATION_DELTAS_DEG = [0.0, 0.5, 1.0]
-const HELPER_COUNTS          = [50, 100, 150, 200, 250, 300]   # must match PAPER_HELPER_COUNTS
+const HELPER_ALT_KM          = 1000.0
+const TARGET_INCLINATION_DEG = 0.0
+const TARGET_ALTITUDES_KM    = [1150.0, 1050.0, 1000.0, 950.0, 850.0]
+const INCLINATION_DELTAS_DEG = [0.0, 0.5, 1.0]
+const HELPER_COUNTS          = [1, 100, 200] #[1, 50, 100, 150, 200, 250, 300]   # must match PAPER_HELPER_COUNTS
 
-# ── Compute classical orbital elements from position + velocity ───────────────
-# Returns (a [m], e, i [rad], raan [rad])
-function _orbital_elements(pos::Vector{Float64}, vel::Vector{Float64})
-    r     = norm(pos)
-    v     = norm(vel)
-    eps   = v^2 / 2 - MU / r                        # specific orbital energy
-    a     = -MU / (2 * eps)                          # semi-major axis [m]
-    h_vec = cross(pos, vel)                          # specific angular momentum
-    h     = norm(h_vec)
-    e_vec = cross(vel, h_vec) / MU - pos / r         # eccentricity vector
-    e     = norm(e_vec)                              # eccentricity
-    i     = acos(clamp(h_vec[3] / h, -1.0, 1.0))    # inclination [rad]
-    n_vec = cross([0.0, 0.0, 1.0], h_vec)            # ascending node vector
-    n     = norm(n_vec)
-    raan  = if n < 1e-10
-        0.0   # equatorial orbit — RAAN undefined, set to 0
-    else
-        ω = acos(clamp(n_vec[1] / n, -1.0, 1.0))
-        n_vec[2] < 0 ? 2π - ω : ω
-    end
-    return (a=a, e=e, i=i, raan=raan)
-end
-
-# ── Read Δ orbital elements (final − initial) for one scenario ────────────────
-# Returns (da [m], de, di_deg [deg], draan_deg [deg]) or nothing if not found.
-function read_final_oe_delta(output_dir, helper_alt_km, target_alt_km,
-                              helper_inc_deg, target_inc_deg, n_helpers;
-                              schedule::String="naive_next_entering",
-                              target_ecc::Float64=0.0,
-                              target_nu_deg::Float64=0.0)
-    alt_folder = @sprintf("h%.0fkm_t%.0fkm",    helper_alt_km,  target_alt_km)
-    inc_folder = @sprintf("ih%.1fdeg_it%.1fdeg", helper_inc_deg, target_inc_deg)
-    n_folder   = @sprintf("N%d",                 n_helpers)
+# ── Read the final cumulative ΔV for one scenario from its feather file ───────
+# Returns (dv_r, dv_t, dv_n) or nothing if the file is not found.
+function read_final_dv(output_dir, helper_alt_km, target_alt_km,
+                        helper_inc_deg, target_inc_deg, n_helpers;
+                        schedule::String="")
+    alt_folder = @sprintf("h%.0fkm_t%.0fkm",     helper_alt_km,  target_alt_km)
+    inc_folder = @sprintf("ih%.1fdeg_it%.1fdeg",  helper_inc_deg, target_inc_deg)
+    n_folder   = @sprintf("N%d",                  n_helpers)
     base_path  = joinpath(output_dir, alt_folder, inc_folder, n_folder)
     isdir(base_path) || return nothing
 
@@ -82,36 +49,19 @@ function read_final_oe_delta(output_dir, helper_alt_km, target_alt_km,
                        readdir(base_path))
     isempty(t_folders) && return nothing
 
-    # Schedule folder: always use _e{ecc}_nu{nu} suffix (matches renamed folder convention)
-    sched_folder = if isempty(schedule)
-        ""
-    else
-        @sprintf("%s_e%.4f_nu%.4f", schedule, target_ecc, target_nu_deg)
-    end
+    # If a schedule is given, look one level deeper inside the T folder
     t_root = joinpath(base_path, first(t_folders))
-    feather_path = isempty(sched_folder) ?
+    feather_path = isempty(schedule) ?
         joinpath(t_root, "simulation_results.feather") :
-        joinpath(t_root, sched_folder, "simulation_results.feather")
+        joinpath(t_root, schedule, "simulation_results.feather")
     isfile(feather_path) || return nothing
 
     tbl = Arrow.Table(feather_path)
     n   = length(tbl.time)
-
-    # Initial state (first saved step)
-    r0 = Float64[tbl.sc1_pos_1[1], tbl.sc1_pos_2[1], tbl.sc1_pos_3[1]]
-    v0 = Float64[tbl.sc1_vel_1[1], tbl.sc1_vel_2[1], tbl.sc1_vel_3[1]]
-    # Final state (last saved step)
-    rf = Float64[tbl.sc1_pos_1[n], tbl.sc1_pos_2[n], tbl.sc1_pos_3[n]]
-    vf = Float64[tbl.sc1_vel_1[n], tbl.sc1_vel_2[n], tbl.sc1_vel_3[n]]
-
-    oe0 = _orbital_elements(r0, v0)
-    oef = _orbital_elements(rf, vf)
-
     return (
-        da        = oef.a    - oe0.a,
-        de        = oef.e    - oe0.e,
-        di_deg    = rad2deg(oef.i    - oe0.i),
-        draan_deg = rad2deg(oef.raan - oe0.raan),
+        dv_r = Float64(tbl.dv_r_accumulated[n]),
+        dv_t = Float64(tbl.dv_t_accumulated[n]),
+        dv_n = Float64(tbl.dv_n_accumulated[n]),
     )
 end
 
@@ -138,10 +88,10 @@ end
 
 # ── Styling knobs (match the prototype) ──────────────────────────────────────
 gap_inner           = 0
-margin_left         = 0
+margin_left         = 5
 margin_bottom       = 0
-margin_right        = 2
-margin_top          = 2
+margin_right        = 0
+margin_top          = 0
 tick_fontsize       = 12
 main_label_fontsize = 12
 col_title_fontsize  = 12
@@ -150,56 +100,54 @@ legend_fontsize     = 12
 marker_stroke_width = 0.1
 main_xlabel         = L"N_{\mathrm{helpers}}"
 
-elements    = [:a, :e, :i, :raan]
-elem_labels = [L"\Delta a,\ \mathrm{m}", L"\Delta e",
-               L"\Delta i,\ \mathrm{deg}", L"\Delta\Omega,\ \mathrm{deg}"]
+components  = [:R, :T, :N]
+col_titles  = [L"\Delta v_R\ \mathrm{(m/s)}",
+               L"\Delta v_T\ \mathrm{(m/s)}",
+               L"\Delta v_N\ \mathrm{(m/s)}"]
 
 inc_colors = [:blue, :red, :green]
 inc_labels = [latexstring("\\Delta i=$(round(d, digits=1))^{\\circ}")
-              for d in TARGET_INCLINATION_DELTAS_DEG]
+              for d in INCLINATION_DELTAS_DEG]
 
-n_rows     = length(elements)             # 4  (Δa, Δe, Δi, ΔRAAN)
-n_cols     = length(TARGET_ALTITUDES_KM)  # 5  (target altitudes)
+n_rows     = length(TARGET_ALTITUDES_KM)
+n_cols     = length(components)
 fig_width  = 220 * n_cols + 80
 fig_height = 180 * n_rows + 50
 
-# ── Build subplots (row-major: altitude × element) ────────────────────────────
+# ── Build subplots (row-major: altitude × component) ─────────────────────────
 subplots = []
 
-for (row_idx, elem) in enumerate(elements)
+for (row_idx, t_alt) in enumerate(TARGET_ALTITUDES_KM)
     is_top    = row_idx == 1
     is_bottom = row_idx == n_rows
 
-    for (col_idx, t_alt) in enumerate(TARGET_ALTITUDES_KM)
+    for (col_idx, comp) in enumerate(components)
         is_left = col_idx == 1
 
+        # collect one (xs, dvs) vector per inclination curve
         all_xs  = Vector{Vector{Float64}}()
         all_dvs = Vector{Vector{Float64}}()
 
-        for delta_i in TARGET_INCLINATION_DELTAS_DEG
-            t_inc = HELPER_INCLINATION_DEG + delta_i
+        for delta_i in INCLINATION_DELTAS_DEG
+            t_inc = TARGET_INCLINATION_DEG + delta_i
             xs    = Float64[]
             dvs   = Float64[]
             for n in HELPER_COUNTS
-                res = read_final_oe_delta(OUTPUT_DIR, HELPER_ALT_KM, t_alt,
-                                          HELPER_INCLINATION_DEG, t_inc, n;
-                                          schedule=SCHEDULE, target_ecc=TARGET_ECC,
-                                          target_nu_deg=TARGET_NU_DEG)
+                res = read_final_dv(OUTPUT_DIR, HELPER_ALT_KM, t_alt,
+                                    TARGET_INCLINATION_DEG, t_inc, n;
+                                    schedule=SCHEDULE)
                 res === nothing && continue
-                push!(xs, Float64(n))
-                val = elem == :a    ? res.da        :
-                      elem == :e    ? res.de        :
-                      elem == :i    ? res.di_deg    :
-                                      res.draan_deg
-                push!(dvs, val)
+                push!(xs,  Float64(n))
+                push!(dvs, comp == :R ? res.dv_r :
+                            comp == :T ? res.dv_t : res.dv_n)
             end
             push!(all_xs,  xs)
             push!(all_dvs, dvs)
         end
 
         all_vals  = vcat(all_dvs...)
-        col_title = is_top    ? latexstring("h_{\\mathrm{t}}=$(round(Int,t_alt))\\,\\mathrm{km}") : ""
-        row_ylab  = is_left   ? elem_labels[row_idx] : ""
+        row_ylab  = is_left   ? latexstring("h_{\\mathrm{t}}=$(round(Int,t_alt))\\,\\mathrm{km}") : ""
+        col_title = is_top    ? col_titles[col_idx] : ""
         x_lab     = is_bottom ? main_xlabel : ""
 
         # ── No-data guard ────────────────────────────────────────────────────
@@ -219,13 +167,7 @@ for (row_idx, elem) in enumerate(elements)
         _vmin  = minimum(all_vals); _vmax = maximum(all_vals)
         _vctr  = (_vmin + _vmax) / 2
         _vhalf = max((_vmax - _vmin) / 2 * 1.1, abs(_vctr) * 0.5, 1e-9)
-
-        ytk_vals, ytk_labs =
-            if elem in (:i, :raan) && maximum(abs.(all_vals)) < 1e-6
-                nice_ticks(-1e-4, 1e-4; n=5)
-            else
-                nice_ticks(_vctr - _vhalf, _vctr + _vhalf; n=5)
-            end
+        ytk_vals, ytk_labs = nice_ticks(_vctr - _vhalf, _vctr + _vhalf; n=5)
 
         ref_xs = first(filter(!isempty, all_xs))
 
@@ -261,10 +203,13 @@ legend_sp = plot(framestyle=:none, ticks=nothing, legend=false,
 
 legend_xs = [0.15, 0.45, 0.75]
 for (xc, col, lab) in zip(legend_xs, inc_colors, inc_labels)
-    plot!(legend_sp, [xc, xc+0.06], [0.72, 0.72]; color=col, lw=1.5, linestyle=:solid)
-    scatter!(legend_sp, [xc+0.03], [0.72]; color=col, marker=:circle, ms=3,
+    plot!(legend_sp, [xc, xc+0.06], [0.6, 0.6];
+          color=col, lw=1.5, linestyle=:solid)
+    scatter!(legend_sp, [xc+0.03], [0.6];
+             color=col, marker=:circle, ms=3,
              markerstrokewidth=marker_stroke_width, label=false)
-    annotate!(legend_sp, xc+0.07, 0.72, text(lab, :black, :left, legend_fontsize))
+    annotate!(legend_sp, xc+0.07, 0.6,
+              text(lab, :black, :left, legend_fontsize))
 end
 
 # ── Assemble and save ─────────────────────────────────────────────────────────
@@ -277,13 +222,11 @@ fig = plot(subplots..., legend_sp,
            left_margin=margin_left*Plots.mm,  right_margin=margin_right*Plots.mm,
            top_margin=margin_top*Plots.mm,    bottom_margin=margin_bottom*Plots.mm)
 
-out_dir  = joinpath(REPO_ROOT, "output", "images", "orbital_elements")
+out_dir  = joinpath(REPO_ROOT, "output", "images", "delta_v")
 mkpath(out_dir)
 _sched_suffix = isempty(SCHEDULE) ? "" : "_$(SCHEDULE)"
-_ecc_suffix   = @sprintf("_e%.4f", TARGET_ECC)
-_nu_suffix    = @sprintf("_nu%.4f", TARGET_NU_DEG)
-out_png  = joinpath(out_dir, "OE_from_feather$(_sched_suffix)$(_ecc_suffix)$(_nu_suffix)_h_cols.png")
-out_pdf  = joinpath(out_dir, "OE_from_feather$(_sched_suffix)$(_ecc_suffix)$(_nu_suffix)_h_cols.pdf")
+out_png  = joinpath(out_dir, "dv_RTN_from_feather$(  _sched_suffix).png")
+out_pdf  = joinpath(out_dir, "dv_RTN_from_feather$(_sched_suffix).pdf")
 savefig(fig, out_png)
 savefig(fig, out_pdf)
 display(fig)

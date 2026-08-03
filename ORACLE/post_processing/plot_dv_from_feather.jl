@@ -1,11 +1,10 @@
 #!/usr/bin/env julia
 # Reads simulation_results.feather files produced by run_case2_laser_links.jl
-# (--paper-grid --feather-only) and plots a 5×3 ΔvRTN grid in the same
-# format as the prototype's 7_dv_all_final_NxN_plot_v1.jl.
+# (--paper-grid --feather-only) and plots a 3×5 ΔvRTN grid.
 #
-# Rows    = helper altitudes  (HELPER_ALTITUDES_KM)
-# Columns = [ΔvR, ΔvT, ΔvN]
-# Curves  = inclination deltas (INCLINATION_DELTAS_DEG), one colour each
+# Rows    = [ΔvR, ΔvT, ΔvN]
+# Columns = target altitude h_t  [km]
+# X-axis  = N_helpers  (one curve per inclination delta)
 #
 # Run from the repository root:
 #   julia --project=. ORACLE/post_processing/plot_dv_from_feather.jl
@@ -22,17 +21,31 @@ gr()
 const REPO_ROOT  = normpath(joinpath(@__DIR__, "..", ".."))
 const OUTPUT_DIR = joinpath(REPO_ROOT, "output", "paper_plot_mode")
 
+# ── Schedule argument: --schedule positive_along_track (default: naive_next_entering) ─
+_sched_idx = findfirst(==("--schedule"), ARGS)
+const SCHEDULE = _sched_idx !== nothing ? ARGS[_sched_idx + 1] : "naive_next_entering"
+
+# ── Target eccentricity argument: --target-ecc 0.01 (default: 0.0) ───────────
+_ecc_idx = findfirst(==("--target-ecc"), ARGS)
+const TARGET_ECC = _ecc_idx !== nothing ? parse(Float64, ARGS[_ecc_idx + 1]) : 0.0
+
+# ── Target true anomaly argument: --target-nu-deg 1.0 (default: 0.0) ────────
+_nu_idx = findfirst(==("--target-nu-deg"), ARGS)
+const TARGET_NU_DEG = _nu_idx !== nothing ? parse(Float64, ARGS[_nu_idx + 1]) : 0.0
+
 # ── Grid parameters — must match what was used in the simulation sweep ────────
 const HELPER_ALT_KM          = 1000.0
 const TARGET_INCLINATION_DEG = 0.0
 const TARGET_ALTITUDES_KM    = [1150.0, 1050.0, 1000.0, 950.0, 850.0]
 const INCLINATION_DELTAS_DEG = [0.0, 0.5, 1.0]
-const HELPER_COUNTS          = [1, 50, 100, 150, 200, 250, 300] #[1, 2, 3]   # must match PAPER_HELPER_COUNTS
+const HELPER_COUNTS          = [1, 50, 100, 150, 200, 250, 300]   # must match PAPER_HELPER_COUNTS
 
 # ── Read the final cumulative ΔV for one scenario from its feather file ───────
 # Returns (dv_r, dv_t, dv_n) or nothing if the file is not found.
 function read_final_dv(output_dir, helper_alt_km, target_alt_km,
-                        helper_inc_deg, target_inc_deg, n_helpers)
+                        helper_inc_deg, target_inc_deg, n_helpers;
+                        schedule::String="", target_ecc::Float64=0.0,
+                        target_nu_deg::Float64=0.0)
     alt_folder = @sprintf("h%.0fkm_t%.0fkm",     helper_alt_km,  target_alt_km)
     inc_folder = @sprintf("ih%.1fdeg_it%.1fdeg",  helper_inc_deg, target_inc_deg)
     n_folder   = @sprintf("N%d",                  n_helpers)
@@ -44,7 +57,16 @@ function read_final_dv(output_dir, helper_alt_km, target_alt_km,
                        readdir(base_path))
     isempty(t_folders) && return nothing
 
-    feather_path = joinpath(base_path, first(t_folders), "simulation_results.feather")
+    # Schedule folder: always use _e{ecc}_nu{nu} suffix (matches renamed folder convention)
+    sched_folder = if isempty(schedule)
+        ""
+    else
+        @sprintf("%s_e%.4f_nu%.4f", schedule, target_ecc, target_nu_deg)
+    end
+    t_root = joinpath(base_path, first(t_folders))
+    feather_path = isempty(sched_folder) ?
+        joinpath(t_root, "simulation_results.feather") :
+        joinpath(t_root, sched_folder, "simulation_results.feather")
     isfile(feather_path) || return nothing
 
     tbl = Arrow.Table(feather_path)
@@ -92,7 +114,7 @@ marker_stroke_width = 0.1
 main_xlabel         = L"N_{\mathrm{helpers}}"
 
 components  = [:R, :T, :N]
-col_titles  = [L"\Delta v_R\ \mathrm{(m/s)}",
+comp_labels = [L"\Delta v_R\ \mathrm{(m/s)}",
                L"\Delta v_T\ \mathrm{(m/s)}",
                L"\Delta v_N\ \mathrm{(m/s)}"]
 
@@ -100,19 +122,20 @@ inc_colors = [:blue, :red, :green]
 inc_labels = [latexstring("\\Delta i=$(round(d, digits=1))^{\\circ}")
               for d in INCLINATION_DELTAS_DEG]
 
-n_rows     = length(TARGET_ALTITUDES_KM)
-n_cols     = length(components)
+# columns correspond to target altitudes
+n_rows     = length(components)           # 3  (ΔvR, ΔvT, ΔvN)
+n_cols     = length(TARGET_ALTITUDES_KM)  # 5  (target altitudes)
 fig_width  = 220 * n_cols + 80
 fig_height = 180 * n_rows + 50
 
-# ── Build subplots (row-major: altitude × component) ─────────────────────────
+# ── Build subplots (row-major: component × h_t) ───────────────────────────────
 subplots = []
 
-for (row_idx, t_alt) in enumerate(TARGET_ALTITUDES_KM)
+for (row_idx, comp) in enumerate(components)
     is_top    = row_idx == 1
     is_bottom = row_idx == n_rows
 
-    for (col_idx, comp) in enumerate(components)
+    for (col_idx, t_alt) in enumerate(TARGET_ALTITUDES_KM)
         is_left = col_idx == 1
 
         # collect one (xs, dvs) vector per inclination curve
@@ -125,7 +148,9 @@ for (row_idx, t_alt) in enumerate(TARGET_ALTITUDES_KM)
             dvs   = Float64[]
             for n in HELPER_COUNTS
                 res = read_final_dv(OUTPUT_DIR, HELPER_ALT_KM, t_alt,
-                                    TARGET_INCLINATION_DEG, t_inc, n)
+                                    TARGET_INCLINATION_DEG, t_inc, n;
+                                    schedule=SCHEDULE, target_ecc=TARGET_ECC,
+                                    target_nu_deg=TARGET_NU_DEG)
                 res === nothing && continue
                 push!(xs,  Float64(n))
                 push!(dvs, comp == :R ? res.dv_r :
@@ -136,8 +161,8 @@ for (row_idx, t_alt) in enumerate(TARGET_ALTITUDES_KM)
         end
 
         all_vals  = vcat(all_dvs...)
-        row_ylab  = is_left   ? latexstring("h_{\\mathrm{t}}=$(round(Int,t_alt))\\,\\mathrm{km}") : ""
-        col_title = is_top    ? col_titles[col_idx] : ""
+        col_title = is_top    ? latexstring("h_{\\mathrm{t}}=$(round(Int,t_alt))\\,\\mathrm{km}") : ""
+        row_ylab  = is_left   ? comp_labels[row_idx] : ""
         x_lab     = is_bottom ? main_xlabel : ""
 
         # ── No-data guard ────────────────────────────────────────────────────
@@ -214,8 +239,11 @@ fig = plot(subplots..., legend_sp,
 
 out_dir  = joinpath(REPO_ROOT, "output", "images", "delta_v")
 mkpath(out_dir)
-out_png  = joinpath(out_dir, "dv_RTN_from_feather.png")
-out_pdf  = joinpath(out_dir, "dv_RTN_from_feather.pdf")
+_sched_suffix = isempty(SCHEDULE) ? "" : "_$(SCHEDULE)"
+_ecc_suffix   = @sprintf("_e%.4f", TARGET_ECC)
+_nu_suffix    = @sprintf("_nu%.4f", TARGET_NU_DEG)
+out_png  = joinpath(out_dir, "dv_RTN_from_feather$(_sched_suffix)$(_ecc_suffix)$(_nu_suffix)_h_cols.png")
+out_pdf  = joinpath(out_dir, "dv_RTN_from_feather$(_sched_suffix)$(_ecc_suffix)$(_nu_suffix)_h_cols.pdf")
 savefig(fig, out_png)
 savefig(fig, out_pdf)
 display(fig)

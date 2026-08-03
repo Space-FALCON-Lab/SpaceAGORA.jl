@@ -584,6 +584,15 @@ end
 end
 
 @testset "spaceagora marsgram backend selection" begin
+    geometry = SpaceAGORA_RL._paper_odyssey_spacecraft_geometry()
+    panel_area_each_m2 = geometry.panel_dims[2] * geometry.panel_dims[3]
+    bus_area_m2 = geometry.bus_dims[1] * geometry.bus_dims[3]
+    @test geometry.bus_dims == (2.2, 2.6, 1.7)
+    @test geometry.panel_dims == (0.01, 1.9, 1.91)
+    @test geometry.panel_offset_y_m == 2.25
+    @test 2.0 * panel_area_each_m2 ≈ 7.258
+    @test bus_area_m2 + 2.0 * panel_area_each_m2 ≈ 10.998
+
     config = paper_pr_drl_marsgram_evaluation_config(process_noise_scale=0.0)
     @test config.backend_mode == :spaceagora_marsgram
     physics_config = paper_pr_drl_physics_evaluation_config(process_noise_scale=0.0)

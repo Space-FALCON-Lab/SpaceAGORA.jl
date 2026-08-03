@@ -8,6 +8,25 @@ const _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_FLOOR = 5_000_000
 const _SPACEAGORA_RL_PHYSICS_SOLVER_MAXITERS_PER_PASS = 250_000
 const PAPER_ABM_THRUST_N = 4.0
 const _PAPER_ABM_CONTROL_RATE_S = 1.0
+const _PAPER_ODYSSEY_BUS_DIMS_M = (2.2, 2.6, 1.7)
+const _PAPER_ODYSSEY_TOTAL_PANEL_SPAN_M = 3.8
+const _PAPER_ODYSSEY_PANEL_HEIGHT_M = 1.91
+const _PAPER_ODYSSEY_PANEL_THICKNESS_M = 0.01
+
+function _paper_odyssey_spacecraft_geometry()
+    panel_span_each_m = _PAPER_ODYSSEY_TOTAL_PANEL_SPAN_M / 2.0
+    return (
+        bus_dims=_PAPER_ODYSSEY_BUS_DIMS_M,
+        panel_dims=(
+            _PAPER_ODYSSEY_PANEL_THICKNESS_M,
+            panel_span_each_m,
+            _PAPER_ODYSSEY_PANEL_HEIGHT_M,
+        ),
+        panel_offset_y_m=(
+            _PAPER_ODYSSEY_BUS_DIMS_M[2] / 2.0 + panel_span_each_m / 2.0
+        ),
+    )
+end
 
 _spaceagora_base_root() = dirname(package_root())
 _spaceagora_spice_path() = joinpath(_spaceagora_base_root(), "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
@@ -213,13 +232,14 @@ function _spaceagora_physics_simulation_template(
     TV = getproperty(spaceagora, :TelemetryVerification)
     planet = deepcopy(_spaceagora_mars(spaceagora, _spaceagora_spice_path()))
     ic = _spaceagora_initial_condition(spaceagora, state, planet)
+    geometry = _paper_odyssey_spacecraft_geometry()
     spacecraft = Base.invokelatest(
         getproperty(TV, :make_three_body_spacecraft);
-        bus_dims=(2.2, 2.6, 1.7),
-        panel_dims=(0.01, 5.5 / 1.35, 2.6),
+        bus_dims=geometry.bus_dims,
+        panel_dims=geometry.panel_dims,
         bus_mass=391.0,
         panel_mass_each=10.0,
-        panel_offset_y=2.6 / 2.0 + 5.5 / 4.0,
+        panel_offset_y=geometry.panel_offset_y_m,
         ic=ic,
         reflection_coefficient=0.9,
         prop_mass=50.0,

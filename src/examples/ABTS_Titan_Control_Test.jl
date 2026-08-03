@@ -9,13 +9,13 @@ args = Dict(# Misc Simulation
             :results => 1,                                                     # Generate csv file for results True=1, False=0
             :passresults => 1,                                                 # Pass results as output True=1, False=0
             :print_res => 1,                                                   # Print some lines True=1, False=0
-            :directory_results => "/workspaces/SpaceAGORA.jl_deprecated/journal_output/titan_edgt_one_switch_J2_poly_mc_test",       # Directory where to save the results
+            :directory_results => "/workspaces/SpaceAGORA.jl_deprecated/journal_output/Titan_targ_pert_mc",       # Directory where to save the results
             :directory_Gram => "/workspaces/SpaceAGORA.jl_deprecated/GRAMpy",                   # Directory where Gram is
             :directory_Gram_data => "/workspaces/SpaceAGORA.jl_deprecated/GRAM_Data",           # Directory where Gram data is
             :directory_Spice => "/workspaces/SpaceAGORA.jl_deprecated/GRAM_Data/SPICE",         # Directory where SPICE files are located
             :Gram_version => 0,                                                # MarsGram x file to use
             :montecarlo_analysis => 0,                                         # Generate csv file for Montecarlo results True=1, False=0
-            :plot => 1,                                                        # Generate pdf plots of results True=1, False=0
+            :plot => 0,                                                        # Generate pdf plots of results True=1, False=0
             :filename => 1,                                         # Filename with specifics of simulation, True =1, False=0
             :machine => "",                                         # choices=['Laptop' , 'Cluster' , 'Aero' , 'Desktop_Home','Karnap_Laptop']
             :integrator => "Julia",                                 # choices=['Costumed', 'Julia'] Costumed customed integrator, Julia DifferentialEquations.jl library integrator, only for drag passage, others phases use RK4
@@ -81,12 +81,12 @@ args = Dict(# Misc Simulation
             
             # Control Mode
             :control_mode => 3,                                     # Use Rotative Solar Panels Control:  False=0, Only heat rate=1, Only heat load=2, Heat rate and Heat load = 3
-            :security_mode => 0,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
+            :security_mode => 1,                                    # Security mode that set the angle of attack to 0 deg if predicted heat load exceed heat load limit
             :second_switch_reevaluation => 1,                       # Reevaluation of the second switch time when the time is closer to it
             :control_in_loop => 1,                                  # Control in loop, control called during integration of trajectory, full state knowledge
-            :flash2_through_integration => 0,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
+            :flash2_through_integration => 1,                       # Integration of the equations of motion and lambda to define time switches and revaluation second time switch
             :struct_ctrl => 0,                                      # Structural thermal control, True=1, False=0
-            :targeting_ctrl => 0,                                   # Targeting control True=1, False=0
+            :targeting_ctrl => 1,                                   # Targeting control True=1, False=0
             
             # Initial Conditions
             :initial_condition_type => 0,                           # Initial Condition ra,hp = 0, Initial Condition v, gamma = 1
@@ -107,8 +107,8 @@ args = Dict(# Misc Simulation
             :inclination => 85.37,                                  # Inclination Orbit, deg
             :ω => 90.0,                                             # AOP, deg
             :Ω => 64.495,                                           # RAAN, deg
-            :EI => 900.0,                                           # Entry Interface, km
-            :AE => 900.0,                                           # Atmospheric Exit, km
+            :EI => 1200.0,                                           # Entry Interface, km
+            :AE => 1200.0,                                           # Atmospheric Exit, km
             :year => 2031,                                          # Mission year
             :month => 10,                                           # Mission month
             :day => 15,                                             # Mission day
@@ -163,20 +163,58 @@ args = Dict(# Misc Simulation
             )
 
 # Calculating time of simulation
-t = @elapsed begin
+# t = @elapsed begin
 
+#     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
+#     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
+#     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
+#     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
+#     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+            
+#     # Run the simulation
+#     sol = run_analysis(args)
+
+#     if Bool(args[:passresults])
+#         println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+#     end
+# end
+
+t = @elapsed begin
     furnsh(args[:directory_Spice] * "/pck/pck00011.tpc")
     furnsh(args[:directory_Spice] * "/spk/planets/de440_GRAM.bsp")
     furnsh(args[:directory_Spice] * "/lsk/naif0012.tls")
     furnsh(args[:directory_Spice] * "/spk/planets/de440s.bsp")
     furnsh(args[:directory_Spice] * "/spk/satellites/sat441_GRAM.bsp")
+
+    ra_initial_a = args[:ra_initial_a]
+    hp_initial_a = args[:hp_initial_a]
+    inc          = args[:inclination]
+    RAAN         = args[:Ω]
+    AOP          = args[:ω]
             
     # Run the simulation
-    sol = run_analysis(args)
+    for i in collect(range(1,498,step=1))
 
-    if Bool(args[:passresults])
-        println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+        d = Uniform(-2.5,+2.5)
+        args[:ra_initial_a] = ra_initial_a + rand(d)*1e3
+        # args[:hp_initial_a] = hp_initial_a + rand(d)*1e3
+
+        disp = Uniform(-0.25,+0.25)
+        args[:inclination] = inc + rand(disp)
+        args[:Ω] = RAAN + rand(disp)
+        args[:ω] = AOP + rand(disp)
+
+        sol = run_analysis(args)
+        sol = nothing
+        config.reset_config()
+        GC.gc()
     end
+
+    println(" ")
+
+    # if Bool(args[:passresults])
+    #     println("Ra initial = " * string((sol.orientation.oe[1][1] * (1 + sol.orientation.oe[2][1]))* 1e-3) * " km, Ra new = " * string((sol.orientation.oe[1][end] * (1 + sol.orientation.oe[2][end]))* 1e-3) * " km - Actual periapsis altitude = " * string(minimum(sol.orientation.alt) * 1e-3) * " km - Target Ra = " * string(args[:final_apoapsis] * 1e-3) * " km")
+    # end
 end
 
 # t = @elapsed begin

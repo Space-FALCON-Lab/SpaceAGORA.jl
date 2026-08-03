@@ -298,7 +298,7 @@ function asim_ctrl_targeting(t_switch, param, time_0, in_cond)
         # if ip.gm == 0
         #     gravity_ii = mass * gravity_const(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         # elseif ip.gm == 1
-        #     gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
+            # gravity_ii = mass * gravity_invsquared(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         # elseif ip.gm == 2
             gravity_ii = mass * gravity_invsquared_J2(pos_ii_mag, pos_ii, m.planet, mass, vel_ii)
         # elseif ip.gm == 3

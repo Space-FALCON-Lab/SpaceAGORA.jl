@@ -132,14 +132,14 @@ function target_planning(f!, ip, m, args, param, OE, initial_time, final_time, a
     println("Apoapsis  target max: ", ra_targ_max)
     println("")
 
-    # h0 = norm(cross(r0, v0))
+    h0 = norm(cross(r0, v0))
     # r_p = h0^2 / (m.planet.μ * (1 + OE[2]))
     # r_p = (minimum( [norm(sol_max_dratio[1:3,k]) for k=1:length(sol_max_dratio.t)] ) + minimum( [norm(sol_min_dratio[1:3,k]) for k=1:length(sol_min_dratio.t)] ))/2
 
-    # h_apoapsis = norm(cross(sol_apoapsis[1:3,end], sol_apoapsis[4:6,end]))
-    # r_p = h_apoapsis^2 / (m.planet.μ * (1 + OE_apoapsis[2]))
+    h_apoapsis = norm(cross(sol_apoapsis[1:3,end], sol_apoapsis[4:6,end]))
+    r_p = h_apoapsis^2 / (m.planet.μ * (1 + OE_apoapsis[2]))
 
-    r_p = OE_apoapsis[1] * (1 - OE_apoapsis[2])
+    # r_p = OE_apoapsis[1] * (1 - OE_apoapsis[2])
 
     # r_p = (minimum( [norm(sol_apoapsis[1:3,k]) for k=1:length(sol_apoapsis.t)] ) + minimum( [norm(sol_apoapsis[1:3,k]) for k=1:length(sol_apoapsis.t)] ))/2
     

@@ -216,157 +216,412 @@ function closed_form_calculation(args, t0, mission, initialcondition, α, T, dat
     # f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + 
     #       c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
 
-    if mission.planet.name == "mars"
-        v0_first = 3900
-        γ0_end = -3.0
+    """
+    Return the first five Chebyshev polynomials evaluated at z:
 
-        mean_b = 2.1858e-4
-        mean_d = -0.0036
-        
-        a2 = -11.7322
-        a3 = 1.7060
-        b2 = 0.2450
-        b3 = -0.4948
+        T₀(z), T₁(z), ..., T₄(z)
+    """
+    function chebyshev_T0_to_T4(z)
+        T0 = one(z)
+        T1 = z
+        T2 = 2z^2 - 1
+        T3 = 4z^3 - 3z
+        T4 = 8z^4 - 8z^2 + 1
 
-        f1 = (-4.894e-11)*v0^4 + (8.678e-7)*v0^3 + (-0.005762)*v0^2 + (16.98)*v0 - 1.871e4
-
-        f2 = exp((a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
-                  a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first)))) * (t_cf) / (2 * t_p)
-
-        # a0 = 0.0016
-        # c0 = 5e-6
-        # mean_a = 3.38
-        # mean_c = 2.6
-        # mean_b = -8.25
-        # mean_d = -0.001
-
-        # f1 = -0.005 * v0 + 27.87
-        # f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + 
-        #       c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
-
-    elseif mission.planet.name == "venus"
-        # v0_first = 8400
-        # γ0_end = -3
-
-        # mean_b = -0.0123
-        # mean_d = -0.0039
-        
-        # a2 = 6.5539e-4
-        # a3 = 0.0026
-        # b2 = -5.9985
-        # b3 = -3.4274
-
-        f1 = (-1.364e-11)*v0^4 + (4.984e-7)*v0^3 + (-0.006825)*v0^2 + (41.51)*v0 - 9.459e4
-
-        # f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
-        #       a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
-
-        x = rad2deg(γ0)
-        y = v0
-
-        p00 =   4274 
-        p10 =  -865.8 
-        p01 =  -2.216 
-        p20 =   30.28
-        p11 =   0.2986  
-        p02 =   0.0004211 
-        p30 =   1.309 
-        p21 =  -0.003775  
-        p12 =  -3.272e-5  
-        p03 =  -3.478e-8  
-        p40 =  -0.2126  
-        p31 =  -0.0005503 
-        p22 =  -2.191e-7
-        p13 =   1.063e-9  
-        p04 =   1.044e-12
-
-        f2 = p00 + p10*x + p01*y + p20*x^2 + p11*x*y + p02*y^2 + p30*x^3 + p21*x^2*y + p12*x*y^2 + p03*y^3 + p40*x^4 + p31*x^3*y + p22*x^2*y^2 + p13*x*y^3 + p04*y^4
-
-        f2 = exp(f2) * (t_cf) / (2 * t_p)
-    elseif mission.planet.name == "earth"
-        # v0_first = 8350
-        # γ0_end = -3
-
-        # mean_b = -0.0164
-        # mean_d = -7.9792e-4
-        
-        # a2 = 2.7402e-6
-        # a3 = 0.0047
-        # b2 = -5.1505
-        # b3 = -0.4760
-
-        f1 = (1.271e-12)*v0^4 + (-4.733e-8)*v0^3 + (0.0006621)*v0^2 + (-4.127)*v0 + 9697
-
-        # f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
-        #       a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
-
-        x = rad2deg(γ0)
-        y = v0
-
-        p00 =        4731  
-        p10 =      -759.6
-        p01 =      -2.402 
-        p20 =       47.19  
-        p11 =      0.2952  
-        p02 =   0.0004592  
-        p30 =      -1.377  
-        p21 =    -0.01233  
-        p12 =  -3.823e-05  
-        p03 =  -3.913e-08  
-        p40 =     0.00949  
-        p31 =   0.0001648  
-        p22 =   7.891e-07  
-        p13 =   1.644e-09 
-        p04 =   1.252e-12  
-
-        f2 = p00 + p10*x + p01*y + p20*x^2 + p11*x*y + p02*y^2 + p30*x^3 + p21*x^2*y + p12*x*y^2 + p03*y^3 + p40*x^4 + p31*x^3*y + p22*x^2*y^2 + p13*x*y^3 + p04*y^4
-
-        f2 = exp(f2) * (t_cf) / (2 * t_p)
-    elseif mission.planet.name == "titan"
-        # v0_first = 1900
-        # γ0_end = -6
-
-        # mean_b = -0.0188
-        # mean_d = -0.0049
-        
-        # a2 = 2.3512e-6
-        # a3 = 1.0144e-4
-        # b2 = -1.0153
-        # b3 = -0.5682
-
-        f1 = (9.39e-12)*v0^4 + (-8.141e-8)*v0^3 + (0.0002664)*v0^2 + (-0.3915)*v0 + 219.4
-
-        # f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
-        #       a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
-
-        x = rad2deg(γ0)
-        y = v0
-
-        # println("x: ", x)
-        # println("y: ", y)
-
-        p00 =       934.1
-        p10 =       -33.4  
-        p01 =      -1.903  
-        p20 =      0.4016 
-        p11 =     0.04816  
-        p02 =    0.001434  
-        p30 =    0.001327  
-        p21 =  -0.0003013  
-        p12 =  -2.301e-5
-        p03 =  -4.798e-7  
-        p40 =  -0.0001555 
-        p31 =  -4.661e-6
-        p22 =   2.175e-8
-        p13 =   3.506e-9
-        p04 =   5.988e-11
-
-        f2 = p00 + p10*x + p01*y + p20*x^2 + p11*x*y + p02*y^2 + p30*x^3 + p21*x^2*y + p12*x*y^2 + p03*y^3 + p40*x^4 + p31*x^3*y + p22*x^2*y^2 + p13*x*y^3 + p04*y^4
-
-        # println("f2: ", exp(f2))
-
-        f2 = exp(f2) * (t_cf) / (2 * t_p)
+        return (T0, T1, T2, T3, T4)
     end
+
+
+    """
+    Evaluate a fourth-degree univariate Chebyshev expansion:
+
+        a₀T₀(x) + a₁T₁(x) + ... + a₄T₄(x)
+    """
+    function evaluate_chebyshev4(x, a)
+        T = chebyshev_T0_to_T4(x)
+
+        return a[1] * T[1] +
+            a[2] * T[2] +
+            a[3] * T[3] +
+            a[4] * T[4] +
+            a[5] * T[5]
+    end
+
+
+    """
+    Evaluate the total-degree-four bivariate Chebyshev expansion
+
+        Σ d_{ℓn} T_ℓ(γ̂) T_n(V̂),    ℓ+n ≤ 4.
+
+    The coefficient tuple must use the ordering
+
+        d00, d10, d01,
+        d20, d11, d02,
+        d30, d21, d12, d03,
+        d40, d31, d22, d13, d04.
+    """
+    function evaluate_chebyshev44(γhat, Vhat, d)
+        Tγ = chebyshev_T0_to_T4(γhat)
+        TV = chebyshev_T0_to_T4(Vhat)
+
+        d00, d10, d01,
+        d20, d11, d02,
+        d30, d21, d12, d03,
+        d40, d31, d22, d13, d04 = d
+
+        return d00 * Tγ[1] * TV[1] +
+            d10 * Tγ[2] * TV[1] +
+            d01 * Tγ[1] * TV[2] +
+
+            d20 * Tγ[3] * TV[1] +
+            d11 * Tγ[2] * TV[2] +
+            d02 * Tγ[1] * TV[3] +
+
+            d30 * Tγ[4] * TV[1] +
+            d21 * Tγ[3] * TV[2] +
+            d12 * Tγ[2] * TV[3] +
+            d03 * Tγ[1] * TV[4] +
+
+            d40 * Tγ[5] * TV[1] +
+            d31 * Tγ[4] * TV[2] +
+            d22 * Tγ[3] * TV[3] +
+            d13 * Tγ[2] * TV[4] +
+            d04 * Tγ[1] * TV[5]
+    end
+
+    planet_name = lowercase(mission.planet.name)
+
+    if planet_name == "mars"
+
+        # Calibration-domain normalization
+        V_center = 4350.0
+        ΔV       = 450.0
+
+        γ_center = -5.25       # deg
+        Δγ       = 2.25        # deg
+
+        # f₁ Chebyshev coefficients:
+        # a₀, a₁, a₂, a₃, a₄
+        f1_coeffs = (
+            4.560850,
+            -1.715925,
+            -0.375150,
+            0.376025,
+            -0.254500
+        )
+
+        # f₂ Chebyshev coefficients:
+        # d00, d10, d01,
+        # d20, d11, d02,
+        # d30, d21, d12, d03,
+        # d40, d31, d22, d13, d04
+        f2_coeffs = (
+            -4.74628450,
+            -3.69824500,
+            -6.06348525,
+
+            1.07688200,
+            3.54740275,
+            1.27053200,
+
+            -0.26357900,
+            -1.12508600,
+            -0.91570600,
+            -0.17288575,
+
+            0.045299125,
+            0.280380250,
+            0.224278500,
+            -0.004521000,
+            -0.025270125
+        )
+
+    elseif planet_name == "venus"
+
+        # Calibration-domain normalization
+        V_center = 9000.0
+        ΔV       = 600.0
+
+        γ_center = -4.375      # deg
+        Δγ       = 1.375       # deg
+
+        f1_coeffs = (
+            16.3939125,
+            -0.6316500,
+            -0.3870500,
+            0.3974500,
+            -0.2209625
+        )
+
+        f2_coeffs = (
+            -11.578333625,
+            -6.131747500,
+            -3.504510250,
+
+            1.440936250,
+            2.801654000,
+            0.536784250,
+
+            0.049912500,
+            -0.281389000,
+            -0.520214000,
+            -0.099717750,
+
+            -0.094991375,
+            -0.214584750,
+            -0.037281250,
+            0.078927750,
+            0.016912750
+        )
+
+    elseif planet_name == "earth"
+
+        # Calibration-domain normalization
+        V_center = 9075.0
+        ΔV       = 725.0
+
+        γ_center = -5.125      # deg
+        Δγ       = 2.125       # deg
+
+        f1_coeffs = (
+            19.807700,
+            -3.164075,
+            0.592100,
+            -0.113625,
+            0.043900
+        )
+
+        f2_coeffs = (
+            -1.989471500,
+            0.523520500,
+            -1.992902250,
+
+            0.462889750,
+            1.965380250,
+            0.591760750,
+
+            -0.182282500,
+            -0.886610000,
+            -0.871433000,
+            -0.200818750,
+
+            0.024188625,
+            0.286623750,
+            0.468237250,
+            0.332824000,
+            0.043238125
+        )
+
+    elseif planet_name == "titan"
+
+        # Calibration-domain normalization
+        V_center = 2050.0
+        ΔV       = 150.0
+
+        γ_center = -12.5       # deg
+        Δγ       = 6.5         # deg
+
+        f1_coeffs = (
+            148.480400,
+            10.480925,
+            0.030500,
+            -0.003725,
+            0.000600
+        )
+
+        f2_coeffs = (
+            -8.397098625,
+            -4.739801250,
+            -1.473748250,
+
+            0.671454000,
+            1.024378750,
+            0.184619500,
+
+            -0.031104750,
+            -0.118313000,
+            -0.145654000,
+            -0.027513750,
+
+            -0.034697125,
+            -0.048001000,
+            0.005169000,
+            0.019228250,
+            0.003789250
+        )
+
+    else
+        throw(ArgumentError(
+            "No f₁/f₂ correction fit is defined for planet: " *
+            string(mission.planet.name)
+        ))
+    end
+
+    # Normalize the dimensional inputs.
+    Vhat = (v0 - V_center) / ΔV
+    γ0_deg = rad2deg(γ0)
+    γhat = (γ0_deg - γ_center) / Δγ
+
+    # Evaluate f₁ directly in m/s².
+    f1 = evaluate_chebyshev4(Vhat, f1_coeffs)
+
+    # Evaluate the dimensionless logarithmic f₂ polynomial.
+    log_f2 = evaluate_chebyshev44(γhat, Vhat, f2_coeffs)
+
+    # Recover the positive correction and apply the original time scaling.
+    f2 = exp(log_f2) * t_cf / (2 * t_p)
+
+    # if mission.planet.name == "mars"
+    #     v0_first = 3900
+    #     γ0_end = -3.0
+
+    #     mean_b = 2.1858e-4
+    #     mean_d = -0.0036
+        
+    #     a2 = -11.7322
+    #     a3 = 1.7060
+    #     b2 = 0.2450
+    #     b3 = -0.4948
+
+    #     f1 = (-4.894e-11)*v0^4 + (8.678e-7)*v0^3 + (-0.005762)*v0^2 + (16.98)*v0 - 1.871e4
+
+    #     f2 = exp((a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
+    #               a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first)))) * (t_cf) / (2 * t_p)
+
+    #     # a0 = 0.0016
+    #     # c0 = 5e-6
+    #     # mean_a = 3.38
+    #     # mean_c = 2.6
+    #     # mean_b = -8.25
+    #     # mean_d = -0.001
+
+    #     # f1 = -0.005 * v0 + 27.87
+    #     # f2 = (a0 * (mean_a^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_b * (v0/1000 - 3.7))) + 
+    #     #       c0 * (mean_c^(2 * abs(rad2deg(γ0) + 3)) * exp(mean_d * (v0/1000 - 3.7)))) * (t_cf) / (2 * t_p)
+
+    # elseif mission.planet.name == "venus"
+    #     # v0_first = 8400
+    #     # γ0_end = -3
+
+    #     # mean_b = -0.0123
+    #     # mean_d = -0.0039
+        
+    #     # a2 = 6.5539e-4
+    #     # a3 = 0.0026
+    #     # b2 = -5.9985
+    #     # b3 = -3.4274
+
+    #     f1 = (-1.364e-11)*v0^4 + (4.984e-7)*v0^3 + (-0.006825)*v0^2 + (41.51)*v0 - 9.459e4
+
+    #     # f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
+    #     #       a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
+
+    #     x = rad2deg(γ0)
+    #     y = v0
+
+    #     p00 =   4274 
+    #     p10 =  -865.8 
+    #     p01 =  -2.216 
+    #     p20 =   30.28
+    #     p11 =   0.2986  
+    #     p02 =   0.0004211 
+    #     p30 =   1.309 
+    #     p21 =  -0.003775  
+    #     p12 =  -3.272e-5  
+    #     p03 =  -3.478e-8  
+    #     p40 =  -0.2126  
+    #     p31 =  -0.0005503 
+    #     p22 =  -2.191e-7
+    #     p13 =   1.063e-9  
+    #     p04 =   1.044e-12
+
+    #     f2 = p00 + p10*x + p01*y + p20*x^2 + p11*x*y + p02*y^2 + p30*x^3 + p21*x^2*y + p12*x*y^2 + p03*y^3 + p40*x^4 + p31*x^3*y + p22*x^2*y^2 + p13*x*y^3 + p04*y^4
+
+    #     f2 = exp(f2) * (t_cf) / (2 * t_p)
+    # elseif mission.planet.name == "earth"
+    #     # v0_first = 8350
+    #     # γ0_end = -3
+
+    #     # mean_b = -0.0164
+    #     # mean_d = -7.9792e-4
+        
+    #     # a2 = 2.7402e-6
+    #     # a3 = 0.0047
+    #     # b2 = -5.1505
+    #     # b3 = -0.4760
+
+    #     f1 = (1.271e-12)*v0^4 + (-4.733e-8)*v0^3 + (0.0006621)*v0^2 + (-4.127)*v0 + 9697
+
+    #     # f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
+    #     #       a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
+
+    #     x = rad2deg(γ0)
+    #     y = v0
+
+    #     p00 =        4731  
+    #     p10 =      -759.6
+    #     p01 =      -2.402 
+    #     p20 =       47.19  
+    #     p11 =      0.2952  
+    #     p02 =   0.0004592  
+    #     p30 =      -1.377  
+    #     p21 =    -0.01233  
+    #     p12 =  -3.823e-05  
+    #     p03 =  -3.913e-08  
+    #     p40 =     0.00949  
+    #     p31 =   0.0001648  
+    #     p22 =   7.891e-07  
+    #     p13 =   1.644e-09 
+    #     p04 =   1.252e-12  
+
+    #     f2 = p00 + p10*x + p01*y + p20*x^2 + p11*x*y + p02*y^2 + p30*x^3 + p21*x^2*y + p12*x*y^2 + p03*y^3 + p40*x^4 + p31*x^3*y + p22*x^2*y^2 + p13*x*y^3 + p04*y^4
+
+    #     f2 = exp(f2) * (t_cf) / (2 * t_p)
+    # elseif mission.planet.name == "titan"
+    #     # v0_first = 1900
+    #     # γ0_end = -6
+
+    #     # mean_b = -0.0188
+    #     # mean_d = -0.0049
+        
+    #     # a2 = 2.3512e-6
+    #     # a3 = 1.0144e-4
+    #     # b2 = -1.0153
+    #     # b3 = -0.5682
+
+    #     f1 = (9.39e-12)*v0^4 + (-8.141e-8)*v0^3 + (0.0002664)*v0^2 + (-0.3915)*v0 + 219.4
+
+    #     # f2 = (a2*exp(b2*(rad2deg(γ0) - γ0_end))*exp(mean_b*(v0 - v0_first)) + 
+    #     #       a3*exp(b3*(rad2deg(γ0) - γ0_end))*exp(mean_d*(v0 - v0_first))) * (t_cf) / (2 * t_p)
+
+    #     x = rad2deg(γ0)
+    #     y = v0
+
+    #     # println("x: ", x)
+    #     # println("y: ", y)
+
+    #     p00 =       934.1
+    #     p10 =       -33.4  
+    #     p01 =      -1.903  
+    #     p20 =      0.4016 
+    #     p11 =     0.04816  
+    #     p02 =    0.001434  
+    #     p30 =    0.001327  
+    #     p21 =  -0.0003013  
+    #     p12 =  -2.301e-5
+    #     p03 =  -4.798e-7  
+    #     p40 =  -0.0001555 
+    #     p31 =  -4.661e-6
+    #     p22 =   2.175e-8
+    #     p13 =   3.506e-9
+    #     p04 =   5.988e-11
+
+    #     f2 = p00 + p10*x + p01*y + p20*x^2 + p11*x*y + p02*y^2 + p30*x^3 + p21*x^2*y + p12*x*y^2 + p03*y^3 + p40*x^4 + p31*x^3*y + p22*x^2*y^2 + p13*x*y^3 + p04*y^4
+
+    #     # println("f2: ", exp(f2))
+
+    #     f2 = exp(f2) * (t_cf) / (2 * t_p)
+    # end
 
     f2_solar_panels = f2 .* α * mission.body.area_SA / Area_tot
     f2_spacecraft = f2 * pi / 2 * mission.body.area_SC / Area_tot

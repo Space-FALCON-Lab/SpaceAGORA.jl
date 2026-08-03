@@ -43,9 +43,9 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
     OE =[initial_state.a, initial_state.e, initial_state.i, initial_state.Ω, initial_state.ω, initial_state.vi, initial_state.m]
     
     # MC
-    # OE[6] = OE[6] + rand(Uniform(deg2rad(-0.025),deg2rad(0.025)))
-    # config.cnf.CD_factor_mc = rand(Uniform(0.9, 1.1))
-    # config.cnf.CL_factor_mc = rand(Uniform(0.9, 1.1))
+    OE[6] = OE[6] + rand(Uniform(deg2rad(-0.025),deg2rad(0.025)))
+    config.cnf.CD_factor_mc = rand(Uniform(0.9, 1.1))
+    config.cnf.CL_factor_mc = rand(Uniform(0.9, 1.1))
     
     OE = SVector{7, Float64}(OE)
 
@@ -399,12 +399,12 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
         end
 
         if config.cnf.targeting == 1
-            # if t0 < config.cnf.ts_targ_1 && t0 - config.cnf.last_targeting_revaluation >= 1/3
-            #     param_reeval = (param[1:6]..., t0, param[8:end]...)
-            #     switch_delay = control_solarpanels_targeting_num_int(config.cnf.energy_f, param_reeval, t0, in_cond)
-            #     config.cnf.ts_targ_1 = t0 + switch_delay
-            #     config.cnf.last_targeting_revaluation = t0
-            # end
+            if t0 < config.cnf.ts_targ_1 && t0 - config.cnf.last_targeting_revaluation >= 20
+                param_reeval = (param[1:6]..., t0, param[8:end]...)
+                switch_delay = control_solarpanels_targeting_num_int(config.cnf.energy_f, param_reeval, t0, in_cond)
+                config.cnf.ts_targ_1 = t0 + switch_delay
+                config.cnf.last_targeting_revaluation = t0
+            end
 
             if t0 >= config.cnf.ts_targ_1 && t0 <= config.cnf.ts_targ_2
                 config.cnf.α = 0
@@ -1005,7 +1005,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
     init_energy = (norm(v0)^2)/2 - (m.planet.μ / norm(r0))
 
-    # config.cnf.mc = true # MC switch
+    config.cnf.mc = true # MC switch
 
     # Def initial conditions
     in_cond = [r0[1], r0[2], r0[3], v0[1], v0[2], v0[3], Mass+1e-10, 0.0, init_energy]
@@ -1285,6 +1285,8 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
                         # config.cnf.lambda_switch_list = []
                         # config.cnf.time_switch_list = []
 
+                        time_switch = [0.0, 0.0]
+
                         # root finding num int
                         time_switch[1] = control_solarpanels_targeting_num_int(config.cnf.energy_f, param, time_0, in_cond)
                         time_switch[2] = Inf
@@ -1328,7 +1330,7 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                         param = (m, index_phase_aerobraking, ip, aerobraking_phase, t_prev, date_initial, time_0, args, initial_state, gram_atmosphere, gram)
 
-                        # config.cnf.mc = true
+                        config.cnf.mc = true
                     end
                 end
 
@@ -1390,13 +1392,18 @@ function asim(ip, m, initial_state, numberofpassage, args, gram_atmosphere=nothi
 
                 # Run simulation
                 prob = ODEProblem(f!, in_cond, (initial_time, final_time), param)
-                sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+                # sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
                 # sol = solve(prob, method, dt = 0.1, adaptive=false, callback=events)
 
                 # if config.cnf.mc == true
                 #     sol = solve(prob, OrdinaryDiffEq.RK4(), dt=1.0, adaptive=false, callback=events)
                 # else
+                if aerobraking_phase == 2
                     # sol = solve(prob, method, dtmax=0.1, abstol=a_tol, reltol=r_tol, callback=events)
+                    sol = solve(prob, OrdinaryDiffEq.RK4(), dt=0.1, adaptive=false, callback=events)
+                else
+                    sol = solve(prob, method, abstol=a_tol, reltol=r_tol, callback=events)
+                end
                 # end
 
                 config.cnf.counter_integrator += 1

@@ -219,27 +219,23 @@ function asim_ctrl_rf(ip, m, time_0, OE, args, v_E, k_cf, heat_rate_control, gra
         # Heat Rate
         heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
 
-        # Add the control for the heat rate if flash == 3
+        # Apply the heat-rate limit without replacing a lower angle selected by
+        # the switching law.
         if heat_rate_control == true && heat_rate > args[:max_heat_rate]
             state = [T_p, ρ, S]
             index_ratio = [1]
             aoa_hr = control_solarpanels_heatrate(ip, m, args, index_ratio, state)
-
-            if args[:struct_ctrl] == 1
-                α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
-
-                aoa = min(aoa_hr, α_struct) # limit the angle of attack to the structural load control
-            end
-
-            if aoa != aoa_hr
-                heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
-            else
-                aoa = aoa_hr
-                heat_rate = args[:max_heat_rate]  
-            end
-
-            # heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
+            aoa = min(aoa, aoa_hr)
         end
+
+        # The structural controller is also an upper bound. In particular, it
+        # must not overwrite aoa = 0 selected by the costate switch.
+        if args[:struct_ctrl] == 1
+            α_struct = control_struct_load(ip, m, args, S, T_p, q, MonteCarlo)
+            aoa = min(aoa, α_struct)
+        end
+
+        heat_rate = heatrate_convective_maxwellian(S, T_p, m, ρ, vel_pp_mag, aoa)
 
         config.cnf.α_past = aoa
 

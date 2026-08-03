@@ -95,35 +95,16 @@ function control_solarpanels_heatrate(ip, m, args, index_ratio, state, t=0, posi
         elseif (heat_rate_min > thermal_limit)
             α = min_α
         elseif (heat_rate_max >= thermal_limit) && (heat_rate_min <= thermal_limit)
-            x_0 = config.cnf.α_past
-
-            # println("try")
             try
-                df(x) = L .* S * cos.(x) * ((pi^0.5) * (S.^2 .+ γ / (γ - 1) + (γ + 1) / (2 * (γ - 1)) .* T_w ./ T_p) .* (1 + erf.(S .* sin.(x))) .+ S .* sin.(x) * exp.(-(S .* sin.(x)).^2))
-                α = find_zero((f, df), x_0, Roots.Newton())
-                # println(find_zero((f, df), x_0, Roots.Newton()))
-
-                if α < 0 || α > pi/2
-                    α = find_zero((f, df), 1e-1, Roots.Newton())
-                end
-
+                # The endpoint checks above guarantee a bracket. A bracketed
+                # method is independent of α_past and cannot converge to a
+                # root outside the permitted panel-angle interval.
+                α = find_zero(f, [min_α, max_α], Roots.Brent())
             catch
-
-            # if α < 0 || α > pi/2
-                try
-                    if abs(heat_rate_max - thermal_limit) < abs(heat_rate_min - thermal_limit)   # Newton method is unable to find a solution since there are multiple ones. We need to provide a good initial guess
-                        x_0 = 2 * max_α / 3
-                    elseif abs(heat_rate_max - thermal_limit) > abs(heat_rate_min - thermal_limit)
-                        x_0 = 2 * max_α / 6
-                        α = find_zero((f, df), x_0, Roots.Newton())
-                    end
-                catch
-                # if α < 0 || α > pi/2
-                    # println("Check - heat rate controller does not converge")
-                    α = min_α
-                # end
-                end
-            # end
+                # If the bracketed solve fails for a non-finite atmospheric
+                # input, retain the conservative heat-rate-safe endpoint
+                # instead of the previous global angle.
+                α = min_α
             end
 
         else

@@ -71,6 +71,14 @@ function update_planet_frame_callback()
     function affect!(integrator)
         p = integrator.p
         p.args.environment_model.planet.L_PI .= _planet_lpi_at(p, integrator.t)
+        # Invalidate _rhs_execution_plan's per-step cache (setup.jl / runtime_types.jl's
+        # rhs_plan_step_cache) here since this callback already runs exactly once per
+        # accepted step, unconditionally, for every non-backbone-mode solve -- the same
+        # boundary the cache needs, with no extra CallbackSet entry required. No-op
+        # (single false check) when SPACEAGORA_RHS_PLAN_STEP_CACHE is off (default).
+        if _simulation_engine_module()._rhs_plan_step_cache_enabled()
+            p.shared_buffers.rhs_plan_step_cache[] = nothing
+        end
     end
 
     function init_affect!(cb, u, t, integrator)

@@ -237,10 +237,14 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
         @test cfg_invalid.artifacts.save_bundle === false
         @test cfg_invalid.artifacts.warn_deprecated_config === true
 
-        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_SOLVER_MAXITERS" => "not_an_int"))
-        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "not_a_float"))
-        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "not_an_int"))
-        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "vern9"))
+        # simulation_engine_config_from_env defaults to solver_strict=false (a
+        # malformed solver knob falls back to its default instead of crashing
+        # the whole config build, see the strict= doc comment in from_env.jl);
+        # solver_strict=true restores the throwing behavior these probes check.
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_SOLVER_MAXITERS" => "not_an_int"); solver_strict=true)
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => "not_a_float"); solver_strict=true)
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => "not_an_int"); solver_strict=true)
+        @test_throws ArgumentError SimulationEngine.simulation_engine_config_from_env(Dict("SPACEAGORA_MULTIRATE_SLOW_SOLVER" => "vern9"); solver_strict=true)
 
         env_valid = Dict{String, String}(
             "SPACEAGORA_SOLVER_MAXITERS" => "321",
@@ -371,7 +375,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             EI_km=120.0,
             dynamic_effectors=(InverseSquaredGravityModel(),)
         )
-        p = ODEParams{1}(args=args)
+        p = ODEParams(n_sats=1, args=args)
 
         hs = [120_000.0, 150_000.0]
         lats = [0.1, 0.2]
@@ -449,7 +453,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             EI_km=120.0,
             dynamic_effectors=(InverseSquaredGravityModel(),)
         )
-        p_batch = ODEParams{2}(args=args_batch)
+        p_batch = ODEParams(n_sats=2, args=args_batch)
         empty!(p_batch.shared_buffers.density_models)
         push!(p_batch.shared_buffers.density_models, surrogate_no_traj)
         @test _TARGET_CALLBACKS._density_batch_model_for_callback(p_batch, 2) === nothing
@@ -490,7 +494,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             dynamic_effectors=(InverseSquaredGravityModel(),),
             keplerian=false
         )
-        p_gram = ODEParams{1}(args=args_gram)
+        p_gram = ODEParams(n_sats=1, args=args_gram)
         withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "on") do
             empty!(p_gram.shared_buffers.density_models)
             @test _TARGET_CALLBACKS._gram_isolated_pool_batch_model_for_callback(p_gram, 1) === gram_model
@@ -545,7 +549,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             EI_km=120.0,
             dynamic_effectors=(InverseSquaredGravityModel(),)
         )
-        p_cache = ODEParams{1}(args=args_cache)
+        p_cache = ODEParams(n_sats=1, args=args_cache)
         u_cache = build_initial_conditions(args_cache)
         pos = SVector{3, Float64}(u_cache.sc[1].pos)
         vel = SVector{3, Float64}(u_cache.sc[1].vel)
@@ -805,7 +809,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         ephemerides_model=SpiceEphemeridesModel()
     )
-    p_ephem = ODEParams{1}(args=args_ephem)
+    p_ephem = ODEParams(n_sats=1, args=args_ephem)
     u_ephem = build_initial_conditions(args_ephem)
     sc_ephem = u_ephem.sc[1]
     sample_ephem = build_state_sample(sc_ephem, args_ephem.dynamics_model.spacecraft[1], false)
@@ -831,6 +835,59 @@ end
     @test all(isfinite, third_body.positions_ii[1])
 end
 
+@testset "Density Freeze Per Step Branch Probes" begin
+    # See CallbackEnvConfig.density_freeze_per_step: without freeze-per-step,
+    # the RHS-side atmosphere buffer is only trusted on an exact time match;
+    # with it, the once-per-accepted-step sample (from the density
+    # DiscreteCallback) is reused for every stage evaluation within the step.
+    args_freeze = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),)
+    )
+    p_freeze = ODEParams(n_sats=1, args=args_freeze)
+    u_freeze = build_initial_conditions(args_freeze)
+    sc_freeze = u_freeze.sc[1]
+    sample_freeze = build_state_sample(sc_freeze, args_freeze.dynamics_model.spacecraft[1], false)
+
+    p_freeze.shared_buffers.densities[1] = 42.0
+    p_freeze.shared_buffers.temperatures[1] = 111.0
+    p_freeze.shared_buffers.winds[1] = SVector{3, Float64}(1.0, 1.0, 1.0)
+    p_freeze.shared_buffers.density_sample_t[1] = 0.0
+
+    withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "0") do
+        @test _TARGET_CALLBACKS._snapshot_callback_env_config().density_freeze_per_step === false
+        # Stale (mismatched) timestamp: not trusted without freeze-per-step.
+        @test !SimulationEngine._buffered_atmosphere_valid(p_freeze, 1, 5.0)
+    end
+    withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "1") do
+        @test _TARGET_CALLBACKS._snapshot_callback_env_config().density_freeze_per_step === true
+        # Same stale timestamp: trusted once freeze-per-step is enabled, since
+        # the buffer was populated (finite) at least once.
+        @test SimulationEngine._buffered_atmosphere_valid(p_freeze, 1, 5.0)
+
+        planet_frame_freeze = SimulationEngine.sample_planet_frame(sample_freeze, p_freeze, 1, 5.0)
+        reused = SimulationEngine._sample_atmosphere_from_planet_frame(
+            sample_freeze, planet_frame_freeze, p_freeze, 1, 5.0; write_buffers=false
+        )
+        # Reuses the buffered values (42.0/111.0/[1,1,1]) rather than recomputing
+        # against NoAtmosphereModel (which would return rho=0.0).
+        @test reused.rho_kg_m3 == 42.0
+        @test reused.temperature_k == 111.0
+        @test reused.wind_pp == SVector{3, Float64}(1.0, 1.0, 1.0)
+    end
+
+    # Never-populated buffer (NaN sentinel): falls through to a fresh sample
+    # regardless of freeze-per-step, guarding the pre-first-callback-firing case.
+    p_freeze_unset = ODEParams(n_sats=1, args=args_freeze)
+    withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "1") do
+        @test !SimulationEngine._buffered_atmosphere_valid(p_freeze_unset, 1, 5.0)
+    end
+end
+
 @testset "Density Runtime Helper Branch Probes" begin
     args_density = build_config_multi(
         spacecraft=[
@@ -845,7 +902,7 @@ end
         ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_density = ODEParams{2}(args=args_density)
+    p_density = ODEParams(n_sats=2, args=args_density)
     u_density = build_initial_conditions(args_density)
     cache_cfg = _TARGET_CALLBACKS._gram_track_cache_config()
 
@@ -913,7 +970,7 @@ end
         ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_density_batch = ODEParams{2}(args=args_density_batch)
+    p_density_batch = ODEParams(n_sats=2, args=args_density_batch)
     u_density_batch = build_initial_conditions(args_density_batch)
     empty!(p_density_batch.shared_buffers.density_models)
     integrator_density_batch = (p=p_density_batch, u=u_density_batch, t=0.0, sol=(prob=(tspan=(0.0, 60.0),),))
@@ -959,7 +1016,7 @@ end
         ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_aero = ODEParams{1}(args=args_aero)
+    p_aero = ODEParams(n_sats=1, args=args_aero)
     fresh_workspace = dyn._aero_workspace_for_sat!(p_aero, 5, 2)
     @test length(fresh_workspace.thread_force) == 2
 
@@ -1030,7 +1087,7 @@ end
         ephemerides_model=SimpleEphemeridesModel(),
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_legacy_aero = ODEParams{1}(args=args_legacy_aero)
+    p_legacy_aero = ODEParams(n_sats=1, args=args_legacy_aero)
     u_legacy_aero = build_initial_conditions(args_legacy_aero)
     p_legacy_aero.shared_buffers.current_time[] = 0.0
     force_legacy, torque_legacy = SimulationModel.calcForceTorque(
@@ -1072,7 +1129,7 @@ end
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
     u_rhs = build_initial_conditions(args_rhs)
-    p_rhs = ODEParams{2}(args=args_rhs)
+    p_rhs = ODEParams(n_sats=2, args=args_rhs)
     _initialize_heat_rate_buffers!(p_rhs)
     p_rhs.is_active[2] = false
 
@@ -1105,6 +1162,63 @@ end
         @test all(==(0.0), du_fast.sc[2].pos)
     end
 
+    # SPACEAGORA_RHS_EXECUTION_MODE=flat forces the
+    # flat_constellation_effector_queue route unconditionally (bypassing the
+    # auto heuristic) and, combined with SPACEAGORA_RHS_FLAT_PACKET_SCHEDULER=on,
+    # forces the packet-batched sub-path -- covering
+    # _prepare_rhs_flat_work_packets!, _rhs_flat_packet_work_stats,
+    # _rhs_flat_use_packet_scheduler, and (since the forced-flat plan always
+    # sets policy_applied=true) the timing-gated
+    # _update_rhs_flat_packet_cost_model!/_update_rhs_flat_packet_overhead_model!
+    # feedback pass. Needs its own config, not args_rhs/p_rhs above:
+    # ConstantTorqueModel isn't in _dynamic_effector_threadsafe's allowlist, so
+    # _rhs_flat_supported(...) is false for that effector tuple and the forced
+    # mode silently falls back to :satellite_batch instead.
+    #
+    # gravity_gradient=true (not the default AerodynamicCoefficientfM pairing):
+    # _batchable_effector diverts the default-gravity_gradient=false gravity
+    # models into a pre-pass that never reaches the per-item packet queue at
+    # all, and AerodynamicCoefficientfM's wrench_caching! writes through a
+    # shared, lazily-`resize!`d per-satellite cache (_store_vector_cache! in
+    # aerodynamic_wrench_models.jl) that is not actually safe under real
+    # concurrent packet workers -- confirmed via a CI failure
+    # (ConcurrencyViolationError: "Vector can not be resized concurrently")
+    # that a single-worker local run never surfaced. gravity_gradient=true
+    # makes both gravity models non-batchable so they DO reach the packet
+    # queue's generic per-item dispatch, but neither defines its own
+    # `wrench_caching!` (only the aero models do), so both fall through to
+    # the generic, cache-free `wrench_caching!(model,x,env,t,p,i) = wrench(...)`
+    # default in core/types/effector_sampling.jl -- exercising the same
+    # packet-scheduler lines without the aero cache's concurrency hazard.
+    args_flat_packets = build_config_multi(
+        spacecraft=[
+            make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=170.0),
+            make_single_link_spacecraft(ra_alt_m=520e3, rp_alt_m=520e3, ν_deg=165.0),
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=5.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(gravity_gradient=true),
+            InverseSquaredJ2GravityModel(gravity_gradient=true),
+        ),
+        ephemerides_model=SimpleEphemeridesModel(),
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    u_flat_packets = build_initial_conditions(args_flat_packets)
+    p_flat_packets = ODEParams(n_sats=2, args=args_flat_packets)
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "flat",
+        "SPACEAGORA_RHS_FLAT_PACKET_SCHEDULER" => "on",
+    ) do
+        du_flat_packets = copy(u_flat_packets)
+        du_flat_packets .= 0.0
+        SimulationEngine.spacecraft_dynamics!(du_flat_packets, u_flat_packets, p_flat_packets, 0.0)
+        @test norm(SVector{3, Float64}(du_flat_packets.sc[1].vel)) > 0.0
+        @test norm(SVector{3, Float64}(du_flat_packets.sc[2].vel)) > 0.0
+    end
+
     args_backbone_batch = build_config_multi(
         spacecraft=[
             make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=170.0),
@@ -1119,7 +1233,7 @@ end
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
     u_backbone_batch = build_initial_conditions(args_backbone_batch)
-    p_backbone_batch = ODEParams{2}(args=args_backbone_batch)
+    p_backbone_batch = ODEParams(n_sats=2, args=args_backbone_batch)
     p_backbone_batch.is_active[2] = false
     q_backbone, dq_backbone = _gravity_backbone_initial_states(u_backbone_batch, args_backbone_batch)
     ddu_backbone = copy(dq_backbone)

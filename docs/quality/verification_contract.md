@@ -18,9 +18,9 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
 12. `rotational-ownership-gate` (`test/gates/ci_rotational_ownership_gate.jl`)
 
 Additional required smoke checks for this migration track:
-1. `test/smoke/ci_clean_depot_smoke.jl`
-2. `test/smoke/ci_threaded_smoke.jl`
-3. `test/smoke/ci_examples_regression.jl`
+1. `test/gates/ci_clean_depot_smoke.jl`
+2. `test/gates/ci_threaded_smoke.jl`
+3. `test/gates/ci_examples_regression.jl`
 4. `benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true`
 
 Telemetry threshold failures are blocking in this cleanup track.

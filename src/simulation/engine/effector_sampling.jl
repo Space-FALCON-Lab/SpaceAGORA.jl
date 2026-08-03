@@ -67,6 +67,21 @@ end
 )::AtmosphereSample
     callbacks = SimulationModel.SimulationCallbacks
     cb_env = callbacks._callback_env_config(p)
+    # Freeze-per-step mode (see CallbackEnvConfig.density_freeze_per_step): reuse
+    # the once-per-accepted-step sample from shared_buffers for every caller and
+    # call site, not just the sample_buffered_atmosphere path -- wrench-based
+    # effectors (the `AerodynamicCoefficientfM` path taken outside flat-mode
+    # atmosphere prefill) call straight into this function with
+    # write_buffers=false, bypassing that path entirely.
+    if cb_env.density_freeze_per_step
+        times = p.shared_buffers.density_sample_t
+        if sat_idx <= length(times) && isfinite(times[sat_idx])
+            rho = sat_idx <= length(p.shared_buffers.densities) ? p.shared_buffers.densities[sat_idx] : 0.0
+            T = sat_idx <= length(p.shared_buffers.temperatures) ? p.shared_buffers.temperatures[sat_idx] : p.args.environment_model.planet.T_ref
+            wind_vec = sat_idx <= length(p.shared_buffers.winds) ? p.shared_buffers.winds[sat_idx] : SVector{3, Float64}(0.0, 0.0, 0.0)
+            return AtmosphereSample(rho, T, wind_vec)
+        end
+    end
     cache_cfg = cb_env.gram_track_cache
     stats_enabled = cb_env.gram_runtime_stats_enabled
     target_include_j2 = cb_env.gram_track_cache_target_use_j2 &&
@@ -111,7 +126,16 @@ end
 
 @inline function _buffered_atmosphere_valid(p, sat_idx::Int, t::Float64)::Bool
     times = p.shared_buffers.density_sample_t
-    return sat_idx <= length(times) && times[sat_idx] == t
+    sat_idx <= length(times) || return false
+    # Freeze-per-step mode: the density DiscreteCallback (get_density_callback)
+    # already resamples once per accepted step; trust that value for every RHS
+    # stage evaluation within the step instead of requiring an exact time match
+    # (see CallbackEnvConfig.density_freeze_per_step for the rationale). Guard
+    # against the pre-first-callback-firing NaN default.
+    if SimulationModel.SimulationCallbacks._callback_env_config(p).density_freeze_per_step
+        return isfinite(times[sat_idx])
+    end
+    return times[sat_idx] == t
 end
 
 @inline function sample_buffered_atmosphere(x, p, sat_idx::Int, t::Float64)::AtmosphereSample

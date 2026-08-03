@@ -30,6 +30,7 @@ function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float
         force_ii=force_ii,
         torque_body=thruster_torque_body + rw_torque_body,
         thruster_forces_n=thruster_forces,
+        rw_torque_body=rw_torque_body,
     )
     return nothing
 end
@@ -38,6 +39,12 @@ end
 function calcControlForceTorque(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
     i == model.chaser_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     return model.held.force_ii, model.held.torque_body
+end
+
+"""Return the held reaction-wheel-attributable torque, held constant (ZOH) between control ticks like `calcControlForceTorque`."""
+function calcReactionWheelTorque(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+    i == model.chaser_idx || return nothing
+    return model.held.rw_torque_body
 end
 
 """Return propellant mass flow for a control effector."""

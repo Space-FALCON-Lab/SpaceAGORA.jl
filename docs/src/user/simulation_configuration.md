@@ -138,9 +138,10 @@ continuous atmosphere scenarios or full entry trajectories).
 
 ## EnvironmentModel
 
-Wires together the planet, atmosphere, ephemerides, and thermal model. All
-four of these must be provided; there are no defaults for `planet` or
-`density_model`.
+Wires together the planet, atmosphere, ephemerides, and thermal model. Only
+`planet`, `EI`, `density_model`, and `thermal_model` are required; the rest
+have defaults: `ephemerides_model` defaults to `SM.SpiceEphemeridesModel()`,
+`wind` defaults to `true`, and `topo_degree`/`topo_order` default to `90`.
 
 ```julia
 planet = SM.make_no_gram_planet(:earth)
@@ -194,7 +195,9 @@ SM.SimulationSettings(
     results            = true,           # write output files
     verbose            = false,          # print solver diagnostics
     results_directory  = "output",       # directory for CSV and bundle output
-    generate_plots     = false,          # reserved; disable for CLI runs
+    generate_plots     = true,           # generate plots after simulation (default)
+    generate_filenames = false,          # embed run parameters in output filenames (default)
+    normalize          = false,          # legacy compatibility flag; typed run_simulation propagates SI state directly (default)
     save_csv           = true,           # write CSV alongside the Feather bundle
     checkpoint_enabled = false,          # periodic checkpoint for restart safety
     checkpoint_interval_s = 300.0,      # checkpoint cadence, simulated seconds
@@ -204,7 +207,9 @@ SM.SimulationSettings(
 ```
 
 Set `results = false` to run without writing any output (useful for
-performance profiling or validation-only runs).
+performance profiling or validation-only runs). Set `generate_plots = false`
+to skip plot generation, which is typically what you want for CLI/batch runs
+and performance studies.
 
 ## FilePaths
 

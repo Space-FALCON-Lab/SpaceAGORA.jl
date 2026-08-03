@@ -449,7 +449,7 @@ function run_study()
     initial_time = InitialTime(year=2001, month=11, day=6, hour=19, minute=0, second=32.0)
     density_model = Base.invokelatest(EM.GRAMAtmosphereModel; planet_name=planet_name, initial_time=initial_time)
     args = _make_args(planet, density_model, initial_time)
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
 
     grid_payload = isfile(grid_file) ? load_payload(grid_file) : nothing
     surrogate_payload = isfile(surrogate_file) ? load_payload(surrogate_file) : nothing

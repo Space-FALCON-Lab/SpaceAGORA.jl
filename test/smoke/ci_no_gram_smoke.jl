@@ -15,6 +15,14 @@ import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_sp
 lock(RuntimeServices.SPICE_LOCK) do
     kclear()
 end
+# kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
+# planet-instance caches in src/environment/ephemerides/planets.jl; without
+# this, a subsequent Earth(...)/Mars(...) call with a previously-seen key
+# (e.g. from ci_clean_depot_smoke.jl / ci_threaded_smoke.jl running earlier
+# in the same process via test/smoke/runtests.jl) silently skips
+# re-furnishing and returns a planet built from kernels kclear() already
+# wiped from CSPICE's pool.
+SimulationModel.Planets._reset_furnished_kernels!()
 
 spacecraft = make_three_body_spacecraft(
     bus_dims=(1.2, 1.1, 0.9),

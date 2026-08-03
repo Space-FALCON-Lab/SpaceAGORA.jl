@@ -398,10 +398,14 @@ end
         @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
     end
     # Pin the auto-mode budget floor (default 16 exceeds CI thread counts).
+    # thread_safe_args uses NoAtmosphereModel, which routes through the
+    # lock-free density-callback source (see the source= selection in
+    # _density_callback_thread_decision), not the GRAM-locked one -- so the
+    # lock-free-specific knob is what actually gates this decision.
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "3",
-        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2"
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
         @test callbacks._density_callback_use_threads(thread_safe_args, 4) == true
     end
@@ -416,7 +420,7 @@ end
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
-        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2",
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
@@ -466,7 +470,7 @@ end
     end
 
     # Density callback threaded branch (line with Threads.@threads).
-    p_density = ODEParams{4}(args=thread_safe_args)
+    p_density = ODEParams(n_sats=4, args=thread_safe_args)
     u_density = build_initial_conditions(thread_safe_args)
     integrator_density = MockCallbackIntegrator(
         p_density,
@@ -486,7 +490,7 @@ end
     @test all(isfinite, p_density.shared_buffers.densities)
 
     if HAS_GRAMSUITE
-        p_density_models = ODEParams{4}(args=thread_safe_args)
+        p_density_models = ODEParams(n_sats=4, args=thread_safe_args)
         u_density_models = build_initial_conditions(thread_safe_args)
         append!(p_density_models.shared_buffers.density_models, fill(GRAMAtmosphereModel(planet_name="earth"), 4))
         integrator_density_models = MockCallbackIntegrator(
@@ -520,7 +524,7 @@ end
         guidance_effecters=(probe_guidance,),
         guidance_rates=[1.0]
     )
-    p_guidance = ODEParams{1}(args=args_guidance)
+    p_guidance = ODEParams(n_sats=1, args=args_guidance)
     u_guidance = build_initial_conditions(args_guidance)
     integrator_guidance = MockCallbackIntegrator(
         p_guidance,
@@ -547,7 +551,7 @@ end
         control_effecters=(probe_control,),
         control_rates=[1.0]
     )
-    p_control = ODEParams{4}(args=args_control)
+    p_control = ODEParams(n_sats=4, args=args_control)
     u_control = build_initial_conditions(args_control)
     integrator_control = MockCallbackIntegrator(
         p_control,
@@ -607,7 +611,7 @@ end
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM())
     )
-    p_aero = ODEParams{1}(args=args_aero)
+    p_aero = ODEParams(n_sats=1, args=args_aero)
     u_aero = build_initial_conditions(args_aero)
     x_aero = u_aero.sc[1]
     p_aero.shared_buffers.densities[1] = 1e-6
@@ -635,7 +639,7 @@ end
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),)
     )
-    p_nbody = ODEParams{1}(args=args_nbody)
+    p_nbody = ODEParams(n_sats=1, args=args_nbody)
     x_nbody = build_initial_conditions(args_nbody).sc[1]
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
         force_nbody, torque_nbody = calcForceTorque(nbody, x_nbody, p_nbody, 1)
@@ -783,7 +787,7 @@ end
             ProbeImplicitForceModel(SVector{3, Float64}(2.0, 0.0, 0.0), SVector{3, Float64}(0.0, 2.0, 0.0)),
         )
     )
-    p_partition = ODEParams{1}(args=args_partition)
+    p_partition = ODEParams(n_sats=1, args=args_partition)
     u_partition = build_initial_conditions(args_partition)
     f_partition = MVector{3, Float64}(0.0, 0.0, 0.0)
     τ_partition = MVector{3, Float64}(0.0, 0.0, 0.0)
@@ -1188,7 +1192,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=false
     )
-    p_density_helpers = ODEParams{1}(args=args_density_helpers)
+    p_density_helpers = ODEParams(n_sats=1, args=args_density_helpers)
 
     rho_no, T_no, wind_no = env_models.getDensity(NoAtmosphereModel(), 150e3, 0.0, 0.0, 0.0, true, p_density_helpers)
     @test rho_no == 0.0
@@ -1508,7 +1512,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=false
     )
-    p_zero_area = ODEParams{1}(args=args_zero_area)
+    p_zero_area = ODEParams(n_sats=1, args=args_zero_area)
     @test callbacks._gram_entry_reference_area_m2(p_zero_area, 1) == 1.0
 
     u_refresh = build_initial_conditions(args_density_helpers)
@@ -1631,7 +1635,7 @@ end
         initial_time=args_density_helpers.initial_time,
         integration_tolerances=args_density_helpers.integration_tolerances
     )
-    p_orbit_refresh = ODEParams{1}(args=args_orbit_refresh)
+    p_orbit_refresh = ODEParams(n_sats=1, args=args_orbit_refresh)
     u_orbit_refresh = build_initial_conditions(args_orbit_refresh)
     pos_orbit = SVector{3, Float64}(u_orbit_refresh.sc[1].pos)
     vel_orbit = SVector{3, Float64}(u_orbit_refresh.sc[1].vel)
@@ -1780,7 +1784,7 @@ end
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),)
     )
-    p_thermal_threaded = ODEParams{2}(args=args_thermal_threaded)
+    p_thermal_threaded = ODEParams(n_sats=2, args=args_thermal_threaded)
     u_thermal_threaded = build_initial_conditions(args_thermal_threaded)
     p_thermal_threaded.shared_buffers.densities .= 1e-6
     p_thermal_threaded.shared_buffers.temperatures .= 250.0
@@ -1831,7 +1835,7 @@ end
         EI_km=120.0,
         dynamic_effectors=(InverseSquaredGravityModel(),)
     )
-    p_quat = ODEParams{2}(args=args_quat)
+    p_quat = ODEParams(n_sats=2, args=args_quat)
     u_quat = build_initial_conditions(args_quat)
     p_quat.is_active[1] = false
     u_quat.sc[2].q .= (NaN, NaN, NaN, NaN)

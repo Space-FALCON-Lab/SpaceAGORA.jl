@@ -1,7 +1,7 @@
 using PreallocationTools
 using NLsolve
 using LinearAlgebra
-using DifferentialEquations
+using OrdinaryDiffEq
 using Dates
 using AstroTime
 using SPICE

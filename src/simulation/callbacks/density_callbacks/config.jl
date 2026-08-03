@@ -16,6 +16,11 @@ end
     return _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_TARGET_USE_J2", true)
 end
 
+# See CallbackEnvConfig.density_freeze_per_step docstring for the rationale.
+@inline function _density_freeze_per_step_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_DENSITY_FREEZE_PER_STEP", false)
+end
+
 """
     _reset_cached_env_flags!()
 
@@ -187,6 +192,7 @@ function _snapshot_callback_env_config()::CallbackEnvConfig
         _gram_runtime_stats_enabled(),
         _gram_track_cache_ignore_time_window(),
         _gram_track_cache_target_use_j2(),
+        _density_freeze_per_step_enabled(),
         _vacuum_gram_cache_enabled(),
         _vacuum_gram_cache_npoints(),
         _vacuum_gram_cache_horizon_s(),
@@ -271,13 +277,21 @@ end
     if !model_threadsafe && !env.density_assume_threadsafe
         return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
     end
+    # Native/point GRAM is serialized behind a process-wide lock (GRAM_LOCK), so
+    # oversubscribing it below a reasonably high thread count wastes cycles
+    # fighting for that lock -- the :density_callback source's 16-thread floor
+    # exists for that case. A lock-free model (e.g. GRAMAtmosphereModelSurrogate)
+    # has no such cost, so it gets the general default floor instead via a
+    # separate source category, rather than being held to the same 16-thread gate
+    # for no reason (see PARALLELIZATION_CURRENT_STATE.md / Finding 1).
+    source = model isa EnvironmentModels.GRAMAtmosphereModel ? :density_callback : :density_callback_lockfree
     policy = ParallelPolicy.thread_policy_decision(
         num_sats;
         mode=mode,
         threshold=env.density_thread_threshold,
         outer_active=outer_active,
         allow_with_outer=allow_with_outer,
-        source=:density_callback,
+        source=source,
         env=penv
     )
     return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)

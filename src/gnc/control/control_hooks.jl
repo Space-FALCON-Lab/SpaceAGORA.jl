@@ -23,7 +23,7 @@ module ControlHooks
 
     const config = Structure
 
-    export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate
+    export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate, calcReactionWheelTorque
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
     export RpoLQMPCController, init_rpo_lqmpc, rpo_lqmpc_control
     export RPOHeldActuation, RPOMPCControlModel

@@ -16,6 +16,8 @@ include(joinpath(@__DIR__, "..", "gates", "ci_aerobraking_strategy_contract_gate
 include(joinpath(@__DIR__, "..", "gates", "ci_rotational_ownership_gate.jl"))
 include(joinpath(@__DIR__, "..", "gates", "ci_scaffold_interface_gate.jl"))
 include(joinpath(@__DIR__, "..", "gates", "ci_typed_config_equivalence_gate.jl"))
+include(joinpath(@__DIR__, "..", "gates", "ci_rhs_calibration_gate.jl"))
+include(joinpath(@__DIR__, "..", "gates", "ci_rhs_parallel_route_gate.jl"))
 include(joinpath(@__DIR__, "..", "gates", "ci_benchmark_wrapper_parity_gate.jl"))
 include(joinpath(@__DIR__, "..", "gates", "ci_docs_contract_gate.jl"))
 include(joinpath(@__DIR__, "..", "gates", "ci_public_api_surface_gate.jl"))

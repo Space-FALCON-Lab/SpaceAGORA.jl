@@ -57,7 +57,7 @@ occursin("module RuntimeServices", runtime_services_src) ||
     error("RuntimeServices owner module is missing.")
 occursin("const SPICE_LOCK = ReentrantLock()", runtime_services_src) ||
     error("RuntimeServices is not the canonical owner of SPICE_LOCK.")
-occursin("const GRAM_LOCK = ReentrantLock()", runtime_services_src) ||
+occursin("const GRAM_LOCK = SPICE_LOCK", runtime_services_src) ||
     error("RuntimeServices is not the canonical owner of GRAM_LOCK.")
 !occursin("const SPICE_LOCK", simulation_model_src) ||
     error("SimulationModel still owns SPICE_LOCK.")
@@ -382,6 +382,23 @@ for rel in (
     joinpath("benchmarks", "studies", "performance_runtime_analysis", "cli.jl")
 )
     isfile(joinpath(REPO_ROOT, rel)) || error("Missing split runtime-analysis file: $rel")
+end
+
+parallel_perf_launcher = _read(joinpath("benchmarks", "studies", "parallelization_performance.jl"))
+(
+    occursin(joinpath("parallelization_performance", "execution.jl"), parallel_perf_launcher) ||
+    occursin("\"parallelization_performance\", \"execution.jl\"", parallel_perf_launcher)
+) ||
+    error("Canonical parallelization-performance launcher is not forwarding to standalone execution.jl.")
+for rel in (
+    joinpath("benchmarks", "studies", "parallelization_performance", "cli.jl"),
+    joinpath("benchmarks", "studies", "parallelization_performance", "cases.jl"),
+    joinpath("benchmarks", "studies", "parallelization_performance", "modes.jl"),
+    joinpath("benchmarks", "studies", "parallelization_performance", "execution.jl"),
+    joinpath("benchmarks", "studies", "parallelization_performance", "trajectory_parity.jl"),
+    joinpath("benchmarks", "studies", "parallelization_performance", "reporting.jl"),
+)
+    isfile(joinpath(REPO_ROOT, rel)) || error("Missing standalone parallelization-performance file: " * rel)
 end
 
 wrapper_files = (

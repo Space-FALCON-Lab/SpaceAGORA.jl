@@ -3,6 +3,9 @@ module SimulationCampaigns
 using ..ParallelProfiles
 using ..ParallelProfiles: OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 using ..ParallelProfiles: select_outer_route!, record_outer_route_feedback!
+using ..ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!
+import Distributed
+using Distributed: remotecall_fetch, CachingPool
 
 include(joinpath(@__DIR__, "monte_carlo.jl"))
 include(joinpath(@__DIR__, "adaptive_routing.jl"))

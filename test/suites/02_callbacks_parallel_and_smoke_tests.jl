@@ -87,7 +87,7 @@
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
     control_cbs = SimulationModel.SimulationCallbacks.get_control_callbacks(1, args_control)
-    p_control = ODEParams{1}(args=args_control)
+    p_control = ODEParams(n_sats=1, args=args_control)
     u_control = build_initial_conditions(args_control)
     integrator_control = MockCallbackIntegrator(
         p_control,
@@ -103,7 +103,7 @@
     @test integrator_control.tstop_max >= thruster_control.start_burn_time[1]
 
     orbit_cb = SimulationModel.SimulationCallbacks.get_orbit_end_callback(1)
-    p_orbit = ODEParams{1}(args=args_orbits)
+    p_orbit = ODEParams(n_sats=1, args=args_orbits)
     u_orbit = build_initial_conditions(args_orbits)
     integrator_orbit = MockCallbackIntegrator(
         p_orbit,
@@ -134,7 +134,7 @@
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
     impact_cb = SimulationModel.SimulationCallbacks.get_impact_callback(2)
-    p_impact = ODEParams{2}(args=args_impact)
+    p_impact = ODEParams(n_sats=2, args=args_impact)
     u_impact = build_initial_conditions(args_impact)
     integrator_impact = MockCallbackIntegrator(
         p_impact,
@@ -171,7 +171,7 @@
         )
     )
     drag_cb = SimulationModel.SimulationCallbacks.get_drag_state_callback(1)
-    p_drag = ODEParams{1}(args=args_drag)
+    p_drag = ODEParams(n_sats=1, args=args_drag)
     u_drag = build_initial_conditions(args_drag)
     integrator_drag = MockCallbackIntegrator(
         p_drag,
@@ -200,7 +200,7 @@
     @test integrator_drag.opts.abstol == args_drag.integration_tolerances.abstol_orbit
 
     quat_proj_cb = SimulationModel.SimulationCallbacks.get_quaternion_projection_callback(1, args_orient)
-    p_orient = ODEParams{1}(args=args_orient)
+    p_orient = ODEParams(n_sats=1, args=args_orient)
     u_orient = build_initial_conditions(args_orient)
     u_orient.sc[1].q .= [0.0, 0.0, 0.0, 2.0]
     integrator_orient = MockCallbackIntegrator(
@@ -240,7 +240,7 @@
         integration_tolerances=args_base.integration_tolerances
     )
     navigation_cbs = SimulationModel.SimulationCallbacks.get_navigation_callbacks(1, args_navigation)
-    p_navigation = ODEParams{1}(args=args_navigation)
+    p_navigation = ODEParams(n_sats=1, args=args_navigation)
     u_navigation = build_initial_conditions(args_navigation)
     integrator_navigation = MockCallbackIntegrator(
         p_navigation,
@@ -285,7 +285,7 @@
         integration_tolerances=args_guidance_base.integration_tolerances
     )
     guidance_cbs = SimulationModel.SimulationCallbacks.get_guidance_callbacks(2, args_guidance)
-    p_guidance = ODEParams{2}(args=args_guidance)
+    p_guidance = ODEParams(n_sats=2, args=args_guidance)
     u_guidance = build_initial_conditions(args_guidance)
     integrator_guidance = MockCallbackIntegrator(
         p_guidance,
@@ -319,7 +319,7 @@
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_control = ODEParams{2}(args=args_control)
+    p_control = ODEParams(n_sats=2, args=args_control)
     u_control = build_initial_conditions(args_control)
     integrator_control = MockCallbackIntegrator(
         p_control,
@@ -360,11 +360,15 @@
         @test density_use_threads(args_control, 8) == false
     end
     # Pin the auto-mode budget floor so this branch check is independent of the
-    # default (16), which exceeds the CI thread count.
+    # default (16), which exceeds the CI thread count. args_control uses
+    # NoAtmosphereModel, which routes through the lock-free density-callback
+    # source (see the source= selection in
+    # src/simulation/callbacks/density_callbacks/config.jl), so the
+    # lock-free-specific knob is what actually gates this decision.
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
-        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2"
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
         @test density_use_threads(args_control, 8) == has_worker_threads
     end
@@ -385,7 +389,7 @@
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
-        "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2",
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
@@ -450,7 +454,7 @@
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_control_parallel = ODEParams{n_parallel_sats}(args=args_control_parallel)
+    p_control_parallel = ODEParams(n_sats=n_parallel_sats, args=args_control_parallel)
     u_control_parallel = build_initial_conditions(args_control_parallel)
     integrator_control_parallel = MockCallbackIntegrator(
         p_control_parallel,
@@ -483,7 +487,7 @@
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_density_parallel = ODEParams{n_parallel_sats}(args=args_density_parallel)
+    p_density_parallel = ODEParams(n_sats=n_parallel_sats, args=args_density_parallel)
     u_density_parallel = build_initial_conditions(args_density_parallel)
     integrator_density_parallel = MockCallbackIntegrator(
         p_density_parallel,
@@ -644,7 +648,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_density_lookup = ODEParams{1}(args=args_density_lookup)
+    p_density_lookup = ODEParams(n_sats=1, args=args_density_lookup)
     gram_model_lookup = SimulationModel.GRAMAtmosphereModel(nothing)
     push!(p_density_lookup.shared_buffers.density_models, gram_model_lookup)
     @test callbacks._density_model_for_sat(p_density_lookup, 1) === gram_model_lookup
@@ -787,7 +791,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_density_stats = ODEParams{1}(args=args_density_stats)
+    p_density_stats = ODEParams(n_sats=1, args=args_density_stats)
     u_density_stats = build_initial_conditions(args_density_stats)
     withenv(
         "SPACEAGORA_GRAM_PROFILE" => "1",
@@ -810,7 +814,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_thermal_branches = ODEParams{1}(args=args_thermal_branches)
+    p_thermal_branches = ODEParams(n_sats=1, args=args_thermal_branches)
     u_thermal_branches = build_initial_conditions(args_thermal_branches)
     thermal_cb_branches = callbacks.get_thermal_callback(1, args_thermal_branches)
 
@@ -864,7 +868,7 @@ end
         initial_time=args_orbit_multi_base.initial_time,
         integration_tolerances=args_orbit_multi_base.integration_tolerances
     )
-    p_orbit_multi = ODEParams{2}(args=args_orbit_multi)
+    p_orbit_multi = ODEParams(n_sats=2, args=args_orbit_multi)
     p_orbit_multi.orbit_counter .= [2, 1]
     p_orbit_multi.is_active .= [true, true]
     orbit_cb_multi = callbacks.get_orbit_end_callback(2)
@@ -1460,7 +1464,7 @@ end
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_calib = ODEParams{4}(args=args_calib)
+    p_calib = ODEParams(n_sats=4, args=args_calib)
     _initialize_heat_rate_buffers!(p_calib)
     _initialize_harmonics_workspace_buffers!(p_calib)
     SimulationEngine._initialize_density_model_instances!(p_calib)
@@ -1487,7 +1491,7 @@ end
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_single = ODEParams{1}(args=args_single_sat)
+    p_single = ODEParams(n_sats=1, args=args_single_sat)
     _initialize_heat_rate_buffers!(p_single)
     _initialize_harmonics_workspace_buffers!(p_single)
     SimulationEngine._initialize_density_model_instances!(p_single)
@@ -1536,23 +1540,21 @@ end
     end
 end
 
+function _no_gram_ring_sat(planet_ng, id::Int, raan_deg::Float64)
+    return make_single_link_spacecraft(
+        ra_alt_m=700e3, rp_alt_m=650e3, i_deg=45.0, ω_deg=0.0, Ω_deg=raan_deg, ν_deg=10.0,
+        planet=planet_ng, id=id, m=100.0, ref_area=2.0
+    )
+end
+
 @testset "Constellation Ensemble Campaign" begin
     planet_ng = SimulationModel.make_no_gram_planet(:earth)
 
-    function _ensemble_test_sat(id::Int, raan_deg::Float64)
-        root = Link{0}(root=true, m=100.0, ref_area=2.0)
-        ic = InitialCondition(
-            ra=planet_ng.Rp_e + 700e3,
-            rp=planet_ng.Rp_e + 650e3,
-            i=45.0,
-            ω=0.0,
-            Ω=raan_deg,
-            ν=10.0
-        )
-        return SpacecraftModel(Joint[], [root], root, true, root.m, 0.0, root.inertia, 0, 0, ic, id)
-    end
-
-    sats = [_ensemble_test_sat(11, 0.0), _ensemble_test_sat(22, 40.0), _ensemble_test_sat(33, 80.0)]
+    sats = [
+        _no_gram_ring_sat(planet_ng, 11, 0.0),
+        _no_gram_ring_sat(planet_ng, 22, 40.0),
+        _no_gram_ring_sat(planet_ng, 33, 80.0),
+    ]
     results_dir = mktempdir()
     cfg = build_config_multi(
         spacecraft=sats,
@@ -1711,20 +1713,7 @@ end
     # ── Features derived from a SimulationConfiguration ───────────────────────
     planet_ng = SimulationModel.make_no_gram_planet(:earth)
 
-    function _adaptive_test_sat(id::Int, raan_deg::Float64)
-        root = Link{0}(root=true, m=100.0, ref_area=2.0)
-        ic = InitialCondition(
-            ra=planet_ng.Rp_e + 700e3,
-            rp=planet_ng.Rp_e + 650e3,
-            i=45.0,
-            ω=0.0,
-            Ω=raan_deg,
-            ν=10.0
-        )
-        return SpacecraftModel(Joint[], [root], root, true, root.m, 0.0, root.inertia, 0, 0, ic, id)
-    end
-
-    adaptive_sats = [_adaptive_test_sat(1, 0.0), _adaptive_test_sat(2, 120.0)]
+    adaptive_sats = [_no_gram_ring_sat(planet_ng, 1, 0.0), _no_gram_ring_sat(planet_ng, 2, 120.0)]
     cfg = build_config_multi(
         spacecraft=adaptive_sats,
         density_model=SimulationModel.NoAtmosphereModel(),

@@ -646,6 +646,31 @@ function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String
     return NBodyGravityModel(body_names=Tuple(body_names), primary_body_name=primary_body_name, planet=planet)
 end
 
+const _HARMONICS_MODEL_CACHE_LOCK = ReentrantLock()
+const _HARMONICS_MODEL_CACHE = Dict{Tuple{Int64, Int64, String, Symbol, Bool, Symbol, Union{Nothing, Float64}, Bool, UInt}, Any}()
+
+# `GravitationalHarmonicsModel(L, M, coefficients_file, planet)` streams and parses the
+# whole coefficients file on every call (row-by-row CSV.Rows iteration, real I/O; some
+# planet files here run 16K+ rows). Callers that build a fresh mission config per
+# iteration (e.g. a Monte Carlo sample loop constructing thousands of trials in one
+# process, same as the SPICE planet-construction case above) redo that parse from
+# scratch every time even though the result only depends on the arguments. Cache it.
+#
+# Safe to share the whole returned model across concurrent callers: `A`, `R`, `I`,
+# `N1`, `N2`, `VR01`, `VR11`, `sqrt_2n_plus_3`, `C`, `S` are precomputed, read-only
+# recurrence/coefficient tables — nothing in `calcForceTorque`/`wrench` ever mutates
+# them. The actual per-call mutable scratch space comes from a separate, properly
+# pooled/per-satellite workspace (`_make_harmonics_scratch_workspace`,
+# `_harmonics_workspace_for_sat!`), never from the model's own fields.
+@inline function _harmonics_model_cache_key(
+    L::Int64, M::Int64, coefficients_file::String, coefficient_normalization::Symbol,
+    coefficients_normalized::Bool, j2_source::Symbol, reference_radius_m::Union{Nothing, Float64},
+    include_central::Bool, planet::AbstractPlanet,
+)
+    return (L, M, coefficients_file, coefficient_normalization, coefficients_normalized,
+            j2_source, reference_radius_m, include_central, objectid(planet))
+end
+
 """
     GravitationalHarmonicsModel(L, M, coefficients_file, planet; coefficient_normalization=:full)
 
@@ -678,6 +703,15 @@ function GravitationalHarmonicsModel(
     if M > L
         throw(ArgumentError("Gravitational harmonics order must satisfy M <= L, got L=$L, M=$M."))
     end
+    cache_key = _harmonics_model_cache_key(
+        L, M, coefficients_file, coefficient_normalization, coefficients_normalized,
+        j2_source, reference_radius_m, include_central, planet,
+    )
+    cached = lock(_HARMONICS_MODEL_CACHE_LOCK) do
+        get(_HARMONICS_MODEL_CACHE, cache_key, nothing)
+    end
+    cached !== nothing && return cached::GravitationalHarmonicsModel{P}
+
     normalized_source = _canonical_harmonics_normalization(coefficient_normalization)
 
     # Use CSV.Rows for streaming/lazy reading instead of materializing entire file.
@@ -844,7 +878,7 @@ function GravitationalHarmonicsModel(
         end
     end
 
-    return GravitationalHarmonicsModel(
+    model = GravitationalHarmonicsModel(
         L,
         M,
         C_trunc,
@@ -863,6 +897,9 @@ function GravitationalHarmonicsModel(
         include_central,
         planet
     )
+    return lock(_HARMONICS_MODEL_CACHE_LOCK) do
+        get!(_HARMONICS_MODEL_CACHE, cache_key, model)::GravitationalHarmonicsModel{P}
+    end
 end
 
 """

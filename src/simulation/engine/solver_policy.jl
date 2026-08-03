@@ -50,13 +50,7 @@ function _build_solver_tolerances(u_state::ComponentVector, args)
 end
 
 @inline _solver_policy_mode(cfg::SolverConfig)::Symbol = cfg.solver_mode
-@inline function _solver_policy_mode()::Symbol
-    active_config = _engine_active_config_ref[]
-    if active_config !== nothing
-        return _solver_policy_mode(active_config.solver)
-    end
-    return _solver_policy_mode(simulation_engine_config_from_env().solver)
-end
+@inline _solver_policy_mode()::Symbol = _solver_policy_mode(_active_solver_config())
 
 @inline function _retcode_is_stiff_symptom(retcode)::Bool
     # Convert once to Symbol (zero-allocation for Symbol/ReturnCode inputs,
@@ -85,7 +79,7 @@ end
 @inline _solver_maxiters(cfg::SolverConfig)::Union{Nothing, Int} = cfg.maxiters
 @inline _active_solver_config()::SolverConfig = begin
     active_config = _engine_active_config_ref[]
-    active_config === nothing ? simulation_engine_config_from_env().solver : active_config.solver
+    active_config === nothing ? simulation_engine_config_from_env(; solver_strict=true).solver : active_config.solver
 end
 @inline _solver_maxiters()::Union{Nothing, Int} = _solver_maxiters(_active_solver_config())
 

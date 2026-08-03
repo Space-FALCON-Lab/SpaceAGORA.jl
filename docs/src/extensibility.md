@@ -139,17 +139,26 @@ Template:
 
 - `templates/control_hook_template.jl`
 
-## Planet and ephemerides extensions
+## Planet, ephemerides, thermal, thruster, and guidance extensions
 
 Stable interfaces:
 
 - `SpaceAGORA.AbstractPlanet`
 - `SpaceAGORA.AbstractEphemeridesModel`
+- `SpaceAGORA.AbstractThermalModel`
+- `SpaceAGORA.AbstractThrusterModel`
+- `SpaceAGORA.AbstractGuidanceModel`
 
 These interfaces are public because no-GRAM onboarding and future user-defined
-body/back-end work need a stable contract, but the practical extension recipes
-for custom planets and ephemerides are still thinner than the force/density/
-control paths above. Treat them as advanced extension points.
+body/back-end, thermal, thruster, and guidance work need a stable contract,
+but the practical extension recipes for these types are still thinner than
+the force/density/control paths above: there is no single dedicated root
+hook function to implement (thermal models are consumed inside the
+force/torque and heat-load machinery, thruster models inside control
+effectors, and guidance models inside the GNC control hooks). Treat them as
+advanced extension points — subtype the abstract type and follow an existing
+implementation in `src/vehicle/thermal/`, `src/vehicle/actuators/thruster/`,
+or `src/gnc/guidance/` as a model rather than a documented recipe.
 
 ## Design guidance
 

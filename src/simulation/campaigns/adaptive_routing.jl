@@ -114,14 +114,9 @@ function campaign_route_features(
 end
 
 function _campaign_route_tuning()::OuterRouteTuning
-    # Campaign runners execute in-process (serial or threaded worker tasks); a
-    # :process backend does not exist here, so suppress the process-preferring
-    # Monte Carlo and constellation rules up front.
-    return OuterRouteTuning(
-        spice_constellation_process_enabled=false,
-        mc_process_min_samples=typemax(Int),
-        mc_process_min_mission_s=Inf
-    )
+    # Campaign runners can route to a real :process backend (ParallelProcess),
+    # so the default thresholds apply unmodified.
+    return OuterRouteTuning()
 end
 
 function _campaign_features_for_routing(f::OuterRouteFeatures, samples::Int)::OuterRouteFeatures
@@ -152,7 +147,7 @@ function _campaign_route_plan(
         return (route=:none, threads=1, inner_thread_budget=1, record=false)
     end
     threads_available = Base.Threads.nthreads() > 1
-    chosen = select_outer_route!(
+    route = select_outer_route!(
         state,
         features;
         tuning=tuning,
@@ -160,12 +155,16 @@ function _campaign_route_plan(
         threads_available=threads_available,
         parallel_enabled=true
     )
-    # The routing layer can still answer :process (native-GRAM point densities
-    # bypass the tuning thresholds); degrade to the closest supported route and
-    # record feedback under the route that actually ran.
-    route = chosen === :process ? (threads_available ? :threads : :none) : chosen
-    workers = route === :threads ? min(n_samples, Base.Threads.nthreads()) : 1
-    workers = max(1, workers)
+    # Process workers run --threads=1 each and don't share the coordinator's
+    # thread pool, so they're sized off tuning.process_max_workers
+    # (Sys.CPU_THREADS by default), not Threads.nthreads() like the thread route.
+    workers = if route === :process
+        max(1, min(n_samples, tuning.process_max_workers))
+    elseif route === :threads
+        max(1, min(n_samples, Base.Threads.nthreads()))
+    else
+        1
+    end
     inner_thread_budget = max(1, fld(Base.Threads.nthreads(), workers))
     return (route=route, threads=workers, inner_thread_budget=inner_thread_budget, record=true)
 end
@@ -173,6 +172,23 @@ end
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
     worker_count = min(spec.threads, length(spec.seeds))
     worker_count > 1 || return run_monte_carlo(f, spec)
+    if plan.route === :process
+        # Bypasses run_monte_carlo (which validates its thread count against
+        # Threads.nthreads() -- not meaningful here, since process workers
+        # aren't Julia threads) and dispatches straight to the process pool.
+        pool = campaign_process_pool()
+        # warmup_fn reuses f itself (the exact closure about to be dispatched
+        # for real) so a newly-added worker's large one-time JIT/specialization
+        # cost (see ensure_process_workers!'s docstring) is paid here, once,
+        # rather than silently inside this call's own timed dispatch below.
+        worker_ids = ensure_process_workers!(pool, worker_count; warmup_fn=() -> f(first(spec.seeds)))
+        active_workers = worker_ids[1:min(worker_count, length(worker_ids))]
+        start_ns = time_ns()
+        samples = _run_monte_carlo_process(f, spec.seeds, spec, active_workers)
+        elapsed_s = (time_ns() - start_ns) / 1.0e9
+        spec.fail_fast && _throw_first_monte_carlo_failure(samples)
+        return MonteCarloResult(samples, elapsed_s, length(active_workers))
+    end
     env_pairs = Pair{String, String}["SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"]
     if isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))
         # Split the thread pool between the outer workers and each sample's

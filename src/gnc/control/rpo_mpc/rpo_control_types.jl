@@ -3,6 +3,7 @@ Base.@kwdef mutable struct RPOHeldActuation
     force_ii::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
     torque_body::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
     thruster_forces_n::SVector{6, Float64} = SVector{6, Float64}(zeros(6))
+    rw_torque_body::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 """RPO control effector that tracks guidance references with LQ-MPC and allocates actuators."""

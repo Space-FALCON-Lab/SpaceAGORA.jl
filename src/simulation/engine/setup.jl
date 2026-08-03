@@ -3,7 +3,8 @@ using LinearAlgebra
 using StaticArrays
 using LoopVectorization
 using ComponentArrays
-using DifferentialEquations
+using OrdinaryDiffEq
+using DiffEqCallbacks
 using CSV
 using DataFrames
 using Polyester
@@ -655,6 +656,37 @@ end
     return active_sats >= budget && budget > 1
 end
 
+# Effectors whose flat-mode routing benefit satellite_batch cannot replicate at any
+# thread count: harmonics gets the cache-friendly SIMD batch kernel across the whole
+# satellite batch (satellite_batch's Polyester loop instead calls the ordinary
+# per-satellite Pines recursion once per satellite), and (J2-)inverse-square gravity
+# gets a batched pre-pass specifically to avoid per-satellite Polyester dispatch
+# overhead for a kernel too cheap to pay for it (_accumulate_invsq_flat_batch! /
+# _accumulate_invsq_j2_flat_batch! in dynamics_rhs.jl). NBody/SRP are deliberately not
+# included: satellite_batch already hoists their expensive shared ephemeris lookups
+# via _prefill_shared_body_samples!, so it doesn't lose anything structural for those.
+#
+# This matters because n_effectors >= env.flat_min_effectors (default 3) below is
+# gating flat-queue eligibility on "enough effector *types* to justify the queue",
+# which has nothing to do with whether one of those effectors has an algorithmic
+# benefit independent of effector count. A 2-effector harmonics+drag constellation
+# (a common shape) would otherwise never reach the flat queue and would fall through
+# to _satellite_batch_saturates_pool once active_sats >= budget, silently discarding
+# the harmonics batch kernel's win even though it has nothing to do with effector count.
+@inline function _rhs_flat_batch_privileged_effector(effector)::Bool
+    effector isa SimulationModel.GravitationalHarmonicsModel && return true
+    effector isa SimulationModel.InverseSquaredGravityModel && return !effector.gravity_gradient
+    effector isa SimulationModel.InverseSquaredJ2GravityModel && return !effector.gravity_gradient
+    return false
+end
+
+@inline function _rhs_flat_has_batch_privileged_effector(dynamic_effectors::Tuple)::Bool
+    @inbounds for effector in dynamic_effectors
+        _rhs_flat_batch_privileged_effector(effector) && return true
+    end
+    return false
+end
+
 # Forces an effector decision to serial, preserving the mode/policy fields for
 # telemetry while making it structurally impossible to enable nested effector
 # threads under satellite_batch.
@@ -733,6 +765,22 @@ end
     )
 end
 
+# Unlike _dynamic_effector_thread_decision and the density/control/thermal
+# callback paths, the harmonics-batch flat-constellation route did not
+# previously consult outer_parallel_active() at all -- it fires on every
+# RHS/ODE step (not once per sample), so an outer worker already blocked in
+# Threads.@sync/Base.@sync repeatedly spawned its own nested batch of workers
+# throughout the whole integration. That's the mechanism behind the severe,
+# livelock-like nested outer+inner contention documented in
+# THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md Finding 3 (some points
+# ranged from ~1x overhead to a multi-minute hang on identical repeated
+# runs). Default false, matching _effector_allow_with_outer's default and
+# this codebase's own documented recommendation to never split the thread
+# budget between outer and inner parallelism.
+@inline function _harmonics_batch_allow_with_outer()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_HARMONICS_BATCH_ALLOW_WITH_OUTER", false)
+end
+
 """
     _snapshot_rhs_plan_env_config() -> SimulationModel.RhsPlanEnvConfig
 
@@ -767,6 +815,7 @@ function _snapshot_rhs_plan_env_config()::SimulationModel.RhsPlanEnvConfig
         _rhs_harmonics_batch_enabled(),
         _rhs_harmonics_batch_min_sats_per_worker(),
         SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled(),
+        _harmonics_batch_allow_with_outer(),
         _rhs_effector_cost_min_samples(),
         _rhs_flat_packet_target_min_ns(),
         _rhs_flat_packet_scheduler_mode(),
@@ -813,18 +862,20 @@ end
 
 @inline function _rhs_flat_supported(dynamic_effectors::Tuple)::Bool
     if length(dynamic_effectors) == 1
-        return dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
-            _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
-            _rhs_harmonics_batch_enabled()
+        return (dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
+                _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
+                _rhs_harmonics_batch_enabled()) ||
+            _rhs_single_invsq_flat_supported(dynamic_effectors)
     end
     return length(dynamic_effectors) > 1 && _dynamic_effectors_parallel_supported(dynamic_effectors)
 end
 
 @inline function _rhs_flat_supported(env::SimulationModel.RhsPlanEnvConfig, dynamic_effectors::Tuple)::Bool
     if length(dynamic_effectors) == 1
-        return dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
-            _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
-            env.harmonics_batch_enabled
+        return (dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
+                _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
+                env.harmonics_batch_enabled) ||
+            _rhs_single_invsq_flat_supported(dynamic_effectors)
     end
     return length(dynamic_effectors) > 1 && _dynamic_effectors_parallel_supported(dynamic_effectors)
 end
@@ -834,6 +885,26 @@ end
         dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel &&
         _dynamic_effector_threadsafe(dynamic_effectors[1]) &&
         env.harmonics_batch_enabled
+end
+
+# Single-effector fast path for plain (J2-)inverse-square gravity, mirroring
+# _rhs_single_harmonics_flat_supported. Unlike harmonics, there is no coefficient
+# table to batch over — the payoff is routing around per-satellite Polyester
+# dispatch entirely in favor of the serial batchable-effector pre-pass
+# (_accumulate_invsq_flat_batch!/_accumulate_invsq_j2_flat_batch!), whose per-item
+# cost is too small to ever amortise task-spawn overhead. Excluded when
+# `gravity_gradient=true` since the batch kernel writes force only.
+@inline function _rhs_single_invsq_flat_supported(dynamic_effectors::Tuple)::Bool
+    length(dynamic_effectors) == 1 || return false
+    effector = dynamic_effectors[1]
+    return (effector isa SimulationModel.InverseSquaredGravityModel ||
+            effector isa SimulationModel.InverseSquaredJ2GravityModel) &&
+        !effector.gravity_gradient &&
+        _dynamic_effector_threadsafe(effector)
+end
+
+@inline function _rhs_invsq_flat_min_sats()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_INVSQ_FLAT_MIN_SATS", 8)
 end
 
 @inline function _rhs_effectors_have_heavy_or_heterogeneous_cost(
@@ -862,7 +933,54 @@ end
         heterogeneity >= heterogeneity_threshold
 end
 
+# Default off: this is a new, not-yet-broadly-validated optimization (see
+# rhs_plan_step_cache's docstring in runtime_types.jl for the mechanism). Every
+# other perf-sensitive toggle in this file defaults to today's proven behavior
+# and requires an explicit opt-in; this follows the same convention.
+@inline function _rhs_plan_step_cache_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_PLAN_STEP_CACHE", false)
+end
+
+# Tried and reverted: routing _spacecraft_dynamics_flat_constellation_effector_queue!'s
+# final per-satellite state-assembly pass (dynamics_rhs.jl) through
+# threaded_foreach_persistent instead of plain threaded_foreach (which spawns a fresh
+# Threads.@spawn/Threads.@sync task batch on every RHS call). Motivated by profiling a
+# no_gram/512-sat/monolithic scenario: Julia's own multiq/work-stealing scheduler
+# internals (multiq_deletemin, julia_multiq_check_empty) become a top-20 self-time
+# cost at 8 threads that's absent at 4, and thread 1's utilization jumps from 28% to
+# 64% between 4 and 8 threads -- well before any GRAM/lock/density-callback code is in
+# the picture. Measured directly (SPACEAGORA_RHS_FLAT_ASSEMBLY_PERSISTENT_DISPATCH,
+# same thread ladder, same scenario): correctness was clean (full test suite +
+# trajectory parity), but the persistent-pool path was slower, not faster --
+# 0.9x at 2 threads, 0.811x at 4 threads (worse at the previously-best point), ~1.0x
+# at 8 (no help at all). This assembly loop's per-item work (assigning already-
+# computed forces/torques into du) is cheap enough that the persistent pool's own
+# dispatch overhead (locked pool lookup, channel-based wake signaling) costs more
+# than plain Threads.@spawn for a payload this light. Root cause of the original
+# 4-vs-8-thread regression is still open; this specific fix doesn't work.
+
+# Thin caching wrapper around _rhs_execution_plan_uncached: when enabled, reuses
+# the same routing decision across every solver stage within one accepted step
+# instead of re-deriving it (active-satellite count, effector cost decision,
+# routing heuristics) on every single stage call. See rhs_plan_step_cache's
+# docstring (runtime_types.jl) for how/when the cache is invalidated.
 @inline function _rhs_execution_plan(
+    args::SimulationConfiguration,
+    p,
+    dynamic_effectors::Tuple,
+    num_sats::Int
+)::SimulationModel.RhsExecutionPlan
+    if p !== nothing && hasproperty(p, :shared_buffers) && _rhs_plan_step_cache_enabled()
+        cached = p.shared_buffers.rhs_plan_step_cache[]
+        cached === nothing || return cached
+        plan = _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats)
+        p.shared_buffers.rhs_plan_step_cache[] = plan
+        return plan
+    end
+    return _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats)
+end
+
+@inline function _rhs_execution_plan_uncached(
     args::SimulationConfiguration,
     p,
     dynamic_effectors::Tuple,
@@ -884,6 +1002,8 @@ end
     end
     budget = penv === nothing ?
         SimulationModel.ParallelPolicy.effective_inner_thread_budget() : penv.inner_thread_budget
+    outer_active = penv === nothing ?
+        SimulationModel.ParallelPolicy.outer_parallel_active() : penv.outer_parallel_active
     # Compute the threading preference from the policy; route selection below may
     # override it via _with_serial_effector_decision when satellite_batch is chosen.
     effector_decision = _dynamic_effector_thread_decision(env, penv, args, p, dynamic_effectors, num_sats)
@@ -919,7 +1039,14 @@ end
             effector_decision=effector_decision,
         )
     elseif forced_mode == :flat_constellation_effector_queue
-        if active_sats <= 1 || !_rhs_flat_supported(env, dynamic_effectors) || budget <= 1
+        # Same nested-outer-split hazard as the auto-routed flat/harmonics
+        # branches below -- an explicit SPACEAGORA_RHS_EXECUTION_MODE=flat
+        # request is still subject to it, since this route fires every RHS
+        # step and the other outer_parallel_active-aware call sites in this
+        # codebase (density/control/thermal callbacks, dynamic effectors)
+        # don't distinguish forced vs. auto requests either.
+        if active_sats <= 1 || !_rhs_flat_supported(env, dynamic_effectors) || budget <= 1 ||
+           (outer_active && !env.harmonics_batch_allow_with_outer)
             return (
                 mode=:satellite_batch,
                 allotment=1,
@@ -951,6 +1078,23 @@ end
     # _accumulate_harmonics_flat_batch!, so this routing is safe at any thread budget.
     single_harmonics_flat = _rhs_single_harmonics_flat_supported(env, dynamic_effectors)
     if single_harmonics_flat && active_sats >= env.flat_min_sats && active_sats > 1
+        # A higher-level campaign (or benchmark harness) already owns an outer
+        # split -- this route fires on every RHS/ODE step, not once per
+        # sample, so nesting its own multi-worker batch here would repeatedly
+        # oversubscribe the same thread pool an already-blocked outer worker
+        # is waiting on, throughout the whole integration (see
+        # _harmonics_batch_allow_with_outer's docstring / Finding 3). Force
+        # serial instead, same as this function's other serial fallbacks.
+        if outer_active && !env.harmonics_batch_allow_with_outer
+            return (
+                mode=:satellite_batch,
+                allotment=1,
+                scheduler=:static,
+                dominant_axis=:satellite,
+                policy_applied=true,
+                effector_decision=_with_serial_effector_decision(effector_decision),
+            )
+        end
         min_sats_floor = env.harmonics_batch_spin_barrier ?
             1 : env.harmonics_batch_min_sats_per_worker
         viable_workers = fld(active_sats, max(1, min_sats_floor))
@@ -964,6 +1108,38 @@ end
                 effector_decision=_with_serial_effector_decision(effector_decision),
             )
         end
+    end
+
+    # Single inverse-square (J2-)gravity fast path: the effector body is a few
+    # FLOPs, far too cheap to ever amortise Polyester per-satellite task-spawn
+    # overhead (unlike harmonics, there's no per-worker SIMD batch to size —
+    # the win is entirely from replacing satellite_batch's per-task effector
+    # dispatch with a single serial pre-pass). Threading is reserved for the
+    # subsequent per-satellite RHS-assembly pass, which every route (including
+    # satellite_batch) already parallelizes.
+    single_invsq_flat = _rhs_single_invsq_flat_supported(dynamic_effectors)
+    if single_invsq_flat && active_sats >= _rhs_invsq_flat_min_sats() && active_sats > 1
+        # Same nested-outer-split hazard as the harmonics-batch route above --
+        # this also fires every RHS step and shares the same multi-worker flat
+        # batch kernel.
+        if outer_active && !env.harmonics_batch_allow_with_outer
+            return (
+                mode=:satellite_batch,
+                allotment=1,
+                scheduler=:static,
+                dominant_axis=:satellite,
+                policy_applied=true,
+                effector_decision=_with_serial_effector_decision(effector_decision),
+            )
+        end
+        return (
+            mode=:flat_constellation_effector_queue,
+            allotment=min(max(1, budget), active_sats),
+            scheduler=:dynamic,
+            dominant_axis=:flat_effector,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
     end
 
     # Safety: not enough satellites, threads, or thread-safe effectors for any
@@ -1007,8 +1183,20 @@ end
         estimated_work_per_worker >= env.flat_work_per_worker_ns_threshold
 
     if active_sats >= env.flat_min_sats &&
-       n_effectors >= env.flat_min_effectors &&
+       (n_effectors >= env.flat_min_effectors || _rhs_flat_has_batch_privileged_effector(dynamic_effectors)) &&
        many_heavy_effectors
+        # Same nested-outer-split hazard as the harmonics-batch/single-invsq
+        # routes above.
+        if outer_active && !env.harmonics_batch_allow_with_outer
+            return (
+                mode=:satellite_batch,
+                allotment=1,
+                scheduler=:static,
+                dominant_axis=:satellite,
+                policy_applied=true,
+                effector_decision=_with_serial_effector_decision(effector_decision),
+            )
+        end
         return (
             mode=:flat_constellation_effector_queue,
             allotment=min(max(1, budget), active_sats * n_effectors),
@@ -1043,6 +1231,29 @@ end
     )
 end
 
+# drag_cache/lift_cache/cross_cache in SaveCache all start as empty Vectors and grow
+# lazily via _store_vector_cache!'s `resize!` (aerodynamic_wrench_models.jl). That's
+# only safe called sequentially: AerodynamicCoefficientfM's wrench is dispatched
+# across persistent worker threads by the flat-constellation-effector-queue route,
+# so two satellites landing on different workers can both see the cache too short
+# and both call `resize!` on the same shared Vector concurrently. Julia 1.12 catches
+# this and throws ConcurrencyViolationError at small satellite counts; at larger
+# counts (tighter timing races) it has corrupted memory badly enough to segfault
+# instead. Pre-sizing to num_sats here, before any threaded dispatch can begin,
+# means every per-satellite write lands on an already-appropriately-sized Vector at
+# a distinct index, so the racy resize path is never reached.
+function _initialize_save_cache_buffers!(p)::Nothing
+    n_sats = length(p.args.dynamics_model.spacecraft)
+    zero_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
+    for cache in (p.save_cache.drag_cache, p.save_cache.lift_cache, p.save_cache.cross_cache)
+        if length(cache) != n_sats
+            resize!(cache, n_sats)
+        end
+        fill!(cache, zero_vec)
+    end
+    return nothing
+end
+
 function _initialize_density_model_instances!(p)
     instances = p.shared_buffers.density_models
     empty!(instances)
@@ -1060,6 +1271,28 @@ function _initialize_density_model_instances!(p)
     @inbounds for _ in 1:n_sats
         # One GRAM handle per satellite avoids sharing mutable native model state.
         push!(instances, deepcopy(density_model))
+    end
+    return nothing
+end
+
+# in_atmosphere[] otherwise defaults to false for every satellite (runtime_types.jl)
+# and is only ever flipped by the up/down-crossing event callback in
+# event_callbacks.jl. A satellite whose initial orbit never crosses EI --
+# because it starts (and stays) below it, e.g. a circular low-altitude orbit --
+# would then incorrectly read as "not in atmosphere" for the entire mission,
+# silently skipping the vacuum-predicted GRAM cache and the finer
+# dt_max_atmosphere step size. Set the flag from the actual starting altitude
+# instead of leaving every satellite to default to the "above the atmosphere"
+# state regardless of where it actually starts.
+function _initialize_in_atmosphere_flags!(p, initial_conditions)::Nothing
+    sc_state = initial_conditions.sc
+    n = length(sc_state)
+    length(p.shared_buffers.in_atmosphere) == n || resize!(p.shared_buffers.in_atmosphere, n)
+    planet = p.args.environment_model.planet
+    ei_m = p.args.environment_model.EI * 1e3
+    @inbounds for i in 1:n
+        alt = norm(_state_position_ii(initial_conditions, i)) - planet.Rp_e
+        p.shared_buffers.in_atmosphere[i] = alt <= ei_m
     end
     return nothing
 end

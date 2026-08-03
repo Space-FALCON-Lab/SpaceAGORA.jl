@@ -115,7 +115,9 @@ Run [GRAMSuite Setup](gramsuite_setup.md) before using GRAM-backed studies.
 | Area | Scripts |
 |---|---|
 | GRAM fidelity | `gram_full_vs_trajectory_density_compare.jl`, `gram_interpolation_vs_point_to_point_analysis.jl`, `gram_single_call_vs_point_to_point_analysis.jl`, `gram_offline_db_accuracy_study.jl`, `gram_planet_rho_altitude_sweep.jl`, `gram_real_sim_runtime_compare.jl`, `gram_real_sim_surrogate_matrix.jl`, `gram_real_sim_surrogate_decision_table.jl`, `gram_trajectory_lookahead_fidelity/main.jl` |
+| GRAM Mars fix and constellation scaling | `gram_mars_fix_and_constellation_scaling/{mars_150km_gram_scaling.jl, earth_standard_gram_scaling.jl, earth_surrogate_gram_scaling.jl, leo_constellation_size_scaling.jl, leo_ensemble_outer_backend_scaling.jl, leo_thread_scaling_by_mode.jl, mc_multisat_process_backend.jl, mc_multisat_thread_allocation.jl}` — see the directory's `README.md` for the Mars ephemeris-bypass fix background and `PARALLELIZATION_CURRENT_STATE.md` for current constellation-scaling findings |
 | Performance support | `performance_effector_reduction_microbench.jl`, `performance_split_imex_compare.jl`, `performance_static_vs_parallel.jl`, `performance_thread_scaling_1024.jl`, `performance_thread_scaling_64_aero_gram.jl`, `performance_hybrid_scaling_64_aero_gram.jl`, `performance_mc_thread_scaling.jl`, `performance_smart_parallel_ladder_cross_machine.jl` |
+| Parallelization paper benchmarks | `paper_parallelization_benchmarks.jl`, `parallelization_performance.jl` — each has a same-named subdirectory with its own `protocol.sh`, `cli.jl`, and `CASES.md` case catalog |
 | Tuning and validation | `telemetry_hybrid_tuner.jl`, `telemetry_odyssey_tuner.jl` |
 
 For long studies, set an explicit output directory and keep the terminal log with

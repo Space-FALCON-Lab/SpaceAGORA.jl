@@ -126,6 +126,11 @@ end
     # Earth fallback paths: strip kernels so ITRF93 (and then everything) fails.
     # ------------------------------------------------------------------
     kclear()
+    # kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
+    # planet-instance caches in src/environment/ephemerides/planets.jl; without
+    # this, the Earth("", SPICE_PATH) restore below would hit the cache from
+    # the `const EARTH = ...` call above and skip re-furnishing entirely.
+    SimulationModel.Planets._reset_furnished_kernels!()
     # No kernels at all: high-precision path throws, fallback throws too, and the
     # error from the fallback propagates out of the catch block.
     @test_throws SPICE.SpiceError r_intor_p!(r_i, v_i, EARTH, et)
@@ -145,6 +150,7 @@ end
 
     # Restore the full kernel set for the remainder of the process.
     kclear()
+    SimulationModel.Planets._reset_furnished_kernels!()
     Earth("", SPICE_PATH)
     @test SMatrix{3, 3, Float64}(pxform("J2000", "ITRF93", et)) ≈ itrf rtol = 1e-14
 

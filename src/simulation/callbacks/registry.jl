@@ -1,7 +1,8 @@
 include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl")) # Get the reference system types for the callback
 
-using DifferentialEquations
+using OrdinaryDiffEq
 using DiffEqBase
+using DiffEqCallbacks
 using LinearAlgebra
 using SPICE
 using Dates

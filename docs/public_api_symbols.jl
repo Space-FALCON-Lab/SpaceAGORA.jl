@@ -195,7 +195,11 @@ const PUBLIC_API_SECTIONS = [
             (owner = :ParallelProfiles, symbol = :default_outer_route, rendered = "SpaceAGORA.default_outer_route"),
             (owner = :ParallelProfiles, symbol = :outer_route_candidates, rendered = "SpaceAGORA.outer_route_candidates"),
             (owner = :ParallelProfiles, symbol = :select_outer_route!, rendered = "SpaceAGORA.select_outer_route!"),
-            (owner = :ParallelProfiles, symbol = :record_outer_route_feedback!, rendered = "SpaceAGORA.record_outer_route_feedback!")
+            (owner = :ParallelProfiles, symbol = :record_outer_route_feedback!, rendered = "SpaceAGORA.record_outer_route_feedback!"),
+            (owner = :ParallelProcess, symbol = :ProcessPool, rendered = "SpaceAGORA.ProcessPool"),
+            (owner = :ParallelProcess, symbol = :campaign_process_pool, rendered = "SpaceAGORA.campaign_process_pool"),
+            (owner = :ParallelProcess, symbol = :ensure_process_workers!, rendered = "SpaceAGORA.ensure_process_workers!"),
+            (owner = :ParallelProcess, symbol = :shutdown_process_pool!, rendered = "SpaceAGORA.shutdown_process_pool!")
         ]
     ),
     (
@@ -229,6 +233,8 @@ const PUBLIC_API_SECTIONS = [
         return getproperty(spaceagora, :SimulationCampaigns)
     elseif owner === :ParallelProfiles
         return getproperty(spaceagora, :ParallelProfiles)
+    elseif owner === :ParallelProcess
+        return getproperty(spaceagora, :ParallelProcess)
     elseif owner === :TelemetryVerification
         return getproperty(spaceagora, :TelemetryVerification)
     elseif owner === :SpaceAGORACLI

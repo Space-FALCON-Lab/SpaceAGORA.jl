@@ -666,7 +666,7 @@ function _write_cross_machine_report(
         )
         println(
             io,
-            "julia --project=.AGORA test/performance_smart_parallel_ladder_cross_machine.jl " *
+            "julia --project=. benchmarks/studies/performance_smart_parallel_ladder_cross_machine.jl " *
             "--profile=$(config.profile) --outdir=$(config.outdir) --clean=$(config.clean ? 1 : 0) $(input_flags)"
         )
         println(io, "```")

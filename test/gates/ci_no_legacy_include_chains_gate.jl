@@ -38,6 +38,7 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "simulation", "callbacks", "gram_track_cache.jl"),
     joinpath("src", "parallel", "policy", "parallel_policy.jl"),
     joinpath("src", "parallel", "routing", "parallel_profiles.jl"),
+    joinpath("src", "parallel", "process", "parallel_process.jl"),
 ])
 
 violations = String[]

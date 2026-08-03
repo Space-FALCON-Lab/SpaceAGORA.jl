@@ -176,6 +176,7 @@ makedocs(
         SpaceAGORA.SimulationEngine,
         SpaceAGORA.SimulationCampaigns,
         SpaceAGORA.ParallelProfiles,
+        SpaceAGORA.ParallelProcess,
         SpaceAGORA.TelemetryVerification,
         SpaceAGORA.SpaceAGORACLI,
     ],

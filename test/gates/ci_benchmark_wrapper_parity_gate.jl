@@ -24,6 +24,7 @@ const RETIRED_WRAPPERS = (
 const CANONICAL_BENCHMARKS = (
     "benchmarks/studies/performance_runtime_analysis.jl",
     "benchmarks/studies/performance_smart_parallel_ladder.jl",
+    "benchmarks/studies/parallelization_performance.jl",
     "benchmarks/studies/performance_smart_parallel_ladder_cross_machine.jl",
     "benchmarks/studies/performance_split_imex_compare.jl",
     "benchmarks/studies/performance_static_vs_parallel.jl",
@@ -58,5 +59,14 @@ launcher_src = read(canonical_launcher, String)
 ) || error("Runtime-analysis canonical launcher does not include split main.jl")
 launcher_lines = count(==('\n'), launcher_src) + 1
 launcher_lines <= 10 || error("Runtime-analysis canonical launcher is not thin (expected <=10 lines)")
+
+parallel_launcher = joinpath(REPO_ROOT, "benchmarks", "studies", "parallelization_performance.jl")
+parallel_src = read(parallel_launcher, String)
+(
+    occursin(joinpath("parallelization_performance", "execution.jl"), parallel_src) ||
+    occursin("\"parallelization_performance\", \"execution.jl\"", parallel_src)
+) || error("Parallelization-performance canonical launcher does not include standalone execution.jl")
+parallel_lines = count(==('\n'), parallel_src) + 1
+parallel_lines <= 20 || error("Parallelization-performance canonical launcher is not thin (expected <=20 lines)")
 
 println("benchmark_wrapper_parity_gate_ok")

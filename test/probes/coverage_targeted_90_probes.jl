@@ -1162,6 +1162,44 @@ end
         @test all(==(0.0), du_fast.sc[2].pos)
     end
 
+    # SPACEAGORA_RHS_EXECUTION_MODE=flat forces the
+    # flat_constellation_effector_queue route unconditionally (bypassing the
+    # auto heuristic) and, combined with SPACEAGORA_RHS_FLAT_PACKET_SCHEDULER=on,
+    # forces the packet-batched sub-path -- covering
+    # _prepare_rhs_flat_work_packets!, _rhs_flat_packet_work_stats,
+    # _rhs_flat_use_packet_scheduler, and (since the forced-flat plan always
+    # sets policy_applied=true) the timing-gated
+    # _update_rhs_flat_packet_cost_model!/_update_rhs_flat_packet_overhead_model!
+    # feedback pass. Needs its own config, not args_rhs/p_rhs above:
+    # ConstantTorqueModel isn't in _dynamic_effector_threadsafe's allowlist, so
+    # _rhs_flat_supported(...) is false for that effector tuple and the forced
+    # mode silently falls back to :satellite_batch instead.
+    args_flat_packets = build_config_multi(
+        spacecraft=[
+            make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=170.0),
+            make_single_link_spacecraft(ra_alt_m=520e3, rp_alt_m=520e3, ν_deg=165.0),
+        ],
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=false,
+        mission_time=5.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+        ephemerides_model=SimpleEphemeridesModel(),
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    u_flat_packets = build_initial_conditions(args_flat_packets)
+    p_flat_packets = ODEParams(n_sats=2, args=args_flat_packets)
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "flat",
+        "SPACEAGORA_RHS_FLAT_PACKET_SCHEDULER" => "on",
+    ) do
+        du_flat_packets = copy(u_flat_packets)
+        du_flat_packets .= 0.0
+        SimulationEngine.spacecraft_dynamics!(du_flat_packets, u_flat_packets, p_flat_packets, 0.0)
+        @test norm(SVector{3, Float64}(du_flat_packets.sc[1].vel)) > 0.0
+        @test norm(SVector{3, Float64}(du_flat_packets.sc[2].vel)) > 0.0
+    end
+
     args_backbone_batch = build_config_multi(
         spacecraft=[
             make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=170.0),

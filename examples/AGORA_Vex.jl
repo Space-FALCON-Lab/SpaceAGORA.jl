@@ -68,7 +68,7 @@ ic = vex_initial.ic
 
 spacecraft = make_three_body_spacecraft(
     bus_dims=(2.05, 3.7, 2.8),
-    panel_dims=(0.01, 5.7 / 1.0, 1.0),
+    panel_dims=(0.01, 5.7 / 2.0, 1.0),
     bus_mass=620.0,
     panel_mass_each=10.0,
     panel_offset_y=2.05 / 2.0 + 5.7 / 4.0,

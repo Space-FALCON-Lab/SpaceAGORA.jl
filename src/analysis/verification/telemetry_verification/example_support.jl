@@ -79,6 +79,11 @@ function make_three_body_spacecraft(;
     bus_ram_face in (:legacy, :frontal) ||
         throw(ArgumentError("bus_ram_face must be :legacy or :frontal, got $bus_ram_face"))
     bus_ref_area = bus_ram_face === :frontal ? bus_dims[2] * bus_dims[3] : bus_dims[1] * bus_dims[3]
+    # PER-WING CONTRACT: TWO panel links are built and EACH carries the full
+    # dims[2]*dims[3] as its reference area, so panel_dims[2] must be the
+    # per-wing half-span (total array span / 2). Passing the full span here
+    # doubles the array's drag/SRP area — the exact defect the April 2026
+    # examples carried (5.7/1.0, 5.5/1.35) until August 2026.
     main_bus = SM.Link{0}(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_ref_area, reflection_coefficient=reflection_coefficient)
     left_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
     right_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)

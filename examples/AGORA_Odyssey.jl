@@ -25,10 +25,10 @@ ic = _mars_odyssey_initial_condition_from_spice(initial_time, SPICE_PATH)
 
 spacecraft = make_three_body_spacecraft(
     bus_dims=(2.2, 2.6, 1.7),
-    panel_dims=(0.01, 5.5 / 1.35, 2.6),
+    panel_dims=(0.01, 3.89 / 2.0, 1.7),
     bus_mass=391.0,
     panel_mass_each=10.0,
-    panel_offset_y=2.6 / 2.0 + 5.5 / 4.0,
+    panel_offset_y=2.6 / 2.0 + 3.89 / 4.0,
     ic=ic,
     reflection_coefficient=0.9,
     prop_mass=50.0,

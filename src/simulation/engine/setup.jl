@@ -65,10 +65,22 @@ end
 
 @inline _density_without_aero_warning_enabled() = _engine_env_get("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO", "1") == "1"
 
-# A density model only produces forces through an atmospheric dynamic effector
-# (AerodynamicCoefficient*); without one the atmosphere feeds heating only.
-# Configuring a non-vacuum density model with no aero effector has historically
-# produced silently drag-free studies, so surface it loudly. Not an error:
+# An effector consumes the atmosphere either as one of the built-in aero types
+# or by declaring environment_requirements(model).atmosphere = true (the public
+# extension hook) — concrete-type recognition alone would misfire on custom
+# drag effectors defined outside the engine.
+@inline function _any_effector_consumes_atmosphere(dynamic_effectors::Tuple)::Bool
+    SimulationModel.SimulationCallbacks._uses_atmospheric_dynamic_effector(dynamic_effectors) && return true
+    @inbounds for effector in dynamic_effectors
+        SimulationModel.environment_requirements(effector).atmosphere && return true
+    end
+    return false
+end
+
+# A density model only produces forces through an atmosphere-consuming dynamic
+# effector; without one the atmosphere feeds heating only. Configuring a
+# non-vacuum density model with no such effector has historically produced
+# silently drag-free studies, so surface it loudly. Not an error:
 # density-without-drag is a legitimate heating/diagnostics configuration
 # (e.g. the GRAM quickstart example); those runs can silence the diagnostic
 # with SPACEAGORA_WARN_DENSITY_WITHOUT_AERO=0.
@@ -78,14 +90,15 @@ function _warn_density_without_atmospheric_effector(args)
     if density_model isa SimulationModel.EnvironmentModels.NoAtmosphereModel
         return nothing
     end
-    if SimulationModel.SimulationCallbacks._uses_atmospheric_dynamic_effector(args.dynamics_model.dynamic_effectors)
+    if _any_effector_consumes_atmosphere(args.dynamics_model.dynamic_effectors)
         return nothing
     end
     @warn(
         "environment_model.density_model=$(nameof(typeof(density_model))) is set but " *
-        "dynamics_model.dynamic_effectors has no aerodynamic effector " *
-        "(AerodynamicCoefficientConstant/AerodynamicCoefficientfM/AerodynamicCoefficientNoBallisticFlight): " *
-        "the atmosphere will affect heating only and NO aerodynamic force will ever be applied. " *
+        "no effector in dynamics_model.dynamic_effectors consumes the atmosphere " *
+        "(built-in AerodynamicCoefficient* models, or a custom effector declaring " *
+        "environment_requirements(model).atmosphere = true): the atmosphere will affect " *
+        "heating only and NO aerodynamic force will ever be applied. " *
         "Add an aerodynamic effector if this run is meant to model drag.",
         maxlog = 1
     )

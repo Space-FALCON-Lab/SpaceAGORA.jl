@@ -12,6 +12,23 @@ const run_simulation = SimulationEngine.run_simulation
 
 const EARTH = make_no_gram_planet(:earth)
 
+# Custom drag-style effector shaped like an extension's: a wrench model that
+# declares its atmosphere dependence through the public requirements hook
+# rather than being one of the built-in AerodynamicCoefficient* types.
+struct ProbeCustomDragModel <: SimulationModel.AbstractForceTorqueModel end
+
+SimulationModel.environment_requirements(::ProbeCustomDragModel) =
+    SimulationModel.EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+
+function SimulationModel.wrench(
+    ::ProbeCustomDragModel,
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64,
+)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
 # ── Config builders ──────────────────────────────────────────────────────────
 
 function make_probe_spacecraft(alt_km::Float64)
@@ -124,6 +141,22 @@ end
         @test !SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(NRLMSISE00AtmosphereModel())
     end
 
+    @testset "custom atmosphere-consuming effector suppresses the warning" begin
+        # Extensions implement drag as custom wrench effectors that declare
+        # environment_requirements(model).atmosphere = true; the diagnostic
+        # must recognize the public hook, not just the built-in aero types.
+        # Runs BEFORE the positive warning test so the @warn call site's
+        # maxlog=1 budget is provably still available there.
+        cfg_custom = make_drag_probe_config(
+            density_model=drag_model(),
+            alt_km=250.0,
+            EI_km=300.0,
+            dynamic_effectors=(InverseSquaredJ2GravityModel(), ProbeCustomDragModel()),
+            mission_time=60.0
+        )
+        @test_logs min_level=Base.CoreLogging.Warn run_simulation(cfg_custom)
+    end
+
     @testset "density model without aero effector warns loudly" begin
         cfg_no_aero = make_drag_probe_config(
             density_model=drag_model(),
@@ -132,6 +165,6 @@ end
             dynamic_effectors=(InverseSquaredJ2GravityModel(),),
             mission_time=60.0
         )
-        @test_logs (:warn, r"no aerodynamic effector") match_mode=:any run_simulation(cfg_no_aero)
+        @test_logs (:warn, r"NO aerodynamic force will ever be applied") match_mode=:any run_simulation(cfg_no_aero)
     end
 end

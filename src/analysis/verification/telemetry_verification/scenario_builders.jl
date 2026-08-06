@@ -96,6 +96,13 @@ end
 
 @inline _dynamic_effector_threadsafe(::ScaledAerodynamicCoefficientfM)::Bool = true
 
+# The wrapper's force is atmosphere-dependent through the wrapped model even
+# though it evaluates on the calcForceTorque path (where the requirements hook
+# is not consulted by the RHS); declaring it keeps the engine's
+# density-without-aero diagnostic from misfiring on cd-scaled scenarios.
+@inline SimulationModel.environment_requirements(::ScaledAerodynamicCoefficientfM) =
+    SimulationModel.EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+
 function SimulationModel.calcForceTorque(
     model::ScaledAerodynamicCoefficientfM,
     x::AbstractVector,

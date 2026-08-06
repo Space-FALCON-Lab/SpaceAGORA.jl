@@ -655,15 +655,32 @@ end
         expected_nrl_fixed = SatelliteToolbox.AtmosphericModels.nrlmsise00(
             dt_nrl, 400.0e3, 0.1, 0.2, 120.0, 130.0, 6.0
         )
-        rho_nrl_fixed, T_nrl_fixed, wind_nrl_fixed = getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, el_time_nrl, false)
-        @test isapprox(rho_nrl_fixed, expected_nrl_fixed.total_density; atol=0.0, rtol=1e-12)
-        @test isapprox(T_nrl_fixed, expected_nrl_fixed.temperature; atol=0.0, rtol=1e-12)
-        @test wind_nrl_fixed == SVector{3, Float64}(0.0, 0.0, 0.0)
+        # NRLMSISE-00 is calendar-dependent: the 6-arg form has no scenario
+        # epoch to anchor el_time and must refuse instead of silently
+        # evaluating at the J2000 reference epoch.
+        @test_throws ArgumentError getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, el_time_nrl, false)
 
         rho_nrl_rel, T_nrl_rel, wind_nrl_rel = getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, 0.0, false, p_nrl)
         @test isapprox(rho_nrl_rel, expected_nrl_fixed.total_density; atol=0.0, rtol=1e-12)
         @test isapprox(T_nrl_rel, expected_nrl_fixed.temperature; atol=0.0, rtol=1e-12)
         @test wind_nrl_rel == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        # p.args.initial_time controls the evaluation epoch: the same query
+        # with initial_time moved to a different season (different day-of-year,
+        # NRLMSISE-00's seasonal input) must change the answer.
+        p_nrl_july = (
+            args=(
+                initial_time=InitialTime(year=2024, month=7, day=1, hour=0, minute=0, second=0.0),
+                environment_model=(planet=EARTH,),
+            ),
+        )
+        expected_nrl_july = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+            DateTime(2024, 7, 1, 0, 0, 0), 400.0e3, 0.1, 0.2, 120.0, 130.0, 6.0
+        )
+        rho_nrl_july, T_nrl_july, _ = getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, 0.0, false, p_nrl_july)
+        @test isapprox(rho_nrl_july, expected_nrl_july.total_density; atol=0.0, rtol=1e-12)
+        @test isapprox(T_nrl_july, expected_nrl_july.temperature; atol=0.0, rtol=1e-12)
+        @test !isapprox(rho_nrl_july, rho_nrl_rel; atol=0.0, rtol=1e-6)
 
         provider_hits = Ref(0)
         provider_nrl = NRLMSISE00AtmosphereModel(
@@ -675,7 +692,7 @@ end
         expected_nrl_provider = SatelliteToolbox.AtmosphericModels.nrlmsise00(
             dt_nrl, 400.0e3, 0.1, 0.2, 95.0, 105.0, [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0]
         )
-        rho_nrl_provider, T_nrl_provider, wind_nrl_provider = getDensity(provider_nrl, 400.0e3, 0.1, 0.2, el_time_nrl, false)
+        rho_nrl_provider, T_nrl_provider, wind_nrl_provider = getDensity(provider_nrl, 400.0e3, 0.1, 0.2, 0.0, false, p_nrl)
         @test provider_hits[] == 1
         @test isapprox(rho_nrl_provider, expected_nrl_provider.total_density; atol=0.0, rtol=1e-12)
         @test isapprox(T_nrl_provider, expected_nrl_provider.temperature; atol=0.0, rtol=1e-12)

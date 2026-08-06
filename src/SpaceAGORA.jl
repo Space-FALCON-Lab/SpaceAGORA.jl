@@ -346,6 +346,11 @@ gravity_backbone_kick_acceleration_ii
 Stable extension hook for custom [`AbstractDensityModel`](@ref)
 implementations. The scalar form returns density, temperature, and wind for a
 single atmosphere query.
+
+Calendar-dependent models require the 7-argument form: `el_time` is elapsed
+seconds from the scenario epoch, which only `p.args.initial_time` can resolve
+to an absolute date. `NRLMSISE00AtmosphereModel` therefore throws on the
+6-argument form instead of silently evaluating at a fixed reference epoch.
 """
 getDensity
 

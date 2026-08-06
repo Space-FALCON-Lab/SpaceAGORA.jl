@@ -160,9 +160,12 @@ SM.EnvironmentModel(
 )
 ```
 
-`EI` (entry interface) controls the altitude threshold below which atmospheric
-drag is applied. For orbit-only scenarios, set it high enough that the
-spacecraft never crosses it (e.g., `120.0` km for Earth).
+`EI` (entry interface) is the altitude at which the integrator switches
+between its orbit and atmosphere step-size/tolerance regimes (see
+`IntegrationTolerances`). It is not a force gate: whenever a non-vacuum
+`density_model` is configured together with an aerodynamic effector, drag is
+evaluated at every altitude and the density model itself decides where the
+force becomes negligible.
 
 Set `wind = true` to request wind vectors from the atmosphere model; note that
 the open-data models (`NoAtmosphereModel`, `ExponentialAtmosphereModel`,

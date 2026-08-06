@@ -583,19 +583,11 @@ function _make_time_aligned_args(
     cr_override::Union{Nothing, Float64}=nothing
 )::SimulationConfiguration
     planet = _planet_from_name(cfg.planet_name)
-    if cfg.drag_enabled && ic isa CartesianInitialCondition
-        ic_alt_km = (norm(ic.pos) - planet.Rp_e) * 1e-3
-        if ic_alt_km > cfg.EI_km
-            @warn(
-                "drag_enabled scenario starts above EI_km: aero forces are zeroed above " *
-                "the entry interface on the split/implicit solver paths, so drag silently " *
-                "vanishes. Set EI_km above the orbit altitude in the scenario manifest.",
-                EI_km = cfg.EI_km,
-                initial_altitude_km = round(ic_alt_km, digits=1),
-                maxlog = 1
-            )
-        end
-    end
+    # Historical note: drag_enabled scenarios starting above EI_km used to lose
+    # aero silently on the split/implicit solver paths, which zeroed forces
+    # above the entry interface for every density model. The implicit partition
+    # now keeps aero engaged at all altitudes for density models that do not
+    # vanish above EI, so no manifest-side EI_km workaround is needed.
     spacecraft = _make_spacecraft(cfg.spacecraft, ic)
     dynamic_effectors = _scenario_dynamic_effectors(
         cfg,

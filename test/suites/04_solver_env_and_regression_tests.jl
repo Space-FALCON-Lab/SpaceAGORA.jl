@@ -2098,9 +2098,13 @@ end
         rp_alt_m=500e3,
         orientation_state=(q0_outside, ω0_outside)
     )
+    # The above-EI fast path only applies to density models that vanish above
+    # the entry interface (NoAtmosphereModel); all other models keep aero
+    # engaged at every altitude, so the buffer-trust behavior under test here
+    # must be probed with the vacuum model.
     args_outside = build_config(
         spacecraft=sc_outside,
-        density_model=ExponentialAtmosphereModel(EARTH),
+        density_model=NoAtmosphereModel(),
         orientation_sim=true,
         mission_time=10.0,
         EI_km=120.0,
@@ -2140,6 +2144,33 @@ end
     p_outside.shared_buffers.in_atmosphere_sample_t[1] = 0.0
     @test SimulationEngine._drag_state_buffer_current(p_outside, 1, 0.0)
     @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_outside.sc, p_outside, 0.0)
+
+    # Density models that do not vanish above EI never take the fast path: an
+    # orbit entirely above the entry interface still sees continuous aero.
+    @test SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(NoAtmosphereModel())
+    @test !SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(ExponentialAtmosphereModel(EARTH))
+    @test !SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(ConstantDensityModel(1e-11, 900.0))
+    args_nonvanishing = build_config(
+        spacecraft=sc_outside,
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=true,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            AerodynamicCoefficientfM(),
+        ),
+        keplerian=true
+    )
+    args_nonvanishing.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+    u0_nonvanishing = build_initial_conditions(args_nonvanishing)
+    p_nonvanishing = ODEParams(n_sats=1, args=args_nonvanishing)
+    _initialize_heat_rate_buffers!(p_nonvanishing)
+    p_nonvanishing.shared_buffers.in_atmosphere[1] = false
+    p_nonvanishing.shared_buffers.in_atmosphere_sample_t[1] = 0.0
+    @test SimulationEngine._drag_state_buffer_current(p_nonvanishing, 1, 0.0)
+    @test !SimulationEngine._spacecraft_outside_atmosphere_for_current_state(u0_nonvanishing.sc[1], p_nonvanishing, 1, 0.0)
+    @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_nonvanishing.sc, p_nonvanishing, 0.0)
 
     sc_mixed = [
         make_spacecraft(ra_alt_m=220e3, rp_alt_m=100e3, ν_deg=0.0),

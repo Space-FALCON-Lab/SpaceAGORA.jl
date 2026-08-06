@@ -63,6 +63,35 @@ function _validate_thermal_model_support!(args)
     return nothing
 end
 
+@inline _density_without_aero_warning_enabled() = _engine_env_get("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO", "1") == "1"
+
+# A density model only produces forces through an atmospheric dynamic effector
+# (AerodynamicCoefficient*); without one the atmosphere feeds heating only.
+# Configuring a non-vacuum density model with no aero effector has historically
+# produced silently drag-free studies, so surface it loudly. Not an error:
+# density-without-drag is a legitimate heating/diagnostics configuration
+# (e.g. the GRAM quickstart example); those runs can silence the diagnostic
+# with SPACEAGORA_WARN_DENSITY_WITHOUT_AERO=0.
+function _warn_density_without_atmospheric_effector(args)
+    _density_without_aero_warning_enabled() || return nothing
+    density_model = args.environment_model.density_model
+    if density_model isa SimulationModel.EnvironmentModels.NoAtmosphereModel
+        return nothing
+    end
+    if SimulationModel.SimulationCallbacks._uses_atmospheric_dynamic_effector(args.dynamics_model.dynamic_effectors)
+        return nothing
+    end
+    @warn(
+        "environment_model.density_model=$(nameof(typeof(density_model))) is set but " *
+        "dynamics_model.dynamic_effectors has no aerodynamic effector " *
+        "(AerodynamicCoefficientConstant/AerodynamicCoefficientfM/AerodynamicCoefficientNoBallisticFlight): " *
+        "the atmosphere will affect heating only and NO aerodynamic force will ever be applied. " *
+        "Add an aerodynamic effector if this run is meant to model drag.",
+        maxlog = 1
+    )
+    return nothing
+end
+
 function _validate_ephemerides_support!(args)
     ephemerides_model = args.environment_model.ephemerides_model
     if ephemerides_model isa SimulationModel.SimpleEphemeridesModel

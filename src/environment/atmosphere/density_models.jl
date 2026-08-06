@@ -12,6 +12,22 @@ struct NoAtmosphereModel <: AbstractDensityModel
 end
 
 """
+    density_vanishes_above_entry_interface(model) -> Bool
+
+Whether the split/implicit solver partition may treat this density model as
+exactly zero above the configured entry interface (`EnvironmentModel.EI`).
+
+Only models guaranteed to produce no density above EI may return `true`; the
+implicit-atmosphere RHS uses this to skip aerodynamic evaluation entirely on
+coast arcs. For every other model EI is a step-size/tolerance boundary, not a
+force gate: aero must stay engaged at all altitudes (an orbit that never
+crosses EI downward would otherwise silently fly drag-free), and genuinely
+negligible densities are handled by the wrench's own `rho <= eps` short-circuit.
+"""
+@inline density_vanishes_above_entry_interface(::AbstractDensityModel)::Bool = false
+@inline density_vanishes_above_entry_interface(::NoAtmosphereModel)::Bool = true
+
+"""
 Single-scale-height analytic atmosphere with zero winds and a constant
 temperature placeholder.
 
@@ -226,7 +242,6 @@ const _NRLMSISE00_DEFAULT_F107 = 150.0
 const _NRLMSISE00_DEFAULT_AP = 4.0
 const _NRLMSISE00_DEFAULT_VALID_MIN_ALTITUDE_M = 0.0
 const _NRLMSISE00_DEFAULT_VALID_MAX_ALTITUDE_M = 1_000.0e3
-const _NRLMSISE00_REFERENCE_EPOCH = DateTime(2000, 1, 1, 12, 0, 0)
 const _NRLMSISE00_LOW_ALTITUDE_DEFAULT_MAX_M = 80.0e3
 const _NRLMSISE00_SPACE_INDICES_LOCK = ReentrantLock()
 const _NRLMSISE00_SPACE_INDICES_READY = Ref(false)
@@ -509,10 +524,6 @@ end
         0
     ) + Millisecond(round(Int, 1000 * Float64(initial_time.second)))
     return base + Millisecond(round(Int, 1000 * el_time))
-end
-
-@inline function _nrlmsise_eval_datetime(el_time::Float64)::DateTime
-    return _NRLMSISE00_REFERENCE_EPOCH + Millisecond(round(Int, 1000 * el_time))
 end
 
 @inline function _nrlmsise_space_indices_lookup(index::Val, instant::DateTime)
@@ -1058,9 +1069,18 @@ function getDensity(model::ConstantDensityModel, altitude_m::Float64, latitude_d
     return model.density_kg_m3, model.temperature_k, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+# NRLMSISE-00 is calendar-dependent (space indices, solar position, seasonal
+# terms), so evaluating it without a scenario epoch is a silent physics error:
+# the historical fallback anchored el_time to the J2000 epoch, which put every
+# caller on this path decades away from its mission dates. Callers must use the
+# 7-arg method, whose epoch comes from `p.args.initial_time`.
 function getDensity(model::NRLMSISE00AtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
-    instant = _nrlmsise_eval_datetime(el_time)
-    return _nrlmsise_density_state(model, instant, h, lat, lon)
+    throw(ArgumentError(
+        "getDensity(::NRLMSISE00AtmosphereModel, h, lat, lon, el_time, wind) has no scenario epoch: " *
+        "el_time would be anchored to the J2000 reference epoch and NRLMSISE-00 would evaluate " *
+        "space indices for the wrong dates. Call the 7-argument method " *
+        "getDensity(model, h, lat, lon, el_time, wind, p), which maps el_time from p.args.initial_time."
+    ))
 end
 
 function getDensity(model::NRLMSISE00AtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params

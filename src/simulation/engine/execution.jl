@@ -164,6 +164,7 @@ function run_simulation(
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
     _validate_ephemerides_support!(args)
+    _warn_density_without_atmospheric_effector(args)
     try
         SimulationModel.ParallelPolicy.reset_policy_telemetry!()
         if SimulationModel.ParallelPolicy.persistent_hints_state_reset_requested()

@@ -8,6 +8,7 @@
         "reference_system_probes.jl",
         "parallel_policy_probes.jl",
         "density_selection_probes.jl",
+        "ei_partition_drag_probes.jl",
         "rpo_planning_probes.jl",
         "rpo_nav_probes.jl",
         "thruster_guidance_probes.jl",

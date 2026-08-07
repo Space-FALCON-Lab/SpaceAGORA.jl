@@ -1958,6 +1958,14 @@ end # function spacecraft_dynamics_slow!
 end
 
 @inline function _spacecraft_outside_atmosphere_for_current_state(sc, p, sat_idx::Int, t::Float64)::Bool
+    # The above-EI shortcut is only sound when the density model is guaranteed
+    # to be vacuum there. For every other model EI is a step-size/tolerance
+    # boundary, not a force gate: an orbit that never crosses EI downward must
+    # still see continuous aero (negligible densities zero out inside the
+    # wrench itself via its rho <= eps short-circuit).
+    density_model = SimulationModel.SimulationCallbacks._density_model_for_sat(p, sat_idx)
+    SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(density_model) || return false
+
     if _drag_state_buffer_current(p, sat_idx, t)
         return !p.shared_buffers.in_atmosphere[sat_idx]
     end

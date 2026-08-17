@@ -535,6 +535,11 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
         srp_cr = _optional_float(tbl, "srp_cr", 1.3)
         srp_area_m2 = _optional_float(tbl, "srp_area_m2", 0.0)
         drag_enabled = _optional_bool(tbl, "drag_enabled", true)
+        aero_fixed_attitude_incidence = let raw = _optional_str(tbl, "aero_fixed_attitude_incidence", "max_drag")
+            raw in ("max_drag", "attitude", "tumbling_average") || error(
+                "Scenario $(context): aero_fixed_attitude_incidence must be max_drag, attitude, or tumbling_average, got $(raw)")
+            Symbol(raw)
+        end
         include_wind = _optional_bool(tbl, "include_wind", false)
         orbit_altitude_mode = _parse_orbit_altitude_mode(_optional_str(tbl, "orbit_altitude_mode", "vacuum"), context)
         maneuver = _parse_maneuver_config(tbl, context)
@@ -577,6 +582,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 srp_cr=srp_cr,
                 srp_area_m2=srp_area_m2,
                 drag_enabled=drag_enabled,
+                aero_fixed_attitude_incidence=aero_fixed_attitude_incidence,
                 include_wind=include_wind,
                 orbit_altitude_mode=orbit_altitude_mode,
                 maneuver_orbit_numbers=maneuver.orbit_numbers,
@@ -644,6 +650,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 srp_cr=srp_cr,
                 srp_area_m2=srp_area_m2,
                 drag_enabled=drag_enabled,
+                aero_fixed_attitude_incidence=aero_fixed_attitude_incidence,
                 include_wind=include_wind,
                 orbit_altitude_mode=orbit_altitude_mode,
                 cartesian_ic_frame=_parse_reference_frame(

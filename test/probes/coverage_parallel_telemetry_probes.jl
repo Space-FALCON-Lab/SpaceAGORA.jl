@@ -2235,4 +2235,74 @@ end
     @test norm(mgr2.h_wheels) < 1.5 * norm(tau_d) / 0.01   # plateau ~ tau/mu
 end
 
+
+@testset "manifest aero_fixed_attitude_incidence key" begin
+    scenario = Dict(
+        "name" => "incidence_key_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+
+        # Absent key: bit-compat default, the historical accounting.
+        write_manifest(scenario)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.aero_fixed_attitude_incidence === :max_drag
+
+        # Key present: parsed and forwarded into the built fM effector.
+        scenario["aero_fixed_attitude_incidence"] = "tumbling_average"
+        write_manifest(scenario)
+        cfg_t = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg_t.aero_fixed_attitude_incidence === :tumbling_average
+        planet = TV._planet_from_name("earth")
+        ic = TV._scenario_initial_condition(cfg_t, planet)
+        sc = TV._make_spacecraft(cfg_t.spacecraft, ic)
+        eff = TV._scenario_dynamic_effectors(cfg_t, planet, sc)
+        fm = only(filter(e -> e isa SimulationModel.AerodynamicCoefficientfM, collect(eff)))
+        @test fm.fixed_attitude_incidence === :tumbling_average
+
+        # Invalid value: loud parse error naming the key.
+        scenario["aero_fixed_attitude_incidence"] = "sideways"
+        write_manifest(scenario)
+        err = try
+            TV._load_scenarios_from_manifest(manifest_path)
+            nothing
+        catch e
+            e
+        end
+        @test err !== nothing
+        @test occursin("aero_fixed_attitude_incidence", sprint(showerror, err))
+    end
+end
+
 println("coverage_parallel_telemetry_probes_ok")

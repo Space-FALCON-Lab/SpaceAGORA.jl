@@ -116,6 +116,10 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     srp_cr::Float64 = 1.3
     srp_area_m2::Float64 = 0.0
     drag_enabled::Bool = true
+    # Fixed-attitude incidence mode forwarded to AerodynamicCoefficientfM
+    # (:max_drag | :attitude | :tumbling_average); :max_drag preserves the
+    # historical accounting bit-identically.
+    aero_fixed_attitude_incidence::Symbol = :max_drag
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     maneuver_orbit_numbers::Vector{Int64} = Int64[]
@@ -184,6 +188,10 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     srp_cr::Float64 = 1.3
     srp_area_m2::Float64 = 0.0
     drag_enabled::Bool = true
+    # Fixed-attitude incidence mode forwarded to AerodynamicCoefficientfM
+    # (:max_drag | :attitude | :tumbling_average); :max_drag preserves the
+    # historical accounting bit-identically.
+    aero_fixed_attitude_incidence::Symbol = :max_drag
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     cartesian_ic_frame::Symbol = :inertial

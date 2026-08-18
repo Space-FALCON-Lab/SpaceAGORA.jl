@@ -88,6 +88,29 @@ function ppc_ensure_process_workers!(n::Int)::Vector{Int}
                 include(joinpath(study_dir, "cases.jl"))
                 include(joinpath(study_dir, "trajectory_parity.jl"))
                 include(joinpath(study_dir, "execution.jl"))
+                # cases.jl's own eager-GRAM-load check inspects ARGS to decide
+                # whether this process will run a GRAM-live case (see
+                # PPC_GRAM_LIVE_CASES) -- but a Distributed worker started via
+                # addprocs doesn't inherit the launching process's command-line
+                # ARGS, so that check silently never fires here, and GRAM-live
+                # cases dispatched under outer_process crash with `MethodError:
+                # no method matching GRAMAtmosphereModel(; planet_name::String)`
+                # the same way the world-age bug did before that check existed.
+                # Distributed workers are only ever spawned for outer_process
+                # batches, so eagerly loading GRAMSuite unconditionally here
+                # (rather than threading "does this case need it" through) is
+                # cheap relative to the alternative of getting it wrong.
+                # @eval, not invokelatest: `Base.invokelatest(f)` only defers
+                # the *call*, but evaluating the bare identifier
+                # `ppc_ensure_gramsuite_loaded!` to get `f` in the first place
+                # still happens in this closure's original (pre-`include`)
+                # world, so it throws the same `UndefVarError` before
+                # invokelatest ever runs. @eval re-resolves the whole
+                # expression, name lookup included, fresh against the current
+                # global bindings -- the same reason ppc_ensure_gramsuite_loaded!
+                # itself uses `@eval import GRAMSuite` rather than a plain
+                # `import`.
+                @eval ppc_ensure_gramsuite_loaded!()
                 nothing
             end
         end

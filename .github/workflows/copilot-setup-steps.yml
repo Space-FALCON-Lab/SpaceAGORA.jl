@@ -30,16 +30,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       # Keep the GRAMSuite data submodule in sync with its remote main branch
-      # so that the cached environment always reflects the latest data.
+      # so that the cached environment always reflects the latest data. The
+      # dev tree (private) carries the GRAM sources needed for a native
+      # build; when the read token cannot reach it, fall back to the public
+      # tree, which ships data only.
       - name: Update GRAMSuite submodule to latest main
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: bash .github/scripts/update_gramsuite_submodule.sh regular
+        run: |
+          bash .github/scripts/update_gramsuite_submodule.sh dev \
+            || bash .github/scripts/update_gramsuite_submodule.sh regular
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -57,7 +62,7 @@ jobs:
       # CondaPkg.toml, so that Python dependencies are not reinstalled when
       # only Julia sources change.
       - name: Cache CondaPkg environment
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.julia/condapkg/SpaceAGORA
           key: condapkg-${{ runner.os }}-${{ hashFiles('CondaPkg.toml') }}
@@ -67,8 +72,15 @@ jobs:
       - name: Instantiate Julia environment
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh --clean
+      # Best-effort: the public GRAMSuite tree has no Build/ sources, so a
+      # native build is only possible on the dev tree. Without it, SpaceAGORA
+      # falls back to the library-less offline GRAM surrogate at runtime
+      # (SPACEAGORA_GRAM_OFFLINE_SURROGATE=auto), so agent setup should not
+      # fail here.
+      - name: Ensure native GRAM build (best-effort)
+        run: |
+          ./scripts/ensure_gram_native.sh --clean \
+            || echo "::warning::native GRAM unavailable (no Build/ sources in this GRAMSuite tree); offline surrogate fallback applies"
 
       # Explicitly trigger precompilation so that every package's compiled
       # .ji cache file is written to ~/.julia/compiled before the cache is

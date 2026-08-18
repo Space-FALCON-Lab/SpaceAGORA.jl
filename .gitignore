@@ -17,6 +17,10 @@ output/*
 GRAMpy/*
 *.pdf
 *.csv
+# ...but gravity-coefficient assets are versioned (see test/gmat_scenario_matrix.jl)
+!data/Gravity_harmonics_data/*.csv
+*.png
+*.tex
 .DS_Store
 *.cov
 docs/build/
@@ -28,6 +32,8 @@ output/calibration/
 SpaceAGORACalibration.jl/test/output/
 SpaceAGORACalibration.jl/.CondaPkg/
 !data/telemetry/OPS-SAT1/uhf_telemetry.csv
+!test/golden/*/fixture.csv
+!test/golden/agora_earth_regression.csv
 !data/telemetry/OPS-SAT1/UHF_TM_notebook/uhf_telemetry.csv
 data/telemetry/CYGNSS/
 data/telemetry/GRIFEX/
@@ -48,9 +54,53 @@ CLAUDE.md
 
 # Binary data files
 *.feather
+!data/telemetry/Odyssey/*.feather
 *.hdf5
 *.arrow
 *.zip
+
+# CAD / 3D model files
+*.[sS][tT][lL]
+*.[sS][tT][eE][pP]
+*.[sS][tT][pP]
+*.[iI][gG][eE][sS]
+*.[iI][gG][sS]
+*.[sS][lL][dD][pP][rR][tT]
+*.[sS][lL][dD][aA][sS][mM]
+*.[sS][lL][dD][dD][rR][wW]
+*.[fF]3[dD]
+*.[fF]3[zZ]
+*.[iI][pP][tT]
+*.[iI][aA][mM]
+*.[iI][dD][wW]
+*.[dD][wW][gG]
+*.[dD][xX][fF]
+*.[cC][aA][tT][pP][aA][rR][tT]
+*.[cC][aA][tT][pP][rR][oO][dD][uU][cC][tT]
+*.[pP][rR][tT]
+*.[aA][sS][mM]
+*.3[dD][mM]
+*.[bB][rR][eE][pP]
+*.[fF][cC][sS][tT][dD]
+*.[sS][cC][aA][dD]
+*.[sS][kK][pP]
+*.[jJ][tT]
+*.[pP][aA][rR]
+*.[pP][sS][mM]
+*.[dD][fF][tT]
+*.[oO][bB][jJ]
+*.[fF][bB][xX]
+*.[dD][aA][eE]
+*.[gG][lL][bB]
+*.[gG][lL][tT][fF]
+*.[pP][lL][yY]
+*.[wW][rR][lL]
+*.[xX]_[tT]
+*.[xX]_[bB]
+*.[sS][aA][tT]
+*.[sS][aA][bB]
+*.3[mM][fF]
+*.[aA][mM][fF]
 
 # Temp / editor artifacts
 texput.log
@@ -61,3 +111,7 @@ texput.log
 *.dll
 *.dylib
 SpaceAGORA.so
+
+# Remote job push tool
+scripts/remote/remotes.conf
+remote_runs/

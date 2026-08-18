@@ -12,6 +12,22 @@ struct NoAtmosphereModel <: AbstractDensityModel
 end
 
 """
+    density_vanishes_above_entry_interface(model) -> Bool
+
+Whether the split/implicit solver partition may treat this density model as
+exactly zero above the configured entry interface (`EnvironmentModel.EI`).
+
+Only models guaranteed to produce no density above EI may return `true`; the
+implicit-atmosphere RHS uses this to skip aerodynamic evaluation entirely on
+coast arcs. For every other model EI is a step-size/tolerance boundary, not a
+force gate: aero must stay engaged at all altitudes (an orbit that never
+crosses EI downward would otherwise silently fly drag-free), and genuinely
+negligible densities are handled by the wrench's own `rho <= eps` short-circuit.
+"""
+@inline density_vanishes_above_entry_interface(::AbstractDensityModel)::Bool = false
+@inline density_vanishes_above_entry_interface(::NoAtmosphereModel)::Bool = true
+
+"""
 Single-scale-height analytic atmosphere with zero winds and a constant
 temperature placeholder.
 
@@ -138,10 +154,17 @@ SpaceAGORA wrapper around a GRAMSuite atmosphere model that preserves
 `AbstractDensityModel` dispatch compatibility. The `core` field holds the
 underlying GRAMSuite model object; constructors are provided by the
 `SpaceAGORAGRAMSuiteExt` package extension when GRAMSuite is loaded.
+
+`instance_lock` serializes native GRAM calls against this wrapper instance when
+`SPACEAGORA_GRAM_LOCK_SCOPE=model` is active (see [`_gram_lock_scope`](@ref));
+each construction (including `deepcopy`) gets a fresh lock.
 """
 struct GRAMAtmosphereModel <: AbstractDensityModel
     core
+    instance_lock::ReentrantLock
 end
+
+GRAMAtmosphereModel(core) = GRAMAtmosphereModel(core, ReentrantLock())
 
 @kwdef struct ConstantDensityModel <: AbstractDensityModel
     density_kg_m3::Float64
@@ -219,7 +242,6 @@ const _NRLMSISE00_DEFAULT_F107 = 150.0
 const _NRLMSISE00_DEFAULT_AP = 4.0
 const _NRLMSISE00_DEFAULT_VALID_MIN_ALTITUDE_M = 0.0
 const _NRLMSISE00_DEFAULT_VALID_MAX_ALTITUDE_M = 1_000.0e3
-const _NRLMSISE00_REFERENCE_EPOCH = DateTime(2000, 1, 1, 12, 0, 0)
 const _NRLMSISE00_LOW_ALTITUDE_DEFAULT_MAX_M = 80.0e3
 const _NRLMSISE00_SPACE_INDICES_LOCK = ReentrantLock()
 const _NRLMSISE00_SPACE_INDICES_READY = Ref(false)
@@ -354,15 +376,15 @@ function NRLMSISE00AtmosphereModel(;
 end
 
 @inline function Base.getproperty(model::GRAMAtmosphereModel, name::Symbol)
-    if name === :core
-        return getfield(model, :core)
+    if name === :core || name === :instance_lock
+        return getfield(model, name)
     end
     return getproperty(getfield(model, :core), name)
 end
 
 @inline function Base.propertynames(model::GRAMAtmosphereModel, private::Bool=false)
     wrapped = propertynames(getfield(model, :core), private)
-    return (:core, wrapped...)
+    return (:core, :instance_lock, wrapped...)
 end
 
 @inline function Base.getproperty(model::GRAMAtmosphereModelSurrogate, name::Symbol)
@@ -375,6 +397,31 @@ end
 @inline function Base.propertynames(model::GRAMAtmosphereModelSurrogate, private::Bool=false)
     wrapped = propertynames(getfield(model, :base_model), private)
     return (:base_model, :surrogate_file, :point_fallback_below_m, wrapped...)
+end
+
+"""
+    _gram_lock_scope() -> Symbol
+
+Which lock serializes native GRAM density calls: `:global` (default) contends on
+the single `RuntimeServices.GRAM_LOCK` process-wide, `:model`
+(`SPACEAGORA_GRAM_LOCK_SCOPE=model`) contends only on the wrapper's own
+`instance_lock`, so distinct [`GRAMAtmosphereModel`](@ref) instances evaluate
+concurrently. `:model` relies on the same safety premise as the isolated-pool
+batch path (`SPACEAGORA_GRAM_ISOLATED_POOL`): independent GRAM model instances
+may be called concurrently as long as each single instance is serialized.
+Threaded Monte Carlo campaigns whose samples build their own GRAM models need
+`:model` to scale; with `:global` all samples serialize on one lock.
+"""
+@inline function _gram_lock_scope()::Symbol
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_LOCK_SCOPE", "global")))
+    if raw == "" || raw == "global"
+        return :global
+    elseif raw == "model" || raw == "per_model" || raw == "per-model" || raw == "instance"
+        return :model
+    end
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_GRAM_LOCK_SCOPE='$raw'. Use one of: global, model."
+    ))
 end
 
 # These Refs are set by SpaceAGORAGRAMSuiteExt when GRAMSuite is loaded.
@@ -477,10 +524,6 @@ end
         0
     ) + Millisecond(round(Int, 1000 * Float64(initial_time.second)))
     return base + Millisecond(round(Int, 1000 * el_time))
-end
-
-@inline function _nrlmsise_eval_datetime(el_time::Float64)::DateTime
-    return _NRLMSISE00_REFERENCE_EPOCH + Millisecond(round(Int, 1000 * el_time))
 end
 
 @inline function _nrlmsise_space_indices_lookup(index::Val, instant::DateTime)
@@ -626,6 +669,147 @@ end
         include_anomalous_oxygen=model.include_anomalous_oxygen
     )
     return atmo.total_density, atmo.temperature, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+"""
+TabulatedFlightAtmosphereModel — density from flight-measured per-pass
+profiles (e.g. accelerometer-derived), for labeled replication/certification
+diagnostics. Pure data: nearest pass in elapsed time, leg by side of that
+pass's periapsis, log-linear interpolation in altitude, exponential tails
+beyond each profile's coverage. `sigma_scale` shifts every point by that many
+measurement standard errors (envelope runs). Temperature is derived from the
+local log-density slope (scale height); winds are zero — the measurement
+carries neither. Serves as the digital-twin regression sentinel and the
+certification reference; predictive-atmosphere results come from the GRAM
+configurations and are reported separately.
+"""
+struct TabulatedFlightAtmosphereModel <: AbstractDensityModel
+    pass_peri_el_s::Vector{Float64}            # sorted periapsis elapsed times
+    # per pass: inbound/outbound profiles as (alt_m ascending, log_rho, sigma_log)
+    prof_alt_m::Vector{NTuple{2, Vector{Float64}}}
+    prof_logrho::Vector{NTuple{2, Vector{Float64}}}
+    prof_siglog::Vector{NTuple{2, Vector{Float64}}}
+    sigma_scale::Float64
+    g_ref_mps2::Float64
+    gas_constant::Float64
+end
+
+# Tail scale heights are clamped to the physical Mars thermosphere range:
+# noisy edge bins can invert (top of a profile is noise-dominated), and an
+# unclamped slope would extend a near-constant density blanket along the whole
+# orbit — integrated over an 18 h period that phantom drag exceeds the real
+# periapsis pass severalfold.
+const _TAB_FLIGHT_H_MIN_M = 2000.0
+const _TAB_FLIGHT_H_MAX_M = 12000.0
+
+@inline function _tab_flight_interp(alts::Vector{Float64}, logs::Vector{Float64}, sigs::Vector{Float64}, h::Float64, sigma_scale::Float64)::Tuple{Float64, Float64}
+    n = length(alts)
+    if h <= alts[1]
+        H = n >= 2 ? (alts[2] - alts[1]) / max(logs[1] - logs[2], 1e-9) : 8000.0
+        H = clamp(H, _TAB_FLIGHT_H_MIN_M, _TAB_FLIGHT_H_MAX_M)
+        return (logs[1] + (alts[1] - h) / H + sigma_scale * sigs[1]), H
+    elseif h >= alts[n]
+        H = n >= 2 ? (alts[n] - alts[n-1]) / max(logs[n-1] - logs[n], 1e-9) : 8000.0
+        H = clamp(H, _TAB_FLIGHT_H_MIN_M, _TAB_FLIGHT_H_MAX_M)
+        return (logs[n] - (h - alts[n]) / H + sigma_scale * sigs[n]), H
+    end
+    j = searchsortedlast(alts, h)
+    t = (h - alts[j]) / (alts[j+1] - alts[j])
+    lr = logs[j] + t * (logs[j+1] - logs[j])
+    sg = sigs[j] + t * (sigs[j+1] - sigs[j])
+    H = (alts[j+1] - alts[j]) / max(logs[j] - logs[j+1], 1e-9)
+    return (lr + sigma_scale * sg), H
+end
+
+function getDensity(model::TabulatedFlightAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
+    ts = model.pass_peri_el_s
+    j = clamp(searchsortedlast(ts, el_time), 1, length(ts))
+    if j < length(ts) && abs(ts[j+1] - el_time) < abs(el_time - ts[j])
+        j += 1
+    end
+    leg = el_time < ts[j] ? 1 : 2
+    alts = model.prof_alt_m[j][leg]
+    if isempty(alts)
+        leg = leg == 1 ? 2 : 1
+        alts = model.prof_alt_m[j][leg]
+    end
+    isempty(alts) && return 0.0, 150.0, SVector{3, Float64}(0.0, 0.0, 0.0)
+    logrho, H_m = _tab_flight_interp(alts, model.prof_logrho[j][leg], model.prof_siglog[j][leg], h, model.sigma_scale)
+    rho = exp(logrho)
+    T = clamp(H_m * model.g_ref_mps2 / model.gas_constant, 80.0, 400.0)
+    return rho, T, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+@inline function getDensity(model::TabulatedFlightAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    return getDensity(model, h, lat, lon, el_time, wind)
+end
+
+"""
+TimeTabulatedAtmosphereModel — density as a pure function of scenario elapsed
+time, log-linearly interpolated from a sorted (t_s, rho) table and held
+constant beyond the table's ends. The orbital-arc counterpart of
+[`TabulatedFlightAtmosphereModel`](@ref) (which is keyed by altitude within
+periapsis passes): use it to replay a flight-inferred along-track density
+history, an assimilated product sampled along the trajectory, or any other
+externally supplied rho(t), e.g. as the drag channel of a digital-twin run.
+`scale` multiplies every density; `temperature_k` is reported as the constant
+gas temperature; winds are zero — the table carries neither.
+"""
+struct TimeTabulatedAtmosphereModel <: AbstractDensityModel
+    t_el_s::Vector{Float64}     # sorted elapsed times from the scenario epoch
+    log_rho::Vector{Float64}    # log density at each node [log(kg/m^3)]
+    scale::Float64
+    temperature_k::Float64
+end
+
+function TimeTabulatedAtmosphereModel(
+    t_el_s::AbstractVector{<:Real},
+    rho_kgm3::AbstractVector{<:Real};
+    scale::Real=1.0,
+    temperature_k::Real=900.0
+)
+    n = length(t_el_s)
+    n == length(rho_kgm3) || throw(ArgumentError(
+        "TimeTabulatedAtmosphereModel time and density vectors must have equal length, got $n vs $(length(rho_kgm3))."
+    ))
+    n >= 2 || throw(ArgumentError("TimeTabulatedAtmosphereModel needs at least 2 table nodes, got $n."))
+    t = Float64.(t_el_s)
+    issorted(t) || throw(ArgumentError("TimeTabulatedAtmosphereModel times must be sorted ascending."))
+    all(isfinite, t) || throw(ArgumentError("TimeTabulatedAtmosphereModel times must be finite."))
+    rho = Float64.(rho_kgm3)
+    all(x -> isfinite(x) && x > 0.0, rho) || throw(ArgumentError(
+        "TimeTabulatedAtmosphereModel densities must be finite and > 0."
+    ))
+    scale_f = Float64(scale)
+    isfinite(scale_f) && scale_f > 0.0 || throw(ArgumentError(
+        "TimeTabulatedAtmosphereModel scale must be finite and > 0, got $scale_f."
+    ))
+    temp_f = Float64(temperature_k)
+    isfinite(temp_f) && temp_f > 0.0 || throw(ArgumentError(
+        "TimeTabulatedAtmosphereModel temperature_k must be finite and > 0, got $temp_f."
+    ))
+    return TimeTabulatedAtmosphereModel(t, log.(rho), scale_f, temp_f)
+end
+
+function getDensity(model::TimeTabulatedAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
+    ts = model.t_el_s
+    logs = model.log_rho
+    n = length(ts)
+    local logrho
+    if el_time <= ts[1]
+        logrho = logs[1]
+    elseif el_time >= ts[n]
+        logrho = logs[n]
+    else
+        j = searchsortedlast(ts, el_time)
+        f = (el_time - ts[j]) / (ts[j+1] - ts[j])
+        logrho = logs[j] + f * (logs[j+1] - logs[j])
+    end
+    return model.scale * exp(logrho), model.temperature_k, SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+@inline function getDensity(model::TimeTabulatedAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+    return getDensity(model, h, lat, lon, el_time, wind)
 end
 
 function getDensity(model::NoAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
@@ -885,9 +1069,18 @@ function getDensity(model::ConstantDensityModel, altitude_m::Float64, latitude_d
     return model.density_kg_m3, model.temperature_k, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+# NRLMSISE-00 is calendar-dependent (space indices, solar position, seasonal
+# terms), so evaluating it without a scenario epoch is a silent physics error:
+# the historical fallback anchored el_time to the J2000 epoch, which put every
+# caller on this path decades away from its mission dates. Callers must use the
+# 7-arg method, whose epoch comes from `p.args.initial_time`.
 function getDensity(model::NRLMSISE00AtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
-    instant = _nrlmsise_eval_datetime(el_time)
-    return _nrlmsise_density_state(model, instant, h, lat, lon)
+    throw(ArgumentError(
+        "getDensity(::NRLMSISE00AtmosphereModel, h, lat, lon, el_time, wind) has no scenario epoch: " *
+        "el_time would be anchored to the J2000 reference epoch and NRLMSISE-00 would evaluate " *
+        "space indices for the wrong dates. Call the 7-argument method " *
+        "getDensity(model, h, lat, lon, el_time, wind, p), which maps el_time from p.args.initial_time."
+    ))
 end
 
 function getDensity(model::NRLMSISE00AtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params

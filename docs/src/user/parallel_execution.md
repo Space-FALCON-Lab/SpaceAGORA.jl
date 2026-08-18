@@ -104,6 +104,21 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 The same environment variables can be scoped in Julia with `withenv` when you
 want one process to run several scenarios with different settings.
 
+Runtime parallelism and cache knobs are resolved once at `run_simulation`
+start into a typed, run-scoped snapshot (together with any active
+`SimulationEngineConfig` overrides), so the RHS and callback hot paths never
+touch process-global `ENV` during integration. Wrap the whole
+`run_simulation` call in `withenv` — changing a variable while a run is in
+flight does not affect that run.
+
+When nothing reads the trajectory (`return_solution=false`,
+`results=false`, no solver metadata requested), the solver skips per-step
+solution storage entirely (`save_on=false`, endpoints kept). This is the
+dominant allocation in campaign runs — skipping it is what lets
+`run_constellation_ensemble` scale near-linearly with threads. Explicitly
+set `SPACEAGORA_SOLVER_SAVE_EVERYSTEP` / `SPACEAGORA_SOLVER_SAVE_ON`
+values override this default in either direction.
+
 ## Monte Carlo campaigns
 
 Use `run_monte_carlo` when you want to run many independent simulations from
@@ -149,6 +164,183 @@ end
 By default, failed samples are captured in `result.failed` and do not stop the
 rest of the campaign. Set `fail_fast=true` when you want the runner to rethrow
 on the first failed sample instead.
+
+### Adaptive campaign routing (`threads=:auto`)
+
+Instead of hardcoding a worker count, both campaign runners accept
+`threads=:auto` and delegate the serial-versus-threaded decision to the
+outer-route bandit (`select_outer_route!`), which keeps empirical runtime
+statistics per workload signature:
+
+```julia
+result = run_monte_carlo(1:100; threads=:auto,
+                         route_features=campaign_route_features(
+                             samples=100, n_sats=1,
+                             density_family="exponential",
+                             mission_time_s=5400.0
+                         )) do seed
+    run_simulation(make_config_for_seed(seed); return_solution=true)
+end
+
+# Constellation ensembles derive their features from the configuration itself:
+result = run_constellation_ensemble(args; threads=:auto, return_solution=true)
+```
+
+`campaign_route_features` describes the campaign shape (sample count,
+per-sample satellite count, density-model family, mission length); the
+`SimulationConfiguration` method derives those fields for you. After every
+campaign the runner records per-sample success and amortized wall-clock
+feedback via `record_outer_route_feedback!`, so repeated campaigns with the
+same shape first explore the feasible allocations and then converge to the
+fastest one. History accumulates in the process-global
+`campaign_outer_route_state()`; inspect it with `outer_route_stats_snapshot`,
+reset it with `reset_outer_route_state!`, or pass an isolated `OuterRouteState`
+via `route_state` (useful for tests and one-off studies).
+
+While the adaptive route runs threaded workers, the runner sets
+`SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and — unless you exported one yourself —
+an `SPACEAGORA_INNER_THREAD_BUDGET` of `nthreads() ÷ workers`, so per-sample
+inner threading and the outer campaign split the thread pool instead of
+oversubscribing it. Nested adaptive campaigns (an `:auto` campaign running
+inside another campaign's worker, where `SPACEAGORA_OUTER_PARALLEL_ACTIVE` is
+already set) yield to the enclosing split: they execute serially and record no
+feedback, so contended timings never poison the shared route statistics.
+
+The spherical-harmonics gravity SIMD batch route is a separate hot path that
+fires on every RHS/ODE step rather than once per sample, so historically it
+did not check `SPACEAGORA_OUTER_PARALLEL_ACTIVE` before spawning its own
+nested worker batch — under `:threads` outer parallelism this produced severe
+nested contention (anywhere from ~1x overhead to multi-minute hangs on
+otherwise-identical runs). It now defaults to running serially whenever outer
+parallelism is active. Only set `SPACEAGORA_HARMONICS_BATCH_ALLOW_WITH_OUTER=1`
+if you have measured that splitting the thread budget between outer workers
+and the harmonics batch is actually faster for your workload; the default is
+the safe choice.
+
+### Process-backend outer parallelism
+
+When the outer-route bandit picks `:process` (or when you want to control it
+directly), campaigns dispatch to `SpaceAGORA.ParallelProcess`, a small
+`Distributed`-based worker pool built for this purpose:
+
+```julia
+pool = campaign_process_pool()
+worker_ids = ensure_process_workers!(pool, 8)
+```
+
+- `campaign_process_pool()` returns the process-global `ProcessPool` that
+  `threads=:auto` campaigns already share; reusing it avoids repaying the
+  one-time `SpaceAGORA`/`GRAMSuite` worker precompilation cost on every call.
+- `ensure_process_workers!(pool, n; warmup_fn=nothing)` grows the pool to at
+  least `n` workers (spawning only the shortfall via `addprocs`), bootstraps
+  each new worker with `SpaceAGORA`, `GRAMSuite` (best-effort), and the
+  default SPICE kernel set, and returns the current worker ids. Pass
+  `warmup_fn` — a zero-argument closure that mirrors the real per-sample call
+  — to also pay a new worker's full JIT/specialization cost once up front
+  (measured at roughly 70 s cold vs. a fraction of a second warm) instead of
+  inside the first real, timed dispatch.
+- `shutdown_process_pool!(pool)` removes every worker via `rmprocs` and
+  clears the pool; mainly useful for tests, since campaign code otherwise
+  leaves the process-global pool warm across calls by design.
+
+Each process worker is started with `--threads=1`, so it does not share the
+coordinator's Julia thread pool: inner thread-based parallelism inside a
+worker's own `run_simulation` call is unaffected by how many process workers
+are active. A campaign built on a non-default SPICE kernel directory, or a
+non-Earth-primary mission whose kernels aren't in the shared default set,
+must still furnish its own kernels on the pool's workers (for example via
+`remotecall_wait` on `ensure_process_workers!`'s return value) before
+dispatching.
+
+### GRAM atmosphere models in threaded campaigns
+
+Native GRAM calls are serialized through a single process-wide lock by default,
+so threaded Monte Carlo samples that all query GRAM contend on one lock no
+matter how many threads are available. When every sample builds its own
+`GRAMAtmosphereModel` (or receives its own `deepcopy`), set:
+
+```bash
+export SPACEAGORA_GRAM_LOCK_SCOPE=model
+```
+
+so each model instance serializes only against itself and samples evaluate
+concurrently. This relies on the same instance-isolation premise as the
+isolated-pool batch path (`SPACEAGORA_GRAM_ISOLATED_POOL`): distinct GRAM model
+instances may run concurrently as long as any single instance is serialized. Do
+not enable it if several threads share one model instance and you have not
+measured the workload — the default `global` scope is always safe. Process-based
+campaigns (separate workers via `addprocs`) do not need this: each process has
+its own lock already.
+
+### Real GRAM without the vacuum-predicted cache
+
+`SPACEAGORA_VACUUM_GRAM_CACHE` (the drag-free trajectory spline described
+above) is the supported way to query real, per-satellite GRAM density at
+constellation scale. If it is disabled — direct, uncached GRAM queries at
+every RHS evaluation — also set:
+
+```bash
+export SPACEAGORA_DENSITY_FREEZE_PER_STEP=1
+```
+
+Real GRAM's perturbation/turbulence model adds small-scale noise on top of the
+smooth mean density profile. An adaptive ODE solver's step-size controller
+reacts to that per-call noise as if it were stiffness and collapses `dt`:
+measured on a 2-satellite, 1-second mission, disabling the vacuum cache
+without this flag produced 12+ million GRAM calls, 2.4 million solver steps,
+and a 604 s wall time; with the flag, the same scenario took 35.7 s (14 calls,
+37 steps) — matching the vacuum-cache path's own timing. `run_simulation`
+already fires a `DiscreteCallback` once per accepted solver step that samples
+density into `shared_buffers`; this flag makes the RHS-side atmosphere read
+trust that once-per-step sample for every stage evaluation within the step
+instead of demanding an exact-time match (which almost never holds for a
+multi-stage adaptive method). This is a standard, small approximation for a
+LEO trajectory: altitude — the dominant driver of the smooth mean density —
+changes negligibly over one integration step, so freezing density for the
+step's duration costs little accuracy while removing the noise that the
+solver was reacting to. It has no effect on the vacuum-predicted-cache path,
+which is already smooth by construction.
+
+## Constellation ensembles
+
+For multi-satellite configurations whose members do not interact (no
+inter-satellite links, no coordinated GNC), `run_constellation_ensemble` splits
+the constellation into independent single-satellite propagations and applies
+Monte Carlo-style outer parallelism across satellites:
+
+```julia
+result = run_constellation_ensemble(args; threads=8, return_solution=true)
+solutions = [s.value for s in result.successful]
+```
+
+Compared to propagating the constellation as one coupled state vector, this
+dispatches each satellite to a worker once for its entire propagation (instead
+of paying per-timestep thread dispatch across satellites) and lets each
+satellite keep its own adaptive step size (instead of forcing every satellite
+to the global minimum step).
+
+Current limitation: with in-process worker threads (the `:threads` outer
+route), per-step environment-variable configuration reads in the RHS and
+callback plumbing serialize concurrent members (Julia `ENV` access is
+process-global), which can erase the outer-parallel gain for light dynamics.
+
+The `:process` outer route avoids this: each satellite is dispatched to its
+own OS process with its own `ENV`, GRAM lock, and thread pool, so members
+never contend on process-global state. Pass `threads=:auto` and the
+outer-route bandit (`select_outer_route!`) will pick `:process` itself for
+workload shapes where it wins, auto-bootstrapping a `Distributed` worker pool
+via `ensure_process_workers!` — no manual `addprocs` call or cluster setup is
+required for this library-level path. See
+[Process-backend outer parallelism](#process-backend-outer-parallelism)
+below. Multi-node/scheduler launches for benchmark and study scripts are a
+separate, explicit-`addprocs` path — see
+[Distributed and HPC](../distributed_hpc.md).
+
+The runner refuses configurations with guidance, navigation, or control
+effectors, because effectors that coordinate satellites cannot act across
+ensemble members. If every configured effector acts on a single satellite only,
+opt in with `allow_gnc_effectors=true`. Keep the monolithic `run_simulation`
+path for genuinely coupled constellations (RPO, formation control).
 
 ## Auditing Active Controls
 

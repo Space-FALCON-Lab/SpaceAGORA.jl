@@ -44,6 +44,17 @@ end
 if !isdefined(@__MODULE__, :TelemetryVerification)
     include(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
 end
+if !isdefined(@__MODULE__, :ParallelProfiles)
+    # SimulationCampaigns consumes the outer-route bandit via `..ParallelProfiles`.
+    include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+end
+if !isdefined(@__MODULE__, :ParallelProcess)
+    # SimulationCampaigns consumes the process-route outer pool via `..ParallelProcess`.
+    include(joinpath(REPO_ROOT, "src", "parallel", "process", "parallel_process.jl"))
+end
+if !isdefined(@__MODULE__, :SimulationCampaigns)
+    include(joinpath(REPO_ROOT, "src", "simulation", "campaigns", "simulation_campaigns.jl"))
+end
 if !isdefined(@__MODULE__, :SpaceAGORA)
     include(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
 end
@@ -223,6 +234,9 @@ if !isdefined(@__MODULE__, :make_example_config)
     const make_three_body_spacecraft = TelemetryVerification.make_three_body_spacecraft
     const run_and_report = TelemetryVerification.run_and_report
 end
+
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_gnc_tests.jl"))
+
 if !isdefined(@__MODULE__, :_solver_policy_mode)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
     const _build_solver_tolerances = SimulationEngine._build_solver_tolerances
@@ -362,11 +376,6 @@ struct WrenchOnlyForceModel <: SimulationModel.AbstractForceTorqueModel
 end
 
 struct AtmosphereProbeWrenchModel <: SimulationModel.AbstractForceTorqueModel
-end
-
-struct ImplicitLegacyForceModel <: SimulationModel.AbstractForceTorqueModel
-    force::SVector{3, Float64}
-    torque::SVector{3, Float64}
 end
 
 struct InvalidPartitionForceModel <: SimulationModel.AbstractForceTorqueModel
@@ -523,7 +532,6 @@ function SimulationModel.wrench(
     return model.force, model.torque
 end
 
-SimulationModel.solver_partition(::ImplicitLegacyForceModel) = :implicit
 SimulationModel.solver_partition(::InvalidPartitionForceModel) = :bad_partition
 SimulationModel.gravity_backbone_structure(::BackboneCustomGravityModel) = :position_only_static_gravity
 SimulationModel.gravity_backbone_structure(::InvalidBackboneStructureModel) = :bad_structure
@@ -564,15 +572,6 @@ function SimulationModel.gravity_backbone_kick_acceleration_ii(
     t::Float64
 )
     return SVector{3, Float64}(0.0, 0.0, 0.0)
-end
-
-function SimulationModel.calcForceTorque(
-    model::ImplicitLegacyForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
-)
-    return model.force, model.torque
 end
 
 function SimulationModel.calcForceTorque(
@@ -759,12 +758,16 @@ function make_single_link_spacecraft(;
     i_deg::Float64=35.0,
     ω_deg::Float64=40.0,
     Ω_deg::Float64=10.0,
-    ν_deg::Float64=175.0
+    ν_deg::Float64=175.0,
+    planet=EARTH,
+    id::Int=1,
+    m::Float64=500.0,
+    ref_area::Float64=12.0
 )
-    root = Link{0}(root=true, m=500.0, ref_area=12.0)
+    root = Link{0}(root=true, m=m, ref_area=ref_area)
     ic = InitialCondition(
-        ra=EARTH.Rp_e + ra_alt_m,
-        rp=EARTH.Rp_e + rp_alt_m,
+        ra=planet.Rp_e + ra_alt_m,
+        rp=planet.Rp_e + rp_alt_m,
         i=i_deg,
         ω=ω_deg,
         Ω=Ω_deg,
@@ -782,7 +785,7 @@ function make_single_link_spacecraft(;
         0,
         0,
         ic,
-        1
+        id
     )
 end
 
@@ -987,51 +990,6 @@ function run_case_capture_stdout(args::SimulationConfiguration; expect_results_c
     end
 end
 
-function seed_solution_for_save_csv!(
-    solution::Solution;
-    n_bodies::Int,
-    n_reaction_wheels::Int,
-    n_thrusters::Int,
-    base::Float64=1.0,
-    closed_form::Bool=false
-)
-    solution.physical_properties.α = [Float64[] for _ in 1:n_bodies]
-    solution.physical_properties.β = [Float64[] for _ in 1:n_bodies]
-    solution.performance.heat_rate = [Float64[] for _ in 1:n_bodies]
-    solution.performance.heat_load = [Float64[] for _ in 1:n_bodies]
-    solution.physical_properties.rw_h = [Float64[] for _ in 1:n_reaction_wheels]
-    solution.physical_properties.rw_τ = [Float64[] for _ in 1:n_reaction_wheels]
-    solution.physical_properties.thruster_forces = [Float64[] for _ in 1:n_thrusters]
-
-    function _push_sample!(field)
-        if field isa Vector{Float64}
-            push!(field, base)
-        elseif field isa Vector{Int64}
-            push!(field, 1)
-        elseif field isa Vector{Vector{Float64}}
-            for subfield in field
-                push!(subfield, base)
-            end
-        end
-        return nothing
-    end
-
-    for group in (solution.orientation, solution.physical_properties, solution.performance, solution.forces)
-        for fname in fieldnames(typeof(group))
-            _push_sample!(getfield(group, fname))
-        end
-    end
-
-    if closed_form
-        solution.closed_form.t_cf = [base + 10.0]
-        solution.closed_form.h_cf = [base + 20.0]
-        solution.closed_form.γ_cf = [base + 30.0]
-        solution.closed_form.v_cf = [base + 40.0]
-    end
-
-    return solution
-end
-
 
 module IncludeOrderSandbox
 end
@@ -1046,6 +1004,8 @@ module GuidanceSandbox
 using ..SimulationModel
 using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
 using ComponentArrays
+using LinearAlgebra
+using StaticArrays
 end
 const GUIDANCE_SANDBOX = GuidanceSandbox
 
@@ -1058,3 +1018,4 @@ include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_t
 include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "08_cli_and_assets_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "suites", "09_probe_drivers.jl"))

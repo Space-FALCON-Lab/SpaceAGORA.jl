@@ -2,6 +2,7 @@
 
 # 1. load common.jl
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..")) # find path to the repository root
+println("Loading SpaceAGORA (precompilation may take a few minutes on first run)...")
 include(joinpath(REPO_ROOT, "examples", "common.jl")) # load common.jl for utility functions and types
 
 # 2. load dependencies
@@ -30,14 +31,14 @@ const PAPER_FIXED_HELPER_INCLINATION_DEG = 0.0
 
 # 6. settings container & default values
 Base.@kwdef struct OracleCase2Options
-    helpers::Int = 200
+    helpers::Int = 10
     helper_altitude_km::Float64 = 1050.0
     target_altitude_km::Float64 = 1000.0
     target_inclination_deg::Float64 = 0.0
     helper_inclination_deg::Float64 = 0.0
     target_nu_deg::Float64 = 0.0
     target_ecc::Float64 = 0.0
-    orbits::Float64 = 80.0
+    orbits::Float64 = 10.0
     schedule::Symbol = :naive_next_entering
     laser_range_km::Float64 = 200.0
     laser_power_w::Float64 = 10_000.0
@@ -56,7 +57,7 @@ end
 # --------- Functions ---------
 #include("functions/0_Module_Setup.jl")
 include("functions/1_LOS_Metrics.jl")
-include("functions/2_Laser_Forces_ver2.jl")
+# LaserImpulseTracker and helpers now live in src/ (laser_link_effectors.jl)
 include("functions/3_Dynamics.jl")
 include("functions/4_Diagnostics.jl")
 include("functions/5_OE_Converters.jl")
@@ -197,6 +198,7 @@ function main(argv=ARGS)
 
     else
         # --- Single-run mode ---
+        println("Running single-case mode...")
         elapsed = @elapsed begin
             result = run_open_cavity_case_native(_with(opts; output_dir=joinpath(opts.output_dir, "single_case_mode")))
         end

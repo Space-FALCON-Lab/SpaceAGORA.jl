@@ -20,8 +20,9 @@ What to read next:
 - [Maintainer Overview](maintainer/index.md)
 
 SpaceAGORA's supported distributed execution surface today is centered on
-multi-process benchmark and study workflows, plus deterministic parallel-policy
-hint persistence.
+multi-process benchmark and study workflows, self-bootstrapping process-backend
+outer parallelism for library-level campaigns, and deterministic
+parallel-policy hint persistence.
 
 This is not a promise that every runtime path is cluster-hardened. It is the
 documented path that currently has real ownership in the repository.
@@ -43,6 +44,56 @@ The key environment knobs are:
 
 Use `.` (the root project) as the worker project unless you have a deliberate
 reason to point workers at a different environment.
+
+## Campaign-level process backend
+
+For library-level campaigns (`run_monte_carlo`, `run_constellation_ensemble`),
+process-worker parallelism does not require any of the manual `addprocs` or
+scheduler setup below. Passing `threads=:auto` lets the adaptive outer-route
+bandit choose the `:process` route itself for workload shapes where it wins,
+and auto-bootstraps a `Distributed` worker pool through
+`SpaceAGORA.ParallelProcess`:
+
+```julia
+result = run_monte_carlo(1:100; threads=:auto) do seed
+    run_simulation(make_config_for_seed(seed); return_solution=true)
+end
+```
+
+Under the hood this uses `campaign_process_pool()` (the process-global
+`ProcessPool` shared across campaigns in the session) and
+`ensure_process_workers!(pool, n; warmup_fn=...)`, which spawns only the
+worker shortfall, bootstraps each new worker with `SpaceAGORA`, `GRAMSuite`
+(best-effort), and the default SPICE kernel set, and optionally pays a
+representative call's JIT/specialization cost once per new worker (measured
+at roughly 70 s cold vs. a fraction of a second warm) via `warmup_fn` instead
+of inside the first real, timed dispatch. Each process worker runs with
+`--threads=1`, so it does not contend with the coordinator's thread pool.
+`shutdown_process_pool!(pool)` tears the pool down; campaign code otherwise
+leaves it warm across calls by design.
+
+See [Parallel Execution: Process-backend outer parallelism](user/parallel_execution.md#process-backend-outer-parallelism)
+for the full walkthrough. This path is entirely separate from the
+scheduler/`addprocs`-based benchmark path documented above — it needs no
+`SPACEAGORA_PERF_PROCS` or worker-project configuration, since the pool
+bootstraps itself against the coordinator's own active project.
+
+Two related tuning knobs affect how outer- and inner-parallel work share a
+machine's threads once a route is chosen:
+
+- `SPACEAGORA_HARMONICS_BATCH_ALLOW_WITH_OUTER` (default `0`) — the
+  spherical-harmonics gravity SIMD batch route fires once per RHS/ODE step
+  rather than once per sample, so by default it runs serially whenever outer
+  parallelism (`:threads` or `:process`) is active, rather than spawning a
+  nested worker batch that would contend with the outer split. Only enable
+  this after measuring that splitting the thread budget helps your workload.
+- `SPACEAGORA_DENSITY_CALLBACK_PARALLEL` (`off`/`auto`/`on`) — the density
+  callback's inner-parallelism thread floor is lower for the lock-free GRAM
+  surrogate than for native GRAM (which serializes through a process-wide
+  lock regardless of thread count), so `auto` picks a different effective
+  floor per density-model family. See
+  [Parallel Execution](user/parallel_execution.md) for the full control
+  matrix.
 
 ## Deterministic hint state
 
@@ -110,6 +161,8 @@ The current first-class distributed support is:
 
 - process-worker benchmark and study execution
 - deterministic persistent-hint state for parallel-policy tuning
+- self-bootstrapping process-backend outer parallelism for `run_monte_carlo`
+  and `run_constellation_ensemble` campaigns (`SpaceAGORA.ParallelProcess`)
 
 The following are not yet treated as a full cluster product surface:
 

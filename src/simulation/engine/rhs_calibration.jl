@@ -171,6 +171,9 @@ function _rhs_calib_lookup(sig::String)::Union{Nothing, NamedTuple}
 end
 
 function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64)::Nothing
+    # Settle the lazy one-time disk load first: otherwise a later first lookup
+    # would load persisted entries over fresher in-process stores.
+    _rhs_calib_load!()
     lock(_rhs_calib_lock) do
         _rhs_calib_cache[sig] = Dict{String, Any}(
             "mode"            => String(plan.mode),

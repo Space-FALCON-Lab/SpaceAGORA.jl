@@ -6,7 +6,7 @@ function _build_timeseries_dataframe(
     oe0,
     orbit_counts::Vector{Float64},   # cumulative orbit count at each sol.t point (from _orbit_count_from_sol)
     mu::Float64,
-    tracker::_LaserImpulseTracker,
+    tracker::LaserImpulseTracker,
 )::DataFrame
     tf = Float64(sol.t[end])
     times = collect(range(0.0, tf; length=opts.timeseries_points))
@@ -15,7 +15,7 @@ function _build_timeseries_dataframe(
     case_id = _case_id(opts)
     for t in times
         r, v = _target_rv_at(sol, Float64(t))
-        dv_r_ts, dv_t_ts, dv_n_ts = _tracked_dv_at(tracker, Float64(t))
+        dv_r_ts, dv_t_ts, dv_n_ts = tracked_dv_at(tracker, Float64(t))
         oe = _rv_to_elements(r, v, mu)
         oc_idx = clamp(searchsortedlast(sol_times, Float64(t)), 1, length(sol_times))
         push!(rows, (

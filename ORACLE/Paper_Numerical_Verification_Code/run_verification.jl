@@ -37,8 +37,9 @@ using .SimulationModel
 # ── 3. Shared orbital-mechanics helpers (only OE converters + RTN basis needed) ──
 # Note: 3_Dynamics.jl is NOT included here because it defines build_case_config
 # with an OracleCase2Options type annotation that is only in scope when loaded via
-# run_case2_laser_links.jl.  The _ver_spacecraft and config-builder functions
-# defined below in this file replace that dependency entirely.
+# run_case2_laser_links.jl.  The _spacecraft function from 0_Spacecraft.jl and
+# OE converters are the only shared dependencies.
+include(joinpath(@__DIR__, "..", "functions", "0_Spacecraft.jl"))
 include(joinpath(@__DIR__, "..", "functions", "5_OE_Converters.jl"))  # _rtn_basis, rv2coe, ...
 
 # ── 4. Default output directory ───────────────────────────────────────────────
@@ -203,16 +204,6 @@ function _build_verification_save_fields(
 end
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Spacecraft builder (mirrors _spacecraft in 3_Dynamics.jl)
-# ─────────────────────────────────────────────────────────────────────────────
-function _ver_spacecraft(id::Int, mass_kg::Float64, ic::InitialCondition)
-    bus = Link(root=true, m=mass_kg, ref_area=1.0)
-    return SpacecraftModel(
-        Joint[], [bus], bus, true, mass_kg, 0.0, bus.inertia, 0, 0, ic, id,
-    )
-end
-
-# ─────────────────────────────────────────────────────────────────────────────
 # SimulationConfiguration builder
 # ─────────────────────────────────────────────────────────────────────────────
 function _build_verification_config(opts::VerificationOptions, results_dir::String)
@@ -225,13 +216,13 @@ function _build_verification_config(opts::VerificationOptions, results_dir::Stri
     # N+1 spacecraft: target (id=1) + opts.helpers helpers (ids 2..N+1)
     # Helpers are uniformly phased in true anomaly over [0°, 360°)
     spacecraft = SpacecraftModel[
-        _ver_spacecraft(1, opts.mass_kg, InitialCondition(
+        _spacecraft(1, opts.mass_kg, InitialCondition(
             target_radius_m, 0.0, opts.inclination_deg, 0.0, 0.0, 0.0,
         ))
     ]
     for k in 1:opts.helpers
         nu_deg = 360.0 * (k - 1) / opts.helpers   # uniform spacing
-        push!(spacecraft, _ver_spacecraft(k + 1, opts.mass_kg, InitialCondition(
+        push!(spacecraft, _spacecraft(k + 1, opts.mass_kg, InitialCondition(
             helper_radius_m, 0.0, opts.inclination_deg, 0.0, 0.0, nu_deg,
         )))
     end

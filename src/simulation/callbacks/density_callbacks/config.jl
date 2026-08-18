@@ -16,6 +16,11 @@ end
     return _parse_bool_env("SPACEAGORA_GRAM_TRACK_CACHE_TARGET_USE_J2", true)
 end
 
+# See CallbackEnvConfig.density_freeze_per_step docstring for the rationale.
+@inline function _density_freeze_per_step_enabled()::Bool
+    return _parse_bool_env("SPACEAGORA_DENSITY_FREEZE_PER_STEP", false)
+end
+
 """
     _reset_cached_env_flags!()
 
@@ -154,6 +159,10 @@ end
     model isa EnvironmentModels.GRAMAtmosphereModel ||
     model isa EnvironmentModels.GRAMAtmosphereModelSurrogate
 
+# The wrapper types forward properties to the GRAMSuite core, whose `gram`
+# field holds the native GRAM Julia wrapper module. `hasproperty` on a Module
+# only sees exported names, so module drivers are probed with `isdefined` —
+# the same capability check GRAMSuite itself uses (e.g. for `get_winds_state`).
 @inline function _gram_track_trajectory_supported(density_model)::Bool
     _is_gram_density_model(density_model) || return false
     hasproperty(density_model, :gram) || return false
@@ -163,26 +172,127 @@ end
     catch
         return false
     end
+    if gram_driver isa Module
+        return isdefined(gram_driver, :generate_trajectory)
+    end
     return hasproperty(gram_driver, :generate_trajectory)
 end
 
+"""
+    _snapshot_callback_env_config() -> CallbackEnvConfig
+
+Resolve every env-derived knob consulted per callback invocation (and per
+RHS-side atmosphere sample) into a typed snapshot.  Built once at
+run_simulation setup; hot paths read plain struct fields via
+`_callback_env_config(p)` instead of re-parsing ENV.
+"""
+function _snapshot_callback_env_config()::CallbackEnvConfig
+    return CallbackEnvConfig(
+        _gram_track_cache_config(),
+        _gram_runtime_stats_enabled(),
+        _gram_track_cache_ignore_time_window(),
+        _gram_track_cache_target_use_j2(),
+        _density_freeze_per_step_enabled(),
+        _vacuum_gram_cache_enabled(),
+        _vacuum_gram_cache_npoints(),
+        _vacuum_gram_cache_horizon_s(),
+        _vacuum_gram_cache_deviation_m(),
+        _density_callback_parallel_mode(),
+        _density_callback_thread_threshold(),
+        _density_callback_allow_with_outer(),
+        _parse_bool_env("SPACEAGORA_DENSITY_CALLBACK_ASSUME_THREADSAFE", false),
+        _density_batch_mode(),
+        _density_batch_threshold(),
+        _gram_isolated_pool_mode(),
+        _gram_isolated_pool_threshold(),
+        _gram_isolated_pool_max_workers(),
+        _control_callback_parallel_mode(),
+        _control_callback_thread_threshold(),
+        _control_callback_allow_with_outer(),
+        _parse_bool_env("SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE", false),
+        _thermal_callback_parallel_mode(),
+        _thermal_callback_thread_threshold(),
+        _thermal_callback_allow_with_outer(),
+    )
+end
+
+# Run-scoped snapshot accessor.  Falls back to live ENV parsing when the
+# snapshot is unset (hand-constructed ODEParams in unit tests / withenv probes).
+@inline function _callback_env_config(p)::CallbackEnvConfig
+    if p !== nothing && hasproperty(p, :shared_buffers)
+        sb = getproperty(p, :shared_buffers)
+        if hasproperty(sb, :callback_env_config)
+            cfg = sb.callback_env_config[]
+            cfg === nothing || return cfg
+        end
+    end
+    return _snapshot_callback_env_config()
+end
+
+# Policy snapshot accessor: `nothing` (→ live reads in thread_policy_decision)
+# when the run has not installed a snapshot.
+@inline function _policy_env_config(p)::Union{Nothing, PolicyDecisionEnvConfig}
+    if p !== nothing && hasproperty(p, :shared_buffers)
+        sb = getproperty(p, :shared_buffers)
+        if hasproperty(sb, :policy_env_config)
+            return sb.policy_env_config[]
+        end
+    end
+    return nothing
+end
+
+@inline function _density_batch_enabled(env::CallbackEnvConfig, num_sats::Int)::Bool
+    mode = env.density_batch_mode
+    if mode == :off
+        return false
+    elseif mode == :on
+        return num_sats > 0
+    end
+    return num_sats >= env.density_batch_threshold
+end
+
+@inline function _gram_isolated_pool_enabled(env::CallbackEnvConfig, num_items::Int)::Bool
+    mode = env.gram_isolated_pool_mode
+    if mode == :off
+        return false
+    elseif mode == :on
+        return num_items > 0
+    end
+    return Threads.nthreads() > 1 && num_items >= env.gram_isolated_pool_threshold
+end
+
 @inline function _density_callback_thread_decision(args::SimulationConfiguration, num_sats::Int)
-    mode = _density_callback_parallel_mode()
-    outer_active = _callback_outer_parallel_hint()
-    allow_with_outer = _density_callback_allow_with_outer()
+    return _density_callback_thread_decision(nothing, args, num_sats)
+end
+
+@inline function _density_callback_thread_decision(p, args::SimulationConfiguration, num_sats::Int)
+    env = _callback_env_config(p)
+    penv = _policy_env_config(p)
+    mode = env.density_parallel_mode
+    outer_active = penv === nothing ? _callback_outer_parallel_hint() : penv.outer_parallel_active
+    allow_with_outer = env.density_allow_with_outer
 
     model = args.environment_model.density_model
     model_threadsafe = density_model_threadsafe(model)
-    if !model_threadsafe && !_parse_bool_env("SPACEAGORA_DENSITY_CALLBACK_ASSUME_THREADSAFE", false)
+    if !model_threadsafe && !env.density_assume_threadsafe
         return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
     end
+    # Native/point GRAM is serialized behind a process-wide lock (GRAM_LOCK), so
+    # oversubscribing it below a reasonably high thread count wastes cycles
+    # fighting for that lock -- the :density_callback source's 16-thread floor
+    # exists for that case. A lock-free model (e.g. GRAMAtmosphereModelSurrogate)
+    # has no such cost, so it gets the general default floor instead via a
+    # separate source category, rather than being held to the same 16-thread gate
+    # for no reason (see PARALLELIZATION_CURRENT_STATE.md / Finding 1).
+    source = model isa EnvironmentModels.GRAMAtmosphereModel ? :density_callback : :density_callback_lockfree
     policy = ParallelPolicy.thread_policy_decision(
         num_sats;
         mode=mode,
-        threshold=_density_callback_thread_threshold(),
+        threshold=env.density_thread_threshold,
         outer_active=outer_active,
         allow_with_outer=allow_with_outer,
-        source=:density_callback
+        source=source,
+        env=penv
     )
     return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
 end
@@ -197,24 +307,31 @@ end
 @inline control_model_threadsafe(::BaseThrusterModel)::Bool = true
 
 @inline function _control_callback_thread_decision(control_model, num_sats::Int, use_invokelatest::Bool)
+    return _control_callback_thread_decision(nothing, control_model, num_sats, use_invokelatest)
+end
+
+@inline function _control_callback_thread_decision(p, control_model, num_sats::Int, use_invokelatest::Bool)
     if use_invokelatest
         return (use_threads=false, allotment=1, mode=:off, policy_applied=false)
     end
-    mode = _control_callback_parallel_mode()
-    outer_active = _callback_outer_parallel_hint()
-    allow_with_outer = _control_callback_allow_with_outer()
+    env = _callback_env_config(p)
+    penv = _policy_env_config(p)
+    mode = env.control_parallel_mode
+    outer_active = penv === nothing ? _callback_outer_parallel_hint() : penv.outer_parallel_active
+    allow_with_outer = env.control_allow_with_outer
 
     model_threadsafe = control_model_threadsafe(control_model)
-    if !model_threadsafe && !_parse_bool_env("SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE", false)
+    if !model_threadsafe && !env.control_assume_threadsafe
         return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
     end
     policy = ParallelPolicy.thread_policy_decision(
         num_sats;
         mode=mode,
-        threshold=_control_callback_thread_threshold(),
+        threshold=env.control_thread_threshold,
         outer_active=outer_active,
         allow_with_outer=allow_with_outer,
-        source=:control_callback
+        source=:control_callback,
+        env=penv
     )
     return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
 end
@@ -224,16 +341,23 @@ end
 end
 
 @inline function _thermal_callback_thread_decision(num_sats::Int)
-    mode = _thermal_callback_parallel_mode()
-    outer_active = _callback_outer_parallel_hint()
-    allow_with_outer = _thermal_callback_allow_with_outer()
+    return _thermal_callback_thread_decision(nothing, num_sats)
+end
+
+@inline function _thermal_callback_thread_decision(p, num_sats::Int)
+    env = _callback_env_config(p)
+    penv = _policy_env_config(p)
+    mode = env.thermal_parallel_mode
+    outer_active = penv === nothing ? _callback_outer_parallel_hint() : penv.outer_parallel_active
+    allow_with_outer = env.thermal_allow_with_outer
     policy = ParallelPolicy.thread_policy_decision(
         num_sats;
         mode=mode,
-        threshold=_thermal_callback_thread_threshold(),
+        threshold=env.thermal_thread_threshold,
         outer_active=outer_active,
         allow_with_outer=allow_with_outer,
-        source=:thermal_callback
+        source=:thermal_callback,
+        env=penv
     )
     return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
 end

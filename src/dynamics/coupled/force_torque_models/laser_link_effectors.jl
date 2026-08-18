@@ -10,6 +10,7 @@ import ..DynamicEffectors: calcForceTorque, solver_partition
 export OpenCavityLaserLinkModel, laser_link_scheduler_callback
 export laser_link_force_magnitude, laser_link_pair_force, laser_link_active_pair
 export update_laser_link_schedule!, accumulate_laser_link_forces!
+export LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
 
 const SPEED_OF_LIGHT_MPS = 299_792_458.0
 const SUPPORTED_LASER_SCHEDULES = (
@@ -500,6 +501,65 @@ function laser_link_scheduler_callback(model::OpenCavityLaserLinkModel)
     affect!(integrator) = _update_matching_laser_models!(model, integrator)
     initialize = (cb, u, t, integrator) -> _update_matching_laser_models!(model, integrator)
     return DiffEqBase.DiscreteCallback(condition, affect!; initialize=initialize)
+end
+
+# Accumulates laser ΔV in RTN at every accepted ODE step via DiscreteCallback.
+Base.@kwdef mutable struct LaserImpulseTracker
+    t_prev::Float64            = 0.0
+    dv_R::Float64              = 0.0
+    dv_T::Float64              = 0.0
+    dv_N::Float64              = 0.0
+    t_hist::Vector{Float64}    = Float64[]
+    dv_R_hist::Vector{Float64} = Float64[]
+    dv_T_hist::Vector{Float64} = Float64[]
+    dv_N_hist::Vector{Float64} = Float64[]
+end
+
+function laser_impulse_callback(
+    model::OpenCavityLaserLinkModel,
+    tracker::LaserImpulseTracker,
+    mass_kg::Float64,
+)
+    function affect!(integrator)
+        dt = integrator.t - tracker.t_prev
+        if dt > 0.0
+            helper_idx = model.active_helper_idx
+            if helper_idx > 0
+                sc      = integrator.u.sc
+                tgt_pos = SVector{3, Float64}(sc[model.target_idx].pos)
+                tgt_vel = SVector{3, Float64}(sc[model.target_idx].vel)
+                hlp_pos = SVector{3, Float64}(sc[helper_idx].pos)
+                rel     = tgt_pos - hlp_pos
+                rho     = norm(rel)
+                if rho > 0.0 && rho <= model.range_m
+                    F_mag = model.eta * model.beta * model.magnification *
+                            model.power_w / SPEED_OF_LIGHT_MPS
+                    force = F_mag * rel / rho
+                    rhat, that, nhat = _rtn_basis(tgt_pos, tgt_vel)
+                    accel = force / mass_kg
+                    tracker.dv_R += dot(accel, rhat) * dt
+                    tracker.dv_T += dot(accel, that) * dt
+                    tracker.dv_N += dot(accel, nhat) * dt
+                end
+            end
+        end
+        tracker.t_prev = integrator.t
+        push!(tracker.t_hist,    integrator.t)
+        push!(tracker.dv_R_hist, tracker.dv_R)
+        push!(tracker.dv_T_hist, tracker.dv_T)
+        push!(tracker.dv_N_hist, tracker.dv_N)
+    end
+    return DiffEqBase.DiscreteCallback(
+        (u, t, integrator) -> true,
+        affect!;
+        save_positions=(false, false),
+    )
+end
+
+function tracked_dv_at(tracker::LaserImpulseTracker, t::Float64)
+    isempty(tracker.t_hist) && return (0.0, 0.0, 0.0)
+    k = clamp(searchsortedlast(tracker.t_hist, t), 1, length(tracker.t_hist))
+    return (tracker.dv_R_hist[k], tracker.dv_T_hist[k], tracker.dv_N_hist[k])
 end
 
 end

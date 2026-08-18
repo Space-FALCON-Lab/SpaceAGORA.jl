@@ -1,89 +1,3 @@
-# Run the simulation for the given options, returning a summary, time-series DataFrame, and the full solution object.
-function run_open_cavity_case(opts::OracleCase2Options)
-    # --- Block 1: build config ---
-    # Build the SimulationConfiguration, laser model, and initial orbital period from opts
-    args, laser_model, target_period_s = build_case_config(opts)
-
-    # --- Block 2: initial orbital elements ---
-    u0 = SimulationEngine.build_initial_conditions(args)  # convert args → initial state vector
-    r0 = SVector{3, Float64}(u0.sc[1].pos)                # target initial position [m]
-    v0 = SVector{3, Float64}(u0.sc[1].vel)                # target initial velocity [m/s]
-    oe0 = _rv_to_elements(r0, v0, args.environment_model.planet.μ)  # initial orbital elements (a,e,i,raan)
-
-    # --- Block 3: callbacks ---
-    # impulse_cb must come FIRST so it reads the active_helper_idx that was set
-    # for the step just completed, before the scheduler updates it for the next.
-    impulse_tracker = _LaserImpulseTracker()               # accumulates dV in RTN at every ODE step
-    impulse_cb  = _make_laser_impulse_callback(laser_model, impulse_tracker, opts.mass_kg)
-    scheduler_cb = laser_link_scheduler_callback(laser_model)  # updates which helper fires next
-
-    # --- Block 4: run the ODE solver ---
-    result = run_simulation(
-        args;
-        isolate_state=false,       # no deep copy — laser_model IS the live model, so the callback can use it directly
-        return_solution=true,      # keep the full solution object (dense output + saved snapshots)
-        return_solver_metadata=true,  # keep solver name and step stats for the summary
-        extra_callbacks=(impulse_cb, scheduler_cb),
-    )
-
-    # --- Block 5: post-simulation quantities ---
-    sol = result.solution
-    orbit_counts   = _orbit_count_from_sol(sol, args.environment_model.planet.μ)  # varying-period orbit counter
-    orbits_elapsed = orbit_counts[end]   # total orbits completed (accounts for changing period)
-    final_state = sol.u[end].sc[1]       # target state at the last saved time step
-    rf = SVector{3, Float64}(final_state.pos)  # final position [m]
-    vf = SVector{3, Float64}(final_state.vel)  # final velocity [m/s]
-    oef = _rv_to_elements(rf, vf, args.environment_model.planet.μ)  # final orbital elements
-    # laser_model is the live model (isolate_state=false), so its final scheduler state is already up to date
-
-    # --- Block 6: pack results into a summary named tuple ---
-    # Each field becomes one column when written to the summary CSV
-    summary = (
-        case_id=_case_id(opts),                          # unique string label for this run
-        helpers=opts.helpers,                            # number of helper satellites
-        helper_altitude_km=opts.helper_altitude_km,      # helper orbital altitude
-        schedule=opts.schedule,                          # which helper-selection algorithm was used
-        target_period_s=target_period_s,                 # initial orbital period of the target [s]
-        active_helper=laser_model.active_helper_idx,     # which helper was firing at end of sim (0 = none)
-        activations=laser_model.link_activation_count,   # total number of helper switches
-        active_steps=laser_model.active_link_step_count, # total ODE steps where the laser was on
-        target_altitude_km=opts.target_altitude_km,
-        target_inclination_deg=opts.target_inclination_deg,
-        helper_inclination_deg=opts.helper_inclination_deg,
-        orbits=opts.orbits,                              # requested number of orbits (input)
-        orbits_elapsed=orbits_elapsed,                   # actual orbits completed (varying period)
-        laser_range_km=opts.laser_range_km,
-        laser_power_w=opts.laser_power_w,
-        magnification=opts.magnification,
-        beta=opts.beta,
-        eta=opts.eta,
-        mass_kg=opts.mass_kg,
-        dt_max_s=opts.dt_max_s,
-        dv_r_mps=impulse_tracker.dv_R,   # total radial ΔV from laser [m/s]
-        dv_t_mps=impulse_tracker.dv_T,   # total along-track ΔV from laser [m/s]
-        dv_n_mps=impulse_tracker.dv_N,   # total cross-track ΔV from laser [m/s]
-        da_m=oef.a - oe0.a,              # change in semi-major axis [m]
-        de=oef.e - oe0.e,                # change in eccentricity
-        di_deg=rad2deg(oef.i - oe0.i),   # change in inclination [deg]
-        draan_deg=rad2deg(oef.raan - oe0.raan),  # change in RAAN [deg]
-        retcode=sol.retcode,             # ODE solver exit status (Success, MaxIters, etc.)
-        solver=result.solver_trace[end].solver,  # name of the solver used
-    )
-
-    # --- Block 7: build the time-series DataFrame and return ---
-    timeseries = _build_timeseries_dataframe(
-        opts,
-        sol,
-        oe0,
-        orbit_counts,
-        args.environment_model.planet.μ,
-        impulse_tracker,
-    )
-    return (summary=summary, timeseries=timeseries, sol=sol,
-            helper_num=opts.helpers, impulse_tracker=impulse_tracker,
-            mu=args.environment_model.planet.μ)
-end
-
 # =============================================================================
 # SaveField helpers for laser-specific quantities (used by native output pipeline)
 # =============================================================================
@@ -92,7 +6,7 @@ end
 # helper index at every ODE save step.  These are merged with SpaceAGORA's default
 # save fields so the standard output bundle (feather + csv + manifest) contains both
 # the usual trajectory columns AND these laser-specific columns.
-function _build_laser_save_fields(impulse_tracker::_LaserImpulseTracker, laser_model)
+function _build_laser_save_fields(impulse_tracker::LaserImpulseTracker, laser_model)
     return SaveField[
         SaveField(
             :dv_r_accumulated,
@@ -145,7 +59,7 @@ function run_open_cavity_case_native(opts::OracleCase2Options)
     )
 
     # --- Block 1: build config with native output enabled ---
-    args, laser_model, target_period_s = build_case_config_native(opts, results_dir)
+    args, laser_model, target_period_s = build_case_config(opts, results_dir)
 
     # --- Block 2: initial orbital elements ---
     u0  = SimulationEngine.build_initial_conditions(args)
@@ -154,8 +68,8 @@ function run_open_cavity_case_native(opts::OracleCase2Options)
     oe0 = _rv_to_elements(r0, v0, args.environment_model.planet.μ)
 
     # --- Block 3: callbacks ---
-    impulse_tracker = _LaserImpulseTracker()
-    impulse_cb   = _make_laser_impulse_callback(laser_model, impulse_tracker, opts.mass_kg)
+    impulse_tracker = LaserImpulseTracker()
+    impulse_cb   = laser_impulse_callback(laser_model, impulse_tracker, opts.mass_kg)
     scheduler_cb = laser_link_scheduler_callback(laser_model)
 
     # --- Block 4: build save fields (SpaceAGORA defaults + laser extras) ---

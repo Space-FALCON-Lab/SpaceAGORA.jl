@@ -32,7 +32,7 @@
         keplerian=true,
         tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=10.0)
     )
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     u = build_initial_conditions(args).sc[1]
 
     _burn_plan(p_, sat_idx) = p_.shared_buffers.maneuver_burn_plans[sat_idx]
@@ -188,7 +188,7 @@
             dynamic_effectors=(InverseSquaredGravityModel(),),
             keplerian=true
         )
-        p_ineligible = ODEParams{1}(args=args_ineligible)
+        p_ineligible = ODEParams(n_sats=1, args=args_ineligible)
         state_ineligible = build_initial_conditions(args_ineligible)
         model_ineligible = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=11.0, stop_burn_time=22.0)
         _clear_burn_plan!(p_ineligible, 1)
@@ -212,7 +212,7 @@
             dynamic_effectors=(InverseSquaredGravityModel(),),
             keplerian=true
         )
-        p_edge_block = ODEParams{1}(args=args_edge_block)
+        p_edge_block = ODEParams(n_sats=1, args=args_edge_block)
         state_edge_block = build_initial_conditions(args_edge_block)
         model_edge_block = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p_edge_block, 1)
@@ -231,7 +231,7 @@
             dynamic_effectors=(InverseSquaredGravityModel(),),
             keplerian=true
         )
-        p_edge_allow = ODEParams{1}(args=args_edge_allow)
+        p_edge_allow = ODEParams(n_sats=1, args=args_edge_allow)
         state_edge_allow = build_initial_conditions(args_edge_allow)
         model_edge_allow = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p_edge_allow, 1)
@@ -248,7 +248,7 @@
             dynamic_effectors=(InverseSquaredGravityModel(),),
             keplerian=true
         )
-        p_circular = ODEParams{1}(args=args_circular)
+        p_circular = ODEParams(n_sats=1, args=args_circular)
         state_circular = build_initial_conditions(args_circular)
         model_circular = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p_circular, 1)
@@ -312,7 +312,7 @@
             dynamic_effectors=(InverseSquaredGravityModel(),),
             keplerian=true
         )
-        p_budget = ODEParams{1}(args=args_budget)
+        p_budget = ODEParams(n_sats=1, args=args_budget)
         state_budget = build_initial_conditions(args_budget)
         model_budget = make_base_thruster_model(thrust=2.0, Δv=400.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         _clear_burn_plan!(p_budget, 1)
@@ -330,7 +330,7 @@
             dynamic_effectors=(InverseSquaredGravityModel(),),
             keplerian=true
         )
-        p_multi = ODEParams{2}(args=args_multi)
+        p_multi = ODEParams(n_sats=2, args=args_multi)
         state_multi = build_initial_conditions(args_multi)
         model_multi = BaseThrusterModel(
             thrust=[2.0, 3.0],
@@ -378,7 +378,7 @@
             keplerian=true,
             planet=throw_planet
         )
-        p_throw = ODEParams{1}(args=args_throw)
+        p_throw = ODEParams(n_sats=1, args=args_throw)
         model_throw = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=123.0, stop_burn_time=124.0)
         withenv("SPACEAGORA_DEBUG_CONTROL" => "1", "SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "0") do
             @test_logs (:warn, r"orbital-element conversion failed") calcControlEffect!(model_throw, state, p_throw, 100.0, 1)
@@ -413,7 +413,7 @@
 
                 model_trace = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
                 state_trace = build_initial_conditions(args)
-                p_trace = ODEParams{1}(args=args)
+                p_trace = ODEParams(n_sats=1, args=args)
 
                 _clear_burn_plan!(p_trace, 1)
                 calcControlEffect!(model_trace, state_trace, p_trace, 100.0, 1)
@@ -488,7 +488,7 @@
             @test set_plan!(p_no_shared, 1, PropulsiveBurnPlan(valid=true)) === nothing
             @test clear_plan!(p_no_shared, 1) === nothing
 
-            p_helper = ODEParams{1}(args=args)
+            p_helper = ODEParams(n_sats=1, args=args)
             model_helper = make_base_thruster_model(
                 thrust=2.0,
                 direction=0.25,
@@ -908,9 +908,9 @@ end
     @test Δeps2 < -2e3
 end
 
-include(joinpath(REPO_ROOT, "test", "coverage_parallel_telemetry_probes.jl"))
-include(joinpath(REPO_ROOT, "test", "coverage_runtime_boundary_probes.jl"))
-include(joinpath(REPO_ROOT, "test", "coverage_targeted_90_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "probes", "coverage_parallel_telemetry_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "probes", "coverage_runtime_boundary_probes.jl"))
+include(joinpath(REPO_ROOT, "test", "probes", "coverage_targeted_90_probes.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "e_edg_strategy_parity_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "t_edg_strategy_parity_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "mission", "aerobraking_policy_selector_stub_tests.jl"))

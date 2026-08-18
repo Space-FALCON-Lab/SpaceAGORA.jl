@@ -646,6 +646,31 @@ function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String
     return NBodyGravityModel(body_names=Tuple(body_names), primary_body_name=primary_body_name, planet=planet)
 end
 
+const _HARMONICS_MODEL_CACHE_LOCK = ReentrantLock()
+const _HARMONICS_MODEL_CACHE = Dict{Tuple{Int64, Int64, String, Symbol, Bool, Symbol, Union{Nothing, Float64}, Bool, UInt}, Any}()
+
+# `GravitationalHarmonicsModel(L, M, coefficients_file, planet)` streams and parses the
+# whole coefficients file on every call (row-by-row CSV.Rows iteration, real I/O; some
+# planet files here run 16K+ rows). Callers that build a fresh mission config per
+# iteration (e.g. a Monte Carlo sample loop constructing thousands of trials in one
+# process, same as the SPICE planet-construction case above) redo that parse from
+# scratch every time even though the result only depends on the arguments. Cache it.
+#
+# Safe to share the whole returned model across concurrent callers: `A`, `R`, `I`,
+# `N1`, `N2`, `VR01`, `VR11`, `sqrt_2n_plus_3`, `C`, `S` are precomputed, read-only
+# recurrence/coefficient tables — nothing in `calcForceTorque`/`wrench` ever mutates
+# them. The actual per-call mutable scratch space comes from a separate, properly
+# pooled/per-satellite workspace (`_make_harmonics_scratch_workspace`,
+# `_harmonics_workspace_for_sat!`), never from the model's own fields.
+@inline function _harmonics_model_cache_key(
+    L::Int64, M::Int64, coefficients_file::String, coefficient_normalization::Symbol,
+    coefficients_normalized::Bool, j2_source::Symbol, reference_radius_m::Union{Nothing, Float64},
+    include_central::Bool, planet::AbstractPlanet,
+)
+    return (L, M, coefficients_file, coefficient_normalization, coefficients_normalized,
+            j2_source, reference_radius_m, include_central, objectid(planet))
+end
+
 """
     GravitationalHarmonicsModel(L, M, coefficients_file, planet; coefficient_normalization=:full)
 
@@ -678,6 +703,15 @@ function GravitationalHarmonicsModel(
     if M > L
         throw(ArgumentError("Gravitational harmonics order must satisfy M <= L, got L=$L, M=$M."))
     end
+    cache_key = _harmonics_model_cache_key(
+        L, M, coefficients_file, coefficient_normalization, coefficients_normalized,
+        j2_source, reference_radius_m, include_central, planet,
+    )
+    cached = lock(_HARMONICS_MODEL_CACHE_LOCK) do
+        get(_HARMONICS_MODEL_CACHE, cache_key, nothing)
+    end
+    cached !== nothing && return cached::GravitationalHarmonicsModel{P}
+
     normalized_source = _canonical_harmonics_normalization(coefficient_normalization)
 
     # Use CSV.Rows for streaming/lazy reading instead of materializing entire file.
@@ -844,7 +878,7 @@ function GravitationalHarmonicsModel(
         end
     end
 
-    return GravitationalHarmonicsModel(
+    model = GravitationalHarmonicsModel(
         L,
         M,
         C_trunc,
@@ -863,6 +897,9 @@ function GravitationalHarmonicsModel(
         include_central,
         planet
     )
+    return lock(_HARMONICS_MODEL_CACHE_LOCK) do
+        get!(_HARMONICS_MODEL_CACHE, cache_key, model)::GravitationalHarmonicsModel{P}
+    end
 end
 
 """
@@ -1756,36 +1793,40 @@ function get_magnetic_field_dipole(r_ecef::AbstractVector, L_PI::MMatrix{3, 3, F
     # Cosine of the magnetic colatitude
     cos_colat = dot(r_hat, M_HAT_ECEF)
 
-    # Dipole field equation. This is a standard formulation.
-    B_ecef = -B0_2020 * (R_EARTH_MODEL / r_norm)^3 * (M_HAT_ECEF - 3 * cos_colat * r_hat)
+    # Dipole field equation with Earth's dipole MOMENT pointing toward the
+    # geomagnetic SOUTH pole (m_hat = -M_HAT_ECEF):
+    #   B = B0 (R/r)^3 [3 (m_hat.r_hat) r_hat - m_hat]
+    #     = B0 (R/r)^3 [M_HAT_ECEF - 3 cos_colat r_hat]
+    # Checks: equator (cos_colat = 0) gives B = B0 * M_HAT_ECEF (north, B0);
+    # north pole gives -2 B0 M_HAT_ECEF (down). The pre-2026-07 sign returned
+    # the ANTIPARALLEL field (170 deg from IGRF at LEO).
+    B_ecef = B0_2020 * (R_EARTH_MODEL / r_norm)^3 * (M_HAT_ECEF - 3 * cos_colat * r_hat)
 
     return L_PI' * B_ecef
 end
 
 """
-    get_magnetic_field(date::DateTime, lat_deg::Number, lon_deg::Number, alt_m::Number)
+    get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
 
-Computes the Earth's magnetic field vector in the local North-East-Down (NED)
-frame using the World Magnetic Model (WMM).
-
-The function automatically uses the correct WMM version based on the input `date`.
+Computes the Earth's magnetic field vector in the inertial frame using the
+International Geomagnetic Reference Field (IGRF).
 
 # Args
 
-- `date`: The `DateTime` of the measurement.
-- `lat_deg`: The geodetic latitude of the observer [degrees].
-- `lon_deg`: The longitude of the observer [degrees].
+- `date`: The `DateTime` of the measurement (sets the IGRF epoch).
+- `lat_rad`: The geodetic latitude of the observer [radians].
+- `lon_rad`: The longitude of the observer [radians].
 - `alt_m`: The altitude above the WGS84 ellipsoid [meters].
+- `L_PI`: The inertial-to-planet-fixed rotation matrix.
 
 # Returns
 
-- A 3-element `SVector` representing the magnetic field `[B_north, B_east, B_down]`
-  in nanoTeslas [nT].
+- A 3-element vector representing the magnetic field in the inertial frame in
+  nanoTeslas [nT]. Note the unit: [`get_magnetic_field_dipole`](@ref) returns
+  Tesla, so the two are NOT drop-in interchangeable.
 """
 function get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
-    # println("Calculating magnetic field at lat: $lat_rad, lon: $lon_rad, alt: $alt_m, date: $date")
-    # Calculate the magnetic field vector using the World Magnetic Model.
-    # The result is in the NED frame and has units of nT.
+    # The IGRF evaluation returns NED components in nT.
     B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geodetic))
     B_pp = ned_to_ecef(B_ned, lat_rad, lon_rad, alt_m)
     B_ii = L_PI' * B_pp
@@ -1823,6 +1864,327 @@ function calculate_magnetic_torque(m::AbstractVector, B::AbstractVector)
     τ = cross(m_svector, B_svector)
 
     return τ
+end
+
+"""
+    MagneticTorqueRodModel <: AbstractForceTorqueModel
+
+Dynamic effector for spacecraft magnetic torque rods / magnetorquers.
+
+Sums the body-frame dipole moment `m` over every [`Magnet`](@ref) attached to
+any link of the spacecraft, samples the Earth magnetic field at the
+spacecraft's current position, and returns the resulting body-frame torque
+`τ = m × B` ([`calculate_magnetic_torque`](@ref)). Produces zero force and
+zero torque when the spacecraft carries no magnets or when attitude state is
+unavailable (`orientation_sim=false`).
+
+Field source (`field_model`):
+
+- `:dipole` (default): fast tilted-dipole approximation
+  ([`get_magnetic_field_dipole`](@ref)), epoch-2020 constants, typically good
+  to 10-20% at LEO. Bit-identical to the pre-option behavior.
+- `:igrf`: the International Geomagnetic Reference Field evaluated at the
+  spacecraft's geodetic position. Requires `igrf_year` (decimal year, e.g.
+  `2025.4`) — the secular field drift over a single simulation is negligible,
+  so one epoch per model is deliberate and keeps the integrator hot loop free
+  of calendar conversions.
+
+Both sources are Earth models; neither is meaningful at another central body.
+"""
+struct MagneticTorqueRodModel <: AbstractForceTorqueModel
+    field_model::Symbol
+    igrf_year::Float64
+
+    function MagneticTorqueRodModel(; field_model::Symbol=:dipole, igrf_year::Real=NaN)
+        field_model in (:dipole, :igrf) ||
+            throw(ArgumentError("field_model must be :dipole or :igrf, got $(repr(field_model))"))
+        # SatelliteToolboxGeomagneticField's IGRF hard-rejects epochs outside
+        # [1900, 2035) (and warns about reduced accuracy past 2030), so reject
+        # unsupported epochs here at configuration time instead of at the
+        # first wrench evaluation.
+        if field_model === :igrf && !(isfinite(igrf_year) && 1900.0 <= igrf_year < 2035.0)
+            throw(ArgumentError(
+                "field_model=:igrf requires igrf_year in [1900, 2035) (decimal year, e.g. 2025.4)"))
+        end
+        return new(field_model, Float64(igrf_year))
+    end
+end
+
+"""
+    _magnetic_field_inertial(model, l_pi, pos_pp, lat_rad, lon_rad, alt_m)
+
+Inertial-frame magnetic field [Tesla] for the model's configured field source.
+The IGRF branch converts from the library's nT to Tesla here so both branches
+share one unit contract.
+"""
+@inline function _magnetic_field_inertial(
+    model::MagneticTorqueRodModel,
+    l_pi::SMatrix{3, 3, Float64, 9},
+    pos_pp::SVector{3, Float64},
+    lat_rad::Float64,
+    lon_rad::Float64,
+    alt_m::Float64,
+)::SVector{3, Float64}
+    if model.field_model === :igrf
+        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic))
+        B_pp_nT = ned_to_ecef(B_ned_nT, lat_rad, lon_rad, alt_m)
+        return SVector{3, Float64}(l_pi' * B_pp_nT) .* 1e-9
+    end
+    return get_magnetic_field_dipole(pos_pp, MMatrix{3, 3, Float64}(l_pi))
+end
+
+@inline function _total_dipole_moment_body(spacecraft)::SVector{3, Float64}
+    m_total = SVector{3, Float64}(0.0, 0.0, 0.0)
+    for link in spacecraft.links
+        for magnet in link.magnets
+            m_total = m_total + SVector{3, Float64}(magnet.m)
+        end
+    end
+    return m_total
+end
+
+function calcForceTorque(model::MagneticTorqueRodModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    zero_wrench = (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+    if !param.args.mission_configuration.orientation_sim
+        return zero_wrench
+    end
+    if i < 1 || i > length(param.args.dynamics_model.spacecraft)
+        return zero_wrench
+    end
+    if !hasproperty(x, :q)
+        return zero_wrench
+    end
+
+    spacecraft = param.args.dynamics_model.spacecraft[i]
+    m_body = _total_dipole_moment_body(spacecraft)
+    iszero(m_body) && return zero_wrench
+
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
+    planet = param.args.environment_model.planet
+    l_pi = planet_frame_lpi(planet, et, param.args.environment_model.ephemerides_model)
+    pos_pp = l_pi * pos_ii
+    if model.field_model === :igrf
+        alt_m, lat_rad, lon_rad = rtolatlong(pos_pp, planet)
+        B_ii = _magnetic_field_inertial(model, SMatrix{3, 3, Float64, 9}(l_pi), pos_pp, lat_rad, lon_rad, alt_m)
+    else
+        B_ii = get_magnetic_field_dipole(pos_pp, MMatrix{3, 3, Float64}(l_pi))
+    end
+
+    q_ib = getproperty(x, :q)
+    q_body = SVector{4, Float64}(Float64(q_ib[1]), Float64(q_ib[2]), Float64(q_ib[3]), Float64(q_ib[4]))
+    B_body = rot(q_body) * B_ii
+    torque_body = calculate_magnetic_torque(m_body, B_body)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
+end
+
+@inline environment_requirements(::MagneticTorqueRodModel) = EffectorEnvironmentRequirements(planet_frame=true)
+
+@inline function wrench(
+    model::MagneticTorqueRodModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    zero_wrench = (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+    if x.q_ib === nothing || x.spacecraft === nothing
+        return zero_wrench
+    end
+
+    m_body = _total_dipole_moment_body(x.spacecraft)
+    iszero(m_body) && return zero_wrench
+
+    planet_frame = env.planet_frame
+    planet_frame === nothing && throw(ArgumentError("MagneticTorqueRodModel wrench requires env.planet_frame."))
+
+    B_ii = _magnetic_field_inertial(
+        model,
+        planet_frame.l_pi,
+        planet_frame.pos_pp,
+        planet_frame.lat_rad,
+        planet_frame.lon_rad,
+        planet_frame.alt_m,
+    )
+    B_body = rot(x.q_ib) * B_ii
+    torque_body = calculate_magnetic_torque(m_body, B_body)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
+end
+
+"""
+    LVLHCascadeAttitudeControlModel <: AbstractForceTorqueModel
+
+Closed-loop LVLH-pointing attitude controller as a dynamic effector: an outer
+proportional attitude loop commands a rate-limited body rate toward a fixed
+LVLH-relative attitude setpoint, and an inner proportional rate loop converts
+the rate error into a body torque with a per-axis saturation. This cascade
+(rate-command) architecture is the common small-satellite ADCS structure
+(e.g. Blue Canyon XACT-class flight software).
+
+    omega_cmd = clamp.(-k_out .* theta_err, -w_max, w_max)
+    tau       = clamp.(k_rate .* (omega_cmd - omega_rel), -tau_max, tau_max)
+
+`theta_err` is the small-angle rotation vector (body coordinates) from the
+commanded attitude to the current attitude, extracted from
+`R_err = R_bl * R_cmd'`; `omega_rel` is the body rate relative to the rotating
+LVLH frame. The LVLH triad is +Z nadir, +Y = nadir x velocity (negative orbit
+normal), +X completing (near along-track), and `q_cmd_lb` is the commanded
+LVLH-to-body quaternion (scalar-last, identity = LVLH-aligned).
+
+The torque is applied directly to the body (zero force): the actuator stack
+(wheel allocation, momentum management) is abstracted into `tau_max`. The
+control law is evaluated continuously at the integrator rate — a
+flight-software discrete update (a few Hz) is well inside the closed-loop
+bandwidth this law can express, so the continuous approximation is benign for
+tracking studies. Signs follow the engine's own conventions
+([`quaternion_derivative`](@ref) gives `theta_dot = +omega_body` near
+identity), which the probe suite pins with an end-to-end convergence test.
+Returns zero wrench when attitude state is unavailable.
+"""
+struct LVLHCascadeAttitudeControlModel <: AbstractForceTorqueModel
+    q_cmd_lb::SVector{4, Float64}
+    k_out::SVector{3, Float64}
+    w_max::Float64
+    k_rate::SVector{3, Float64}
+    tau_max::Float64
+    tau_ff::SVector{3, Float64}
+
+    function LVLHCascadeAttitudeControlModel(;
+        q_cmd_lb::AbstractVector{<:Real}=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+        k_out::AbstractVector{<:Real},
+        w_max::Real,
+        k_rate::AbstractVector{<:Real},
+        tau_max::Real,
+        tau_ff::AbstractVector{<:Real}=SVector{3, Float64}(0.0, 0.0, 0.0),
+    )
+        q = SVector{4, Float64}(q_cmd_lb...)
+        qn = norm(q)
+        (isfinite(qn) && qn > 0) ||
+            throw(ArgumentError("q_cmd_lb must be a finite, nonzero quaternion"))
+        ko = SVector{3, Float64}(k_out...)
+        kr = SVector{3, Float64}(k_rate...)
+        all(isfinite, ko) && all(>=(0.0), ko) ||
+            throw(ArgumentError("k_out must be finite and nonnegative [1/s]"))
+        all(isfinite, kr) && all(>=(0.0), kr) ||
+            throw(ArgumentError("k_rate must be finite and nonnegative [N m s]"))
+        (isfinite(w_max) && w_max > 0) ||
+            throw(ArgumentError("w_max must be finite and positive [rad/s]"))
+        (isfinite(tau_max) && tau_max > 0) ||
+            throw(ArgumentError("tau_max must be finite and positive [N m]"))
+        tf = SVector{3, Float64}(tau_ff...)
+        all(isfinite, tf) ||
+            throw(ArgumentError("tau_ff must be finite [N m]"))
+        return new(q / qn, ko, Float64(w_max), kr, Float64(tau_max), tf)
+    end
+end
+
+"""
+    _lvlh_cascade_torque(model, pos_ii, vel_ii, q_ib, w_body)
+
+Body-frame control torque of [`LVLHCascadeAttitudeControlModel`](@ref) for the
+given inertial position/velocity and attitude state. Returns zero for
+degenerate orbits (near-zero radius or angular momentum).
+"""
+@inline function _lvlh_cascade_torque(
+    model::LVLHCascadeAttitudeControlModel,
+    pos_ii::SVector{3, Float64},
+    vel_ii::SVector{3, Float64},
+    q_ib::SVector{4, Float64},
+    w_body::SVector{3, Float64},
+)::SVector{3, Float64}
+    r2 = dot(pos_ii, pos_ii)
+    h_ii = cross(pos_ii, vel_ii)
+    if !(r2 > 0.0) || !(dot(h_ii, h_ii) > 0.0)
+        return SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    z_l = -pos_ii / sqrt(r2)
+    y_l = cross(z_l, vel_ii)
+    y_l = y_l / norm(y_l)
+    x_l = cross(y_l, z_l)
+    R_li = SMatrix{3, 3, Float64, 9}(
+        x_l[1], y_l[1], z_l[1],
+        x_l[2], y_l[2], z_l[2],
+        x_l[3], y_l[3], z_l[3],
+    )                                    # inertial -> LVLH (rows = triad)
+    R_bi = rot(q_ib)                     # inertial -> body
+    R_bl = R_bi * R_li'                  # LVLH -> body
+    R_e = R_bl * rot(model.q_cmd_lb)'    # commanded -> current, body coords
+    # Rotation-log error extraction. The plain vee-map (0.5*(R_e[2,3]-R_e[3,2]),
+    # ...) returns sin(theta)*axis, which vanishes at a half-turn — an
+    # undesired zero-command equilibrium at 180 deg and weak authority near it
+    # (Codex review). The quaternion log 2*atan2(|qv|, qs)*qv/|qv| equals the
+    # vee-map to second order at small angles (2*qs*qv == sin(theta)*axis)
+    # but grows monotonically to pi*axis at the antipode. Index order/signs
+    # follow the engine conventions pinned empirically in the probe suite:
+    # rotating the body by +theta yields rot(q) ≈ I - S(theta); the opposite
+    # sign turns the attitude loop into positive feedback.
+    tr_e = R_e[1, 1] + R_e[2, 2] + R_e[3, 3]
+    q_e = if tr_e > 0.0
+        s = sqrt(tr_e + 1.0) * 2
+        SVector{4, Float64}((R_e[2, 3] - R_e[3, 2]) / s, (R_e[3, 1] - R_e[1, 3]) / s,
+                            (R_e[1, 2] - R_e[2, 1]) / s, s / 4)
+    elseif R_e[1, 1] > R_e[2, 2] && R_e[1, 1] > R_e[3, 3]
+        s = sqrt(1.0 + R_e[1, 1] - R_e[2, 2] - R_e[3, 3]) * 2
+        SVector{4, Float64}(s / 4, (R_e[1, 2] + R_e[2, 1]) / s,
+                            (R_e[1, 3] + R_e[3, 1]) / s, (R_e[2, 3] - R_e[3, 2]) / s)
+    elseif R_e[2, 2] > R_e[3, 3]
+        s = sqrt(1.0 + R_e[2, 2] - R_e[1, 1] - R_e[3, 3]) * 2
+        SVector{4, Float64}((R_e[1, 2] + R_e[2, 1]) / s, s / 4,
+                            (R_e[2, 3] + R_e[3, 2]) / s, (R_e[3, 1] - R_e[1, 3]) / s)
+    else
+        s = sqrt(1.0 + R_e[3, 3] - R_e[1, 1] - R_e[2, 2]) * 2
+        SVector{4, Float64}((R_e[1, 3] + R_e[3, 1]) / s, (R_e[2, 3] + R_e[3, 2]) / s,
+                            s / 4, (R_e[1, 2] - R_e[2, 1]) / s)
+    end
+    q_e = q_e[4] < 0.0 ? -q_e : q_e      # shortest rotation (qs >= 0)
+    qv = SVector{3, Float64}(q_e[1], q_e[2], q_e[3])
+    sv = norm(qv)
+    theta_err = sv > 1e-12 ? (2.0 * atan(sv, q_e[4]) / sv) * qv : 2.0 * qv
+    # Body-frame LVLH feed-forward: with the body-rate quaternion kinematics
+    # (see quaternion_derivative), the state that tracks the LVLH frame is
+    # its rotation rate expressed in BODY coordinates — pinned by the
+    # torque-free tracking and closed-loop convergence probes.
+    w_lvlh_body = R_bi * (h_ii / r2)
+    w_rel = w_body - w_lvlh_body
+    w_cmd = clamp.(-model.k_out .* theta_err, -model.w_max, model.w_max)
+    # tau_ff: constant body-frame feedforward torque, the stateless equivalent
+    # of converged integral action against a quasi-steady disturbance (a pure
+    # PD cascade holds a steady offset error of |tau_dist| / (k_rate*k_out)
+    # under a constant torque; the feedforward nulls it). True discrete-rate
+    # integral action belongs in a stateful control effector - a continuous
+    # wrench cannot hold accumulator state correctly under adaptive stepping.
+    return clamp.(model.k_rate .* (w_cmd - w_rel) + model.tau_ff, -model.tau_max, model.tau_max)
+end
+
+function calcForceTorque(model::LVLHCascadeAttitudeControlModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    zero_wrench = (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+    if !param.args.mission_configuration.orientation_sim
+        return zero_wrench
+    end
+    if !hasproperty(x, :q) || !hasproperty(x, :ω)
+        return zero_wrench
+    end
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    vel_ii = SVector{3, Float64}(x[4], x[5], x[6])
+    q_ib = SVector{4, Float64}(Float64.(getproperty(x, :q))...)
+    w_body = SVector{3, Float64}(Float64.(getproperty(x, :ω))...)
+    torque = _lvlh_cascade_torque(model, pos_ii, vel_ii, q_ib, w_body)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), torque
+end
+
+@inline environment_requirements(::LVLHCascadeAttitudeControlModel) = EffectorEnvironmentRequirements()
+
+@inline function wrench(
+    model::LVLHCascadeAttitudeControlModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    zero_wrench = (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+    if x.q_ib === nothing || x.ω_body === nothing
+        return zero_wrench
+    end
+    torque = _lvlh_cascade_torque(model, x.pos_ii, x.vel_ii, x.q_ib, x.ω_body)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), torque
 end
 
 function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64}, rp::Float64)

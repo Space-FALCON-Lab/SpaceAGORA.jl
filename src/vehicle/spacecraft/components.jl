@@ -31,7 +31,7 @@ end
 end
 
 @kwdef mutable struct Magnet
-    m::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Magnetic dipole moment in the body frame, nT
+    m::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Magnetic dipole moment in the body frame, A*m^2
     location::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Location in the link frame, relative to the CoM of the link, m
 end
 
@@ -46,8 +46,11 @@ reaction wheel assembly with N wheels.
     n_wheels::Int = N # Number of reaction wheels in the assembly
 
     "Jacobian mapping wheel angular velocity to body angular momentum"
-    J_rw::SMatrix{3, N, Float64} = SMatrix{3, N, Float64}(eye(3, N)) # Default to identity mapping for 3 wheels
-    
+    J_rw::SMatrix{3, N, Float64} = SMatrix{3, N, Float64}(LinearAlgebra.I) # Default to identity mapping
+
+    "Precomputed pseudo-inverse of J_rw, mapping a desired body torque/momentum onto per-wheel values"
+    J_rw_pinv::SMatrix{N, 3, Float64} = SMatrix{N, 3, Float64}(pinv(Matrix(J_rw)))
+
     "Maximum torque (Nm) *each* wheel can produce"
     max_wheel_torque::Float64 = 0.1
     

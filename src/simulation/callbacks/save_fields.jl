@@ -128,7 +128,14 @@ end
     heat_rates = Vector{Float64}(undef, num_sats)
     shared_heat_rates = integrator.p.shared_buffers.heat_rates
     @inbounds for i in 1:num_sats
-        heat_rates[i] = i <= length(shared_heat_rates) ? sum(shared_heat_rates[i]) : 0.0
+        rates = if hasproperty(u, :sc)
+            _compute_stage_heat_rates!(integrator.p, u.sc[i], i, Float64(t); use_buffered_density=false)
+        elseif i <= length(shared_heat_rates)
+            shared_heat_rates[i]
+        else
+            Float64[]
+        end
+        heat_rates[i] = !isempty(rates) ? maximum(rates) : 0.0
     end
     return heat_rates
 end
@@ -136,7 +143,8 @@ end
 @inline function _save_heat_load(num_sats::Int, u, t, integrator)
     heat_loads = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        heat_loads[i] = sum(_simulation_engine_module()._state_heat_loads(u, integrator.p.args, i))
+        loads = _simulation_engine_module()._state_heat_loads(u, integrator.p.args, i)
+        heat_loads[i] = isempty(loads) ? 0.0 : maximum(loads)
     end
     return heat_loads
 end

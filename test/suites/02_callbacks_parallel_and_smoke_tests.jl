@@ -87,7 +87,7 @@
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
     control_cbs = SimulationModel.SimulationCallbacks.get_control_callbacks(1, args_control)
-    p_control = ODEParams{1}(args=args_control)
+    p_control = ODEParams(n_sats=1, args=args_control)
     u_control = build_initial_conditions(args_control)
     integrator_control = MockCallbackIntegrator(
         p_control,
@@ -103,7 +103,7 @@
     @test integrator_control.tstop_max >= thruster_control.start_burn_time[1]
 
     orbit_cb = SimulationModel.SimulationCallbacks.get_orbit_end_callback(1)
-    p_orbit = ODEParams{1}(args=args_orbits)
+    p_orbit = ODEParams(n_sats=1, args=args_orbits)
     u_orbit = build_initial_conditions(args_orbits)
     integrator_orbit = MockCallbackIntegrator(
         p_orbit,
@@ -134,7 +134,7 @@
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
     impact_cb = SimulationModel.SimulationCallbacks.get_impact_callback(2)
-    p_impact = ODEParams{2}(args=args_impact)
+    p_impact = ODEParams(n_sats=2, args=args_impact)
     u_impact = build_initial_conditions(args_impact)
     integrator_impact = MockCallbackIntegrator(
         p_impact,
@@ -171,7 +171,7 @@
         )
     )
     drag_cb = SimulationModel.SimulationCallbacks.get_drag_state_callback(1)
-    p_drag = ODEParams{1}(args=args_drag)
+    p_drag = ODEParams(n_sats=1, args=args_drag)
     u_drag = build_initial_conditions(args_drag)
     integrator_drag = MockCallbackIntegrator(
         p_drag,
@@ -200,7 +200,7 @@
     @test integrator_drag.opts.abstol == args_drag.integration_tolerances.abstol_orbit
 
     quat_proj_cb = SimulationModel.SimulationCallbacks.get_quaternion_projection_callback(1, args_orient)
-    p_orient = ODEParams{1}(args=args_orient)
+    p_orient = ODEParams(n_sats=1, args=args_orient)
     u_orient = build_initial_conditions(args_orient)
     u_orient.sc[1].q .= [0.0, 0.0, 0.0, 2.0]
     integrator_orient = MockCallbackIntegrator(
@@ -240,7 +240,7 @@
         integration_tolerances=args_base.integration_tolerances
     )
     navigation_cbs = SimulationModel.SimulationCallbacks.get_navigation_callbacks(1, args_navigation)
-    p_navigation = ODEParams{1}(args=args_navigation)
+    p_navigation = ODEParams(n_sats=1, args=args_navigation)
     u_navigation = build_initial_conditions(args_navigation)
     integrator_navigation = MockCallbackIntegrator(
         p_navigation,
@@ -285,7 +285,7 @@
         integration_tolerances=args_guidance_base.integration_tolerances
     )
     guidance_cbs = SimulationModel.SimulationCallbacks.get_guidance_callbacks(2, args_guidance)
-    p_guidance = ODEParams{2}(args=args_guidance)
+    p_guidance = ODEParams(n_sats=2, args=args_guidance)
     u_guidance = build_initial_conditions(args_guidance)
     integrator_guidance = MockCallbackIntegrator(
         p_guidance,
@@ -319,7 +319,7 @@
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_control = ODEParams{2}(args=args_control)
+    p_control = ODEParams(n_sats=2, args=args_control)
     u_control = build_initial_conditions(args_control)
     integrator_control = MockCallbackIntegrator(
         p_control,
@@ -359,9 +359,16 @@
     ) do
         @test density_use_threads(args_control, 8) == false
     end
+    # Pin the auto-mode budget floor so this branch check is independent of the
+    # default (16), which exceeds the CI thread count. args_control uses
+    # NoAtmosphereModel, which routes through the lock-free density-callback
+    # source (see the source= selection in
+    # src/simulation/callbacks/density_callbacks/config.jl), so the
+    # lock-free-specific knob is what actually gates this decision.
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
-        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1"
+        "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
         @test density_use_threads(args_control, 8) == has_worker_threads
     end
@@ -382,6 +389,7 @@
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_DENSITY_CALLBACK_THREAD_THRESHOLD" => "1",
+        "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
@@ -446,7 +454,7 @@
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_control_parallel = ODEParams{n_parallel_sats}(args=args_control_parallel)
+    p_control_parallel = ODEParams(n_sats=n_parallel_sats, args=args_control_parallel)
     u_control_parallel = build_initial_conditions(args_control_parallel)
     integrator_control_parallel = MockCallbackIntegrator(
         p_control_parallel,
@@ -479,7 +487,7 @@
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_density_parallel = ODEParams{n_parallel_sats}(args=args_density_parallel)
+    p_density_parallel = ODEParams(n_sats=n_parallel_sats, args=args_density_parallel)
     u_density_parallel = build_initial_conditions(args_density_parallel)
     integrator_density_parallel = MockCallbackIntegrator(
         p_density_parallel,
@@ -640,7 +648,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_density_lookup = ODEParams{1}(args=args_density_lookup)
+    p_density_lookup = ODEParams(n_sats=1, args=args_density_lookup)
     gram_model_lookup = SimulationModel.GRAMAtmosphereModel(nothing)
     push!(p_density_lookup.shared_buffers.density_models, gram_model_lookup)
     @test callbacks._density_model_for_sat(p_density_lookup, 1) === gram_model_lookup
@@ -783,7 +791,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_density_stats = ODEParams{1}(args=args_density_stats)
+    p_density_stats = ODEParams(n_sats=1, args=args_density_stats)
     u_density_stats = build_initial_conditions(args_density_stats)
     withenv(
         "SPACEAGORA_GRAM_PROFILE" => "1",
@@ -806,7 +814,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_thermal_branches = ODEParams{1}(args=args_thermal_branches)
+    p_thermal_branches = ODEParams(n_sats=1, args=args_thermal_branches)
     u_thermal_branches = build_initial_conditions(args_thermal_branches)
     thermal_cb_branches = callbacks.get_thermal_callback(1, args_thermal_branches)
 
@@ -860,7 +868,7 @@ end
         initial_time=args_orbit_multi_base.initial_time,
         integration_tolerances=args_orbit_multi_base.integration_tolerances
     )
-    p_orbit_multi = ODEParams{2}(args=args_orbit_multi)
+    p_orbit_multi = ODEParams(n_sats=2, args=args_orbit_multi)
     p_orbit_multi.orbit_counter .= [2, 1]
     p_orbit_multi.is_active .= [true, true]
     orbit_cb_multi = callbacks.get_orbit_end_callback(2)
@@ -891,7 +899,7 @@ end
     if Base.JLOptions().code_coverage == 0
         @test true
     else
-        probe_script = joinpath(REPO_ROOT, "test", "coverage_threaded_probes.jl")
+        probe_script = joinpath(REPO_ROOT, "test", "probes", "coverage_threaded_probes.jl")
         cmd = `$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(REPO_ROOT) --code-coverage=user --threads=2 $(probe_script)`
         cmd = addenv(
             cmd,
@@ -1456,7 +1464,7 @@ end
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_calib = ODEParams{4}(args=args_calib)
+    p_calib = ODEParams(n_sats=4, args=args_calib)
     _initialize_heat_rate_buffers!(p_calib)
     _initialize_harmonics_workspace_buffers!(p_calib)
     SimulationEngine._initialize_density_model_instances!(p_calib)
@@ -1483,7 +1491,7 @@ end
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_single = ODEParams{1}(args=args_single_sat)
+    p_single = ODEParams(n_sats=1, args=args_single_sat)
     _initialize_heat_rate_buffers!(p_single)
     _initialize_harmonics_workspace_buffers!(p_single)
     SimulationEngine._initialize_density_model_instances!(p_single)
@@ -1509,10 +1517,18 @@ end
 
     # ── Multi-sat + harmonics calibration (requires worker threads) ───────────
     if Threads.nthreads() > 1
+        # Pin the SIMD batch floor so the 4-sat fixture yields >= 2 viable
+        # workers and the sweep produces an override regardless of the
+        # default SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER (4).
+        # Point the calibration path at a throwaway file so the force-mode
+        # save cannot persist this suite's synthetic signatures into the
+        # machine-default calibration state (which poisons later suite runs).
         withenv(
             "SPACEAGORA_RHS_CALIBRATE" => "force",
             "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1",
-            "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2"
+            "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
+            "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1",
+            "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(mktempdir(), "calib_force_gate.toml")
         ) do
             p_calib.shared_buffers.rhs_plan_override[] = nothing
             SimulationEngine._calibrate_rhs_plan_if_needed!(p_calib, u_calib, args_calib)
@@ -1522,4 +1538,357 @@ end
             @test override.policy_applied == true
         end
     end
+end
+
+function _no_gram_ring_sat(planet_ng, id::Int, raan_deg::Float64)
+    return make_single_link_spacecraft(
+        ra_alt_m=700e3, rp_alt_m=650e3, i_deg=45.0, ω_deg=0.0, Ω_deg=raan_deg, ν_deg=10.0,
+        planet=planet_ng, id=id, m=100.0, ref_area=2.0
+    )
+end
+
+@testset "Constellation Ensemble Campaign" begin
+    planet_ng = SimulationModel.make_no_gram_planet(:earth)
+
+    sats = [
+        _no_gram_ring_sat(planet_ng, 11, 0.0),
+        _no_gram_ring_sat(planet_ng, 22, 40.0),
+        _no_gram_ring_sat(planet_ng, 33, 80.0),
+    ]
+    results_dir = mktempdir()
+    cfg = build_config_multi(
+        spacecraft=sats,
+        density_model=SimulationModel.NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=600.0,
+        EI_km=120.0,
+        dynamic_effectors=(SimulationModel.InverseSquaredJ2GravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(
+            results=true,
+            verbose=false,
+            generate_plots=false,
+            normalize=false,
+            results_directory=results_dir
+        ),
+        ephemerides_model=SimulationModel.SimpleEphemeridesModel(),
+        planet=planet_ng
+    )
+
+    ensemble_threads = min(2, Threads.nthreads())
+    res = SimulationCampaigns.run_constellation_ensemble(cfg; threads=ensemble_threads, return_solution=true)
+    @test res isa SimulationCampaigns.MonteCarloResult
+    @test length(res.samples) == 3
+    @test isempty(res.failed)
+    @test [s.seed for s in res.samples] == [1, 2, 3]
+    @test all(s -> s.value !== nothing, res.samples)
+
+    # Each ensemble member writes into its own per-satellite results directory.
+    @test isdir(joinpath(results_dir, "sat_1_id_11"))
+    @test isdir(joinpath(results_dir, "sat_2_id_22"))
+    @test isdir(joinpath(results_dir, "sat_3_id_33"))
+
+    # An ensemble member must reproduce a direct single-satellite propagation.
+    single_cfg = SimulationCampaigns._ensemble_member_configuration(cfg, sats[3], "solo_direct")
+    sol_direct = run_simulation(single_cfg; return_solution=true)
+    u_direct = collect(sol_direct.u[end])
+    u_member = collect(res.samples[3].value.u[end])
+    @test maximum(abs.(u_direct .- u_member)) <= 1e-9
+
+    # Uncoupled guard: GNC effectors are rejected unless explicitly allowed.
+    cfg_ctrl = build_config_multi(
+        spacecraft=sats,
+        density_model=SimulationModel.NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=600.0,
+        EI_km=120.0,
+        dynamic_effectors=(SimulationModel.InverseSquaredJ2GravityModel(),),
+        control_effectors=(make_base_thruster_model(thrust=0.0),),
+        control_rates=[1.0],
+        keplerian=true,
+        ephemerides_model=SimulationModel.SimpleEphemeridesModel(),
+        planet=planet_ng
+    )
+    @test_throws ArgumentError SimulationCampaigns.run_constellation_ensemble(cfg_ctrl)
+    @test SimulationCampaigns._validate_ensemble_uncoupled(cfg_ctrl, true) === nothing
+
+    # Empty constellation is rejected.
+    cfg_empty = build_config_multi(
+        spacecraft=SpacecraftModel[],
+        density_model=SimulationModel.NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=600.0,
+        EI_km=120.0,
+        dynamic_effectors=(SimulationModel.InverseSquaredJ2GravityModel(),),
+        keplerian=true,
+        ephemerides_model=SimulationModel.SimpleEphemeridesModel(),
+        planet=planet_ng
+    )
+    @test_throws ArgumentError SimulationCampaigns.run_constellation_ensemble(cfg_empty)
+
+    # Member splits alias the parent environment (cheap split); parallel isolation
+    # therefore relies on the per-worker deepcopy, which must sever mutable model
+    # state such as the planet object.
+    member_split = SimulationCampaigns._ensemble_member_configuration(cfg, sats[1], "alias_probe")
+    @test member_split.environment_model === cfg.environment_model
+    member_isolated = deepcopy(member_split)
+    @test member_isolated.environment_model !== cfg.environment_model
+    @test member_isolated.environment_model.planet !== cfg.environment_model.planet
+
+    # An explicit isolate_state=false must not break the parallel path: the runner
+    # overrides it with its own per-worker copy.
+    res_noiso = SimulationCampaigns.run_constellation_ensemble(
+        cfg; threads=ensemble_threads, return_solution=true, isolate_state=false
+    )
+    @test isempty(res_noiso.failed)
+    u_noiso = collect(res_noiso.samples[3].value.u[end])
+    @test maximum(abs.(u_direct .- u_noiso)) <= 1e-9
+
+    # Checkpoint path splitting: any checkpoint interaction gets a per-member path.
+    settings_ck_default = SimulationSettings(
+        results=false, verbose=false, generate_plots=false, normalize=false,
+        results_directory="outdir", checkpoint_enabled=true
+    )
+    split_ck_default = SimulationCampaigns._ensemble_member_settings(settings_ck_default, "sat_1_id_11")
+    @test split_ck_default.results_directory == joinpath("outdir", "sat_1_id_11")
+
+    settings_resume_explicit = SimulationSettings(
+        results=false, verbose=false, generate_plots=false, normalize=false,
+        results_directory="outdir", checkpoint_directory="ckdir", resume_from_checkpoint=true
+    )
+    split_resume = SimulationCampaigns._ensemble_member_settings(settings_resume_explicit, "sat_2_id_22")
+    @test split_resume.checkpoint_directory == joinpath("ckdir", "sat_2_id_22")
+    @test split_resume.results_directory == "outdir"
+
+    settings_plain = SimulationSettings(
+        results=false, verbose=false, generate_plots=false, normalize=false
+    )
+    @test SimulationCampaigns._ensemble_member_settings(settings_plain, "sat_3_id_33") === settings_plain
+end
+
+@testset "GRAM Lock Scope" begin
+    EMt = SimulationModel.EnvironmentModels
+
+    withenv("SPACEAGORA_GRAM_LOCK_SCOPE" => nothing) do
+        @test EMt._gram_lock_scope() === :global
+    end
+    withenv("SPACEAGORA_GRAM_LOCK_SCOPE" => "global") do
+        @test EMt._gram_lock_scope() === :global
+    end
+    for token in ("model", "per_model", "per-model", "instance", "MODEL")
+        withenv("SPACEAGORA_GRAM_LOCK_SCOPE" => token) do
+            @test EMt._gram_lock_scope() === :model
+        end
+    end
+    withenv("SPACEAGORA_GRAM_LOCK_SCOPE" => "bogus") do
+        @test_throws ArgumentError EMt._gram_lock_scope()
+    end
+
+    # Every wrapper construction carries its own instance lock so distinct
+    # models never contend under SPACEAGORA_GRAM_LOCK_SCOPE=model.
+    m1 = EMt.GRAMAtmosphereModel(:dummy_core_a)
+    m2 = EMt.GRAMAtmosphereModel(:dummy_core_b)
+    @test m1.instance_lock isa ReentrantLock
+    @test m1.instance_lock !== m2.instance_lock
+    @test m1.core === :dummy_core_a
+    @test :instance_lock in propertynames(m1)
+end
+
+@testset "Adaptive Campaign Routing" begin
+    # ── Features from an explicit campaign shape ──────────────────────────────
+    feats = SimulationCampaigns.campaign_route_features(
+        samples=12, n_sats=2, density_family="exponential", mission_time_s=1200.0
+    )
+    @test feats isa ParallelProfiles.OuterRouteFeatures
+    @test feats.category == "montecarlo"
+    @test feats.montecarlo_samples == 12
+    @test feats.n_sats == 2
+    sig = ParallelProfiles.outer_route_signature(feats)
+    @test occursin("cat=montecarlo", sig)
+    @test occursin("dens=exp", sig)
+    @test occursin("mission=short", sig)
+    @test_throws ArgumentError SimulationCampaigns.campaign_route_features(samples=-1)
+    @test_throws ArgumentError SimulationCampaigns.campaign_route_features(samples=4, n_sats=0)
+
+    # ── Features derived from a SimulationConfiguration ───────────────────────
+    planet_ng = SimulationModel.make_no_gram_planet(:earth)
+
+    adaptive_sats = [_no_gram_ring_sat(planet_ng, 1, 0.0), _no_gram_ring_sat(planet_ng, 2, 120.0)]
+    cfg = build_config_multi(
+        spacecraft=adaptive_sats,
+        density_model=SimulationModel.NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=300.0,
+        EI_km=120.0,
+        dynamic_effectors=(SimulationModel.InverseSquaredJ2GravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        ephemerides_model=SimulationModel.SimpleEphemeridesModel(),
+        planet=planet_ng
+    )
+    cfg_feats = SimulationCampaigns.campaign_route_features(cfg; samples=2, n_sats=1)
+    @test cfg_feats.density_family == "none"
+    @test cfg_feats.mission_time_s == 300.0
+    @test cfg_feats.n_sats == 1
+    @test cfg_feats.montecarlo_samples == 2
+    @test cfg_feats.dynamic_effector_count == 1
+    @test cfg_feats.has_control == false
+    @test cfg_feats.orientation_on == false
+    full_feats = SimulationCampaigns.campaign_route_features(cfg; samples=2)
+    @test full_feats.n_sats == 2
+
+    withenv("SPACEAGORA_INNER_THREAD_BUDGET" => nothing, "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing) do
+        # ── threads=:auto Monte Carlo: route selection, env split, feedback ───
+        state = ParallelProfiles.OuterRouteState()
+        n_seeds = 6
+        inner_budget_seen = Vector{String}(undef, n_seeds)
+        outer_active_seen = Vector{String}(undef, n_seeds)
+        runner = seed -> begin
+            inner_budget_seen[seed] = get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")
+            outer_active_seen[seed] = get(ENV, "SPACEAGORA_OUTER_PARALLEL_ACTIVE", "")
+            seed * 10
+        end
+        res1 = SimulationCampaigns.run_monte_carlo(runner, 1:n_seeds; threads=:auto, route_state=state)
+        @test res1 isa SimulationCampaigns.MonteCarloResult
+        @test length(res1.successful) == n_seeds
+        @test [s.value for s in res1.samples] == [10, 20, 30, 40, 50, 60]
+        # The adaptive env overrides are scoped to the campaign run.
+        @test isempty(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", ""))
+
+        expected_workers = Threads.nthreads() > 1 ? min(n_seeds, Threads.nthreads()) : 1
+        @test res1.threads == expected_workers
+        if Threads.nthreads() > 1
+            expected_budget = string(max(1, fld(Threads.nthreads(), expected_workers)))
+            @test all(==(expected_budget), inner_budget_seen)
+            @test all(==("1"), outer_active_seen)
+        end
+
+        auto_sig = ParallelProfiles.outer_route_signature(
+            SimulationCampaigns.campaign_route_features(samples=n_seeds)
+        )
+        route1 = Threads.nthreads() > 1 ? :threads : :none
+        snap1 = ParallelProfiles.outer_route_stats_snapshot(state, auto_sig)
+        @test haskey(snap1, route1)
+        @test snap1[route1].samples == n_seeds
+        @test snap1[route1].success_rate == 1.0
+        # Feedback stores amortized campaign wall time per sample.
+        @test isapprox(snap1[route1].mean_s, res1.elapsed_s / n_seeds; rtol=1e-6)
+
+        # A second identical campaign explores the under-sampled serial route,
+        # so repeated campaigns accumulate stats for every feasible allocation.
+        if Threads.nthreads() > 1
+            res2 = SimulationCampaigns.run_monte_carlo(runner, 1:n_seeds; threads=:auto, route_state=state)
+            @test res2.threads == 1
+            snap2 = ParallelProfiles.outer_route_stats_snapshot(state, auto_sig)
+            @test snap2[:none].samples == n_seeds
+            @test snap2[:threads].samples == n_seeds
+        end
+
+        # Caller-provided route features are patched with the actual sample count.
+        if Threads.nthreads() > 1
+            override_state = ParallelProfiles.OuterRouteState()
+            stale = SimulationCampaigns.campaign_route_features(samples=0, density_family="exponential")
+            res_o = SimulationCampaigns.run_monte_carlo(
+                x -> x, 1:n_seeds;
+                threads=:auto, route_features=stale, route_state=override_state
+            )
+            @test res_o.threads == expected_workers
+            snap_o = ParallelProfiles.outer_route_stats_snapshot(
+                override_state,
+                ParallelProfiles.outer_route_signature(
+                    SimulationCampaigns.campaign_route_features(samples=n_seeds, density_family="exponential")
+                )
+            )
+            @test sum(info.samples for info in values(snap_o)) == n_seeds
+        end
+
+        # Failures are recorded and lower the stored success rate.
+        fail_state = ParallelProfiles.OuterRouteState()
+        res_fail = SimulationCampaigns.run_monte_carlo(1:4; threads=:auto, route_state=fail_state) do seed
+            seed == 2 && error("seed two failed")
+            seed
+        end
+        @test length(res_fail.failed) == 1
+        snap_fail = ParallelProfiles.outer_route_stats_snapshot(
+            fail_state,
+            ParallelProfiles.outer_route_signature(SimulationCampaigns.campaign_route_features(samples=4))
+        )
+        @test sum(info.samples for info in values(snap_fail)) == 4
+        @test any(info.success_rate == 0.75 for info in values(snap_fail))
+
+        # Nested adaptive campaigns yield to an enclosing outer split: serial
+        # execution, no route feedback (contended timings must not poison the
+        # shared statistics).
+        nested_state = ParallelProfiles.OuterRouteState()
+        res_nested = withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1") do
+            SimulationCampaigns.run_monte_carlo(x -> x, 1:n_seeds; threads=:auto, route_state=nested_state)
+        end
+        @test res_nested.threads == 1
+        @test length(res_nested.successful) == n_seeds
+        @test isempty(nested_state.history)
+
+        # Caller-provided features with a non-montecarlo category are normalized
+        # before routing and recording: other categories' default-route rules can
+        # answer :process for shapes whose candidates are [:none, :threads],
+        # which the selector would clamp to a serial default on larger machines.
+        if Threads.nthreads() > 1
+            cat_state = ParallelProfiles.OuterRouteState()
+            odd_features = ParallelProfiles.OuterRouteFeatures(
+                category="scaling",
+                n_sats=2,
+                mission_time_s=3600.0,
+                has_control=true,
+                montecarlo_samples=0
+            )
+            res_cat = SimulationCampaigns.run_monte_carlo(
+                x -> x, 1:n_seeds;
+                threads=:auto, route_features=odd_features, route_state=cat_state
+            )
+            @test res_cat.threads == expected_workers
+            normalized_sig = ParallelProfiles.outer_route_signature(
+                ParallelProfiles.OuterRouteFeatures(
+                    category="montecarlo",
+                    n_sats=2,
+                    mission_time_s=3600.0,
+                    has_control=true,
+                    montecarlo_samples=n_seeds
+                )
+            )
+            snap_cat = ParallelProfiles.outer_route_stats_snapshot(cat_state, normalized_sig)
+            @test sum(info.samples for info in values(snap_cat)) == n_seeds
+        end
+
+        # ── threads=:auto constellation ensemble ──────────────────────────────
+        ens_state = ParallelProfiles.OuterRouteState()
+        res_ens = SimulationCampaigns.run_constellation_ensemble(
+            cfg; threads=:auto, route_state=ens_state, return_solution=true
+        )
+        @test res_ens isa SimulationCampaigns.MonteCarloResult
+        @test length(res_ens.samples) == 2
+        @test isempty(res_ens.failed)
+        @test all(s -> s.value !== nothing, res_ens.samples)
+        ens_sig = ParallelProfiles.outer_route_signature(
+            SimulationCampaigns.campaign_route_features(cfg; samples=2, n_sats=1)
+        )
+        ens_snap = ParallelProfiles.outer_route_stats_snapshot(ens_state, ens_sig)
+        @test sum(info.samples for info in values(ens_snap)) == 2
+        @test all(info.success_rate == 1.0 for info in values(ens_snap))
+    end
+
+    # ── Argument validation ────────────────────────────────────────────────────
+    guard_state = ParallelProfiles.OuterRouteState()
+    @test_throws ArgumentError SimulationCampaigns.run_monte_carlo(identity, 1:2; threads=:fast)
+    @test_throws ArgumentError SimulationCampaigns.run_monte_carlo(identity, 1:2; threads=1, route_state=guard_state)
+    @test_throws ArgumentError SimulationCampaigns.run_constellation_ensemble(cfg; threads=:fast)
+    @test_throws ArgumentError SimulationCampaigns.run_constellation_ensemble(cfg; threads=1, route_state=guard_state)
+
+    # Empty seed sets return an empty result without consulting the bandit.
+    empty_state = ParallelProfiles.OuterRouteState()
+    res_empty = SimulationCampaigns.run_monte_carlo(identity, Int[]; threads=:auto, route_state=empty_state)
+    @test isempty(res_empty.samples)
+    @test isempty(empty_state.history)
+
+    # The process-global state is a stable, inspectable OuterRouteState.
+    @test SimulationCampaigns.campaign_outer_route_state() isa ParallelProfiles.OuterRouteState
+    @test SimulationCampaigns.campaign_outer_route_state() === SimulationCampaigns.campaign_outer_route_state()
 end

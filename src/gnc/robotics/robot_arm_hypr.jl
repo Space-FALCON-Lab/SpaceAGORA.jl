@@ -1,0 +1,5 @@
+include(joinpath(@__DIR__, "robot_arm_hypr", "config.jl"))
+include(joinpath(@__DIR__, "robot_arm_hypr", "swarm_and_retiming.jl"))
+include(joinpath(@__DIR__, "robot_arm_hypr", "clearance.jl"))
+include(joinpath(@__DIR__, "robot_arm_hypr", "rrt_warmstart.jl"))
+include(joinpath(@__DIR__, "robot_arm_hypr", "planner_core.jl"))

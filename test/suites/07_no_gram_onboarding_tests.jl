@@ -25,6 +25,12 @@
         lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
             kclear()
         end
+        # kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
+        # planet-instance caches in src/environment/ephemerides/planets.jl;
+        # without this, a subsequent Earth(...)/Mars(...) call with a
+        # previously-seen key silently skips re-furnishing and returns a
+        # planet built from kernels that no longer exist in the pool.
+        SimulationModel.Planets._reset_furnished_kernels!()
 
         earth_sc = make_spacecraft(ra_alt_m=500e3, rp_alt_m=400e3, ν_deg=175.0)
         earth_args = make_example_config(
@@ -63,7 +69,13 @@
             results=false,
             results_directory=joinpath(REPO_ROOT, "output", "test_no_gram_mars")
         )
-        @test_nowarn run_simulation(mars_args)
+        # Deliberately drag-free (exponential atmosphere feeds heating only, no
+        # aero effector). The density-without-aero diagnostic is silenced via
+        # its env switch because maxlog=1 makes its firing order-dependent
+        # inside the full suite process.
+        withenv("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO" => "0") do
+            @test_nowarn run_simulation(mars_args)
+        end
         mars_et0 = ephemerides_time_seconds(mars_args.initial_time, mars_args.environment_model.ephemerides_model)
         mars_lpi0 = planet_frame_lpi(mars_args.environment_model.planet, mars_et0, mars_args.environment_model.ephemerides_model)
         @test !all(iszero, mars_lpi0)
@@ -73,6 +85,12 @@
         lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
             kclear()
         end
+        # kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
+        # planet-instance caches in src/environment/ephemerides/planets.jl;
+        # without this, a subsequent Earth(...)/Mars(...) call with a
+        # previously-seen key silently skips re-furnishing and returns a
+        # planet built from kernels that no longer exist in the pool.
+        SimulationModel.Planets._reset_furnished_kernels!()
 
         spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
         earth = @test_nowarn Earth("", spice_path)

@@ -1,7 +1,8 @@
 include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl")) # Get the reference system types for the callback
 
-using DifferentialEquations
+using OrdinaryDiffEq
 using DiffEqBase
+using DiffEqCallbacks
 using LinearAlgebra
 using SPICE
 using Dates
@@ -18,6 +19,7 @@ using ..GravityEffectors: InverseSquaredJ2GravityModel, j2_secular_rates
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
 import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache
+import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
 using ..ControlHooks: calcControlEffect!
 using ..GuidanceHooks: calcGuidanceEffect!
 using ..NavigationHooks: calcNavigationEffect!

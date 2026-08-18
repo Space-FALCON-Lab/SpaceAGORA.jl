@@ -125,6 +125,9 @@ end
 @inline _maneuver_count(cfg::OrbitEventsScenarioConfig) = length(cfg.maneuver_orbit_numbers)
 @inline _maneuver_count(::TimeAlignedScenarioConfig) = 0
 
+@inline _maneuver_replay_scale_mode(cfg::OrbitEventsScenarioConfig) = cfg.maneuver_replay_scale_mode
+@inline _maneuver_replay_scale_mode(::TimeAlignedScenarioConfig) = "delta_v"
+
 @inline _min_eval_points(cfg::OrbitEventsScenarioConfig) = cfg.min_eval_points
 @inline _min_eval_points(cfg::TimeAlignedScenarioConfig) = cfg.min_eval_points
 

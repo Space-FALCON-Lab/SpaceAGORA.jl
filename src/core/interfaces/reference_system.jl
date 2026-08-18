@@ -28,18 +28,17 @@ end
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
     # Legacy fallback when the caller does not have an explicit ephemeris time.
     # From J2000 inertial to PCPF (planet centered/planet fixed).
-    # The internal inertial frame is J2000, so the planetary spin vector is used directly.
-    ω_j2000 = planet.ω
+    # planet.ω is the spin vector in planet-fixed axes (pole = +z), so the
+    # transport term is applied after rotating into that frame.
     r_p = SVector{3, Float64}(planet.L_PI * r_i)
-    v_p = SVector{3, Float64}(planet.L_PI * (v_i - cross(ω_j2000, r_i)))
+    v_p = SVector{3, Float64}(planet.L_PI * v_i - cross(planet.ω, r_p))
     return r_p, v_p
 end
 
 function r_pintor_i(r_p::SVector{3, Float64}, v_p::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
     # From PCPF (planet centered/planet fixed) to J2000 inertial.
-    ω_j2000 = planet.ω
     r_j2000 = SVector{3, Float64}(planet.L_PI' * r_p)
-    v_j2000 = SVector{3, Float64}(planet.L_PI' * v_p + cross(ω_j2000, r_j2000))
+    v_j2000 = SVector{3, Float64}(planet.L_PI' * (v_p + cross(planet.ω, r_p)))
     return r_j2000, v_j2000
 end
 
@@ -109,9 +108,10 @@ function r_intor_p!(
     end
 
     l_pi = planet_frame_lpi(planet, et, ephemerides_model)
-    ω_j2000 = planet.ω
     r_p = SVector{3, Float64}(l_pi * r_i)
-    v_p = SVector{3, Float64}(l_pi * (v_i - cross(ω_j2000, r_i)))
+    # planet.ω is the spin vector in planet-fixed axes; apply the transport term
+    # after rotating (identical for the z-spin simple-ephemerides frame).
+    v_p = SVector{3, Float64}(l_pi * v_i - cross(planet.ω, r_p))
     return r_p, v_p
 end
 
@@ -276,11 +276,11 @@ function latlongtor(LATLONGH, planet, α_g0, t, t0)
     b = planet.Rp_p
     e = sqrt(1 - b^2/a^2)
     α = λ + α_g0 + planet.ω[3]*(t - t0)
-    cnst = a / (1 - e^2 * sin(ϕ)^2) + h
+    N = a / sqrt(1 - e^2 * sin(ϕ)^2)
 
-    x = cnst * cos(ϕ) * cos(α)
-    y = cnst * cos(ϕ) * sin(α)
-    z = cnst * sin(ϕ)
+    x = (N + h) * cos(ϕ) * cos(α)
+    y = (N + h) * cos(ϕ) * sin(α)
+    z = ((1 - e^2) * N + h) * sin(ϕ)
 
     return [x, y, z]
 end
@@ -346,7 +346,7 @@ function latlongtoOE(LATLONGH, planet, γ, α, v)
     # v_vec = SVector{3, Float64}([v*cos(γ)*cos(α), v*cos(γ)*sin(α), v*sin(γ)])
 
     # rvtoorbitalelement now works directly in J2000.
-    OE = rvtoorbitalelement(r_i, v_eci_j2000, 0, planet)[1:6]
+    OE = rvtoorbitalelement(r_i, v_eci_j2000, 0.0, planet)[1:6]
     return OE
 end
 
@@ -369,14 +369,20 @@ function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topogra
     # Calculate Altitude
     if !spherical_harmonic_topography
         N = planet.Rp_e / sqrt(1 - e2*sin(lat)^2)
-        alt = p_xy*cos(lat) + (z_p + e2*N*sin(lat)^2)*sin(lat) - N
+        # Bowring closed form: h = p·cosφ + (z + e²·N·sinφ)·sinφ − N.
+        alt = p_xy*cos(lat) + (z_p + e2*N*sin(lat))*sin(lat) - N
     else
-        alt = norm(r_p) - planet.topography_function(args, 
-                                                    planet.Clm_topo, 
-                                                    planet.Slm_topo, 
-                                                    lat, 
-                                                    lon,
-                                                    planet.A_topo)
+        # Legacy duck-typed topography contract (see the sandbox test in suite
+        # 03): the 6-arg planet.topography_function receives the includer
+        # module's `args` global when one exists; previously an includer
+        # without that global got an UndefVarError here.
+        topo_args = isdefined(@__MODULE__, :args) ? getfield(@__MODULE__, :args) : nothing
+        alt = norm(r_p) - planet.topography_function(topo_args,
+                                                     planet.Clm_topo,
+                                                     planet.Slm_topo,
+                                                     lat,
+                                                     lon,
+                                                     planet.A_topo)
     end
     
     return SVector{3, Float64}([alt, lat, lon])
@@ -604,3 +610,93 @@ Earth-Centered, Earth-Fixed (ECEF) frame.
 
 #     return v_gcrf
 # end
+
+# -----------------------------------------------------------------------------
+# RPO / HCW reference-frame utilities
+# -----------------------------------------------------------------------------
+
+"""
+    rtn_dcm_from_inertial(r_target_ii, v_target_ii)
+
+Return the direction-cosine matrix whose columns are the RTN basis vectors
+expressed in the inertial frame. The RTN convention used here is the HCW/RPO
+convention: radial, along-track, cross-track.
+"""
+function rtn_dcm_from_inertial(r_target_ii, v_target_ii)::SMatrix{3, 3, Float64}
+    r = SVector{3, Float64}(r_target_ii)
+    v = SVector{3, Float64}(v_target_ii)
+    r_norm = norm(r)
+    h = cross(r, v)
+    h_norm = norm(h)
+    if r_norm <= eps(Float64) || h_norm <= eps(Float64)
+        throw(ArgumentError("RTN frame requires nonzero target position and angular momentum."))
+    end
+
+    r_hat = r / r_norm
+    n_hat = h / h_norm
+    t_hat = normalize(cross(n_hat, r_hat))
+    return SMatrix{3, 3, Float64}(hcat(r_hat, t_hat, n_hat))
+end
+
+@inline function _rtn_rate_rad_s(r_target_ii, v_target_ii)::Float64
+    r = SVector{3, Float64}(r_target_ii)
+    v = SVector{3, Float64}(v_target_ii)
+    r2 = dot(r, r)
+    r2 <= eps(Float64) && throw(ArgumentError("RTN frame rate requires nonzero target position."))
+    return norm(cross(r, v)) / r2
+end
+
+"""
+    inertial_to_rtn_relative_state(r_chaser_ii, v_chaser_ii, r_target_ii, v_target_ii)
+
+Convert inertial chaser/target states to an HCW-style RTN relative state
+`[r_R, r_T, r_N, v_R, v_T, v_N]`.
+"""
+function inertial_to_rtn_relative_state(
+    r_chaser_ii,
+    v_chaser_ii,
+    r_target_ii,
+    v_target_ii,
+)::SVector{6, Float64}
+    C = rtn_dcm_from_inertial(r_target_ii, v_target_ii)
+    n = _rtn_rate_rad_s(r_target_ii, v_target_ii)
+    r_rel_ii = SVector{3, Float64}(r_chaser_ii) - SVector{3, Float64}(r_target_ii)
+    v_rel_ii = SVector{3, Float64}(v_chaser_ii) - SVector{3, Float64}(v_target_ii)
+    r_rel_rtn = C' * r_rel_ii
+    v_rel_rtn = C' * v_rel_ii - cross(SVector{3, Float64}(0.0, 0.0, n), r_rel_rtn)
+    return SVector{6, Float64}(
+        r_rel_rtn[1], r_rel_rtn[2], r_rel_rtn[3],
+        v_rel_rtn[1], v_rel_rtn[2], v_rel_rtn[3],
+    )
+end
+
+"""
+    rtn_to_inertial_relative_state(r_rel_rtn, v_rel_rtn, r_target_ii, v_target_ii)
+
+Convert an RTN relative position/velocity into inertial chaser position and
+velocity using the target inertial state.
+"""
+function rtn_to_inertial_relative_state(
+    r_rel_rtn,
+    v_rel_rtn,
+    r_target_ii,
+    v_target_ii,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    C = rtn_dcm_from_inertial(r_target_ii, v_target_ii)
+    n = _rtn_rate_rad_s(r_target_ii, v_target_ii)
+    r_rel = SVector{3, Float64}(r_rel_rtn)
+    v_rel = SVector{3, Float64}(v_rel_rtn)
+    r_chaser = SVector{3, Float64}(r_target_ii) + C * r_rel
+    v_chaser = SVector{3, Float64}(v_target_ii) +
+        C * (v_rel + cross(SVector{3, Float64}(0.0, 0.0, n), r_rel))
+    return r_chaser, v_chaser
+end
+
+"""
+    rtn_accel_to_inertial(a_rtn, r_target_ii, v_target_ii)
+
+Rotate an acceleration command from RTN coordinates to the inertial frame.
+"""
+function rtn_accel_to_inertial(a_rtn, r_target_ii, v_target_ii)::SVector{3, Float64}
+    return rtn_dcm_from_inertial(r_target_ii, v_target_ii) * SVector{3, Float64}(a_rtn)
+end

@@ -54,8 +54,21 @@ end
     return model isa EnvironmentModels.GRAMAtmosphereModel ? model : nothing
 end
 
+@inline function _gram_isolated_pool_batch_model_for_callback(
+    env::CallbackEnvConfig,
+    density_models::AbstractVector{<:AbstractDensityModel},
+    fallback_model::AbstractDensityModel,
+    num_sats::Int
+)
+    _gram_isolated_pool_enabled(env, num_sats) || return nothing
+    isempty(density_models) || return nothing
+    model = fallback_model
+    return model isa EnvironmentModels.GRAMAtmosphereModel ? model : nothing
+end
+
 @inline function _gram_isolated_pool_batch_model_for_callback(p, num_sats::Int)
     return _gram_isolated_pool_batch_model_for_callback(
+        _callback_env_config(p),
         p.shared_buffers.density_models,
         p.args.environment_model.density_model,
         num_sats,
@@ -169,7 +182,8 @@ function _gram_isolated_pool_batch_eval!(
     allotment_hint::Int=max(1, Threads.nthreads())
 )::Bool
     n = length(hs)
-    _gram_isolated_pool_enabled(n) || return false
+    env = _callback_env_config(p)
+    _gram_isolated_pool_enabled(env, n) || return false
     length(rhos) == n || return false
     length(Ts) == n || return false
     length(winds) == n || return false
@@ -179,7 +193,7 @@ function _gram_isolated_pool_batch_eval!(
         length(el_time) == n || return false
     end
 
-    max_allotment = min(max(1, allotment_hint), _gram_isolated_pool_max_workers())
+    max_allotment = min(max(1, allotment_hint), env.gram_isolated_pool_max_workers)
     workers = ParallelPolicy.thread_worker_count(n, max_allotment)
     workers > 1 || return false
 

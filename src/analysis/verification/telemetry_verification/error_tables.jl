@@ -10,26 +10,51 @@ function _orbit_rows_errors(
     tele_apo = _load_telemetry_curve(cfg.telemetry_apo_path, max_points)
     peri_bias = get(bias_by_event, "peri", 0.0)
     apo_bias = get(bias_by_event, "apo", 0.0)
-    peri_step = length(tele_peri.orbit) >= 2 ? median(diff(tele_peri.orbit)) : 1.0
-    apo_step = length(tele_apo.orbit) >= 2 ? median(diff(tele_apo.orbit)) : 1.0
-    peri_sim_axis = tele_peri.orbit[1] .+ peri_step .* collect(0:(length(extrema.peri.altitude)-1))
-    apo_sim_axis = tele_apo.orbit[1] .+ apo_step .* collect(0:(length(extrema.apo.altitude)-1))
+    # Sim apsis events occur once per orbit. With a known epoch orbit number the
+    # axis is anchored there with unit step and scoring is masked to the span the
+    # simulation actually reached; the legacy fallback stretches events across the
+    # telemetry sampling grid (median step) and clamp-scores beyond coverage.
+    mask_to_sim = cfg.epoch_orbit_offset !== nothing
+    if mask_to_sim
+        peri_sim_axis = cfg.epoch_orbit_offset .+ collect(0.0:(length(extrema.peri.altitude) - 1))
+        apo_sim_axis = cfg.epoch_orbit_offset .+ collect(0.0:(length(extrema.apo.altitude) - 1))
+    else
+        peri_step = length(tele_peri.orbit) >= 2 ? median(diff(tele_peri.orbit)) : 1.0
+        apo_step = length(tele_apo.orbit) >= 2 ? median(diff(tele_apo.orbit)) : 1.0
+        peri_sim_axis = tele_peri.orbit[1] .+ peri_step .* collect(0:(length(extrema.peri.altitude)-1))
+        apo_sim_axis = tele_apo.orbit[1] .+ apo_step .* collect(0:(length(extrema.apo.altitude)-1))
+    end
     peri_summary, peri_errors = _compare_orbit_curve(
         cfg.name,
         "peri",
         tele_peri.orbit,
         tele_peri.altitude,
-        extrema.peri.altitude .+ peri_bias;
-        sim_axis=peri_sim_axis
+        extrema.peri.altitude;
+        sim_axis=peri_sim_axis,
+        bias=peri_bias,
+        mask_to_sim_span=mask_to_sim
     )
     apo_summary, apo_errors = _compare_orbit_curve(
         cfg.name,
         "apo",
         tele_apo.orbit,
         tele_apo.altitude,
-        extrema.apo.altitude .+ apo_bias;
-        sim_axis=apo_sim_axis
+        extrema.apo.altitude;
+        sim_axis=apo_sim_axis,
+        bias=apo_bias,
+        mask_to_sim_span=mask_to_sim
     )
+    if length(extrema.apo.altitude) >= 3
+        burn_orbits = isempty(cfg.maneuver_orbit_numbers_campaign) ?
+            cfg.maneuver_orbit_numbers : cfg.maneuver_orbit_numbers_campaign
+        apo_summary = merge(apo_summary, _apo_decay_diagnostic(
+            tele_apo.orbit,
+            tele_apo.altitude,
+            apo_sim_axis,
+            extrema.apo.altitude .+ apo_bias,
+            Float64.(burn_orbits)
+        ))
+    end
     return [peri_summary, apo_summary], [peri_errors, apo_errors]
 end
 
@@ -83,6 +108,15 @@ function _time_aligned_rows_errors(
             tele_extrema.apo.altitude,
             sim_extrema.apo.altitude .+ apo_bias
         )
+        if length(sim_extrema.apo.altitude) >= 3 && length(tele_extrema.apo.orbit) >= 3
+            apo_summary = merge(apo_summary, _apo_decay_diagnostic(
+                collect(Float64, tele_extrema.apo.orbit),
+                collect(Float64, tele_extrema.apo.altitude),
+                tele_extrema.apo.orbit[1] .+ collect(0.0:(length(sim_extrema.apo.altitude) - 1)),
+                collect(Float64, sim_extrema.apo.altitude .+ apo_bias),
+                Float64[]
+            ))
+        end
 
         peri_speed_summary, peri_speed_errors = _compare_orbit_curve(
             cfg.name,
@@ -174,7 +208,29 @@ function _time_aligned_rows_errors(
         sim_time,
         sim_z_km
     )
-    return [altitude_summary, x_summary, y_summary, z_summary], [altitude_errors, x_errors, y_errors, z_errors]
+    summaries = [altitude_summary, x_summary, y_summary, z_summary]
+    errors = [altitude_errors, x_errors, y_errors, z_errors]
+
+    has_velocity_truth = !any(isnothing, (cfg.telemetry_vx_col, cfg.telemetry_vy_col, cfg.telemetry_vz_col))
+    if has_velocity_truth
+        sim_vx_kmps = sim_vx_mps .* 1e-3 .+ get(bias_by_event, "state_vx_time", 0.0)
+        sim_vy_kmps = sim_vy_mps .* 1e-3 .+ get(bias_by_event, "state_vy_time", 0.0)
+        sim_vz_kmps = sim_vz_mps .* 1e-3 .+ get(bias_by_event, "state_vz_time", 0.0)
+
+        vx_summary, vx_errors = _compare_time_series(
+            cfg.name, "state_vx_time", telemetry.time_s, telemetry.vx_kmps, sim_time, sim_vx_kmps
+        )
+        vy_summary, vy_errors = _compare_time_series(
+            cfg.name, "state_vy_time", telemetry.time_s, telemetry.vy_kmps, sim_time, sim_vy_kmps
+        )
+        vz_summary, vz_errors = _compare_time_series(
+            cfg.name, "state_vz_time", telemetry.time_s, telemetry.vz_kmps, sim_time, sim_vz_kmps
+        )
+        append!(summaries, [vx_summary, vy_summary, vz_summary])
+        append!(errors, [vx_errors, vy_errors, vz_errors])
+    end
+
+    return summaries, errors
 end
 
 @inline _tolerances_for(cfg::OrbitEventsScenarioConfig, profile::Symbol) = profile == :quick ? cfg.tolerances_quick : cfg.tolerances_full

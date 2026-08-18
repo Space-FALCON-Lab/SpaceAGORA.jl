@@ -44,18 +44,8 @@ end
     return parsed
 end
 
-struct GramTrackCacheConfig
-    mode::Symbol
-    entry_horizon_s::Float64
-    entry_alt_tol_m::Float64
-    entry_ang_tol_rad::Float64
-    entry_points::Int
-    orbit_horizon_s::Float64
-    orbit_alt_tol_m::Float64
-    orbit_ang_tol_rad::Float64
-    orbit_points::Int
-    transition_band_m::Float64
-end
+# GramTrackCacheConfig is defined in ConfigTypes (runtime_types.jl) so run-scoped
+# env snapshots on SharedBuffers can embed it; imported via registry.jl.
 
 @inline function _gram_track_cache_mode()::Symbol
     # Benchmark note (2026-02-27):

@@ -17,16 +17,61 @@
 #   julia --project=. benchmarks/studies/performance_mc_thread_scaling.jl
 #
 # Environment variables:
-#   SPACEAGORA_MC_THREAD_COUNTS    comma-separated worker counts (default: 1,2,4,8,16,32)
+#   SPACEAGORA_MC_THREAD_COUNTS    comma-separated worker counts (default: powers of two
+#                                  up to the physical core count, plus the physical and
+#                                  logical core counts)
 #   SPACEAGORA_MC_THREAD_OUTDIR    output directory
 #   SPACEAGORA_MC_THREAD_NORBITS   orbital periods per case (default: 10)
+#   SPACEAGORA_MC_THREAD_BATCHES   cases per worker (default: 1; use >=2 for steadier
+#                                  throughput estimates that amortise dispatch jitter)
+#   SPACEAGORA_MC_PHYSICAL_CORES   override detected physical core count
 #   SPACEAGORA_MC_THREAD_SYSIMAGE  path to sysimage .so (auto-detected if omitted)
 #   SPACEAGORA_MC_THREAD_SMOKE     set to "1" for a minimal 1-worker smoke run
 
 const _MC_TS_REPO_ROOT    = normpath(joinpath(@__DIR__, "..", ".."))
 const _MC_TS_WORKER_SCRIPT = joinpath(@__DIR__, "performance_mc_thread_scaling_worker.jl")
 const _MC_TS_DEFAULT_OUTDIR = joinpath(_MC_TS_REPO_ROOT, "output", "performance", "mc_thread_scaling")
-const _MC_TS_DEFAULT_THREAD_COUNTS = [1, 2, 4, 8, 16, 32, 64, 100]
+
+# Physical core count, distinct from Sys.CPU_THREADS (logical, includes SMT).
+# Returns (count, exact): exact=false means we fell back to the logical count.
+function _mc_ts_physical_cores()::Tuple{Int, Bool}
+    override = strip(get(ENV, "SPACEAGORA_MC_PHYSICAL_CORES", ""))
+    isempty(override) || return (parse(Int, override), true)
+    if Sys.isapple()
+        try
+            return (parse(Int, strip(read(`sysctl -n hw.physicalcpu`, String))), true)
+        catch
+        end
+    elseif Sys.islinux()
+        try
+            pairs = Set{String}()
+            for line in eachline(`lscpu -p=core,socket`)
+                startswith(line, "#") && continue
+                isempty(strip(line)) && continue
+                push!(pairs, strip(line))
+            end
+            isempty(pairs) || return (length(pairs), true)
+        catch
+        end
+    end
+    return (Sys.CPU_THREADS, false)
+end
+
+# Default sweep: powers of two up to the physical core count, the physical count
+# itself, and the logical count when SMT is present (so the SMT plateau is visible
+# without wasting runs far beyond it).
+function _mc_ts_default_thread_counts()::Vector{Int}
+    physical, _ = _mc_ts_physical_cores()
+    counts = Int[]
+    n = 1
+    while n < physical
+        push!(counts, n)
+        n *= 2
+    end
+    push!(counts, physical)
+    Sys.CPU_THREADS > physical && push!(counts, Sys.CPU_THREADS)
+    return sort!(unique!(counts))
+end
 
 using CSV
 using DataFrames
@@ -72,7 +117,7 @@ end
 end
 
 function _mc_ts_thread_counts()::Vector{Int}
-    raw = _mc_ts_env("SPACEAGORA_MC_THREAD_COUNTS", join(_MC_TS_DEFAULT_THREAD_COUNTS, ","))
+    raw = _mc_ts_env("SPACEAGORA_MC_THREAD_COUNTS", join(_mc_ts_default_thread_counts(), ","))
     counts = Int[]
     for part in split(raw, ",")
         t = strip(part)
@@ -144,6 +189,7 @@ function _mc_ts_run_one(
             "SPACEAGORA_MC_THREAD_OUTDIR"  => run_outdir,
             "SPACEAGORA_MC_THREAD_NORBITS" => string(n_orbits),
             "SPACEAGORA_MC_DIST_NWORKERS"  => string(n_threads),
+            "SPACEAGORA_MC_THREAD_BATCHES" => _mc_ts_env("SPACEAGORA_MC_THREAD_BATCHES", "1"),
         ) do
             @elapsed run(cmd)
         end
@@ -164,9 +210,12 @@ function _mc_ts_run_one(
     df = CSV.read(result_csv, DataFrame)
     nrow(df) == 0 && return nothing
     row = df[1, :]
+    row_names = Symbol.(names(df))
     return (
         julia_threads      = Int(row.julia_threads),
         n_concurrent       = Int(row.n_concurrent),
+        n_cases            = :n_cases in row_names ? Int(row.n_cases) : Int(row.n_concurrent),
+        batches_per_worker = :batches_per_worker in row_names ? Int(row.batches_per_worker) : 1,
         wall_time_s        = Float64(row.wall_time_s),
         time_per_case_s    = Float64(row.time_per_case_s),
         throughput_cases_s = Float64(row.throughput_cases_s),
@@ -174,6 +223,7 @@ function _mc_ts_run_one(
         min_case_s         = Float64(row.min_case_s),
         max_case_s         = Float64(row.max_case_s),
         imbalance_pct      = Float64(row.imbalance_pct),
+        mean_gc_pct        = :mean_gc_pct in row_names ? Float64(row.mean_gc_pct) : NaN,
         n_orbits           = Int(row.n_orbits),
         case_id            = String(row.case_id),
     )
@@ -248,6 +298,10 @@ function _mc_ts_generate_plots(
     opt_row = _mc_ts_optimal_row(summary_df)
     opt_n   = opt_row !== nothing ? opt_row.julia_threads : -1
 
+    physical_cores, physical_exact = _mc_ts_physical_cores()
+    show_core_line = physical_exact && minimum(xs) <= physical_cores <= maximum(xs)
+    core_label = "Physical cores ($(physical_cores))"
+
     # Panel 1: time-per-case vs workers.
     p1 = Plots.plot(
         xs, tpc;
@@ -284,6 +338,7 @@ function _mc_ts_generate_plots(
             )
         end
     end
+    show_core_line && Plots.vline!(p1, [physical_cores]; color=:gray, linestyle=:dot, label=core_label)
 
     # Panel 2: throughput (cases/s) vs workers.
     p2 = Plots.plot(
@@ -303,6 +358,7 @@ function _mc_ts_generate_plots(
         bottom_margin=16Plots.mm,
         legend=:topleft,
     )
+    show_core_line && Plots.vline!(p2, [physical_cores]; color=:gray, linestyle=:dot, label=core_label)
     Plots.plot!(p2, xs, ideal_thput;
         label="Ideal (linear throughput)",
         color=:black,
@@ -330,6 +386,7 @@ function _mc_ts_generate_plots(
         legend=:topright,
     )
     Plots.hline!(p3, [100.0]; color=:black, linestyle=:dash, label="100% (ideal)")
+    show_core_line && Plots.vline!(p3, [physical_cores]; color=:gray, linestyle=:dot, label=core_label)
 
     combined = Plots.plot(p1, p2, p3;
         layout=(3, 1),
@@ -365,10 +422,12 @@ function _mc_ts_write_report(
     open(path, "w") do io
         println(io, "# Monte Carlo Distributed Worker Scaling Study")
         println(io)
+        physical_cores, physical_exact = _mc_ts_physical_cores()
         println(io, "- Generated (UTC): `$(now(UTC))`")
         println(io, "- Julia: `$(VERSION)`")
         println(io, "- Worker counts measured: $(join(thread_counts, ", "))")
-        println(io, "- Host CPU threads available: `$(Sys.CPU_THREADS)`")
+        println(io, "- Host physical cores: `$(physical_cores)`$(physical_exact ? "" : " (estimate: fell back to logical count)")")
+        println(io, "- Host CPU threads available (logical): `$(Sys.CPU_THREADS)`")
         println(io, "- Workload: $(nrow(summary_df) > 0 ? summary_df.case_id[1] : "unknown")")
         println(io, "- Orbits per case: $(n_orbits)")
         sysimage = _mc_ts_sysimage()
@@ -394,16 +453,18 @@ function _mc_ts_write_report(
         println(io)
         println(io, "## Results Table")
         println(io)
-        println(io, "- `time_per_case_s`: wall_time / N. Lower = better throughput.")
-        println(io, "- `throughput_cases_s`: N / wall_time. Higher = better.")
+        println(io, "- `time_per_case_s`: wall_time / n_cases (n_cases = workers × batches). Lower = better throughput.")
+        println(io, "- `throughput_cases_s`: n_cases / wall_time. Higher = better.")
         println(io, "- `speedup_throughput`: throughput_at_N / throughput_at_1. Ideal = N.")
-        println(io, "- `efficiency_pct`: 100 × speedup / N. 100% = perfect linear scaling.")
+        println(io, "- `efficiency_pct`: 100 × speedup / N. 100% = perfect linear scaling. Expect a knee at the physical core count; efficiency past it reflects SMT, not real cores.")
         println(io, "- `imbalance_pct`: 100 × (max_case − min_case) / mean_case. High values indicate uneven thread utilisation.")
+        println(io, "- `mean_gc_pct`: 100 × Σgc_time / Σcase_time across cases. High values indicate allocation pressure.")
         println(io)
         cols = [
-            :julia_threads, :time_per_case_s, :throughput_cases_s,
+            :julia_threads, :n_cases, :time_per_case_s, :throughput_cases_s,
             :speedup_throughput, :efficiency_pct,
             :wall_time_s, :mean_case_s, :min_case_s, :max_case_s, :imbalance_pct,
+            :mean_gc_pct,
             :is_optimal,
         ]
         present = [c for c in cols if c in Symbol.(names(summary_df))]
@@ -486,6 +547,7 @@ function _mc_ts_write_optimal_toml(outdir::String, stamp::String, opt_row)
         "case_id"            => opt_row.case_id,
         "n_orbits"           => opt_row.n_orbits,
         "host_cpu_threads"   => Sys.CPU_THREADS,
+        "host_physical_cores" => _mc_ts_physical_cores()[1],
     )
     open(toml_path, "w") do io
         TOML.print(io, data)
@@ -503,9 +565,12 @@ function main_mc_thread_scaling()
 
     mkpath(outdir)
 
+    physical_cores, physical_exact = _mc_ts_physical_cores()
     println("MC distributed worker scaling study")
     println("Worker counts:    $(join(thread_counts, ", "))")
     println("Orbits per case:  $(n_orbits)")
+    println("Batches/worker:   $(_mc_ts_env("SPACEAGORA_MC_THREAD_BATCHES", "1"))")
+    println("Physical cores:   $(physical_cores)$(physical_exact ? "" : " (estimate)")")
     println("Host CPU threads: $(Sys.CPU_THREADS)")
     println("Sysimage:         $(sysimage === nothing ? "none" : sysimage)")
     println("Output:           $(outdir)")

@@ -7,6 +7,48 @@ module Planets
     export Earth, Mars, Venus, Moon, Titan
     const SPICE_LOCK = parentmodule(parentmodule(@__MODULE__)).RuntimeServices.SPICE_LOCK
     const MARS_MU_M3S2 = 0.4282837285418775e5 * 1e9
+
+    # Planet constructors (Earth(), Mars(), ...) are called once per case setup, but
+    # some callers (e.g. Monte Carlo sample loops that build a fresh mission config
+    # per trial) call them many times per process. `furnsh` has no cheap "already
+    # loaded" check of its own and CSPICE's kernel table is a fixed-size global
+    # resource with no automatic eviction, so reloading the same kernel path
+    # thousands of times in one process without ever unloading eventually exhausts
+    # it ("Insufficient dynamic kernel table space" / "too many kernels loaded").
+    # Track furnished paths here so repeat construction is a cheap no-op instead of
+    # a repeat furnsh call.
+    const _FURNISHED_KERNELS = Set{String}()
+
+    # `kclear()` wipes CSPICE's own kernel pool but has no way to know about this
+    # cache (or the planet-instance caches below), so anything that calls `kclear()`
+    # must call this too — otherwise a kernel already in `_FURNISHED_KERNELS` gets
+    # skipped on the next furnish even though `kclear()` just unloaded it from CSPICE,
+    # leaving lookups (e.g. utc2et needing the leapseconds kernel) failing against an
+    # empty pool. Also drops the cached Earth()/Mars()/etc. instances themselves
+    # (defined further down, near their constructors) since those were built from
+    # kernels that no longer exist post-kclear.
+    @inline function _reset_furnished_kernels!()
+        lock(SPICE_LOCK) do
+            empty!(_FURNISHED_KERNELS)
+            empty!(_EARTH_CACHE)
+            empty!(_MARS_CACHE)
+            empty!(_VENUS_CACHE)
+            empty!(_TITAN_CACHE)
+            empty!(_MOON_CACHE)
+        end
+        return nothing
+    end
+
+    @inline function _furnsh_once(kernel_path::String)
+        resolved = abspath(kernel_path)
+        lock(SPICE_LOCK) do
+            resolved in _FURNISHED_KERNELS && return nothing
+            furnsh(resolved)
+            push!(_FURNISHED_KERNELS, resolved)
+            return nothing
+        end
+        return nothing
+    end
     δ(i, j) = ==(i, j)
 
     @kwdef mutable struct TopographyHarmonicsWorkspace
@@ -163,7 +205,7 @@ module Planets
     @inline function _furnsh_required(spice_path::String, relpath::String)
         kernel_path = joinpath(spice_path, relpath)
         isfile(kernel_path) || throw(ArgumentError("Required SPICE kernel not found: $kernel_path"))
-        furnsh(kernel_path)
+        _furnsh_once(kernel_path)
         return kernel_path
     end
 
@@ -171,7 +213,7 @@ module Planets
         for relpath in relpaths
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
+                _furnsh_once(kernel_path)
                 return kernel_path
             end
         end
@@ -182,7 +224,7 @@ module Planets
         for relpath in relpaths
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
+                _furnsh_once(kernel_path)
                 return kernel_path
             end
         end
@@ -218,7 +260,7 @@ module Planets
         )
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
+                _furnsh_once(kernel_path)
                 return kernel_path
             end
         end
@@ -282,7 +324,7 @@ module Planets
         for relpath in ("pck/pck00011.tpc", "pck/pck00010.tpc")
             kernel_path = joinpath(spice_path, relpath)
             if isfile(kernel_path)
-                furnsh(kernel_path)
+                _furnsh_once(kernel_path)
                 return kernel_path
             end
         end
@@ -301,72 +343,122 @@ module Planets
     end
 
     # Constructors
+    #
+    # `Earth("", spice_path)` / `Mars(...)` / etc. are called pervasively across the
+    # codebase (case builders, Monte Carlo sample loops, test setup) with the same
+    # `(topo_harmonics_file, spice_path)` pair every time within a process. The
+    # `topo_harmonics_file` argument is currently inert everywhere: `TopographyHarmonicsWorkspace!`
+    # (below) is the only thing that ever mutates a planet after construction, and no
+    # caller in this codebase invokes it (every call site passes `topo_harmonics_file=""`
+    # and the call is commented out in each constructor). That makes these constructors
+    # pure for any given key, so — on top of `_furnsh_once` making repeat kernel loads a
+    # no-op — cache the constructed planet itself: repeat calls become a `Dict` lookup
+    # instead of a `SPICE_LOCK`-guarded `bodvrd` FFI round trip (Mars/Venus/Titan/Moon) or
+    # kernel-existence probing (all five). This matters most for Monte Carlo sample loops,
+    # which build a fresh mission config (and therefore a fresh planet) per trial, all
+    # serialized on the same global lock when run multi-threaded.
+    #
+    # NOTE: this assumes the returned planet is never mutated after construction. If
+    # `TopographyHarmonicsWorkspace!` is ever wired back up for a real caller, this cache
+    # needs revisiting — every consumer of a given key would be sharing one mutable
+    # workspace.
+    const _EARTH_CACHE = Dict{Tuple{String, String}, Earth}()
+    const _MARS_CACHE  = Dict{Tuple{String, String}, Mars}()
+    const _VENUS_CACHE = Dict{Tuple{String, String}, Venus}()
+    const _TITAN_CACHE = Dict{Tuple{String, String}, Titan}()
+    const _MOON_CACHE  = Dict{Tuple{String, String}, Moon}()
+
     function Earth(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_required(spice_path, "pck/pck00011.tpc")
-        _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_planetary_kernel(spice_path)
-        _gravity_constants_kernel_if_available(spice_path)
-        # The starter-pack SPICE bundle shipped in-repo may omit the high-precision
-        # Earth orientation kernels. When they are absent, runtime frame transforms
-        # fall back to the generic IAU_EARTH frame from pck00011.tpc.
-        _furnsh_first_existing_if_available(
-            spice_path,
-            ("pck/earth_latest_high_prec.bpc", "pck/earth_200101_990628_predict.bpc")
-        )
-        _furnsh_first_existing_if_available(
-            spice_path,
-            (
-                "tf/earth_assoc_itrf93.tf",
-                # "fk/planets/earth_assoc_itrf93.tf",
-                # "fk/planets/earth_fixed.tf"
+        key = (topo_harmonics_file, spice_path)
+        return lock(SPICE_LOCK) do
+            haskey(_EARTH_CACHE, key) && return _EARTH_CACHE[key]
+            _furnsh_required(spice_path, "pck/pck00011.tpc")
+            _furnsh_required(spice_path, "lsk/naif0012.tls")
+            _furnsh_planetary_kernel(spice_path)
+            _gravity_constants_kernel_if_available(spice_path)
+            # The starter-pack SPICE bundle shipped in-repo may omit the high-precision
+            # Earth orientation kernels. When they are absent, runtime frame transforms
+            # fall back to the generic IAU_EARTH frame from pck00011.tpc.
+            _furnsh_first_existing_if_available(
+                spice_path,
+                ("pck/earth_latest_high_prec.bpc", "pck/earth_200101_990628_predict.bpc")
             )
-        )
-        earth = Earth()
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
-        return earth
+            _furnsh_first_existing_if_available(
+                spice_path,
+                (
+                    "tf/earth_assoc_itrf93.tf",
+                    # "fk/planets/earth_assoc_itrf93.tf",
+                    # "fk/planets/earth_fixed.tf"
+                )
+            )
+            earth = Earth()
+            # TopographyHarmonicsWorkspace!(topo_harmonics_file, earth)
+            _EARTH_CACHE[key] = earth
+            return earth
+        end
     end
 
     function Mars(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_mars_pck(spice_path)
-        _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_planetary_kernel(spice_path)
-        _furnsh_mars_system_kernel(spice_path)
-        _gravity_constants_kernel_if_available(spice_path)
-        mars = Mars(; _spice_backed_planet_kwargs("Mars")...)
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
-        return mars
+        key = (topo_harmonics_file, spice_path)
+        return lock(SPICE_LOCK) do
+            haskey(_MARS_CACHE, key) && return _MARS_CACHE[key]
+            _furnsh_mars_pck(spice_path)
+            _furnsh_required(spice_path, "lsk/naif0012.tls")
+            _furnsh_planetary_kernel(spice_path)
+            _furnsh_mars_system_kernel(spice_path)
+            _gravity_constants_kernel_if_available(spice_path)
+            mars = Mars(; _spice_backed_planet_kwargs("Mars")...)
+            # TopographyHarmonicsWorkspace!(topo_harmonics_file, mars)
+            _MARS_CACHE[key] = mars
+            return mars
+        end
     end
 
     function Venus(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_required(spice_path, "pck/pck00011.tpc")
-        _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_planetary_kernel(spice_path)
-        _gravity_constants_kernel_if_available(spice_path)
-        venus = Venus(; _spice_backed_planet_kwargs("Venus")...)
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
-        return venus
+        key = (topo_harmonics_file, spice_path)
+        return lock(SPICE_LOCK) do
+            haskey(_VENUS_CACHE, key) && return _VENUS_CACHE[key]
+            _furnsh_required(spice_path, "pck/pck00011.tpc")
+            _furnsh_required(spice_path, "lsk/naif0012.tls")
+            _furnsh_planetary_kernel(spice_path)
+            _gravity_constants_kernel_if_available(spice_path)
+            venus = Venus(; _spice_backed_planet_kwargs("Venus")...)
+            # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
+            _VENUS_CACHE[key] = venus
+            return venus
+        end
     end
 
     function Titan(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_required(spice_path, "pck/pck00010.tpc")
-        _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_planetary_kernel(spice_path)
-        _gravity_constants_kernel_if_available(spice_path)
-        _furnsh_first_existing(spice_path, ("spk/satellites/sat441.bsp", "spk/satellites/sat441_GRAM.bsp"))
-        titan = Titan(; _spice_backed_planet_kwargs("Titan")...)
-        # TopographyHarmonicsWorkspace!(topo_harmonics_file, titan)
-        return titan
+        key = (topo_harmonics_file, spice_path)
+        return lock(SPICE_LOCK) do
+            haskey(_TITAN_CACHE, key) && return _TITAN_CACHE[key]
+            _furnsh_required(spice_path, "pck/pck00010.tpc")
+            _furnsh_required(spice_path, "lsk/naif0012.tls")
+            _furnsh_planetary_kernel(spice_path)
+            _gravity_constants_kernel_if_available(spice_path)
+            _furnsh_first_existing(spice_path, ("spk/satellites/sat441.bsp", "spk/satellites/sat441_GRAM.bsp"))
+            titan = Titan(; _spice_backed_planet_kwargs("Titan")...)
+            # TopographyHarmonicsWorkspace!(topo_harmonics_file, titan)
+            _TITAN_CACHE[key] = titan
+            return titan
+        end
     end
 
     function Moon(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
-        _furnsh_required(spice_path, "pck/pck00011.tpc")
-        _furnsh_required(spice_path, "lsk/naif0012.tls")
-        _furnsh_planetary_kernel(spice_path)
-        _gravity_constants_kernel_if_available(spice_path)
-        _furnsh_required(spice_path, "spk/satellites/SPICELunaCurrentKernel.bpc")
-        _furnsh_required(spice_path, "tf/SPICELunaFrameKernel.tf")
-        moon = Moon(; _spice_backed_planet_kwargs("Moon")...)
-        return moon
+        key = (topo_harmonics_file, spice_path)
+        return lock(SPICE_LOCK) do
+            haskey(_MOON_CACHE, key) && return _MOON_CACHE[key]
+            _furnsh_required(spice_path, "pck/pck00011.tpc")
+            _furnsh_required(spice_path, "lsk/naif0012.tls")
+            _furnsh_planetary_kernel(spice_path)
+            _gravity_constants_kernel_if_available(spice_path)
+            _furnsh_required(spice_path, "spk/satellites/SPICELunaCurrentKernel.bpc")
+            _furnsh_required(spice_path, "tf/SPICELunaFrameKernel.tf")
+            moon = Moon(; _spice_backed_planet_kwargs("Moon")...)
+            _MOON_CACHE[key] = moon
+            return moon
+        end
     end
 
     # Helper functions

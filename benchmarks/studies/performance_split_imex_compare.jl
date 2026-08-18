@@ -284,8 +284,8 @@ function main()
     println("Wrote report: $(report_path)")
     println()
     println("Run recipe:")
-    println("  julia --project=.AGORA test/performance_split_imex_compare.jl --profile=quick")
-    println("  julia --project=.AGORA test/performance_split_imex_compare.jl --profile=quick --warmup=1 --repeats=3 --cases=single_orientation_aero,proximity_2sat_orientation_fullstack_gnc_highrate,multi_4_gravity")
+    println("  julia --project=. benchmarks/studies/performance_split_imex_compare.jl --profile=quick")
+    println("  julia --project=. benchmarks/studies/performance_split_imex_compare.jl --profile=quick --warmup=1 --repeats=3 --cases=single_orientation_aero,proximity_2sat_orientation_fullstack_gnc_highrate,multi_4_gravity")
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

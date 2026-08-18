@@ -8,9 +8,10 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "gravity_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "aerodynamic_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "perturbation_effectors.jl"))
-    include(joinpath(@__DIR__, "force_torque_models", "laser_link_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "thruster_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "laser_link_effectors.jl"))
 
     # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
     @eval GravityEffectors using ..PerturbationEffectors
@@ -23,25 +24,33 @@ module DynamicEffectors
     using .AerodynamicEffectors: _threadid_capacity, _multibody_use_threads, _multibody_thread_decision
     using .AerodynamicEffectors: _make_aero_scratch_workspace, _ensure_aero_workspace_capacity!, _aero_workspace_for_sat!
     using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
+    using .PerturbationEffectors: MagneticTorqueRodModel, get_magnetic_field_dipole, get_magnetic_field, calculate_magnetic_torque
+    using .PerturbationEffectors: LVLHCascadeAttitudeControlModel
     using .PerturbationEffectors: srp, srp_cannonball_accel, _spice_query_name
     using .PerturbationEffectors: planetary_albedo_accel, planetary_ir_accel
     using .PerturbationEffectors: _make_nbody_scratch_workspace, _ensure_nbody_workspace_capacity!, _nbody_workspace_for_sat!
     using .PerturbationEffectors: _make_harmonics_scratch_workspace, _harmonics_workspace_for_sat!
     using .PerturbationEffectors: _nbody_body_position_from_cache_j2000_m, _srp_sun_position_from_cache_j2000_m
     using .PerturbationEffectors: eclipse_area_calc
+    using .ThrusterModels: BaseThrusterModel
+    using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
+    using .RobotArmReactionEffectors: RobotArmReactionEffector
     using .LaserLinkEffectors: OpenCavityLaserLinkModel, laser_link_scheduler_callback
     using .LaserLinkEffectors: laser_link_force_magnitude, laser_link_pair_force, laser_link_active_pair
     using .LaserLinkEffectors: update_laser_link_schedule!, accumulate_laser_link_forces!
-    using .ThrusterModels: BaseThrusterModel
-    using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
+    using .LaserLinkEffectors: LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
-    export OpenCavityLaserLinkModel, laser_link_scheduler_callback
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
+    export MagneticTorqueRodModel, get_magnetic_field_dipole, get_magnetic_field, calculate_magnetic_torque
+    export LVLHCascadeAttitudeControlModel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     export calcForceTorque
     export wrench, wrench_caching!, environment_requirements, solver_partition
     export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
+    export RobotArmReactionEffector
+    export OpenCavityLaserLinkModel, laser_link_scheduler_callback
+    export LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
 end

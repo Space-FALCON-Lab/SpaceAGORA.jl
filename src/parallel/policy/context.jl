@@ -186,17 +186,18 @@ function _spin_barrier_worker_loop_w(worker_id::Int, pool::_SpinBarrierPool)::No
         catch err
             captured = Base.CapturedException(err, catch_backtrace())
         end
-        # Signal done. Coordinator reads done_count after all worker_gen bumps.
-        # Store any error into request so the coordinator can rethrow it.
-        if captured !== nothing
-            pool.request[] = (; pool.request[]..., _error=captured)
-        end
+        # Record the round's outcome in this worker's private slot (clearing any
+        # stale error), then signal done. The atomic_add! release-publishes the
+        # slot write; the coordinator reads slots only after the barrier.
+        pool.errors[worker_id] = captured
         Threads.atomic_add!(pool.done_count, 1)
     end
 end
 
 function _create_spin_barrier_pool(workers::Int)::_SpinBarrierPool
-    workers = max(1, workers)
+    # Spin workers busy-wait without yielding, so the pool must leave one Julia
+    # thread free for the coordinator; more spinners than that would deadlock.
+    workers = max(1, min(workers, Threads.nthreads() - 1))
     pool = _SpinBarrierPool(workers)
     @inbounds for worker_id in 1:workers
         Threads.@spawn _spin_barrier_worker_loop_w(worker_id, pool)
@@ -255,9 +256,13 @@ function _spin_barrier_dispatch!(
             GC.safepoint()
         end
         Threads.atomic_sub!(pool.done_count, pool_workers)
-        req = pool.request[]
-        if hasproperty(req, :_error) && req._error !== nothing
-            throw(req._error.ex)
+        # Propagate the first pool-worker error (by worker index), then any
+        # coordinator error. Each slot is written by exactly one worker.
+        @inbounds for w in 1:pool_workers
+            captured = pool.errors[w]
+            if captured !== nothing
+                throw(captured.ex)
+            end
         end
         if coordinator_error !== nothing
             throw(coordinator_error)

@@ -144,6 +144,16 @@ end
             "SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET",
             max(default_budget, 16),
         )
+    elseif source == :density_callback_lockfree
+        # A lock-free density model (e.g. GRAMAtmosphereModelSurrogate) has no
+        # global-lock oversubscription cost to guard against -- the 16-thread
+        # floor above exists for native/locked GRAM specifically, and gates
+        # the lock-free surrogate for no reason. Falls through to the general
+        # default (4) like :multibody/:dynamic_effectors/:control_callback.
+        return parse_thread_threshold_env(
+            "SPACEAGORA_DENSITY_CALLBACK_LOCKFREE_AUTO_THREAD_MIN_BUDGET",
+            default_budget,
+        )
     elseif source == :thermal_callback
         return parse_thread_threshold_env(
             "SPACEAGORA_THERMAL_CALLBACK_AUTO_THREAD_MIN_BUDGET",
@@ -154,7 +164,7 @@ end
 end
 
 @inline function _telemetry_bucket(source::Symbol)::Symbol
-    if source == :density_callback
+    if source == :density_callback || source == :density_callback_lockfree
         return :density
     elseif source == :control_callback
         return :control
@@ -162,6 +172,37 @@ end
         return :multibody
     end
     return :other
+end
+
+"""
+    snapshot_policy_decision_env() -> PolicyDecisionEnvConfig
+
+Resolve the env-derived knobs consulted on every `thread_policy_decision` call
+into a typed snapshot.  Built once at run_simulation setup so hot paths avoid
+process-global ENV access; values reflect ENV (and any active engine
+overrides) at snapshot time.
+"""
+function snapshot_policy_decision_env()::PolicyDecisionEnvConfig
+    return PolicyDecisionEnvConfig(
+        effective_inner_thread_budget(),
+        outer_parallel_active(),
+        auto_thread_min_budget(),
+        auto_thread_min_budget(:density_callback),
+        auto_thread_min_budget(:density_callback_lockfree),
+        auto_thread_min_budget(:thermal_callback),
+        adaptive_policy_enabled(),
+    )
+end
+
+@inline function _snapshot_auto_min_budget(env::PolicyDecisionEnvConfig, source::Symbol)::Int
+    if source == :density_callback
+        return env.auto_min_budget_density
+    elseif source == :density_callback_lockfree
+        return env.auto_min_budget_density_lockfree
+    elseif source == :thermal_callback
+        return env.auto_min_budget_thermal
+    end
+    return env.auto_min_budget_default
 end
 
 @inline adaptive_policy_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_ADAPTIVE", false)

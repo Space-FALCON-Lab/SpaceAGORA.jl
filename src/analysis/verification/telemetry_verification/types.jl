@@ -23,6 +23,22 @@ Base.@kwdef struct AtmosphereTruthConfig
     mars_wind_scales::Union{Nothing, NTuple{2, Float64}} = nothing
     mars_mola_heights::Union{Nothing, Bool} = nothing
     mars_min_max::Union{Nothing, Int} = nothing
+    # Flight-measured atmosphere mode: atmosphere_model = "tabulated_flight"
+    # flies the sim on per-pass measured density profiles (see
+    # TabulatedFlightAtmosphereModel). Used by the Odyssey nightly as a
+    # digital-twin regression sentinel (PI decision, 2026-07) and by the
+    # certification envelope; always visible in the summary via the
+    # atmosphere_model column, so rows are never ambiguous about their mode.
+    tabulated_flight_file::String = ""
+    tabulated_flight_sigma::Float64 = 0.0
+    # Time-tabulated atmosphere mode: atmosphere_model = "tabulated_time" flies
+    # the sim on an externally supplied rho(t) table in scenario elapsed time
+    # (see TimeTabulatedAtmosphereModel) — the orbital-arc counterpart of
+    # tabulated_flight, used for flight-inferred along-track density replay
+    # (digital-twin runs) and assimilated-product sampling.
+    tabulated_time_file::String = ""
+    tabulated_time_scale::Float64 = 1.0
+    tabulated_time_temperature_k::Float64 = 900.0
 end
 
 Base.@kwdef struct CalibrationConfig
@@ -50,6 +66,10 @@ Base.@kwdef struct SpacecraftConfig
     panel_offset_y_m::Float64
     prop_mass_kg::Float64
     id::Int64
+    # :legacy = historical bus ref_area dims[1]*dims[3]; :frontal = the flow-normal
+    # dims[2]*dims[3] face matching the Hart free-molecular coefficient
+    # normalization (see make_three_body_spacecraft).
+    bus_ram_face::Symbol = :legacy
 end
 
 abstract type AbstractScenarioConfig end
@@ -75,6 +95,17 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     aop_deg::Float64
     raan_deg::Float64
     ta_deg::Float64
+    element_frame::Symbol = :j2000
+    # Optional exact J2000 Cartesian state (x, y, z in m; vx, vy, vz in m/s)
+    # relative to the central body at initial_time, e.g. taken directly from the
+    # mission NAV kernel. When present it overrides the element-based initial
+    # condition above (the elements stay in the manifest as documentation).
+    initial_state_j2000_m::Union{Nothing, NTuple{6, Float64}} = nothing
+    # Campaign orbit number of the scenario epoch (the truth product's numbering
+    # origin may predate the epoch, e.g. counting from orbit insertion). When
+    # set, sim apsis events are placed at epoch_orbit_offset + k with unit step
+    # (one apsis per orbit) and scoring is masked to the simulated span.
+    epoch_orbit_offset::Union{Nothing, Float64} = nothing
     spacecraft::SpacecraftConfig
     gravity_model::Symbol
     gravity_harmonics_degree::Int = 0
@@ -88,7 +119,14 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     maneuver_orbit_numbers::Vector{Int64} = Int64[]
+    maneuver_orbit_numbers_campaign::Vector{Int64} = Int64[]
     maneuver_delta_v_mps::Vector{Float64} = Float64[]
+    # Diagnostic replay scaling: "delta_v" (benchmark default, replay flight
+    # dv verbatim) or "flight_apoapsis_ratio" (scale each burn by flight/sim
+    # apoapsis radius so it delivers the flight's periapsis change; injects
+    # flight truth — diagnostics only, recorded in the summary).
+    maneuver_replay_scale_mode::String = "delta_v"
+    maneuver_flight_apoapsis_alt_m::Vector{Float64} = Float64[]
     maneuver_thrust_n::Float64 = 0.0
     maneuver_isp_s::Float64 = 0.0
     maneuver_guidance_rate_s::Float64 = 30.0
@@ -120,6 +158,14 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     telemetry_vx_ic_col::Union{Nothing, String} = nothing
     telemetry_vy_ic_col::Union{Nothing, String} = nothing
     telemetry_vz_ic_col::Union{Nothing, String} = nothing
+    # Optional: real per-sample velocity ground truth. When all three are present,
+    # state_vx_time/state_vy_time/state_vz_time error rows are computed against
+    # these telemetry columns instead of being omitted (the default vx_kmps/vy_kmps/
+    # vz_kmps fallback in _load_time_aligned_telemetry is numerically differentiated
+    # from position and is not compared against directly).
+    telemetry_vx_col::Union{Nothing, String} = nothing
+    telemetry_vy_col::Union{Nothing, String} = nothing
+    telemetry_vz_col::Union{Nothing, String} = nothing
     max_points_quick::Int
     max_points_full::Int
     min_eval_points::Int
@@ -147,6 +193,16 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     atmosphere_truth::AtmosphereTruthConfig = AtmosphereTruthConfig()
     calibration::CalibrationConfig = CalibrationConfig()
     EI_km::Float64
+    # Constant offsets added to the Cartesian telemetry IC (J2000, after any
+    # frame conversion). The knobs behind differential-correction IC fitting
+    # (fit_initial_state) and offset sweeps; zero by default.
+    ic_offset_m::NTuple{3, Float64} = (0.0, 0.0, 0.0)
+    ic_offset_mps::NTuple{3, Float64} = (0.0, 0.0, 0.0)
+    # Illumination screen for single-frequency GNSS truth: ionospheric group
+    # delay biases the dayside radial by O(100 m) (measured -162 m mean on
+    # CYGNSS FM4), so :nightside keeps only samples with the position vector
+    # anti-sunward (cos(sun angle) < 0). :dayside keeps the complement.
+    truth_mask::Symbol = :none
 end
 
 Base.@kwdef struct StudyConfig

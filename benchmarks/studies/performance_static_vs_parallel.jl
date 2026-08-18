@@ -6,7 +6,7 @@ using Random
 const STATIC_VS_PARALLEL_PERF_ROOT = joinpath(REPO_ROOT, "output", "performance")
 const STATIC_VS_PARALLEL_DEFAULT_OUTDIR = joinpath(STATIC_VS_PARALLEL_PERF_ROOT, "static_vs_parallel")
 const STATIC_VS_PARALLEL_RUNTIME_SCRIPT = joinpath(_WRAPPER_DIR, "performance_runtime_analysis.jl")
-const STATIC_VS_PARALLEL_PROJECT = joinpath(REPO_ROOT, ".AGORA")
+const STATIC_VS_PARALLEL_PROJECT = REPO_ROOT
 const STATIC_VS_PARALLEL_POLICY_KEYS = (:outer_pinned, :full_auto)
 
 Base.@kwdef struct StaticVsParallelConfig
@@ -752,7 +752,7 @@ function _write_static_vs_parallel_report(
         process_suffix = config.include_process ? " --include-process=1$(isnothing(config.process_workers) ? "" : " --process-workers=$(config.process_workers)")" : ""
         println(
             io,
-            "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=.AGORA test/performance_static_vs_parallel.jl --profile=$(config.profile.name) --outdir=$(config.outdir) --clean=1 --passes=$(config.passes) --randomize-arm-order=$(config.randomize_arm_order ? 1 : 0) --seed=$(config.random_seed) --policy-matrices=$(join(string.(config.policy_matrices), ',')) --include-control-stress-per-orbit=$(config.include_control_stress_per_orbit ? 1 : 0) --control-stress-repeats-full=$(config.control_stress_repeats_full) --control-stress-warmup-full=$(config.control_stress_warmup_full)$(process_suffix)"
+            "JULIA_NUM_THREADS=$(Threads.nthreads()) julia --project=. benchmarks/studies/performance_static_vs_parallel.jl --profile=$(config.profile.name) --outdir=$(config.outdir) --clean=1 --passes=$(config.passes) --randomize-arm-order=$(config.randomize_arm_order ? 1 : 0) --seed=$(config.random_seed) --policy-matrices=$(join(string.(config.policy_matrices), ',')) --include-control-stress-per-orbit=$(config.include_control_stress_per_orbit ? 1 : 0) --control-stress-repeats-full=$(config.control_stress_repeats_full) --control-stress-warmup-full=$(config.control_stress_warmup_full)$(process_suffix)"
         )
         println(io, "```")
     end

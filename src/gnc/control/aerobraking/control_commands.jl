@@ -207,7 +207,7 @@ function asim_ctrl(ip, m, time_0, OE, args, k_cf, heat_rate_control, time_switch
         wU = wind[3] # positive up , m / s
 
         wind_pp = wN * uN + wE * uE - wU * uD        # wind velocity in pp frame , m / s
-        vel_pp_rw = vel_pp + wind_pp                 # relative wind vector , m / s
+        vel_pp_rw = vel_pp - wind_pp                 # airspeed: spacecraft velocity minus atmosphere velocity, m / s
         vel_pp_rw_hat = vel_pp_rw / norm(vel_pp_rw)  # relative wind unit vector , nd
 
         # Dynamic pressure, CHANGE THE VELOCITY WITH THE WIND VELOCITY

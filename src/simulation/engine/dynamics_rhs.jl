@@ -74,7 +74,6 @@ end
             () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             (local_sum, eff_idx) -> begin
                 effector = dynamic_effectors[eff_idx]
-                _constellation_coupled_effector(effector) && return nothing
                 force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
                 local_sum[1] += force[1]
                 local_sum[2] += force[2]
@@ -93,16 +92,15 @@ end
         )
         # Unpack reduced MVector directly into forces/torques without an intermediate SVector.
         @inbounds begin
-            forces[1] += reduced[1]
-            forces[2] += reduced[2]
-            forces[3] += reduced[3]
-            torques[1] += reduced[4]
-            torques[2] += reduced[5]
-            torques[3] += reduced[6]
+            forces[1] = reduced[1]
+            forces[2] = reduced[2]
+            forces[3] = reduced[3]
+            torques[1] = reduced[4]
+            torques[2] = reduced[5]
+            torques[3] = reduced[6]
         end
     else
         @inbounds for effector in dynamic_effectors
-            _constellation_coupled_effector(effector) && continue
             force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
             forces .+= force
             torques .+= torque
@@ -153,7 +151,6 @@ end
             (local_sum, eff_idx) -> begin
                 effector = dynamic_effectors[eff_idx]
                 _effector_in_partition(effector, partition) || return nothing
-                _constellation_coupled_effector(effector) && return nothing
                 force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
                 local_sum[1] += force[1]
                 local_sum[2] += force[2]
@@ -170,14 +167,13 @@ end
                 return nothing
             end
         )
-        forces .+= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
-        torques .+= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
+        forces .= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
+        torques .= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
         return nothing
     end
 
     @inbounds for effector in dynamic_effectors
         _effector_in_partition(effector, partition) || continue
-        _constellation_coupled_effector(effector) && continue
         force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
         forces .+= force
         torques .+= torque
@@ -205,6 +201,7 @@ end
 @inline function _accumulate_control_effectors!(
     forces::MVector{3, Float64},
     torques::MVector{3, Float64},
+    rw_torque_body::MVector{3, Float64},
     sc_view,
     p,
     sat_idx::Int,
@@ -215,12 +212,14 @@ end
     @inbounds for control_effector in p.args.control_model.control_effectors
         control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, sat_idx, t)
         control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, sat_idx, t)
+        rw_torque = SimulationModel.calcReactionWheelTorque(control_effector, sc_view, p, sat_idx, t)
         if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
             println("Applying control effect for spacecraft $sat_idx at time $t seconds:")
             println("  Control force: $control_force")
         end
         forces .+= control_force
         torques .+= control_torque
+        rw_torque === nothing || (rw_torque_body .+= rw_torque)
         mass_rate += isfinite(control_mass_rate) ? control_mass_rate : 0.0
     end
     return mass_rate
@@ -237,6 +236,10 @@ end
         partials = partials_ref[]
         if size(partials, 1) != 6 || size(partials, 2) < num_sats || size(partials, 3) < workers
             partials_ref[] = zeros(Float64, 6, num_sats, workers)
+        elseif size(partials, 2) == num_sats && size(partials, 3) == workers
+            # Exact-size buffer (the steady-state case): contiguous fill! is a
+            # straight memset, cheaper than the strided view broadcast below.
+            fill!(partials, 0.0)
         else
             partials[:, 1:num_sats, 1:workers] .= 0.0
         end
@@ -367,72 +370,6 @@ end
     return _effector_cost_ns_per_item_default() * Float64(rank * rank)
 end
 
-@inline _constellation_coupled_effector(::Any)::Bool = false
-@inline _constellation_coupled_effector(::SimulationModel.OpenCavityLaserLinkModel)::Bool = true
-
-@inline function _has_constellation_coupled_effector(effectors::Tuple)::Bool
-    @inbounds for effector in effectors
-        _constellation_coupled_effector(effector) && return true
-    end
-    return false
-end
-
-@inline function _count_non_constellation_coupled_effectors(effectors::Tuple)::Int
-    count = 0
-    @inbounds for effector in effectors
-        _constellation_coupled_effector(effector) || (count += 1)
-    end
-    return count
-end
-
-function _accumulate_constellation_coupled_effectors!(
-    totals::AbstractMatrix{Float64},
-    dynamic_effectors::Tuple,
-    pos_buffers::Vector{SVector{3, Float64}},
-    active_flags,
-    partition::Union{Nothing, Symbol},
-)::Nothing
-    @inbounds for effector in dynamic_effectors
-        _constellation_coupled_effector(effector) || continue
-        if partition !== nothing && SimulationModel.solver_partition(effector) !== partition
-            continue
-        end
-        if effector isa SimulationModel.OpenCavityLaserLinkModel
-            SimulationModel.DynamicEffectors.accumulate_laser_link_forces!(
-                totals,
-                effector,
-                pos_buffers,
-                active_flags,
-            )
-        end
-    end
-    return nothing
-end
-
-function _constellation_coupled_force_totals!(
-    p,
-    sc_state,
-    dynamic_effectors::Tuple,
-    partition::Union{Nothing, Symbol},
-)
-    has_coupled = partition === nothing ?
-        _has_constellation_coupled_effector(dynamic_effectors) :
-        any(effector -> _constellation_coupled_effector(effector) && _effector_in_partition(effector, partition), dynamic_effectors)
-    has_coupled || return nothing
-
-    _ensure_rhs_flat_effector_scratch!(p.shared_buffers, length(sc_state), 1)
-    _prefill_rhs_flat_state_samples!(p.shared_buffers, sc_state, p)
-    totals = p.shared_buffers.rhs_flat_effector_totals[]
-    _accumulate_constellation_coupled_effectors!(
-        totals,
-        dynamic_effectors,
-        p.shared_buffers.rhs_flat_state_pos_ii[],
-        p.is_active,
-        partition,
-    )
-    return totals
-end
-
 @inline function _rhs_effector_estimated_cost_ns(shared_buffers, dynamic_effectors::Tuple, eff_idx::Int)::Float64
     fallback = _rhs_effector_static_cost_ns(dynamic_effectors[eff_idx])
     return _rhs_effector_observed_cost_ns(shared_buffers, eff_idx, fallback)
@@ -493,17 +430,32 @@ function _prepare_rhs_flat_work_items!(
         for eff_idx in 1:n_effectors
             effector = dynamic_effectors[eff_idx]
             _flat_partition_selected(effector, partition) || continue
-            _constellation_coupled_effector(effector) && continue
             # Skip effectors resolved by pre-passes — they already wrote into totals.
             partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue
             count_items += 1
             work_items[count_items] = _constellation_node_work_item(sat_idx, eff_idx, n_effectors)
         end
     end
-    if count_items > 1
+    # Cost only varies by eff_idx, not sat_idx, and the pre-pass filter above already
+    # strips out batchable/harmonics effectors -- so once at most one effector type
+    # remains in the flat queue (the common case once a constellation's gravity model
+    # is pre-passed away, leaving e.g. just aero), every item shares the same cost key
+    # and sorting is a guaranteed no-op that still pays full O(n log n) comparison cost,
+    # each comparison re-deriving the same handful of per-effector cost lookups. Skip
+    # it entirely in that case; only heterogeneous multi-effector residual queues
+    # benefit from (and need) the sort.
+    if count_items > 1 && _count_flat_queue_only_effectors(dynamic_effectors) > 1
+        # Item cost only depends on eff_idx, so there are just n_effectors distinct
+        # values. Resolve each effector's estimated cost once up front; the sort
+        # comparator then reads a small tuple instead of re-deriving the cost-model
+        # lookup O(n log n) times inside sort!.
+        eff_costs = ntuple(
+            eff_idx -> _rhs_effector_estimated_cost_ns(p.shared_buffers, dynamic_effectors, eff_idx),
+            length(dynamic_effectors),
+        )
         sort!(
             @view(work_items[1:count_items]);
-            by=item -> -_rhs_flat_item_estimated_cost_ns(p.shared_buffers, dynamic_effectors, item),
+            by=item -> -eff_costs[_constellation_node_eff_idx(item, n_effectors)],
             alg=Base.Sort.DEFAULT_STABLE,
         )
     end
@@ -581,7 +533,7 @@ function _prepare_rhs_flat_work_packets!(
     @inbounds for idx in 1:count_items
         total_cost_ns += _rhs_flat_item_estimated_cost_ns(shared_buffers, dynamic_effectors, work_items[idx])
     end
-    target_ns = max(_rhs_flat_packet_target_min_ns(), total_cost_ns / max(1, workers * 4))
+    target_ns = max(_rhs_env_config_from_buffers(shared_buffers).flat_packet_target_min_ns, total_cost_ns / max(1, workers * 4))
 
     packet_count = 0
     idx = 1
@@ -634,7 +586,8 @@ function _rhs_flat_use_packet_scheduler(
     work_items::Vector{Int},
     count_items::Int,
 )::Bool
-    mode = _rhs_flat_packet_scheduler_mode()
+    env = _rhs_env_config_from_buffers(shared_buffers)
+    mode = env.flat_packet_scheduler_mode
     mode == :off && return false
     if mode == :on
         return count_items > 1
@@ -642,10 +595,10 @@ function _rhs_flat_use_packet_scheduler(
     if hasproperty(shared_buffers, :rhs_flat_packet_disabled) && shared_buffers.rhs_flat_packet_disabled[]
         return false
     end
-    count_items >= _rhs_flat_packet_min_items() || return false
+    count_items >= env.flat_packet_min_items || return false
     total_cost_ns, heterogeneity = _rhs_flat_packet_work_stats(shared_buffers, dynamic_effectors, work_items, count_items)
-    total_cost_ns >= _rhs_flat_packet_work_ns_threshold() || return false
-    heterogeneity >= _rhs_flat_packet_heterogeneity_threshold() || return false
+    total_cost_ns >= env.flat_packet_work_ns_threshold || return false
+    heterogeneity >= env.flat_packet_heterogeneity_threshold || return false
     return true
 end
 
@@ -661,8 +614,9 @@ function _update_rhs_flat_packet_overhead_model!(
          hasproperty(shared_buffers, :rhs_flat_packet_disabled))
         return nothing
     end
+    env = _rhs_env_config_from_buffers(shared_buffers)
     ratio = min(1.0, Float64(packet_overhead_ns) / Float64(flat_elapsed_ns))
-    α = _effector_cost_ema_alpha()
+    α = env.effector_cost_ema_alpha
     previous = shared_buffers.rhs_flat_packet_overhead_ema[]
     shared_buffers.rhs_flat_packet_overhead_ema[] = if isfinite(previous) && previous >= 0.0
         (1.0 - α) * previous + α * ratio
@@ -671,8 +625,8 @@ function _update_rhs_flat_packet_overhead_model!(
     end
     shared_buffers.rhs_flat_packet_overhead_samples[] =
         min(typemax(Int64), shared_buffers.rhs_flat_packet_overhead_samples[] + Int64(1))
-    if shared_buffers.rhs_flat_packet_overhead_samples[] >= _rhs_flat_packet_overhead_min_samples() &&
-       shared_buffers.rhs_flat_packet_overhead_ema[] >= _rhs_flat_packet_overhead_disable_ratio()
+    if shared_buffers.rhs_flat_packet_overhead_samples[] >= env.flat_packet_overhead_min_samples &&
+       shared_buffers.rhs_flat_packet_overhead_ema[] >= env.flat_packet_overhead_disable_ratio
         shared_buffers.rhs_flat_packet_disabled[] = true
     end
     return nothing
@@ -710,15 +664,23 @@ end
 # reading shared-environment data (ephemeris, sun position) that was prefilled
 # once by _prefill_shared_body_samples!.  The pre-pass writes directly into the
 # totals matrix, and those effectors are skipped in the per-(sat,effector) flat
-# queue.  This eliminates per-item channel/worker dispatch overhead for NBody and
-# SRP, which are the dominant cost for high-thread-count constellations once the
-# ephemeris cache is warm.
+# queue.  This eliminates per-item channel/worker dispatch overhead for NBody,
+# SRP, and inverse-square gravity, which is the dominant cost for high-thread-count
+# constellations once the ephemeris cache is warm (NBody/SRP) or the whole point
+# for a kernel too cheap to ever amortise per-item dispatch (inverse-square gravity).
 #
 # GRAM/aero are NOT batchable: density is altitude/location-dependent per
 # satellite and mutable model state prevents safe cross-satellite sharing.
+#
+# Inverse-square gravity is only batchable when it produces no torque: the batch
+# kernel writes force only, so a model configured with `gravity_gradient=true`
+# (which needs the per-satellite quaternion) must keep going through the
+# per-satellite wrench path instead.
 @inline _batchable_effector(::Any)::Bool = false
 @inline _batchable_effector(::SimulationModel.NBodyGravityModel)::Bool = true
 @inline _batchable_effector(::SimulationModel.SolarRadiationPressureModel)::Bool = true
+@inline _batchable_effector(effector::SimulationModel.InverseSquaredGravityModel)::Bool = !effector.gravity_gradient
+@inline _batchable_effector(effector::SimulationModel.InverseSquaredJ2GravityModel)::Bool = !effector.gravity_gradient
 
 @inline function _has_any_batchable_effector(effectors::Tuple)::Bool
     @inbounds for e in effectors
@@ -866,6 +828,70 @@ function _accumulate_srp_flat_batch!(
     return nothing
 end
 
+# Inverse-square gravity batch pre-pass: no shared ephemeris lookup to hoist (the
+# primary is at the frame origin), so the win here is purely eliminating
+# per-satellite Polyester/flat-queue dispatch for a kernel whose body is a few
+# FLOPs — too cheap to ever amortise task-spawn overhead. Delegates to the same
+# `_inverse_squared_gravity_accel` helper used by `calcForceTorque`/`wrench`, so
+# results are bit-identical to the per-satellite path.
+function _accumulate_invsq_flat_batch!(
+    totals::Matrix{Float64},
+    effector::SimulationModel.InverseSquaredGravityModel,
+    pos_buffers::Vector{SVector{3, Float64}},
+    mass_buffers::Vector{Float64},
+    active_flags,
+    p,
+    t::Float64,
+    num_sats::Int,
+)::Nothing
+    planet = p.args.environment_model.planet
+    grav = SimulationModel.DynamicEffectors.GravityEffectors
+    @inbounds for sat_idx in 1:num_sats
+        active_flags[sat_idx] || continue
+        pos_ii = pos_buffers[sat_idx]
+        mass   = mass_buffers[sat_idx]
+        accel  = grav._inverse_squared_gravity_accel(pos_ii, planet)
+        totals[1, sat_idx] += mass * accel[1]
+        totals[2, sat_idx] += mass * accel[2]
+        totals[3, sat_idx] += mass * accel[3]
+        # torques[4..6] stay zero (only reached when !effector.gravity_gradient)
+    end
+    return nothing
+end
+
+# Inverse-square + J2 gravity batch pre-pass: J2 needs the position in the
+# planet-fixed frame, so l_pi (inertial->planet rotation) is computed once per
+# RHS call — analogous to the harmonics pre-pass computing lpi once instead of
+# per satellite — then the per-satellite loop is a tight, allocation-free scalar
+# sweep with no further shared lookups.
+function _accumulate_invsq_j2_flat_batch!(
+    totals::Matrix{Float64},
+    effector::SimulationModel.InverseSquaredJ2GravityModel,
+    pos_buffers::Vector{SVector{3, Float64}},
+    mass_buffers::Vector{Float64},
+    active_flags,
+    p,
+    t::Float64,
+    num_sats::Int,
+)::Nothing
+    planet = p.args.environment_model.planet
+    l_pi = _planet_lpi_at_engine(p, t)
+    grav = SimulationModel.DynamicEffectors.GravityEffectors
+    @inbounds for sat_idx in 1:num_sats
+        active_flags[sat_idx] || continue
+        pos_ii = pos_buffers[sat_idx]
+        mass   = mass_buffers[sat_idx]
+        pos_pp = SVector{3, Float64}(l_pi * pos_ii)
+        accel_pp = grav._inverse_squared_j2_gravity_accel(pos_pp, planet)
+        accel_ii = l_pi' * accel_pp
+        totals[1, sat_idx] += mass * accel_ii[1]
+        totals[2, sat_idx] += mass * accel_ii[2]
+        totals[3, sat_idx] += mass * accel_ii[3]
+        # torques[4..6] stay zero (only reached when !effector.gravity_gradient)
+    end
+    return nothing
+end
+
 # Dispatch to the appropriate batch kernel for a single batchable effector.
 @inline function _accumulate_batchable_effector_flat!(
     totals::Matrix{Float64},
@@ -881,6 +907,10 @@ end
         return _accumulate_nbody_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
     elseif effector isa SimulationModel.SolarRadiationPressureModel
         return _accumulate_srp_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
+    elseif effector isa SimulationModel.InverseSquaredGravityModel
+        return _accumulate_invsq_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
+    elseif effector isa SimulationModel.InverseSquaredJ2GravityModel
+        return _accumulate_invsq_j2_flat_batch!(totals, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
     end
     return nothing
 end
@@ -896,8 +926,9 @@ function _accumulate_harmonics_flat_batch!(
     num_sats = length(sc_state)
     active_sats = count(identity, p.is_active)
     active_sats <= 0 && return nothing
-    min_sats = SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled() ?
-        1 : _rhs_harmonics_batch_min_sats_per_worker()
+    rhs_env = _rhs_env_config(p)
+    min_sats = rhs_env.harmonics_batch_spin_barrier ?
+        1 : rhs_env.harmonics_batch_min_sats_per_worker
     capped_allotment = max(1, min(plan.allotment, fld(active_sats, max(1, min_sats))))
     workers = SimulationModel.ParallelPolicy.thread_worker_count(active_sats, capped_allotment)
     if init_scratch
@@ -936,7 +967,7 @@ function _accumulate_harmonics_flat_batch!(
             totals, model, sc_state, work_items, 1, count_items, lpi, pool[1]
         )
     else
-        dispatch_fn = SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled() ?
+        dispatch_fn = rhs_env.harmonics_batch_spin_barrier ?
             SimulationModel.ParallelPolicy.threaded_foreach_worker_spin :
             SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent
         dispatch_fn(
@@ -980,7 +1011,14 @@ function _accumulate_dynamic_effectors_flat_batch!(
     num_items = num_sats * n_effectors
     num_items <= 0 && return nothing
     workers = SimulationModel.ParallelPolicy.thread_worker_count(num_items, plan.allotment)
-    _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, workers)
+    # Partials are only written by the flat queue itself; pre-pass-only effector
+    # sets (e.g. harmonics-only constellations, which take the batch-kernel
+    # shortcut below and write straight into totals) never touch them, so skip
+    # the O(6·N·W) zeroing sweep in that case. Partitioned calls always run the
+    # queue for their selected effectors.
+    needs_flat_queue = partition === nothing ?
+        _count_flat_queue_only_effectors(dynamic_effectors) > 0 : true
+    _ensure_rhs_flat_effector_scratch!(p.shared_buffers, num_sats, workers; zero_partials=needs_flat_queue)
     selected_count = partition === nothing ? n_effectors : _partition_selected_count(dynamic_effectors, partition)
     selected_count <= 0 && return nothing
 
@@ -1001,29 +1039,15 @@ function _accumulate_dynamic_effectors_flat_batch!(
 
     needs_state_sample = if partition === nothing
         any(_wrench_method_available(effector) for effector in dynamic_effectors) ||
-            _has_any_batchable_effector(dynamic_effectors) ||
-            _has_constellation_coupled_effector(dynamic_effectors)
+            _has_any_batchable_effector(dynamic_effectors)
     else
-        _partition_needs_state_sample(dynamic_effectors, partition) ||
-            any(effector -> _constellation_coupled_effector(effector) && _effector_in_partition(effector, partition), dynamic_effectors)
+        _partition_needs_state_sample(dynamic_effectors, partition)
     end
     if needs_state_sample
         _prefill_rhs_flat_state_samples!(p.shared_buffers, sc_state, p)
     end
     spacecraft = p.args.dynamics_model.spacecraft
     orientation_sim = p.args.mission_configuration.orientation_sim
-
-    if _has_constellation_coupled_effector(dynamic_effectors)
-        pos_buffers = p.shared_buffers.rhs_flat_state_pos_ii[]
-        _accumulate_constellation_coupled_effectors!(
-            totals,
-            dynamic_effectors,
-            pos_buffers,
-            p.is_active,
-            partition,
-        )
-        _count_non_constellation_coupled_effectors(dynamic_effectors) == 0 && return nothing
-    end
 
     # ── Batchable effector pre-pass (NBody, SRP) ─────────────────────────────
     # Run batchable effectors as a single serial sweep before the flat queue.
@@ -1138,8 +1162,11 @@ function _accumulate_dynamic_effectors_flat_batch!(
         end
     end
 
-    @inbounds for sat_idx in 1:num_sats
-        for worker_id in 1:exec_plan.workers
+    # Worker-major reduction: partials is column-major 6×N×W, so for a fixed
+    # worker the satellite dimension is contiguous (stride 6); satellite-major
+    # order with the worker innermost would jump 6N doubles per iteration.
+    @inbounds for worker_id in 1:exec_plan.workers
+        for sat_idx in 1:num_sats
             totals[1, sat_idx] += partials[1, sat_idx, worker_id]
             totals[2, sat_idx] += partials[2, sat_idx, worker_id]
             totals[3, sat_idx] += partials[3, sat_idx, worker_id]
@@ -1330,7 +1357,8 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
     totals = p.shared_buffers.rhs_flat_effector_totals[]
 
     SimulationModel.ParallelPolicy.threaded_foreach(length(sc_state), plan.allotment) do i
-        @inbounds if !p.is_active[i]
+        @inbounds if !p.is_active[i] ||
+                     (rhs_kind == :implicit && _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t))
             sc_du[i] .= 0.0
             return
         end
@@ -1353,6 +1381,7 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
                 du_view.heat_loads .= 0.0
@@ -1378,13 +1407,17 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
                 _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
             else
-                mass_rate = rhs_kind == :explicit || rhs_kind == :full ?
-                    _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control) :
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = if rhs_kind == :explicit || rhs_kind == :full
+                    _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                else
                     0.0
+                end
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -1407,6 +1440,8 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
                 _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
@@ -1509,7 +1544,7 @@ function _gravity_backbone_half_kick!(u_state, p, t::Float64, half_dt::Float64)
     dynamic_effectors = p.args.dynamics_model.dynamic_effectors
     vel_state = _gravity_backbone_velocity_state(u_state)
     p.shared_buffers.current_time[] = t
-    use_rhs_batch = _rhs_batch_parallel_enabled(length(vel_state.sc))
+    use_rhs_batch = _rhs_batch_parallel_enabled(p, length(vel_state.sc))
 
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(vel_state.sc) / Polyester.num_cores())))
@@ -1540,7 +1575,7 @@ function spacecraft_dynamics_gravity_backbone!(ddu, dq, q, p, t::Float64)
     ddu_state = ddu.sc
     dynamic_effectors = p.args.dynamics_model.dynamic_effectors
     p.shared_buffers.current_time[] = t
-    use_rhs_batch = _rhs_batch_parallel_enabled(length(q_state))
+    use_rhs_batch = _rhs_batch_parallel_enabled(p, length(q_state))
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(q_state) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(q_state)
@@ -1571,6 +1606,8 @@ end
     torques::AbstractVector{<:Real};
     propagate_quaternion::Bool,
     include_gyroscopic::Bool,
+    rw_assembly=nothing,
+    rw_torque_body::SVector{3, Float64}=SVector{3, Float64}(0.0, 0.0, 0.0),
 )
     omega_body = SimulationModel.DynamicsRotational.body_angular_velocity(sc_view.ω)
     tau_body = SimulationModel.DynamicsRotational.body_torque(torques)
@@ -1581,11 +1618,115 @@ end
         du_view.q .= 0.0
     end
 
+    h_wheel_body = SVector{3, Float64}(0.0, 0.0, 0.0)
+    if rw_assembly !== nothing && rw_assembly.n_wheels > 0
+        h_wheel_body = rw_assembly.J_rw * SVector{rw_assembly.n_wheels, Float64}(sc_view.h_wheels)
+        du_view.h_wheels .= rw_assembly.J_rw_pinv * (-rw_torque_body)
+    end
+
     du_view.ω .= SimulationModel.DynamicsRotational.angular_acceleration(
         omega_body,
         inertia_tensor,
         tau_body;
         include_gyroscopic=include_gyroscopic,
+        h_wheel_body=h_wheel_body,
+    )
+    return nothing
+end
+
+"""Return whether an effector owns a robot-arm plan for the requested spacecraft."""
+@inline function _robot_arm_effector_matches(effector, sat_idx::Int)::Bool
+    return hasproperty(effector, :plan) &&
+        hasproperty(effector, :spacecraft_idx) &&
+        getproperty(effector, :spacecraft_idx) == sat_idx &&
+        getproperty(effector, :plan) isa SimulationModel.RobotArmPlan
+end
+
+"""Read a numeric effector field as `Float64`, falling back to a default value."""
+@inline _effector_float(effector, name::Symbol, default::Float64)::Float64 =
+    hasproperty(effector, name) ? Float64(getproperty(effector, name)) : default
+
+"""Read an optional effector field, falling back to a default value."""
+@inline _effector_value(effector, name::Symbol, default) =
+    hasproperty(effector, name) ? getproperty(effector, name) : default
+
+"""Build the cloth-coupled robot-arm RHS configuration from an active effector."""
+@inline function _robot_arm_coupling_from_effector(effector, t::Float64)
+    return (
+        plan=getproperty(effector, :plan),
+        t_s=max(0.0, t - _effector_float(effector, :updated_at_s, 0.0)),
+        k_translation_n_m=_effector_value(effector, :k_translation_n_m, 5.0e3),
+        c_translation_n_s_m=_effector_value(effector, :c_translation_n_s_m, 30.0),
+        k_rotation_n_m_rad=_effector_value(effector, :k_rotation_n_m_rad, 15.0),
+        c_rotation_n_m_s_rad=_effector_value(effector, :c_rotation_n_m_s_rad, 0.5),
+        joint_actuators=hasproperty(effector, :joint_actuators) ?
+            getproperty(effector, :joint_actuators) :
+            SimulationModel.CompliantJointActuator[],
+    )
+end
+
+"""Return whether any configured effector carries a robot-arm plan at all."""
+function _any_robot_arm_effector(args)::Bool
+    if hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors)
+        @inbounds for effector in args.control_model.control_effectors
+            hasproperty(effector, :plan) &&
+                getproperty(effector, :plan) isa SimulationModel.RobotArmPlan && return true
+        end
+    end
+    if hasproperty(args, :dynamics_model) && hasproperty(args.dynamics_model, :dynamic_effectors)
+        @inbounds for effector in args.dynamics_model.dynamic_effectors
+            hasproperty(effector, :plan) &&
+                getproperty(effector, :plan) isa SimulationModel.RobotArmPlan && return true
+        end
+    end
+    return false
+end
+
+"""Cached robot-arm presence check for the RHS hot path (lazy, run-constant)."""
+@inline function _robot_arm_present(p)::Bool
+    (p !== nothing && hasproperty(p, :shared_buffers) &&
+        hasproperty(p.shared_buffers, :robot_arm_present)) || return true
+    cached = p.shared_buffers.robot_arm_present[]
+    cached === nothing || return cached
+    present = _any_robot_arm_effector(p.args)
+    p.shared_buffers.robot_arm_present[] = present
+    return present
+end
+
+"""Find the active robot-arm coupling configuration for one spacecraft."""
+function _robot_arm_coupling(args, sat_idx::Int, t::Float64)
+    if hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors)
+        @inbounds for effector in args.control_model.control_effectors
+            _robot_arm_effector_matches(effector, sat_idx) && return _robot_arm_coupling_from_effector(effector, t)
+        end
+    end
+    if hasproperty(args, :dynamics_model) && hasproperty(args.dynamics_model, :dynamic_effectors)
+        @inbounds for effector in args.dynamics_model.dynamic_effectors
+            _robot_arm_effector_matches(effector, sat_idx) && return _robot_arm_coupling_from_effector(effector, t)
+        end
+    end
+    return nothing
+end
+
+"""Apply coupled cloth robot-arm state derivatives to one spacecraft RHS view."""
+@inline function _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, sat_idx::Int, t::Float64, forces, torques)
+    # Fast path: skip the per-satellite effector-tuple scan when the run has no
+    # robot-arm effector anywhere (cached in shared_buffers on first use).
+    _robot_arm_present(p) || return nothing
+    coupling = _robot_arm_coupling(p.args, sat_idx, t)
+    coupling === nothing && return nothing
+    SimulationModel.assign_coupled_cloth_robot_arm_rhs!(
+        du_view,
+        sc_view,
+        coupling.plan,
+        coupling.t_s,
+        forces,
+        torques;
+        k_translation_n_m=coupling.k_translation_n_m,
+        c_translation_n_s_m=coupling.c_translation_n_s_m,
+        k_rotation_n_m_rad=coupling.k_rotation_n_m_rad,
+        c_rotation_n_m_s_rad=coupling.c_rotation_n_m_s_rad,
+        joint_actuators=coupling.joint_actuators,
     )
     return nothing
 end
@@ -1603,11 +1744,10 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
         return _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:full)
     end
     effector_decision = plan.effector_decision
-    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
-    coupled_totals = _constellation_coupled_force_totals!(p, sc_state, dynamic_effectors, nothing)
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
@@ -1618,14 +1758,12 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = if coupled_totals === nothing
-                    MVector{3, Float64}(0.0, 0.0, 0.0)
-                else
-                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
-                end
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -1650,6 +1788,8 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -1665,14 +1805,12 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = if coupled_totals === nothing
-                    MVector{3, Float64}(0.0, 0.0, 0.0)
-                else
-                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
-                end
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -1697,6 +1835,8 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -1718,11 +1858,10 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
         return _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:slow)
     end
     effector_decision = plan.effector_decision
-    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
-    coupled_totals = _constellation_coupled_force_totals!(p, sc_state, dynamic_effectors, nothing)
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
@@ -1733,13 +1872,10 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = if coupled_totals === nothing
-                    MVector{3, Float64}(0.0, 0.0, 0.0)
-                else
-                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
-                end
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -1763,6 +1899,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
 
@@ -1778,13 +1915,10 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = if coupled_totals === nothing
-                    MVector{3, Float64}(0.0, 0.0, 0.0)
-                else
-                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
-                end
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -1808,6 +1942,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
 
@@ -1817,6 +1952,39 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
     end
 end # function spacecraft_dynamics_slow!
 
+@inline function _drag_state_buffer_current(p, sat_idx::Int, t::Float64)::Bool
+    times = p.shared_buffers.in_atmosphere_sample_t
+    return sat_idx <= length(times) && times[sat_idx] == t
+end
+
+@inline function _spacecraft_outside_atmosphere_for_current_state(sc, p, sat_idx::Int, t::Float64)::Bool
+    # The above-EI shortcut is only sound when the density model is guaranteed
+    # to be vacuum there. For every other model EI is a step-size/tolerance
+    # boundary, not a force gate: an orbit that never crosses EI downward must
+    # still see continuous aero (negligible densities zero out inside the
+    # wrench itself via its rho <= eps short-circuit).
+    density_model = SimulationModel.SimulationCallbacks._density_model_for_sat(p, sat_idx)
+    SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(density_model) || return false
+
+    if _drag_state_buffer_current(p, sat_idx, t)
+        return !p.shared_buffers.in_atmosphere[sat_idx]
+    end
+
+    planet_frame = p.shared_buffers.rhs_planet_frame_prefilled[] ?
+        sample_buffered_planet_frame(p, sat_idx) :
+        sample_planet_frame(sc, p, sat_idx, t)
+    isfinite(planet_frame.alt_m) || return false
+    return planet_frame.alt_m > p.args.environment_model.EI * 1e3
+end
+
+@inline function _all_active_spacecraft_outside_atmosphere(sc_state, p, t::Float64)::Bool
+    @inbounds for i in eachindex(sc_state)
+        p.is_active[i] || continue
+        _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t) || return false
+    end
+    return true
+end
+
 function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
     sc_du = du.sc
@@ -1824,17 +1992,12 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
     dynamic_effectors = dynamics_model.dynamic_effectors
     spacecraft = dynamics_model.spacecraft
     p.shared_buffers.current_time[] = t
-    # Fast path: if no active satellite is in the atmosphere, all implicit drag
-    # terms are zero.  This eliminates GRAM calls and Newton Jacobian perturbations
-    # during coast arcs (the vast majority of an aerobraking mission).
-    any_in_atm = false
-    @inbounds for i in eachindex(p.is_active)
-        if p.is_active[i] && p.shared_buffers.in_atmosphere[i]
-            any_in_atm = true
-            break
-        end
-    end
-    if !any_in_atm
+    # Fast path: if the current state proves that no active spacecraft is inside
+    # the atmosphere, all implicit drag terms are zero.  We only trust the staged
+    # drag-state flag when it was stamped for this RHS time; otherwise we derive
+    # the decision from the current altitude to avoid skipping first-step or
+    # direct RHS evaluations that start inside the entry interface.
+    if _all_active_spacecraft_outside_atmosphere(sc_state, p, t)
         du .= 0.0
         return nothing
     end
@@ -1851,14 +2014,14 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
         )
     end
     effector_decision = plan.effector_decision
-    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
-            if !p.is_active[i] || !p.shared_buffers.in_atmosphere[i]
+            if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
                 sc_du[i] .= 0.0
                 continue
             end
@@ -1884,6 +2047,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
 
@@ -1892,7 +2056,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
         end
     else
         @inbounds for i in eachindex(sc_state)
-            if !p.is_active[i] || !p.shared_buffers.in_atmosphere[i]
+            if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
                 sc_du[i] .= 0.0
                 continue
             end
@@ -1918,6 +2082,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
                     )
                 end
 
@@ -1948,11 +2113,10 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
         )
     end
     effector_decision = plan.effector_decision
-    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
-    coupled_totals = _constellation_coupled_force_totals!(p, sc_state, dynamic_effectors, :explicit)
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
@@ -1963,14 +2127,12 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = if coupled_totals === nothing
-                    MVector{3, Float64}(0.0, 0.0, 0.0)
-                else
-                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
-                end
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -1995,6 +2157,8 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -2010,14 +2174,12 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
-                forces = if coupled_totals === nothing
-                    MVector{3, Float64}(0.0, 0.0, 0.0)
-                else
-                    MVector{3, Float64}(coupled_totals[1, i], coupled_totals[2, i], coupled_totals[3, i])
-                end
+                forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors_partitioned!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision, :explicit)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -2042,6 +2204,8 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
                         torques;
                         propagate_quaternion=true,
                         include_gyroscopic=true,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -2057,7 +2221,7 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
     spacecraft = p.args.dynamics_model.spacecraft
     debug_control = p.shared_buffers.debug_control[]
     p.shared_buffers.current_time[] = t
-    use_rhs_batch = _rhs_batch_parallel_enabled(length(spacecraft))
+    use_rhs_batch = _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
         minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
         @batch minbatch=minbatch for i in eachindex(sc_state)
@@ -2070,7 +2234,9 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
 
                 SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
                     du_view,
@@ -2088,6 +2254,8 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -2105,7 +2273,9 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                 du_view = sc_du[i]
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
-                mass_rate = _accumulate_control_effectors!(forces, torques, sc_view, p, i, t, debug_control)
+                rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+                mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, i, t, debug_control)
+                _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
 
                 SimulationModel.DynamicsTranslational.assign_control_only_translational_rhs!(
                     du_view,
@@ -2123,6 +2293,8 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
                         torques;
                         propagate_quaternion=false,
                         include_gyroscopic=false,
+                        rw_assembly=spacecraft[i].root.rw_assembly,
+                        rw_torque_body=SVector{3, Float64}(rw_torque_body),
                     )
                 end
 
@@ -2135,11 +2307,12 @@ end # function spacecraft_dynamics_fast_control!
 function build_initial_conditions(args)::ComponentVector
     # Each spacecraft can have a different body count, so the state layout has
     # to be sized per spacecraft before we pack the global ComponentVector.
-    sc_shapes = map(args.dynamics_model.spacecraft) do sc
+    sc_shapes = map(eachindex(args.dynamics_model.spacecraft)) do i
+        sc = args.dynamics_model.spacecraft[i]
         n_bodies = length(sc.links)
         mass = sc.dry_mass + sc.prop_mass
-        if args.mission_configuration.orientation_sim
-            return (
+        base_shape = if args.mission_configuration.orientation_sim
+            (
                 pos = zeros(3), 
                 vel = zeros(3), 
                 mass = mass, 
@@ -2148,13 +2321,18 @@ function build_initial_conditions(args)::ComponentVector
                 ω = zeros(3)
             )
         else
-            return (
+            (
                 pos = zeros(3), 
                 vel = zeros(3), 
                 mass = mass, 
                 heat_loads = zeros(n_bodies)
             )
         end
+        n_rw = args.mission_configuration.orientation_sim ? sc.root.rw_assembly.n_wheels : 0
+        base_shape = n_rw > 0 ? merge(base_shape, (h_wheels = zeros(n_rw),)) : base_shape
+        coupling = _robot_arm_coupling(args, i, 0.0)
+        coupling === nothing && return base_shape
+        return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan))
     end
 
     state = ComponentVector(sc = sc_shapes)
@@ -2177,6 +2355,13 @@ function build_initial_conditions(args)::ComponentVector
         if args.mission_configuration.orientation_sim
             sc_view.q .= SimulationModel.project_unit_quaternion(spacecraft.initial_condition.q)
             sc_view.ω .= spacecraft.initial_condition.ang_vel
+            if spacecraft.root.rw_assembly.n_wheels > 0
+                sc_view.h_wheels .= spacecraft.root.rw_assembly.h_wheels
+            end
+        end
+        coupling = _robot_arm_coupling(args, i, 0.0)
+        if coupling !== nothing
+            SimulationModel.initialize_coupled_cloth_robot_arm_state!(sc_view, coupling.plan; t_s=coupling.t_s)
         end
     end
 

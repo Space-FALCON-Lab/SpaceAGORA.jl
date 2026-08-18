@@ -37,6 +37,24 @@
         @test occursin("SPACEAGORA_TELEMETRY_PLOTS=0", telemetry_text)
         @test occursin("telemetry_orbit_accuracy_study.jl", telemetry_text)
 
+        telemetry_smoke_text = sprint(io -> @test SpaceAGORA.run_cli([
+            "telemetry",
+            "smoke",
+            "--output-dir=$(mktempdir())",
+            "--print-only",
+        ]; io=io, errio=io) == 0)
+        @test occursin("telemetry_orbit_accuracy_study.jl", telemetry_smoke_text)
+        @test occursin(" quick", telemetry_smoke_text)
+
+        telemetry_smoke_profile_text = sprint(io -> @test SpaceAGORA.run_cli([
+            "telemetry",
+            "--profile=smoke",
+            "--output-dir=$(mktempdir())",
+            "--print-only",
+        ]; io=io, errio=io) == 0)
+        @test occursin("telemetry_orbit_accuracy_study.jl", telemetry_smoke_profile_text)
+        @test occursin(" quick", telemetry_smoke_profile_text)
+
         perf_text = sprint(io -> @test SpaceAGORA.run_cli([
             "benchmark",
             "runtime-analysis",
@@ -56,6 +74,17 @@
         ]; io=io, errio=io) == 0)
         @test occursin("SPACEAGORA_SMART_LADDER_OUTDIR", ladder_text)
         @test occursin("performance_smart_parallel_ladder.jl", ladder_text)
+
+        ladder_pass_through_text = sprint(io -> @test SpaceAGORA.run_cli([
+            "benchmark",
+            "smart-parallel-ladder",
+            "full",
+            "--passes=3",
+            "--output-dir=$(mktempdir())",
+            "--print-only",
+        ]; io=io, errio=io) == 0)
+        @test occursin(" full --passes=3", ladder_pass_through_text)
+        @test !occursin("full--passes=3", ladder_pass_through_text)
 
         manifest_text = sprint(io -> @test SpaceAGORA.run_cli(["assets", "manifest"]; io=io, errio=io) == 0)
         @test occursin("SpaceAGORA asset manifest", manifest_text)

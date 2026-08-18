@@ -101,7 +101,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
         keplerian=true
     )
-    p_eff_single = ODEParams{1}(args=args_eff_single)
+    p_eff_single = ODEParams(n_sats=1, args=args_eff_single)
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
@@ -132,7 +132,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
         keplerian=true
     )
-    p_eff_multi = ODEParams{1}(args=args_eff_multi)
+    p_eff_multi = ODEParams(n_sats=1, args=args_eff_multi)
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
@@ -149,7 +149,7 @@
     end
 
     args_eff_constellation = args_eff_single
-    p_eff_constellation = ODEParams{1}(args=args_eff_constellation)
+    p_eff_constellation = ODEParams(n_sats=1, args=args_eff_constellation)
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads()),
@@ -203,8 +203,8 @@
     du_flat_rhs = copy(u_flat_rhs)
     du_serial_rhs .= 0.0
     du_flat_rhs .= 0.0
-    p_serial_rhs = ODEParams{4}(args=args_flat_rhs)
-    p_flat_rhs = ODEParams{4}(args=args_flat_rhs)
+    p_serial_rhs = ODEParams(n_sats=4, args=args_flat_rhs)
+    p_flat_rhs = ODEParams(n_sats=4, args=args_flat_rhs)
     _initialize_heat_rate_buffers!(p_serial_rhs)
     _initialize_heat_rate_buffers!(p_flat_rhs)
     withenv(
@@ -256,8 +256,8 @@
     du_harmonics_flat = copy(u_harmonics_flat)
     du_harmonics_serial .= 0.0
     du_harmonics_flat .= 0.0
-    p_harmonics_serial = ODEParams{4}(args=args_harmonics_flat)
-    p_harmonics_flat = ODEParams{4}(args=args_harmonics_flat)
+    p_harmonics_serial = ODEParams(n_sats=4, args=args_harmonics_flat)
+    p_harmonics_flat = ODEParams(n_sats=4, args=args_harmonics_flat)
     _initialize_heat_rate_buffers!(p_harmonics_serial)
     _initialize_heat_rate_buffers!(p_harmonics_flat)
     _initialize_harmonics_workspace_buffers!(p_harmonics_serial)
@@ -420,7 +420,7 @@
     end
 
     u_alloc_probe = build_initial_conditions(solver_args)
-    p_alloc_probe = ODEParams{1}(args=solver_args)
+    p_alloc_probe = ODEParams(n_sats=1, args=solver_args)
     sc_alloc_probe = u_alloc_probe.sc[1]
     gravity_alloc_model = InverseSquaredGravityModel()
     j2_alloc_model = InverseSquaredJ2GravityModel()
@@ -470,7 +470,7 @@
         keplerian=true
     )
     u0_split_gravity = build_initial_conditions(args_split_gravity)
-    p_split_gravity = ODEParams{1}(args=args_split_gravity)
+    p_split_gravity = ODEParams(n_sats=1, args=args_split_gravity)
     _initialize_heat_rate_buffers!(p_split_gravity)
 
     withenv("SPACEAGORA_SOLVER_MODE" => "split_imex") do
@@ -750,7 +750,7 @@
     @test _gravity_backbone_eligible(args_backbone_custom) == true
 
     u0_backbone = build_initial_conditions(args_backbone)
-    p_backbone = ODEParams{1}(args=args_backbone)
+    p_backbone = ODEParams(n_sats=1, args=args_backbone)
     _initialize_heat_rate_buffers!(p_backbone)
     callbacks_backbone = CallbackSet()
     withenv("SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split") do
@@ -790,7 +790,7 @@
         ephemerides_model=SimpleEphemeridesModel()
     )
     u0_backbone_kicks = build_initial_conditions(args_backbone_kicks)
-    p_backbone_kicks = ODEParams{1}(args=args_backbone_kicks)
+    p_backbone_kicks = ODEParams(n_sats=1, args=args_backbone_kicks)
     _initialize_heat_rate_buffers!(p_backbone_kicks)
     _initialize_nbody_ephemeris_cache_buffer!(p_backbone_kicks)
     _initialize_srp_sun_cache_buffer!(p_backbone_kicks)
@@ -976,7 +976,7 @@
     u0_wrench_mix = build_initial_conditions(args_wrench_mix)
     du0_wrench_mix = copy(u0_wrench_mix)
     du0_wrench_mix .= 0.0
-    p_wrench_mix = ODEParams{1}(args=args_wrench_mix)
+    p_wrench_mix = ODEParams(n_sats=1, args=args_wrench_mix)
     spacecraft_dynamics!(du0_wrench_mix, u0_wrench_mix, p_wrench_mix, 0.0)
     expected_force_mix = legacy_force + typed_force
     @test isapprox(SVector{3, Float64}(du0_wrench_mix.sc[1].vel), expected_force_mix / u0_wrench_mix.sc[1].mass; atol=1e-12, rtol=1e-10)
@@ -986,113 +986,6 @@
         atol=1e-12,
         rtol=1e-10
     )
-
-    @testset "Open Cavity Laser Link Effector" begin
-        dyn = SimulationModel.DynamicEffectors
-        model = OpenCavityLaserLinkModel(
-            1,
-            [2, 3];
-            range_m=10.0,
-            power_w=3.0e8,
-            magnification=1.0,
-            beta=1.0,
-            eta=1.0,
-            schedule=:naive_next_entering,
-        )
-        expected_mag = model.power_w / dyn.LaserLinkEffectors.SPEED_OF_LIGHT_MPS
-        @test isapprox(dyn.laser_link_force_magnitude(model), expected_mag; rtol=1e-14)
-        @test dyn.laser_link_pair_force(
-            model,
-            SVector{3, Float64}(0.0, 0.0, 0.0),
-            SVector{3, Float64}(20.0, 0.0, 0.0),
-        ) == SVector{3, Float64}(0.0, 0.0, 0.0)
-
-        model.active_helper_idx = 2
-        totals = zeros(Float64, 8, 3)
-        dyn.accumulate_laser_link_forces!(
-            totals,
-            model,
-            SVector{3, Float64}[
-                SVector{3, Float64}(0.0, 0.0, 0.0),
-                SVector{3, Float64}(5.0, 0.0, 0.0),
-                SVector{3, Float64}(0.0, 5.0, 0.0),
-            ],
-            trues(3),
-        )
-        @test isapprox(totals[1:3, 1], [expected_mag, 0.0, 0.0]; rtol=1e-14, atol=1e-14)
-        @test isapprox(totals[1:3, 2], [-expected_mag, 0.0, 0.0]; rtol=1e-14, atol=1e-14)
-        @test totals[1:3, 3] == zeros(3)
-        @test count(!iszero, (model.target_idx, model.active_helper_idx)) == 2
-
-        pos_a = SVector{3, Float64}[
-            SVector{3, Float64}(0.0, 0.0, 0.0),
-            SVector{3, Float64}(5.0, 0.0, 0.0),
-            SVector{3, Float64}(20.0, 0.0, 0.0),
-        ]
-        vel_a = SVector{3, Float64}[SVector{3, Float64}(0.0, 1.0, 0.0) for _ in 1:3]
-        model.active_helper_idx = 0
-        fill!(model.previous_in_range, false)
-        @test dyn.update_laser_link_schedule!(model, pos_a, vel_a) == 2
-
-        # Helper 2 enters while helper 1 is still active; the active link is held.
-        pos_b = SVector{3, Float64}[
-            SVector{3, Float64}(0.0, 0.0, 0.0),
-            SVector{3, Float64}(5.0, 0.0, 0.0),
-            SVector{3, Float64}(4.0, 0.0, 0.0),
-        ]
-        @test dyn.update_laser_link_schedule!(model, pos_b, vel_a) == 2
-
-        # Helper 1 leaves; helper 2 was already in range, so naive scheduling waits.
-        pos_c = SVector{3, Float64}[
-            SVector{3, Float64}(0.0, 0.0, 0.0),
-            SVector{3, Float64}(20.0, 0.0, 0.0),
-            SVector{3, Float64}(4.0, 0.0, 0.0),
-        ]
-        @test dyn.update_laser_link_schedule!(model, pos_c, vel_a) == 0
-
-        # Helper 2 exits and then re-enters, so a new link is formed.
-        pos_d = SVector{3, Float64}[
-            SVector{3, Float64}(0.0, 0.0, 0.0),
-            SVector{3, Float64}(20.0, 0.0, 0.0),
-            SVector{3, Float64}(20.0, 0.0, 0.0),
-        ]
-        @test dyn.update_laser_link_schedule!(model, pos_d, vel_a) == 0
-        @test dyn.update_laser_link_schedule!(model, pos_c, vel_a) == 3
-
-        sc_target = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, i_deg=0.0, Ω_deg=0.0, ω_deg=0.0, ν_deg=0.0)
-        sc_h1 = make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, i_deg=0.0, Ω_deg=0.0, ω_deg=0.0, ν_deg=0.05)
-        sc_h2 = make_spacecraft(ra_alt_m=520e3, rp_alt_m=520e3, i_deg=0.0, Ω_deg=0.0, ω_deg=0.0, ν_deg=0.0)
-        laser_smoke = OpenCavityLaserLinkModel(
-            1,
-            [2, 3];
-            range_m=50e3,
-            power_w=10_000.0,
-            magnification=100.0,
-            beta=1.0,
-            eta=2.0,
-            schedule=:naive_next_entering,
-        )
-        args_laser_smoke = build_config_multi(
-            spacecraft=[sc_target, sc_h1, sc_h2],
-            density_model=NoAtmosphereModel(),
-            orientation_sim=false,
-            mission_time=30.0,
-            EI_km=120.0,
-            dynamic_effectors=(InverseSquaredJ2GravityModel(), laser_smoke),
-            keplerian=true,
-            simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
-            tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=5.0),
-            ephemerides_model=SimpleEphemeridesModel(),
-        )
-        sol_laser = run_simulation(
-            args_laser_smoke;
-            return_solution=true,
-            extra_callbacks=(laser_link_scheduler_callback(laser_smoke),),
-        )
-        @test DiffEqBase.successful_retcode(sol_laser.retcode)
-        laser_after = sol_laser.prob.p.args.dynamics_model.dynamic_effectors[2]
-        @test laser_after.link_activation_count >= 1
-    end
 
     env_empty = sample_environment(
         EffectorEnvironmentRequirements(),
@@ -1119,7 +1012,7 @@
         keplerian=true
     )
     u0_probe = build_initial_conditions(args_probe)
-    p_probe = ODEParams{1}(args=args_probe)
+    p_probe = ODEParams(n_sats=1, args=args_probe)
     state_probe = build_state_sample(u0_probe.sc[1], args_probe.dynamics_model.spacecraft[1], false)
     req_probe = environment_requirements(AtmosphereProbeWrenchModel())
     env_probe = sample_environment(req_probe, AtmosphereProbeWrenchModel(), u0_probe.sc[1], p_probe, 1, 0.0; write_buffers=false)
@@ -1258,7 +1151,7 @@
     @test decision_unsupported.use_threads == false
     @test decision_unsupported.policy_applied == false
 
-    p_workspace_resize = ODEParams{1}(args=args_eff_single)
+    p_workspace_resize = ODEParams(n_sats=1, args=args_eff_single)
     resize!(p_workspace_resize.shared_buffers.harmonics_workspaces, 0)
     resize!(p_workspace_resize.shared_buffers.nbody_workspaces, 0)
     resize!(p_workspace_resize.shared_buffers.aero_workspaces, 0)
@@ -1282,7 +1175,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_density_instances = ODEParams{1}(args=args_density_instances)
+    p_density_instances = ODEParams(n_sats=1, args=args_density_instances)
     withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "on") do
         SimulationEngine._initialize_density_model_instances!(p_density_instances)
     end
@@ -1324,7 +1217,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    p_density_surrogate = ODEParams{1}(args=args_density_surrogate)
+    p_density_surrogate = ODEParams(n_sats=1, args=args_density_surrogate)
     withenv("SPACEAGORA_GRAM_PER_SAT_INSTANCES" => "on") do
         SimulationEngine._initialize_density_model_instances!(p_density_surrogate)
     end
@@ -1341,7 +1234,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(), SolarRadiationPressureModel(1.2, 12.0)),
         keplerian=true
     )
-    p_srp = ODEParams{1}(args=args_srp)
+    p_srp = ODEParams(n_sats=1, args=args_srp)
     _initialize_srp_sun_cache_buffer!(p_srp)
     withenv("SPACEAGORA_SRP_EPHEMERIS_CACHE" => "1") do
         _initialize_srp_sun_ephemeris_cache!(p_srp, 0.0, 0.0)
@@ -1357,8 +1250,8 @@
     @test p_srp.shared_buffers.srp_sun_ephemeris_cache[] === nothing
 
     _clear_ephemeris_reuse_cache!()
-    p_srp_reuse_a = ODEParams{1}(args=args_srp)
-    p_srp_reuse_b = ODEParams{1}(args=args_srp)
+    p_srp_reuse_a = ODEParams(n_sats=1, args=args_srp)
+    p_srp_reuse_b = ODEParams(n_sats=1, args=args_srp)
     _initialize_srp_sun_cache_buffer!(p_srp_reuse_a)
     _initialize_srp_sun_cache_buffer!(p_srp_reuse_b)
     _reset_spice_runtime_counters!(p_srp_reuse_a)
@@ -1395,7 +1288,7 @@
         dynamic_effectors=(InverseSquaredGravityModel(), NBodyGravityModel(body_names=("moon",), primary_body_name="Earth")),
         keplerian=true
     )
-    p_nbody = ODEParams{1}(args=args_nbody)
+    p_nbody = ODEParams(n_sats=1, args=args_nbody)
     _initialize_nbody_ephemeris_cache_buffer!(p_nbody)
     withenv("SPACEAGORA_NBODY_EPHEMERIS_CACHE" => "1") do
         _initialize_nbody_ephemeris_cache!(p_nbody, 0.0, 0.0)
@@ -1467,7 +1360,7 @@
     end
     _clear_ephemeris_reuse_cache!()
 
-    p_planet_frame = ODEParams{1}(args=args_srp)
+    p_planet_frame = ODEParams(n_sats=1, args=args_srp)
     _initialize_planet_frame_cache_buffer!(p_planet_frame)
     withenv("SPACEAGORA_PLANET_FRAME_CACHE" => "1") do
         _initialize_planet_frame_ephemeris_cache!(p_planet_frame, 0.0, 0.0)
@@ -1495,7 +1388,7 @@
         ),
         keplerian=true
     )
-    p_nbody_srp = ODEParams{1}(args=args_nbody_srp)
+    p_nbody_srp = ODEParams(n_sats=1, args=args_nbody_srp)
     _initialize_nbody_ephemeris_cache_buffer!(p_nbody_srp)
     _initialize_srp_sun_cache_buffer!(p_nbody_srp)
     _reset_spice_runtime_counters!(p_nbody_srp)
@@ -1618,7 +1511,7 @@
                 keplerian=true,
                 ephemerides_model=SimpleEphemeridesModel()
             )
-            p_harmonics_compare = ODEParams{1}(args=args_harmonics_compare)
+            p_harmonics_compare = ODEParams(n_sats=1, args=args_harmonics_compare)
             _initialize_harmonics_workspace_buffers!(p_harmonics_compare)
 
             sample_positions_pp = (
@@ -1918,7 +1811,7 @@
     u_heat_copy = build_initial_conditions(args_heat_copy)
     du_heat_copy = copy(u_heat_copy)
     du_heat_copy .= 0.0
-    p_heat_copy = ODEParams{1}(args=args_heat_copy)
+    p_heat_copy = ODEParams(n_sats=1, args=args_heat_copy)
     _initialize_heat_rate_buffers!(p_heat_copy)
     expected_heat_rates = copy(
         SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
@@ -1966,7 +1859,7 @@ end
     u0 = build_initial_conditions(args)
     du0 = copy(u0)
     du0 .= 0.0
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     spacecraft_dynamics!(du0, u0, p, 0.0)
 
     ω = SVector{3, Float64}(u0.sc[1].ω)
@@ -2025,7 +1918,7 @@ end
 
         du0 = copy(u0)
         du0 .= 0.0
-        p = ODEParams{1}(args=args)
+        p = ODEParams(n_sats=1, args=args)
         spacecraft_dynamics!(du0, u0, p, 0.0)
         return SVector{3, Float64}(du0.sc[1].ω)
     end
@@ -2096,7 +1989,7 @@ end
     u0 = build_initial_conditions(args)
     du0 = copy(u0)
     du0 .= 0.0
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     spacecraft_dynamics!(du0, u0, p, 0.0)
 
     @test norm(SVector{3, Float64}(du0.sc[1].vel)) > 0.0
@@ -2140,8 +2033,12 @@ end
     du_implicit .= 0.0
     du_explicit .= 0.0
     du_sum .= 0.0
-    p_split = ODEParams{1}(args=args_split)
+    p_split = ODEParams(n_sats=1, args=args_split)
     _initialize_heat_rate_buffers!(p_split)
+    p_split.shared_buffers.in_atmosphere[1] = false
+    p_split.shared_buffers.in_atmosphere_sample_t[1] = -1.0
+    @test !SimulationEngine._drag_state_buffer_current(p_split, 1, 0.0)
+    @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_split.sc, p_split, 0.0)
 
     spacecraft_dynamics!(du_full, u0_split, p_split, 0.0)
     spacecraft_dynamics_implicit_atmosphere!(du_implicit, u0_split, p_split, 0.0)
@@ -2187,10 +2084,131 @@ end
     u0_split_no_aero = build_initial_conditions(args_split_no_aero)
     du_explicit_no_aero = copy(u0_split_no_aero)
     du_explicit_no_aero .= 0.0
-    p_split_no_aero = ODEParams{1}(args=args_split_no_aero)
+    p_split_no_aero = ODEParams(n_sats=1, args=args_split_no_aero)
     _initialize_heat_rate_buffers!(p_split_no_aero)
     spacecraft_dynamics_explicit_remainder!(du_explicit_no_aero, u0_split_no_aero, p_split_no_aero, 0.0)
     @test isapprox(du_explicit.sc[1].ω, du_explicit_no_aero.sc[1].ω; atol=1e-12, rtol=1e-10)
+end
+
+@testset "Atmosphere-Implicit Fast Path Requires Current Outside Decision" begin
+    q0_outside = normalize(SVector{4, Float64}(0.1, 0.2, -0.05, 0.97))
+    ω0_outside = SVector{3, Float64}(0.01, 0.0, -0.015)
+    sc_outside = make_spacecraft(
+        ra_alt_m=500e3,
+        rp_alt_m=500e3,
+        orientation_state=(q0_outside, ω0_outside)
+    )
+    # The above-EI fast path only applies to density models that vanish above
+    # the entry interface (NoAtmosphereModel); all other models keep aero
+    # engaged at every altitude, so the buffer-trust behavior under test here
+    # must be probed with the vacuum model.
+    args_outside = build_config(
+        spacecraft=sc_outside,
+        density_model=NoAtmosphereModel(),
+        orientation_sim=true,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            AerodynamicCoefficientfM(),
+        ),
+        keplerian=true
+    )
+    args_outside.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+
+    u0_outside = build_initial_conditions(args_outside)
+    du_outside = copy(u0_outside)
+    du_outside .= 0.0
+    p_outside = ODEParams(n_sats=1, args=args_outside)
+    _initialize_heat_rate_buffers!(p_outside)
+
+    p_outside.shared_buffers.in_atmosphere[1] = true
+    p_outside.shared_buffers.in_atmosphere_sample_t[1] = -1.0
+    @test !SimulationEngine._drag_state_buffer_current(p_outside, 1, 0.0)
+    @test SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_outside.sc, p_outside, 0.0)
+
+    spacecraft_dynamics_implicit_atmosphere!(du_outside, u0_outside, p_outside, 0.0)
+    @test all(==(0.0), du_outside.sc[1].pos)
+    @test all(==(0.0), du_outside.sc[1].vel)
+    @test du_outside.sc[1].mass == 0.0
+    @test all(==(0.0), du_outside.sc[1].q)
+    @test all(==(0.0), du_outside.sc[1].ω)
+    @test all(==(0.0), du_outside.sc[1].heat_loads)
+
+    p_outside.shared_buffers.in_atmosphere[1] = false
+    p_outside.shared_buffers.in_atmosphere_sample_t[1] = 0.0
+    @test SimulationEngine._drag_state_buffer_current(p_outside, 1, 0.0)
+    @test SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_outside.sc, p_outside, 0.0)
+
+    p_outside.shared_buffers.in_atmosphere[1] = true
+    p_outside.shared_buffers.in_atmosphere_sample_t[1] = 0.0
+    @test SimulationEngine._drag_state_buffer_current(p_outside, 1, 0.0)
+    @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_outside.sc, p_outside, 0.0)
+
+    # Density models that do not vanish above EI never take the fast path: an
+    # orbit entirely above the entry interface still sees continuous aero.
+    @test SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(NoAtmosphereModel())
+    @test !SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(ExponentialAtmosphereModel(EARTH))
+    @test !SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(ConstantDensityModel(1e-11, 900.0))
+    args_nonvanishing = build_config(
+        spacecraft=sc_outside,
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=true,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            AerodynamicCoefficientfM(),
+        ),
+        keplerian=true
+    )
+    args_nonvanishing.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+    u0_nonvanishing = build_initial_conditions(args_nonvanishing)
+    p_nonvanishing = ODEParams(n_sats=1, args=args_nonvanishing)
+    _initialize_heat_rate_buffers!(p_nonvanishing)
+    p_nonvanishing.shared_buffers.in_atmosphere[1] = false
+    p_nonvanishing.shared_buffers.in_atmosphere_sample_t[1] = 0.0
+    @test SimulationEngine._drag_state_buffer_current(p_nonvanishing, 1, 0.0)
+    @test !SimulationEngine._spacecraft_outside_atmosphere_for_current_state(u0_nonvanishing.sc[1], p_nonvanishing, 1, 0.0)
+    @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_nonvanishing.sc, p_nonvanishing, 0.0)
+
+    sc_mixed = [
+        make_spacecraft(ra_alt_m=220e3, rp_alt_m=100e3, ν_deg=0.0),
+        make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=0.0),
+    ]
+    args_mixed = build_config_multi(
+        spacecraft=sc_mixed,
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=false,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(AerodynamicCoefficientfM(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    args_mixed.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+    u0_mixed = build_initial_conditions(args_mixed)
+    du_mixed = copy(u0_mixed)
+    du_mixed .= 0.0
+    p_mixed = ODEParams(n_sats=2, args=args_mixed)
+    _initialize_heat_rate_buffers!(p_mixed)
+    p_mixed.shared_buffers.in_atmosphere[1] = false
+    p_mixed.shared_buffers.in_atmosphere[2] = true
+    p_mixed.shared_buffers.in_atmosphere_sample_t .= -1.0
+    @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_mixed.sc, p_mixed, 0.0)
+
+    withenv(
+        "SPACEAGORA_RHS_EXECUTION_MODE" => "flat",
+        "SPACEAGORA_EFFECTOR_PARALLEL" => "off",
+        "SPACEAGORA_INNER_THREAD_BUDGET" => string(max(1, Threads.nthreads()))
+    ) do
+        spacecraft_dynamics_implicit_atmosphere!(du_mixed, u0_mixed, p_mixed, 0.0)
+    end
+    @test norm(SVector{3, Float64}(du_mixed.sc[1].vel)) > 0.0
+    @test all(==(0.0), du_mixed.sc[2].pos)
+    @test all(==(0.0), du_mixed.sc[2].vel)
+    @test du_mixed.sc[2].mass == 0.0
+    @test all(==(0.0), du_mixed.sc[2].heat_loads)
 end
 
 @testset "Split IMEX Allows Zero Implicit Partition" begin
@@ -2204,7 +2222,7 @@ end
         keplerian=true
     )
     u0_zero_implicit = build_initial_conditions(args_zero_implicit)
-    p_zero_implicit = ODEParams{1}(args=args_zero_implicit)
+    p_zero_implicit = ODEParams(n_sats=1, args=args_zero_implicit)
     _initialize_heat_rate_buffers!(p_zero_implicit)
     split_prob_zero_implicit = withenv("SPACEAGORA_SOLVER_MODE" => "split_imex") do
         _build_typed_solver_problem(u0_zero_implicit, (0.0, 30.0), p_zero_implicit, CallbackSet())
@@ -2239,7 +2257,7 @@ end
     u0 = build_initial_conditions(args)
     du0 = copy(u0)
     du0 .= 0.0
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     _initialize_heat_rate_buffers!(p)
     spacecraft_dynamics!(du0, u0, p, 0.0)
     drag_force, drag_torque = SimulationModel.calcForceTorque(AerodynamicCoefficientfM(), u0.sc[1], p, 1)
@@ -2706,4 +2724,51 @@ end
     df = run_case(args)
     eps = specific_energy(df, EARTH.μ)
     @test last(eps) < first(eps) - 1e5
+end
+
+@testset "Solver Cache Re-Initializes When Save Options Change" begin
+    # Regression (Codex review on PR #31): DiffEq bakes save_everystep/save_on
+    # into the integrator at init, so a SolverIntegratorCache first used by a
+    # no-output run (return_solution=false, results=false → save_on=false) must
+    # NOT serve its endpoints-only integrator to a later return_solution=true
+    # run.  The cache records its init-time save options and re-initializes
+    # when a call resolves different ones.
+    args_cache = build_config(
+        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3),
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=600.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredJ2GravityModel(),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        ephemerides_model=SimpleEphemeridesModel()
+    )
+    cache = SimulationEngine.SolverIntegratorCache()
+
+    # No-output run initializes the cache with storage disabled.
+    @test run_simulation(args_cache; return_solution=false, solver_cache=cache) === nothing
+    @test cache.integrator !== nothing
+    @test cache.save_on == false
+    @test cache.save_everystep == false
+    integ_no_output = cache.integrator
+
+    # Reusing the same cache for a full-solution run must re-init and return
+    # the whole trajectory, not the cached endpoints-only integrator.
+    sol_full = run_simulation(args_cache; return_solution=true, solver_cache=cache)
+    @test length(sol_full.t) > 2
+    @test cache.integrator !== integ_no_output
+    @test cache.save_on == true
+
+    # Matching options keep reusing the cached integrator (no churn).
+    integ_full = cache.integrator
+    sol_again = run_simulation(args_cache; return_solution=true, solver_cache=cache)
+    @test length(sol_again.t) > 2
+    @test cache.integrator === integ_full
+
+    # Downgrading back to a no-output run re-initializes again so campaign
+    # runs do not silently pay full-trajectory storage.
+    @test run_simulation(args_cache; return_solution=false, solver_cache=cache) === nothing
+    @test cache.integrator !== integ_full
+    @test cache.save_on == false
 end

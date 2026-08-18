@@ -399,7 +399,7 @@ function run_analysis()
         initial_time=initial_time
     )
     args = _make_args(planet, density_model, initial_time)
-    p = ODEParams{1}(args=args)
+    p = ODEParams(n_sats=1, args=args)
     cache_cfg = CB._gram_track_cache_config()
 
     println("GRAM interpolation vs point-to-point analysis")

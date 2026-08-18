@@ -96,6 +96,13 @@ end
 
 @inline _dynamic_effector_threadsafe(::ScaledAerodynamicCoefficientfM)::Bool = true
 
+# The wrapper's force is atmosphere-dependent through the wrapped model even
+# though it evaluates on the calcForceTorque path (where the requirements hook
+# is not consulted by the RHS); declaring it keeps the engine's
+# density-without-aero diagnostic from misfiring on cd-scaled scenarios.
+@inline SimulationModel.environment_requirements(::ScaledAerodynamicCoefficientfM) =
+    SimulationModel.EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+
 function SimulationModel.calcForceTorque(
     model::ScaledAerodynamicCoefficientfM,
     x::AbstractVector,
@@ -166,9 +173,100 @@ function _scenario_dynamic_effectors(
 end
 
 @inline function _scenario_density_model(cfg::AbstractScenarioConfig)
-    return cfg.drag_enabled ?
-        _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth) :
-        SimulationModel.NoAtmosphereModel()
+    cfg.drag_enabled || return SimulationModel.NoAtmosphereModel()
+    if cfg.atmosphere_truth.atmosphere_model == "tabulated_flight"
+        return _make_tabulated_flight_density_model(cfg.initial_time, cfg.atmosphere_truth)
+    end
+    if cfg.atmosphere_truth.atmosphere_model == "tabulated_time"
+        return _make_time_tabulated_density_model(cfg.atmosphere_truth)
+    end
+    if cfg.atmosphere_truth.atmosphere_model == "nrlmsise00"
+        lowercase(strip(cfg.planet_name)) == "earth" || throw(ArgumentError(
+            "atmosphere_truth.atmosphere_model=\"nrlmsise00\" is Earth-only " *
+            "(scenario planet '$(cfg.planet_name)')."
+        ))
+        return SimulationModel.NRLMSISE00AtmosphereModel(use_space_indices=true)
+    end
+    return _make_required_gram_density_model(cfg.planet_name, cfg.initial_time, cfg.atmosphere_truth)
+end
+
+# Flight-measured density table (see build script in the lab notes): one row
+# per (pass, leg, 1 km altitude bin) with mean density, its standard error,
+# and the pass periapsis UTC. Loaded into per-pass in/out profiles keyed by
+# elapsed time from the scenario epoch; nearest pass answers each query, so
+# archive gaps fall back to the neighboring pass (counted and logged here).
+function _make_tabulated_flight_density_model(
+    initial_time::InitialTime,
+    truth::AtmosphereTruthConfig
+)
+    path = truth.tabulated_flight_file
+    isfile(path) || throw(ArgumentError("tabulated_flight_file not found: $path"))
+    tbl = DataFrame(Arrow.Table(path))
+    for col in ("P", "leg", "alt_km", "rho_kgm3", "sigma_kgm3", "t_peri_utc")
+        hasproperty(tbl, Symbol(col)) || throw(ArgumentError("tabulated_flight_file missing column '$col'"))
+    end
+    epoch = DateTime(
+        Int(initial_time.year), Int(initial_time.month), Int(initial_time.day),
+        Int(initial_time.hour), Int(initial_time.minute)
+    ) + Millisecond(round(Int, 1000 * Float64(initial_time.second)))
+    pass_ids = sort(unique(Int.(tbl.P)))
+    peri_el = Float64[]
+    alt_pairs = NTuple{2, Vector{Float64}}[]
+    log_pairs = NTuple{2, Vector{Float64}}[]
+    sig_pairs = NTuple{2, Vector{Float64}}[]
+    for pid in pass_ids
+        sub = tbl[Int.(tbl.P) .== pid, :]
+        t_peri = DateTime(first(sub.t_peri_utc)[1:19])
+        push!(peri_el, Float64(Dates.value(t_peri - epoch)) / 1000.0)
+        alts = (Float64[], Float64[]); logs = (Float64[], Float64[]); sigs = (Float64[], Float64[])
+        for r in eachrow(sub)
+            li = r.leg == "in" ? 1 : 2
+            rho = Float64(r.rho_kgm3)
+            rho > 0.0 || continue
+            push!(alts[li], Float64(r.alt_km) * 1000.0)
+            push!(logs[li], log(rho))
+            push!(sigs[li], Float64(r.sigma_kgm3) / rho)   # sigma of log-density
+        end
+        for li in (1, 2)
+            ord = sortperm(alts[li])
+            permute!(alts[li], ord); permute!(logs[li], ord); permute!(sigs[li], ord)
+        end
+        push!(alt_pairs, alts); push!(log_pairs, logs); push!(sig_pairs, sigs)
+    end
+    ord = sortperm(peri_el)
+    n_gaps = isempty(pass_ids) ? 0 : (maximum(pass_ids) - minimum(pass_ids) + 1 - length(pass_ids))
+    println("tabulated_flight: $(length(pass_ids)) passes, $(nrow(tbl)) bins, " *
+            "$(n_gaps) archive gaps (nearest-pass fallback), sigma_scale=$(truth.tabulated_flight_sigma)")
+    return SimulationModel.TabulatedFlightAtmosphereModel(
+        peri_el[ord], alt_pairs[ord], log_pairs[ord], sig_pairs[ord],
+        truth.tabulated_flight_sigma, 3.4, 188.92
+    )
+end
+
+# Loads a rho(t) table (CSV or Arrow; columns time_s, rho_kgm3) for the
+# "tabulated_time" scenario density source. Times are scenario elapsed seconds,
+# so the table's epoch must equal the scenario initial_time — document the
+# epoch alongside the table.
+function _make_time_tabulated_density_model(truth::AtmosphereTruthConfig)
+    path = truth.tabulated_time_file
+    isfile(path) || throw(ArgumentError("tabulated_time_file not found: $path"))
+    tbl = endswith(lowercase(path), ".csv") ?
+        DataFrame(CSV.File(path)) : DataFrame(Arrow.Table(path))
+    for col in ("time_s", "rho_kgm3")
+        hasproperty(tbl, Symbol(col)) || throw(ArgumentError(
+            "tabulated_time_file missing column '$col' (needs time_s, rho_kgm3)"
+        ))
+    end
+    ord = sortperm(Float64.(tbl.time_s))
+    println("tabulated_time: $(nrow(tbl)) nodes spanning " *
+            "$(round((maximum(tbl.time_s) - minimum(tbl.time_s)) / 3600.0, digits=2)) h, " *
+            "scale=$(truth.tabulated_time_scale)")
+    return SimulationModel.TimeTabulatedAtmosphereModel(
+        Float64.(tbl.time_s)[ord],
+        Float64.(tbl.rho_kgm3)[ord];
+        scale=truth.tabulated_time_scale,
+        temperature_k=truth.tabulated_time_temperature_k
+    )
 end
 
 Base.@kwdef struct _GRAMOfflineSurrogateFallbackBase
@@ -196,7 +294,11 @@ end
     return _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_ALLOW_GRAM_OFFLINE_NO_LIB", "1"), true)
 end
 
-function _try_libraryless_gram_surrogate(planet_name::String)
+function _try_libraryless_gram_surrogate(planet_name::String, truth::AtmosphereTruthConfig)
+    # gram_offline_surrogate="off" opts the scenario out of every surrogate
+    # path, including this library-missing fallback: a benchmark pinned to the
+    # native model must fail rather than silently fly the frozen-epoch grid.
+    truth.gram_offline_surrogate == "off" && return nothing
     _libraryless_gram_surrogate_enabled() || return nothing
     planet_key = lowercase(strip(planet_name))
     surrogate_file = try
@@ -234,7 +336,7 @@ function _make_required_gram_density_model(
     catch err
         msg = sprint(showerror, err)
         if _is_gram_library_missing_error(err)
-            offline_model = _try_libraryless_gram_surrogate(planet_name)
+            offline_model = _try_libraryless_gram_surrogate(planet_name, truth)
             if offline_model !== nothing
                 @warn "GRAM shared library unavailable; using library-less GRAM offline surrogate fallback for telemetry." planet=planet_name surrogate_file=offline_model.surrogate_file
                 return offline_model
@@ -253,7 +355,8 @@ end
         panel_offset_y=cfg.panel_offset_y_m,
         ic=ic,
         prop_mass=cfg.prop_mass_kg,
-        id=cfg.id
+        id=cfg.id,
+        bus_ram_face=cfg.bus_ram_face
     )
 end
 
@@ -308,9 +411,20 @@ function _with_campaign_maneuvers(args::SimulationConfiguration, cfg::OrbitEvent
         stop_burn_time=fill(-1.0, n_sats),
         Isp=fill(cfg.maneuver_isp_s, n_sats)
     )
+    # Diagnostic replay scaling: convert flight apoapsis altitudes to radii
+    # with the equatorial radius; the flight/sim RATIO is insensitive to the
+    # (identical) altitude-to-radius convention at the <0.2% level.
+    flight_apo_radius_m = if cfg.maneuver_replay_scale_mode == "flight_apoapsis_ratio"
+        planet = args.environment_model.planet
+        println("maneuver_replay_scale context=$(cfg.name) mode=flight_apoapsis_ratio burns=$(length(cfg.maneuver_flight_apoapsis_alt_m))")
+        Float64[alt + planet.Rp_e for alt in cfg.maneuver_flight_apoapsis_alt_m]
+    else
+        Float64[]
+    end
     guidance_effector = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
         maneuver_orbit_number=cfg.maneuver_orbit_numbers,
-        maneuver_Δv=cfg.maneuver_delta_v_mps
+        maneuver_Δv=cfg.maneuver_delta_v_mps,
+        maneuver_flight_apoapsis_radius_m=flight_apo_radius_m
     )
     return SimulationConfiguration(
         file_paths=args.file_paths,
@@ -361,6 +475,73 @@ function _with_orbit_mission(
     )
 end
 
+# Body-mean-equator inertial axes expressed in J2000: z along the body pole,
+# x along the ascending node of the body equator on the J2000 equator.
+function _body_equator_frame_rotation(pole_j2000::SVector{3, Float64})::SMatrix{3, 3, Float64, 9}
+    ẑ = pole_j2000 / norm(pole_j2000)
+    node = SVector{3, Float64}(-ẑ[2], ẑ[1], 0.0)
+    node_mag = norm(node)
+    node_mag <= 1e-12 && return SMatrix{3, 3, Float64}(1.0I)
+    x̂ = node / node_mag
+    ŷ = cross(ẑ, x̂)
+    return hcat(x̂, ŷ, ẑ)
+end
+
+# Flight-dynamics products for Venus/Mars scenarios publish osculating elements
+# referenced to the body mean equator, while the engine propagates in J2000
+# (dynamics_rhs build_initial_conditions). Elements flagged body_equator_inertial
+# are therefore converted to a J2000 Cartesian state here, using the same pole
+# model (planet_frame_lpi) the propagation itself uses.
+function _initial_condition_in_j2000(
+    ic::InitialCondition,
+    planet,
+    initial_time,
+    element_frame::Symbol
+)::SimulationModel.AbstractInitialCondition
+    element_frame === :j2000 && return ic
+    element_frame === :body_equator_inertial || throw(ArgumentError(
+        "Unsupported element_frame=$element_frame for orbit-element initial conditions."
+    ))
+    model = SimulationModel.SpiceEphemeridesModel()
+    et = SimulationModel.ephemerides_time_seconds(initial_time, model)
+    l_pi = SimulationModel.planet_frame_lpi(planet, et, model)
+    pole_j2000 = SVector{3, Float64}(l_pi[3, 1], l_pi[3, 2], l_pi[3, 3])
+    rot = _body_equator_frame_rotation(pole_j2000)
+    r_body, v_body = SimulationEngine.orbitalelemtorv(ic, planet)
+    return CartesianInitialCondition(
+        rot * SVector{3, Float64}(r_body),
+        rot * SVector{3, Float64}(v_body)
+    )
+end
+
+# Initial condition for an orbit-events scenario. The exact NAV-kernel Cartesian
+# state (initial_state_j2000_m) takes precedence when the manifest provides it;
+# the published osculating elements are then documentation only. Otherwise the
+# elements are used, converted to J2000 axes if flagged body_equator_inertial.
+function _scenario_initial_condition(
+    cfg::OrbitEventsScenarioConfig,
+    planet
+)::SimulationModel.AbstractInitialCondition
+    state = cfg.initial_state_j2000_m
+    if state !== nothing
+        println("initial_state_j2000: kernel Cartesian override active context=$(cfg.name)")
+        return CartesianInitialCondition(
+            SVector{3, Float64}(state[1], state[2], state[3]),
+            SVector{3, Float64}(state[4], state[5], state[6])
+        )
+    end
+    rp_m = planet.Rp_e + cfg.rp_altitude_m
+    ic_elements = InitialCondition(
+        ra=cfg.ra_m,
+        rp=rp_m,
+        i=cfg.i_deg,
+        ω=cfg.aop_deg,
+        Ω=cfg.raan_deg,
+        ν=cfg.ta_deg
+    )
+    return _initial_condition_in_j2000(ic_elements, planet, cfg.initial_time, cfg.element_frame)
+end
+
 function _make_orbit_args(
     cfg::OrbitEventsScenarioConfig,
     target_orbits::Int;
@@ -369,14 +550,7 @@ function _make_orbit_args(
 )::SimulationConfiguration
     planet = _planet_from_name(cfg.planet_name)
     rp_m = planet.Rp_e + cfg.rp_altitude_m
-    ic = InitialCondition(
-        ra=cfg.ra_m,
-        rp=rp_m,
-        i=cfg.i_deg,
-        ω=cfg.aop_deg,
-        Ω=cfg.raan_deg,
-        ν=cfg.ta_deg
-    )
+    ic = _scenario_initial_condition(cfg, planet)
 
     spacecraft = _make_spacecraft(cfg.spacecraft, ic)
     dynamic_effectors = _scenario_dynamic_effectors(
@@ -416,6 +590,11 @@ function _make_time_aligned_args(
     cr_override::Union{Nothing, Float64}=nothing
 )::SimulationConfiguration
     planet = _planet_from_name(cfg.planet_name)
+    # Historical note: drag_enabled scenarios starting above EI_km used to lose
+    # aero silently on the split/implicit solver paths, which zeroed forces
+    # above the entry interface for every density model. The implicit partition
+    # now keeps aero engaged at all altitudes for density models that do not
+    # vanish above EI, so no manifest-side EI_km workaround is needed.
     spacecraft = _make_spacecraft(cfg.spacecraft, ic)
     dynamic_effectors = _scenario_dynamic_effectors(
         cfg,
@@ -454,10 +633,21 @@ end
 
 function _with_study_settings(args::SimulationConfiguration; quick::Bool=false)::SimulationConfiguration
     hf = _has_high_fidelity_effectors(args)
-    rel_orbit = min(quick ? 5e-7 : 1e-7, STRICT_REL_ORBIT)
-    abs_orbit = min(quick ? 5e-9 : 1e-9, STRICT_ABS_ORBIT)
-    rel_atm = min(quick ? 1e-6 : 1e-7, STRICT_REL_ATM)
-    abs_atm = min(quick ? 1e-8 : 1e-9, STRICT_ABS_ATM)
+    rel_orbit_base = min(quick ? 5e-7 : 1e-7, STRICT_REL_ORBIT)
+    abs_orbit_base = min(quick ? 5e-9 : 1e-9, STRICT_ABS_ORBIT)
+    rel_atm_base = min(quick ? 1e-6 : 1e-7, STRICT_REL_ATM)
+    abs_atm_base = min(quick ? 1e-8 : 1e-9, STRICT_ABS_ATM)
+    # SPACEAGORA_TELEMETRY_{RELTOL,ABSTOL}_{ORBIT,ATM} may TIGHTEN the study
+    # tolerances but never loosen them past the study bases (these variables
+    # were historically accepted by callers and silently ignored here).
+    rel_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_RELTOL_ORBIT")
+    abs_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_ABSTOL_ORBIT")
+    rel_atm_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_RELTOL_ATM")
+    abs_atm_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_ABSTOL_ATM")
+    rel_orbit = rel_orbit_env === nothing ? rel_orbit_base : min(rel_orbit_env, rel_orbit_base)
+    abs_orbit = abs_orbit_env === nothing ? abs_orbit_base : min(abs_orbit_env, abs_orbit_base)
+    rel_atm = rel_atm_env === nothing ? rel_atm_base : min(rel_atm_env, rel_atm_base)
+    abs_atm = abs_atm_env === nothing ? abs_atm_base : min(abs_atm_env, abs_atm_base)
     dt_orbit_base = min(quick ? (hf ? 180.0 : 240.0) : (hf ? 60.0 : 120.0), STRICT_DT_ORBIT)
     dt_atm_base = min(quick ? (hf ? 2.0 : 5.0) : (hf ? 0.2 : 0.5), STRICT_DT_ATM)
     dt_orbit_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_DT_MAX_ORBIT")

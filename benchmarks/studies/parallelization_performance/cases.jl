@@ -63,9 +63,22 @@ any(a -> any(c -> occursin(c, a), PPC_GRAM_LIVE_CASES), ARGS) && ppc_ensure_gram
 # the "native-library contention" axis the manuscript's execution-architecture
 # contribution claims to route on.
 const _PPC_GRAM_MODEL_CACHE = Dict{String, Any}()
+const _PPC_GRAM_MODEL_CACHE_LOCK = ReentrantLock()
+# `get!`'s do-block form is not thread-safe against concurrent *first*
+# population: under outer_threads/full_smart with mc_samples > 1, every MC
+# sample's ppc_single_config call lands on a different thread at roughly the
+# same time (Threads.@threads in ppc_run_sample_batch), so with a plain Dict
+# multiple threads can all see the entry missing and race to construct
+# GRAMAtmosphereModel concurrently -- each hitting the same
+# set_library!-in-the-wrong-world-age crash the cache above exists to avoid,
+# just via a race instead of a second sequential call. Locking around the
+# whole check-and-construct makes population itself serialize (matching the
+# type's own instance_lock intent for concurrent *use*).
 function ppc_gram_atmosphere_model(planet_name::String)
-    return get!(_PPC_GRAM_MODEL_CACHE, planet_name) do
-        GRAMAtmosphereModel(planet_name=planet_name)
+    lock(_PPC_GRAM_MODEL_CACHE_LOCK) do
+        get!(_PPC_GRAM_MODEL_CACHE, planet_name) do
+            GRAMAtmosphereModel(planet_name=planet_name)
+        end
     end
 end
 

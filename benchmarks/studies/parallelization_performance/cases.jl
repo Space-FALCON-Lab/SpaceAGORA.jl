@@ -406,6 +406,22 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         # and GRAM usage" axis, on the interacting side. GRAMSuite is already
         # loaded (see PPC_GRAM_LIVE_CASES above the case catalog) -- world-age
         # safe because that happens before this function is even compiled.
+        #
+        # KNOWN ISSUE (2026-08-18): at the real full mission duration (1200s),
+        # this case leaks memory unboundedly -- observed growing ~150-300 MB/min
+        # with no plateau, eventually OOM-killing the host. Reproduced with
+        # solver_mode=tsit5 too (rules out the auto_stiff/Rodas5P autoswitch
+        # path), and the MERRA2 data file is read exactly once (rules out a
+        # repeated-file-read cause), so this looks like a per-call resource leak
+        # inside the vendored GRAMSuite.jl native binding itself, scaling with
+        # GRAM call volume (16 satellites x many RHS evaluations). The
+        # single-satellite montecarlo_mars_gram_live case below does NOT show
+        # this (35s, clean) at its own real full mission duration (1800s), so
+        # it's specific to this case, not live GRAM in general. Deliberately
+        # excluded from B6 (paper_parallelization_benchmarks/cli.jl) until this
+        # is root-caused. Do not re-add it to a phase without re-validating at
+        # the real (not "test"-profile) mission duration first -- a short smoke
+        # run will not reproduce this.
         return ppc_build_config(
             planet=planet,
             spacecraft=ppc_constellation(planet, 16),

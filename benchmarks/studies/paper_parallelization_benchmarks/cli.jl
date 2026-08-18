@@ -198,10 +198,19 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # judged against them -- see PPB_STATIC_MODES/PPB_ADAPTIVE_MODES in
         # reporting.jl) and instead sweeps the workload axes B5 held fixed:
         #   - spacecraft count:      4 / 16 / 64 / 256 (many_sat_high_fidelity ladder)
-        #   - atmosphere/GRAM usage: multi_16_gram_live, montecarlo_mars_gram_live
-        #                            (native GRAMAtmosphereModel, not the analytic
+        #   - atmosphere/GRAM usage: montecarlo_mars_gram_live (native
+        #                            GRAMAtmosphereModel, not the analytic
         #                            ExponentialAtmosphereModel every other
-        #                            atmosphere case here uses)
+        #                            atmosphere case here uses). multi_16_gram_live
+        #                            (the interacting/16-satellite counterpart) is
+        #                            defined in cases.jl but deliberately NOT run
+        #                            here: it triggers an unbounded per-call memory
+        #                            leak in the vendored GRAMSuite.jl native
+        #                            binding (reproduced with solver_mode=tsit5 too,
+        #                            so it isn't the auto_stiff/Rodas5P path) --
+        #                            pre-existing, out of scope for this phase,
+        #                            being investigated separately. Do not add it
+        #                            back to this case list until that's resolved.
         #   - force/actuator count:  articulated_1sat_fullstack (harmonics+aero+
         #                            thermal+attitude) and multi_8sat_magnetorquer_attitude
         #                            (the only case in this whole catalog with a
@@ -223,7 +232,6 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
             "multi_16_aero_surrogate_cached",
             "multi_64_high_fidelity",
             "multi_256_high_fidelity",
-            "multi_16_gram_live",
             "montecarlo_mars_gram_live",
             "montecarlo_multi_sat",
             "articulated_1sat_fullstack",
@@ -234,7 +242,6 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         parity_cases = [
             "multi_4_aero_surrogate_cached",
             "multi_256_high_fidelity",
-            "multi_16_gram_live",
             "montecarlo_mars_gram_live",
             "multi_8sat_magnetorquer_attitude",
             "gravity_16sat_l20_vacuum_longmission",

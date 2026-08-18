@@ -2546,4 +2546,92 @@ end
     @test fields[1].column_prefix == "pos" && fields[2].column_prefix == "vel"
 end
 
+@testset "manifest link attitude quaternions" begin
+    scenario = Dict(
+        "name" => "link_attitude_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+        build_sc = cfg -> begin
+            planet = TV._planet_from_name("earth")
+            TV._make_spacecraft(cfg.spacecraft, TV._scenario_initial_condition(cfg, planet))
+        end
+        IDENTITY = (0.0, 0.0, 0.0, 1.0)
+
+        # Absent keys: every link at identity — bit-compat with the
+        # pre-capability spacecraft.
+        write_manifest(scenario)
+        sc0 = build_sc(only(TV._load_scenarios_from_manifest(manifest_path)))
+        @test all(Tuple(link.q) == IDENTITY for link in sc0.links)
+
+        # Round-trip: canted panels (±22.5° about y, deliberately UNNORMALIZED
+        # input) land on the built links normalized; bus stays identity.
+        s, c = sin(pi / 16), cos(pi / 16)
+        scenario["spacecraft"]["panel_attitude_q_left"] = [0.0, 2s, 0.0, 2c]
+        scenario["spacecraft"]["panel_attitude_q_right"] = [0.0, -2s, 0.0, 2c]
+        write_manifest(scenario)
+        cfg_q = only(TV._load_scenarios_from_manifest(manifest_path))
+        sc_q = build_sc(cfg_q)
+        bus, left, right = sc_q.links
+        @test Tuple(bus.q) == IDENTITY
+        @test collect(left.q) ≈ [0.0, s, 0.0, c] atol = 1e-12
+        @test collect(right.q) ≈ [0.0, -s, 0.0, c] atol = 1e-12
+
+        # The point of the capability: under :attitude the canted panels now
+        # see oblique incidence (mirrored about flow-normal), where the
+        # identity-quaternion configuration is pinned flow-normal.
+        AeroFM = SimulationModel.DynamicEffectors.AerodynamicEffectors
+        α_left = AeroFM._attitude_link_alpha(left, bus)
+        α_right = AeroFM._attitude_link_alpha(right, bus)
+        @test abs(α_left - pi / 2) ≈ pi / 8 atol = 1e-10
+        @test α_left + α_right ≈ pi atol = 1e-10
+        @test AeroFM._attitude_link_alpha(bus, bus) ≈ pi / 2 atol = 1e-12
+
+        # Validation: wrong length and zero norm fail loudly, naming the key.
+        for bad in (Any[0.0, 1.0, 0.0], Any[0.0, 0.0, 0.0, 0.0])
+            scenario["spacecraft"]["bus_attitude_q"] = bad
+            write_manifest(scenario)
+            err = try
+                TV._load_scenarios_from_manifest(manifest_path)
+                nothing
+            catch e
+                e
+            end
+            @test err !== nothing
+            @test occursin("bus_attitude_q", sprint(showerror, err))
+        end
+    end
+end
+
 println("coverage_parallel_telemetry_probes_ok")

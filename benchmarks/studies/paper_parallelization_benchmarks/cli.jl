@@ -187,6 +187,72 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         thread_mode = :max_only,
     ),
 
+    PPBPhase(
+        id    = "B6",
+        label = "Expanded Router Evaluation — Spacecraft Count, Atmosphere/GRAM, Actuators, Propagation Mode, Duration/Cadence",
+        # B5 evaluates the full routing-profile ladder on 3 fixed workloads at
+        # a single thread budget. This phase is point 8's response to that
+        # narrowness: it holds the mode ladder to the routes that matter most
+        # for router *regret* (serial/outer_threads/outer_process as static
+        # baselines, outer_inner_adaptive/full_smart as the routes being
+        # judged against them -- see PPB_STATIC_MODES/PPB_ADAPTIVE_MODES in
+        # reporting.jl) and instead sweeps the workload axes B5 held fixed:
+        #   - spacecraft count:      4 / 16 / 64 / 256 (many_sat_high_fidelity ladder)
+        #   - atmosphere/GRAM usage: multi_16_gram_live, montecarlo_mars_gram_live
+        #                            (native GRAMAtmosphereModel, not the analytic
+        #                            ExponentialAtmosphereModel every other
+        #                            atmosphere case here uses)
+        #   - force/actuator count:  articulated_1sat_fullstack (harmonics+aero+
+        #                            thermal+attitude) and multi_8sat_magnetorquer_attitude
+        #                            (the only case in this whole catalog with a
+        #                            real control_effector -- every other case has
+        #                            control_effectors=())
+        #   - interacting vs.
+        #     independent:          constellation cases vs. montecarlo_mars_gram_live/
+        #                           montecarlo_multi_sat
+        #   - thread/process budget: thread_mode=:low_high (1 and machine-max,
+        #                            rather than B5's single fixed max) plus
+        #                           outer_process in the mode ladder
+        #   - duration/cadence:     gravity_16sat_l20_vacuum_longmission (~4x
+        #                            mission time) and _sparse_output (15x fewer
+        #                            saved steps), both vs. the unmodified
+        #                            gravity_16sat_l20_vacuum baseline
+        cases = [
+            "gravity_16sat_l20_vacuum",
+            "multi_4_aero_surrogate_cached",
+            "multi_16_aero_surrogate_cached",
+            "multi_64_high_fidelity",
+            "multi_256_high_fidelity",
+            "multi_16_gram_live",
+            "montecarlo_mars_gram_live",
+            "montecarlo_multi_sat",
+            "articulated_1sat_fullstack",
+            "multi_8sat_magnetorquer_attitude",
+            "gravity_16sat_l20_vacuum_longmission",
+            "gravity_16sat_l20_vacuum_sparse_output",
+        ],
+        parity_cases = [
+            "multi_4_aero_surrogate_cached",
+            "multi_256_high_fidelity",
+            "multi_16_gram_live",
+            "montecarlo_mars_gram_live",
+            "multi_8sat_magnetorquer_attitude",
+            "gravity_16sat_l20_vacuum_longmission",
+            "gravity_16sat_l20_vacuum_sparse_output",
+        ],
+        modes = [
+            "serial",
+            "outer_threads",
+            "outer_process",
+            "outer_inner_adaptive",
+            "full_smart",
+        ],
+        mc_samples  = [1, 8],
+        repeats     = 3,
+        warmup      = 1,
+        thread_mode = :low_high,
+    ),
+
 ]
 
 # ── CLI parsing ───────────────────────────────────────────────────────────────

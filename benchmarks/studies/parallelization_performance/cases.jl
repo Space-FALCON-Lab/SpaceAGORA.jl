@@ -1,12 +1,82 @@
-include(joinpath(PPC_REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
-include(joinpath(PPC_REPO_ROOT, "src", "simulation", "runtime_services.jl"))
-include(joinpath(PPC_REPO_ROOT, "src", "core", "simulation_model.jl"))
-include(joinpath(PPC_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+# Load through the real, Pkg-loaded SpaceAGORA package (rather than raw
+# `include`-ing the src/ files directly into Main, as this study used to)
+# so package extensions actually attach -- in particular
+# SpaceAGORAGRAMSuiteExt, which is what supplies the `GRAMAtmosphereModel`/
+# `GRAMAtmosphereModelSurrogate` keyword constructors used by the GRAM-axis
+# router-evaluation cases below. A raw-included copy of simulation_model.jl
+# is a second, independent module instantiation with its own type identities
+# that Julia's extension mechanism (keyed to the real SpaceAGORA Base.PkgId)
+# cannot see, so those constructors never resolved under the old include-only
+# setup even after `import GRAMSuite`. `using SpaceAGORA` still exposes every
+# name this file (and modes.jl/execution.jl/trajectory_parity.jl) previously
+# got from the raw includes, since SpaceAGORA.jl itself includes/re-exports
+# the same source files.
+using SpaceAGORA
+using SpaceAGORA.SimulationModel
+const SimulationEngine = SpaceAGORA.SimulationEngine
+using SpaceAGORA.SimulationModel: GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate
 
-using .SimulationModel
+# Mirrors examples/common.jl's `ensure_gramsuite_loaded!` (that file isn't
+# included here to avoid pulling in its Pkg.activate bootstrapping, which
+# this study's cli.jl/worker subprocess launch already handles via
+# `--project=$(PPC_REPO_ROOT)`). Idempotent: safe to call more than once.
+function ppc_ensure_gramsuite_loaded!()
+    isdefined(SpaceAGORA, :GRAMSuite) && return nothing
+    vendored_gramsuite = joinpath(PPC_REPO_ROOT, "data", "GRAMSuite.jl")
+    if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
+        pushfirst!(LOAD_PATH, vendored_gramsuite)
+    end
+    @eval import GRAMSuite
+    return nothing
+end
+
+# Case names that build a live GRAMAtmosphereModel. Must be loaded here, at
+# file-include time, rather than lazily inside those cases' branches in
+# ppc_single_config below: `@eval import GRAMSuite` inside a function only
+# advances the *global* world age, which is invisible to any frame already on
+# the call stack above that `eval` without Base.invokelatest -- and GRAM's
+# extension-provided methods are called from many places (the constructor,
+# the density-callback's `getDensity`, ...) scattered too deep/far apart to
+# invokelatest individually. Each worker subprocess handles exactly one
+# --case=X for its whole lifetime (see ppc_worker_cmd), so ARGS already says
+# up front whether this process will ever need GRAMSuite loaded.
+const PPC_GRAM_LIVE_CASES = ("multi_16_gram_live", "montecarlo_mars_gram_live")
+any(a -> any(c -> occursin(c, a), PPC_GRAM_LIVE_CASES), ARGS) && ppc_ensure_gramsuite_loaded!()
+
+# GRAMAtmosphereModel is cached per planet (not rebuilt per call/sample): the
+# vendored GRAMSuite.jl itself dynamically (re)defines `set_library!` inside
+# its own constructor path (data/GRAMSuite.jl/GRAM Suite 2.0/Julia/generic.jl),
+# so a *second* construction for the same planet in one process hits the same
+# world-age barrier as above ("MethodError: no method matching set_library!" /
+# Julia's own "access to binding in a world prior to its definition" warning)
+# -- independent of anything in this file or SpaceAGORAGRAMSuiteExt. This bites
+# montecarlo_mars_gram_live specifically, since ppc_single_config is called
+# fresh per MC sample within one worker process (ppc_run_sample_batch), so
+# mc_samples > 1 would otherwise try to build a second Mars GRAMAtmosphereModel.
+# Reusing one instance is also the officially-supported concurrent-access
+# pattern (GRAMAtmosphereModel's docstring: `instance_lock` "serializes native
+# GRAM calls against this wrapper instance"), so this cache is simultaneously
+# the crash fix and the intended way to exercise GRAM contention under
+# threaded outer-parallelism -- vs. outer_process, where each sample gets its
+# own process and thus its own uncontended instance. That contrast (shared
+# lock-serialized instance under threads vs. per-process isolation) is exactly
+# the "native-library contention" axis the manuscript's execution-architecture
+# contribution claims to route on.
+const _PPC_GRAM_MODEL_CACHE = Dict{String, Any}()
+function ppc_gram_atmosphere_model(planet_name::String)
+    return get!(_PPC_GRAM_MODEL_CACHE, planet_name) do
+        GRAMAtmosphereModel(planet_name=planet_name)
+    end
+end
 
 const PPC_SPICE_PATH = joinpath(PPC_REPO_ROOT, "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
 const PPC_EARTH_HARMONICS_FILE = joinpath(PPC_REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+
+# Internal (non-exported) home of `_lvlh_cascade_torque`, reached the same way
+# the CYGNSS closed-loop-twin driver reaches it
+# (spaceagora-private-telemetry/CYGNSS/campaign_drivers/productized/cygnss_constellation_scaling_worker.jl),
+# for the actuator/control-effector router-evaluation case below.
+const PE = SimulationModel.DynamicEffectors.PerturbationEffectors
 
 Base.@kwdef struct PPCCaseSpec
     name::String
@@ -98,7 +168,8 @@ function ppc_build_config(;
     control_rates::Vector{Float64}=Float64[],
     dt_max_orbit::Float64=10.0,
     reltol_orbit::Float64=1e-9,
-    abstol_orbit::Float64=1e-9
+    abstol_orbit::Float64=1e-9,
+    num_steps_to_save::Int=300
 )
     return SimulationConfiguration(
         simulation_settings=SimulationSettings(
@@ -114,7 +185,7 @@ function ppc_build_config(;
             number_of_orbits=1,
             mission_time=mission_time_s,
             orientation_sim=orientation_sim,
-            num_steps_to_save=300
+            num_steps_to_save=num_steps_to_save
         ),
         environment_model=EnvironmentModel(
             planet=planet,
@@ -298,6 +369,161 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             density_model=ExponentialAtmosphereModel(mars),
             dt_max_orbit=1.0
         )
+
+    # ── Router-evaluation axis coverage (point 8: spacecraft count, atmosphere/GRAM
+    # usage, force/actuator model count, interacting vs. independent propagation,
+    # thread/process budgets, output cadence and mission duration) ─────────────────
+
+    elseif case_name == "multi_4_aero_surrogate_cached"
+        # Rounds out the many_sat_high_fidelity spacecraft-count ladder at the low
+        # end (existing: 16/64/128) for the router phase's spacecraft-count axis.
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, 4),
+            mission_time_s=ppc_mission_time(cfg.profile; smoke=90.0, full=1200.0),
+            orientation_sim=false,
+            dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+            density_model=ExponentialAtmosphereModel(planet),
+            dt_max_orbit=5.0
+        )
+    elseif case_name == "multi_256_high_fidelity"
+        # High end of the same ladder (existing: 64/128).
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, 256),
+            mission_time_s=ppc_mission_time(cfg.profile; smoke=90.0, full=1200.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 20), SolarRadiationPressureModel(1.2, 12.0), AerodynamicCoefficientfM()),
+            density_model=ExponentialAtmosphereModel(planet),
+            dt_max_orbit=10.0
+        )
+    elseif case_name == "multi_16_gram_live"
+        # Interacting constellation against the *native* GRAM atmosphere model
+        # (SpaceAGORAGRAMSuiteExt's GRAMAtmosphereModel), not the analytic
+        # ExponentialAtmosphereModel every other atmosphere case in this catalog
+        # uses. Exercises real GRAM-call contention (native-library mutex/cache
+        # traffic) under outer-loop constellation parallelism -- the "atmosphere
+        # and GRAM usage" axis, on the interacting side. GRAMSuite is already
+        # loaded (see PPC_GRAM_LIVE_CASES above the case catalog) -- world-age
+        # safe because that happens before this function is even compiled.
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, 16),
+            mission_time_s=ppc_mission_time(cfg.profile; smoke=90.0, full=1200.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 20), AerodynamicCoefficientfM()),
+            density_model=ppc_gram_atmosphere_model("earth"),
+            dt_max_orbit=5.0
+        )
+    elseif case_name == "montecarlo_mars_gram_live"
+        # Independent-trial counterpart to multi_16_gram_live: same Mars
+        # aerobraking geometry as montecarlo_mars_aerobraking, but native GRAM
+        # density instead of ExponentialAtmosphereModel. This is also the
+        # workload the review's point 7 flagged the router choosing poorly on
+        # (R5 ~25% slower than the best tested route for the GRAM case) --
+        # giving it its own case here (rather than only the surrogate/analytic
+        # version) lets the expanded thread/process ladder actually probe that.
+        return ppc_build_config(
+            planet=mars,
+            spacecraft=[ppc_spacecraft(
+                mars;
+                ra_alt_m=4500e3 + randn(rng) * 100e3,
+                rp_alt_m=max(110e3, 135e3 + randn(rng) * 10e3),
+                i_deg=93.0,
+                omega_deg=80.0,
+                raan_deg=30.0,
+                nu_deg=180.0 + randn(rng) * 4.0
+            )],
+            mission_time_s=ppc_mission_time(cfg.profile; smoke=120.0, full=1800.0),
+            orientation_sim=false,
+            dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+            density_model=ppc_gram_atmosphere_model("mars"),
+            dt_max_orbit=1.0
+        )
+    elseif case_name == "multi_8sat_magnetorquer_attitude"
+        # Every other case in this catalog has control_effectors=() -- no case
+        # exercises the discrete-rate control-effector path (stateful per-satellite
+        # accumulator on the ControlModel callback, distinct from the continuous
+        # dynamic_effectors RHS terms) at constellation scale. This case adds a
+        # real actuator: an LVLH cascade attitude controller (dynamic_effectors,
+        # shared across satellites -- see _lvlh_cascade_torque, which is
+        # satellite-state-driven rather than sat_idx-keyed) commanding per-satellite
+        # MagneticMomentumManagerModel magnetorquer unloading (control_effectors,
+        # one stateful instance per sat_idx). The controller gains below are generic
+        # small-sat-scale values for exercising this code path under routing, NOT
+        # flight-fit numbers -- unlike the CYGNSS closed-loop-twin driver in
+        # spaceagora-private-telemetry, this case makes no flight-fidelity claim.
+        # b_field_ii reuses the library's own tilted-dipole model
+        # (get_magnetic_field_dipole) with a fixed (non-rotating) ECEF frame --
+        # a deliberate simplification appropriate for a routing benchmark over
+        # missions this short (tens of minutes), not a flight-accurate B-field.
+        n_sats = 8
+        spacecraft = SpacecraftModel[
+            ppc_spacecraft(
+                planet;
+                id=i,
+                ra_alt_m=540e3 + 2e3 * (i - 1),
+                rp_alt_m=500e3 + 1e3 * (i - 1),
+                nu_deg=120.0 + 240.0 * (i - 1) / n_sats,
+                orientation_state=(q0, w0)
+            )
+            for i in 1:n_sats
+        ]
+        controller = PE.LVLHCascadeAttitudeControlModel(
+            q_cmd_lb=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+            k_out=SVector{3, Float64}(0.05, 0.05, 0.05),
+            w_max=0.01,
+            k_rate=SVector{3, Float64}(50.0, 50.0, 50.0),
+            tau_max=0.01,
+        )
+        commanded_torque = (t, r, v, q, w) -> PE._lvlh_cascade_torque(controller, r, v, q, w)
+        l_pi_fixed = MMatrix{3, 3, Float64}(1.0I)
+        b_field_ii = (t, r_ii) -> PE.get_magnetic_field_dipole(r_ii, l_pi_fixed)
+        mgr_models = MagneticMomentumManagerModel[
+            MagneticMomentumManagerModel(
+                sat_idx=i, mu_gain=7.0e-4, m_max_am2=1.8,
+                h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0),
+                commanded_torque=commanded_torque, b_field_ii=b_field_ii
+            )
+            for i in 1:n_sats
+        ]
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=spacecraft,
+            mission_time_s=ppc_mission_time(cfg.profile; smoke=90.0, full=1200.0),
+            orientation_sim=true,
+            dynamic_effectors=(InverseSquaredGravityModel(), controller),
+            density_model=NoAtmosphereModel(),
+            guidance_effectors=(),
+            control_effectors=Tuple(mgr_models),
+            control_rates=fill(1.0, n_sats),
+            dt_max_orbit=2.0
+        )
+    elseif case_name == "gravity_16sat_l20_vacuum_longmission"
+        # Mission-duration axis: same physics as gravity_16sat_l20_vacuum, ~4x the
+        # standard "full" mission length.
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, 16),
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=480.0, full=7200.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 20),),
+            density_model=NoAtmosphereModel(),
+            dt_max_orbit=20.0
+        )
+    elseif case_name == "gravity_16sat_l20_vacuum_sparse_output"
+        # Output-cadence axis: same physics/duration as gravity_16sat_l20_vacuum,
+        # 15x fewer saved output steps.
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, 16),
+            mission_time_s=ppc_mission_time(cfg.profile),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 20),),
+            density_model=NoAtmosphereModel(),
+            dt_max_orbit=20.0,
+            num_steps_to_save=20
+        )
     end
 
     throw(ArgumentError("Unknown parallelization performance case '$case_name'."))
@@ -331,6 +557,15 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
     add!("montecarlo_high_accuracy", "monte_carlo", "Monte Carlo high-accuracy gravity seeds", montecarlo=true)
     add!("montecarlo_multi_sat", "monte_carlo", "Monte Carlo 4-spacecraft gravity seeds", montecarlo=true)
     add!("montecarlo_mars_aerobraking", "monte_carlo", "Monte Carlo Mars aerobraking seeds", montecarlo=true)
+
+    # Router-evaluation axis coverage (B6 / point 8).
+    add!("multi_4_aero_surrogate_cached", "many_sat_high_fidelity", "4 spacecraft with aero and analytic density")
+    add!("multi_256_high_fidelity", "many_sat_high_fidelity", "256 spacecraft with harmonics, SRP, aero, and analytic density")
+    add!("multi_16_gram_live", "gram_live", "16 spacecraft, harmonics and aero, native GRAM atmosphere (interacting)")
+    add!("montecarlo_mars_gram_live", "gram_live", "Monte Carlo Mars aerobraking, native GRAM atmosphere (independent)", montecarlo=true)
+    add!("multi_8sat_magnetorquer_attitude", "actuator", "8 spacecraft, LVLH attitude control and magnetorquer unloading actuator", orientation=true)
+    add!("gravity_16sat_l20_vacuum_longmission", "duration_cadence", "16 spacecraft, L20 harmonics, ~4x mission duration")
+    add!("gravity_16sat_l20_vacuum_sparse_output", "duration_cadence", "16 spacecraft, L20 harmonics, 15x sparser output cadence")
     return cases
 end
 

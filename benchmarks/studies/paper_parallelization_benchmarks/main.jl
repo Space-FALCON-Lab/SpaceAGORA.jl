@@ -10,6 +10,12 @@ function _ppb_thread_ladder(phase::PPBPhase, ppb::PPBConfig)::Vector{Int}
     base = isempty(ppb.threads) ? _ppc_full_thread_ladder() : ppb.threads
     phase.thread_mode == :max_only && return [maximum(base)]
     phase.thread_mode == :single   && return [1]
+    # Two points (1 and the machine max) rather than the full ladder: B6
+    # covers many workload axes at once (case count x mode count already
+    # multiplies out large), so it takes a coarse cut of the thread-budget
+    # axis specifically to keep total cost bounded -- the *full* ladder is
+    # already covered in depth by B1/B2's dedicated thread-scaling phases.
+    phase.thread_mode == :low_high && return sort(unique([1, maximum(base)]))
     return base
 end
 

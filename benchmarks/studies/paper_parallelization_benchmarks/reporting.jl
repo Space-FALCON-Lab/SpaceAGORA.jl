@@ -97,6 +97,38 @@ function _ppb_collect_partial(root_dir::String)::NamedTuple
     return (raw=raw, complete_dirs=complete_dirs, partial_dirs=partial_dirs)
 end
 
+# ── Router regret (point 8: report router regret relative to the best tested
+# static route, (T_selected - T_best) / T_best) ────────────────────────────────
+
+# "Static" routes are fixed, non-adaptive parallel profiles (R0-R3); "adaptive"
+# routes let the runtime pick the schedule per call/workload (R4-R5). Regret is
+# computed for the adaptive routes against the best static route measured on
+# the *same* workload point (phase_id, case, thread_count, process_workers,
+# mc_samples) -- i.e. what the adaptive router actually cost you relative to
+# the best fixed route you could have picked for that exact point, matching
+# the review's point 8 formula.
+const PPB_STATIC_MODES   = Set(["serial", "outer_threads", "outer_process", "inner_only", "outer_inner_static"])
+const PPB_ADAPTIVE_MODES = Set(["outer_inner_adaptive", "full_smart"])
+
+function _ppb_add_router_regret!(agg::DataFrame)
+    agg[!, :regret_vs_best_static] = Vector{Union{Missing, Float64}}(missing, nrow(agg))
+    nrow(agg) == 0 && return agg
+    point_key = [k for k in [:phase_id, :case, :thread_count, :process_workers, :mc_samples] if string(k) in names(agg)]
+    isempty(point_key) && return agg
+
+    for sub in groupby(agg, point_key)
+        static_times = [t for (m, t) in zip(sub.mode, sub.wall_time_median_s) if m in PPB_STATIC_MODES && !ismissing(t) && t > 0.0]
+        isempty(static_times) && continue
+        best_static = minimum(static_times)
+        for i in 1:nrow(sub)
+            t = sub.wall_time_median_s[i]
+            (ismissing(t) || t <= 0.0) && continue
+            sub.regret_vs_best_static[i] = (t - best_static) / best_static
+        end
+    end
+    return agg
+end
+
 # ── Aggregation ───────────────────────────────────────────────────────────────
 
 function _ppb_aggregate(raw::DataFrame)::DataFrame
@@ -142,6 +174,7 @@ function _ppb_aggregate(raw::DataFrame)::DataFrame
         ]
     end
     agg[!, :n_sat] = _ppb_n_sat.(agg.case)
+    _ppb_add_router_regret!(agg)
     return agg
 end
 
@@ -358,6 +391,51 @@ function _ppb_plot_profile_comparison(agg::DataFrame, outdir::String)::String
     return path
 end
 
+function _ppb_plot_router_regret(agg::DataFrame, outdir::String)::String
+    "regret_vs_best_static" in names(agg) || return ""
+    df = agg[
+        (coalesce.(agg.phase_id, "") .== "B6") .&
+        (in.(agg.mode, Ref(PPB_ADAPTIVE_MODES))) .&
+        .!ismissing.(agg.regret_vs_best_static),
+        :,
+    ]
+    nrow(df) == 0 && return ""
+
+    cases = sort(unique(df.case))
+    modes = [m for m in ["outer_inner_adaptive", "full_smart"] if m in unique(df.mode)]
+    n_c, n_m = length(cases), length(modes)
+    n_c == 0 || n_m == 0 && return ""
+
+    # Worst-case (max) regret per case/mode across whatever thread/process/mc
+    # points were tested for it -- one bar per case/mode, not one per point.
+    y = [begin
+        sub = df[(df.case .== c) .& (df.mode .== m), :]
+        nrow(sub) > 0 ? 100.0 * maximum(sub.regret_vs_best_static) : NaN
+    end for c in cases, m in modes]
+
+    p = Plots.bar(
+        cases, y;
+        label         = permutedims(modes),
+        ylabel        = "Router regret vs. best static route (%)",
+        title         = "B6 — Router Regret Across the Expanded Workload Matrix",
+        xrotation     = 25,
+        tickfont      = Plots.font(8),
+        guidefont     = Plots.font(11),
+        titlefont     = Plots.font(11),
+        legendfont    = Plots.font(9),
+        legend        = :topright,
+        size          = (900, 550),
+        left_margin   = 14Plots.PlotMeasures.mm,
+        bottom_margin = 32Plots.PlotMeasures.mm,
+        right_margin  = 24Plots.PlotMeasures.mm,
+    )
+    Plots.hline!(p, [0.0]; label="", linestyle=:dash, color=:grey, linewidth=1)
+
+    path = joinpath(outdir, "router_regret.png")
+    Plots.savefig(p, path)
+    return path
+end
+
 # ── Top-level plot dispatcher ─────────────────────────────────────────────────
 
 # Runs a single plot-producing closure, isolating its failure so one broken
@@ -399,6 +477,9 @@ function _ppb_write_plots(outdir::String, agg::DataFrame)::Vector{String}
         end,
         _ppb_safe_plot("profile_comparison") do
             _ppb_plot_profile_comparison(agg, outdir)
+        end,
+        _ppb_safe_plot("router_regret") do
+            _ppb_plot_router_regret(agg, outdir)
         end,
     ]
 
@@ -497,6 +578,46 @@ function _ppb_write_report(
                 end
                 println(io)
             end
+
+            _ppb_safe_section(io, "Router Regret (B6)") do
+                println(io, "## Router Regret (B6)")
+                println(io)
+                println(io, "Regret of the adaptive routing profiles (`outer_inner_adaptive` = R4,")
+                println(io, "`full_smart` = R5) relative to the best *static* route (R0-R3) measured on")
+                println(io, "the same workload point (case, thread count, process workers, MC samples):")
+                println(io)
+                println(io, "```")
+                println(io, "regret = (T_selected - T_best_static) / T_best_static")
+                println(io, "```")
+                println(io)
+                println(io, "Worst-case (max) regret per case/mode across every point B6 tested for it.")
+                println(io, "Negative values mean the adaptive route beat every static route tested; the")
+                println(io, "manuscript's own finding that R5 lags ~25% behind the best static route on")
+                println(io, "the GRAM workload is exactly what a large positive value here would confirm")
+                println(io, "or, if it no longer reproduces, contradict.")
+                println(io)
+                regret_df = agg[
+                    (coalesce.(agg.phase_id, "") .== "B6") .&
+                    (in.(agg.mode, Ref(PPB_ADAPTIVE_MODES))) .&
+                    .!ismissing.(agg.regret_vs_best_static),
+                    :,
+                ]
+                if nrow(regret_df) > 0
+                    println(io, "| Case | Mode | Worst regret | Threads | Process workers | MC samples |")
+                    println(io, "|------|------|-------------:|--------:|-----------------:|-----------:|")
+                    for case in sort(unique(regret_df.case)), mode in ["outer_inner_adaptive", "full_smart"]
+                        sub = regret_df[(regret_df.case .== case) .& (regret_df.mode .== mode), :]
+                        nrow(sub) == 0 && continue
+                        worst_idx = argmax(sub.regret_vs_best_static)
+                        r = sub[worst_idx, :]
+                        pw = "process_workers" in names(sub) ? string(coalesce(r.process_workers, "—")) : "—"
+                        println(io, "| $(case) | $(mode) | $(round(100 * r.regret_vs_best_static; digits=1))% | $(r.thread_count) | $(pw) | $(r.mc_samples) |")
+                    end
+                else
+                    println(io, "_No B6 router-regret data._")
+                end
+                println(io)
+            end
         end
 
         println(io, "## Output Files")
@@ -504,7 +625,7 @@ function _ppb_write_report(
         println(io, "Raw and aggregated CSV files are in the same directory as this report.")
         println(io, "Plots: `constellation_scaling_gravity.png`, `constellation_scaling_harmonics.png`,")
         println(io, "`thread_scaling_outer_threads.png`, `atmosphere_runtime_comparison.png`,")
-        println(io, "`mc_throughput_scaling.png`, `profile_comparison.png`.")
+        println(io, "`mc_throughput_scaling.png`, `profile_comparison.png`, `router_regret.png`.")
     end
     return path
 end

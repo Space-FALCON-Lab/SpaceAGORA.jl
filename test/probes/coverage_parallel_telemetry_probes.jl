@@ -2438,4 +2438,112 @@ end
     end
 end
 
+@testset "scenario builder frame and helper coverage" begin
+    planet = TV._planet_from_name("earth")
+
+    # Orbital period helper against the closed form it implements.
+    T = TV._period_seconds(planet, 7.2e6, 6.8e6)
+    @test T ≈ 2π * sqrt(7.0e6^3 / planet.μ) rtol = 1e-12
+
+    # Gravity effector selection and its failure branch.
+    @test TV._base_gravity_effector(:inverse_squared) isa SimulationModel.InverseSquaredGravityModel
+    @test TV._base_gravity_effector(:inverse_squared_j2) isa SimulationModel.InverseSquaredJ2GravityModel
+    @test_throws ArgumentError TV._base_gravity_effector(:cubed)
+
+    # Harmonics order clamping table.
+    @test TV._harmonics_order(0, 5) == 0
+    @test TV._harmonics_order(50, 0) == 0
+    @test TV._harmonics_order(50, -1) == 50
+    @test TV._harmonics_order(50, 30) == 30
+    @test TV._harmonics_order(50, 70) == 50
+
+    # N-body primary naming and its failure branch.
+    for (key, name) in ("earth" => "Earth", "mars" => "Mars", "venus" => "Venus",
+                        "moon" => "Moon", "titan" => "Titan")
+        @test TV._nbody_primary_name(key) == name
+    end
+    @test_throws ArgumentError TV._nbody_primary_name("pluto")
+    @test_throws ArgumentError TV._planet_from_name("pluto")
+
+    # Env-gated J2-source and normalization selection: defaults, default
+    # override, and scenario-set membership (member vs non-member).
+    withenv("SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS" => nothing) do
+        @test TV._telemetry_j2_source_for_scenario("anything") === :file_c20
+    end
+    withenv("SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT" => "planet",
+            "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS" => nothing) do
+        @test TV._telemetry_j2_source_for_scenario("anything") === :planet_j2
+    end
+    withenv("SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS" => "special, other") do
+        @test TV._telemetry_j2_source_for_scenario("Special") === :planet_j2
+        @test TV._telemetry_j2_source_for_scenario("regular") === :file_c20
+    end
+    withenv("SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS" => nothing) do
+        @test TV._telemetry_coefficients_normalized_for_scenario("anything")
+    end
+    withenv("SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT" => "false",
+            "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS" => nothing) do
+        @test !TV._telemetry_coefficients_normalized_for_scenario("anything")
+    end
+    withenv("SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS" => "raw_one") do
+        @test !TV._telemetry_coefficients_normalized_for_scenario("RAW_ONE")
+        @test TV._telemetry_coefficients_normalized_for_scenario("normalized_one")
+    end
+
+    # Scaled-fM wrapper contract: positive scale required, thread-safe, and
+    # atmosphere-consuming so the density-without-aero diagnostic stays quiet.
+    fm = SimulationModel.AerodynamicCoefficientfM()
+    scaled = TV.ScaledAerodynamicCoefficientfM(fm, 1.2)
+    @test scaled.cd_scale == 1.2
+    @test_throws ArgumentError TV.ScaledAerodynamicCoefficientfM(fm, 0.0)
+    @test TV._dynamic_effector_threadsafe(scaled)
+    @test SimulationModel.environment_requirements(scaled).atmosphere
+
+    # Orbit-mission plumbing swaps only the mission configuration.
+    ic = SimulationModel.InitialCondition(
+        7.0e6, 1.0e-3, 35.0, 0.0, 0.0, 0.0,
+        SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    )
+    sc = TV.make_three_body_spacecraft(
+        bus_dims=(0.2, 0.5, 0.6), panel_dims=(0.4, 0.001, 0.5), bus_mass=29.0,
+        panel_mass_each=0.0, panel_offset_y=0.5, ic=ic
+    )
+    args = TV.make_example_config(
+        planet=planet, spacecraft=sc, mission_time=60.0,
+        initial_time=SimulationModel.InitialTime(year=2020, month=1, day=1),
+        verbose=false
+    )
+    args_o = TV._with_orbit_mission(args, 5, 1234.0)
+    @test args_o.mission_configuration.mission_type === SimulationModel.MissionOrbits
+    @test args_o.mission_configuration.number_of_orbits == 5
+    @test args_o.mission_configuration.mission_time == 1234.0
+    @test args_o.environment_model === args.environment_model
+
+    # Body-equator frame math: a z-aligned pole degenerates to identity; a
+    # tilted pole yields an orthonormal frame with ẑ along the pole and the
+    # node axis in the J2000 equatorial plane.
+    R_id = TV._body_equator_frame_rotation(SVector{3, Float64}(0.0, 0.0, 1.0))
+    @test R_id ≈ SMatrix{3, 3, Float64}(1.0I) atol = 1e-14
+    pole = SVector{3, Float64}(0.2, -0.3, 0.9)
+    R = TV._body_equator_frame_rotation(pole)
+    @test R' * R ≈ SMatrix{3, 3, Float64}(1.0I) atol = 1e-12
+    @test R[:, 3] ≈ pole / norm(pole) atol = 1e-12
+    @test abs(R[3, 1]) < 1e-12   # node axis lies in the J2000 equatorial plane
+
+    # Element-frame conversion: :j2000 is the identity path; unsupported
+    # frames fail loudly.
+    it = SimulationModel.InitialTime(year=2020, month=1, day=1)
+    @test TV._initial_condition_in_j2000(ic, planet, it, :j2000) === ic
+    @test_throws ArgumentError TV._initial_condition_in_j2000(ic, planet, it, :ecliptic)
+
+    # Study save-fields: position and velocity per-satellite extractors.
+    fields = TV._save_fields_for_study()
+    @test length(fields) == 2
+    @test fields[1].column_prefix == "pos" && fields[2].column_prefix == "vel"
+end
+
 println("coverage_parallel_telemetry_probes_ok")

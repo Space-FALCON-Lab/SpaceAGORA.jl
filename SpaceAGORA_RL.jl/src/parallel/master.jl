@@ -245,6 +245,112 @@ function _launch_spaceagora_physics_streaming_worker!(session::TrainingSession{<
     )
 end
 
+function _launch_spaceagora_physics_streaming_worker!(
+    session::TrainingSession{<:A2CLearner},
+    event_channel,
+    worker_id::Int,
+    episode_index::Int,
+    actor_snapshot::QNetwork,
+    action_rng::AbstractRNG,
+    policy_version::Int;
+    simulation_template::Union{Nothing,SpaceAGORAPhysicsSimulationTemplate}=nothing,
+    process_id::Union{Nothing,Int}=nothing,
+    scenario_seed::Union{Nothing,Int}=nothing,
+    successful_case_repeat_index::Int=0,
+)
+    seed = scenario_seed === nothing ?
+           _spaceagora_physics_streaming_worker_seed(
+               session.config.training.seed,
+               worker_id,
+               episode_index,
+           ) :
+           Int(scenario_seed)
+    scenario_rng = MersenneTwister(seed)
+    config = session.config.scenario
+    state = reset_scenario(config, scenario_rng)
+    norm_obs = normalize_observation(observe_state(config, state), config.normalization_bounds)
+    protected_first_pass = session.config.training.protected_first_pass
+    action_index = protected_first_pass ?
+                   zero_action_index() :
+                   actor_action(actor_snapshot, norm_obs, action_rng; test=false)
+    action = action_from_index(action_index)
+    summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
+    compatibility_config = DDQNConfig(
+        obs_dim=session.learner.config.obs_dim,
+        action_dim=session.learner.config.action_dim,
+    )
+    template = nothing
+    handle = if process_id === nothing
+        template = simulation_template === nothing ?
+                   _spaceagora_physics_simulation_template(
+                       config,
+                       state,
+                       action;
+                       campaign_max_passes=_spaceagora_physics_campaign_mission_pass_cap(
+                           config,
+                           session.config.training.max_passes_per_campaign,
+                       ),
+                   ) :
+                   simulation_template
+        start_spaceagora_physics_campaign_worker!(
+            event_channel,
+            config,
+            EpsilonSchedule(),
+            compatibility_config,
+            nothing,
+            template,
+            state,
+            norm_obs,
+            action_index,
+            summary,
+            episode_index,
+            worker_id,
+            seed,
+            session.config.training.max_passes_per_campaign,
+            session.learner.global_step;
+            protected_first_pass=protected_first_pass,
+            protected_suppress_thermal_terminal=
+                session.config.training.protected_first_pass_suppress_thermal_terminal,
+            policy_version=policy_version,
+        )
+    else
+        action_channel = RemoteChannel(() -> Channel{Any}(1), process_id)
+        future = remotecall(
+            run_spaceagora_physics_campaign_process_worker_episode,
+            process_id,
+            event_channel,
+            action_channel,
+            config,
+            EpsilonSchedule(),
+            compatibility_config,
+            state,
+            norm_obs,
+            action_index,
+            summary,
+            episode_index,
+            worker_id,
+            seed,
+            session.config.training.max_passes_per_campaign,
+            session.learner.global_step;
+            protected_first_pass=protected_first_pass,
+            protected_suppress_thermal_terminal=
+                session.config.training.protected_first_pass_suppress_thermal_terminal,
+            policy_version=policy_version,
+        )
+        SpaceAGORAPhysicsWorkerHandle(future, action_channel)
+    end
+    return SpaceAGORAPhysicsActiveWorker(
+        worker_id,
+        episode_index,
+        seed,
+        handle,
+        0,
+        template,
+        process_id,
+        successful_case_repeat_index,
+    )
+end
+
 function _finish_spaceagora_physics_streaming_worker!(worker::SpaceAGORAPhysicsActiveWorker)
     fetch(worker.handle.task)
     return nothing
@@ -809,51 +915,185 @@ mutable struct A2CWorkerCampaign
     worker_id::Int
     episode_index::Int
     seed::Int
-    rng::MersenneTwister
+    scenario_rng::MersenneTwister
+    policy_rng::MersenneTwister
     state::AerobrakingDecisionState
     observation::Vector{Float32}
     summary::EpisodeSummary
+    ready::Bool
+    summary_pending::Bool
 end
 
-function _new_a2c_worker_campaign(config::AerobrakingScenarioConfig, worker_id::Int,
-                                  episode_index::Int, seed::Int)
-    rng = MersenneTwister(seed)
-    state = reset_scenario(config, rng)
-    observation = normalize_observation(observe_state(config, state), config.normalization_bounds)
-    summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
-    return A2CWorkerCampaign(worker_id, episode_index, seed, rng, state, observation, summary)
+struct A2CCollectedStep
+    transition::Transition
+    episode_end::Bool
 end
 
-function _reset_a2c_worker_campaign!(worker::A2CWorkerCampaign, config::AerobrakingScenarioConfig,
-                                     episode_index::Int, seed::Int)
+function _a2c_worker_policy_seed(base_seed::Int, worker_id::Int)
+    return base_seed + 1_000_000_007 + 10_000 * worker_id
+end
+
+function _initialize_a2c_worker_campaign!(worker::A2CWorkerCampaign,
+                                          session::TrainingSession{<:A2CLearner},
+                                          episode_index::Int, seed::Int)
+    config = session.config.scenario
     worker.episode_index = episode_index
     worker.seed = seed
-    worker.rng = MersenneTwister(seed)
-    worker.state = reset_scenario(config, worker.rng)
-    worker.observation = normalize_observation(observe_state(config, worker.state),
-                                               config.normalization_bounds)
+    worker.scenario_rng = MersenneTwister(seed)
+    worker.state = reset_scenario(config, worker.scenario_rng)
     worker.summary = empty_episode_summary(episode_index=episode_index,
                                            worker_id=worker.worker_id,
                                            seed=seed)
+    initial = run_protected_initializer(
+        config,
+        worker.state,
+        worker.scenario_rng,
+        worker.summary;
+        settings=protected_initialization_config(session.config.training),
+    )
+    worker.state = initial.state
+    worker.observation = initial.normalized_observation
+    worker.summary = initial.summary
+    pass_cap = min(session.config.training.max_passes_per_campaign,
+                   config.termination_config.max_passes)
+    worker.ready = !initial.done && worker.summary.pass_count < pass_cap
+    worker.summary_pending = !worker.ready
     return worker
+end
+
+function _new_a2c_worker_campaign(session::TrainingSession{<:A2CLearner}, worker_id::Int,
+                                  episode_index::Int, seed::Int)
+    config = session.config.scenario
+    scenario_rng = MersenneTwister(seed)
+    state = reset_scenario(config, scenario_rng)
+    observation = normalize_observation(observe_state(config, state),
+                                        config.normalization_bounds)
+    summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
+    worker = A2CWorkerCampaign(
+        worker_id,
+        episode_index,
+        seed,
+        scenario_rng,
+        MersenneTwister(_a2c_worker_policy_seed(session.config.training.seed, worker_id)),
+        state,
+        observation,
+        summary,
+        true,
+        false,
+    )
+    return _initialize_a2c_worker_campaign!(worker, session, episode_index, seed)
+end
+
+function _prepare_a2c_worker!(session::TrainingSession{<:A2CLearner},
+                              worker::A2CWorkerCampaign,
+                              summaries::AbstractVector{EpisodeSummary},
+                              episode_budget::Int,
+                              next_episode_ref::Base.RefValue{Int};
+                              allow_new_episode::Bool=true)
+    while !worker.ready
+        if worker.summary_pending
+            push!(summaries, finalize_episode_summary(worker.summary, session.config.scenario))
+            worker.summary_pending = false
+        end
+        allow_new_episode || return false
+        next_episode_ref[] < episode_budget || return false
+        next_episode_ref[] += 1
+        seed = _a2c_worker_seed(session.config.training.seed,
+                                worker.worker_id,
+                                next_episode_ref[])
+        _initialize_a2c_worker_campaign!(worker, session, next_episode_ref[], seed)
+    end
+    return true
 end
 
 function _a2c_worker_seed(base_seed::Int, worker_id::Int, episode_index::Int)
     return base_seed + 10_000 * worker_id + episode_index
 end
 
-function _a2c_bootstrap_values(learner::A2CLearner, workers::Vector{A2CWorkerCampaign})
-    obs = Matrix{Float32}(undef, learner.config.obs_dim, length(workers))
-    for (col, worker) in pairs(workers)
-        obs[:, col] .= worker.observation
+function _a2c_next_values(learner::A2CLearner, next_observations::Array{Float32,3},
+                          valid::AbstractMatrix{Bool})
+    size(next_observations, 2) == size(valid, 1) ||
+        throw(DimensionMismatch("next-observation worker dimension does not match valid mask"))
+    size(next_observations, 3) == size(valid, 2) ||
+        throw(DimensionMismatch("next-observation time dimension does not match valid mask"))
+    observations = Matrix{Float32}(undef, learner.config.obs_dim, count(valid))
+    coordinates = Tuple{Int,Int}[]
+    column = 1
+    for t in axes(valid, 2), worker in axes(valid, 1)
+        valid[worker, t] || continue
+        observations[:, column] .= @view next_observations[:, worker, t]
+        push!(coordinates, (worker, t))
+        column += 1
     end
-    return value_predictions(learner, obs)
+    predictions = value_predictions(learner, observations)
+    next_values = zeros(Float32, size(valid))
+    for (value, (worker, t)) in zip(predictions, coordinates)
+        next_values[worker, t] = value
+    end
+    return next_values
+end
+
+function _a2c_batch_from_worker_rollouts(
+    learner::A2CLearner,
+    worker_rollouts::AbstractVector{<:AbstractVector{A2CCollectedStep}},
+    policy_version::Integer,
+)
+    n_workers = length(worker_rollouts)
+    segment_length = maximum(length, worker_rollouts; init=0)
+    segment_length > 0 || return nothing
+    observations = zeros(Float32, learner.config.obs_dim, n_workers, segment_length)
+    next_observations = zeros(Float32, learner.config.obs_dim, n_workers, segment_length)
+    actions = zeros(Int, n_workers, segment_length)
+    rewards = zeros(Float32, n_workers, segment_length)
+    episode_end = falses(n_workers, segment_length)
+    terminated = falses(n_workers, segment_length)
+    valid = falses(n_workers, segment_length)
+    for (worker, rollout) in pairs(worker_rollouts), (t, collected) in pairs(rollout)
+        transition = collected.transition
+        observations[:, worker, t] .= transition.observation
+        next_observations[:, worker, t] .= transition.next_observation
+        actions[worker, t] = transition.action_index
+        rewards[worker, t] = transition.reward
+        episode_end[worker, t] = collected.episode_end
+        terminated[worker, t] = transition.terminated
+        valid[worker, t] = true
+    end
+    next_values = _a2c_next_values(learner, next_observations, valid)
+    returns = compute_discounted_returns(
+        rewards,
+        episode_end,
+        terminated,
+        valid,
+        next_values,
+        learner.config.discount,
+    )
+    return flatten_rollout(
+        observations,
+        actions,
+        returns,
+        valid;
+        policy_version=policy_version,
+    )
+end
+
+function _a2c_rollout_quotas(worker_ids::AbstractVector{Int}, remaining_steps::Int,
+                             segment_length::Int)
+    quotas = Dict(worker_id => 0 for worker_id in worker_ids)
+    remaining = remaining_steps
+    for _ in 1:segment_length
+        for worker_id in worker_ids
+            remaining > 0 || return quotas
+            quotas[worker_id] += 1
+            remaining -= 1
+        end
+    end
+    return quotas
 end
 
 function _collect_a2c_segment!(session::TrainingSession{<:A2CLearner},
                                workers::Vector{A2CWorkerCampaign},
-                               summaries::Vector{EpisodeSummary},
-                               transitions::Vector{Transition},
+                               summaries::AbstractVector{EpisodeSummary},
+                               transitions::AbstractVector{Transition},
                                target_global_step::Int,
                                episode_budget::Int,
                                next_episode_ref::Base.RefValue{Int})
@@ -864,33 +1104,51 @@ function _collect_a2c_segment!(session::TrainingSession{<:A2CLearner},
     observations = zeros(Float32, learner.config.obs_dim, n_workers, segment_length)
     actions = zeros(Int, n_workers, segment_length)
     rewards = zeros(Float32, n_workers, segment_length)
-    done = falses(n_workers, segment_length)
+    next_observations = zeros(Float32, learner.config.obs_dim, n_workers, segment_length)
+    episode_end = falses(n_workers, segment_length)
+    terminated = falses(n_workers, segment_length)
     valid = falses(n_workers, segment_length)
     actor_snapshot = cpu_network(learner.actor)
+    policy_version = learner.policy_version
 
     for t in 1:segment_length
         learner.global_step < target_global_step || break
         length(summaries) < episode_budget || break
 
+        for worker in workers
+            _prepare_a2c_worker!(
+                session,
+                worker,
+                summaries,
+                episode_budget,
+                next_episode_ref;
+                allow_new_episode=learner.global_step < target_global_step,
+            )
+        end
+
         step_jobs = Vector{Union{Nothing,Task}}(nothing, n_workers)
         chosen_actions = Vector{Int}(undef, n_workers)
         previous_observations = Vector{Vector{Float32}}(undef, n_workers)
+        remaining_steps = target_global_step - learner.global_step
+        launched = 0
 
         for (worker_index, worker) in pairs(workers)
-            learner.global_step < target_global_step || break
-            length(summaries) < episode_budget || break
+            worker.ready || continue
+            launched < remaining_steps || break
             previous_observations[worker_index] = copy(worker.observation)
             chosen_actions[worker_index] = actor_action(actor_snapshot, worker.observation,
-                                                        worker.rng; test=false)
+                                                        worker.policy_rng; test=false)
             observations[:, worker_index, t] .= worker.observation
             actions[worker_index, t] = chosen_actions[worker_index]
             step_jobs[worker_index] = Threads.@spawn step_scenario(
                 $config,
                 $(worker.state),
                 $(chosen_actions[worker_index]),
-                $(worker.rng),
+                $(worker.scenario_rng),
             )
+            launched += 1
         end
+        launched == 0 && break
 
         for (worker_index, worker) in pairs(workers)
             step_jobs[worker_index] === nothing && continue
@@ -902,6 +1160,7 @@ function _collect_a2c_segment!(session::TrainingSession{<:A2CLearner},
             push!(transitions, transition)
             valid[worker_index, t] = true
             rewards[worker_index, t] = transition.reward
+            next_observations[:, worker_index, t] .= transition.next_observation
             learner.global_step += 1
 
             worker.summary = update_episode_summary(worker.summary, result)
@@ -909,29 +1168,34 @@ function _collect_a2c_segment!(session::TrainingSession{<:A2CLearner},
             worker.observation = result.normalized_observation
             campaign_done = transition.terminated || transition.truncated ||
                             worker.summary.pass_count >= session.config.training.max_passes_per_campaign
-            done[worker_index, t] = campaign_done
+            episode_end[worker_index, t] = campaign_done
+            terminated[worker_index, t] = transition.terminated
 
             if campaign_done
-                push!(summaries, finalize_episode_summary(worker.summary, config))
-                if length(summaries) < episode_budget && learner.global_step < target_global_step
-                    next_episode_ref[] += 1
-                    seed = _a2c_worker_seed(session.config.training.seed,
-                                            worker.worker_id,
-                                            next_episode_ref[])
-                    _reset_a2c_worker_campaign!(worker, config, next_episode_ref[], seed)
-                end
+                worker.ready = false
+                worker.summary_pending = true
+                _prepare_a2c_worker!(
+                    session,
+                    worker,
+                    summaries,
+                    episode_budget,
+                    next_episode_ref;
+                    allow_new_episode=learner.global_step < target_global_step,
+                )
             end
         end
     end
 
     count(valid) == 0 && return nothing
-    bootstraps = _a2c_bootstrap_values(learner, workers)
-    returns = compute_discounted_returns(rewards, done, valid, bootstraps, learner.config.discount)
-    return flatten_rollout(observations, actions, returns, valid)
+    next_values = _a2c_next_values(learner, next_observations, valid)
+    returns = compute_discounted_returns(rewards, episode_end, terminated, valid,
+                                         next_values, learner.config.discount)
+    return flatten_rollout(observations, actions, returns, valid;
+                           policy_version=policy_version)
 end
 
 function _print_a2c_progress(session::TrainingSession{<:A2CLearner},
-                             summaries::Vector{EpisodeSummary},
+                             summaries::AbstractVector{<:EpisodeSummary},
                              episode_budget::Int,
                              target_global_step::Int,
                              active_workers::Int,
@@ -951,14 +1215,27 @@ function _print_a2c_progress(session::TrainingSession{<:A2CLearner},
         target_tolerance_m=session.config.scenario.reward_config.target_tolerance_m,
     )
     loss = isfinite(session.learner.last_loss) ? @sprintf("%.6g", session.learner.last_loss) : "n/a"
+    policy_loss = isfinite(session.learner.last_policy_loss) ?
+                  @sprintf("%.6g", session.learner.last_policy_loss) : "n/a"
+    value_loss = isfinite(session.learner.last_value_loss) ?
+                 @sprintf("%.6g", session.learner.last_value_loss) : "n/a"
+    entropy = isfinite(session.learner.last_entropy) ?
+              @sprintf("%.6g", session.learner.last_entropy) : "n/a"
+    explained_variance = isfinite(session.learner.last_explained_variance) ?
+                         @sprintf("%.4f", session.learner.last_explained_variance) : "n/a"
     @printf(
-        "progress algo=a2c ep=%d/%s steps=%d%s train_steps=%d loss=%s recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal_no_thermal=%.1f%% recent_mean_end_distance_no_thermal_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
+        "progress algo=a2c ep=%d/%s steps=%d%s train_steps=%d policy_version=%d loss=%s policy_loss=%s value_loss=%s entropy=%s explained_variance=%s recent_reward=%.3f recent_mean_thermal_violations=%.2f recent_mean_passes_to_end=%.1f recent_reached_goal_no_thermal=%.1f%% recent_mean_end_distance_no_thermal_km=%.2f workers=%d/%d elapsed=%s eta=%s\n",
         completed_episodes,
         _budget_label(episode_budget),
         session.learner.global_step,
         step_limited ? "/$(target_global_step)" : "",
         session.learner.train_steps,
+        session.learner.policy_version,
         loss,
+        policy_loss,
+        value_loss,
+        entropy,
+        explained_variance,
         stats.mean_reward,
         stats.mean_thermal_violations,
         stats.mean_passes_to_end,
@@ -972,17 +1249,443 @@ function _print_a2c_progress(session::TrainingSession{<:A2CLearner},
     flush(stdout)
 end
 
+function _shutdown_a2c_live_workers!(active::Dict{Int,SpaceAGORAPhysicsActiveWorker},
+                                     parked::Set{Int}, event_channel)
+    for worker_id in collect(parked)
+        worker = get(active, worker_id, nothing)
+        worker === nothing && continue
+        put!(worker.handle.action_channel, nothing)
+        _finish_spaceagora_physics_streaming_worker!(worker)
+        delete!(active, worker_id)
+    end
+    empty!(parked)
+    isempty(active) || _stop_spaceagora_physics_streaming_workers!(active, event_channel)
+    return nothing
+end
+
+function _train_parallel_a2c_spaceagora_physics_streaming!(
+    session::TrainingSession{<:A2CLearner};
+    global_steps::Int=session.config.training.global_steps,
+    episodes::Union{Nothing,Int}=nothing,
+    n_workers::Int=session.config.training.n_workers,
+    process_ids::Vector{Int}=Int[],
+)
+    summaries = DiskBackedHistory(
+        EpisodeSummary,
+        joinpath(session.output_dir, "training_episode_summaries.jls"),
+    )
+    transitions = DiskBackedHistory(
+        Transition,
+        joinpath(session.output_dir, "training_transitions.jls"),
+    )
+    aggregate_accumulator = EpisodeAggregateAccumulator()
+    requested_workers = max(1, n_workers)
+    worker_backend = isempty(process_ids) ? :threads : :processes
+    active_worker_limit = worker_backend == :threads ?
+                          min(requested_workers, Threads.nthreads()) :
+                          min(requested_workers, length(process_ids))
+    if worker_backend == :threads && active_worker_limit < requested_workers
+        @warn "n_workers exceeds available Julia threads; using Threads.nthreads()" requested_workers active_workers=active_worker_limit
+    end
+    target_global_step = global_steps > 0 ? global_steps : typemax(Int)
+    episode_budget = episodes === nothing ?
+                     (global_steps > 0 ? typemax(Int) : session.config.training.episodes) :
+                     max(0, episodes)
+    active_worker_limit = min(active_worker_limit, episode_budget)
+    checkpoint_frequency = session.config.training.checkpoint_frequency
+    next_checkpoint_step = checkpoint_frequency > 0 ? checkpoint_frequency : typemax(Int)
+    progress_frequency = max(0, session.config.training.progress_frequency)
+    next_progress_step = progress_frequency > 0 && target_global_step != typemax(Int) ?
+                         min(target_global_step, session.learner.global_step + progress_frequency) :
+                         typemax(Int)
+    next_progress_episode = progress_frequency > 0 && target_global_step == typemax(Int) ?
+                            min(progress_frequency, episode_budget) :
+                            typemax(Int)
+    start_time = time()
+    start_global_step = session.learner.global_step
+    last_progress_step = -1
+    last_progress_episode = -1
+
+    @printf(
+        "starting A2C training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d worker_backend=%s julia_threads=%d segment_length=%d train_start=%d checkpoint_frequency=%d progress_frequency=%d device=%s architecture=on_policy_pass_streaming\n",
+        target_global_step == typemax(Int) ? "none" : string(target_global_step),
+        _budget_label(episode_budget),
+        requested_workers,
+        active_worker_limit,
+        string(worker_backend),
+        Threads.nthreads(),
+        session.learner.config.segment_length,
+        session.learner.config.train_start,
+        checkpoint_frequency,
+        progress_frequency,
+        training_device_name(session.learner.device),
+    )
+    @printf("output_dir=%s\n", session.output_dir)
+    flush(stdout)
+
+    event_channel = worker_backend == :processes ?
+                    RemoteChannel(() -> Channel{Any}(max(32, 2 * active_worker_limit)), myid()) :
+                    Channel{Any}(max(32, 2 * active_worker_limit))
+    active = Dict{Int,SpaceAGORAPhysicsActiveWorker}()
+    parked = Set{Int}()
+    parked_observations = Dict{Int,Vector{Float32}}()
+    simulation_templates = Dict{Int,SpaceAGORAPhysicsSimulationTemplate}()
+    pending_repeats = Dict{Int,Any}()
+    action_rngs = Dict(
+        worker_id => MersenneTwister(
+            _a2c_worker_policy_seed(session.config.training.seed, worker_id),
+        )
+        for worker_id in 1:active_worker_limit
+    )
+    next_episode = 1
+
+    try
+        while session.learner.global_step < target_global_step &&
+              length(summaries) < episode_budget
+            worker_ids = sort!(collect(keys(active)))
+            available_new_episodes = episode_budget == typemax(Int) ?
+                                     active_worker_limit :
+                                     max(0, episode_budget - next_episode + 1)
+            for worker_id in 1:active_worker_limit
+                worker_id in worker_ids && continue
+                available_new_episodes > 0 || break
+                push!(worker_ids, worker_id)
+                available_new_episodes -= 1
+            end
+            sort!(unique!(worker_ids))
+            isempty(worker_ids) && break
+
+            remaining_steps = target_global_step - session.learner.global_step
+            quotas = _a2c_rollout_quotas(
+                worker_ids,
+                remaining_steps,
+                session.learner.config.segment_length,
+            )
+            policy_version = session.learner.policy_version
+            actor_snapshot = cpu_network(session.learner.actor)
+            rollout_by_worker = Dict(worker_id => A2CCollectedStep[] for worker_id in worker_ids)
+            collected = Dict(worker_id => 0 for worker_id in worker_ids)
+
+            participating = Int[]
+            for worker_id in worker_ids
+                quota = quotas[worker_id]
+                if quota == 0
+                    if worker_id in parked
+                        worker = active[worker_id]
+                        put!(worker.handle.action_channel, nothing)
+                        _finish_spaceagora_physics_streaming_worker!(worker)
+                        delete!(active, worker_id)
+                        delete!(parked, worker_id)
+                        delete!(parked_observations, worker_id)
+                    end
+                    continue
+                end
+                if haskey(active, worker_id)
+                    worker_id in parked ||
+                        throw(ErrorException("A2C live worker $worker_id was not parked at an update boundary"))
+                    observation = parked_observations[worker_id]
+                    action_index = actor_action(
+                        actor_snapshot,
+                        observation,
+                        action_rngs[worker_id];
+                        test=false,
+                    )
+                    put!(
+                        active[worker_id].handle.action_channel,
+                        (action_index=action_index, protected=false,
+                         policy_version=policy_version),
+                    )
+                    delete!(parked, worker_id)
+                    delete!(parked_observations, worker_id)
+                    push!(participating, worker_id)
+                else
+                    next_episode <= episode_budget || continue
+                    repeat_plan = pop!(pending_repeats, worker_id, nothing)
+                    active[worker_id] = _launch_spaceagora_physics_streaming_worker!(
+                        session,
+                        event_channel,
+                        worker_id,
+                        next_episode,
+                        actor_snapshot,
+                        action_rngs[worker_id],
+                        policy_version;
+                        simulation_template=get(simulation_templates, worker_id, nothing),
+                        process_id=worker_backend == :processes ? process_ids[worker_id] : nothing,
+                        scenario_seed=repeat_plan === nothing ? nothing : repeat_plan.seed,
+                        successful_case_repeat_index=
+                            repeat_plan === nothing ? 0 : repeat_plan.repeat_index,
+                    )
+                    next_episode += 1
+                    push!(participating, worker_id)
+                end
+            end
+            worker_ids = participating
+            isempty(worker_ids) && break
+
+            while any(worker_id -> collected[worker_id] < quotas[worker_id], worker_ids)
+                event = take!(event_channel)
+                worker = get(active, event.worker_id, nothing)
+                worker === nothing && continue
+                if event.policy_version != policy_version
+                    event.done || put!(worker.handle.action_channel, nothing)
+                    _finish_spaceagora_physics_streaming_worker!(worker)
+                    delete!(active, event.worker_id)
+                    throw(ErrorException(
+                        "A2C worker $(event.worker_id) returned policy version $(event.policy_version); expected $policy_version",
+                    ))
+                end
+                if event.error !== nothing
+                    event.done || put!(worker.handle.action_channel, nothing)
+                    _finish_spaceagora_physics_streaming_worker!(worker)
+                    delete!(active, event.worker_id)
+                    throw(ErrorException(event.error))
+                end
+
+                if event.protected
+                    worker.protected_events_seen += 1
+                elseif event.transition !== nothing
+                    transition = event.transition
+                    push!(transitions, transition)
+                    push!(
+                        rollout_by_worker[event.worker_id],
+                        A2CCollectedStep(transition, event.done),
+                    )
+                    collected[event.worker_id] += 1
+                    session.learner.global_step += 1
+                end
+
+                if event.done
+                    final_summary = finalize_episode_summary(event.summary, session.config.scenario)
+                    push!(summaries, final_summary)
+                    accumulate_episode!(aggregate_accumulator, final_summary)
+                    repeat_plan = _next_successful_case_repeat(
+                        worker.seed,
+                        worker.successful_case_repeat_index,
+                        final_summary.success,
+                        session.config.training.successful_case_repetitions,
+                    )
+                    worker.simulation_template === nothing ||
+                        (simulation_templates[event.worker_id] = worker.simulation_template)
+                    _finish_spaceagora_physics_streaming_worker!(worker)
+                    delete!(active, event.worker_id)
+
+                    can_continue = collected[event.worker_id] < quotas[event.worker_id] &&
+                                   next_episode <= episode_budget &&
+                                   session.learner.global_step < target_global_step
+                    if can_continue
+                        active[event.worker_id] = _launch_spaceagora_physics_streaming_worker!(
+                            session,
+                            event_channel,
+                            event.worker_id,
+                            next_episode,
+                            actor_snapshot,
+                            action_rngs[event.worker_id],
+                            policy_version;
+                            simulation_template=get(simulation_templates, event.worker_id, nothing),
+                            process_id=worker_backend == :processes ?
+                                       process_ids[event.worker_id] : nothing,
+                            scenario_seed=repeat_plan === nothing ? nothing : repeat_plan.seed,
+                            successful_case_repeat_index=
+                                repeat_plan === nothing ? 0 : repeat_plan.repeat_index,
+                        )
+                        next_episode += 1
+                    else
+                        repeat_plan === nothing ||
+                            (pending_repeats[event.worker_id] = repeat_plan)
+                        if collected[event.worker_id] < quotas[event.worker_id]
+                            quotas[event.worker_id] = collected[event.worker_id]
+                        end
+                    end
+                elseif collected[event.worker_id] >= quotas[event.worker_id]
+                    transition = event.transition
+                    transition === nothing &&
+                        throw(ErrorException("A2C worker parked without a transition observation"))
+                    push!(parked, event.worker_id)
+                    parked_observations[event.worker_id] = transition.next_observation
+                else
+                    corridor_action = event.protected && worker.protected_events_seen == 1 ?
+                                      _protected_corridor_action_index(
+                                          session.config.training,
+                                          event.result,
+                                      ) :
+                                      nothing
+                    if corridor_action === nothing
+                        transition = event.transition
+                        transition === nothing &&
+                            throw(ErrorException("A2C worker event is missing its next observation"))
+                        next_action = actor_action(
+                            actor_snapshot,
+                            transition.next_observation,
+                            action_rngs[event.worker_id];
+                            test=false,
+                        )
+                        put!(
+                            worker.handle.action_channel,
+                            (action_index=next_action, protected=false,
+                             policy_version=policy_version),
+                        )
+                    else
+                        put!(
+                            worker.handle.action_channel,
+                            (action_index=corridor_action, protected=true,
+                             policy_version=policy_version),
+                        )
+                    end
+                end
+            end
+
+            ordered_rollouts = [rollout_by_worker[worker_id] for worker_id in worker_ids]
+            batch = _a2c_batch_from_worker_rollouts(
+                session.learner,
+                ordered_rollouts,
+                policy_version,
+            )
+            batch === nothing || maybe_train!(session.learner, batch)
+
+            while session.learner.global_step >= next_checkpoint_step
+                checkpoint_path = joinpath(
+                    session.output_dir,
+                    "checkpoint_$(next_checkpoint_step).jls",
+                )
+                save_checkpoint(checkpoint_path, session.learner; manifest=session.manifest)
+                @printf("checkpoint step=%d path=%s\n", next_checkpoint_step, checkpoint_path)
+                flush(stdout)
+                next_checkpoint_step += checkpoint_frequency
+            end
+
+            if progress_frequency > 0 && target_global_step != typemax(Int) &&
+               session.learner.global_step >= next_progress_step
+                _print_a2c_progress(
+                    session,
+                    summaries,
+                    episode_budget,
+                    target_global_step,
+                    active_worker_limit,
+                    start_time,
+                    start_global_step,
+                )
+                last_progress_step = session.learner.global_step
+                while next_progress_step <= session.learner.global_step &&
+                      next_progress_step < target_global_step
+                    next_progress_step += progress_frequency
+                end
+                next_progress_step = min(next_progress_step, target_global_step)
+            elseif progress_frequency > 0 && target_global_step == typemax(Int) &&
+                   length(summaries) >= next_progress_episode
+                _print_a2c_progress(
+                    session,
+                    summaries,
+                    episode_budget,
+                    target_global_step,
+                    active_worker_limit,
+                    start_time,
+                    start_global_step,
+                )
+                last_progress_episode = length(summaries)
+                while next_progress_episode <= length(summaries)
+                    next_progress_episode += progress_frequency
+                end
+            end
+        end
+    catch
+        _shutdown_a2c_live_workers!(active, parked, event_channel)
+        close_history!(summaries)
+        close_history!(transitions)
+        rethrow()
+    end
+
+    _shutdown_a2c_live_workers!(active, parked, event_channel)
+    if target_global_step != typemax(Int)
+        if last_progress_step != session.learner.global_step
+            _print_a2c_progress(session, summaries, episode_budget, target_global_step,
+                                active_worker_limit, start_time, start_global_step)
+        end
+    elseif last_progress_episode != length(summaries)
+        _print_a2c_progress(session, summaries, episode_budget, target_global_step,
+                            active_worker_limit, start_time, start_global_step)
+    end
+
+    final_checkpoint_path = joinpath(session.output_dir, "checkpoint_final.jls")
+    save_checkpoint(final_checkpoint_path, session.learner; manifest=session.manifest)
+    close_history!(summaries)
+    close_history!(transitions)
+    @printf("training complete final_checkpoint=%s elapsed=%s\n",
+            final_checkpoint_path, _format_duration(time() - start_time))
+    flush(stdout)
+    return (
+        summaries=summaries,
+        transitions=transitions,
+        metrics=MappedHistory(summaries, summary -> episode_metrics(summary; policy_name="a2c")),
+        aggregate=aggregate_metrics(aggregate_accumulator; policy_name="a2c"),
+        global_step=session.learner.global_step,
+        target_global_step=target_global_step == typemax(Int) ? nothing : target_global_step,
+        output_dir=session.output_dir,
+    )
+end
+
 function train_parallel!(session::TrainingSession{<:A2CLearner};
                          global_steps::Int=session.config.training.global_steps,
                          episodes::Union{Nothing,Int}=nothing,
                          n_workers::Int=session.config.training.n_workers)
-    summaries = EpisodeSummary[]
-    transitions = Transition[]
+    if _is_spaceagora_live_backend(session.config.scenario.backend_mode)
+        worker_backend = session.config.training.worker_backend
+        active_workers = worker_backend == :processes ?
+                         max(1, n_workers) :
+                         min(max(1, n_workers), Threads.nthreads())
+        return _with_spaceagora_physics_outer_parallelism(
+            active_workers,
+            session.config.scenario,
+            worker_backend,
+        ) do
+            if worker_backend == :processes
+                process_ids = setup_isolated_process_workers(active_workers)
+                try
+                    for process_id in process_ids
+                        remotecall_wait(
+                            _prewarm_spaceagora_rl_shared_ephemeris_cache!,
+                            process_id,
+                            session.config.scenario,
+                            session.config.training.max_passes_per_campaign,
+                        )
+                    end
+                    return _train_parallel_a2c_spaceagora_physics_streaming!(
+                        session;
+                        global_steps=global_steps,
+                        episodes=episodes,
+                        n_workers=n_workers,
+                        process_ids=process_ids,
+                    )
+                finally
+                    rmprocs(process_ids)
+                end
+            end
+            _prewarm_spaceagora_rl_shared_ephemeris_cache!(
+                session.config.scenario,
+                session.config.training.max_passes_per_campaign,
+            )
+            return _train_parallel_a2c_spaceagora_physics_streaming!(
+                session;
+                global_steps=global_steps,
+                episodes=episodes,
+                n_workers=n_workers,
+            )
+        end
+    end
+
+    summaries = DiskBackedHistory(
+        EpisodeSummary,
+        joinpath(session.output_dir, "training_episode_summaries.jls"),
+    )
+    transitions = DiskBackedHistory(
+        Transition,
+        joinpath(session.output_dir, "training_transitions.jls"),
+    )
     requested_workers = max(1, n_workers)
-    active_workers = min(requested_workers, Threads.nthreads())
-    active_workers < requested_workers && @warn "n_workers exceeds available Julia threads; using Threads.nthreads()" requested_workers active_workers
     target_global_step = global_steps > 0 ? global_steps : typemax(Int)
     episode_budget = episodes === nothing ? (global_steps > 0 ? typemax(Int) : session.config.training.episodes) : max(0, episodes)
+    thread_workers = min(requested_workers, Threads.nthreads())
+    thread_workers < requested_workers && @warn "n_workers exceeds available Julia threads; using Threads.nthreads()" requested_workers active_workers=thread_workers
+    active_workers = min(thread_workers, episode_budget)
     checkpoint_frequency = session.config.training.checkpoint_frequency
     next_checkpoint_step = checkpoint_frequency > 0 ? checkpoint_frequency : typemax(Int)
     progress_frequency = max(0, session.config.training.progress_frequency)
@@ -999,7 +1702,7 @@ function train_parallel!(session::TrainingSession{<:A2CLearner};
     printed_initial_progress = false
 
     @printf(
-        "starting A2C training global_steps=%s campaign_cap=%s n_workers=%d active_workers=%d julia_threads=%d segment_length=%d train_start=%d checkpoint_frequency=%d progress_frequency=%d device=%s\n",
+        "starting A2C training global_steps=%s episode_cap=%s n_workers=%d active_workers=%d julia_threads=%d segment_length=%d train_start=%d checkpoint_frequency=%d progress_frequency=%d device=%s\n",
         target_global_step == typemax(Int) ? "none" : string(target_global_step),
         _budget_label(episode_budget),
         requested_workers,
@@ -1017,7 +1720,7 @@ function train_parallel!(session::TrainingSession{<:A2CLearner};
     next_episode_ref = Ref(active_workers)
     workers = [
         _new_a2c_worker_campaign(
-            session.config.scenario,
+            session,
             worker_id,
             worker_id,
             _a2c_worker_seed(session.config.training.seed, worker_id, worker_id),
@@ -1090,11 +1793,13 @@ function train_parallel!(session::TrainingSession{<:A2CLearner};
 
     final_checkpoint_path = joinpath(session.output_dir, "checkpoint_final.jls")
     save_checkpoint(final_checkpoint_path, session.learner; manifest=session.manifest)
+    close_history!(summaries)
+    close_history!(transitions)
     @printf("training complete final_checkpoint=%s elapsed=%s\n",
             final_checkpoint_path, _format_duration(time() - start_time))
     flush(stdout)
     return (summaries=summaries, transitions=transitions,
-            metrics=[episode_metrics(s; policy_name="a2c") for s in summaries],
+            metrics=MappedHistory(summaries, summary -> episode_metrics(summary; policy_name="a2c")),
             aggregate=aggregate_metrics(summaries; policy_name="a2c"),
             global_step=session.learner.global_step,
             target_global_step=target_global_step == typemax(Int) ? nothing : target_global_step,

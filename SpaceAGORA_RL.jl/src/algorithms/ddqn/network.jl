@@ -28,13 +28,15 @@ function orthogonal_weight(rng::AbstractRNG, rows::Integer, cols::Integer; gain:
     end
 end
 
-function init_q_network(rng::AbstractRNG; input_dim::Int=9, hidden_dim::Int=1024, output_dim::Int=13)
+function init_q_network(rng::AbstractRNG; input_dim::Int=9, hidden_dim::Int=1024,
+                        output_dim::Int=13,
+                        output_gain::Real=sqrt(2))
     return QNetwork(
         orthogonal_weight(rng, hidden_dim, input_dim),
         zeros(Float32, hidden_dim),
         orthogonal_weight(rng, hidden_dim, hidden_dim),
         zeros(Float32, hidden_dim),
-        orthogonal_weight(rng, output_dim, hidden_dim),
+        orthogonal_weight(rng, output_dim, hidden_dim; gain=Float32(output_gain)),
         zeros(Float32, output_dim),
     )
 end

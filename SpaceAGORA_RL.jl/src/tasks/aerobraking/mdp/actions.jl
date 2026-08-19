@@ -27,3 +27,12 @@ function nearest_action_index(delta_v_mps::Real)
 end
 
 action_from_delta_v(delta_v_mps::Real) = action_from_index(nearest_action_index(delta_v_mps))
+
+function continuous_action_from_delta_v(delta_v_mps::Real)
+    delta_v = Float64(delta_v_mps)
+    isfinite(delta_v) || throw(ArgumentError("aerobraking delta-v must be finite"))
+    index = nearest_action_index(delta_v)
+    magnitude = abs(delta_v)
+    phi = delta_v <= 0.0 ? 0.0 : 180.0
+    return AerobrakingAction(index, delta_v, magnitude, phi, delta_v < 0.0, delta_v > 0.0)
+end

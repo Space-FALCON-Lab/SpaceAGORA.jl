@@ -109,6 +109,7 @@ function make_example_config(;
     orientation_sim::Bool=false,
     keplerian::Bool=true,
     EI_km::Float64=300.0,
+    wind::Bool=false,
     verbose::Bool=true,
     results::Bool=true,
     results_directory::String=_example_default_results_directory(),
@@ -137,7 +138,7 @@ function make_example_config(;
             ephemerides_model=ephemerides_model,
             thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
             topography=false,
-            wind=false
+            wind=wind
         ),
         dynamics_model=SM.DynamicsModel([spacecraft], dynamic_effectors),
         guidance_model=SM.GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),

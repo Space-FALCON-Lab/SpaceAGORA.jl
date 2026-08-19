@@ -49,38 +49,21 @@ gravity_harmonics_degree = 20
 gravity_harmonics_order = 20
 gravity_harmonics_file = "data/Gravity_harmonics_data/Mars50c.csv"
 
-[ddqn]
-learning_rate = 1.0e-4
-discount = 0.95
-batch_size = 256
-train_frequency = 5
-train_start = 10000
-replay_size = 20000
-target_update = 10000
-gradient_clip_norm = 10.0
-adam_epsilon = 1.0e-6
-hidden_dim = 1024
-
 [a2c]
 learning_rate = 1.0e-4
 discount = 0.95
 segment_length = 10
 train_start = 0
-entropy_coef = 0.1
+entropy_coef = 0.02
 value_coef = 0.5
+normalize_advantages = true
 gradient_clip_norm = 0.5
 adam_epsilon = 1.0e-6
 hidden_dim = 1024
 
-[epsilon]
-start = 1.0
-stop = 0.01
-decay_steps = 5000
-decay_start_step = 10000
-
 [training]
 seed = 42
-algorithm = "pr_drl"
+algorithm = "a2c"
 device = "cuda"
 global_steps = 1100000
 episodes = 25000

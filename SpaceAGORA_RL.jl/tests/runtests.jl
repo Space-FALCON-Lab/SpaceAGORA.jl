@@ -19,6 +19,11 @@ end
     @test action_from_delta_v(-0.123).lowers_periapsis
     @test action_from_delta_v(0.123).raises_periapsis
     @test action_from_delta_v(0.123).index == nearest_action_index(0.123)
+    continuous = continuous_action_from_delta_v(-2.375)
+    @test continuous.delta_v_mps == -2.375
+    @test continuous.magnitude_mps == 2.375
+    @test continuous.lowers_periapsis
+    @test continuous.index == nearest_action_index(-2.375)
 end
 
 @testset "normalization" begin
@@ -111,7 +116,7 @@ end
     @test marsgram_config.training.successful_case_repetitions == 9
 end
 
-@testset "paper AADS uses bisection maneuver" begin
+@testset "paper AADS uses continuous seeded bisection maneuver" begin
     config = default_aerobraking_config(phase="Main", training=false)
     state = AerobrakingDecisionState(
         apoapsis_radius_m = config.initial_apoapsis_radius_m,
@@ -121,11 +126,29 @@ end
         argument_of_periapsis_rad = config.nominal_argument_of_periapsis_rad,
         epoch = config.nominal_epoch,
     )
-    action_index = policy_action_index(AADSHeuristicPolicy(), config, state, observe_state(config, state),
-                                       MersenneTwister(3))
-    action = action_from_index(action_index)
-    @test 1 <= action_index <= action_count()
-    @test minimum(PAPER_ACTIONS_MPS) <= action.delta_v_mps <= maximum(PAPER_ACTIONS_MPS)
+    policy = AADSHeuristicPolicy()
+    action = policy_action_index(policy, config, state, observe_state(config, state), MersenneTwister(3))
+    @test action isa AerobrakingAction
+    @test -6.0 <= action.delta_v_mps < -1.0
+    @test !(action.delta_v_mps in PAPER_ACTIONS_MPS)
+    @test SpaceAGORA_RL.predicted_heat_rate(config, state, action) ≈
+          policy.target_heat_rate_w_cm2 atol=0.01
+    action_index, resolved_action = SpaceAGORA_RL._resolve_policy_action(action)
+    @test action_index == action.index
+    @test resolved_action.delta_v_mps == action.delta_v_mps
+
+    evaluation_config = paper_odyssey_flight_evaluation_config(max_passes=1)
+    evaluation = evaluate_policy(
+        policy,
+        evaluation_config;
+        episodes=1,
+        seed=4,
+        paper_protocol=false,
+        protected_initialization=ProtectedInitializationConfig(enabled=false),
+    )
+    executed_action = only(only(evaluation.summaries).action_trace)
+    @test abs(executed_action) > 1.0
+    @test !(executed_action in PAPER_ACTIONS_MPS)
 end
 
 @testset "thermal status and reward" begin
@@ -208,6 +231,28 @@ end
     @test SpaceAGORA_RL._max_heat_rate_w_cm2([NaN, -1.0, 0.25]) == 0.25
 end
 
+@testset "passage minimum altitude is distinct from osculating periapsis" begin
+    config = default_aerobraking_config(training=false)
+    state = AerobrakingDecisionState(
+        apoapsis_radius_m=config.initial_apoapsis_radius_m,
+        periapsis_altitude_m=84.9e3,
+        inclination_rad=config.nominal_inclination_rad,
+        raan_rad=config.nominal_raan_rad,
+        argument_of_periapsis_rad=config.nominal_argument_of_periapsis_rad,
+        epoch=config.nominal_epoch,
+        previous_pass_minimum_altitude_m=91.8e3,
+    )
+
+    observation = observe_state(config, state)
+    flags = classify_termination(observation, config; training=false)
+    metrics = SpaceAGORA_RL.pass_metrics_from_state(state)
+
+    @test observation.periapsis_altitude_m == 91.8e3
+    @test !flags.impact
+    @test metrics.periapsis_altitude_m == 91.8e3
+    @test state.periapsis_altitude_m == 84.9e3
+end
+
 @testset "SpaceAGORA propagated orbital-element ordering" begin
     semimajor_axis_m = 4.0e6
     eccentricity = 0.1
@@ -241,6 +286,7 @@ end
     stats = SpaceAGORA_RL.SpaceAGORAPhysicsPassStats(
         max_density_kg_m3 = 1.0e-8,
         max_heat_rate_w_cm2 = 0.1,
+        min_altitude_m = 91.8e3,
     )
 
     next_state = SpaceAGORA_RL._spaceagora_physics_next_state_from_u(
@@ -258,6 +304,9 @@ end
     @test next_state.inclination_rad == inclination_rad
     @test next_state.raan_rad == raan_rad
     @test next_state.argument_of_periapsis_rad == argument_of_periapsis_rad
+    @test next_state.periapsis_altitude_m == 200e3
+    @test next_state.previous_pass_minimum_altitude_m == 91.8e3
+    @test observe_state(config, next_state).periapsis_altitude_m == 91.8e3
 end
 
 @testset "continuous physics campaign evaluation policy selection" begin
@@ -296,6 +345,15 @@ end
     selected = SpaceAGORA_RL._spaceagora_physics_campaign_select_action!(rollout)
     @test selected.index == zero_action_index()
     @test rollout.action_index == zero_action_index()
+    continuous = continuous_action_from_delta_v(2.375)
+    SpaceAGORA_RL._spaceagora_physics_campaign_set_action!(rollout, continuous)
+    @test rollout.action.delta_v_mps == 2.375
+    @test rollout.action_index == nearest_action_index(2.375)
+    @test SpaceAGORA_RL._spaceagora_physics_campaign_decode_action_command(3) ==
+          (3, false, 0)
+    @test SpaceAGORA_RL._spaceagora_physics_campaign_decode_action_command(
+        (action_index=4, protected=true, policy_version=7),
+    ) == (4, true, 7)
     @test SpaceAGORA_RL._spaceagora_physics_gram_once_per_step(config)
 
     surrogate_config = default_aerobraking_config(
@@ -395,6 +453,54 @@ end
     @test all(!scenario.training for scenario in values(suites))
     @test suites["nominal"].randomization_config.nominal
     @test !suites["iid_randomized"].randomization_config.nominal
+
+    spaceagora_training = default_aerobraking_config(
+        backend_mode=:spaceagora_physics,
+        spaceagora_atmosphere_model=:marsgram,
+        spaceagora_gram_wind_mode=:perturbed,
+        training=true,
+        randomization_config=AerobrakingRandomizationConfig(
+            nominal=false,
+            marsgram_perturbation_scale=1.25,
+            process_noise=true,
+            process_noise_scale=0.4,
+            aerodynamic_coefficient_dispersion=true,
+        ),
+    )
+    generalization = generalization_evaluation_suite(spaceagora_training)
+    @test first.(generalization) == [
+        GENERALIZATION_EVALUATION_REFERENCE_CASE,
+        collect(GENERALIZATION_EVALUATION_CASES)...,
+    ]
+    cases = Dict(generalization)
+    @test !cases["iid_reference"].training
+    @test all(!case.termination_config.terminal_on_thermal_violation for case in values(cases))
+    @test !cases["iid_reference"].randomization_config.nominal
+    @test cases["iid_reference"].randomization_config.process_noise
+    @test all(case.backend_mode == :spaceagora_physics for case in values(cases))
+    @test all(case.spaceagora_gram_wind_mode == :perturbed for case in values(cases))
+    @test cases["nominal"].randomization_config.nominal
+    @test cases["nominal"].randomization_config.apoapsis_jitter_m == 0.0
+    @test !cases["nominal"].randomization_config.process_noise
+    @test cases["exponential_density"].spaceagora_atmosphere_model == :exponential
+    @test cases["aggressive_atmosphere"].randomization_config.marsgram_perturbation_scale == 2.5
+    @test cases["aggressive_atmosphere"].spaceagora_mars_mgcm_dust_levels ==
+          (0.3, 0.0, 0.0)
+    @test cases["aggressive_atmosphere"].spaceagora_mars_dust_storm[3] == 3.0
+    @test cases["short_campaign"].phase == "Walkout"
+    @test cases["long_campaign"].phase == "Campaign"
+    @test rad2deg(cases["long_campaign"].nominal_argument_of_periapsis_rad) ≈ 109.0
+    accurate = cases["high_accuracy_spaceagora"].spaceagora_integration_config
+    nominal_integration = cases["nominal"].spaceagora_integration_config
+    @test accurate.solver_mode == nominal_integration.solver_mode
+    @test accurate.split_imex_solver == nominal_integration.split_imex_solver
+    @test accurate.reltol_orbit < nominal_integration.reltol_orbit
+    @test accurate.dt_max_atmosphere_s < nominal_integration.dt_max_atmosphere_s
+    @test_throws ArgumentError generalization_evaluation_suite(evaluation_config)
+    @test_throws ArgumentError default_aerobraking_config(
+        spaceagora_integration_config=SpaceAGORAIntegrationConfig(dt_max_orbit_s=0.0),
+    )
+
     paper_training = resolve_config(
         joinpath(dirname(default_config_path()), "pr_drl_paper_surrogate.toml"),
     )
@@ -569,10 +675,14 @@ end
     end
 end
 
-@testset "aads prediction is nominal under randomized actual pass" begin
+@testset "aads prediction uses a distinct campaign seed" begin
     config = paper_pr_drl_evaluation_config(process_noise_scale=0.4)
     rng = MersenneTwister(12)
     state = reset_scenario(config, rng)
+    prediction_state = SpaceAGORA_RL._aads_prediction_state(state)
+    @test prediction_state.gram_seed != state.gram_seed
+    @test prediction_state.gram_seed == SpaceAGORA_RL._aads_prediction_state(state).gram_seed
+    @test prediction_state.apoapsis_radius_m == state.apoapsis_radius_m
     predicted = SpaceAGORA_RL.predicted_heat_rate(config, state, zero_action_index())
     result = step_scenario(config, state, zero_action_index(), rng)
     deterministic_config = paper_pr_drl_evaluation_config(process_noise_scale=0.0)
@@ -595,6 +705,7 @@ end
 
     config = paper_pr_drl_marsgram_evaluation_config(process_noise_scale=0.0)
     @test config.backend_mode == :spaceagora_marsgram
+    @test SpaceAGORA_RL._spaceagora_gram_wind_enabled(config)
     physics_config = paper_pr_drl_physics_evaluation_config(process_noise_scale=0.0)
     @test physics_config.backend_mode == :spaceagora_physics
     live = resolve_config(joinpath(dirname(default_config_path()), "pr_drl_spaceagora_marsgram.toml"))
@@ -617,15 +728,38 @@ end
     @test physics.training.validation_checkpoint_stride == 5
     @test physics.training.worker_backend == :threads
     @test !physics.scenario.spaceagora_gram_once_per_step
+    @test !SpaceAGORA_RL._spaceagora_gram_wind_enabled(physics.scenario)
     native_gram = resolve_config(
         joinpath(dirname(default_config_path()), "pr_drl_spaceagora_physics_marsgram.toml"),
     )
     @test native_gram.scenario.spaceagora_atmosphere_model == :marsgram
+    @test native_gram.scenario.spaceagora_gram_wind_mode == :perturbed
     @test native_gram.scenario.spaceagora_gram_once_per_step
     @test native_gram.training.worker_backend == :processes
     @test native_gram.training.validate_checkpoints
     @test native_gram.training.validation_checkpoint_stride == 5
     @test native_gram.scenario.randomization_config.marsgram_perturbation_scale == 1.0
+    @test SpaceAGORA_RL._spaceagora_gram_wind_enabled(native_gram.scenario)
+    gram_evaluation = paper_evaluation_scenario(native_gram.scenario)
+    @test gram_evaluation.spaceagora_gram_wind_mode == :perturbed
+    @test SpaceAGORA_RL._spaceagora_gram_wind_enabled(gram_evaluation)
+    zero_wind = resolve_config(
+        joinpath(dirname(default_config_path()), "pr_drl_spaceagora_physics_marsgram.toml");
+        gram_wind_mode=:zero,
+    )
+    @test zero_wind.scenario.spaceagora_gram_wind_mode == :zero
+    @test !SpaceAGORA_RL._spaceagora_gram_wind_enabled(zero_wind.scenario)
+    @test SpaceAGORA_RL._spaceagora_live_needs_gramsuite(zero_wind.scenario)
+    nominal_wind = resolve_config(
+        joinpath(dirname(default_config_path()), "pr_drl_spaceagora_physics_marsgram.toml");
+        gram_wind_mode="nominal",
+    )
+    @test nominal_wind.scenario.spaceagora_gram_wind_mode == :nominal
+    @test SpaceAGORA_RL._spaceagora_gram_wind_enabled(nominal_wind.scenario)
+    @test_throws ArgumentError resolve_config(
+        joinpath(dirname(default_config_path()), "pr_drl_spaceagora_physics_marsgram.toml");
+        gram_wind_mode="variable",
+    )
     invalid = deepcopy(load_config(default_config_path()))
     invalid["training"]["worker_backend"] = "tasks"
     @test_throws ArgumentError resolve_config(invalid)
@@ -855,6 +989,42 @@ end
     @test returns[2, :] ≈ Float32[4.125, 4.25, 4.5]
 end
 
+@testset "a2c bootstraps truncations without crossing episode resets" begin
+    rewards = reshape(Float32[1, 2, 3], 1, :)
+    episode_end = reshape(Bool[false, true, false], 1, :)
+    terminated = reshape(Bool[false, false, false], 1, :)
+    valid = trues(1, 3)
+    next_values = reshape(Float32[10, 20, 30], 1, :)
+    returns = compute_discounted_returns(
+        rewards,
+        episode_end,
+        terminated,
+        valid,
+        next_values,
+        0.5,
+    )
+    @test returns[1, :] ≈ Float32[7, 12, 18]
+
+    terminated[1, 2] = true
+    terminal_returns = compute_discounted_returns(
+        rewards,
+        episode_end,
+        terminated,
+        valid,
+        next_values,
+        0.5,
+    )
+    @test terminal_returns[1, :] ≈ Float32[2, 2, 18]
+    @test_throws ArgumentError compute_discounted_returns(
+        rewards,
+        falses(1, 3),
+        terminated,
+        valid,
+        next_values,
+        0.5,
+    )
+end
+
 @testset "a2c learner updates on rollout batch" begin
     rng = MersenneTwister(7)
     config = A2CConfig(hidden_dim=8, obs_dim=3, action_dim=4, segment_length=2)
@@ -870,6 +1040,86 @@ end
     @test learner.train_steps == 1
     @test SpaceAGORA_RL.mean_training_loss(learner) == loss
     @test learner.actor.W1 != before
+    @test learner.policy_version == 1
+    @test isfinite(learner.last_actor_gradient_norm)
+    @test isfinite(learner.last_critic_gradient_norm)
+    @test_throws ArgumentError SpaceAGORA_RL.train_step!(learner, batch)
+end
+
+@testset "A2C config matches PR-DRL live physics setup" begin
+    config_directory = dirname(default_config_path())
+    a2c_path = joinpath(config_directory, "a2c_spaceagora_physics_marsgram.toml")
+    pr_drl_path = joinpath(config_directory, "pr_drl_spaceagora_physics_marsgram.toml")
+    a2c_config = resolve_config(a2c_path)
+    @test a2c_config.training.algorithm == :a2c
+    @test a2c_config.training.worker_backend == :processes
+    @test a2c_config.a2c.normalize_advantages
+    @test a2c_config.scenario.backend_mode == :spaceagora_physics
+    @test a2c_config.scenario.spaceagora_atmosphere_model == :marsgram
+    @test a2c_config.scenario.spaceagora_gram_wind_mode == :perturbed
+    @test a2c_config.scenario.spaceagora_gram_once_per_step
+
+    a2c_raw = load_config(a2c_path)
+    pr_drl_raw = load_config(pr_drl_path)
+    for section in ("scenario", "reward", "termination", "randomization", "spaceagora_physics")
+        @test a2c_raw[section] == pr_drl_raw[section]
+    end
+    for key in (
+        "seed",
+        "device",
+        "global_steps",
+        "episodes",
+        "max_passes_per_campaign",
+        "n_workers",
+        "worker_backend",
+        "protected_first_pass",
+        "protected_initial_corridor_maneuver",
+        "protected_first_pass_suppress_thermal_terminal",
+        "protected_corridor_low_w_cm2",
+        "protected_corridor_high_w_cm2",
+        "successful_case_repetitions",
+    )
+        @test a2c_raw["training"][key] == pr_drl_raw["training"][key]
+    end
+
+    pr_drl_raw = load_config(default_config_path())
+    pr_drl_raw["a2c"]["segment_length"] = 0
+    @test resolve_config(pr_drl_raw).training.algorithm == :pr_drl
+
+    a2c_raw = deepcopy(pr_drl_raw)
+    a2c_raw["training"]["algorithm"] = "a2c"
+    @test_throws ArgumentError resolve_config(a2c_raw)
+end
+
+@testset "parallel a2c uses exact on-policy transition batches" begin
+    mktempdir() do output_dir
+        raw = load_config(default_config_path())
+        raw["scenario"]["backend_mode"] = "paper_surrogate"
+        raw["training"]["algorithm"] = "a2c"
+        raw["training"]["global_steps"] = 3
+        raw["training"]["episodes"] = 20
+        raw["training"]["n_workers"] = 2
+        raw["training"]["checkpoint_frequency"] = 0
+        raw["training"]["progress_frequency"] = 0
+        raw["training"]["output_dir"] = output_dir
+        raw["training"]["protected_first_pass"] = true
+        raw["a2c"]["hidden_dim"] = 8
+        raw["a2c"]["segment_length"] = 2
+        raw["a2c"]["normalize_advantages"] = true
+        config = resolve_config(raw)
+        session = build_training_session(config; run_id="a2c-parallel-test")
+        result = train_parallel!(session)
+        @test result.global_step == 3
+        @test length(result.transitions) == 3
+        @test session.learner.train_steps == session.learner.policy_version
+        @test session.learner.train_steps > 0
+        @test all(summary -> summary.protected_passes >= 1, result.summaries)
+        payload = load_checkpoint(joinpath(result.output_dir, "checkpoint_final.jls"))
+        @test payload[:algorithm] == :a2c
+        @test payload[:policy_version] == session.learner.policy_version
+        @test load_trained_a2c_policy(joinpath(result.output_dir, "checkpoint_final.jls")) isa
+              GreedyA2CPolicy
+    end
 end
 
 @testset "run manifest title distinguishes config algorithm" begin
@@ -893,6 +1143,10 @@ end
     @test endswith(ddqn_manifest.run_id, "_paper_replication-ddqn")
     @test endswith(a2c_manifest.run_id, "_paper_replication-a2c")
     @test SpaceAGORA_RL.manifest_dict(pr_drl_manifest)["algorithm"] == "pr_drl"
+    @test SpaceAGORA_RL.manifest_dict(
+        pr_drl_manifest;
+        gram_wind_mode=:zero,
+    )["gram_wind_mode"] == "zero"
     @test SpaceAGORA_RL.manifest_dict(a2c_manifest)["title"] == "paper_replication-a2c"
     @test RunManifest(a2c_config; run_id="custom-run").run_id == "custom-run"
 end
@@ -1014,4 +1268,13 @@ end
     cache = SpaceAGORA_RL.forward_cache(network, observations)
     @test cache[1] === observations
     @test predict_q(network, observations) == cache[end]
+
+    default_network = init_q_network(MersenneTwister(19); input_dim=3,
+                                     hidden_dim=4, output_dim=2)
+    explicit_network = init_q_network(MersenneTwister(19); input_dim=3,
+                                      hidden_dim=4, output_dim=2,
+                                      output_gain=sqrt(2))
+    @test default_network.W3 == explicit_network.W3
 end
+
+include("evaluate_rl_run_checkpoint_selection.jl")

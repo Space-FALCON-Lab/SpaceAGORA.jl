@@ -201,7 +201,15 @@ function _density_state_from_kinematics!(
             s.direct_calls += 1
         end)
     end
-    return getDensity(density_model, alt, lat, lon, t, true, p)
+    return getDensity(
+        density_model,
+        alt,
+        lat,
+        lon,
+        t,
+        p.args.environment_model.wind,
+        p,
+    )
 end
 
 function _stage_environment_state(x, p, sat_idx::Int, t::Float64; write_buffers::Bool=true)

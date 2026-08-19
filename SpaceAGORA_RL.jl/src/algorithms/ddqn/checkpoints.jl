@@ -3,6 +3,30 @@ function cpu_adam_state(opt::AdamState)
                      opt.epsilon, opt.learning_rate)
 end
 
+function _deserialize_a2c_config_field(s::Serialization.AbstractSerializer)
+    tag = Int32(read(s.io, UInt8)::UInt8)
+    tag == Serialization.UNDEFREF_TAG &&
+        throw(ArgumentError("serialized A2CConfig contains an undefined field"))
+    return Serialization.handle_deserialize(s, tag)
+end
+
+function Serialization.deserialize(s::Serialization.AbstractSerializer, ::Type{A2CConfig})
+    prefix = ntuple(_ -> _deserialize_a2c_config_field(s), 7)
+    if prefix[7] isa Bool
+        suffix = ntuple(_ -> _deserialize_a2c_config_field(s), 7)
+        return A2CConfig(prefix..., suffix...)
+    elseif prefix[7] isa Float64
+        suffix = ntuple(_ -> _deserialize_a2c_config_field(s), 6)
+        return A2CConfig(prefix[1:6]..., true, prefix[7], suffix...)
+    end
+    throw(ArgumentError(
+        "serialized A2CConfig has an unsupported seventh field of type $(typeof(prefix[7]))",
+    ))
+end
+
+_checkpoint_manifest_payload(manifest) =
+    manifest isa RunManifest ? manifest_dict(manifest) : manifest
+
 function save_checkpoint(path::AbstractString, learner::DDQNLearner; manifest=nothing)
     mkpath(dirname(path))
     algorithm = manifest isa RunManifest ? manifest.algorithm : :ddqn
@@ -21,7 +45,7 @@ function save_checkpoint(path::AbstractString, learner::DDQNLearner; manifest=no
         :training_loss_count => learner.loss_count,
         :device => training_device_name(learner.device),
         :action_table => copy(PAPER_ACTIONS_MPS),
-        :manifest => manifest,
+        :manifest => _checkpoint_manifest_payload(manifest),
     )
     serialize(path, payload)
     return path
@@ -45,9 +69,13 @@ function save_checkpoint(path::AbstractString, learner::A2CLearner; manifest=not
         :last_policy_loss => learner.last_policy_loss,
         :last_entropy => learner.last_entropy,
         :last_value_loss => learner.last_value_loss,
+        :last_explained_variance => learner.last_explained_variance,
+        :last_actor_gradient_norm => learner.last_actor_gradient_norm,
+        :last_critic_gradient_norm => learner.last_critic_gradient_norm,
+        :policy_version => learner.policy_version,
         :device => training_device_name(learner.device),
         :action_table => copy(PAPER_ACTIONS_MPS),
-        :manifest => manifest,
+        :manifest => _checkpoint_manifest_payload(manifest),
     )
     serialize(path, payload)
     return path

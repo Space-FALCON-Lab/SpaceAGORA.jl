@@ -31,6 +31,10 @@ function _build_training_session(config::ResolvedConfig, run_id::Union{Nothing,S
     manifest = RunManifest(config; run_id=run_id)
     output_dir = joinpath(config.training.output_dir, manifest.run_id)
     mkpath(output_dir)
-    write_manifest(joinpath(output_dir, "manifest.toml"), manifest)
+    write_manifest(
+        joinpath(output_dir, "manifest.toml"),
+        manifest;
+        gram_wind_mode=config.scenario.spaceagora_gram_wind_mode,
+    )
     return TrainingSession(config, backend, learner, rng, output_dir, manifest)
 end

@@ -64,8 +64,8 @@ function RunManifest(config::ResolvedConfig; run_id::Union{Nothing,String}=nothi
     )
 end
 
-function manifest_dict(manifest::RunManifest)
-    return Dict{String,Any}(
+function manifest_dict(manifest::RunManifest; gram_wind_mode=nothing)
+    result = Dict{String,Any}(
         "run_id" => manifest.run_id,
         "title" => run_title(manifest),
         "created_utc" => string(manifest.created_utc),
@@ -100,15 +100,21 @@ function manifest_dict(manifest::RunManifest)
             "train_start" => manifest.a2c_config.train_start,
             "entropy_coef" => manifest.a2c_config.entropy_coef,
             "value_coef" => manifest.a2c_config.value_coef,
+            "normalize_advantages" => manifest.a2c_config.normalize_advantages,
+            "gradient_clip_norm" => manifest.a2c_config.gradient_clip_norm,
             "hidden_dim" => manifest.a2c_config.hidden_dim,
         ),
     )
+    if gram_wind_mode !== nothing
+        result["gram_wind_mode"] = String(canonical_gram_wind_mode(gram_wind_mode))
+    end
+    return result
 end
 
-function write_manifest(path::AbstractString, manifest::RunManifest)
+function write_manifest(path::AbstractString, manifest::RunManifest; gram_wind_mode=nothing)
     mkpath(dirname(path))
     open(path, "w") do io
-        TOML.print(io, manifest_dict(manifest))
+        TOML.print(io, manifest_dict(manifest; gram_wind_mode=gram_wind_mode))
     end
     return path
 end

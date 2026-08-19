@@ -70,7 +70,8 @@ export AbstractMDP, AbstractRLBackend, AbstractPolicy
 export reset_scenario, step_scenario, observe_state, normalize_observation
 export policy_action_index, Transition, EpisodeSummary, empty_episode_summary
 
-export PAPER_ACTIONS_MPS, AerobrakingAction, action_from_index, action_from_delta_v, nearest_action_index
+export PAPER_ACTIONS_MPS, AerobrakingAction, action_from_index, action_from_delta_v
+export continuous_action_from_delta_v, nearest_action_index
 export zero_action_index, action_count
 export PaperObservation, paper_observation_names, raw_observation_vector
 export NormalizationBounds, paper_normalization_bounds, normalize_value
@@ -79,7 +80,8 @@ export thermal_high, thermal_medium, thermal_hard, thermal_status, paper_reward
 export TerminationFlags, classify_termination
 export AerobrakingRandomizationConfig
 
-export AerobrakingScenarioConfig, AerobrakingDecisionState, AerobrakingPassMetrics
+export AerobrakingScenarioConfig, SpaceAGORAIntegrationConfig
+export AerobrakingDecisionState, AerobrakingPassMetrics
 export AerobrakingStepResult, SpaceAGORAAerobrakingBackend
 export reset_scenario, step_scenario
 export PAPER_ABM_THRUST_N, paper_finite_burn_duration_s
@@ -89,10 +91,12 @@ export evaluate_policy, evaluate_baselines, episode_metrics, aggregate_metrics
 export ProtectedInitializationConfig, PAPER_IID_EVALUATION_EPISODES
 export protected_initialization_config
 export PAPER_GENERALIZATION_EVALUATION_EPISODES, PAPER_EVALUATION_MODES
+export GENERALIZATION_EVALUATION_REFERENCE_CASE, GENERALIZATION_EVALUATION_CASES
 export paper_evaluation_scenario, paper_evaluation_mode_scenarios
 export paper_pr_drl_evaluation_config, paper_pr_drl_marsgram_evaluation_config
 export paper_pr_drl_physics_evaluation_config, paper_odyssey_flight_evaluation_config
-export generalization_suite_configs, write_evaluation_artifacts
+export generalization_suite_configs, generalization_evaluation_suite
+export write_evaluation_artifacts
 export evaluate_policy_modes, evaluate_frozen_checkpoint_modes
 export frozen_checkpoint_paths, evaluate_frozen_checkpoints
 export thermal_violation_breakdown, terminal_thermal_violation_type
@@ -100,6 +104,7 @@ export episode_thermal_violation_metrics, aggregate_thermal_violation_metrics
 export select_best_validation_checkpoint, validate_frozen_checkpoints
 export write_checkpoint_training_plots
 export default_aerobraking_config, mars_odyssey_phase_constants
+export SPACEAGORA_GRAM_WIND_MODES, canonical_gram_wind_mode
 
 export ReplayBuffer, ReplayBatch, sample_batch
 export QNetwork, init_q_network, predict_q, copy_network!

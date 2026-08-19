@@ -50,6 +50,33 @@ function mars_odyssey_phase_constants(phase::AbstractString)
     end
 end
 
+Base.@kwdef struct SpaceAGORAIntegrationConfig
+    solver_mode::Symbol = :split_imex
+    split_imex_solver::Symbol = :kencarp4
+    reltol_orbit::Float64 = 1e-8
+    abstol_orbit::Float64 = 1e-8
+    dt_max_orbit_s::Float64 = 30.0
+    reltol_atmosphere::Float64 = 1e-8
+    abstol_atmosphere::Float64 = 1e-8
+    dt_max_atmosphere_s::Float64 = 5.0
+end
+
+function _validate_spaceagora_integration_config(config::SpaceAGORAIntegrationConfig)
+    for field in (
+        :reltol_orbit,
+        :abstol_orbit,
+        :dt_max_orbit_s,
+        :reltol_atmosphere,
+        :abstol_atmosphere,
+        :dt_max_atmosphere_s,
+    )
+        value = getfield(config, field)
+        isfinite(value) && value > 0.0 ||
+            throw(ArgumentError("SpaceAGORA integration $field must be finite and positive"))
+    end
+    return config
+end
+
 struct AerobrakingScenarioConfig
     phase::String
     final_apoapsis_radius_m::Float64
@@ -77,7 +104,11 @@ struct AerobrakingScenarioConfig
     heat_nominal_w_cm2::Float64
     backend_mode::Symbol
     spaceagora_atmosphere_model::Symbol
+    spaceagora_gram_wind_mode::Symbol
     spaceagora_gram_once_per_step::Bool
+    spaceagora_mars_mgcm_dust_levels::Union{Nothing,NTuple{3,Float64}}
+    spaceagora_mars_dust_storm::Union{Nothing,NTuple{6,Float64}}
+    spaceagora_integration_config::SpaceAGORAIntegrationConfig
     spaceagora_tabulated_flight_file::String
     spaceagora_tabulated_flight_sigma::Float64
     spaceagora_gravity_harmonics_degree::Int
@@ -90,13 +121,27 @@ struct AerobrakingScenarioConfig
     training::Bool
 end
 
+const SPACEAGORA_GRAM_WIND_MODES = (:zero, :nominal, :perturbed)
+
+function canonical_gram_wind_mode(value)::Symbol
+    mode = Symbol(lowercase(strip(String(value))))
+    mode in SPACEAGORA_GRAM_WIND_MODES || throw(ArgumentError(
+        "GRAM wind mode must be \"zero\", \"nominal\", or \"perturbed\", got $(repr(value))",
+    ))
+    return mode
+end
+
 function default_aerobraking_config(; phase::AbstractString="Main",
                                     nominal::Bool=true,
                                     max_passes::Int=1000,
                                     backend_mode::Symbol=:paper_surrogate,
                                     training::Bool=true,
                                     spaceagora_atmosphere_model::Symbol=:gram,
+                                    spaceagora_gram_wind_mode::Symbol=:perturbed,
                                     spaceagora_gram_once_per_step::Bool=false,
+                                    spaceagora_mars_mgcm_dust_levels=nothing,
+                                    spaceagora_mars_dust_storm=nothing,
+                                    spaceagora_integration_config::SpaceAGORAIntegrationConfig=SpaceAGORAIntegrationConfig(),
                                     spaceagora_tabulated_flight_file::AbstractString="data/telemetry/Odyssey/odyssey_accelerometer_density.feather",
                                     spaceagora_tabulated_flight_sigma::Real=0.0,
                                     spaceagora_gravity_harmonics_degree::Int=50,
@@ -109,6 +154,10 @@ function default_aerobraking_config(; phase::AbstractString="Main",
     mars = _base_mars_model()
     term = termination_config === nothing ? TerminationConfig(max_passes=max_passes) : termination_config
     rand_cfg = randomization_config === nothing ? AerobrakingRandomizationConfig(nominal=nominal) : randomization_config
+    dust_levels = spaceagora_mars_mgcm_dust_levels === nothing ? nothing :
+                  ntuple(index -> Float64(spaceagora_mars_mgcm_dust_levels[index]), 3)
+    dust_storm = spaceagora_mars_dust_storm === nothing ? nothing :
+                 ntuple(index -> Float64(spaceagora_mars_dust_storm[index]), 6)
     return AerobrakingScenarioConfig(
         constants.phase,
         constants.final_apoapsis_radius_m,
@@ -136,7 +185,11 @@ function default_aerobraking_config(; phase::AbstractString="Main",
         0.15,
         backend_mode,
         spaceagora_atmosphere_model,
+        canonical_gram_wind_mode(spaceagora_gram_wind_mode),
         spaceagora_gram_once_per_step,
+        dust_levels,
+        dust_storm,
+        _validate_spaceagora_integration_config(spaceagora_integration_config),
         String(spaceagora_tabulated_flight_file),
         Float64(spaceagora_tabulated_flight_sigma),
         spaceagora_gravity_harmonics_degree,
@@ -165,6 +218,7 @@ Base.@kwdef struct AerobrakingDecisionState
     previous_density_kg_m3::Float64 = 0.0
     previous_heat_rate_w_cm2::Float64 = 0.0
     last_drag_passage_time_s::Float64 = 400.0
+    previous_pass_minimum_altitude_m::Float64 = NaN
     gram_seed::Int = 1001
     aerodynamic_cd_scale::Float64 = 1.0
     aerodynamic_cl_scale::Float64 = 1.0
@@ -189,11 +243,16 @@ end
 SpaceAGORAAerobrakingBackend(config::AerobrakingScenarioConfig=default_aerobraking_config()) =
     SpaceAGORAAerobrakingBackend(config, SpaceAGORACoreAdapter(config.backend_mode))
 
+function observed_periapsis_altitude_m(state::AerobrakingDecisionState)
+    altitude = state.previous_pass_minimum_altitude_m
+    return isfinite(altitude) ? altitude : state.periapsis_altitude_m
+end
+
 function observe_state(config::AerobrakingScenarioConfig, state::AerobrakingDecisionState)
     return PaperObservation(
         state.last_drag_passage_time_s,
         state.apoapsis_radius_m,
-        state.periapsis_altitude_m,
+        observed_periapsis_altitude_m(state),
         state.argument_of_periapsis_rad,
         state.raan_rad,
         state.inclination_rad,
@@ -327,6 +386,7 @@ function paper_surrogate_pass(config::AerobrakingScenarioConfig, state::Aerobrak
         previous_density_kg_m3 = density,
         previous_heat_rate_w_cm2 = heat_rate,
         last_drag_passage_time_s = drag_time,
+        previous_pass_minimum_altitude_m = periapsis_after_maneuver,
         gram_seed = state.gram_seed,
         aerodynamic_cd_scale = state.aerodynamic_cd_scale,
         aerodynamic_cl_scale = state.aerodynamic_cl_scale,
@@ -413,9 +473,18 @@ function _record_spaceagora_physics_sample!(spaceagora_state_position_ii,
                                             integrator)
     pos = spaceagora_state_position_ii(integrator.u, 1)
     planet = integrator.p.args.environment_model.planet
-    altitude = norm(pos) - planet.Rp_e
     t = Float64(integrator.t)
-    stats.min_altitude_m = min(stats.min_altitude_m, altitude)
+    spherical_altitude = norm(pos) - planet.Rp_e
+    engine = getproperty(spaceagora, :SimulationEngine)
+    satellite_state = _spaceagora_solution_satellite_state(integrator.u)
+    planet_frame = Base.invokelatest(
+        getproperty(engine, :sample_planet_frame),
+        satellite_state,
+        integrator.p,
+        1,
+        t,
+    )
+    stats.min_altitude_m = min(stats.min_altitude_m, Float64(planet_frame.alt_m))
     stats.last_sample_time_s = t
 
     rho = try
@@ -429,7 +498,7 @@ function _record_spaceagora_physics_sample!(spaceagora_state_position_ii,
     stats.max_heat_rate_w_cm2 = max(stats.max_heat_rate_w_cm2, heat_rate)
 
     entry_altitude = integrator.p.args.environment_model.EI * 1e3
-    if altitude <= entry_altitude
+    if spherical_altitude <= entry_altitude
         if !stats.in_drag_passage
             stats.drag_entry_time_s = t
             stats.in_drag_passage = true
@@ -501,6 +570,7 @@ function _spaceagora_physics_next_state_from_u(spaceagora,
         previous_density_kg_m3 = stats.max_density_kg_m3,
         previous_heat_rate_w_cm2 = stats.max_heat_rate_w_cm2,
         last_drag_passage_time_s = drag_time,
+        previous_pass_minimum_altitude_m = stats.min_altitude_m,
         gram_seed = state.gram_seed,
         aerodynamic_cd_scale = state.aerodynamic_cd_scale,
         aerodynamic_cl_scale = state.aerodynamic_cl_scale,

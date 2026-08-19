@@ -386,7 +386,15 @@ end
 @inline function _aero_link_atmosphere_query(p, sat_idx::Int, t::Float64, pos_pp_link::SVector{3, Float64}, planet)
     alt, lat, lon = rtolatlong(pos_pp_link, planet)
     density_model = SimulationModel.SimulationCallbacks._density_model_for_sat(p, sat_idx)
-    return SimulationModel.getDensity(density_model, alt, lat, lon, t, true, p)
+    return SimulationModel.getDensity(
+        density_model,
+        alt,
+        lat,
+        lon,
+        t,
+        p.args.environment_model.wind,
+        p,
+    )
 end
 
 @inline function wrench(

@@ -86,7 +86,9 @@ function reward_config_from_table(table::Dict)
     )
 end
 
-function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String}=nothing)
+function resolve_config(raw::Dict{String,Any};
+                        source_path::Union{Nothing,String}=nothing,
+                        gram_wind_mode=nothing)
     scenario_table = _table(raw, "scenario")
     reward_table = _table(raw, "reward")
     term_table = _table(raw, "termination")
@@ -97,6 +99,11 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
     train_table = _table(raw, "training")
     report_table = _table(raw, "reports")
     spaceagora_table = _table(raw, "spaceagora_physics")
+    resolved_gram_wind_mode = canonical_gram_wind_mode(
+        gram_wind_mode === nothing ?
+        _get(spaceagora_table, "gram_wind_mode", "perturbed") :
+        gram_wind_mode,
+    )
 
     phase = String(_get(scenario_table, "phase", "Main"))
     reward = reward_config_from_table(reward_table)
@@ -143,6 +150,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         spaceagora_atmosphere_model = canonical_spaceagora_atmosphere_model(
             _get(spaceagora_table, "atmosphere_model", "gram")
         ),
+        spaceagora_gram_wind_mode = resolved_gram_wind_mode,
         spaceagora_gram_once_per_step = Bool(_get(spaceagora_table, "gram_once_per_step", false)),
         spaceagora_tabulated_flight_file = String(_get(
             spaceagora_table,
@@ -161,10 +169,11 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         termination_config = termination,
         randomization_config = randomization,
     )
-    scenario.spaceagora_atmosphere_model in (:gram, :marsgram, :marsgram_surrogate, :tabulated_flight) ||
+    scenario.spaceagora_atmosphere_model in
+        (:gram, :marsgram, :marsgram_surrogate, :tabulated_flight, :exponential) ||
         throw(ArgumentError(
             "spaceagora_physics.atmosphere_model must be \"gram\", \"marsgram\", " *
-            "\"marsgram_surrogate\", or \"tabulated_flight\""
+            "\"marsgram_surrogate\", \"tabulated_flight\", or \"exponential\""
         ))
     if scenario.spaceagora_gram_once_per_step &&
        !(scenario.spaceagora_atmosphere_model in (:gram, :marsgram))
@@ -192,6 +201,7 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         train_start = Int(_get(a2c_table, "train_start", 0)),
         entropy_coef = Float64(_get(a2c_table, "entropy_coef", 0.1)),
         value_coef = Float64(_get(a2c_table, "value_coef", 0.5)),
+        normalize_advantages = Bool(_get(a2c_table, "normalize_advantages", true)),
         gradient_clip_norm = Float64(_get(a2c_table, "gradient_clip_norm", 0.5)),
         adam_epsilon = Float64(_get(a2c_table, "adam_epsilon", 1e-6)),
         hidden_dim = Int(_get(a2c_table, "hidden_dim", 1024)),
@@ -251,9 +261,24 @@ function resolve_config(raw::Dict{String,Any}; source_path::Union{Nothing,String
         throw(ArgumentError("training.validation_checkpoint_stride must be positive"))
     training.successful_case_repetitions >= 0 ||
         throw(ArgumentError("training.successful_case_repetitions must be nonnegative"))
+    if training.algorithm == :a2c
+        a2c.learning_rate > 0 || throw(ArgumentError("a2c.learning_rate must be positive"))
+        0 <= a2c.discount <= 1 ||
+            throw(ArgumentError("a2c.discount must be between 0 and 1"))
+        a2c.segment_length > 0 || throw(ArgumentError("a2c.segment_length must be positive"))
+        a2c.train_start >= 0 || throw(ArgumentError("a2c.train_start must be nonnegative"))
+        a2c.entropy_coef >= 0 || throw(ArgumentError("a2c.entropy_coef must be nonnegative"))
+        a2c.value_coef >= 0 || throw(ArgumentError("a2c.value_coef must be nonnegative"))
+        a2c.gradient_clip_norm > 0 ||
+            throw(ArgumentError("a2c.gradient_clip_norm must be positive"))
+    end
     return ResolvedConfig(source_path, raw, scenario, ddqn, a2c, epsilon, training, reports)
 end
 
-function resolve_config(path::AbstractString=default_config_path())
-    return resolve_config(load_config(path); source_path=String(path))
+function resolve_config(path::AbstractString=default_config_path(); gram_wind_mode=nothing)
+    return resolve_config(
+        load_config(path);
+        source_path=String(path),
+        gram_wind_mode=gram_wind_mode,
+    )
 end

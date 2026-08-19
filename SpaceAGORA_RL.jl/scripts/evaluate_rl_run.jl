@@ -5,8 +5,9 @@ Evaluate a completed SpaceAGORA_RL run using the protocol and artifacts reported
 in Falcone and Putnam (2023), "Autonomous Decision-Making for Aerobraking via
 Parallel Randomized Deep Reinforcement Learning."
 
-The script accepts a run directory, discovers its manifest/config/checkpoints,
-and writes raw episode/pass data, paper tables, and paper-style figures.
+The script accepts one or more run directories, discovers their
+manifest/config/checkpoints, and writes raw episode/pass data, paper tables,
+and paper-style figures.
 Run with `--help` for the command-line interface.
 """
 
@@ -14,6 +15,7 @@ ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
 
 using CSV
 using DataFrames
+using Dates
 using Distributed
 using Plots
 using Printf
@@ -31,15 +33,6 @@ const ODYSSEY_REFERENCE = (
 )
 const PAPER_TARGET_TOLERANCE_KM = 10.0
 
-const PAPER_GENERALIZATION_CASES = (
-    "nominal",
-    "exponential_density",
-    "aggressive_atmosphere",
-    "short_campaign",
-    "long_campaign",
-    "accurate_simulator",
-)
-
 function _usage(io::IO=stdout)
     println(io, """
 Usage:
@@ -53,37 +46,53 @@ Options:
   --output DIR                Output directory (default: RUN_DIR/paper_evaluation,
                               or RUN_DIR/final_flight_comparison in comparison mode).
   --config PATH               Override the config recorded in the run manifest.
-  --checkpoint PATH|final     Policy checkpoint (default: checkpoint_final.jls,
-                              otherwise the largest numbered checkpoint).
-  --final-flight-comparison   Only evaluate checkpoint_final.jls against AADS and
+  --checkpoint PATH|best|final
+                              Policy checkpoint (default: best validation
+                              checkpoint, then final/latest as a fallback).
+  --compare-run RUN_DIR       Add a trained run to a combined flight comparison.
+                              May be repeated. Additional runs use their own
+                              recorded config and best/final checkpoint. All
+                              policies are evaluated on the primary RUN_DIR's
+                              scenario and campaign seeds. This mode adds AADS
+                              and the Mars Odyssey reference automatically.
+  --wind-mode MODE            MarsGRAM wind mode: zero, nominal, or perturbed.
+                              Overrides spaceagora_physics.gram_wind_mode.
+  --final-flight-comparison   Only evaluate the selected checkpoint against AADS and
                               the Mars Odyssey mission reference. Uses the
                               thermal-tolerant protocol and --episodes campaigns
                               (default: 40), including the percentage that finish
                               within ±10 km of the target apoapsis radius.
-  --episodes N                IID PR-DRL/AADS episodes for Table V/Fig. 10
+  --episodes N                IID PR-DRL/AADS episodes for Table V/Fig. 10,
+                              or campaigns per policy in flight comparisons
                               (default: 40).
   --flight-episodes N         Odyssey-geometry episodes for Figs. 11-12
                               (default: 40).
-  --generalization-episodes N Episodes per Table VI case (default: 100).
+  --generalization-episodes N Episodes per IID reference and Table VI-inspired
+                              SpaceAGORA case (default: 100).
   --checkpoint-episodes N     Episodes per mode and checkpoint for Figs. 7-8
                               (default: 40).
   --checkpoint-stride N       Evaluate every Nth numbered checkpoint (default: 1).
-  --processes N               Worker processes for final-flight comparison
+  --processes N               Worker processes for final/multi-run comparisons
                               (default: min(4, available CPU threads)).
   --threads-per-process N     Julia threads available inside each worker process
                               (default: 1).
   --progress-every N          Print progress every N completed campaigns
                               (default: 1).
+  --generalization-only       Run only the frozen-policy SpaceAGORA
+                              generalization evaluation suite.
   --skip-checkpoint-sweep     Skip Figs. 7-8 checkpoint evaluation.
   --skip-generalization       Skip Table VI generalization evaluation.
   --help                      Show this message.
 
 Outputs include the raw episode/pass CSVs, checkpoint_metrics.csv,
-paper_table_v_pr_drl_vs_aads.csv, paper_table_vi_generalization.csv,
+paper_table_v_pr_drl_vs_aads.csv, the generalization_evaluation_suite directory,
 paper_fig07_*.png through paper_fig12_*.png, the dedicated episode-completion
 and final-target-distance chart, and evaluation_manifest.toml.
 Final-flight-comparison mode writes its four-panel PNG, comparison CSV, raw
 episode/pass CSVs, and evaluation_manifest.toml only.
+With --compare-run, the equivalent combined artifacts are written outside the
+training runs under outputs/comparisons by default; use --output to choose an
+explicit comparison directory.
 """)
 end
 
@@ -98,6 +107,8 @@ function _parse_cli(args)
         :output => nothing,
         :config => nothing,
         :checkpoint => nothing,
+        :comparison_runs => String[],
+        :wind_mode => nothing,
         :final_flight_comparison => false,
         :episodes => PAPER_IID_EVALUATION_EPISODES,
         :flight_episodes => PAPER_IID_EVALUATION_EPISODES,
@@ -107,6 +118,7 @@ function _parse_cli(args)
         :processes => max(1, min(4, Sys.CPU_THREADS)),
         :threads_per_process => 1,
         :progress_every => 1,
+        :generalization_only => false,
         :checkpoint_sweep => true,
         :generalization => true,
     )
@@ -114,6 +126,7 @@ function _parse_cli(args)
         "--output" => :output,
         "--config" => :config,
         "--checkpoint" => :checkpoint,
+        "--wind-mode" => :wind_mode,
         "--episodes" => :episodes,
         "--flight-episodes" => :flight_episodes,
         "--generalization-episodes" => :generalization_episodes,
@@ -146,12 +159,26 @@ function _parse_cli(args)
         elseif arg == "--skip-generalization"
             options[:generalization] = false
             index += 1
+        elseif arg == "--generalization-only"
+            options[:generalization_only] = true
+            index += 1
+        elseif arg == "--compare-run"
+            index == length(args) &&
+                throw(ArgumentError("missing value for $arg"))
+            push!(options[:comparison_runs], args[index + 1])
+            index += 2
         elseif haskey(value_options, arg)
             index == length(args) &&
                 throw(ArgumentError("missing value for $arg"))
             key = value_options[arg]
             value = args[index + 1]
-            options[key] = key in integer_options ? parse(Int, value) : value
+            options[key] = if key in integer_options
+                parse(Int, value)
+            elseif key == :wind_mode
+                canonical_gram_wind_mode(value)
+            else
+                value
+            end
             index += 2
         else
             throw(ArgumentError("unknown option: $arg"))
@@ -160,6 +187,12 @@ function _parse_cli(args)
     for key in integer_options
         options[key] > 0 || throw(ArgumentError("$key must be positive"))
     end
+    options[:generalization_only] && !options[:generalization] &&
+        throw(ArgumentError("--generalization-only cannot be combined with --skip-generalization"))
+    options[:generalization_only] && options[:final_flight_comparison] &&
+        throw(ArgumentError("--generalization-only cannot be combined with --final-flight-comparison"))
+    options[:generalization_only] && !isempty(options[:comparison_runs]) &&
+        throw(ArgumentError("--generalization-only cannot be combined with --compare-run"))
     return (; help=false, options...)
 end
 
@@ -170,6 +203,7 @@ function _resolve_existing_path(path::AbstractString, run_dir::AbstractString)
         abspath(joinpath(dirname(run_dir), path)),
         abspath(joinpath(dirname(dirname(run_dir)), path)),
         abspath(joinpath(dirname(dirname(dirname(run_dir))), path)),
+        abspath(joinpath(dirname(dirname(dirname(dirname(run_dir)))), path)),
     ])
     found = findfirst(isfile, candidates)
     return found === nothing ? nothing : candidates[found]
@@ -195,11 +229,52 @@ function _numeric_checkpoint_step(path::AbstractString)
     return match_result === nothing ? nothing : parse(Int, match_result.captures[1])
 end
 
+function _best_checkpoint_path(run_dir::AbstractString)
+    record_path = joinpath(
+        run_dir,
+        "checkpoint_validation",
+        "best_validation_checkpoint.txt",
+    )
+    isfile(record_path) || return nothing
+
+    checkpoint_name = nothing
+    for line in eachline(record_path)
+        key_value = split(line, "="; limit=2)
+        length(key_value) == 2 || continue
+        if strip(first(key_value)) == "checkpoint"
+            checkpoint_name = strip(last(key_value))
+            break
+        end
+    end
+    checkpoint_name === nothing && throw(ArgumentError(
+        "best-checkpoint record has no checkpoint entry: $record_path",
+    ))
+    isempty(checkpoint_name) && throw(ArgumentError(
+        "best-checkpoint record has an empty checkpoint entry: $record_path",
+    ))
+    basename(checkpoint_name) == checkpoint_name || throw(ArgumentError(
+        "best-checkpoint record must name a run-local checkpoint: $record_path",
+    ))
+
+    checkpoint_path = joinpath(run_dir, checkpoint_name)
+    isfile(checkpoint_path) || throw(ArgumentError(
+        "best validation checkpoint does not exist: $checkpoint_path",
+    ))
+    return checkpoint_path
+end
+
 function _checkpoint_path(run_dir::AbstractString, requested)
-    if requested !== nothing && requested != "final"
+    if requested !== nothing && requested != "best" && requested != "final"
         path = _resolve_existing_path(String(requested), run_dir)
         path === nothing && throw(ArgumentError("checkpoint does not exist: $requested"))
         return path
+    end
+    if requested === nothing || requested == "best"
+        best_path = _best_checkpoint_path(run_dir)
+        best_path !== nothing && return best_path
+        requested == "best" && throw(ArgumentError(
+            "run has no checkpoint_validation/best_validation_checkpoint.txt: $run_dir",
+        ))
     end
     final_path = joinpath(run_dir, "checkpoint_final.jls")
     if (requested === nothing || requested == "final") && isfile(final_path)
@@ -211,13 +286,6 @@ function _checkpoint_path(run_dir::AbstractString, requested)
     return last(numbered)
 end
 
-function _final_checkpoint_path(run_dir::AbstractString)
-    path = joinpath(run_dir, "checkpoint_final.jls")
-    isfile(path) ||
-        throw(ArgumentError("final-policy comparison requires $path"))
-    return path
-end
-
 function _load_policy(checkpoint_path::AbstractString)
     payload = load_checkpoint(checkpoint_path)
     algorithm = Symbol(get(payload, :algorithm, haskey(payload, :actor) ? :a2c : :pr_drl))
@@ -225,6 +293,98 @@ function _load_policy(checkpoint_path::AbstractString)
              load_trained_a2c_policy(checkpoint_path) :
              load_trained_pr_drl_policy(checkpoint_path)
     return policy, algorithm, payload
+end
+
+function _load_evaluation_source(run_directory::AbstractString;
+                                 config_override=nothing,
+                                 checkpoint_requested=nothing,
+                                 wind_mode=nothing)
+    run_dir = abspath(run_directory)
+    isdir(run_dir) || throw(ArgumentError("run directory does not exist: $run_dir"))
+    manifest_path = joinpath(run_dir, "manifest.toml")
+    isfile(manifest_path) || throw(ArgumentError("run has no manifest.toml: $run_dir"))
+    run_manifest = TOML.parsefile(manifest_path)
+    config_path = _config_path(run_dir, run_manifest, config_override)
+    config_digest = bytes2hex(sha256(read(config_path)))
+    recorded_digest = strip(String(get(run_manifest, "config_sha256", "")))
+    if !isempty(recorded_digest) && recorded_digest != config_digest
+        @warn "evaluation config differs from the config recorded by the training run" run_dir config_path recorded_digest config_digest
+    end
+    resolved = resolve_config(config_path; gram_wind_mode=wind_mode)
+    checkpoint_path = _checkpoint_path(run_dir, checkpoint_requested)
+    policy, algorithm, payload = _load_policy(checkpoint_path)
+    run_id = String(get(run_manifest, "run_id", basename(run_dir)))
+    return (
+        run_dir=run_dir,
+        run_id=run_id,
+        manifest_path=manifest_path,
+        config_path=config_path,
+        config_sha256=config_digest,
+        checkpoint_path=checkpoint_path,
+        policy=policy,
+        algorithm=algorithm,
+        checkpoint_payload=payload,
+        resolved=resolved,
+    )
+end
+
+function _comparison_policy_specs(sources)
+    algorithm_counts = Dict{Symbol,Int}()
+    for source in sources
+        algorithm_counts[source.algorithm] = get(algorithm_counts, source.algorithm, 0) + 1
+    end
+    occurrences = Dict{Symbol,Int}()
+    return map(sources) do source
+        occurrence = get(occurrences, source.algorithm, 0) + 1
+        occurrences[source.algorithm] = occurrence
+        base_key = "trained_$(source.algorithm)"
+        duplicated = algorithm_counts[source.algorithm] > 1
+        policy_key = duplicated ? "$(base_key)_$(occurrence)" : base_key
+        algorithm_label = SpaceAGORA_RL.algorithm_display_name(source.algorithm)
+        policy_label = duplicated ? "$(algorithm_label) ($(source.run_id))" : algorithm_label
+        return (key=policy_key, label=policy_label, source=source)
+    end
+end
+
+_field_values(value) = Tuple(getfield(value, index) for index in 1:fieldcount(typeof(value)))
+
+function _comparison_environment_signature(resolved)
+    scenario = resolved.scenario
+    training = resolved.training
+    return (
+        phase=scenario.phase,
+        backend_mode=scenario.backend_mode,
+        atmosphere_model=scenario.spaceagora_atmosphere_model,
+        gram_wind_mode=scenario.spaceagora_gram_wind_mode,
+        gram_once_per_step=scenario.spaceagora_gram_once_per_step,
+        mars_mgcm_dust_levels=scenario.spaceagora_mars_mgcm_dust_levels,
+        mars_dust_storm=scenario.spaceagora_mars_dust_storm,
+        integration=_field_values(scenario.spaceagora_integration_config),
+        gravity_degree=scenario.spaceagora_gravity_harmonics_degree,
+        gravity_order=scenario.spaceagora_gravity_harmonics_order,
+        gravity_file=scenario.spaceagora_gravity_harmonics_file,
+        reward=_field_values(scenario.reward_config),
+        termination=_field_values(scenario.termination_config),
+        randomization=_field_values(scenario.randomization_config),
+        normalization=_field_values(scenario.normalization_bounds),
+        protected_initialization=(
+            training.protected_first_pass,
+            training.protected_initial_corridor_maneuver,
+            training.protected_first_pass_suppress_thermal_terminal,
+            training.protected_corridor_low_w_cm2,
+            training.protected_corridor_high_w_cm2,
+        ),
+    )
+end
+
+function _default_comparison_output_dir(sources)
+    primary_parent = dirname(first(sources).run_dir)
+    output_root = basename(primary_parent) == "runs" ? dirname(primary_parent) : primary_parent
+    comparison_name = join(
+        replace.(basename.(getfield.(sources, :run_dir)), r"[^A-Za-z0-9._-]" => "_"),
+        "_vs_",
+    )
+    return joinpath(output_root, "comparisons", comparison_name)
 end
 
 _std(values) = length(values) > 1 ? std(values) : 0.0
@@ -334,8 +494,9 @@ function _result_from_summaries(summaries, scenario, policy_name::AbstractString
     )
 end
 
-function _evaluate_pair_parallel(
-    policy,
+function _evaluate_policies_parallel(
+    policies::Dict{String,Any},
+    policy_order::Vector{String},
     scenario,
     episodes::Int,
     seed::Int,
@@ -346,17 +507,17 @@ function _evaluate_pair_parallel(
 )
     isempty(process_ids) &&
         throw(ArgumentError("parallel evaluation requires at least one worker process"))
-    policies = Dict{String,Any}(
-        "aads_heuristic" => AADSHeuristicPolicy(),
-        "trained_pr_drl" => policy,
-    )
+    isempty(policy_order) &&
+        throw(ArgumentError("parallel evaluation requires at least one policy"))
+    all(haskey(policies, policy_name) for policy_name in policy_order) ||
+        throw(ArgumentError("policy_order contains a policy missing from policies"))
     jobs = [
         (
             policy_name=policy_name,
             episode=episode,
             campaign_seed=seed + episode - 1,
         )
-        for policy_name in ("aads_heuristic", "trained_pr_drl")
+        for policy_name in policy_order
         for episode in 1:episodes
     ]
     total = length(jobs)
@@ -364,8 +525,9 @@ function _evaluate_pair_parallel(
     pool = CachingPool(process_ids)
     start_time = time()
     @printf(
-        "campaign evaluation starting total=%d policies=2 campaigns_per_policy=%d workers=%d\n",
+        "campaign evaluation starting total=%d policies=%d campaigns_per_policy=%d workers=%d\n",
         total,
+        length(policy_order),
         episodes,
         length(process_ids),
     )
@@ -459,17 +621,41 @@ function _evaluate_pair_parallel(
         end
     end
     evaluated = fetch(evaluation_task)
-    summaries = Dict(
-        "aads_heuristic" => EpisodeSummary[],
-        "trained_pr_drl" => EpisodeSummary[],
-    )
+    summaries = Dict(policy_name => EpisodeSummary[] for policy_name in policy_order)
     for item in evaluated
         push!(summaries[item.policy_name], item.summary)
     end
     return Dict(
         policy_name =>
             _result_from_summaries(summaries[policy_name], scenario, policy_name)
-        for policy_name in ("aads_heuristic", "trained_pr_drl")
+        for policy_name in policy_order
+    )
+end
+
+function _evaluate_pair_parallel(
+    policy,
+    scenario,
+    episodes::Int,
+    seed::Int,
+    protected_initialization,
+    process_ids::Vector{Int};
+    paper_protocol::Bool=true,
+    progress_every::Int=1,
+)
+    policies = Dict{String,Any}(
+        "aads_heuristic" => AADSHeuristicPolicy(),
+        "trained_pr_drl" => policy,
+    )
+    return _evaluate_policies_parallel(
+        policies,
+        ["aads_heuristic", "trained_pr_drl"],
+        scenario,
+        episodes,
+        seed,
+        protected_initialization,
+        process_ids;
+        paper_protocol=paper_protocol,
+        progress_every=progress_every,
     )
 end
 
@@ -597,12 +783,17 @@ function _target_reached_stats(metrics::DataFrame, policy::String;
     )
 end
 
-function _flight_performance_table(metrics::DataFrame)
+_default_flight_policy_specs() = [
+    (key="trained_pr_drl", label="PR-DRL"),
+    (key="aads_heuristic", label="AADS"),
+]
+
+function _flight_performance_table(metrics::DataFrame,
+                                   policy_specs=_default_flight_policy_specs())
     rows = NamedTuple[]
-    for (policy, label) in (
-        ("trained_pr_drl", "PR-DRL"),
-        ("aads_heuristic", "AADS"),
-    )
+    for spec in policy_specs
+        policy = spec.key
+        label = spec.label
         maneuvers = _metric_stats(metrics, policy, :maneuver_count)
         duration = _metric_stats(metrics, policy, :mission_duration_days)
         delta_v = _metric_stats(metrics, policy, :total_mission_delta_v_mps)
@@ -644,9 +835,11 @@ function _flight_performance_table(metrics::DataFrame)
     return DataFrame(rows)
 end
 
-function _paper_figure_11(metrics::DataFrame, path::AbstractString)
-    policies = ["trained_pr_drl", "aads_heuristic", "odyssey_flight"]
-    labels = ["PR-DRL", "AADS", "Mars Odyssey"]
+function _paper_figure_11(metrics::DataFrame, path::AbstractString,
+                          policy_specs=_default_flight_policy_specs())
+    policies = getfield.(policy_specs, :key)
+    policy_labels = getfield.(policy_specs, :label)
+    labels = vcat(policy_labels, ["Mars Odyssey"])
     specs = [
         (
             :maneuver_count,
@@ -677,7 +870,7 @@ function _paper_figure_11(metrics::DataFrame, path::AbstractString)
     for (field, ylabel, reference, title) in specs
         means = Float64[]
         errors = Float64[]
-        for policy in policies[1:2]
+        for policy in policies
             μ, σ = _metric_stats(metrics, policy, field)
             push!(means, μ)
             push!(errors, min(σ, μ))
@@ -696,11 +889,11 @@ function _paper_figure_11(metrics::DataFrame, path::AbstractString)
     end
     target_stats = [
         _target_reached_stats(metrics, policy)
-        for policy in policies[1:2]
+        for policy in policies
     ]
     target_reached_percent = getfield.(target_stats, :percent)
     target_panel = bar(
-        labels[1:2],
+        policy_labels,
         target_reached_percent;
         ylabel="Campaigns (%)",
         legend=false,
@@ -718,21 +911,21 @@ function _paper_figure_11(metrics::DataFrame, path::AbstractString)
     target_distance_errors = getfield.(target_stats, :std_abs_error_km)
     target_distance_upper = maximum(target_distance_means .+ target_distance_errors)
     push!(panels, bar(
-        labels[1:2],
+        policy_labels,
         target_distance_means;
         yerror=target_distance_errors,
         ylabel="Absolute final distance (km)",
         legend=false,
         xrotation=15,
-        ylims=(0, 1.1 * target_distance_upper),
+        ylims=(0, max(1.0, 1.1 * target_distance_upper)),
         title="(f) Final target distance",
     ))
-    campaigns = count(==("trained_pr_drl"), metrics.policy)
+    campaigns = minimum(count(==(policy), metrics.policy) for policy in policies)
     savefig(plot(
         panels...;
         layout=(2, 3),
-        size=(1300, 820),
-        plot_title="$(campaigns)-campaign thermal-tolerant flight comparison",
+        size=(max(1300, 260 * length(labels)), 820),
+        plot_title="$(campaigns) campaigns per policy: thermal-tolerant flight comparison",
         left_margin=8Plots.mm,
         bottom_margin=5Plots.mm,
     ), path)
@@ -1004,88 +1197,87 @@ function _paper_figure_9(pass_logs::DataFrame, output_dir::AbstractString)
     return (metrics=csv_path, figure=plot_path)
 end
 
-function _randomization_variant(config; process_noise_scale=config.process_noise_scale,
-                                marsgram_perturbation_scale=config.marsgram_perturbation_scale)
-    return AerobrakingRandomizationConfig(
-        nominal=config.nominal,
-        apoapsis_jitter_m=config.apoapsis_jitter_m,
-        periapsis_jitter_m=config.periapsis_jitter_m,
-        angle_jitter_deg=config.angle_jitter_deg,
-        nonnominal_inclination_low_deg=config.nonnominal_inclination_low_deg,
-        nonnominal_inclination_high_deg=config.nonnominal_inclination_high_deg,
-        nonnominal_aop_low_deg=config.nonnominal_aop_low_deg,
-        nonnominal_aop_high_deg=config.nonnominal_aop_high_deg,
-        nonnominal_raan_low_deg=config.nonnominal_raan_low_deg,
-        nonnominal_raan_high_deg=config.nonnominal_raan_high_deg,
-        initial_date_start=config.initial_date_start,
-        initial_date_days=config.initial_date_days,
-        randomize_initial_time_of_day=config.randomize_initial_time_of_day,
-        initial_true_anomaly_jitter_deg=config.initial_true_anomaly_jitter_deg,
-        process_noise=process_noise_scale != 0,
-        process_noise_scale=process_noise_scale,
-        aerodynamic_coefficient_dispersion=config.aerodynamic_coefficient_dispersion,
-        aerodynamic_coefficient_span=config.aerodynamic_coefficient_span,
-        aerodynamic_cd_span=config.aerodynamic_cd_span,
-        aerodynamic_cl_span=config.aerodynamic_cl_span,
-        marsgram_perturbation_scale=marsgram_perturbation_scale,
-        marsgram_seed_base=config.marsgram_seed_base,
+function _transition_batch(transitions)
+    isempty(transitions) && return nothing
+    return (
+        observations=hcat(getfield.(transitions, :observation)...),
+        next_observations=hcat(getfield.(transitions, :next_observation)...),
+        actions=Int[getfield(transition, :action_index) for transition in transitions],
+        rewards=Float32[getfield(transition, :reward) for transition in transitions],
+        terminated=Bool[getfield(transition, :terminated) for transition in transitions],
+        truncated=Bool[getfield(transition, :truncated) for transition in transitions],
     )
 end
 
-function _scenario_variant(base; phase=base.phase, backend_mode=base.backend_mode,
-                           randomization=base.randomization_config)
-    return default_aerobraking_config(
-        phase=phase,
-        nominal=randomization.nominal,
-        max_passes=base.termination_config.max_passes,
-        backend_mode=backend_mode,
-        training=false,
-        spaceagora_atmosphere_model=base.spaceagora_atmosphere_model,
-        spaceagora_gram_once_per_step=base.spaceagora_gram_once_per_step,
-        spaceagora_tabulated_flight_file=base.spaceagora_tabulated_flight_file,
-        spaceagora_tabulated_flight_sigma=base.spaceagora_tabulated_flight_sigma,
-        spaceagora_gravity_harmonics_degree=base.spaceagora_gravity_harmonics_degree,
-        spaceagora_gravity_harmonics_order=base.spaceagora_gravity_harmonics_order,
-        spaceagora_gravity_harmonics_file=base.spaceagora_gravity_harmonics_file,
-        reward_config=base.reward_config,
-        termination_config=base.termination_config,
-        randomization_config=randomization,
+function _ddqn_evaluation_td_loss(payload, transitions)
+    batch = _transition_batch(transitions)
+    batch === nothing && return NaN
+    online = payload[:online]
+    target = get(payload, :target, online)
+    config = payload[:config]
+    q_values = predict_q(online, batch.observations)
+    online_next = predict_q(online, batch.next_observations)
+    target_next = predict_q(target, batch.next_observations)
+    targets = compute_ddqn_targets(
+        online_next,
+        target_next,
+        batch.rewards,
+        batch.terminated,
+        batch.truncated,
+        config.discount;
+        bootstrap_truncated=config.bootstrap_truncated,
     )
+    selected = Float32[q_values[action, index]
+                       for (index, action) in pairs(batch.actions)]
+    return mean(abs2, selected .- targets)
 end
 
-function _generalization_scenarios(base)
-    aggressive = _randomization_variant(
-        base.randomization_config;
-        process_noise_scale=max(0.8, 2 * base.randomization_config.process_noise_scale),
-        marsgram_perturbation_scale=2.0,
-    )
-    return Dict(
-        "nominal" => _scenario_variant(base),
-        "exponential_density" => _scenario_variant(base; backend_mode=:paper_surrogate),
-        "aggressive_atmosphere" => _scenario_variant(base; randomization=aggressive),
-        "short_campaign" => _scenario_variant(base; phase="Walkout"),
-        "long_campaign" => _scenario_variant(base; phase="Campaign"),
-        "accurate_simulator" => _scenario_variant(base),
-    )
+function _a2c_evaluation_td_loss(payload, transitions)
+    batch = _transition_batch(transitions)
+    batch === nothing && return NaN
+    critic = payload[:critic]
+    config = payload[:config]
+    values = vec(predict_q(critic, batch.observations))
+    next_values = vec(predict_q(critic, batch.next_observations))
+    targets = similar(batch.rewards)
+    for index in eachindex(targets)
+        bootstrap = batch.terminated[index] ? 0f0 : next_values[index]
+        targets[index] = batch.rewards[index] + Float32(config.discount) * bootstrap
+    end
+    return mean(abs2, values .- targets)
 end
 
-function _generalization_record(case_name, result, nominal_reward)
+function _generalization_evaluation_loss(payload, algorithm::Symbol, transitions)
+    algorithm in (:ddqn, :pr_drl) &&
+        return _ddqn_evaluation_td_loss(payload, transitions)
+    algorithm == :a2c && return _a2c_evaluation_td_loss(payload, transitions)
+    throw(ArgumentError("unsupported generalization-loss algorithm: $algorithm"))
+end
+
+_generalization_loss_definition(algorithm::Symbol) =
+    algorithm in (:ddqn, :pr_drl) ? "ddqn_action_value_td_mse" :
+    algorithm == :a2c ? "a2c_critic_value_td_mse" : "unsupported"
+
+function _generalization_record(case_name, result, evaluation_loss, reference_loss)
     summaries = result.summaries
     field_values(field) = Float64[getfield(summary, field) for summary in summaries]
     rewards = field_values(:episode_reward)
     thermal = field_values(:thermal_violations)
-    distance = field_values(:target_error_m) ./ 1000
+    distance = abs.(field_values(:target_error_m)) ./ 1000
     delta_v = field_values(:total_delta_v_mps)
     duration = field_values(:mission_duration_days)
     length_values = field_values(:pass_count)
     maneuvers = field_values(:maneuver_count)
+    successes = getfield.(summaries, :success)
     return (
         case=case_name,
         episodes=length(summaries),
-        generalization_gap=nominal_reward - mean(rewards),
+        evaluation_td_loss=evaluation_loss,
+        generalization_gap=evaluation_loss - reference_loss,
         mean_reward=mean(rewards), std_reward=_std(rewards),
         mean_thermal_violations=mean(thermal), std_thermal_violations=_std(thermal),
-        reached_goal_percent=100 * mean(getfield.(summaries, :success)),
+        reached_goal_fraction=mean(successes),
+        reached_goal_percent=100 * mean(successes),
         mean_goal_distance_km=mean(distance), std_goal_distance_km=_std(distance),
         mean_delta_v_mps=mean(delta_v), std_delta_v_mps=_std(delta_v),
         mean_mission_duration_days=mean(duration), std_mission_duration_days=_std(duration),
@@ -1094,30 +1286,240 @@ function _generalization_record(case_name, result, nominal_reward)
     )
 end
 
-function _generalization_table(policy, scenario, episodes, seed,
-                               protected_initialization, output_dir)
-    scenarios = _generalization_scenarios(scenario)
+function _generalization_case_config_record(case_name, scenario)
+    integration = scenario.spaceagora_integration_config
+    return (
+        case=case_name,
+        reference_case=case_name == GENERALIZATION_EVALUATION_REFERENCE_CASE,
+        phase=scenario.phase,
+        backend_mode=String(scenario.backend_mode),
+        atmosphere_model=String(scenario.spaceagora_atmosphere_model),
+        gram_wind_mode=String(scenario.spaceagora_gram_wind_mode),
+        initial_apoapsis_radius_km=scenario.initial_apoapsis_radius_m / 1000,
+        final_apoapsis_radius_km=scenario.final_apoapsis_radius_m / 1000,
+        nominal_periapsis_altitude_km=scenario.nominal_periapsis_altitude_m / 1000,
+        nominal_argument_of_periapsis_deg=
+            rad2deg(scenario.nominal_argument_of_periapsis_rad),
+        nominal_epoch=string(scenario.nominal_epoch),
+        nominal_initial_conditions=scenario.randomization_config.nominal,
+        terminal_on_thermal_violation=
+            scenario.termination_config.terminal_on_thermal_violation,
+        marsgram_perturbation_scale=
+            scenario.randomization_config.marsgram_perturbation_scale,
+        mars_mgcm_dust_levels=scenario.spaceagora_mars_mgcm_dust_levels === nothing ?
+                              "" : join(scenario.spaceagora_mars_mgcm_dust_levels, ","),
+        mars_dust_storm=scenario.spaceagora_mars_dust_storm === nothing ?
+                        "" : join(scenario.spaceagora_mars_dust_storm, ","),
+        solver_mode=String(integration.solver_mode),
+        split_imex_solver=String(integration.split_imex_solver),
+        reltol_orbit=integration.reltol_orbit,
+        abstol_orbit=integration.abstol_orbit,
+        dt_max_orbit_s=integration.dt_max_orbit_s,
+        reltol_atmosphere=integration.reltol_atmosphere,
+        abstol_atmosphere=integration.abstol_atmosphere,
+        dt_max_atmosphere_s=integration.dt_max_atmosphere_s,
+    )
+end
+
+function _write_generalization_progress(
+    path;
+    status,
+    current_case,
+    case_index,
+    case_count,
+    case_episode,
+    episodes_per_case,
+    completed_episodes,
+    total_episodes,
+    started_at,
+)
+    progress = Dict(
+        "status" => String(status),
+        "current_case" => String(current_case),
+        "case_index" => case_index,
+        "case_count" => case_count,
+        "case_episode" => case_episode,
+        "episodes_per_case" => episodes_per_case,
+        "completed_episodes" => completed_episodes,
+        "total_episodes" => total_episodes,
+        "percent_complete" => total_episodes == 0 ? 100.0 :
+                              100 * completed_episodes / total_episodes,
+        "elapsed_seconds" => time() - started_at,
+        "process_id" => getpid(),
+        "updated_utc" => string(now(UTC)),
+    )
+    temporary_path = path * ".tmp"
+    open(temporary_path, "w") do io
+        TOML.print(io, progress)
+    end
+    mv(temporary_path, path; force=true)
+    return path
+end
+
+function _generalization_table(policy, checkpoint_payload, algorithm, scenario,
+                               episodes, seed, protected_initialization, output_dir;
+                               progress_every=1)
+    progress_every > 0 || throw(ArgumentError("progress_every must be positive"))
+    suite = generalization_evaluation_suite(scenario)
     results = Dict{String,Any}()
-    for case_name in PAPER_GENERALIZATION_CASES
+    losses = Dict{String,Float64}()
+    case_configs = Dict(suite)
+    suite_dir = joinpath(output_dir, "generalization_evaluation_suite")
+    mkpath(suite_dir)
+    progress_path = joinpath(suite_dir, "progress.toml")
+    case_count = length(suite)
+    total_episodes = case_count * episodes
+    started_at = time()
+    _write_generalization_progress(
+        progress_path;
+        status="running",
+        current_case="",
+        case_index=0,
+        case_count=case_count,
+        case_episode=0,
+        episodes_per_case=episodes,
+        completed_episodes=0,
+        total_episodes=total_episodes,
+        started_at=started_at,
+    )
+    for (case_index, (case_name, case_scenario)) in enumerate(suite)
+        completed_before_case = (case_index - 1) * episodes
+        _write_generalization_progress(
+            progress_path;
+            status="running",
+            current_case=case_name,
+            case_index=case_index,
+            case_count=case_count,
+            case_episode=0,
+            episodes_per_case=episodes,
+            completed_episodes=completed_before_case,
+            total_episodes=total_episodes,
+            started_at=started_at,
+        )
         @printf("generalization evaluation case=%s episodes=%d\n", case_name, episodes)
-        results[case_name] = evaluate_policy(
-            policy,
-            scenarios[case_name];
-            episodes=episodes,
-            seed=seed,
-            policy_name="trained_pr_drl_$case_name",
-            paper_protocol=false,
-            protected_initialization=protected_initialization,
+        flush(stdout)
+        completed_in_case = Ref(0)
+        episode_callback = function (case_episode, _)
+            completed_in_case[] = case_episode
+            completed_episodes = completed_before_case + case_episode
+            _write_generalization_progress(
+                progress_path;
+                status="running",
+                current_case=case_name,
+                case_index=case_index,
+                case_count=case_count,
+                case_episode=case_episode,
+                episodes_per_case=episodes,
+                completed_episodes=completed_episodes,
+                total_episodes=total_episodes,
+                started_at=started_at,
+            )
+            if completed_episodes % progress_every == 0 ||
+               case_episode == episodes
+                @printf(
+                    "generalization progress case=%s episode=%d/%d overall=%d/%d (%.1f%%)\n",
+                    case_name,
+                    case_episode,
+                    episodes,
+                    completed_episodes,
+                    total_episodes,
+                    100 * completed_episodes / total_episodes,
+                )
+                flush(stdout)
+            end
+        end
+        results[case_name] = try
+            evaluate_policy(
+                policy,
+                case_scenario;
+                episodes=episodes,
+                seed=seed,
+                policy_name="frozen_policy_$case_name",
+                paper_protocol=false,
+                protected_initialization=protected_initialization,
+                episode_callback=episode_callback,
+            )
+        catch
+            _write_generalization_progress(
+                progress_path;
+                status="failed",
+                current_case=case_name,
+                case_index=case_index,
+                case_count=case_count,
+                case_episode=completed_in_case[],
+                episodes_per_case=episodes,
+                completed_episodes=completed_before_case + completed_in_case[],
+                total_episodes=total_episodes,
+                started_at=started_at,
+            )
+            rethrow()
+        end
+        losses[case_name] = _generalization_evaluation_loss(
+            checkpoint_payload,
+            algorithm,
+            results[case_name].transitions,
         )
     end
-    nominal_reward = mean(getfield.(results["nominal"].summaries, :episode_reward))
-    table = DataFrame([
-        _generalization_record(case_name, results[case_name], nominal_reward)
-        for case_name in PAPER_GENERALIZATION_CASES
+    reference_loss = losses[GENERALIZATION_EVALUATION_REFERENCE_CASE]
+    all_case_names = first.(suite)
+    all_cases = DataFrame([
+        _generalization_record(
+            case_name,
+            results[case_name],
+            losses[case_name],
+            reference_loss,
+        )
+        for case_name in all_case_names
     ])
-    path = joinpath(output_dir, "paper_table_vi_generalization.csv")
-    CSV.write(path, table)
-    return path
+    table_vi = all_cases[in.(all_cases.case, Ref(GENERALIZATION_EVALUATION_CASES)), :]
+
+    episode_rows = NamedTuple[]
+    pass_rows = NamedTuple[]
+    for case_name in all_case_names
+        append!(episode_rows, [
+            merge((case=case_name,), episode_metrics(summary; policy_name="frozen_policy"))
+            for summary in results[case_name].summaries
+        ])
+        append!(pass_rows, [
+            merge((case=case_name,), row)
+            for row in results[case_name].pass_rows
+        ])
+    end
+
+    table_path = joinpath(suite_dir, "table_vi_metrics.csv")
+    all_cases_path = joinpath(suite_dir, "all_cases_with_iid_reference.csv")
+    episodes_path = joinpath(suite_dir, "episode_metrics.csv")
+    passes_path = joinpath(suite_dir, "pass_logs.csv")
+    configs_path = joinpath(suite_dir, "case_configurations.csv")
+    CSV.write(table_path, table_vi)
+    CSV.write(all_cases_path, all_cases)
+    CSV.write(episodes_path, DataFrame(episode_rows))
+    CSV.write(passes_path, DataFrame(pass_rows))
+    CSV.write(configs_path, DataFrame([
+        _generalization_case_config_record(case_name, case_configs[case_name])
+        for case_name in all_case_names
+    ]))
+    _write_generalization_progress(
+        progress_path;
+        status="complete",
+        current_case=last(all_case_names),
+        case_index=case_count,
+        case_count=case_count,
+        case_episode=episodes,
+        episodes_per_case=episodes,
+        completed_episodes=total_episodes,
+        total_episodes=total_episodes,
+        started_at=started_at,
+    )
+    return (
+        table=table_path,
+        all_cases=all_cases_path,
+        episode_metrics=episodes_path,
+        pass_logs=passes_path,
+        case_configurations=configs_path,
+        progress=progress_path,
+        loss_definition=_generalization_loss_definition(algorithm),
+    )
 end
 
 function _write_manifest(output_dir; run_dir, config_path, config_sha256,
@@ -1130,11 +1532,17 @@ function _write_manifest(output_dir; run_dir, config_path, config_sha256,
         "config_sha256" => config_sha256,
         "checkpoint_path" => abspath(checkpoint_path),
         "algorithm" => String(algorithm),
+        "policy_action_selection" => "greedy",
+        "policy_updates_during_evaluation" => false,
+        "generalization_protocol" => "paper-inspired SpaceAGORA-native",
+        "generalization_loss_definition" => _generalization_loss_definition(algorithm),
+        "generalization_reference_case" => GENERALIZATION_EVALUATION_REFERENCE_CASE,
         "seed" => options.seed,
         "iid_episodes" => options.episodes,
         "flight_episodes" => options.flight_episodes,
         "generalization_episodes" => options.generalization_episodes,
         "checkpoint_episodes" => options.checkpoint_episodes,
+        "gram_wind_mode" => String(options.gram_wind_mode),
         "paper_reference" => Dict(
             "title" => "Autonomous Decision-Making for Aerobraking via Parallel Randomized Deep Reinforcement Learning",
             "doi" => "10.1109/TAES.2022.3221697",
@@ -1142,12 +1550,13 @@ function _write_manifest(output_dir; run_dir, config_path, config_sha256,
             "figure_12_reference" => "Piecewise phase median heat rates from Paper Table III",
         ),
         "generalization_case_mapping" => Dict(
-            "nominal" => "run evaluation scenario",
-            "exponential_density" => "paper_surrogate exponential atmosphere",
-            "aggressive_atmosphere" => "2x process-noise scale (minimum 0.8) and MarsGRAM perturbation scale 2",
-            "short_campaign" => "Walkout phase initial conditions",
-            "long_campaign" => "full Campaign initial conditions",
-            "accurate_simulator" => "run backend with SpaceAGORA_RL evaluation solver settings",
+            "iid_reference" => "held-out draws from the policy run's training distribution",
+            "nominal" => "nominal SpaceAGORA initial conditions with the run's native GRAM setup",
+            "exponential_density" => "nominal case with only the SpaceAGORA density model changed to exponential",
+            "aggressive_atmosphere" => "nominal case with 2x native GRAM perturbations, DUSTTAU 0.3, and a global maximum-intensity storm",
+            "short_campaign" => "nominal SpaceAGORA Walkout phase initial conditions",
+            "long_campaign" => "nominal SpaceAGORA full-Campaign initial conditions",
+            "high_accuracy_spaceagora" => "nominal case with the same SpaceAGORA solver and tighter tolerances and step limits",
         ),
         "artifacts" => artifact_dict,
     )
@@ -1172,11 +1581,186 @@ function _final_flight_scenario(resolved)
     )
 end
 
+function evaluate_multi_run_comparison(options)
+    requested_run_dirs = [String(options.run_dir); String.(options.comparison_runs)]
+    absolute_run_dirs = abspath.(requested_run_dirs)
+    length(unique(absolute_run_dirs)) == length(absolute_run_dirs) ||
+        throw(ArgumentError("multi-run comparison contains a duplicate run directory"))
+
+    sources = map(eachindex(absolute_run_dirs)) do index
+        _load_evaluation_source(
+            absolute_run_dirs[index];
+            config_override=index == 1 ? options.config : nothing,
+            checkpoint_requested=index == 1 ? options.checkpoint : nothing,
+            wind_mode=options.wind_mode,
+        )
+    end
+    specs = _comparison_policy_specs(sources)
+    primary = first(sources)
+    primary_signature = _comparison_environment_signature(primary.resolved)
+    environment_matches = Bool[]
+    for source in sources
+        matches = _comparison_environment_signature(source.resolved) == primary_signature
+        push!(environment_matches, matches)
+        if !matches
+            @warn "comparison run was trained with a different environment; evaluating it on the primary run's scenario for a common test" primary_run=primary.run_dir comparison_run=source.run_dir
+        end
+    end
+
+    output_dir = abspath(options.output === nothing ?
+                        _default_comparison_output_dir(sources) : options.output)
+    mkpath(output_dir)
+    scenario = _final_flight_scenario(primary.resolved)
+    scenario.termination_config.terminal_on_thermal_violation &&
+        error("multi-run flight comparison must use thermal-tolerant termination")
+    seed = primary.resolved.training.validation_seed
+    protected = protected_initialization_config(primary.resolved.training)
+
+    policies = Dict{String,Any}("aads_heuristic" => AADSHeuristicPolicy())
+    for spec in specs
+        policies[spec.key] = spec.source.policy
+        @printf(
+            "comparison source policy=%s run=%s algorithm=%s checkpoint=%s config=%s environment_matches_primary=%s\n",
+            spec.label,
+            spec.source.run_dir,
+            spec.source.algorithm,
+            spec.source.checkpoint_path,
+            spec.source.config_path,
+            _comparison_environment_signature(spec.source.resolved) == primary_signature,
+        )
+    end
+    policy_order = vcat(getfield.(specs, :key), ["aads_heuristic"])
+    @printf(
+        "multi-run flight comparison policies=%d trained_runs=%d campaigns_per_policy=%d scenario_source=%s wind_mode=%s processes=%d threads_per_process=%d output=%s\n",
+        length(policy_order),
+        length(specs),
+        options.episodes,
+        primary.run_dir,
+        String(primary.resolved.scenario.spaceagora_gram_wind_mode),
+        options.processes,
+        options.threads_per_process,
+        output_dir,
+    )
+    flush(stdout)
+
+    process_ids = _start_evaluation_workers(
+        options.processes,
+        options.threads_per_process,
+        scenario,
+    )
+    results = try
+        _evaluate_policies_parallel(
+            policies,
+            policy_order,
+            scenario,
+            options.episodes,
+            seed,
+            protected,
+            process_ids;
+            paper_protocol=false,
+            progress_every=options.progress_every,
+        )
+    finally
+        println("stopping evaluation workers")
+        flush(stdout)
+        rmprocs(process_ids)
+    end
+
+    raw_paths = write_evaluation_artifacts(
+        joinpath(output_dir, "trained_policies_vs_aads"),
+        results,
+    )
+    metrics, _ = _result_frames(results)
+    flight_policy_specs = vcat(
+        [(key=spec.key, label=spec.label) for spec in specs],
+        [(key="aads_heuristic", label="AADS")],
+    )
+    comparison = _flight_performance_table(metrics, flight_policy_specs)
+    comparison_path = joinpath(
+        output_dir,
+        "multi_run_flight_performance_comparison.csv",
+    )
+    CSV.write(comparison_path, comparison)
+    for spec in flight_policy_specs
+        row = only(eachrow(comparison[comparison.policy .== spec.label, :]))
+        @printf(
+            "flight comparison target reached policy=%s tolerance_km=%.1f campaigns=%d/%d percent=%.1f%%\n",
+            spec.label,
+            PAPER_TARGET_TOLERANCE_KM,
+            row.target_reached_10km_count,
+            row.episodes,
+            row.target_reached_10km_percent,
+        )
+    end
+    flush(stdout)
+    figure_path = _paper_figure_11(
+        metrics,
+        joinpath(output_dir, "multi_run_flight_performance_comparison.png"),
+        flight_policy_specs,
+    )
+
+    source_records = [
+        Dict{String,Any}(
+            "run_dir" => source.run_dir,
+            "run_id" => source.run_id,
+            "algorithm" => String(source.algorithm),
+            "policy_key" => spec.key,
+            "policy_label" => spec.label,
+            "checkpoint_path" => abspath(source.checkpoint_path),
+            "checkpoint_global_step" => Int(get(source.checkpoint_payload, :global_step, 0)),
+            "config_path" => abspath(source.config_path),
+            "config_sha256" => source.config_sha256,
+            "environment_matches_primary" => environment_matches[index],
+        )
+        for (index, (source, spec)) in enumerate(zip(sources, specs))
+    ]
+    evaluation_manifest = joinpath(output_dir, "evaluation_manifest.toml")
+    manifest = Dict{String,Any}(
+        "evaluation_mode" => "multi_run_flight_comparison",
+        "scenario_source_run_dir" => primary.run_dir,
+        "campaigns_per_policy" => options.episodes,
+        "worker_processes" => options.processes,
+        "threads_per_process" => options.threads_per_process,
+        "progress_every_campaigns" => options.progress_every,
+        "seed" => seed,
+        "terminal_on_thermal_violation" => false,
+        "target_reached_tolerance_km" => PAPER_TARGET_TOLERANCE_KM,
+        "policy_action_selection" => "greedy",
+        "gram_wind_mode" => String(primary.resolved.scenario.spaceagora_gram_wind_mode),
+        "source_runs" => source_records,
+        "odyssey_reference" => Dict(
+            "maneuver_count" => ODYSSEY_REFERENCE.maneuver_count,
+            "mission_duration_days" => ODYSSEY_REFERENCE.mission_duration_days,
+            "total_mission_delta_v_mps" =>
+                ODYSSEY_REFERENCE.total_mission_delta_v_mps,
+            "thermal_violations" => ODYSSEY_REFERENCE.thermal_violations,
+        ),
+        "artifacts" => Dict(
+            "episode_metrics" => raw_paths.metrics,
+            "summary_metrics" => raw_paths.aggregate,
+            "pass_logs" => raw_paths.pass_logs,
+            "comparison_csv" => comparison_path,
+            "comparison_figure" => figure_path,
+        ),
+    )
+    open(evaluation_manifest, "w") do io
+        TOML.print(io, manifest)
+    end
+    println("multi-run flight comparison complete: ", output_dir)
+    println("comparison figure: ", figure_path)
+    println("comparison metrics: ", comparison_path)
+    return (
+        output_dir=output_dir,
+        checkpoints=getfield.(sources, :checkpoint_path),
+        metrics=comparison_path,
+        figure=figure_path,
+        manifest=evaluation_manifest,
+    )
+end
+
 function evaluate_final_flight_comparison(options)
     run_dir = abspath(options.run_dir)
     isdir(run_dir) || throw(ArgumentError("run directory does not exist: $run_dir"))
-    options.checkpoint in (nothing, "final") ||
-        throw(ArgumentError("--final-flight-comparison always uses checkpoint_final.jls"))
 
     manifest_path = joinpath(run_dir, "manifest.toml")
     isfile(manifest_path) || throw(ArgumentError("run has no manifest.toml: $run_dir"))
@@ -1188,8 +1772,8 @@ function evaluate_final_flight_comparison(options)
         @warn "evaluation config differs from the config recorded by the training run" config_path recorded_digest config_digest
     end
 
-    resolved = resolve_config(config_path)
-    checkpoint_path = _final_checkpoint_path(run_dir)
+    resolved = resolve_config(config_path; gram_wind_mode=options.wind_mode)
+    checkpoint_path = _checkpoint_path(run_dir, options.checkpoint)
     policy, algorithm, _ = _load_policy(checkpoint_path)
     output_dir = abspath(options.output === nothing ?
                         joinpath(run_dir, "final_flight_comparison") :
@@ -1202,11 +1786,12 @@ function evaluate_final_flight_comparison(options)
     protected = protected_initialization_config(resolved.training)
 
     @printf(
-        "final flight comparison run=%s algorithm=%s checkpoint=%s campaigns_per_policy=%d thermal_terminal=false processes=%d threads_per_process=%d progress_every=%d config=%s output=%s\n",
+        "final flight comparison run=%s algorithm=%s checkpoint=%s campaigns_per_policy=%d thermal_terminal=false wind_mode=%s processes=%d threads_per_process=%d progress_every=%d config=%s output=%s\n",
         run_dir,
         algorithm,
         checkpoint_path,
         options.episodes,
+        String(resolved.scenario.spaceagora_gram_wind_mode),
         options.processes,
         options.threads_per_process,
         options.progress_every,
@@ -1249,7 +1834,7 @@ function evaluate_final_flight_comparison(options)
     for policy in ("PR-DRL", "AADS")
         row = only(eachrow(comparison[comparison.policy .== policy, :]))
         @printf(
-            "final checkpoint target reached policy=%s tolerance_km=%.1f campaigns=%d/%d percent=%.1f%%\n",
+            "flight comparison target reached policy=%s tolerance_km=%.1f campaigns=%d/%d percent=%.1f%%\n",
             policy,
             PAPER_TARGET_TOLERANCE_KM,
             row.target_reached_10km_count,
@@ -1279,6 +1864,7 @@ function evaluate_final_flight_comparison(options)
         "terminal_on_thermal_violation" => false,
         "target_reached_tolerance_km" => PAPER_TARGET_TOLERANCE_KM,
         "policy_action_selection" => "greedy",
+        "gram_wind_mode" => String(resolved.scenario.spaceagora_gram_wind_mode),
         "odyssey_reference" => Dict(
             "maneuver_count" => ODYSSEY_REFERENCE.maneuver_count,
             "mission_duration_days" => ODYSSEY_REFERENCE.mission_duration_days,
@@ -1310,6 +1896,8 @@ function evaluate_final_flight_comparison(options)
 end
 
 function evaluate_run(options)
+    !isempty(options.comparison_runs) &&
+        return evaluate_multi_run_comparison(options)
     options.final_flight_comparison &&
         return evaluate_final_flight_comparison(options)
     run_dir = abspath(options.run_dir)
@@ -1323,11 +1911,13 @@ function evaluate_run(options)
     if !isempty(recorded_digest) && recorded_digest != config_digest
         @warn "evaluation config differs from the config recorded by the training run" config_path recorded_digest config_digest
     end
-    resolved = resolve_config(config_path)
+    resolved = resolve_config(config_path; gram_wind_mode=options.wind_mode)
     checkpoint_path = _checkpoint_path(run_dir, options.checkpoint)
-    policy, algorithm, _ = _load_policy(checkpoint_path)
+    policy, algorithm, checkpoint_payload = _load_policy(checkpoint_path)
+    default_output_name = options.generalization_only ?
+                          "generalization_evaluation" : "paper_evaluation"
     output_dir = abspath(options.output === nothing ?
-                        joinpath(run_dir, "paper_evaluation") : options.output)
+                        joinpath(run_dir, default_output_name) : options.output)
     mkpath(output_dir)
     seed = resolved.training.validation_seed
     protected = protected_initialization_config(resolved.training)
@@ -1335,10 +1925,49 @@ function evaluate_run(options)
         resolved.scenario;
         max_passes=max(1000, resolved.scenario.termination_config.max_passes),
     )
-    runtime_options = merge(options, (; seed=seed))
+    runtime_options = merge(
+        options,
+        (; seed=seed, gram_wind_mode=resolved.scenario.spaceagora_gram_wind_mode),
+    )
 
-    @printf("evaluating run=%s algorithm=%s checkpoint=%s config=%s output=%s\n",
-            run_dir, algorithm, checkpoint_path, config_path, output_dir)
+    @printf("evaluating run=%s algorithm=%s checkpoint=%s wind_mode=%s config=%s output=%s\n",
+            run_dir, algorithm, checkpoint_path,
+            String(resolved.scenario.spaceagora_gram_wind_mode), config_path, output_dir)
+
+    if options.generalization_only
+        paths = _generalization_table(
+            policy,
+            checkpoint_payload,
+            algorithm,
+            scenario,
+            options.generalization_episodes,
+            seed,
+            protected,
+            output_dir,
+            progress_every=options.progress_every,
+        )
+        artifacts = (
+            generalization_table_vi=paths.table,
+            paper_table_vi=paths.table,
+            generalization_all_cases=paths.all_cases,
+            generalization_episode_metrics=paths.episode_metrics,
+            generalization_pass_logs=paths.pass_logs,
+            generalization_case_configurations=paths.case_configurations,
+            generalization_progress=paths.progress,
+        )
+        evaluation_manifest = _write_manifest(
+            output_dir;
+            run_dir=run_dir,
+            config_path=config_path,
+            config_sha256=config_digest,
+            checkpoint_path=checkpoint_path,
+            algorithm=algorithm,
+            options=runtime_options,
+            artifacts=artifacts,
+        )
+        println("generalization evaluation complete: ", paths.table)
+        return (output_dir=output_dir, artifacts=artifacts, manifest=evaluation_manifest)
+    end
 
     iid_dir = joinpath(output_dir, "iid_pr_drl_vs_aads")
     iid = _evaluate_pair(policy, scenario, options.episodes, seed, protected)
@@ -1392,15 +2021,25 @@ function evaluate_run(options)
                          joinpath(output_dir, "checkpoint_metrics.csv")
     end
 
-    table_vi_path = ""
+    generalization_paths = (
+        table="",
+        all_cases="",
+        episode_metrics="",
+        pass_logs="",
+        case_configurations="",
+        progress="",
+    )
     if options.generalization
-        table_vi_path = _generalization_table(
+        generalization_paths = _generalization_table(
             policy,
+            checkpoint_payload,
+            algorithm,
             scenario,
             options.generalization_episodes,
             seed,
             protected,
             output_dir,
+            progress_every=options.progress_every,
         )
     end
 
@@ -1414,7 +2053,13 @@ function evaluate_run(options)
         checkpoint_metrics=checkpoint_csv,
         repeated_action_metrics=fig9.metrics,
         paper_table_v=table_v_path,
-        paper_table_vi=table_vi_path,
+        generalization_table_vi=generalization_paths.table,
+        paper_table_vi=generalization_paths.table,
+        generalization_all_cases=generalization_paths.all_cases,
+        generalization_episode_metrics=generalization_paths.episode_metrics,
+        generalization_pass_logs=generalization_paths.pass_logs,
+        generalization_case_configurations=generalization_paths.case_configurations,
+        generalization_progress=generalization_paths.progress,
         paper_fig07a=length(checkpoint_figure_paths) >= 1 ? checkpoint_figure_paths[1] : "",
         paper_fig07b=length(checkpoint_figure_paths) >= 2 ? checkpoint_figure_paths[2] : "",
         paper_fig08=length(checkpoint_figure_paths) >= 3 ? checkpoint_figure_paths[3] : "",

@@ -134,6 +134,17 @@ end
 function _spaceagora_density_model(spaceagora, config, state)
     SM = getproperty(spaceagora, :SimulationModel)
     model = config.spaceagora_atmosphere_model
+    if model == :exponential
+        return Base.invokelatest(
+            getproperty(SM, :ExponentialAtmosphereModel),
+            config.rho_ref_kg_m3,
+            config.h_ref_m,
+            config.scale_height_m;
+            temperature_k=config.temperature_k,
+            valid_min_altitude_m=0.0,
+            valid_max_altitude_m=300e3,
+        )
+    end
     if model == :tabulated_flight
         TV = getproperty(spaceagora, :TelemetryVerification)
         path = _spaceagora_repo_path(config.spaceagora_tabulated_flight_file)
@@ -164,6 +175,7 @@ function _spaceagora_density_model(spaceagora, config, state)
             spice_directory=_spaceagora_spice_path(),
             seed=state.gram_seed,
             initial_time=_initial_time_from_datetime(state.epoch; spaceagora=spaceagora),
+            wind_mode=config.spaceagora_gram_wind_mode,
             point_fallback_below_m=nothing,
         )
     end
@@ -175,12 +187,18 @@ function _spaceagora_density_model(spaceagora, config, state)
         spice_directory=_spaceagora_spice_path(),
         seed=state.gram_seed,
         initial_time=_initial_time_from_datetime(state.epoch; spaceagora=spaceagora),
+        wind_mode=config.spaceagora_gram_wind_mode,
         gram_perturbation_scales=perturbation_scale,
+        mars_mgcm_dust_levels=config.spaceagora_mars_mgcm_dust_levels,
+        mars_dust_storm=config.spaceagora_mars_dust_storm,
     )
 end
 
 _spaceagora_live_needs_gramsuite(config) =
     config.spaceagora_atmosphere_model in (:gram, :marsgram, :marsgram_surrogate)
+
+_spaceagora_gram_wind_enabled(config) =
+    _spaceagora_live_needs_gramsuite(config) && config.spaceagora_gram_wind_mode != :zero
 
 function _spaceagora_physics_solver_maxiters(campaign_max_passes::Integer)
     pass_cap = max(1, Int(campaign_max_passes))
@@ -286,11 +304,12 @@ function _spaceagora_physics_simulation_template(
         spacecraft.root.ref_area,
     )
     aero_base = Base.invokelatest(getproperty(SM, :AerodynamicCoefficientfM))
+    integration = config.spaceagora_integration_config
     solver_cfg = Base.invokelatest(
         getproperty(SM, :SolverConfig);
-        solver_mode=:split_imex,
+        solver_mode=integration.solver_mode,
         maxiters=_spaceagora_physics_solver_maxiters(campaign_max_passes),
-        split_imex_solver=:kencarp4,
+        split_imex_solver=integration.split_imex_solver,
     )
     return SpaceAGORAPhysicsSimulationTemplate(
         planet,
@@ -357,6 +376,7 @@ function _spaceagora_physics_simulation_configuration(config,
     )
 
     solver_cfg = template.solver_cfg
+    integration = config.spaceagora_integration_config
     base_args = Base.invokelatest(
         getproperty(TV, :make_example_config);
         planet=planet,
@@ -368,6 +388,7 @@ function _spaceagora_physics_simulation_configuration(config,
         orientation_sim=false,
         keplerian=false,
         EI_km=160.0,
+        wind=_spaceagora_gram_wind_enabled(config),
         verbose=false,
         results=false,
         results_directory=joinpath(package_root(), "outputs", "spaceagora_physics_tmp"),
@@ -400,12 +421,12 @@ function _spaceagora_physics_simulation_configuration(config,
         initial_time=base_args.initial_time,
         integration_tolerances=Base.invokelatest(
             getproperty(SM, :IntegrationTolerances);
-            reltol_orbit=1e-8,
-            abstol_orbit=1e-8,
-            dt_max_orbit=30.0,
-            reltol_atmosphere=1e-8,
-            abstol_atmosphere=1e-8,
-            dt_max_atmosphere=5.0,
+            reltol_orbit=integration.reltol_orbit,
+            abstol_orbit=integration.abstol_orbit,
+            dt_max_orbit=integration.dt_max_orbit_s,
+            reltol_atmosphere=integration.reltol_atmosphere,
+            abstol_atmosphere=integration.abstol_atmosphere,
+            dt_max_atmosphere=integration.dt_max_atmosphere_s,
         ),
         solver_config=solver_cfg,
     )
@@ -431,9 +452,14 @@ function _spaceagora_physics_simulation_configuration(config,
         gravity_harmonics_j2_source=:file_c20,
         density_model=config.spaceagora_atmosphere_model == :tabulated_flight ?
                       :TabulatedFlightAtmosphereModel :
+                      config.spaceagora_atmosphere_model == :exponential ?
+                      :ExponentialAtmosphereModel :
                       config.spaceagora_atmosphere_model == :marsgram_surrogate ?
                       :GRAMAtmosphereModelSurrogate :
                       :GRAMAtmosphereModel,
+        gram_wind_mode=config.spaceagora_gram_wind_mode,
+        mars_mgcm_dust_levels=config.spaceagora_mars_mgcm_dust_levels,
+        mars_dust_storm=config.spaceagora_mars_dust_storm,
         tabulated_flight_file=config.spaceagora_atmosphere_model == :tabulated_flight ?
                               _spaceagora_repo_path(config.spaceagora_tabulated_flight_file) :
                               "",
@@ -441,8 +467,14 @@ function _spaceagora_physics_simulation_configuration(config,
         aerodynamic_cd_scale=state.aerodynamic_cd_scale,
         aerodynamic_cl_scale=state.aerodynamic_cl_scale,
         initial_true_anomaly_deg=rad2deg(state.true_anomaly_rad),
-        solver_mode=:split_imex,
-        split_imex_solver=:kencarp4,
+        solver_mode=integration.solver_mode,
+        split_imex_solver=integration.split_imex_solver,
+        reltol_orbit=integration.reltol_orbit,
+        abstol_orbit=integration.abstol_orbit,
+        dt_max_orbit_s=integration.dt_max_orbit_s,
+        reltol_atmosphere=integration.reltol_atmosphere,
+        abstol_atmosphere=integration.abstol_atmosphere,
+        dt_max_atmosphere_s=integration.dt_max_atmosphere_s,
     )
     return args, metadata
 end

@@ -5,6 +5,7 @@ function _evaluate_spaceagora_physics_policy(
     seed::Int,
     policy_name::AbstractString,
     protected_initialization::ProtectedInitializationConfig,
+    episode_callback=nothing,
 )
     summaries = EpisodeSummary[]
     transitions = Transition[]
@@ -23,6 +24,7 @@ function _evaluate_spaceagora_physics_policy(
         append!(transitions, episode_transitions)
         append!(pass_rows, pass_log_rows(summary; policy_name=policy_name))
         push!(summaries, summary)
+        episode_callback === nothing || episode_callback(episode, summary)
     end
     metrics = [
         merge(
@@ -44,7 +46,8 @@ function evaluate_policy(policy::AbstractPolicy, config::AerobrakingScenarioConf
                          policy_name::AbstractString=string(nameof(typeof(policy))),
                          paper_protocol::Bool=true,
                          protected_initialization::ProtectedInitializationConfig=
-                             ProtectedInitializationConfig())
+                             ProtectedInitializationConfig(),
+                         episode_callback=nothing)
     scenario = paper_protocol ? paper_evaluation_scenario(config) : config
     if _is_spaceagora_live_backend(scenario.backend_mode)
         return _evaluate_spaceagora_physics_policy(
@@ -54,6 +57,7 @@ function evaluate_policy(policy::AbstractPolicy, config::AerobrakingScenarioConf
             seed=seed,
             policy_name=policy_name,
             protected_initialization=protected_initialization,
+            episode_callback=episode_callback,
         )
     end
 
@@ -77,8 +81,9 @@ function evaluate_policy(policy::AbstractPolicy, config::AerobrakingScenarioConf
         summary = initial.summary
 
         while !initial.done
-            action_index = policy_action_index(policy, scenario, state, obs, rng)
-            result = step_scenario(scenario, state, action_index, rng)
+            selected = policy_action_index(policy, scenario, state, obs, rng)
+            action_index, action = _resolve_policy_action(selected)
+            result = step_scenario(scenario, state, action, rng)
             push!(transitions, transition_from_step(norm_obs, action_index, result, length(transitions) + 1))
             summary = update_episode_summary(summary, result)
             state = result.state
@@ -91,6 +96,7 @@ function evaluate_policy(policy::AbstractPolicy, config::AerobrakingScenarioConf
         summary = finalize_episode_summary(summary, scenario)
         append!(pass_rows, pass_log_rows(summary; policy_name=policy_name))
         push!(summaries, summary)
+        episode_callback === nothing || episode_callback(episode, summary)
     end
     metrics = [
         merge(
@@ -161,7 +167,11 @@ function evaluate_frozen_checkpoint_modes(
     seed::Int=1,
     protected_initialization::ProtectedInitializationConfig=ProtectedInitializationConfig(),
 )
-    policy = load_trained_pr_drl_policy(checkpoint_path)
+    payload = load_checkpoint(checkpoint_path)
+    algorithm = Symbol(get(payload, :algorithm, haskey(payload, :actor) ? :a2c : :pr_drl))
+    policy = algorithm == :a2c ?
+             load_trained_a2c_policy(checkpoint_path) :
+             load_trained_pr_drl_policy(checkpoint_path)
     checkpoint_name = splitext(basename(checkpoint_path))[1]
     return evaluate_policy_modes(
         policy,

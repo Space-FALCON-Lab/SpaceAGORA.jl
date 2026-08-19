@@ -5,6 +5,46 @@ using SpaceAGORA_RL
 
 const TERMINAL_LOG_FILENAME = "terminal_output.txt"
 
+function _usage(io::IO=stdout)
+    println(io, """
+Usage:
+  julia --project=SpaceAGORA_RL.jl \\
+    SpaceAGORA_RL.jl/scripts/train.jl [CONFIG] [--wind-mode MODE]
+
+Options:
+  --wind-mode MODE   MarsGRAM wind mode: zero, nominal, or perturbed.
+                     Overrides spaceagora_physics.gram_wind_mode.
+  --help             Show this message.
+""")
+end
+
+function _parse_cli(args)
+    any(==("--help"), args) && return (help=true,)
+    config_path = nothing
+    wind_mode = nothing
+    index = 1
+    while index <= length(args)
+        arg = args[index]
+        if arg == "--wind-mode"
+            index == length(args) && throw(ArgumentError("missing value for --wind-mode"))
+            wind_mode = canonical_gram_wind_mode(args[index + 1])
+            index += 2
+        elseif startswith(arg, "--")
+            throw(ArgumentError("unknown option: $arg"))
+        elseif config_path === nothing
+            config_path = arg
+            index += 1
+        else
+            throw(ArgumentError("unexpected positional argument: $arg"))
+        end
+    end
+    return (
+        help=false,
+        config_path=something(config_path, default_config_path()),
+        wind_mode=wind_mode,
+    )
+end
+
 function _terminal_log_timestamp()
     return Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ")
 end
@@ -89,7 +129,7 @@ end
 function _validate_checkpoints(session)
     config = session.config
     config.training.validate_checkpoints || return nothing
-    config.training.algorithm in (:pr_drl, :ddqn) || return nothing
+    config.training.algorithm in (:pr_drl, :ddqn, :a2c) || return nothing
     output_dir = joinpath(session.output_dir, "checkpoint_validation")
     return validate_frozen_checkpoints(
         session.output_dir,
@@ -104,10 +144,15 @@ function _validate_checkpoints(session)
 end
 
 function main(args=ARGS)
-    config_path = isempty(args) ? default_config_path() : args[1]
-    config = resolve_config(config_path)
+    options = _parse_cli(args)
+    if options.help
+        _usage()
+        return nothing
+    end
+    config = resolve_config(options.config_path; gram_wind_mode=options.wind_mode)
     session = build_training_session(config)
     return _with_terminal_log(session.output_dir) do _
+        println("MarsGRAM wind mode: ", config.scenario.spaceagora_gram_wind_mode)
         result = _train_session(session)
         validation = _validate_checkpoints(session)
         println("wrote run artifacts to ", result.output_dir)
@@ -119,5 +164,12 @@ function main(args=ARGS)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    main()
+    try
+        main()
+    catch error
+        showerror(stderr, error)
+        println(stderr)
+        println(stderr, "Use --help for usage.")
+        exit(1)
+    end
 end

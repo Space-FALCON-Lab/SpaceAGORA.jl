@@ -20,7 +20,7 @@ function pass_metrics_from_state(state; pass_index=state.pass_index,
     return AerobrakingPassMetrics(
         pass_index = pass_index,
         apoapsis_radius_m = state.apoapsis_radius_m,
-        periapsis_altitude_m = state.periapsis_altitude_m,
+        periapsis_altitude_m = observed_periapsis_altitude_m(state),
         argument_of_periapsis_rad = state.argument_of_periapsis_rad,
         raan_rad = state.raan_rad,
         inclination_rad = state.inclination_rad,

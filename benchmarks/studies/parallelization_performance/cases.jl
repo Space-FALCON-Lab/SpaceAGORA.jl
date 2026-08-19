@@ -457,10 +457,31 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         # at its own real 1800s mission). So this is a *different* failure mode
         # from N=16's leak, not a smaller instance of the same one -- rules out
         # "proportional to N" as the leak's cause, but doesn't give us a usable
-        # interacting-GRAM case either. NOT wired into any phase; needs its own
-        # investigation (likely step-size collapse from live GRAM's non-smooth
-        # density field interacting with multi-satellite coupling, independent
-        # of the memory issue) before it's trustworthy anywhere.
+        # interacting-GRAM case either.
+        #
+        # Root-caused (2026-08-18) via solver statistics (sol.stats) at short
+        # mission durations, plain solver_mode=tsit5 (rules out auto_stiff/
+        # Rodas5P as the cause): a single Earth satellite against this same
+        # live GRAMAtmosphereModel needs only 50 accepted steps / 352 f_evals
+        # for a 10s mission -- completely healthy. This 4-satellite case needs
+        # 14,540 accepted steps / 101,836 f_evals for the same 10s window
+        # (average step ~0.7ms, ~7000x smaller than dt_max_orbit=5.0's cap).
+        # That ~290x blowup from 4x more satellites rules out "Earth GRAM /
+        # MERRA2 data is inherently noisy" (N=1 is clean) and points instead
+        # at the multi-satellite *sharing* of one GRAMAtmosphereModel instance:
+        # density queries for different satellites interleave within a single
+        # RHS evaluation, and if the native library carries call-order-
+        # dependent internal state (consistent with the set_library!
+        # single-construction-only bug documented on ppc_gram_atmosphere_model
+        # above -- the same underlying "not designed for concurrent users"
+        # class of problem), satellite 2's query could be subtly influenced by
+        # satellite 1's preceding one. A step-adaptive integrator reads that as
+        # extreme non-smoothness and shrinks its step chasing noise it can
+        # never resolve. Plausible fix -- one GRAMAtmosphereModel instance per
+        # satellite -- is exactly what the world-age bug currently forbids, so
+        # this and multi_16_gram_live's leak look like two symptoms of the same
+        # upstream GRAMSuite limitation rather than two independent bugs. NOT
+        # wired into any phase.
         return ppc_build_config(
             planet=planet,
             spacecraft=ppc_constellation(planet, 4),

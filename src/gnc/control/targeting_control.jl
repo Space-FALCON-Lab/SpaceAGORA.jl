@@ -57,7 +57,7 @@ function _edg_environment_state(u, p::ODEParams, t::Float64, i::Int)
     uD, uN, uE = latlongtoNED(lla)
     wE, wN, wU = wind
     wind_pp = wN * uN + wE * uE - wU * uD
-    vel_pp_rw = vel_pp + wind_pp
+    vel_pp_rw = vel_pp - wind_pp
     speed = norm(vel_pp_rw)
     sound_speed = sqrt(max(0.0, planet.γ * planet.R * temperature))
     molecular_speed_ratio = sound_speed > 0.0 ? sqrt(0.5 * planet.γ) * speed / sound_speed : 0.0
@@ -92,8 +92,8 @@ function _edg_recompute_switches!(
     config = model.config
     state = model.state
     if state.selected_mode[i] == :targeting && state.targeting_active[i]
-        isfinite(state.targeting_switch_s[i]) && return nothing
         _edg_in_drag_passage(p, env) || return nothing
+        isfinite(state.targeting_switch_s[i]) && return nothing
         state.targeting_switch_s[i] = _edg_solve_targeting_switch(
             config,
             state,
@@ -114,26 +114,103 @@ function _edg_recompute_switches!(
             if state.heat_load_drag_passage_active[i]
                 state.heat_load_switch_solved[i] = false
                 state.heat_load_drag_passage_active[i] = false
+                state.heat_load_switches_s[i] = (Inf, Inf)
+                state.heat_load_entry_time_s[i] = NaN
+                state.heat_load_last_reevaluation_s[i] = -Inf
+                state.heat_load_security_active[i] = false
+                state.heat_load_previous_j_cm2[i] = 0.0
             end
             return nothing
         end
-        state.heat_load_drag_passage_active[i] = true
-        state.heat_load_switch_solved[i] && return nothing
-        state.heat_load_switches_s[i] = _edg_solve_heat_load_switches(
-            config,
-            p,
-            spacecraft,
-            pos,
-            vel,
-            mass,
-            env,
-            heat_load_j_cm2,
-            t;
-            heat_rate_control=(:heat_rate in config.max_energy_submodes),
-            structural_control=(:structural_load in config.max_energy_submodes),
-        )
-        state.heat_load_switch_solved[i] = true
-        state.last_switch_solve_t[i] = t
+        heat_rate_control = :heat_rate in config.max_energy_submodes
+        structural_control = :structural_load in config.max_energy_submodes
+        if !state.heat_load_drag_passage_active[i]
+            state.heat_load_drag_passage_active[i] = true
+            state.heat_load_entry_time_s[i] = t
+            state.heat_load_last_reevaluation_s[i] = t
+            state.heat_load_previous_j_cm2[i] = heat_load_j_cm2
+        end
+        if !state.heat_load_switch_solved[i]
+            solve_altitude_m = 1e3 * Float64(p.args.environment_model.EI) - 500.0
+            env.altitude_m <= solve_altitude_m || return nothing
+            t - state.last_switch_solve_t[i] >= 1.0 || return nothing
+            switches = _edg_solve_heat_load_switches(
+                config,
+                p,
+                spacecraft,
+                pos,
+                vel,
+                mass,
+                env,
+                heat_load_j_cm2,
+                t;
+                heat_rate_control=heat_rate_control,
+                structural_control=structural_control,
+            )
+            state.heat_load_switches_s[i] = switches
+            state.heat_load_switch_solved[i] = all(isfinite, switches) && switches[1] < switches[2]
+            state.last_switch_solve_t[i] = t
+        else
+            switches = state.heat_load_switches_s[i]
+            remaining = switches[2] - t
+            passage_switch_time = switches[2] - state.heat_load_entry_time_s[i]
+            ascending = dot(pos, vel) > 0.0
+            start_reevaluation = ascending ||
+                (isfinite(remaining) && isfinite(passage_switch_time) && abs(remaining) < 0.2 * max(passage_switch_time, eps(Float64)))
+            since_reevaluation = t - state.heat_load_last_reevaluation_s[i]
+            after_first_switch = t - switches[1] > 1.0
+            reevaluation_due = after_first_switch && (
+                (since_reevaluation > 10.0 && remaining > 0.0) ||
+                (3.0 < remaining < 50.0 && since_reevaluation > 3.0) ||
+                (0.0 < remaining <= 3.0 && since_reevaluation > 0.8)
+            )
+            degenerate_window_expired = config.heat_load_switch_solver == :tpbvp_integration &&
+                t >= switches[2] && switches[2] - switches[1] <= 2.0 &&
+                heat_load_j_cm2 < 0.98 * config.heat_load_limit_j_cm2 &&
+                since_reevaluation > 3.0
+            if config.second_switch_reevaluation && config.heat_load_switch_solver == :closed_form &&
+                    (degenerate_window_expired || (start_reevaluation && reevaluation_due)) &&
+                    !state.heat_load_security_active[i]
+                reevaluation_mode = since_reevaluation > 3.0 ? 1 : 2
+                state.heat_load_switches_s[i] = _edg_recompute_second_heat_load_switch(
+                    config,
+                    p,
+                    spacecraft,
+                    pos,
+                    vel,
+                    mass,
+                    env,
+                    heat_load_j_cm2,
+                    t,
+                    switches;
+                    passage_entry_time_s=state.heat_load_entry_time_s[i],
+                    reevaluation_mode=reevaluation_mode,
+                    heat_rate_control=heat_rate_control,
+                    structural_control=structural_control,
+                )
+                state.heat_load_last_reevaluation_s[i] = t
+            elseif config.heat_load_security_mode && config.heat_load_switch_solver == :closed_form &&
+                    !state.heat_load_security_active[i] &&
+                    heat_load_j_cm2 > 0.98 * config.heat_load_limit_j_cm2 &&
+                    heat_load_j_cm2 - state.heat_load_previous_j_cm2[i] < 2.0
+                security_required, security_end = _edg_heat_load_security_required(
+                    config,
+                    p,
+                    spacecraft,
+                    pos,
+                    vel,
+                    mass,
+                    env,
+                    heat_load_j_cm2,
+                    t,
+                )
+                if security_required
+                    state.heat_load_switches_s[i] = (t, security_end)
+                    state.heat_load_security_active[i] = true
+                end
+            end
+        end
+        state.heat_load_previous_j_cm2[i] = heat_load_j_cm2
     end
     return nothing
 end
@@ -197,9 +274,6 @@ function _edg_command_alpha!(
     elseif structural_active
         alpha = alpha_struct
     end
-    if (:heat_load in config.max_energy_submodes) && heat_load_j_cm2 >= config.heat_load_limit_j_cm2
-        alpha = min(alpha, config.min_alpha_rad)
-    end
     alpha = clamp(alpha, config.min_alpha_rad, config.max_alpha_rad)
     state.last_alpha_rad[i] = alpha
     state.last_alpha_heat_rate_rad[i] = alpha_hr
@@ -207,6 +281,24 @@ function _edg_command_alpha!(
     state.last_heat_rate_w_cm2[i] = _edg_maxwellian_heat_rate(p, env, alpha)
     state.last_heat_load_j_cm2[i] = heat_load_j_cm2
     state.last_dynamic_pressure_pa[i] = env.dynamic_pressure
+    reference_drag_area = _energy_depletion_struct_drag_area(
+        spacecraft,
+        env.temperature,
+        env.molecular_speed_ratio,
+        model.aoa_effector.controlled_panel_links,
+        config.max_alpha_rad,
+        config,
+    )
+    controlled_drag_area = _energy_depletion_struct_drag_area(
+        spacecraft,
+        env.temperature,
+        env.molecular_speed_ratio,
+        model.aoa_effector.controlled_panel_links,
+        alpha,
+        config,
+    )
+    state.last_structural_load_pa[i] = env.dynamic_pressure * controlled_drag_area /
+        max(reference_drag_area, eps(Float64))
     return alpha
 end
 
@@ -238,7 +330,9 @@ function calcControlEffect!(
     _edg_control_state_index_ok(state, i) || return nothing
     config = model.config
     if state.selected_mode[i] == :inactive
-        state.selected_mode[i] = (:max_energy_depletion in config.guidance_modes) ? :max_energy_depletion : :safe_low_drag
+        if !(:targeting in config.guidance_modes)
+            state.selected_mode[i] = (:max_energy_depletion in config.guidance_modes) ? :max_energy_depletion : :safe_low_drag
+        end
     end
     sc = _edg_control_sat_state(u, i)
     env = _edg_environment_state(u, p, Float64(t), i)
@@ -296,6 +390,113 @@ function _edg_target_energy_from_apoapsis(planet, target_apoapsis_radius_m::Floa
     return -planet.μ / (target_apoapsis_radius_m + periapsis_radius_m)
 end
 
+function _edg_corrected_target_energy_from_apoapsis(
+    planet,
+    target_apoapsis_radius_m::Float64,
+    periapsis_radius_m::Float64,
+    perturbation_energy_change_jkg::Float64,
+)
+    target_energy = _edg_target_energy_from_apoapsis(
+        planet,
+        target_apoapsis_radius_m,
+        periapsis_radius_m,
+    )
+    return target_energy - perturbation_energy_change_jkg
+end
+
+function _edg_vacuum_apoapsis_correction(
+    p::ODEParams,
+    pos0::SVector{3, Float64},
+    vel0::SVector{3, Float64},
+    mass::Float64,
+    t0::Float64,
+)
+    planet = p.args.environment_model.planet
+    initial_energy = 0.5 * dot(vel0, vel0) - planet.μ / norm(pos0)
+    pos = pos0
+    vel = vel0
+    radial_velocity = dot(pos, vel) / norm(pos)
+    dt = 1.0
+    initial_metrics = _edg_orbit_metrics_from_rv(pos0, vel0, mass, planet)
+    semi_major_axis = isfinite(initial_metrics.energy) && initial_metrics.energy < 0.0 ?
+        -planet.μ / (2.0 * initial_metrics.energy) : NaN
+    half_period = isfinite(semi_major_axis) && semi_major_axis > 0.0 ?
+        pi * sqrt(semi_major_axis^3 / planet.μ) : 0.0
+    max_duration = max(20_000.0, 1.25 * half_period)
+    elapsed = 0.0
+
+    while elapsed < max_duration
+        acceleration(r, v, tau) = _edg_prediction_gravity_acceleration(p, r, v, mass, t0 + tau)
+        a1 = acceleration(pos, vel, elapsed)
+        k1r, k1v = vel, a1
+        a2 = acceleration(pos + 0.5dt * k1r, vel + 0.5dt * k1v, elapsed + 0.5dt)
+        k2r, k2v = vel + 0.5dt * k1v, a2
+        a3 = acceleration(pos + 0.5dt * k2r, vel + 0.5dt * k2v, elapsed + 0.5dt)
+        k3r, k3v = vel + 0.5dt * k2v, a3
+        a4 = acceleration(pos + dt * k3r, vel + dt * k3v, elapsed + dt)
+        k4r, k4v = vel + dt * k3v, a4
+        next_pos = pos + dt * (k1r + 2.0k2r + 2.0k3r + k4r) / 6.0
+        next_vel = vel + dt * (k1v + 2.0k2v + 2.0k3v + k4v) / 6.0
+        next_radial_velocity = dot(next_pos, next_vel) / norm(next_pos)
+        elapsed += dt
+        pos, vel = next_pos, next_vel
+        if radial_velocity > 0.0 && next_radial_velocity <= 0.0
+            break
+        end
+        radial_velocity = next_radial_velocity
+    end
+
+    metrics = _edg_orbit_metrics_from_rv(pos, vel, mass, planet)
+    final_energy = 0.5 * dot(vel, vel) - planet.μ / norm(pos)
+    return (
+        energy_change_jkg=final_energy - initial_energy,
+        periapsis_radius_m=metrics.periapsis,
+        apoapsis_radius_m=metrics.apoapsis,
+        propagation_time_s=elapsed,
+    )
+end
+
+function _edg_vacuum_drag_passage_exit(
+    p::ODEParams,
+    pos0::SVector{3, Float64},
+    vel0::SVector{3, Float64},
+    mass::Float64,
+    t0::Float64,
+)
+    planet = p.args.environment_model.planet
+    exit_altitude_m = 1e3 * Float64(p.args.environment_model.EI)
+    pos = pos0
+    vel = vel0
+    dt = 1.0
+    elapsed = 0.0
+    max_duration = 2_000.0
+    passed_periapsis = dot(pos, vel) >= 0.0
+
+    while elapsed < max_duration
+        acceleration(r, v, tau) = _edg_prediction_gravity_acceleration(p, r, v, mass, t0 + tau)
+        a1 = acceleration(pos, vel, elapsed)
+        k1r, k1v = vel, a1
+        a2 = acceleration(pos + 0.5dt * k1r, vel + 0.5dt * k1v, elapsed + 0.5dt)
+        k2r, k2v = vel + 0.5dt * k1v, a2
+        a3 = acceleration(pos + 0.5dt * k2r, vel + 0.5dt * k2v, elapsed + 0.5dt)
+        k3r, k3v = vel + 0.5dt * k2v, a3
+        a4 = acceleration(pos + dt * k3r, vel + dt * k3v, elapsed + dt)
+        k4r, k4v = vel + dt * k3v, a4
+        pos = pos + dt * (k1r + 2.0k2r + 2.0k3r + k4r) / 6.0
+        vel = vel + dt * (k1v + 2.0k2v + 2.0k3v + k4v) / 6.0
+        elapsed += dt
+        passed_periapsis |= dot(pos, vel) >= 0.0
+
+        if passed_periapsis
+            et = _edg_ephemeris_time(p, t0 + elapsed)
+            pos_pp, _ = r_intor_p!(pos, vel, planet, et, p.args.environment_model.ephemerides_model)
+            altitude_m = rtolatlong(pos_pp, planet)[1]
+            altitude_m >= exit_altitude_m && break
+        end
+    end
+    return (position=pos, velocity=vel, propagation_time_s=elapsed)
+end
+
 @inline function _edg_ephemeris_time(p::ODEParams, t_abs::Float64)::Float64
     if hasproperty(p, :shared_buffers) && hasproperty(p.shared_buffers, :et_start)
         return p.shared_buffers.et_start[] + t_abs
@@ -328,14 +529,17 @@ function _edg_targeting_prediction_environment(p::ODEParams, r::SVector{3, Float
     uD, uN, uE = latlongtoNED(lla)
     wE, wN, wU = wind
     wind_pp = wN * uN + wE * uE - wU * uD
-    vel_pp_rw = vel_pp + wind_pp
+    vel_pp_rw = vel_pp - wind_pp
     speed = norm(vel_pp_rw)
     sound_speed = sqrt(max(0.0, planet.γ * planet.R * temperature))
     speed_ratio = sound_speed > 0.0 ? sqrt(0.5 * planet.γ) * speed / sound_speed : 0.0
     return (
         l_pi=l_pi,
+        et=et,
         pos_pp=pos_pp,
         vel_pp=vel_pp,
+        latitude=Float64(lla[2]),
+        longitude=Float64(lla[3]),
         vel_pp_rw=vel_pp_rw,
         altitude_m=Float64(lla[1]),
         rho=max(0.0, rho),
@@ -344,6 +548,34 @@ function _edg_targeting_prediction_environment(p::ODEParams, r::SVector{3, Float
         molecular_speed_ratio=speed_ratio,
         dynamic_pressure=0.5 * max(0.0, rho) * speed^2,
     )
+end
+
+function _edg_prediction_gravity_acceleration(
+    p::ODEParams,
+    r::SVector{3, Float64},
+    v::SVector{3, Float64},
+    mass::Float64,
+    t_abs::Float64,
+)
+    planet = p.args.environment_model.planet
+    ephemerides_model = p.args.environment_model.ephemerides_model
+    et = _edg_ephemeris_time(p, t_abs)
+    pos_pp, _ = r_intor_p!(r, v, planet, et, ephemerides_model)
+    dynamic_effectors = p.args.dynamics_model.dynamic_effectors
+    use_j2 = any(nameof(typeof(effector)) == :InverseSquaredJ2GravityModel for effector in dynamic_effectors)
+    acceleration_ii = if use_j2
+        l_pi = _edg_planet_frame_lpi(p, t_abs)
+        SVector{3, Float64}(l_pi' * _inverse_squared_j2_gravity_accel(pos_pp, planet))
+    else
+        _inverse_squared_gravity_accel(r, planet)
+    end
+    et = _edg_ephemeris_time(p, t_abs)
+    for effector in dynamic_effectors
+        if effector isa NBodyGravityModel
+            acceleration_ii += nbody_acceleration_ii_at_epoch(effector, r, p, et)
+        end
+    end
+    return acceleration_ii
 end
 
 function _edg_targeting_constrained_alpha(
@@ -391,9 +623,16 @@ function _edg_targeting_constrained_alpha(
 end
 
 function _edg_targeting_prediction_time_grid(duration::Float64)
-    step = 0.1
+    step = 1.0
     n = clamp(ceil(Int, duration / step) + 1, 64, 20_000)
     return collect(range(0.0, duration; length=n))
+end
+
+function _edg_outbound_exit_index(track, p::ODEParams)::Int
+    periapsis_index = argmin(track.h)
+    exit_altitude_m = 1e3 * Float64(p.args.environment_model.EI)
+    relative_index = findfirst(>=(exit_altitude_m), @view track.h[periapsis_index:end])
+    return relative_index === nothing ? lastindex(track.h) : periapsis_index + relative_index - 1
 end
 
 function _edg_targeting_aero_acceleration(
@@ -406,8 +645,17 @@ function _edg_targeting_aero_acceleration(
     t_abs::Float64,
     alpha::Float64,
 )::SVector{3, Float64}
-    planet = p.args.environment_model.planet
     env = _edg_targeting_prediction_environment(p, r, v, t_abs)
+    return _edg_targeting_aero_acceleration(config, spacecraft, mass, alpha, env)
+end
+
+function _edg_targeting_aero_acceleration(
+    config::AerobrakingEnergyDepletionConfig,
+    spacecraft,
+    mass::Float64,
+    alpha::Float64,
+    env,
+)::SVector{3, Float64}
     if !(env.rho > 0.0 && env.speed > eps(Float64))
         return SVector{3, Float64}(0.0, 0.0, 0.0)
     end
@@ -421,23 +669,16 @@ function _edg_targeting_aero_acceleration(
     lift_hat = lift_norm > eps(Float64) ? lift_vec / lift_norm : SVector{3, Float64}(0.0, 0.0, 0.0)
     drag_hat = -vel_hat
     q = env.dynamic_pressure
-    controlled = Set{Int}(config.controlled_panel_links)
-    aero_module = getfield(getfield(parentmodule(@__MODULE__), :DynamicEffectors), :AerodynamicEffectors)
-    aero_coeff = getfield(aero_module, :aerodynamic_coefficient_fM)
-
-    force_pp = MVector{3, Float64}(0.0, 0.0, 0.0)
-    for (idx, link) in pairs(spacecraft.links)
-        area = max(0.0, Float64(link.ref_area))
-        area == 0.0 && continue
-        link_alpha = link.root ? (pi / 2) :
-            (idx in controlled ? alpha : clamp(Float64(link.α), config.min_alpha_rad, config.max_alpha_rad))
-        coeffs = aero_coeff(link, env.temperature, max(env.molecular_speed_ratio, eps(Float64)), link_alpha, Float64(link.β), Float64(link.θ))
-        cl = Float64(coeffs[1])
-        cd = max(0.0, Float64(coeffs[2]))
-        force_pp .+= q * area * (cd * drag_hat + cl * lift_hat)
-    end
-
-    return SVector{3, Float64}(env.l_pi' * SVector{3, Float64}(force_pp)) / mass
+    cl, cd = _edg_dynamic_spacecraft_aero_coefficients(
+        spacecraft,
+        env.temperature,
+        max(env.molecular_speed_ratio, eps(Float64)),
+        config.controlled_panel_links,
+        alpha,
+    )
+    area = _edg_total_ref_area(spacecraft)
+    force_pp = q * area * (cd * drag_hat + cl * lift_hat)
+    return SVector{3, Float64}(env.l_pi' * force_pp) / mass
 end
 
 function _edg_integrated_targeting_trajectory(
@@ -463,8 +704,7 @@ function _edg_integrated_targeting_trajectory(
     alpha_past = config.max_alpha_rad
 
     function acceleration(r, v, tau, alpha)
-        radius = max(norm(r), eps(Float64))
-        gravity = -planet.μ * r / radius^3
+        gravity = _edg_prediction_gravity_acceleration(p, r, v, mass, t + tau)
         aero = _edg_targeting_aero_acceleration(config, p, spacecraft, r, v, mass, t + tau, alpha)
         return gravity + aero
     end
@@ -569,8 +809,7 @@ function _edg_integrated_max_energy_depletion_trajectory(
     alpha_past = config.max_alpha_rad
 
     function acceleration(r, v, tau, alpha)
-        radius = max(norm(r), eps(Float64))
-        gravity = -planet.μ * r / radius^3
+        gravity = _edg_prediction_gravity_acceleration(p, r, v, mass, t + tau)
         aero = _edg_targeting_aero_acceleration(config, p, spacecraft, r, v, mass, t + tau, alpha)
         return gravity + aero
     end
@@ -666,7 +905,10 @@ function _edg_predict_targeting_outcome(
     structural_control::Bool,
 )
     mass = _edg_predict_mass(spacecraft, mass_state)
-    duration = _edg_drag_passage_duration(config, p, pos, vel, mass)
+    duration = min(
+        _edg_drag_passage_duration(config, p, pos, vel, mass) + 120.0,
+        config.planning_horizon_s,
+    )
     times = _edg_targeting_prediction_time_grid(duration)
     track = _edg_integrated_targeting_trajectory(
         config,
@@ -682,13 +924,16 @@ function _edg_predict_targeting_outcome(
         structural_control=structural_control,
     )
     planet = p.args.environment_model.planet
-    final_metrics = _edg_orbit_metrics_from_rv(track.positions[end], track.velocities[end], mass, planet)
+    exit_index = _edg_outbound_exit_index(track, p)
+    final_metrics = _edg_orbit_metrics_from_rv(track.positions[exit_index], track.velocities[exit_index], mass, planet)
     return (
         switch_time_s=switch_time_s,
-        duration_s=last(track.time),
+        duration_s=track.time[exit_index],
         energy_jkg=final_metrics.energy,
         periapsis_radius_m=final_metrics.periapsis,
         apoapsis_radius_m=final_metrics.apoapsis,
+        exit_position=track.positions[exit_index],
+        exit_velocity=track.velocities[exit_index],
         track=track,
         alpha_profile=track.alpha_profile,
     )
@@ -708,7 +953,10 @@ function _edg_predict_max_energy_depletion_outcome(
     structural_control::Bool,
 )
     mass = _edg_predict_mass(spacecraft, mass_state)
-    duration = _edg_drag_passage_duration(config, p, pos, vel, mass)
+    duration = min(
+        _edg_drag_passage_duration(config, p, pos, vel, mass) + 120.0,
+        config.planning_horizon_s,
+    )
     times = _edg_targeting_prediction_time_grid(duration)
     heat_load_switches = (:heat_load in config.max_energy_submodes) ?
         _edg_solve_heat_load_switches(
@@ -739,14 +987,17 @@ function _edg_predict_max_energy_depletion_outcome(
         structural_control=structural_control,
     )
     planet = p.args.environment_model.planet
-    final_metrics = _edg_orbit_metrics_from_rv(track.positions[end], track.velocities[end], mass, planet)
+    exit_index = _edg_outbound_exit_index(track, p)
+    final_metrics = _edg_orbit_metrics_from_rv(track.positions[exit_index], track.velocities[exit_index], mass, planet)
     return (
         switch_time_s=NaN,
         heat_load_switches_s=heat_load_switches,
-        duration_s=last(track.time),
+        duration_s=track.time[exit_index],
         energy_jkg=final_metrics.energy,
         periapsis_radius_m=final_metrics.periapsis,
         apoapsis_radius_m=final_metrics.apoapsis,
+        exit_position=track.positions[exit_index],
+        exit_velocity=track.velocities[exit_index],
         track=track,
         alpha_profile=track.alpha_profile,
     )
@@ -831,108 +1082,6 @@ function _edg_targeting_bracket_outcomes(
     return low_drag, max_energy_depletion
 end
 
-function _edg_targeting_outcome_with_heat_load(
-    config::AerobrakingEnergyDepletionConfig,
-    p::ODEParams,
-    spacecraft,
-    pos::SVector{3, Float64},
-    vel::SVector{3, Float64},
-    mass::Float64,
-    t::Float64,
-    switch_time_s::Float64,
-    accumulated_heat_load_j_cm2::Float64;
-    heat_rate_control::Bool,
-    structural_control::Bool,
-)
-    outcome = _edg_predict_targeting_outcome(
-        config,
-        p,
-        spacecraft,
-        pos,
-        vel,
-        mass,
-        t,
-        switch_time_s;
-        heat_rate_control=heat_rate_control,
-        structural_control=structural_control,
-    )
-    future_heat_load = _edg_profile_heat_load(
-        config,
-        p,
-        outcome.track,
-        outcome.alpha_profile;
-        heat_rate_control=false,
-    )
-    return merge(outcome, (heat_load_j_cm2=accumulated_heat_load_j_cm2 + future_heat_load,))
-end
-
-function _edg_certify_targeting_candidates(
-    candidate_times::AbstractVector{<:Real},
-    evaluate_candidate;
-    heat_load_limit_j_cm2::Real,
-    energy_order_tolerance_jkg::Real,
-    heat_load_tolerance_j_cm2::Real,
-)
-    isempty(candidate_times) && throw(ArgumentError("candidate_times must not be empty."))
-    energy_tolerance = Float64(energy_order_tolerance_jkg)
-    heat_tolerance = Float64(heat_load_tolerance_j_cm2)
-    heat_limit = Float64(heat_load_limit_j_cm2)
-    energy_tolerance >= 0.0 || throw(ArgumentError("energy_order_tolerance_jkg must be >= 0.0."))
-    heat_tolerance >= 0.0 || throw(ArgumentError("heat_load_tolerance_j_cm2 must be >= 0.0."))
-
-    first_time = Float64(first(candidate_times))
-    first_outcome = evaluate_candidate(first_time)
-    certified_times = Float64[]
-    certified_outcomes = typeof(first_outcome)[]
-
-    if !isfinite(first_outcome.energy_jkg)
-        return (times=certified_times, outcomes=certified_outcomes, failure=:nonfinite_energy, failure_time_s=first_time)
-    end
-    if !(isfinite(first_outcome.heat_load_j_cm2) && first_outcome.heat_load_j_cm2 <= heat_limit + heat_tolerance)
-        return (times=certified_times, outcomes=certified_outcomes, failure=:heat_load, failure_time_s=first_time)
-    end
-
-    push!(certified_times, first_time)
-    push!(certified_outcomes, first_outcome)
-    previous_energy = first_outcome.energy_jkg
-
-    for candidate_time in Iterators.drop(candidate_times, 1)
-        time_s = Float64(candidate_time)
-        outcome = evaluate_candidate(time_s)
-        if !isfinite(outcome.energy_jkg)
-            return (times=certified_times, outcomes=certified_outcomes, failure=:nonfinite_energy, failure_time_s=time_s)
-        end
-        if !(isfinite(outcome.heat_load_j_cm2) && outcome.heat_load_j_cm2 <= heat_limit + heat_tolerance)
-            return (times=certified_times, outcomes=certified_outcomes, failure=:heat_load, failure_time_s=time_s)
-        end
-        if !(outcome.energy_jkg < previous_energy - energy_tolerance)
-            return (times=certified_times, outcomes=certified_outcomes, failure=:energy_order, failure_time_s=time_s)
-        end
-        push!(certified_times, time_s)
-        push!(certified_outcomes, outcome)
-        previous_energy = outcome.energy_jkg
-    end
-
-    return (times=certified_times, outcomes=certified_outcomes, failure=:none, failure_time_s=Inf)
-end
-
-function _edg_disable_uncertified_targeting!(
-    config::AerobrakingEnergyDepletionConfig,
-    state::AerobrakingEnergyDepletionState,
-    i::Int;
-    prefer_max_energy_depletion::Bool,
-)
-    state.targeting_active[i] = false
-    if prefer_max_energy_depletion && (:max_energy_depletion in config.guidance_modes)
-        state.selected_mode[i] = :max_energy_depletion
-        state.safe_low_drag[i] = false
-    else
-        state.selected_mode[i] = :safe_low_drag
-        state.safe_low_drag[i] = true
-    end
-    return Inf
-end
-
 function _edg_solve_targeting_switch(
     config::AerobrakingEnergyDepletionConfig,
     state::AerobrakingEnergyDepletionState,
@@ -947,16 +1096,10 @@ function _edg_solve_targeting_switch(
     heat_rate_control::Bool,
     structural_control::Bool,
 )
-    isfinite(state.target_energy_jkg[i]) || return t + 0.5 * config.planning_horizon_s
+    target_energy = state.target_energy_jkg[i]
+    isfinite(target_energy) || return Inf
 
-    predicted_mass = _edg_predict_mass(spacecraft, mass)
-    duration = _edg_drag_passage_duration(config, p, pos, vel, predicted_mass)
-    t_low = t
-    nominal_t_high = t + duration + 1.0
-    candidate_times = collect(range(t_low, nominal_t_high; length=config.targeting_certification_samples))
-    heat_load_limit = (:heat_load in config.max_energy_submodes) ? config.heat_load_limit_j_cm2 : Inf
-
-    evaluate_candidate(t_switch) = _edg_targeting_outcome_with_heat_load(
+    evaluate_delay(delay_s) = _edg_predict_targeting_outcome(
         config,
         p,
         spacecraft,
@@ -964,106 +1107,40 @@ function _edg_solve_targeting_switch(
         vel,
         mass,
         t,
-        t_switch,
-        heat_load_j_cm2;
+        t + delay_s;
         heat_rate_control=heat_rate_control,
         structural_control=structural_control,
     )
-    certification = _edg_certify_targeting_candidates(
-        candidate_times,
-        evaluate_candidate;
-        heat_load_limit_j_cm2=heat_load_limit,
-        energy_order_tolerance_jkg=config.targeting_energy_order_tolerance_jkg,
-        heat_load_tolerance_j_cm2=config.targeting_heat_load_tolerance_j_cm2,
-    )
-    if length(certification.times) < 2
-        return _edg_disable_uncertified_targeting!(
-            config,
-            state,
-            i;
-            prefer_max_energy_depletion=false,
-        )
+    residual(delay_s) = (evaluate_delay(delay_s).energy_jkg - target_energy) / 1e6
+
+    min_delay = 0.0
+    max_delay = 2_000.0
+    min_error = residual(min_delay)
+    max_error = residual(max_delay)
+    state.bracket_min_energy_jkg[i], state.bracket_max_energy_jkg[i] = extrema((
+        min_error * 1e6 + target_energy,
+        max_error * 1e6 + target_energy,
+    ))
+
+    switch_delay = if min_error == 0.0
+        min_delay
+    elseif max_error == 0.0
+        max_delay
+    elseif isfinite(min_error) && isfinite(max_error) && signbit(min_error) != signbit(max_error)
+        Roots.find_zero(residual, (min_delay, max_delay), Roots.Brent(); rtol=1e-8, atol=1e-8)
+    else
+        abs(min_error) <= abs(max_error) ? min_delay : max_delay
     end
-
-    low_drag = first(certification.outcomes)
-    certified_end = last(certification.outcomes)
-    t_high = last(certification.times)
-    target_energy = state.target_energy_jkg[i]
-    target_apoapsis = config.target_apoapsis_radius_m
-    state.bracket_min_energy_jkg[i] = certified_end.energy_jkg
-    state.bracket_max_energy_jkg[i] = low_drag.energy_jkg
-
-    energy_tolerance = config.targeting_energy_order_tolerance_jkg
-    if target_energy > low_drag.energy_jkg + energy_tolerance
-        return _edg_disable_uncertified_targeting!(
-            config,
-            state,
-            i;
-            prefer_max_energy_depletion=false,
-        )
-    elseif target_energy < certified_end.energy_jkg - energy_tolerance
-        return _edg_disable_uncertified_targeting!(
-            config,
-            state,
-            i;
-            prefer_max_energy_depletion=true,
-        )
-    end
-
-    function energy_residual(t_switch)
-        outcome = evaluate_candidate(t_switch)
-        return outcome.energy_jkg - target_energy
-    end
-
-    function apoapsis_residual(t_switch)
-        outcome = evaluate_candidate(t_switch)
-        return outcome.apoapsis_radius_m - target_apoapsis
-    end
-
-    function solve_energy_switch()
-        f_low = low_drag.energy_jkg - target_energy
-        f_high = certified_end.energy_jkg - target_energy
-        if !(isfinite(f_low) && isfinite(f_high)) || f_low * f_high > 0.0
-            denom = certified_end.energy_jkg - low_drag.energy_jkg
-            frac = abs(denom) > eps(Float64) ? (target_energy - low_drag.energy_jkg) / denom : 0.5
-            return t_low + clamp(frac, 0.0, 1.0) * (t_high - t_low)
+    if min_delay < switch_delay < max_delay
+        left_delay = max(min_delay, switch_delay - 1.0)
+        right_delay = min(max_delay, switch_delay + 1.0)
+        left_error = residual(left_delay)
+        right_error = residual(right_delay)
+        if isfinite(left_error) && isfinite(right_error) && left_error != right_error
+            interpolated_delay = left_delay - left_error * (right_delay - left_delay) /
+                (right_error - left_error)
+            switch_delay = clamp(interpolated_delay, left_delay, right_delay)
         end
-        return Roots.find_zero(energy_residual, (t_low, t_high), Roots.Brent(); rtol=1e-7)
     end
-
-    function solve_apoapsis_switch()
-        isfinite(target_apoapsis) && target_apoapsis > 0.0 || return solve_energy_switch()
-        f_low = low_drag.apoapsis_radius_m - target_apoapsis
-        f_high = certified_end.apoapsis_radius_m - target_apoapsis
-        if !(isfinite(f_low) && isfinite(f_high)) || f_low * f_high > 0.0
-            denom = certified_end.apoapsis_radius_m - low_drag.apoapsis_radius_m
-            if isfinite(denom) && abs(denom) > eps(Float64)
-                frac = (target_apoapsis - low_drag.apoapsis_radius_m) / denom
-                return t_low + clamp(frac, 0.0, 1.0) * (t_high - t_low)
-            end
-            return solve_energy_switch()
-        end
-        return Roots.find_zero(apoapsis_residual, (t_low, t_high), Roots.Brent(); rtol=1e-7)
-    end
-
-    t_switch = solve_apoapsis_switch()
-    for _ in 1:2
-        outcome = evaluate_candidate(t_switch)
-        apo_error = outcome.apoapsis_radius_m - config.target_apoapsis_radius_m
-        state.target_energy_jkg[i] = outcome.energy_jkg
-        if isfinite(apo_error) && abs(apo_error) <= 25.0
-            break
-        end
-        denom = outcome.apoapsis_radius_m + outcome.periapsis_radius_m
-        if !(isfinite(apo_error) && isfinite(denom) && denom > 0.0)
-            break
-        end
-        energy_correction = p.args.environment_model.planet.μ / denom^2 * apo_error
-        isfinite(energy_correction) || break
-        target_energy -= energy_correction
-        state.target_energy_jkg[i] = target_energy
-        t_switch = solve_apoapsis_switch()
-    end
-
-    return clamp(t_switch, t_low, t_high)
+    return t + switch_delay
 end

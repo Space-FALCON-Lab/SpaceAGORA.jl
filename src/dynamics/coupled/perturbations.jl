@@ -934,6 +934,56 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
+"""Return configured third-body acceleration at an arbitrary ephemeris epoch."""
+function nbody_acceleration_ii_at_epoch(
+    model::NBodyGravityModel,
+    pos_ii::SVector{3, Float64},
+    param::ODEParams,
+    et::Float64,
+)::SVector{3, Float64}
+    primary_body_name = _spice_query_name(model.primary_body_name)
+    nbody_cache_entry = param.shared_buffers.nbody_ephemeris_cache[]
+    spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
+    spice_rhs_memo = param.shared_buffers.spice_rhs_memo
+    counter = param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls
+    acceleration_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+
+    for (k, body_name) in pairs(model.body_names)
+        body_name_spice = _spice_query_name(body_name)
+        pos_primary_body_j2000_m = if nbody_cache_entry isa NBodyEphemerisCache
+            cached = _nbody_body_position_from_cache_j2000_m(
+                nbody_cache_entry,
+                et,
+                body_name_spice,
+                primary_body_name,
+            )
+            cached === nothing ? _nbody_body_position_from_spice_j2000_m(
+                body_name_spice,
+                et,
+                primary_body_name,
+                spice_rhs_memo_enabled,
+                spice_rhs_memo,
+                counter,
+            ) : cached
+        else
+            _nbody_body_position_from_spice_j2000_m(
+                body_name_spice,
+                et,
+                primary_body_name,
+                spice_rhs_memo_enabled,
+                spice_rhs_memo,
+                counter,
+            )
+        end
+        pos_spacecraft_body = pos_primary_body_j2000_m - pos_ii
+        acceleration_ii .+= model.body_mus[k] * (
+            pos_spacecraft_body / norm(pos_spacecraft_body)^3 -
+            pos_primary_body_j2000_m / norm(pos_primary_body_j2000_m)^3
+        )
+    end
+    return SVector{3, Float64}(acceleration_ii)
+end
+
 @inline environment_requirements(model::NBodyGravityModel) = EffectorEnvironmentRequirements(third_body_names=model.body_names)
 
 @inline gravity_backbone_kick_structure(::NBodyGravityModel) = :velocity_kick_explicit

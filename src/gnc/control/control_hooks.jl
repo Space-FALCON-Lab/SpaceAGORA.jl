@@ -8,6 +8,9 @@ module ControlHooks
     using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
     using ..GuidanceModels: RPOPlan, RPOPlanBuffer
     using ..GravityEffectors: aerobraking_gravity_force_ii
+    using ..GravityEffectors: _inverse_squared_gravity_accel, _inverse_squared_j2_gravity_accel
+    using ..GravityEffectors: NBodyGravityModel, nbody_acceleration_ii_at_epoch
+    using ..AerodynamicModels: aerodynamic_coefficient_fM
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
@@ -35,8 +38,8 @@ module ControlHooks
     include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
     include(joinpath(@__DIR__, "propulsive_maneuvers.jl"))
     include(joinpath(@__DIR__, "heat_rate_control.jl"))
-    include(joinpath(@__DIR__, "heat_load_control.jl"))
     include(joinpath(@__DIR__, "struct_load_control.jl"))
+    include(joinpath(@__DIR__, "heat_load_control.jl"))
     include(joinpath(@__DIR__, "targeting_control.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "lqmpc.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "rpo_control_types.jl"))

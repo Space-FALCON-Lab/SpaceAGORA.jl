@@ -104,6 +104,7 @@ include(joinpath(@__DIR__, "..", "dynamics", "translational", "translational_mod
 # --- Coupled Dynamic Force/Torque Effectors ---
 include(joinpath(@__DIR__, "..", "dynamics", "coupled", "force_torque_models.jl"))
 @reexport using .DynamicEffectors
+include(joinpath(@__DIR__, "..", "dynamics", "coupled", "aerodynamic_models.jl"))
 include(joinpath(@__DIR__, "..", "environment", "gravity", "gravity_effectors.jl"))
 
 # --- IO Owners ---

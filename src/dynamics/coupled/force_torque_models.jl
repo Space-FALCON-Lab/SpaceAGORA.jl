@@ -23,6 +23,7 @@ module DynamicEffectors
     using .AerodynamicEffectors: _threadid_capacity, _multibody_use_threads, _multibody_thread_decision
     using .AerodynamicEffectors: _make_aero_scratch_workspace, _ensure_aero_workspace_capacity!, _aero_workspace_for_sat!
     using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
+    using .PerturbationEffectors: nbody_acceleration_ii_at_epoch
     using .PerturbationEffectors: srp, srp_cannonball_accel, _spice_query_name
     using .PerturbationEffectors: planetary_albedo_accel, planetary_ir_accel
     using .PerturbationEffectors: _make_nbody_scratch_workspace, _ensure_nbody_workspace_capacity!, _nbody_workspace_for_sat!
@@ -35,6 +36,7 @@ module DynamicEffectors
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
+    export nbody_acceleration_ii_at_epoch
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     export calcForceTorque

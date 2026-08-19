@@ -6,22 +6,33 @@ using Plots
 import PlotlyJS
 using StaticArrays
 
-planet = Mars()
+setup_gram_example!()
+
+phase = Symbol(lowercase(get(ENV, "SPACEAGORA_EDG_PHASE", "heat_load")))
+phase in (:constraints, :heat_load, :targeting) ||
+    throw(ArgumentError("SPACEAGORA_EDG_PHASE must be constraints, heat_load, or targeting."))
+heat_load_solver = Symbol(lowercase(get(ENV, "SPACEAGORA_EDG_HEAT_LOAD_SOLVER", "closed_form")))
+heat_load_solver in (:closed_form, :tpbvp_integration) ||
+    throw(ArgumentError("SPACEAGORA_EDG_HEAT_LOAD_SOLVER must be closed_form or tpbvp_integration."))
+
+planet = Mars("", SPICE_PATH)
+initial_time = InitialTime(year=2001, month=11, day=6, hour=19, minute=0, second=0.0)
+ephemerides_model = SpiceEphemeridesModel()
 
 # ABTS Odyssey control-test limits and orbit seed.
 limit_qdot = 0.15
 limit_q = 30.0
 limit_dyn_pressure = 0.5
-ra = 28_559.615e3
-rp = planet.Rp_e + 77e3
+ra = 9_800e3
+rp = planet.Rp_e + 100e3
 orbit_period_s = 2pi * sqrt(((ra + rp) / 2)^3 / planet.μ)
 
 ic = InitialCondition(
     ra=ra,
     rp=rp,
     i=93.6,
-    ω=109.7454,
-    Ω=28.1517,
+    ω=0.0,
+    Ω=0.0,
     ν=180.0,
 )
 
@@ -38,14 +49,17 @@ spacecraft = make_three_body_spacecraft(
 )
 
 energy_state = AerobrakingEnergyDepletionState(num_sats=1)
+guidance_modes = phase == :targeting ? (:targeting, :max_energy_depletion) : (:max_energy_depletion,)
+submodes = phase == :constraints ? (:heat_rate, :structural_load) :
+    (:heat_rate, :structural_load, :heat_load)
 energy_config = AerobrakingEnergyDepletionConfig(
-    guidance_modes=(:targeting, :max_energy_depletion),
-    max_energy_submodes=(:heat_rate, :heat_load),
-    heat_load_switch_solver=:tpbvp_integration,
+    guidance_modes=guidance_modes,
+    max_energy_submodes=submodes,
+    heat_load_switch_solver=heat_load_solver,
     controlled_panel_links=(2, 3),
-    target_apoapsis_radius_m=26_750e3,
+    target_apoapsis_radius_m=9_755e3,
     max_alpha_rad=pi / 2,
-    min_alpha_rad=1e-4,
+    min_alpha_rad=0.0,
     heat_rate_limit_w_cm2=limit_qdot,
     heat_load_limit_j_cm2=limit_q,
     structural_load_limit_pa=limit_dyn_pressure,
@@ -62,13 +76,26 @@ base_args = make_example_config(
     planet=planet,
     spacecraft=spacecraft,
     mission_time=orbit_period_s,
-    initial_time=InitialTime(year=2001, month=11, day=6, hour=19, minute=0, second=0.0),
-    dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
-    density_model=ExponentialAtmosphereModel(planet),
-    ephemerides_model=SimpleEphemeridesModel(),
+    initial_time=initial_time,
+    dynamic_effectors=(InverseSquaredJ2GravityModel(), AerodynamicCoefficientfM()),
+    density_model=GRAMAtmosphereModel(planet_name="mars"),
+    ephemerides_model=ephemerides_model,
     orientation_sim=false,
-    keplerian=true,
+    keplerian=false,
     EI_km=160.0,
+    results_directory=joinpath(REPO_ROOT, "output", "odyssey_energy_depletion", String(phase), String(heat_load_solver)),
+)
+
+legacy_environment = EnvironmentModel(
+    planet=base_args.environment_model.planet,
+    EI=base_args.environment_model.EI,
+    density_model=base_args.environment_model.density_model,
+    ephemerides_model=base_args.environment_model.ephemerides_model,
+    thermal_model=base_args.environment_model.thermal_model,
+    topography=false,
+    topo_degree=0,
+    topo_order=0,
+    wind=true,
 )
 
 args = SimulationConfiguration(
@@ -83,13 +110,14 @@ args = SimulationConfiguration(
         num_steps_to_save=base_args.mission_configuration.num_steps_to_save,
         data_rate=1.0,
     ),
-    environment_model=base_args.environment_model,
+    environment_model=legacy_environment,
     dynamics_model=base_args.dynamics_model,
-    guidance_model=GuidanceModel(guidance_effectors=(guidance,), guidance_rates=[3.0]),
+    guidance_model=GuidanceModel(guidance_effectors=(guidance,), guidance_rates=[1 / 3]),
     navigation_model=base_args.navigation_model,
     control_model=ControlModel(control_effectors=(control,), control_rates=[0.1]),
     initial_time=base_args.initial_time,
     integration_tolerances=base_args.integration_tolerances,
+    solver_config=SolverConfig(maxiters=2_000_000),
 )
 
 panel_alpha_save_field = SaveField(
@@ -184,6 +212,56 @@ bracket_max_save_field = SaveField(
     column_prefix="edg_bracket_max_energy_jkg",
 )
 
+heat_load_switches_save_field = SaveField(
+    :edg_heat_load_switch_s,
+    (u, t, integrator) -> [
+        SVector{2, Float64}(_edg_runtime_control(integrator).state.heat_load_switches_s[i])
+        for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
+    ];
+    per_satellite=true,
+    column_prefix="edg_heat_load_switch_s",
+)
+
+heat_load_security_save_field = SaveField(
+    :edg_heat_load_security_active,
+    (u, t, integrator) -> [
+        _edg_runtime_control(integrator).state.heat_load_security_active[i] ? 1.0 : 0.0
+        for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
+    ];
+    per_satellite=true,
+    column_prefix="edg_heat_load_security_active",
+)
+
+controlled_heat_rate_save_field = SaveField(
+    :edg_controlled_heat_rate_w_cm2,
+    (u, t, integrator) -> [
+        _edg_runtime_control(integrator).state.last_heat_rate_w_cm2[i]
+        for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
+    ];
+    per_satellite=true,
+    column_prefix="edg_controlled_heat_rate_w_cm2",
+)
+
+controlled_heat_load_save_field = SaveField(
+    :edg_controlled_heat_load_j_cm2,
+    (u, t, integrator) -> [
+        _edg_runtime_control(integrator).state.last_heat_load_j_cm2[i]
+        for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
+    ];
+    per_satellite=true,
+    column_prefix="edg_controlled_heat_load_j_cm2",
+)
+
+structural_load_save_field = SaveField(
+    :edg_structural_load_pa,
+    (u, t, integrator) -> [
+        _edg_runtime_control(integrator).state.last_structural_load_pa[i]
+        for i in eachindex(integrator.p.args.dynamics_model.spacecraft)
+    ];
+    per_satellite=true,
+    column_prefix="edg_structural_load_pa",
+)
+
 save_fields = vcat(
     default_save_fields(args),
     [
@@ -194,6 +272,11 @@ save_fields = vcat(
         target_energy_save_field,
         bracket_min_save_field,
         bracket_max_save_field,
+        heat_load_switches_save_field,
+        heat_load_security_save_field,
+        controlled_heat_rate_save_field,
+        controlled_heat_load_save_field,
+        structural_load_save_field,
     ],
 )
 
@@ -274,7 +357,7 @@ function _save_energy_depletion_plots(csv_path::AbstractString, plot_dir::Abstra
 
     heat_rate_plot = plot(
         t_drag,
-        df.sc1_heat_rate[drag_indices];
+        df.sc1_edg_controlled_heat_rate_w_cm2[drag_indices];
         xlabel="Time from entry [s]",
         ylabel="Heat rate [W/cm^2]",
         label="Heat rate",
@@ -286,7 +369,7 @@ function _save_energy_depletion_plots(csv_path::AbstractString, plot_dir::Abstra
 
     heat_load_plot = plot(
         t_drag,
-        df.sc1_heat_load[drag_indices];
+        df.sc1_edg_controlled_heat_load_j_cm2[drag_indices];
         xlabel="Time from entry [s]",
         ylabel="Heat load [J/cm^2]",
         label="Heat load",
@@ -457,6 +540,28 @@ if args.simulation_settings.results && isfile(csv_path)
     df = CSV.read(csv_path, DataFrame)
     println("Saved $(nrow(df)) samples to $(abspath(csv_path))")
     final_orbit = _orbit_metrics_from_row(df[end, :], planet)
+    drag_indices = _drag_passage_indices(df)
+    drag_magnitude = _series_magnitude(df.sc1_drag_1, df.sc1_drag_2, df.sc1_drag_3)
+    println("Validation phase = $(phase), heat-load solver = $(heat_load_solver)")
+    println("Maximum controlled-panel heat rate = $(maximum(df.sc1_edg_controlled_heat_rate_w_cm2[drag_indices])) W/cm^2 (limit $(limit_qdot))")
+    println("Maximum controlled-panel heat load = $(maximum(df.sc1_edg_controlled_heat_load_j_cm2[drag_indices])) J/cm^2 (limit $(limit_q))")
+    println("Maximum all-link heat rate = $(maximum(df.sc1_heat_rate[drag_indices])) W/cm^2")
+    println("Maximum all-link heat load = $(maximum(df.sc1_heat_load[drag_indices])) J/cm^2")
+    println("Maximum drag = $(maximum(drag_magnitude[drag_indices])) N")
+    finite_structural_loads = filter(isfinite, df.sc1_edg_structural_load_pa[drag_indices])
+    if !isempty(finite_structural_loads)
+        println("Maximum equivalent structural load = $(maximum(finite_structural_loads)) Pa (limit $(limit_dyn_pressure))")
+    end
+    finite_switch_rows = findall(
+        isfinite.(df.sc1_edg_heat_load_switch_s_1) .&
+        isfinite.(df.sc1_edg_heat_load_switch_s_2) .&
+        (df.sc1_edg_heat_load_switch_s_2 .> df.sc1_edg_heat_load_switch_s_1),
+    )
+    if !isempty(finite_switch_rows)
+        switch_row = last(finite_switch_rows)
+        println("Heat-load switches = ($(df.sc1_edg_heat_load_switch_s_1[switch_row]), $(df.sc1_edg_heat_load_switch_s_2[switch_row])) s")
+    end
+    println("Heat-load security activated = $(maximum(df.sc1_edg_heat_load_security_active) > 0.5)")
     println("Selected guidance mode = $(_edg_mode_name(df.sc1_edg_mode_code[end]))")
     println("Targeting active = $(df.sc1_edg_targeting_active[end] > 0.5)")
     println("Targeting switch time = $(df.sc1_edg_targeting_switch_s[end]) s")

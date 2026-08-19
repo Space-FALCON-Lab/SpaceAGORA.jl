@@ -1,6 +1,10 @@
 using SpecialFunctions
 using Roots
 
+const _EDG_LEGACY_CONSTRAINT_MIN_ALPHA_RAD = 1e-4
+
+@inline _edg_constraint_min_alpha(config) = max(config.min_alpha_rad, _EDG_LEGACY_CONSTRAINT_MIN_ALPHA_RAD)
+
 function _energy_depletion_heat_rate_calc(
     taf::Float64,
     rho::Float64,
@@ -40,8 +44,7 @@ function _energy_depletion_heatrate_root_alpha(;
     end
 
     T_w = T_p
-    thermal_margin = max(1e-5, 5e-4 * heat_rate_limit)
-    thermal_limit = heat_rate_limit - thermal_margin
+    thermal_limit = heat_rate_limit - 1e-5
     thermal_limit > 0.0 || return min_alpha
 
     heat_rate_max = _energy_depletion_heat_rate_calc(taf, rho, T_w, T_p, R, gamma, S, max_alpha)
@@ -61,48 +64,12 @@ function _energy_depletion_heatrate_root_alpha(;
         term_b = (S^2 + gamma / (gamma - 1.0) - (gamma + 1.0) / (2.0 * (gamma - 1.0)) * (T_w / T_p)) * term_a
         (term_b - 0.5 * exp_term) * L - thermal_limit
     end
-    df(alpha) = begin
-        s_sin = S * sin(alpha)
-        L * S * cos(alpha) *
-        (
-            sqrt(pi) * (S^2 + gamma / (gamma - 1.0) + (gamma + 1.0) / (2.0 * (gamma - 1.0)) * (T_w / T_p)) *
-            (1.0 + erf(s_sin)) +
-            s_sin * exp(-(s_sin)^2)
-        )
-    end
-
-    x0 = isfinite(alpha_past) && min_alpha <= alpha_past <= max_alpha ? alpha_past : 0.5 * (min_alpha + max_alpha)
     alpha = try
-        Roots.find_zero((f, df), x0, Roots.Newton())
+        Roots.find_zero(f, (min_alpha, max_alpha), Roots.Brent())
     catch
-        NaN
+        min_alpha
     end
-
-    if !(isfinite(alpha) && min_alpha <= alpha <= max_alpha)
-        alpha = try
-            Roots.find_zero((f, df), 1e-1, Roots.Newton())
-        catch
-            NaN
-        end
-    end
-
-    if !(isfinite(alpha) && min_alpha <= alpha <= max_alpha)
-        alpha = try
-            if abs(heat_rate_max - thermal_limit) < abs(heat_rate_min - thermal_limit)
-                Roots.find_zero((f, df), 2.0 * max_alpha / 3.0, Roots.Newton())
-            else
-                Roots.find_zero((f, df), 2.0 * max_alpha / 6.0, Roots.Newton())
-            end
-        catch
-            NaN
-        end
-    end
-
-    if !(isfinite(alpha) && min_alpha <= alpha <= max_alpha)
-        alpha = Roots.find_zero(f, (min_alpha, max_alpha), Roots.Bisection())
-    end
-
-    return clamp(alpha, min_alpha, max_alpha)
+    return (isfinite(alpha) && 0.0 <= alpha <= max_alpha) ? alpha : 0.0
 end
 
 function _edg_maxwellian_heat_rate(p::ODEParams, env, alpha::Float64)::Float64
@@ -139,6 +106,8 @@ function _edg_heat_rate_alpha(
     if !(isfinite(limit) && limit > 0.0)
         return base_alpha
     end
+    min_alpha = _edg_constraint_min_alpha(config)
+    base_alpha < min_alpha && return base_alpha
     thermal_model = p.args.environment_model.thermal_model
     taf = hasproperty(thermal_model, :thermal_accomodation_factor) ? Float64(thermal_model.thermal_accomodation_factor) : 1.0
     planet = p.args.environment_model.planet
@@ -150,7 +119,7 @@ function _edg_heat_rate_alpha(
         gamma=planet.γ,
         S=env.molecular_speed_ratio,
         max_alpha=base_alpha,
-        min_alpha=config.min_alpha_rad,
+        min_alpha=min_alpha,
         heat_rate_limit=limit,
         alpha_past=alpha_past,
     )

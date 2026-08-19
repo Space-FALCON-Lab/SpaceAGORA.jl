@@ -15,6 +15,7 @@ module PerturbationEffectors
     import ...EffectorSampling: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
+    export nbody_acceleration_ii_at_epoch
     export srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
 
     # Read once at module load; avoids a syscall + string allocation on every harmonics call.

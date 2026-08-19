@@ -28,9 +28,8 @@ struct AerobrakingEnergyDepletionConfig
     structural_load_limit_pa::Float64
     planning_horizon_s::Float64
     switch_recompute_interval_s::Float64
-    targeting_certification_samples::Int
-    targeting_energy_order_tolerance_jkg::Float64
-    targeting_heat_load_tolerance_j_cm2::Float64
+    second_switch_reevaluation::Bool
+    heat_load_security_mode::Bool
 end
 
 function AerobrakingEnergyDepletionConfig(;
@@ -45,10 +44,9 @@ function AerobrakingEnergyDepletionConfig(;
     heat_load_limit_j_cm2::Real=Inf,
     structural_load_limit_pa::Real=Inf,
     planning_horizon_s::Real=5_000.0,
-    switch_recompute_interval_s::Real=30.0,
-    targeting_certification_samples::Integer=9,
-    targeting_energy_order_tolerance_jkg::Real=1e-3,
-    targeting_heat_load_tolerance_j_cm2::Real=1e-6,
+    switch_recompute_interval_s::Real=20.0,
+    second_switch_reevaluation::Bool=true,
+    heat_load_security_mode::Bool=true,
 )
     guidance_modes_t = _edg_validate_symbol_set(_edg_symbol_tuple(guidance_modes), _EDG_GUIDANCE_MODES, "guidance_modes")
     max_energy_submodes_t = _edg_validate_symbol_set(_edg_symbol_tuple(max_energy_submodes), _EDG_MAX_ENERGY_SUBMODES, "max_energy_submodes")
@@ -66,15 +64,6 @@ function AerobrakingEnergyDepletionConfig(;
     recompute = Float64(switch_recompute_interval_s)
     isfinite(horizon) && horizon > 0.0 || throw(ArgumentError("planning_horizon_s must be finite and > 0.0."))
     isfinite(recompute) && recompute > 0.0 || throw(ArgumentError("switch_recompute_interval_s must be finite and > 0.0."))
-    certification_samples = Int(targeting_certification_samples)
-    certification_samples >= 2 || throw(ArgumentError("targeting_certification_samples must be >= 2."))
-    energy_order_tolerance = Float64(targeting_energy_order_tolerance_jkg)
-    heat_load_tolerance = Float64(targeting_heat_load_tolerance_j_cm2)
-    isfinite(energy_order_tolerance) && energy_order_tolerance >= 0.0 ||
-        throw(ArgumentError("targeting_energy_order_tolerance_jkg must be finite and >= 0.0."))
-    isfinite(heat_load_tolerance) && heat_load_tolerance >= 0.0 ||
-        throw(ArgumentError("targeting_heat_load_tolerance_j_cm2 must be finite and >= 0.0."))
-
     return AerobrakingEnergyDepletionConfig(
         guidance_modes_t,
         max_energy_submodes_t,
@@ -88,9 +77,8 @@ function AerobrakingEnergyDepletionConfig(;
         Float64(structural_load_limit_pa),
         horizon,
         recompute,
-        certification_samples,
-        energy_order_tolerance,
-        heat_load_tolerance,
+        second_switch_reevaluation,
+        heat_load_security_mode,
     )
 end
 
@@ -101,11 +89,16 @@ mutable struct AerobrakingEnergyDepletionState
     energy_bracketing_evaluated::Vector{Bool}
     energy_bracketing_count::Vector{Int}
     target_energy_jkg::Vector{Float64}
+    target_perturbation_energy_change_jkg::Vector{Float64}
     bracket_min_energy_jkg::Vector{Float64}
     bracket_max_energy_jkg::Vector{Float64}
     heat_load_switches_s::Vector{NTuple{2, Float64}}
     heat_load_switch_solved::Vector{Bool}
     heat_load_drag_passage_active::Vector{Bool}
+    heat_load_entry_time_s::Vector{Float64}
+    heat_load_last_reevaluation_s::Vector{Float64}
+    heat_load_security_active::Vector{Bool}
+    heat_load_previous_j_cm2::Vector{Float64}
     targeting_switch_s::Vector{Float64}
     last_switch_solve_t::Vector{Float64}
     last_alpha_rad::Vector{Float64}
@@ -114,6 +107,7 @@ mutable struct AerobrakingEnergyDepletionState
     last_heat_rate_w_cm2::Vector{Float64}
     last_heat_load_j_cm2::Vector{Float64}
     last_dynamic_pressure_pa::Vector{Float64}
+    last_structural_load_pa::Vector{Float64}
 end
 
 function AerobrakingEnergyDepletionState(; num_sats::Integer)
@@ -128,11 +122,17 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
         fill(NaN, n),
         fill(NaN, n),
         fill(NaN, n),
+        fill(NaN, n),
         fill((Inf, Inf), n),
         falses(n),
         falses(n),
+        fill(NaN, n),
+        fill(-Inf, n),
+        falses(n),
+        zeros(n),
         fill(Inf, n),
         fill(-Inf, n),
+        fill(NaN, n),
         fill(NaN, n),
         fill(NaN, n),
         fill(NaN, n),
@@ -188,39 +188,6 @@ function calcGuidanceEffect!(
     return nothing
 end
 
-using Roots
-
-function _edg_interpolate_bracket_value(exit_energy::Float64, energy_min::Float64, energy_max::Float64, value_at_min::Float64, value_at_max::Float64)
-    width = energy_max - energy_min
-    abs(width) < eps(Float64) && return 0.5 * (value_at_min + value_at_max)
-    fraction = (exit_energy - energy_min) / width
-    return value_at_min + fraction * (value_at_max - value_at_min)
-end
-
-function _edg_target_energy_from_reachable_bracket(
-    planet,
-    target_apoapsis_radius_m::Float64,
-    energy_min::Float64,
-    energy_max::Float64,
-    periapsis_at_min::Float64,
-    periapsis_at_max::Float64,
-)
-    function residual(exit_energy)
-        periapsis = _edg_interpolate_bracket_value(exit_energy, energy_min, energy_max, periapsis_at_min, periapsis_at_max)
-        desired_energy = _control_module()._edg_target_energy_from_apoapsis(planet, target_apoapsis_radius_m, periapsis)
-        return exit_energy - desired_energy
-    end
-
-    residual_min = residual(energy_min)
-    residual_max = residual(energy_max)
-    if isfinite(residual_min) && isfinite(residual_max) && residual_min * residual_max <= 0.0
-        return Roots.find_zero(residual, (energy_min, energy_max), Roots.Brent(); rtol=1e-10)
-    elseif isfinite(residual_min) && isfinite(residual_max) && abs(residual_max - residual_min) > eps(Float64)
-        return energy_min - residual_min * (energy_max - energy_min) / (residual_max - residual_min)
-    end
-    return abs(residual_min) <= abs(residual_max) ? energy_min : energy_max
-end
-
 function _edg_set_targeting_fallback!(
     config::AerobrakingEnergyDepletionConfig,
     state::AerobrakingEnergyDepletionState,
@@ -248,7 +215,6 @@ function _edg_run_target_energy_bracketing!(
     ctrl = _control_module()
     env = ctrl._edg_environment_state(u, p, t, i)
     if !ctrl._edg_in_drag_passage(p, env)
-        _edg_set_targeting_fallback!(config, state, i)
         return nothing
     end
 
@@ -271,33 +237,33 @@ function _edg_run_target_energy_bracketing!(
         structural_control=(:structural_load in config.max_energy_submodes),
     )
 
-    endpoints = (low_drag, max_energy_depletion)
     energy_values = (low_drag.energy_jkg, max_energy_depletion.energy_jkg)
     energy_min, energy_max = extrema(energy_values)
-    min_idx = energy_values[1] <= energy_values[2] ? 1 : 2
-    max_idx = min_idx == 1 ? 2 : 1
-    periapsis_at_min = endpoints[min_idx].periapsis_radius_m
-    periapsis_at_max = endpoints[max_idx].periapsis_radius_m
-    apoapsis_min, apoapsis_max = extrema((low_drag.apoapsis_radius_m, max_energy_depletion.apoapsis_radius_m))
-
-    target_energy = _edg_target_energy_from_reachable_bracket(
+    vacuum_exit = ctrl._edg_vacuum_drag_passage_exit(p, pos, vel, mass, t)
+    vacuum_correction = ctrl._edg_vacuum_apoapsis_correction(
+        p,
+        vacuum_exit.position,
+        vacuum_exit.velocity,
+        mass,
+        t + vacuum_exit.propagation_time_s,
+    )
+    target_periapsis = isfinite(vacuum_correction.periapsis_radius_m) ?
+        vacuum_correction.periapsis_radius_m : low_drag.periapsis_radius_m
+    target_energy = ctrl._edg_corrected_target_energy_from_apoapsis(
         planet,
         config.target_apoapsis_radius_m,
-        energy_min,
-        energy_max,
-        periapsis_at_min,
-        periapsis_at_max,
+        target_periapsis,
+        vacuum_correction.energy_change_jkg,
     )
 
     energy_tol = 1e-6 * max(abs(energy_min), abs(energy_max), 1.0)
-    apo_tol = 1e-6 * max(abs(apoapsis_min), abs(apoapsis_max), abs(config.target_apoapsis_radius_m), 1.0)
     reachable = isfinite(target_energy) &&
-        energy_min - energy_tol <= target_energy <= energy_max + energy_tol &&
-        apoapsis_min - apo_tol <= config.target_apoapsis_radius_m <= apoapsis_max + apo_tol
+        energy_min - energy_tol <= target_energy <= energy_max + energy_tol
 
     state.energy_bracketing_evaluated[i] = true
     state.energy_bracketing_count[i] += 1
     state.target_energy_jkg[i] = target_energy
+    state.target_perturbation_energy_change_jkg[i] = vacuum_correction.energy_change_jkg
     state.bracket_min_energy_jkg[i] = energy_min
     state.bracket_max_energy_jkg[i] = energy_max
     state.targeting_active[i] = reachable

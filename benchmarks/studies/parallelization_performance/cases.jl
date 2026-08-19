@@ -40,7 +40,7 @@ end
 # invokelatest individually. Each worker subprocess handles exactly one
 # --case=X for its whole lifetime (see ppc_worker_cmd), so ARGS already says
 # up front whether this process will ever need GRAMSuite loaded.
-const PPC_GRAM_LIVE_CASES = ("multi_16_gram_live", "montecarlo_mars_gram_live")
+const PPC_GRAM_LIVE_CASES = ("multi_16_gram_live", "multi_4_gram_live", "montecarlo_mars_gram_live")
 any(a -> any(c -> occursin(c, a), PPC_GRAM_LIVE_CASES), ARGS) && ppc_ensure_gramsuite_loaded!()
 
 # GRAMAtmosphereModel is cached per planet (not rebuilt per call/sample): the
@@ -444,6 +444,32 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             density_model=ppc_gram_atmosphere_model("earth"),
             dt_max_orbit=5.0
         )
+    elseif case_name == "multi_4_gram_live"
+        # Added to check whether multi_16_gram_live's leak (see its own comment
+        # above) is proportional to satellite count, as a possible small-N
+        # stopgap for the interacting side of the atmosphere-GRAM axis. Result
+        # (2026-08-18, bounded OS-timeout + memory-watched reproduction at the
+        # real full mission duration, 1200s): memory does NOT leak here -- RSS
+        # held in the 1.6-1.9 GB range with no runaway growth, unlike N=16's
+        # unbounded climb to 30+ GB. But it's still far too SLOW to be a
+        # practical stopgap: it did not finish a single solve within a 10-minute
+        # hard timeout (vs. ~35s for the single-satellite montecarlo_mars_gram_live
+        # at its own real 1800s mission). So this is a *different* failure mode
+        # from N=16's leak, not a smaller instance of the same one -- rules out
+        # "proportional to N" as the leak's cause, but doesn't give us a usable
+        # interacting-GRAM case either. NOT wired into any phase; needs its own
+        # investigation (likely step-size collapse from live GRAM's non-smooth
+        # density field interacting with multi-satellite coupling, independent
+        # of the memory issue) before it's trustworthy anywhere.
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, 4),
+            mission_time_s=ppc_mission_time(cfg.profile; smoke=90.0, full=1200.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 20), AerodynamicCoefficientfM()),
+            density_model=ppc_gram_atmosphere_model("earth"),
+            dt_max_orbit=5.0
+        )
     elseif case_name == "montecarlo_mars_gram_live"
         # Independent-trial counterpart to multi_16_gram_live: same Mars
         # aerobraking geometry as montecarlo_mars_aerobraking, but native GRAM
@@ -591,6 +617,7 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
     add!("multi_4_aero_surrogate_cached", "many_sat_high_fidelity", "4 spacecraft with aero and analytic density")
     add!("multi_256_high_fidelity", "many_sat_high_fidelity", "256 spacecraft with harmonics, SRP, aero, and analytic density")
     add!("multi_16_gram_live", "gram_live", "16 spacecraft, harmonics and aero, native GRAM atmosphere (interacting)")
+    add!("multi_4_gram_live", "gram_live", "4 spacecraft, harmonics and aero, native GRAM atmosphere (interacting, small-N)")
     add!("montecarlo_mars_gram_live", "gram_live", "Monte Carlo Mars aerobraking, native GRAM atmosphere (independent)", montecarlo=true)
     add!("multi_8sat_magnetorquer_attitude", "actuator", "8 spacecraft, LVLH attitude control and magnetorquer unloading actuator", orientation=true)
     add!("gravity_16sat_l20_vacuum_longmission", "duration_cadence", "16 spacecraft, L20 harmonics, ~4x mission duration")

@@ -52,6 +52,7 @@ Base.@kwdef mutable struct SpaceAGORAPhysicsCampaignRollout
     transitions::Vector{Transition}
     stats::SpaceAGORAPhysicsPassStats = SpaceAGORAPhysicsPassStats()
     pass_start_time_s::Float64 = 0.0
+    periapsis_seen_since_pass_start::Bool = false
     terminated::Bool = false
     streaming::Bool = false
     event_channel::Any = nothing
@@ -311,6 +312,9 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
                                                        idx::Int64)
     idx == 1 || return nothing
     rollout.terminated && return nothing
+    # A randomized campaign may initialize just before apoapsis. Ignore that
+    # initial root: it does not represent a completed atmospheric passage.
+    rollout.periapsis_seen_since_pass_start || return nothing
     t_now = Float64(getproperty(integrator, :t))
     elapsed_since_pass_start = t_now - rollout.pass_start_time_s
     elapsed_since_pass_start > 1.0 || return nothing
@@ -336,6 +340,7 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
         return _spaceagora_physics_campaign_terminate!(spaceagora, integrator)
     end
     rollout.protected_next_transition = false
+    rollout.periapsis_seen_since_pass_start = false
 
     done = result.flags.terminated ||
            result.flags.truncated ||
@@ -383,6 +388,16 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
     return nothing
 end
 
+function _spaceagora_physics_campaign_mark_periapsis!(
+    rollout::SpaceAGORAPhysicsCampaignRollout,
+    idx::Int64,
+)
+    idx == 1 || return nothing
+    rollout.terminated && return nothing
+    rollout.periapsis_seen_since_pass_start = true
+    return nothing
+end
+
 function _spaceagora_physics_campaign_apoapsis_callback(spaceagora,
                                                         rollout::SpaceAGORAPhysicsCampaignRollout)
     engine = getproperty(spaceagora, :SimulationEngine)
@@ -396,9 +411,17 @@ function _spaceagora_physics_campaign_apoapsis_callback(spaceagora,
         out[1] = -dot(pos, vel)
         return nothing
     end
-    affect!(integrator, idx::Int64) =
+    affect_apoapsis!(integrator, idx::Int64) =
         _spaceagora_physics_campaign_record_apoapsis!(spaceagora, rollout, integrator, idx)
-    return Base.invokelatest(vector_callback, condition!, affect!, nothing, 1)
+    affect_periapsis!(integrator, idx::Int64) =
+        _spaceagora_physics_campaign_mark_periapsis!(rollout, idx)
+    return Base.invokelatest(
+        vector_callback,
+        condition!,
+        affect_apoapsis!,
+        affect_periapsis!,
+        1,
+    )
 end
 
 function _spaceagora_physics_campaign_stats_callback(spaceagora,

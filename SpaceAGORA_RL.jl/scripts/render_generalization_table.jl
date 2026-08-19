@@ -45,7 +45,8 @@ end
 
 function _draw_table!(report, headers, rows;
                       left, right, top, row_height, widths,
-                      header_size=9, cell_size=9)
+                      header_size=9, cell_size=9,
+                      highlight_column=nothing)
     length(headers) == length(widths) ||
         throw(ArgumentError("table headers and widths must have equal length"))
     isapprox(sum(widths), 1.0; atol=1e-8) ||
@@ -75,10 +76,10 @@ function _draw_table!(report, headers, rows;
     for (row_index, row) in enumerate(rows)
         y1 = top - row_index * row_height
         y0 = y1 - row_height
-        fill = row_index == 1 ? "#D9EAF7" :
-               iseven(row_index) ? "#F5F7FA" : :white
+        row_fill = iseven(row_index) ? "#F5F7FA" : :white
         for column in eachindex(row)
             x0, x1 = edges[column], edges[column + 1]
+            fill = column == highlight_column ? "#D9EAF7" : row_fill
             plot!(
                 report,
                 Shape([x0, x1, x1, x0], [y0, y0, y1, y1]);
@@ -114,29 +115,51 @@ function render_generalization_table(csv_path::AbstractString,
 
     labels = [get(CASE_LABELS, String(row.case), replace(String(row.case), "_" => " "))
               for row in eachrow(frame)]
+    rows = collect(eachrow(frame))
+    case_headers = replace.(labels, " " => "\n")
+    iid_index = findfirst(==("iid_reference"), String.(frame.case))
+    iid_column = iid_index === nothing ? nothing : iid_index + 1
     primary_rows = [
         [
-            labels[index],
-            string(row.episodes),
-            _cell_text(row, :evaluation_td_loss; digits=3),
-            _cell_text(row, :generalization_gap; digits=3),
-            _mean_std(row, :mean_reward, :std_reward; digits=2),
-            _mean_std(row, :mean_thermal_violations, :std_thermal_violations; digits=2),
-            @sprintf("%.1f%%", row.reached_goal_percent),
-            _mean_std(row, :mean_goal_distance_km, :std_goal_distance_km; digits=2),
-        ]
-        for (index, row) in enumerate(eachrow(frame))
+            "Episodes (N)",
+            [string(row.episodes) for row in rows]...,
+        ],
+        ["TD loss", [_cell_text(row, :evaluation_td_loss; digits=3) for row in rows]...],
+        ["Generalization gap", [_cell_text(row, :generalization_gap; digits=3) for row in rows]...],
+        ["Reward\n(mean +/- SD)", [_mean_std(row, :mean_reward, :std_reward; digits=2) for row in rows]...],
+        [
+            "Thermal violations\n(mean +/- SD)",
+            [_mean_std(row, :mean_thermal_violations,
+                       :std_thermal_violations; digits=2) for row in rows]...,
+        ],
+        ["Success", [@sprintf("%.1f%%", row.reached_goal_percent) for row in rows]...],
+        [
+            "Goal distance, km\n(mean +/- SD)",
+            [_mean_std(row, :mean_goal_distance_km,
+                       :std_goal_distance_km; digits=2) for row in rows]...,
+        ],
     ]
     campaign_rows = [
         [
-            labels[index],
-            _mean_std(row, :mean_delta_v_mps, :std_delta_v_mps; digits=2),
-            _mean_std(row, :mean_mission_duration_days,
-                      :std_mission_duration_days; digits=2),
-            _mean_std(row, :mean_episode_length, :std_episode_length; digits=2),
-            _mean_std(row, :mean_maneuver_count, :std_maneuver_count; digits=2),
-        ]
-        for (index, row) in enumerate(eachrow(frame))
+            "Delta-v, m/s\n(mean +/- SD)",
+            [_mean_std(row, :mean_delta_v_mps,
+                       :std_delta_v_mps; digits=2) for row in rows]...,
+        ],
+        [
+            "Duration, days\n(mean +/- SD)",
+            [_mean_std(row, :mean_mission_duration_days,
+                       :std_mission_duration_days; digits=2) for row in rows]...,
+        ],
+        [
+            "Passes / episode\n(mean +/- SD)",
+            [_mean_std(row, :mean_episode_length,
+                       :std_episode_length; digits=2) for row in rows]...,
+        ],
+        [
+            "Maneuvers\n(mean +/- SD)",
+            [_mean_std(row, :mean_maneuver_count,
+                       :std_maneuver_count; digits=2) for row in rows]...,
+        ],
     ]
 
     metadata = _metadata(csv_path)
@@ -172,45 +195,32 @@ function render_generalization_table(csv_path::AbstractString,
               text("Primary generalization metrics", 13, :navy, :left))
     _draw_table!(
         report,
-        [
-            "Case",
-            "N",
-            "TD loss",
-            "Gen. gap",
-            "Reward\n(mean +/- SD)",
-            "Thermal violations\n(mean +/- SD)",
-            "Success",
-            "Goal distance, km\n(mean +/- SD)",
-        ],
+        ["Metric", case_headers...],
         primary_rows;
         left=0.04,
         right=0.96,
         top=0.83,
-        row_height=0.058,
-        widths=[0.18, 0.045, 0.085, 0.085, 0.16, 0.17, 0.08, 0.195],
-        header_size=8,
-        cell_size=8,
+        row_height=0.055,
+        widths=[0.20, fill(0.80 / length(rows), length(rows))...],
+        header_size=7,
+        cell_size=7,
+        highlight_column=iid_column,
     )
 
     annotate!(report, 0.04, 0.335,
               text("Campaign and control statistics", 13, :navy, :left))
     _draw_table!(
         report,
-        [
-            "Case",
-            "Delta-v, m/s\n(mean +/- SD)",
-            "Duration, days\n(mean +/- SD)",
-            "Passes / episode\n(mean +/- SD)",
-            "Maneuvers\n(mean +/- SD)",
-        ],
+        ["Metric", case_headers...],
         campaign_rows;
         left=0.04,
         right=0.96,
         top=0.305,
-        row_height=0.034,
-        widths=[0.24, 0.19, 0.19, 0.19, 0.19],
-        header_size=8,
-        cell_size=8,
+        row_height=0.045,
+        widths=[0.20, fill(0.80 / length(rows), length(rows))...],
+        header_size=7,
+        cell_size=7,
+        highlight_column=iid_column,
     )
 
     annotate!(
@@ -221,7 +231,7 @@ function render_generalization_table(csv_path::AbstractString,
             "Notes: Generalization gap = evaluation TD loss - IID-reference TD loss. " *
             "Thermal violations are totals per episode.\n" *
             "Goal distance is absolute final " *
-            "apoapsis-target error. The blue row is the held-out IID reference.",
+            "apoapsis-target error. The blue column is the held-out IID reference.",
             7,
             :gray35,
             :left,

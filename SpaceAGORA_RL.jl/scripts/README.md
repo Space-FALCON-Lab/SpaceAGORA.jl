@@ -86,12 +86,15 @@ counts, case mappings, reference values, and artifact paths.
 
 The `generalization_evaluation_suite` output directory contains the six-case
 Table VI view, an all-cases table that includes the IID loss reference, raw
-episode/pass data, and the resolved SpaceAGORA configuration for every case.
+episode/pass data, the resolved SpaceAGORA configuration for every case, and
+an automatically rendered transposed `generalization_results_table.pdf`.
 The evaluated checkpoint is frozen and selected greedily; no case performs
 training or fine-tuning. While the suite runs, `progress.toml` records the
 current case, case episode, overall episode count and percentage, elapsed time,
-and process ID. Terminal updates follow `--progress-every N` (default: every
-episode).
+coordinator process ID, worker count, and threads per worker. Each case's
+campaigns run concurrently in isolated Julia worker processes; the same worker
+pool is reused across cases. The default is 16 workers with one thread each.
+Terminal updates follow `--progress-every N` (default: every episode).
 
 Run that suite without the other paper figures and comparisons with:
 
@@ -99,7 +102,8 @@ Run that suite without the other paper figures and comparisons with:
 julia --project=SpaceAGORA_RL.jl \
   SpaceAGORA_RL.jl/scripts/evaluate_rl_run.jl \
   SpaceAGORA_RL.jl/outputs/runs/MY_RUN \
-  --generalization-only
+  --generalization-only \
+  --processes 16 --threads-per-process 1
 ```
 
 For a quick smoke evaluation:

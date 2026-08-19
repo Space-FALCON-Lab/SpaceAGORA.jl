@@ -356,6 +356,23 @@ end
     ) == (4, true, 7)
     @test SpaceAGORA_RL._spaceagora_physics_gram_once_per_step(config)
 
+    # A campaign initialized just before apoapsis must not count that first
+    # high-altitude root as a completed atmospheric passage.
+    @test !rollout.periapsis_seen_since_pass_start
+    @test isnothing(
+        SpaceAGORA_RL._spaceagora_physics_campaign_record_apoapsis!(
+            nothing,
+            rollout,
+            (t=2.0,),
+            1,
+        ),
+    )
+    @test isempty(rollout.transitions)
+    SpaceAGORA_RL._spaceagora_physics_campaign_mark_periapsis!(rollout, 2)
+    @test !rollout.periapsis_seen_since_pass_start
+    SpaceAGORA_RL._spaceagora_physics_campaign_mark_periapsis!(rollout, 1)
+    @test rollout.periapsis_seen_since_pass_start
+
     surrogate_config = default_aerobraking_config(
         backend_mode=:spaceagora_physics,
         spaceagora_atmosphere_model=:marsgram_surrogate,

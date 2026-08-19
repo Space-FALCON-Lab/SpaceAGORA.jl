@@ -72,8 +72,8 @@ Options:
   --checkpoint-episodes N     Episodes per mode and checkpoint for Figs. 7-8
                               (default: 40).
   --checkpoint-stride N       Evaluate every Nth numbered checkpoint (default: 1).
-  --processes N               Worker processes for final/multi-run comparisons
-                              (default: min(4, available CPU threads)).
+  --processes N               Worker processes for parallel campaign evaluation,
+                              including generalization (default: 16).
   --threads-per-process N     Julia threads available inside each worker process
                               (default: 1).
   --progress-every N          Print progress every N completed campaigns
@@ -86,6 +86,7 @@ Options:
 
 Outputs include the raw episode/pass CSVs, checkpoint_metrics.csv,
 paper_table_v_pr_drl_vs_aads.csv, the generalization_evaluation_suite directory,
+generalization_results_table.pdf,
 paper_fig07_*.png through paper_fig12_*.png, the dedicated episode-completion
 and final-target-distance chart, and evaluation_manifest.toml.
 Final-flight-comparison mode writes its four-panel PNG, comparison CSV, raw
@@ -115,7 +116,7 @@ function _parse_cli(args)
         :generalization_episodes => PAPER_GENERALIZATION_EVALUATION_EPISODES,
         :checkpoint_episodes => PAPER_IID_EVALUATION_EPISODES,
         :checkpoint_stride => 1,
-        :processes => max(1, min(4, Sys.CPU_THREADS)),
+        :processes => 16,
         :threads_per_process => 1,
         :progress_every => 1,
         :generalization_only => false,
@@ -494,6 +495,17 @@ function _result_from_summaries(summaries, scenario, policy_name::AbstractString
     )
 end
 
+function _result_from_parallel_episodes(episodes, scenario, policy_name::AbstractString)
+    sort!(episodes; by=episode -> episode.summary.episode_index)
+    summaries = EpisodeSummary[episode.summary for episode in episodes]
+    result = _result_from_summaries(summaries, scenario, policy_name)
+    transitions = Transition[]
+    for episode in episodes
+        append!(transitions, episode.transitions)
+    end
+    return merge(result, (; transitions))
+end
+
 function _evaluate_policies_parallel(
     policies::Dict{String,Any},
     policy_order::Vector{String},
@@ -504,6 +516,8 @@ function _evaluate_policies_parallel(
     process_ids::Vector{Int};
     paper_protocol::Bool=true,
     progress_every::Int=1,
+    collect_transitions::Bool=false,
+    campaign_callback=nothing,
 )
     isempty(process_ids) &&
         throw(ArgumentError("parallel evaluation requires at least one worker process"))
@@ -535,8 +549,8 @@ function _evaluate_policies_parallel(
 
     evaluation_task = @async pmap(pool, jobs; batch_size=1) do job
         evaluation_policy = policies[job.policy_name]
-        summary = if SpaceAGORA_RL._is_spaceagora_live_backend(scenario.backend_mode)
-            campaign_summary, _ =
+        summary, episode_transitions = if SpaceAGORA_RL._is_spaceagora_live_backend(scenario.backend_mode)
+            campaign_summary, campaign_transitions =
                 SpaceAGORA_RL.run_spaceagora_physics_policy_campaign_episode(
                     evaluation_policy,
                     scenario,
@@ -546,7 +560,7 @@ function _evaluate_policies_parallel(
                     max_passes_per_campaign=scenario.termination_config.max_passes,
                     protected_initialization=protected_initialization,
                 )
-            campaign_summary
+            campaign_summary, campaign_transitions
         else
             episode_result = SpaceAGORA_RL.evaluate_policy(
                 evaluation_policy,
@@ -557,7 +571,7 @@ function _evaluate_policies_parallel(
                 paper_protocol=paper_protocol,
                 protected_initialization=protected_initialization,
             )
-            only(episode_result.summaries)
+            only(episode_result.summaries), episode_result.transitions
         end
         summary.episode_index = job.episode
         summary.worker_id = Distributed.myid()
@@ -572,7 +586,11 @@ function _evaluate_policies_parallel(
                 target_error_km=abs(summary.target_error_m) / 1000,
             ),
         )
-        return (policy_name=job.policy_name, summary=summary)
+        return (
+            policy_name=job.policy_name,
+            summary=summary,
+            transitions=collect_transitions ? episode_transitions : Transition[],
+        )
     end
 
     completed = 0
@@ -582,6 +600,7 @@ function _evaluate_policies_parallel(
             message = take!(progress)
             completed += 1
             last_status_time = time()
+            campaign_callback === nothing || campaign_callback(completed, message)
             if completed % progress_every == 0 || completed == total
                 elapsed = time() - start_time
                 eta = completed == 0 ? Inf :
@@ -621,13 +640,17 @@ function _evaluate_policies_parallel(
         end
     end
     evaluated = fetch(evaluation_task)
-    summaries = Dict(policy_name => EpisodeSummary[] for policy_name in policy_order)
+    episode_results = Dict(policy_name => Any[] for policy_name in policy_order)
     for item in evaluated
-        push!(summaries[item.policy_name], item.summary)
+        push!(episode_results[item.policy_name], item)
     end
     return Dict(
         policy_name =>
-            _result_from_summaries(summaries[policy_name], scenario, policy_name)
+            _result_from_parallel_episodes(
+                episode_results[policy_name],
+                scenario,
+                policy_name,
+            )
         for policy_name in policy_order
     )
 end
@@ -1332,6 +1355,8 @@ function _write_generalization_progress(
     completed_episodes,
     total_episodes,
     started_at,
+    worker_processes=1,
+    threads_per_process=1,
 )
     progress = Dict(
         "status" => String(status),
@@ -1346,6 +1371,8 @@ function _write_generalization_progress(
                               100 * completed_episodes / total_episodes,
         "elapsed_seconds" => time() - started_at,
         "process_id" => getpid(),
+        "worker_processes" => worker_processes,
+        "threads_per_process" => threads_per_process,
         "updated_utc" => string(now(UTC)),
     )
     temporary_path = path * ".tmp"
@@ -1356,10 +1383,31 @@ function _write_generalization_progress(
     return path
 end
 
+function _render_generalization_report(csv_path::AbstractString,
+                                       output_path::AbstractString)
+    project_file = Base.active_project()
+    project_file === nothing &&
+        error("cannot render the generalization report without an active Julia project")
+    renderer_path = joinpath(@__DIR__, "render_generalization_table.jl")
+    isfile(renderer_path) || error("generalization report renderer is missing: $renderer_path")
+    project_dir = dirname(project_file)
+    @printf("rendering generalization PDF: %s\n", output_path)
+    flush(stdout)
+    run(`$(Base.julia_cmd()) --project=$project_dir $renderer_path $csv_path $output_path`)
+    isfile(output_path) ||
+        error("generalization report renderer did not create: $output_path")
+    return String(output_path)
+end
+
 function _generalization_table(policy, checkpoint_payload, algorithm, scenario,
                                episodes, seed, protected_initialization, output_dir;
-                               progress_every=1)
+                               progress_every=1,
+                               processes=16,
+                               threads_per_process=1)
     progress_every > 0 || throw(ArgumentError("progress_every must be positive"))
+    processes > 0 || throw(ArgumentError("processes must be positive"))
+    threads_per_process > 0 ||
+        throw(ArgumentError("threads_per_process must be positive"))
     suite = generalization_evaluation_suite(scenario)
     results = Dict{String,Any}()
     losses = Dict{String,Float64}()
@@ -1381,84 +1429,117 @@ function _generalization_table(policy, checkpoint_payload, algorithm, scenario,
         completed_episodes=0,
         total_episodes=total_episodes,
         started_at=started_at,
+        worker_processes=processes,
+        threads_per_process=threads_per_process,
     )
-    for (case_index, (case_name, case_scenario)) in enumerate(suite)
-        completed_before_case = (case_index - 1) * episodes
-        _write_generalization_progress(
-            progress_path;
-            status="running",
-            current_case=case_name,
-            case_index=case_index,
-            case_count=case_count,
-            case_episode=0,
-            episodes_per_case=episodes,
-            completed_episodes=completed_before_case,
-            total_episodes=total_episodes,
-            started_at=started_at,
+    process_ids = Int[]
+    try
+        process_ids = _start_evaluation_workers(
+            processes,
+            threads_per_process,
+            scenario,
         )
-        @printf("generalization evaluation case=%s episodes=%d\n", case_name, episodes)
-        flush(stdout)
-        completed_in_case = Ref(0)
-        episode_callback = function (case_episode, _)
-            completed_in_case[] = case_episode
-            completed_episodes = completed_before_case + case_episode
+        for (case_index, (case_name, case_scenario)) in enumerate(suite)
+            completed_before_case = (case_index - 1) * episodes
             _write_generalization_progress(
                 progress_path;
                 status="running",
                 current_case=case_name,
                 case_index=case_index,
                 case_count=case_count,
-                case_episode=case_episode,
+                case_episode=0,
                 episodes_per_case=episodes,
-                completed_episodes=completed_episodes,
+                completed_episodes=completed_before_case,
                 total_episodes=total_episodes,
                 started_at=started_at,
+                worker_processes=length(process_ids),
+                threads_per_process=threads_per_process,
             )
-            if completed_episodes % progress_every == 0 ||
-               case_episode == episodes
-                @printf(
-                    "generalization progress case=%s episode=%d/%d overall=%d/%d (%.1f%%)\n",
-                    case_name,
-                    case_episode,
-                    episodes,
-                    completed_episodes,
-                    total_episodes,
-                    100 * completed_episodes / total_episodes,
+            @printf(
+                "generalization evaluation case=%s episodes=%d workers=%d\n",
+                case_name,
+                episodes,
+                length(process_ids),
+            )
+            flush(stdout)
+            completed_in_case = Ref(0)
+            campaign_callback = function (case_completed, _)
+                completed_in_case[] = case_completed
+                completed_episodes = completed_before_case + case_completed
+                _write_generalization_progress(
+                    progress_path;
+                    status="running",
+                    current_case=case_name,
+                    case_index=case_index,
+                    case_count=case_count,
+                    case_episode=case_completed,
+                    episodes_per_case=episodes,
+                    completed_episodes=completed_episodes,
+                    total_episodes=total_episodes,
+                    started_at=started_at,
+                    worker_processes=length(process_ids),
+                    threads_per_process=threads_per_process,
                 )
-                flush(stdout)
+                if completed_episodes % progress_every == 0 ||
+                   case_completed == episodes
+                    @printf(
+                        "generalization progress case=%s completed=%d/%d overall=%d/%d (%.1f%%)\n",
+                        case_name,
+                        case_completed,
+                        episodes,
+                        completed_episodes,
+                        total_episodes,
+                        100 * completed_episodes / total_episodes,
+                    )
+                    flush(stdout)
+                end
             end
-        end
-        results[case_name] = try
-            evaluate_policy(
-                policy,
-                case_scenario;
-                episodes=episodes,
-                seed=seed,
-                policy_name="frozen_policy_$case_name",
-                paper_protocol=false,
-                protected_initialization=protected_initialization,
-                episode_callback=episode_callback,
+            policy_name = "frozen_policy_$case_name"
+            results[case_name] = try
+                only_policy = Dict{String,Any}(policy_name => policy)
+                parallel_results = _evaluate_policies_parallel(
+                    only_policy,
+                    [policy_name],
+                    case_scenario,
+                    episodes,
+                    seed,
+                    protected_initialization,
+                    process_ids;
+                    paper_protocol=false,
+                    progress_every=progress_every,
+                    collect_transitions=true,
+                    campaign_callback=campaign_callback,
+                )
+                parallel_results[policy_name]
+            catch
+                _write_generalization_progress(
+                    progress_path;
+                    status="failed",
+                    current_case=case_name,
+                    case_index=case_index,
+                    case_count=case_count,
+                    case_episode=completed_in_case[],
+                    episodes_per_case=episodes,
+                    completed_episodes=completed_before_case + completed_in_case[],
+                    total_episodes=total_episodes,
+                    started_at=started_at,
+                    worker_processes=length(process_ids),
+                    threads_per_process=threads_per_process,
+                )
+                rethrow()
+            end
+            losses[case_name] = _generalization_evaluation_loss(
+                checkpoint_payload,
+                algorithm,
+                results[case_name].transitions,
             )
-        catch
-            _write_generalization_progress(
-                progress_path;
-                status="failed",
-                current_case=case_name,
-                case_index=case_index,
-                case_count=case_count,
-                case_episode=completed_in_case[],
-                episodes_per_case=episodes,
-                completed_episodes=completed_before_case + completed_in_case[],
-                total_episodes=total_episodes,
-                started_at=started_at,
-            )
-            rethrow()
         end
-        losses[case_name] = _generalization_evaluation_loss(
-            checkpoint_payload,
-            algorithm,
-            results[case_name].transitions,
-        )
+    finally
+        if !isempty(process_ids)
+            println("stopping generalization evaluation workers")
+            flush(stdout)
+            rmprocs(process_ids)
+        end
     end
     reference_loss = losses[GENERALIZATION_EVALUATION_REFERENCE_CASE]
     all_case_names = first.(suite)
@@ -1491,6 +1572,7 @@ function _generalization_table(policy, checkpoint_payload, algorithm, scenario,
     episodes_path = joinpath(suite_dir, "episode_metrics.csv")
     passes_path = joinpath(suite_dir, "pass_logs.csv")
     configs_path = joinpath(suite_dir, "case_configurations.csv")
+    report_pdf_path = joinpath(suite_dir, "generalization_results_table.pdf")
     CSV.write(table_path, table_vi)
     CSV.write(all_cases_path, all_cases)
     CSV.write(episodes_path, DataFrame(episode_rows))
@@ -1510,6 +1592,8 @@ function _generalization_table(policy, checkpoint_payload, algorithm, scenario,
         completed_episodes=total_episodes,
         total_episodes=total_episodes,
         started_at=started_at,
+        worker_processes=processes,
+        threads_per_process=threads_per_process,
     )
     return (
         table=table_path,
@@ -1518,6 +1602,7 @@ function _generalization_table(policy, checkpoint_payload, algorithm, scenario,
         pass_logs=passes_path,
         case_configurations=configs_path,
         progress=progress_path,
+        report_pdf=report_pdf_path,
         loss_definition=_generalization_loss_definition(algorithm),
     )
 end
@@ -1542,6 +1627,8 @@ function _write_manifest(output_dir; run_dir, config_path, config_sha256,
         "flight_episodes" => options.flight_episodes,
         "generalization_episodes" => options.generalization_episodes,
         "checkpoint_episodes" => options.checkpoint_episodes,
+        "worker_processes" => options.processes,
+        "threads_per_process" => options.threads_per_process,
         "gram_wind_mode" => String(options.gram_wind_mode),
         "paper_reference" => Dict(
             "title" => "Autonomous Decision-Making for Aerobraking via Parallel Randomized Deep Reinforcement Learning",
@@ -1945,6 +2032,8 @@ function evaluate_run(options)
             protected,
             output_dir,
             progress_every=options.progress_every,
+            processes=options.processes,
+            threads_per_process=options.threads_per_process,
         )
         artifacts = (
             generalization_table_vi=paths.table,
@@ -1954,6 +2043,7 @@ function evaluate_run(options)
             generalization_pass_logs=paths.pass_logs,
             generalization_case_configurations=paths.case_configurations,
             generalization_progress=paths.progress,
+            generalization_report_pdf=paths.report_pdf,
         )
         evaluation_manifest = _write_manifest(
             output_dir;
@@ -1965,7 +2055,9 @@ function evaluate_run(options)
             options=runtime_options,
             artifacts=artifacts,
         )
+        _render_generalization_report(paths.all_cases, paths.report_pdf)
         println("generalization evaluation complete: ", paths.table)
+        println("generalization PDF: ", paths.report_pdf)
         return (output_dir=output_dir, artifacts=artifacts, manifest=evaluation_manifest)
     end
 
@@ -2028,6 +2120,7 @@ function evaluate_run(options)
         pass_logs="",
         case_configurations="",
         progress="",
+        report_pdf="",
     )
     if options.generalization
         generalization_paths = _generalization_table(
@@ -2040,6 +2133,8 @@ function evaluate_run(options)
             protected,
             output_dir,
             progress_every=options.progress_every,
+            processes=options.processes,
+            threads_per_process=options.threads_per_process,
         )
     end
 
@@ -2060,6 +2155,7 @@ function evaluate_run(options)
         generalization_pass_logs=generalization_paths.pass_logs,
         generalization_case_configurations=generalization_paths.case_configurations,
         generalization_progress=generalization_paths.progress,
+        generalization_report_pdf=generalization_paths.report_pdf,
         paper_fig07a=length(checkpoint_figure_paths) >= 1 ? checkpoint_figure_paths[1] : "",
         paper_fig07b=length(checkpoint_figure_paths) >= 2 ? checkpoint_figure_paths[2] : "",
         paper_fig08=length(checkpoint_figure_paths) >= 3 ? checkpoint_figure_paths[3] : "",
@@ -2080,6 +2176,13 @@ function evaluate_run(options)
         options=runtime_options,
         artifacts=artifacts,
     )
+    if options.generalization
+        _render_generalization_report(
+            generalization_paths.all_cases,
+            generalization_paths.report_pdf,
+        )
+        println("generalization PDF: ", generalization_paths.report_pdf)
+    end
     println("evaluation complete: ", output_dir)
     println("evaluation manifest: ", evaluation_manifest)
     return (output_dir=output_dir, artifacts=artifacts, manifest=evaluation_manifest)

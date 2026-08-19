@@ -54,6 +54,18 @@ end
     @test_throws ArgumentError _parse_cli(["runs/pr-drl", "--compare-run"])
     generalization = _parse_cli(["runs/pr-drl", "--generalization-only"])
     @test generalization.generalization_only
+    @test generalization.processes == 16
+    @test generalization.threads_per_process == 1
+    parallel_override = _parse_cli([
+        "runs/pr-drl",
+        "--generalization-only",
+        "--processes",
+        "3",
+        "--threads-per-process",
+        "2",
+    ])
+    @test parallel_override.processes == 3
+    @test parallel_override.threads_per_process == 2
     @test_throws ArgumentError _parse_cli([
         "runs/pr-drl",
         "--generalization-only",
@@ -74,6 +86,71 @@ end
     specs = _comparison_policy_specs(sources)
     @test getfield.(specs, :key) == ["trained_pr_drl_1", "trained_a2c", "trained_pr_drl_2"]
     @test getfield.(specs, :label) == ["PR-DRL (pr-seed-1)", "A2C", "PR-DRL (pr-seed-2)"]
+end
+
+@testset "parallel evaluation preserves transitions and episode order" begin
+    scenario = default_aerobraking_config(
+        backend_mode=:paper_surrogate,
+        training=false,
+        max_passes=2,
+        termination_config=TerminationConfig(
+            max_passes=2,
+            terminal_on_thermal_violation=false,
+        ),
+    )
+    first_transition = Transition(
+        Float32[1],
+        1,
+        1f0,
+        Float32[2],
+        false,
+        false,
+        1,
+    )
+    second_transition = Transition(
+        Float32[2],
+        1,
+        2f0,
+        Float32[3],
+        true,
+        false,
+        2,
+    )
+    ordered = _result_from_parallel_episodes(
+        [
+            (summary=EpisodeSummary(episode_index=2), transitions=[second_transition]),
+            (summary=EpisodeSummary(episode_index=1), transitions=[first_transition]),
+        ],
+        scenario,
+        "test_policy",
+    )
+    @test getfield.(ordered.summaries, :episode_index) == [1, 2]
+    @test getfield.(ordered.transitions, :reward) == Float32[1, 2]
+
+    process_ids = _start_evaluation_workers(2, 1, scenario)
+    completed_campaigns = Int[]
+    try
+        result = _evaluate_policies_parallel(
+            Dict{String,Any}("no_maneuver" => NoManeuverPolicy()),
+            ["no_maneuver"],
+            scenario,
+            2,
+            71,
+            ProtectedInitializationConfig(enabled=false),
+            process_ids;
+            paper_protocol=false,
+            progress_every=1,
+            collect_transitions=true,
+            campaign_callback=(completed, _) -> push!(completed_campaigns, completed),
+        )["no_maneuver"]
+        @test getfield.(result.summaries, :episode_index) == [1, 2]
+        @test all(summary.worker_id in process_ids for summary in result.summaries)
+        @test length(result.transitions) == sum(summary.pass_count for summary in result.summaries)
+        @test !isempty(result.transitions)
+        @test completed_campaigns == [1, 2]
+    finally
+        rmprocs(process_ids)
+    end
 end
 
 @testset "multi-policy flight comparison includes Odyssey" begin
@@ -178,6 +255,8 @@ end
             completed_episodes=125,
             total_episodes=700,
             started_at=started_at,
+            worker_processes=16,
+            threads_per_process=1,
         ) == progress_path
 
         progress = TOML.parsefile(progress_path)
@@ -189,6 +268,42 @@ end
         @test progress["percent_complete"] ≈ 100 * 125 / 700
         @test progress["elapsed_seconds"] >= 2
         @test progress["process_id"] == getpid()
+        @test progress["worker_processes"] == 16
+        @test progress["threads_per_process"] == 1
         @test !isfile(progress_path * ".tmp")
+    end
+end
+
+@testset "generalization evaluation renders its PDF artifact" begin
+    mktempdir() do output_dir
+        suite_dir = joinpath(output_dir, "generalization_evaluation_suite")
+        mkpath(suite_dir)
+        csv_path = joinpath(suite_dir, "all_cases_with_iid_reference.csv")
+        pdf_path = joinpath(suite_dir, "generalization_results_table.pdf")
+        CSV.write(csv_path, DataFrame([(
+            case="iid_reference",
+            episodes=2,
+            evaluation_td_loss=0.5,
+            generalization_gap=0.0,
+            mean_reward=-1.0,
+            std_reward=0.1,
+            mean_thermal_violations=0.0,
+            std_thermal_violations=0.0,
+            reached_goal_percent=100.0,
+            mean_goal_distance_km=2.0,
+            std_goal_distance_km=0.5,
+            mean_delta_v_mps=3.0,
+            std_delta_v_mps=0.2,
+            mean_mission_duration_days=4.0,
+            std_mission_duration_days=0.3,
+            mean_episode_length=5.0,
+            std_episode_length=0.4,
+            mean_maneuver_count=6.0,
+            std_maneuver_count=0.5,
+        )]))
+
+        @test _render_generalization_report(csv_path, pdf_path) == pdf_path
+        @test isfile(pdf_path)
+        @test filesize(pdf_path) > 0
     end
 end

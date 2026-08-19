@@ -2305,4 +2305,137 @@ end
     end
 end
 
+@testset "campaign maneuver and wind config plumbing" begin
+    scenario = Dict(
+        "name" => "maneuver_plumbing_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+        load_cfg = () -> only(TV._load_scenarios_from_manifest(manifest_path))
+        planet = TV._planet_from_name("earth")
+
+        write_manifest(scenario)
+        cfg0 = load_cfg()
+        sc = TV._make_spacecraft(cfg0.spacecraft, TV._scenario_initial_condition(cfg0, planet))
+        args = TV.make_example_config(
+            planet=planet, spacecraft=sc, mission_time=60.0,
+            initial_time=SimulationModel.InitialTime(year=2020, month=1, day=1),
+            verbose=false
+        )
+
+        # No maneuvers configured: identity pass-through.
+        @test !TV._has_campaign_maneuvers(cfg0)
+        @test TV._with_campaign_maneuvers(args, cfg0) === args
+
+        # Wind plumbing toggles only the environment wind flag.
+        @test TV._with_environment_wind(args, true).environment_model.wind === true
+        @test TV._with_environment_wind(args, false).environment_model.wind === false
+
+        # Maneuver replay wiring: thruster control effector + campaign guidance
+        # effector carrying the manifest burn schedule.
+        scenario["maneuvers"] = Dict(
+            "orbit_numbers" => [2, 4], "delta_v_mps" => [0.1, 0.2],
+            "thrust_n" => 1.0, "isp_s" => 200.0
+        )
+        write_manifest(scenario)
+        cfg_m = load_cfg()
+        @test TV._has_campaign_maneuvers(cfg_m)
+        args_m = TV._with_campaign_maneuvers(args, cfg_m)
+        thr = only(args_m.control_model.control_effectors)
+        @test thr isa SimulationModel.BaseThrusterModel
+        @test thr.thrust == [1.0] && thr.Isp == [200.0]
+        gm = only(args_m.guidance_model.guidance_effectors)
+        @test gm.maneuver_orbit_number == [2, 4]
+        @test gm.maneuver_Δv == [0.1, 0.2]
+        @test isempty(gm.maneuver_flight_apoapsis_radius_m)
+        @test args_m.guidance_model.guidance_rates == [cfg_m.maneuver_guidance_rate_s]
+        @test args_m.control_model.control_rates == [cfg_m.maneuver_control_rate_s]
+
+        # Diagnostic replay scaling: flight apoapsis altitudes become radii.
+        scenario["maneuvers"]["replay_scale_mode"] = "flight_apoapsis_ratio"
+        scenario["maneuvers"]["flight_apoapsis_alt_km"] = [300.0, 310.0]
+        write_manifest(scenario)
+        cfg_r = load_cfg()
+        gm_r = only(TV._with_campaign_maneuvers(args, cfg_r).guidance_model.guidance_effectors)
+        @test gm_r.maneuver_flight_apoapsis_radius_m ≈
+              [alt + planet.Rp_e for alt in cfg_r.maneuver_flight_apoapsis_alt_m]
+
+        # Validation branches fail loudly, naming the scenario.
+        for field in (:maneuver_thrust_n, :maneuver_isp_s,
+                      :maneuver_guidance_rate_s, :maneuver_control_rate_s)
+            vals = Dict(
+                :maneuver_thrust_n => cfg_m.maneuver_thrust_n,
+                :maneuver_isp_s => cfg_m.maneuver_isp_s,
+                :maneuver_guidance_rate_s => cfg_m.maneuver_guidance_rate_s,
+                :maneuver_control_rate_s => cfg_m.maneuver_control_rate_s
+            )
+            vals[field] = 0.0
+            cfg_bad = TV.OrbitEventsScenarioConfig(
+                name=cfg_m.name, planet_name=cfg_m.planet_name,
+                telemetry_peri_path=cfg_m.telemetry_peri_path,
+                telemetry_apo_path=cfg_m.telemetry_apo_path,
+                target_orbits_quick=cfg_m.target_orbits_quick,
+                target_orbits_full=cfg_m.target_orbits_full,
+                compare_points_quick=cfg_m.compare_points_quick,
+                compare_points_full=cfg_m.compare_points_full,
+                min_eval_points=cfg_m.min_eval_points,
+                units_x=cfg_m.units_x, units_y=cfg_m.units_y,
+                tolerances_quick=cfg_m.tolerances_quick,
+                tolerances_full=cfg_m.tolerances_full,
+                initial_time=cfg_m.initial_time,
+                ra_m=cfg_m.ra_m, rp_altitude_m=cfg_m.rp_altitude_m,
+                i_deg=cfg_m.i_deg, aop_deg=cfg_m.aop_deg,
+                raan_deg=cfg_m.raan_deg, ta_deg=cfg_m.ta_deg,
+                spacecraft=cfg_m.spacecraft, gravity_model=cfg_m.gravity_model,
+                maneuver_orbit_numbers=cfg_m.maneuver_orbit_numbers,
+                maneuver_delta_v_mps=cfg_m.maneuver_delta_v_mps,
+                maneuver_thrust_n=vals[:maneuver_thrust_n],
+                maneuver_isp_s=vals[:maneuver_isp_s],
+                maneuver_guidance_rate_s=vals[:maneuver_guidance_rate_s],
+                maneuver_control_rate_s=vals[:maneuver_control_rate_s],
+                EI_km=cfg_m.EI_km
+            )
+            err = try
+                TV._with_campaign_maneuvers(args, cfg_bad)
+                nothing
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin(cfg_m.name, sprint(showerror, err))
+        end
+    end
+end
+
 println("coverage_parallel_telemetry_probes_ok")

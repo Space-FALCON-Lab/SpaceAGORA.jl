@@ -76,8 +76,10 @@ Base.@kwdef struct SpacecraftConfig
     # docstring); panel quaternions are relative to the BUS frame — the
     # kinematics convention, and the natural way to express a fixed panel
     # cant. `nothing` leaves the link at identity, bit-identical to the
-    # pre-capability spacecraft. Only the fM :attitude incidence mode
-    # consumes these when orientation_sim=false.
+    # pre-capability spacecraft. The manifest layer requires
+    # aero_fixed_attitude_incidence = "attitude" whenever any of these is
+    # set: the historical :max_drag path reads non-root quaternions, so the
+    # combination would silently change default-mode physics.
     bus_attitude_q::Union{Nothing, NTuple{4, Float64}} = nothing
     panel_attitude_q_left::Union{Nothing, NTuple{4, Float64}} = nothing
     panel_attitude_q_right::Union{Nothing, NTuple{4, Float64}} = nothing

@@ -2595,11 +2595,27 @@ end
         sc0 = build_sc(only(TV._load_scenarios_from_manifest(manifest_path)))
         @test all(Tuple(link.q) == IDENTITY for link in sc0.links)
 
-        # Round-trip: canted panels (±22.5° about y, deliberately UNNORMALIZED
-        # input) land on the built links normalized; bus stays identity.
+        # Attitude keys with any non-:attitude mode are a manifest error —
+        # the historical :max_drag path reads panel quaternions, so letting
+        # them through would silently change default-mode physics (Codex
+        # review, PR #84).
         s, c = sin(pi / 16), cos(pi / 16)
         scenario["spacecraft"]["panel_attitude_q_left"] = [0.0, 2s, 0.0, 2c]
         scenario["spacecraft"]["panel_attitude_q_right"] = [0.0, -2s, 0.0, 2c]
+        write_manifest(scenario)
+        err_mode = try
+            TV._load_scenarios_from_manifest(manifest_path)
+            nothing
+        catch e
+            e
+        end
+        @test err_mode !== nothing
+        @test occursin("require aero_fixed_attitude_incidence", sprint(showerror, err_mode))
+
+        # Round-trip under :attitude: canted panels (±22.5° about y,
+        # deliberately UNNORMALIZED input) land on the built links
+        # normalized; bus stays identity.
+        scenario["aero_fixed_attitude_incidence"] = "attitude"
         write_manifest(scenario)
         cfg_q = only(TV._load_scenarios_from_manifest(manifest_path))
         sc_q = build_sc(cfg_q)
@@ -2618,7 +2634,9 @@ end
         @test α_left + α_right ≈ pi atol = 1e-10
         @test AeroFM._attitude_link_alpha(bus, bus) ≈ pi / 2 atol = 1e-12
 
-        # Validation: wrong length and zero norm fail loudly, naming the key.
+        # Validation: wrong length and zero norm fail loudly, naming the key
+        # (mode already :attitude from the round-trip above, so the shape
+        # errors are what fire).
         for bad in (Any[0.0, 1.0, 0.0], Any[0.0, 0.0, 0.0, 0.0])
             scenario["spacecraft"]["bus_attitude_q"] = bad
             write_manifest(scenario)

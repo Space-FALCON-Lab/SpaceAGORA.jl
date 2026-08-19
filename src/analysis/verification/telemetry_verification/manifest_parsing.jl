@@ -556,6 +556,20 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 "Scenario $(context): aero_fixed_attitude_incidence must be max_drag, attitude, or tumbling_average, got $(raw)")
             Symbol(raw)
         end
+        # Link attitude quaternions are meaningful only under the :attitude
+        # incidence mode. The historical :max_drag path reads non-root link
+        # quaternions through _quaternion_link_alpha, so letting configured
+        # panel attitudes through any other mode would silently change
+        # default-mode physics — reject the combination at parse time.
+        if aero_fixed_attitude_incidence !== :attitude &&
+           (spacecraft.bus_attitude_q !== nothing ||
+            spacecraft.panel_attitude_q_left !== nothing ||
+            spacecraft.panel_attitude_q_right !== nothing)
+            error("Scenario $(context): spacecraft attitude quaternions " *
+                  "(bus_attitude_q / panel_attitude_q_left / panel_attitude_q_right) " *
+                  "require aero_fixed_attitude_incidence = \"attitude\"; " *
+                  "got $(aero_fixed_attitude_incidence)")
+        end
         include_wind = _optional_bool(tbl, "include_wind", false)
         orbit_altitude_mode = _parse_orbit_altitude_mode(_optional_str(tbl, "orbit_altitude_mode", "vacuum"), context)
         maneuver = _parse_maneuver_config(tbl, context)

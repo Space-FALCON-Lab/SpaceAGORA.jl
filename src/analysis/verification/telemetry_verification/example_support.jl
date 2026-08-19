@@ -91,8 +91,10 @@ function make_three_body_spacecraft(;
     # flow-aligned reference frame; panel q is relative to the bus frame
     # (kinematics convention). Absent -> identity, the historical value the
     # Link constructor defaults to, so existing callers are bit-identical.
-    # Only the fM :attitude incidence mode consumes these when
-    # orientation_sim=false (see AerodynamicCoefficientfM).
+    # Intended for the fM :attitude incidence mode with orientation_sim=false
+    # (see AerodynamicCoefficientfM); note the historical :max_drag path also
+    # reads non-root quaternions, which is why the manifest layer rejects
+    # attitude keys under any other incidence mode.
     _link_q(q) = q === nothing ?
         MVector{4, Float64}(0.0, 0.0, 0.0, 1.0) : MVector{4, Float64}(q...)
     main_bus = SM.Link{0}(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_ref_area, reflection_coefficient=reflection_coefficient, q=_link_q(bus_attitude_q))

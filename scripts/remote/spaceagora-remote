@@ -28,8 +28,23 @@ spaceagora-remote — sync SpaceAGORA.jl to a remote box and run a job there.
 
 Usage:
   spaceagora-remote push [--remote NAME] [--threads N] [--ram SIZE]
+                          [--process-workers N]
                           [--attach] [--sync-data] [--poll-interval SEC]
                           -- <command> [args...]
+
+  --threads N          Sets JULIA_NUM_THREADS/SPACEAGORA_PERF_PROCS (older
+                        paper_scenarios/ladder pipeline) *and*
+                        SPACEAGORA_PPB_THREADS/SPACEAGORA_PPC_THREADS
+                        (paper_parallelization_benchmarks, B1-B6).
+  --process-workers N  Sets SPACEAGORA_PPB_PROCESS_WORKERS/
+                        SPACEAGORA_PPC_PROCESS_WORKERS. Matters for any
+                        outer_process-mode point: a pool larger than that
+                        point's own mc_samples count is pure cold-start
+                        overhead (each repeat is a fresh subprocess, so the
+                        whole pool -- default 32 -- gets spun up from
+                        scratch every time) with no throughput benefit, and
+                        can make outer_process look far slower than serial.
+                        For B6 specifically (mc_samples=[1,8]), pass 8.
   spaceagora-remote seed-data [--remote NAME]
   spaceagora-remote list       [--remote NAME]
   spaceagora-remote status     [--remote NAME] <job-id>
@@ -141,12 +156,13 @@ new_job_id() {
 }
 
 cmd_push() {
-  local remote="" threads="" ram="" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
+  local remote="" threads="" ram="" process_workers="" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --remote) remote="$2"; shift 2 ;;
       --threads) threads="$2"; shift 2 ;;
       --ram) ram="$2"; shift 2 ;;
+      --process-workers) process_workers="$2"; shift 2 ;;
       --attach) attach=1; shift ;;
       --sync-data) sync_data_flag=1; shift ;;
       --poll-interval) poll_interval="$2"; shift 2 ;;
@@ -189,6 +205,30 @@ export JULIA_DEPOT_PATH="$REMOTE_BASE/shared_depot"
 export JULIA_NUM_THREADS="${threads:-}"
 export SPACEAGORA_PERF_PROCS="${threads:-}"
 export SPACEAGORA_REMOTE_JOB_RAM_HINT="${ram:-}"
+EOF
+  # paper_parallelization_benchmarks (B1-B6) and its lower-level
+  # parallelization_performance study read their own SPACEAGORA_PPB_*/
+  # SPACEAGORA_PPC_* env vars, not JULIA_NUM_THREADS/SPACEAGORA_PERF_PROCS
+  # above (those are the older paper_scenarios/ladder pipeline's knobs) --
+  # --threads/--process-workers were previously silently ignored by a B6
+  # push. Only emitted when the flag was actually passed: each of these vars
+  # defaults to "use the full machine-scaled ladder" / "32" when *unset*, but
+  # `parse(Int, "")` throws, so exporting them empty-but-present on every
+  # push (rather than omitting the export entirely) would break the
+  # zero-flags case instead of just leaving it as the default.
+  if [[ -n "$threads" ]]; then
+    cat >> "$run_sh" <<EOF
+export SPACEAGORA_PPB_THREADS="$threads"
+export SPACEAGORA_PPC_THREADS="$threads"
+EOF
+  fi
+  if [[ -n "$process_workers" ]]; then
+    cat >> "$run_sh" <<EOF
+export SPACEAGORA_PPB_PROCESS_WORKERS="$process_workers"
+export SPACEAGORA_PPC_PROCESS_WORKERS="$process_workers"
+EOF
+  fi
+  cat >> "$run_sh" <<EOF
 echo "PID=\$\$" >> "$job_dir/job.meta"
 echo "START=\$(date -Iseconds)" >> "$job_dir/job.meta"
 julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$job_dir/instantiate.log" 2>&1
@@ -216,6 +256,7 @@ EOF
     echo "COMMAND=$cmd_str"
     echo "THREADS=${threads:-unset}"
     echo "RAM_HINT=${ram:-unset}"
+    echo "PROCESS_WORKERS=${process_workers:-unset}"
   } | rsh "cat > '$job_dir/job.meta'"
 
   echo "==> launching (tmux session: $session)"

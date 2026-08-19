@@ -357,7 +357,10 @@ end
         ic=ic,
         prop_mass=cfg.prop_mass_kg,
         id=cfg.id,
-        bus_ram_face=cfg.bus_ram_face
+        bus_ram_face=cfg.bus_ram_face,
+        bus_attitude_q=cfg.bus_attitude_q,
+        panel_attitude_q_left=cfg.panel_attitude_q_left,
+        panel_attitude_q_right=cfg.panel_attitude_q_right
     )
 end
 

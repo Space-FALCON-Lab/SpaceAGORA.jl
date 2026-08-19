@@ -455,6 +455,19 @@ function _parse_vec3(tbl, key::String, context::String)::NTuple{3, Float64}
     return (Float64(raw[1]), Float64(raw[2]), Float64(raw[3]))
 end
 
+function _parse_attitude_q(tbl, key::String, context::String)::Union{Nothing, NTuple{4, Float64}}
+    haskey(tbl, key) || return nothing
+    raw = tbl[key]
+    raw isa AbstractVector || throw(ArgumentError("Expected 4-element array '$key' in $context"))
+    length(raw) == 4 || throw(ArgumentError(
+        "Expected 4 values (x, y, z, w scalar-last) for '$key' in $context, got $(length(raw))"))
+    q = (Float64(raw[1]), Float64(raw[2]), Float64(raw[3]), Float64(raw[4]))
+    all(isfinite, q) || throw(ArgumentError("Non-finite value in '$key' for $context"))
+    n = sqrt(sum(abs2, q))
+    n > 1e-8 || throw(ArgumentError("Attitude quaternion '$key' in $context has (near-)zero norm"))
+    return (q[1] / n, q[2] / n, q[3] / n, q[4] / n)
+end
+
 function _parse_spacecraft_config(tbl, context::String)::SpacecraftConfig
     stbl = _require_table(tbl, "spacecraft", context)
     return SpacecraftConfig(
@@ -465,7 +478,10 @@ function _parse_spacecraft_config(tbl, context::String)::SpacecraftConfig
         panel_offset_y_m=_require_float(stbl, "panel_offset_y_m", "$context.spacecraft"),
         prop_mass_kg=_require_float(stbl, "prop_mass_kg", "$context.spacecraft"),
         id=Int64(_require_int(stbl, "id", "$context.spacecraft")),
-        bus_ram_face=Symbol(_optional_str(stbl, "bus_ram_face", "legacy"))
+        bus_ram_face=Symbol(_optional_str(stbl, "bus_ram_face", "legacy")),
+        bus_attitude_q=_parse_attitude_q(stbl, "bus_attitude_q", "$context.spacecraft"),
+        panel_attitude_q_left=_parse_attitude_q(stbl, "panel_attitude_q_left", "$context.spacecraft"),
+        panel_attitude_q_right=_parse_attitude_q(stbl, "panel_attitude_q_right", "$context.spacecraft")
     )
 end
 
@@ -539,6 +555,20 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
             raw in ("max_drag", "attitude", "tumbling_average") || error(
                 "Scenario $(context): aero_fixed_attitude_incidence must be max_drag, attitude, or tumbling_average, got $(raw)")
             Symbol(raw)
+        end
+        # Link attitude quaternions are meaningful only under the :attitude
+        # incidence mode. The historical :max_drag path reads non-root link
+        # quaternions through _quaternion_link_alpha, so letting configured
+        # panel attitudes through any other mode would silently change
+        # default-mode physics — reject the combination at parse time.
+        if aero_fixed_attitude_incidence !== :attitude &&
+           (spacecraft.bus_attitude_q !== nothing ||
+            spacecraft.panel_attitude_q_left !== nothing ||
+            spacecraft.panel_attitude_q_right !== nothing)
+            error("Scenario $(context): spacecraft attitude quaternions " *
+                  "(bus_attitude_q / panel_attitude_q_left / panel_attitude_q_right) " *
+                  "require aero_fixed_attitude_incidence = \"attitude\"; " *
+                  "got $(aero_fixed_attitude_incidence)")
         end
         include_wind = _optional_bool(tbl, "include_wind", false)
         orbit_altitude_mode = _parse_orbit_altitude_mode(_optional_str(tbl, "orbit_altitude_mode", "vacuum"), context)

@@ -70,6 +70,19 @@ Base.@kwdef struct SpacecraftConfig
     # dims[2]*dims[3] face matching the Hart free-molecular coefficient
     # normalization (see make_three_body_spacecraft).
     bus_ram_face::Symbol = :legacy
+    # Optional per-link attitude quaternions (x, y, z, w scalar-last),
+    # normalized at parse time. The bus quaternion is expressed in the
+    # flow-aligned reference frame (see the AerodynamicCoefficientfM
+    # docstring); panel quaternions are relative to the BUS frame — the
+    # kinematics convention, and the natural way to express a fixed panel
+    # cant. `nothing` leaves the link at identity, bit-identical to the
+    # pre-capability spacecraft. The manifest layer requires
+    # aero_fixed_attitude_incidence = "attitude" whenever any of these is
+    # set: the historical :max_drag path reads non-root quaternions, so the
+    # combination would silently change default-mode physics.
+    bus_attitude_q::Union{Nothing, NTuple{4, Float64}} = nothing
+    panel_attitude_q_left::Union{Nothing, NTuple{4, Float64}} = nothing
+    panel_attitude_q_right::Union{Nothing, NTuple{4, Float64}} = nothing
 end
 
 abstract type AbstractScenarioConfig end

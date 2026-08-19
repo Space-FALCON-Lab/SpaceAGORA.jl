@@ -70,6 +70,126 @@ function _gram_utc_string(initial_time)::String
     )
 end
 
+# ---------------------------------------------------------------------------
+# Epoch-level ephemeris cache.
+#
+# Six of the eight EphemerisStateC fields -- longitudeSun, subsolarLatitude,
+# subsolarLongitude, orbitalRadius, oneWayLightTime, secondsPerSol -- depend
+# only on (body, epoch). They do NOT depend on the query lat/lon. Only
+# solarTime and solarZenithAngle do, and both are closed-form arithmetic on the
+# subsolar point.
+#
+# Every satellite in a constellation is evaluated at the same `el_time` within
+# one right-hand-side call, so without a cache the five SPICE calls below
+# (utc2et, spkpos, lspcn, ltime, subslr) run once per satellite per stage and
+# serialize on the SPICE lock. Caching the epoch-level result collapses that to
+# once per epoch -- the same "compute shared environment once, amortize across
+# the constellation" mechanism already used for the N-body/SRP prepass.
+#
+# The cache holds ONE entry per body (the most recent epoch), not a growing
+# map: `el_time` advances every step, so an unbounded Dict keyed on epoch would
+# grow without limit over a mission. One entry is the right size because the
+# access pattern is "all satellites at epoch t, then all satellites at t'".
+#
+# Set SPACEAGORA_GRAM_EPHEMERIS_CACHE=off to bypass (for A/B checking); the
+# cached and uncached paths compute bit-identical values.
+#
+# Locking: the cache is guarded by GRAM_LOCK, which is `const GRAM_LOCK =
+# SPICE_LOCK` (runtime_services.jl:15) -- the same object that serializes every
+# other CSPICE call in the process. That matters because the miss path calls
+# SPICE.jl (utc2et/spkpos/lspcn/ltime/subslr), and CSPICE is not thread-safe:
+# guarding with a private lock would serialize misses against each other but
+# not against SpaceAGORA's own SRP/N-body SPICE calls on another thread. Using
+# the one shared lock also removes any lock-ordering hazard, since it is
+# reentrant and is already held on entry under the default global lock scope.
+# ---------------------------------------------------------------------------
+
+const _GRAM_EPHEM_CACHE = Dict{String, Tuple{Float64, NTuple{6, Float64}}}()
+const _GRAM_ET0_CACHE = Dict{String, Float64}()
+const _GRAM_NAIF_ID_CACHE = Dict{String, Int}()
+
+@inline function _gram_ephemeris_cache_enabled()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_EPHEMERIS_CACHE", "on")))
+    raw in ("on", "1", "true", "yes") && return true
+    raw in ("off", "0", "false", "no") && return false
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_GRAM_EPHEMERIS_CACHE='$raw'. Use one of: on, off."
+    ))
+end
+
+"""
+    clear_gram_ephemeris_cache!()
+
+Drop the cached epoch-level ephemeris, start-epoch and NAIF-id lookups. Only
+needed when SPICE kernels are re-furnished mid-process.
+"""
+function clear_gram_ephemeris_cache!()
+    lock(GRAM_LOCK) do
+        empty!(_GRAM_EPHEM_CACHE)
+        empty!(_GRAM_ET0_CACHE)
+        empty!(_GRAM_NAIF_ID_CACHE)
+    end
+    return nothing
+end
+
+# Start epoch and NAIF id are fixed for the whole run; utc2et parses a string
+# and bodn2c does a name lookup, so neither belongs in a per-call path.
+@inline function _gram_et0(utc::String)::Float64
+    lock(GRAM_LOCK) do
+        get!(_GRAM_ET0_CACHE, utc) do
+            SPICE.utc2et(utc)
+        end
+    end
+end
+
+@inline function _gram_naif_id(naif_name::String)::Int
+    lock(GRAM_LOCK) do
+        get!(_GRAM_NAIF_ID_CACHE, naif_name) do
+            Int(SPICE.bodn2c(naif_name))
+        end
+    end
+end
+
+# The epoch-only half: longitudeSun, subsolarLat, subsolarLon, orbitalRadius,
+# oneWayLightTime, secondsPerSol.
+function _gram_body_ephemeris_uncached(naif_name::String, et::Float64)::NTuple{6, Float64}
+    frame = "IAU_" * naif_name
+
+    pos_sun, _ = SPICE.spkpos(naif_name, et, "J2000", "NONE", "SUN")
+    orbital_radius_au = sqrt(sum(abs2, pos_sun)) / _GRAM_AU_KM
+
+    longitude_sun_deg = mod(rad2deg(SPICE.lspcn(naif_name, et, "NONE")), 360.0)
+
+    _, howlng = SPICE.ltime(et, _gram_naif_id(naif_name), "->", _GRAM_EARTH_NAIF_ID)
+    one_way_light_time_min = howlng / 60.0
+
+    spoint, _, _ = SPICE.subslr("NEAR POINT/ELLIPSOID", naif_name, et, frame, "NONE", naif_name)
+    _, subsolar_lon, subsolar_lat = SPICE.reclat(spoint)
+    subsolar_lon_deg = mod(rad2deg(subsolar_lon), 360.0)
+    subsolar_lat_deg = rad2deg(subsolar_lat)
+
+    return (
+        longitude_sun_deg, subsolar_lat_deg, subsolar_lon_deg,
+        orbital_radius_au, one_way_light_time_min, _GRAM_SECONDS_PER_SOL[naif_name]
+    )
+end
+
+function _gram_body_ephemeris(naif_name::String, et::Float64)::NTuple{6, Float64}
+    _gram_ephemeris_cache_enabled() || return _gram_body_ephemeris_uncached(naif_name, et)
+    lock(GRAM_LOCK) do
+        hit = get(_GRAM_EPHEM_CACHE, naif_name, nothing)
+        # Exact epoch match only: the value is a nonlinear function of et, so
+        # interpolating or tolerating a nearby epoch would silently change the
+        # atmosphere. Every satellite in one RHS call shares et exactly.
+        if hit !== nothing && hit[1] === et
+            return hit[2]
+        end
+        value = _gram_body_ephemeris_uncached(naif_name, et)
+        _GRAM_EPHEM_CACHE[naif_name] = (et, value)
+        return value
+    end
+end
+
 function _gram_spice_ephemeris_state(
     planet_name::String,
     initial_time,
@@ -80,25 +200,16 @@ function _gram_spice_ephemeris_state(
     naif_name = uppercase(planet_name)
     haskey(_GRAM_SECONDS_PER_SOL, naif_name) || return nothing
 
-    et = SPICE.utc2et(_gram_utc_string(initial_time)) + el_time
-    frame = "IAU_" * naif_name
+    et = _gram_et0(_gram_utc_string(initial_time)) + el_time
 
-    pos_sun, _ = SPICE.spkpos(naif_name, et, "J2000", "NONE", "SUN")
-    orbital_radius_au = sqrt(sum(abs2, pos_sun)) / _GRAM_AU_KM
-
-    longitude_sun_deg = mod(rad2deg(SPICE.lspcn(naif_name, et, "NONE")), 360.0)
-
-    _, howlng = SPICE.ltime(et, SPICE.bodn2c(naif_name), "->", _GRAM_EARTH_NAIF_ID)
-    one_way_light_time_min = howlng / 60.0
-
-    spoint, _, _ = SPICE.subslr("NEAR POINT/ELLIPSOID", naif_name, et, frame, "NONE", naif_name)
-    _, subsolar_lon, subsolar_lat = SPICE.reclat(spoint)
-    subsolar_lon_deg = mod(rad2deg(subsolar_lon), 360.0)
-    subsolar_lat_deg = rad2deg(subsolar_lat)
+    longitude_sun_deg, subsolar_lat_deg, subsolar_lon_deg,
+        orbital_radius_au, one_way_light_time_min, seconds_per_sol =
+            _gram_body_ephemeris(naif_name, et)
 
     # Local solar time & solar zenith angle from the subsolar point vs. the
     # query lat/lon (standard spherical-geometry relations; matches GRAM's
-    # own updateLocalSolarTime()/updateSolarZenithAngle()).
+    # own updateLocalSolarTime()/updateSolarZenithAngle()). These are the only
+    # per-satellite terms, and they are pure arithmetic -- no SPICE.
     hour_angle_deg = mod(lon_deg - subsolar_lon_deg + 180.0, 360.0) - 180.0
     solar_time_hr = mod(12.0 + hour_angle_deg / 15.0, 24.0)
 
@@ -106,8 +217,6 @@ function _gram_spice_ephemeris_state(
     dlon_r = deg2rad(lon_deg - subsolar_lon_deg)
     cos_zenith = sin(lat_r) * sin(sublat_r) + cos(lat_r) * cos(sublat_r) * cos(dlon_r)
     solar_zenith_deg = rad2deg(acos(clamp(cos_zenith, -1.0, 1.0)))
-
-    seconds_per_sol = _GRAM_SECONDS_PER_SOL[naif_name]
 
     return (
         solar_time_hr, longitude_sun_deg, subsolar_lat_deg, subsolar_lon_deg,

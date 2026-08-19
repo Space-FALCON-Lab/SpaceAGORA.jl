@@ -162,7 +162,8 @@ function _scenario_dynamic_effectors(
     end
 
     if cfg.drag_enabled
-        aero = AerodynamicCoefficientfM()
+        aero = AerodynamicCoefficientfM(
+            fixed_attitude_incidence=cfg.aero_fixed_attitude_incidence)
         if isapprox(cd_scale, 1.0; rtol=0.0, atol=1e-12)
             push!(effectors, aero)
         else

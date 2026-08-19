@@ -2235,4 +2235,315 @@ end
     @test norm(mgr2.h_wheels) < 1.5 * norm(tau_d) / 0.01   # plateau ~ tau/mu
 end
 
+
+@testset "manifest aero_fixed_attitude_incidence key" begin
+    scenario = Dict(
+        "name" => "incidence_key_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+
+        # Absent key: bit-compat default, the historical accounting.
+        write_manifest(scenario)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.aero_fixed_attitude_incidence === :max_drag
+
+        # Key present: parsed and forwarded into the built fM effector.
+        scenario["aero_fixed_attitude_incidence"] = "tumbling_average"
+        write_manifest(scenario)
+        cfg_t = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg_t.aero_fixed_attitude_incidence === :tumbling_average
+        planet = TV._planet_from_name("earth")
+        ic = TV._scenario_initial_condition(cfg_t, planet)
+        sc = TV._make_spacecraft(cfg_t.spacecraft, ic)
+        eff = TV._scenario_dynamic_effectors(cfg_t, planet, sc)
+        fm = only(filter(e -> e isa SimulationModel.AerodynamicCoefficientfM, collect(eff)))
+        @test fm.fixed_attitude_incidence === :tumbling_average
+
+        # Invalid value: loud parse error naming the key.
+        scenario["aero_fixed_attitude_incidence"] = "sideways"
+        write_manifest(scenario)
+        err = try
+            TV._load_scenarios_from_manifest(manifest_path)
+            nothing
+        catch e
+            e
+        end
+        @test err !== nothing
+        @test occursin("aero_fixed_attitude_incidence", sprint(showerror, err))
+    end
+end
+
+@testset "campaign maneuver and wind config plumbing" begin
+    scenario = Dict(
+        "name" => "maneuver_plumbing_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+        load_cfg = () -> only(TV._load_scenarios_from_manifest(manifest_path))
+        planet = TV._planet_from_name("earth")
+
+        write_manifest(scenario)
+        cfg0 = load_cfg()
+        sc = TV._make_spacecraft(cfg0.spacecraft, TV._scenario_initial_condition(cfg0, planet))
+        args = TV.make_example_config(
+            planet=planet, spacecraft=sc, mission_time=60.0,
+            initial_time=SimulationModel.InitialTime(year=2020, month=1, day=1),
+            verbose=false
+        )
+
+        # No maneuvers configured: identity pass-through.
+        @test !TV._has_campaign_maneuvers(cfg0)
+        @test TV._with_campaign_maneuvers(args, cfg0) === args
+
+        # Wind plumbing toggles only the environment wind flag.
+        @test TV._with_environment_wind(args, true).environment_model.wind === true
+        @test TV._with_environment_wind(args, false).environment_model.wind === false
+
+        # Maneuver replay wiring: thruster control effector + campaign guidance
+        # effector carrying the manifest burn schedule.
+        scenario["maneuvers"] = Dict(
+            "orbit_numbers" => [2, 4], "delta_v_mps" => [0.1, 0.2],
+            "thrust_n" => 1.0, "isp_s" => 200.0
+        )
+        write_manifest(scenario)
+        cfg_m = load_cfg()
+        @test TV._has_campaign_maneuvers(cfg_m)
+        args_m = TV._with_campaign_maneuvers(args, cfg_m)
+        thr = only(args_m.control_model.control_effectors)
+        @test thr isa SimulationModel.BaseThrusterModel
+        @test thr.thrust == [1.0] && thr.Isp == [200.0]
+        gm = only(args_m.guidance_model.guidance_effectors)
+        @test gm.maneuver_orbit_number == [2, 4]
+        @test gm.maneuver_Δv == [0.1, 0.2]
+        @test isempty(gm.maneuver_flight_apoapsis_radius_m)
+        @test args_m.guidance_model.guidance_rates == [cfg_m.maneuver_guidance_rate_s]
+        @test args_m.control_model.control_rates == [cfg_m.maneuver_control_rate_s]
+
+        # Diagnostic replay scaling: flight apoapsis altitudes become radii.
+        scenario["maneuvers"]["replay_scale_mode"] = "flight_apoapsis_ratio"
+        scenario["maneuvers"]["flight_apoapsis_alt_km"] = [300.0, 310.0]
+        write_manifest(scenario)
+        cfg_r = load_cfg()
+        gm_r = only(TV._with_campaign_maneuvers(args, cfg_r).guidance_model.guidance_effectors)
+        @test gm_r.maneuver_flight_apoapsis_radius_m ≈
+              [alt + planet.Rp_e for alt in cfg_r.maneuver_flight_apoapsis_alt_m]
+
+        # Validation branches fail loudly, naming the scenario.
+        for field in (:maneuver_thrust_n, :maneuver_isp_s,
+                      :maneuver_guidance_rate_s, :maneuver_control_rate_s)
+            vals = Dict(
+                :maneuver_thrust_n => cfg_m.maneuver_thrust_n,
+                :maneuver_isp_s => cfg_m.maneuver_isp_s,
+                :maneuver_guidance_rate_s => cfg_m.maneuver_guidance_rate_s,
+                :maneuver_control_rate_s => cfg_m.maneuver_control_rate_s
+            )
+            vals[field] = 0.0
+            cfg_bad = TV.OrbitEventsScenarioConfig(
+                name=cfg_m.name, planet_name=cfg_m.planet_name,
+                telemetry_peri_path=cfg_m.telemetry_peri_path,
+                telemetry_apo_path=cfg_m.telemetry_apo_path,
+                target_orbits_quick=cfg_m.target_orbits_quick,
+                target_orbits_full=cfg_m.target_orbits_full,
+                compare_points_quick=cfg_m.compare_points_quick,
+                compare_points_full=cfg_m.compare_points_full,
+                min_eval_points=cfg_m.min_eval_points,
+                units_x=cfg_m.units_x, units_y=cfg_m.units_y,
+                tolerances_quick=cfg_m.tolerances_quick,
+                tolerances_full=cfg_m.tolerances_full,
+                initial_time=cfg_m.initial_time,
+                ra_m=cfg_m.ra_m, rp_altitude_m=cfg_m.rp_altitude_m,
+                i_deg=cfg_m.i_deg, aop_deg=cfg_m.aop_deg,
+                raan_deg=cfg_m.raan_deg, ta_deg=cfg_m.ta_deg,
+                spacecraft=cfg_m.spacecraft, gravity_model=cfg_m.gravity_model,
+                maneuver_orbit_numbers=cfg_m.maneuver_orbit_numbers,
+                maneuver_delta_v_mps=cfg_m.maneuver_delta_v_mps,
+                maneuver_thrust_n=vals[:maneuver_thrust_n],
+                maneuver_isp_s=vals[:maneuver_isp_s],
+                maneuver_guidance_rate_s=vals[:maneuver_guidance_rate_s],
+                maneuver_control_rate_s=vals[:maneuver_control_rate_s],
+                EI_km=cfg_m.EI_km
+            )
+            err = try
+                TV._with_campaign_maneuvers(args, cfg_bad)
+                nothing
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin(cfg_m.name, sprint(showerror, err))
+        end
+    end
+end
+
+@testset "scenario builder frame and helper coverage" begin
+    planet = TV._planet_from_name("earth")
+
+    # Orbital period helper against the closed form it implements.
+    T = TV._period_seconds(planet, 7.2e6, 6.8e6)
+    @test T ≈ 2π * sqrt(7.0e6^3 / planet.μ) rtol = 1e-12
+
+    # Gravity effector selection and its failure branch.
+    @test TV._base_gravity_effector(:inverse_squared) isa SimulationModel.InverseSquaredGravityModel
+    @test TV._base_gravity_effector(:inverse_squared_j2) isa SimulationModel.InverseSquaredJ2GravityModel
+    @test_throws ArgumentError TV._base_gravity_effector(:cubed)
+
+    # Harmonics order clamping table.
+    @test TV._harmonics_order(0, 5) == 0
+    @test TV._harmonics_order(50, 0) == 0
+    @test TV._harmonics_order(50, -1) == 50
+    @test TV._harmonics_order(50, 30) == 30
+    @test TV._harmonics_order(50, 70) == 50
+
+    # N-body primary naming and its failure branch.
+    for (key, name) in ("earth" => "Earth", "mars" => "Mars", "venus" => "Venus",
+                        "moon" => "Moon", "titan" => "Titan")
+        @test TV._nbody_primary_name(key) == name
+    end
+    @test_throws ArgumentError TV._nbody_primary_name("pluto")
+    @test_throws ArgumentError TV._planet_from_name("pluto")
+
+    # Env-gated J2-source and normalization selection: defaults, default
+    # override, and scenario-set membership (member vs non-member).
+    withenv("SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS" => nothing) do
+        @test TV._telemetry_j2_source_for_scenario("anything") === :file_c20
+    end
+    withenv("SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT" => "planet",
+            "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS" => nothing) do
+        @test TV._telemetry_j2_source_for_scenario("anything") === :planet_j2
+    end
+    withenv("SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS" => "special, other") do
+        @test TV._telemetry_j2_source_for_scenario("Special") === :planet_j2
+        @test TV._telemetry_j2_source_for_scenario("regular") === :file_c20
+    end
+    withenv("SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS" => nothing) do
+        @test TV._telemetry_coefficients_normalized_for_scenario("anything")
+    end
+    withenv("SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT" => "false",
+            "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS" => nothing) do
+        @test !TV._telemetry_coefficients_normalized_for_scenario("anything")
+    end
+    withenv("SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS" => "raw_one") do
+        @test !TV._telemetry_coefficients_normalized_for_scenario("RAW_ONE")
+        @test TV._telemetry_coefficients_normalized_for_scenario("normalized_one")
+    end
+
+    # Scaled-fM wrapper contract: positive scale required, thread-safe, and
+    # atmosphere-consuming so the density-without-aero diagnostic stays quiet.
+    fm = SimulationModel.AerodynamicCoefficientfM()
+    scaled = TV.ScaledAerodynamicCoefficientfM(fm, 1.2)
+    @test scaled.cd_scale == 1.2
+    @test_throws ArgumentError TV.ScaledAerodynamicCoefficientfM(fm, 0.0)
+    @test TV._dynamic_effector_threadsafe(scaled)
+    @test SimulationModel.environment_requirements(scaled).atmosphere
+
+    # Orbit-mission plumbing swaps only the mission configuration.
+    ic = SimulationModel.InitialCondition(
+        7.0e6, 1.0e-3, 35.0, 0.0, 0.0, 0.0,
+        SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    )
+    sc = TV.make_three_body_spacecraft(
+        bus_dims=(0.2, 0.5, 0.6), panel_dims=(0.4, 0.001, 0.5), bus_mass=29.0,
+        panel_mass_each=0.0, panel_offset_y=0.5, ic=ic
+    )
+    args = TV.make_example_config(
+        planet=planet, spacecraft=sc, mission_time=60.0,
+        initial_time=SimulationModel.InitialTime(year=2020, month=1, day=1),
+        verbose=false
+    )
+    args_o = TV._with_orbit_mission(args, 5, 1234.0)
+    @test args_o.mission_configuration.mission_type === SimulationModel.MissionOrbits
+    @test args_o.mission_configuration.number_of_orbits == 5
+    @test args_o.mission_configuration.mission_time == 1234.0
+    @test args_o.environment_model === args.environment_model
+
+    # Body-equator frame math: a z-aligned pole degenerates to identity; a
+    # tilted pole yields an orthonormal frame with ẑ along the pole and the
+    # node axis in the J2000 equatorial plane.
+    R_id = TV._body_equator_frame_rotation(SVector{3, Float64}(0.0, 0.0, 1.0))
+    @test R_id ≈ SMatrix{3, 3, Float64}(1.0I) atol = 1e-14
+    pole = SVector{3, Float64}(0.2, -0.3, 0.9)
+    R = TV._body_equator_frame_rotation(pole)
+    @test R' * R ≈ SMatrix{3, 3, Float64}(1.0I) atol = 1e-12
+    @test R[:, 3] ≈ pole / norm(pole) atol = 1e-12
+    @test abs(R[3, 1]) < 1e-12   # node axis lies in the J2000 equatorial plane
+
+    # Element-frame conversion: :j2000 is the identity path; unsupported
+    # frames fail loudly.
+    it = SimulationModel.InitialTime(year=2020, month=1, day=1)
+    @test TV._initial_condition_in_j2000(ic, planet, it, :j2000) === ic
+    @test_throws ArgumentError TV._initial_condition_in_j2000(ic, planet, it, :ecliptic)
+
+    # Study save-fields: position and velocity per-satellite extractors.
+    fields = TV._save_fields_for_study()
+    @test length(fields) == 2
+    @test fields[1].column_prefix == "pos" && fields[2].column_prefix == "vel"
+end
+
 println("coverage_parallel_telemetry_probes_ok")

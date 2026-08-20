@@ -1,0 +1,29 @@
+--- "/home/space-falcon-1/Documents/SpaceAGORA.jl/data/GRAMSuite.jl/GRAM Suite 2.0/Mars/source/MarsAtmosphere.cpp"	2026-03-04 14:34:18.868906854 -0500
++++ /tmp/claude-1000/-home-space-falcon-1-Documents-JAIS-2026-SpaceAGORA/176498cc-3ab2-4457-b81a-2f03949b129f/scratchpad/gram_patched/Mars/source/MarsAtmosphere.cpp	2026-08-19 10:52:23.477967459 -0400
+@@ -642,13 +642,19 @@
+   }
+ 
+   // Days between current julian date and waveDate
+-  greal julianDate;
+-  time.getTime(inputParameters.timeScale, inputParameters.timeFrame, julianDate);
+-  double deltaDays;
+-  if (waveData.waveDate <= 0.0) {
+-    deltaDays = 0.0;
+-  }
+-  else {
++  //
++  // PATCH (thread-safety): GramTime::getTime() reaches CSPICE via timout_c on
++  // every update. CSPICE is not thread-safe and shares a call-trace stack, so
++  // this single call is what prevents concurrent MarsAtmosphere instances from
++  // being evaluated on separate threads. When waveDate <= 0 -- the default, and
++  // the only value reachable through GRAMSuite.jl, which exposes no wave-date
++  // setter -- julianDate is computed and then discarded. Hoisting the call
++  // inside the branch that actually consumes it is bit-for-bit equivalent in
++  // every configuration and removes the last per-update CSPICE call on Mars.
++  double deltaDays = 0.0;
++  if (waveData.waveDate > 0.0) {
++    greal julianDate;
++    time.getTime(inputParameters.timeScale, inputParameters.timeFrame, julianDate);
+     deltaDays = julianDate - waveData.waveDate;
+   }
+ 

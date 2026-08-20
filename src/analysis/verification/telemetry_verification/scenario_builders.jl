@@ -122,7 +122,18 @@ function _scenario_dynamic_effectors(
 )
     effectors = Any[]
 
-    if cfg.gravity_harmonics_degree > 0
+    if cfg.gravity_harmonics_degree > 0 || cfg.gravity_harmonics_gm_override_m3s2 !== nothing
+        # An explicit GM override (gravity_harmonics_gm_override_m3s2) lets a
+        # degree-0 (J0/point-mass) scenario pin the central-body GM to a
+        # specific reference tool's own convention instead of the generic
+        # per-planet `planet.μ` used by `_base_gravity_effector` below. This
+        # exists because GMAT's and STK's own J0 scenario generators do not
+        # always agree with each other on a body's default GM (confirmed by
+        # reconstructing GM directly from each tool's reference trajectories
+        # -- see spaceagora_j0_gm_parity_investigation.md), so no single fixed
+        # `planet.μ` can match both simultaneously. When the override is set,
+        # it takes priority over both the file's own declared `gm_m3s2` and
+        # `planet.μ`.
         harmonics_file = cfg.gravity_harmonics_file
         isempty(harmonics_file) && throw(ArgumentError(
             "Scenario $(cfg.name) sets gravity_harmonics_degree=$(cfg.gravity_harmonics_degree) but does not provide gravity_harmonics_file."
@@ -136,7 +147,8 @@ function _scenario_dynamic_effectors(
                 harmonics_file,
                 planet;
                 coefficients_normalized=_telemetry_coefficients_normalized_for_scenario(cfg.name),
-                j2_source=_telemetry_j2_source_for_scenario(cfg.name)
+                j2_source=_telemetry_j2_source_for_scenario(cfg.name),
+                gm_m3s2=cfg.gravity_harmonics_gm_override_m3s2
             )
         )
     else

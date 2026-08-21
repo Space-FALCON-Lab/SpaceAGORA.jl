@@ -10,6 +10,7 @@
         "density_selection_probes.jl",
         "ei_partition_drag_probes.jl",
         "fm_incidence_probes.jl",
+        "eddy_damping_probes.jl",
         "rpo_planning_probes.jl",
         "rpo_nav_probes.jl",
         "thruster_guidance_probes.jl",

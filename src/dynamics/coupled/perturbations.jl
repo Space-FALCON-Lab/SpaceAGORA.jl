@@ -1900,6 +1900,9 @@ struct EddyCurrentDampingModel <: AbstractForceTorqueModel
             throw(ArgumentError(
                 "field_model=:igrf requires igrf_year in [1900, 2035) (decimal year, e.g. 2025.4)"))
         end
+        if field_model === :igrf && igrf_year > 2030.0
+            @warn "IGRF field accuracy is reduced for epochs past 2030 (igrf_year = $(Float64(igrf_year))); warning once at construction, per-evaluation library warnings are suppressed."
+        end
         return new(Float64(k_e), field_model, Float64(igrf_year))
     end
 end
@@ -2005,12 +2008,16 @@ struct MagneticTorqueRodModel <: AbstractForceTorqueModel
         field_model in (:dipole, :igrf) ||
             throw(ArgumentError("field_model must be :dipole or :igrf, got $(repr(field_model))"))
         # SatelliteToolboxGeomagneticField's IGRF hard-rejects epochs outside
-        # [1900, 2035) (and warns about reduced accuracy past 2030), so reject
-        # unsupported epochs here at configuration time instead of at the
-        # first wrench evaluation.
+        # [1900, 2035), so reject unsupported epochs here at configuration time
+        # instead of at the first wrench evaluation. The library also warns
+        # about reduced accuracy past 2030 on every evaluation (no maxlog);
+        # _magnetic_field_inertial suppresses that and we warn once here.
         if field_model === :igrf && !(isfinite(igrf_year) && 1900.0 <= igrf_year < 2035.0)
             throw(ArgumentError(
                 "field_model=:igrf requires igrf_year in [1900, 2035) (decimal year, e.g. 2025.4)"))
+        end
+        if field_model === :igrf && igrf_year > 2030.0
+            @warn "IGRF field accuracy is reduced for epochs past 2030 (igrf_year = $(Float64(igrf_year))); warning once at construction, per-evaluation library warnings are suppressed."
         end
         return new(field_model, Float64(igrf_year))
     end
@@ -2032,7 +2039,10 @@ share one unit contract.
     alt_m::Float64,
 )::SVector{3, Float64}
     if model.field_model === :igrf
-        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic))
+        # show_warnings=false: the library's reduced-accuracy warning for
+        # epochs past 2030 has no maxlog and this runs once per RHS call;
+        # the model constructors emit it once instead.
+        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic); show_warnings=false)
         B_pp_nT = ned_to_ecef(B_ned_nT, lat_rad, lon_rad, alt_m)
         return SVector{3, Float64}(l_pi' * B_pp_nT) .* 1e-9
     end

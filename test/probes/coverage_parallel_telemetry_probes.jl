@@ -2,6 +2,7 @@ using Test
 using TOML
 using DataFrames
 using LinearAlgebra
+using Logging
 using StaticArrays
 
 const _COV_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, "..", ".."))
@@ -1923,6 +1924,11 @@ end
     # constructor must catch that at configuration time (Codex P2, PR 64).
     @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=2050.0)
     @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=1899.0)
+    # Epochs past 2030 warn exactly once at construction; the per-evaluation
+    # library warning is suppressed so the integrator hot loop stays silent.
+    m_2032 = @test_logs (:warn, r"reduced for epochs past 2030") PE.MagneticTorqueRodModel(
+        field_model=:igrf, igrf_year=2032.0)
+    @test m_2032.igrf_year == 2032.0
 
     # Tilted-dipole SIGN pins. The pre-fix implementation used the north-pole
     # axis as the dipole moment and returned the antiparallel field (~170 deg
@@ -1950,6 +1956,14 @@ end
         @test B_d == PE.get_magnetic_field_dipole(r, MMatrix{3, 3, Float64}(l_pi))
         @test acosd(clamp(dot(B_i, B_d) / (norm(B_i) * norm(B_d)), -1, 1)) < 35
     end
+
+    # The post-2030 epoch evaluates warning-free: the construction-time warning
+    # above is the only one, never the integrator hot loop.
+    r32 = 6898e3 * SVector(cosd(25.0) * cosd(40.0), cosd(25.0) * sind(40.0), sind(25.0))
+    alt32, lat32, lon32 = PE.rtolatlong(r32, earth)
+    B32 = @test_logs min_level = Logging.Warn PE._magnetic_field_inertial(
+        m_2032, l_pi, r32, lat32, lon32, alt32)
+    @test 1.5e-5 < norm(B32) < 7e-5
 
     # wrench plumbing: one magnet, identity attitude -> torque = m x B_ii for
     # BOTH field sources, zero force, and tau ⊥ m.

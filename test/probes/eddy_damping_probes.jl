@@ -1,5 +1,6 @@
 using Test
 using LinearAlgebra
+using Logging
 using StaticArrays
 using Random
 
@@ -83,6 +84,25 @@ end
         @test_throws ArgumentError EddyCurrentDampingModel(k_e=1.0, field_model=:sideways)
         m = EddyCurrentDampingModel(k_e=5.0, field_model=:igrf, igrf_year=2015.4)
         @test m.k_e == 5.0 && m.igrf_year == 2015.4
+    end
+
+    @testset "post-2030 IGRF epoch: one construction warning, silent hot loop" begin
+        # The library's reduced-accuracy warning has no maxlog and would fire
+        # on every RHS call; the model warns exactly once at construction and
+        # _magnetic_field_inertial evaluates warning-free.
+        m32 = @test_logs (:warn, r"reduced for epochs past 2030") EddyCurrentDampingModel(
+            k_e=1.0, field_model=:igrf, igrf_year=2032.0)
+        @test m32.igrf_year == 2032.0
+        earth = PE.Earth()
+        l_pi = SMatrix{3, 3, Float64, 9}(I)
+        r = 6898e3 * SVector(cosd(25.0) * cosd(40.0), cosd(25.0) * sind(40.0), sind(25.0))
+        alt, lat, lon = PE.rtolatlong(r, earth)
+        B_ii = @test_logs min_level = Logging.Warn PE._magnetic_field_inertial(
+            m32, l_pi, r, lat, lon, alt)
+        @test 1.5e-5 < norm(B_ii) < 7e-5   # the epoch actually evaluated
+        # Pre-2031 epochs stay warning-free at construction too.
+        @test_logs min_level = Logging.Warn EddyCurrentDampingModel(
+            k_e=1.0, field_model=:igrf, igrf_year=2025.4)
     end
 
     @testset "ODE-path torque: dissipative when attitude simulated, zero otherwise" begin

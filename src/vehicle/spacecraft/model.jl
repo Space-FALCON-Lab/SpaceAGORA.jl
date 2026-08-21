@@ -269,6 +269,7 @@ mutable struct Link{N_RW}
     J_thruster::Matrix{Float64} # Thruster Jacobian matrix
     thrusters::Vector{Thruster}
     magnets::Vector{Magnet} # List of magnetic dipoles attached to the link
+    cop_offset_b::MVector{3, Float64} # Aerodynamic center-of-pressure offset from the link COM (link frame, m); lever arm for the aero wrench torque, zeros = no intrinsic aero torque
 
     function Link{N_RW}(; root=false,
         r=MVector{3, Float64}(0, 0, 0),
@@ -297,7 +298,8 @@ mutable struct Link{N_RW}
         SRP_facets=Facet[],
         J_thruster=Matrix{Float64}(zeros(3, 1)),
         thrusters=Thruster[],
-        magnets=Magnet[]) where {N_RW}
+        magnets=Magnet[],
+        cop_offset_b=MVector{3, Float64}(0, 0, 0)) where {N_RW}
 
         rw_assembly = ReactionWheelAssembly{N_RW}(
             J_rw=J_rw,
@@ -307,7 +309,7 @@ mutable struct Link{N_RW}
             h_dot_wheels=MVector{N_RW, Float64}(zeros(N_RW)), # h_dot_wheels
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
-        new{N_RW}(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets)
+        new{N_RW}(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets, cop_offset_b)
     end
 end
 

@@ -227,6 +227,17 @@ end
     return 2 * (2.2 - 0.8) / pi * alpha_rad + 0.8
 end
 
+# The constant model's linear CD(alpha) is physical only on [0, pi/2]
+# (CD 0.8 -> 2.2). The signed atan2 incidence a propagated attitude produces
+# spans (-pi, pi]; fed in raw it goes as low as CD = -0.6 at alpha = -pi/2 —
+# drag turned into thrust, pumping orbital energy into a tumbling spacecraft
+# (Codex, PR #86). Fold by the box's x/z symmetry: reversed flow hits the
+# same face. The fM model keeps the signed angles it needs.
+@inline function _fold_constant_incidence(alpha_rad::Float64)::Float64
+    a = abs(alpha_rad)
+    return min(a, pi - a)
+end
+
 # `rot(q)` maps reference -> body, so this vector is the assumed flow
 # direction (reference +x) expressed in body coordinates — NOT the body x-axis
 # in the reference frame (the transpose reading flips the sign of lift).
@@ -274,13 +285,23 @@ end
     vel_pi::SVector{3, Float64},
     θ_body::Float64,
     fixed_attitude_incidence::Symbol=:max_drag,
+    q_root_ib::Union{Nothing, SVector{4, Float64}}=nothing,
 )::Tuple{Float64, Float64, Union{Nothing, SMatrix{3, 3, Float64, 9}}}
     if orientation_sim
-        R = rotate_to_inertial(spacecraft, body, root_index)
+        # The root attitude must be the PROPAGATED state (StateSample.q_ib),
+        # not the static Link.q stored on the spacecraft model — the stored
+        # quaternion never tracks the attitude ODE, so using it froze the aero
+        # geometry at the initial attitude for the whole simulation. Child
+        # attitudes stay the stored root-relative Link.q (articulated panels).
+        q_root_ib === nothing && throw(ArgumentError(
+            "orientation_sim aero evaluation requires the propagated root attitude q_root_ib."))
+        R_root = rot(q_root_ib)'
+        R = body.root ? SMatrix{3, 3, Float64, 9}(R_root) :
+            SMatrix{3, 3, Float64, 9}(R_root * rot(SVector{4, Float64}(body.q...))')
         body_frame_velocity = R' * vel_pi
         α_body = atan(body_frame_velocity[1], body_frame_velocity[3])
         β_body = atan(body_frame_velocity[2], hypot(body_frame_velocity[1], body_frame_velocity[3]))
-        return α_body, β_body, SMatrix{3, 3, Float64, 9}(R)
+        return α_body, β_body, R
     end
     α_body = if fixed_attitude_incidence === :attitude
         _attitude_link_alpha(body, spacecraft.root)
@@ -314,7 +335,9 @@ set_per_link_atmosphere!(flag::Bool) = (PER_LINK_ATMOSPHERE_ENABLED[] = flag; no
     PER_LINK_ATMOSPHERE_ENABLED[]
 
 
-# Returns (force_ii, torque_body, drag_ii, lift_ii, cross_ii) all in the inertial frame.
+# Returns (force_ii, torque_body, drag_ii, lift_ii, cross_ii): the forces in the
+# inertial frame, torque_body in the ROOT BODY frame (the wrench torque contract,
+# matching every other torque-returning effector).
 #
 # `link_atmosphere_fn`, when provided, is called as `link_atmosphere_fn(pos_pp_link)`
 # for every non-root link and must return `(rho_kg_m3, temperature_k, wind_pp)` for
@@ -388,12 +411,14 @@ function _aero_pure_wrench(
     lift_ii   = MVector{3, Float64}(0.0, 0.0, 0.0)
     cross_ii  = MVector{3, Float64}(0.0, 0.0, 0.0)
     @inbounds for body in bodies
-        α_body, β_body, R_body_to_inertial = _aero_link_angles(spacecraft, body, root_index, orientation_sim, vel_pi, θ_body, fixed_attitude_incidence)
+        α_body, β_body, R_body_to_inertial = _aero_link_angles(spacecraft, body, root_index, orientation_sim, vel_pi, θ_body, fixed_attitude_incidence, x.q_ib)
         link_area = orientation_sim ? body.ref_area : _aero_link_area(body, fixed_attitude_incidence)
 
         rho_body, T_body = rho, T
         if link_atmosphere_fn !== nothing && orientation_sim && !body.root && R_body_to_inertial !== nothing
-            pos_ii_body = x.pos_ii + R_body_to_inertial * SVector{3, Float64}(body.r)
+            # body.r is a ROOT-frame offset; rotate it with the propagated root
+            # attitude (not the link frame, which differs for canted panels).
+            pos_ii_body = x.pos_ii + rot(x.q_ib)' * SVector{3, Float64}(body.r)
             pos_pp_body = planet_frame.l_pi * pos_ii_body
             rho_link, T_link, wind_link = link_atmosphere_fn(pos_pp_body)
             if isfinite(rho_link) && rho_link > eps(Float64) && isfinite(T_link) && T_link > 0.0
@@ -428,7 +453,7 @@ function _aero_pure_wrench(
             coeffs = aerodynamic_coefficient_fM(body, T_body, S_body, α_body, β_body, θ_body)
             coeffs[1], coeffs[2], coeffs[3]
         else
-            0.0, _constant_drag_coefficient(α_body), 0.0
+            0.0, _constant_drag_coefficient(_fold_constant_incidence(α_body)), 0.0
         end
 
         drag_pp_body = q_body * CD_body * link_area * drag_pp_hat
@@ -442,8 +467,19 @@ function _aero_pure_wrench(
         lift_ii   .+= lift_ii_body
         cross_ii  .+= cross_ii_body
         if orientation_sim && !(R_body_to_inertial === nothing)
-            force_body = SVector{3, Float64}(drag_ii_body + lift_ii_body + cross_ii_body)
-            torque_body .+= cross(SVector{3, Float64}(body.r), R_body_to_inertial' * force_body)
+            # Torque contract is the ROOT BODY frame: rotate the inertial link
+            # force there and build the lever arm there. body.r is already a
+            # root-frame offset (zero for the root link); the center-of-pressure
+            # offset is a link-frame vector and composes through the child
+            # attitude. The previous code crossed the root-frame body.r with a
+            # LINK-frame force — frame-inconsistent for canted panels — and had
+            # no CoP term, so root-only spacecraft could never carry aero torque.
+            force_ii_link = SVector{3, Float64}(drag_ii_body + lift_ii_body + cross_ii_body)
+            force_root = rot(x.q_ib) * force_ii_link
+            cop = SVector{3, Float64}(body.cop_offset_b)
+            lever_root = body.root ? cop :
+                SVector{3, Float64}(body.r) + rot(SVector{4, Float64}(body.q...))' * cop
+            torque_body .+= cross(lever_root, force_root)
         end
     end
 

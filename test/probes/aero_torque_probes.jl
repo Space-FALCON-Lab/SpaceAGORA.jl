@@ -119,6 +119,34 @@ state_for(sc; q_ib=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
         @test τ_one ≈ cross(lever, f_panel) atol = 1e-12
     end
 
+    @testset "constant-model drag never thrusts (folded incidence)" begin
+        # The constant CD(alpha) line is physical on [0, pi/2] only; the signed
+        # atan2 incidence a propagated attitude produces must be folded, or
+        # alpha = -pi/2 yields CD = -0.6 and drag pumps orbital energy
+        # (Codex, PR #86). Sweep attitudes: drag must always oppose the flow,
+        # and reversed flow must see the same face (fold symmetry).
+        sc = box_spacecraft((box_link(),))
+        v_hat = normalize(V_PP)
+        for ax in (SVector(1.0, 0.0, 0.0), SVector(0.0, 0.0, 1.0),
+                   normalize(SVector(1.0, 1.0, 1.0)))
+            for deg in (-150.0, -90.0, -45.0, 30.0, 90.0, 135.0, 180.0)
+                q = SVector{4, Float64}((sind(deg / 2) .* ax)..., cosd(deg / 2))
+                f, _ = AE.wrench(cc, state_for(sc; q_ib=q), env, 0.0)
+                @test dot(f, v_hat) < 0.0                # always drag, never thrust
+            end
+        end
+        # fold symmetry: flow along body -x sees the max-drag face exactly
+        # like flow along body +x (90 deg vs -90 deg about z).
+        q_p = SVector{4, Float64}(0.0, 0.0, sind(45.0), cosd(45.0))
+        q_m = SVector{4, Float64}(0.0, 0.0, -sind(45.0), cosd(45.0))
+        f_p, _ = AE.wrench(cc, state_for(sc; q_ib=q_p), env, 0.0)
+        f_m, _ = AE.wrench(cc, state_for(sc; q_ib=q_m), env, 0.0)
+        @test norm(f_p) ≈ norm(f_m)
+        @test AE._fold_constant_incidence(-pi / 2) == pi / 2
+        @test AE._fold_constant_incidence(Float64(pi)) == 0.0
+        @test AE._fold_constant_incidence(pi / 2) == pi / 2   # historical range untouched
+    end
+
     @testset "child composition order under a rotated root (fM)" begin
         # A child at attitude q_child on a root at q_ib must see exactly the
         # incidence of a root-only body at the COMPOSED attitude. Different

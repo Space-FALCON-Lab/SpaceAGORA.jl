@@ -227,6 +227,17 @@ end
     return 2 * (2.2 - 0.8) / pi * alpha_rad + 0.8
 end
 
+# The constant model's linear CD(alpha) is physical only on [0, pi/2]
+# (CD 0.8 -> 2.2). The signed atan2 incidence a propagated attitude produces
+# spans (-pi, pi]; fed in raw it goes as low as CD = -0.6 at alpha = -pi/2 —
+# drag turned into thrust, pumping orbital energy into a tumbling spacecraft
+# (Codex, PR #86). Fold by the box's x/z symmetry: reversed flow hits the
+# same face. The fM model keeps the signed angles it needs.
+@inline function _fold_constant_incidence(alpha_rad::Float64)::Float64
+    a = abs(alpha_rad)
+    return min(a, pi - a)
+end
+
 # `rot(q)` maps reference -> body, so this vector is the assumed flow
 # direction (reference +x) expressed in body coordinates — NOT the body x-axis
 # in the reference frame (the transpose reading flips the sign of lift).
@@ -442,7 +453,7 @@ function _aero_pure_wrench(
             coeffs = aerodynamic_coefficient_fM(body, T_body, S_body, α_body, β_body, θ_body)
             coeffs[1], coeffs[2], coeffs[3]
         else
-            0.0, _constant_drag_coefficient(α_body), 0.0
+            0.0, _constant_drag_coefficient(_fold_constant_incidence(α_body)), 0.0
         end
 
         drag_pp_body = q_body * CD_body * link_area * drag_pp_hat

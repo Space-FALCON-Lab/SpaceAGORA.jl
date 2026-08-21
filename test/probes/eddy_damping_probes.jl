@@ -65,13 +65,20 @@ end
             ω = SVector{3, Float64}(randn(rng, 3)...) .* 0.05
             τ = eddy_damping_torque(1.0e3, B, ω)
             @test τ ≈ 1.0e3 .* cross(B, cross(B, ω))
+            # independent BAC-CAB formulation — not a transcription of the code
+            @test τ ≈ 1.0e3 .* (B .* dot(B, ω) .- ω .* dot(B, B))
             @test dot(τ, ω) <= 1e-18   # dissipative
         end
+        Bz = SVector{3, Float64}(2e-5, -1e-5, 3e-5)
+        @test eddy_damping_torque(1.0e3, Bz, SVector{3, Float64}(0.0, 0.0, 0.0)) ==
+              SVector{3, Float64}(0.0, 0.0, 0.0)
         B = SVector{3, Float64}(2e-5, -1e-5, 3e-5)
         ω_par = 0.05 .* B ./ norm(B)
         @test norm(eddy_damping_torque(1.0e3, B, ω_par)) ≈ 0.0 atol = 1e-18
         @test_throws ArgumentError EddyCurrentDampingModel(k_e=-1.0)
         @test_throws ArgumentError EddyCurrentDampingModel(k_e=0.0)
+        @test_throws ArgumentError EddyCurrentDampingModel(k_e=Inf)
+        @test_throws ArgumentError EddyCurrentDampingModel(k_e=NaN)
         @test_throws ArgumentError EddyCurrentDampingModel(k_e=1.0, field_model=:igrf)
         @test_throws ArgumentError EddyCurrentDampingModel(k_e=1.0, field_model=:sideways)
         m = EddyCurrentDampingModel(k_e=5.0, field_model=:igrf, igrf_year=2015.4)
@@ -99,6 +106,68 @@ end
         f2, τ2 = SimulationModel.calcForceTorque(model, u2.sc[1], p2, 1)
         @test f2 == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test τ2 == SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+
+    @testset "wrench path: the live engine route, both field sources, guards" begin
+        # Real simulations reach this effector through wrench(model, StateSample,
+        # EnvironmentSample, t) — _wrench_method_available short-circuits
+        # calcForceTorque — so the translational no-op guard that matters is the
+        # one in wrench, pinned here directly and end-to-end below.
+        ES = parentmodule(PE.StateSample)
+        earth = PE.Earth()
+        l_pi = SMatrix{3, 3, Float64, 9}(I)
+        r = 6898e3 * SVector(cosd(25.0) * cosd(40.0), cosd(25.0) * sind(40.0), sind(25.0))
+        alt, lat, lon = PE.rtolatlong(r, earth)
+        pf = ES.PlanetFrameSample(l_pi, r, SVector(0.0, 0.0, 0.0), alt, lat, lon)
+        env = PE.EnvironmentSample(earth; planet_frame=pf)
+        q = SVector{4, Float64}(sind(15.0), 0.0, 0.0, cosd(15.0))
+        ω = SVector{3, Float64}(0.02, -0.01, 0.03)
+        x = PE.StateSample(r, SVector(7.6e3, 0.0, 0.0), 4.0; q_ib=q, ω_body=ω)
+        k_e = 2.0e3
+        for model in (EddyCurrentDampingModel(k_e=k_e),
+                      EddyCurrentDampingModel(k_e=k_e, field_model=:igrf, igrf_year=2015.12))
+            B_ii = PE._magnetic_field_inertial(model, l_pi, r, lat, lon, alt)
+            @test 1.5e-5 < norm(B_ii) < 7e-5          # a real LEO-band field was evaluated
+            B_b = PE.rot(q) * B_ii
+            f, τ = PE.wrench(model, x, env, 0.0)
+            @test f == SVector(0.0, 0.0, 0.0)
+            @test τ ≈ k_e .* (B_b .* dot(B_b, ω) .- ω .* dot(B_b, B_b))
+            @test dot(τ, ω) < 0.0
+            # translational guard: any missing attitude channel -> exact zero
+            for (qg, ωg) in ((nothing, ω), (q, nothing), (nothing, nothing))
+                xg = PE.StateSample(r, SVector(7.6e3, 0.0, 0.0), 4.0; q_ib=qg, ω_body=ωg)
+                @test PE.wrench(model, xg, env, 0.0) ==
+                      (SVector(0.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0))
+            end
+            @test_throws ArgumentError PE.wrench(model, x, PE.EnvironmentSample(earth), 0.0)
+        end
+
+        # ODE-path :igrf branch (the rtolatlong + _magnetic_field_inertial copy)
+        model_igrf = EddyCurrentDampingModel(k_e=1.0e4, field_model=:igrf, igrf_year=2015.12)
+        args = make_attitude_config(effectors=(InverseSquaredGravityModel(), model_igrf))
+        p = ODEParams(n_sats=1, args=args)
+        u = build_initial_conditions(args)
+        p.shared_buffers.current_time[] = 0.0
+        f, τ = SimulationModel.calcForceTorque(model_igrf, u.sc[1], p, 1)
+        @test f == SVector{3, Float64}(0.0, 0.0, 0.0)
+        @test all(isfinite, τ) && norm(τ) > 0.0
+        ω0 = SVector{3, Float64}(Float64.(getproperty(u.sc[1], :ω))...)
+        @test dot(τ, ω0) < 0.0
+
+        # end-to-end translational no-op: with orientation_sim=false the engine's
+        # wrench route must leave the trajectory bit-identical.
+        base = make_attitude_config(
+            effectors=(InverseSquaredGravityModel(),), orientation_sim=false)
+        plus = make_attitude_config(
+            effectors=(InverseSquaredGravityModel(), EddyCurrentDampingModel(k_e=1.0e4)),
+            orientation_sim=false)
+        sol_b = run_simulation(base; return_solution=true)
+        sol_p = run_simulation(plus; return_solution=true)
+        @test string(sol_b.retcode) == "Success" && string(sol_p.retcode) == "Success"
+        @test SVector{3, Float64}(sol_p.u[end].sc[1].pos...) ==
+              SVector{3, Float64}(sol_b.u[end].sc[1].pos...)
+        @test SVector{3, Float64}(sol_p.u[end].sc[1].vel...) ==
+              SVector{3, Float64}(sol_b.u[end].sc[1].vel...)
     end
 
     @testset "end-to-end spin-down: damping dissipates, magnet alone conserves" begin

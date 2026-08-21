@@ -1892,7 +1892,8 @@ struct EddyCurrentDampingModel <: AbstractForceTorqueModel
     igrf_year::Float64
 
     function EddyCurrentDampingModel(; k_e::Real, field_model::Symbol=:dipole, igrf_year::Real=NaN)
-        k_e > 0.0 || throw(ArgumentError("EddyCurrentDampingModel k_e must be > 0, got $k_e"))
+        isfinite(k_e) && k_e > 0.0 ||
+            throw(ArgumentError("EddyCurrentDampingModel k_e must be finite and > 0, got $k_e"))
         field_model in (:dipole, :igrf) ||
             throw(ArgumentError("field_model must be :dipole or :igrf, got $(repr(field_model))"))
         if field_model === :igrf && !(isfinite(igrf_year) && 1900.0 <= igrf_year < 2035.0)

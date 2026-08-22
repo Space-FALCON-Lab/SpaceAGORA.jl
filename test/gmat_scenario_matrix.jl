@@ -1000,6 +1000,51 @@ const _MATRIX_J2_ORDER_OVERRIDE = Dict{Tuple{String, Symbol}, Int}(
     ("moon",  :stk)  => 0,
 )
 
+# STK's own Lunar Prospector gravity file declares a C(2,0) that differs from
+# data/Gravity_harmonics_data/LP165P.csv's (GMAT-sourced, byte-verified against
+# LP165P.cof) by ~0.047% -- confirmed by a 3-point calibration that collapsed the
+# moon_j2-vs-STK secular drift from 202 m to 0.24 m at t=600,000 s (down to the
+# same floor as the harmonics-free J0 case) once this value was substituted. This
+# is ordinary cross-distribution variance, smaller than the already-documented
+# Mars C20 gap between Mars50c/GMM2B (mars_j2_investigation_spaceagora.md), not a
+# SpaceAGORA bug -- see spaceagora_luna_j2_stk_c20_investigation.md. Left out of
+# the shared, citation-backed LP165P.csv (which should stay a faithful transcription
+# of one named source) and scoped here to just the STK-target Moon J2 matrix case
+# instead, via a derived copy of that file with only this one coefficient changed.
+# J2-only, NOT also J50: LP165P.csv's full 50x50 field already matches STK's own
+# J50 dynamics well as a self-consistent whole (moon_j50 vs. STK already passes
+# unmodified); perturbing just C(2,0) inside that field made J50 measurably worse
+# (33 m -> 148.5 m) rather than better when tried, so the override applies only
+# where C(2,0) is the sole harmonic term present.
+const _LUNA_STK_C20 = -9.09330986562e-05
+const _LUNA_STK_ADJUSTED_HARMONICS_FILE = Ref{Union{Nothing, String}}(nothing)
+
+function _luna_stk_c20_adjusted_harmonics_file()::String
+    cached = _LUNA_STK_ADJUSTED_HARMONICS_FILE[]
+    cached !== nothing && return cached
+
+    src = joinpath(_GMAT_REPO_ROOT, _GMAT_HARMONICS_MOON_FILE)
+    dst_dir = mktempdir(; prefix="spaceagora_luna_stk_c20_")
+    dst = joinpath(dst_dir, "LP165P_stk_c20_adjusted.csv")
+    row_pattern = r"^2,0,(-?[\d.eE+-]+),(.*)$"
+    replaced = false
+    open(dst, "w") do out
+        for line in eachline(src)
+            m = match(row_pattern, line)
+            if m === nothing
+                println(out, line)
+            else
+                replaced = true
+                println(out, "2,0,$(_LUNA_STK_C20),$(m.captures[2])")
+            end
+        end
+    end
+    replaced || throw(ArgumentError("Could not find the C(2,0) row in $src to adjust for the STK-target Moon J2/J50 comparison."))
+
+    _LUNA_STK_ADJUSTED_HARMONICS_FILE[] = dst
+    return dst
+end
+
 function _matrix_scenario_overrides(scenario_name::String, reference_target::Symbol=:gmat)::Dict{String, Any}
     reference_target in (:gmat, :stk) || throw(ArgumentError(
         "reference_target must be :gmat or :stk, got $reference_target"
@@ -1038,6 +1083,8 @@ function _matrix_scenario_overrides(scenario_name::String, reference_target::Sym
         _GMAT_HARMONICS_MARS_FILE
     elseif planet == "venus"
         _GMAT_HARMONICS_VENUS_FILE
+    elseif planet == "moon" && reference_target == :stk && gravity_tag == "j2"
+        _luna_stk_c20_adjusted_harmonics_file()
     elseif planet == "moon"
         _GMAT_HARMONICS_MOON_FILE
     else

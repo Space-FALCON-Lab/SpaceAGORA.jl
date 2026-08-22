@@ -353,6 +353,80 @@ function _ppb_plot_mc_throughput(agg::DataFrame, outdir::String)::String
     return path
 end
 
+# B7's counterpart to _ppb_plot_thread_scaling. Kept separate rather than folded
+# into that function's phase list because B7 varies the *case* (four different
+# workload shapes) rather than N_sat within one physics configuration, so the
+# series have to be keyed on case name -- and because the point of the plot is
+# the contrast between where each case's curve flattens, which needs them on one
+# set of axes against the ideal line.
+function _ppb_plot_heavy_thread_scaling(agg::DataFrame, outdir::String)::String
+    df = agg[(coalesce.(agg.phase_id, "") .== "B7") .& (agg.mode .== "outer_threads"), :]
+    nrow(df) == 0 && return ""
+
+    p = Plots.plot(
+        title       = "B7 — Heavy Constellation Thread Scaling (outer_threads)",
+        xlabel      = "Thread count (physical cores)",
+        ylabel      = "Speedup vs. serial (×)",
+        legend      = :topleft,
+        tickfont    = Plots.font(9),
+        guidefont   = Plots.font(11),
+        titlefont   = Plots.font(11),
+        legendfont  = Plots.font(8),
+        size        = (700, 480),
+        left_margin = 12Plots.PlotMeasures.mm,
+        bottom_margin = 8Plots.PlotMeasures.mm,
+    )
+
+    for case in sort(unique(df.case))
+        sub = sort(df[df.case .== case, :], :thread_count)
+        nrow(sub) == 0 && continue
+        Plots.plot!(p, sub.thread_count, coalesce.(sub.speedup, NaN);
+            label=case, marker=:circle, linewidth=2)
+    end
+
+    max_t = maximum(df.thread_count)
+    Plots.plot!(p, 1:max_t, 1:max_t;
+        label="ideal", linestyle=:dash, color=:grey, linewidth=1)
+
+    path = joinpath(outdir, "b7_heavy_thread_scaling.png")
+    Plots.savefig(p, path)
+    return path
+end
+
+function _ppb_plot_heavy_mc_throughput(agg::DataFrame, outdir::String)::String
+    df = agg[(coalesce.(agg.phase_id, "") .== "B8") .& (agg.mode .== "outer_process"), :]
+    nrow(df) == 0 && return ""
+
+    p = Plots.plot(
+        title       = "B8 — Heavy Monte Carlo Throughput vs. Process Workers",
+        xlabel      = "Process workers",
+        ylabel      = "Speedup vs. serial (×)",
+        legend      = :topleft,
+        tickfont    = Plots.font(9),
+        guidefont   = Plots.font(11),
+        titlefont   = Plots.font(11),
+        legendfont  = Plots.font(9),
+        size        = (700, 480),
+        left_margin = 12Plots.PlotMeasures.mm,
+        bottom_margin = 8Plots.PlotMeasures.mm,
+    )
+
+    max_w = maximum(skipmissing(df.process_workers))
+    Plots.plot!(p, 1:max_w, 1:max_w;
+        label="ideal", linestyle=:dash, color=:grey, linewidth=1)
+
+    for mc in sort(unique(df.mc_samples))
+        sub = sort(df[df.mc_samples .== mc, :], :process_workers)
+        nrow(sub) == 0 && continue
+        Plots.plot!(p, sub.process_workers, coalesce.(sub.speedup, NaN);
+            label="mc=$(mc)", marker=:circle, linewidth=2)
+    end
+
+    path = joinpath(outdir, "b8_heavy_mc_throughput.png")
+    Plots.savefig(p, path)
+    return path
+end
+
 function _ppb_plot_profile_comparison(agg::DataFrame, outdir::String)::String
     df = agg[coalesce.(agg.phase_id, "") .== "B5", :]
     nrow(df) == 0 && return ""
@@ -480,6 +554,12 @@ function _ppb_write_plots(outdir::String, agg::DataFrame)::Vector{String}
         end,
         _ppb_safe_plot("router_regret") do
             _ppb_plot_router_regret(agg, outdir)
+        end,
+        _ppb_safe_plot("b7_heavy_thread_scaling") do
+            _ppb_plot_heavy_thread_scaling(agg, outdir)
+        end,
+        _ppb_safe_plot("b8_heavy_mc_throughput") do
+            _ppb_plot_heavy_mc_throughput(agg, outdir)
         end,
     ]
 

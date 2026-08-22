@@ -227,19 +227,36 @@ function _rhs_plan_candidates(p, dynamic_effectors)
     candidates = Any[_make_calib_satellite_batch_plan()]
 
     if viable_workers >= 2 && _rhs_flat_supported(dynamic_effectors)
-        allotments = Int[]
-        push!(allotments, 2)
-        if viable_workers > 2
-            push!(allotments, max(2, viable_workers ÷ 2))
-            push!(allotments, viable_workers)
+        # Ladder is geometric in the THREAD BUDGET, not in viable_workers.
+        #
+        # viable_workers is a SIMD batch-sizing quantity (active_sats /
+        # min_sats_per_worker) and is routinely far larger than the budget: at
+        # 1024 satellites with the default floor of 4 it is 256, against a
+        # 12-thread budget. The old ladder was built from it -- 2,
+        # viable_workers/2, viable_workers -- and every entry was then clamped by
+        # min(a, budget), so [2, 128, 256] collapsed to [2, 12, 12]. The sweep
+        # therefore only ever compared width 2 against the full budget and could
+        # not discover anything in between.
+        #
+        # That matters because the optimum is in between. On this repo's
+        # 12-physical-core reference box, every multi-effector constellation case
+        # measured peaks at 4 workers and is *slower than serial* at 12
+        # (heavy_1024sat_fullstack_1hr: 13.7 s at 4 threads vs 25.1 s at 12,
+        # against 24.0 s serial; same shape at 256 satellites and in 6-DOF). A
+        # ladder that skips 4 cannot find it.
+        #
+        # 1 is included so the sweep can conclude "do not thread this at all",
+        # which is the right answer for workloads whose curve inverts.
+        max_workers = max(1, min(budget, viable_workers))
+        allotments = Int[1]
+        a = 2
+        while a < max_workers
+            push!(allotments, a)
+            a *= 2
         end
-        # Also probe the full thread budget in case the SIMD floor is not the
-        # actual bottleneck (e.g. spin-barrier mode, or very large constellations).
-        budget > viable_workers && push!(allotments, budget)
+        push!(allotments, max_workers)
         sort!(unique!(allotments))
         for a in allotments
-            a = min(a, budget)
-            a >= 2 || continue
             push!(candidates, _make_calib_flat_plan(a))
         end
     end

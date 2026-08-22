@@ -39,6 +39,7 @@ Base.@kwdef struct PPBConfig
     cpu_pinning::Vector{Int} = Int[]
     dry_run::Bool           = false
     preview::Bool           = false
+    resume::String          = ""
 end
 
 # Preview mode: caps N_sat at 64, MC samples at 16, workers at 4, repeats at 2.
@@ -47,7 +48,13 @@ const PPB_PREVIEW_MAX_SAMPLES = 16
 const PPB_PREVIEW_MAX_WORKERS = 4
 const PPB_PREVIEW_REPEATS     = 2
 const PPB_PREVIEW_WARMUP      = 1
-const PPB_PREVIEW_SKIP_PHASES = Set{String}()
+# B7/B8 are skipped under --preview. Preview exists to smoke-test the phase
+# structure on a laptop and caps N_sat at 64, but B7's whole premise is
+# workloads large enough for scaling to be observable -- and its case filter
+# would drop every case (all are >64 satellites) and then fall back to running
+# the two largest anyway. B8's samples are seconds each by design. Run them on
+# the benchmark machine or not at all.
+const PPB_PREVIEW_SKIP_PHASES = Set{String}(["B7", "B8"])
 
 function _ppb_preview_phase(phase::PPBPhase)::PPBPhase
     cases = filter(c -> _ppb_n_sat(c) <= PPB_PREVIEW_MAX_N_SAT, phase.cases)
@@ -260,6 +267,87 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         thread_mode = :low_high,
     ),
 
+    PPBPhase(
+        id    = "B7",
+        label = "Heavy Constellation Scaling — Thread Ladder on Workloads Large Enough to Scale",
+        # B1-B6 all draw from cases whose post-warm-up solve time is a fraction of
+        # a second on a modern machine (0.017 s for gravity_16sat_l20_vacuum,
+        # 0.18 s for multi_64_high_fidelity). At that size the measurement is
+        # dominated by fixed per-solve setup and the serial spine of the
+        # integrator, so the thread ladder is flat by construction and no routing
+        # profile can distinguish itself. This phase runs the same ladder against
+        # workloads whose serial baseline is ~8 s and whose parallelisable RHS is
+        # the majority of that, which is the only regime where the scaling claim
+        # is testable.
+        #
+        # The case list is deliberately a contrast, not a sweep:
+        #   heavy_1024sat_l50_6hr       single heavy effector, no callbacks --
+        #                               the cleanest read on outer-loop scaling.
+        #   heavy_4096sat_l50_1hr       same physics, 4x the satellites per RHS
+        #                               call. Reference measurement on 12 physical
+        #                               cores: 1024 sats saturate at ~4 workers
+        #                               (3.9x) while 4096 keeps scaling to 12+
+        #                               (5.1x), so the pair localises where
+        #                               per-RHS fork/join overhead stops being
+        #                               amortised instead of reporting one number.
+        #   heavy_1024sat_fullstack_1hr heterogeneous effector mix plus density
+        #                               and thermal callbacks at scale -- the case
+        #                               where inner/callback parallelism has work.
+        #   heavy_256sat_coupled6dof_2hr attitude propagation on for every
+        #                               satellite; the only many-satellite case in
+        #                               the catalog that is actually 6-DOF.
+        cases = [
+            "heavy_1024sat_l50_6hr",
+            "heavy_4096sat_l50_1hr",
+            "heavy_1024sat_fullstack_1hr",
+            "heavy_256sat_coupled6dof_2hr",
+        ],
+        parity_cases = [
+            "heavy_1024sat_l50_6hr",
+            "heavy_1024sat_fullstack_1hr",
+            "heavy_256sat_coupled6dof_2hr",
+        ],
+        modes = [
+            "serial",
+            "outer_threads",
+            "outer_inner_adaptive",
+            "full_smart",
+        ],
+        mc_samples  = [1],
+        repeats     = 3,
+        warmup      = 1,
+        thread_mode = :full_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B8",
+        label = "Heavy Monte Carlo Process Throughput",
+        # B4's process-throughput curve uses samples that take milliseconds each,
+        # so its wall time is mostly per-worker process startup and JIT rather
+        # than the trials, and adding workers can make the curve go the wrong way.
+        # This phase uses a 12x longer aerobraking arc: ~1.05 s of integration per
+        # sample (measured), against which pmap dispatch is ~1% rather than the
+        # dominant term. (The harness change that provisions and warms the
+        # Distributed pool before the clock starts removes the startup component;
+        # this removes what remained of the signal-to-noise problem.)
+        #
+        # The sample ladder stops at 64 on purpose. Every worker-ladder entry is a
+        # separate controller run that re-executes the full mode x sample x repeat
+        # grid, and serial/full_smart produce identical numbers at every worker
+        # count (both run the batch in-process at thread_mode=:single), so their
+        # cost is paid seven times over. At [16, 64] that is ~13 min per entry;
+        # adding 256 quadruples it for no additional shape in the curve, since 64
+        # samples across 64 workers is already exactly one dispatch round.
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = ["montecarlo_heavy_aerobraking"],
+        modes        = ["serial", "outer_process", "full_smart"],
+        mc_samples   = [16, 64],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode   = :single,
+        worker_ladder = [1, 2, 4, 8, 16, 32, 64],
+    ),
+
 ]
 
 # ── CLI parsing ───────────────────────────────────────────────────────────────
@@ -277,6 +365,7 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     cpu_pinning     = _ppc_parse_cpu_list(get(ENV, "SPACEAGORA_PPB_CPU_LIST", ""))
     dry_run         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_DRY_RUN", "0"))
     preview         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_PREVIEW", "0"))
+    resume          = get(ENV, "SPACEAGORA_PPB_RESUME", "")
 
     valid_phases = Set(p.id for p in PAPER_BENCHMARK_PHASES)
     for arg in args
@@ -302,6 +391,8 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
             dry_run = true
         elseif arg == "--preview"
             preview = true
+        elseif startswith(arg, "--resume=")
+            resume = _ppc_arg_value(arg)
         else
             throw(ArgumentError("Unknown argument '$arg'. Valid phases: $(join(sort(collect(valid_phases)), ", "))."))
         end
@@ -312,6 +403,9 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     isempty(unknown) || throw(ArgumentError("Unknown phase(s): $(join(unknown, ", "))."))
     (mc_samples_max === nothing || mc_samples_max >= 1) ||
         throw(ArgumentError("--mc-samples-max must be >= 1, got $(mc_samples_max)."))
+    resume = strip(resume)
+    (isempty(resume) || isdir(resume)) ||
+        throw(ArgumentError("--resume path does not exist: $(resume)"))
 
     return PPBConfig(
         phases          = phases,
@@ -324,5 +418,6 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
         cpu_pinning     = cpu_pinning,
         dry_run         = dry_run,
         preview         = preview,
+        resume          = isempty(resume) ? "" : abspath(resume),
     )
 end

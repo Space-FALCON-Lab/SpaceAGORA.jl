@@ -18,6 +18,17 @@ function _compute_stage_heat_rates!(
 )
     links = p.args.dynamics_model.spacecraft[sat_idx].links
     isempty(links) && return _heat_rate_buffer_for_sat!(p, sat_idx)
+    # Vacuum short-circuit. Without an atmosphere there is no aerothermal
+    # heating, so this call can only ever fall out of the `rho <= 0` guard
+    # below with an all-zero buffer -- but not before paying for a full
+    # sample_planet_frame (rtolatlong: atan/asin/sqrt per satellite) plus a
+    # density sample, once per satellite per RHS stage. Profiling a
+    # 1024-satellite L20 vacuum constellation put that at ~41% of the entire
+    # solve. The type check is static, so this compiles away for every
+    # configuration that does have an atmosphere.
+    if p.args.environment_model.density_model isa NoAtmosphereModel
+        return _heat_rate_buffer_for_sat!(p, sat_idx)
+    end
     heat_rates = _heat_rate_buffer_for_sat!(p, sat_idx)
     engine = _simulation_engine_module()
     planet_frame = engine.sample_planet_frame(x, p, sat_idx, t)

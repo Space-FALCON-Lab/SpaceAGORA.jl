@@ -101,7 +101,52 @@ function _ppc_parse_cpu_list(raw::AbstractString)::Vector{Int}
     return unique(cpus)
 end
 
-function _ppc_full_thread_ladder(cpu_threads::Int=Sys.CPU_THREADS)::Vector{Int}
+# Physical (not logical) core count. Julia's Sys.CPU_THREADS counts SMT
+# siblings, and the RHS hot path is FP/SIMD-bound spherical-harmonics work that
+# gains nothing from SMT while contending for the same execution ports: on this
+# repo's 12-core/24-thread reference box every constellation workload measured
+# regressed 1.5-2x going from 16 to 24 Julia threads, and on a 64-core/128-thread
+# box the ladder's own top rung would therefore be its *worst* data point. The
+# ladder below is built from this instead of Sys.CPU_THREADS so "max threads"
+# means "one thread per physical core".
+#
+# Override with SPACEAGORA_PPC_PHYSICAL_CORES when the detection is wrong or the
+# run is confined to a subset of the machine (e.g. under taskset/cgroups).
+function _ppc_physical_core_count()::Int
+    override = strip(get(ENV, "SPACEAGORA_PPC_PHYSICAL_CORES", ""))
+    if !isempty(override)
+        parsed = tryparse(Int, override)
+        parsed !== nothing && parsed > 0 && return parsed
+        @warn "Ignoring non-positive/unparseable SPACEAGORA_PPC_PHYSICAL_CORES." value=override
+    end
+    if Sys.islinux()
+        try
+            # /proc/cpuinfo lists one stanza per logical CPU; a physical core is
+            # a unique (physical id, core id) pair, so SMT siblings collapse.
+            cores = Set{Tuple{String, String}}()
+            package = ""
+            core = ""
+            for line in eachline("/proc/cpuinfo")
+                if startswith(line, "physical id")
+                    package = strip(split(line, ":", limit=2)[2])
+                elseif startswith(line, "core id")
+                    core = strip(split(line, ":", limit=2)[2])
+                elseif isempty(strip(line)) && !isempty(core)
+                    push!(cores, (package, core))
+                    package = ""
+                    core = ""
+                end
+            end
+            isempty(core) || push!(cores, (package, core))
+            isempty(cores) || return length(cores)
+        catch err
+            @warn "Physical-core detection failed; falling back to Sys.CPU_THREADS." reason=sprint(showerror, err)
+        end
+    end
+    return max(1, Sys.CPU_THREADS)
+end
+
+function _ppc_full_thread_ladder(cpu_threads::Int=_ppc_physical_core_count())::Vector{Int}
     max_threads = max(1, cpu_threads)
     if max_threads < 7
         return collect(1:max_threads)
@@ -200,7 +245,15 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     parity_cases = _ppc_csv(get(ENV, "SPACEAGORA_PPC_PARITY_CASES", ""))
     threads = _ppc_int_csv(get(ENV, "SPACEAGORA_PPC_THREADS", ""))
     repeats = parse(Int, get(ENV, "SPACEAGORA_PPC_REPEATS", "0"))
-    warmup = parse(Int, get(ENV, "SPACEAGORA_PPC_WARMUP", "0"))
+    # -1 (not 0) is the "unset" sentinel: the fallback below is `warmup < 0`, so
+    # defaulting this to 0 silently pinned every worker at zero warm-up runs and
+    # made the profile defaults (`full` => 1) dead code. With no warm-up the
+    # timed run IS the first run, so every reported wall time was dominated by
+    # Julia's JIT compilation of the RHS/solver stack rather than by the
+    # simulation: measured 21.4 s first solve vs 0.017 s steady-state solve for
+    # gravity_16sat_l20_vacuum, i.e. >99.9% compilation. 0 remains selectable
+    # explicitly via --warmup=0 / SPACEAGORA_PPC_WARMUP=0.
+    warmup = parse(Int, get(ENV, "SPACEAGORA_PPC_WARMUP", "-1"))
     seed = parse(Int, get(ENV, "SPACEAGORA_PPC_SEED", "20260615"))
     solver_mode = lowercase(strip(get(ENV, "SPACEAGORA_PPC_SOLVER_MODE", "auto_stiff")))
     process_workers = parse(Int, get(ENV, "SPACEAGORA_PPC_PROCESS_WORKERS", "2"))

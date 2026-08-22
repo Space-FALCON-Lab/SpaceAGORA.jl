@@ -46,6 +46,54 @@ end
     return count
 end
 
+# Type-stable replacement for `for effector in dynamic_effectors`.
+#
+# `dynamic_effectors` is a heterogeneous tuple whose eltype is the abstract
+# AbstractForceTorqueModel, so iterating it leaves the loop variable abstract:
+# _evaluate_dynamic_effector becomes a dynamic dispatch and the force/torque it
+# returns are inferred as Any, which boxes on every accumulate. Measured
+# directly: 240 bytes per iteration for the 3-effector (gravity + SRP + aero)
+# mix, versus 0 bytes for a homogeneous 1-tuple. That per-satellite,
+# per-RHS-call cost is a large part of why the atmosphere constellation cases
+# allocate ~30 GB per solve while the single-effector vacuum cases allocate
+# ~1.6 GB, and allocation is what caps their thread scaling.
+#
+# Peeling one element at a time via Base.tail gives every recursion level a
+# concretely typed `first(effs)`, so the chain unrolls at compile time and stays
+# allocation-free. Effector tuples are small (1-5 entries), so recursion depth is
+# not a concern.
+@inline _accumulate_effector_chain!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    ::Tuple{},
+    sc_view,
+    state_sample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::Nothing = nothing
+
+@inline function _accumulate_effector_chain!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    effs::Tuple,
+    sc_view,
+    state_sample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::Nothing
+    force, torque = _evaluate_dynamic_effector(first(effs), sc_view, state_sample, p, sat_idx, t)
+    # Broadcast, matching the loop this replaced: the type-stability win comes
+    # from peeling the tuple, not from rewriting the accumulate, and keeping the
+    # original expression avoids gratuitously perturbing floating-point rounding.
+    forces .+= force
+    torques .+= torque
+    return _accumulate_effector_chain!(
+        forces, torques, Base.tail(effs), sc_view, state_sample, p, sat_idx, t
+    )
+end
+
 @inline function _accumulate_dynamic_effectors!(
     forces::MVector{3, Float64},
     torques::MVector{3, Float64},
@@ -100,11 +148,9 @@ end
             torques[3] = reduced[6]
         end
     else
-        @inbounds for effector in dynamic_effectors
-            force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
-            forces .+= force
-            torques .+= torque
-        end
+        _accumulate_effector_chain!(
+            forces, torques, dynamic_effectors, sc_view, state_sample, p, sat_idx, t
+        )
     end
     if needs_timing
         elapsed_ns = Int64(time_ns() - effector_started_ns)
@@ -365,13 +411,27 @@ end
     return 1
 end
 
-@inline function _rhs_effector_static_cost_ns(effector)::Float64
+# Takes the per-item cost default as a value rather than reading it from the
+# environment. The env reader (`_effector_cost_ns_per_item_default`) goes through
+# _parse_positive_float_env, which allocates unconditionally -- `string(default)`
+# to build the fallback, then `strip` to produce a SubString, then a parse -- for
+# a measured 432 bytes per call. This function is on the RHS hot path (the flat
+# queue's cost model calls it per effector per RHS call, and
+# _rhs_effectors_have_heavy_or_heterogeneous_cost calls it per effector inside
+# the routing decision, which itself re-runs every RHS call unless the plan step
+# cache is on), so at constellation scale that reached multiple GB of pure
+# garbage per solve. The value is already snapshotted per run in
+# RhsPlanEnvConfig.effector_cost_ns_per_item_default -- this just reads it from
+# there. Same hoist as commit d4f5cce4 did for the other per-step env reads;
+# these cost-model ones were missed.
+@inline function _rhs_effector_static_cost_ns(effector, cost_ns_per_item_default::Float64)::Float64
     rank = _rhs_effector_cost_rank(effector)
-    return _effector_cost_ns_per_item_default() * Float64(rank * rank)
+    return cost_ns_per_item_default * Float64(rank * rank)
 end
 
 @inline function _rhs_effector_estimated_cost_ns(shared_buffers, dynamic_effectors::Tuple, eff_idx::Int)::Float64
-    fallback = _rhs_effector_static_cost_ns(dynamic_effectors[eff_idx])
+    cost_default = _rhs_env_config_from_buffers(shared_buffers).effector_cost_ns_per_item_default
+    fallback = _rhs_effector_static_cost_ns(dynamic_effectors[eff_idx], cost_default)
     return _rhs_effector_observed_cost_ns(shared_buffers, eff_idx, fallback)
 end
 
@@ -411,6 +471,22 @@ end
     return mod(item - 1, n_effectors) + 1
 end
 
+# Per-effector "does this belong in the flat queue" mask, built by peeling the
+# effector tuple one concretely typed element at a time so every predicate call
+# is a static dispatch. Returns NTuple{N, Bool}, which callers can index at a
+# runtime eff_idx without allocating (unlike the heterogeneous effector tuple
+# itself). Mirrors the skip logic that used to live inline in
+# _prepare_rhs_flat_work_items!'s inner loop.
+@inline _flat_selection_mask(::Tuple{}, partition)::Tuple{} = ()
+
+@inline function _flat_selection_mask(effs::Tuple, partition)
+    effector = first(effs)
+    keep = _flat_partition_selected(effector, partition) &&
+        # Effectors resolved by pre-passes already wrote into totals.
+        !(partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)))
+    return (keep, _flat_selection_mask(Base.tail(effs), partition)...)
+end
+
 function _prepare_rhs_flat_work_items!(
     work_items::Vector{Int},
     p,
@@ -424,14 +500,25 @@ function _prepare_rhs_flat_work_items!(
         resize!(work_items, required)
     end
 
+    # Which effectors belong in the flat queue depends only on eff_idx and the
+    # partition -- never on sat_idx -- so resolve it once, outside the per-
+    # satellite loop, into a homogeneous NTuple{N, Bool}.
+    #
+    # The previous form indexed `dynamic_effectors[eff_idx]` inside the inner
+    # loop, i.e. num_sats * n_effectors times per RHS call. That tuple is
+    # heterogeneous, so a runtime index infers to the Union of its element types
+    # and allocates a measured 144 bytes each time (0 bytes for a homogeneous
+    # tuple), which made this function one of the largest allocation sites in the
+    # 12-thread profile of the 1024-satellite atmosphere case. Indexing the Bool
+    # mask instead is allocation-free because NTuple{N, Bool} is homogeneous, and
+    # building the mask costs n_effectors type-stable predicate calls per RHS
+    # call rather than num_sats * n_effectors boxed ones.
+    selected = _flat_selection_mask(dynamic_effectors, partition)
     count_items = 0
     @inbounds for sat_idx in 1:num_sats
         p.is_active[sat_idx] || continue
         for eff_idx in 1:n_effectors
-            effector = dynamic_effectors[eff_idx]
-            _flat_partition_selected(effector, partition) || continue
-            # Skip effectors resolved by pre-passes — they already wrote into totals.
-            partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue
+            selected[eff_idx] || continue
             count_items += 1
             work_items[count_items] = _constellation_node_work_item(sat_idx, eff_idx, n_effectors)
         end

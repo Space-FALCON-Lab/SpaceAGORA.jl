@@ -66,6 +66,9 @@ end
 
 function ppc_process_sample_task(case_name::String, cfg::PPCConfig, mode_name::String, sample_idx::Int, sample_seed::Int)
     mode = ppc_mode_specs()[mode_name]
+    # No outer_tasks override: on a Distributed worker the outer split really is
+    # active (this process is one of cfg.process_workers running concurrently),
+    # which is exactly what the flag is supposed to say.
     withenv(ppc_mode_env_pairs(mode, cfg)...) do
         return ppc_run_sample_once(case_name, cfg, sample_idx, sample_seed)
     end
@@ -121,7 +124,21 @@ end
 function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSpec, sample_count::Int)
     sample_indices = collect(1:sample_count)
     sample_seeds = [cfg.worker_seed + i - 1 for i in sample_indices]
-    withenv(ppc_mode_env_pairs(mode, cfg)...) do
+    uses_process_pool = sample_count > 1 && mode.backend == "process"
+    # How many outer units of work this batch actually dispatches concurrently,
+    # mirroring the branch conditions below exactly. Single-sample batches --
+    # which is every constellation case in the catalog -- run one simulation
+    # with nothing beside it, so no outer split is active no matter which mode
+    # is nominally under test. See ppc_mode_env_pairs for why that distinction
+    # changes the measurement.
+    outer_tasks = if uses_process_pool
+        sample_count
+    elseif sample_count > 1 && mode.backend == "threads" && Threads.nthreads() > 1
+        sample_count
+    else
+        1
+    end
+    withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do
         for warmup_idx in 1:cfg.warmup
             warmup_args = ppc_single_config(
                 case.name,
@@ -135,6 +152,33 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
             end
         end
     end
+    # Provision and warm the Distributed pool *before* the clock starts. Both
+    # costs are one-off per worker process and neither is part of the throughput
+    # this phase claims to measure: addprocs plus the workers' `include` of the
+    # study files and `using SpaceAGORA` runs tens of seconds, and each worker
+    # then JIT-compiles the whole RHS/solver stack on its first solve. Left
+    # inside the timed region they dominate every low-sample-count point and
+    # make the throughput-vs-workers curve bend the wrong way (more workers =
+    # more startup to pay for).
+    if uses_process_pool
+        pre_workers = ppc_ensure_process_workers!(cfg.process_workers)
+        if cfg.warmup > 0 && !isempty(pre_workers)
+            @sync for (offset, w) in enumerate(pre_workers)
+                @async try
+                    remotecall_wait(
+                        ppc_process_sample_task,
+                        w,
+                        case.name,
+                        cfg,
+                        mode.name,
+                        offset,
+                        cfg.worker_seed - offset,
+                    )
+                catch
+                end
+            end
+        end
+    end
     GC.gc()
     batch_started = time()
     results = Vector{Any}(undef, sample_count)
@@ -144,7 +188,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
     if sample_count > 1 && mode.backend == "threads" && Threads.nthreads() > 1
         actual_backend = "threads"
         execution_scope = "outer_thread_sample_batch"
-        withenv(ppc_mode_env_pairs(mode, cfg)...) do
+        withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do
             Threads.@threads for i in eachindex(sample_indices)
                 results[i] = ppc_run_sample_once(case.name, cfg, sample_indices[i], sample_seeds[i])
             end
@@ -156,7 +200,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         if isempty(worker_ids)
             actual_backend = "serial"
             execution_scope = "serial_sample_batch_process_unavailable"
-            withenv(ppc_mode_env_pairs(mode, cfg)...) do
+            withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do
                 for i in eachindex(sample_indices)
                     results[i] = ppc_run_sample_once(case.name, cfg, sample_indices[i], sample_seeds[i])
                 end
@@ -170,7 +214,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
             end
         end
     else
-        withenv(ppc_mode_env_pairs(mode, cfg)...) do
+        withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do
             for i in eachindex(sample_indices)
                 results[i] = ppc_run_sample_once(case.name, cfg, sample_indices[i], sample_seeds[i])
             end
@@ -182,7 +226,8 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         results=results,
         batch_wall_time_s=batch_wall,
         actual_backend=actual_backend,
-        execution_scope=execution_scope
+        execution_scope=execution_scope,
+        outer_tasks=outer_tasks
     )
 end
 
@@ -192,10 +237,12 @@ function ppc_run_worker_performance(cfg::PPCConfig)
     mode = ppc_mode_specs()[cfg.worker_mode]
     rows = NamedTuple[]
     hw = ppc_hardware_snapshot()
-    env_string = ppc_effective_env_string(mode, cfg)
     samples = case.montecarlo ? cfg.worker_mc_samples : 1
 
     batch = ppc_run_sample_batch(case, cfg, mode, samples)
+    # Built from the batch's own outer_tasks so the recorded env matches what
+    # the timed run actually saw (see ppc_mode_env_pairs).
+    env_string = ppc_effective_env_string(mode, cfg; outer_tasks=batch.outer_tasks)
     sample_results = batch.results
     total_success = all(r -> r.success, sample_results)
     sample_wall_sum = sum(r -> Float64(r.wall_time_s), sample_results)
@@ -260,7 +307,7 @@ function ppc_run_worker_parity(cfg::PPCConfig)
     ref_reason = ""
     cmp_reason = ""
 
-    withenv(ppc_mode_env_pairs(serial, cfg)...) do
+    withenv(ppc_mode_env_pairs(serial, cfg; outer_tasks=1)...) do
         try
             ref_result = ppc_solve_once(args_ref, cfg)
             ref_ok = ppc_solve_success(ref_result.solution)
@@ -269,7 +316,7 @@ function ppc_run_worker_parity(cfg::PPCConfig)
             ref_reason = string(typeof(err), ": ", sprint(showerror, err))
         end
     end
-    withenv(ppc_mode_env_pairs(mode, cfg)...) do
+    withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...) do
         try
             cmp_result = ppc_solve_once(args_cmp, cfg)
             cmp_ok = ppc_solve_success(cmp_result.solution)
@@ -362,6 +409,12 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
         "--repeat=$(repeat)",
         "--worker-seed=$(seed)",
         "--worker-mc-samples=$(mc_samples)",
+        # Must be forwarded explicitly: the worker is a fresh subprocess that
+        # re-parses its own CLI from scratch, so anything the controller resolved
+        # (here, the phase's warm-up count) is invisible to it unless it appears
+        # in argv. Without this the worker fell back to zero warm-up and timed
+        # its own JIT compilation instead of the simulation.
+        "--warmup=$(cfg.warmup)",
         "--solver-mode=$(cfg.solver_mode)",
         "--process-workers=$(cfg.process_workers)",
         "--parity-samples=$(cfg.parity_samples)",
@@ -369,6 +422,24 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
         "--parity=$(parity ? 1 : 0)"
     ]
     return Cmd(_ppc_apply_cpu_pinning(argv, cfg.cpu_pinning, threads))
+end
+
+# Resume support: a worker's outfile is considered already done only if it
+# parses and has at least one row with success not missing/false — a file
+# left behind by a killed or crashed worker (empty, header-only, or a
+# `success=false` row) is treated as not done and re-run, same as if it
+# were never there. Any read/parse failure is treated the same way (re-run)
+# rather than raising, since this only gates a skip decision.
+function _ppc_worker_already_done(outfile::String)::Bool
+    isfile(outfile) || return false
+    try
+        df = ppc_read_optional(outfile)
+        hasproperty(df, :success) || return false
+        successes = collect(skipmissing(df.success))
+        return !isempty(successes) && all(successes)
+    catch
+        return false
+    end
 end
 
 function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Function}=nothing)
@@ -396,21 +467,25 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                 continue
             end
             outfile = joinpath(scratch, "perf_$(case)_$(mode)_t$(thread_count)_mc$(mc_count)_r$(repeat).csv")
-            cmd = ppc_worker_cmd(
-                cfg;
-                case=case,
-                mode=mode,
-                threads=thread_count,
-                repeat=repeat,
-                seed=cfg.seed + repeat,
-                mc_samples=mc_count,
-                outfile=outfile,
-                parity=false
-            )
-            println("[run] $(case) mode=$(mode) threads=$(thread_count) repeat=$(repeat) mc=$(mc_count)")
-            run(cmd)
+            if _ppc_worker_already_done(outfile)
+                println("[skip] $(case) mode=$(mode) threads=$(thread_count) repeat=$(repeat) mc=$(mc_count) (already completed — resume)")
+            else
+                cmd = ppc_worker_cmd(
+                    cfg;
+                    case=case,
+                    mode=mode,
+                    threads=thread_count,
+                    repeat=repeat,
+                    seed=cfg.seed + repeat,
+                    mc_samples=mc_count,
+                    outfile=outfile,
+                    parity=false
+                )
+                println("[run] $(case) mode=$(mode) threads=$(thread_count) repeat=$(repeat) mc=$(mc_count)")
+                run(cmd)
+                on_run_complete === nothing || on_run_complete()
+            end
             push!(perf_paths, outfile)
-            on_run_complete === nothing || on_run_complete()
         end
     end
 
@@ -419,19 +494,23 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     for case in parity_cases, mode in parity_modes
         thread_count = maximum(cfg.threads)
         outfile = joinpath(scratch, "parity_$(case)_$(mode)_t$(thread_count).csv")
-        cmd = ppc_worker_cmd(
-            cfg;
-            case=case,
-            mode=mode,
-            threads=thread_count,
-            repeat=1,
-            seed=cfg.seed,
-            mc_samples=1,
-            outfile=outfile,
-            parity=true
-        )
-        println("[parity] $(case) mode=$(mode) threads=$(thread_count)")
-        run(cmd)
+        if _ppc_worker_already_done(outfile)
+            println("[skip] parity $(case) mode=$(mode) threads=$(thread_count) (already completed — resume)")
+        else
+            cmd = ppc_worker_cmd(
+                cfg;
+                case=case,
+                mode=mode,
+                threads=thread_count,
+                repeat=1,
+                seed=cfg.seed,
+                mc_samples=1,
+                outfile=outfile,
+                parity=true
+            )
+            println("[parity] $(case) mode=$(mode) threads=$(thread_count)")
+            run(cmd)
+        end
         push!(parity_paths, outfile)
     end
 

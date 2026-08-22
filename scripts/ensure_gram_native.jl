@@ -26,6 +26,7 @@ function normalize_gram_root(path::AbstractString)
 end
 
 function build_command(build_helper::AbstractString, clean::Bool, gram_root::AbstractString)
+    args = clean ? ["--clean", gram_root] : [gram_root]
     if Sys.iswindows()
         cmd_helper = replace(build_helper, '/' => '\\')
         return Cmd(["cmd", "/C", cmd_helper, args...])

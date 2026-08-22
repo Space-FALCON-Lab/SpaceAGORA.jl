@@ -1,3 +1,10 @@
+# gravity_harmonics_source_metadata_v1
+# source_model: GMM-2B (Mars, degree/order 80x80)
+# reference_radius_m: 3397000.0
+# gm_m3s2: 4.28283719012840e13
+# normalization: fully_normalized
+# citation: Lemoine, F.G., Smith, D.E., Rowlands, D.D., Zuber, M.T., Neumann, G.A., Chinn, D.S., Pavlis, D.E. (2001), "An improved solution of the gravity field of Mars (GMM-2B) from Mars Global Surveyor," Journal of Geophysical Research, 106(E10), 23359-23376, doi:10.1029/2000JE001426.
+# origin: GMAT R2022a data/gravity/mars/GMM2B.cof POTFIELD header line ("POTFIELD 80 80 0 4.28283719012840e+13 3.39700000000000e+06"); coefficient values below verified byte-for-byte against this file's RECOEF rows.
 degree,order,C,S
 0, 0, 0.0,0.0
 1,0,0.0,0.0

@@ -179,10 +179,30 @@ end
 function main_paper_benchmarks()
     ppb    = ppb_parse_cli()
     active = _ppb_active_phases(ppb)
-    stamp  = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
-    root   = ppb.dry_run ? joinpath(ppb.outdir, "dry_run_$(stamp)") : joinpath(ppb.outdir, stamp)
+
+    # --resume points at an existing run directory (e.g. one a prior invocation
+    # aborted mid-phase) rather than starting a fresh timestamped one. Reuse
+    # that directory's own stamp for the final CSV/report names when it
+    # matches the expected pattern, so a resumed run's outputs read as a
+    # continuation of the original rather than a separate run; fall back to a
+    # fresh stamp otherwise (e.g. a hand-picked directory name).
+    resuming = !isempty(ppb.resume)
+    stamp = if resuming
+        m = match(r"^\d{8}_\d{6}", basename(ppb.resume))
+        m === nothing ? Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS") : String(m.match)
+    else
+        Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
+    end
+    root = if resuming
+        ppb.resume
+    elseif ppb.dry_run
+        joinpath(ppb.outdir, "dry_run_$(stamp)")
+    else
+        joinpath(ppb.outdir, stamp)
+    end
     ppb.dry_run || mkpath(root)
 
+    resuming && println("[paper-benchmarks] resuming        = $(root)")
     println("[paper-benchmarks] outdir          = $(root)")
     println("[paper-benchmarks] phases           = $(join([p.id for p in active], ", "))")
     println("[paper-benchmarks] thread_ladder    = $(isempty(ppb.threads) ? "auto ($(Sys.CPU_THREADS) CPU threads)" : join(ppb.threads, ","))")

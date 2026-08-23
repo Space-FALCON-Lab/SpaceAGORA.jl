@@ -1,0 +1,31 @@
+[task]
+safe_distance_m = 0.5
+max_translation_waypoints = 12
+max_attitude_waypoints = 6
+max_edits = 32
+coordinate_scale_m = 20.0
+fuel_weight = 2.0
+duration_weight = 0.2
+allocation_error_weight = 5.0
+
+[scenario]
+start_rtn = [-8.0, -4.0, 2.0]
+goal_rtn = [5.0, 0.0, 0.0]
+station_asset = "gateway"
+station_points = 2000
+station_seed = 740
+station_keepout_radius_m = 0.25
+position_randomization_m = 1.0
+
+[training]
+episodes = 1000
+seed = 740
+hidden_dim = 512
+learning_rate = 1.0e-4
+discount = 0.99
+batch_size = 256
+train_start = 5000
+replay_size = 500000
+target_update = 5000
+checkpoint_every_episodes = 100
+checkpoint_directory = "SpaceAGORA_RL.jl/outputs/hypr_rl/checkpoints"

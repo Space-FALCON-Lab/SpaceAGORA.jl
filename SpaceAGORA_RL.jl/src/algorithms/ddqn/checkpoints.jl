@@ -27,11 +27,14 @@ end
 _checkpoint_manifest_payload(manifest) =
     manifest isa RunManifest ? manifest_dict(manifest) : manifest
 
-function save_checkpoint(path::AbstractString, learner::DDQNLearner; manifest=nothing)
+function save_checkpoint(path::AbstractString, learner::DDQNLearner;
+                         manifest=nothing, task::Symbol=:aerobraking,
+                         action_table=copy(PAPER_ACTIONS_MPS), task_metadata=nothing)
     mkpath(dirname(path))
     algorithm = manifest isa RunManifest ? manifest.algorithm : :ddqn
     payload = Dict(
         :algorithm => algorithm,
+        :task => task,
         :online => cpu_network(learner.online),
         :target => cpu_network(learner.target),
         :optimizer => cpu_adam_state(learner.optimizer),
@@ -44,7 +47,8 @@ function save_checkpoint(path::AbstractString, learner::DDQNLearner; manifest=no
         :training_loss_sum => learner.loss_sum,
         :training_loss_count => learner.loss_count,
         :device => training_device_name(learner.device),
-        :action_table => copy(PAPER_ACTIONS_MPS),
+        :action_table => copy(action_table),
+        :task_metadata => task_metadata,
         :manifest => _checkpoint_manifest_payload(manifest),
     )
     serialize(path, payload)

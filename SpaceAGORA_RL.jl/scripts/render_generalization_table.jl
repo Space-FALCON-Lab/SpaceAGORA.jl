@@ -20,6 +20,12 @@ const CASE_LABELS = Dict(
     "high_accuracy_spaceagora" => "High-accuracy SpaceAGORA",
 )
 
+const ALGORITHM_LABELS = Dict(
+    "pr_drl" => "PR-DRL",
+    "ddqn" => "DDQN",
+    "a2c" => "A2C",
+)
+
 function _usage(io::IO=stdout)
     println(io, """
 Usage:
@@ -107,6 +113,13 @@ function _metadata(csv_path)
     return TOML.parsefile(manifest_path)
 end
 
+function _algorithm_label(metadata)
+    metadata === nothing && return "Policy"
+    algorithm = lowercase(String(get(metadata, "algorithm", "")))
+    isempty(algorithm) && return "Policy"
+    return get(ALGORITHM_LABELS, algorithm, uppercase(replace(algorithm, "_" => " ")))
+end
+
 function render_generalization_table(csv_path::AbstractString,
                                      output_path::AbstractString)
     isfile(csv_path) || throw(ArgumentError("metrics CSV does not exist: $csv_path"))
@@ -163,13 +176,14 @@ function render_generalization_table(csv_path::AbstractString,
     ]
 
     metadata = _metadata(csv_path)
+    algorithm_label = _algorithm_label(metadata)
     subtitle = if metadata === nothing
         "Frozen-policy SpaceAGORA evaluation"
     else
         checkpoint = basename(String(metadata["checkpoint_path"]))
         wind = String(metadata["gram_wind_mode"])
         episodes = Int(metadata["generalization_episodes"])
-        "Frozen PR-DRL policy: $checkpoint  |  $episodes episodes/case  |  " *
+        "Frozen $algorithm_label policy: $checkpoint  |  $episodes episodes/case  |  " *
         "native SpaceAGORA physics  |  MarsGRAM winds: $wind"
     end
 
@@ -188,7 +202,7 @@ function render_generalization_table(csv_path::AbstractString,
         fontfamily="DejaVu Sans",
     )
     annotate!(report, 0.04, 0.955,
-              text("PR-DRL Generalization Evaluation", 22, :navy, :left))
+              text("$algorithm_label Generalization Evaluation", 22, :navy, :left))
     annotate!(report, 0.04, 0.915, text(subtitle, 10, :gray30, :left))
 
     annotate!(report, 0.04, 0.865,

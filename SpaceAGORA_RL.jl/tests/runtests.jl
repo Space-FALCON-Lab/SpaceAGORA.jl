@@ -1295,3 +1295,4 @@ end
 end
 
 include("evaluate_rl_run_checkpoint_selection.jl")
+include("rpo_hypr_rl_tests.jl")

@@ -78,11 +78,18 @@ function selected_q_targets(online_q_next::AbstractMatrix{<:Real},
                             terminated::AbstractVector{Bool},
                             truncated::AbstractVector{Bool},
                             gamma::Real;
-                            bootstrap_truncated::Bool=true)
+                            bootstrap_truncated::Bool=true,
+                            next_action_masks::Union{Nothing, AbstractMatrix{Bool}}=nothing)
     batch_size = length(rewards)
+    size(online_q_next, 2) == batch_size ||
+        throw(DimensionMismatch("Q-value batch size must match rewards"))
+    next_action_masks === nothing || size(next_action_masks) == size(online_q_next) ||
+        throw(DimensionMismatch("next-action masks must match Q-value dimensions"))
     targets = Vector{Float32}(undef, batch_size)
     for i in 1:batch_size
-        online_action = argmax(view(online_q_next, :, i))
+        online_action = next_action_masks === nothing ?
+            argmax(view(online_q_next, :, i)) :
+            _masked_argmax(view(online_q_next, :, i), view(next_action_masks, :, i))
         done = terminated[i] || (!bootstrap_truncated && truncated[i])
         bootstrap = done ? 0.0 : Float64(target_q_next[online_action, i])
         targets[i] = Float32(Float64(rewards[i]) + Float64(gamma) * bootstrap)
@@ -92,20 +99,61 @@ end
 
 compute_ddqn_targets(args...; kwargs...) = selected_q_targets(args...; kwargs...)
 
-function greedy_action_index(learner::DDQNLearner, observation::AbstractVector{<:Real})
+function greedy_action_index(learner::DDQNLearner, observation::AbstractVector{<:Real};
+                             action_mask::Union{Nothing, AbstractVector{Bool}}=nothing)
     obs = reshape(_as_float32_array(observation), :, 1)
     q = to_cpu_array(predict_q(learner.online, to_device_array(learner.device, obs)))
-    return argmax(view(q, :, 1))
+    values = view(q, :, 1)
+    return action_mask === nothing ? argmax(values) : _masked_argmax(values, action_mask)
 end
 
 function select_action(learner::DDQNLearner, observation::AbstractVector{<:Real};
-                       rng::AbstractRNG=Random.default_rng(), test::Bool=false)
+                       rng::AbstractRNG=Random.default_rng(), test::Bool=false,
+                       action_mask::Union{Nothing, AbstractVector{Bool}}=nothing)
     learner.global_step += 1
     eps = test ? 0.0 : epsilon_value(learner.schedule, learner.global_step)
     if !test && rand(rng) < eps
-        return rand(rng, 1:learner.config.action_dim)
+        return action_mask === nothing ? rand(rng, 1:learner.config.action_dim) :
+            rand(rng, _valid_action_indices(action_mask))
     end
-    return greedy_action_index(learner, observation)
+    return greedy_action_index(learner, observation; action_mask=action_mask)
+end
+
+function train_step!(learner::DDQNLearner, buffer::MaskedReplayBuffer, rng::AbstractRNG)
+    batch = sample_batch(buffer, learner.config.batch_size, rng)
+    observations = to_device_array(learner.device, batch.observations)
+    next_observations = to_device_array(learner.device, batch.next_observations)
+    online_next = predict_q(learner.online, next_observations)
+    target_next = predict_q(learner.target, next_observations)
+    targets = compute_ddqn_targets(
+        to_cpu_array(online_next), to_cpu_array(target_next), batch.rewards,
+        batch.terminated, batch.truncated, learner.config.discount;
+        bootstrap_truncated=learner.config.bootstrap_truncated,
+        next_action_masks=batch.next_action_masks,
+    )
+    loss, grads = network_loss_and_gradients(
+        learner.online, observations, batch.actions, targets; device=learner.device,
+    )
+    norm = gradient_norm(grads)
+    if isfinite(norm) && norm > learner.config.gradient_clip_norm
+        scale_gradients!(grads, learner.config.gradient_clip_norm / norm)
+    end
+    adam_update!(learner.online, grads, learner.optimizer)
+    learner.train_steps += 1
+    learner.last_loss = loss
+    learner.loss_sum += loss
+    learner.loss_count += 1
+    maybe_update_target!(learner)
+    return loss
+end
+
+function maybe_train!(learner::DDQNLearner, buffer::MaskedReplayBuffer, rng::AbstractRNG)
+    if length(buffer) >= learner.config.batch_size &&
+       learner.global_step >= learner.config.train_start &&
+       learner.global_step % learner.config.train_frequency == 0
+        return train_step!(learner, buffer, rng)
+    end
+    return nothing
 end
 
 function observe!(learner::DDQNLearner, transition::Transition)

@@ -1,5 +1,20 @@
 # RL evaluation scripts
 
+## HyPR-RL RPO path planning
+
+The RPO trainer uses masked DDQN to edit a feasible RRT-Connect/Bezier warm
+start. Candidate edits include variable translation and attitude waypoint
+counts and are scored after retiming, coupled LQ-MPC tracking, reaction-wheel
+attitude propagation, and six-thruster propellant accounting.
+
+```sh
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/rpo/train_hypr_rl.jl \
+  SpaceAGORA_RL.jl/configs/rpo/hypr_rl.toml
+```
+
+The RPO code and API map are documented in `src/tasks/rpo/README.md`.
+
 ## Parallel A2C training
 
 The A2C trainer uses synchronous, policy-versioned rollouts. The supplied

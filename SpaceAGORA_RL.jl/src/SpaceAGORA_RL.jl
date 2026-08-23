@@ -13,6 +13,7 @@ using TOML
 include("core/mdp_interface.jl")
 include("core/backend_interface.jl")
 include("core/policy_interface.jl")
+include("core/action_mask_interface.jl")
 include("core/transition_schema.jl")
 
 include("tasks/aerobraking/mdp/actions.jl")
@@ -46,6 +47,7 @@ include("tasks/aerobraking/AerobrakingMDP.jl")
 
 include("algorithms/training_device.jl")
 include("algorithms/ddqn/replay_buffer.jl")
+include("algorithms/ddqn/masked_replay_buffer.jl")
 include("algorithms/ddqn/network.jl")
 include("algorithms/ddqn/epsilon_schedule.jl")
 include("algorithms/ddqn/target_network.jl")
@@ -55,6 +57,14 @@ include("algorithms/a2c/learner.jl")
 include("algorithms/ddqn/checkpoints.jl")
 include("algorithms/ddqn/policy.jl")
 include("algorithms/a2c/policy.jl")
+
+include("tasks/rpo/types.jl")
+include("tasks/rpo/mdp/actions.jl")
+include("tasks/rpo/attitude.jl")
+include("tasks/rpo/backend/spaceagora_adapter.jl")
+include("tasks/rpo/mdp/environment.jl")
+include("tasks/rpo/planner.jl")
+include("tasks/rpo/training/training.jl")
 
 include("runtime/config_loading.jl")
 include("runtime/run_manifest.jl")
@@ -68,7 +78,7 @@ include("parallel/distributed_backend.jl")
 
 export AbstractMDP, AbstractRLBackend, AbstractPolicy
 export reset_scenario, step_scenario, observe_state, normalize_observation
-export policy_action_index, Transition, EpisodeSummary, empty_episode_summary
+export policy_action_index, valid_action_mask, Transition, EpisodeSummary, empty_episode_summary
 
 export PAPER_ACTIONS_MPS, AerobrakingAction, action_from_index, action_from_delta_v
 export continuous_action_from_delta_v, nearest_action_index
@@ -106,7 +116,7 @@ export write_checkpoint_training_plots
 export default_aerobraking_config, mars_odyssey_phase_constants
 export SPACEAGORA_GRAM_WIND_MODES, canonical_gram_wind_mode
 
-export ReplayBuffer, ReplayBatch, sample_batch
+export ReplayBuffer, ReplayBatch, MaskedTransition, MaskedReplayBuffer, MaskedReplayBatch, sample_batch
 export QNetwork, init_q_network, predict_q, copy_network!
 export EpsilonSchedule, epsilon_value
 export DDQNConfig, DDQNLearner, select_action, observe!, maybe_train!, compute_ddqn_targets
@@ -115,6 +125,15 @@ export save_checkpoint, load_checkpoint, GreedyDDQNPolicy, GreedyPRDRLPolicy
 export load_trained_ddqn_policy, load_trained_pr_drl_policy
 export GreedyA2CPolicy, load_trained_a2c_policy
 export CPUTrainingDevice, CUDATrainingDevice, resolve_training_device, training_device_name
+
+export RPOHyPRRLConfig, RPOHyPRRLScenario, RPOHyPRRLEvaluation, RPOHyPRRLState
+export RPOHyPRRLStepResult, RPOHyPRRLPlan, RPOHyPRRLMDP, RPOEditorAction
+export rpo_editor_actions, rpo_hypr_rl_observation_dim, rpo_hypr_rl_seed_path
+export build_rpo_hypr_rl_scenario
+export evaluate_rpo_candidate, hypr_rl_plan, rpo_hypr_rl_plan_path
+export GreedyHyPRRLPolicy, load_hypr_rl_policy
+export RPOHyPRRLTrainingConfig, rpo_hypr_rl_ddqn_config, train_hypr_rl!
+export save_hypr_rl_checkpoint
 
 export ResolvedConfig, load_config, resolve_config, default_config_path
 export RunManifest, write_manifest, TrainingSession, build_training_session

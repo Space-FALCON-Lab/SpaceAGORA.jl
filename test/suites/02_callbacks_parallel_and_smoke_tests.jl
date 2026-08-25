@@ -1659,6 +1659,69 @@ end
     @test mismatches == 1
 end
 
+@testset "Successive-halving sweep" begin
+    # The sweep now eliminates candidates in rounds instead of giving every one
+    # the full timed block. What must hold is that it still returns a plan drawn
+    # from the candidate set, that it survives a budget of 1, and that a
+    # candidate set it cannot evaluate degrades to "no override" rather than to
+    # an exception -- the calibration is an optimisation and must never be able
+    # to take a solve down.
+    Threads.nthreads() > 1 || return
+
+    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    args_sweep = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i,
+                            ν_deg=120.0 + 5.0 * i)
+            for i in 1:16
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(GravitationalHarmonicsModel(8, 8, harmonics_file, EARTH),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_sweep = ODEParams(n_sats=16, args=args_sweep)
+    _initialize_heat_rate_buffers!(p_sweep)
+    _initialize_harmonics_workspace_buffers!(p_sweep)
+    SimulationEngine._initialize_density_model_instances!(p_sweep)
+    SimulationEngine._initialize_density_cache_buffers!(p_sweep)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_sweep)
+    _initialize_aero_workspace_buffers!(p_sweep)
+    _initialize_nbody_workspace_buffers!(p_sweep)
+    SimulationEngine._initialize_runtime_env_config!(p_sweep)
+    u_sweep = build_initial_conditions(args_sweep)
+
+    effs = args_sweep.dynamics_model.dynamic_effectors
+    withenv("SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1") do
+        SimulationEngine._initialize_runtime_env_config!(p_sweep)
+        candidates = SimulationEngine._rhs_plan_candidates(p_sweep, effs)
+        @test length(candidates) > 1
+
+        plan, elapsed = SimulationEngine._run_rhs_sweep!(p_sweep, u_sweep, effs, false)
+        @test plan !== nothing
+        @test elapsed > 0.0
+        @test any(c -> c.mode === plan.mode && c.allotment == plan.allotment &&
+                       c.scheduler === plan.scheduler, candidates)
+
+        # A one-call budget must still terminate and still choose. Successive
+        # halving doubles its repetition count each round, so a budget that is
+        # already reached on the first round has to break immediately rather
+        # than loop.
+        withenv("SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "1",
+                "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1") do
+            plan_min, elapsed_min = SimulationEngine._run_rhs_sweep!(p_sweep, u_sweep, effs, false)
+            @test plan_min !== nothing
+            @test elapsed_min > 0.0
+        end
+    end
+    # The sweep must leave no override behind: it restores the Ref on every path,
+    # including the error path, or a candidate would leak into the real solve.
+    @test p_sweep.shared_buffers.rhs_plan_override[] === nothing
+end
+
 @testset "Flat-queue reduction: parallel path is bit-identical to serial" begin
     # The cross-worker partials reduction was serial O(N*W) and now splits over
     # the worker pool. Each worker owns a disjoint satellite range and still

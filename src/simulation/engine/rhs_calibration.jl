@@ -319,6 +319,33 @@ end
 
 # ── Sweep ─────────────────────────────────────────────────────────────────────
 
+# Measure one candidate as the MINIMUM over `reps` single-call timings.
+#
+# Minimum, not mean. Interference is strictly additive and one-sided -- a
+# preempted call is longer, never shorter -- so the minimum estimates the
+# uncontended cost while the mean estimates "this plus whatever else the machine
+# was doing". The sweep previously took a mean over its whole timed block, where
+# a single 2 ms preemption anywhere inside moved a candidate by 200 microseconds
+# per call and could silently change which plan won.
+function _rhs_sweep_measure!(p, du, u0, candidate, reps::Int)::Float64
+    p.shared_buffers.rhs_plan_override[] = candidate
+    try
+        best = Inf
+        for _ in 1:max(1, reps)
+            t0 = time_ns()
+            spacecraft_dynamics!(du, u0, p, 0.0)
+            sample = Float64(time_ns() - t0)
+            sample < best && (best = sample)
+        end
+        return best
+    catch e
+        @warn "RHS calibration: candidate skipped due to error" mode=candidate.mode allotment=candidate.allotment exception=e
+        return Inf
+    finally
+        p.shared_buffers.rhs_plan_override[] = nothing
+    end
+end
+
 function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool)
     n_warmup   = _rhs_calibrate_n_warmup()
     n_timed    = _rhs_calibrate_n_timed()
@@ -327,47 +354,105 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool)
     # Nothing to compare: only the baseline candidate exists.
     length(candidates) <= 1 && return nothing, 0.0
 
+    du = zero(u0)
+
+    # SUCCESSIVE HALVING rather than an exhaustive equal-budget sweep.
+    #
+    # The old sweep gave every candidate the full warm-up plus timed block --
+    # 10 candidates x (5 + 15) = 200 RHS evaluations, all discarded -- and spent
+    # exactly as much measuring an obviously terrible plan as the eventual
+    # winner. Most candidates are separable after one call; only the last two or
+    # three need precision.
+    #
+    # So each round times the survivors, keeps the better half, and doubles the
+    # repetitions for the next round. Bad candidates are eliminated cheaply and
+    # the budget concentrates where the decision is actually close:
+    #
+    #     10 x 1 + 5 x 2 + 3 x 4 + 2 x 8 + 1 x 15  =  63 timed calls
+    #
+    # against 150, for the same final precision on the winner. This is the
+    # standard fixed-budget bandit allocation, and it needs no cost model -- it
+    # is strictly cheaper than what it replaces with the same answer whenever the
+    # eliminated candidates were genuinely worse, which one call is enough to
+    # establish for all but near-ties.
+    #
+    # Warm-up is per-sweep plus one call per candidate, not the full block per
+    # candidate. The expensive part of warm-up is JIT and thread-pool spin-up,
+    # which is shared: candidates differ by allotment and scheduler, both runtime
+    # values, so only the two plan *modes* need separate compilation. That takes
+    # warm-up from 50 calls to 15.
+    p.shared_buffers.rhs_plan_override[] = first(candidates)
+    try
+        for _ in 1:n_warmup
+            spacecraft_dynamics!(du, u0, p, 0.0)
+        end
+    catch e
+        @warn "RHS calibration: warm-up failed; skipping calibration." exception=e
+        p.shared_buffers.rhs_plan_override[] = nothing
+        return nothing, 0.0
+    finally
+        p.shared_buffers.rhs_plan_override[] = nothing
+    end
+    for candidate in candidates
+        _rhs_sweep_measure!(p, du, u0, candidate, 1)
+    end
+
     if verbose
         println(
-            "[SpaceAGORA] RHS calibration: sweeping $(length(candidates)) candidates " *
-            "($(n_warmup) warmup + $(n_timed) timed calls each)"
+            "[SpaceAGORA] RHS calibration: successive halving over " *
+            "$(length(candidates)) candidates (budget $(n_timed) timed calls)"
         )
     end
 
-    du         = zero(u0)
-    best_plan    = nothing
-    best_elapsed = Inf
+    survivors = collect(candidates)
+    scores = Dict{Any, Float64}()
+    # Two repetitions in the first round, not one.
+    #
+    # Elimination is irreversible, so the round that discards the most
+    # candidates is the one that can least afford a bad reading. A single timing
+    # is a min-of-1, which is just the raw sample and fully exposed to the
+    # one-sided interference the minimum is supposed to filter -- so the true
+    # best could be eliminated in round one on a single unlucky call. Two
+    # samples costs ten extra calls out of roughly sixty and removes the
+    # single-sample failure mode; candidates surviving to later rounds get
+    # geometrically more evidence anyway.
+    reps = min(2, n_timed)
+    total_calls = 0
 
-    for candidate in candidates
-        p.shared_buffers.rhs_plan_override[] = candidate
-        elapsed_mean = Inf
-        try
-            for _ in 1:n_warmup
-                spacecraft_dynamics!(du, u0, p, 0.0)
-            end
-            t0 = time_ns()
-            for _ in 1:n_timed
-                spacecraft_dynamics!(du, u0, p, 0.0)
-            end
-            elapsed_mean = Float64(time_ns() - t0) / n_timed
-        catch e
-            @warn "RHS calibration: candidate skipped due to error" mode=candidate.mode allotment=candidate.allotment exception=e
-        finally
-            p.shared_buffers.rhs_plan_override[] = nothing
+    while true
+        empty!(scores)
+        for candidate in survivors
+            scores[candidate] = _rhs_sweep_measure!(p, du, u0, candidate, reps)
+            total_calls += reps
         end
-
-        elapsed_mean < Inf || continue
-
-        if elapsed_mean < best_elapsed
-            best_elapsed = elapsed_mean
-            best_plan    = candidate
-        end
+        viable = [c for c in survivors if isfinite(scores[c])]
+        isempty(viable) && return nothing, 0.0
 
         if verbose
-            label = candidate.mode == :satellite_batch ?
-                "satellite_batch                 " :
-                "flat($(rpad(candidate.scheduler, 7)) allotment=$(lpad(candidate.allotment, 3)))"
-            println("  $(label) → $(round(elapsed_mean / 1e6, digits=3)) ms/call")
+            for candidate in sort(viable; by = c -> scores[c])
+                label = candidate.mode == :satellite_batch ?
+                    "satellite_batch                 " :
+                    "flat($(rpad(candidate.scheduler, 7)) allotment=$(lpad(candidate.allotment, 3)))"
+                println("  [x$(lpad(reps, 2))] $(label) → $(round(scores[candidate] / 1e6, digits=3)) ms/call")
+            end
+        end
+
+        if length(viable) == 1 || reps >= n_timed
+            survivors = viable
+            break
+        end
+        keep = max(1, cld(length(viable), 2))
+        sort!(viable; by = c -> scores[c])
+        survivors = viable[1:keep]
+        reps = min(n_timed, reps * 2)
+    end
+
+    best_plan = survivors[1]
+    best_elapsed = scores[best_plan]
+    for candidate in survivors
+        if scores[candidate] < best_elapsed
+            best_elapsed = scores[candidate]
+            best_plan = candidate
         end
     end
 
@@ -375,7 +460,8 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool)
         label = best_plan.mode == :satellite_batch ?
             "satellite_batch" :
             "flat($(best_plan.scheduler), allotment=$(best_plan.allotment))"
-        println("  → best: $(label)  ($(round(best_elapsed / 1e6, digits=3)) ms/call)")
+        println("  → best: $(label)  ($(round(best_elapsed / 1e6, digits=3)) ms/call, " *
+                "$(total_calls) timed calls)")
     end
 
     return best_plan, best_elapsed

@@ -188,8 +188,20 @@ a restatement of the fit.
                        holds the table -- not by `sizeof(Float64)`.
 - `ns_per_scalar_item` cost of one per-satellite scalar unit.
 - `ns_per_queue_node`  per-node flat-queue bookkeeping.
-- `dispatch_ns_base` / `dispatch_ns_per_worker`
-                       affine model of one parallel dispatch and join.
+- `dispatch_pool_ns_base` / `dispatch_pool_ns_per_worker`
+- `dispatch_batch_ns_base` / `dispatch_batch_ns_per_worker`
+                       affine models of one parallel dispatch and join, ONE PER
+                       MECHANISM. The routes do not share a dispatcher: the flat
+                       routes go through the persistent channel pool
+                       (`threaded_foreach_worker_persistent`) while
+                       `satellite_batch` goes through `Polyester.@batch`, and
+                       they differ by enough to invert a decision. A single
+                       constant measured from a third mechanism (`Threads.@spawn`)
+                       was the first version of this, and it drove the predictor
+                       to 25% decision accuracy against the real kernel: it
+                       systematically preferred narrow allotments because it
+                       could not see what a wide one really cost on the route it
+                       was actually taken on.
 - `ns_per_atomic`      one contended atomic read-modify-write, which is what the
                        dynamic scheduler pays per chunk.
 - `reference_fma_ns` / `reference_mem_ns`
@@ -222,8 +234,10 @@ Base.@kwdef struct MachineConstants
     coeff_touch::RateCurve
     ns_per_scalar_item::Float64
     ns_per_queue_node::Float64
-    dispatch_ns_base::Float64
-    dispatch_ns_per_worker::Float64
+    dispatch_pool_ns_base::Float64
+    dispatch_pool_ns_per_worker::Float64
+    dispatch_batch_ns_base::Float64
+    dispatch_batch_ns_per_worker::Float64
     ns_per_atomic::Float64
     reference_fma_ns::Float64
     reference_mem_ns::Float64

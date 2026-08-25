@@ -5,6 +5,8 @@ using SHA
 
 using ..EnvironmentModels
 using ..ParallelPolicy
+using Polyester: @batch
+import Polyester
 using ..DynamicEffectors: ConstantGravityModel, InverseSquaredGravityModel
 using ..DynamicEffectors: InverseSquaredJ2GravityModel
 using ..DynamicEffectors: NBodyGravityModel, GravitationalHarmonicsModel

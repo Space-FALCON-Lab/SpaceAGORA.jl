@@ -92,12 +92,17 @@ end
 Per-satellite scalar setup/teardown stand-in: non-vectorized work proportional
 to satellite count, mirroring phases 1 and 5 of the harmonics kernel.
 """
+const CALIB_SCALAR_FLOPS = 6
+
 function calib_scalar_kernel!(state::Vector{Float64}, n_items::Int)::Float64
     acc = 0.0
     @inbounds for i in 1:n_items
         idx = ((i - 1) % length(state)) + 1
         v = state[idx]
-        acc += sqrt(v) * 1.0000001 + v * v
+        # Exactly CALIB_SCALAR_FLOPS flops, and no sqrt: a transcendental would
+        # make the per-flop rate depend on how many of them the counted kernel
+        # happens to contain, which is not something the count can express.
+        acc = muladd(v, 1.0000001, acc) + v * v - v * 0.5
     end
     return acc
 end

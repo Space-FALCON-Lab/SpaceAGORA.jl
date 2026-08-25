@@ -51,13 +51,55 @@ function effector_cost_terms(model::GravitationalHarmonicsModel)::WorkCounts
 
     alf = _alf_recurrence_iterations(L, M)
 
-    # Phase 2 sub-diagonal: 1 seed + (L+1) rows.
-    # Phase 3 longitude recurrence: 1 seed + (M+1) steps.
-    # Phase 4 per degree: accumulator reset, zonal m=0 block, tail accumulate.
-    simd_terms = Float64((L + 2) + (M + 2) + alf + 3 * L + active_total)
+    # Vectorized work counted in FLOPS PER LANE, not in loop passes.
+    #
+    # Counting passes was the first version and it understated the real kernel
+    # by 21x, because the passes are nowhere near equal: the sub-diagonal
+    # recurrence is 2 flops per lane while the active-order accumulation is 24,
+    # and the heavy one is the one that dominates a full field. A model that
+    # weights them equally is not slightly off, it is measuring a different
+    # quantity -- and it failed cold validation at 25% decision accuracy with the
+    # error concentrated exactly where the mix of pass types changes, which is
+    # across degree and order.
+    #
+    # Weights below are counted off `_harmonics_flat_batch_kernel!` body by
+    # body. Multiplies and adds count 1 each; a muladd counts 2, matching the
+    # calibration kernel's own accounting so the rate and the count are in the
+    # same units.
+    #
+    #   phase 2 seed          A[b,2,1] = u*sqrt3                          1
+    #   phase 2 row           A = u * s2n3 * A                            2
+    #   phase 3 step          R,I complex rotate: 4 mul + 2 add           6
+    #   phase 4 ALF           A = u*N1*A - N2*A                           4
+    #   phase 4 rho reset     rho *= rho; rr = rho/RE; 4 zero stores      2
+    #   phase 4 zonal         2 x (VR * A * D0) accumulate                6
+    #   phase 4 active order  D,E,F (12) + mA (1) + 4 accumulates (11)   24
+    #   phase 4 tail          4 x (rr * sum) accumulate                    8
+    simd_terms = Float64(
+        1 + 2 * (L + 1) +
+        6 * (M + 1) +
+        4 * alf +
+        (2 + 6 + 8) * L +
+        24 * active_total
+    )
 
-    # Phase 1 gather and phase 5 back-transform, one scalar pass each.
-    scalar_items = 2.0
+    # Phase 1 gather and phase 5 back-transform, counted in flops per satellite
+    # like the vectorized terms -- not as "two passes", which is what they were
+    # and which understated them by roughly forty-fold.
+    #
+    # These are the only parts of the kernel that are NOT vectorized (plain
+    # `@inbounds for b = 1:B`, no `@turbo`), and they are dense: a 3x3
+    # matrix-vector product, a norm with its square root, a reciprocal, and a
+    # second matrix-vector product on the way out. For a zonal field they
+    # dominate the whole kernel, which is why treating them as negligible made
+    # the model predict that a 1024-satellite L20 zonal solve was too cheap to
+    # be worth parallelising -- when measurement says the opposite.
+    #
+    #   phase 1: lpi * pos (15), norm incl. sqrt (16), reciprocal (10),
+    #            s/t/u scaling (3), rho and rho_np1 (3)               ~47
+    #   phase 5: g_pp assembly (6), central term incl. inv_r^3 (9),
+    #            lpi' * g_pp (15), mass scaling (3), 3 accumulates (3) ~36
+    scalar_items = 83.0
 
     # N1/N2 per ALF step; C/VR01/VR11 for each zonal term; C/S/VR01/VR11 per
     # active order. Counted as reads, not bytes: the coefficient matrices are

@@ -119,11 +119,17 @@ function effector_cost_terms(model::GravitationalHarmonicsModel)::WorkCounts
     # expose this being the wrong aggregate.
     table_bytes = 6.0 * (L + 2) * (M + 2) * 8.0
 
+    # The A workspace the batch kernel carries per satellite: (L+3) x (M+2)
+    # Float64. Multiplied by batch width this is what the SIMD lane rate is
+    # indexed on, because at wide batch it leaves cache entirely.
+    workspace_per_sat = Float64((L + 3) * (M + 2) * 8)
+
     return WorkCounts(
         simd_terms = simd_terms,
         scalar_items = scalar_items,
         coeff_touches = coeff_touches,
         coeff_table_bytes = table_bytes,
+        simd_workspace_bytes_per_sat = workspace_per_sat,
     )
 end
 
@@ -270,6 +276,7 @@ function constellation_work_counts(
         scalar_items = total.scalar_items,
         coeff_touches = total.coeff_touches,
         coeff_table_bytes = total.coeff_table_bytes,
+        simd_workspace_bytes_per_sat = total.simd_workspace_bytes_per_sat,
         queue_nodes = Float64(n_sats * queue_effectors),
         probe_ns = total.probe_ns,
         unknown_effectors = total.unknown_effectors,

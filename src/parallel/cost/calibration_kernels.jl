@@ -38,22 +38,34 @@ after each, `simd_per_touch` vectorized passes over the whole of `out`. So
 and the two are independently controllable, which is the entire point.
 """
 function calib_batch_kernel!(
-    out::Vector{Float64},
+    ws::Matrix{Float64},
     table::Matrix{Float64},
     row::Int,
     n_touch::Int,
     simd_per_touch::Int,
 )::Float64
-    B = length(out)
+    # `ws` is B x depth, mirroring the harmonics kernel's A workspace
+    # (batch x (L+3) x (M+2)), and successive SIMD passes walk successive depth
+    # slices rather than hammering one vector.
+    #
+    # The depth dimension is not decoration. At batch width 1024 with L=20 the
+    # real A workspace is 1024*23*22 doubles = 4.1 MB, far outside any cache,
+    # while a B-element vector stand-in is 8 KB and L1-resident. Calibrating
+    # against the 8 KB version measured pure arithmetic throughput and missed
+    # the memory traffic that dominates the real kernel at large batch -- which
+    # is why the model under-predicted the serial case by ~2x and kept choosing
+    # it.
+    B, depth = size(ws)
     @inbounds for t in 1:n_touch
         c = table[row, t]
-        for _ in 1:simd_per_touch
+        for s in 1:simd_per_touch
+            d = ((t * simd_per_touch + s) % depth) + 1
             @simd for b in 1:B
-                out[b] = muladd(c, 1.0000001, out[b])
+                ws[b, d] = muladd(c, 1.0000001, ws[b, d])
             end
         end
     end
-    return @inbounds out[1]
+    return @inbounds ws[1, 1]
 end
 
 """
@@ -94,15 +106,27 @@ to satellite count, mirroring phases 1 and 5 of the harmonics kernel.
 """
 const CALIB_SCALAR_FLOPS = 6
 
-function calib_scalar_kernel!(state::Vector{Float64}, n_items::Int)::Float64
-    acc = 0.0
+function calib_scalar_kernel!(out::Vector{Float64}, state::Vector{Float64}, n_items::Int)::Float64
+    # `state` must be at least `n_items` long. An earlier version wrapped the
+    # index with `((i-1) % length(state)) + 1` to be safe, and that integer
+    # modulo costs 20-40 cycles against the six flops it was supposed to be
+    # measuring -- so ns_per_scalar_item was reporting the cost of a division
+    # instruction, roughly an order of magnitude high, and the model duly
+    # concluded that the unvectorized phases dominated everything.
+    # Results go to independent slots, NOT into a running accumulator.
+    #
+    # An accumulator creates a loop-carried dependency and makes the kernel
+    # latency-bound, which measured 0.274 ns/flop -- 24x the SIMD rate. The
+    # phases this is meant to represent (harmonics gather and back-transform)
+    # are per-satellite independent and therefore throughput-bound, so a
+    # latency-bound stand-in overstates them by roughly that factor and led the
+    # model to believe the unvectorized phases dominated a zonal solve.
     @inbounds for i in 1:n_items
-        idx = ((i - 1) % length(state)) + 1
-        v = state[idx]
+        v = state[i]
         # Exactly CALIB_SCALAR_FLOPS flops, and no sqrt: a transcendental would
         # make the per-flop rate depend on how many of them the counted kernel
         # happens to contain, which is not something the count can express.
-        acc = muladd(v, 1.0000001, acc) + v * v - v * 0.5
+        out[i] = muladd(v, 1.0000001, v) + v * v - v * 0.5
     end
-    return acc
+    return @inbounds out[1]
 end

@@ -86,24 +86,34 @@ function predict_plan_ns(
     scalar = batch * counts.scalar_items * mc.ns_per_scalar_item
     probe = batch * counts.probe_ns
 
+    # Achieved speedup, not assumed linear scaling. `batch` already divides the
+    # work by the worker count; this corrects that ideal share back up to what
+    # the machine actually delivers, which saturates near 3x on twelve workers
+    # rather than reaching 12x.
+    ideal = Float64(max(1, workers))
+    achieved = workers <= 1 ? 1.0 : max(1.0, rate_at(mc.parallel_speedup, workers))
+    contention = ideal / achieved
+
     total = if candidate.mode === :satellite_batch
-        lane1 = rate_at(mc.simd_lane, 1)
+        # satellite_batch runs one satellite at a time, so its workspace is one
+        # satellite's worth.
+        lane1 = rate_at(mc.simd_lane, max(8.0, counts.simd_workspace_bytes_per_sat))
         touch = rate_at(mc.coeff_touch, counts.coeff_table_bytes)
-        dispatch +
+        dispatch + contention * (
             batch * counts.simd_terms * lane1 +
             batch * counts.coeff_touches * touch +
-            scalar + probe
+            scalar + probe)
     else
-        lane = rate_at(mc.simd_lane, batch)
+        lane = rate_at(mc.simd_lane, max(8.0, batch * counts.simd_workspace_bytes_per_sat))
         touch = rate_at(mc.coeff_touch, counts.coeff_table_bytes)
         nodes_per_worker = counts.queue_nodes / workers
         atomics = candidate.scheduler === :dynamic && workers > 1 ?
             counts.queue_nodes * mc.ns_per_atomic : 0.0
-        dispatch +
+        dispatch + atomics + contention * (
             batch * counts.simd_terms * lane +
             counts.coeff_touches * touch +
             nodes_per_worker * mc.ns_per_queue_node +
-            atomics + scalar + probe
+            scalar + probe)
     end
 
     return PlanPrediction(candidate, total, workers, batch)

@@ -1,9 +1,19 @@
 @inline function _active_policy_context()::PolicyContext
-    ctx = try
-        Base.task_local_storage(_policy_context_tls_key)
-    catch
-        nothing
-    end
+    # Dictionary lookup rather than the throwing accessor.
+    #
+    # `Base.task_local_storage(key)` raises KeyError when the key is absent, and
+    # absent is the common case: a scoped PolicyContext exists only inside
+    # with_policy_context, while every solve outside one -- including every
+    # Distributed worker in a process-routed campaign -- falls through to the
+    # global context. Wrapping that in try/catch therefore threw and caught an
+    # exception on the hot path, measured at 1.96 us per call against 9.8 ns for
+    # the lock this sits beside, and it is invoked at least twice per policy
+    # decision. Replacing it took a forced-region decision from 5.6 us to 0.9 us
+    # and _record_policy_decision! from 2.25 us to 0.12 us.
+    #
+    # Behaviour is unchanged, including the isa guard below, which still covers a
+    # key collision holding a non-PolicyContext value.
+    ctx = get(Base.task_local_storage(), _policy_context_tls_key, nothing)
     if ctx isa PolicyContext
         return ctx
     end

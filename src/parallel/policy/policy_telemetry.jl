@@ -144,8 +144,31 @@ function policy_telemetry_snapshot()
             last_hint_allotment=t.last_hint_allotment,
             last_hint_confidence=t.last_hint_confidence,
             last_hint_regret_ns=t.last_hint_regret_ns,
+            rhs_plan_source=String(t.rhs_plan_source),
+            rhs_plan_mode=String(t.rhs_plan_mode),
+            rhs_plan_allotment=t.rhs_plan_allotment,
             accounted_fraction_proxy=accounted_fraction_proxy,
             trimmed_accounted_fraction_proxy=trimmed_accounted_fraction_proxy
         )
     end
+end
+
+"""
+    record_rhs_plan_selection!(source::Symbol, mode::Symbol, allotment::Integer)
+
+Record which RHS execution plan pre-solve calibration installed, so the choice
+survives the solve and can be read back through
+[`policy_telemetry_snapshot`](@ref). `source` is `:cache` when the plan came from
+the calibration cache and `:sweep` when it was measured by a fresh route sweep.
+
+Accounting only — no policy path reads these fields back.
+"""
+function record_rhs_plan_selection!(source::Symbol, mode::Symbol, allotment::Integer)
+    lock(_policy_telemetry_lock) do
+        t = _active_policy_context().telemetry
+        t.rhs_plan_source = source
+        t.rhs_plan_mode = mode
+        t.rhs_plan_allotment = Int64(max(0, allotment))
+    end
+    return nothing
 end

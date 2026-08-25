@@ -545,6 +545,53 @@ The probe ranks `:satellite_batch` fastest and the full-solve evidence agrees.
 Both are excluded from `--preview` (its 64-satellite cap would drop every case
 and then run the two largest anyway).
 
+### B9–B14 — Expanded router evaluation (review point 8)
+
+Added 2026-08-22. One phase per workload axis the review names, replacing B6 —
+whose numbers are not reportable, since every case it draws on is 0.017–2.9 s
+serial and it measured 0.0–3.3% regret across every route, inside the ~16%
+variance §7.4 records. B6 is retained as a below-the-floor control. Three
+differences from B6 beyond sizing: the full static ladder R0–R3 runs at every
+point (B6 omitted R2/R3, which biases `best_static` *downward* and flatters the
+router); the thread budget has four points rather than two; and the router's
+actual selection is now recorded rather than inferred.
+
+- **B9** spacecraft count, `gravity_{256,1024,4096}sat_l50_vacuum_1hr`.
+- **B10** atmosphere fidelity at N=256/600 s: vacuum → exponential → GRAM
+  surrogate → live GRAM → live GRAM + SPICE third-body. The load-bearing phase
+  for review point 7's "R5 is ~25% slower than the best static route on GRAM".
+- **B11** force/actuator model count, one model added per rung.
+- **B12** interacting vs. independent propagation at matched satellite-hours.
+- **B13** one fixed 64-core budget split seven ways between processes and
+  threads — the hybrid nesting `OUTER_PARALLEL_ACTIVE`/`INNER_THREAD_BUDGET`
+  arbitrate, which no previous phase exercised.
+- **B14** mission duration and output cadence.
+
+Three things the sizing calibration established, all of which changed the design:
+
+1. **The actuator path is O(N^2.2).** `stack{32,64,256}_e6_actuated` measures
+   0.583 / 2.728 / 33.4 s per 10 s of simulated mission, against a near-linear
+   `e5`. Cause: `get_control_callbacks` builds one `PeriodicCallback` per control
+   effector and each loops over *all* satellites, so N per-satellite models cost
+   N² `calcControlEffect!` calls per tick — N intended, N(N−1) returning
+   immediately on a `sat_idx` the model does not own. Invisible at the 8
+   satellites `multi_8sat_magnetorquer_attitude` uses, dominant at 256. The
+   shared-model-with-per-spacecraft-vectors shape `BaseThrusterModel` enforces
+   avoids it. **Not fixed** — B11 runs two sub-ladders instead.
+2. **Output cadence is flat; output on/off is not.** At N=1024 over a 10 s
+   mission: 0.051 s with output off, 3.13 / 3.09 / 3.17 s at `saveat` = 60 / 10 /
+   1 s. Pinning `SPACEAGORA_SOLVER_SAVE_EVERYSTEP=0` *and*
+   `SPACEAGORA_SOLVER_SAVE_ON=0` does not move it (3.25 / 3.25 / 3.24 s), so the
+   62× is neither per-step solution storage nor the solver's save path but a
+   fixed cost of the saving callback being in the `CallbackSet` at all. §10's
+   note that `num_steps_to_save` is inert stands, and is now moot for the
+   harness: the live knob is `simulation_settings.results`, which this harness
+   had hardcoded off, so no benchmark case before B14 produced any output.
+3. **Live GRAM is no longer the blocker §8.1 hoped.** `atmo256_gram_live_10min`
+   at N=256 runs 0.623 s per 10 s of mission with no leak and no step-size
+   collapse — 2.6× the precomputed surrogate and comfortably measurable. The
+   interacting-GRAM axis point 8 asked for is recoverable, and B10 takes it.
+
 ---
 
 ## 12. Paper framing

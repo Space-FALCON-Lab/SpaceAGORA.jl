@@ -344,6 +344,9 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
         cached = _rhs_calib_lookup(sig)
         if cached !== nothing
             p.shared_buffers.rhs_plan_override[] = cached
+            SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
+                :cache, cached.mode, cached.allotment
+            )
             if verbose
                 label = cached.mode == :satellite_batch ?
                     "satellite_batch" : "flat(allotment=$(cached.allotment))"
@@ -357,6 +360,9 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     best_plan === nothing && return
 
     p.shared_buffers.rhs_plan_override[] = best_plan
+    SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
+        :sweep, best_plan.mode, best_plan.allotment
+    )
     _rhs_calib_store!(sig, best_plan, best_elapsed)
     _rhs_calib_save!()
 

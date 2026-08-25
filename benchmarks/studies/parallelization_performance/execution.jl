@@ -49,7 +49,16 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
             wall_time_s=Float64(timed.time),
             terminal=ppc_terminal_metrics(sol),
             error_type="",
-            error_message=""
+            error_message="",
+            # Taken from the solve's own return value rather than by calling
+            # policy_telemetry_snapshot() out here. _active_policy_context()
+            # resolves through task-local storage first, and the engine runs the
+            # solve under its own scoped PolicyContext, so every routing decision
+            # is recorded into that scope -- a snapshot taken from the harness's
+            # task afterwards reads the *global* context, which never saw any of
+            # it and reports zeros. run_simulation already captures the snapshot
+            # from inside the scope when return_solver_metadata=true.
+            policy=get(timed.value.result, :parallel_policy, nothing)
         )
     end
     retcode = timed.value.result === nothing ? string(typeof(timed.value.err)) : string(timed.value.result.solution.retcode)
@@ -60,7 +69,8 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
         wall_time_s=Float64(timed.time),
         terminal=(terminal_time_s=missing, pos_norm_m=missing, vel_norm_mps=missing, mass_kg=missing),
         error_type=retcode,
-        error_message=errmsg
+        error_message=errmsg,
+        policy=nothing
     )
 end
 
@@ -121,9 +131,80 @@ function ppc_ensure_process_workers!(n::Int)::Vector{Int}
     return [w for w in workers() if w != myid()]
 end
 
+"""
+    ppc_resolve_outer_backend(case, cfg, mode, sample_count) -> PPCModeSpec
+
+Resolve a mode whose `backend` is `"auto"` into a concrete backend by asking the
+shipped outer-route selector, and return the mode with that answer substituted in.
+
+Modes with an explicit backend are returned unchanged.
+
+This exists because `ppc_run_sample_batch` dispatches the outer split itself, by
+branching on `mode.backend`. R4 and R5 were declared here with
+`backend="threads"`, which meant the two profiles whose entire purpose is to
+*choose* an outer route were hard-pinned to one, and `select_outer_route!` was
+never reached -- the harness answered the question it was supposed to be asking.
+That is not a subtle bias: on `independent_1sat_1hr` at 256 samples the router
+picks `:process` (8.1x) while the pin forced `:threads` (2.0x), and the resulting
+"router regret" was a property of this table rather than of the router.
+
+The shipped profile definitions already say `outer_backend=:auto` for R3/R4/R5
+(`src/parallel/routing/profile_definitions.jl`), so this restores agreement with
+them for the two adaptive profiles. R3 deliberately keeps its explicit `threads`
+pin: it is the *static* hybrid baseline the adaptive profiles are measured
+against, so it has to stay fixed.
+
+Single-sample batches resolve to `"threads"` unconditionally. There is no outer
+split to route when there is one simulation, so the resolution would be moot, and
+keeping the literal string identical to the pre-fix value keeps the recorded env
+comparable across the constellation phases.
+"""
+function ppc_resolve_outer_backend(
+    case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSpec, sample_count::Int
+)::PPCModeSpec
+    mode.backend == "auto" || return mode
+    sample_count > 1 || return _ppc_mode_with_backend(mode, "threads")
+    route = try
+        probe = ppc_single_config(case.name, cfg; seed=cfg.worker_seed, mc_index=1)
+        features = SpaceAGORA.SimulationCampaigns.campaign_route_features(
+            probe; samples=sample_count
+        )
+        PP = SpaceAGORA.ParallelProfiles
+        # select_outer_route! rather than default_outer_route: it is the entry
+        # point the shipped campaign runner calls, so it carries the candidate
+        # filtering and machine clamping too. The state is fresh per worker
+        # process, so no cross-run feedback is folded in -- each measured point
+        # sees the router's cold decision, which is what makes the points
+        # comparable to each other.
+        PP.select_outer_route!(
+            PP.OuterRouteState(),
+            features;
+            machine_class=PP._machine_parallel_class(),
+            threads_available=Threads.nthreads() > 1,
+            parallel_enabled=true,
+        )
+    catch err
+        @warn "Outer-route resolution failed; falling back to threads" case=case.name mode=mode.name exception=err
+        :threads
+    end
+    backend = route === :process ? "process" : (route === :threads ? "threads" : "none")
+    return _ppc_mode_with_backend(mode, backend)
+end
+
+function _ppc_mode_with_backend(mode::PPCModeSpec, backend::String)::PPCModeSpec
+    return PPCModeSpec(;
+        (f => (f === :backend ? backend : getfield(mode, f)) for f in fieldnames(PPCModeSpec))...
+    )
+end
+
 function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSpec, sample_count::Int)
     sample_indices = collect(1:sample_count)
     sample_seeds = [cfg.worker_seed + i - 1 for i in sample_indices]
+    # Adaptive profiles (backend="auto") ask the router here; every other mode
+    # keeps the backend its spec declares. Done once, before warm-up, so the
+    # warm-up, the env recorded in the row, and the timed dispatch below all
+    # agree on one backend.
+    mode = ppc_resolve_outer_backend(case, cfg, mode, sample_count)
     uses_process_pool = sample_count > 1 && mode.backend == "process"
     # How many outer units of work this batch actually dispatches concurrently,
     # mirroring the branch conditions below exactly. Single-sample batches --
@@ -227,7 +308,50 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         batch_wall_time_s=batch_wall,
         actual_backend=actual_backend,
         execution_scope=execution_scope,
-        outer_tasks=outer_tasks
+        outer_tasks=outer_tasks,
+        policy=ppc_policy_columns(
+            isempty(results) ? nothing :
+                (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
+        )
+    )
+end
+
+# What the router actually decided during the timed batch.
+#
+# Until this existed the CSV recorded `rhs_execution_mode="auto"` -- the mode
+# *requested*, never the route selected -- so a finding like review point 8's "it
+# selects poorly for the GRAM case" could be measured but not attributed. The
+# selected RHS plan lives in per-solve `shared_buffers.rhs_plan_override`, which
+# is gone by the time the solve returns; `record_rhs_plan_selection!`
+# (src/parallel/policy/policy_telemetry.jl) copies it into the process-level
+# policy telemetry so it survives, and this reads it back.
+#
+# Process-route caveat: the counters are per-process, and on the `outer_process`
+# route the solves happen on Distributed workers, so the controller's snapshot is
+# empty and these columns come back as the `:none`/0 defaults. That is correct
+# rather than missing -- the controller process genuinely made no routing
+# decision -- but it means the selected-route columns are only meaningful for the
+# in-process (serial/threads) routes.
+function ppc_policy_columns(snap)
+    empty = (
+        rhs_plan_source="none", rhs_plan_mode="none", rhs_plan_allotment=0,
+        policy_last_mode="none", policy_last_allotment=0, policy_last_outer_active=false,
+        policy_decisions_total=0, policy_adaptive_decisions_total=0,
+        policy_threads_enabled_total=0, policy_discarded_by_route_total=0,
+    )
+    snap === nothing && return empty
+    g(k, d) = hasproperty(snap, k) ? getproperty(snap, k) : d
+    return (
+        rhs_plan_source=string(g(:rhs_plan_source, "none")),
+        rhs_plan_mode=string(g(:rhs_plan_mode, "none")),
+        rhs_plan_allotment=g(:rhs_plan_allotment, 0),
+        policy_last_mode=string(g(:last_mode, "none")),
+        policy_last_allotment=g(:last_allotment, 0),
+        policy_last_outer_active=g(:last_outer_active, false),
+        policy_decisions_total=g(:decisions_total, 0),
+        policy_adaptive_decisions_total=g(:adaptive_decisions_total, 0),
+        policy_threads_enabled_total=g(:threads_enabled_total, 0),
+        policy_discarded_by_route_total=g(:policy_discarded_by_route_total, 0),
     )
 end
 
@@ -239,10 +363,31 @@ function ppc_run_worker_performance(cfg::PPCConfig)
     hw = ppc_hardware_snapshot()
     samples = case.montecarlo ? cfg.worker_mc_samples : 1
 
-    batch = ppc_run_sample_batch(case, cfg, mode, samples)
+    # One row per timed repeat, all inside this one process. See
+    # PPCConfig.worker_repeats for why the repeats are not separate subprocesses.
+    # ppc_run_sample_batch re-runs its own warm-up on each pass, so every repeat
+    # is measured the same way; only the first pays cold JIT, which is exactly the
+    # cost this loop exists to stop paying N times.
+    for repeat_offset in 0:(max(1, cfg.worker_repeats) - 1)
+    repeat_index = cfg.worker_repeat + repeat_offset
+    # Warm-up runs on the first repeat only. Its job is to get the RHS/solver
+    # stack compiled and the caches populated before anything is timed, and that
+    # is a property of the process, not of the repeat -- once repeat 1 has run,
+    # repeats 2..N are already warm. Repeating it would just re-pay the solve cost
+    # (2 warm-ups x 3 repeats = 6 untimed solves per point instead of 2), which on
+    # the heavier cases is a larger cost than the startup this loop exists to
+    # amortise.
+    repeat_cfg = repeat_offset == 0 ? cfg :
+        _ppc_with(cfg;
+            worker_repeat=repeat_index,
+            worker_seed=cfg.worker_seed + repeat_offset,
+            warmup=0,
+        )
+
+    batch = ppc_run_sample_batch(case, repeat_cfg, mode, samples)
     # Built from the batch's own outer_tasks so the recorded env matches what
     # the timed run actually saw (see ppc_mode_env_pairs).
-    env_string = ppc_effective_env_string(mode, cfg; outer_tasks=batch.outer_tasks)
+    env_string = ppc_effective_env_string(mode, repeat_cfg; outer_tasks=batch.outer_tasks)
     sample_results = batch.results
     total_success = all(r -> r.success, sample_results)
     sample_wall_sum = sum(r -> Float64(r.wall_time_s), sample_results)
@@ -264,8 +409,8 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         parallel_profile=mode.profile,
         thread_count=cfg.worker_threads,
         process_workers=cfg.process_workers,
-        repeat=cfg.worker_repeat,
-        seed=cfg.worker_seed,
+        repeat=repeat_index,
+        seed=repeat_cfg.worker_seed,
         mc_samples=samples,
         solver_mode=cfg.solver_mode,
         success=total_success,
@@ -278,6 +423,10 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         outer_tasks=samples,
         throughput_samples_per_s=throughput,
         rhs_execution_mode="auto",
+        # What the router actually selected during the timed batch, as opposed to
+        # the mode requested above. See ppc_policy_snapshot for the mechanism and
+        # its process-route caveat.
+        batch.policy...,
         rhs_batch_parallel=mode.rhs_batch,
         density_callback_parallel=mode.density,
         control_callback_parallel=mode.control,
@@ -290,6 +439,7 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         final_primary_mass_kg=final_terminal.mass_kg,
         effective_env=env_string
     ))
+    end
     ppc_write_rows(cfg.worker_outfile, rows)
     return nothing
 end
@@ -394,7 +544,7 @@ function _ppc_apply_cpu_pinning(argv::Vector{String}, cpu_pinning::Vector{Int}, 
     return vcat(["taskset", "-c", cpu_list], argv)
 end
 
-function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int, repeat::Int, seed::Int, mc_samples::Int, outfile::String, parity::Bool)
+function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int, repeat::Int, seed::Int, mc_samples::Int, outfile::String, parity::Bool, repeats::Int=1)
     julia_bin = Base.julia_cmd().exec[1]
     argv = String[
         julia_bin,
@@ -407,6 +557,7 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
         "--mode=$(mode)",
         "--thread-count=$(threads)",
         "--repeat=$(repeat)",
+        "--worker-repeats=$(repeats)",
         "--worker-seed=$(seed)",
         "--worker-mc-samples=$(mc_samples)",
         # Must be forwarded explicitly: the worker is a fresh subprocess that
@@ -454,34 +605,62 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     unknown_modes = [m for m in cfg.modes if !haskey(modes, m)]
     isempty(unknown_modes) || throw(ArgumentError("Unknown mode(s): $(join(unknown_modes, ", "))"))
 
+    # Refuse to time anything on a machine that is already loaded. See
+    # ppc_assert_machine_quiet! -- this is the check whose absence let an entire
+    # 115-point run be collected against another user's 26-hour job.
+    ppc_assert_machine_quiet!()
     println("[parallelization-performance] profile=$(cfg.profile) outdir=$(outdir)")
+    println("[parallelization-performance] load=$(round(ppc_load_average(); digits=2)) " *
+            "headroom=$(round(100 * ppc_load_headroom(); digits=0))% " *
+            "cores=$(_ppc_physical_core_count())")
     println("[parallelization-performance] cases=$(join(cases, ","))")
     println("[parallelization-performance] modes=$(join(cfg.modes, ","))")
 
     perf_paths = String[]
     for case in cases
-        is_mc = ppc_case_catalog()[case].montecarlo
-        sample_counts = is_mc ? cfg.mc_samples : [1]
-        for mode in cfg.modes, thread_count in cfg.threads, mc_count in sample_counts, repeat in 1:cfg.repeats
+        case_meta = ppc_case_catalog()[case]
+        is_mc = case_meta.montecarlo
+        # A joint_routing rung is a (spacecraft, samples) pair whose product is
+        # the fixed total work the grid compares aspect ratios at, so running it
+        # at the profile's sample ladder would measure a different total at every
+        # rung and the comparison the grid exists for would not hold. Those cases
+        # therefore supply their own sample count, unless the caller named one.
+        sample_counts = if !is_mc
+            [1]
+        elseif case_meta.family == "joint_routing" && !cfg.mc_samples_explicit
+            [case_meta.default_samples]
+        else
+            cfg.mc_samples
+        end
+        # One subprocess per (case, mode, threads, mc) point, running all of that
+        # point's repeats inside it -- not one subprocess per repeat. A worker
+        # spends ~80 s on Julia startup plus JIT of the RHS/solver stack before it
+        # can time anything, so per-repeat subprocesses paid that cost `repeats`
+        # times to collect `repeats` samples of the same point; at three repeats
+        # that was two thirds of the entire run. Resume granularity is coarser as a
+        # result (a point's repeats complete together or not at all), which is the
+        # trade this makes. See PPCConfig.worker_repeats.
+        for mode in cfg.modes, thread_count in cfg.threads, mc_count in sample_counts
             if mode == "serial" && thread_count != minimum(cfg.threads)
                 continue
             end
-            outfile = joinpath(scratch, "perf_$(case)_$(mode)_t$(thread_count)_mc$(mc_count)_r$(repeat).csv")
+            outfile = joinpath(scratch, "perf_$(case)_$(mode)_t$(thread_count)_mc$(mc_count).csv")
             if _ppc_worker_already_done(outfile)
-                println("[skip] $(case) mode=$(mode) threads=$(thread_count) repeat=$(repeat) mc=$(mc_count) (already completed — resume)")
+                println("[skip] $(case) mode=$(mode) threads=$(thread_count) mc=$(mc_count) (already completed — resume)")
             else
                 cmd = ppc_worker_cmd(
                     cfg;
                     case=case,
                     mode=mode,
                     threads=thread_count,
-                    repeat=repeat,
-                    seed=cfg.seed + repeat,
+                    repeat=1,
+                    repeats=cfg.repeats,
+                    seed=cfg.seed + 1,
                     mc_samples=mc_count,
                     outfile=outfile,
                     parity=false
                 )
-                println("[run] $(case) mode=$(mode) threads=$(thread_count) repeat=$(repeat) mc=$(mc_count)")
+                println("[run] $(case) mode=$(mode) threads=$(thread_count) repeats=$(cfg.repeats) mc=$(mc_count)")
                 run(cmd)
                 on_run_complete === nothing || on_run_complete()
             end

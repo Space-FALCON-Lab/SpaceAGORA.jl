@@ -11,8 +11,137 @@ function ppc_hardware_snapshot()
         julia_threads=Threads.nthreads(),
         os=string(Sys.KERNEL),
         arch=string(Sys.ARCH),
-        git_commit=ppc_git_commit()
+        git_commit=ppc_git_commit(),
+        # Machine load at the moment this row was produced, and how much of it is
+        # not ours. A benchmark that cannot get the cores it was given measures
+        # contention, not routing -- and nothing in the recorded row previously
+        # said so, which is how a 26-hour job from another user on a shared
+        # 64-core box silently turned an entire run into noise (the adaptive
+        # profiles, which dispatch the most concurrent work, degraded ~4x while
+        # the narrow static ones degraded ~2x, which reads exactly like a routing
+        # failure). Recording it per row makes that visible after the fact;
+        # ppc_assert_machine_quiet! refuses to start when it is already true.
+        load_avg_1min=ppc_load_average(),
+        load_headroom=ppc_load_headroom()
     )
+end
+
+"""
+    ppc_load_average() -> Float64
+
+1-minute load average, or `NaN` where the platform does not report one.
+"""
+function ppc_load_average()::Float64
+    try
+        return Float64(Sys.loadavg()[1])
+    catch
+        return NaN
+    end
+end
+
+# Fraction of the machine's physical cores not already claimed by the 1-minute
+# load. 1.0 is idle; <= 0.0 means the machine is oversubscribed before this
+# benchmark starts.
+function ppc_load_headroom()::Float64
+    la = ppc_load_average()
+    isnan(la) && return NaN
+    cores = _ppc_physical_core_count()
+    return (cores - la) / max(1, cores)
+end
+
+"""
+    ppc_cpu_busy_fraction(sample_s=2.0) -> Float64
+
+Fraction of total CPU capacity in use, sampled directly from `/proc/stat` over
+`sample_s` seconds. `NaN` where /proc/stat is unavailable.
+
+Distinct from the load average, and needed because the load average could not see
+the failure this exists to catch. On 2026-08-24 a leftover probe process and a
+desktop file indexer together held ~1.8 of 12 cores for ten hours; the 1-minute
+load average read 4.09, i.e. 66% headroom, comfortably inside the guard's 50%
+threshold, so every run started and every timing came back 8-34% slow -- serial
+baselines included, which is the signature of stolen cores rather than a code
+change. Load average answers "how many runnable tasks", which a benchmark's own
+workers dominate; this answers "how much of the machine is already gone", which
+is the question that matters before any worker exists.
+"""
+function ppc_cpu_busy_fraction(sample_s::Float64=2.0)::Float64
+    read_stat() = try
+        line = first(eachline("/proc/stat"))
+        vals = parse.(Int64, split(line)[2:end])
+        idle = vals[4] + (length(vals) >= 5 ? vals[5] : 0)   # idle + iowait
+        (sum(vals), idle)
+    catch
+        nothing
+    end
+    a = read_stat()
+    a === nothing && return NaN
+    sleep(max(0.1, sample_s))
+    b = read_stat()
+    b === nothing && return NaN
+    dtotal = b[1] - a[1]
+    didle = b[2] - a[2]
+    dtotal <= 0 && return NaN
+    return clamp(1.0 - didle / dtotal, 0.0, 1.0)
+end
+
+"""
+    ppc_assert_machine_quiet!(; required_headroom, allow_override)
+
+Refuse to start a timing run on a machine that is already busy.
+
+Timing benchmarks are only meaningful when the process can actually obtain the
+cores it asks for. Set `SPACEAGORA_PPC_ALLOW_BUSY=1` to proceed anyway (recorded
+in the row either way through `load_avg_1min`).
+"""
+function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int=600)
+    la = ppc_load_average()
+    isnan(la) && return nothing
+    # Wait for the machine to settle before refusing.
+    #
+    # The 1-minute load average is a decaying average, so it stays elevated for
+    # minutes after work stops. A controller starting immediately after a long
+    # phase therefore sees the *previous* phase's load and aborts, which is what
+    # happened to B14 on 2026-08-24: it failed with 0 s elapsed at 7.6 load
+    # seconds after B11 finished a 5 h 20 m phase, on an otherwise idle machine.
+    # Refusing to measure on a busy machine is right; refusing to wait 90 s for
+    # a decaying average is not.
+    deadline = time() + max(0, wait_s)
+    while ppc_load_headroom() < required_headroom && time() < deadline
+        sleep(15)
+    end
+    # Foreign-CPU check, run before any worker of this run exists: at this point
+    # anything busy is somebody else's, so a simple total-utilisation sample is
+    # an honest reading. Threshold at 15% of the machine, above desktop idle
+    # noise and below the ~15% a single stolen core represents on 12 cores.
+    busy = ppc_cpu_busy_fraction()
+    if !isnan(busy) && busy > 0.15
+        offenders = try
+            readchomp(pipeline(`ps -eo pcpu,etime,comm --sort=-pcpu`, `head -4`))
+        catch
+            "(process list unavailable)"
+        end
+        msg = "Machine has $(round(100 * busy; digits=0))% of its CPU already in use before this run " *
+              "starts any worker. Timing results taken now would measure contention. Top consumers:\n$(offenders)"
+        if lowercase(strip(get(ENV, "SPACEAGORA_PPC_ALLOW_BUSY", "0"))) in ("1", "true", "yes", "on")
+            @warn msg
+        else
+            error(msg)
+        end
+    end
+    headroom = ppc_load_headroom()
+    headroom >= required_headroom && return nothing
+    cores = _ppc_physical_core_count()
+    msg = "Machine is busy: 1-min load average $(round(la; digits=1)) on $(cores) " *
+          "physical cores (headroom $(round(100 * headroom; digits=0))%, need " *
+          "$(round(100 * required_headroom; digits=0))%). Timing results taken now " *
+          "would measure contention rather than parallel routing. Wait for the " *
+          "machine to clear (waited $(wait_s) s), or set SPACEAGORA_PPC_ALLOW_BUSY=1 to proceed anyway."
+    if lowercase(strip(get(ENV, "SPACEAGORA_PPC_ALLOW_BUSY", "0"))) in ("1", "true", "yes", "on")
+        @warn msg
+        return nothing
+    end
+    error(msg)
 end
 
 function ppc_git_commit()::String

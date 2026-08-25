@@ -1374,6 +1374,19 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
 
     decision = SimulationModel.SimulationCallbacks._density_callback_thread_decision(p.args, num_sats)
     worker_allotment = decision.use_threads ? decision.allotment : 1
+
+    # Whether the atmosphere half of this pass goes to the distributed density
+    # service. Decided once, before the loop, so every satellite in one
+    # derivative evaluation takes the same path -- a per-satellite decision would
+    # split one batch across two mechanisms and defeat the batching.
+    #
+    # This is the batch point the service needs, and the reason it can be exact:
+    # the loop below already computes every satellite's planet frame before any
+    # force is accumulated, so all N density queries for this evaluation are
+    # available together, at the true stage state. Nothing is frozen or reused.
+    batch_atmosphere = atmosphere &&
+        SimulationModel.SimulationCallbacks._rhs_density_service_candidate(p, num_sats)
+
     SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, worker_allotment) do _, sat_idx
         if p.is_active[sat_idx]
             @views sc_view = sc_state[sat_idx]
@@ -1385,8 +1398,28 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
                 planet_lat[sat_idx] = planet_frame.lat_rad
                 planet_lon[sat_idx] = planet_frame.lon_rad
             end
-            if atmosphere
+            if atmosphere && !batch_atmosphere
                 _sample_atmosphere_from_planet_frame(sc_view, planet_frame, p, sat_idx, t; write_buffers=true)
+            end
+        end
+    end
+
+    if batch_atmosphere
+        served = SimulationModel.SimulationCallbacks._rhs_density_service_fill!(
+            p, t, num_sats, planet_alt, planet_lat, planet_lon
+        )
+        if !served
+            # Service declined or a worker failed. The planet frames above are
+            # already in the buffers, so the fallback re-reads them rather than
+            # recomputing, and the result is identical to never having tried.
+            SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, worker_allotment) do _, sat_idx
+                if p.is_active[sat_idx]
+                    @views sc_view = sc_state[sat_idx]
+                    _sample_atmosphere_from_planet_frame(
+                        sc_view, sample_buffered_planet_frame(p, sat_idx), p, sat_idx, t;
+                        write_buffers=true,
+                    )
+                end
             end
         end
     end

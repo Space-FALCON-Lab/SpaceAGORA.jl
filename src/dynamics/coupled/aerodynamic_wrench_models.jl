@@ -34,7 +34,33 @@ end
 
 @inline function _multibody_thread_decision(num_items::Int; heavy_work::Bool=true)
     mode = _multibody_parallel_mode()
+
+    # Cheap forced-false checks before the policy call, because this runs PER
+    # SATELLITE PER RHS CALL.
+    #
+    # Both call sites -- the n-body force and the aerodynamic wrench -- invoke
+    # this from inside the per-satellite effector chain, and the answer does not
+    # depend on the satellite: it is a function of `num_items` (third bodies, or
+    # aerodynamic links), which is the same for every one of them. Reaching
+    # thread_policy_decision costs roughly nine ENV reads, each allocating
+    # through strip/lowercase, plus two telemetry lock acquisitions. On a
+    # 256-satellite constellation with third-body gravity that is ~2300 ENV
+    # reads and 512 lock acquisitions per RHS call, to re-derive one answer 256
+    # times.
+    #
+    # The common case never had a decision to make. SPACEAGORA_MULTIBODY_THREAD_THRESHOLD
+    # defaults to 4 and a typical third-body set is Sun plus Moon, so num_items
+    # is 2 and threading is refused on the threshold -- after all that work.
+    #
+    # `mode == :on` is excluded from the threshold check because it forces
+    # threading regardless of item count, so its answer is not forced here.
+    if mode == :off || num_items <= 1 || Threads.nthreads() <= 1
+        return (use_threads=false, allotment=1, mode=mode)
+    end
     threshold = _multibody_thread_threshold()
+    if mode != :on && num_items < max(1, threshold)
+        return (use_threads=false, allotment=1, mode=mode)
+    end
     outer_active = _multibody_outer_parallel_hint()
     allow_with_outer = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER", false)
     heavy_only = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY", true)

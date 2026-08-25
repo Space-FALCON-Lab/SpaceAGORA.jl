@@ -170,10 +170,18 @@ of `n_active_sats` active satellites.
 Effectors that declare `effector_cost_terms` contribute analytic counts.
 Effectors that do not are looked up in `probe` -- a `Dict` of measured
 per-satellite nanoseconds keyed by effector index, produced at run start by
-`probe_effector_costs!`. An effector that is in neither is counted as unknown
-with zero cost, which is only correct when the caller has already decided to
-abstain; `probe_effector_costs!` covers every undeclared effector, so this
-should not arise in a wired-up run.
+`probe_effector_costs!`.
+
+An effector that is in neither clears `in_domain`. It is tempting to let it
+contribute zero and carry on, but zero is a *number*, and downstream the
+difference between "this effector is free" and "nobody measured this effector"
+would be invisible: the predictor would confidently rank a workload whose
+dominant cost it never saw. That is the same silent-underestimate failure the
+declare-or-probe design exists to avoid, so an unmeasured unknown effector
+disqualifies the whole prediction rather than quietly biasing it. In a wired-up
+run this arises only when the probe itself failed -- a throwing effector, or an
+RHS warm-up that could not complete -- which is exactly when the model should
+decline to answer.
 """
 function constellation_work_counts(
     args,
@@ -197,9 +205,11 @@ function constellation_work_counts(
             continue
         end
         measured = probe === nothing ? nothing : get(probe, idx, nothing)
+        usable = measured !== nothing && isfinite(measured) && measured >= 0.0
         total = total + WorkCounts(
-            probe_ns = measured === nothing ? 0.0 : max(0.0, measured),
+            probe_ns = usable ? measured : 0.0,
             unknown_effectors = 1,
+            in_domain = usable,
         )
     end
 

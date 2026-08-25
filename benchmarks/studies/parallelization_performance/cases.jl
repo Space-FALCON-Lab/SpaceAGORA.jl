@@ -45,6 +45,19 @@ const PPC_GRAM_LIVE_CASES = (
     # Matches the whole heavy_<N>sat_gram_nbody_l50 ladder via `occursin` below,
     # so new satellite counts do not need adding here.
     "gram_nbody_l50",
+    # Matches the B10 atmosphere-fidelity ladder's GRAM rungs
+    # (atmo256_gram_surrogate_10min / atmo256_gram_live_10min /
+    # atmo256_gram_live_nbody_10min) the same way. The surrogate rung needs
+    # GRAMSuite loaded too: GRAMAtmosphereModelSurrogate's keyword constructor
+    # builds a live GRAMAtmosphereModel first and then resolves the surrogate
+    # file through GRAMSuite.gram_default_surrogate_file.
+    "atmo256_gram",
+    # Registering a case that builds a live GRAMAtmosphereModel means adding it
+    # here as well as to the catalog. Miss this and the extension never attaches,
+    # so the keyword constructor resolves to the stub in density_models.jl and
+    # the worker dies with "no method matching GRAMAtmosphereModel(; planet_name)"
+    # -- which reads like a broken case rather than a missing import.
+    "campaign_gnc_6dof_gram",
 )
 any(a -> any(c -> occursin(c, a), PPC_GRAM_LIVE_CASES), ARGS) && ppc_ensure_gramsuite_loaded!()
 
@@ -194,11 +207,29 @@ function ppc_build_config(;
     dt_max_orbit::Float64=10.0,
     reltol_orbit::Float64=1e-9,
     abstol_orbit::Float64=1e-9,
-    num_steps_to_save::Int=300
+    num_steps_to_save::Int=300,
+    results::Bool=false,
+    data_rate::Float64=10.0
 )
+    # `results` and `data_rate` are the output-cadence axis (B14).
+    #
+    # `num_steps_to_save` above is NOT that axis and never was: nothing outside
+    # analysis/verification/telemetry_verification/ reads it, and the solver runs
+    # on save_everystep with no saveat, so varying it changes literally nothing
+    # about the work performed. The real mechanism is
+    # get_data_saving_callback (src/simulation/callbacks/event_callbacks.jl),
+    # which builds `SavingCallback(...; saveat=data_rate)` -- but it is only
+    # installed when `simulation_settings.results` is true
+    # (src/simulation/callbacks/density_callbacks/assembly.jl), and this harness
+    # hardcoded results=false, so every benchmark case to date has done no
+    # trajectory output at all. Setting results=true both installs that callback
+    # and (via `needs_full_solution` in simulation/engine/execution.jl) turns on
+    # per-step solution storage, so the cadence rungs must all share the same
+    # `results` value for `data_rate` to be the only thing that varies between
+    # them.
     return SimulationConfiguration(
         simulation_settings=SimulationSettings(
-            results=false,
+            results=results,
             verbose=false,
             generate_plots=false,
             normalize=false,
@@ -210,7 +241,8 @@ function ppc_build_config(;
             number_of_orbits=1,
             mission_time=mission_time_s,
             orientation_sim=orientation_sim,
-            num_steps_to_save=num_steps_to_save
+            num_steps_to_save=num_steps_to_save,
+            data_rate=data_rate
         ),
         environment_model=EnvironmentModel(
             planet=planet,
@@ -518,6 +550,62 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             density_model=ppc_gram_atmosphere_model("earth"),
             dt_max_orbit=5.0
         )
+    elseif case_name == "campaign_gnc_6dof_gram"
+        # Everything at once: embedded GNC, coupled 6-DOF attitude, a live native
+        # atmosphere, and campaign-scale propagation. No other case in this
+        # catalog carries all four -- montecarlo_mars_gram_live has the campaign
+        # and the native atmosphere but is 3-DOF and uncontrolled,
+        # heavy_256sat_coupled6dof_2hr has the attitude but an analytic
+        # atmosphere and one sample, and stack<N>_e6_actuated has the GNC but
+        # neither GRAM nor a campaign. This case exists to time the combination.
+        #
+        # Earth rather than Mars because the actuator is a magnetorquer, which
+        # needs a global magnetic field to push against; Mars has none, so the
+        # Mars aerobraking geometry the other GRAM campaign uses would make the
+        # control loop physically meaningless.
+        #
+        # Four spacecraft per sample, not more: the control-effector rung is
+        # quadratic in N (one MagneticMomentumManagerModel per satellite, each
+        # evaluating a commanded torque), and every density query on top of that
+        # is a native GRAM call under a global lock. The campaign axis carries
+        # the scale here, which is the point -- GRAM is not thread-safe, so the
+        # samples are what the process route can actually distribute.
+        gnc_n = 4
+        gnc_harmonics = ppc_harmonics_model(planet, 20)
+        gnc_srp = SolarRadiationPressureModel(1.2, 12.0)
+        gnc_spacecraft = ppc_constellation(
+            planet, gnc_n;
+            with_panel=true, panel_count=4, orientation_state=(q0, w0),
+        )
+        gnc_controller = PE.LVLHCascadeAttitudeControlModel(
+            q_cmd_lb=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+            k_out=SVector{3, Float64}(0.05, 0.05, 0.05),
+            w_max=0.01,
+            k_rate=SVector{3, Float64}(50.0, 50.0, 50.0),
+            tau_max=0.01,
+        )
+        gnc_torque = (t, r, v, q, w) -> PE._lvlh_cascade_torque(gnc_controller, r, v, q, w)
+        gnc_l_pi = MMatrix{3, 3, Float64}(1.0I)
+        gnc_b_field = (t, r_ii) -> PE.get_magnetic_field_dipole(r_ii, gnc_l_pi)
+        gnc_mgr = MagneticMomentumManagerModel[
+            MagneticMomentumManagerModel(
+                sat_idx=i, mu_gain=7.0e-4, m_max_am2=1.8,
+                h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0),
+                commanded_torque=gnc_torque, b_field_ii=gnc_b_field
+            )
+            for i in 1:gnc_n
+        ]
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=gnc_spacecraft,
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=120.0, full=600.0),
+            orientation_sim=true,
+            dynamic_effectors=(gnc_harmonics, gnc_srp, AerodynamicCoefficientfM(), gnc_controller),
+            density_model=ppc_gram_atmosphere_model("earth"),
+            control_effectors=Tuple(gnc_mgr),
+            control_rates=fill(1.0, gnc_n),
+            dt_max_orbit=10.0
+        )
     elseif case_name == "montecarlo_mars_gram_live"
         # Independent-trial counterpart to multi_16_gram_live: same Mars
         # aerobraking geometry as montecarlo_mars_aerobraking, but native GRAM
@@ -614,18 +702,325 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             density_model=NoAtmosphereModel(),
             dt_max_orbit=20.0
         )
-    elseif case_name == "gravity_16sat_l20_vacuum_sparse_output"
-        # Output-cadence axis: same physics/duration as gravity_16sat_l20_vacuum,
-        # 15x fewer saved output steps.
+    # ── B10: atmosphere / GRAM fidelity ladder ────────────────────────────────
+    #
+    # Five rungs at a fixed N=256 constellation, fixed 600 s mission and fixed L50
+    # harmonics. The ONLY thing that varies across the ladder is how atmospheric
+    # density is obtained, so any routing difference between rungs is attributable
+    # to the density path rather than to problem size. This is the axis review
+    # point 7 singles out (R5 ~25% slower than the best tested route, and slower
+    # than serial, on the GRAM workload), so it carries the most weight of the six.
+    #
+    # 600 s rather than the 1 h the vacuum ladder uses: that is the duration the
+    # heavy_<N>sat_gram_nbody_l50 family is already validated at for N up to 256,
+    # and live GRAM at N=256 is by far the slowest thing in this catalog. Keeping
+    # every rung at the same duration is what makes them comparable.
+    #
+    # The rungs, in increasing order of native-library serialisation:
+    #   vacuum       NoAtmosphereModel, no aero effector -- the floor.
+    #   exponential  analytic ExponentialAtmosphereModel + aero. Adds the density
+    #                callback and drag, with no native library involved.
+    #   gram_surrogate  GRAMAtmosphereModelSurrogate: precomputed GRAM table read
+    #                from <gram_root>/<Planet>/<planet>_surrogate.jls, so the
+    #                atmosphere is GRAM's but the queries do not enter native GRAM.
+    #   gram_live    GRAMAtmosphereModel: real native GRAM calls, one shared
+    #                instance serialised by its own instance_lock.
+    #   gram_live_nbody  adds Sun/Moon NBodyGravityModel on top, i.e. a *second*
+    #                serialised native library (CSPICE under SPICE_LOCK). §8.4 of
+    #                docs/architecture/parallelization_measurement_and_allocation_findings.md
+    #                measured this configuration as the one that does produce real
+    #                thread scaling where the smaller GRAM cases were flat.
+    elseif startswith(case_name, "atmo256_")
+        atmo_n = 256
+        atmo_time = ppc_mission_time(cfg.profile; test=10.0, smoke=90.0, full=600.0)
+        atmo_harmonics = ppc_harmonics_model(planet, 50)
+        atmo_nbody = NBodyGravityModel(
+            body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet
+        )
+        density, effectors = if case_name == "atmo256_vacuum_10min"
+            (NoAtmosphereModel(), (atmo_harmonics,))
+        elseif case_name == "atmo256_exponential_10min"
+            (ExponentialAtmosphereModel(planet), (atmo_harmonics, AerodynamicCoefficientfM()))
+        elseif case_name == "atmo256_gram_surrogate_10min"
+            (GRAMAtmosphereModelSurrogate(planet_name="earth"),
+             (atmo_harmonics, AerodynamicCoefficientfM()))
+        elseif case_name == "atmo256_gram_live_10min"
+            (ppc_gram_atmosphere_model("earth"), (atmo_harmonics, AerodynamicCoefficientfM()))
+        elseif case_name == "atmo256_gram_live_nbody_10min"
+            (ppc_gram_atmosphere_model("earth"),
+             (atmo_harmonics, atmo_nbody, AerodynamicCoefficientfM()))
+        else
+            throw(ArgumentError("Unknown atmosphere-ladder case '$case_name'."))
+        end
         return ppc_build_config(
             planet=planet,
-            spacecraft=ppc_constellation(planet, 16),
-            mission_time_s=ppc_mission_time(cfg.profile),
+            spacecraft=ppc_constellation(planet, atmo_n),
+            mission_time_s=atmo_time,
             orientation_sim=false,
-            dynamic_effectors=(ppc_harmonics_model(planet, 20),),
+            dynamic_effectors=effectors,
+            density_model=density,
+            dt_max_orbit=5.0
+        )
+
+    # ── B11: force- and actuator-model count ladder ───────────────────────────
+    #
+    # Six rungs at a fixed constellation size and fixed 600 s mission, each adding
+    # exactly one model to the rung before it. Nothing else in this catalog sweeps
+    # model count as an isolated variable -- the existing multi-effector cases each
+    # pick one arbitrary stack -- yet it is the variable §7.1 of the findings doc
+    # identifies as driving the heterogeneous-effector-tuple cost the flat work
+    # queue has to schedule around.
+    #
+    #   e1_harm      L20 harmonics only                         (1 dynamic effector)
+    #   e2_srp       + SolarRadiationPressureModel               (2)
+    #   e3_aero      + AerodynamicCoefficientfM, exponential density (3, + density callback)
+    #   e4_nbody     + Sun/Moon NBodyGravityModel                (4, + SPICE under lock)
+    #   e5_6dof      same four effectors, orientation_sim=true   (attitude states on)
+    #   e6_actuated  + LVLH cascade controller and per-satellite magnetorquer
+    #                control effectors                           (5 dynamic + N control)
+    #
+    # e5 and e6 are split deliberately: e5-vs-e4 isolates turning attitude
+    # propagation on, and e6-vs-e5 isolates adding the actuator/control-callback
+    # path, so neither is confounded with the other. The controller construction
+    # mirrors multi_8sat_magnetorquer_attitude below -- see that case's comment for
+    # why these gains are routing-benchmark values and make no flight-fidelity
+    # claim.
+    #
+    # SATELLITE COUNT IS IN THE CASE NAME, and the ladder is deliberately run at a
+    # smaller N than the other axes, because the actuator rung is quadratic in N.
+    # get_control_callbacks (src/simulation/callbacks/control_callbacks.jl) builds
+    # one PeriodicCallback per control effector and each one loops over *all*
+    # num_sats, so N per-satellite MagneticMomentumManagerModels cost N^2
+    # calcControlEffect! calls per tick -- of which N are the intended ones and
+    # N(N-1) are calls with a sat_idx the model does not own. That is invisible at
+    # the 8 satellites multi_8sat_magnetorquer_attitude uses (64 calls) and
+    # dominant at 256 (65,536): measured post-warm-up, e6 at N=256 takes 33.4 s for
+    # a *10 s* mission against 0.13 s for the otherwise-identical e5, which would
+    # put a full-duration run in the hours.
+    #
+    # This is a real defect in the control path rather than an artifact of the
+    # benchmark -- the shared-model-with-per-spacecraft-vectors pattern that
+    # BaseThrusterModel enforces is the shape that avoids it -- but fixing it is
+    # out of scope here. The ladder is sized so every rung is measurable instead,
+    # and the quadratic itself is reported.
+    elseif occursin(r"^stack[0-9]+_e[0-9]", case_name)
+        stack_n = parse(Int, match(r"^stack([0-9]+)_", case_name).captures[1])
+        # Duration is keyed off N because the actuator rung's N^2 term (above)
+        # means one mission length cannot put both sub-ladders in a measurable
+        # band. Measured post-warm-up per 10 s of simulated mission, serial:
+        # e1 0.0009 s / e5 0.0157 s / e6 0.583 s at N=32, and e5 0.13 s at N=256.
+        # At N>=128 a 1 h mission puts the model-count rungs at roughly 3-47 s;
+        # at N<128 a 600 s mission puts the actuator rung at ~35 s. Each
+        # sub-ladder is internally single-variable, which is what the axis needs.
+        stack_time = stack_n >= 128 ?
+            ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0) :
+            ppc_mission_time(cfg.profile; test=10.0, smoke=120.0, full=600.0)
+        stack_harmonics = ppc_harmonics_model(planet, 20)
+        stack_srp = SolarRadiationPressureModel(1.2, 12.0)
+        stack_nbody = NBodyGravityModel(
+            body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet
+        )
+        stack_rung = match(r"^stack[0-9]+_(e[0-9]+_[a-z0-9]+)$", case_name)
+        stack_rung === nothing &&
+            throw(ArgumentError("Unknown effector-ladder case '$case_name'."))
+        stack_rung = stack_rung.captures[1]
+        stack_attitude = stack_rung in ("e5_6dof", "e6_actuated")
+        stack_effectors, stack_density = if stack_rung == "e1_harm"
+            ((stack_harmonics,), NoAtmosphereModel())
+        elseif stack_rung == "e2_srp"
+            ((stack_harmonics, stack_srp), NoAtmosphereModel())
+        elseif stack_rung == "e3_aero"
+            ((stack_harmonics, stack_srp, AerodynamicCoefficientfM()),
+             ExponentialAtmosphereModel(planet))
+        elseif stack_rung in ("e4_nbody", "e5_6dof", "e6_actuated")
+            ((stack_harmonics, stack_srp, stack_nbody, AerodynamicCoefficientfM()),
+             ExponentialAtmosphereModel(planet))
+        else
+            throw(ArgumentError("Unknown effector-ladder case '$case_name'."))
+        end
+        stack_spacecraft = ppc_constellation(
+            planet, stack_n;
+            with_panel=stack_attitude,
+            panel_count=stack_attitude ? 4 : 1,
+            orientation_state=stack_attitude ? (q0, w0) : nothing,
+        )
+        if stack_rung == "e6_actuated"
+            stack_controller = PE.LVLHCascadeAttitudeControlModel(
+                q_cmd_lb=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
+                k_out=SVector{3, Float64}(0.05, 0.05, 0.05),
+                w_max=0.01,
+                k_rate=SVector{3, Float64}(50.0, 50.0, 50.0),
+                tau_max=0.01,
+            )
+            stack_torque = (t, r, v, q, w) -> PE._lvlh_cascade_torque(stack_controller, r, v, q, w)
+            stack_l_pi = MMatrix{3, 3, Float64}(1.0I)
+            stack_b_field = (t, r_ii) -> PE.get_magnetic_field_dipole(r_ii, stack_l_pi)
+            stack_mgr = MagneticMomentumManagerModel[
+                MagneticMomentumManagerModel(
+                    sat_idx=i, mu_gain=7.0e-4, m_max_am2=1.8,
+                    h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0),
+                    commanded_torque=stack_torque, b_field_ii=stack_b_field
+                )
+                for i in 1:stack_n
+            ]
+            return ppc_build_config(
+                planet=planet,
+                spacecraft=stack_spacecraft,
+                mission_time_s=stack_time,
+                orientation_sim=true,
+                dynamic_effectors=(stack_effectors..., stack_controller),
+                density_model=stack_density,
+                control_effectors=Tuple(stack_mgr),
+                control_rates=fill(1.0, stack_n),
+                dt_max_orbit=10.0
+            )
+        end
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=stack_spacecraft,
+            mission_time_s=stack_time,
+            orientation_sim=stack_attitude,
+            dynamic_effectors=stack_effectors,
+            density_model=stack_density,
+            dt_max_orbit=10.0
+        )
+
+    # ── B12: interacting vs. independent propagation, matched work ────────────
+    #
+    # Review point 8 asks for "interacting versus independent propagation" as an
+    # axis. B6 gestured at it by putting constellation cases and Monte Carlo cases
+    # in the same phase, but those differ in physics, duration and satellite count
+    # as well as in coupling, so nothing there isolates coupling itself.
+    #
+    # These two builders are the matched pair. Identical planet, orbit geometry,
+    # effector stack, density model, tolerances and mission duration; the only
+    # difference is how the N satellite-hours are arranged:
+    #
+    #   interact_<N>sat_1hr   one simulation propagating N satellites -- shared
+    #                         config, shared environment queries, one solver, one
+    #                         coupled state vector. Outer parallelism is across
+    #                         satellites inside one RHS call.
+    #   independent_1sat_1hr  one satellite, run at mc_samples = N -- N fully
+    #                         independent solves. Outer parallelism is across
+    #                         samples (threads or processes), and the RHS is
+    #                         single-satellite.
+    #
+    # Run at N = 16/64/256 on both sides, the pair is a direct measurement of the
+    # manuscript's third contribution: whether the router correctly distinguishes
+    # shared-state multi-spacecraft propagation from process-isolable independent
+    # campaigns at matched total work.
+    elseif occursin(r"^interact_[0-9]+sat_1hr$", case_name)
+        coupling_n = parse(Int, match(r"^interact_([0-9]+)sat", case_name).captures[1])
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, coupling_n),
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 50), AerodynamicCoefficientfM()),
+            density_model=ExponentialAtmosphereModel(planet),
+            dt_max_orbit=20.0
+        )
+    elseif occursin(r"^mcgrid_[0-9]+sat_[0-9]+mc$", case_name)
+        # Joint inner/outer routing. Every other Monte Carlo case in the catalog
+        # carries exactly one spacecraft per sample, and every constellation case
+        # carries exactly one sample, so in all of them one of the two axes is
+        # empty and the route follows from the workload shape without a trade
+        # being made. These rungs put real work on both axes at once: S samples of
+        # N spacecraft each, where the same core budget can be spent fanning out
+        # samples across processes, spreading spacecraft across threads inside one
+        # sample, or splitting between the two.
+        #
+        # The rungs are sized to hold N*S constant within a grid, so the total
+        # work is identical across a grid and only the aspect ratio changes. A router that
+        # is genuinely choosing should answer differently at each rung -- outer for
+        # many small samples, inner for few large ones -- and 32x32 is deliberately
+        # the ambiguous middle. Identical answers across all three would say the
+        # split is derived from the outer decision rather than selected, which is
+        # what _campaign_route_plan's inner_thread_budget = fld(nthreads, workers)
+        # suggests and what this case exists to test.
+        #
+        # Physics matches interact_<N>sat_1hr exactly (degree 50 harmonics,
+        # exponential atmosphere, aerodynamics, 1 h) so the per-spacecraft cost is
+        # the already-measured 0.072 s/spacecraft-hour. The 1024 spacecraft-hour
+        # rungs land near 74 s serial; the 128 spacecraft-hour rungs near 9 s,
+        # which is still 3x PPB_NOISE_FLOOR_SERIAL_S.
+        mcgrid_n = parse(Int, match(r"^mcgrid_([0-9]+)sat", case_name).captures[1])
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, mcgrid_n),
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 50), AerodynamicCoefficientfM()),
+            density_model=ExponentialAtmosphereModel(planet),
+            dt_max_orbit=20.0
+        )
+    elseif case_name == "independent_1sat_1hr"
+        # Independent side of the pair above. Deliberately NOT jittered the way
+        # the montecarlo_* cases are: an initial-condition spread would give each
+        # sample a different step-count and make per-sample cost vary, which would
+        # show up as load imbalance and confound the coupling comparison. Every
+        # sample here is the same problem, so total work is exactly N x the
+        # single-satellite cost and the interacting/independent contrast is clean.
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=[ppc_spacecraft(planet; id=1)],
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 50), AerodynamicCoefficientfM()),
+            density_model=ExponentialAtmosphereModel(planet),
+            dt_max_orbit=20.0
+        )
+
+    # ── B14: mission duration and output cadence ──────────────────────────────
+    #
+    # Duration rungs: 15 min / 1 h / 6 h at N=1024, L50, vacuum. The 1 h and 6 h
+    # points already exist as gravity_1024sat_l50_vacuum_1hr and
+    # heavy_1024sat_l50_6hr; this adds the short end.
+    elseif case_name == "gravity_1024sat_l50_vacuum_15min"
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, 1024),
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=120.0, full=900.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 50),),
+            density_model=NoAtmosphereModel(),
+            dt_max_orbit=20.0
+        )
+
+    # Cadence rungs: identical physics and duration to
+    # gravity_1024sat_l50_vacuum_1hr, varying only how much trajectory output the
+    # run produces. See ppc_build_config's comment for why this goes through
+    # `results`/`data_rate` and not `num_steps_to_save` (which is inert).
+    #
+    #   cadence_none   results=false -- no saving callback, no per-step solution
+    #                  storage. This is what every other case in the catalog does,
+    #                  so it is the ladder's zero point rather than a new rung.
+    #   cadence_60s / _10s / _1s   results=true with saveat = 60 / 10 / 1 s.
+    #
+    # At 1024 satellites the saving callback's per-satellite _save_snapshot is a
+    # genuinely serial spine, so this ladder measures an Amdahl term the router
+    # has no visibility into at all -- which is the finding either way it comes
+    # out.
+    elseif startswith(case_name, "cadence_1024sat_")
+        cadence_results, cadence_rate = if case_name == "cadence_1024sat_none"
+            (false, 10.0)
+        elseif case_name == "cadence_1024sat_10s"
+            (true, 10.0)
+        elseif case_name == "cadence_1024sat_1s"
+            (true, 1.0)
+        else
+            throw(ArgumentError("Unknown output-cadence case '$case_name'."))
+        end
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, 1024),
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 50),),
             density_model=NoAtmosphereModel(),
             dt_max_orbit=20.0,
-            num_steps_to_save=20
+            results=cadence_results,
+            data_rate=cadence_rate
         )
 
     # ── Heavy scaling cases ────────────────────────────────────────────────────
@@ -802,14 +1197,15 @@ end
 
 function ppc_case_catalog()::Dict{String, PPCCaseSpec}
     cases = Dict{String, PPCCaseSpec}()
-    add!(name, family, description; montecarlo=false, orientation=false) = begin
+    add!(name, family, description; montecarlo=false, orientation=false, default_samples=1) = begin
         cases[name] = PPCCaseSpec(
             name=name,
             family=family,
             description=description,
             builder=ppc_single_config,
             montecarlo=montecarlo,
-            orientation=orientation
+            orientation=orientation,
+            default_samples=default_samples
         )
     end
     add!("single_inverse_square_vacuum", "gravity_only", "1 spacecraft, inverse-square gravity, no atmosphere")
@@ -838,10 +1234,12 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
     add!("multi_256_high_fidelity", "many_sat_high_fidelity", "256 spacecraft with harmonics, SRP, aero, and analytic density")
     add!("multi_16_gram_live", "gram_live", "16 spacecraft, harmonics and aero, native GRAM atmosphere (interacting)")
     add!("multi_4_gram_live", "gram_live", "4 spacecraft, harmonics and aero, native GRAM atmosphere (interacting, small-N)")
+    add!("campaign_gnc_6dof_gram", "full_stack_campaign",
+        "4 spacecraft, LVLH attitude control + magnetorquers, coupled 6-DOF, live Earth GRAM, run as N independent samples",
+        montecarlo=true, orientation=true)
     add!("montecarlo_mars_gram_live", "gram_live", "Monte Carlo Mars aerobraking, native GRAM atmosphere (independent)", montecarlo=true)
     add!("multi_8sat_magnetorquer_attitude", "actuator", "8 spacecraft, LVLH attitude control and magnetorquer unloading actuator", orientation=true)
     add!("gravity_16sat_l20_vacuum_longmission", "duration_cadence", "16 spacecraft, L20 harmonics, ~4x mission duration")
-    add!("gravity_16sat_l20_vacuum_sparse_output", "duration_cadence", "16 spacecraft, L20 harmonics, 15x sparser output cadence")
 
     # Heavy scaling cases (see the ppc_single_config branches for sizing rationale).
     add!("heavy_1024sat_l50_6hr", "heavy_scaling", "1024 spacecraft, L50 harmonics, 6hr mission, RHS-bound vacuum")
@@ -853,6 +1251,85 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
         add!("heavy_$(n)sat_gram_nbody_l50", "heavy_scaling",
              "$(n) spacecraft, live GRAM atmosphere + L50 harmonics + Sun/Moon third-body gravity (native-library contention)")
     end
+
+    # ── Expanded router evaluation (B9-B14, review point 8) ───────────────────
+    # Single-variable ladders, one per axis point 8 names. See the corresponding
+    # ppc_single_config branches for the sizing and isolation rationale.
+
+    # Atmosphere / GRAM fidelity (B10): N and duration fixed, density path varies.
+    add!("atmo256_vacuum_10min", "atmosphere_ladder", "256 spacecraft, L50 harmonics, no atmosphere (fidelity-ladder floor)")
+    add!("atmo256_exponential_10min", "atmosphere_ladder", "256 spacecraft, L50 harmonics + aero, analytic exponential density")
+    add!("atmo256_gram_surrogate_10min", "atmosphere_ladder", "256 spacecraft, L50 harmonics + aero, precomputed GRAM surrogate table")
+    add!("atmo256_gram_live_10min", "atmosphere_ladder", "256 spacecraft, L50 harmonics + aero, live native GRAM atmosphere")
+    add!("atmo256_gram_live_nbody_10min", "atmosphere_ladder", "256 spacecraft, live GRAM + Sun/Moon third-body (two serialised native libraries)")
+
+    # Force / actuator model count (B11): N and duration fixed, model count varies.
+    # Registered at several N because the actuator rung is quadratic in satellite
+    # count (see the ppc_single_config branch), so the ladder has to be run at
+    # whichever N keeps every rung both measurable and affordable; B11 picks one.
+    for n in (32, 64, 256)
+        add!("stack$(n)_e1_harm", "effector_ladder", "$(n) spacecraft, L20 harmonics only (1 dynamic effector)")
+        add!("stack$(n)_e2_srp", "effector_ladder", "$(n) spacecraft, harmonics + SRP (2 dynamic effectors)")
+        add!("stack$(n)_e3_aero", "effector_ladder", "$(n) spacecraft, harmonics + SRP + aero (3 effectors, density callback)")
+        add!("stack$(n)_e4_nbody", "effector_ladder", "$(n) spacecraft, harmonics + SRP + third-body + aero (4 effectors)")
+        add!("stack$(n)_e5_6dof", "effector_ladder", "$(n) spacecraft, same 4 effectors with attitude propagation on", orientation=true)
+        add!("stack$(n)_e6_actuated", "effector_ladder", "$(n) spacecraft, 6-DOF plus LVLH controller and per-satellite magnetorquer actuators", orientation=true)
+    end
+
+    # Interacting vs. independent propagation at matched work (B12).
+    for n in (16, 64, 256)
+        add!("interact_$(n)sat_1hr", "coupling_mode", "$(n) spacecraft propagated as one coupled simulation (interacting side)")
+    end
+    add!("independent_1sat_1hr", "coupling_mode", "1 spacecraft, identical physics, run as N independent samples (independent side)", montecarlo=true)
+
+    # Joint inner/outer routing grids. N x S is held constant within each grid so
+    # its rungs are the same total work at different aspect ratios. The sample
+    # count is carried in the name and in default_samples, and execution honours
+    # it for this family: a joint_routing case runs at its own S unless the caller
+    # names one with --mc-samples. Every other family still takes the sample
+    # ladder from PPCConfig.mc_samples, so nothing outside this grid is affected.
+    # See the mcgrid_ builder for why this axis is missing from every other case.
+    #
+    # Two totals. The 1024 spacecraft-hour grid is the reference and the most
+    # expensive family in the catalog at ~74 s serial per rung, which is why it is
+    # still unrun. The 128 spacecraft-hour grid repeats the same aspect-ratio
+    # sweep at ~9 s serial, an eighth of the cost and still well clear of the 3 s
+    # measurability floor, so the joint-routing axis can be exercised in a normal
+    # working session rather than an overnight slot. Every rung of both grids
+    # carries multiple spacecraft per sample, which is the property that makes the
+    # inner axis non-empty.
+    for (mcgrid_n, mcgrid_s) in ((64, 16), (32, 32), (16, 64),   # 1024 sc-h
+                                 (32,  4), (16,  8), ( 8, 16))   #  128 sc-h
+        add!(
+            "mcgrid_$(mcgrid_n)sat_$(mcgrid_s)mc", "joint_routing",
+            "$(mcgrid_n) spacecraft x $(mcgrid_s) samples, " *
+            "$(mcgrid_n * mcgrid_s) spacecraft-hours, both routing axes live",
+            montecarlo=true, default_samples=mcgrid_s
+        )
+    end
+
+    # Mission duration and output cadence (B14).
+    add!("gravity_1024sat_l50_vacuum_15min", "duration_cadence", "1024 spacecraft, L50 harmonics, 15 min mission (short end of duration ladder)")
+    # MEASURED, and the reason this ladder is three rungs and not six.
+    #
+    # At N=1024 over a 10 s mission, post-warm-up and serial: 0.051 s with output
+    # off, and 3.13 / 3.09 / 3.17 s at saveat = 60 / 10 / 1 s. Turning trajectory
+    # output on costs 62x; the requested cadence then changes that by under 1%,
+    # i.e. it is flat. Pinning SPACEAGORA_SOLVER_SAVE_EVERYSTEP=0 and
+    # SPACEAGORA_SOLVER_SAVE_ON=0 does not move it either (3.25 / 3.25 / 3.24 s),
+    # so the cost is neither per-step solution storage nor the solver's own save
+    # path -- it is a fixed cost of having the saving callback in the CallbackSet
+    # at all, and it does not scale with how often the callback actually saves.
+    #
+    # So the honest form of point 8's "output cadence" axis is on-vs-off, not a
+    # cadence sweep. The 1 s rung is retained as the evidence that cadence really
+    # is flat once the full mode and thread ladder runs over it; adding 60 s and a
+    # per-step variant on top would spend three times the budget re-measuring the
+    # same number, which is the mistake B6 made.
+    add!("cadence_1024sat_none", "duration_cadence", "1024 spacecraft, L50 harmonics, no trajectory output (cadence-ladder zero point)")
+    add!("cadence_1024sat_10s", "duration_cadence", "1024 spacecraft, L50 harmonics, trajectory saved every 10 s")
+    add!("cadence_1024sat_1s", "duration_cadence", "1024 spacecraft, L50 harmonics, trajectory saved every 1 s (cadence-flatness check)")
+
     return cases
 end
 

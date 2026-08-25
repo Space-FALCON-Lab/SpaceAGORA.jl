@@ -27,6 +27,12 @@ Base.@kwdef struct PPCConfig
     solver_mode::String = "auto_stiff"
     process_workers::Int = 2
     mc_samples::Vector{Int} = Int[]
+    # True when mc_samples came from --mc-samples or SPACEAGORA_PPC_MC_SAMPLES
+    # rather than from the profile's default ladder. Only the joint_routing
+    # family consults it: those cases carry their own sample count (a rung is
+    # N spacecraft x S samples and the pair is what holds its total work fixed),
+    # so they use it unless the caller asked for something specific.
+    mc_samples_explicit::Bool = false
     parity_samples::Int = 128
     cpu_pinning::Vector{Int} = Int[]
     worker::Bool = false
@@ -34,10 +40,30 @@ Base.@kwdef struct PPCConfig
     worker_mode::String = ""
     worker_threads::Int = 1
     worker_repeat::Int = 1
+    # How many timed repeats the worker runs inside its own process, starting at
+    # worker_repeat. One Julia subprocess spends ~80 s on startup plus JIT of the
+    # RHS/solver stack before it can time anything (measured: 79 s per row for a
+    # case whose solve is 0.016 s), so launching a fresh subprocess per repeat
+    # spends that cost N times to collect N samples of the same point. Running the
+    # repeats in one process pays it once. The repeats stay independently timed
+    # and all of them are post-warm-up, which is what the measurement requires;
+    # what changes is only that repeats 2..N inherit a process that has already
+    # warmed its caches -- if anything a better model of steady state than repeat
+    # 1, which is the sample every previous run of this harness relied on.
+    worker_repeats::Int = 1
     worker_seed::Int = 20260615
     worker_mc_samples::Int = 1
     worker_outfile::String = ""
     worker_parity::Bool = false
+end
+
+# Copy of `cfg` with the named fields replaced. Base.@kwdef gives a keyword
+# constructor but not an update-an-existing-instance one, and the worker needs a
+# per-repeat variant of its config (repeat index and seed) without restating the
+# other two dozen fields.
+function _ppc_with(cfg::PPCConfig; kwargs...)
+    overrides = Dict{Symbol, Any}(kwargs)
+    return PPCConfig(; (f => get(overrides, f, getfield(cfg, f)) for f in fieldnames(PPCConfig))...)
 end
 
 @inline function _ppc_bool(raw::AbstractString)::Bool
@@ -265,6 +291,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     worker_mode = ""
     worker_threads = 1
     worker_repeat = 1
+    worker_repeats = 1
     worker_seed = seed
     worker_mc_samples = 1
     worker_outfile = ""
@@ -311,6 +338,8 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
             worker_threads = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--repeat=")
             worker_repeat = parse(Int, _ppc_arg_value(arg))
+        elseif startswith(arg, "--worker-repeats=")
+            worker_repeats = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--worker-seed=")
             worker_seed = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--worker-mc-samples=")
@@ -331,6 +360,9 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     isempty(threads) && (threads = defaults.threads)
     repeats <= 0 && (repeats = defaults.repeats)
     warmup < 0 && (warmup = defaults.warmup)
+    # Record this before the default ladder fills the gap: afterwards the two
+    # cases are indistinguishable.
+    mc_samples_explicit = !isempty(mc_samples)
     isempty(mc_samples) && (mc_samples = defaults.mc_samples)
     parity_samples <= 0 && (parity_samples = defaults.parity_samples)
     process_workers = max(1, process_workers)
@@ -348,6 +380,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
         solver_mode=solver_mode,
         process_workers=process_workers,
         mc_samples=mc_samples,
+        mc_samples_explicit=mc_samples_explicit,
         parity_samples=parity_samples,
         cpu_pinning=cpu_pinning,
         worker=worker,
@@ -355,6 +388,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
         worker_mode=worker_mode,
         worker_threads=worker_threads,
         worker_repeat=worker_repeat,
+        worker_repeats=worker_repeats,
         worker_seed=worker_seed,
         worker_mc_samples=worker_mc_samples,
         worker_outfile=worker_outfile,

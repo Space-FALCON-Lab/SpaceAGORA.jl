@@ -63,6 +63,18 @@ Base.@kwdef mutable struct PolicyTelemetry
     last_hint_allotment::Int64 = 1
     last_hint_confidence::Float64 = 0.0
     last_hint_regret_ns::Float64 = 0.0
+    # Which RHS execution plan pre-solve calibration installed via
+    # `rhs_plan_override`, and how it got there. Recorded by
+    # `_record_rhs_plan_selection!` (simulation/engine/rhs_calibration.jl) purely
+    # so the choice is observable after the fact: the plan lives in per-solve
+    # `shared_buffers` and is otherwise unreachable once the solve returns, which
+    # makes "the router picked the wrong route for this workload" impossible to
+    # attribute from outside. Read-only accounting; nothing dispatches on these.
+    #   rhs_plan_source  :none (never calibrated) | :cache | :sweep
+    #   rhs_plan_mode    the plan's own mode, e.g. :satellite_batch or :flat
+    rhs_plan_source::Symbol = :none
+    rhs_plan_mode::Symbol = :none
+    rhs_plan_allotment::Int64 = 0
 end
 
 Base.@kwdef mutable struct AdaptiveChoiceStats

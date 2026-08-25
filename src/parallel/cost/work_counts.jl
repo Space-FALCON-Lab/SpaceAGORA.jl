@@ -95,6 +95,49 @@ satellite; only the per-body arithmetic is.
     return WorkCounts(scalar_items = Float64(max(1, length(model.body_names))))
 end
 
+# Flat-queue node predicates, mirrored from SimulationEngine.
+#
+# SOURCE OF TRUTH: `_batchable_effector` / `_harmonics_prepass_effector` /
+# `_count_flat_queue_only_effectors` in src/simulation/engine/dynamics_rhs.jl.
+# They are duplicated here rather than called because ParallelCost is included
+# from core/simulation_model.jl, which the engine is built on top of -- calling
+# upward would invert the dependency.
+#
+# Duplication is made safe by test/unit/parallel/cost_work_counts_tests.jl,
+# which asserts these agree with the engine's versions for every built-in
+# effector, including the `gravity_gradient` variants. Divergence is a test
+# failure, not a silent mis-count.
+@inline _cost_batchable_effector(::Any)::Bool = false
+@inline _cost_batchable_effector(::NBodyGravityModel)::Bool = true
+@inline _cost_batchable_effector(::SolarRadiationPressureModel)::Bool = true
+@inline _cost_batchable_effector(e::InverseSquaredGravityModel)::Bool = !e.gravity_gradient
+@inline _cost_batchable_effector(e::InverseSquaredJ2GravityModel)::Bool = !e.gravity_gradient
+
+@inline _cost_harmonics_prepass_effector(::Any)::Bool = false
+@inline _cost_harmonics_prepass_effector(::GravitationalHarmonicsModel)::Bool = true
+
+"""
+    flat_queue_node_effector(effector; partition_active = false) -> Bool
+
+Whether an effector produces flat-queue work items.
+
+Effectors resolved by a pre-pass -- the batchable ones that write straight into
+`totals` from position buffers, and harmonics with its own SIMD batch -- have
+already written their contribution by the time the queue runs, and the queue
+skips them. Counting them as nodes overstates `queue_nodes` by a factor of
+(total effectors)/(queue-only effectors), which for a vacuum harmonics-only
+constellation means counting N nodes where the queue does zero work.
+
+`partition_active` reverses the exclusion: under a solver partition (split
+IMEX) the pre-pass results are not applicable and every selected effector goes
+through the queue, which is what the `partition === nothing` guard in
+`_flat_selection_mask` encodes.
+"""
+@inline function flat_queue_node_effector(effector; partition_active::Bool = false)::Bool
+    partition_active && return true
+    return !(_cost_batchable_effector(effector) || _cost_harmonics_prepass_effector(effector))
+end
+
 """
     model_in_cost_domain(density_model) -> Bool
 
@@ -136,13 +179,19 @@ function constellation_work_counts(
     args,
     n_active_sats::Int;
     probe::Union{Nothing, Dict{Int, Float64}} = nothing,
+    partition_active::Bool = false,
 )::WorkCounts
     n_sats = max(0, n_active_sats)
     effectors = args.dynamics_model.dynamic_effectors
     total = WorkCounts()
+    queue_effectors = 0
 
     @inbounds for idx in eachindex(effectors)
-        declared = effector_cost_terms(effectors[idx])
+        effector = effectors[idx]
+        flat_queue_node_effector(effector; partition_active=partition_active) &&
+            (queue_effectors += 1)
+
+        declared = effector_cost_terms(effector)
         if declared !== nothing
             total = total + declared
             continue
@@ -158,7 +207,7 @@ function constellation_work_counts(
         simd_terms = total.simd_terms,
         scalar_items = total.scalar_items,
         coeff_touches = total.coeff_touches,
-        queue_nodes = Float64(n_sats * length(effectors)),
+        queue_nodes = Float64(n_sats * queue_effectors),
         probe_ns = total.probe_ns,
         unknown_effectors = total.unknown_effectors,
         in_domain = total.in_domain &&

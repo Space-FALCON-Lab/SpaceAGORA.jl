@@ -571,6 +571,15 @@ export RhsEffectorDecision, RhsExecutionPlan
     # (ParallelPolicy, SimulationCallbacks, SimulationEngine).
 
     # Feeds ParallelPolicy.thread_policy_decision and budget-dependent routing.
+    #
+    # The adaptive-controller knobs below (persistent_hints through
+    # adaptive_trim_quanta) were previously read straight from ENV on every
+    # adaptive decision *and* every policy observation. Each read is a Dict
+    # lookup plus strip/lowercase/parse, all of which allocate, and the
+    # observation path fires once per RHS call on the flat-effector route --
+    # so an L50 constellation solve paid several thousand of them per second
+    # for values that cannot change inside a run. They are snapshotted here
+    # for the same reason inner_thread_budget already was.
     struct PolicyDecisionEnvConfig
         inner_thread_budget::Int
         outer_parallel_active::Bool
@@ -579,6 +588,14 @@ export RhsEffectorDecision, RhsExecutionPlan
         auto_min_budget_density_lockfree::Int
         auto_min_budget_thermal::Int
         adaptive_enabled::Bool
+        persistent_hints::Bool
+        adaptive_measured_reward::Bool
+        adaptive_bootstrap_threads::Bool
+        adaptive_control_tail_guard::Bool
+        adaptive_rho::Float64
+        adaptive_delta::Float64
+        adaptive_window::Int
+        adaptive_trim_quanta::Int
     end
 
     # GRAM along-track density cache tolerances (built by

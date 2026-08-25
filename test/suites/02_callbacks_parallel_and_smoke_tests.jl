@@ -951,6 +951,19 @@ end
     policy = SimulationModel.ParallelPolicy
     policy.reset_policy_telemetry!()
 
+    # Forced region: budget <= 1 or num_items <= 1 means the *next* decision
+    # cannot read the controller (thread_policy_decision returns use_threads
+    # false and allotment 1 before consulting desire), so record_policy_observation!
+    # must not move it. This block used to drive the AIMD arithmetic through
+    # exactly that region -- budget 1, num_items 1/1/0 -- and assert the
+    # classifications it produced. Those classifications were unreadable by
+    # construction, and worse, the arithmetic there is degenerate: at budget 1
+    # `allotment` collapses to 1 and `useful` to min(num_items, 1), so any
+    # num_items >= 1 scores utilization 1.0 and inflates desire on every call,
+    # which then leaks into a later higher-budget solve in the same process as
+    # a desire that was never earned. The controller is exercised for real in
+    # the live-budget block below; here the contract is that the forced region
+    # is inert.
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
         "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "1",
@@ -966,47 +979,99 @@ end
             source=:density_callback
         ) == false
 
-        policy.record_policy_observation!(
-            :density_callback;
-            mode=:auto,
-            num_items=1,
-            use_threads=false,
-            elapsed_ns=10
-        )
-        snap1 = policy.policy_telemetry_snapshot()
-        @test snap1.last_classification == "efficient_satisfied"
-        @test snap1.adaptation_updates_total >= 1
-        @test snap1.last_desire >= 2
+        for (items, ns) in ((1, 10), (1, 11), (0, 12))
+            policy.record_policy_observation!(
+                :density_callback;
+                mode=:auto,
+                num_items=items,
+                use_threads=false,
+                elapsed_ns=ns
+            )
+        end
+        snap = policy.policy_telemetry_snapshot()
+        # Raw accounting still advances -- only the controller update is skipped.
+        @test snap.observations_total >= 3
+        @test snap.serial_elapsed_ns_total >= 33
+        @test snap.adaptation_updates_total == 0
+        @test snap.quantums_total == 0
+        @test snap.last_classification == "none"
+        @test snap.accounted_fraction_proxy >= 0.0
+        @test snap.trimmed_accounted_fraction_proxy >= 0.0
+    end
 
-        policy.record_policy_observation!(
-            :density_callback;
-            mode=:auto,
-            num_items=1,
-            use_threads=false,
-            elapsed_ns=11
-        )
-        snap2 = policy.policy_telemetry_snapshot()
-        @test snap2.last_classification == "efficient_deprived"
+    # Live budget: the controller can actually be read, so the three AIMD
+    # classifications are reachable and are asserted here instead.
+    #
+    # `inefficient` needs utilization < delta, i.e. num_items < delta * allotment
+    # with num_items >= 2 (below that the forced-region guard applies), so it
+    # needs an allotment of at least 3 and therefore a budget of at least 4.
+    # `efficient_deprived` needs desire > budget, which the rho ramp reaches
+    # after a few satisfied windows since the desire cap is ceil(rho * budget).
+    if Threads.nthreads() >= 4
+        policy.reset_policy_telemetry!()
+        budget = Threads.nthreads()
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
+            "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
+            "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget)
+        ) do
+            saturating_items = 4 * budget
+            classifications = String[]
+            elapsed_total = 0
+            # Saturating windows: utilization pins at 1.0, so desire ramps by rho
+            # until it exceeds the budget and the allotment starts being clamped.
+            for i in 1:8
+                decision = policy.thread_policy_decision(
+                    saturating_items;
+                    mode=:auto,
+                    threshold=1,
+                    source=:other_source
+                )
+                elapsed_total += 10 + i
+                policy.record_policy_observation!(
+                    :other_source;
+                    mode=:auto,
+                    num_items=saturating_items,
+                    use_threads=decision.use_threads,
+                    elapsed_ns=10 + i
+                )
+                push!(classifications, policy.policy_telemetry_snapshot().last_classification)
+            end
+            @test "efficient_satisfied" in classifications
+            @test "efficient_deprived" in classifications
+            @test policy.policy_telemetry_snapshot().last_desire >= 2
 
-        policy.record_policy_observation!(
-            :density_callback;
-            mode=:auto,
-            num_items=0,
-            use_threads=false,
-            elapsed_ns=12
-        )
-        snap3 = policy.policy_telemetry_snapshot()
-        @test snap3.last_classification == "inefficient"
-        @test snap3.last_utilization <= 0.1
-        @test snap3.serial_elapsed_ns_total >= 33
-        @test snap3.quantum_length == 1
-        @test snap3.trim_quanta_budget == 1
-        @test snap3.quantums_total >= 3
-        @test snap3.quantums_inefficient >= 1
-        @test snap3.quantums_efficient_satisfied >= 1
-        @test snap3.quantums_efficient_deprived >= 1
-        @test snap3.accounted_fraction_proxy >= 0.0
-        @test snap3.trimmed_accounted_fraction_proxy >= 0.0
+            # Starve the same controller: two items against an allotment that has
+            # ramped to at least 3 scores below delta.
+            starved = policy.thread_policy_decision(
+                2;
+                mode=:auto,
+                threshold=1,
+                source=:other_source
+            )
+            policy.record_policy_observation!(
+                :other_source;
+                mode=:auto,
+                num_items=2,
+                use_threads=starved.use_threads,
+                elapsed_ns=13
+            )
+            elapsed_total += 13
+            snap = policy.policy_telemetry_snapshot()
+            @test snap.last_classification == "inefficient"
+            @test snap.last_utilization < 0.8
+            @test snap.adaptation_updates_total >= 3
+            @test snap.quantum_length == 1
+            @test snap.trim_quanta_budget == 1
+            @test snap.quantums_total >= 3
+            @test snap.quantums_inefficient >= 1
+            @test snap.quantums_efficient_satisfied >= 1
+            @test snap.quantums_efficient_deprived >= 1
+            @test snap.elapsed_ns_total >= elapsed_total
+        end
     end
 
     if Threads.nthreads() > 1
@@ -1417,7 +1482,7 @@ end
     @test flat_plan_floor.allotment == 1
 
     # ── In-memory store / lookup round-trip ──────────────────────────────────
-    test_sig = "v1|machine=test_gate|budget=8|sats=2_4|effs=1|harm=1"
+    test_sig = "v2|machine=test_gate|budget=8|sats=2_4|effs=1|harm=1"
     SimulationEngine._rhs_calib_store!(test_sig, sat_batch_plan, 1.5e6)
     retrieved = SimulationEngine._rhs_calib_lookup(test_sig)
     @test retrieved !== nothing
@@ -1429,12 +1494,24 @@ end
     @test retrieved_flat.mode == :flat_constellation_effector_queue
     @test retrieved_flat.allotment == 4
 
+    # Scheduler survives store/lookup: it is a swept axis now, so a cache entry
+    # that dropped it would silently hand the solve back to the env var.
+    for sched in (:static, :dynamic)
+        sig_sched = "v2|machine=test_gate_$(sched)|budget=8|sats=2_4|effs=1|harm=1"
+        SimulationEngine._rhs_calib_store!(
+            sig_sched, SimulationEngine._make_calib_flat_plan(4, sched), 0.8e6
+        )
+        round_tripped = SimulationEngine._rhs_calib_lookup(sig_sched)
+        @test round_tripped !== nothing
+        @test round_tripped.scheduler == sched
+    end
+
     # ── TOML persistence round-trip (temp directory) ─────────────────────────
     mktempdir() do tmp
         calib_path = joinpath(tmp, "calib_test.toml")
         withenv("SPACEAGORA_RHS_CALIBRATION_PATH" => calib_path) do
             # Store and save to disk
-            sig_disk = "v1|machine=disktest|budget=4|sats=2_4|effs=1|harm=1"
+            sig_disk = "v2|machine=disktest|budget=4|sats=2_4|effs=1|harm=1"
             SimulationEngine._rhs_calib_store!(sig_disk, flat_plan, 2.0e6)
             SimulationEngine._rhs_calib_save!()
             @test isfile(calib_path)
@@ -1444,6 +1521,8 @@ end
             @test parsed["schema_version"] == 1
             rows = parsed["calibrations"]
             @test any(r -> get(r, "signature", "") == sig_disk, rows)
+            disk_row = only(filter(r -> get(r, "signature", "") == sig_disk, rows))
+            @test get(disk_row, "scheduler", "") == String(flat_plan.scheduler)
         end
     end
 
@@ -1510,7 +1589,10 @@ end
     sig_a = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
     sig_b = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
     @test sig_a == sig_b
-    @test startswith(sig_a, "v1|machine=")
+    # v2: the signature version was bumped when the inner scheduler became part
+    # of the calibrated plan, so v1 entries (which pinned only mode+allotment and
+    # left the scheduler to ENV) must not be replayed under the new semantics.
+    @test startswith(sig_a, "v2|machine=")
     @test occursin("|sats=", sig_a)
     @test occursin("|effs=1|", sig_a)
     @test occursin("|harm=1", sig_a)

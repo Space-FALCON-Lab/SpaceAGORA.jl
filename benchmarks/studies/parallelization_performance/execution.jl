@@ -335,6 +335,7 @@ end
 function ppc_policy_columns(snap)
     empty = (
         rhs_plan_source="none", rhs_plan_mode="none", rhs_plan_allotment=0,
+        rhs_plan_scheduler="none",
         policy_last_mode="none", policy_last_allotment=0, policy_last_outer_active=false,
         policy_decisions_total=0, policy_adaptive_decisions_total=0,
         policy_threads_enabled_total=0, policy_discarded_by_route_total=0,
@@ -345,6 +346,7 @@ function ppc_policy_columns(snap)
         rhs_plan_source=string(g(:rhs_plan_source, "none")),
         rhs_plan_mode=string(g(:rhs_plan_mode, "none")),
         rhs_plan_allotment=g(:rhs_plan_allotment, 0),
+        rhs_plan_scheduler=string(g(:rhs_plan_scheduler, "none")),
         policy_last_mode=string(g(:last_mode, "none")),
         policy_last_allotment=g(:last_allotment, 0),
         policy_last_outer_active=g(:last_outer_active, false),

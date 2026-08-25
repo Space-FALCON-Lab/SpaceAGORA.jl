@@ -97,7 +97,8 @@ function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
                 mode=decision.mode,
                 num_items=num_sats,
                 use_threads=use_threads,
-                elapsed_ns=(time_ns() - started_ns)
+                elapsed_ns=(time_ns() - started_ns),
+                env=_policy_env_config(p)
             )
         end
     end

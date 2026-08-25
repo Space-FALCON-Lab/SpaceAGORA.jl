@@ -10,19 +10,58 @@ function record_policy_observation!(
     mode::Symbol,
     num_items::Int,
     use_threads::Bool,
-    elapsed_ns::Integer
+    elapsed_ns::Integer,
+    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
 )
-    budget = effective_inner_thread_budget()
+    budget = env === nothing ? effective_inner_thread_budget() : env.inner_thread_budget
     elapsed_ns_i64 = try
         Int64(elapsed_ns)
     catch
         typemax(Int64)
     end
     elapsed_ns_clamped = max(Int64(0), elapsed_ns_i64)
-    adaptive_enabled = (mode == :auto) && adaptive_policy_enabled()
-    measured_reward = adaptive_enabled && persistent_hints_enabled() && adaptive_measured_reward_enabled()
+    adaptive_enabled = (mode == :auto) &&
+        (env === nothing ? adaptive_policy_enabled() : env.adaptive_enabled)
+
+    # Skip the adaptive branch when nothing can consume what it would produce.
+    #
+    # This is the observation-side counterpart to the short-circuit in
+    # thread_policy_decision (adaptive_decision.jl), which was added on its own
+    # and left this path unguarded. Everything below the `!adaptive_active`
+    # return exists to move `AdaptiveControllerState.desire`, and `desire` is
+    # read in exactly one place: the adaptive branch of the *next*
+    # thread_policy_decision for the same source. Two cases where that read
+    # cannot happen:
+    #
+    #   decision_forced -- budget <= 1 or num_items <= 1 makes the next decision
+    #     take the forced path, which never reads desire. Every Distributed
+    #     worker in a process-routed campaign runs --threads=1, so this is the
+    #     common case there, not an edge case.
+    #
+    #   empty signature -- thread_policy_decision writes ctx.decision_signature
+    #     only from its adaptive branch, so an empty entry means no adaptive
+    #     decision has ever been made for this source in this context. That is
+    #     the whole of a vacuum-gravity constellation solve: the RHS flat/batch
+    #     routes call this once per RHS call with plan.policy_applied set, but
+    #     the plan came from pre-solve calibration and no callback ever consults
+    #     the policy (measured on gravity_1024sat_l50_vacuum_1hr:
+    #     policy_decisions_total = 0, adaptive_decisions_total = 0, against
+    #     thousands of observations per second).
+    #
+    # The telemetry writes above the guard are unconditional as before, so
+    # observations_total and the elapsed accumulators are unchanged. Only the
+    # controller update -- a dict lookup plus ~8 field writes, and for R4 four
+    # more ENV reads -- is skipped, and only when its result is unreadable.
+    decision_forced = budget <= 1 || num_items <= 1
+    adaptive_possible = adaptive_enabled && !decision_forced
+    hints_enabled = adaptive_possible &&
+        (env === nothing ? persistent_hints_enabled() : env.persistent_hints)
+    measured_reward = hints_enabled &&
+        (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)
+
     hint_signature = ""
     hint_allotment = Int64(1)
+    adaptive_active = false
 
     lock(_policy_telemetry_lock) do
         ctx = _active_policy_context()
@@ -41,7 +80,8 @@ function record_policy_observation!(
         hint_allotment = get(ctx.decision_allotment, source, use_threads ? Int64(max(1, min(budget, num_items))) : Int64(1))
         t.last_signature = hint_signature
 
-        if !adaptive_enabled
+        adaptive_active = adaptive_possible && !isempty(hint_signature)
+        if !adaptive_active
             return nothing
         end
 
@@ -66,10 +106,10 @@ function record_policy_observation!(
             return nothing
         end
 
-        ρ = adaptive_rho()
-        δ = adaptive_delta()
-        L = adaptive_window_size()
-        trim_quanta = adaptive_trim_quanta_budget()
+        ρ = env === nothing ? adaptive_rho() : env.adaptive_rho
+        δ = env === nothing ? adaptive_delta() : env.adaptive_delta
+        L = env === nothing ? adaptive_window_size() : env.adaptive_window
+        trim_quanta = env === nothing ? adaptive_trim_quanta_budget() : env.adaptive_trim_quanta
 
         st.desire = min(max(1, st.desire), _adaptive_desire_cap(budget, ρ))
         allotment = use_threads ? max(1, min(st.desire, budget)) : 1
@@ -123,7 +163,12 @@ function record_policy_observation!(
         end
     end
 
-    if adaptive_enabled && persistent_hints_enabled() && !isempty(hint_signature)
+    # `adaptive_active` already implies a non-empty signature, which in turn
+    # implies the decision that produced it ran its adaptive branch -- so this
+    # keeps recording exactly the hint samples it recorded before. The forced
+    # region drops out for free: thread_policy_decision stores "" there, so the
+    # old `!isempty(hint_signature)` test already excluded it.
+    if adaptive_active && hints_enabled
         _hint_record_observation!(
             hint_signature,
             max(Int64(1), hint_allotment),

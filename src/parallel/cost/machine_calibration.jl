@@ -24,10 +24,17 @@ const CALIBRATION_SCHEMA_VERSION = 1
 const _COEFF_KNOTS = ((22, 20), (52, 50), (102, 100), (202, 200),
                       (402, 400), (802, 800), (1602, 1600))
 
-# Batch widths for the SIMD-lane curve. The low end is where per-pass loop
-# overhead dominates and cannot amortize -- a real regime, since batch width is
-# satellites-per-worker and a small constellation on many threads lands there.
-const _LANE_KNOTS = (16, 64, 256, 1024, 4096, 16384, 65536, 262144)
+# Batch widths for the SIMD-lane curve.
+#
+# The ladder starts at 1, not at some comfortable vector width, because
+# `satellite_batch` lives entirely at the bottom of it: that route processes one
+# satellite at a time, so the model evaluates the lane rate at B=1. Clamping to
+# a B=16 knot would have handed the candidate a guessed rate for the whole
+# regime that decides it. The low end is also where per-pass loop overhead
+# dominates and cannot amortize, which is a real effect and not an artefact --
+# batch width is satellites-per-worker, so a small constellation on many threads
+# genuinely lands there.
+const _LANE_KNOTS = (1, 2, 4, 8, 16, 64, 256, 1024, 4096, 16384, 65536, 262144)
 
 """
     machine_fingerprint() -> String

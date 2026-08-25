@@ -437,20 +437,37 @@ end
     return nothing
 end
 
-# Whether `route` has enough observations to be trusted and is not beaten by any
-# other route that also has observations. Routes with no data cannot beat it --
-# that is the point: an unmeasured route is not evidence against a measured one.
+# Whether `route` has been tested AGAINST SOMETHING and won.
+#
+# Three conditions, and the third is the one that matters. The route needs
+# enough observations to be trusted, no sampled alternative may beat it, and at
+# least one alternative must actually have been sampled.
+#
+# Without that last clause the predicate is vacuous exactly when it is most
+# dangerous: after a single campaign only the default has data, "no other route
+# beats it" is trivially true because no other route has been tried, and the
+# selector would stop exploring before it had learned anything. Comparing a
+# measured route against nothing is not evidence that it is the right one -- it
+# only means nothing has contradicted it yet.
+#
+# What this does buy, which is the point, is that once alternatives have been
+# tried and lost the router stops paying to re-try them. That is the recurring
+# cost persisted history is meant to eliminate: a restored signature carrying
+# hundreds of observations across every route should exploit immediately, not
+# re-run the round-robin its predecessor already paid for.
 @inline function _route_is_proven(snapshot, route::Symbol, min_samples::Int)::Bool
     info = get(snapshot, route, nothing)
     info === nothing && return false
     (info.samples >= max(1, min_samples) && isfinite(info.mean_s)) || return false
+    tested_against_an_alternative = false
     for (other, other_info) in snapshot
         other === route && continue
         other_info.samples <= 0 && continue
         isfinite(other_info.mean_s) || continue
+        tested_against_an_alternative = true
         other_info.mean_s < info.mean_s && return false
     end
-    return true
+    return tested_against_an_alternative
 end
 
 @inline function _best_candidate(

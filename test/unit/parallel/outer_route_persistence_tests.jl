@@ -111,3 +111,21 @@ end
         PPr.outer_route_stats_snapshot(beaten, PPr.outer_route_signature(feat)),
         :process, 2) == false
 end
+
+@testset "A default tested against nothing is not proven" begin
+    # The guard must not fire before any alternative has been tried. "No sampled
+    # route beats the default" is vacuously true when the default is the only
+    # sampled route, and stopping exploration there would mean the router never
+    # learns anything -- it would lock in whatever `default_outer_route` guessed
+    # on the first campaign. The integration suite caught exactly this.
+    feat = _feat()
+    only_default = PPr.OuterRouteState()
+    _record!(only_default, feat, :process, 0.10)
+    snap = PPr.outer_route_stats_snapshot(only_default, PPr.outer_route_signature(feat))
+    @test PPr._route_is_proven(snap, :process, 2) == false
+
+    # One sampled alternative that loses is enough to make it proven.
+    _record!(only_default, feat, :threads, 0.90)
+    snap2 = PPr.outer_route_stats_snapshot(only_default, PPr.outer_route_signature(feat))
+    @test PPr._route_is_proven(snap2, :process, 2) == true
+end

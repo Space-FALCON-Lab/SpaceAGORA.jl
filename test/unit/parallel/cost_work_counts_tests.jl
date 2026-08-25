@@ -97,3 +97,45 @@ end
     @test PC.effector_cost_terms(SM.InverseSquaredGravityModel()).coeff_touches == 0.0
     @test PC.effector_cost_terms(SM.InverseSquaredGravityModel()).scalar_items > 0.0
 end
+
+@testset "Flat-queue predicates agree with the engine's" begin
+    # ParallelCost duplicates _batchable_effector / _harmonics_prepass_effector
+    # because it is included below SimulationEngine and cannot call upward.
+    # This test is what makes that duplication safe: if the engine's predicates
+    # change and the mirrored copies do not, queue_nodes silently drifts from
+    # the node count the RHS actually builds, and the cost model mis-ranks the
+    # routing candidates with no other symptom.
+    SE = SpaceAGORA.SimulationEngine
+    E = SM.Earth()
+    harm_file = joinpath(@__DIR__, "..", "..", "..", "data",
+                         "Gravity_harmonics_data", "EarthGGM05C.csv")
+
+    effectors = Any[
+        SM.InverseSquaredGravityModel(),
+        SM.InverseSquaredJ2GravityModel(),
+        SM.NBodyGravityModel(["Sun"], "Earth"),
+        SM.SolarRadiationPressureModel(1.8, 10.0),
+        # gravity_gradient flips _batchable_effector for the central terms, so
+        # both variants must be checked -- a type-only mirror would pass the
+        # default case and silently disagree here.
+        SM.InverseSquaredGravityModel(gravity_gradient=true),
+        SM.InverseSquaredJ2GravityModel(gravity_gradient=true),
+    ]
+    if isfile(harm_file)
+        push!(effectors, SM.GravitationalHarmonicsModel(4, 4, harm_file, E))
+    end
+
+    for e in effectors
+        @test PC._cost_batchable_effector(e) == SE._batchable_effector(e)
+        @test PC._cost_harmonics_prepass_effector(e) == SE._harmonics_prepass_effector(e)
+    end
+
+    # The mirrored node predicate must reproduce the engine's queue-only count.
+    tup = Tuple(effectors)
+    expected = SE._count_flat_queue_only_effectors(tup)
+    got = count(e -> PC.flat_queue_node_effector(e), effectors)
+    @test got == expected
+
+    # And a solver partition puts every effector back on the queue.
+    @test all(e -> PC.flat_queue_node_effector(e; partition_active=true), effectors)
+end

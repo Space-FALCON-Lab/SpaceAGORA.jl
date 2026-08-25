@@ -1724,6 +1724,62 @@ end
     end
 end
 
+@testset "Light-work effector short-circuit keeps the cost model fed" begin
+    # _dynamic_effector_thread_decision returns before consulting the policy when
+    # heavy-only rejects light work. That return MUST keep policy_applied true:
+    # at the call site it gates both the elapsed-time measurement and
+    # _update_effector_cost_model!, and that cost model is what computes
+    # heavy_work in the first place. Returning false freezes the estimate, so
+    # work classified light once can never be reclassified, and the guard latches
+    # permanently on its first observation.
+    args_light = build_config_multi(
+        spacecraft=[make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i,
+                                    ν_deg=120.0 + 5.0 * i) for i in 1:2],
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        # Two cheap effectors, both thread-safe so the decision actually reaches
+        # the heavy-work guard. AerodynamicCoefficientConstant would not: it is
+        # not declared thread-safe, so _dynamic_effectors_parallel_supported
+        # rejects the set earlier and the guard under test never runs.
+        dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_light = ODEParams(n_sats=2, args=args_light)
+    _initialize_heat_rate_buffers!(p_light)
+    _initialize_harmonics_workspace_buffers!(p_light)
+    SimulationEngine._initialize_density_model_instances!(p_light)
+    SimulationEngine._initialize_density_cache_buffers!(p_light)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_light)
+    _initialize_aero_workspace_buffers!(p_light)
+    _initialize_nbody_workspace_buffers!(p_light)
+    SimulationEngine._initialize_runtime_env_config!(p_light)
+    u_light = build_initial_conditions(args_light)
+    du_light = zero(u_light)
+
+    withenv("SPACEAGORA_EFFECTOR_PARALLEL" => "auto",
+            "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY" => "1") do
+        SimulationEngine._initialize_runtime_env_config!(p_light)
+        decision = SimulationEngine._dynamic_effector_thread_decision(
+            args_light, p_light, args_light.dynamics_model.dynamic_effectors, 2
+        )
+        # Light work must not thread, but must still be timed.
+        @test decision.use_threads == false
+        @test decision.allotment == 1
+        @test decision.policy_applied == true
+
+        # And the cost model must actually accumulate samples across RHS calls,
+        # which is the observable consequence.
+        before = p_light.shared_buffers.effector_cost_samples[]
+        for _ in 1:5
+            SimulationEngine.spacecraft_dynamics!(du_light, u_light, p_light, 0.0)
+        end
+        @test p_light.shared_buffers.effector_cost_samples[] > before
+    end
+end
+
 @testset "RHS Plan Calibration" begin
     # ── Env var parsing ──────────────────────────────────────────────────────
     withenv("SPACEAGORA_RHS_CALIBRATE" => "off") do

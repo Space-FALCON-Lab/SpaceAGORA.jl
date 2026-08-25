@@ -668,6 +668,34 @@ end
     target_ns = env.effector_work_ns_per_worker_threshold * (outer_active ? env.effector_outer_work_scale : 1.0)
     heavy_work = work_per_worker_ns >= target_ns
 
+    # Light work under heavy-only returns before the policy is consulted at all,
+    # the same way n_effectors <= 1 and an unsupported effector set already do.
+    #
+    # thread_policy_decision now short-circuits its adaptive branch for this
+    # case, but it still records a decision and stamps the context, which is two
+    # telemetry lock acquisitions and ~20 field writes on a path that runs once
+    # per RHS call. For a single spacecraft with two cheap effectors -- the
+    # montecarlo_heavy_aerobraking shape -- that bookkeeping was most of what the
+    # effector policy cost, on a workload where it can never enable threading:
+    # num_items is 2, above the forced-region floor, so nothing cheaper caught
+    # it. Turning the effector policy off entirely was worth 48% of wall time
+    # there before this, and the answer it computes is `use_threads = false`
+    # either way.
+    #
+    # policy_applied stays TRUE here, and that is not incidental. At the call
+    # site `needs_timing = effector_decision.policy_applied` gates both the
+    # elapsed-time measurement and `_update_effector_cost_model!`, which is what
+    # feeds `_effector_observed_cost_ns_per_item` and therefore `heavy_work`
+    # itself. Returning false would freeze the cost estimate: work classified
+    # light once would never be re-measured, could never be reclassified heavy,
+    # and the guard would latch permanently on its first observation. The other
+    # early returns above can afford policy_applied=false because they describe
+    # effector sets with no threading decision to make at all; this one describes
+    # a decision whose input has to keep being measured.
+    if env.effector_heavy_only && !heavy_work
+        return (use_threads=false, allotment=1, mode=mode, policy_applied=true)
+    end
+
     policy = SimulationModel.ParallelPolicy.thread_policy_decision(
         n_effectors;
         mode=mode,

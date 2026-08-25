@@ -33,7 +33,39 @@
     # adaptive_enabled itself is left as the caller configured it, so telemetry
     # still reports whether adaptive routing was *on*, distinct from whether it
     # had anything to decide.
-    decision_forced = budget <= 1 || num_items <= 1
+    # Every way `use_threads` below resolves to false without consulting the
+    # adaptive branch, not just the two budget/item cases it started with.
+    #
+    # `use_threads` already short-circuits on an under-threshold item count, on
+    # an outer split that disallows inner threading, and on the heavy-only guard
+    # rejecting light work -- but all three were tested *after* the adaptive
+    # branch had built a signature string, taken a persistent-hint lock, done a
+    # hint lookup and taken the telemetry lock. The result was discarded every
+    # time.
+    #
+    # The heavy-only case is the expensive one in practice. A single spacecraft
+    # with two cheap effectors puts num_items at 2 -- above the forced floor --
+    # so the full adaptive machinery ran once per RHS call to decide whether to
+    # thread two effectors that the heavy-work guard was always going to reject.
+    # Measured on the montecarlo_heavy_aerobraking shape (1 satellite,
+    # inverse-square + aero), turning the effector policy off was worth 48% of
+    # wall time and disabling adaptation entirely 45%, on a workload where
+    # neither can ever enable threading.
+    #
+    # `mode == :off` needs no entry: adaptive_enabled already requires :auto.
+    # `mode == :on` is deliberately absent -- it forces use_threads true, but the
+    # allotment still comes from the adaptive branch, so that decision is not
+    # forced. It cannot reach here anyway for the same :auto reason.
+    #
+    # As before, only work is skipped and never a decision: use_threads and
+    # allotment are identical either way, because each disjunct below
+    # independently pins use_threads false and allotted collapses to 1.
+    decision_forced =
+        budget <= 1 || num_items <= 1 ||
+        !auto_budget_allowed ||
+        num_items < max(1, threshold) ||
+        (outer_active && !allow_with_outer) ||
+        (heavy_only && !heavy_work)
     adaptive_active = adaptive_enabled && !decision_forced
     measured_reward = adaptive_active &&
         (env === nothing ? persistent_hints_enabled() : env.persistent_hints) &&

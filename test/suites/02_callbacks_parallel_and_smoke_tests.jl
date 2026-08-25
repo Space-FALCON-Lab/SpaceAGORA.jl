@@ -1659,6 +1659,71 @@ end
     @test mismatches == 1
 end
 
+@testset "Flat-queue reduction: parallel path is bit-identical to serial" begin
+    # The cross-worker partials reduction was serial O(N*W) and now splits over
+    # the worker pool. Each worker owns a disjoint satellite range and still
+    # accumulates worker_id 1..W in order for every satellite it owns, so the
+    # floating-point summation order per satellite is UNCHANGED and the result
+    # must be bit-identical -- not merely close. Anything else would mean the
+    # optimisation silently altered trajectories.
+    Threads.nthreads() > 1 || return
+
+    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    args_red = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * (i % 7), rp_alt_m=480e3 + 5e3 * (i % 5),
+                            ν_deg=(120.0 + 7.0 * i) % 360.0)
+            for i in 1:160
+        ],
+        # Harmonics is pre-pass handled; the aerodynamic effector is flat-queue
+        # only, which is what makes the partials reduction actually run.
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(GravitationalHarmonicsModel(8, 8, harmonics_file, EARTH),
+                           AerodynamicCoefficientConstant()),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_red = ODEParams(n_sats=160, args=args_red)
+    _initialize_heat_rate_buffers!(p_red)
+    _initialize_harmonics_workspace_buffers!(p_red)
+    SimulationEngine._initialize_density_model_instances!(p_red)
+    SimulationEngine._initialize_density_cache_buffers!(p_red)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_red)
+    _initialize_aero_workspace_buffers!(p_red)
+    _initialize_nbody_workspace_buffers!(p_red)
+    SimulationEngine._initialize_runtime_env_config!(p_red)
+    u_red = build_initial_conditions(args_red)
+    du_red = zero(u_red)
+
+    function derivative_at(allot::Int, min_sats::String)
+        withenv("SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER" => min_sats) do
+            SimulationEngine._initialize_runtime_env_config!(p_red)
+            p_red.shared_buffers.rhs_plan_override[] =
+                SimulationEngine._make_calib_flat_plan(allot, :static)
+            try
+                SimulationEngine.spacecraft_dynamics!(du_red, u_red, p_red, 0.0)
+                return [du_red.sc[i][j] for i in 1:160 for j in 4:6]
+            finally
+                p_red.shared_buffers.rhs_plan_override[] = nothing
+            end
+        end
+    end
+
+    # "999999" forces the serial path regardless of satellite count.
+    reference = derivative_at(1, "999999")
+    @test any(!iszero, reference)
+
+    for allot in (2, 4, Threads.nthreads())
+        serial_result = derivative_at(allot, "999999")
+        parallel_result = derivative_at(allot, "1")
+        @test serial_result == reference
+        @test parallel_result == reference
+    end
+end
+
 @testset "RHS Plan Calibration" begin
     # ── Env var parsing ──────────────────────────────────────────────────────
     withenv("SPACEAGORA_RHS_CALIBRATE" => "off") do

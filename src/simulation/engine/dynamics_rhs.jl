@@ -764,6 +764,25 @@ end
 # kernel writes force only, so a model configured with `gravity_gradient=true`
 # (which needs the per-satellite quaternion) must keep going through the
 # per-satellite wrench path instead.
+# Below this many satellites per reduction worker the dispatch costs more than
+# the reduction saves, so the serial path is kept. Sized off the measured
+# persistent-pool dispatch (a few microseconds at realistic widths) against a
+# six-element-per-satellite accumulate.
+#
+# SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER overrides it; setting it very
+# high forces the serial reduction, which is how the parallel path is A/B'd.
+@inline function _rhs_reduction_min_sats_per_worker()::Int
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER", "64"))
+    v = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError(
+            "SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER must be an integer, got '$raw'"
+        ))
+    end
+    return max(1, v)
+end
+
 @inline _batchable_effector(::Any)::Bool = false
 @inline _batchable_effector(::SimulationModel.NBodyGravityModel)::Bool = true
 @inline _batchable_effector(::SimulationModel.SolarRadiationPressureModel)::Bool = true
@@ -1278,17 +1297,60 @@ function _accumulate_dynamic_effectors_flat_batch!(
         end
     end
 
-    # Worker-major reduction: partials is column-major 6×N×W, so for a fixed
-    # worker the satellite dimension is contiguous (stride 6); satellite-major
-    # order with the worker innermost would jump 6N doubles per iteration.
-    @inbounds for worker_id in 1:exec_plan.workers
-        for sat_idx in 1:num_sats
-            totals[1, sat_idx] += partials[1, sat_idx, worker_id]
-            totals[2, sat_idx] += partials[2, sat_idx, worker_id]
-            totals[3, sat_idx] += partials[3, sat_idx, worker_id]
-            totals[4, sat_idx] += partials[4, sat_idx, worker_id]
-            totals[5, sat_idx] += partials[5, sat_idx, worker_id]
-            totals[6, sat_idx] += partials[6, sat_idx, worker_id]
+    # Cross-worker reduction of the 6 x N x W partials into totals.
+    #
+    # This is O(N*W) work and it used to run serially on the calling thread,
+    # which made it a cost that GROWS with the worker count -- every extra
+    # worker added a full N-satellite pass to a loop nothing else overlapped.
+    # At 1024 satellites and 12 workers that is ~74k element-adds per RHS call
+    # charged entirely against wall time, so widening the split partly paid for
+    # itself in reduction.
+    #
+    # Splitting it over the same worker pool leaves the total work unchanged but
+    # divides the wall time, taking the term from O(N*W) to O(N) and making it
+    # very nearly allotment-independent -- which is also why the cost model does
+    # not need a discriminating term for it.
+    #
+    # Each worker owns a disjoint satellite range and accumulates every worker's
+    # partial for those satellites, so there is no write conflict and no atomic.
+    # Satellite-major within a worker is the right traversal here: partials is
+    # column-major 6 x N x W, so for fixed worker_id the satellite dimension is
+    # contiguous at stride 6, and the outer loop over worker_id keeps that inner
+    # access sequential.
+    reduce_workers = SimulationModel.ParallelPolicy.thread_worker_count(
+        num_sats, exec_plan.workers
+    )
+    if reduce_workers <= 1 || num_sats < _rhs_reduction_min_sats_per_worker() * 2
+        @inbounds for worker_id in 1:exec_plan.workers
+            for sat_idx in 1:num_sats
+                totals[1, sat_idx] += partials[1, sat_idx, worker_id]
+                totals[2, sat_idx] += partials[2, sat_idx, worker_id]
+                totals[3, sat_idx] += partials[3, sat_idx, worker_id]
+                totals[4, sat_idx] += partials[4, sat_idx, worker_id]
+                totals[5, sat_idx] += partials[5, sat_idx, worker_id]
+                totals[6, sat_idx] += partials[6, sat_idx, worker_id]
+            end
+        end
+    else
+        n_partials = exec_plan.workers
+        chunk = cld(num_sats, reduce_workers)
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+            :rhs_flat_reduce, reduce_workers, reduce_workers; scheduler = :static
+        ) do _worker_id, slice_idx
+            lo = (slice_idx - 1) * chunk + 1
+            hi = min(num_sats, slice_idx * chunk)
+            lo > num_sats && return nothing
+            @inbounds for worker_id in 1:n_partials
+                for sat_idx in lo:hi
+                    totals[1, sat_idx] += partials[1, sat_idx, worker_id]
+                    totals[2, sat_idx] += partials[2, sat_idx, worker_id]
+                    totals[3, sat_idx] += partials[3, sat_idx, worker_id]
+                    totals[4, sat_idx] += partials[4, sat_idx, worker_id]
+                    totals[5, sat_idx] += partials[5, sat_idx, worker_id]
+                    totals[6, sat_idx] += partials[6, sat_idx, worker_id]
+                end
+            end
+            return nothing
         end
     end
 

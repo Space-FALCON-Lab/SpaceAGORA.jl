@@ -4,6 +4,125 @@ using ..SimulationModel: SimulationConfiguration, EnvironmentModels, ParallelPol
 
 const _CAMPAIGN_OUTER_ROUTE_STATE = OuterRouteState()
 
+# Cross-session persistence for the outer-route bandit.
+#
+# `save_outer_route_state` and `load_outer_route_state!` have existed and been
+# exported since the state was written, and nothing in `src/` ever called them,
+# so the bandit started cold in every process. That is not a small loss on the
+# workloads it matters for: `select_outer_route!` refuses to exploit until every
+# candidate has `adaptive_min_samples` observations, so a fresh process spends
+# its first samples on `:none` and `:threads` before it will use `:process` --
+# even when `default_outer_route` already answers `:process` correctly and the
+# same machine learned that in the previous run. Measured on
+# montecarlo_heavy_aerobraking at 64 samples, the adaptive profiles ran ~19%
+# behind the pinned process route, and forced cold exploration is a direct
+# contributor.
+#
+# Persistence is gated on the same knob the inner hints use, which R5 already
+# sets (`persistent_state_persist=true` in profile_definitions.jl), so this
+# turns on for exactly the profile that declares it and stays off for the
+# static baselines that must not drift between runs.
+const _CAMPAIGN_ROUTE_STATE_LOADED = Ref(false)
+const _CAMPAIGN_ROUTE_STATE_ATEXIT = Ref(false)
+const _CAMPAIGN_ROUTE_STATE_LOCK = ReentrantLock()
+
+@inline function _campaign_route_state_persist_enabled()::Bool
+    return ParallelPolicy.persistent_hints_persist_enabled()
+end
+
+"""
+    campaign_route_state_path() -> String
+
+File backing the persisted outer-route history.
+
+Keyed by profile, machine label and thread count for the same reason the inner
+policy state is: routing statistics gathered under a different profile or a
+different thread budget describe a different machine as far as the bandit is
+concerned, and replaying them would be worse than starting cold.
+`SPACEAGORA_OUTER_ROUTE_STATE_PATH` overrides.
+"""
+function campaign_route_state_path()::String
+    override = strip(get(ENV, "SPACEAGORA_OUTER_ROUTE_STATE_PATH", ""))
+    if !isempty(override)
+        return normpath(isabspath(override) ? override : joinpath(pwd(), override))
+    end
+    profile = ParallelPolicy._safe_token(get(ENV, "SPACEAGORA_PARALLEL_PROFILE", "default"))
+    machine = ParallelPolicy._safe_token(get(ENV, "SPACEAGORA_PERF_MACHINE_LABEL", "default"))
+    return normpath(joinpath(
+        pwd(), "output", "parallel_policy_state",
+        "outer_route_state_$(profile)_$(machine)_t$(Base.Threads.nthreads()).toml",
+    ))
+end
+
+"""
+    ensure_campaign_route_state_loaded!(state = campaign_outer_route_state())
+
+Load persisted routing history into `state` once per process, and register an
+`atexit` hook to write it back.
+
+Loading is additive (`replace=false`): a session's own observations are merged
+with the persisted ones rather than discarding either. Failures are swallowed
+deliberately -- a missing, unreadable, or malformed state file must degrade the
+router to cold-start behaviour, never break a campaign that would otherwise run.
+"""
+function ensure_campaign_route_state_loaded!(state::OuterRouteState = campaign_outer_route_state())::Nothing
+    _campaign_route_state_persist_enabled() || return nothing
+    lock(_CAMPAIGN_ROUTE_STATE_LOCK) do
+        if !_CAMPAIGN_ROUTE_STATE_LOADED[]
+            _CAMPAIGN_ROUTE_STATE_LOADED[] = true
+            path = campaign_route_state_path()
+            try
+                load_outer_route_state!(state, path; replace=false)
+            catch err
+                @debug "Outer-route state could not be loaded; starting cold." path exception=err
+            end
+        end
+        if !_CAMPAIGN_ROUTE_STATE_ATEXIT[]
+            _CAMPAIGN_ROUTE_STATE_ATEXIT[] = true
+            atexit(() -> save_campaign_route_state())
+        end
+        return nothing
+    end
+    return nothing
+end
+
+"""
+    save_campaign_route_state(state = campaign_outer_route_state())
+
+Write the accumulated routing history back to [`campaign_route_state_path`](@ref).
+Returns without writing when persistence is disabled, and never throws: a state
+file that cannot be written must cost the router its memory, not the run.
+"""
+function save_campaign_route_state(state::OuterRouteState = campaign_outer_route_state())::Nothing
+    _campaign_route_state_persist_enabled() || return nothing
+    try
+        save_outer_route_state(
+            state,
+            campaign_route_state_path();
+            metadata=Dict{String, Any}(
+                "profile" => get(ENV, "SPACEAGORA_PARALLEL_PROFILE", "default"),
+                "threads" => Base.Threads.nthreads(),
+            ),
+        )
+    catch err
+        @debug "Outer-route state could not be saved." exception=err
+    end
+    return nothing
+end
+
+"""
+    reset_campaign_route_state_persistence!()
+
+Forget that persisted state was loaded, so the next campaign reloads it. Exists
+for tests; a normal process loads once and keeps the state in memory.
+"""
+function reset_campaign_route_state_persistence!()::Nothing
+    lock(_CAMPAIGN_ROUTE_STATE_LOCK) do
+        _CAMPAIGN_ROUTE_STATE_LOADED[] = false
+    end
+    return nothing
+end
+
 """
     campaign_outer_route_state() -> OuterRouteState
 
@@ -146,6 +265,10 @@ function _campaign_route_plan(
         # serially and skip both selection and feedback.
         return (route=:none, threads=1, inner_thread_budget=1, record=false)
     end
+    # Merge any persisted history before the first selection, so a repeat run on
+    # the same machine exploits what the last one learned instead of re-paying
+    # for cold exploration.
+    ensure_campaign_route_state_loaded!(state)
     threads_available = Base.Threads.nthreads() > 1
     route = select_outer_route!(
         state,

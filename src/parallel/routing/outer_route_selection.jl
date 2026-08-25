@@ -437,6 +437,22 @@ end
     return nothing
 end
 
+# Whether `route` has enough observations to be trusted and is not beaten by any
+# other route that also has observations. Routes with no data cannot beat it --
+# that is the point: an unmeasured route is not evidence against a measured one.
+@inline function _route_is_proven(snapshot, route::Symbol, min_samples::Int)::Bool
+    info = get(snapshot, route, nothing)
+    info === nothing && return false
+    (info.samples >= max(1, min_samples) && isfinite(info.mean_s)) || return false
+    for (other, other_info) in snapshot
+        other === route && continue
+        other_info.samples <= 0 && continue
+        isfinite(other_info.mean_s) || continue
+        other_info.mean_s < info.mean_s && return false
+    end
+    return true
+end
+
 @inline function _best_candidate(
     candidates::Vector{Symbol},
     snapshot
@@ -580,7 +596,29 @@ function select_outer_route!(
     confidence_s = 0.0
     regret_s = 0.0
     if !isempty(snapshot)
-        explore = _under_sampled_candidate(candidates, snapshot, default_route, tuning.adaptive_min_samples)
+        # Forced exploration is skipped once the default route has proven itself.
+        #
+        # `_under_sampled_candidate` guarantees every candidate `adaptive_min_samples`
+        # observations before the selector will exploit anything. That is the right
+        # behaviour cold, but it keeps costing after the answer is known: a
+        # candidate set whose membership shifts between runs -- a different
+        # machine_class, a changed threshold, or history restored for only some
+        # routes -- re-triggers a guaranteed trial of a route the default already
+        # beats. With persisted history this became a regression rather than a
+        # cost: a signature carrying hundreds of observations of `:process` at
+        # 0.1 s and `:threads` at 0.9 s would still divert to an unsampled
+        # `:none`, which cold-start would never have chosen because
+        # `default_outer_route` answers `:process` outright.
+        #
+        # So exploration stays mandatory only while the default is itself
+        # unproven. Once it has the minimum samples and no sampled alternative
+        # beats it, ranking falls through to UCB, which still explores -- through
+        # the confidence width on candidates it has data for -- but is no longer
+        # obliged to spend a full trial on every candidate it does not.
+        default_proven = _route_is_proven(snapshot, default_route, tuning.adaptive_min_samples)
+        explore = default_proven ?
+            nothing :
+            _under_sampled_candidate(candidates, snapshot, default_route, tuning.adaptive_min_samples)
         if !(explore === nothing)
             chosen = explore
             reason = "explore_hier"

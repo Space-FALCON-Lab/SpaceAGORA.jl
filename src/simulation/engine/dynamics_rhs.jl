@@ -162,7 +162,8 @@ end
             mode=effector_decision.mode,
             num_items=n_effectors,
             use_threads=effector_decision.use_threads,
-            elapsed_ns=elapsed_ns
+            elapsed_ns=elapsed_ns,
+            env=_policy_env_config(p)
         )
     end
     return nothing
@@ -1002,6 +1003,28 @@ end
     return nothing
 end
 
+# Forward a plan's `scheduler` to the dispatch primitives only when the plan came
+# from pre-solve calibration.
+#
+# Heuristic plans in setup.jl have carried a `scheduler` field since long before
+# the dispatch primitives honoured one -- they always read
+# SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER instead -- so those values have
+# never been measured against anything. Honouring them now would silently change
+# R0-R3 too, which is a different change from making the adaptive profiles'
+# scheduler a routed decision. A calibrated plan's scheduler is a swept, timed
+# choice, so that one is forwarded; everything else resolves to `:auto`, i.e.
+# the env var, exactly as before.
+#
+# The override Ref is also what the calibration sweep writes each candidate
+# into, so the sweep measures each candidate under its own scheduler.
+@inline function _dispatch_scheduler(p, plan)::Symbol
+    if p !== nothing && hasproperty(p, :shared_buffers) &&
+       p.shared_buffers.rhs_plan_override[] !== nothing
+        return plan.scheduler
+    end
+    return :auto
+end
+
 function _accumulate_harmonics_flat_batch!(
     sc_state,
     p,
@@ -1060,7 +1083,8 @@ function _accumulate_harmonics_flat_batch!(
         dispatch_fn(
             :rhs_harmonics_batch,
             n_workers,
-            plan.allotment,
+            plan.allotment;
+            scheduler=_dispatch_scheduler(p, plan),
         ) do _worker_id, w
             item_start = (w - 1) * batch_size + 1
             item_end   = min(w * batch_size, count_items)
@@ -1080,6 +1104,7 @@ function _accumulate_harmonics_flat_batch!(
             num_items=max(1, active_sats),
             use_threads=true,
             elapsed_ns=elapsed_ns,
+            env=_policy_env_config(p),
         )
     end
     return nothing
@@ -1202,7 +1227,9 @@ function _accumulate_dynamic_effectors_flat_batch!(
             packet_overhead_ns += Int64(time_ns() - packet_prepare_started_ns)
         end
 
-        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_flat_queue_packets, packet_count, plan.allotment) do worker_id, packet_idx
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+            :rhs_flat_queue_packets, packet_count, plan.allotment; scheduler=_dispatch_scheduler(p, plan)
+        ) do worker_id, packet_idx
             packet_started_ns = needs_timing ? time_ns() : UInt64(0)
             @inbounds for item_idx in packet_starts[packet_idx]:packet_ends[packet_idx]
                 item = work_items[item_idx]
@@ -1228,7 +1255,9 @@ function _accumulate_dynamic_effectors_flat_batch!(
             return nothing
         end
     else
-        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_flat_queue, count_items, plan.allotment) do worker_id, item_idx
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+            :rhs_flat_queue, count_items, plan.allotment; scheduler=_dispatch_scheduler(p, plan)
+        ) do worker_id, item_idx
             item = work_items[item_idx]
             sat_idx = _constellation_node_sat_idx(item, exec_plan.n_effectors)
             eff_idx = _constellation_node_eff_idx(item, exec_plan.n_effectors)
@@ -1277,6 +1306,7 @@ function _accumulate_dynamic_effectors_flat_batch!(
             num_items=max(1, count_items),
             use_threads=true,
             elapsed_ns=elapsed_ns,
+            env=_policy_env_config(p),
         )
         if exec_plan.use_packets
             feedback_started_ns = time_ns()

@@ -178,9 +178,9 @@ end
     snapshot_policy_decision_env() -> PolicyDecisionEnvConfig
 
 Resolve the env-derived knobs consulted on every `thread_policy_decision` call
-into a typed snapshot.  Built once at run_simulation setup so hot paths avoid
-process-global ENV access; values reflect ENV (and any active engine
-overrides) at snapshot time.
+and every `record_policy_observation!` call into a typed snapshot.  Built once
+at run_simulation setup so hot paths avoid process-global ENV access; values
+reflect ENV (and any active engine overrides) at snapshot time.
 """
 function snapshot_policy_decision_env()::PolicyDecisionEnvConfig
     return PolicyDecisionEnvConfig(
@@ -191,6 +191,14 @@ function snapshot_policy_decision_env()::PolicyDecisionEnvConfig
         auto_thread_min_budget(:density_callback_lockfree),
         auto_thread_min_budget(:thermal_callback),
         adaptive_policy_enabled(),
+        persistent_hints_enabled(),
+        adaptive_measured_reward_enabled(),
+        adaptive_bootstrap_threads(),
+        adaptive_control_tail_guard(),
+        adaptive_rho(),
+        adaptive_delta(),
+        adaptive_window_size(),
+        adaptive_trim_quanta_budget(),
     )
 end
 

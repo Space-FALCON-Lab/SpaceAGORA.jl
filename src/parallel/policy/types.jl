@@ -75,6 +75,11 @@ Base.@kwdef mutable struct PolicyTelemetry
     rhs_plan_source::Symbol = :none
     rhs_plan_mode::Symbol = :none
     rhs_plan_allotment::Int64 = 0
+    #   rhs_plan_scheduler  the plan's inner scheduler (:static/:dynamic), or
+    #                       :auto when it defers to the env var. Recorded since
+    #                       the scheduler became part of the calibrated plan
+    #                       rather than a process-global setting.
+    rhs_plan_scheduler::Symbol = :none
 end
 
 Base.@kwdef mutable struct AdaptiveChoiceStats

@@ -35,9 +35,13 @@
     # had anything to decide.
     decision_forced = budget <= 1 || num_items <= 1
     adaptive_active = adaptive_enabled && !decision_forced
-    measured_reward = adaptive_active && persistent_hints_enabled() && adaptive_measured_reward_enabled()
-    bootstrap_threads = adaptive_active && adaptive_bootstrap_threads()
-    control_tail_guard = adaptive_active && adaptive_control_tail_guard()
+    measured_reward = adaptive_active &&
+        (env === nothing ? persistent_hints_enabled() : env.persistent_hints) &&
+        (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)
+    bootstrap_threads = adaptive_active &&
+        (env === nothing ? adaptive_bootstrap_threads() : env.adaptive_bootstrap_threads)
+    control_tail_guard = adaptive_active &&
+        (env === nothing ? adaptive_control_tail_guard() : env.adaptive_control_tail_guard)
     signature = ""
     hint_allotment = Int64(1)
     hint_confidence = 0.0
@@ -64,7 +68,7 @@
             hints_loaded = _persistent_hint_state[].loaded
             hints_entries = _hint_entry_count(_persistent_hint_state[])
         end
-        ρ = adaptive_rho()
+        ρ = env === nothing ? adaptive_rho() : env.adaptive_rho
         desire_cap = _adaptive_desire_cap(budget, ρ)
         lock(_policy_telemetry_lock) do
             st = _adaptive_state_for(source)

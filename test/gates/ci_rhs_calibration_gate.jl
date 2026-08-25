@@ -27,7 +27,10 @@ for fn in (
     "function _rhs_calib_lookup(sig::String)",
     "function _rhs_calib_store!(sig::String",
     "function _make_calib_satellite_batch_plan()",
-    "function _make_calib_flat_plan(allotment::Int)",
+    # Scheduler is a swept axis, not a constant: the flat plan constructor takes
+    # it as a second argument and the sweep crosses it with the allotment ladder.
+    "function _make_calib_flat_plan(allotment::Int, scheduler::Symbol",
+    "function _rhs_calibrate_schedulers()",
     "function _rhs_plan_candidates(",
     "function _run_rhs_sweep!(",
     "function _calibrate_rhs_plan_if_needed!(",
@@ -43,6 +46,7 @@ for key in (
     "SPACEAGORA_RHS_CALIBRATION_PATH",
     "SPACEAGORA_RHS_CALIBRATE_N_WARMUP",
     "SPACEAGORA_RHS_CALIBRATE_N_TIMED",
+    "SPACEAGORA_RHS_CALIBRATE_SCHEDULERS",
     "SPACEAGORA_PERF_MACHINE_LABEL",
 )
     occursin(key, calib_src) ||
@@ -51,7 +55,7 @@ end
 
 # ── §3: TOML schema keys present in persistence helpers ───────────────────────
 
-for key in ("\"calibrations\"", "\"signature\"", "\"mode\"", "\"allotment\"", "\"elapsed_mean_ns\"", "\"schema_version\"")
+for key in ("\"calibrations\"", "\"signature\"", "\"mode\"", "\"allotment\"", "\"scheduler\"", "\"elapsed_mean_ns\"", "\"schema_version\"")
     occursin(key, calib_src) ||
         error("TOML schema key $(key) is missing from rhs_calibration.jl persistence helpers")
 end

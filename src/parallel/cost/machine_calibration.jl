@@ -16,7 +16,7 @@
 # out makes a good prediction evidence that the synthetic constants transfer,
 # and a bad one a localised, diagnosable residual.
 
-const CALIBRATION_SCHEMA_VERSION = 1
+const CALIBRATION_SCHEMA_VERSION = 2
 
 # Footprint ladder for the coefficient-touch curve: square-ish tables, matching
 # the (L+2) x (M+2) shape of a full-field harmonics model, spanning L1-resident
@@ -101,15 +101,18 @@ function calibrate_machine(; k::Int = 15, verbose::Bool = false)::MachineConstan
     coeff_curve = _calibrate_coeff_touch(k, verbose)
     lane_curve = _calibrate_simd_lane(k, verbose, coeff_curve)
     scalar_ns = _calibrate_scalar_item(k, verbose)
-    node_ns, dispatch_base, dispatch_per_worker, atomic_ns = _calibrate_dispatch(k, verbose)
+    node_ns, pool_base, pool_per_worker, atomic_ns = _calibrate_dispatch(k, verbose)
+    batch_base, batch_per_worker = _calibrate_polyester_dispatch(k, verbose)
 
     return MachineConstants(
         simd_lane = lane_curve,
         coeff_touch = coeff_curve,
         ns_per_scalar_item = scalar_ns,
         ns_per_queue_node = node_ns,
-        dispatch_ns_base = dispatch_base,
-        dispatch_ns_per_worker = dispatch_per_worker,
+        dispatch_pool_ns_base = pool_base,
+        dispatch_pool_ns_per_worker = pool_per_worker,
+        dispatch_batch_ns_base = batch_base,
+        dispatch_batch_ns_per_worker = batch_per_worker,
         ns_per_atomic = atomic_ns,
         reference_fma_ns = reference_kernel_ns(k = k),
         reference_mem_ns = reference_memory_kernel_ns(k = k),
@@ -147,11 +150,13 @@ function _calibrate_simd_lane(k::Int, verbose::Bool, coeff_curve::RateCurve)::Ra
     for B in _LANE_KNOTS
         out = zeros(Float64, B)
         total = timed_min(() -> calib_batch_kernel!(out, tab, rows ÷ 2, n_touch, spt); k = k)
-        lane_terms = Float64(n_touch * spt * B)
+        # The synthetic pass is one muladd per lane = 2 flops, and simd_terms is
+        # counted in flops, so the rate must be per flop for the two to compose.
+        lane_terms = Float64(n_touch * spt * B) * 2.0
         per_lane = max(0.0, total - touch_ns) / lane_terms
         push!(log2_size, log2(Float64(B)))
         push!(ns, per_lane)
-        verbose && println("[calibrate] simd_lane    B=$(B) -> $(round(per_lane, digits=5)) ns/lane-term")
+        verbose && println("[calibrate] simd_lane    B=$(B) -> $(round(per_lane, digits=6)) ns/flop-lane")
     end
     return RateCurve(log2_size, ns)
 end
@@ -159,7 +164,8 @@ end
 function _calibrate_scalar_item(k::Int, verbose::Bool)::Float64
     state = [1.0 + i * 1e-6 for i in 1:4096]
     n = 4096
-    per_item = timed_min(() -> calib_scalar_kernel!(state, n); k = k) / n
+    # Per flop, matching how scalar_items is counted.
+    per_item = timed_min(() -> calib_scalar_kernel!(state, n); k = k) / (n * CALIB_SCALAR_FLOPS)
     verbose && println("[calibrate] scalar_item  -> $(round(per_item, digits=5)) ns")
     return per_item
 end
@@ -213,6 +219,13 @@ function _calibrate_dispatch(k::Int, verbose::Bool)
         return (per_node, NaN, NaN, NaN)
     end
 
+    # Measured against threaded_foreach_worker_persistent, which is the
+    # dispatcher the flat routes actually use. The first version measured
+    # Threads.@spawn instead and applied the result to every route; the
+    # persistent pool is 1.7-3.7x SLOWER at the same width, and Polyester
+    # (satellite_batch) is cheaper than both, so one constant was wrong in
+    # magnitude and in sign-of-error depending on which route it was applied to.
+    #
     # Dispatch cost against worker count: one item per worker, so the reading is
     # dominated by fan-out and join rather than by the body. Least-squares line
     # through the knots gives base and per-worker.
@@ -232,7 +245,7 @@ function _calibrate_dispatch(k::Int, verbose::Bool)
     for w in knots
         w > budget && continue
         t = timed_min(k = dispatch_k) do
-            PP.threaded_foreach_worker(w, w) do _w, i
+            PP.threaded_foreach_worker_persistent(:cost_calib_dispatch, w, w) do _w, i
                 @inbounds sink[i] = i * 1.0000001
             end
             @inbounds sink[1]
@@ -247,13 +260,13 @@ function _calibrate_dispatch(k::Int, verbose::Bool)
     # Atomic cost: identical work under the dynamic and static schedulers at
     # chunk 1, so the difference is one contended read-modify-write per item.
     t_static = timed_min(k = dispatch_k) do
-        PP.threaded_foreach_worker(n_items, budget; scheduler = :static) do _w, i
+        PP.threaded_foreach_worker_persistent(:cost_calib_sched, n_items, budget; scheduler = :static) do _w, i
             @inbounds sink[i] = i * 1.0000001
         end
         @inbounds sink[1]
     end
     t_dynamic = timed_min(k = dispatch_k) do
-        PP.threaded_foreach_worker(n_items, budget; scheduler = :dynamic, chunk = 1) do _w, i
+        PP.threaded_foreach_worker_persistent(:cost_calib_sched, n_items, budget; scheduler = :dynamic, chunk = 1) do _w, i
             @inbounds sink[i] = i * 1.0000001
         end
         @inbounds sink[1]
@@ -300,8 +313,10 @@ function save_machine_constants(mc::MachineConstants, path::AbstractString = mac
         "fingerprint" => mc.fingerprint,
         "ns_per_scalar_item" => mc.ns_per_scalar_item,
         "ns_per_queue_node" => mc.ns_per_queue_node,
-        "dispatch_ns_base" => mc.dispatch_ns_base,
-        "dispatch_ns_per_worker" => mc.dispatch_ns_per_worker,
+        "dispatch_pool_ns_base" => mc.dispatch_pool_ns_base,
+        "dispatch_pool_ns_per_worker" => mc.dispatch_pool_ns_per_worker,
+        "dispatch_batch_ns_base" => mc.dispatch_batch_ns_base,
+        "dispatch_batch_ns_per_worker" => mc.dispatch_batch_ns_per_worker,
         "ns_per_atomic" => mc.ns_per_atomic,
         "reference_fma_ns" => mc.reference_fma_ns,
         "reference_mem_ns" => mc.reference_mem_ns,
@@ -351,8 +366,10 @@ function load_machine_constants(path::AbstractString = machine_constants_path())
             coeff_touch = curve("coeff_touch"),
             ns_per_scalar_item = Float64(parsed["ns_per_scalar_item"]),
             ns_per_queue_node = Float64(parsed["ns_per_queue_node"]),
-            dispatch_ns_base = Float64(parsed["dispatch_ns_base"]),
-            dispatch_ns_per_worker = Float64(parsed["dispatch_ns_per_worker"]),
+            dispatch_pool_ns_base = Float64(parsed["dispatch_pool_ns_base"]),
+            dispatch_pool_ns_per_worker = Float64(parsed["dispatch_pool_ns_per_worker"]),
+            dispatch_batch_ns_base = Float64(parsed["dispatch_batch_ns_base"]),
+            dispatch_batch_ns_per_worker = Float64(parsed["dispatch_batch_ns_per_worker"]),
             ns_per_atomic = Float64(parsed["ns_per_atomic"]),
             reference_fma_ns = Float64(parsed["reference_fma_ns"]),
             reference_mem_ns = Float64(parsed["reference_mem_ns"]),
@@ -399,4 +416,44 @@ function constants_are_current(
     end
     drift = measured / mc.reference_fma_ns - 1.0
     return (ok = abs(drift) <= tolerance, measured_ns = measured, drift = drift)
+end
+
+# Polyester dispatch, measured separately because `satellite_batch` uses
+# `@batch` rather than the channel pool. Polyester keeps its own parked worker
+# set and hands out contiguous index ranges without going through a Channel, so
+# its fan-out is substantially cheaper -- which is exactly why applying the
+# pool's constant to `satellite_batch` mispriced it.
+#
+# `minbatch` is set the way dynamics_rhs.jl sets it, so the measured cost is the
+# cost of the dispatch shape the RHS actually issues rather than of Polyester in
+# the abstract.
+function _calibrate_polyester_dispatch(k::Int, verbose::Bool)
+    budget = Threads.nthreads()
+    n = 4096
+    sink = zeros(Float64, n)
+
+    if budget <= 1 || Polyester.num_cores() <= 1
+        verbose && println("[calibrate] polyester    skipped: single-threaded session")
+        return (NaN, NaN)
+    end
+
+    ws = Float64[]
+    ts = Float64[]
+    for w in unique(Int[2, 3, 4, max(4, budget ÷ 3), max(4, budget ÷ 2), budget])
+        w > budget && continue
+        # minbatch chosen so the loop splits into exactly w chunks.
+        mb = max(1, cld(n, w))
+        t = timed_min(k = 4 * k) do
+            @batch minbatch=mb for i in 1:n
+                @inbounds sink[i] = i * 1.0000001
+            end
+            @inbounds sink[1]
+        end
+        push!(ws, Float64(w))
+        push!(ts, t)
+    end
+    slope, intercept = _least_squares_line(ws, ts)
+    verbose && println("[calibrate] polyester    base=$(round(intercept, digits=1)) ns  " *
+                       "per_worker=$(round(slope, digits=1)) ns")
+    return (intercept, slope)
 end

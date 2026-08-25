@@ -72,8 +72,16 @@ function predict_plan_ns(
         max(1, min(candidate.allotment, max_workers))
 
     batch = max(1, cld(n_sats, workers))
-    dispatch = workers <= 1 ? 0.0 :
-        mc.dispatch_ns_base + workers * mc.dispatch_ns_per_worker
+    # Per-mechanism: satellite_batch dispatches through Polyester.@batch, the
+    # flat routes through the persistent channel pool. Using one number for both
+    # is what took the first predictor to 25% decision accuracy.
+    dispatch = if workers <= 1
+        0.0
+    elseif candidate.mode === :satellite_batch
+        mc.dispatch_batch_ns_base + workers * mc.dispatch_batch_ns_per_worker
+    else
+        mc.dispatch_pool_ns_base + workers * mc.dispatch_pool_ns_per_worker
+    end
 
     scalar = batch * counts.scalar_items * mc.ns_per_scalar_item
     probe = batch * counts.probe_ns

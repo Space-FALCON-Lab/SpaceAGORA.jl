@@ -51,8 +51,10 @@ function _synthetic_constants(; ref_fma = 20.0)
         coeff_touch = PC.RateCurve([12.0, 16.0, 20.0], [0.10, 0.17, 0.30]),
         ns_per_scalar_item = 1.38,
         ns_per_queue_node = 0.055,
-        dispatch_ns_base = 2396.0,
-        dispatch_ns_per_worker = 447.0,
+        dispatch_pool_ns_base = 3834.0,
+        dispatch_pool_ns_per_worker = 1213.0,
+        dispatch_batch_ns_base = 387.0,
+        dispatch_batch_ns_per_worker = 26.4,
         ns_per_atomic = 19.9,
         reference_fma_ns = ref_fma,
         reference_mem_ns = 0.9,
@@ -72,7 +74,8 @@ end
         @test back !== nothing
         @test back.fingerprint == mc.fingerprint
         @test back.ns_per_atomic ≈ mc.ns_per_atomic
-        @test back.dispatch_ns_base ≈ mc.dispatch_ns_base
+        @test back.dispatch_pool_ns_base ≈ mc.dispatch_pool_ns_base
+        @test back.dispatch_batch_ns_per_worker ≈ mc.dispatch_batch_ns_per_worker
         @test back.simd_lane.ns ≈ mc.simd_lane.ns
         @test back.coeff_touch.log2_size ≈ mc.coeff_touch.log2_size
         # The curves must survive, not just the scalars: they are what
@@ -118,4 +121,41 @@ end
 
     # A missing reference cannot be validated, so it is treated as stale.
     @test !PC.constants_are_current(_synthetic_constants(ref_fma = 0.0)).ok
+end
+
+@testset "Dispatch mechanisms are priced separately" begin
+    # satellite_batch dispatches through Polyester.@batch and the flat routes
+    # through the persistent channel pool. Measured on this machine at twelve
+    # workers the two differ by ~26x (704 ns against 18.4 us), so a predictor
+    # that shares one constant between them misprices whichever route it was not
+    # calibrated on. The first version did exactly that and scored 25% decision
+    # accuracy against the real kernel.
+    mc = _synthetic_constants()
+    counts = PC.WorkCounts(simd_terms = 1000.0, scalar_items = 83.0,
+                           coeff_touches = 500.0, coeff_table_bytes = 20000.0)
+    batch = PC.predict_plan_ns(counts, mc, PC.PlanCandidate(:satellite_batch, 1, :static);
+                               n_active_sats = 256, budget = 12)
+    flat = PC.predict_plan_ns(counts, mc, PC.PlanCandidate(:flat_constellation_effector_queue, 12, :static);
+                              n_active_sats = 256, budget = 12)
+    # Same worker count, so any difference in the dispatch component comes from
+    # the mechanism rather than from width.
+    @test batch.workers == flat.workers == 12
+    @test batch.ns != flat.ns
+end
+
+@testset "select_plan abstains rather than guessing" begin
+    mc = _synthetic_constants()
+    # Out of domain: no calibration can represent the workload, so no answer.
+    out = PC.WorkCounts(simd_terms = 1000.0, in_domain = false)
+    @test PC.select_plan(out, mc; budget = 12, n_active_sats = 256) === nothing
+
+    # A margin wide enough that nothing separates the candidates must also
+    # abstain -- this is the mechanism that makes "never worse than the static
+    # route" structural rather than hoped-for.
+    counts = PC.WorkCounts(simd_terms = 1000.0, scalar_items = 83.0,
+                           coeff_touches = 500.0, coeff_table_bytes = 20000.0)
+    @test PC.select_plan(counts, mc; budget = 12, n_active_sats = 256, margin = 10.0) === nothing
+
+    # With a permissive margin it does choose.
+    @test PC.select_plan(counts, mc; budget = 12, n_active_sats = 256, margin = 0.0) !== nothing
 end

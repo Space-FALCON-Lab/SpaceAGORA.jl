@@ -45,6 +45,13 @@ stated explicitly:
                     satellite and pays it N times. Everything else in the model
                     is symmetric between the candidates; this is what makes them
                     differ, and what makes the crossover predictable.
+- `simd_workspace_bytes_per_sat` SIZE ARGUMENT. Scratch the vectorized kernel
+                    holds per satellite in its batch; multiplied by batch width
+                    it gives the footprint that decides the SIMD lane rate. For
+                    harmonics the A workspace is batch x (L+3) x (M+2), which at
+                    batch 1024 and L=20 is 4.1 MB -- nowhere near cache, and the
+                    reason a rate indexed by batch width alone under-predicted
+                    the serial case by ~2x.
 - `queue_nodes`     TOTAL. Flat-queue work items (satellites x effectors),
                     driving per-node dispatch bookkeeping.
 - `coeff_table_bytes` SIZE ARGUMENT, not a count. The footprint strided over
@@ -72,6 +79,7 @@ Base.@kwdef struct WorkCounts
     scalar_items::Float64 = 0.0
     coeff_touches::Float64 = 0.0
     coeff_table_bytes::Float64 = 0.0
+    simd_workspace_bytes_per_sat::Float64 = 0.0
     queue_nodes::Float64 = 0.0
     probe_ns::Float64 = 0.0
     unknown_effectors::Int = 0
@@ -84,6 +92,7 @@ function Base.:+(a::WorkCounts, b::WorkCounts)::WorkCounts
         scalar_items = a.scalar_items + b.scalar_items,
         coeff_touches = a.coeff_touches + b.coeff_touches,
         coeff_table_bytes = a.coeff_table_bytes + b.coeff_table_bytes,
+        simd_workspace_bytes_per_sat = a.simd_workspace_bytes_per_sat + b.simd_workspace_bytes_per_sat,
         queue_nodes = a.queue_nodes + b.queue_nodes,
         probe_ns = a.probe_ns + b.probe_ns,
         unknown_effectors = a.unknown_effectors + b.unknown_effectors,
@@ -186,6 +195,13 @@ a restatement of the fit.
                        a row, so each read strides by `(L+2)*8` bytes onto its own
                        cache line, and what it costs is set by which cache level
                        holds the table -- not by `sizeof(Float64)`.
+- `parallel_speedup`   [`RateCurve`] ACHIEVED speedup against worker count, not
+                       assumed linear scaling. Measured here: 0.99 efficiency at
+                       one worker falling to 0.26 at twelve, saturating near 3x,
+                       and the real harmonics kernel shows the same ~2.3x
+                       ceiling. Dividing work by the worker count over-credits
+                       every wide plan, and no correction to the other constants
+                       can compensate for a term that is simply absent.
 - `ns_per_scalar_item` cost of one per-satellite scalar unit.
 - `ns_per_queue_node`  per-node flat-queue bookkeeping.
 - `dispatch_pool_ns_base` / `dispatch_pool_ns_per_worker`
@@ -232,6 +248,7 @@ a restatement of the fit.
 Base.@kwdef struct MachineConstants
     simd_lane::RateCurve
     coeff_touch::RateCurve
+    parallel_speedup::RateCurve
     ns_per_scalar_item::Float64
     ns_per_queue_node::Float64
     dispatch_pool_ns_base::Float64

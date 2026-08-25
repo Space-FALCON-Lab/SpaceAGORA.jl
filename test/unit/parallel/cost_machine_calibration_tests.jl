@@ -49,6 +49,9 @@ function _synthetic_constants(; ref_fma = 20.0)
     return PC.MachineConstants(
         simd_lane = PC.RateCurve([4.0, 8.0, 12.0], [0.24, 0.026, 0.044]),
         coeff_touch = PC.RateCurve([12.0, 16.0, 20.0], [0.10, 0.17, 0.30]),
+        # Achieved speedup, saturating well below linear -- the shape actually
+        # measured on this machine, not an idealisation.
+        parallel_speedup = PC.RateCurve([0.0, 1.0, 2.0, 3.0], [1.0, 2.05, 3.13, 5.38]),
         ns_per_scalar_item = 1.38,
         ns_per_queue_node = 0.055,
         dispatch_pool_ns_base = 3834.0,
@@ -81,6 +84,7 @@ end
         # The curves must survive, not just the scalars: they are what
         # discriminates the routing candidates.
         @test PC.rate_at(back.coeff_touch, 2^14) ≈ PC.rate_at(mc.coeff_touch, 2^14)
+        @test back.parallel_speedup.ns ≈ mc.parallel_speedup.ns
     end
 end
 
@@ -158,4 +162,35 @@ end
 
     # With a permissive margin it does choose.
     @test PC.select_plan(counts, mc; budget = 12, n_active_sats = 256, margin = 0.0) !== nothing
+end
+
+@testset "Wide plans are charged for imperfect scaling" begin
+    # The predictor divides work by worker count and then corrects back up by
+    # workers/achieved_speedup. With measured speedup saturating near 5x at
+    # twelve workers, a twelve-wide plan must be charged roughly 2.4x its ideal
+    # share -- otherwise every wide plan looks better than it is, which is the
+    # error that kept the first predictor at 20% decision accuracy.
+    mc = _synthetic_constants()
+    counts = PC.WorkCounts(simd_terms = 5000.0, scalar_items = 83.0,
+                           coeff_touches = 1000.0, coeff_table_bytes = 20000.0,
+                           simd_workspace_bytes_per_sat = 4000.0)
+
+    ideal = PC.RateCurve([0.0, 1.0, 2.0, 3.0], [1.0, 2.0, 4.0, 8.0])
+    mc_ideal = PC.MachineConstants(
+        simd_lane = mc.simd_lane, coeff_touch = mc.coeff_touch,
+        parallel_speedup = ideal,
+        ns_per_scalar_item = mc.ns_per_scalar_item,
+        ns_per_queue_node = mc.ns_per_queue_node,
+        dispatch_pool_ns_base = mc.dispatch_pool_ns_base,
+        dispatch_pool_ns_per_worker = mc.dispatch_pool_ns_per_worker,
+        dispatch_batch_ns_base = mc.dispatch_batch_ns_base,
+        dispatch_batch_ns_per_worker = mc.dispatch_batch_ns_per_worker,
+        ns_per_atomic = mc.ns_per_atomic,
+        reference_fma_ns = mc.reference_fma_ns, reference_mem_ns = mc.reference_mem_ns,
+        fingerprint = "ideal", schema_version = PC.CALIBRATION_SCHEMA_VERSION)
+
+    cand = PC.PlanCandidate(:flat_constellation_effector_queue, 8, :static)
+    real_ns = PC.predict_plan_ns(counts, mc, cand; n_active_sats = 1024, budget = 12).ns
+    ideal_ns = PC.predict_plan_ns(counts, mc_ideal, cand; n_active_sats = 1024, budget = 12).ns
+    @test real_ns > ideal_ns
 end

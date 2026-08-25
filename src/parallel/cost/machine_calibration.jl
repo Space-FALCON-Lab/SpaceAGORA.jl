@@ -16,7 +16,7 @@
 # out makes a good prediction evidence that the synthetic constants transfer,
 # and a bad one a localised, diagnosable residual.
 
-const CALIBRATION_SCHEMA_VERSION = 2
+const CALIBRATION_SCHEMA_VERSION = 3
 
 # Footprint ladder for the coefficient-touch curve: square-ish tables, matching
 # the (L+2) x (M+2) shape of a full-field harmonics model, spanning L1-resident
@@ -24,17 +24,22 @@ const CALIBRATION_SCHEMA_VERSION = 2
 const _COEFF_KNOTS = ((22, 20), (52, 50), (102, 100), (202, 200),
                       (402, 400), (802, 800), (1602, 1600))
 
-# Batch widths for the SIMD-lane curve.
+# (batch, depth) pairs for the SIMD-lane curve, which is indexed by WORKSPACE
+# FOOTPRINT rather than by batch width alone.
 #
-# The ladder starts at 1, not at some comfortable vector width, because
-# `satellite_batch` lives entirely at the bottom of it: that route processes one
-# satellite at a time, so the model evaluates the lane rate at B=1. Clamping to
-# a B=16 knot would have handed the candidate a guessed rate for the whole
-# regime that decides it. The low end is also where per-pass loop overhead
-# dominates and cannot amortize, which is a real effect and not an artefact --
-# batch width is satellites-per-worker, so a small constellation on many threads
-# genuinely lands there.
-const _LANE_KNOTS = (1, 2, 4, 8, 16, 64, 256, 1024, 4096, 16384, 65536, 262144)
+# Both dimensions are swept because the real workspace is
+# batch x (L+3) x (M+2): at batch 1024 with L=20 that is 4.1 MB and nowhere near
+# cache, while a bare 1024-element vector is 8 KB and L1-resident. Calibrating
+# against the vector measured arithmetic throughput and missed the memory
+# traffic that dominates the real kernel at large batch. A wide-shallow and a
+# narrow-deep workspace reaching the same footprint cost the same, and only
+# footprint predicts that.
+#
+# The ladder still reaches batch 1: `satellite_batch` processes one satellite at
+# a time and lives entirely at that end, where per-pass overhead cannot amortize.
+const _LANE_KNOTS = ((1, 8), (4, 8), (16, 8), (64, 8), (256, 8),
+                     (256, 64), (1024, 32), (1024, 128), (4096, 64),
+                     (4096, 256), (16384, 128), (16384, 512))
 
 """
     machine_fingerprint() -> String
@@ -103,10 +108,12 @@ function calibrate_machine(; k::Int = 15, verbose::Bool = false)::MachineConstan
     scalar_ns = _calibrate_scalar_item(k, verbose)
     node_ns, pool_base, pool_per_worker, atomic_ns = _calibrate_dispatch(k, verbose)
     batch_base, batch_per_worker = _calibrate_polyester_dispatch(k, verbose)
+    speedup_curve = _calibrate_parallel_speedup(k, verbose)
 
     return MachineConstants(
         simd_lane = lane_curve,
         coeff_touch = coeff_curve,
+        parallel_speedup = speedup_curve,
         ns_per_scalar_item = scalar_ns,
         ns_per_queue_node = node_ns,
         dispatch_pool_ns_base = pool_base,
@@ -145,27 +152,83 @@ function _calibrate_simd_lane(k::Int, verbose::Bool, coeff_curve::RateCurve)::Ra
     tab = calib_table(rows, cols)
     touch_ns = rate_at(coeff_curve, rows * cols * 8) * n_touch
 
-    log2_size = Float64[]
-    ns = Float64[]
-    for B in _LANE_KNOTS
-        out = zeros(Float64, B)
-        total = timed_min(() -> calib_batch_kernel!(out, tab, rows ÷ 2, n_touch, spt); k = k)
+    pairs = Tuple{Float64, Float64}[]
+    for (B, depth) in _LANE_KNOTS
+        ws = zeros(Float64, B, depth)
+        total = timed_min(() -> calib_batch_kernel!(ws, tab, rows ÷ 2, n_touch, spt); k = k)
         # The synthetic pass is one muladd per lane = 2 flops, and simd_terms is
         # counted in flops, so the rate must be per flop for the two to compose.
         lane_terms = Float64(n_touch * spt * B) * 2.0
         per_lane = max(0.0, total - touch_ns) / lane_terms
-        push!(log2_size, log2(Float64(B)))
-        push!(ns, per_lane)
-        verbose && println("[calibrate] simd_lane    B=$(B) -> $(round(per_lane, digits=6)) ns/flop-lane")
+        bytes = Float64(B * depth * 8)
+        push!(pairs, (log2(bytes), per_lane))
+        verbose && println("[calibrate] simd_lane    B=$(B) d=$(depth) " *
+                           "$(round(bytes/1024, digits=1)) KiB -> $(round(per_lane, digits=6)) ns/flop-lane")
+    end
+    # Several (batch, depth) pairs can land on the same footprint; keep the
+    # cheapest reading at each, since the minimum is the uncontended estimate.
+    sort!(pairs; by = first)
+    log2_size = Float64[]
+    ns = Float64[]
+    for (lg, v) in pairs
+        if !isempty(log2_size) && isapprox(log2_size[end], lg; atol = 1e-9)
+            ns[end] = min(ns[end], v)
+        else
+            push!(log2_size, lg)
+            push!(ns, v)
+        end
     end
     return RateCurve(log2_size, ns)
 end
 
+# Achieved parallel speedup against worker count, measured rather than assumed.
+#
+# The model divided per-worker work by the worker count, i.e. assumed perfect
+# scaling. Measured on this box with a kernel shaped like the harmonics batch,
+# achieved speedup saturates near 3x at twelve workers (efficiency 0.99 at one
+# worker, 0.26 at twelve), and the real harmonics kernel shows the same ~2.3x
+# ceiling. Assuming linear scaling over-credits every wide plan, and no
+# correction to the other constants can compensate for a term that is absent.
+#
+# Batch width is held constant across worker counts so this measures contention
+# alone; the batch-width effect is already carried by the lane curve and would
+# otherwise be counted twice.
+function _calibrate_parallel_speedup(k::Int, verbose::Bool)::RateCurve
+    budget = Threads.nthreads()
+    tab = calib_table(52, 64)
+    outs = [zeros(Float64, 2048, 16) for _ in 1:max(1, budget)]
+    total_touch = 512
+
+    serial = timed_min(k = k) do
+        calib_batch_kernel!(outs[1], tab, 26, total_touch, 4)
+    end
+
+    log2_w = Float64[]
+    speedup = Float64[]
+    for w in unique(Int[1, 2, 3, 4, 6, 8, budget])
+        w > budget && continue
+        per = cld(total_touch, w)
+        t = timed_min(k = k) do
+            ParallelPolicy.threaded_foreach_worker_persistent(:cost_calib_speedup, w, w) do wid, _i
+                calib_batch_kernel!(outs[wid], tab, 26, per, 4)
+            end
+            @inbounds outs[1][1, 1]
+        end
+        s = t > 0.0 ? serial / t : 1.0
+        push!(log2_w, log2(Float64(w)))
+        push!(speedup, max(1.0, s))
+        verbose && println("[calibrate] speedup      w=$(w) -> $(round(s, digits=2))x " *
+                           "(efficiency $(round(s / w, digits=3)))")
+    end
+    return RateCurve(log2_w, speedup)
+end
+
 function _calibrate_scalar_item(k::Int, verbose::Bool)::Float64
-    state = [1.0 + i * 1e-6 for i in 1:4096]
     n = 4096
+    state = [1.0 + i * 1e-6 for i in 1:n]
+    out = zeros(Float64, n)
     # Per flop, matching how scalar_items is counted.
-    per_item = timed_min(() -> calib_scalar_kernel!(state, n); k = k) / (n * CALIB_SCALAR_FLOPS)
+    per_item = timed_min(() -> calib_scalar_kernel!(out, state, n); k = k) / (n * CALIB_SCALAR_FLOPS)
     verbose && println("[calibrate] scalar_item  -> $(round(per_item, digits=5)) ns")
     return per_item
 end
@@ -328,6 +391,10 @@ function save_machine_constants(mc::MachineConstants, path::AbstractString = mac
             "log2_size" => mc.coeff_touch.log2_size,
             "ns" => mc.coeff_touch.ns,
         ),
+        "parallel_speedup" => Dict{String, Any}(
+            "log2_size" => mc.parallel_speedup.log2_size,
+            "ns" => mc.parallel_speedup.ns,
+        ),
     )
     path_s = String(path)
     mkpath(dirname(path_s))
@@ -364,6 +431,7 @@ function load_machine_constants(path::AbstractString = machine_constants_path())
         return MachineConstants(
             simd_lane = curve("simd_lane"),
             coeff_touch = curve("coeff_touch"),
+            parallel_speedup = curve("parallel_speedup"),
             ns_per_scalar_item = Float64(parsed["ns_per_scalar_item"]),
             ns_per_queue_node = Float64(parsed["ns_per_queue_node"]),
             dispatch_pool_ns_base = Float64(parsed["dispatch_pool_ns_base"]),

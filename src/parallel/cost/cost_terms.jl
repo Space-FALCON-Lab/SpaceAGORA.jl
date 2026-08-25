@@ -110,15 +110,27 @@ a restatement of the fit.
                        affine model of one parallel dispatch and join.
 - `ns_per_atomic`      one contended atomic read-modify-write, which is what the
                        dynamic scheduler pays per chunk.
-- `reference_ns`       the reference kernel's measured cost at calibration time.
-                       Re-measured at the start of every run and compared: if it
-                       has moved beyond tolerance, these constants no longer
-                       describe this machine (different cgroup quota, changed
-                       governor, a co-tenant, thermal state) and the predictor
-                       abstains. This is the staleness canary -- it costs
-                       microseconds and it is the only freshness check the model
-                       needs, because everything else volatile is re-derived per
-                       run rather than cached.
+- `reference_fma_ns` / `reference_mem_ns`
+                       the two reference kernels' costs at calibration time, in
+                       ns per lane and ns per cache-line touch. Two rather than
+                       one because normalisation only cancels the part of a
+                       contention slowdown that the reference and the measured
+                       kernel share; an arithmetic reference tracks a
+                       stride-bound term poorly (measured: 14.6% raw drift under
+                       memory load, still 6.5% after FMA-only normalisation).
+                       Arithmetic terms normalise against the first,
+                       stride-bound terms against the second.
+
+                       `reference_fma_ns` doubles as the staleness canary:
+                       re-measured at the start of every run and compared, and
+                       if it has moved beyond tolerance these constants no
+                       longer describe this machine (different cgroup quota,
+                       changed governor, a co-tenant, thermal state) and the
+                       predictor abstains. It is the cheap one, at tens of
+                       nanoseconds per call, which is why it and not the memory
+                       kernel is on the per-run path. It is the only freshness
+                       check the model needs, because everything else volatile
+                       is re-derived per run rather than cached.
 - `fingerprint`        machine identity these constants were measured on.
 - `schema_version`     bumped when term semantics change, so stale files are
                        rejected rather than reinterpreted.
@@ -131,7 +143,8 @@ Base.@kwdef struct MachineConstants
     dispatch_ns_base::Float64
     dispatch_ns_per_worker::Float64
     ns_per_atomic::Float64
-    reference_ns::Float64
+    reference_fma_ns::Float64
+    reference_mem_ns::Float64
     fingerprint::String = ""
     schema_version::Int = 1
 end

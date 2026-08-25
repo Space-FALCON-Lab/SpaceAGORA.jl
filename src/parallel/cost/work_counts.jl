@@ -68,10 +68,20 @@ function effector_cost_terms(model::GravitationalHarmonicsModel)::WorkCounts
     # derived.
     coeff_touches = Float64(2 * alf + 3 * L + 4 * active_total)
 
+    # Footprint the row walk strides over, which decides the cache level and
+    # therefore the per-touch rate. Six arrays are interleaved at the same
+    # (row, j): C, S, VR01, VR11 in the order accumulation and N1, N2 in the ALF
+    # recurrence, each an (L+2) x (M+2) Float64 matrix. Counting all six is the
+    # working set the walk actually pulls through cache, not the size of any one
+    # of them. The cold-prediction check against the real kernel is what would
+    # expose this being the wrong aggregate.
+    table_bytes = 6.0 * (L + 2) * (M + 2) * 8.0
+
     return WorkCounts(
         simd_terms = simd_terms,
         scalar_items = scalar_items,
         coeff_touches = coeff_touches,
+        coeff_table_bytes = table_bytes,
     )
 end
 
@@ -217,6 +227,7 @@ function constellation_work_counts(
         simd_terms = total.simd_terms,
         scalar_items = total.scalar_items,
         coeff_touches = total.coeff_touches,
+        coeff_table_bytes = total.coeff_table_bytes,
         queue_nodes = Float64(n_sats * queue_effectors),
         probe_ns = total.probe_ns,
         unknown_effectors = total.unknown_effectors,

@@ -47,6 +47,12 @@ stated explicitly:
                     differ, and what makes the crossover predictable.
 - `queue_nodes`     TOTAL. Flat-queue work items (satellites x effectors),
                     driving per-node dispatch bookkeeping.
+- `coeff_table_bytes` SIZE ARGUMENT, not a count. The footprint strided over
+                    while accumulating `coeff_touches`, used to look up the
+                    right rate on `MachineConstants.coeff_touch` -- a touch into
+                    an L1-resident table and one into an L3-resident table
+                    differ by 3.4x and the model has to tell them apart. Summed
+                    across effectors that contribute touches; zero when none do.
 - `probe_ns`        PER SATELLITE. Summed measured cost in ns of effectors the
                     model cannot count analytically. Zero when
                     every effector is either known or has declared its terms.
@@ -65,6 +71,7 @@ Base.@kwdef struct WorkCounts
     simd_terms::Float64 = 0.0
     scalar_items::Float64 = 0.0
     coeff_touches::Float64 = 0.0
+    coeff_table_bytes::Float64 = 0.0
     queue_nodes::Float64 = 0.0
     probe_ns::Float64 = 0.0
     unknown_effectors::Int = 0
@@ -76,6 +83,7 @@ function Base.:+(a::WorkCounts, b::WorkCounts)::WorkCounts
         simd_terms = a.simd_terms + b.simd_terms,
         scalar_items = a.scalar_items + b.scalar_items,
         coeff_touches = a.coeff_touches + b.coeff_touches,
+        coeff_table_bytes = a.coeff_table_bytes + b.coeff_table_bytes,
         queue_nodes = a.queue_nodes + b.queue_nodes,
         probe_ns = a.probe_ns + b.probe_ns,
         unknown_effectors = a.unknown_effectors + b.unknown_effectors,
@@ -84,6 +92,78 @@ function Base.:+(a::WorkCounts, b::WorkCounts)::WorkCounts
 end
 
 Base.zero(::Type{WorkCounts})::WorkCounts = WorkCounts()
+
+"""
+    RateCurve
+
+A machine rate that depends on the size of the thing it operates on, stored as
+measured knots and interpolated in log2 of that size.
+
+Scalars were the original design and the measurements rejected them. Both of
+the model's discriminating rates move by more than a factor of two across the
+sizes real workloads produce, on this 12-core box (L1d 48K, L2 1M, L3 32M):
+
+    coefficient touch, by table footprint
+        3.4 KiB  0.103 ns      315 KiB  0.240 ns
+       20.3 KiB  0.125 ns     1256 KiB  0.299 ns
+       79.7 KiB  0.174 ns    20025 KiB  0.346 ns          -> 3.4x spread
+
+    SIMD lane-term, by batch width
+        B=16     0.228 ns      B=4096   0.0227 ns
+        B=256    0.0259 ns     B=16384  0.0435 ns
+        B=1024   0.0227 ns     B=262144 0.0551 ns
+
+A single number for either would be wrong by 2-3x at the extremes, and a 2x
+error in the coefficient-touch rate alone shifts the predicted `satellite_batch`
+cost by 49% -- enough to invert the routing decision it exists to make.
+
+The shape is physical, not noise: flat while the working set sits in L1, rising
+through the L1-to-L2 and L2-to-L3 transitions, flattening again in L3. The small
+batch-width end is a different effect -- per-pass loop overhead that cannot
+amortize over a short vector -- and is absorbed into the same curve rather than
+modelled as a separate term, because what is measured at each knot is the
+*effective* per-lane cost with that overhead already amortized.
+
+Knots are interpolated linearly in log2 of the size and clamped outside the
+measured range, so a workload larger or smaller than anything calibrated gets
+the nearest measured rate rather than an extrapolation off the end of a curve
+whose shape is only known where it was sampled.
+"""
+struct RateCurve
+    log2_size::Vector{Float64}
+    ns::Vector{Float64}
+
+    function RateCurve(log2_size::Vector{Float64}, ns::Vector{Float64})
+        length(log2_size) == length(ns) ||
+            throw(ArgumentError("RateCurve knots and values must have equal length."))
+        isempty(log2_size) && throw(ArgumentError("RateCurve needs at least one knot."))
+        issorted(log2_size) ||
+            throw(ArgumentError("RateCurve knots must be sorted ascending in log2 size."))
+        return new(log2_size, ns)
+    end
+end
+
+"""
+    rate_at(curve, size) -> Float64
+
+The rate at `size`, linearly interpolated in log2 and clamped at both ends.
+"""
+function rate_at(curve::RateCurve, size::Real)::Float64
+    n = length(curve.log2_size)
+    n == 1 && return curve.ns[1]
+    x = log2(max(1.0, Float64(size)))
+    x <= curve.log2_size[1] && return curve.ns[1]
+    x >= curve.log2_size[n] && return curve.ns[n]
+    @inbounds for i in 2:n
+        if x <= curve.log2_size[i]
+            x0, x1 = curve.log2_size[i - 1], curve.log2_size[i]
+            y0, y1 = curve.ns[i - 1], curve.ns[i]
+            w = (x - x0) / max(1e-12, x1 - x0)
+            return y0 + w * (y1 - y0)
+        end
+    end
+    return curve.ns[n]
+end
 
 """
     MachineConstants
@@ -96,15 +176,17 @@ Never fitted from the benchmark case catalog: the catalog is held out so that a
 predicted-versus-actual comparison over it is an out-of-sample test rather than
 a restatement of the fit.
 
-- `ns_per_simd_lane`   cost of one vectorized inner-loop iteration per satellite
-                       in the batch.
+- `simd_lane`          [`RateCurve`] cost of one vectorized inner-loop iteration
+                       per satellite, as a function of the satellite batch width
+                       the loop runs over.
+- `coeff_touch`        [`RateCurve`] cost of one coefficient-table read, as a
+                       function of the table footprint being strided over.
+                       Calibrated rather than derived from element size: the
+                       coefficient matrices are column-major and the kernel walks
+                       a row, so each read strides by `(L+2)*8` bytes onto its own
+                       cache line, and what it costs is set by which cache level
+                       holds the table -- not by `sizeof(Float64)`.
 - `ns_per_scalar_item` cost of one per-satellite scalar unit.
-- `ns_per_coeff_touch` cost of one coefficient-table read, including whatever
-                       cache-line traffic the access stride implies. Calibrated
-                       rather than derived from element size on purpose: the
-                       coefficient matrices are column-major and the kernel
-                       walks a row, so the bytes actually moved per term depend
-                       on stride and table size, not on `sizeof(Float64)`.
 - `ns_per_queue_node`  per-node flat-queue bookkeeping.
 - `dispatch_ns_base` / `dispatch_ns_per_worker`
                        affine model of one parallel dispatch and join.
@@ -136,9 +218,9 @@ a restatement of the fit.
                        rejected rather than reinterpreted.
 """
 Base.@kwdef struct MachineConstants
-    ns_per_simd_lane::Float64
+    simd_lane::RateCurve
+    coeff_touch::RateCurve
     ns_per_scalar_item::Float64
-    ns_per_coeff_touch::Float64
     ns_per_queue_node::Float64
     dispatch_ns_base::Float64
     dispatch_ns_per_worker::Float64

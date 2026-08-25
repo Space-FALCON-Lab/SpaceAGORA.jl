@@ -1430,6 +1430,235 @@ end
     end
 end
 
+# Test doubles for the cost probe. Defined at file scope because the probe
+# dispatches on their concrete types.
+#
+# _ProbeWorkEffector stands in for a user-defined effector with no
+# effector_cost_terms method: the whole point of the probe is that such an
+# effector needs to implement nothing to be routable. _ProbeThrowingEffector
+# stands in for one that fails when evaluated, which must degrade the model to
+# "cannot predict" rather than take the solve down with it.
+struct _ProbeWorkEffector <: SimulationModel.AbstractForceTorqueModel
+    iterations::Int
+end
+
+function SimulationModel.calcForceTorque(
+    model::_ProbeWorkEffector, x::AbstractVector{Float64}, param::ODEParams, i::Int64
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    acc = 0.0
+    @inbounds for j in 1:model.iterations
+        acc = muladd(x[1], 1.0000001, acc)
+    end
+    return (SVector{3, Float64}(acc * 0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+end
+
+struct _ProbeThrowingEffector <: SimulationModel.AbstractForceTorqueModel end
+
+function SimulationModel.calcForceTorque(
+    ::_ProbeThrowingEffector, ::AbstractVector{Float64}, ::ODEParams, ::Int64
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    error("deliberate probe failure")
+end
+
+# Survives the warm-up RHS, then throws once the probe starts hammering it.
+# This is the failure mode the per-effector try/catch exists for: an effector
+# that works in the RHS but not under isolated re-evaluation. The
+# always-throwing double above cannot exercise it, because it takes the warm-up
+# down first and nothing is ever probed.
+const _PROBE_FLAKY_CALLS = Ref(0)
+
+struct _ProbeFlakyEffector <: SimulationModel.AbstractForceTorqueModel
+    succeed_for::Int
+end
+
+function SimulationModel.calcForceTorque(
+    model::_ProbeFlakyEffector, ::AbstractVector{Float64}, ::ODEParams, ::Int64
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    _PROBE_FLAKY_CALLS[] += 1
+    _PROBE_FLAKY_CALLS[] > model.succeed_for && error("deliberate probe failure")
+    return (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+end
+
+@testset "Effector Cost Probe" begin
+    PC = SimulationModel.ParallelCost
+    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics = GravitationalHarmonicsModel(4, 4, harmonics_file, EARTH)
+    cheap = _ProbeWorkEffector(64)
+    dear  = _ProbeWorkEffector(16_384)
+
+    args_probe = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
+            for i in 1:4
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(harmonics, cheap, dear),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_probe = ODEParams(n_sats=4, args=args_probe)
+    _initialize_heat_rate_buffers!(p_probe)
+    _initialize_harmonics_workspace_buffers!(p_probe)
+    SimulationEngine._initialize_density_model_instances!(p_probe)
+    SimulationEngine._initialize_density_cache_buffers!(p_probe)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_probe)
+    _initialize_aero_workspace_buffers!(p_probe)
+    _initialize_nbody_workspace_buffers!(p_probe)
+    u_probe = build_initial_conditions(args_probe)
+
+    probes = SimulationEngine.probe_effector_costs!(p_probe, u_probe, args_probe)
+
+    @test length(probes) == 3
+    @test all(haskey(probes, i) for i in 1:3)
+
+    # Harmonics declares analytic terms, so it is probed only to validate.
+    @test probes[1].declared
+    @test !probes[2].declared
+    @test !probes[3].declared
+
+    # A user-defined effector with no trait method is measured, and the
+    # measurement is real work rather than a folded-away constant.
+    floor_ns = PC.timing_noise_floor()
+    for i in 2:3
+        @test isfinite(probes[i].ns_per_sat)
+        @test probes[i].ns_per_sat > floor_ns
+        @test isfinite(probes[i].reference_ratio)
+        @test probes[i].reference_ratio > 0.0
+    end
+
+    # The probe must order effectors by cost -- that is the only property the
+    # model actually consumes from it. 256x the inner iterations must read as
+    # materially dearer; the bound is loose because SIMD width and loop overhead
+    # make the true factor machine-specific.
+    @test probes[3].ns_per_sat > 4 * probes[2].ns_per_sat
+
+    # probe_ns_map feeds constellation_work_counts and must omit declared
+    # effectors, whose cost comes from their counts -- including them would
+    # double-count.
+    ns_map = PC.probe_ns_map(probes)
+    @test !haskey(ns_map, 1)
+    @test haskey(ns_map, 2) && haskey(ns_map, 3)
+
+    # Second call, post-compilation: the probe runs at every solve setup, so
+    # its own cost has to stay negligible against the sweep it replaces (which
+    # evaluated the whole RHS 15 times for each of up to 10 candidate plans).
+    probe_elapsed_s = @elapsed SimulationEngine.probe_effector_costs!(p_probe, u_probe, args_probe)
+    @info "Effector cost probe overhead" effectors=3 seconds=probe_elapsed_s
+    @test probe_elapsed_s < 0.5
+
+    counts = PC.constellation_work_counts(args_probe, 4; probe=ns_map)
+    @test counts.unknown_effectors == 2
+    @test counts.probe_ns ≈ ns_map[2] + ns_map[3]
+    @test counts.simd_terms > 0.0                     # harmonics contributed analytically
+    # Harmonics is pre-pass handled; the two doubles are not, so only they
+    # produce queue nodes.
+    @test counts.queue_nodes == 4 * 2
+    @test counts.in_domain
+end
+
+@testset "Effector Cost Probe: failures do not break the run" begin
+    PC = SimulationModel.ParallelCost
+    args_bad = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
+            for i in 1:2
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredJ2GravityModel(), _ProbeThrowingEffector()),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_bad = ODEParams(n_sats=2, args=args_bad)
+    _initialize_heat_rate_buffers!(p_bad)
+    _initialize_harmonics_workspace_buffers!(p_bad)
+    SimulationEngine._initialize_density_model_instances!(p_bad)
+    SimulationEngine._initialize_density_cache_buffers!(p_bad)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_bad)
+    _initialize_aero_workspace_buffers!(p_bad)
+    _initialize_nbody_workspace_buffers!(p_bad)
+    u_bad = build_initial_conditions(args_bad)
+
+    # An effector that cannot be evaluated at all takes the warm-up RHS down,
+    # so nothing is probed. That must return empty rather than throw: a solve
+    # whose RHS fails once was not going to run regardless, and the probe is
+    # not the place to surface it.
+    probes = SimulationEngine.probe_effector_costs!(p_bad, u_bad, args_bad)
+    @test isempty(probes)
+
+    # And the model must decline rather than treat the unmeasured effector as
+    # free -- the whole point of routing an unknown effector to the probe is
+    # lost if a failed probe silently becomes zero cost.
+    counts = PC.constellation_work_counts(args_bad, 2; probe=PC.probe_ns_map(probes))
+    @test counts.unknown_effectors == 1
+    @test !counts.in_domain
+end
+
+@testset "Effector Cost Probe: isolated-evaluation failure is contained" begin
+    PC = SimulationModel.ParallelCost
+    _PROBE_FLAKY_CALLS[] = 0
+    args_flaky = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
+            for i in 1:2
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        # succeed_for covers the warm-up RHS (one call per active satellite),
+        # then the probe's own repeated calls trip the failure.
+        dynamic_effectors=(InverseSquaredJ2GravityModel(), _ProbeFlakyEffector(2)),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_flaky = ODEParams(n_sats=2, args=args_flaky)
+    _initialize_heat_rate_buffers!(p_flaky)
+    _initialize_harmonics_workspace_buffers!(p_flaky)
+    SimulationEngine._initialize_density_model_instances!(p_flaky)
+    SimulationEngine._initialize_density_cache_buffers!(p_flaky)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_flaky)
+    _initialize_aero_workspace_buffers!(p_flaky)
+    _initialize_nbody_workspace_buffers!(p_flaky)
+    u_flaky = build_initial_conditions(args_flaky)
+
+    probes = SimulationEngine.probe_effector_costs!(p_flaky, u_flaky, args_flaky)
+    @test haskey(probes, 2)
+    @test isnan(probes[2].ns_per_sat)
+    @test isnan(probes[2].reference_ratio)
+
+    # NaN must not leak into the counts as a number.
+    counts = PC.constellation_work_counts(args_flaky, 2; probe=PC.probe_ns_map(probes))
+    @test !counts.in_domain
+    @test counts.probe_ns == 0.0
+    @test !isnan(counts.probe_ns)
+end
+
+@testset "Declaration mismatch is warned, not enforced" begin
+    PC = SimulationModel.ParallelCost
+    # Agreement inside the factor, disagreement outside it.
+    @test PC.validate_declaration(100.0, 150.0)
+    @test PC.validate_declaration(150.0, 100.0)
+    @test !PC.validate_declaration(100.0, 10.0)
+    @test !PC.validate_declaration(10.0, 100.0)
+    # An unmeasurable probe cannot invalidate a declaration.
+    @test PC.validate_declaration(NaN, 100.0)
+
+    probes = Dict(
+        1 => PC.EffectorProbe(100.0, 5.0, true),    # declared, agrees
+        2 => PC.EffectorProbe(100.0, 5.0, true),    # declared, disagrees 10x
+        3 => PC.EffectorProbe(100.0, 5.0, false),   # undeclared, never checked
+    )
+    predicted = Dict(1 => 120.0, 2 => 10.0, 3 => 1.0)
+    mismatches = SimulationEngine.warn_on_declaration_mismatch(probes, predicted)
+    @test mismatches == 1
+end
+
 @testset "RHS Plan Calibration" begin
     # ── Env var parsing ──────────────────────────────────────────────────────
     withenv("SPACEAGORA_RHS_CALIBRATE" => "off") do

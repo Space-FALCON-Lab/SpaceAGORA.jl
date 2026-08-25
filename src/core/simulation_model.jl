@@ -107,6 +107,10 @@ include(joinpath(@__DIR__, "..", "dynamics", "coupled", "force_torque_models.jl"
 include(joinpath(@__DIR__, "..", "environment", "gravity", "gravity_effectors.jl"))
 include(joinpath(@__DIR__, "..", "environment", "aerodynamics", "aerodynamic_effectors.jl"))
 
+# Analytic cost model for routing decisions. Included after the effector owners
+# because its work-count methods dispatch on their concrete types.
+include(joinpath(@__DIR__, "..", "parallel", "cost", "parallel_cost.jl"))
+
 # --- IO Owners ---
 include(joinpath(@__DIR__, "..", "io", "config", "io_config.jl"))
 @reexport using .IOConfig

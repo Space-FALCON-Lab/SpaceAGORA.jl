@@ -39,6 +39,18 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "parallel", "policy", "parallel_policy.jl"),
     joinpath("src", "parallel", "routing", "parallel_profiles.jl"),
     joinpath("src", "parallel", "process", "parallel_process.jl"),
+    # Fourth src/parallel/<area>/<area>.jl module aggregator, same shape as the
+    # three above: defines its module, includes its own files, exports its
+    # surface, owns no behavior. Added with the cost model and omitted here by
+    # oversight, so this gate has failed since that commit.
+    #
+    # Deliberately NOT added to CANONICAL_AGGREGATOR_FILES in
+    # ci_src_completeness_contract_gate.jl, which is a different allowlist with
+    # a different meaning: that one requires the
+    # "# Canonical aggregator: no behavior ownership." header and forbids any
+    # function or type definition. parallel_policy.jl sits in this list and not
+    # in that one for the same reason.
+    joinpath("src", "parallel", "cost", "parallel_cost.jl"),
 ])
 
 violations = String[]

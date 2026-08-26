@@ -1239,6 +1239,13 @@ end
     @test isapprox(rho_above, 1e-10; rtol=1e-6)                            # tail continues H
     rho_below, _, _ = SimulationModel.getDensity(m, 90.0e3, 0.0, 0.0, 10.0, false)
     @test isapprox(rho_below, 1e-6; rtol=1e-6)
+    # NaN altitude (an adaptive solver's trial state): both tail guards are
+    # false for NaN and searchsortedlast points past the last bin, so this
+    # used to BoundsError out of the ensemble task mid-study; it must return
+    # NaN density for the solver to reject the step instead.
+    rho_nan, T_nan, w_nan = SimulationModel.getDensity(m, NaN, 0.0, 0.0, 10.0, false)
+    @test isnan(rho_nan) && isnan(T_nan)
+    @test w_nan == SimulationModel.SVector{3, Float64}(0.0, 0.0, 0.0)
     mp = SimulationModel.TabulatedFlightAtmosphereModel(
         [0.0], [(alts, alts)], [(logs, logs)], [(sigs, sigs)], 1.0, 3.4, 188.92)
     rho_p, _, _ = SimulationModel.getDensity(mp, 105.0e3, 0.0, 0.0, 10.0, false)

@@ -2025,18 +2025,40 @@ end
             "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
             "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1",
             "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(mktempdir(), "calib_force_gate.toml"),
-            # Margin zero: this block tests that calibration CAN install a plan.
-            # At the shipped margin the heuristic legitimately wins on small
-            # fixtures, which is the no-regret floor doing its job rather than a
-            # failure -- that behaviour is asserted separately below.
             "SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN" => "0.0"
         ) do
+            # End to end, EITHER outcome is correct and which one occurs is a
+            # timing race: at margin zero the heuristic is still retained
+            # whenever it is faster by any amount, which on a four-satellite
+            # fixture it often is. An earlier version of this asserted an
+            # override was installed and passed only by luck of the draw. So
+            # assert the outcome is well formed rather than which way it went.
             p_calib.shared_buffers.rhs_plan_override[] = nothing
             SimulationEngine._calibrate_rhs_plan_if_needed!(p_calib, u_calib, args_calib)
             override = p_calib.shared_buffers.rhs_plan_override[]
-            @test override !== nothing
-            @test override.mode ∈ (:satellite_batch, :flat_constellation_effector_queue)
-            @test override.policy_applied == true
+            if override !== nothing
+                @test override.mode ∈ (:satellite_batch, :flat_constellation_effector_queue)
+                @test override.policy_applied == true
+            else
+                @test override === nothing
+            end
+        end
+
+        # That the sweep CAN produce a plan is tested directly, without the
+        # floor, so it does not depend on which side wins a timing race:
+        # passing no `args` means no heuristic candidate and therefore no floor.
+        withenv(
+            "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1",
+            "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
+            "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1"
+        ) do
+            plan, elapsed = SimulationEngine._run_rhs_sweep!(
+                p_calib, u_calib, args_calib.dynamics_model.dynamic_effectors, false
+            )
+            @test plan !== nothing
+            @test plan.mode ∈ (:satellite_batch, :flat_constellation_effector_queue)
+            @test elapsed > 0.0
+            @test p_calib.shared_buffers.rhs_plan_override[] === nothing
         end
 
         # ── No-regret floor ──────────────────────────────────────────────────

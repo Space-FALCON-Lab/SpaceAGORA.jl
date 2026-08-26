@@ -455,13 +455,27 @@ end
 # cost persisted history is meant to eliminate: a restored signature carrying
 # hundreds of observations across every route should exploit immediately, not
 # re-run the round-robin its predecessor already paid for.
-@inline function _route_is_proven(snapshot, route::Symbol, min_samples::Int)::Bool
+@inline function _route_is_proven(
+    candidates::Vector{Symbol},
+    snapshot,
+    route::Symbol,
+    min_samples::Int,
+)::Bool
     info = get(snapshot, route, nothing)
     info === nothing && return false
     (info.samples >= max(1, min_samples) && isfinite(info.mean_s)) || return false
     tested_against_an_alternative = false
-    for (other, other_info) in snapshot
+    # Only arms this selector enumerated. Scanning the whole snapshot was wrong
+    # once the bucket held more than one selector's arms: after a single
+    # campaign the split arm `split_threads_w4` sits beside the `:threads` route
+    # arm carrying the same observation, so it registered as "an alternative
+    # that was measured and did not win" and declared the route proven -- ending
+    # exploration after one campaign, on evidence that was the route's own
+    # timing recorded twice under two names.
+    for other in candidates
         other === route && continue
+        other_info = get(snapshot, other, nothing)
+        other_info === nothing && continue
         other_info.samples <= 0 && continue
         isfinite(other_info.mean_s) || continue
         tested_against_an_alternative = true
@@ -632,7 +646,7 @@ function select_outer_route!(
         # beats it, ranking falls through to UCB, which still explores -- through
         # the confidence width on candidates it has data for -- but is no longer
         # obliged to spend a full trial on every candidate it does not.
-        default_proven = _route_is_proven(snapshot, default_route, tuning.adaptive_min_samples)
+        default_proven = _route_is_proven(candidates, snapshot, default_route, tuning.adaptive_min_samples)
         explore = default_proven ?
             nothing :
             _under_sampled_candidate(candidates, snapshot, default_route, tuning.adaptive_min_samples)
@@ -662,4 +676,173 @@ function select_outer_route!(
         )
     end
     return chosen
+end
+
+# ── Outer/inner split adaptation ──────────────────────────────────────────────
+#
+# How many outer workers to use, and therefore how many threads each one gets
+# for inner parallelism. Until now this was arithmetic rather than a decision:
+# the campaign runner took the widest outer split the route allowed and gave the
+# inner budget whatever floor division left over, which for a threads route
+# using the whole pool is exactly one thread -- inner parallelism disabled, not
+# because that was measured to be right but because nothing chose otherwise.
+#
+# The two levels trade against each other. Widening the outer split shortens the
+# queue but starves each sample of inner threads; narrowing it does the reverse.
+# Which side wins depends on whether a single sample can use several threads
+# productively, which is a property of the workload and not of the machine, so
+# it cannot be settled by a fixed rule.
+#
+# The selector reuses the route bandit wholesale -- same per-signature bucket,
+# same statistics, same confidence handling, same persistence -- by naming its
+# arms `split_<route>_w<N>`. Route arms and split arms live side by side without
+# colliding because each selector only ever scores the arms it enumerated.
+
+@inline function _split_arm(route::Symbol, workers::Int)::Symbol
+    return Symbol("split_", String(route), "_w", max(1, workers))
+end
+
+# Split arms live under their own signature namespace rather than beside the
+# route arms.
+#
+# Sharing a bucket looked economical and was not. Anything that scans a bucket
+# rather than an explicit candidate list sees both selectors' arms: _route_is_proven
+# read one campaign's split arm as an independent alternative and declared the
+# route proven after a single observation, and summing a snapshot's samples
+# double-counts every campaign, because the split arm carries the same
+# observation under a second name. Separating the namespace removes the whole
+# class of interaction instead of patching each scan site as it is found.
+const _SPLIT_SIGNATURE_PREFIX = "split|"
+
+@inline function _split_signature_chain(f::OuterRouteFeatures)::Vector{String}
+    return String[_SPLIT_SIGNATURE_PREFIX * sig for sig in _outer_route_signature_hierarchy(f)]
+end
+
+"""
+    outer_split_candidates(route; budget, n_units, tuning) -> Vector{Int}
+
+Worker counts worth trying for `route`, as a geometric ladder up to the widest
+split the route and workload allow.
+
+Geometric rather than exhaustive because the interesting differences are
+multiplicative: 1, 2, 4, 8 covers the shape of the trade-off, while every
+integer in between mostly re-measures the same regime at the cost of more
+exploration. The widest split is always included, since it is what the previous
+fixed rule would have chosen and the selector must be able to reproduce it.
+"""
+function outer_split_candidates(
+    route::Symbol;
+    budget::Int,
+    n_units::Int,
+    tuning::OuterRouteTuning=OuterRouteTuning()
+)::Vector{Int}
+    units = max(1, n_units)
+    max_workers = if route === :process
+        max(1, min(units, tuning.process_max_workers))
+    elseif route === :threads
+        max(1, min(units, max(1, budget)))
+    else
+        1
+    end
+    max_workers <= 1 && return Int[1]
+
+    out = Int[1]
+    w = 2
+    while w < max_workers
+        push!(out, w)
+        w *= 2
+    end
+    push!(out, max_workers)
+    return sort!(unique!(out))
+end
+
+"""
+    select_outer_split!(state, features; route, budget, n_units, tuning) -> Int
+
+Choose how many outer workers to run, given an already-selected `route`.
+
+Cold, this returns the widest split, which is what the previous arithmetic rule
+produced -- so an uncalibrated machine behaves exactly as before and the
+adaptation can only improve on it. With history, the same UCB rule the route
+selector uses picks the empirically fastest width, and the same
+`adaptive_min_samples` guarantee explores each width before exploiting.
+
+A process route always reports an inner budget of one thread per worker
+regardless of width, since its workers are separate processes launched with a
+single thread each; the width still matters there, because more processes is not
+always faster once memory bandwidth or native-library instances dominate.
+"""
+function select_outer_split!(
+    state::OuterRouteState,
+    f::OuterRouteFeatures;
+    route::Symbol,
+    budget::Int,
+    n_units::Int,
+    tuning::OuterRouteTuning=OuterRouteTuning()
+)::Int
+    candidates = outer_split_candidates(route; budget=budget, n_units=n_units, tuning=tuning)
+    length(candidates) <= 1 && return isempty(candidates) ? 1 : candidates[1]
+    widest = candidates[end]
+    tuning.adaptive_enabled || return widest
+
+    arms = Symbol[_split_arm(route, w) for w in candidates]
+    signature_chain = _split_signature_chain(f)
+    snapshot = Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate, :std_s), Tuple{Int, Float64, Float64, Float64}}}()
+    for candidate_sig in signature_chain
+        snap = _outer_route_stats_snapshot_internal(state, candidate_sig)
+        if any(a -> haskey(snap, a), arms)
+            snapshot = snap
+            break
+        end
+    end
+    isempty(snapshot) && return widest
+
+    widest_arm = _split_arm(route, widest)
+    explore = _route_is_proven(arms, snapshot, widest_arm, tuning.adaptive_min_samples) ?
+        nothing :
+        _under_sampled_candidate(arms, snapshot, widest_arm, tuning.adaptive_min_samples)
+    if !(explore === nothing)
+        for (w, arm) in zip(candidates, arms)
+            arm === explore && return w
+        end
+        return widest
+    end
+
+    best = _best_candidate_confidence(arms, snapshot, widest_arm, tuning.adaptive_exploration_c)
+    best.route === nothing && return widest
+    for (w, arm) in zip(candidates, arms)
+        arm === best.route && return w
+    end
+    return widest
+end
+
+"""
+    record_outer_split_feedback!(state, features; route, workers, kwargs...)
+
+Record the outcome of running `route` at `workers` wide, so later campaigns can
+select the width empirically. Delegates to
+[`record_outer_route_feedback!`](@ref) under the split arm, so the split shares
+the route bandit's statistics and persistence rather than duplicating them.
+"""
+function record_outer_split_feedback!(
+    state::OuterRouteState,
+    f::OuterRouteFeatures;
+    route::Symbol,
+    workers::Int,
+    successes::Int,
+    failures::Int,
+    elapsed_success_s::Float64=0.0,
+    elapsed_success_sq_sum_s::Float64=NaN,
+    tuning::OuterRouteTuning=OuterRouteTuning()
+)::Nothing
+    return record_outer_route_feedback!(
+        state, f;
+        route=_split_arm(route, workers),
+        successes=successes,
+        failures=failures,
+        elapsed_success_s=elapsed_success_s,
+        elapsed_success_sq_sum_s=elapsed_success_sq_sum_s,
+        tuning=tuning,
+        signature_prefix=_SPLIT_SIGNATURE_PREFIX,
+    )
 end

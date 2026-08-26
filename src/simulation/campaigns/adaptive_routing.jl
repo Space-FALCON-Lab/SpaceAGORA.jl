@@ -278,16 +278,32 @@ function _campaign_route_plan(
         threads_available=threads_available,
         parallel_enabled=true
     )
+    # How wide to run the outer split is now selected rather than assumed.
+    #
+    # This used to take the widest split the route allowed and give inner
+    # parallelism whatever floor division left -- which, for a threads route
+    # using the whole pool, is exactly one thread. Inner parallelism was
+    # therefore disabled on every threaded campaign, not because that was
+    # measured to be right but because nothing chose otherwise. The two levels
+    # genuinely trade against each other, and which side wins depends on whether
+    # one sample can use several threads productively, which is a property of
+    # the workload.
+    #
+    # Cold, select_outer_split! returns the widest split, so an uncalibrated
+    # machine behaves exactly as it did before and the adaptation can only
+    # improve on that baseline.
+    #
     # Process workers run --threads=1 each and don't share the coordinator's
     # thread pool, so they're sized off tuning.process_max_workers
     # (Sys.CPU_THREADS by default), not Threads.nthreads() like the thread route.
-    workers = if route === :process
-        max(1, min(n_samples, tuning.process_max_workers))
-    elseif route === :threads
-        max(1, min(n_samples, Base.Threads.nthreads()))
-    else
-        1
-    end
+    workers = select_outer_split!(
+        state,
+        features;
+        route=route,
+        budget=Base.Threads.nthreads(),
+        n_units=n_samples,
+        tuning=tuning,
+    )
     inner_thread_budget = max(1, fld(Base.Threads.nthreads(), workers))
     return (route=route, threads=workers, inner_thread_budget=inner_thread_budget, record=true)
 end
@@ -343,6 +359,21 @@ function _record_campaign_route_feedback!(
         state,
         features;
         route=route,
+        successes=successes,
+        failures=failures,
+        elapsed_success_s=per_sample_s * successes,
+        elapsed_success_sq_sum_s=per_sample_s^2 * successes,
+        tuning=tuning
+    )
+    # The split arm gets the same observation, so the width that produced this
+    # timing is credited as well as the route. Without it the split selector
+    # would explore forever: it would never accumulate the samples its own
+    # min-samples guarantee requires before it will exploit.
+    record_outer_split_feedback!(
+        state,
+        features;
+        route=route,
+        workers=max(1, result.threads),
         successes=successes,
         failures=failures,
         elapsed_success_s=per_sample_s * successes,

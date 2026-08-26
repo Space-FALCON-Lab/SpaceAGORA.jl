@@ -156,7 +156,13 @@ function save_outer_route_state(
             bucket = state.history[signature]
             isempty(bucket) && continue
             signature_rows = 0
-            for route in (:none, :threads, :process)
+            # Every arm in the bucket, not a fixed three. The split selector adds
+            # `split_<route>_w<N>` arms alongside the route arms, and a fixed
+            # enumeration would silently drop them on save -- so a restored state
+            # would carry route history but no split history, and the split
+            # bandit would re-explore from cold on every run while the route
+            # bandit did not.
+            for route in sort!(collect(keys(bucket)); by = String)
                 stats = get(bucket, route, nothing)
                 stats isa OuterRouteStats || continue
                 stats.samples > 0 || continue
@@ -214,8 +220,9 @@ function load_outer_route_state!(
             row isa AbstractDict || continue
             signature = strip(String(get(row, "signature", "")))
             isempty(signature) && continue
-            route = Symbol(String(get(row, "route", "")))
-            route in (:none, :threads, :process) || continue
+            route_name = strip(String(get(row, "route", "")))
+            isempty(route_name) && continue
+            route = Symbol(route_name)
             stats = _route_payload_stats(get(row, "stats", nothing))
             stats === nothing && continue
 

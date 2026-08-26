@@ -108,6 +108,7 @@ end
     _record!(beaten, feat, :process, 0.90)
     _record!(beaten, feat, :threads, 0.10)
     @test PPr._route_is_proven(
+        Symbol[:none, :threads, :process],
         PPr.outer_route_stats_snapshot(beaten, PPr.outer_route_signature(feat)),
         :process, 2) == false
 end
@@ -122,10 +123,120 @@ end
     only_default = PPr.OuterRouteState()
     _record!(only_default, feat, :process, 0.10)
     snap = PPr.outer_route_stats_snapshot(only_default, PPr.outer_route_signature(feat))
-    @test PPr._route_is_proven(snap, :process, 2) == false
+    @test PPr._route_is_proven(Symbol[:none, :threads, :process], snap, :process, 2) == false
 
     # One sampled alternative that loses is enough to make it proven.
     _record!(only_default, feat, :threads, 0.90)
     snap2 = PPr.outer_route_stats_snapshot(only_default, PPr.outer_route_signature(feat))
-    @test PPr._route_is_proven(snap2, :process, 2) == true
+    @test PPr._route_is_proven(Symbol[:none, :threads, :process], snap2, :process, 2) == true
+end
+
+@testset "Outer/inner split: candidate ladder" begin
+    T = PPr.OuterRouteTuning(process_max_workers = 12)
+    # Geometric, and always including the widest split -- the widest is what the
+    # previous arithmetic rule produced, so the selector must be able to
+    # reproduce it exactly.
+    @test PPr.outer_split_candidates(:threads; budget = 12, n_units = 64, tuning = T) == [1, 2, 4, 8, 12]
+    # Capped by the work available, not just the budget: four samples cannot
+    # occupy twelve workers.
+    @test PPr.outer_split_candidates(:threads; budget = 12, n_units = 4, tuning = T) == [1, 2, 4]
+    # A serial route has exactly one width.
+    @test PPr.outer_split_candidates(:none; budget = 12, n_units = 64, tuning = T) == [1]
+    # Process width is bounded by process_max_workers rather than the thread pool.
+    @test PPr.outer_split_candidates(:process; budget = 2, n_units = 64, tuning = T) == [1, 2, 4, 8, 12]
+end
+
+@testset "Outer/inner split: cold behaviour matches the old arithmetic" begin
+    # With no history the selector must return the widest split, because that is
+    # exactly what the fixed `min(n_samples, nthreads)` rule produced. An
+    # uncalibrated machine therefore behaves as it did before the adaptation
+    # existed, which is what makes this change unable to regress a cold run.
+    feat = _feat()
+    cold = PPr.OuterRouteState()
+    for route in (:threads, :process)
+        w = PPr.select_outer_split!(cold, feat; route = route, budget = 12,
+                                    n_units = 64, tuning = PPr.OuterRouteTuning())
+        @test w == PPr.outer_split_candidates(route; budget = 12, n_units = 64,
+                                              tuning = PPr.OuterRouteTuning())[end]
+    end
+    # A route with a single feasible width is returned without consulting history.
+    @test PPr.select_outer_split!(cold, feat; route = :none, budget = 12, n_units = 64) == 1
+end
+
+@testset "Outer/inner split: history moves the choice" begin
+    feat = _feat()
+    st = PPr.OuterRouteState()
+    T = PPr.OuterRouteTuning()
+    # Teach it that a narrow split is much faster than a wide one -- the case
+    # where each sample can use several threads and starving it to widen the
+    # queue is the wrong trade.
+    for w in PPr.outer_split_candidates(:threads; budget = 12, n_units = 64, tuning = T)
+        mean_s = w == 4 ? 0.10 : 0.90
+        for _ in 1:5
+            PPr.record_outer_split_feedback!(
+                st, feat; route = :threads, workers = w, successes = 64, failures = 0,
+                elapsed_success_s = 64 * mean_s, elapsed_success_sq_sum_s = 64 * mean_s^2)
+        end
+    end
+    @test PPr.select_outer_split!(st, feat; route = :threads, budget = 12,
+                                  n_units = 64, tuning = T) == 4
+
+    # Split arms must not disturb route selection: the two share a bucket, and
+    # each selector may only score the arms it enumerated.
+    _record!(st, feat, :process, 0.10)
+    _record!(st, feat, :threads, 0.90)
+    _record!(st, feat, :none, 1.50)
+    @test PPr.select_outer_route!(st, feat; machine_class = :large,
+                                  threads_available = true) === :process
+end
+
+@testset "Outer/inner split: arms survive persistence" begin
+    # save_outer_route_state enumerated a fixed three route symbols, which would
+    # have silently dropped every split arm -- so a restored state would carry
+    # route history but no split history, and the split bandit would re-explore
+    # from cold on every run while the route bandit did not.
+    mktempdir() do dir
+        path = joinpath(dir, "split.toml")
+        feat = _feat()
+        st = PPr.OuterRouteState()
+        for _ in 1:4
+            PPr.record_outer_split_feedback!(
+                st, feat; route = :threads, workers = 4, successes = 64, failures = 0,
+                elapsed_success_s = 64 * 0.1, elapsed_success_sq_sum_s = 64 * 0.01)
+        end
+        PPr.save_outer_route_state(st, path)
+
+        back = PPr.OuterRouteState()
+        PPr.load_outer_route_state!(back, path)
+        snap = PPr.outer_route_stats_snapshot(
+            back, "split|" * PPr.outer_route_signature(feat))
+        @test haskey(snap, Symbol("split_threads_w4"))
+        @test snap[Symbol("split_threads_w4")].mean_s ≈ 0.1 atol = 1e-9
+    end
+end
+
+@testset "Split arms cannot make a route look proven" begin
+    # The route and split selectors share a per-signature bucket, and
+    # _route_is_proven must only weigh the arms its own selector enumerated.
+    # Scanning the whole bucket meant one campaign's split arm -- which carries
+    # that same campaign's timing under a second name -- counted as an
+    # independent alternative, so the route was declared proven after a single
+    # observation and exploration stopped early.
+    feat = _feat()
+    st = PPr.OuterRouteState()
+    _record!(st, feat, :threads, 0.50)
+    PPr.record_outer_split_feedback!(
+        st, feat; route = :threads, workers = 4, successes = 64, failures = 0,
+        elapsed_success_s = 64 * 0.50, elapsed_success_sq_sum_s = 64 * 0.25)
+    # Split arms are not in the route signature's bucket at all.
+    snap = PPr.outer_route_stats_snapshot(st, PPr.outer_route_signature(feat))
+    @test !haskey(snap, Symbol("split_threads_w4"))
+    # Route arm only: 5 reps x 64 samples. Before the namespace split this
+    # summed to 384, because the split arm's 64 were counted again here.
+    @test sum(i.samples for i in values(snap)) == 320
+    split_snap = PPr.outer_route_stats_snapshot(
+        st, "split|" * PPr.outer_route_signature(feat))
+    @test haskey(split_snap, Symbol("split_threads_w4"))
+    # :threads has no route-level alternative measured, so it is NOT proven.
+    @test PPr._route_is_proven(Symbol[:none, :threads, :process], snap, :threads, 2) == false
 end

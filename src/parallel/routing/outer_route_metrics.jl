@@ -12,9 +12,15 @@ function record_outer_route_feedback!(
     failures::Int,
     elapsed_success_s::Float64=0.0,
     elapsed_success_sq_sum_s::Float64=NaN,
-    tuning::OuterRouteTuning=OuterRouteTuning()
+    tuning::OuterRouteTuning=OuterRouteTuning(),
+    signature_prefix::String=""
 )::Nothing
-    route in (:none, :threads, :process) || return nothing
+    # Arms are not restricted to the three route symbols any more. The split
+    # selector (`select_outer_split!`) records under `split_<route>_w<N>` arms in
+    # the same per-signature bucket, so it inherits this function's statistics,
+    # its confidence handling and its persistence rather than duplicating them.
+    # Route arms and split arms never collide because the split arms are
+    # prefixed, and each selector only scores the arms it enumerated.
     success_count = max(0, successes)
     failure_count = max(0, failures)
     samples = success_count + failure_count
@@ -39,6 +45,9 @@ function record_outer_route_feedback!(
     elapsed_sq_sum_s = max(elapsed_sq_sum_s, (elapsed_sum_s^2) / samples)
 
     signatures = _outer_route_signature_hierarchy(f)
+    if !isempty(signature_prefix)
+        signatures = String[signature_prefix * sig for sig in signatures]
+    end
     lock(state.lock) do
         for signature in signatures
             bucket = get!(state.history, signature) do

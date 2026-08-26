@@ -51,20 +51,20 @@ just the GRAM mean.
 
 The following scaffold was added under this study directory:
 
-- [`Project.toml`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/Project.toml)
-- [`main.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/main.jl)
-- [`corridor.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/corridor.jl)
-- [`truth_sources.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/truth_sources.jl)
-- [`merra2.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/merra2.jl)
-- [`gram_correlation.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/gram_correlation.jl)
-- [`measure_merra2_correlation.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/measure_merra2_correlation.jl)
-- [`truth_cache.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/truth_cache.jl)
-- [`gram_prior.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/gram_prior.jl)
-- [`gp_models.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/gp_models.jl)
-- [`scoring.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/scoring.jl)
-- [`plot_results.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/plot_results.jl)
-- [`README.md`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/README.md)
-- [`RESULTS.md`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/RESULTS.md)
+- [`Project.toml`](Project.toml)
+- [`main.jl`](main.jl)
+- [`corridor.jl`](corridor.jl)
+- [`truth_sources.jl`](truth_sources.jl)
+- [`merra2.jl`](merra2.jl)
+- [`gram_correlation.jl`](gram_correlation.jl)
+- [`measure_merra2_correlation.jl`](measure_merra2_correlation.jl)
+- [`truth_cache.jl`](truth_cache.jl)
+- [`gram_prior.jl`](gram_prior.jl)
+- [`gp_models.jl`](gp_models.jl)
+- [`scoring.jl`](scoring.jl)
+- [`plot_results.jl`](plot_results.jl)
+- [`README.md`](README.md)
+- [`RESULTS.md`](RESULTS.md)
 
 ## Diagnosis of the Weak First Result
 
@@ -319,25 +319,25 @@ filesystem-boundary issues executing it.
 
 Observed attempts:
 
-- `/home/space-falcon-1/.juliaup/bin/julia`
+- `~/.juliaup/bin/julia`
   Result: permission denied from this shell.
 - `/tmp/julia`
   Result: not visible in this shell's `/tmp`.
 - `/var/lib/snapd/hostfs/tmp/julia`
   Result: visible to `ls/stat`, but not readable or executable from this shell.
-- `/home/space-falcon-1/Documents/SpaceAGORA.jl/tmp-julia`
+- `<repo-root>/tmp-julia`
   Result at time of check: this path existed as a directory, not an executable file.
 
 The last concrete unblock requested was to place a runnable Julia executable in
 the workspace at a file path such as:
 
-- `/home/space-falcon-1/Documents/SpaceAGORA.jl/tmp-julia-bin`
+- `<repo-root>/tmp-julia-bin`
 
 ## User-Provided Julia Paths During Debugging
 
 The user indicated these Julia-related paths during the conversation:
 
-- `/home/space-falcon-1/.juliaup/bin/julia`
+- `~/.juliaup/bin/julia`
 - `/tmp/julia`
 - workspace-local location under the repository root
 

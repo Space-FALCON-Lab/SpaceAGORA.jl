@@ -36,7 +36,7 @@ measured at exactly `0`), so every sound truth source is built on it.
 
 ### MERRA-2
 
-[`merra2.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/merra2.jl)
+[`merra2.jl`](merra2.jl)
 reads the binary grids vendored with Earth-GRAM directly, following the layout
 in `Earth/source/MERRA2Data.cpp`: nineteen 3-D `(pressure, lat, lon)` Float64
 blocks with density first and level height second, then twenty surface blocks.
@@ -110,7 +110,7 @@ rho = exp(-( dx / Lh + dz / Lz + dt / Lt ))
 
 a separable exponential on an L1 metric, with `Lh` and `Lz` tabulated against
 altitude in `EarthAtmosphereData.cpp::rsData` and transcribed into
-[`gram_correlation.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/gram_correlation.jl):
+[`gram_correlation.jl`](gram_correlation.jl):
 
 | altitude | `Lh` | `Lz` |
 |---|---|---|
@@ -122,7 +122,7 @@ altitude in `EarthAtmosphereData.cpp::rsData` and transcribed into
 ### Is it present in MERRA-2?
 
 Yes, horizontally, and to within a few percent through the band that matters.
-[`measure_merra2_correlation.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/measure_merra2_correlation.jl)
+[`measure_merra2_correlation.jl`](measure_merra2_correlation.jl)
 builds two anomaly ensembles from the vendored grids over `0-45N` and fits an
 `e`-folding scale to the binned correlation against chordal separation:
 
@@ -255,21 +255,21 @@ and four kernels:
 
 ## Layout
 
-- [`main.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/main.jl): study driver
-- [`corridor.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/corridor.jl): synthetic aerocapture and EDL paths
-- [`truth_sources.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/truth_sources.jl): pluggable truth fields
-- [`merra2.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/merra2.jl): reader for the vendored MERRA-2 binary climatology grids
-- [`merra2_native.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/merra2_native.jl): reader for day-specific MERRA-2 model-level netCDF granules
-- [`fetch_merra2_native.sh`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/fetch_merra2_native.sh) and [`verify_merra2_native.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/verify_merra2_native.jl): download and post-download checks
-- [`gram_correlation.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/gram_correlation.jl): GRAM's tabulated correlation scales and the chordal metric
-- [`prior_sources.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/prior_sources.jl): swappable onboard prior (GRAM nominal or NRLMSISE-00)
-- [`accel_filter.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/accel_filter.jl) and [`compare_filter.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/compare_filter.jl): in-situ density-ratio filter and its comparison against the GP
-- [`measure_merra2_correlation.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/measure_merra2_correlation.jl): measures MERRA-2's empirical correlation structure
-- [`gram_prior.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/gram_prior.jl): seeded GRAM nominal and dispersed prior sampling
-- [`gp_models.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/gp_models.jl): GP residual models and target transforms
-- [`scoring.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/scoring.jl): RMSE, NLPD, and coverage metrics
-- [`plot_results.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/plot_results.jl): summary plotting
-- [`RESULTS.md`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/RESULTS.md): generated summary after a run
+- [`main.jl`](main.jl): study driver
+- [`corridor.jl`](corridor.jl): synthetic aerocapture and EDL paths
+- [`truth_sources.jl`](truth_sources.jl): pluggable truth fields
+- [`merra2.jl`](merra2.jl): reader for the vendored MERRA-2 binary climatology grids
+- [`merra2_native.jl`](merra2_native.jl): reader for day-specific MERRA-2 model-level netCDF granules
+- [`fetch_merra2_native.sh`](fetch_merra2_native.sh) and [`verify_merra2_native.jl`](verify_merra2_native.jl): download and post-download checks
+- [`gram_correlation.jl`](gram_correlation.jl): GRAM's tabulated correlation scales and the chordal metric
+- [`prior_sources.jl`](prior_sources.jl): swappable onboard prior (GRAM nominal or NRLMSISE-00)
+- [`accel_filter.jl`](accel_filter.jl) and [`compare_filter.jl`](compare_filter.jl): in-situ density-ratio filter and its comparison against the GP
+- [`measure_merra2_correlation.jl`](measure_merra2_correlation.jl): measures MERRA-2's empirical correlation structure
+- [`gram_prior.jl`](gram_prior.jl): seeded GRAM nominal and dispersed prior sampling
+- [`gp_models.jl`](gp_models.jl): GP residual models and target transforms
+- [`scoring.jl`](scoring.jl): RMSE, NLPD, and coverage metrics
+- [`plot_results.jl`](plot_results.jl): summary plotting
+- [`RESULTS.md`](RESULTS.md): generated summary after a run
 
 ## Project Setup
 
@@ -344,7 +344,7 @@ The driver writes:
 - `mean_function_fits.csv`, the fitted GLS mean coefficients per case
 - `cases.csv`, including the truth source and whether it is position-indexed
 - `pointwise_predictions.csv` when enabled
-- a generated [`RESULTS.md`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/RESULTS.md)
+- a generated [`RESULTS.md`](RESULTS.md)
 
 `plot_results.jl` reads the summary and pointwise CSV files and produces bar
 charts for weighted metrics plus a representative density-profile comparison
@@ -486,7 +486,7 @@ result here rests on that.
 
 ### Comparison with an in-situ density filter
 
-[`compare_filter.jl`](/home/space-falcon-1/Documents/SpaceAGORA.jl/benchmarks/studies/edl_aerocapture_gp_uncertainty/compare_filter.jl)
+[`compare_filter.jl`](compare_filter.jl)
 runs a scalar density-ratio filter in the style of Tracy, Falcone and
 Manchester, *Robust Entry Guidance with Atmospheric Adaptation*, against the
 same truth. Twelve cases, MSL-class vehicle (`beta = 121 kg/m^2`), corridor

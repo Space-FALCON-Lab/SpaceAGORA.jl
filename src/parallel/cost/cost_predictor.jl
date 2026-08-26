@@ -7,10 +7,27 @@
 # regression against the sweep it was meant to replace.
 #
 # Measured by scripts/validate_cost_model.jl against the held-out real harmonics
-# kernel: 30-35% decision accuracy at picking the fastest plan, median regret
-# +9% to +15%. That is worse than the heuristic it would displace, and the
-# abstention guard below cannot rescue it, because where it is wrong the margins
-# are not small -- it is confidently wrong rather than uncertain.
+# kernel, over six runs on identical cached constants: 30-45% decision accuracy
+# at picking the fastest plan (30/30/35/35/35/45), median regret +2.8% to +11%.
+# That is worse than the heuristic it would displace, and the abstention guard
+# below cannot rescue it, because where it is wrong the margins are not small --
+# it is confidently wrong rather than uncertain.
+#
+# QUOTE THAT AS A RANGE. Predictions here are deterministic given cached
+# constants, so the spread is not the model changing its mind: it is measurement
+# noise reordering which candidate counts as the true best. Accuracy is
+# therefore unstable exactly where the best is a near-tie, and at those rows it
+# measures how often two near-equal plans swap rather than anything about the
+# model. Regret is the better headline for the same reason -- continuous, and it
+# degrades gracefully at ties where a binary accuracy figure does not.
+#
+# Scored as the coarser question "serial or threaded?", the same six runs give
+# 60-70% and a tighter spread (2/20 against 3/20), because that view discards
+# precisely the within-side ties the full-plan metric spends its variance on.
+# Serial-vs-threaded plus regret is the more stable pair if a headline is needed.
+# One configuration predicts threaded where serial measures faster in every one
+# of the six runs -- N=8, L=50, M=50, a 2.4x miss -- which is the shape of error
+# no margin can catch, since the model is confident there.
 #
 # What the same measurement does support is using it as a FILTER rather than a
 # chooser. The true best sits in its top-1 only 25% of the time but in its top-2

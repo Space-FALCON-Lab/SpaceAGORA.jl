@@ -2002,14 +2002,24 @@ end
     sig_a = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
     sig_b = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
     @test sig_a == sig_b
-    # v3: bumped again for the no-regret floor. A cached entry short-circuits
-    # the sweep, and the floor only runs inside a sweep, so pre-floor entries
-    # would keep pinning plans the floor exists to reject -- on a machine that
-    # has already been calibrated, indefinitely.
-    @test startswith(sig_a, "v3|machine=")
+    # v4: bumped again for the effector-identity and outer-split terms. v3
+    # entries key on effector COUNT and are blind to the outer split, so
+    # replaying one is exactly the collision those terms exist to prevent --
+    # measured: gravity_4096sat_l50 calibrates to "retain the heuristic" 16/16
+    # with no outer split and to a pinned flat plan 16/16 with one, and under v3
+    # those two shared a single cache key.
+    #
+    # (v3 itself was the no-regret floor bump: a cached entry short-circuits the
+    # sweep, and the floor only runs inside a sweep, so pre-floor entries would
+    # keep pinning plans the floor exists to reject, indefinitely.)
+    @test startswith(sig_a, "v4|machine=")
     @test occursin("|sats=", sig_a)
     @test occursin("|effs=1|", sig_a)
     @test occursin("|harm=1", sig_a)
+    # Effector identity, not just count: two shapes with the same effector count
+    # must not share a cache key.
+    @test occursin("|eff=", sig_a)
+    @test occursin("|outer=", sig_a)
 
     # ── Multi-sat + harmonics calibration (requires worker threads) ───────────
     if Threads.nthreads() > 1

@@ -71,6 +71,40 @@ end
     return clamp(v, 0.0, 0.9)
 end
 
+# Persist a "the heuristic won" verdict, so it is reached once per machine
+# rather than re-derived once per solve.
+#
+# The no-regret floor's retain-the-heuristic outcome used to return `nothing`
+# and store nothing, and `_rhs_calib_lookup` had no representation for it -- so
+# the next solve on the same signature saw a cache MISS and ran the entire
+# successive-halving sweep again, to reach the same conclusion, forever. On the
+# shapes where the floor actually fires (small constellations, three-effector
+# queues -- the light workloads, where a fixed pre-solve cost is largest
+# relative to the solve) that is roughly 110 discarded RHS evaluations per run
+# that the floor guarantees cannot buy anything.
+#
+# Measured with the paired probe in its cold-calibration mode (which drops the
+# in-process memo before each sample, modelling the fresh-process regime the
+# benchmark harness and every real user actually run in): light_16_harm was
+# +30.7% and light_64_aero +14.9% cold against warm, and neither stores an entry
+# even under SPACEAGORA_RHS_CALIBRATE=force.
+#
+# Off restores the previous behaviour, which is what the A/B probe reverts on
+# the B side to isolate this mechanism.
+@inline function _rhs_calibrate_cache_heuristic()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env(
+        "SPACEAGORA_RHS_CALIBRATE_CACHE_HEURISTIC", true
+    )
+end
+
+# Sentinel `mode` for a cached retain-the-heuristic verdict. Deliberately not a
+# plan: nothing is pinned, rhs_plan_override stays unset and the runtime
+# heuristic runs, exactly as it does after a live sweep reaches the same answer.
+# Older builds parse this row, fail both plan-mode comparisons in
+# `_rhs_calib_lookup` and fall through to a miss, so the file stays
+# backward-compatible.
+const _CALIB_HEURISTIC_MODE = "heuristic"
+
 function _rhs_calibrate_schedulers()::Vector{Symbol}
     raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_SCHEDULERS", "static,dynamic")))
     out = Symbol[]
@@ -120,12 +154,39 @@ end
 
 # ── Signature ─────────────────────────────────────────────────────────────────
 
+# Stable fingerprint of WHICH effectors are in the queue, not just how many.
+#
+# The signature keyed on `effs=<count>` plus a has-harmonics flag, so a
+# 2-effector harmonics+drag constellation and a 2-effector inverse-square+SRP
+# one shared a cache entry and replayed each other's pinned plan. effs=2 is the
+# most populated bucket in this machine's own state file and it is the light
+# workload bucket, so the collision lands where it is least affordable. Type
+# names are stable across runs and cheap to hash; the concrete values inside an
+# effector are deliberately excluded, since a plan is a function of the work
+# SHAPE, not of a drag coefficient.
+function _rhs_calib_effector_token(dynamic_effectors)::String
+    names = sort!([string(nameof(typeof(e))) for e in dynamic_effectors])
+    return bytes2hex(SHA.sha256(codeunits(join(names, ",")))[1:4])
+end
+
 function _rhs_calib_signature(p, dynamic_effectors)::String
     budget      = SimulationModel.ParallelPolicy.effective_inner_thread_budget()
     active_sats = count(identity, p.is_active)
     n_eff       = length(dynamic_effectors)
     has_harmonics = n_eff == 1 &&
         dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel
+    # An enclosing outer split changes which plan the heuristic will pick --
+    # _rhs_execution_plan_uncached clamps the flat routes' allotment to 1 under
+    # `outer_serialized` specifically to avoid nesting a thread split inside an
+    # already-blocked outer worker. A signature blind to it lets an entry
+    # calibrated in a single-simulation run be replayed under a campaign's outer
+    # split at full width (the nested-oversubscription hazard) and an entry
+    # calibrated under an outer split be replayed single-simulation at
+    # allotment 1 (throughput left on the table). Budget does not separate the
+    # two: the benchmark harness asserts SPACEAGORA_OUTER_PARALLEL_ACTIVE=1 even
+    # for single-simulation constellation cases, where there is no outer split
+    # at all.
+    outer_active = SimulationModel.ParallelPolicy.outer_parallel_active()
     return join([
         # v3: entries predating the no-regret floor must not be replayed.
         #
@@ -139,12 +200,20 @@ function _rhs_calib_signature(p, dynamic_effectors)::String
         # v2 pinned the inner scheduler, which v1 left to ENV; a v1 entry
         # replayed under v2 would have silently reinstated whatever scheduler the
         # current profile declared.
-        "v3",
+        # v4: v3 entries key on effector COUNT and are blind to the outer split,
+        # so replaying one is exactly the collision the eff= and outer= terms
+        # below exist to prevent -- a v3 entry has no way to say which of the
+        # colliding shapes produced it. Nothing re-sweeps a signature that
+        # already has an answer, so invalidating them is the only way the fix
+        # reaches an already-calibrated machine.
+        "v4",
         "machine=$(_calib_machine_label())",
         "budget=$(budget)",
         "sats=$(_calib_sat_bucket(active_sats))",
         "effs=$(n_eff)",
         "harm=$(has_harmonics ? "1" : "0")",
+        "eff=$(_rhs_calib_effector_token(dynamic_effectors))",
+        "outer=$(outer_active ? "1" : "0")",
     ], "|")
 end
 
@@ -218,7 +287,9 @@ function _rhs_calib_save!()::Nothing
     end
 end
 
-function _rhs_calib_lookup(sig::String)::Union{Nothing, NamedTuple}
+# Three outcomes, not two: `nothing` is a MISS (sweep), a NamedTuple is a plan to
+# pin, and `:heuristic` is a cached decision to pin nothing and not sweep.
+function _rhs_calib_lookup(sig::String)::Union{Nothing, Symbol, NamedTuple}
     _rhs_calib_load!()
     entry = lock(_rhs_calib_lock) do
         get(_rhs_calib_cache, sig, nothing)
@@ -227,8 +298,24 @@ function _rhs_calib_lookup(sig::String)::Union{Nothing, NamedTuple}
     mode_str  = get(entry, "mode", "")
     allotment = max(1, Int(get(entry, "allotment", 1)))
     scheduler = Symbol(get(entry, "scheduler", "auto"))
+    if mode_str == _CALIB_HEURISTIC_MODE
+        return _rhs_calibrate_cache_heuristic() ? :heuristic : nothing
+    end
     mode_str == "satellite_batch"                  && return _make_calib_satellite_batch_plan()
     mode_str == "flat_constellation_effector_queue" && return _make_calib_flat_plan(allotment, scheduler)
+    return nothing
+end
+
+function _rhs_calib_store_heuristic!(sig::String)::Nothing
+    _rhs_calib_load!()
+    lock(_rhs_calib_lock) do
+        _rhs_calib_cache[sig] = Dict{String, Any}(
+            "mode"            => _CALIB_HEURISTIC_MODE,
+            "allotment"       => 1,
+            "scheduler"       => "auto",
+            "elapsed_mean_ns" => 0.0,
+        )
+    end
     return nothing
 end
 
@@ -344,25 +431,106 @@ end
 
 # ── Sweep ─────────────────────────────────────────────────────────────────────
 
-# Measure one candidate as the MINIMUM over `reps` single-call timings.
+# Which statistic reduces a candidate's timed samples to one score.
 #
-# Minimum, not mean. Interference is strictly additive and one-sided -- a
-# preempted call is longer, never shorter -- so the minimum estimates the
-# uncontended cost while the mean estimates "this plus whatever else the machine
-# was doing". The sweep previously took a mean over its whole timed block, where
-# a single 2 ms preemption anywhere inside moved a candidate by 200 microseconds
-# per call and could silently change which plan won.
+#   trimmed  (default) drop the slowest sample, then take the MEAN of the rest
+#   min                the previous behaviour, minimum over all samples
+#
+# Minimum was wrong, and specifically wrong in a direction that biases the
+# sweep. Its justification -- "interference is strictly additive and one-sided,
+# a preempted call is longer and never shorter" -- is correct for EXTERNAL
+# interference and false for a parallel plan's own straggler variance. That
+# variance is not noise to be filtered out: it is part of what the plan costs,
+# it grows with allotment, and the solve pays it on every call. Scoring on the
+# minimum therefore reads a wide plan at its luckiest and a narrow plan at very
+# nearly its average, and systematically prefers the wide one.
+#
+# Trimming the single slowest sample keeps the one-sided-interference filter the
+# minimum was reaching for -- a 2 ms preemption anywhere in the block is still
+# discarded -- while the mean over what remains is the statistic the solve
+# actually pays. At fewer than three samples there is nothing to trim and this
+# degenerates to the minimum, which is the old behaviour.
+#
+# MEASURED EFFECT: none that this harness can resolve. Paired probe, 21 pairs,
+# cold, isolated stores, trimmed against min: gravity_4096 +1.6%, heavy_1024
+# -0.9%, interact_256 -1.2%, light_64_aero -0.8%, all p >= 0.38. Verdict
+# stability over 16 forced sweeps on gravity_4096 moved from 12/16 to 13/16
+# retain-the-heuristic, which is inside its own spread. The bias argued above is
+# real in principle and too small to detect at this sample size; this is kept
+# because it is the more defensible statistic at no cost, NOT because it was
+# shown to be faster. Revert the default to `min` freely if it ever complicates
+# anything.
+# Off restores contiguous per-candidate blocks, which is what the B side of the
+# isolating A/B reverts to.
+# Off keeps the sweep's oversized flat partials buffer for the rest of the solve,
+# which is the previous behaviour and what the isolating A/B reverts on B.
+# How close two swept candidates must be before the narrower one wins.
+#
+# DEFAULT OFF (0.0), and that is a measured decision rather than caution. The
+# argument for it is sound -- see the tie-break block in _run_rhs_sweep! -- but
+# on the one path with enough near-ties to exercise it (gravity_4096 under an
+# enclosing outer split, where the pinned allotment is unstable at 12/8/4 even
+# with interleaving) a 5% margin over 16 forced sweeps did not stabilise the
+# verdict and WIDENED the outcome set, pulling in satellite_batch results the
+# pure-minimum chooser never produced:
+#
+#   margin 0.05   flat(12)x5  flat(8)x4  flat(4)x4  satellite_batch(1)x3
+#   margin 0.00   flat(12)x7  flat(8)x5  flat(4)x4
+#
+# So the mechanism ships and the default does not. Set it if a workload is found
+# where near-ties are both frequent and genuinely equal; do not set it on the
+# reasoning alone, which is what this comment previously amounted to.
+@inline function _rhs_calibrate_tie_margin()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_TIE_MARGIN", "0.0"))
+    v = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_RHS_CALIBRATE_TIE_MARGIN must be a float, got '$raw'"))
+    end
+    return clamp(v, 0.0, 0.5)
+end
+
+@inline function _rhs_calibrate_release_scratch()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env(
+        "SPACEAGORA_RHS_CALIBRATE_RELEASE_SCRATCH", true
+    )
+end
+
+@inline function _rhs_calibrate_interleave()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env(
+        "SPACEAGORA_RHS_CALIBRATE_INTERLEAVE", true
+    )
+end
+
+@inline function _rhs_calibrate_score_statistic()::Symbol
+    raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_SCORE", "trimmed")))
+    raw in ("trimmed", "", "trimmed_mean") && return :trimmed
+    raw in ("min", "minimum", "best")       && return :min
+    throw(ArgumentError(
+        "SPACEAGORA_RHS_CALIBRATE_SCORE must be trimmed or min; got '$raw'"
+    ))
+end
+
+@inline function _rhs_reduce_samples(samples::Vector{Float64}, statistic::Symbol)::Float64
+    isempty(samples) && return Inf
+    (statistic === :min || length(samples) < 3) && return minimum(samples)
+    sort!(samples)
+    kept = @view samples[1:(length(samples) - 1)]   # drop the slowest
+    return sum(kept) / length(kept)
+end
+
 function _rhs_sweep_measure!(p, du, u0, candidate, reps::Int)::Float64
     p.shared_buffers.rhs_plan_override[] = candidate
+    statistic = _rhs_calibrate_score_statistic()
+    samples = Float64[]
+    sizehint!(samples, max(1, reps))
     try
-        best = Inf
         for _ in 1:max(1, reps)
             t0 = time_ns()
             spacecraft_dynamics!(du, u0, p, 0.0)
-            sample = Float64(time_ns() - t0)
-            sample < best && (best = sample)
+            push!(samples, Float64(time_ns() - t0))
         end
-        return best
+        return _rhs_reduce_samples(samples, statistic)
     catch e
         @warn "RHS calibration: candidate skipped due to error" mode=candidate.mode allotment=candidate.allotment exception=e
         return Inf
@@ -405,7 +573,7 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
     end
 
     # Nothing to compare: only the baseline candidate exists.
-    length(candidates) <= 1 && return nothing, 0.0
+    length(candidates) <= 1 && return nothing, 0.0, :aborted
 
     du = zero(u0)
 
@@ -442,7 +610,7 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
     catch e
         @warn "RHS calibration: warm-up failed; skipping calibration." exception=e
         p.shared_buffers.rhs_plan_override[] = nothing
-        return nothing, 0.0
+        return nothing, 0.0, :aborted
     finally
         p.shared_buffers.rhs_plan_override[] = nothing
     end
@@ -455,6 +623,55 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
             "[SpaceAGORA] RHS calibration: successive halving over " *
             "$(length(candidates)) candidates (budget $(n_timed) timed calls)"
         )
+    end
+
+    # Interleave the round's samples across candidates instead of running each
+    # candidate's whole block contiguously.
+    #
+    # This file's own measurement methodology says never to compare in blocks:
+    # the same thermal-callback comparison read +11.1% block-ordered and +1.7%
+    # paired, and the 11.1% was entirely ordering. That lesson was applied to
+    # the external A/B instrument and not to this sweep, which is the internal
+    # one and makes an irreversible decision. Each candidate's reps ran
+    # back-to-back, satellite_batch always ran first in every round, and any
+    # drift across the round -- frequency ramp, thermal throttle, a GC pause, a
+    # background process -- landed on whichever candidate happened to be
+    # executing.
+    #
+    # Round-robin over reps fixes it the same way the paired probe does: every
+    # candidate is sampled once per pass, so slow drift scales all of them
+    # together and cancels in the comparison rather than accumulating on one.
+    # The sweep order also reverses on alternate passes, so a systematic
+    # first-position or last-position bias cancels across passes instead of
+    # always favouring the candidate that happens to be enumerated first.
+    #
+    # Same total number of RHS calls; only their order changes.
+    @inline function _measure_round!(cands::Vector, reps::Int, out::Dict{Any, Float64})
+        if !_rhs_calibrate_interleave() || length(cands) <= 1
+            for c in cands
+                out[c] = _rhs_sweep_measure!(p, du, u0, c, reps)
+            end
+            return reps * length(cands)
+        end
+        statistic = _rhs_calibrate_score_statistic()
+        samples = Dict{Any, Vector{Float64}}(c => Float64[] for c in cands)
+        failed = Set{Any}()
+        for pass in 1:max(1, reps)
+            order = isodd(pass) ? cands : reverse(cands)
+            for c in order
+                c in failed && continue
+                # One rep at a time, so the plan override is re-armed per sample.
+                # That is the same Ref write the block version does once per
+                # block; at ~10 ns against an RHS call it is not a measurable
+                # addition to what is being timed.
+                v = _rhs_sweep_measure!(p, du, u0, c, 1)
+                isfinite(v) ? push!(samples[c], v) : push!(failed, c)
+            end
+        end
+        for c in cands
+            out[c] = c in failed ? Inf : _rhs_reduce_samples(samples[c], statistic)
+        end
+        return reps * length(cands)
     end
 
     survivors = collect(candidates)
@@ -474,12 +691,9 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
 
     while true
         empty!(scores)
-        for candidate in survivors
-            scores[candidate] = _rhs_sweep_measure!(p, du, u0, candidate, reps)
-            total_calls += reps
-        end
+        total_calls += _measure_round!(survivors, reps, scores)
         viable = [c for c in survivors if isfinite(scores[c])]
-        isempty(viable) && return nothing, 0.0
+        isempty(viable) && return nothing, 0.0, :aborted
 
         if verbose
             for candidate in sort(viable; by = c -> scores[c])
@@ -509,6 +723,38 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
         end
     end
 
+    # Among survivors that are indistinguishable from the winner, take the
+    # NARROWEST rather than the nominal minimum.
+    #
+    # Cold validation of the cost model established that the true best sits in
+    # the top-2 of a ranked candidate set 65% of the time and the top-3 85%,
+    # both at 0.0% median regret -- that is, near-ties are unresolvable by
+    # measurement AND do not matter, because the candidates involved cost the
+    # same. That evidence was collected and never fed back into the chooser,
+    # which still resolves a near-tie by raw minimum and so lets noise pick
+    # between plans that are equally good on the sweep but not equally good
+    # afterwards.
+    #
+    # Narrower is the right way to break it. A wide plan and a narrow plan that
+    # time the same on an idle pre-solve probe are not the same bet during a
+    # solve: the wide one has more straggler exposure, holds more of the pool
+    # against anything else that wants it, and is the one that inverts on the
+    # workloads whose scaling curve turns over. Preferring the narrow one costs
+    # nothing when they really are equal and protects the tail when they are
+    # not.
+    tie_margin = _rhs_calibrate_tie_margin()
+    if tie_margin > 0.0 && isfinite(best_elapsed)
+        threshold_ns = best_elapsed * (1.0 + tie_margin)
+        for candidate in survivors
+            isfinite(scores[candidate]) || continue
+            scores[candidate] <= threshold_ns || continue
+            if candidate.allotment < best_plan.allotment
+                best_plan = candidate
+                best_elapsed = scores[candidate]
+            end
+        end
+    end
+
     # Measure the heuristic on the same footing and keep it unless the swept
     # winner clears it by more than the sweep's own resolution. Returning
     # `nothing` leaves rhs_plan_override unset, so the runtime heuristic runs --
@@ -524,7 +770,12 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
                         "vs best swept $(round(best_elapsed / 1e6, digits=3)); " *
                         "margin $(round(100 * margin, digits=1))% not cleared)")
             end
-            return nothing, 0.0
+            # :heuristic, not :aborted. This is a MEASURED verdict -- the sweep
+            # ran, the floor compared, and the heuristic won -- so it is worth
+            # caching. The :aborted returns above are failures to measure and
+            # must stay uncached, or one transient error would permanently
+            # suppress calibration for that signature.
+            return nothing, 0.0, :heuristic
         end
     end
 
@@ -536,7 +787,7 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
                 "$(total_calls) timed calls)")
     end
 
-    return best_plan, best_elapsed
+    return best_plan, best_elapsed, :pinned
 end
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -554,7 +805,21 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
 
     if _rhs_calibration_mode() != :force
         cached = _rhs_calib_lookup(sig)
-        if cached !== nothing
+        if cached === :heuristic
+            # Cached retain-the-heuristic verdict: pin nothing, and -- the point --
+            # do not sweep. rhs_plan_override stays unset, so _rhs_execution_plan
+            # runs the per-call heuristic exactly as it does when a live sweep
+            # reaches this answer. Recorded as a plan selection so the outcome is
+            # still visible in policy_telemetry_snapshot rather than looking like
+            # calibration never ran.
+            SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
+                :cache, :heuristic, 0, :none
+            )
+            verbose && println(
+                "[SpaceAGORA] RHS calibration: cached verdict → heuristic retained (no sweep)"
+            )
+            return
+        elseif cached !== nothing
             p.shared_buffers.rhs_plan_override[] = cached
             SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
                 :cache, cached.mode, cached.allotment, cached.scheduler
@@ -569,15 +834,40 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
         end
     end
 
-    best_plan, best_elapsed = _run_rhs_sweep!(p, u0, dynamic_effectors, verbose, args)
-    best_plan === nothing && return
+    best_plan, best_elapsed, verdict = _run_rhs_sweep!(p, u0, dynamic_effectors, verbose, args)
+
+    if best_plan === nothing
+        # The sweep ran and grew the buffer even though nothing was pinned, so
+        # the heuristic now inherits a partials buffer sized to the widest
+        # candidate tried. Release it for the same reason as the pinned path.
+        _rhs_calibrate_release_scratch() &&
+            _release_oversized_flat_scratch!(p.shared_buffers, 1)
+        if verdict === :heuristic && _rhs_calibrate_cache_heuristic()
+            SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
+                :sweep, :heuristic, 0, :none
+            )
+            _rhs_calib_store_heuristic!(sig)
+            _rhs_calib_save!()
+        end
+        return
+    end
 
     p.shared_buffers.rhs_plan_override[] = best_plan
+    # The sweep grew the flat partials buffer to its widest candidate; the solve
+    # runs at best_plan.allotment. Leaving it oversized costs a strided zeroing
+    # instead of a memset on every RHS call for the rest of the run.
+    _rhs_release_oversized_scratch(p, best_plan)
     SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
         :sweep, best_plan.mode, best_plan.allotment, best_plan.scheduler
     )
     _rhs_calib_store!(sig, best_plan, best_elapsed)
     _rhs_calib_save!()
 
+    return nothing
+end
+
+@inline function _rhs_release_oversized_scratch(p, plan)::Nothing
+    _rhs_calibrate_release_scratch() || return nothing
+    _release_oversized_flat_scratch!(p.shared_buffers, max(1, plan.allotment))
     return nothing
 end

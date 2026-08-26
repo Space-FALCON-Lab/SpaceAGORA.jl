@@ -272,6 +272,42 @@ end
     return mass_rate
 end
 
+# Drop a flat-effector partials buffer that is WIDER than the worker count the
+# solve will actually use.
+#
+# _ensure_rhs_flat_effector_scratch! grows the worker dimension and never
+# shrinks it, and it has an exact-size fast path: when size(partials,3) == workers
+# the per-call zeroing is one contiguous fill! (a memset), and otherwise it is a
+# strided broadcast over a non-contiguous view. That is a per-RHS-call cost, for
+# the whole solve.
+#
+# The calibration sweep walks an allotment ladder up to the full thread budget,
+# so it grows the buffer to the WIDEST candidate it tries -- and then the solve
+# runs at whatever allotment won, which is routinely narrower (this repo's own
+# ladder comment records every multi-effector constellation case peaking at 4 on
+# a 12-thread box). From then on every call takes the strided path. Static
+# profiles never sweep, so their buffer is allocated once at the heuristic's own
+# worker count and hits the memset path forever: this is a cost only the
+# calibrating profiles pay, created entirely by the measurement.
+#
+# Called once, after calibration settles, so the solve starts from a buffer
+# sized to the plan it is actually going to run.
+function _release_oversized_flat_scratch!(shared_buffers, workers::Int)::Nothing
+    shared_buffers === nothing && return nothing
+    hasproperty(shared_buffers, :rhs_flat_effector_partials) || return nothing
+    ref = shared_buffers.rhs_flat_effector_partials
+    partials = ref[]
+    partials === nothing && return nothing
+    if size(partials, 3) > max(1, workers)
+        # Hand back an empty array rather than a correctly-sized one: the next
+        # _ensure_rhs_flat_effector_scratch! allocates it at the exact
+        # (num_sats, workers) the RHS asks for, which is the only place that
+        # knows both. Sizing it here would have to duplicate that derivation.
+        ref[] = Array{Float64, 3}(undef, 6, 0, 0)
+    end
+    return nothing
+end
+
 @inline function _ensure_rhs_flat_effector_scratch!(
     shared_buffers,
     num_sats::Int,

@@ -107,6 +107,9 @@ grid = [(N, L, M) for N in (8, 64, 256, 1024)
 println(repeat("-", 100))
 
 agree = 0; total = 0; ratios = Float64[]
+const MAX_TOPK = 5
+truth_ranks = Int[]
+topk_regret = Dict(k => Float64[] for k in 1:MAX_TOPK)
 for (N, L, M) in grid
     case = build_case(N, L, M)
     counts = PC.constellation_work_counts(case.args, N)
@@ -126,6 +129,19 @@ for (N, L, M) in grid
     global agree += ok ? 1 : 0
     global total += 1
     push!(ratios, regret)
+
+    # Where the TRUE best sits in the model's ranking, and what it would cost to
+    # sweep only the model's top k. This is the pruning statistic, and it is a
+    # different question from decision accuracy: a model can be useless at
+    # naming the winner and still reliably bracket it, which is all a candidate
+    # filter needs.
+    order = sortperm(map(last, preds))
+    truth_idx = argmin(map(last, meas))
+    push!(truth_ranks, findfirst(==(truth_idx), order))
+    for k in 1:MAX_TOPK
+        topk = order[1:min(k, length(order))]
+        push!(topk_regret[k], minimum(meas[i][2] for i in topk) / mbest_ns)
+    end
     lbl(c) = c.mode === :satellite_batch ? "satellite_batch" :
         "flat(a=$(c.allotment),$(c.scheduler))"
     @printf("%-6d %-4d %-4d | %-22s %-22s | %-8.3f %s\n",
@@ -136,3 +152,26 @@ println()
 @printf("decision accuracy      : %d/%d (%.0f%%)\n", agree, total, 100*agree/total)
 @printf("median regret vs best  : %+.1f%%\n", 100*(sort(ratios)[cld(length(ratios),2)] - 1))
 @printf("worst regret vs best   : %+.1f%%\n", 100*(maximum(ratios) - 1))
+
+# ── Pruning statistic ────────────────────────────────────────────────────────
+#
+# Decision accuracy answers "can the model pick the winner". This answers "can
+# it bracket the winner", which is the weaker property a candidate filter needs
+# and the one the model actually has. A sweep restricted to the model's top k
+# costs whatever the best candidate inside that set costs; if the truth is
+# usually in the top two or three, the sweep can be cut by most of its width at
+# no measured cost, without the model ever being trusted to choose.
+#
+# Pruning is also failure-tolerant in a way gating is not: a wrongly pruned
+# candidate costs convergence speed, while a wrongly opened gate costs wall time
+# immediately.
+println()
+println("Rank of the TRUE best candidate within the model's ranking:")
+n_cfg = length(truth_ranks)
+for k in 1:MAX_TOPK
+    hits = count(<=(k), truth_ranks)
+    med = sort(topk_regret[k])[cld(n_cfg, 2)]
+    @printf("  truth in top-%d : %2d/%d (%3.0f%%)   median regret sweeping only those: %+.1f%%\n",
+            k, hits, n_cfg, 100 * hits / n_cfg, 100 * (med - 1))
+end
+@printf("worst rank of truth    : %d\n", maximum(truth_ranks))

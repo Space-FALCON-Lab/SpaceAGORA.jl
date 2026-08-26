@@ -1,10 +1,30 @@
 # Scoring a routing candidate from work counts and machine constants.
 #
-# This is the part that replaces the pre-solve sweep. The sweep evaluated the
-# whole RHS 20 times per candidate and picked argmin of the resulting means;
-# this evaluates a handful of multiplies per candidate and picks argmin of the
-# predicted cost, with an explicit refusal to answer when the candidates are too
-# close to separate.
+# NOT WIRED INTO ANY ROUTING PATH, and not currently fit to be. `select_plan` is
+# called by nothing outside tests and the validation script. An earlier version
+# of this comment described it as the replacement for the pre-solve sweep, which
+# read as shipped intent; it is not, and at its measured accuracy it would be a
+# regression against the sweep it was meant to replace.
+#
+# Measured by scripts/validate_cost_model.jl against the held-out real harmonics
+# kernel: 30-35% decision accuracy at picking the fastest plan, median regret
+# +9% to +15%. That is worse than the heuristic it would displace, and the
+# abstention guard below cannot rescue it, because where it is wrong the margins
+# are not small -- it is confidently wrong rather than uncertain.
+#
+# What the same measurement does support is using it as a FILTER rather than a
+# chooser. The true best sits in its top-1 only 25% of the time but in its top-2
+# 60% and top-3 70%, and a sweep restricted to its top two carries 0.0% median
+# regret -- so it can cut a candidate set by most of its width without ever
+# being trusted to name the winner. Pruning also fails safely where gating does
+# not: a wrongly pruned candidate costs convergence speed, a wrongly opened gate
+# costs wall time immediately. If this is used in rhs_calibration.jl at all it
+# should prune the sweep's candidates, never replace the sweep.
+#
+# Mechanically: the sweep evaluates the whole RHS per candidate and takes the
+# minimum of repeated timings; this evaluates a handful of multiplies per
+# candidate and picks argmin of the predicted cost, with an explicit refusal to
+# answer when the candidates are too close to separate.
 
 """
     PlanCandidate

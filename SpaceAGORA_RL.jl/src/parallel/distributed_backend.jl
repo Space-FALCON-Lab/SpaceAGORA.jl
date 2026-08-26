@@ -8,6 +8,14 @@ function setup_distributed_workers(n_workers::Integer)
     return workers()[1:n]
 end
 
+function _remotecall_wait_all(f, process_ids::AbstractVector{<:Integer}, args...)
+    futures = map(process_ids) do process_id
+        remotecall(f, process_id, args...)
+    end
+    foreach(fetch, futures)
+    return nothing
+end
+
 function setup_isolated_process_workers(n_workers::Integer)
     n = max(1, Int(n_workers))
     project_file = Base.active_project()
@@ -17,9 +25,7 @@ function setup_isolated_process_workers(n_workers::Integer)
         exeflags=Cmd(["--project=$(project_dir)", "--threads=1"]),
     )
     try
-        for process_id in process_ids
-            remotecall_wait(Base.eval, process_id, Main, :(using SpaceAGORA_RL))
-        end
+        _remotecall_wait_all(Base.eval, process_ids, Main, :(using SpaceAGORA_RL))
     catch
         rmprocs(process_ids)
         rethrow()

@@ -29,6 +29,58 @@ function _delete_matrix_column(matrix::AbstractMatrix, column::Int)
     return Matrix{Float64}(matrix[:, keep])
 end
 
+function _rpo_infeasibility_score(evaluation::RPOHyPRRLEvaluation,
+                                  config::RPOHyPRRLConfig)
+    evaluation.feasible && return 0.0
+    components = get(evaluation.diagnostics, :path_components, nothing)
+    components === nothing && return Inf
+    penalty = Float64(get(
+        evaluation.diagnostics,
+        :clearance_penalty,
+        get(components, :total, Inf),
+    ))
+    return isfinite(penalty) ? max(0.0, penalty) : Inf
+end
+
+function _rpo_infeasibility_improvement(before::RPOHyPRRLEvaluation,
+                                        after::RPOHyPRRLEvaluation,
+                                        config::RPOHyPRRLConfig)
+    before_score = _rpo_infeasibility_score(before, config)
+    after_score = _rpo_infeasibility_score(after, config)
+    limit = config.infeasible_edit_penalty
+    if isfinite(before_score) && isfinite(after_score)
+        return clamp(before_score - after_score, -limit, limit)
+    elseif !isfinite(before_score) && isfinite(after_score)
+        return limit
+    elseif isfinite(before_score) && !isfinite(after_score)
+        return -limit
+    end
+    return 0.0
+end
+
+function _rpo_bounded_objective_improvement(before::Real, after::Real,
+                                            config::RPOHyPRRLConfig;
+                                            allow_negative::Bool=true)
+    if !isfinite(before) || !isfinite(after)
+        return 0.0
+    end
+    scaled = (Float64(before) - Float64(after)) /
+        max(config.reward_improvement_scale, 1.0e-9)
+    lower = allow_negative ? -config.infeasible_edit_penalty : 0.0
+    return clamp(scaled, lower, config.infeasible_edit_penalty)
+end
+
+function _rpo_terminal_reward(seed::RPOHyPRRLEvaluation,
+                              best::RPOHyPRRLEvaluation,
+                              config::RPOHyPRRLConfig)
+    best.feasible || return -config.infeasible_edit_penalty
+    seed.feasible || return config.infeasible_edit_penalty
+    improvement = _rpo_bounded_objective_improvement(
+        seed.objective, best.objective, config; allow_negative=false,
+    )
+    return config.completion_bonus * improvement
+end
+
 function _apply_rpo_editor_action(state::RPOHyPRRLState,
                                   action::RPOEditorAction,
                                   config::RPOHyPRRLConfig)
@@ -102,10 +154,9 @@ function step_scenario(mdp::RPOHyPRRLMDP, state::RPOHyPRRLState,
         )
     end
     if action.kind == :stop
-        improvement = max(0.0, state.seed_evaluation.objective -
-                                state.best_evaluation.objective)
-        reward = mdp.config.completion_bonus *
-                 improvement / max(mdp.config.reward_improvement_scale, 1.0e-9)
+        reward = _rpo_terminal_reward(
+            state.seed_evaluation, state.best_evaluation, mdp.config,
+        )
         next_state = RPOHyPRRLState(
             state.control_points_rtn, state.attitude_progress,
             state.attitude_quaternions, state.evaluation,
@@ -121,7 +172,7 @@ function step_scenario(mdp::RPOHyPRRLMDP, state::RPOHyPRRLState,
 
     points, progress, quaternions = _apply_rpo_editor_action(state, action, mdp.config)
     candidate = mdp.evaluator(mdp.scenario, mdp.config, points, progress, quaternions)
-    if !candidate.feasible
+    if !isfinite(candidate.objective)
         next_state = RPOHyPRRLState(
             state.control_points_rtn, state.attitude_progress,
             state.attitude_quaternions, state.evaluation,
@@ -132,12 +183,28 @@ function step_scenario(mdp::RPOHyPRRLMDP, state::RPOHyPRRLState,
         truncated = next_edit_count >= mdp.config.max_edits
         return RPOHyPRRLStepResult(
             next_state, -mdp.config.infeasible_edit_penalty, false, truncated,
-            false, index, (action=action, reason=:infeasible_candidate),
+            false, index, (action=action, reason=:evaluation_failed),
         )
     end
 
-    improvement = state.evaluation.objective - candidate.objective
-    is_best = candidate.objective + 1.0e-12 < state.best_evaluation.objective
+    improvement = if state.evaluation.feasible && candidate.feasible
+        state.evaluation.objective - candidate.objective
+    elseif !state.evaluation.feasible && candidate.feasible
+        mdp.config.infeasible_edit_penalty
+    else
+        _rpo_infeasibility_improvement(
+            state.evaluation, candidate, mdp.config,
+        )
+    end
+    is_best = if candidate.feasible
+        !state.best_evaluation.feasible ||
+            candidate.objective + 1.0e-12 < state.best_evaluation.objective
+    elseif !state.best_evaluation.feasible
+        _rpo_infeasibility_score(candidate, mdp.config) + 1.0e-12 <
+            _rpo_infeasibility_score(state.best_evaluation, mdp.config)
+    else
+        false
+    end
     best_points = is_best ? copy(points) : state.best_control_points_rtn
     best_progress = is_best ? copy(progress) : state.best_attitude_progress
     best_quaternions = is_best ? copy(quaternions) : state.best_attitude_quaternions
@@ -147,12 +214,20 @@ function step_scenario(mdp::RPOHyPRRLMDP, state::RPOHyPRRLState,
         best_points, best_progress, best_quaternions, best_evaluation,
         state.seed_evaluation, next_edit_count, false,
     )
-    reward = improvement / max(mdp.config.reward_improvement_scale, 1.0e-9) -
-             mdp.config.edit_penalty
+    bounded_improvement = clamp(
+        improvement / max(mdp.config.reward_improvement_scale, 1.0e-9),
+        -mdp.config.infeasible_edit_penalty,
+        mdp.config.infeasible_edit_penalty,
+    )
+    reward = bounded_improvement - mdp.config.edit_penalty
     truncated = next_edit_count >= mdp.config.max_edits
     return RPOHyPRRLStepResult(
         next_state, reward, false, truncated, true, index,
-        (action=action, reason=:accepted, new_best=is_best),
+        (
+            action=action,
+            reason=candidate.feasible ? :accepted : :accepted_infeasible,
+            new_best=is_best,
+        ),
     )
 end
 

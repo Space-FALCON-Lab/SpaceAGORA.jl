@@ -129,10 +129,16 @@ export CPUTrainingDevice, CUDATrainingDevice, resolve_training_device, training_
 export RPOHyPRRLConfig, RPOHyPRRLScenario, RPOHyPRRLEvaluation, RPOHyPRRLState
 export RPOHyPRRLStepResult, RPOHyPRRLPlan, RPOHyPRRLMDP, RPOEditorAction
 export rpo_editor_actions, rpo_hypr_rl_observation_dim, rpo_hypr_rl_seed_path
-export build_rpo_hypr_rl_scenario
-export evaluate_rpo_candidate, hypr_rl_plan, rpo_hypr_rl_plan_path
+export RPOHyPRRLEndpointSampler, build_rpo_hypr_rl_endpoint_sampler
+export build_rpo_hypr_rl_scenario, sample_rpo_hypr_rl_scenario
+export evaluate_rpo_candidate, evaluate_rpo_training_candidate
+export hypr_rl_plan, rpo_hypr_rl_plan_path, evaluate_hypr_rl_policy_case
+export RPOHyPRRLPSOObjectiveEvaluator, evaluate_hypr_pso_baseline_case
+export evaluate_hypr_original_baseline_case, evaluate_hypr_pso_comparison_case
 export GreedyHyPRRLPolicy, load_hypr_rl_policy
 export RPOHyPRRLTrainingConfig, rpo_hypr_rl_ddqn_config, train_hypr_rl!
+export rpo_hypr_rl_epsilon_schedule
+export train_hypr_rl_parallel!
 export save_hypr_rl_checkpoint
 
 export ResolvedConfig, load_config, resolve_config, default_config_path

@@ -181,7 +181,16 @@ end
 end
 
 """Run the RPO HYPR PSO planner and return the best path, cost, and diagnostics."""
-function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig; safe_distance_m=nothing, rng=Random.default_rng(), iteration_callback=nothing)
+function rpo_pso_plan_path(
+    start_rtn,
+    goal_rtn,
+    geometry,
+    base_cfg::RPOPSOConfig;
+    safe_distance_m=nothing,
+    rng=Random.default_rng(),
+    iteration_callback=nothing,
+    objective_evaluator=nothing,
+)
     adaptive_safe_distance = safe_distance_m === nothing ||
         (Float64(safe_distance_m) == 0.0 && base_cfg.safe_distance_m > 0.0) ?
         base_cfg.safe_distance_m :
@@ -207,7 +216,13 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
     end
     if current_n_waypoints == 0
         path = hcat(start, goal)
-        comps = rpo_normalized_path_cost_components(path, geometry, cfg; safe_distance_m=effective_safe_distance)
+        comps = rpo_path_objective_components(
+            path,
+            geometry,
+            cfg;
+            safe_distance_m=effective_safe_distance,
+            objective_evaluator=objective_evaluator,
+        )
         iteration_callback !== nothing && iteration_callback(0, comps.total, comps)
         return (
             path=path,
@@ -367,12 +382,13 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
     # Evaluate one flattened particle position as an RPO path-cost component bundle.
     function evaluate_position(pos; cost_cutoff=Inf)
         path = rpo_position_to_path(pos, start, goal, current_n_waypoints)
-        return rpo_normalized_path_cost_components(
+        return rpo_path_objective_components(
             path,
             geometry,
             cfg;
             safe_distance_m=effective_safe_distance,
             cost_cutoff=cost_cutoff,
+            objective_evaluator=objective_evaluator,
         )
     end
 
@@ -610,8 +626,20 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
 
     final_cfg = cfg_for_current()
     path = rpo_position_to_path(gbest, start, goal, current_n_waypoints)
-    refined, refined_cost, improved = rpo_post_refine_path(path, geometry, final_cfg; safe_distance_m=effective_safe_distance)
-    comps = rpo_normalized_path_cost_components(refined, geometry, final_cfg; safe_distance_m=effective_safe_distance)
+    refined, refined_cost, improved = rpo_post_refine_path(
+        path,
+        geometry,
+        final_cfg;
+        safe_distance_m=effective_safe_distance,
+        objective_evaluator=objective_evaluator,
+    )
+    comps = rpo_path_objective_components(
+        refined,
+        geometry,
+        final_cfg;
+        safe_distance_m=effective_safe_distance,
+        objective_evaluator=objective_evaluator,
+    )
     return (
         path=refined,
         cost=refined_cost,

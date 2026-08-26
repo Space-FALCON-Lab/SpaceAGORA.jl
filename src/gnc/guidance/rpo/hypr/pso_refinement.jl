@@ -161,9 +161,22 @@ function rpo_refinement_project_to_segment(q, a, b)
 end
 
 """Evaluate and accept a refinement candidate only when it improves the current path."""
-function rpo_try_accept_refinement(candidate, geometry, cfg::RPOPSOConfig, current_components; safe_distance_m::Real=0.0)
+function rpo_try_accept_refinement(
+    candidate,
+    geometry,
+    cfg::RPOPSOConfig,
+    current_components;
+    safe_distance_m::Real=0.0,
+    objective_evaluator=nothing,
+)
     clamped = rpo_refinement_clamp_path(candidate, cfg)
-    comps = rpo_normalized_path_cost_components(clamped, geometry, cfg; safe_distance_m=safe_distance_m)
+    comps = rpo_path_objective_components(
+        clamped,
+        geometry,
+        cfg;
+        safe_distance_m=safe_distance_m,
+        objective_evaluator=objective_evaluator,
+    )
     if rpo_refinement_better(comps, current_components, cfg)
         return clamped, comps, true
     end
@@ -171,7 +184,14 @@ function rpo_try_accept_refinement(candidate, geometry, cfg::RPOPSOConfig, curre
 end
 
 """Shortcut a sampled path and refit it to the active Bezier degree."""
-function rpo_refine_shortcut_refit(path, geometry, cfg::RPOPSOConfig, current_components; safe_distance_m::Real=0.0)
+function rpo_refine_shortcut_refit(
+    path,
+    geometry,
+    cfg::RPOPSOConfig,
+    current_components;
+    safe_distance_m::Real=0.0,
+    objective_evaluator=nothing,
+)
     samples = rpo_sample_path(
         path,
         cfg,
@@ -183,11 +203,25 @@ function rpo_refine_shortcut_refit(path, geometry, cfg::RPOPSOConfig, current_co
     shortcut = rpo_refinement_shortcut_samples(samples, geometry, cfg; safe_distance_m=safe_distance_m)
     size(shortcut, 2) == size(samples, 2) && return Matrix{Float64}(path), current_components, false
     candidate = rpo_fit_bezier_fixed_endpoints(shortcut, size(path, 2), cfg)
-    return rpo_try_accept_refinement(candidate, geometry, cfg, current_components; safe_distance_m=safe_distance_m)
+    return rpo_try_accept_refinement(
+        candidate,
+        geometry,
+        cfg,
+        current_components;
+        safe_distance_m=safe_distance_m,
+        objective_evaluator=objective_evaluator,
+    )
 end
 
 """Pull Bezier handles toward local path chords when doing so improves the objective."""
-function rpo_refine_tighten_handles(path, geometry, cfg::RPOPSOConfig, current_components; safe_distance_m::Real=0.0)
+function rpo_refine_tighten_handles(
+    path,
+    geometry,
+    cfg::RPOPSOConfig,
+    current_components;
+    safe_distance_m::Real=0.0,
+    objective_evaluator=nothing,
+)
     current = Matrix{Float64}(path)
     size(current, 2) <= 2 && return current, current_components, false
     start = SVector{3, Float64}(current[:, 1])
@@ -213,6 +247,7 @@ function rpo_refine_tighten_handles(path, geometry, cfg::RPOPSOConfig, current_c
                     cfg,
                     current_components;
                     safe_distance_m=safe_distance_m,
+                    objective_evaluator=objective_evaluator,
                 )
                 if did_accept
                     current = accepted
@@ -229,7 +264,14 @@ function rpo_refine_tighten_handles(path, geometry, cfg::RPOPSOConfig, current_c
 end
 
 """Attempt a lower-degree Bezier representation without worsening the path objective."""
-function rpo_refine_lower_degree(path, geometry, cfg::RPOPSOConfig, current_components; safe_distance_m::Real=0.0)
+function rpo_refine_lower_degree(
+    path,
+    geometry,
+    cfg::RPOPSOConfig,
+    current_components;
+    safe_distance_m::Real=0.0,
+    objective_evaluator=nothing,
+)
     current = Matrix{Float64}(path)
     size(current, 2) <= 3 && return current, current_components, false
     improved = false
@@ -250,6 +292,7 @@ function rpo_refine_lower_degree(path, geometry, cfg::RPOPSOConfig, current_comp
             cfg,
             current_components;
             safe_distance_m=safe_distance_m,
+            objective_evaluator=objective_evaluator,
         )
         if did_accept
             current = accepted
@@ -269,12 +312,31 @@ function rpo_refine_lower_degree(path, geometry, cfg::RPOPSOConfig, current_comp
 end
 
 """Run the configured sequence of RPO post-refinement passes."""
-function rpo_post_refine_path(path, geometry, cfg::RPOPSOConfig; safe_distance_m::Real=0.0)
+function rpo_post_refine_path(
+    path,
+    geometry,
+    cfg::RPOPSOConfig;
+    safe_distance_m::Real=0.0,
+    objective_evaluator=nothing,
+)
     current = Matrix{Float64}(path)
     decision_cfg = rpo_refinement_config(cfg)
-    current_components = rpo_normalized_path_cost_components(current, geometry, decision_cfg; safe_distance_m=safe_distance_m)
+    current_components = rpo_path_objective_components(
+        current,
+        geometry,
+        decision_cfg;
+        safe_distance_m=safe_distance_m,
+        objective_evaluator=objective_evaluator,
+    )
     if !cfg.refinement_enable || cfg.refinement_rounds == 0
-        return current, rpo_path_cost(current, geometry, cfg; safe_distance_m=safe_distance_m), false
+        final_components = rpo_path_objective_components(
+            current,
+            geometry,
+            cfg;
+            safe_distance_m=safe_distance_m,
+            objective_evaluator=objective_evaluator,
+        )
+        return current, final_components.total, false
     end
 
     improved = false
@@ -287,6 +349,7 @@ function rpo_post_refine_path(path, geometry, cfg::RPOPSOConfig; safe_distance_m
             decision_cfg,
             current_components;
             safe_distance_m=safe_distance_m,
+            objective_evaluator=objective_evaluator,
         )
         if did_accept
             current = candidate
@@ -301,6 +364,7 @@ function rpo_post_refine_path(path, geometry, cfg::RPOPSOConfig; safe_distance_m
             decision_cfg,
             current_components;
             safe_distance_m=safe_distance_m,
+            objective_evaluator=objective_evaluator,
         )
         if did_accept
             current = candidate
@@ -315,6 +379,7 @@ function rpo_post_refine_path(path, geometry, cfg::RPOPSOConfig; safe_distance_m
             decision_cfg,
             current_components;
             safe_distance_m=safe_distance_m,
+            objective_evaluator=objective_evaluator,
         )
         if did_accept
             current = candidate
@@ -326,6 +391,12 @@ function rpo_post_refine_path(path, geometry, cfg::RPOPSOConfig; safe_distance_m
         changed || break
     end
 
-    final_cost = rpo_path_cost(current, geometry, cfg; safe_distance_m=safe_distance_m)
-    return current, final_cost, improved
+    final_components = rpo_path_objective_components(
+        current,
+        geometry,
+        cfg;
+        safe_distance_m=safe_distance_m,
+        objective_evaluator=objective_evaluator,
+    )
+    return current, final_components.total, improved
 end

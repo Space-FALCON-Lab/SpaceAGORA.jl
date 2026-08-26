@@ -681,14 +681,12 @@ function train_parallel!(session::TrainingSession{<:DDQNLearner};
             if worker_backend == :processes
                 process_ids = setup_isolated_process_workers(active_workers)
                 try
-                    for process_id in process_ids
-                        remotecall_wait(
-                            _prewarm_spaceagora_rl_shared_ephemeris_cache!,
-                            process_id,
-                            session.config.scenario,
-                            session.config.training.max_passes_per_campaign,
-                        )
-                    end
+                    _remotecall_wait_all(
+                        _prewarm_spaceagora_rl_shared_ephemeris_cache!,
+                        process_ids,
+                        session.config.scenario,
+                        session.config.training.max_passes_per_campaign,
+                    )
                     return _train_parallel_spaceagora_physics_streaming!(
                         session;
                         global_steps = global_steps,
@@ -1640,14 +1638,12 @@ function train_parallel!(session::TrainingSession{<:A2CLearner};
             if worker_backend == :processes
                 process_ids = setup_isolated_process_workers(active_workers)
                 try
-                    for process_id in process_ids
-                        remotecall_wait(
-                            _prewarm_spaceagora_rl_shared_ephemeris_cache!,
-                            process_id,
-                            session.config.scenario,
-                            session.config.training.max_passes_per_campaign,
-                        )
-                    end
+                    _remotecall_wait_all(
+                        _prewarm_spaceagora_rl_shared_ephemeris_cache!,
+                        process_ids,
+                        session.config.scenario,
+                        session.config.training.max_passes_per_campaign,
+                    )
                     return _train_parallel_a2c_spaceagora_physics_streaming!(
                         session;
                         global_steps=global_steps,

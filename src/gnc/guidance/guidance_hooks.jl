@@ -42,7 +42,7 @@ module GuidanceHooks
     export RPOPSOProbeSettings, RPOPSOReexploreSettings, RPOPSORefinementSettings
     export RPOPSORetimingSettings, RPOPSOScheduleSettings, RPOPSOSwarmSettings
     export RPOPSORRTConnectWarmstartSettings, RPOPSOStagnationSettings, rpo_pso_config
-    export rpo_pso_plan_path, rpo_reference_from_path
+    export rpo_path_objective_components, rpo_pso_plan_path, rpo_reference_from_path
     export RPOReplanningConfig, RPOReplanningSphere
     export rpo_active_replanning_spheres, rpo_geometry_with_replanning_spheres
     export rpo_reference_tracking_error, rpo_remaining_reference_path

@@ -1,0 +1,614 @@
+\documentclass[11pt]{article}
+
+\usepackage[letterpaper,margin=0.82in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{microtype}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5em}
+\setlist[itemize]{leftmargin=1.4em,itemsep=0.15em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=1.6em,itemsep=0.15em,topsep=0.2em}
+\renewcommand{\arraystretch}{1.12}
+\setlength{\LTpre}{0.2em}
+\setlength{\LTpost}{0.7em}
+
+\definecolor{agorablue}{RGB}{28,73,122}
+\definecolor{lightblue}{RGB}{235,243,250}
+\definecolor{lightgreen}{RGB}{237,248,240}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\hypersetup{
+  pdftitle={Capability-Aware SpaceAGORA Integrated Plan},
+  pdfauthor={SpaceAGORA Contributors}
+}
+
+\title{\vspace{-1.0em}\textbf{Capability-Aware SpaceAGORA Integrated Plan}\\
+\large Package Structure, Interfaces, Milestones, and Verification}
+\author{SpaceAGORA Contributors}
+\date{August 26, 2026}
+
+\begin{document}
+\maketitle
+\vspace{-1.2em}
+
+\begin{abstract}
+This document converts the research outline \emph{Capability-Aware Learning
+Architecture for Distributed Small Spacecraft Autonomy} into a package and
+integration plan for \code{SpaceAGORA.jl} and \code{SpaceAGORA_RL.jl}.  The
+proposal adds an Earth-observation task family without changing the ownership
+of flight dynamics or actuator authority.  SpaceAGORA supplies physical truth,
+public telemetry snapshots, typed activity commands, deterministic feasibility
+checks, and bounded execution.  SpaceAGORA\_RL supplies the capability-aware
+MDP, degradation experiments, policies, fleet allocation, explanations, and
+evaluation.  Development proceeds from a small event surrogate and conventional
+baselines to a live SpaceAGORA backend, generalization, distributed allocation,
+and flatsat preparation.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Objective and architectural decision}
+
+The research objective is to close the loop
+\[
+\text{physical degradation}
+\rightarrow \text{telemetry and estimation}
+\rightarrow \text{operational capability}
+\rightarrow \text{mission decisions}
+\rightarrow \text{fleet reallocation}.
+\]
+
+The implementation should be a new Earth-observation (EO) task family in
+\code{SpaceAGORA_RL.jl}.  It should reuse the package's existing MDP, backend,
+action-mask, transition, learner, runtime, checkpoint, and parallel-rollout
+interfaces.  It should not be embedded into the aerobraking MDP and should not
+put learned decisions inside dynamics, guidance, or control code.
+
+\begin{center}
+\fcolorbox{agorablue}{lightblue}{%
+\begin{minipage}{0.92\linewidth}
+\centering
+SpaceAGORA physical state and telemetry\\
+$\downarrow$\\
+Capability estimate with uncertainty\\
+$\downarrow$\\
+Capability-conditioned EO MDP and fleet allocator in SpaceAGORA\_RL\\
+$\downarrow$\\
+Typed mission activity command\\
+$\downarrow$\\
+Independent SpaceAGORA feasibility and safety gate\\
+$\downarrow$\\
+Conventional GNC, control, and physical execution
+\end{minipage}}
+\end{center}
+
+The first implementation should be smaller than the complete research vision:
+a deterministic event-driven EO surrogate, an oracle capability estimate,
+three non-learning baselines, and one configuration-conditioned policy.  A
+meta-learning implementation is deferred until held-out experiments establish
+that static capability conditioning is insufficient.
+
+\section{Assumptions and constraints}
+
+\begin{enumerate}
+  \item The requested destination is the existing nested package
+        \code{SpaceAGORA.jl/SpaceAGORA_RL.jl}.
+  \item EO is added alongside the implemented aerobraking and RPO task
+        families; existing task behavior is not refactored as part of this work.
+  \item SpaceAGORA remains the owner of physical propagation, vehicle state,
+        GNC, actuator authority, and simulation execution.
+  \item SpaceAGORA\_RL owns policy learning, degradation campaigns, fleet
+        allocation experiments, and research metrics.
+  \item Physical battery, payload, or data-system models that become useful
+        outside RL belong in SpaceAGORA.  Inexpensive experimental surrogates
+        may begin inside the EO task package.
+  \item New EO integration calls only documented, root-level SpaceAGORA APIs.
+        It does not add dependencies on private
+        \code{SpaceAGORA.SimulationModel} internals.
+  \item The learned executive proposes bounded mission activities.  A
+        deterministic layer independent of the policy decides whether a command
+        is accepted, rejected, or bounded.
+  \item A coordinated constellation is one decision environment.
+        \code{run_constellation_ensemble} explicitly handles uncoupled members,
+        so it must not be used to split a coupled fleet-policy episode into
+        independent spacecraft.  Parallel rollout workers each own a complete,
+        isolated fleet episode.
+\end{enumerate}
+
+\section{Fit to the current implementation}
+
+\begin{longtable}{P{0.34\linewidth}P{0.59\linewidth}}
+\toprule
+Current area & Reuse in the EO implementation \\
+\midrule
+\endhead
+\code{src/core/mdp_interface.jl} &
+Keep the task-specific raw observation and learner-facing normalization
+contract. \\
+\code{src/core/backend_interface.jl} &
+Implement EO reset and step methods for surrogate and live backends. \\
+\code{src/core/action_mask_interface.jl} &
+Mask impossible task/activity choices before policy selection. \\
+\code{src/core/transition_schema.jl} &
+Retain the existing learner-facing transition record and explicit terminated
+versus truncated semantics. \\
+\code{src/algorithms} &
+Begin with implemented DDQN or A2C; add meta-RL only after a measured need. \\
+\code{src/runtime} &
+Extend TOML resolution, manifests, training sessions, histories, and
+checkpoint metadata with task and schema versions. \\
+\code{src/parallel} &
+Run complete EO or fleet episodes on rollout workers while the central learner
+retains parameter ownership. \\
+\code{src/tasks/aerobraking} &
+Use its surrogate/live backend split, baselines, metrics, and generalization
+organization as a precedent, without sharing task-specific records. \\
+\code{src/tasks/rpo} &
+Use its task-local SpaceAGORA adapter as a placement precedent, but call a new
+public root API for EO. \\
+\bottomrule
+\end{longtable}
+
+The parent package already contains multi-spacecraft propagation, reaction-wheel
+state, typed maneuver commands, mission-operation ownership under
+\code{src/mission/operations}, runtime telemetry, and canonical architecture
+rules.  Missing elements are a generic capability contract, EO task/product
+records, subsystem-resource snapshots, EO activity commands, and a
+crosslink-aware fleet decision environment.
+
+\section{Proposed package layout}
+
+The following is a destination layout.  It is not a request to add placeholders
+or empty directories.  ``Later'' entries are created only when the associated
+phase begins.
+
+\subsection{SpaceAGORA-owned structure}
+
+\begin{verbatim}
+SpaceAGORA.jl/
+|-- src/
+|   |-- SpaceAGORA.jl                         (extend public API)
+|   |-- core/simulation_model.jl              (extend aggregator)
+|   |-- mission/operations/
+|   |   |-- capabilities/
+|   |   |   |-- capabilities.jl              (new module owner)
+|   |   |   |-- capability_snapshot.jl       (new typed estimate)
+|   |   |   |-- activity_commands.jl         (new bounded commands)
+|   |   |   `-- feasibility.jl               (new deterministic gate)
+|   |   `-- earth_observation/
+|   |       |-- earth_observation.jl          (new module owner)
+|   |       |-- task_types.jl                 (new task contract)
+|   |       `-- product_requirements.jl       (new quality contract)
+|   |-- simulation/engine/
+|   |   `-- mission_snapshot.jl               (new public snapshot API)
+|   `-- vehicle/                              (later physical models)
+|       |-- power/power_models.jl
+|       |-- power/battery_degradation.jl
+|       |-- payloads/earth_observation_camera.jl
+|       `-- data_handling/data_models.jl
+|-- examples/
+|   `-- Earth_EO_Capability_Constellation.jl  (after live adapter)
+`-- test/
+    |-- unit/capability_contract_tests.jl
+    |-- unit/earth_observation_contract_tests.jl
+    `-- integration/eo_rl_command_boundary_tests.jl
+\end{verbatim}
+
+\subsection{SpaceAGORA\_RL-owned structure}
+
+\begin{verbatim}
+SpaceAGORA_RL.jl/
+|-- Project.toml                              (declare SpaceAGORA)
+|-- src/
+|   |-- SpaceAGORA_RL.jl                      (includes and exports)
+|   |-- core/                                 (reuse existing contracts)
+|   |-- algorithms/meta_rl/                   (later)
+|   |   |-- context_encoder.jl
+|   |   `-- adaptation.jl
+|   `-- tasks/earth_observation/
+|       |-- EarthObservationMDP.jl
+|       |-- types.jl
+|       |-- mdp/
+|       |   |-- actions.jl
+|       |   |-- observations.jl
+|       |   |-- normalization.jl
+|       |   |-- action_masks.jl
+|       |   |-- rewards.jl
+|       |   `-- termination.jl
+|       |-- capability/
+|       |   |-- degradation_scenarios.jl
+|       |   |-- estimator_interface.jl
+|       |   `-- estimators.jl
+|       |-- backend/
+|       |   |-- event_surrogate.jl
+|       |   |-- spaceagora_adapter.jl
+|       |   |-- access_cache.jl
+|       |   `-- fleet_environment.jl
+|       |-- coordination/
+|       |   |-- allocator_interface.jl
+|       |   |-- centralized_allocator.jl
+|       |   |-- decentralized_messages.jl
+|       |   `-- crosslink_model.jl
+|       |-- baselines/
+|       |   |-- fixed_schedule.jl
+|       |   |-- rule_based.jl
+|       |   `-- optimization_oracle.jl
+|       `-- evaluation/
+|           |-- metrics.jl
+|           |-- explanation_records.jl
+|           |-- generalization_suites.jl
+|           `-- reports.jl
+|-- configs/earth_observation/
+|   |-- smoke.toml
+|   |-- single_vehicle_surrogate.toml
+|   |-- fleet_surrogate.toml
+|   |-- spaceagora_physics.toml
+|   `-- generalization.toml
+|-- scripts/earth_observation/
+|   |-- train.jl
+|   |-- evaluate.jl
+|   |-- run_baselines.jl
+|   `-- run_generalization_suite.jl
+|-- examples/earth_observation/
+|   `-- capability_aware_constellation.jl
+`-- tests/earth_observation/
+    |-- contract_tests.jl
+    |-- mdp_tests.jl
+    |-- surrogate_backend_tests.jl
+    |-- spaceagora_adapter_tests.jl
+    |-- coordination_tests.jl
+    `-- campaign_tests.jl
+\end{verbatim}
+
+\section{Ownership and dependency contract}
+
+\begin{longtable}{P{0.31\linewidth}P{0.22\linewidth}P{0.38\linewidth}}
+\toprule
+Concern & Owner & Rationale \\
+\midrule
+\endhead
+Orbit, attitude, environment, actuator truth & SpaceAGORA & Physical simulation ownership \\
+Battery/camera/data physical models & SpaceAGORA & Reusable beyond a learned policy \\
+Telemetry/resource snapshots & SpaceAGORA & Stable simulator boundary \\
+EO tasks and product requirements & SpaceAGORA & Shared by rules, optimization, and RL \\
+Activity command and safety disposition & SpaceAGORA & Independent authority boundary \\
+Degradation campaign distributions & SpaceAGORA\_RL & Research randomization concern \\
+Oracle/noisy estimators & SpaceAGORA\_RL initially & Experimental estimators; mature interfaces can be promoted \\
+Observation, reward, masks, termination & SpaceAGORA\_RL & MDP definition \\
+Learning and fleet allocation & SpaceAGORA\_RL & Policy concern \\
+GNC and actuator execution & SpaceAGORA & Safety and physical execution \\
+\bottomrule
+\end{longtable}
+
+The dependency remains one-directional: SpaceAGORA must not import
+SpaceAGORA\_RL.  After the public contracts are available, the RL project
+should declare the parent package rather than adding more path-based private
+module loading:
+
+\begin{verbatim}
+[deps]
+SpaceAGORA = "afbfb69f-5c0b-4832-b760-43725dff8540"
+
+[sources]
+SpaceAGORA = {path = ".."}
+
+[compat]
+SpaceAGORA = "0.1"
+\end{verbatim}
+
+Existing aerobraking and RPO adapters can migrate independently.  Their
+migration is not a prerequisite for the EO integration.
+
+\section{Data and function contracts}
+
+\subsection{Capability snapshot}
+
+The planner-facing capability state is
+\[
+\hat{\mathbf{c}}_i(t)=
+[\alpha_E,\alpha_G,\alpha_A,\alpha_P,\alpha_C,\alpha_S,\alpha_D],
+\]
+representing usable energy, generation, agility, payload, compute, storage,
+and downlink capability.  A snapshot also contains spacecraft identifier,
+timestamp, uncertainty, estimator/source identifier, freshness, and validity
+flags.  Values must not silently imply certainty.
+
+Physical truth, raw telemetry, estimator belief, capability estimate, and the
+policy observation remain distinct records.  This separation prevents an
+experimental policy from accidentally receiving latent degradation truth.
+
+\subsection{EO tasks and activity commands}
+
+An \code{EarthObservationTask} contains a task identifier, target geometry,
+open/close time, mission value, allowed collection modes, required product
+quality, raw data volume, processing demand, and optional latency or revisit
+terms.
+
+A \code{MissionActivityCommand} contains spacecraft/task identifiers, an
+activity kind, bounded start and duration, requested collection mode, resource
+reservation, and a policy/explanation correlation identifier.  Initial
+activity kinds are
+\[
+\{\text{collect},\text{process},\text{downlink},\text{recharge},
+\text{desaturate},\text{defer},\text{reassign}\}.
+\]
+
+A \code{CommandDisposition} records accepted or rejected status, a stable
+reason code, the limiting constraint and margin, and any deterministic command
+bounding.  Rejected commands must not mutate physical state.
+
+\subsection{Public SpaceAGORA functions}
+
+The proposed root-level surface is conceptually:
+
+\begin{verbatim}
+mission_snapshot(simulation, spacecraft_id, epoch_s)
+evaluate_activity(snapshot, task, command)
+execute_activity!(simulation, accepted_command)
+\end{verbatim}
+
+The engine may use internal types behind this API.  Learned, rule-based,
+optimization, and operator commands all pass through the same deterministic
+evaluation function.
+
+\subsection{Learner-facing state and action catalog}
+
+An \code{EODecisionState} contains mission time, resource state, pending
+candidate tasks, capability estimate and belief, compact fleet summaries, and
+communication freshness.  The observation is a fixed-length normalized vector
+composed of resource margins, capability values and uncertainty, timing, the
+top $K$ candidate tasks, and fleet/message summaries.
+
+Neural-network outputs should not embed arbitrary task identifiers.  At each
+decision the environment ranks the top $K$ candidates, creates a stable action
+catalog from candidate slots and activity kinds, and masks invalid entries
+with the existing \code{valid_action_mask} interface.
+
+Hard constraints are enforced by both the action mask and SpaceAGORA command
+gate.  They are not represented only as negative rewards.
+
+\subsection{Reward and explanations}
+
+The reward is decomposed and persisted:
+\[
+R_t=J_{\mathrm{delivered}}
+-C_{\mathrm{resource}}
+-C_{\mathrm{risk}}
+-C_{\mathrm{degradation}}
+-C_{\mathrm{uncertainty}}
+-C_{\mathrm{coordination}}.
+\]
+Each term and every relevant constraint margin is written to the step log.
+
+Every policy path emits one explanation record containing the selected action,
+capability estimate and uncertainty, active constraints, predicted outcomes,
+material alternatives, command disposition, and policy/checkpoint/config/seed
+identifiers.  Explanation fidelity is then tested against recorded inputs and
+the actual command gate, rather than inferred from network weights.
+
+\section{Implementation phases}
+
+\subsection{Phase 0: boundaries and fixtures}
+
+\textbf{Deliverables.}
+Typed capability, EO task, activity command, and disposition records; public
+snapshot and feasibility fixtures; a hand-authored two-spacecraft/six-task
+scenario; and versioned observation/action schemas.
+
+\textbf{Verification.}
+Constructors reject invalid ranges, serialization round-trips, identical
+inputs have identical dispositions, and SpaceAGORA tests run without loading
+SpaceAGORA\_RL.
+
+\textbf{Exit gate.}
+The RL task can be developed against fixtures without importing private
+SpaceAGORA modules.
+
+\subsection{Phase 1: single-vehicle event surrogate and baselines}
+
+\textbf{Deliverables.}
+An event-driven EO backend; energy, agility, payload-quality, storage, compute,
+and downlink ledgers; degradation onset/severity; an oracle estimator; fixed
+schedule, rule-based, and optimization-oracle baselines; and initial metrics.
+
+\textbf{Verification.}
+Seeded CPU episodes are repeatable, resources obey conservation and bounds,
+infeasible actions are masked and rejected, nominal cases match baseline
+expectations, and the oracle cannot lose to the identical feasible fixed
+schedule because of implementation differences.
+
+\textbf{Exit gate.}
+One command evaluates the fixed, rule, optimization, learned, and oracle
+policies on the same manifest-backed campaign.
+
+\subsection{Phase 2: live SpaceAGORA adapter}
+
+\textbf{Deliverables.}
+A declared parent dependency; public orbit/access/attitude/resource snapshots;
+typed command handoff; bounded collect, slew, desaturate, recharge, and
+downlink execution; and cached exogenous access geometry.
+
+\textbf{Verification.}
+Surrogate and live backends share task/config/result interfaces, snapshot and
+disposition fixtures agree at known states, accepted commands use only the
+typed path, rejected commands do not mutate state, and a short live episode is
+deterministic for fixed seeds and solver settings.
+
+\textbf{Exit gate.}
+A frozen policy runs unchanged against both backends.
+
+\subsection{Phase 3: estimation and generalization}
+
+\textbf{Deliverables.}
+Oracle, delayed/noisy, and telemetry-derived estimators; battery, wheel, and
+payload degradation sweeps; configuration-conditioned DDQN/A2C; held-out
+configuration campaigns; calibration; and explanation-fidelity reports.
+
+\textbf{Verification.}
+Non-oracle observations exclude true capability, train/validation/test
+degradation families are disjoint and recorded, manifests contain estimator
+and schema versions, and every learned result is compared with rule,
+optimization, and oracle baselines.
+
+\textbf{Exit gate.}
+Capability conditioning demonstrates repeatable value over an otherwise
+identical policy that omits capability inputs.  Only then is a recurrent
+context encoder or meta-RL adaptation module considered.
+
+\subsection{Phase 4: distributed mission layer}
+
+\textbf{Deliverables.}
+A fleet environment, dynamic reassignment, a centralized allocation baseline,
+timestamped decentralized messages, crosslink degradation, partial payload
+loss, role reassignment, and fleet recovery metrics.
+
+\textbf{Verification.}
+Reassigned tasks are never double counted, reservations prevent exclusive-task
+collisions, missing messages cannot bypass local safety, each rollout worker
+owns an isolated complete fleet, and \code{run_constellation_ensemble} remains
+limited to uncoupled physical studies.
+
+\textbf{Exit gate.}
+The fleet retains more value than independent local policies in at least one
+preregistered partial-degradation regime without increasing hard violations.
+
+\subsection{Phase 5: assurance and flatsat preparation}
+
+\textbf{Deliverables.}
+Deterministic replay, compute and memory measurements, command-gate fault
+injection, operator rationale/counterfactual/reconstruction reports, and a
+hardware shim preserving the snapshot and command schemas.
+
+\textbf{Verification.}
+Replay reproduces actions and dispositions, safety behavior is independent of
+policy implementation, timeouts or malformed outputs resolve to documented
+safe behavior, and reported uncertainty is calibrated.
+
+\textbf{Exit gate.}
+The software boundary is ready for embedded/flatsat work.  Hardware
+procurement and flight qualification remain outside this package effort.
+
+\section{Experiment and metric plan}
+
+\begin{longtable}{P{0.29\linewidth}P{0.62\linewidth}}
+\toprule
+Campaign axis & Initial values \\
+\midrule
+\endhead
+Backend & Event surrogate; SpaceAGORA live \\
+Policy & Fixed; rule; optimization; DDQN/A2C; oracle \\
+Estimator & Oracle; delayed/noisy; telemetry-derived \\
+Degradation & None; battery; agility; payload; joint \\
+Severity & Preregistered continuous bins \\
+Fleet size & One, then two; expand only after correctness \\
+Crosslink & Nominal; delayed; lossy; unavailable \\
+Configuration split & Training; seen test; unseen-combination test \\
+\bottomrule
+\end{longtable}
+
+Required outcome measures are mission value retention, oracle regret,
+adaptation latency, hard violations, minimum resource margins, capability
+estimation error and calibration, held-out generalization, recovered value
+after reassignment, revisit/gap, delivery latency, communication bytes,
+decision time, memory, explanation fidelity, and replay completeness.
+Aggregate results include seed counts and uncertainty intervals.
+
+\section{Test strategy}
+
+Fast pull-request tests cover:
+
+\begin{itemize}
+  \item contract construction, units, ranges, and serialization;
+  \item observation shape/version and normalization bounds;
+  \item action-catalog and mask invariants;
+  \item deterministic surrogate transitions;
+  \item reward-component arithmetic;
+  \item command rejection and non-mutation;
+  \item reservation and reassignment invariants; and
+  \item one single-vehicle and one two-vehicle smoke episode.
+\end{itemize}
+
+Nightly or research campaigns cover Monte Carlo degradation sweeps, live
+SpaceAGORA parity, held-out generalization, crosslink degradation, and
+performance/memory regression.  Parent-package changes also satisfy the
+existing architecture, canonical-path, naming, coverage, typed-configuration,
+documentation, and artifact gates.
+
+\section{Risks and controls}
+
+\begin{longtable}{P{0.25\linewidth}P{0.31\linewidth}P{0.35\linewidth}}
+\toprule
+Risk & Consequence & Control \\
+\midrule
+\endhead
+Full physics first & Slow iteration and ambiguous failures & Stabilize contracts and event surrogate first \\
+Health/capability conflation & Planner depends on component details & Expose mission-level capability and uncertainty \\
+Safety only in reward & Invalid commands remain possible & Masks plus independent deterministic gate \\
+Variable task action space & Fixed-output learners do not fit & Top-$K$ slots and stable catalog \\
+Latent-state leakage & Unrealistic evaluation & Separate truth, telemetry, estimate, observation \\
+Fleet/worker confusion & False satellite independence & One fleet environment per worker \\
+Private API coupling & Brittle integration & Declared dependency and root APIs \\
+Opaque scalar reward & Tradeoffs cannot be audited & Persist reward components and margins \\
+Premature meta-RL & Complexity without evidence & Require conditioning baseline first \\
+Schema drift & Checkpoints silently misread state & Version schemas in manifests \\
+\bottomrule
+\end{longtable}
+
+\section{Recommended first vertical slice}
+
+\begin{enumerate}
+  \item Add the four SpaceAGORA boundary records and deterministic fixture gate.
+  \item Add an \code{EarthObservationMDP} with one spacecraft, six tasks, and
+        event-driven energy/storage/downlink transitions.
+  \item Model only battery-capacity degradation with an oracle estimator.
+  \item Implement \emph{single image}, \emph{downlink}, \emph{recharge}, and
+        \emph{defer} actions.
+  \item Add fixed, rule-based, and optimization-oracle baselines.
+  \item Train the existing DDQN implementation with capability included in the
+        observation.
+  \item Report mission value retention, regret, SOC margin, and adaptation
+        latency.
+  \item Run the frozen policy against a fixture-backed public SpaceAGORA
+        adapter without private imports.
+\end{enumerate}
+
+This slice validates the package boundary and end-to-end experiment before
+reaction-wheel degradation, image quality, meta-learning, or distributed
+allocation are introduced.
+
+\section{Definition of done}
+
+The integrated framework is complete when:
+
+\begin{itemize}
+  \item dependencies are one-directional and declared;
+  \item physical truth, telemetry, capability estimate, and policy observation
+        are distinct typed records;
+  \item learned and non-learned planners share task, command, gate, and metric
+        paths;
+  \item one frozen capability-conditioned policy runs on surrogate and live
+        backends;
+  \item single and joint degradation campaigns are repeatable and
+        manifest-backed;
+  \item fleet reassignment works under partial degradation and restricted
+        crosslinks;
+  \item hard constraints are enforced outside the policy;
+  \item explanations are tied to recorded inputs, alternatives, outcomes, and
+        command dispositions; and
+  \item repository scripts regenerate all preregistered baselines, metrics,
+        tables, and plots from the research outline.
+\end{itemize}
+
+\end{document}

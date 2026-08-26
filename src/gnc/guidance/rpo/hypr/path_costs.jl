@@ -160,3 +160,34 @@ end
 function rpo_path_cost(points, geometry, cfg::RPOPSOConfig; safe_distance_m::Real=0.0, cost_cutoff::Real=Inf)
     return rpo_normalized_path_cost_components(points, geometry, cfg; safe_distance_m=safe_distance_m, cost_cutoff=cost_cutoff).total
 end
+
+"""Evaluate a path with the standard HYPR objective or a caller-supplied component evaluator."""
+function rpo_path_objective_components(
+    points,
+    geometry,
+    cfg::RPOPSOConfig;
+    safe_distance_m::Real=0.0,
+    cost_cutoff::Real=Inf,
+    objective_evaluator=nothing,
+)
+    objective_evaluator === nothing && return rpo_normalized_path_cost_components(
+        points,
+        geometry,
+        cfg;
+        safe_distance_m=safe_distance_m,
+        cost_cutoff=cost_cutoff,
+    )
+    components = objective_evaluator(
+        points,
+        geometry,
+        cfg,
+        Float64(safe_distance_m),
+        Float64(cost_cutoff),
+    )
+    for field in (:total, :J_obs, :violation_count)
+        hasproperty(components, field) || throw(ArgumentError(
+            "custom RPO objective components must include .$field",
+        ))
+    end
+    return components
+end

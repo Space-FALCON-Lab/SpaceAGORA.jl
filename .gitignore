@@ -22,6 +22,7 @@ GRAMpy/*
 *.png
 *.tex
 !SpaceAGORA_RL.jl/Implementation Plan/SpaceAGORA_RL_Current_Implementation.tex
+!SpaceAGORA_RL.jl/Implementation Plan/Capability_Aware_SpaceAGORA_Integrated_Plan.tex
 .DS_Store
 *.cov
 docs/build/

@@ -1,25 +1,41 @@
 [task]
 safe_distance_m = 0.5
-max_translation_waypoints = 12
+curve_type = "bezier"
+# Maximum internal Bezier control waypoints; start and goal remain fixed.
+max_translation_waypoints = 20
 max_attitude_waypoints = 6
-max_edits = 32
+max_edits = 64
 coordinate_scale_m = 20.0
-fuel_weight = 2.0
-duration_weight = 0.2
-allocation_error_weight = 5.0
+fuel_weight = 1.0
+# Reaction-wheel energy is normalized by wheel capacity, so this stays secondary.
+wheel_weight = 0.01
+duration_weight = 0.0
+allocation_error_weight = 0.0
 
 [scenario]
-start_rtn = [-8.0, -4.0, 2.0]
-goal_rtn = [5.0, 0.0, 0.0]
 station_asset = "gateway"
 station_points = 2000
 station_seed = 740
 station_keepout_radius_m = 0.25
-position_randomization_m = 1.0
+# Match the HyPR planner-comparison endpoint shell and rejection bounds.
+endpoint_clearance_margin_m = 0.05
+endpoint_max_clearance_m = 1.0
+min_separation_m = 1.5
+surrounded_max_distance_m = 2.0
+max_sampling_tries = 4000
 
 [training]
-episodes = 1000
+algorithm = "pr_drl"
+episodes = 100000
 seed = 740
+n_workers = 16
+worker_backend = "processes"
+progress_every_episodes = 10
+epsilon_start = 1.0
+epsilon_stop = 0.01
+epsilon_decay_start_episode = 10000
+epsilon_decay_end_episode = 20000
+successful_case_repetitions = 3
 hidden_dim = 512
 learning_rate = 1.0e-4
 discount = 0.99
@@ -27,5 +43,18 @@ batch_size = 256
 train_start = 5000
 replay_size = 500000
 target_update = 5000
-checkpoint_every_episodes = 100
-checkpoint_directory = "SpaceAGORA_RL.jl/outputs/hypr_rl/checkpoints"
+checkpoint_every_episodes = 1000
+checkpoint_directory = "SpaceAGORA_RL.jl/outputs/hypr_rl/checkpoints_bezier20_100k_bounded_fuel"
+
+[evaluation]
+cases = 100
+seed = 10000740
+n_workers = 16
+station_max_plot_points = 2000
+bezier_plot_spacing_m = 0.05
+output_directory = "SpaceAGORA_RL.jl/outputs/hypr_rl/evaluation_100_cases_bounded_fuel"
+hypr_baseline_output_directory = "SpaceAGORA_RL.jl/outputs/hypr_rl/evaluation_100_cases_hypr_pso_retimed_fuel"
+hypr_comparison_output_directory = "SpaceAGORA_RL.jl/outputs/hypr_rl/evaluation_100_cases_hypr_original_vs_retimed_fuel"
+hypr_baseline_particles = 100
+hypr_baseline_iterations = 60
+hypr_baseline_waypoints = 5

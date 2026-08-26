@@ -4,22 +4,6 @@ using Random
 using TOML
 using SpaceAGORA_RL
 
-function _rpo_training_scenario(base::RPOHyPRRLScenario, sigma_m::Real,
-                                rng::AbstractRNG)
-    start = base.start_rtn .+ Float64(sigma_m) .* randn(rng, 3)
-    goal = base.goal_rtn .+ Float64(sigma_m) .* randn(rng, 3)
-    return RPOHyPRRLScenario(
-        start_rtn=start,
-        goal_rtn=goal,
-        geometry=base.geometry,
-        pso_config=base.pso_config,
-        tracking_settings=base.tracking_settings,
-        rrt_settings=base.rrt_settings,
-        initial_attitude_rtn_to_body=base.initial_attitude_rtn_to_body,
-        final_attitude_rtn_to_body=base.final_attitude_rtn_to_body,
-    )
-end
-
 function main(args=ARGS)
     config_path = isempty(args) ?
         joinpath(@__DIR__, "..", "..", "configs", "rpo", "hypr_rl.toml") : args[1]
@@ -27,6 +11,10 @@ function main(args=ARGS)
     task = raw["task"]
     scenario_config = raw["scenario"]
     training_config = raw["training"]
+    Symbol(training_config["algorithm"]) == :pr_drl ||
+        throw(ArgumentError("HyPR-RL training currently requires algorithm = \"pr_drl\""))
+    Symbol(get(task, "curve_type", "bezier")) == :bezier ||
+        throw(ArgumentError("HyPR-RL translation waypoints must use curve_type = \"bezier\""))
     config = RPOHyPRRLConfig(
         safe_distance_m=task["safe_distance_m"],
         max_translation_waypoints=task["max_translation_waypoints"],
@@ -36,16 +24,31 @@ function main(args=ARGS)
         fuel_weight=task["fuel_weight"],
         duration_weight=task["duration_weight"],
         allocation_error_weight=task["allocation_error_weight"],
+        wheel_weight=task["wheel_weight"],
     )
-    scenario = build_rpo_hypr_rl_scenario(
-        start_rtn=scenario_config["start_rtn"],
-        goal_rtn=scenario_config["goal_rtn"],
+    base_scenario = build_rpo_hypr_rl_scenario(
         station_asset=Symbol(scenario_config["station_asset"]),
         station_points=scenario_config["station_points"],
         station_seed=scenario_config["station_seed"],
         station_keepout_radius_m=scenario_config["station_keepout_radius_m"],
     )
-    mdp = RPOHyPRRLMDP(config, scenario)
+    scenario_sampler = build_rpo_hypr_rl_endpoint_sampler(
+        base_scenario;
+        station_asset=Symbol(scenario_config["station_asset"]),
+        safe_distance_m=config.safe_distance_m,
+        endpoint_clearance_margin_m=
+            scenario_config["endpoint_clearance_margin_m"],
+        endpoint_max_clearance_m=scenario_config["endpoint_max_clearance_m"],
+        min_separation_m=scenario_config["min_separation_m"],
+        surrounded_max_distance_m=scenario_config["surrounded_max_distance_m"],
+        max_sampling_tries=scenario_config["max_sampling_tries"],
+    )
+    scenario = sample_rpo_hypr_rl_scenario(
+        scenario_sampler, MersenneTwister(training_config["seed"] + 1),
+    )
+    mdp = RPOHyPRRLMDP(
+        config, scenario; evaluator=evaluate_rpo_training_candidate,
+    )
     ddqn = rpo_hypr_rl_ddqn_config(
         config;
         hidden_dim=training_config["hidden_dim"],
@@ -59,20 +62,56 @@ function main(args=ARGS)
     training = RPOHyPRRLTrainingConfig(
         episodes=training_config["episodes"],
         seed=training_config["seed"],
+        n_workers=training_config["n_workers"],
+        worker_backend=Symbol(training_config["worker_backend"]),
+        epsilon_start=training_config["epsilon_start"],
+        epsilon_stop=training_config["epsilon_stop"],
+        epsilon_decay_start_episode=
+            training_config["epsilon_decay_start_episode"],
+        epsilon_decay_end_episode=training_config["epsilon_decay_end_episode"],
+        successful_case_repetitions=
+            training_config["successful_case_repetitions"],
+        progress_every_episodes=training_config["progress_every_episodes"],
         checkpoint_every_episodes=training_config["checkpoint_every_episodes"],
         checkpoint_directory=training_config["checkpoint_directory"],
     )
-    sigma_m = scenario_config["position_randomization_m"]
+    println("HyPR-RL path representation=bezier_control_waypoints " *
+            "evaluators edit=retimed_feedforward terminal=full_lqmpc")
+    println(
+        "HyPR-RL endpoints=canonical_hypr_surface_shell " *
+        "clearance_m=$(scenario_sampler.endpoint_min_clearance_m)-" *
+        "$(scenario_sampler.endpoint_max_clearance_m) " *
+        "min_separation_m=$(scenario_sampler.min_separation_m) " *
+        "surrounded_max_distance_m=$(scenario_sampler.surrounded_max_distance_m)",
+    )
     result = train_hypr_rl!(
         mdp;
         training=training,
         ddqn_config=ddqn,
-        scenario_sampler=(rng, _) -> _rpo_training_scenario(scenario, sigma_m, rng),
+        scenario_sampler=scenario_sampler,
+        terminal_evaluator=evaluate_rpo_candidate,
     )
     final_path = joinpath(training.checkpoint_directory, "hypr_rl_final.jls")
     save_hypr_rl_checkpoint(
         final_path, result.learner, config;
-        training_metadata=(episodes=training.episodes,),
+        training_metadata=(
+            episodes=training.episodes,
+            curve_type=:bezier,
+            max_bezier_waypoints=config.max_translation_waypoints,
+            epsilon_start=training.epsilon_start,
+            epsilon_stop=training.epsilon_stop,
+            epsilon_decay_start_episode=training.epsilon_decay_start_episode,
+            epsilon_decay_end_episode=training.epsilon_decay_end_episode,
+            successful_case_repetitions=training.successful_case_repetitions,
+            endpoint_distribution=:canonical_hypr_surface_shell,
+            endpoint_min_clearance_m=scenario_sampler.endpoint_min_clearance_m,
+            endpoint_max_clearance_m=scenario_sampler.endpoint_max_clearance_m,
+            min_separation_m=scenario_sampler.min_separation_m,
+            surrounded_max_distance_m=
+                scenario_sampler.surrounded_max_distance_m,
+            edit_evaluator=:retimed_feedforward,
+            terminal_evaluator=:full_lqmpc,
+        ),
     )
     println("wrote HyPR-RL checkpoint to ", final_path)
     println("final 100-episode mean return: ",

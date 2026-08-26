@@ -83,6 +83,44 @@ end
     @test isfinite(plan.cost)
     @test plan.config.sample_ds_m == 0.1
 
+    custom_cfg = SM.rpo_pso_config(
+        cfg;
+        n_particles=2,
+        n_iters=1,
+        refinement_enable=false,
+    )
+    custom_objective = function (path, objective_geometry, objective_cfg,
+                                 objective_safe_distance, objective_cutoff)
+        components = SM.GuidanceHooks.rpo_normalized_path_cost_components(
+            path,
+            objective_geometry,
+            objective_cfg;
+            safe_distance_m=objective_safe_distance,
+            cost_cutoff=objective_cutoff,
+        )
+        return merge(
+            components,
+            (total=components.total + 123.0, custom_objective=true),
+        )
+    end
+    custom_plan = SM.rpo_pso_plan_path(
+        SVector{3, Float64}(-6.0, 0.0, 0.0),
+        SVector{3, Float64}(6.0, 0.0, 0.0),
+        geom,
+        custom_cfg;
+        safe_distance_m=0.1,
+        rng=MersenneTwister(2),
+        objective_evaluator=custom_objective,
+    )
+    standard_custom_path = SM.GuidanceHooks.rpo_normalized_path_cost_components(
+        custom_plan.path,
+        geom,
+        custom_plan.config;
+        safe_distance_m=0.1,
+    )
+    @test custom_plan.components.custom_objective
+    @test custom_plan.cost ≈ standard_custom_path.total + 123.0
+
     synced_cfg = SM.rpo_pso_config(SM.RPOPSOConfig(sample_ds_m=0.5, safe_distance_m=0.2))
     @test synced_cfg.sample_ds_m == synced_cfg.safe_distance_m
     @test SM.GuidanceHooks.rpo_hypr_sampling_density_m(SM.RPOPSOConfig(sample_ds_m=0.5), 0.2) == 0.2

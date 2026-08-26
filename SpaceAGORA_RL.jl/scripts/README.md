@@ -2,10 +2,28 @@
 
 ## HyPR-RL RPO path planning
 
-The RPO trainer uses masked DDQN to edit a feasible RRT-Connect/Bezier warm
-start. Candidate edits include variable translation and attitude waypoint
-counts and are scored after retiming, coupled LQ-MPC tracking, reaction-wheel
-attitude propagation, and six-thruster propellant accounting.
+The RPO trainer uses masked DDQN to smooth and edit raw RRT-Connect topology.
+Candidate edits directly move, insert, and delete the original HyPR Bezier
+control waypoints, with up to 20 internal translation waypoints, and also use
+variable attitude waypoint counts.
+Unsafe intermediate curves receive finite obstacle scores; feasible curves are
+scored after retiming, reaction-wheel attitude propagation, and six-thruster
+propellant accounting. The feasible objective contains normalized propellant
+use plus a small normalized reaction-wheel energy term; it has no path-length
+term. Both the RL editor and retimed-fuel PSO use the original weighted HyPR
+sigmoid clearance penalty for unsafe candidates. Full LQ-MPC runs once on each
+episode's best terminal candidate and
+supplies a bounded terminal reward while hard clearance checks remain in force.
+It uses the same PR-DRL rollout architecture as aerobraking: frozen policy
+snapshots on parallel workers and a single central learner. The supplied
+configuration launches 16 isolated one-thread worker processes.
+The configured run lasts 100,000 episodes. Epsilon is 1.0 through episode
+10,000, decays linearly to 0.01 at episode 20,000, and remains there afterward.
+Each successful base scenario is replayed three additional times. Training
+progress includes both elapsed time and ETA. Training and evaluation draw from
+the same station-wide near-surface endpoint distribution as the HyPR comparison
+cases: 0.55--1.0 m clearance, 1.5 m minimum separation, and the same surrounded
+endpoint rejection rule.
 
 ```sh
 julia --project=SpaceAGORA_RL.jl \
@@ -13,7 +31,48 @@ julia --project=SpaceAGORA_RL.jl \
   SpaceAGORA_RL.jl/configs/rpo/hypr_rl.toml
 ```
 
+Evaluate the newest frozen checkpoint on 100 held-out randomized RPO cases:
+
+```sh
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/rpo/evaluate_hypr_rl.jl
+```
+
+The output includes per-case and aggregate clearance, safety-violation, fuel,
+tracking, actuator, attitude-wheel, and runtime metrics. `index.html` links to
+an interactive 3D HTML trajectory for every case, with the existing station
+CAD mesh displayed beneath the sampled Bezier plan and executed LQ-MPC path.
+Control waypoints are shown as markers rather than connected as a surrogate
+trajectory. The evaluation uses the
+configured 16 isolated processes and applies full LQ-MPC only once after the
+learned sequential editor selects its best candidate.
+
 The RPO code and API map are documented in `src/tasks/rpo/README.md`.
+
+Run the matched baseline HyPR evaluation on the same held-out cases with:
+
+```sh
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/rpo/evaluate_hypr_baseline.jl
+```
+
+This version retimes every PSO particle and makes PSO minimize the same
+six-thruster propellant plus small reaction-wheel energy objective used by the
+RL editor. It runs full LQ-MPC once on the winning path and writes the same CSV
+and interactive CAD-mesh trajectory artifacts. The exact per-particle
+retiming makes it considerably slower than the legacy HyPR proxy objective.
+
+Compare that objective directly against original HyPR on paired cases with:
+
+```sh
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/rpo/compare_hypr_objectives.jl
+```
+
+The comparison uses the same scenario and PSO seed for both planners, evaluates
+both selected paths with the same full terminal model, and writes paired fuel,
+safety, path-length, and runtime results. Its HTML index links to a two-panel 3D
+trajectory comparison for each case.
 
 ## Parallel A2C training
 

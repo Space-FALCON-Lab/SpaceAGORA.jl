@@ -1,7 +1,8 @@
 Base.@kwdef struct RPOHyPRRLConfig
-    max_translation_waypoints::Int = 12
+    # Internal Bezier control waypoints; the start and goal are fixed endpoints.
+    max_translation_waypoints::Int = 20
     max_attitude_waypoints::Int = 6
-    max_edits::Int = 32
+    max_edits::Int = 64
     translation_step_m::NTuple{2, Float64} = (0.10, 0.40)
     attitude_step_rad::NTuple{2, Float64} = (deg2rad(2.0), deg2rad(10.0))
     attitude_time_step::Float64 = 0.05
@@ -12,10 +13,10 @@ Base.@kwdef struct RPOHyPRRLConfig
     infeasible_edit_penalty::Float64 = 1.0
     edit_penalty::Float64 = 0.01
     completion_bonus::Float64 = 0.25
-    fuel_weight::Float64 = 2.0
-    duration_weight::Float64 = 0.20
-    allocation_error_weight::Float64 = 5.0
-    wheel_weight::Float64 = 0.05
+    fuel_weight::Float64 = 1.0
+    duration_weight::Float64 = 0.0
+    allocation_error_weight::Float64 = 0.0
+    wheel_weight::Float64 = 0.01
     mass_kg::Float64 = 5.2
     g0_mps2::Float64 = 9.80665
     thruster_directions_body::Matrix{Float64} = [
@@ -39,6 +40,20 @@ function _validate_rpo_hypr_rl_config(config::RPOHyPRRLConfig)
     config.max_attitude_waypoints >= 0 ||
         throw(ArgumentError("max_attitude_waypoints must be nonnegative"))
     config.max_edits > 0 || throw(ArgumentError("max_edits must be positive"))
+    config.reward_improvement_scale > 0.0 ||
+        throw(ArgumentError("reward_improvement_scale must be positive"))
+    config.invalid_action_penalty >= 0.0 ||
+        throw(ArgumentError("invalid_action_penalty must be nonnegative"))
+    config.infeasible_edit_penalty > 0.0 ||
+        throw(ArgumentError("infeasible_edit_penalty must be positive"))
+    config.edit_penalty >= 0.0 ||
+        throw(ArgumentError("edit_penalty must be nonnegative"))
+    config.completion_bonus >= 0.0 ||
+        throw(ArgumentError("completion_bonus must be nonnegative"))
+    all(>=(0.0), (
+        config.fuel_weight, config.duration_weight,
+        config.allocation_error_weight, config.wheel_weight,
+    )) || throw(ArgumentError("objective weights must be nonnegative"))
     all(>(0.0), config.translation_step_m) ||
         throw(ArgumentError("translation steps must be positive"))
     all(>(0.0), config.attitude_step_rad) ||

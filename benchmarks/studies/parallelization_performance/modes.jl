@@ -116,7 +116,14 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             thermal="auto",
             multibody="auto",
             effector="auto",
-            scheduler="dynamic",
+            # Mirrors profile_definitions.jl, which moved R4/R5 to the static
+            # scheduler after the dynamic default measured 7.0% slower on
+            # gravity-only constellations (paired probe, 21 pairs, p = 0.0072).
+            # The harness must not diverge from the shipped profile or it
+            # measures a configuration nobody actually runs. Dynamic is still
+            # reachable through calibration, which crosses both schedulers with
+            # the allotment ladder and pins whichever measurably wins.
+            scheduler="static",
             allow_inner_with_outer=true
         ),
         "full_smart" => PPCModeSpec(
@@ -132,7 +139,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             thermal="on",
             multibody="auto",
             effector="auto",
-            scheduler="dynamic",
+            scheduler="static",
             persistent=true,
             allow_inner_with_outer=true
         ),
@@ -147,7 +154,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             name="full_smart_nocalib",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
             rhs_batch="auto", density="auto", control="auto", thermal="on",
-            multibody="auto", effector="auto", scheduler="dynamic", persistent=true,
+            multibody="auto", effector="auto", scheduler="static", persistent=true,
             allow_inner_with_outer=true,
             # Only difference from full_smart: no pre-solve plan sweep.
             calibrate="off"
@@ -156,7 +163,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             name="full_smart_noinner",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
             rhs_batch="auto", density="auto", control="auto", thermal="on",
-            multibody="auto", effector="auto", scheduler="dynamic", persistent=true,
+            multibody="auto", effector="auto", scheduler="static", persistent=true,
             # Only difference from full_smart: the inner policy is not consulted
             # while an outer split is active, which is what outer_process does.
             allow_inner_with_outer=false
@@ -175,7 +182,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             profile="R5", backend="auto", outer_active=true,
             policy_adaptive=false,
             rhs_batch="auto", density="auto", control="auto", thermal="on",
-            multibody="auto", effector="auto", scheduler="dynamic", persistent=true,
+            multibody="auto", effector="auto", scheduler="static", persistent=true,
             allow_inner_with_outer=true,
             # policy_adaptive=false would otherwise drag calibration off with it;
             # pinning it to auto keeps this arm's only difference the policy itself.
@@ -201,7 +208,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             name="full_smart_innermodes_off",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
             rhs_batch="auto", density="auto", control="auto", thermal="on",
-            multibody="auto", effector="auto", scheduler="dynamic", persistent=true,
+            multibody="auto", effector="auto", scheduler="static", persistent=true,
             allow_inner_with_outer=true,
             # Only difference from full_smart: the five inner parallel-mode knobs
             # are off, so no inner decision or observation bookkeeping is entered
@@ -214,7 +221,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             name="full_smart_nohints",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
             rhs_batch="auto", density="auto", control="auto", thermal="on",
-            multibody="auto", effector="auto", scheduler="dynamic",
+            multibody="auto", effector="auto", scheduler="static",
             # Only difference from full_smart: persistent hints (and with them
             # the measured-reward branch, which requires persistent_hints_enabled)
             # are off. Separates the hint/measured-reward machinery from the base

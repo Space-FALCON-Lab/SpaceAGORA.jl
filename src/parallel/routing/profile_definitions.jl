@@ -209,7 +209,28 @@ function profile_config(profile_in)::ParallelProfileConfig
         thermal_mode="on",
         multibody_mode="auto",
         effector_mode="auto",
-        inner_scheduler="dynamic",
+        # Static, not dynamic, and this is a measured reversal.
+        #
+        # R5 hard-coded the dynamic scheduler, which pre-empts the very choice
+        # calibration now measures: the scheduler became part of the calibrated
+        # RHS plan, and the dispatch sites honour that plan's scheduler. But when
+        # calibration declines to override -- which the no-regret floor makes the
+        # common outcome on workloads the heuristic already handles well -- the
+        # dispatch falls back to this profile-level setting, so the hard-coded
+        # value silently decided what the router was supposed to measure.
+        #
+        # It cost 7.0% on gravity_4096sat_l50_vacuum_1hr (paired probe, 21 pairs,
+        # 4 wins against 17, p = 0.0072), which was the last remaining
+        # statistically significant regression of R5 against the best static
+        # route. On interact_256 with a live flat queue, static is not worse
+        # (p = 0.30, not distinguishable), so nothing that currently wins depends
+        # on the dynamic default.
+        #
+        # Dynamic scheduling remains reachable: the calibration sweep crosses
+        # both schedulers with the allotment ladder and pins dynamic where it
+        # measurably wins. What changes is that it must now be earned rather than
+        # assumed.
+        inner_scheduler="static",
         adaptive_window=4,
         adaptive_control_tail_guard=true,
         adaptive_measured_reward=true,

@@ -1,0 +1,137 @@
+# Venus Express 2014 aerobraking reconstruction with VenusGRAM
+# (docs/spaceagora_aerobraking_reconstruction_record.md, §8).
+#
+# Frozen copy of the "vex" scenario in test/telemetry_benchmark_manifest.toml.
+# Calibrated mission reconstruction: one physical nuisance parameter (Cr, grid
+# {1.15, 1.30, 1.45}, mean_nmae objective — the record selects 1.15) and the
+# two event alignments are fitted on the same data later scored. Truth is a
+# plot-digitized campaign figure (likely Damiani et al., ISSFD 2015), not a
+# navigation kernel; the legacy comparison axis (no epoch_orbit_offset)
+# stretches sim events across the digitized grid's median step (~0.86 orbit),
+# adding ~0.5-1 orbit registration uncertainty to the apoapsis budget.
+# Record-of-truth values (full profile, Apple arm64; runtime ~18 min):
+#   apoapsis  MAE 254.34 km, RMSE 397.93 km, max 948.24 km, nMAE 0.0701
+#   periapsis MAE  0.422 km, RMSE 0.617 km, max 2.965 km, nMAE 0.0074
+#   drag-decay ratio 1.262 median / 1.283 span-weighted
+#   alignments: apo -12.585 km, peri +0.253 km; selected Cr = 1.15
+version = 1
+
+[[scenarios]]
+name = "vex_venusgram"
+kind = "orbit_events"
+planet = "venus"
+events = ["peri", "apo"]
+# Plot-digitized apsis histories: periapsis on a ~1/31-km pixel grid (55
+# rows), apoapsis on a ~4.61-km grid (56 rows).
+telemetry_peri = "data/telemetry/VEx/Vex_periapsis_data_new.feather"
+telemetry_apo = "data/telemetry/VEx/Vex_apoapsis_data.feather"
+target_orbits_quick = 8
+target_orbits_full = 60
+compare_points_quick = 8
+compare_points_full = 55
+min_eval_points = 6
+# ESA-published flight-dynamics elements at 2014-05-19 04:00:00 UTC.
+ra_m = 7.2651770e7
+rp_altitude_m = 186600.0
+i_deg = 89.876
+aop_deg = 75.505
+raan_deg = 104.115
+ta_deg = 178.0
+# ESA flight-dynamics elements (Damiani et al., ISSFD 2015) are referenced to
+# the Venus mean equator, not J2000: matched against the ORVV_T19 kernels to
+# <=0.006 deg only in that frame.
+element_frame = "body_equator_inertial"
+gravity_model = "inverse_squared"
+gravity_harmonics_degree = 20
+gravity_harmonics_order = 20
+gravity_harmonics_file = "data/Gravity_harmonics_data/MGNP180U.csv"
+nbody_bodies = ["sun", "earth", "moon", "jupiter"]
+srp_enabled = true
+srp_cr = 1.3
+srp_area_m2 = 5.70
+include_wind = true
+EI_km = 250.0
+
+[scenarios.maneuvers]
+# Four finite burns at epoch-relative orbits, 4.0 N / 220 s Isp.
+orbit_numbers = [6, 37, 42, 46]
+delta_v_mps = [0.428, -0.177, -0.07, -0.05]
+thrust_n = 4.0
+isp_s = 220.0
+guidance_rate_s = 30.0
+control_rate_s = 10.0
+
+[scenarios.atmosphere_truth]
+assumption_id = "vex_venus_gram_deterministic_v1"
+atmosphere_model = "GRAM"
+atmosphere_dataset = "VenusGRAM climatology"
+space_weather_model = "VenusGRAM deterministic (seeded, perturbations off)"
+solar_flux_model = "VenusGRAM epoch-fixed defaults"
+gram_seed = 1001
+gram_perturbation_scales = [0.0, 0.0, 0.0, 0.0]
+gram_offline_surrogate = "off"
+gram_static_grid = false
+gram_track_cache = false
+gram_global_lock = "on"
+
+[scenarios.calibration]
+# Record §8: Cr fitted over {1.15, 1.30, 1.45} with mean_nmae (selects 1.15);
+# Cd scale, initial state, epoch, and maneuvers fixed; event alignments use
+# the same first-10-error median rule and +-500 km cap as Odyssey. No pass or
+# interval withheld.
+enabled = true
+profiles = ["full"]
+search_on_quick_subset = false
+fit_cd_scale = false
+cd_scale_min = 1.0
+cd_scale_max = 1.0
+cd_scale_steps = 3
+fit_cr = true
+cr_min = 1.15
+cr_max = 1.45
+cr_steps = 3
+fit_bias = true
+bias_abs_max_km = 500.0
+objective = "mean_nmae"
+
+[scenarios.initial_time]
+year = 2014
+month = 5
+day = 19
+hour = 4
+minute = 0
+second = 0.0
+
+[scenarios.spacecraft]
+# 630 kg bus plus two 10 kg panels (650 kg total); bus reference area 5.74 m2,
+# panel area 2.85 m2 each.
+bus_dims_m = [2.05, 3.7, 2.8]
+panel_dims_m = [0.01, 2.85, 1.0]
+bus_mass_kg = 630.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.45
+prop_mass_kg = 0.0
+id = 1002
+
+[scenarios.units]
+x = "orbit_index"
+peri = "km"
+apo = "km"
+
+[scenarios.tolerances_quick.peri]
+max_abs_km = 55.0
+max_nmae = 1.00
+
+[scenarios.tolerances_quick.apo]
+max_abs_km = 2200.0
+max_nmae = 1.50
+
+[scenarios.tolerances_full.peri]
+max_abs_km = 4.58
+max_nmae = 0.30
+max_rmse_km = 3.368
+
+[scenarios.tolerances_full.apo]
+max_abs_km = 1300.0
+max_nmae = 0.30
+max_rmse_km = 550.0

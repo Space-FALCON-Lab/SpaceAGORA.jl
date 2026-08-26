@@ -41,57 +41,48 @@ const PC = SM.ParallelCost
 const EARTH = SM.Earth()
 const HARM = joinpath(@__DIR__, "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 
-# Profile environments, mirroring benchmarks/studies/parallelization_performance/modes.jl.
-# Kept local rather than imported because that file needs the harness's PPCConfig
-# machinery, and the point here is a process that starts fast.
+# Profile environments come from the shipped definition, not a local copy.
+#
+# The first version of this file duplicated the env table from
+# benchmarks/studies/parallelization_performance/modes.jl, on the reasoning that
+# importing that file drags in the harness's PPCConfig machinery and the point
+# here is a process that starts fast. That duplication drifted within the hour:
+# R5's scheduler was changed in profile_definitions.jl and this probe kept
+# measuring the old value, reporting a regression that had already been fixed.
+#
+# ParallelProfiles.profile_env_pairs is what the shipped profile actually
+# resolves to, so deriving from it cannot drift. preserve_existing=false so the
+# profile's own values win rather than inheriting whatever the caller's shell
+# happens to have set.
 const _COMMON = Dict(
     "SPACEAGORA_PERF_PARALLEL_BACKEND" => "none",
     "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
-    "SPACEAGORA_RHS_BATCH_PARALLEL" => "auto",
     "SPACEAGORA_HARMONICS_BATCH_ENABLED" => "1",
     "SPACEAGORA_SAVE_BUNDLE" => "0",
     "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
 )
 
+const _MODE_PROFILE = Dict(
+    "serial" => "R0",
+    "outer_threads" => "R1_a",
+    "outer_process" => "R1_b",
+    "inner_only" => "R2",
+    "outer_inner_static" => "R3",
+    "outer_inner_adaptive" => "R4",
+    "full_smart" => "R5",
+)
+
 function mode_env(name::String)::Dict{String, String}
-    inner(v) = Dict(
-        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => v,
-        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => v,
-        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => v,
-        "SPACEAGORA_MULTIBODY_PARALLEL" => v,
-        "SPACEAGORA_EFFECTOR_PARALLEL" => v,
-    )
-    base = merge(_COMMON, Dict("SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
-                               "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "0",
-                               "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0",
-                               "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD" => "0",
-                               "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => "static",
-                               "SPACEAGORA_RHS_CALIBRATE" => "off"))
-    if name == "serial"
-        return merge(base, inner("off"), Dict("SPACEAGORA_PARALLEL_PROFILE" => "R0"))
-    elseif name == "inner_only"
-        return merge(base, inner("auto"), Dict("SPACEAGORA_PARALLEL_PROFILE" => "R2"))
-    elseif name == "outer_inner_static"
-        return merge(base, inner("auto"), Dict("SPACEAGORA_PARALLEL_PROFILE" => "R3"))
-    elseif name == "outer_inner_adaptive"
-        return merge(base, inner("auto"),
-                     Dict("SPACEAGORA_PARALLEL_PROFILE" => "R4",
-                          "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-                          "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => "dynamic",
-                          "SPACEAGORA_RHS_CALIBRATE" => "auto"))
-    elseif name == "full_smart"
-        return merge(base, inner("auto"),
-                     Dict("SPACEAGORA_PARALLEL_PROFILE" => "R5",
-                          "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-                          "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "on",
-                          "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
-                          "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "1",
-                          "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD" => "1",
-                          "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "1",
-                          "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => "dynamic",
-                          "SPACEAGORA_RHS_CALIBRATE" => "auto"))
-    end
-    error("unknown mode '$name'")
+    haskey(_MODE_PROFILE, name) || error("unknown mode '$name'")
+    profile = _MODE_PROFILE[name]
+    pairs = SpaceAGORA.ParallelProfiles.profile_env_pairs(profile; preserve_existing=false)
+    envd = Dict{String, String}(String(k) => String(v) for (k, v) in pairs)
+    # Pre-solve plan calibration follows the profile's adaptive flag, matching
+    # modes.jl: the static profiles measure one fixed route, the adaptive ones
+    # are meant to exercise everything they ship with.
+    adaptive = profile in ("R4", "R5")
+    envd["SPACEAGORA_RHS_CALIBRATE"] = adaptive ? "auto" : "off"
+    return merge(_COMMON, envd)
 end
 
 function make_sc(i, planet)
@@ -147,11 +138,22 @@ end
 # ── CLI ───────────────────────────────────────────────────────────────────────
 cases = ["gravity_4096_l50"]
 a_name, b_name, pairs = "full_smart", "inner_only", 15
+# Applied on top of profile B, so a single mechanism can be isolated by running
+# the same profile on both sides with one setting reverted on B. If B wins
+# significantly, that setting is what the profile is paying for.
+b_override = Dict{String, String}()
 for arg in ARGS
     startswith(arg, "--cases=") && (global cases = String.(split(split(arg, "=")[2], ",")))
     startswith(arg, "--a=")     && (global a_name = String(split(arg, "=")[2]))
     startswith(arg, "--b=")     && (global b_name = String(split(arg, "=")[2]))
     startswith(arg, "--pairs=") && (global pairs = parse(Int, split(arg, "=")[2]))
+    if startswith(arg, "--b-override=")
+        for kv in split(split(arg, "=", limit=2)[2], ";")
+            isempty(kv) && continue
+            k, v = split(kv, "=", limit=2)
+            global b_override[String(k)] = String(v)
+        end
+    end
 end
 
 # A two-sided sign test on n pairs cannot return below 2/2^n, so fewer than six
@@ -163,7 +165,9 @@ if pairs < 6
           "p = $(round(2.0^(1 - pairs), digits=4)) and can never clear 0.05.")
 end
 
-env_a, env_b = mode_env(a_name), mode_env(b_name)
+env_a = mode_env(a_name)
+env_b = merge(mode_env(b_name), b_override)
+isempty(b_override) || @printf("B overrides: %s\n", join(["$k=$v" for (k,v) in b_override], " "))
 @printf("paired probe: %s (A) vs %s (B), %d pairs, %d threads\n\n", a_name, b_name, pairs, Threads.nthreads())
 
 for case in cases

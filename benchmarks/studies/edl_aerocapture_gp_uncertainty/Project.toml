@@ -1,0 +1,25 @@
+name = "EDLAerocaptureGPUQStudy"
+uuid = "4ef07ec6-8f0f-4670-a802-36d4dd99d4cb"
+version = "0.1.0"
+
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+SatelliteToolboxAtmosphericModels = "5718ef0a-a30f-426d-bcd9-4cf31dd12909"
+SpaceAGORA = "afbfb69f-5c0b-4832-b760-43725dff8540"
+
+[sources]
+GRAMSuite = {path = "../../../data/GRAMSuite.jl"}
+SpaceAGORA = {path = "../../../"}
+
+[compat]
+CSV = "0.10"
+DataFrames = "1"
+NCDatasets = "0.14.15"
+Plots = "1"
+SatelliteToolboxAtmosphericModels = "1.3.0"
+SpaceAGORA = "0.1"
+julia = "1.12"

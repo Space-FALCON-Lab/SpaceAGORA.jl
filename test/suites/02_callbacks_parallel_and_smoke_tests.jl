@@ -1895,7 +1895,7 @@ end
     @test flat_plan_floor.allotment == 1
 
     # ── In-memory store / lookup round-trip ──────────────────────────────────
-    test_sig = "v2|machine=test_gate|budget=8|sats=2_4|effs=1|harm=1"
+    test_sig = "v3|machine=test_gate|budget=8|sats=2_4|effs=1|harm=1"
     SimulationEngine._rhs_calib_store!(test_sig, sat_batch_plan, 1.5e6)
     retrieved = SimulationEngine._rhs_calib_lookup(test_sig)
     @test retrieved !== nothing
@@ -1910,7 +1910,7 @@ end
     # Scheduler survives store/lookup: it is a swept axis now, so a cache entry
     # that dropped it would silently hand the solve back to the env var.
     for sched in (:static, :dynamic)
-        sig_sched = "v2|machine=test_gate_$(sched)|budget=8|sats=2_4|effs=1|harm=1"
+        sig_sched = "v3|machine=test_gate_$(sched)|budget=8|sats=2_4|effs=1|harm=1"
         SimulationEngine._rhs_calib_store!(
             sig_sched, SimulationEngine._make_calib_flat_plan(4, sched), 0.8e6
         )
@@ -1924,7 +1924,7 @@ end
         calib_path = joinpath(tmp, "calib_test.toml")
         withenv("SPACEAGORA_RHS_CALIBRATION_PATH" => calib_path) do
             # Store and save to disk
-            sig_disk = "v2|machine=disktest|budget=4|sats=2_4|effs=1|harm=1"
+            sig_disk = "v3|machine=disktest|budget=4|sats=2_4|effs=1|harm=1"
             SimulationEngine._rhs_calib_store!(sig_disk, flat_plan, 2.0e6)
             SimulationEngine._rhs_calib_save!()
             @test isfile(calib_path)
@@ -2002,10 +2002,11 @@ end
     sig_a = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
     sig_b = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
     @test sig_a == sig_b
-    # v2: the signature version was bumped when the inner scheduler became part
-    # of the calibrated plan, so v1 entries (which pinned only mode+allotment and
-    # left the scheduler to ENV) must not be replayed under the new semantics.
-    @test startswith(sig_a, "v2|machine=")
+    # v3: bumped again for the no-regret floor. A cached entry short-circuits
+    # the sweep, and the floor only runs inside a sweep, so pre-floor entries
+    # would keep pinning plans the floor exists to reject -- on a machine that
+    # has already been calibrated, indefinitely.
+    @test startswith(sig_a, "v3|machine=")
     @test occursin("|sats=", sig_a)
     @test occursin("|effs=1|", sig_a)
     @test occursin("|harm=1", sig_a)
@@ -2023,7 +2024,12 @@ end
             "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1",
             "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
             "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1",
-            "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(mktempdir(), "calib_force_gate.toml")
+            "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(mktempdir(), "calib_force_gate.toml"),
+            # Margin zero: this block tests that calibration CAN install a plan.
+            # At the shipped margin the heuristic legitimately wins on small
+            # fixtures, which is the no-regret floor doing its job rather than a
+            # failure -- that behaviour is asserted separately below.
+            "SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN" => "0.0"
         ) do
             p_calib.shared_buffers.rhs_plan_override[] = nothing
             SimulationEngine._calibrate_rhs_plan_if_needed!(p_calib, u_calib, args_calib)
@@ -2031,6 +2037,40 @@ end
             @test override !== nothing
             @test override.mode ∈ (:satellite_batch, :flat_constellation_effector_queue)
             @test override.policy_applied == true
+        end
+
+        # ── No-regret floor ──────────────────────────────────────────────────
+        # The sweep may only displace the runtime heuristic when it beats it by
+        # more than the sweep's own resolution. Without this the sweep could pin
+        # a plan worse than doing nothing and no measurement could detect it,
+        # because the heuristic's answer was never one of its candidates:
+        # measured on gravity_4096sat_l50_vacuum_1hr and heavy_1024sat_l50_6hr
+        # at eight threads, where policy_decisions_total is zero for every
+        # profile and the whole 10-12% gap was a pinned plan losing to the
+        # heuristic it was never compared against.
+        withenv(
+            "SPACEAGORA_RHS_CALIBRATE" => "force",
+            "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1",
+            "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
+            "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1",
+            "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(mktempdir(), "calib_floor_gate.toml"),
+            # An unreachable margin: nothing can clear it, so the heuristic must
+            # always be retained regardless of what the sweep measured.
+            "SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN" => "0.89"
+        ) do
+            p_calib.shared_buffers.rhs_plan_override[] = nothing
+            SimulationEngine._calibrate_rhs_plan_if_needed!(p_calib, u_calib, args_calib)
+            @test p_calib.shared_buffers.rhs_plan_override[] === nothing
+        end
+
+        @test SimulationEngine._rhs_calibrate_override_margin() ≈ 0.10
+        withenv("SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN" => "0.25") do
+            @test SimulationEngine._rhs_calibrate_override_margin() ≈ 0.25
+        end
+        # Clamped into [0, 0.9] so a mistyped value cannot disable calibration
+        # entirely or make every sweep override.
+        withenv("SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN" => "5.0") do
+            @test SimulationEngine._rhs_calibrate_override_margin() ≈ 0.9
         end
     end
 end

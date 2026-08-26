@@ -54,6 +54,23 @@ end
 # Which schedulers the flat ladder is swept over. Restricting this to a single
 # value reproduces the pre-change sweep (one scheduler, allotment only) and is
 # the escape hatch if the doubled sweep cost ever matters on a short solve.
+# How much faster a swept plan must be before it displaces the heuristic.
+#
+# Not zero: the sweep's readings carry real spread, and overriding on a
+# difference inside that spread trades a plan that adapts per call for one that
+# cannot, on no evidence. Ten percent is above the repeat-to-repeat spread
+# measured on this harness and well below the margins that motivate calibration
+# in the first place -- the wins it exists to capture are 3-5x, not 3%.
+@inline function _rhs_calibrate_override_margin()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN", "0.10"))
+    v = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN must be a float, got '$raw'"))
+    end
+    return clamp(v, 0.0, 0.9)
+end
+
 function _rhs_calibrate_schedulers()::Vector{Symbol}
     raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_SCHEDULERS", "static,dynamic")))
     out = Symbol[]
@@ -110,11 +127,19 @@ function _rhs_calib_signature(p, dynamic_effectors)::String
     has_harmonics = n_eff == 1 &&
         dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel
     return join([
-        # v2: entries now also pin the inner scheduler, which v1 left to ENV.
-        # A v1 entry replayed under v2 would silently reinstate whatever
-        # scheduler the *current* profile declares, which is exactly the
-        # coupling this change removes -- so the version bump invalidates them.
-        "v2",
+        # v3: entries predating the no-regret floor must not be replayed.
+        #
+        # The floor only runs inside a sweep. A cached entry short-circuits the
+        # sweep entirely (`_rhs_calib_lookup` returns and calibration returns),
+        # so a machine carrying pre-floor entries would keep pinning plans the
+        # floor exists to reject -- indefinitely, since nothing re-sweeps a
+        # signature that already has an answer. Invalidating them is the only
+        # way the fix reaches a machine that has already been calibrated.
+        #
+        # v2 pinned the inner scheduler, which v1 left to ENV; a v1 entry
+        # replayed under v2 would have silently reinstated whatever scheduler the
+        # current profile declared.
+        "v3",
         "machine=$(_calib_machine_label())",
         "budget=$(budget)",
         "sats=$(_calib_sat_bucket(active_sats))",
@@ -346,10 +371,38 @@ function _rhs_sweep_measure!(p, du, u0, candidate, reps::Int)::Float64
     end
 end
 
-function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool)
+function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing)
     n_warmup   = _rhs_calibrate_n_warmup()
     n_timed    = _rhs_calibrate_n_timed()
     candidates = _rhs_plan_candidates(p, dynamic_effectors)
+
+    # NO-REGRET FLOOR: the runtime heuristic competes as a candidate.
+    #
+    # Without this the sweep can only pick the best of the plans it happens to
+    # enumerate, and it enumerates satellite_batch plus a flat ladder -- never
+    # the plan `_rhs_execution_plan_uncached` would have chosen on its own. So
+    # calibration could confidently pin something worse than doing nothing, and
+    # nothing in the measurement could detect it.
+    #
+    # That was not hypothetical. On gravity_4096sat_l50_vacuum_1hr and
+    # heavy_1024sat_l50_6hr at eight threads, both the static profiles and R5
+    # record policy_decisions_total = 0 -- no policy consultation happens at all
+    # -- and the entire 10-12% gap is that R5 pins a calibrated
+    # flat(allotment=8) while the static profiles run the heuristic. The
+    # heuristic is better on those workloads because it re-derives the plan
+    # against the live satellite count and outer-split state on every call,
+    # where a pinned plan is fixed at whatever the pre-solve probe saw.
+    #
+    # The outer-route bandit has always had this property: default_outer_route's
+    # answer is in its candidate set and ranked first. Plan selection did not.
+    heuristic = nothing
+    if args !== nothing
+        heuristic = try
+            _rhs_execution_plan_uncached(args, p, dynamic_effectors, length(args.dynamics_model.spacecraft))
+        catch
+            nothing
+        end
+    end
 
     # Nothing to compare: only the baseline candidate exists.
     length(candidates) <= 1 && return nothing, 0.0
@@ -456,6 +509,25 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool)
         end
     end
 
+    # Measure the heuristic on the same footing and keep it unless the swept
+    # winner clears it by more than the sweep's own resolution. Returning
+    # `nothing` leaves rhs_plan_override unset, so the runtime heuristic runs --
+    # which is strictly better than pinning a copy of it, since it re-derives
+    # per call rather than freezing the pre-solve answer.
+    if heuristic !== nothing
+        heuristic_ns = _rhs_sweep_measure!(p, du, u0, heuristic, max(2, n_timed))
+        total_calls += max(2, n_timed)
+        margin = _rhs_calibrate_override_margin()
+        if !isfinite(best_elapsed) || best_elapsed > heuristic_ns * (1.0 - margin)
+            if verbose
+                println("  → heuristic retained ($(round(heuristic_ns / 1e6, digits=3)) ms/call " *
+                        "vs best swept $(round(best_elapsed / 1e6, digits=3)); " *
+                        "margin $(round(100 * margin, digits=1))% not cleared)")
+            end
+            return nothing, 0.0
+        end
+    end
+
     if verbose && best_plan !== nothing
         label = best_plan.mode == :satellite_batch ?
             "satellite_batch" :
@@ -497,7 +569,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
         end
     end
 
-    best_plan, best_elapsed = _run_rhs_sweep!(p, u0, dynamic_effectors, verbose)
+    best_plan, best_elapsed = _run_rhs_sweep!(p, u0, dynamic_effectors, verbose, args)
     best_plan === nothing && return
 
     p.shared_buffers.rhs_plan_override[] = best_plan

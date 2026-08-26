@@ -178,12 +178,15 @@
         hint_confidence,
         hint_regret_ns,
         hints_loaded,
-        hints_entries
+        hints_entries,
+        env
     )
-    lock(_policy_telemetry_lock) do
-        ctx = _active_policy_context()
-        ctx.decision_signature[source] = signature
-        ctx.decision_allotment[source] = Int64(allotted)
+    if !policy_telemetry_uses_snapshot()
+        lock(_policy_telemetry_lock) do
+            ctx = _active_policy_context()
+            ctx.decision_signature[source] = signature
+            ctx.decision_allotment[source] = Int64(allotted)
+        end
     end
     return (
         use_threads=use_threads,

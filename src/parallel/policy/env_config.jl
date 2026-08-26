@@ -72,6 +72,18 @@ end
 
 @inline persistent_hints_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS", false)
 
+# Let _record_policy_decision! read the run-scoped env snapshot instead of ENV,
+# and stamp the decision context under the lock it already holds instead of
+# taking a second one.
+#
+# Off restores both: a live parse_bool_env (an ENV lookup that allocates a
+# String) per decision, and two uncontended lock acquisitions per decision
+# instead of one. Kept as a knob only so the isolating A/B has a B side; there
+# is no reason to run with it off.
+@inline function policy_telemetry_uses_snapshot()::Bool
+    return parse_bool_env("SPACEAGORA_PARALLEL_POLICY_TELEMETRY_SNAPSHOT", true)
+end
+
 @inline function persistent_hints_persist_enabled()::Bool
     return parse_bool_env("SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST", persistent_hints_enabled())
 end

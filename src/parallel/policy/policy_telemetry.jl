@@ -5,6 +5,21 @@
     end
 end
 
+# `env` carries the run-scoped PolicyDecisionEnvConfig when the caller has one.
+#
+# This function used to call persistent_hints_enabled() directly, which is
+# parse_bool_env -> lowercase(strip(get(ENV, ...))) -- a process-global ENV
+# lookup that ALLOCATES a String, on every policy decision, including every
+# forced-region decision the short-circuit above exists to make cheap. The
+# snapshot that already resolves this exact knob once per run was threaded
+# through thread_policy_decision and then not used by the one caller on the hot
+# path that still read ENV.
+#
+# `ctx_signature`/`ctx_allotment` fold in the context stamp that
+# thread_policy_decision used to perform in a SECOND lock(_policy_telemetry_lock)
+# block immediately after this call returned. Two uncontended acquisitions per
+# decision where one will do; the writes are to the same context object under
+# the same lock, so merging them changes nothing observable.
 function _record_policy_decision!(
     source::Symbol,
     mode::Symbol,
@@ -24,10 +39,12 @@ function _record_policy_decision!(
     hint_confidence::Float64,
     hint_regret_ns::Float64,
     hints_loaded::Bool,
-    hints_entries::Int64
+    hints_entries::Int64,
+    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
 )
     lock(_policy_telemetry_lock) do
-        t = _active_policy_context().telemetry
+        ctx = _active_policy_context()
+        t = ctx.telemetry
         t.decisions_total += 1
         t.threads_enabled_total += use_threads ? 1 : 0
         t.policy_threading_proposed_total += use_threads ? 1 : 0
@@ -61,7 +78,8 @@ function _record_policy_decision!(
         t.last_heavy_only = heavy_only
         t.last_heavy_work = heavy_work
         t.last_use_threads = use_threads
-        t.persistent_hints_enabled = persistent_hints_enabled()
+        t.persistent_hints_enabled = (env === nothing || !policy_telemetry_uses_snapshot()) ?
+            persistent_hints_enabled() : env.persistent_hints
         t.persistent_hints_loaded = hints_loaded
         t.persistent_hints_entries = hints_entries
         t.persistent_hints_path = _persistent_hint_state[].path
@@ -69,6 +87,12 @@ function _record_policy_decision!(
         t.last_hint_allotment = max(1, hint_allotment)
         t.last_hint_confidence = max(0.0, hint_confidence)
         t.last_hint_regret_ns = max(0.0, hint_regret_ns)
+
+        # Folded in from thread_policy_decision's second lock block.
+        if policy_telemetry_uses_snapshot()
+            ctx.decision_signature[source] = signature
+            ctx.decision_allotment[source] = Int64(allotment)
+        end
     end
     return nothing
 end

@@ -61,8 +61,14 @@ const TV = TelemetryVerification
     @test cfg_r4.adaptive_measured_reward == false
     @test cfg_full.outer_route_adaptive == true
     @test cfg_full.label == "r5"
-    @test cfg_full.thermal_mode == "on"
-    @test cfg_full.inner_scheduler == "dynamic"
+    # Both of these track measured reversals in profile_definitions.jl.
+    # inner_scheduler went dynamic -> static in 622ae2a0 (the sweep now measures
+    # the scheduler, so a profile constant must not pre-empt it) and this probe
+    # was not updated with it. thermal_mode went on -> auto for the same reason:
+    # R5 was the only profile forcing it, and "on" was never measured to beat
+    # "auto" on any workload.
+    @test cfg_full.thermal_mode == "auto"
+    @test cfg_full.inner_scheduler == "static"
     @test cfg_full.adaptive_control_tail_guard == true
     @test cfg_full.adaptive_measured_reward == true
     @test cfg_full.adaptive_window == 4
@@ -89,8 +95,8 @@ const TV = TelemetryVerification
     env_pairs_auto = PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false)
     env_map_auto = Dict(env_pairs_auto)
     @test env_map_auto["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "auto"
-    @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "on"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "dynamic"
+    @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "auto"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "static"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "4"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD"] == "1"

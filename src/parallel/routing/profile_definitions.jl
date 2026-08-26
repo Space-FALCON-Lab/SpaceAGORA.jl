@@ -206,7 +206,20 @@ function profile_config(profile_in)::ParallelProfileConfig
         outer_route_adaptive=true,
         density_mode="auto",
         control_mode="auto",
-        thermal_mode="on",
+        # Auto, not on, and this is the same reversal as the scheduler below.
+        #
+        # R5 was the only profile that forced the thermal callback parallel:
+        # R2, R3 and R4 all declare "auto". A profile-level constant that
+        # pre-empts a routed decision is exactly the defect the inner_scheduler
+        # comment below describes, and this was its twin, three fields up in the
+        # same constructor.
+        #
+        # The +11.1% originally attributed to it was an artifact of block
+        # ordering and was correctly retracted; the paired re-measurement put it
+        # at +1.7%, and that residual was then filed with the retraction rather
+        # than acted on. "on" was never measured to be better than "auto" on any
+        # workload -- it was asserted.
+        thermal_mode="auto",
         multibody_mode="auto",
         effector_mode="auto",
         # Static, not dynamic, and this is a measured reversal.

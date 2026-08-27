@@ -348,7 +348,32 @@ end
     # has to earn the choice from measured feedback instead of being assumed.
     # This mirrors the no-regret floor on the inner axis: the heuristic's answer
     # is the default, and calibration may displace it only on evidence.
-    return _threads_or_none(threads_available)
+    #
+    # WITH NO WORKER THREADS the comparison above does not apply and the answer
+    # inverts. Everything measured against the process route measured it against
+    # THREADS, and threads won every time. With one Julia thread there are no
+    # threads to lose to: the comparison is process against serial, and a Monte
+    # Carlo campaign is a set of independent samples, so the process pool is the
+    # only parallelism available at all.
+    #
+    # Falling through to _threads_or_none returned :none here, which is fully
+    # serial, and it was the single worst result in the benchmark set. At one
+    # thread, 64 samples, the fastest fixed route is outer processes (R1_b) on
+    # every Monte Carlo case measured, and both adaptive profiles trailed it by
+    # most of a factor of two:
+    #
+    #     montecarlo_multi_sat        R1_b 0.316 s   R4 +89.0%   R5 +67.0%
+    #     montecarlo_high_accuracy    R1_b 0.572 s   R4 +73.4%   R5 +77.5%
+    #     montecarlo_mars_aerobraking R1_b 2.115 s   R4 +88.8%   R5 +86.6%
+    #
+    # The affordability and machine-class conditions are the same ones
+    # outer_route_candidates uses to enumerate the process arm, so the default
+    # can never name a route the selector did not offer.
+    if !threads_available
+        return (machine_class in (:large, :medium) && _mc_process_worth_exploring(f, t)) ?
+            :process : :none
+    end
+    return :threads
 end
 
 """

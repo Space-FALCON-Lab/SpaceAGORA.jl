@@ -42,8 +42,8 @@ function _record_policy_decision!(
     hints_entries::Int64,
     env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
 )
-    lock(_policy_telemetry_lock) do
-        ctx = _active_policy_context()
+    ctx = _active_policy_context()
+    lock(ctx.lock) do
         t = ctx.telemetry
         t.decisions_total += 1
         t.threads_enabled_total += use_threads ? 1 : 0
@@ -98,8 +98,8 @@ function _record_policy_decision!(
 end
 
 function reset_policy_telemetry!()
-    lock(_policy_telemetry_lock) do
-        ctx = _active_policy_context()
+    ctx = _active_policy_context()
+    lock(ctx.lock) do
         ctx.telemetry = PolicyTelemetry()
         empty!(ctx.adaptive_state)
         empty!(ctx.decision_signature)
@@ -109,8 +109,9 @@ function reset_policy_telemetry!()
 end
 
 function policy_telemetry_snapshot()
-    lock(_policy_telemetry_lock) do
-        t = _active_policy_context().telemetry
+    ctx = _active_policy_context()
+    lock(ctx.lock) do
+        t = ctx.telemetry
         quantums_effective = max(0, t.quantums_total - min(t.quantums_total, t.trim_quanta_budget))
         trimmed_accounted = min(t.quantums_accounted_proxy, quantums_effective)
         accounted_fraction_proxy = t.quantums_total == 0 ? 0.0 : t.quantums_accounted_proxy / t.quantums_total
@@ -195,8 +196,9 @@ function record_rhs_plan_selection!(
     allotment::Integer,
     scheduler::Symbol=:none
 )
-    lock(_policy_telemetry_lock) do
-        t = _active_policy_context().telemetry
+    ctx = _active_policy_context()
+    lock(ctx.lock) do
+        t = ctx.telemetry
         t.rhs_plan_source = source
         t.rhs_plan_mode = mode
         t.rhs_plan_allotment = Int64(max(0, allotment))

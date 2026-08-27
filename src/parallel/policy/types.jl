@@ -108,8 +108,33 @@ Base.@kwdef mutable struct PolicyContext
     adaptive_state::Dict{Symbol, AdaptiveControllerState} = Dict{Symbol, AdaptiveControllerState}()
     decision_signature::Dict{Symbol, String} = Dict{Symbol, String}()
     decision_allotment::Dict{Symbol, Int64} = Dict{Symbol, Int64}()
+    # Per-context, not process-global, and that distinction is the whole point.
+    #
+    # Every field above belongs to ONE PolicyContext, and with_policy_context
+    # gives each run_simulation its own (execution.jl). They were nonetheless all
+    # protected by a single process-global ReentrantLock, taken on every policy
+    # decision and every policy observation -- so under a thread-routed Monte
+    # Carlo campaign all N concurrently running samples serialised on one lock,
+    # once per RHS call each, to guard state no two of them shared.
+    #
+    # That was the entire residual regret of R5 against the best static route on
+    # thread-routed Monte Carlo once the outer-route default was fixed. Measured
+    # on independent_1sat_1hr, 64 samples, 12 threads: the ablation arm that
+    # stops entering the decision/observation path at all
+    # (full_smart_innermodes_off) ran -3.8% against the best static where
+    # full_smart ran +22.4%, i.e. it recovered 117% of the gap, and the arm that
+    # disables the adaptive policy outright recovered 142%.
+    #
+    # A lock per context makes the contention structural rather than incidental:
+    # two samples can only contend if they genuinely share a context, which is
+    # exactly when they share the state it guards.
+    lock::ReentrantLock = ReentrantLock()
 end
 
+# Retained for the global fallback context and for callers outside a scoped
+# context. Prefer `lock(_active_policy_context().lock)`, which is what every hot
+# path now does; this exists so that the handful of places holding no context
+# still have something to take.
 const _policy_telemetry_lock = ReentrantLock()
 const _policy_context_tls_key = :spaceagora_parallel_policy_context
 const _global_policy_context = Ref{PolicyContext}(PolicyContext())

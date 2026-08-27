@@ -1,6 +1,7 @@
 function record_route_discard!()
-    lock(_policy_telemetry_lock) do
-        _active_policy_context().telemetry.policy_discarded_by_route_total += 1
+    ctx = _active_policy_context()
+    lock(ctx.lock) do
+        ctx.telemetry.policy_discarded_by_route_total += 1
     end
     return nothing
 end
@@ -63,8 +64,8 @@ function record_policy_observation!(
     hint_allotment = Int64(1)
     adaptive_active = false
 
-    lock(_policy_telemetry_lock) do
-        ctx = _active_policy_context()
+    ctx = _active_policy_context()
+    lock(ctx.lock) do
         t = ctx.telemetry
         t.observations_total += 1
         t.last_elapsed_ns = elapsed_ns_clamped
@@ -183,8 +184,9 @@ function record_policy_observation!(
             hints_entries = _hint_entry_count(_persistent_hint_state[])
             hints_path = _persistent_hint_state[].path
         end
-        lock(_policy_telemetry_lock) do
-            t = _active_policy_context().telemetry
+        ctx2 = _active_policy_context()
+        lock(ctx2.lock) do
+            t = ctx2.telemetry
             t.persistent_hints_updates += 1
             t.persistent_hints_loaded = hints_loaded
             t.persistent_hints_entries = hints_entries

@@ -1,3 +1,25 @@
+# Does consulting the persistent-hint layer pay for itself for this source?
+#
+# Compares the measured cost of one consultation against the measured work the
+# decision guards. Both come from this machine; see hint_work_ratio in
+# env_config.jl. A source with no observation yet is allowed through, so cold
+# start behaves as it always did and the estimate converges within a few calls.
+#
+# Takes the context lock briefly and releases it before the caller touches the
+# hint store, preserving the lock order (hint store before context) that the
+# adaptive branch already relies on.
+@inline function _hint_layer_pays(source::Symbol)::Bool
+    ratio = hint_work_ratio()
+    ratio <= 0.0 && return true
+    ctx = _active_policy_context()
+    work_ns = lock(ctx.lock) do
+        st = get(ctx.adaptive_state, source, nothing)
+        st === nothing ? 0.0 : st.elapsed_ema_ns
+    end
+    work_ns <= 0.0 && return true
+    return work_ns >= ratio * hint_overhead_ns()
+end
+
 @inline function _adaptive_state_for(source::Symbol)::AdaptiveControllerState
     ctx = _active_policy_context()
     return get!(ctx.adaptive_state, source) do

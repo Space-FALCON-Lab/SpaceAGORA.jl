@@ -55,7 +55,10 @@ function record_policy_observation!(
     # more ENV reads -- is skipped, and only when its result is unreadable.
     decision_forced = budget <= 1 || num_items <= 1
     adaptive_possible = adaptive_enabled && !decision_forced
+    # Consulted only when it pays for itself on this machine; see
+    # _hint_layer_pays and hint_work_ratio.
     hints_enabled = adaptive_possible &&
+        _hint_layer_pays(source) &&
         (env === nothing ? persistent_hints_enabled() : env.persistent_hints)
     measured_reward = hints_enabled &&
         (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)
@@ -67,6 +70,16 @@ function record_policy_observation!(
     ctx = _active_policy_context()
     lock(ctx.lock) do
         t = ctx.telemetry
+        # Keep the per-source work estimate current even when the adaptive
+        # branch below is skipped: the hint layer's gate reads it, and a source
+        # whose estimate froze at its first observation could never be
+        # reclassified. One multiply-add on a path that already holds the lock.
+        st_work = get!(ctx.adaptive_state, source) do
+            AdaptiveControllerState()
+        end
+        st_work.elapsed_ema_ns = st_work.elapsed_ema_ns <= 0.0 ?
+            Float64(elapsed_ns_clamped) :
+            0.8 * st_work.elapsed_ema_ns + 0.2 * Float64(elapsed_ns_clamped)
         t.observations_total += 1
         t.last_elapsed_ns = elapsed_ns_clamped
         t.elapsed_ns_total += elapsed_ns_clamped

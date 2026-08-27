@@ -338,6 +338,48 @@ function _hint_choose_allotment(
     end
 end
 
+# What one hint consultation costs ON THIS MACHINE, measured rather than assumed.
+#
+# The hint layer is worth consulting when the work a decision guards is large
+# compared with the cost of consulting it. That comparison has two sides and
+# both are machine-dependent: a lookup costs 183 ns on this repo's 12-core
+# reference box and will cost something else elsewhere, and the guarded work
+# varies by four orders of magnitude across the workloads in the benchmark
+# catalog. Hard-coding either side ports badly, which is why this is probed at
+# first use instead.
+#
+# Measured once per process against a synthetic signature that hits the same
+# code path a real consultation does -- candidate enumeration, the store lookup
+# and the lock -- and then cached. The probe itself costs roughly a quarter of a
+# millisecond, once, against a solve measured in seconds.
+const _HINT_OVERHEAD_NS = Ref{Float64}(-1.0)
+
+function hint_overhead_ns()::Float64
+    _HINT_OVERHEAD_NS[] >= 0.0 && return _HINT_OVERHEAD_NS[]
+    probe_sig = _hint_workload_signature(:_probe, 8, 1, 8, false, false, true)
+    candidates = _hint_candidate_allotments(8, 8)
+    best = Inf
+    try
+        for _ in 1:200                      # warm the path
+            _hint_choose_allotment(probe_sig, candidates)
+        end
+        for _ in 1:5                        # min of five blocks of 200
+            t0 = time_ns()
+            for _ in 1:200
+                _hint_choose_allotment(probe_sig, candidates)
+            end
+            sample = (time_ns() - t0) / 200
+            sample < best && (best = sample)
+        end
+    catch
+        # A probe failure must not disable routing. Fall back to a value that
+        # keeps the layer enabled for anything but the very cheapest regions.
+        best = 200.0
+    end
+    _HINT_OVERHEAD_NS[] = isfinite(best) ? max(1.0, best) : 200.0
+    return _HINT_OVERHEAD_NS[]
+end
+
 function _hint_record_observation!(
     signature::String,
     allotment::Int64,

@@ -67,7 +67,10 @@
         (outer_active && !allow_with_outer) ||
         (heavy_only && !heavy_work)
     adaptive_active = adaptive_enabled && !decision_forced
-    measured_reward = adaptive_active &&
+    # The hint layer is consulted only when it pays for itself on this machine;
+    # see _hint_layer_pays and hint_work_ratio.
+    hint_layer_active = adaptive_active && _hint_layer_pays(source)
+    measured_reward = hint_layer_active &&
         (env === nothing ? persistent_hints_enabled() : env.persistent_hints) &&
         (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)
     bootstrap_threads = adaptive_active &&
@@ -92,13 +95,15 @@
             heavy_only,
             heavy_work
         )
-        hint = _hint_choose_allotment(signature, _hint_candidate_allotments(num_items, budget))
-        hint_allotment = hint.allotment
-        hint_confidence = hint.confidence
-        hint_regret_ns = hint.regret_ns
-        lock(_persistent_hint_lock) do
-            hints_loaded = _persistent_hint_state[].loaded
-            hints_entries = _hint_entry_count(_persistent_hint_state[])
+        if hint_layer_active
+            hint = _hint_choose_allotment(signature, _hint_candidate_allotments(num_items, budget))
+            hint_allotment = hint.allotment
+            hint_confidence = hint.confidence
+            hint_regret_ns = hint.regret_ns
+            lock(_persistent_hint_lock) do
+                hints_loaded = _persistent_hint_state[].loaded
+                hints_entries = _hint_entry_count(_persistent_hint_state[])
+            end
         end
         ρ = env === nothing ? adaptive_rho() : env.adaptive_rho
         desire_cap = _adaptive_desire_cap(budget, ρ)

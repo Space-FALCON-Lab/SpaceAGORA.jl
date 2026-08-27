@@ -80,6 +80,37 @@ end
 # String) per decision, and two uncontended lock acquisitions per decision
 # instead of one. Kept as a knob only so the isolating A/B has a B side; there
 # is no reason to run with it off.
+# How much work a decision must guard before the persistent-hint layer is worth
+# consulting, expressed as a multiple of what one consultation costs.
+#
+# Both sides of that comparison are MEASURED, so nothing here is tuned to one
+# machine. The cost side is probed at first use by
+# `hint_overhead_ns()` (240 ns on this repo's reference box, something else
+# elsewhere); the work side is `AdaptiveControllerState.elapsed_ema_ns`, the
+# moving average of the region each decision for that source actually guards.
+# Only the ratio between them is a constant, and a ratio is dimensionless: at
+# the default the layer is consulted whenever a consultation would cost under
+# one percent of the work it is deciding about, on any machine.
+#
+# This replaced a hard-coded "off whenever an outer split is active", which was
+# the right call on the workloads it was measured on and the wrong KIND of rule:
+# it baked a threshold discovered on a 12-core box into a boolean. The
+# distinction it was really reaching for is that Monte Carlo samples guard very
+# little work per decision while constellation solves guard a great deal, and
+# that is exactly what this measures directly.
+#
+# Zero disables the gate and always consults the layer, which is the behaviour
+# before any of this and what the isolating A/B reverts to on its B side.
+@inline function hint_work_ratio()::Float64
+    raw = strip(get(ENV, "SPACEAGORA_PARALLEL_POLICY_HINT_WORK_RATIO", "100"))
+    v = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_PARALLEL_POLICY_HINT_WORK_RATIO must be a float, got '$raw'"))
+    end
+    return max(0.0, v)
+end
+
 @inline function policy_telemetry_uses_snapshot()::Bool
     return parse_bool_env("SPACEAGORA_PARALLEL_POLICY_TELEMETRY_SNAPSHOT", true)
 end

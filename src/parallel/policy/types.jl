@@ -1,4 +1,11 @@
 Base.@kwdef mutable struct AdaptiveControllerState
+    # Exponential moving average of the elapsed time of the region each decision
+    # for this source guards. This is the denominator of the hint layer's
+    # cost/benefit test: consulting the persistent hint store is worth doing when
+    # the work being decided about is large compared with the cost of consulting
+    # it, and both sides of that comparison are measured rather than assumed.
+    # Zero means no observation has been recorded yet.
+    elapsed_ema_ns::Float64 = 0.0
     desire::Int64 = 1
     window_calls::Int64 = 0
     window_allotment_sum::Int64 = 0

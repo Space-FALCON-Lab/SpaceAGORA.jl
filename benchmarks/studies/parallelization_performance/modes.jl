@@ -11,6 +11,8 @@ Base.@kwdef struct PPCModeSpec
     multibody::String
     effector::String
     scheduler::String = "static"
+    # Retained for reporting only. Env construction derives persistent hints
+    # from the shipped profile; use persistent_override to change them.
     persistent::Bool = false
     allow_inner_with_outer::Bool = false
     # Overrides the SPACEAGORA_RHS_CALIBRATE value that policy_adaptive would
@@ -25,6 +27,11 @@ Base.@kwdef struct PPCModeSpec
     # selection, which is a separate axis. `nothing` keeps each mode's own
     # per-knob values and is what every shipped mode uses.
     inner_modes::Union{Nothing, String} = nothing
+    # `nothing` inherits the shipped profile's value; set only by attribution
+    # arms that need to isolate one of these knobs. See ppc_mode_env_pairs.
+    measured_reward::Union{Nothing, Bool} = nothing
+    tail_guard::Union{Nothing, Bool} = nothing
+    persistent_override::Union{Nothing, Bool} = nothing
 end
 
 function ppc_mode_specs()::Dict{String, PPCModeSpec}
@@ -233,6 +240,33 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             # this arm is still routing adaptively.
             inner_modes="off"
         ),
+        # Sixth and seventh attribution arms. Now that env construction derives
+        # from the shipped profile, an arm differs from full_smart in exactly the
+        # knob it names -- which was not true before: the tail guard used to be
+        # keyed on the literal mode name, so every arm below silently turned it
+        # off as well.
+        "full_smart_notailguard" => PPCModeSpec(
+            name="full_smart_notailguard",
+            profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
+            multibody="auto", effector="auto", scheduler="static", persistent=true,
+            allow_inner_with_outer=true,
+            # Only difference from full_smart: the control-callback tail guard,
+            # which R4 ships off and R5 ships on.
+            tail_guard=false
+        ),
+        "full_smart_noreward" => PPCModeSpec(
+            name="full_smart_noreward",
+            profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
+            multibody="auto", effector="auto", scheduler="static", persistent=true,
+            allow_inner_with_outer=true,
+            # Only difference from full_smart: measured-reward allotment
+            # selection, with the persistent hint store still loaded. Separates
+            # "timing candidate configurations" from "reusing what was learned",
+            # which full_smart_nohints removes together.
+            measured_reward=false
+        ),
         "full_smart_nohints" => PPCModeSpec(
             name="full_smart_nohints",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
@@ -243,7 +277,10 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             # are off. Separates the hint/measured-reward machinery from the base
             # per-callback decision+observation bookkeeping that innermodes_off
             # removes wholesale.
-            persistent=false,
+            #
+            # persistent_override, not persistent: the latter is now inert for
+            # env construction, which derives from the shipped profile.
+            persistent=true, persistent_override=false,
             allow_inner_with_outer=true
         )
     )
@@ -268,7 +305,6 @@ function ppc_mode_env_pairs(
     cfg::PPCConfig;
     outer_tasks::Int=-1,
 )::Vector{Pair{String, Union{Nothing, String}}}
-    persist = mode.persistent ? "1" : "0"
     outer_active = mode.outer_active && outer_tasks != 1
     inner_override = mode.inner_modes
     density_mode = inner_override === nothing ? mode.density : inner_override
@@ -276,7 +312,60 @@ function ppc_mode_env_pairs(
     thermal_mode = inner_override === nothing ? mode.thermal : inner_override
     multibody_mode = inner_override === nothing ? mode.multibody : inner_override
     effector_mode = inner_override === nothing ? mode.effector : inner_override
-    return Pair{String, Union{Nothing, String}}[
+
+    # Start from what the profile actually ships, then override only what this
+    # harness legitimately controls.
+    #
+    # This table used to construct the whole environment by hand, and it got
+    # three knobs wrong in ways no test could see:
+    #
+    #   SPACEAGORA_PARALLEL_POLICY_WINDOW was never emitted at all, so R5's
+    #     shipped window of 4 was silently measured as the default 8.
+    #   SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD was derived from
+    #     policy_adaptive, so R4 -- which ships it OFF -- was measured with it on.
+    #   SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD was keyed on the literal
+    #     string `mode.name == "full_smart"`, so every full_smart_* attribution
+    #     arm differed from full_smart in TWO knobs at once: the one it meant to
+    #     isolate, and the tail guard. Every attribution number taken with those
+    #     arms is confounded to that extent.
+    #
+    #   SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION and _HINT_MIN_SAMPLES were
+    #     also never emitted (R5 ships 1.8/3, R4 1.5/2).
+    #
+    # scripts/paired_profile_probe.jl already derives from
+    # ParallelProfiles.profile_env_pairs for exactly this reason, and its header
+    # records that a duplicated table drifted within an hour of being written.
+    # This one drifted for longer because nothing compared it to the source of
+    # truth. ci_ppc_mode_profile_parity_gate now does, and this function now
+    # starts from the source of truth rather than re-deriving it.
+    merged = Dict{String, Union{Nothing, String}}()
+    order = String[]
+    put!(k::String, v::Union{Nothing, String}) = begin
+        haskey(merged, k) || push!(order, k)
+        merged[k] = v
+    end
+    for (k, v) in SpaceAGORA.ParallelProfiles.profile_env_pairs(mode.profile; preserve_existing=false)
+        put!(String(k), String(v))
+    end
+
+    # Persistent hints follow the profile unless an attribution arm overrides
+    # them. Turning them off also turns off measured reward, which depends on
+    # them (adaptive_measured_reward_enabled defaults to persistent_hints_enabled
+    # but an explicit profile value would otherwise keep it on).
+    if mode.persistent_override !== nothing
+        persist = mode.persistent_override ? "1" : "0"
+        put!("SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS", persist)
+        put!("SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST", persist)
+        mode.persistent_override || put!("SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD", "0")
+    end
+    if mode.measured_reward !== nothing
+        put!("SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD", mode.measured_reward ? "1" : "0")
+    end
+    if mode.tail_guard !== nothing
+        put!("SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD", mode.tail_guard ? "1" : "0")
+    end
+
+    for (k, v) in Pair{String, Union{Nothing, String}}[
         "SPACEAGORA_PARALLEL_PROFILE" => mode.profile,
         "SPACEAGORA_PERF_PARALLEL_BACKEND" => mode.backend,
         "SPACEAGORA_PERF_PROCS" => string(cfg.process_workers),
@@ -296,10 +385,6 @@ function ppc_mode_env_pairs(
         "SPACEAGORA_EFFECTOR_PARALLEL_ALLOW_WITH_OUTER" => (mode.allow_inner_with_outer ? "1" : "0"),
         "SPACEAGORA_HARMONICS_BATCH_ENABLED" => "1",
         "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => mode.scheduler,
-        "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => persist,
-        "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => persist,
-        "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD" => (mode.policy_adaptive ? "1" : "0"),
-        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => (mode.name == "full_smart" ? "1" : "0"),
         # Pre-solve RHS-plan auto-calibration follows the mode's own adaptive
         # flag rather than being disabled everywhere.
         #
@@ -324,6 +409,9 @@ function ppc_mode_env_pairs(
         "OPENBLAS_NUM_THREADS" => "1",
         "GKSwstype" => "100"
     ]
+        put!(k, v)
+    end
+    return Pair{String, Union{Nothing, String}}[k => merged[k] for k in order]
 end
 
 function ppc_effective_env_string(mode::PPCModeSpec, cfg::PPCConfig; outer_tasks::Int=-1)::String

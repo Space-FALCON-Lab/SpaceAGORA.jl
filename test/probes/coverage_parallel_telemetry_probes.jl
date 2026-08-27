@@ -197,8 +197,32 @@ const TV = TelemetryVerification
 
     state = PP.OuterRouteState()
     @test isempty(PP.outer_route_stats_snapshot(state, sig))
+
+    # Arm symbols are deliberately unrestricted. This assertion used to require
+    # that an unrecognised route be dropped, and e6dc7539 removed the
+    # restriction on purpose so the split selector could reuse the route
+    # bandit wholesale -- same bucket, same statistics, same confidence
+    # handling, same persistence -- by naming its arms split_<route>_w<N>.
+    # The probe was not updated with it. Recording an arbitrary arm is now the
+    # documented behaviour, so assert that rather than its opposite.
     PP.record_outer_route_feedback!(state, f_heavy; route=:bad_route, successes=1, failures=0, tuning=tune)
-    @test isempty(PP.outer_route_stats_snapshot(state, sig))
+    @test haskey(PP.outer_route_stats_snapshot(state, sig), :bad_route)
+
+    # What actually keeps split arms from polluting route statistics is the
+    # signature namespace, not arm validation: record_outer_split_feedback!
+    # passes signature_prefix="split|", so split arms are invisible to a
+    # snapshot taken on the bare signature and visible under the prefixed one.
+    # That is the invariant worth pinning, and nothing covered it before.
+    state_split = PP.OuterRouteState()
+    PP.record_outer_split_feedback!(
+        state_split, f_heavy;
+        route=:threads, workers=4, successes=2, failures=0,
+        elapsed_success_s=10.0, tuning=tune
+    )
+    @test isempty(PP.outer_route_stats_snapshot(state_split, sig))
+    split_snap = PP.outer_route_stats_snapshot(state_split, "split|" * sig)
+    @test haskey(split_snap, Symbol("split_threads_w4"))
+    @test split_snap[Symbol("split_threads_w4")].samples == 2
 
     PP.record_outer_route_feedback!(state, f_heavy; route=:threads, successes=2, failures=0, elapsed_success_s=100.0, tuning=tune)
     PP.record_outer_route_feedback!(state, f_heavy; route=:process, successes=2, failures=0, elapsed_success_s=10.0, tuning=tune)

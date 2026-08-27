@@ -48,6 +48,17 @@
     end
 
     @testset "Parallel policy decision and persistent hint parity" begin
+        # Needs worker threads, and not incidentally: at a budget of 1
+        # thread_policy_decision takes its forced-region short-circuit, which
+        # skips the adaptive branch entirely and stamps an EMPTY signature.
+        # record_policy_observation! keys the persistent hint off that
+        # signature, so no hint is written, the state file is never created and
+        # every assertion below fails -- by design, not by defect. CI sets
+        # JULIA_NUM_THREADS=4 so this ran green there, and it fails on the
+        # single-threaded `julia --project=. test/runtests.jl` that CLAUDE.md
+        # documents as the default entrypoint. Guarded the same way the
+        # multi-threaded sections of test/suites/02 already are.
+        if Threads.nthreads() > 1
         mktempdir() do tmp
             state_path = joinpath(tmp, "hints.toml")
             withenv(
@@ -76,6 +87,9 @@
                 @test !isempty(rows)
                 @test any(row -> row.layer == "probe_split", rows)
             end
+        end
+        else
+            @test Threads.nthreads() == 1   # placeholder: nothing to assert serially
         end
     end
 end

@@ -123,10 +123,15 @@ def main():
 
     with open(out_path, "w") as fh:
         fh.write("\\begin{table}[htbp]\n\\centering\n")
-        fh.write("\\caption{Adaptive routing against the best fixed route, across workloads. "
+        fh.write("\\caption{Adaptive routing against an ORACLE fixed route, across workloads. "
                  "Regret is relative to the fastest static profile measured for that workload and "
-                 "thread count; negative values indicate the adaptive profile was faster than any "
-                 "fixed route.}\n")
+                 "thread count, selected after the fact; negative values indicate the adaptive "
+                 "profile was faster than any fixed route. This baseline is deliberately "
+                 "unattainable: the fastest fixed route changes with the workload and the thread "
+                 "budget, so no strategy a practitioner could commit to in advance achieves the "
+                 "Time column. Read this table for how close adaptive routing comes to perfect "
+                 "hindsight, and the accompanying aggregate table for what it is worth against a "
+                 "choice that could actually be made.}\n")
         fh.write("\\label{%s}\n\\small\n" % label)
         fh.write("\\setlength{\\tabcolsep}{4pt}\n\\renewcommand{\\arraystretch}{0.92}\n")
         fh.write("\\begin{tabular}{lrrlrrrrr}\n\\toprule\n")

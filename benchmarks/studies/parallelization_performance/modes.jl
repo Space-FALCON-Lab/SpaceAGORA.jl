@@ -136,7 +136,23 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             rhs_batch="auto",
             density="auto",
             control="auto",
-            thermal="on",
+            # Tracks R5's shipped thermal_mode, which is "auto".
+            #
+            # This table hard-coded "on" and so measured a profile SpaceAGORA
+            # does not ship. R5's thermal_mode was reverted to "auto" because
+            # forcing it was an unmeasured profile constant pre-empting a routed
+            # decision -- worth -16.2% on interact_256_aero and -25.3% on a
+            # 64-satellite aero constellation, paired probe, two independent
+            # runs. None of that could reach this harness while the value was
+            # duplicated here.
+            #
+            # This is the same drift the paired probe's header describes: it
+            # used to duplicate this table too, the duplicate went stale within
+            # the hour, and it now derives from
+            # ParallelProfiles.profile_env_pairs instead. This table should do
+            # the same; until it does, test/gates/ci_ppc_mode_profile_parity_gate.jl
+            # fails the build when a value here disagrees with the shipped profile.
+            thermal="auto",
             multibody="auto",
             effector="auto",
             scheduler="static",
@@ -153,7 +169,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
         "full_smart_nocalib" => PPCModeSpec(
             name="full_smart_nocalib",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
-            rhs_batch="auto", density="auto", control="auto", thermal="on",
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
             multibody="auto", effector="auto", scheduler="static", persistent=true,
             allow_inner_with_outer=true,
             # Only difference from full_smart: no pre-solve plan sweep.
@@ -162,7 +178,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
         "full_smart_noinner" => PPCModeSpec(
             name="full_smart_noinner",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
-            rhs_batch="auto", density="auto", control="auto", thermal="on",
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
             multibody="auto", effector="auto", scheduler="static", persistent=true,
             # Only difference from full_smart: the inner policy is not consulted
             # while an outer split is active, which is what outer_process does.
@@ -181,7 +197,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             name="full_smart_nopolicy",
             profile="R5", backend="auto", outer_active=true,
             policy_adaptive=false,
-            rhs_batch="auto", density="auto", control="auto", thermal="on",
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
             multibody="auto", effector="auto", scheduler="static", persistent=true,
             allow_inner_with_outer=true,
             # policy_adaptive=false would otherwise drag calibration off with it;
@@ -207,7 +223,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
         "full_smart_innermodes_off" => PPCModeSpec(
             name="full_smart_innermodes_off",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
-            rhs_batch="auto", density="auto", control="auto", thermal="on",
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
             multibody="auto", effector="auto", scheduler="static", persistent=true,
             allow_inner_with_outer=true,
             # Only difference from full_smart: the five inner parallel-mode knobs
@@ -220,7 +236,7 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
         "full_smart_nohints" => PPCModeSpec(
             name="full_smart_nohints",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
-            rhs_batch="auto", density="auto", control="auto", thermal="on",
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
             multibody="auto", effector="auto", scheduler="static",
             # Only difference from full_smart: persistent hints (and with them
             # the measured-reward branch, which requires persistent_hints_enabled)

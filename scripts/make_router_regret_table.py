@@ -36,6 +36,11 @@ LABEL = {
     "heavy_1024sat_l50_6hr": "1024 spacecraft, six-hour arc",
     "cadence_1024sat_10s": "1024 spacecraft, 10\\,s output",
     "cadence_1024sat_1s": "1024 spacecraft, 1\\,s output",
+    "montecarlo_high_accuracy": "Monte Carlo, high-accuracy gravity",
+    "montecarlo_multi_sat": "Monte Carlo, four spacecraft",
+    "montecarlo_mars_aerobraking": "Monte Carlo, Mars aerobraking",
+    "montecarlo_heavy_aerobraking": "Monte Carlo, long-arc aerobraking",
+    "independent_1sat_1hr": "Independent samples, one spacecraft",
 }
 
 def load(paths):
@@ -49,7 +54,17 @@ def load(paths):
                     w = float(r["wall_time_s"])
                 except (KeyError, ValueError):
                     continue
-                runs[(r["case"], int(r["thread_count"]), r["mode"])].append(w)
+                # mc_samples is part of the key, not a field to average over.
+                # A Monte Carlo case run at 16 and 64 samples is two different
+                # workloads; keying only on (case, threads, mode) silently took
+                # the median ACROSS the sample ladder and reported one number
+                # for both. Non-Monte-Carlo rows all carry mc_samples=1, so this
+                # is a no-op for them.
+                try:
+                    mc = int(r.get("mc_samples", 1) or 1)
+                except ValueError:
+                    mc = 1
+                runs[(r["case"], int(r["thread_count"]), mc, r["mode"])].append(w)
     # Median across repeats: the harness already discards warm-up solves, and the
     # median is insensitive to a single contended repeat in a way the mean is not.
     return {k: statistics.median(v) for k, v in runs.items()}
@@ -64,7 +79,9 @@ def main():
     rows, wins, ties, losses = [], 0, 0, 0
     for case in cases:
         for t in sorted({k[1] for k in agg if k[0] == case}):
-            modes = {k[2]: v for k, v in agg.items() if k[0] == case and k[1] == t}
+          for mc in sorted({k[2] for k in agg if k[0] == case and k[1] == t}):
+            modes = {k[3]: v for k, v in agg.items()
+                     if k[0] == case and k[1] == t and k[2] == mc}
             static = {m: v for m, v in modes.items() if m in STATIC}
             r4, r5 = modes.get("outer_inner_adaptive"), modes.get("full_smart")
             if not static or r5 is None:
@@ -77,7 +94,7 @@ def main():
             elif g5 <= 2.0: ties += 1
             else:           losses += 1
             best5 = r"\textbf{%.3f}" % r5 if r5 <= bv else "%.3f" % r5
-            rows.append((LABEL.get(case, case.replace("_", r"\_")), t, PROFILE[bm], bv,
+            rows.append((LABEL.get(case, case.replace("_", r"\_")), t, mc, PROFILE[bm], bv,
                          ("%.3f" % r4) if r4 else "--", best5,
                          ("$%+.0f\\%%$" % g4) if g4 is not None else "--",
                          "$%+.0f\\%%$" % g5))
@@ -90,18 +107,18 @@ def main():
                  "fixed route.}\n")
         fh.write("\\label{tab:router_regret_consolidated}\n\\small\n")
         fh.write("\\setlength{\\tabcolsep}{4pt}\n\\renewcommand{\\arraystretch}{0.92}\n")
-        fh.write("\\begin{tabular}{lrlrrrrr}\n\\toprule\n")
-        fh.write("& & \\multicolumn{2}{c}{Best static route} & "
+        fh.write("\\begin{tabular}{lrrlrrrrr}\n\\toprule\n")
+        fh.write("& & & \\multicolumn{2}{c}{Best static route} & "
                  "\\multicolumn{2}{c}{Adaptive (s)} & \\multicolumn{2}{c}{Regret} \\\\\n")
-        fh.write("\\cmidrule(lr){3-4} \\cmidrule(lr){5-6} \\cmidrule(lr){7-8}\n")
-        fh.write("Workload & Threads & Profile & Time (s) & \\texttt{R4} & \\texttt{R5} & "
+        fh.write("\\cmidrule(lr){4-5} \\cmidrule(lr){6-7} \\cmidrule(lr){8-9}\n")
+        fh.write("Workload & Threads & Samples & Profile & Time (s) & \\texttt{R4} & \\texttt{R5} & "
                  "\\texttt{R4} & \\texttt{R5} \\\\\n\\midrule\n")
         prev = None
-        for lbl, t, prof, bv, r4, r5, g4, g5 in rows:
+        for lbl, t, mc, prof, bv, r4, r5, g4, g5 in rows:
             shown = lbl if lbl != prev else ""
             prev = lbl
-            fh.write("%s & %d & %s & %.3f & %s & %s & %s & %s \\\\\n"
-                     % (shown, t, prof, bv, r4, r5, g4, g5))
+            fh.write("%s & %d & %d & %s & %.3f & %s & %s & %s & %s \\\\\n"
+                     % (shown, t, mc, prof, bv, r4, r5, g4, g5))
         fh.write("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
 
     n = wins + ties + losses

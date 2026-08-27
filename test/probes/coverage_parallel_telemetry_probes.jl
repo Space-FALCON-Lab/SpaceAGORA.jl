@@ -193,6 +193,19 @@ const TV = TelemetryVerification
     # rediscover it on a machine or workload where it wins, and the reversal
     # above would be permanent and unfalsifiable.
     @test :process in PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true)
+    # With NO worker threads the reversal inverts, because everything it was
+    # measured against was threads. One Julia thread leaves the process pool as
+    # the only parallelism a Monte Carlo campaign can use, and falling through
+    # to :none was the worst result in the benchmark set: at one thread the
+    # fastest fixed route is outer processes on every Monte Carlo case measured,
+    # and both adaptive profiles trailed it by 67 to 89 percent.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) == :process
+    # The default must never name a route the selector did not enumerate.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) in
+          PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true)
+    # A campaign too small to amortise process startup still stays serial rather
+    # than spawning a pool for nothing.
+    @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) == :none
     # Native GRAM is unaffected: there the process route is a thread-safety
     # requirement, decided before the Monte Carlo rule is consulted.
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process

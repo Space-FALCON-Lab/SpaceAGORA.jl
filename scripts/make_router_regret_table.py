@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 Emit the consolidated router-regret table from paper-benchmark raw CSVs.
 
 One row per (workload, thread count): the best static profile, its wall time,
@@ -10,7 +10,13 @@ route would have been the right choice -- which is only meaningful if the
 comparison is to the best one, not to a convenient one.
 
 Usage:
-  python3 scripts/make_router_regret_table.py OUT.tex RAW1.csv [RAW2.csv ...]
+  python3 scripts/make_router_regret_table.py [--label=NAME] OUT.tex RAW1.csv [RAW2.csv ...]
+
+--label overrides the LaTeX label (default tab:router_regret_consolidated). It
+exists because this script now emits more than one table into the same document
+-- a consolidated one and a Monte Carlo one -- and two label commands with the
+same name make every \cref to either of them resolve to whichever came last,
+silently. Pass a distinct label per table.
 """
 import csv, sys, collections, statistics, os
 
@@ -73,7 +79,17 @@ def load(paths):
 def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__)
-    out_path, raw_paths = sys.argv[1], sys.argv[2:]
+    args = sys.argv[1:]
+    label = "tab:router_regret_consolidated"
+    rest = []
+    for a in args:
+        if a.startswith("--label="):
+            label = a.split("=", 1)[1]
+        else:
+            rest.append(a)
+    if len(rest) < 2:
+        sys.exit(__doc__)
+    out_path, raw_paths = rest[0], rest[1:]
     agg = load(raw_paths)
     cases = sorted({k[0] for k in agg}, key=lambda c: list(LABEL).index(c) if c in LABEL else 99)
 
@@ -111,7 +127,7 @@ def main():
                  "Regret is relative to the fastest static profile measured for that workload and "
                  "thread count; negative values indicate the adaptive profile was faster than any "
                  "fixed route.}\n")
-        fh.write("\\label{tab:router_regret_consolidated}\n\\small\n")
+        fh.write("\\label{%s}\n\\small\n" % label)
         fh.write("\\setlength{\\tabcolsep}{4pt}\n\\renewcommand{\\arraystretch}{0.92}\n")
         fh.write("\\begin{tabular}{lrrlrrrrr}\n\\toprule\n")
         fh.write("& & & \\multicolumn{2}{c}{Best static route} & "

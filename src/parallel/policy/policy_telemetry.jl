@@ -8,8 +8,20 @@
 # Takes the context lock briefly and releases it before the caller touches the
 # hint store, preserving the lock order (hint store before context) that the
 # adaptive branch already relies on.
-@inline function _hint_layer_pays(source::Symbol)::Bool
-    ratio = hint_work_ratio()
+# `env` is the run-scoped snapshot when the caller has one.
+#
+# hint_work_ratio() is strip(get(ENV, ...)) plus a float parse -- 92.4 ns and an
+# allocation of the 106.6 ns this predicate costs -- and it runs on every
+# adaptive decision and every observation. Reading it live here reintroduced
+# exactly the defect that "Forced-region decision: -30% time, -40% allocation"
+# removed from _record_policy_decision! earlier on this branch. The snapshot
+# already resolves every other per-decision knob once per run; this one now
+# travels with them.
+@inline function _hint_layer_pays(
+    source::Symbol,
+    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
+)::Bool
+    ratio = env === nothing ? hint_work_ratio() : env.hint_work_ratio
     ratio <= 0.0 && return true
     ctx = _active_policy_context()
     work_ns = lock(ctx.lock) do

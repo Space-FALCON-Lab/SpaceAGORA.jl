@@ -58,7 +58,7 @@ function record_policy_observation!(
     # Consulted only when it pays for itself on this machine; see
     # _hint_layer_pays and hint_work_ratio.
     hints_enabled = adaptive_possible &&
-        _hint_layer_pays(source) &&
+        _hint_layer_pays(source, env) &&
         (env === nothing ? persistent_hints_enabled() : env.persistent_hints)
     measured_reward = hints_enabled &&
         (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)

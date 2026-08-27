@@ -596,6 +596,10 @@ export RhsEffectorDecision, RhsExecutionPlan
         adaptive_delta::Float64
         adaptive_window::Int
         adaptive_trim_quanta::Int
+        # Multiple of one hint consultation that the work a decision guards must
+        # exceed before the hint layer is consulted. Read on every decision AND
+        # every observation, so it belongs in the snapshot rather than in ENV.
+        hint_work_ratio::Float64
     end
 
     # GRAM along-track density cache tolerances (built by

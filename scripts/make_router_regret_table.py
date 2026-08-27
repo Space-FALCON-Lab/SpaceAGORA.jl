@@ -41,6 +41,7 @@ LABEL = {
     "montecarlo_mars_aerobraking": "Monte Carlo, Mars aerobraking",
     "montecarlo_heavy_aerobraking": "Monte Carlo, long-arc aerobraking",
     "independent_1sat_1hr": "Independent samples, one spacecraft",
+    "multi_128_high_fidelity": "128 spacecraft, full force stack",
 }
 
 def load(paths):
@@ -77,6 +78,8 @@ def main():
     cases = sorted({k[0] for k in agg}, key=lambda c: list(LABEL).index(c) if c in LABEL else 99)
 
     rows, wins, ties, losses = [], 0, 0, 0
+    best_counts = collections.Counter()
+    fixed_penalty = collections.defaultdict(list)
     for case in cases:
         for t in sorted({k[1] for k in agg if k[0] == case}):
           for mc in sorted({k[2] for k in agg if k[0] == case and k[1] == t}):
@@ -88,6 +91,9 @@ def main():
                 continue
             bm = min(static, key=static.get)
             bv = static[bm]
+            best_counts[PROFILE[bm]] += 1
+            for m, v in static.items():
+                fixed_penalty[PROFILE[m]].append(100.0 * (v / bv - 1.0))
             g4 = 100.0 * (r4 / bv - 1.0) if r4 else None
             g5 = 100.0 * (r5 / bv - 1.0)
             if g5 < -2.0:   wins += 1
@@ -124,6 +130,13 @@ def main():
     n = wins + ties + losses
     print("wrote %s: %d rows" % (out_path, len(rows)))
     print("R5 vs best static -- faster: %d, within 2%%: %d, slower: %d (of %d)" % (wins, ties, losses, n))
+    # The cost of committing to one fixed route. This is the claim the table
+    # actually supports: not that the adaptive router wins everywhere, but that
+    # no fixed route does, and that guessing wrong is expensive.
+    print("best-static profile by workload: %s" % dict(best_counts))
+    for prof, pen in sorted(fixed_penalty.items(), key=lambda kv: -max(kv[1])):
+        print("  committing to %-16s worst-case regret %+.0f%% over %d workloads"
+              % (prof, max(pen), len(pen)))
 
 
 if __name__ == "__main__":

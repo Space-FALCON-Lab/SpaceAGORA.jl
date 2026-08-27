@@ -102,7 +102,7 @@
         end
         ρ = env === nothing ? adaptive_rho() : env.adaptive_rho
         desire_cap = _adaptive_desire_cap(budget, ρ)
-        lock(_policy_telemetry_lock) do
+        lock(_active_policy_context().lock) do
             st = _adaptive_state_for(source)
             st.desire = min(max(1, st.desire), desire_cap)
             if measured_reward
@@ -182,8 +182,8 @@
         env
     )
     if !policy_telemetry_uses_snapshot()
-        lock(_policy_telemetry_lock) do
-            ctx = _active_policy_context()
+        ctx = _active_policy_context()
+        lock(ctx.lock) do
             ctx.decision_signature[source] = signature
             ctx.decision_allotment[source] = Int64(allotted)
         end

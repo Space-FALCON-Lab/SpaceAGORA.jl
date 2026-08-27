@@ -1122,8 +1122,10 @@ end
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "4"
     ) do
-        lock(policy._policy_telemetry_lock) do
-            ctx = policy._active_policy_context()
+        # The telemetry lock now lives on the context it guards, not process-wide.
+        ctx_reset = policy._active_policy_context()
+        lock(ctx_reset.lock) do
+            ctx = ctx_reset
             ctx.telemetry = policy.PolicyTelemetry()
             empty!(ctx.adaptive_state)
             empty!(ctx.decision_signature)

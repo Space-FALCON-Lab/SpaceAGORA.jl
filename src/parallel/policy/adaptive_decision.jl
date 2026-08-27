@@ -69,7 +69,7 @@
     adaptive_active = adaptive_enabled && !decision_forced
     # The hint layer is consulted only when it pays for itself on this machine;
     # see _hint_layer_pays and hint_work_ratio.
-    hint_layer_active = adaptive_active && _hint_layer_pays(source)
+    hint_layer_active = adaptive_active && _hint_layer_pays(source, env)
     measured_reward = hint_layer_active &&
         (env === nothing ? persistent_hints_enabled() : env.persistent_hints) &&
         (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)

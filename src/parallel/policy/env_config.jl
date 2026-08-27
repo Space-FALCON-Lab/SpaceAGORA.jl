@@ -242,6 +242,7 @@ function snapshot_policy_decision_env()::PolicyDecisionEnvConfig
         adaptive_delta(),
         adaptive_window_size(),
         adaptive_trim_quanta_budget(),
+        hint_work_ratio(),
     )
 end
 

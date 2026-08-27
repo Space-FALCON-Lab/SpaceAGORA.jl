@@ -282,6 +282,14 @@ end
     return f.has_nbody || f.harmonics_degree >= 20 || f.mission_time_s > t.outer_light_mission_threshold_s
 end
 
+# Whether a Monte Carlo campaign is big enough that the process route is worth
+# EXPLORING. Deliberately not the same question as whether it should be the
+# default -- see _priority_outer_route_montecarlo.
+@inline function _mc_process_worth_exploring(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
+    return f.montecarlo_samples >= t.mc_process_min_samples ||
+        f.mission_time_s >= t.mc_process_min_mission_s
+end
+
 @inline function _priority_outer_route_montecarlo(
     f::OuterRouteFeatures,
     t::OuterRouteTuning;
@@ -295,11 +303,51 @@ end
     if f.montecarlo_samples <= 1
         return :none
     end
-    if machine_class in (:large, :medium) &&
-       (f.montecarlo_samples >= t.mc_process_min_samples ||
-        f.mission_time_s >= t.mc_process_min_mission_s)
-        return :process
-    end
+    # Threads, not process, and this is a measured reversal.
+    #
+    # This returned :process whenever the machine was medium/large AND either the
+    # sample count cleared mc_process_min_samples (16) or the mission cleared
+    # mc_process_min_mission_s (3600 s). Neither term is a proxy for PER-SAMPLE
+    # COMPUTE, which is the only thing that decides whether a sample is worth
+    # shipping to another process:
+    #
+    #   - Sample count measures total work AND total dispatch overhead. It rises
+    #     on both sides of the comparison, so it cannot discriminate.
+    #   - mission_time_s is SIMULATED seconds. A one-satellite, one-hour arc is
+    #     3600 by this measure and 72 ms of actual compute.
+    #
+    # The result was that essentially every Monte Carlo campaign of 16+ samples
+    # took the process route, and the process route lost every time. Measured at
+    # 64 samples, 12 threads, median of 3 post-warm-up repeats, process against
+    # threads:
+    #
+    #     montecarlo_multi_sat          0.038 s/sample   2.45x SLOWER
+    #     independent_1sat_1hr          0.072 s/sample   2.90x SLOWER
+    #     montecarlo_high_accuracy      0.072 s/sample   1.46x SLOWER
+    #     montecarlo_mars_aerobraking   0.259 s/sample   1.41x SLOWER
+    #     montecarlo_heavy_aerobraking  3.179 s/sample   1.69x SLOWER
+    #
+    # There is no crossover in that range. Even at 3.18 s of compute per sample
+    # -- two orders of magnitude above the cheapest case -- Distributed's
+    # per-campaign worker startup and per-sample serialisation still cost more
+    # than they save. So there is no threshold on per-sample cost that would have
+    # rescued the old rule either; the rule's premise was wrong, not its constants.
+    #
+    # Against the best static route this was worth +33% to +201% on every Monte
+    # Carlo case in the paper's catalog, and the inner-axis ablations
+    # (full_smart_nocalib / _noinner / _nopolicy / _innermodes_off / _nohints)
+    # recovered none of it, which is what localised the cost here.
+    #
+    # Native GRAM is unaffected: _is_native_gram_point_density short-circuits to
+    # the process route in both default_outer_route and outer_route_candidates
+    # BEFORE this function is consulted, because there the process route is a
+    # thread-safety requirement rather than a performance choice.
+    #
+    # Process stays in the CANDIDATE set (outer_route_candidates), so the bandit
+    # can still discover it on a machine or workload where it wins -- it simply
+    # has to earn the choice from measured feedback instead of being assumed.
+    # This mirrors the no-regret floor on the inner axis: the heuristic's answer
+    # is the default, and calibration may displace it only on evidence.
     return _threads_or_none(threads_available)
 end
 
@@ -386,14 +434,17 @@ function outer_route_candidates(
     if threads_available
         push!(candidates, :threads)
     end
+    # Candidacy is a weaker test than default-ness, and for Monte Carlo the two
+    # are now different questions. _priority_outer_route_montecarlo no longer
+    # returns :process (see its comment), so deriving candidacy from it would
+    # drop the process route out of the bandit's arm set entirely and make the
+    # reversal permanent and undiscoverable. Enumerate it here whenever the
+    # campaign is large enough for the exploration to be affordable, and let
+    # measured feedback decide.
     allow_process = if lowercase(strip(f.category)) == "montecarlo"
-        _priority_outer_route_montecarlo(
-            f,
-            tuning;
-            machine_class=machine_class,
-            threads_available=threads_available,
-            parallel_enabled=parallel_enabled
-        ) == :process
+        f.montecarlo_samples > 1 &&
+            machine_class in (:large, :medium) &&
+            _mc_process_worth_exploring(f, tuning)
     else
         _feature_heavy_for_process(f, tuning)
     end

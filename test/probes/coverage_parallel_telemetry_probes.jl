@@ -176,8 +176,26 @@ const TV = TelemetryVerification
     @test PP.default_outer_route(f_const; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_heavy; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_heavy; tuning=tune, machine_class=:small, threads_available=false, parallel_enabled=true) == :none
-    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
+    # Threads, not process, and this is a measured reversal.
+    #
+    # The Monte Carlo rule used to return :process whenever the machine was
+    # medium/large and either the sample count or the SIMULATED mission time
+    # cleared a threshold. Neither is a proxy for per-sample compute, and the
+    # process route lost on every Monte Carlo case in the benchmark catalog --
+    # +33% to +201% against the best static route. Measured at 64 samples on 12
+    # threads, process against threads: 2.45x slower at 0.038 s/sample, 2.90x at
+    # 0.072, 1.46x at 0.072, 1.41x at 0.259 and 1.69x at 3.179 s/sample. No
+    # crossover anywhere in that range, so the premise was wrong rather than the
+    # constants.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+    # ...but the process route must stay a CANDIDATE, or the bandit could never
+    # rediscover it on a machine or workload where it wins, and the reversal
+    # above would be permanent and unfalsifiable.
+    @test :process in PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true)
+    # Native GRAM is unaffected: there the process route is a thread-safety
+    # requirement, decided before the Monte Carlo rule is consulted.
+    @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=false) == :none
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :process

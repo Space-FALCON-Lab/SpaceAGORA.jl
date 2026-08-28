@@ -545,6 +545,22 @@ end
     # the route, and gating on N declared a route proven after a single, cold
     # look. See OuterRouteStats.campaigns.
     (get(info, :campaigns, info.samples) >= max(1, min_samples) && isfinite(info.mean_s)) || return false
+    # An arm cannot be proven while an enumerated alternative has never been
+    # measured at all.
+    #
+    # This used to require only that SOME alternative had been tried, and on a
+    # width ladder that is satisfied by the worst possible one. The split
+    # selector enumerates [w1, w2, w4, w8, w12]; once w12 and w1 both had a
+    # timing and w12 was faster, the default was declared proven and w2, w4 and
+    # w8 were never tried. Beating width 1 says nothing about width 8, and width
+    # 8 is where the optimum actually sits: measured directly at 12 threads with
+    # 64 samples, the full budget is 47% slower than width 8 on
+    # montecarlo_multi_sat and 55% slower on montecarlo_high_accuracy.
+    #
+    # Requiring every enumerated candidate to have been measured costs a few
+    # exploratory campaigns once per signature, against a standing error of that
+    # size on every campaign afterwards.
+    unmeasured_alternative = false
     tested_against_an_alternative = false
     # Only arms this selector enumerated. Scanning the whole snapshot was wrong
     # once the bucket held more than one selector's arms: after a single
@@ -556,11 +572,15 @@ end
     for other in candidates
         other === route && continue
         other_info = get(snapshot, other, nothing)
-        other_info === nothing && continue
-        other_info.samples <= 0 && continue
-        isfinite(other_info.mean_s) || continue
+        if other_info === nothing || other_info.samples <= 0 || !isfinite(other_info.mean_s)
+            unmeasured_alternative = true
+            continue
+        end
         tested_against_an_alternative = true
         other_info.mean_s < info.mean_s && return false
+    end
+    if unmeasured_alternative && proven_requires_all_candidates()
+        return false
     end
     return tested_against_an_alternative
 end
@@ -827,10 +847,29 @@ function outer_split_candidates(
     end
     max_workers <= 1 && return Int[1]
 
-    out = Int[1]
-    w = 2
+    # The ladder starts at a quarter of the available width, not at 1.
+    #
+    # Every arm is an arm the selector must pay to measure, and on a Monte Carlo
+    # campaign the very narrow ones cannot win: they run the same per-sample work
+    # with less of the machine. Worse, they are actively harmful as candidates.
+    # Ranking five arms from short, noisy campaigns is unreliable, and a narrow
+    # arm that draws a lucky timing can be selected and held; measured on
+    # montecarlo_mars_aerobraking, whose optimum IS the full width, opening the
+    # whole ladder left the selector in a steady state of 0.057 s against 0.043 s
+    # for the previous two-arm behaviour -- worse in the steady state, not merely
+    # slower to converge.
+    #
+    # Declining to split at all is not lost by this: it is the `:none` route,
+    # which the route selector enumerates separately and which this ladder would
+    # only duplicate at w=1.
+    # Filter the doubling grid rather than re-basing it: re-basing moves every
+    # rung (a 12-wide budget became 3, 6, 12) and can drop the optimum, which
+    # here is 8.
+    floor_w = max(2, cld(max_workers, 4))
+    out = Int[]
+    w = 1
     while w < max_workers
-        push!(out, w)
+        w >= floor_w && push!(out, w)
         w *= 2
     end
     push!(out, max_workers)

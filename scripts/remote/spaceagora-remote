@@ -231,6 +231,21 @@ EOF
   cat >> "$run_sh" <<EOF
 echo "PID=\$\$" >> "$job_dir/job.meta"
 echo "START=\$(date -Iseconds)" >> "$job_dir/job.meta"
+# Purge the precompile cache for the LOCAL-SOURCE packages before every job.
+#
+# Julia 1.12 writes a native pkgimage (.so) beside the .ji in the shared depot.
+# That cache was observed serving an image built from an EARLIER release while
+# Base.locate_package resolved correctly to the current one, so a job executed a
+# previous release's src/ while its CSV rows recorded the commit that had just
+# been deployed. Nothing in the output showed the divergence: harness files
+# under benchmarks/ are include()d and always reflect the release, so only
+# changes under src/ went missing, and only silently.
+#
+# Scoped to SpaceAGORA and its extensions on purpose. The ~500 cached
+# dependencies are immutable at a resolved version and rebuilding them would add
+# roughly twenty minutes to every job for no correctness gain.
+rm -rf "$REMOTE_BASE"/shared_depot/compiled/v*/SpaceAGORA*
+echo "PURGED_PKGIMAGES=\$(date -Iseconds)" >> "$job_dir/job.meta"
 julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$job_dir/instantiate.log" 2>&1
 INSTANTIATE_EXIT=\$?
 if [ \$INSTANTIATE_EXIT -ne 0 ]; then

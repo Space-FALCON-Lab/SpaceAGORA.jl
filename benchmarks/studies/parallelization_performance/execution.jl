@@ -178,15 +178,25 @@ function ppc_resolve_outer_backend(
         # comparable to each other.
         #
         # That freshness carries a second property, currently load-bearing and
-        # easy to lose. An empty state means an empty snapshot, and every
-        # exploitation path in the router returns early on one:
-        # _route_is_proven's first two lines are `info = get(snapshot, route,
-        # nothing)` and `info === nothing && return false`. So the whole
-        # accumulated-statistics half of the router -- the proven-default guard,
-        # the confidence ranking, the split-width ladder -- is unreachable from
-        # this harness, and changes to it cannot move a benchmark number. That
-        # is why routing work can land mid-measurement-campaign without
-        # invalidating runs in flight.
+        # easy to lose. An empty state means an empty snapshot, and
+        # select_outer_route! guards its entire statistics section behind
+        # `if !isempty(snapshot)`, so on a fresh state only the COLD path runs:
+        # default_outer_route and the candidate filter. The
+        # accumulated-statistics half -- the proven-default guard, the
+        # confidence ranking, the split-width ladder, and the feedback recorder
+        # this harness never calls at all -- is unreachable, and changes to it
+        # cannot move a benchmark number. That is why work on those parts can
+        # land mid-measurement-campaign without invalidating runs in flight.
+        #
+        # Be precise about which half, because the other half is NOT inert.
+        # Changes to the cold path are fully visible to R4 and R5 and do move
+        # published numbers: reversing the Monte Carlo default from process to
+        # threads, and later sending it back to process at one thread, both
+        # landed in default_outer_route and both moved every adaptive Monte
+        # Carlo figure by tens of percent. "Routing changes cannot move a
+        # benchmark number" is true of the statistics half and false of the
+        # cold path, and a reader who takes the unqualified version will trust
+        # a stale CSV.
         #
         # Persist route state across points to save time and that isolation is
         # gone: the harness would start measuring the guard's convergence rather

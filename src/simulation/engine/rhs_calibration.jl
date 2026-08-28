@@ -169,7 +169,14 @@ function _rhs_calib_effector_token(dynamic_effectors)::String
     return bytes2hex(SHA.sha256(codeunits(join(names, ",")))[1:4])
 end
 
-function _rhs_calib_signature(p, dynamic_effectors)::String
+# The density model's identity, because it decides both the cost of a pass and
+# whether the cost model is willing to rank plans at all: model_in_cost_domain
+# rejects GRAMAtmosphereModel, whose process-wide lock has no representation as
+# a sum of per-unit rates. Plain type name rather than a hash -- there is only
+# ever one, and a readable cache file is worth more than four bytes.
+_rhs_calib_density_token(density_model)::String = string(nameof(typeof(density_model)))
+
+function _rhs_calib_signature(p, dynamic_effectors, density_model)::String
     budget      = SimulationModel.ParallelPolicy.effective_inner_thread_budget()
     active_sats = count(identity, p.is_active)
     n_eff       = length(dynamic_effectors)
@@ -206,13 +213,35 @@ function _rhs_calib_signature(p, dynamic_effectors)::String
         # colliding shapes produced it. Nothing re-sweeps a signature that
         # already has an answer, so invalidating them is the only way the fix
         # reaches an already-calibrated machine.
-        "v4",
+        # v5: v4 entries are blind to the DENSITY MODEL, and that is not a
+        # near-miss collision -- it silently defeats the cost model's own
+        # abstention.
+        #
+        # select_plan declines when counts.in_domain is false, and
+        # model_in_cost_domain clears it for GRAMAtmosphereModel precisely
+        # because the native lock's cost is superlinear in concurrency. But a
+        # cached entry short-circuits calibration before any of that runs, so a
+        # plan calibrated against a cheap analytic atmosphere is replayed
+        # verbatim against live GRAM -- the one workload the model refuses to
+        # rank. Measured on B10, where three cases share an effector set and
+        # differ only in density model: atmo256_exponential_10min calibrates to
+        # satellite_batch and caches it, then atmo256_gram_surrogate_10min
+        # replays it at +79% regret and atmo256_gram_live_10min at +119%, both
+        # slower than serial. atmo256_gram_live_nbody_10min escapes only by
+        # accident -- its extra effectors change the eff= token, so it misses
+        # the cache, recomputes, and correctly abstains.
+        #
+        # Nothing re-sweeps a signature that already has an answer, so
+        # invalidating v4 is the only way this reaches an already-calibrated
+        # machine.
+        "v5",
         "machine=$(_calib_machine_label())",
         "budget=$(budget)",
         "sats=$(_calib_sat_bucket(active_sats))",
         "effs=$(n_eff)",
         "harm=$(has_harmonics ? "1" : "0")",
         "eff=$(_rhs_calib_effector_token(dynamic_effectors))",
+        "dens=$(_rhs_calib_density_token(density_model))",
         "outer=$(outer_active ? "1" : "0")",
     ], "|")
 end
@@ -800,7 +829,9 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     isempty(dynamic_effectors) && return
     count(identity, p.is_active) < 2 && return
 
-    sig     = _rhs_calib_signature(p, dynamic_effectors)
+    sig     = _rhs_calib_signature(
+        p, dynamic_effectors, args.environment_model.density_model
+    )
     verbose = args.simulation_settings.verbose
 
     if _rhs_calibration_mode() != :force

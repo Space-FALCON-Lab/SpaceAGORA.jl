@@ -13,7 +13,8 @@ function record_outer_route_feedback!(
     elapsed_success_s::Float64=0.0,
     elapsed_success_sq_sum_s::Float64=NaN,
     tuning::OuterRouteTuning=OuterRouteTuning(),
-    signature_prefix::String=""
+    signature_prefix::String="",
+    discard_cold_observation::Bool=outer_route_discard_cold_observation()
 )::Nothing
     # Arms are not restricted to the three route symbols any more. The split
     # selector (`select_outer_split!`) records under `split_<route>_w<N>` arms in
@@ -55,6 +56,19 @@ function record_outer_route_feedback!(
             end
             stats = get!(bucket, route) do
                 OuterRouteStats()
+            end
+            # Evict this arm's first, cold timing as soon as a warm one exists.
+            # See OuterRouteStats.observations for why it is evicted rather than
+            # skipped, and for the measurement that motivates it at all.
+            stats.observations += 1
+            stats.campaigns += 1
+            if discard_cold_observation && stats.observations == 2
+                stats.samples = samples
+                stats.successes = success_count
+                stats.failures = failure_count
+                stats.elapsed_sum_s = elapsed_sum_s
+                stats.elapsed_sq_sum_s = elapsed_sq_sum_s
+                continue
             end
             stats.samples += samples
             stats.successes += success_count

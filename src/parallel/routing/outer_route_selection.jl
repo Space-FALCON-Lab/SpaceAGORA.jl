@@ -213,10 +213,10 @@ end
 function _outer_route_stats_snapshot_internal(
     state::OuterRouteState,
     signature::String
-)::Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate, :std_s), Tuple{Int, Float64, Float64, Float64}}}
+)::Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate, :std_s, :campaigns), Tuple{Int, Float64, Float64, Float64, Int}}}
     lock(state.lock) do
         entry = get(state.history, signature, nothing)
-        snap = Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate, :std_s), Tuple{Int, Float64, Float64, Float64}}}()
+        snap = Dict{Symbol, NamedTuple{(:samples, :mean_s, :success_rate, :std_s, :campaigns), Tuple{Int, Float64, Float64, Float64, Int}}}()
         if entry === nothing
             return snap
         end
@@ -230,7 +230,8 @@ function _outer_route_stats_snapshot_internal(
                 samples=stats.samples,
                 mean_s=elapsed.mean_s,
                 success_rate=success_rate,
-                std_s=elapsed.std_s
+                std_s=elapsed.std_s,
+                campaigns=stats.campaigns
             )
         end
         return snap
@@ -505,8 +506,9 @@ end
 )::Union{Nothing, Symbol}
     ranked = _route_ranked_candidates(candidates, default_route)
     for route in ranked
-        info = get(snapshot, route, (samples=0, mean_s=Inf, success_rate=0.0))
-        if info.samples < max(1, min_samples)
+        info = get(snapshot, route, (samples=0, mean_s=Inf, success_rate=0.0, campaigns=0))
+        # Campaigns, not samples: see OuterRouteStats.campaigns.
+        if get(info, :campaigns, info.samples) < max(1, min_samples)
             return route
         end
     end
@@ -539,7 +541,10 @@ end
 )::Bool
     info = get(snapshot, route, nothing)
     info === nothing && return false
-    (info.samples >= max(1, min_samples) && isfinite(info.mean_s)) || return false
+    # Campaigns, not samples: one campaign of N samples is one observation of
+    # the route, and gating on N declared a route proven after a single, cold
+    # look. See OuterRouteStats.campaigns.
+    (get(info, :campaigns, info.samples) >= max(1, min_samples) && isfinite(info.mean_s)) || return false
     tested_against_an_alternative = false
     # Only arms this selector enumerated. Scanning the whole snapshot was wrong
     # once the bucket held more than one selector's arms: after a single

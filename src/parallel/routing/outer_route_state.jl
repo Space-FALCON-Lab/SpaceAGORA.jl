@@ -57,12 +57,61 @@ Base.@kwdef struct OuterRouteTuning
     trace::Bool = false
 end
 
+# Off restores the previous behaviour, in which an arm's cold first timing was
+# recorded as if it were its steady-state cost. Exists so the isolating A/B has
+# a B side; there is no reason to run with it off.
+@inline function outer_route_discard_cold_observation()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_OUTER_ROUTE_DISCARD_COLD", "1")))
+    return raw in ("1", "true", "yes", "on")
+end
+
 Base.@kwdef mutable struct OuterRouteStats
     samples::Int = 0
     successes::Int = 0
     failures::Int = 0
     elapsed_sum_s::Float64 = 0.0
     elapsed_sq_sum_s::Float64 = 0.0
+    # How many observations this arm has taken, used to evict its first, cold
+    # timing once a warm one exists.
+    #
+    # The first campaign to run on an arm pays costs that will never recur: JIT
+    # of the threaded or distributed dispatch path, thread-pool spin-up, worker
+    # provisioning. Recording that timing as if it were the arm's steady-state
+    # cost is how a good route gets written off permanently after one look, and
+    # it is exactly what happened. Measured on montecarlo_multi_sat, 64 samples,
+    # 12 threads, one persisted state across repeated campaigns: the threads
+    # arm's first observation came in at 0.590 s against serial's 0.060 s, the
+    # selector stopped choosing threads, and every subsequent campaign ran
+    # serially -- at 0.060 s where a warm threads run costs 0.024 s and the best
+    # width costs 0.017 s. One cold sample cost a factor of 3.4, permanently.
+    #
+    # Every other timed path in this codebase already discards a warm-up: the
+    # RHS calibration sweep warms before it measures, and the benchmark harness
+    # takes --warmup=1. This is the same discipline for the route bandit.
+    #
+    # The cold observation is EVICTED rather than skipped. Skipping it entirely
+    # would also discard whether the route succeeded, so a route that failed on
+    # its only attempt would be retried forever, and it would leave a campaign
+    # that ran with no record of having run. Recording it and then replacing it
+    # wholesale on the second observation keeps the success and failure counts
+    # from the first attempt available to the selector while ensuring no cold
+    # timing survives into the average.
+    observations::Int = 0
+    # How many CAMPAIGNS this arm has been observed over, as distinct from how
+    # many Monte Carlo samples those campaigns contained.
+    #
+    # The two were conflated, and the exploration gate read the wrong one. One
+    # campaign of 64 samples credited the arm with 64 `samples`, which satisfies
+    # any reasonable min-samples guarantee immediately -- so a single campaign
+    # was enough to mark a route "sufficiently observed" and stop the selector
+    # ever trying it again. Those 64 numbers are not 64 observations of the
+    # route; they are one, and the route bandit's whole exploration budget was
+    # being spent by it.
+    #
+    # `samples` still normalises the mean, which is a per-sample time and wants
+    # the sample count. `campaigns` gates exploration, which wants the number of
+    # independent timings.
+    campaigns::Int = 0
 end
 
 """

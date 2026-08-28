@@ -81,10 +81,24 @@ def main():
         sys.exit(__doc__)
     args = sys.argv[1:]
     label = "tab:router_regret_consolidated"
+    # Percentage points below which a per-point regret from this harness is not
+    # resolved. 0 disables the marking.
+    #
+    # This is NOT the within-point spread of the repeats, which is about 1.9
+    # points and badly understates the truth: repeats inside one measurement
+    # point share a process, a warm cache, an allocator state and one route
+    # decision, so they are serially correlated and their scatter measures far
+    # less than the run-to-run uncertainty. The honest figure comes from
+    # comparing this harness against scripts/paired_campaign_probe.jl, which
+    # pairs whole campaigns and cancels that drift: on the three Monte Carlo
+    # points measured both ways the harness was off by 1.5, 5.0 and 7.9 points.
+    resolution = 0.0
     rest = []
     for a in args:
         if a.startswith("--label="):
             label = a.split("=", 1)[1]
+        elif a.startswith("--resolution="):
+            resolution = float(a.split("=", 1)[1])
         else:
             rest.append(a)
     if len(rest) < 2:
@@ -116,10 +130,16 @@ def main():
             elif g5 <= 2.0: ties += 1
             else:           losses += 1
             best5 = r"\textbf{%.3f}" % r5 if r5 <= bv else "%.3f" % r5
+            def fmt(g):
+                if g is None:
+                    return "--"
+                # Dagger inside the math, or the adjacent $ signs close and
+                # immediately reopen math mode and LaTeX renders an empty group.
+                mark = "^{\\dagger}" if (resolution > 0.0 and abs(g) <= resolution) else ""
+                return "$%+.0f\\%%%s$" % (g, mark)
             rows.append((LABEL.get(case, case.replace("_", r"\_")), t, mc, PROFILE[bm], bv,
                          ("%.3f" % r4) if r4 else "--", best5,
-                         ("$%+.0f\\%%$" % g4) if g4 is not None else "--",
-                         "$%+.0f\\%%$" % g5))
+                         fmt(g4), fmt(g5)))
 
     with open(out_path, "w") as fh:
         fh.write("\\begin{table}[htbp]\n\\centering\n")
@@ -131,7 +151,17 @@ def main():
                  "budget, so no strategy a practitioner could commit to in advance achieves the "
                  "Time column. Read this table for how close adaptive routing comes to perfect "
                  "hindsight, and the accompanying aggregate table for what it is worth against a "
-                 "choice that could actually be made.}\n")
+                 "choice that could actually be made.")
+        if resolution > 0.0:
+            fh.write(" A dagger marks a regret this harness cannot resolve. It runs modes in "
+                     "blocks with a fresh process per point, and against the paired campaign "
+                     "probe, which interleaves whole campaigns and so cancels between-run drift, "
+                     "its per-point regret was off by up to %.0f percentage points on the Monte "
+                     "Carlo cases measured both ways. Daggered cells should be read as parity "
+                     "rather than as the value printed. The aggregate comparisons in the "
+                     "accompanying table are far larger than this band and are unaffected."
+                     % resolution)
+        fh.write("}\n")
         fh.write("\\label{%s}\n\\small\n" % label)
         fh.write("\\setlength{\\tabcolsep}{4pt}\n\\renewcommand{\\arraystretch}{0.92}\n")
         fh.write("\\begin{tabular}{lrrlrrrrr}\n\\toprule\n")

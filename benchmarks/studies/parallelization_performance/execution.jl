@@ -193,6 +193,18 @@ function ppc_resolve_outer_backend(
         # than the router's cold decision, points would stop being independent,
         # and their order would matter. If that is ever wanted it needs to be a
         # deliberate, separately reported configuration, not an optimisation.
+        #
+        # For a PINNED backend the guarantee is stronger still and does not rest
+        # on the empty snapshot at all: the first line of this function is
+        # `mode.backend == "auto" || return mode`, so a mode declaring
+        # "threads", "process" or "serial" never reaches select_outer_route!.
+        # The only other ParallelProfiles entry points the harness touches are
+        # _machine_parallel_class, a hardware classifier holding no routing
+        # state, and profile_env_pairs in modes.jl. So for R0 through R3 the
+        # routing sources are not merely unreachable, they are never called --
+        # which is what rules them out as the cause when a static route's timing
+        # shifts between commits, and sends the search into the rest of src/
+        # instead.
         PP.select_outer_route!(
             PP.OuterRouteState(),
             features;

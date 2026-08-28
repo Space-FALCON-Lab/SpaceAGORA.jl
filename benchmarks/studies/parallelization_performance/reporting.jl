@@ -65,12 +65,29 @@ change. Load average answers "how many runnable tasks", which a benchmark's own
 workers dominate; this answers "how much of the machine is already gone", which
 is the question that matters before any worker exists.
 """
-function ppc_cpu_busy_fraction(sample_s::Float64=2.0)::Float64
+function ppc_cpu_busy_fraction(sample_s::Float64=2.0; cpus::Vector{Int}=Int[])::Float64
+    # With `cpus` empty this reads the aggregate "cpu" line (whole machine). With
+    # a CPU list it sums only those per-core lines, which is the capacity a run
+    # confined by taskset/cgroup can actually obtain -- see ppc_assert_machine_quiet!.
+    wanted = isempty(cpus) ? nothing : Set("cpu" * string(c) for c in cpus)
     read_stat() = try
-        line = first(eachline("/proc/stat"))
-        vals = parse.(Int64, split(line)[2:end])
-        idle = vals[4] + (length(vals) >= 5 ? vals[5] : 0)   # idle + iowait
-        (sum(vals), idle)
+        if wanted === nothing
+            line = first(eachline("/proc/stat"))
+            vals = parse.(Int64, split(line)[2:end])
+            idle = vals[4] + (length(vals) >= 5 ? vals[5] : 0)   # idle + iowait
+            (sum(vals), idle)
+        else
+            total = 0; idle = 0; seen = 0
+            for line in eachline("/proc/stat")
+                parts = split(line)
+                (isempty(parts) || !(parts[1] in wanted)) && continue
+                vals = parse.(Int64, parts[2:end])
+                total += sum(vals)
+                idle += vals[4] + (length(vals) >= 5 ? vals[5] : 0)
+                seen += 1
+            end
+            seen == 0 ? nothing : (total, idle)
+        end
     catch
         nothing
     end
@@ -86,6 +103,32 @@ function ppc_cpu_busy_fraction(sample_s::Float64=2.0)::Float64
 end
 
 """
+    ppc_pinned_cpus() -> Vector{Int}
+
+CPUs this process is confined to, or empty when it can use the whole machine.
+
+Read from `/proc/self/status` `Cpus_allowed_list`, so it reflects whatever set
+the run actually got -- `taskset`, a cgroup cpuset, or a scheduler placement --
+rather than anything the harness was told. Empty is the "not confined" answer,
+which keeps every caller on the pre-existing whole-machine path.
+"""
+function ppc_pinned_cpus()::Vector{Int}
+    Sys.islinux() || return Int[]
+    try
+        for line in eachline("/proc/self/status")
+            startswith(line, "Cpus_allowed_list:") || continue
+            cpus = _ppc_parse_cpu_list(strip(split(line, ":"; limit=2)[2]))
+            # A mask covering everything is not a confinement; treat it as absent
+            # so the whole-machine checks below apply unchanged.
+            length(cpus) >= Sys.CPU_THREADS && return Int[]
+            return cpus
+        end
+    catch
+    end
+    return Int[]
+end
+
+"""
     ppc_assert_machine_quiet!(; required_headroom, allow_override)
 
 Refuse to start a timing run on a machine that is already busy.
@@ -95,6 +138,52 @@ cores it asks for. Set `SPACEAGORA_PPC_ALLOW_BUSY=1` to proceed anyway (recorded
 in the row either way through `load_avg_1min`).
 """
 function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int=600)
+    allow_busy = lowercase(strip(get(ENV, "SPACEAGORA_PPC_ALLOW_BUSY", "0"))) in ("1", "true", "yes", "on")
+    # Announce before any blocking wait. This check runs ahead of the controller's
+    # first println, so without this a run that is legitimately waiting for the
+    # machine to settle is indistinguishable from a hung process: no output, no
+    # worker, no CPU. That ambiguity cost two killed runs on 2026-08-28.
+    println("[parallelization-performance] machine-quiet check (waits up to $(wait_s)s)")
+    flush(stdout)
+
+    pinned = ppc_pinned_cpus()
+    if !isempty(pinned)
+        # Confined to a subset of the machine, so judge only that subset.
+        #
+        # The 1-minute load average is machine-wide and has no per-cpuset
+        # equivalent, so dividing it by the pinned core count compares a whole
+        # machine's runnable tasks against a slice of its capacity. On a 64-core
+        # box shared with another user, a run pinned to 12 idle cores saw load
+        # 13.4 -> "headroom -11%" and refused to start, while the cores it had
+        # were completely free. Sampling the pinned cores answers the question
+        # the guard is actually asking: is the capacity this run can obtain
+        # already spoken for?
+        deadline = time() + max(0, wait_s)
+        busy = ppc_cpu_busy_fraction(; cpus=pinned)
+        while !isnan(busy) && busy > 0.15 && time() < deadline
+            sleep(15)
+            busy = ppc_cpu_busy_fraction(; cpus=pinned)
+        end
+        pinned_desc = "$(length(pinned)) pinned core(s) [$(first(pinned))-$(last(pinned))]"
+        if isnan(busy) || busy <= 0.15
+            println("[parallelization-performance] $(pinned_desc) " *
+                    "$(isnan(busy) ? "unreadable" : string(round(100 * busy; digits=0)) * "% busy") — proceeding")
+            flush(stdout)
+            return nothing
+        end
+        offenders = try
+            readchomp(pipeline(`ps -eo pcpu,etime,comm --sort=-pcpu`, `head -4`))
+        catch
+            "(process list unavailable)"
+        end
+        msg = "Pinned cores are $(round(100 * busy; digits=0))% busy before this run starts any " *
+              "worker ($(pinned_desc)). Timing results taken now would measure contention. " *
+              "Top consumers:\n$(offenders)"
+        allow_busy || error(msg)
+        @warn msg
+        return nothing
+    end
+
     la = ppc_load_average()
     isnan(la) && return nothing
     # Wait for the machine to settle before refusing.
@@ -123,7 +212,7 @@ function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int
         end
         msg = "Machine has $(round(100 * busy; digits=0))% of its CPU already in use before this run " *
               "starts any worker. Timing results taken now would measure contention. Top consumers:\n$(offenders)"
-        if lowercase(strip(get(ENV, "SPACEAGORA_PPC_ALLOW_BUSY", "0"))) in ("1", "true", "yes", "on")
+        if allow_busy
             @warn msg
         else
             error(msg)
@@ -137,7 +226,7 @@ function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int
           "$(round(100 * required_headroom; digits=0))%). Timing results taken now " *
           "would measure contention rather than parallel routing. Wait for the " *
           "machine to clear (waited $(wait_s) s), or set SPACEAGORA_PPC_ALLOW_BUSY=1 to proceed anyway."
-    if lowercase(strip(get(ENV, "SPACEAGORA_PPC_ALLOW_BUSY", "0"))) in ("1", "true", "yes", "on")
+    if allow_busy
         @warn msg
         return nothing
     end

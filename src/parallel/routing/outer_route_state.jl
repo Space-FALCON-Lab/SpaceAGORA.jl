@@ -60,6 +60,32 @@ end
 # Off restores the previous behaviour, in which an arm's cold first timing was
 # recorded as if it were its steady-state cost. Exists so the isolating A/B has
 # a B side; there is no reason to run with it off.
+# Whether a default arm must be measured against EVERY enumerated alternative
+# before it counts as proven, rather than against any one of them.
+#
+# DEFAULT OFF, and that is a measured reversal of the obvious guess. Forcing the
+# selector through the whole ladder looked like the fix for a width optimum it
+# never found, and it is not: with the ladder trimmed to plausible widths (see
+# outer_split_candidates) the ORDINARY guard finds the optimum on every campaign
+# measured, and forcing full exploration is worse on all of them. Steady state
+# over runs 11-20, 64 samples at 12 threads, off against on:
+#
+#     montecarlo_multi_sat        w8  0.0155 s   vs   w4  0.0220 s
+#     montecarlo_high_accuracy    w8  0.0230 s   vs   w4  0.0345 s
+#     montecarlo_mars_aerobraking w12 0.0435 s   vs   w12 0.0445 s
+#
+# Three noisy arms can be ranked; five cannot, and the extra exploration buys a
+# worse answer as well as costing more to reach. The real defect was the useless
+# narrow arms satisfying the guard's "tested against an alternative" without
+# being informative, which trimming the ladder removes at the source.
+#
+# Kept as a knob because it is the natural hypothesis and someone will have it
+# again; the numbers above are why it is not the default.
+@inline function proven_requires_all_candidates()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_OUTER_ROUTE_PROVEN_ALL", "0")))
+    return raw in ("1", "true", "yes", "on")
+end
+
 @inline function outer_route_discard_cold_observation()::Bool
     raw = lowercase(strip(get(ENV, "SPACEAGORA_OUTER_ROUTE_DISCARD_COLD", "1")))
     return raw in ("1", "true", "yes", "on")

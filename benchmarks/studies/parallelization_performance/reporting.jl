@@ -164,7 +164,20 @@ function ppc_assert_machine_quiet!(; required_headroom::Float64=0.5, wait_s::Int
             sleep(15)
             busy = ppc_cpu_busy_fraction(; cpus=pinned)
         end
-        pinned_desc = "$(length(pinned)) pinned core(s) [$(first(pinned))-$(last(pinned))]"
+        # Render as ranges, not first-last: the pinned set is routinely
+        # non-contiguous (a core plus its SMT sibling is N and N+64), and
+        # "[52-127]" reads as 76 CPUs when the set is 24.
+        pinned_desc = let runs = String[], i = 1
+            while i <= length(pinned)
+                j = i
+                while j < length(pinned) && pinned[j + 1] == pinned[j] + 1
+                    j += 1
+                end
+                push!(runs, i == j ? string(pinned[i]) : "$(pinned[i])-$(pinned[j])")
+                i = j + 1
+            end
+            "$(length(pinned)) pinned CPU(s) [$(join(runs, ","))]"
+        end
         if isnan(busy) || busy <= 0.15
             println("[parallelization-performance] $(pinned_desc) " *
                     "$(isnan(busy) ? "unreadable" : string(round(100 * busy; digits=0)) * "% busy") — proceeding")

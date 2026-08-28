@@ -73,19 +73,42 @@ step-by-step local setup guide for licensed GRAM assets. The full GRAM submodule
 checkout uses Git LFS and downloads several GB of binary data, so it is separate
 from the default baseline installation path.
 
-If the native GRAM shared library for your operating system is missing, build
-it with:
+### Building the native GRAM library
+
+GRAM is a C/C++ codebase that SpaceAGORA calls through FFI, so the shared
+library has to be compiled once per machine. One command does all of it:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If the build metadata came from a different machine or checkout path, force a
-clean rebuild with:
+That returns immediately if the library for your host is already there, so it
+is safe to run unconditionally before a GRAM-backed run. Otherwise it builds
+`data/GRAMSuite.jl/GRAM Suite 2.0/Build/lib/libGRAM.so` (`.dylib` on macOS,
+`.dll` on Windows), which takes on the order of 20 seconds on 24 cores.
+
+You need a C/C++ toolchain and GNU Make (`make` on Linux, `gmake` on macOS via
+`brew install make`, `mingw32-make` from MSYS2 on Windows). You do **not** need
+a Fortran compiler, and you do not need to install CSPICE on Linux x86_64 or
+Windows — a suitable archive is bundled and selected automatically. On macOS,
+run `brew install cspice` first.
+
+Force a full rebuild with:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean
 ```
+
+You need `--clean` in one specific situation: **the GRAM tree was copied or
+`rsync`ed in from another machine with its `Build/lib` already populated** — as
+happens with `scripts/remote/spaceagora-remote`, which mirrors the working
+tree. The command above skips the build whenever `Build/lib/libGRAM.<ext>`
+exists, and a foreign library satisfies that check, so you end up loading a
+binary built for the wrong host. Moving or renaming the checkout on the *same*
+machine is detected and handled automatically; no flag needed.
+
+Build details, per-platform prerequisites, and manual `make` invocation are
+documented in `data/GRAMSuite.jl/README.md`.
 
 ## Quick Start
 

@@ -113,27 +113,84 @@ If the official delivery already contains a `GRAM Suite 2.0` directory, copy
 that directory as-is. Avoid renaming it, because SpaceAGORA and the wrapper
 scripts expect that exact folder name.
 
-## Build or verify the native GRAM library
+## Build the native GRAM library
 
-If the platform-native GRAM shared library is missing, build it from the repo
-root with:
+GRAM is a C/C++ codebase that SpaceAGORA calls through FFI. The shared library
+is compiled per machine and is never shipped prebuilt, so this step is required
+on every host.
+
+### Build prerequisites
+
+| Requirement | Notes |
+|---|---|
+| C/C++ toolchain | GCC on Linux; Clang via Xcode command-line tools on macOS; MinGW-w64 (MSYS2) on Windows |
+| GNU Make | Linux: `make`. macOS: `gmake`, from `brew install make` — the build files use GNU Make features that `/usr/bin/make` does not support. Windows: `mingw32-make`. |
+| CSPICE | Bundled and selected automatically on Linux x86_64 and Windows MinGW. On macOS, run `brew install cspice` first. On Linux arm64, supply your own archive (see below). |
+
+A Fortran compiler is **not** required, despite `gfortran` appearing in the
+GRAM build configuration. `Build/makefile.defs` ends with `undefine FC`, which
+disables the Fortran example targets; the library build never invokes it.
+
+### Build it
+
+From the repo root:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If the copied build metadata came from a different machine or absolute path,
-force a clean rebuild:
+This is the only command you need. It returns immediately when the library for
+your host already exists, so it is safe to run before every GRAM-backed job.
+Otherwise it delegates to the vendored helper
+`GRAM Suite 2.0/simulation/GRAM/build_gram.sh`, which:
+
+1. runs `Build/setup_cspice.sh` to put the right CSPICE archive in place —
+   you do not run this yourself
+2. runs `make shared` with one job per core, using the correct make binary for
+   the host
+3. writes the library to
+   `data/GRAMSuite.jl/GRAM Suite 2.0/Build/lib/libGRAM.so` (`.dylib` on macOS,
+   `.dll` on Windows)
+4. writes `simulation/GRAM/gram.env` and `simulation/GRAM/.gram-build-manifest`,
+   recording the host and root path the artifacts belong to
+
+A full build takes roughly 20 seconds on 24 cores, or about 3 minutes of total
+CPU time.
+
+`shared` is the only make target that produces `libGRAM`. Plain `make` and the
+per-planet targets such as `make Mars` build static libraries and example
+executables but leave `Build/lib` without the shared library SpaceAGORA loads.
+There is no faster single-planet path to a working `libGRAM`.
+
+### When you need `--clean`
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean
 ```
 
-This step should produce the native `libGRAM` artifact under the platform
-appropriate subpath inside:
+Use it when **the GRAM tree was copied or `rsync`ed in from another machine
+with `Build/lib` already populated**. `scripts/remote/spaceagora-remote`
+mirrors the whole working tree, so remote hosts hit this routinely. The
+ordinary command's first test is whether `Build/lib/libGRAM.<ext>` exists, and
+a library built on a different machine satisfies that test — the build is
+skipped and you get a load error, or worse, a binary built for the wrong
+architecture.
+
+You do **not** need `--clean` for a checkout that moved or was renamed on the
+same machine. The build manifest records the host tag and the root path, and
+the helper forces a clean rebuild by itself when either has changed, printing
+what it detected.
+
+### CSPICE on Linux arm64
+
+No archive is bundled for arm64/aarch64. Either install CSPICE so that one of
+`/usr/lib/libcspice.a`, `/usr/local/lib/libcspice.a`, `/usr/lib64/libcspice.a`,
+or `/usr/lib/aarch64-linux-gnu/libcspice.a` exists, or point the build at an
+explicit archive:
 
 ```text
-data/GRAMSuite.jl/GRAM Suite 2.0/Build/lib
+cd "data/GRAMSuite.jl/GRAM Suite 2.0/Build"
+make shared -j SPICE_LIB=/absolute/path/to/cspice.a
 ```
 
 ## Verify the asset layout
@@ -197,11 +254,32 @@ Run:
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If needed, retry with:
+If it prints `Native GRAM library already present for this host` but loading
+still fails, the library on disk was built somewhere else. Force a rebuild:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean
 ```
+
+### The build fails with `Could not auto-find a Linux CSPICE archive`
+
+You are on an architecture with no bundled CSPICE. See
+[CSPICE on Linux arm64](#cspice-on-linux-arm64).
+
+### The build fails with `gmake not found` on macOS
+
+```text
+brew install make
+```
+
+The GRAM makefiles require GNU Make; the `make` shipped with macOS is too old.
+
+### `make` succeeded but there is still no `libGRAM`
+
+You most likely ran `make` or a per-planet target rather than `make shared`.
+Only the `shared` target links the FFI library. Prefer
+`scripts/ensure_gram_native.jl`, which always builds the right target and also
+records the build manifest that the staleness detection depends on.
 
 ### Git LFS reports `no space left on device`
 

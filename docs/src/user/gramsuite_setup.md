@@ -230,6 +230,68 @@ If you want a larger mission example after that, move on to:
 - `examples/AGORA_Vex.jl`
 - `examples/AGORA_Odyssey.jl`
 
+## Verified end-to-end walkthrough
+
+The sequence below was run start to finish on a clean machine
+(Ubuntu 24.04, x86_64, 24 cores, Julia 1.12.1, GCC 13.3.0) from an empty
+directory. Timings are from that run and are indicative, not guarantees.
+
+```text
+# 1. clone and instantiate                                            ~40 s
+git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+cd SpaceAGORA.jl
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+
+# 2. confirm the baseline path works before involving GRAM at all     ~25 s
+julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
+
+# 3. fetch the GRAMSuite wrapper (Git LFS; ~3 GB, several minutes)    ~3 min
+git submodule update --init --recursive --remote
+
+# 4. copy the licensed NASA GRAM Suite delivery into the scaffold     ~40 s
+#    (see "Copy the official GRAM Suite folders" above)
+#    the tree is ~17 GB once complete
+
+# 5. build the native library                                         ~21 s
+julia --project=. scripts/ensure_gram_native.jl
+
+# 6. confirm the assets are visible
+julia --project=. src/cli/main.jl assets check
+
+# 7. first GRAM-backed run                                            ~34 s
+julia --project=. examples/AGORA_Basic_GRAMEarth.jl
+```
+
+Two points that are easy to misread:
+
+Step 3 does **not** give you a buildable GRAM tree, and step 4 is not optional.
+The submodule tracks the *public* GRAMSuite mirror, which carries the Julia
+wrapper, `simulation/`, `SPICE/` and the folder scaffold, but deliberately no
+`Build/`, no `common/` and no planet directories — those are the licensed NASA
+content that step 4 supplies. Running step 5 before step 4 fails because there
+is no `Build/` to build.
+
+This is a property of the public mirror, not of GRAMSuite. The private
+`dev-GRAMSuite.jl` repository tracks the complete GRAM Suite tree and builds
+from a bare clone with no copy step. If you have access to it and are setting up
+a development machine, cloning that directly over `data/GRAMSuite.jl` avoids
+step 4 entirely.
+
+Step 5 is the only step that compiles anything, and it is fast. If it runs for
+minutes, or if it reports a path that is not inside your checkout, stop and read
+the troubleshooting entries below rather than waiting.
+
+Expected output from step 6 on a GRAM-ready machine:
+
+```text
+- gram_root: available
+- spice_directory: available
+```
+
+Step 7 writes `output/simulation_results.csv`. A successful run prints
+`COMPUTATIONAL TIME` and no `Error during loading of extension` line — see
+[The GRAM extension fails to load](#the-gram-extension-fails-to-load) if it does.
+
 ## Troubleshooting
 
 ### The submodule exists, but GRAM is still reported missing
@@ -280,6 +342,34 @@ You most likely ran `make` or a per-planet target rather than `make shared`.
 Only the `shared` target links the FFI library. Prefer
 `scripts/ensure_gram_native.jl`, which always builds the right target and also
 records the build manifest that the staleness detection depends on.
+
+### The GRAM extension fails to load
+
+**Symptom:** the run completes, but begins with
+
+```text
+Error: Error during loading of extension SpaceAGORAGRAMSuiteExt of SpaceAGORA
+InitError: UndefVarError: `_GRAM_EPHEMERIS_STATE_FN` not defined in `GRAMSuite`
+```
+
+**Cause:** the `GRAMSuite` checkout is older than the extension in this
+repository. The extension's `__init__` installs several hooks and aborts on the
+missing one, so the hooks after it — including the process-wide CSPICE lock that
+GRAM model construction must serialise against — are never installed. Because
+this is reported as a warning rather than an error, the simulation continues
+without them. Single-threaded results are unaffected; what is lost is thread
+safety, so a threaded or multi-satellite GRAM run can corrupt SPICE state.
+
+**Resolution:** update the submodule to a `GRAMSuite` revision that defines the
+symbol named in the error:
+
+```text
+cd data/GRAMSuite.jl
+git fetch origin
+git checkout origin/main
+```
+
+Never ignore this warning on a threaded run.
 
 ### Git LFS reports `no space left on device`
 

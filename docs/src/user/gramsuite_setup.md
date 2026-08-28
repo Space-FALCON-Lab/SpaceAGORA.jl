@@ -52,10 +52,30 @@ This should populate the vendored Julia wrapper path:
 data/GRAMSuite.jl
 ```
 
-The wrapper package is not the same thing as the licensed GRAM binaries and
-data. The submodule gives SpaceAGORA the Julia integration layer and the
-expected folder scaffold; the official NASA distribution provides the GRAM
-content that must be placed into that scaffold.
+The submodule tracks `dev-GRAMSuite.jl`, which carries the complete GRAM Suite
+tree — the Julia integration layer, `Build/`, `common/`, every planet directory
+and the SPICE kernels. Access to that repository is required; without it the
+command cannot authenticate.
+
+### Existing checkouts need `git submodule sync`
+
+The submodule URL previously pointed at the public `GRAMSuite.jl` mirror. If
+your checkout predates that change, pulling the new `.gitmodules` is **not**
+enough on its own. `git submodule init` copied the old URL into `.git/config`
+when you first set the submodule up, and that copy is what fetches actually
+use. Propagate the new URL before updating:
+
+```text
+git submodule sync
+git submodule update --init --recursive --remote
+```
+
+Without the `sync`, `git submodule update` keeps pulling from the public mirror
+and reports nothing unusual. You end up with a tree that has no `Build/`, no
+`common/` and no planet directories, and the native build then fails with
+nothing to build.
+
+A fresh clone reads `.gitmodules` directly and needs neither command.
 
 If you only need the wrapper source or want to inspect the scaffold without
 downloading LFS objects immediately, skip LFS smudging during the submodule
@@ -264,18 +284,19 @@ julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 
 Two points that are easy to misread:
 
-Step 3 does **not** give you a buildable GRAM tree, and step 4 is not optional.
-The submodule tracks the *public* GRAMSuite mirror, which carries the Julia
-wrapper, `simulation/`, `SPICE/` and the folder scaffold, but deliberately no
-`Build/`, no `common/` and no planet directories — those are the licensed NASA
-content that step 4 supplies. Running step 5 before step 4 fails because there
-is no `Build/` to build.
+Step 4 applies only if you are working from the public `GRAMSuite.jl` mirror.
+That mirror strips the proprietary folders — no `Build/`, no `common/`, no
+planet directories — so a build against it fails with nothing to build.
+`dev-GRAMSuite.jl`, which the submodule tracks, carries all of it, and step 5
+follows step 3 directly.
 
-This is a property of the public mirror, not of GRAMSuite. The private
-`dev-GRAMSuite.jl` repository tracks the complete GRAM Suite tree and builds
-from a bare clone with no copy step. If you have access to it and are setting up
-a development machine, cloning that directly over `data/GRAMSuite.jl` avoids
-step 4 entirely.
+That is a property of the public mirror, not of GRAMSuite. `dev-GRAMSuite.jl`,
+which the submodule now tracks, carries the complete tree, so on a current
+checkout step 4 is unnecessary and step 5 works straight after step 3.
+
+If your checkout predates the repoint, run `git submodule sync` first — see
+[Existing checkouts need `git submodule sync`](#existing-checkouts-need-git-submodule-sync).
+Without it you stay silently on the public mirror and step 5 fails.
 
 Step 5 is the only step that compiles anything, and it is fast. If it runs for
 minutes, or if it reports a path that is not inside your checkout, stop and read

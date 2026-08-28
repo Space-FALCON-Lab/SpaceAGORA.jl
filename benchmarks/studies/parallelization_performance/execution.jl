@@ -176,6 +176,23 @@ function ppc_resolve_outer_backend(
         # process, so no cross-run feedback is folded in -- each measured point
         # sees the router's cold decision, which is what makes the points
         # comparable to each other.
+        #
+        # That freshness carries a second property, currently load-bearing and
+        # easy to lose. An empty state means an empty snapshot, and every
+        # exploitation path in the router returns early on one:
+        # _route_is_proven's first two lines are `info = get(snapshot, route,
+        # nothing)` and `info === nothing && return false`. So the whole
+        # accumulated-statistics half of the router -- the proven-default guard,
+        # the confidence ranking, the split-width ladder -- is unreachable from
+        # this harness, and changes to it cannot move a benchmark number. That
+        # is why routing work can land mid-measurement-campaign without
+        # invalidating runs in flight.
+        #
+        # Persist route state across points to save time and that isolation is
+        # gone: the harness would start measuring the guard's convergence rather
+        # than the router's cold decision, points would stop being independent,
+        # and their order would matter. If that is ever wanted it needs to be a
+        # deliberate, separately reported configuration, not an optimisation.
         PP.select_outer_route!(
             PP.OuterRouteState(),
             features;

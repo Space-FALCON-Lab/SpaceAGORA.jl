@@ -1999,8 +1999,14 @@ end
     end
 
     # ── Signature stability ───────────────────────────────────────────────────
-    sig_a = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
-    sig_b = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
+    sig_a = SimulationEngine._rhs_calib_signature(
+        p_calib, args_calib.dynamics_model.dynamic_effectors,
+        args_calib.environment_model.density_model
+    )
+    sig_b = SimulationEngine._rhs_calib_signature(
+        p_calib, args_calib.dynamics_model.dynamic_effectors,
+        args_calib.environment_model.density_model
+    )
     @test sig_a == sig_b
     # v4: bumped again for the effector-identity and outer-split terms. v3
     # entries key on effector COUNT and are blind to the outer split, so

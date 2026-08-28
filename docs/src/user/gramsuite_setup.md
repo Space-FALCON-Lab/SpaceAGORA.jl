@@ -264,11 +264,18 @@ julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 
 Two points that are easy to misread:
 
-Step 3 does **not** give you a buildable GRAM tree. The submodule provides the
-Julia wrapper, `simulation/`, `SPICE/` and the folder scaffold. It deliberately
-contains no `Build/`, no `common/` and no planet directories — those are the
-licensed NASA content that step 4 supplies. Running step 5 before step 4 fails
-because there is no `Build/` to build.
+Step 3 does **not** give you a buildable GRAM tree, and step 4 is not optional.
+The submodule tracks the *public* GRAMSuite mirror, which carries the Julia
+wrapper, `simulation/`, `SPICE/` and the folder scaffold, but deliberately no
+`Build/`, no `common/` and no planet directories — those are the licensed NASA
+content that step 4 supplies. Running step 5 before step 4 fails because there
+is no `Build/` to build.
+
+This is a property of the public mirror, not of GRAMSuite. The private
+`dev-GRAMSuite.jl` repository tracks the complete GRAM Suite tree and builds
+from a bare clone with no copy step. If you have access to it and are setting up
+a development machine, cloning that directly over `data/GRAMSuite.jl` avoids
+step 4 entirely.
 
 Step 5 is the only step that compiles anything, and it is fast. If it runs for
 minutes, or if it reports a path that is not inside your checkout, stop and read

@@ -246,6 +246,32 @@ echo "START=\$(date -Iseconds)" >> "$job_dir/job.meta"
 # roughly twenty minutes to every job for no correctness gain.
 rm -rf "$REMOTE_BASE"/shared_depot/compiled/v*/SpaceAGORA*
 echo "PURGED_PKGIMAGES=\$(date -Iseconds)" >> "$job_dir/job.meta"
+# Persist the adaptive policy's learned state ACROSS releases.
+#
+# Four subsystems write into pwd()/output/parallel_policy_state/ -- the inner
+# policy's hints (policy/env_config.jl), the cost-model constants
+# (cost/machine_calibration.jl), the outer-route state
+# (campaigns/adaptive_routing.jl) and the RHS plan calibration
+# (engine/rhs_calibration.jl). Every release gets a fresh output/, so on a
+# remote host all four started empty on every job and the "learn across runs"
+# half of the policy could never accumulate anything.
+#
+# That is not merely lost speed, it is a measured regression: R5 differs from
+# R4 only by persistent=true, and on a host where the state is discarded R5
+# pays the bookkeeping and collects none of the benefit. Measured on trx50,
+# interact_256sat_1hr at 8 threads: best static 3.06 s, R4 3.23 s, R5 3.57 s --
+# the profile with the memory was the slowest of the three. On the local
+# machine, where this directory lives in the repo and had been accumulating for
+# days, R5 is the fastest.
+#
+# Symlinked at directory level rather than via the per-file env overrides
+# (SPACEAGORA_PARALLEL_POLICY_STATE_PATH, _COST_CONSTANTS_PATH,
+# _OUTER_ROUTE_STATE_PATH, _RHS_CALIBRATION_PATH) so that any future state file
+# is covered without a matching change here.
+mkdir -p "$REMOTE_BASE/policy_state"
+rm -rf "$release_dir/output/parallel_policy_state"
+ln -s "$REMOTE_BASE/policy_state" "$release_dir/output/parallel_policy_state"
+echo "POLICY_STATE=$REMOTE_BASE/policy_state" >> "$job_dir/job.meta"
 julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$job_dir/instantiate.log" 2>&1
 INSTANTIATE_EXIT=\$?
 if [ \$INSTANTIATE_EXIT -ne 0 ]; then

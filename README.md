@@ -73,19 +73,84 @@ step-by-step local setup guide for licensed GRAM assets. The full GRAM submodule
 checkout uses Git LFS and downloads several GB of binary data, so it is separate
 from the default baseline installation path.
 
-If the native GRAM shared library for your operating system is missing, build
-it with:
+### Building the native GRAM library
+
+GRAM is a C/C++ codebase that SpaceAGORA calls through FFI, so the shared
+library has to be compiled once per machine. One command does all of it:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If the build metadata came from a different machine or checkout path, force a
-clean rebuild with:
+That returns immediately if the library for your host is already there, so it
+is safe to run unconditionally before a GRAM-backed run. Otherwise it builds
+`data/GRAMSuite.jl/GRAM Suite 2.0/Build/lib/libGRAM.so` (`.dylib` on macOS,
+`.dll` on Windows), which takes on the order of 20 seconds on 24 cores.
+
+You need a C/C++ toolchain and GNU Make (`make` on Linux, `gmake` on macOS via
+`brew install make`, `mingw32-make` from MSYS2 on Windows). You do **not** need
+a Fortran compiler, and you do not need to install CSPICE on Linux x86_64 or
+Windows — a suitable archive is bundled and selected automatically. On macOS,
+run `brew install cspice` first.
+
+Force a full rebuild with:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean
 ```
+
+You need `--clean` in one specific situation: **the GRAM tree was copied or
+`rsync`ed in from another machine with its `Build/lib` already populated** — as
+happens with `scripts/remote/spaceagora-remote`, which mirrors the working
+tree. The command above skips the build whenever `Build/lib/libGRAM.<ext>`
+exists, and a foreign library satisfies that check, so you end up loading a
+binary built for the wrong host. Moving or renaming the checkout on the *same*
+machine is detected and handled automatically; no flag needed.
+
+#### Build prerequisites
+
+| Requirement | Notes |
+|---|---|
+| C/C++ toolchain | GCC on Linux; Clang via Xcode command-line tools on macOS; MinGW-w64 (MSYS2) on Windows |
+| GNU Make | Linux: `make`. macOS: `gmake`, from `brew install make` — the GRAM makefiles use GNU Make features the `make` shipped with macOS does not support. Windows: `mingw32-make`. |
+| CSPICE | Bundled and selected automatically on Linux x86_64 and Windows MinGW. macOS: `brew install cspice`. Linux arm64: supply your own archive. |
+| Git LFS | The GRAM submodule stores its surrogate payloads and SPICE kernels via LFS. |
+
+No Fortran compiler is required, despite `gfortran` appearing in GRAM's build
+configuration — `Build/makefile.defs` ends with `undefine FC`, so the library
+build never invokes it.
+
+#### What the command does
+
+`ensure_gram_native.jl` delegates to the vendored helper
+`GRAM Suite 2.0/simulation/GRAM/build_gram.sh`, which runs
+`Build/setup_cspice.sh` (you never run this yourself), then `make shared` with
+one job per core, then writes `simulation/GRAM/gram.env` and
+`simulation/GRAM/.gram-build-manifest` recording the host and root path the
+artifacts belong to.
+
+`shared` is the only make target that produces `libGRAM`. Plain `make` and the
+per-planet targets such as `make Mars` build static libraries and leave
+`Build/lib` without the shared library SpaceAGORA loads, so there is no faster
+single-planet route.
+
+`gram.env` and `.gram-build-manifest` hold absolute paths for the machine that
+wrote them. Never commit them — a committed one makes the next person's build
+fail against a directory that does not exist on their machine.
+
+#### If the build fails
+
+| Symptom | Cause and fix |
+|---|---|
+| `Build finished but shared library not found`, naming a path that is not yours | A `gram.env`/`.gram-build-manifest` from another machine is present. Delete both and re-run. |
+| `Could not auto-find a Linux CSPICE archive` | Linux arm64 has no bundled archive. Install CSPICE so `/usr/lib/libcspice.a` (or `/usr/local/lib`, `/usr/lib64`, `/usr/lib/aarch64-linux-gnu`) exists, or build with `make shared -j SPICE_LIB=/absolute/path/to/cspice.a` from `data/GRAMSuite.jl/GRAM Suite 2.0/Build`. |
+| `gmake not found` on macOS | `brew install make`. |
+| `make` succeeded but there is still no `libGRAM` | You ran `make` or a per-planet target instead of `make shared`. Prefer `ensure_gram_native.jl`, which always builds the right target. |
+| `GRAMAtmosphereModel` load error although the library exists | It was built on a different machine — rebuild with `--clean`. |
+
+The full walkthrough, including copying the licensed NASA GRAM folders into
+place, is in
+[docs/src/user/gramsuite_setup.md](docs/src/user/gramsuite_setup.md).
 
 ## Quick Start
 

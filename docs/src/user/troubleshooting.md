@@ -51,7 +51,8 @@ expected local path.
    ```text
    data/GRAMSuite.jl/GRAM Suite 2.0
    ```
-3. Build or verify the native shared library:
+3. Build the native shared library (needs a C/C++ toolchain and GNU Make; no
+   Fortran compiler, and CSPICE is bundled on Linux x86_64 and Windows):
    ```text
    julia --project=. scripts/ensure_gram_native.jl
    ```
@@ -70,8 +71,9 @@ disk space and see [GRAMSuite Setup](gramsuite_setup.md#git-lfs-reports-no-space
 **Symptom:** GRAM assets are present but `GRAMAtmosphereModel` raises a library
 load error at runtime.
 
-**Cause:** The platform-native `libGRAM` was either not built or was built on a
-different machine or checkout path.
+**Cause:** The platform-native `libGRAM` was either never built on this host, or
+the GRAM tree was copied in from another machine with its `Build/lib` already
+populated.
 
 **Resolution:**
 
@@ -79,11 +81,24 @@ different machine or checkout path.
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If the build metadata came from a different machine or path:
+If that prints `Native GRAM library already present for this host` and the load
+error persists, the library on disk belongs to a different machine. The
+existence check cannot distinguish it from a native build, so force a rebuild:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean
 ```
+
+This is the common case on remote hosts, because
+`scripts/remote/spaceagora-remote` mirrors the entire working tree, native
+build outputs included.
+
+A checkout that was moved or renamed on the same machine does not need
+`--clean`; the vendored build helper detects the changed root from its build
+manifest and rebuilds on its own.
+
+Build prerequisites and the per-platform CSPICE story are covered in
+[GRAMSuite Setup](gramsuite_setup.md#build-the-native-gram-library).
 
 ---
 

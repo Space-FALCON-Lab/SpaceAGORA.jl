@@ -52,28 +52,61 @@ This should populate the vendored Julia wrapper path:
 data/GRAMSuite.jl
 ```
 
-The submodule tracks `dev-GRAMSuite.jl`, which carries the complete GRAM Suite
-tree — the Julia integration layer, `Build/`, `common/`, every planet directory
-and the SPICE kernels. Access to that repository is required; without it the
-command cannot authenticate.
+The submodule tracks the public `GRAMSuite.jl` mirror, which needs no special
+access. It carries the Julia integration layer, `simulation/`, `SPICE/` and the
+folder scaffold — but not the licensed GRAM content. The official NASA
+distribution provides that, and it must be placed into the scaffold; see
+[Copy the official GRAM Suite folders](#copy-the-official-gram-suite-folders).
 
-### Existing checkouts need `git submodule sync`
+### Lab members: using `dev-GRAMSuite.jl` instead
 
-The submodule URL previously pointed at the public `GRAMSuite.jl` mirror. If
-your checkout predates that change, pulling the new `.gitmodules` is **not**
-enough on its own. `git submodule init` copied the old URL into `.git/config`
-when you first set the submodule up, and that copy is what fetches actually
-use. Propagate the new URL before updating:
+`dev-GRAMSuite.jl` carries the complete GRAM Suite tree — `Build/`, `common/`,
+every planet directory — so pointing at it removes the copy step entirely. It is
+private, and requires access to the GRAM code.
+
+Override the URL **for your machine only**. Do not commit a change to
+`.gitmodules`: the public URL has to keep resolving for everyone without dev
+access, who would otherwise be unable to initialize the submodule at all.
+
+```text
+DEV=https://github.com/Space-FALCON-Lab/dev-GRAMSuite.jl.git
+git config submodule.GRAMSuite.jl.url "$DEV"
+git -C data/GRAMSuite.jl remote set-url origin "$DEV"
+git -C data/GRAMSuite.jl fetch origin main
+git -C data/GRAMSuite.jl checkout origin/main
+```
+
+Both `config` lines are needed: the first is what `git submodule` commands
+consult, the second is what a `git -C data/GRAMSuite.jl fetch` uses.
+
+Three consequences, all normal for this setup:
+
+**Do not run `git submodule sync` afterwards.** That command copies the URL
+*from* `.gitmodules` *into* `.git/config`, so it silently puts you back on the
+public mirror. Its legitimate use is the opposite case, below.
+
+**`git submodule update` reverts the checkout.** The recorded gitlink names a
+public commit, so a plain `git submodule update` — including one inside a setup
+script or CI step — checks the public content back out. Re-run the
+`fetch`/`checkout` pair above if that happens.
+
+**`git status` shows `data/GRAMSuite.jl` as modified, permanently.** The
+submodule sits on a commit that is not the recorded one. Do not commit that
+pointer: the two repositories share no objects, so a dev commit is never a valid
+gitlink for consumers resolving against the public URL, and committing one
+breaks every clone without dev access.
+
+### When `git submodule sync` *is* needed
+
+If the URL in `.gitmodules` changes upstream and you already have an initialized
+checkout, pulling is not enough on its own. `git submodule init` copied the old
+URL into `.git/config` at setup time, and that copy is what fetches use.
+Propagate it with:
 
 ```text
 git submodule sync
-git submodule update --init --recursive --remote
+git submodule update --init --recursive
 ```
-
-Without the `sync`, `git submodule update` keeps pulling from the public mirror
-and reports nothing unusual. You end up with a tree that has no `Build/`, no
-`common/` and no planet directories, and the native build then fails with
-nothing to build.
 
 A fresh clone reads `.gitmodules` directly and needs neither command.
 
@@ -284,19 +317,16 @@ julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 
 Two points that are easy to misread:
 
-Step 4 applies only if you are working from the public `GRAMSuite.jl` mirror.
-That mirror strips the proprietary folders — no `Build/`, no `common/`, no
-planet directories — so a build against it fails with nothing to build.
-`dev-GRAMSuite.jl`, which the submodule tracks, carries all of it, and step 5
-follows step 3 directly.
+Step 3 does **not** give you a buildable GRAM tree, and step 4 is not optional
+on the default path. The public mirror the submodule tracks strips the
+proprietary folders — no `Build/`, no `common/`, no planet directories — so
+running step 5 before step 4 fails with nothing to build. Lab members who point
+the submodule at `dev-GRAMSuite.jl` get the complete tree and can skip step 4.
 
-That is a property of the public mirror, not of GRAMSuite. `dev-GRAMSuite.jl`,
-which the submodule now tracks, carries the complete tree, so on a current
-checkout step 4 is unnecessary and step 5 works straight after step 3.
-
-If your checkout predates the repoint, run `git submodule sync` first — see
-[Existing checkouts need `git submodule sync`](#existing-checkouts-need-git-submodule-sync).
-Without it you stay silently on the public mirror and step 5 fails.
+That is a property of the public mirror, not of GRAMSuite itself. Lab members
+can point the submodule at `dev-GRAMSuite.jl`, which carries the complete tree,
+and skip step 4 — see
+[Lab members: using `dev-GRAMSuite.jl` instead](#lab-members-using-dev-gramsuitejl-instead).
 
 Step 5 is the only step that compiles anything, and it is fast. If it runs for
 minutes, or if it reports a path that is not inside your checkout, stop and read

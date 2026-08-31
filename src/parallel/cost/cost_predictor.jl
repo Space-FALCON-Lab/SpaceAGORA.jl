@@ -43,6 +43,16 @@
 # candidate and picks argmin of the predicted cost, with an explicit refusal to
 # answer when the candidates are too close to separate.
 
+# Wait/hold above which the model declines to rank plans at all.
+#
+# Below it, a lock is a serial fraction and `usl_speedup` handles it. Above it
+# the workers are spending most of their time queueing, and the cost of that
+# queue is set by convoy behaviour the linear-plus-quadratic form has no term
+# for. Three is deliberately loose: at wait/hold = 3 the measured ladder is
+# already past its turning point, so anything the model says beyond there would
+# be extrapolation dressed as prediction.
+const LOCK_CONVOY_ABSTAIN_RATIO = 3.0
+
 """
     PlanCandidate
 
@@ -100,6 +110,7 @@ function predict_plan_ns(
     candidate::PlanCandidate;
     n_active_sats::Int,
     budget::Int,
+    contention::Union{Nothing, ContentionInputs} = nothing,
 )::PlanPrediction
     n_sats = max(1, n_active_sats)
     max_workers = max(1, min(budget, n_sats))
@@ -125,18 +136,39 @@ function predict_plan_ns(
 
     # Achieved speedup, not assumed linear scaling. `batch` already divides the
     # work by the worker count; this corrects that ideal share back up to what
-    # the machine actually delivers, which saturates near 3x on twelve workers
-    # rather than reaching 12x.
+    # the machine actually delivers.
+    #
+    # WHICH achieved speedup depends on what is known about the workload, and the
+    # difference is the point of the USL path. `parallel_speedup` is a
+    # machine-only curve measured from one synthetic kernel, so it says the same
+    # thing about a constellation that allocates nothing per pass and one that
+    # allocates hundreds of KiB -- and those two measure a plateau and an
+    # inversion respectively on the same box. A single curve cannot be right for
+    # both, and being wrong here moves the predicted cost of a wide plan by more
+    # than the margins the router is trying to resolve.
+    #
+    # Given a warm probe, the parameters are predicted per workload instead:
+    # `alpha` from the dispatch primitive's own serial fraction plus the measured
+    # native-lock duty cycle, `beta` from allocation rate and working set. Absent
+    # a probe this falls back to the legacy curve, so callers that cannot probe
+    # behave exactly as before.
     ideal = Float64(max(1, workers))
-    achieved = workers <= 1 ? 1.0 : max(1.0, rate_at(mc.parallel_speedup, workers))
-    contention = ideal / achieved
+    achieved = if workers <= 1
+        1.0
+    elseif contention === nothing || !contention.valid
+        max(1.0, rate_at(mc.parallel_speedup, workers))
+    else
+        alpha, beta = workload_usl_parameters(mc, contention; n_active_sats = n_sats)
+        usl_speedup(alpha, beta, workers)
+    end
+    contention_factor = ideal / achieved
 
     total = if candidate.mode === :satellite_batch
         # satellite_batch runs one satellite at a time, so its workspace is one
         # satellite's worth.
         lane1 = rate_at(mc.simd_lane, max(8.0, counts.simd_workspace_bytes_per_sat))
         touch = rate_at(mc.coeff_touch, counts.coeff_table_bytes)
-        dispatch + contention * (
+        dispatch + contention_factor * (
             batch * counts.simd_terms * lane1 +
             batch * counts.coeff_touches * touch +
             scalar + probe)
@@ -146,7 +178,7 @@ function predict_plan_ns(
         nodes_per_worker = counts.queue_nodes / workers
         atomics = candidate.scheduler === :dynamic && workers > 1 ?
             counts.queue_nodes * mc.ns_per_atomic : 0.0
-        dispatch + atomics + contention * (
+        dispatch + atomics + contention_factor * (
             batch * counts.simd_terms * lane +
             counts.coeff_touches * touch +
             nodes_per_worker * mc.ns_per_queue_node +
@@ -234,14 +266,32 @@ function select_plan(
     budget::Int,
     n_active_sats::Int,
     margin::Float64 = 0.15,
+    contention::Union{Nothing, ContentionInputs} = nothing,
 )::Union{Nothing, PlanPrediction}
-    counts.in_domain || return nothing
+    # `in_domain` used to be the whole gate, and it is false for any workload
+    # whose density model holds the process-wide native lock -- which refused to
+    # answer on exactly the workloads where the split matters most.
+    #
+    # A measured lock duty cycle makes that refusal too broad. The lock is an
+    # Amdahl term: it caps speedup at 1/rho and `workload_usl_parameters` now
+    # carries it in `alpha`, which the model can represent. What it still cannot
+    # represent is the convoy regime -- once workers spend far longer queueing
+    # than holding, the cost stops being linear in occupancy and the fit has no
+    # term for it. So the refusal narrows from "this model takes a lock" to
+    # "this workload is already past what the lock admits", which is a statement
+    # about the regime rather than about the model type.
+    if contention !== nothing && contention.valid
+        lock_wait_hold_ratio(contention) > LOCK_CONVOY_ABSTAIN_RATIO && return nothing
+    else
+        counts.in_domain || return nothing
+    end
 
     candidates = plan_candidates(counts; budget=budget, n_active_sats=n_active_sats)
     isempty(candidates) && return nothing
 
     preds = [
-        predict_plan_ns(counts, mc, c; n_active_sats=n_active_sats, budget=budget)
+        predict_plan_ns(counts, mc, c; n_active_sats=n_active_sats, budget=budget,
+                        contention=contention)
         for c in candidates
     ]
     filter!(p -> isfinite(p.ns) && p.ns > 0.0, preds)

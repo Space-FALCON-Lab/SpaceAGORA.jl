@@ -5,6 +5,11 @@ using Test
 end
 
 include("rpo_port_tests.jl")
+include(joinpath(@__DIR__, "parallel", "machine_topology_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "native_lock_stats_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "contention_inputs_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "usl_tests.jl"))
+include(joinpath(@__DIR__, "parallel", "streaming_trial_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "cost_work_counts_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "cost_robust_timing_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "cost_machine_calibration_tests.jl"))

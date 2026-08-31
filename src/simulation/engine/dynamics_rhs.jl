@@ -1979,7 +1979,23 @@ end
     return nothing
 end
 
+# In-run width identification, when it is switched on.
+#
+# One `=== nothing` test per RHS call when it is off, which it is by default and
+# always is once identification has committed -- the trial clears itself from
+# shared_buffers on commit, so the steady state has no trial branch to take and
+# no per-call plan switching.
+#
+# The wrapper exists because the timing has to enclose the whole evaluation and
+# the body below has two exits (the flat-queue route returns early). Wrapping
+# here is the only place both are covered.
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    trial = p.shared_buffers.rhs_width_trial[]
+    trial === nothing && return _spacecraft_dynamics_dispatch!(du, u, p, t)
+    return rhs_width_trial_step!(du, u, p, t, trial, _spacecraft_dynamics_dispatch!)
+end
+
+function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
     sc_du = du.sc
     dynamics_model = p.args.dynamics_model

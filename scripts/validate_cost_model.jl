@@ -63,6 +63,8 @@ function build_case(n_sats::Int, L::Int, M::Int)
     SE._initialize_density_model_instances!(p)
     SE._initialize_density_cache_buffers!(p)
     SE._initialize_gram_isolated_pool_buffers!(p)
+    SE._initialize_save_cache_buffers!(p)
+
     SE._initialize_aero_workspace_buffers!(p)
     SE._initialize_nbody_workspace_buffers!(p)
     SE._initialize_runtime_env_config!(p)
@@ -87,6 +89,38 @@ function measure_candidate(case, cand::PC.PlanCandidate)
         case.p.shared_buffers.rhs_plan_override[] = nothing
     end
 end
+
+# Whether to feed the predictor per-workload USL parameters instead of the
+# machine-only `parallel_speedup` curve.
+#
+# DEFAULT OFF, and that is a measured result rather than caution. The premise
+# was that the contention coefficient beta is predictable from two countable
+# workload quantities -- allocation rate and working set -- with coefficients
+# calibrated once per machine. On this box it is not:
+#
+#     legacy machine-only curve      top-1 30-45%   median regret +2.8..11%
+#     USL, beta predicted            top-1 20%      median regret +45.8%
+#
+# The diagnosis is in the calibrated coefficients. beta_bw came out at 1.20 per
+# unit of (working set / LLC) and beta_alloc at 0.011 per GiB/s, so the
+# footprint term outweighs the allocation term by roughly a hundred to one --
+# and the footprint of a vacuum constellation and of the same constellation with
+# an atmosphere are nearly identical, because both are dominated by the same
+# harmonics workspace. So predicted beta cannot separate the family that
+# plateaus from the family that inverts, which was the entire premise.
+#
+# The probe DOES separate them: allocation per pass differs by 48x
+# (16.4 KiB against 790.5 KiB at N=256). What fails is pushing that separation
+# through a calibrated coefficient small enough to be swamped.
+#
+# That points at identifying beta per workload rather than predicting it -- an
+# in-run paired A/B over widths, which is the next phase and does not need this
+# to work first. The machinery stays because it is correct and tested and
+# because the identification path needs the same functional form; only the
+# claim that beta can be predicted from these two inputs is withdrawn.
+#
+# Set SPACEAGORA_VALIDATE_USL=1 to re-run the comparison.
+const USE_USL = get(ENV, "SPACEAGORA_VALIDATE_USL", "0") == "1"
 
 mc = PC.load_machine_constants()
 if mc === nothing
@@ -115,7 +149,15 @@ for (N, L, M) in grid
     counts = PC.constellation_work_counts(case.args, N)
     cands = PC.plan_candidates(counts; budget=budget, n_active_sats=N)
 
-    preds = [(c, PC.predict_plan_ns(counts, mc, c; n_active_sats=N, budget=budget).ns) for c in cands]
+    # OPT-IN, and off by default, because the USL path measured WORSE than the
+    # machine-only curve it was meant to replace. See USE_USL below.
+    contention = USE_USL ? SE.probe_contention_inputs!(
+        case.p, case.u0, case.args;
+        k = 5, t_step = Float64(case.args.mission_configuration.mission_time) / 8,
+        workspace_bytes_per_sat = counts.simd_workspace_bytes_per_sat) : nothing
+
+    preds = [(c, PC.predict_plan_ns(counts, mc, c; n_active_sats=N, budget=budget,
+                                    contention=contention).ns) for c in cands]
     meas  = [(c, measure_candidate(case, c)) for c in cands]
 
     pbest = preds[argmin(map(last, preds))][1]

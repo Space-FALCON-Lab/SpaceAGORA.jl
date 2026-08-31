@@ -6,6 +6,12 @@ module Planets
     using SPICE
     export Earth, Mars, Venus, Moon, Titan
     const SPICE_LOCK = parentmodule(parentmodule(@__MODULE__)).RuntimeServices.SPICE_LOCK
+    # Every lock site in this file is planet construction, kernel furnishing or a
+    # body-constant lookup -- setup, not solve. They are attributed so that a
+    # solve's occupancy is not silently missing the setup that preceded it, and
+    # so that a run whose "lock cost" is really kernel loading reads as such.
+    const _SPICE_BODY_LOCK =
+        parentmodule(parentmodule(@__MODULE__)).RuntimeServices.tracked_lock(:spice_body)
     const MARS_MU_M3S2 = 0.4282837285418775e5 * 1e9
 
     # Planet constructors (Earth(), Mars(), ...) are called once per case setup, but
@@ -19,6 +25,8 @@ module Planets
     # a repeat furnsh call.
     const _FURNISHED_KERNELS = Set{String}()
 
+    # Two things can desynchronise this cache from CSPICE's actual pool.
+    #
     # `kclear()` wipes CSPICE's own kernel pool but has no way to know about this
     # cache (or the planet-instance caches below), so anything that calls `kclear()`
     # must call this too — otherwise a kernel already in `_FURNISHED_KERNELS` gets
@@ -27,8 +35,16 @@ module Planets
     # empty pool. Also drops the cached Earth()/Mars()/etc. instances themselves
     # (defined further down, near their constructors) since those were built from
     # kernels that no longer exist post-kclear.
+    #
+    # PRECOMPILATION is the second route, and it is worse because it is silent
+    # and permanent. `_FURNISHED_KERNELS` is a module-level `const`, so a
+    # precompile workload that constructs a SPICE-backed planet bakes the
+    # furnished paths into the pkgimage; every later process then starts with a
+    # cache claiming kernels are loaded and a CSPICE pool that is empty, and
+    # nothing furnishes them again. `src/precompile_workload.jl` calls this at
+    # the end of `@setup_workload` for exactly that reason.
     @inline function _reset_furnished_kernels!()
-        lock(SPICE_LOCK) do
+        lock(_SPICE_BODY_LOCK) do
             empty!(_FURNISHED_KERNELS)
             empty!(_EARTH_CACHE)
             empty!(_MARS_CACHE)
@@ -41,7 +57,7 @@ module Planets
 
     @inline function _furnsh_once(kernel_path::String)
         resolved = abspath(kernel_path)
-        lock(SPICE_LOCK) do
+        lock(_SPICE_BODY_LOCK) do
             resolved in _FURNISHED_KERNELS && return nothing
             furnsh(resolved)
             push!(_FURNISHED_KERNELS, resolved)
@@ -236,14 +252,14 @@ module Planets
     end
 
     @inline function _spice_body_radii_m(planet_name::String)::NTuple{3, Float64}
-        radii_km = lock(SPICE_LOCK) do
+        radii_km = lock(_SPICE_BODY_LOCK) do
             bodvrd(_spice_body_pool_name(planet_name), "RADII")
         end
         return (radii_km[1] * 1e3, radii_km[2] * 1e3, radii_km[3] * 1e3)
     end
 
     @inline function _spice_body_gm_m3s2(planet_name::String)::Float64
-        gm_km3s2 = lock(SPICE_LOCK) do
+        gm_km3s2 = lock(_SPICE_BODY_LOCK) do
             bodvrd(_spice_body_pool_name(planet_name), "GM")
         end
         return gm_km3s2[1] * 1e9
@@ -336,7 +352,7 @@ module Planets
     end
 
     @inline function _spice_body_fixed_frame(planet_name::String)::String
-        return planet_name == "Moon" ? "MOON_PA_DE421" : lock(SPICE_LOCK) do
+        return planet_name == "Moon" ? "MOON_PA_DE421" : lock(_SPICE_BODY_LOCK) do
             _, resolved_frame = cnmfrm(planet_name)
             resolved_frame
         end
@@ -370,7 +386,7 @@ module Planets
 
     function Earth(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
-        return lock(SPICE_LOCK) do
+        return lock(_SPICE_BODY_LOCK) do
             haskey(_EARTH_CACHE, key) && return _EARTH_CACHE[key]
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
@@ -400,7 +416,7 @@ module Planets
 
     function Mars(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
-        return lock(SPICE_LOCK) do
+        return lock(_SPICE_BODY_LOCK) do
             haskey(_MARS_CACHE, key) && return _MARS_CACHE[key]
             _furnsh_mars_pck(spice_path)
             _furnsh_required(spice_path, "lsk/naif0012.tls")
@@ -416,7 +432,7 @@ module Planets
 
     function Venus(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
-        return lock(SPICE_LOCK) do
+        return lock(_SPICE_BODY_LOCK) do
             haskey(_VENUS_CACHE, key) && return _VENUS_CACHE[key]
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
@@ -431,7 +447,7 @@ module Planets
 
     function Titan(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
-        return lock(SPICE_LOCK) do
+        return lock(_SPICE_BODY_LOCK) do
             haskey(_TITAN_CACHE, key) && return _TITAN_CACHE[key]
             _furnsh_required(spice_path, "pck/pck00010.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
@@ -447,7 +463,7 @@ module Planets
 
     function Moon(topo_harmonics_file::String, spice_path::String="data/GRAMSuite.jl/GRAM Suite 2.0/SPICE")
         key = (topo_harmonics_file, spice_path)
-        return lock(SPICE_LOCK) do
+        return lock(_SPICE_BODY_LOCK) do
             haskey(_MOON_CACHE, key) && return _MOON_CACHE[key]
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")

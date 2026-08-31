@@ -70,6 +70,18 @@ using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlM
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
+using .SimulationModel: AerobrakingMPCMode, TargetEnergyMode, MaxEnergyDepletionMode
+using .SimulationModel: AerobrakingMPCParams, AerobrakingMPCConfig, AerobrakingMPCProblem
+using .SimulationModel: AerobrakingMPCSolution, AerobrakingMPCState, AerobrakingMPCConstraintSet
+using .SimulationModel: AerobrakingMPCReferenceConfig, AerobrakingMPCControlModel
+using .SimulationModel: mpc_constraints, constraint_active, constraint_names, apply_constraints
+using .SimulationModel: mpc_params_from_spaceagora, mpc_prediction_gravity_model
+using .SimulationModel: spacecraft_mass_kg, spacecraft_reference_areas, mpc_config_from_spaceagora
+using .SimulationModel: density_and_gradient_from_spaceagora, density_function_from_spaceagora
+using .SimulationModel: build_reference_drag_pass, build_mpc_problem, solve_mpc_qp
+using .SimulationModel: objective_kind, objective_label, commanded_area_fraction
+using .SimulationModel: alpha_from_commanded_area, commanded_area_from_alpha, apply_commanded_area!
+using .SimulationModel: mpc_control_save_fields
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
@@ -482,6 +494,18 @@ export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
+export AerobrakingMPCMode, TargetEnergyMode, MaxEnergyDepletionMode
+export AerobrakingMPCParams, AerobrakingMPCConfig, AerobrakingMPCProblem
+export AerobrakingMPCSolution, AerobrakingMPCState, AerobrakingMPCConstraintSet
+export AerobrakingMPCReferenceConfig, AerobrakingMPCControlModel
+export mpc_constraints, constraint_active, constraint_names, apply_constraints
+export mpc_params_from_spaceagora, mpc_prediction_gravity_model
+export spacecraft_mass_kg, spacecraft_reference_areas, mpc_config_from_spaceagora
+export density_and_gradient_from_spaceagora, density_function_from_spaceagora
+export build_reference_drag_pass, build_mpc_problem, solve_mpc_qp
+export objective_kind, objective_label, commanded_area_fraction
+export alpha_from_commanded_area, commanded_area_from_alpha, apply_commanded_area!
+export mpc_control_save_fields
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

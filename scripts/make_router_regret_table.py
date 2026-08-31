@@ -84,14 +84,30 @@ def main():
     # Percentage points below which a per-point regret from this harness is not
     # resolved. 0 disables the marking.
     #
-    # This is NOT the within-point spread of the repeats, which is about 1.9
-    # points and badly understates the truth: repeats inside one measurement
-    # point share a process, a warm cache, an allocator state and one route
-    # decision, so they are serially correlated and their scatter measures far
-    # less than the run-to-run uncertainty. The honest figure comes from
-    # comparing this harness against scripts/paired_campaign_probe.jl, which
-    # pairs whole campaigns and cancels that drift: on the three Monte Carlo
-    # points measured both ways the harness was off by 1.5, 5.0 and 7.9 points.
+    # This is NOT derived from the within-point spread of the repeats, and two
+    # separate attempts to derive it that way were wrong.
+    #
+    # The scatter of repeats inside one measurement point understates badly:
+    # those repeats share a process, a warm cache, an allocator state and one
+    # route decision, so they are serially correlated. It also does not predict
+    # the error's SHAPE. Within-point robust CV on this machine is four to five
+    # times tighter at one thread (median 0.43-0.63%) than at eight or twelve
+    # (1.65-2.94%), which suggests a rung-dependent band -- and direct
+    # validation says otherwise: at one thread the harness read +5.8% and +5.3%
+    # where the paired probe reads +0.5% and -0.7%, errors of 5.3 and 6.0
+    # points, as large as anything measured at twelve.
+    #
+    # The figure used is the measured disagreement against the paired probes,
+    # which interleave and cancel between-run drift. Eight comparisons spanning
+    # 1, 8 and 12 threads and both workload families:
+    #
+    #     0.2, 1.5, 3.6, 5.0, 5.3, 6.0, 7.9, 8.2 points
+    #
+    # Median 5.3, max 8.2. A five-point band covers half of them, which is why
+    # the default used for the paper tables is eight. Note the smallest error by
+    # far, 0.2 points, is on the one comparison where the effect is large
+    # (-30.3% against -30.1%): this harness is accurate where the differences
+    # are big and unreliable only where they are small.
     resolution = 0.0
     rest = []
     for a in args:

@@ -4,12 +4,15 @@ module ParallelProfiles
 using Dates
 using TOML
 
+include(joinpath(@__DIR__, "machine_topology.jl"))
 include(joinpath(@__DIR__, "profile_definitions.jl"))
 include(joinpath(@__DIR__, "env_mapping.jl"))
 include(joinpath(@__DIR__, "outer_route_state.jl"))
 include(joinpath(@__DIR__, "outer_route_selection.jl"))
 include(joinpath(@__DIR__, "outer_route_metrics.jl"))
 
+export machine_topology, refresh_machine_topology!, usable_core_budget
+export physical_core_count, allowed_cpus, cgroup_cpu_quota
 export ParallelProfile, ParallelProfileConfig
 export parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
 export OuterRouteFeatures, OuterRouteTuning, OuterRouteState

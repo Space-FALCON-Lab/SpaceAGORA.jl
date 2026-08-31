@@ -161,8 +161,30 @@ function paired_compare(fa::FA, fb::FB; pairs::Int = 15, alpha::Float64 = 0.05):
     wins_b = 0
 
     for i in 1:pairs
-        ta = timed_min(fa; k = 1, warmup = i == 1 ? 2 : 0)
-        tb = timed_min(fb; k = 1, warmup = i == 1 ? 2 : 0)
+        # ORDER ALTERNATES WITHIN THE PAIR, and this is not a refinement.
+        #
+        # A fixed a-then-b order lets any first-position effect register as a
+        # difference between the alternatives: a GC landing on the first call,
+        # caches or branch predictors warmed by it for the second, a frequency
+        # step between them. Measured here on a whole-solve comparison, fixed
+        # ordering reported the identification path 59% SLOWER at 15-0 and
+        # significant; alternating the order on the same workload in the same
+        # session reported it 40% FASTER at 15-0 and significant. The effect was
+        # larger than the effect under test and had the opposite sign.
+        #
+        # `scripts/paired_profile_probe.jl` and `paired_campaign_probe.jl` both
+        # alternate for exactly this reason and say so in their headers; this
+        # function did not, so a caller reaching for the library instead of the
+        # scripts got the bias silently.
+        ta, tb = if isodd(i)
+            a = timed_min(fa; k = 1, warmup = i == 1 ? 2 : 0)
+            b = timed_min(fb; k = 1, warmup = i == 1 ? 2 : 0)
+            (a, b)
+        else
+            b = timed_min(fb; k = 1, warmup = 0)
+            a = timed_min(fa; k = 1, warmup = 0)
+            (a, b)
+        end
         ratios[i] = tb > 0.0 ? ta / tb : Inf
         if ta < tb
             wins_a += 1
@@ -296,4 +318,177 @@ header.
 function reference_memory_kernel_ns(; k::Int = 15)::Float64
     buf = _make_reference_buffer(_REFERENCE_MEM_DOUBLES)
     return timed_min(() -> _reference_mem_kernel(buf); k = k, warmup = 3) / _REFERENCE_MEM_TOUCHES
+end
+
+# ── Streaming paired identification ───────────────────────────────────────────
+#
+# `paired_compare` above is a driver: it calls both alternatives itself, in a
+# loop it controls. In-run identification needs the inverse. The solver decides
+# when the RHS is evaluated; the trial can only say which arm the next call
+# should use and be told afterwards what it cost.
+#
+# Same two properties that make the paired probes trustworthy, kept:
+#
+#   INTERLEAVING. Arms are visited once per round, and the visiting order
+#   rotates between rounds, so anything drifting slower than a round -- thermal
+#   state, frequency, a co-tenant, the allocator settling -- scales every arm in
+#   a round together and cancels in the within-round comparison. Blocking the
+#   arms instead (all of A, then all of B) lets drift masquerade as effect; this
+#   repo has one measurement that read 11.1% block-ordered and 1.7% paired.
+#
+#   A SIGNIFICANCE VERDICT. The reduction is a two-sided sign test on round
+#   wins, not a difference of medians, so the trial can return "too close to
+#   call" -- which is the right answer for most workloads and the one a median
+#   cannot express. An undecided trial keeps the incumbent, which is what makes
+#   this safe to run by default: it can only move a decision it can defend.
+#
+# Rounds, not pairs, because the ladder has more than two arms: a round is one
+# observation of every arm, and it is the unit the sign test counts.
+
+"""
+    StreamingPairedTrial(n_arms; rounds = 9, alpha = 0.05, warmup_rounds = 1)
+
+An interleaved A/B/.../N trial whose observations arrive one at a time.
+
+`arm 1` is the incumbent: the verdict is expressed as whether some other arm
+beats it, so a trial that never reaches significance leaves the caller doing
+exactly what it was doing.
+
+`warmup_rounds` observations of each arm are discarded before any are counted.
+Switching execution width re-warms caches and can re-enter the dispatch pool, so
+the first observation after a switch measures the switch.
+"""
+mutable struct StreamingPairedTrial
+    n_arms::Int
+    rounds_target::Int
+    warmup_rounds::Int
+    alpha::Float64
+    obs::Vector{Vector{Float64}}
+    order::Vector{Int}
+    pos::Int
+    round::Int
+end
+
+function StreamingPairedTrial(n_arms::Int; rounds::Int = 9, alpha::Float64 = 0.05,
+                              warmup_rounds::Int = 1)
+    n_arms >= 2 || throw(ArgumentError("A trial needs at least two arms; got $n_arms."))
+    return StreamingPairedTrial(
+        n_arms, max(1, rounds), max(0, warmup_rounds), alpha,
+        [Float64[] for _ in 1:n_arms], collect(1:n_arms), 1, 1)
+end
+
+"""
+    next_arm(trial) -> Int
+
+Which arm the next observation should use. Cheap and side-effect free, so it can
+be called on the hot path before every evaluation.
+"""
+@inline next_arm(t::StreamingPairedTrial)::Int = @inbounds t.order[t.pos]
+
+"""
+    trial_active(trial) -> Bool
+
+Whether the trial still wants observations. False once it has its rounds, at
+which point the caller should stop switching arms and use [`trial_verdict`](@ref).
+"""
+@inline function trial_active(t::StreamingPairedTrial)::Bool
+    return t.round <= t.rounds_target + t.warmup_rounds
+end
+
+"""
+    observe!(trial, elapsed_ns)
+
+Record the cost of the arm [`next_arm`](@ref) named, and advance the schedule.
+
+The arm order is rotated at each round boundary so a systematic first-position
+or last-position bias -- a cold cache at the start of a round, a scheduler
+preemption at the end -- spreads across arms instead of accumulating on one.
+"""
+function observe!(t::StreamingPairedTrial, elapsed_ns::Real)::Nothing
+    arm = next_arm(t)
+    ns = Float64(elapsed_ns)
+    if t.round > t.warmup_rounds && isfinite(ns) && ns > 0.0
+        push!(t.obs[arm], ns)
+    end
+    t.pos += 1
+    if t.pos > t.n_arms
+        t.pos = 1
+        t.round += 1
+        # Rotate rather than shuffle: deterministic, so a trial is reproducible,
+        # and over n_arms rounds every arm has occupied every position once.
+        push!(t.order, popfirst!(t.order))
+    end
+    return nothing
+end
+
+"""
+    trial_rounds(trial) -> Int
+
+Counted rounds, excluding warm-up.
+"""
+@inline function trial_rounds(t::StreamingPairedTrial)::Int
+    return minimum(length(o) for o in t.obs)
+end
+
+"""
+    trial_verdict(trial) -> (arm, significant, median_ratio, rounds)
+
+The arm that won, whether the win survives a two-sided sign test against the
+incumbent, and the median of the per-round ratios `incumbent / winner`.
+
+`median_ratio > 1` means the winner is that many times faster than arm 1. A
+verdict with `significant = false` must be read as "keep the incumbent": it is
+returned with the winning arm still named so a caller can log what it nearly
+chose, not so it can act on it.
+"""
+function trial_verdict(t::StreamingPairedTrial)
+    n = trial_rounds(t)
+    n <= 0 && return (arm = 1, significant = false, median_ratio = 1.0, rounds = 0)
+
+    # Best arm by median, which is insensitive to one wild round in a way a mean
+    # is not.
+    med(v) = (s = sort(v); length(s) % 2 == 1 ? s[(length(s) + 1) ÷ 2] :
+              0.5 * (s[length(s) ÷ 2] + s[length(s) ÷ 2 + 1]))
+    medians = [med(t.obs[a][1:n]) for a in 1:t.n_arms]
+    best = argmin(medians)
+    best == 1 && return (arm = 1, significant = false, median_ratio = 1.0, rounds = n)
+
+    wins = 0
+    decided = 0
+    ratios = Float64[]
+    @inbounds for r in 1:n
+        a = t.obs[1][r]
+        b = t.obs[best][r]
+        (isfinite(a) && isfinite(b) && b > 0.0) || continue
+        push!(ratios, a / b)
+        if b < a
+            wins += 1; decided += 1
+        elseif a < b
+            decided += 1
+        end
+    end
+    isempty(ratios) && return (arm = 1, significant = false, median_ratio = 1.0, rounds = n)
+    significant = decided > 0 && _sign_test_two_sided(max(wins, decided - wins), decided) <= t.alpha
+    # Significance alone is not a reason to switch: the winner must be the arm
+    # that actually won the rounds, not merely the one with the better median.
+    significant &= wins > decided - wins
+    return (arm = best, significant = significant, median_ratio = med(ratios), rounds = n)
+end
+
+"""
+    trial_speedups(trial) -> Vector{Float64}
+
+Per-arm speedup against arm 1, from each arm's minimum observation.
+
+The minimum, not the median: a trial runs inside a live solve, so every
+observation carries whatever interruption happened to land on it, and the
+minimum is the least contaminated estimate of what the arm costs when nothing
+else is happening. Feed these to `_fit_usl` with the arms' widths to identify
+the scalability parameters of THIS workload, which is the thing the machine-only
+prediction could not do.
+"""
+function trial_speedups(t::StreamingPairedTrial)::Vector{Float64}
+    base = isempty(t.obs[1]) ? NaN : minimum(t.obs[1])
+    return [(isempty(t.obs[a]) || !isfinite(base) || base <= 0.0) ? 1.0 :
+            max(1e-6, base / minimum(t.obs[a])) for a in 1:t.n_arms]
 end

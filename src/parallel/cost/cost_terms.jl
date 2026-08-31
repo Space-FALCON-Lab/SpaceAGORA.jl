@@ -103,6 +103,87 @@ end
 Base.zero(::Type{WorkCounts})::WorkCounts = WorkCounts()
 
 """
+    ContentionInputs
+
+What one warm RHS pass reveals about how this workload will behave under a
+split, as opposed to how much work it contains.
+
+`WorkCounts` answers "how much work"; this answers "how badly does that work
+scale", which is a different question and needs different evidence. The three
+terms are the three mechanisms measured to cap thread scaling in this codebase:
+
+- `alloc_bytes_per_pass` / `pass_ns`  allocation pressure. Shared-heap
+                    allocation and the GC it drives are process-wide, which is
+                    why separate processes escape a ceiling that more threads
+                    only worsen. The measured contrast is stark and mechanical:
+                    a vacuum constellation iterates a homogeneous effector
+                    1-tuple and allocates 0 bytes per pass, while the same
+                    physics plus atmosphere reaches tens of GiB over a solve and
+                    inverts past four threads.
+- `workspace_bytes_per_sat`  memory footprint, carried through from
+                    `WorkCounts` rather than re-measured, so the two cannot
+                    disagree. Scaled by the satellites a worker holds it gives
+                    the working set that decides whether a wider split still
+                    fits in cache.
+- `lock_*`          native-lock occupancy, read straight off the shared
+                    GRAM/SPICE critical section. Unlike the other two this is
+                    not a proxy: `lock_hold_ns` over the window is an Amdahl
+                    serial fraction with a hard `1/rho` speedup ceiling, and
+                    `lock_wait_ns / lock_hold_ns` reports whether the width in
+                    use is already past what the lock admits.
+
+`valid` is false when the warm pass could not be completed, in which case every
+field is meaningless rather than zero -- a workload that allocates nothing and
+one that could not be measured must not read the same.
+"""
+Base.@kwdef struct ContentionInputs
+    alloc_bytes_per_pass::Float64 = 0.0
+    pass_ns::Float64 = 0.0
+    workspace_bytes_per_sat::Float64 = 0.0
+    n_active_sats::Int = 0
+    lock_acquisitions::Int64 = 0
+    lock_hold_ns::Float64 = 0.0
+    lock_wait_ns::Float64 = 0.0
+    valid::Bool = false
+end
+
+"""
+    alloc_bytes_per_second(ci) -> Float64
+
+Allocation rate of one worker running this workload. Zero for an invalid or
+zero-length measurement, never `Inf`: a caller sizing a width from this must get
+"no pressure observed" rather than a poisoned number.
+"""
+@inline function alloc_bytes_per_second(ci::ContentionInputs)::Float64
+    (ci.valid && ci.pass_ns > 0.0) || return 0.0
+    return ci.alloc_bytes_per_pass * 1.0e9 / ci.pass_ns
+end
+
+"""
+    lock_duty_cycle(ci, workers = 1) -> Float64
+
+Fraction rho of available worker-time spent inside the native lock. `1/rho`
+bounds achievable speedup at any width.
+"""
+@inline function lock_duty_cycle(ci::ContentionInputs, workers::Integer = 1)::Float64
+    window = ci.pass_ns * max(1.0, Float64(workers))
+    (ci.valid && window > 0.0) || return 0.0
+    return clamp(ci.lock_hold_ns / window, 0.0, 1.0)
+end
+
+"""
+    lock_wait_hold_ratio(ci) -> Float64
+
+Time blocked outside the native lock against time spent inside it. Much greater
+than one means the split is already wider than the lock admits, and the finding
+needs no history to reach: it is visible in the window that measured it.
+"""
+@inline function lock_wait_hold_ratio(ci::ContentionInputs)::Float64
+    (ci.valid && ci.lock_hold_ns > 0.0) || return 0.0
+    return ci.lock_wait_ns / ci.lock_hold_ns
+end
+
+"""
     RateCurve
 
 A machine rate that depends on the size of the thing it operates on, stored as
@@ -258,8 +339,104 @@ Base.@kwdef struct MachineConstants
     ns_per_atomic::Float64
     reference_fma_ns::Float64
     reference_mem_ns::Float64
+    usl_alpha_base::Float64 = 0.0
+    usl_beta_arith::Float64 = 0.0
+    usl_beta_alloc::Float64 = 0.0
+    usl_beta_bw::Float64 = 0.0
+    llc_bytes::Float64 = 0.0
     fingerprint::String = ""
     schema_version::Int = 1
+end
+
+"""
+    usl_speedup(α, β, k) -> Float64
+
+Universal Scalability Law: `S(k) = k / (1 + α(k−1) + βk(k−1))`.
+
+Two parameters rather than one because the measured curves do two different
+things. `α` alone (Amdahl) can only saturate, and the workloads that matter here
+do not saturate -- they **invert**: the aero RHS at N=1024 runs 4957 µs serial,
+1637 at four threads and 4755 at twelve. Only a term that grows faster than the
+worker count can bend a speedup curve back down, which is what `βk(k−1)` does,
+and it puts the turning point at `k* = √((1−α)/β)` in closed form rather than
+requiring that the inverting width have been measured.
+
+Returns at least `1.0`: a plan can always decline to split, so a predicted
+speedup below one means "do not widen", not "widening makes the work itself
+slower".
+"""
+@inline function usl_speedup(alpha::Real, beta::Real, k::Integer)::Float64
+    kf = Float64(max(1, k))
+    kf <= 1.0 && return 1.0
+    a = max(0.0, Float64(alpha))
+    b = max(0.0, Float64(beta))
+    denom = 1.0 + a * (kf - 1.0) + b * kf * (kf - 1.0)
+    denom > 0.0 || return 1.0
+    return max(1.0, kf / denom)
+end
+
+"""
+    usl_peak_workers(α, β) -> Float64
+
+The width at which [`usl_speedup`](@ref) turns over, `k* = √((1−α)/β)`. `Inf`
+when `β` is zero, which is the saturating case: more workers never help, but
+they never hurt either.
+"""
+@inline function usl_peak_workers(alpha::Real, beta::Real)::Float64
+    b = max(0.0, Float64(beta))
+    b > 0.0 || return Inf
+    a = clamp(Float64(alpha), 0.0, 1.0)
+    return sqrt(max(0.0, 1.0 - a) / b)
+end
+
+"""
+    workload_usl_parameters(mc, contention; workers, n_active_sats) -> (α, β)
+
+Predict this workload's scalability parameters from machine constants and one
+warm probe.
+
+`α` is the serial fraction: the dispatch primitive's own residual (measured once
+per machine) plus the native-lock duty cycle (measured per workload). A lock is
+an Amdahl term, not a contention one -- it caps speedup at `1/ρ` however the
+work is split -- and treating it as anything else is what left the cost model
+declaring native-GRAM workloads simply out of domain.
+
+`β` is contention, and it is predicted rather than measured per workload because
+the two things that drive it are countable: how fast a worker allocates, and how
+much memory it touches relative to the last-level cache. Both coefficients are
+machine constants; both workload quantities come from `ContentionInputs`.
+
+Scaled per worker, not per pass: allocation pressure and working set are
+properties of what one worker does concurrently with the others, so the split
+enters here rather than being folded into the coefficients.
+"""
+function workload_usl_parameters(
+    mc::MachineConstants,
+    contention::Union{Nothing, ContentionInputs};
+    n_active_sats::Integer,
+)::NTuple{2, Float64}
+    alpha = max(0.0, mc.usl_alpha_base)
+    beta = max(0.0, mc.usl_beta_arith)
+    (contention === nothing || !contention.valid) && return (alpha, beta)
+
+    alpha = clamp(alpha + lock_duty_cycle(contention, 1), 0.0, 1.0)
+
+    # NEITHER TERM MAY DEPEND ON THE WIDTH. `beta` is a property of the
+    # workload, and the closed-form turning point `k* = √((1−α)/β)` is only
+    # meaningful if it is one: a first version divided the footprint by the
+    # worker count, so beta fell as the split widened and the model reported a
+    # larger `k*` when evaluated at twelve workers than at four -- an optimum
+    # that moved depending on where you stood.
+    #
+    # The per-worker share is real, but it is already carried by the SIMD lane
+    # rate, which is indexed by the workspace footprint the batch actually
+    # produces. Counting it here too would double it.
+    beta += max(0.0, mc.usl_beta_alloc) * (alloc_bytes_per_second(contention) / 1024^3)
+    if mc.llc_bytes > 0.0
+        footprint = contention.workspace_bytes_per_sat * Float64(max(1, Int(n_active_sats)))
+        beta += max(0.0, mc.usl_beta_bw) * (footprint / mc.llc_bytes)
+    end
+    return (alpha, max(0.0, beta))
 end
 
 """

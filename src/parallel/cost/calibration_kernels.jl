@@ -130,3 +130,61 @@ function calib_scalar_kernel!(out::Vector{Float64}, state::Vector{Float64}, n_it
     end
     return @inbounds out[1]
 end
+
+# ── Contention kernels ────────────────────────────────────────────────────────
+#
+# The kernels above measure how fast one worker computes. These two measure how
+# badly workers interfere, which is a different property and the one the USL
+# beta term is about. Each is deliberately dominated by ONE shared resource, so
+# a speedup ladder run over it attributes its contention to that resource rather
+# than to an unlabelled mixture:
+#
+#   calib_alloc_kernel!   the allocator and the garbage collector, both
+#                         process-wide. This is the mechanism behind the
+#                         measured contrast between a constellation that
+#                         allocates nothing per RHS pass and scales, and one
+#                         that allocates tens of GiB over a solve and inverts.
+#   calib_stream_kernel!  memory bandwidth, by streaming a buffer far larger
+#                         than the last-level cache so no reuse is possible.
+#
+# Neither body may be elidable. Both return a value derived from every element
+# they touch, for the reason `_calibrate_dispatch` records: an empty loop is
+# optimised away and the resulting measurement is wrong without looking wrong.
+
+"""
+    calib_alloc_kernel!(n_arrays, n_elems) -> Float64
+
+Allocate `n_arrays` fresh vectors of `n_elems` elements, touch each, and return
+a checksum. The allocation is the point, so the arrays are not reused and not
+preallocated.
+"""
+function calib_alloc_kernel!(n_arrays::Int, n_elems::Int)::Float64
+    acc = 0.0
+    for _ in 1:n_arrays
+        v = Vector{Float64}(undef, n_elems)
+        @inbounds for i in 1:n_elems
+            v[i] = i * 1.0000001
+        end
+        @inbounds acc += v[1] + v[n_elems]
+    end
+    return acc
+end
+
+"""
+    calib_stream_kernel!(buf, passes) -> Float64
+
+Read and write every element of `buf` `passes` times. Sized past the last-level
+cache by the caller so the traffic reaches DRAM and the workers contend for
+bandwidth rather than for cache.
+"""
+function calib_stream_kernel!(buf::Vector{Float64}, passes::Int)::Float64
+    acc = 0.0
+    n = length(buf)
+    for _ in 1:passes
+        @inbounds for i in 1:n
+            buf[i] = buf[i] * 1.0000001 + 1.0
+        end
+        @inbounds acc += buf[1]
+    end
+    return acc
+end

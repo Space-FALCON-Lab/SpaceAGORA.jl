@@ -7,15 +7,37 @@ using SPICE
 using Serialization
 
 const EM = SpaceAGORA.SimulationModel.EnvironmentModels
+# Spelled out rather than routed through `RS` below: ci_architecture_contract_gate
+# asserts this exact reference textually, because the one thing that must never
+# drift here is which lock this is. Same reason the gate exists at all.
 const GRAM_LOCK = SpaceAGORA.RuntimeServices.GRAM_LOCK
+const RS = SpaceAGORA.RuntimeServices
+
+# Attributed views of the one shared native lock. Same critical section, same
+# mutual exclusion; the site only decides which occupancy counter the time lands
+# in. See RuntimeServices' native-lock section for why occupancy is attributed
+# by call site rather than by density-model family.
+@inline _tl(site::Symbol) = RS.tracked_lock(site)
 
 # Lock used to serialize native GRAM calls for this model instance. With the
 # default global scope every call in the process contends on GRAM_LOCK; with
 # SPACEAGORA_GRAM_LOCK_SCOPE=model only calls on the same wrapper instance
 # serialize, so per-sample/per-worker model copies evaluate concurrently
 # (the same instance-isolation premise as the isolated-pool batch path).
-@inline function _gram_call_lock(model::EM.GRAMAtmosphereModel)::ReentrantLock
-    return EM._gram_lock_scope() === :model ? model.instance_lock : GRAM_LOCK
+#
+# Return type is left unannotated because the two branches now differ: the
+# global branch hands back a tracked view of the shared lock, the per-model
+# branch the instance's own `ReentrantLock`. GRAMSuite's `lock_obj` keyword is
+# untyped and reaches it through `lock(f, l)`, so both work; the small Union
+# splits at the call site.
+#
+# Per-model occupancy is deliberately NOT recorded: those calls do not contend
+# on the shared lock at all, which is the entire point of that mode, so their
+# absence from the shared counters is the correct reading. What is lost is the
+# per-instance duty cycle, which needs its own counters if that mode is ever
+# measured rather than merely offered.
+@inline function _gram_call_lock(model::EM.GRAMAtmosphereModel)
+    return EM._gram_lock_scope() === :model ? model.instance_lock : _tl(:gram_density)
 end
 
 function __init__()
@@ -124,7 +146,7 @@ Drop the cached epoch-level ephemeris, start-epoch and NAIF-id lookups. Only
 needed when SPICE kernels are re-furnished mid-process.
 """
 function clear_gram_ephemeris_cache!()
-    lock(GRAM_LOCK) do
+    lock(_tl(:gram_setup)) do
         empty!(_GRAM_EPHEM_CACHE)
         empty!(_GRAM_ET0_CACHE)
         empty!(_GRAM_NAIF_ID_CACHE)
@@ -135,7 +157,7 @@ end
 # Start epoch and NAIF id are fixed for the whole run; utc2et parses a string
 # and bodn2c does a name lookup, so neither belongs in a per-call path.
 @inline function _gram_et0(utc::String)::Float64
-    lock(GRAM_LOCK) do
+    lock(_tl(:spice_body)) do
         get!(_GRAM_ET0_CACHE, utc) do
             SPICE.utc2et(utc)
         end
@@ -143,7 +165,7 @@ end
 end
 
 @inline function _gram_naif_id(naif_name::String)::Int
-    lock(GRAM_LOCK) do
+    lock(_tl(:spice_body)) do
         get!(_GRAM_NAIF_ID_CACHE, naif_name) do
             Int(SPICE.bodn2c(naif_name))
         end
@@ -176,7 +198,7 @@ end
 
 function _gram_body_ephemeris(naif_name::String, et::Float64)::NTuple{6, Float64}
     _gram_ephemeris_cache_enabled() || return _gram_body_ephemeris_uncached(naif_name, et)
-    lock(GRAM_LOCK) do
+    lock(_tl(:spice_ephemeris)) do
         hit = get(_GRAM_EPHEM_CACHE, naif_name, nothing)
         # Exact epoch match only: the value is a nonlinear function of et, so
         # interpolating or tolerating a nearby epoch would silently change the
@@ -264,7 +286,7 @@ function EM.precompute_gram_static_grids!(
         base_model.core;
         planets=planets,
         wind=wind,
-        lock_obj=GRAM_LOCK
+        lock_obj=_tl(:gram_setup)
     )
 end
 
@@ -275,7 +297,7 @@ end
 
 function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
     haskey(stackdict, model) && return stackdict[model]
-    copied = lock(GRAM_LOCK) do
+    copied = lock(_tl(:gram_setup)) do
         EM.GRAMAtmosphereModel(deepcopy(model.core))
     end
     stackdict[model] = copied
@@ -284,7 +306,7 @@ end
 
 function Base.deepcopy_internal(model::EM.GRAMAtmosphereModelSurrogate, stackdict::IdDict)
     haskey(stackdict, model) && return stackdict[model]
-    copied = lock(GRAM_LOCK) do
+    copied = lock(_tl(:gram_setup)) do
         EM.GRAMAtmosphereModelSurrogate(
             deepcopy(model.base_model),
             model.surrogate_file,
@@ -433,7 +455,7 @@ function EM.getDensity(
     base_model = model.base_model isa EM.GRAMAtmosphereModel ? model.base_model.core : model.base_model
     point_fallback = model.base_model isa EM.GRAMAtmosphereModel ? nothing :
         (m, h_i, lat_i, lon_i, t_i, w_i) -> EM._gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
-    lock_obj = model.base_model isa EM.GRAMAtmosphereModel ? _gram_call_lock(model.base_model) : GRAM_LOCK
+    lock_obj = model.base_model isa EM.GRAMAtmosphereModel ? _gram_call_lock(model.base_model) : _tl(:gram_density)
     h_gram = max(h, -30.0)
 
     # println("GRAM density altitude = $(h) m ($(h / 1e3) km)")

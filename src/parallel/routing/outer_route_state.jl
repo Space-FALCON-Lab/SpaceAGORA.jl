@@ -163,13 +163,48 @@ function reset_outer_route_state!(state::OuterRouteState)
     return nothing
 end
 
+# `observations` and `campaigns` are persisted, and leaving them out was not a
+# cosmetic omission -- it defeated persistence twice over.
+#
+# Both fields gate behaviour, and both restored as zero:
+#
+#   campaigns == 0     `_route_is_proven` and `_under_sampled_candidate` read
+#                      campaigns, not samples, so every restored arm looked
+#                      never-observed and the selector was obliged to spend a
+#                      full exploratory campaign on each one -- which is exactly
+#                      the cost persistence exists to remove. The docstring on
+#                      `ensure_campaign_route_state_loaded!` claims a restored
+#                      signature "should exploit immediately, not re-run the
+#                      round-robin its predecessor already paid for"; it could
+#                      not.
+#
+#   observations == 0  worse, and silent. The cold-eviction branch in
+#                      `record_outer_route_feedback!` fires when observations
+#                      reaches 2 and REPLACES the arm's statistics wholesale. So
+#                      the second live observation after a load discarded the
+#                      entire restored history, however many campaigns it
+#                      represented, and left the arm holding one fresh timing.
+#
+# Test `outer_route_persistence_tests.jl` asserted the intended behaviour and
+# was failing on the first of these.
+#
+# RESIDUAL, deliberately not addressed here: eviction guards a PER-PROCESS cost
+# (JIT of the dispatch path, thread-pool spin-up, worker provisioning), but the
+# counter is now restored across processes -- so a restored arm with
+# observations >= 2 will average this process's own cold first timing into its
+# history rather than evicting it. It is diluted by the restored weight and is
+# strictly better than either previous behaviour, but the correct fix is a
+# separate per-process observation counter that resets on load, which is a
+# semantics change rather than a serialisation fix.
 @inline function _route_stats_payload(stats::OuterRouteStats)::Dict{String, Any}
     return Dict{String, Any}(
         "samples" => max(0, Int(stats.samples)),
         "successes" => max(0, Int(stats.successes)),
         "failures" => max(0, Int(stats.failures)),
         "elapsed_sum_s" => max(0.0, Float64(stats.elapsed_sum_s)),
-        "elapsed_sq_sum_s" => max(0.0, Float64(stats.elapsed_sq_sum_s))
+        "elapsed_sq_sum_s" => max(0.0, Float64(stats.elapsed_sq_sum_s)),
+        "observations" => max(0, Int(stats.observations)),
+        "campaigns" => max(0, Int(stats.campaigns))
     )
 end
 
@@ -201,6 +236,26 @@ end
         NaN
     end
     samples <= 0 && return nothing
+    # Schema-2 files carry neither counter. One is the honest default for both:
+    # a row with samples > 0 is evidence the arm ran at least once, and nothing
+    # in the file says how many times.
+    #
+    # One rather than zero for `campaigns`, so a legacy file is not treated as
+    # never-observed. One rather than two for `observations`, so the next live
+    # observation still evicts a restored timing whose warmth is unknowable --
+    # the conservative reading, and the same discipline the eviction applies to
+    # a first in-process timing.
+    default_count = 1
+    observations = try
+        max(0, Int(get(payload, "observations", default_count)))
+    catch
+        default_count
+    end
+    campaigns = try
+        max(0, Int(get(payload, "campaigns", default_count)))
+    catch
+        default_count
+    end
     successes = min(samples, successes)
     failures = min(samples - successes, failures)
     elapsed_sum_s = max(0.0, elapsed_sum_s)
@@ -214,7 +269,9 @@ end
         successes=successes,
         failures=failures,
         elapsed_sum_s=elapsed_sum_s,
-        elapsed_sq_sum_s=elapsed_sq_sum_s
+        elapsed_sq_sum_s=elapsed_sq_sum_s,
+        observations=observations,
+        campaigns=campaigns
     )
 end
 
@@ -263,7 +320,11 @@ function save_outer_route_state(
     end
 
     payload = Dict{String, Any}(
-        "schema_version" => 2,
+        # 3: adds the `observations` and `campaigns` counters. Not gated on when
+        # loading -- a schema-2 file is still read, with the defaults documented
+        # in `_route_payload_stats` -- so the bump records what a file contains
+        # rather than rejecting older ones.
+        "schema_version" => 3,
         "updated_utc" => string(now(UTC)),
         "metadata" => metadata_out,
         "history" => rows
@@ -312,6 +373,12 @@ function load_outer_route_state!(
             existing.failures += stats.failures
             existing.elapsed_sum_s += stats.elapsed_sum_s
             existing.elapsed_sq_sum_s += stats.elapsed_sq_sum_s
+            # Additive like every other field: `replace=false` merges a session's
+            # own observations with the persisted ones, and an observation count
+            # that did not merge would under-report the merged history it now
+            # describes.
+            existing.observations += stats.observations
+            existing.campaigns += stats.campaigns
             loaded_rows += 1
             push!(loaded_signatures, signature)
         end

@@ -25,7 +25,7 @@ end
     et::Float64,
     observer::AbstractString
 )::SVector{3, Float64}
-    return lock(SPICE_LOCK) do
+    return lock(tracked_lock(:spice_ephemeris)) do
         _spice_position_j2000_m_unlocked(target, et, observer)
     end
 end
@@ -47,7 +47,7 @@ end
 
 @inline function ephemerides_time_seconds(initial_time, ::SpiceEphemeridesModel)::Float64
     start_epoch = from_utc(_initial_time_datetime(initial_time))
-    return lock(SPICE_LOCK) do
+    return lock(tracked_lock(:spice_body)) do
         utc2et(to_utc(start_epoch))
     end
 end
@@ -73,7 +73,7 @@ end
 end
 
 function _spice_planet_frame_lpi(planet, et::Float64)::SMatrix{3, 3, Float64}
-    return lock(SPICE_LOCK) do
+    return lock(tracked_lock(:spice_frame)) do
         if planet.name == "Earth"
             try
                 return SMatrix{3, 3, Float64}(pxform("J2000", _EARTH_HIGH_PREC_BODY_FIXED_FRAME, et))

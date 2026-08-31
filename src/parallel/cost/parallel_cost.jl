@@ -15,11 +15,16 @@ using ..DynamicEffectors: SolarRadiationPressureModel
 export WorkCounts, MachineConstants, RateCurve, rate_at, effector_cost_terms
 export constellation_work_counts, model_in_cost_domain, flat_queue_node_effector
 export EffectorProbe, validate_declaration, probe_ns_map
+export ContentionInputs, alloc_bytes_per_second, lock_duty_cycle, lock_wait_hold_ratio
 export PlanCandidate, PlanPrediction, predict_plan_ns, plan_candidates, select_plan
 export calibrate_machine, machine_fingerprint, machine_constants_path
 export save_machine_constants, load_machine_constants, constants_are_current
 export timed_min, paired_compare, PairedComparison
+export StreamingPairedTrial, next_arm, observe!, trial_active, trial_verdict
+export trial_rounds, trial_speedups
 export calib_batch_kernel!, calib_touch_kernel!, calib_table, calib_scalar_kernel!
+export calib_alloc_kernel!, calib_stream_kernel!
+export usl_speedup, usl_peak_workers, workload_usl_parameters
 export reference_kernel_ns, reference_memory_kernel_ns
 export timing_noise_floor
 

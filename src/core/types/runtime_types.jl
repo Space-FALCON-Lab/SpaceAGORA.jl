@@ -803,6 +803,18 @@ export RhsEffectorDecision, RhsExecutionPlan
         # as Any in the RHS, boxing every plan access and re-boxing ODEParams
         # (~1.6 KB inline) on each dynamics call — ~2/3 of solve-path allocations.
         rhs_plan_override::Base.RefValue{Union{Nothing, RhsExecutionPlan}} = Ref{Union{Nothing, RhsExecutionPlan}}(nothing)
+        # In-run width identification state, or `nothing` when it is off (the
+        # default). Typed `Any` because the trial lives in ParallelCost, which is
+        # included after this file; the RHS reads it behind a `=== nothing`
+        # branch and never touches it on the hot path once identification has
+        # finished, so the boxing costs one pointer comparison per call.
+        #
+        # Distinct from rhs_plan_override in what it is for: the override is a
+        # decision already made, this is the process of making one. The trial
+        # writes its answer INTO the override and then clears itself, so the
+        # steady state after identification is exactly the state a pre-solve
+        # sweep would have produced.
+        rhs_width_trial::Base.RefValue{Any} = Ref{Any}(nothing)
         # Per-accepted-step cache of _rhs_execution_plan's routing decision, active
         # only when SPACEAGORA_RHS_PLAN_STEP_CACHE=on (_rhs_plan_step_cache_enabled,
         # setup.jl). N_sats/thread policy don't change mid-step, so re-deriving the

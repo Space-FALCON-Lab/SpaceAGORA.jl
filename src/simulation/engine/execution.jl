@@ -328,6 +328,30 @@ function run_simulation(
     # or a cached result already exists for this machine + scenario signature.
     _calibrate_rhs_plan_if_needed!(p, u_start, args)
 
+    # In-run width identification, AFTER the sweep and only where the sweep
+    # produced no plan.
+    #
+    # Both mechanisms drive `rhs_plan_override`, and running them together does
+    # not merely duplicate work -- it corrupts the sweep. The sweep measures a
+    # candidate by pinning it and calling the RHS; with a trial installed, the
+    # RHS wrapper replaces that pin with whichever arm the trial wants next, so
+    # every reading the sweep takes belongs to a different plan than the one it
+    # believes it is timing. It then caches that verdict, and the bad entry
+    # outlives the run. Measured on the 256-satellite fullstack shape at a
+    # 3600 s arc with a clean store: identification-before-sweep ran 57% slower
+    # than the sweep alone, 15-0 and significant, and the penalty survived
+    # warm-up because it was baked into the cached entry.
+    #
+    # Ordering it after the sweep also makes the division of labour the useful
+    # one. The sweep pins a plan when it can separate the candidates by its
+    # margin; identification is for the case where it cannot and abstains,
+    # which is where a solve is currently left with the runtime heuristic and no
+    # measurement behind it.
+    if _rhs_identify_enabled() && p.shared_buffers.rhs_plan_override[] === nothing
+        p.shared_buffers.rhs_width_trial[] =
+            build_rhs_width_trial(p, args.dynamics_model.dynamic_effectors)
+    end
+
     # Skip per-step solution/dense storage when nothing reads the trajectory.
     # gravity_backbone_split backfills save data from interior solution points,
     # and _auto_stiff_switched/solver metadata read per-step solver state, so
@@ -445,6 +469,11 @@ function run_simulation(
             throw(ErrorException("Solve failed with retcode=$(sol.retcode)."))
         end
     end
+
+    # Time the solve, so the next process with this signature knows whether the
+    # ~0.1 s sweep is worth paying. Placed here rather than at the end of the
+    # function so results/telemetry work is not counted as solve cost.
+    _rhs_calib_record_solve_time!()
 
     # Process and save results
     _save_simulation_results_if_enabled!(

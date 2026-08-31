@@ -160,16 +160,54 @@ end
     error("SimulationModel.planet_frame_lpi not found in module ancestry for aerodynamic_wrench_models.jl")
 end
 
+# Guards the lazy-growth path below, and nothing else.
+#
+# Not on the hot path: `_initialize_save_cache_buffers!` (engine/setup.jl) sizes
+# these caches to the satellite count before any threaded dispatch can begin, so
+# in a solve the growth branch is never taken and this lock is never acquired.
+const _SAVE_CACHE_GROW_LOCK = ReentrantLock()
+
 @inline function _store_vector_cache!(
     cache::Vector{SVector{3, Float64}},
     sat_idx::Int,
     value::SVector{3, Float64}
 )::Nothing
     if length(cache) < sat_idx
-        resize!(cache, sat_idx)
-        @inbounds for idx in eachindex(cache)
-            if !isassigned(cache, idx)
-                cache[idx] = SVector{3, Float64}(0.0, 0.0, 0.0)
+        # Growing a SHARED vector from inside a parallel region.
+        #
+        # AerodynamicCoefficientfM's wrench is dispatched across persistent
+        # worker threads by the flat-constellation-effector-queue route, so two
+        # satellites on different workers can both see the cache too short and
+        # both call `resize!` on the same Vector. Julia 1.12 catches that as a
+        # ConcurrencyViolationError; at larger satellite counts, where the race
+        # window is tighter, it has instead corrupted memory badly enough to
+        # segfault.
+        #
+        # `_initialize_save_cache_buffers!` pre-sizes the caches and is called by
+        # `run_simulation`, which is why solves do not hit this. But safety then
+        # rests on every construction path remembering one call, and the paths
+        # that build `ODEParams` directly to drive the RHS -- the cost-model
+        # validation script and the contention probes -- did not. A missed call
+        # should cost a lock acquisition on a cold path, not a segfault at N=1024.
+        #
+        # Double-checked: the length is re-tested under the lock, so concurrent
+        # arrivals grow once and the losers fall through to the indexed write.
+        #
+        # This serialises growth against growth. It does NOT serialise growth
+        # against a concurrent indexed write lower down the same vector, which
+        # `resize!` can invalidate by reallocating -- guarding every write would
+        # put a lock on the hot path to fix a case that should not arise. So
+        # this is a survivability net, not a licence to skip initialisation:
+        # pre-sizing remains the only correct configuration, and callers that
+        # build `ODEParams` themselves must still call
+        # `_initialize_save_cache_buffers!`.
+        lock(_SAVE_CACHE_GROW_LOCK) do
+            if length(cache) < sat_idx
+                old_len = length(cache)
+                resize!(cache, sat_idx)
+                @inbounds for idx in (old_len + 1):sat_idx
+                    cache[idx] = SVector{3, Float64}(0.0, 0.0, 0.0)
+                end
             end
         end
     end

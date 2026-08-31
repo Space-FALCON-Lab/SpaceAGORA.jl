@@ -1,5 +1,6 @@
 using Test
 using SpaceAGORA
+using TOML
 
 const PPr = SpaceAGORA.ParallelProfiles
 const SCamp = SpaceAGORA.SimulationCampaigns
@@ -239,4 +240,86 @@ end
     @test haskey(split_snap, Symbol("split_threads_w4"))
     # :threads has no route-level alternative measured, so it is NOT proven.
     @test PPr._route_is_proven(Symbol[:none, :threads, :process], snap, :threads, 2) == false
+end
+
+@testset "Observation counters survive the round trip" begin
+    # Both counters gate behaviour and neither was serialised, so a restored
+    # arm read as never-observed (campaigns) and had its whole history replaced
+    # by the second live timing (observations, via the cold-eviction branch).
+    mktempdir() do dir
+        path = joinpath(dir, "counters.toml")
+        feat = _feat()
+        sig = PPr.outer_route_signature(feat)
+
+        learned = PPr.OuterRouteState()
+        _record!(learned, feat, :process, 0.10)   # reps = 5
+        _record!(learned, feat, :threads, 0.90)
+        PPr.save_outer_route_state(learned, path)
+
+        fresh = PPr.OuterRouteState()
+        PPr.load_outer_route_state!(fresh, path)
+        snap = PPr.outer_route_stats_snapshot(fresh, sig)
+        # Four rounds' worth, not five: the cold-eviction branch replaces the
+        # arm wholesale on its second observation, so the first is discarded.
+        # Both counters still count all five, which is the point -- they record
+        # how often the arm was observed, not how much of that survived into
+        # the average.
+        @test snap[:process].samples == 4 * 64
+
+        restored = fresh.history[sig][:process]
+        @test restored.campaigns == 5
+        @test restored.observations == 5
+
+        # The load-then-observe sequence that used to discard everything: with
+        # observations restored at 5 the eviction branch (observations == 2)
+        # cannot fire, so the restored weight survives.
+        before_samples = restored.samples
+        PPr.record_outer_route_feedback!(
+            fresh, feat; route = :process, successes = 64, failures = 0,
+            elapsed_success_s = 64 * 0.10, elapsed_success_sq_sum_s = 64 * 0.10^2,
+        )
+        PPr.record_outer_route_feedback!(
+            fresh, feat; route = :process, successes = 64, failures = 0,
+            elapsed_success_s = 64 * 0.10, elapsed_success_sq_sum_s = 64 * 0.10^2,
+        )
+        @test fresh.history[sig][:process].samples == before_samples + 2 * 64
+        @test fresh.history[sig][:process].campaigns == 7
+    end
+end
+
+@testset "Schema-2 files still load" begin
+    # The bump to schema 3 records what a file contains; it must not reject one
+    # written before the counters existed.
+    mktempdir() do dir
+        path = joinpath(dir, "legacy.toml")
+        feat = _feat()
+        sig = PPr.outer_route_signature(feat)
+        legacy = Dict{String, Any}(
+            "schema_version" => 2,
+            "history" => [Dict{String, Any}(
+                "signature" => sig,
+                "route" => "process",
+                "stats" => Dict{String, Any}(
+                    "samples" => 64,
+                    "successes" => 64,
+                    "failures" => 0,
+                    "elapsed_sum_s" => 6.4,
+                    "elapsed_sq_sum_s" => 0.64,
+                ),
+            )],
+        )
+        open(path, "w") do io
+            TOML.print(io, legacy)
+        end
+
+        st = PPr.OuterRouteState()
+        result = PPr.load_outer_route_state!(st, path)
+        @test result.rows == 1
+        stats = st.history[sig][:process]
+        @test stats.samples == 64
+        # One, not zero: a row with samples > 0 ran at least once, and nothing
+        # in a schema-2 file says how many times.
+        @test stats.campaigns == 1
+        @test stats.observations == 1
+    end
 end

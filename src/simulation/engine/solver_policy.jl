@@ -212,11 +212,38 @@ end
 
 @inline _gravity_backbone_eligible(args)::Bool = isnothing(_gravity_backbone_reject_reason(args))
 
-@inline function _split_imex_solver_spec(cfg::SolverConfig)
+# KLUFactorization requires a sparse W, which only exists when the component
+# function carries a jac_prototype; on a dense W it produces wrong Newton
+# corrections rather than an error, so it is opt-in per problem exactly as in
+# _rodas5p_alg below.
+#
+# A per-satellite dense-LU solver was built and measured against KLU here and
+# was strictly worse, so it is deliberately not an option. Block LU does win the
+# factorization (0.091 ms against 0.31 ms on a 256-block, n=2560 W), but it
+# loses the solve badly -- 0.0495 ms against 0.0226 ms -- because 256 small
+# LAPACK ldiv! calls cost more per call than one sparse triangular solve. This
+# workload is solve-dominated by roughly 42:1 (nsolve=543 against nw=13 on a
+# representative constellation run), so the solve is what counts and KLU wins
+# it. Measuring factorize+solve as a unit is what makes block LU look 3.4x
+# faster; that ratio does not survive contact with the integrator's actual mix.
+@inline _sparse_linsolve_or_default(sparse_jac::Bool) = sparse_jac ? KLUFactorization() : nothing
+
+"""Return whether a problem component function carries a sparse Jacobian prototype."""
+@inline function _has_sparse_jac_prototype(f)::Bool
+    hasproperty(f, :jac_prototype) || return false
+    return getproperty(f, :jac_prototype) isa SparseMatrixCSC
+end
+
+"""Return whether split component `name` (`:f1`/`:f2`) of `prob` carries a sparse prototype."""
+@inline _split_component_has_sparse_jac(prob, name::Symbol)::Bool =
+    hasproperty(prob.f, name) && _has_sparse_jac_prototype(getproperty(prob.f, name))
+
+@inline function _split_imex_solver_spec(cfg::SolverConfig, sparse_jac::Bool=false)
     mode = cfg.split_imex_solver
-    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff()),  label="KenCarp4")
-    mode === :kencarp47 && return (alg=KenCarp47(autodiff=AutoFiniteDiff()), label="KenCarp47")
-    mode === :kencarp58 && return (alg=KenCarp58(autodiff=AutoFiniteDiff()), label="KenCarp58")
+    ls = _sparse_linsolve_or_default(sparse_jac)
+    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff(), linsolve=ls),  label="KenCarp4")
+    mode === :kencarp47 && return (alg=KenCarp47(autodiff=AutoFiniteDiff(), linsolve=ls), label="KenCarp47")
+    mode === :kencarp58 && return (alg=KenCarp58(autodiff=AutoFiniteDiff(), linsolve=ls), label="KenCarp58")
     throw(ArgumentError(
         "Unsupported SolverConfig.split_imex_solver=$(repr(mode)). Use one of: :kencarp4, :kencarp47, :kencarp58."
     ))
@@ -234,23 +261,26 @@ end
 end
 @inline _multirate_slow_dt_s(args)::Float64 = _multirate_slow_dt_s(_active_solver_config(), args)
 
-@inline function _multirate_solver_spec_from_sym(mode::Symbol, field_name::String)
+@inline function _multirate_solver_spec_from_sym(mode::Symbol, field_name::String, sparse_jac::Bool=false)
+    ls = _sparse_linsolve_or_default(sparse_jac)
     mode === :tsit5     && return (alg=Tsit5(), label="Tsit5", auto_switch_capable=false)
     mode === :auto_stiff && return (
-        alg=AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff())),
+        alg=AutoTsit5(Rodas5P(autodiff=AutoFiniteDiff(), linsolve=ls)),
         label="AutoTsit5(Rodas5P)",
         auto_switch_capable=true
     )
-    mode === :rodas5p   && return (alg=Rodas5P(autodiff=AutoFiniteDiff()), label="Rodas5P", auto_switch_capable=false)
-    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff()), label="KenCarp4", auto_switch_capable=false)
+    mode === :rodas5p   && return (alg=Rodas5P(autodiff=AutoFiniteDiff(), linsolve=ls), label="Rodas5P", auto_switch_capable=false)
+    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff(), linsolve=ls), label="KenCarp4", auto_switch_capable=false)
     mode === :dp8       && return (alg=DP8(), label="DP8", auto_switch_capable=false)
     throw(ArgumentError(
         "Unsupported SolverConfig.$field_name=$(repr(mode)). Use one of: :tsit5, :dp8, :auto_stiff, :rodas5p, :kencarp4."
     ))
 end
 
-@inline _multirate_slow_solver_spec(cfg::SolverConfig) = _multirate_solver_spec_from_sym(cfg.multirate_slow_solver, "multirate_slow_solver")
-@inline _multirate_fast_solver_spec(cfg::SolverConfig) = _multirate_solver_spec_from_sym(cfg.multirate_fast_solver, "multirate_fast_solver")
+@inline _multirate_slow_solver_spec(cfg::SolverConfig, sparse_jac::Bool=false) =
+    _multirate_solver_spec_from_sym(cfg.multirate_slow_solver, "multirate_slow_solver", sparse_jac)
+@inline _multirate_fast_solver_spec(cfg::SolverConfig, sparse_jac::Bool=false) =
+    _multirate_solver_spec_from_sym(cfg.multirate_fast_solver, "multirate_fast_solver", sparse_jac)
 @inline _multirate_slow_solver_spec() = _multirate_slow_solver_spec(_active_solver_config())
 @inline _multirate_fast_solver_spec() = _multirate_fast_solver_spec(_active_solver_config())
 
@@ -265,7 +295,13 @@ mutable struct SolverIntegratorCache
     save_on::Bool
     save_start::Bool
     save_end::Bool
-    SolverIntegratorCache() = new(nothing, true, true, true, true)
+    # dtmax is baked into the integrator at init and `reinit!` does not reset
+    # it, so a cache init'ed at one dtmax must not serve a call asking for
+    # another -- it would silently integrate with the wrong maximum step. The
+    # multirate driver relies on this: its slow half asks for the macro-step
+    # width, which shrinks on the final partial macro-step.
+    dtmax::Float64
+    SolverIntegratorCache() = new(nothing, true, true, true, true, NaN)
 end
 
 @inline function _solver_cache_options_match(
@@ -274,11 +310,13 @@ end
     save_on::Bool,
     save_start::Bool,
     save_end::Bool,
+    dtmax::Float64,
 )::Bool
     return solver_cache.save_everystep == save_everystep &&
            solver_cache.save_on == save_on &&
            solver_cache.save_start == save_start &&
-           solver_cache.save_end == save_end
+           solver_cache.save_end == save_end &&
+           solver_cache.dtmax == dtmax
 end
 
 @inline function _cache_integrator!(
@@ -288,12 +326,14 @@ end
     save_on::Bool,
     save_start::Bool,
     save_end::Bool,
+    dtmax::Float64,
 )
     solver_cache.integrator = integ
     solver_cache.save_everystep = save_everystep
     solver_cache.save_on = save_on
     solver_cache.save_start = save_start
     solver_cache.save_end = save_end
+    solver_cache.dtmax = dtmax
     return integ
 end
 
@@ -334,7 +374,7 @@ end
     # Reuse the cached integrator only when it was init'ed with the same save
     # options this call resolved; otherwise fall through and re-init the cache.
     if solver_cache !== nothing && solver_cache.integrator !== nothing &&
-       _solver_cache_options_match(solver_cache, save_everystep, save_on, save_start, save_end)
+       _solver_cache_options_match(solver_cache, save_everystep, save_on, save_start, save_end, dtmax_use)
         integ = solver_cache.integrator
         integ.p = prob.p
         SciMLBase.reinit!(integ, prob.u0;
@@ -348,14 +388,14 @@ end
     if maxiters === nothing
         if solver_cache !== nothing
             integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
-            _cache_integrator!(solver_cache, integ, save_everystep, save_on, save_start, save_end)
+            _cache_integrator!(solver_cache, integ, save_everystep, save_on, save_start, save_end, dtmax_use)
             return DiffEqBase.solve!(integ)
         end
         return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
     end
     if solver_cache !== nothing
         integ = DiffEqBase.init(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
-        _cache_integrator!(solver_cache, integ, save_everystep, save_on, save_start, save_end)
+        _cache_integrator!(solver_cache, integ, save_everystep, save_on, save_start, save_end, dtmax_use)
         return DiffEqBase.solve!(integ)
     end
     return solve(prob, alg; reltol=reltol_tol, abstol=abstol_tol, dtmax=dtmax_use, maxiters=maxiters, save_everystep=save_everystep, save_on=save_on, save_start=save_start, save_end=save_end)
@@ -423,17 +463,39 @@ function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol,
         )
     end
 
-    slow_spec = _multirate_slow_solver_spec(cfg)
-    fast_spec = _multirate_fast_solver_spec(cfg)
+    # Each half is handed to _split_subproblem as its own ODEProblem, so the
+    # sparse linear solve is opt-in per component: whichever of f1/f2 carries a
+    # prototype gets KLU, the other keeps the dense default.
+    slow_spec = _multirate_slow_solver_spec(cfg, _split_component_has_sparse_jac(prob, :f1))
+    fast_spec = _multirate_fast_solver_spec(cfg, _split_component_has_sparse_jac(prob, :f2))
     fast_substeps = _multirate_fast_substeps(cfg)
     slow_dt_s = _multirate_slow_dt_s(cfg, args)
     fast_dt_s = slow_dt_s / fast_substeps
 
     t_cursor = t_start
+    # Carried across macro-steps and copied into, never rebound: the sub-solve
+    # results can alias a cached integrator's own state buffer, which the next
+    # reinit! overwrites, so the handoff state must live in a buffer the
+    # integrators do not own.
     u_cursor = deepcopy(prob.u0)
     final_sol = nothing
     macro_steps = 0
     auto_switch_events = 0
+
+    # One cached integrator per split component. They cannot share one: `reinit!`
+    # rebinds the state and time span but never the RHS, and f1/f2 are different
+    # functions. Both fast half-steps resolve the same dtmax, so a single fast
+    # cache serves them; the slow cache re-inits itself on the final partial
+    # macro-step, where the requested dtmax shrinks.
+    #
+    # Without this the driver built a complete integrator -- cache, jac config,
+    # W, and KLU symbolic factorization -- three times per macro-step and threw
+    # it away. Measured on a 256-satellite-shaped block-diagonal problem
+    # (n=2560): init 0.834 ms / 4.3 MB against reinit! 0.005 ms / 0.1 MB, and a
+    # fresh init costs more than four integration steps while each sub-solve
+    # takes only a handful.
+    slow_cache = SolverIntegratorCache()
+    fast_cache = SolverIntegratorCache()
 
     while t_cursor < t_end
         t_next = min(t_cursor + slow_dt_s, t_end)
@@ -453,7 +515,8 @@ function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol,
                 fast_spec.alg,
                 reltol_tol,
                 abstol_tol;
-                dtmax_override=min(fast_dt_s, half_dt)
+                dtmax_override=min(fast_dt_s, half_dt),
+                solver_cache=fast_cache
             )
             if fast_spec.auto_switch_capable && _auto_stiff_switched(sol_fast_pre)
                 auto_switch_events += 1
@@ -469,7 +532,7 @@ function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol,
                     auto_switch_events=auto_switch_events
                 )
             end
-            u_cursor = deepcopy(sol_fast_pre.u[end])
+            copyto!(u_cursor, sol_fast_pre.u[end])
             final_sol = sol_fast_pre
         end
 
@@ -481,7 +544,8 @@ function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol,
             slow_spec.alg,
             reltol_tol,
             abstol_tol;
-            dtmax_override=segment_dt
+            dtmax_override=segment_dt,
+            solver_cache=slow_cache
         )
         if slow_spec.auto_switch_capable && _auto_stiff_switched(sol_slow)
             auto_switch_events += 1
@@ -497,7 +561,7 @@ function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol,
                 auto_switch_events=auto_switch_events
             )
         end
-        u_cursor = deepcopy(sol_slow.u[end])
+        copyto!(u_cursor, sol_slow.u[end])
         final_sol = sol_slow
 
         if half_dt > 0.0
@@ -509,7 +573,8 @@ function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol,
                 fast_spec.alg,
                 reltol_tol,
                 abstol_tol;
-                dtmax_override=min(fast_dt_s, half_dt)
+                dtmax_override=min(fast_dt_s, half_dt),
+                solver_cache=fast_cache
             )
             if fast_spec.auto_switch_capable && _auto_stiff_switched(sol_fast_post)
                 auto_switch_events += 1
@@ -525,7 +590,7 @@ function _solve_with_multirate_solver(prob, cfg::SolverConfig, args, reltol_tol,
                     auto_switch_events=auto_switch_events
                 )
             end
-            u_cursor = deepcopy(sol_fast_post.u[end])
+            copyto!(u_cursor, sol_fast_post.u[end])
             final_sol = sol_fast_post
         end
 
@@ -663,12 +728,15 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
         )
     end
 
-    # KLUFactorization requires a sparse W matrix. Only use it when a jac_prototype
-    # was provided (multi-satellite path); fall back to dense LU otherwise so that
-    # single-satellite runs don't get wrong Newton corrections from KLU on a dense matrix.
-    _rodas5p_alg() = prob.f.jac_prototype !== nothing ?
-        Rodas5P(autodiff=AutoFiniteDiff(), linsolve=KLUFactorization()) :
-        Rodas5P(autodiff=AutoFiniteDiff())
+    # KLUFactorization requires a sparse W matrix. Only use it when a sparse
+    # jac_prototype was provided (multi-satellite path); fall back to dense LU
+    # otherwise so that single-satellite runs don't get wrong Newton corrections
+    # from KLU on a dense matrix. The check asks for a sparse prototype rather
+    # than a non-nothing one so a dense prototype cannot route here either.
+    _rodas5p_alg() = Rodas5P(
+        autodiff=AutoFiniteDiff(),
+        linsolve=_sparse_linsolve_or_default(_has_sparse_jac_prototype(prob.f)),
+    )
 
     if mode == :rodas5p
         sol = _solve_with_explicit_solver(prob, cfg, args, _rodas5p_alg(), reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
@@ -707,7 +775,7 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
     end
 
     if mode == :split_imex
-        split_solver = _split_imex_solver_spec(cfg)
+        split_solver = _split_imex_solver_spec(cfg, _split_component_has_sparse_jac(prob, :f1))
         sol = _solve_with_explicit_solver(prob, cfg, args, split_solver.alg, reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
         return sol, (
             solver="$(split_solver.label)(IMEX)",

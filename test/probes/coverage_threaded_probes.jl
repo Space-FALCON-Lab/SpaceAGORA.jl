@@ -207,8 +207,8 @@ function make_spacecraft(;
     ν_deg::Float64=175.0,
     orientation_state::Union{Nothing, Tuple{SVector{4, Float64}, SVector{3, Float64}}}=nothing
 )
-    root = Link{0}(root=true, m=500.0, ref_area=12.0)
-    panel = Link{0}(root=false, m=30.0, ref_area=6.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
+    root = Link(root=true, m=500.0, ref_area=12.0)
+    panel = Link(root=false, m=30.0, ref_area=6.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
 
     if isnothing(orientation_state)
         ic = InitialCondition(

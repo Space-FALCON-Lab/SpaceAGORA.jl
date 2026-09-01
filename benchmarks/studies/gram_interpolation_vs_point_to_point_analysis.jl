@@ -26,7 +26,7 @@ const STRICT_WIND_ABS_MAX = 120.0
 end
 
 function _make_spacecraft(planet)::SpacecraftModel
-    root = Link{0}(root=true, m=120.0, ref_area=1.2)
+    root = Link(root=true, m=120.0, ref_area=1.2)
     ic = InitialCondition(
         ra=planet.Rp_e + 520e3,
         rp=planet.Rp_e + 500e3,

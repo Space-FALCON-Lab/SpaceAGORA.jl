@@ -487,7 +487,7 @@ function _coupled_end_effector_from_state(plan::RobotArmPlan, state)
 end
 
 function _rpo_3u_cubesat_inertia()
-    root = Link{0}(
+    root = Link(
         root=true,
         m=RPO_3U_CUBESAT_DRY_MASS_KG,
         dims=MVector{3, Float64}(RPO_3U_CUBESAT_DIMS_M),

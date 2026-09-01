@@ -1345,8 +1345,8 @@ end
 
     @test dynamic_effectors._threadid_capacity() >= Threads.maxthreadid()
 
-    body_a = Link{0}(root=true)
-    body_b = Link{0}(root=false)
+    body_a = Link(root=true)
+    body_b = Link(root=false)
     body_a.net_force .= SVector{3, Float64}(1.0, 2.0, 3.0)
     body_a.net_torque .= SVector{3, Float64}(4.0, 5.0, 6.0)
     body_b.net_force .= SVector{3, Float64}(-0.5, 0.0, 0.5)
@@ -2018,7 +2018,11 @@ end
     # (v3 itself was the no-regret floor bump: a cached entry short-circuits the
     # sweep, and the floor only runs inside a sweep, so pre-floor entries would
     # keep pinning plans the floor exists to reject, indefinitely.)
-    @test startswith(sig_a, "v4|machine=")
+    #
+    # v5: bumped for the density-model term -- v4 keys were blind to the density
+    # model, so a cached entry could replay a GRAM plan the sweep had refused to
+    # rank.
+    @test startswith(sig_a, "v5|machine=")
     @test occursin("|sats=", sig_a)
     @test occursin("|effs=1|", sig_a)
     @test occursin("|harm=1", sig_a)

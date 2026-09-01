@@ -586,7 +586,7 @@
     end
 
     @testset "integrate_impulse!" begin
-        link = Link{0}(root=true, attitude_control_rate=0.1)
+        link = Link(root=true, attitude_control_rate=0.1)
         ω = 20.0
 
         thr_zero = Thruster(max_thrust=10.0, cutoff_frequency=ω, κ=0.0)
@@ -633,7 +633,7 @@
     @testset "thrust_calculation_schmitt_trigger!" begin
         mktempdir() do tmp
             cd(tmp) do
-                link = Link{0}(root=true, attitude_control_rate=0.1)
+                link = Link(root=true, attitude_control_rate=0.1)
                 thr = Thruster(
                     max_thrust=10.0,
                     min_firing_time=0.05,
@@ -680,7 +680,7 @@
     @testset "update_thrusters!" begin
         mktempdir() do tmp
             cd(tmp) do
-                link = Link{0}(root=true, attitude_control_rate=0.1)
+                link = Link(root=true, attitude_control_rate=0.1)
                 update_thrusters!(link, SVector{3, Float64}(0.0, 0.0, 0.0), 0.0)
                 @test isempty(link.thrusters)
                 @test size(link.J_thruster) == (3, 0)
@@ -697,7 +697,7 @@
                 update_thrusters!(link, SVector{3, Float64}(-1.0, 0.0, 0.0), 0.1)
                 @test link.thrusters[1].thrust >= 0.0
 
-                link_full = Link{0}(root=true, attitude_control_rate=0.1)
+                link_full = Link(root=true, attitude_control_rate=0.1)
                 push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 1.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
                 push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 0.0, 1.0), direction=MVector{3, Float64}(1.0, 0.0, 0.0)))
                 push!(link_full.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(1.0, 0.0, 0.0), direction=MVector{3, Float64}(0.0, 1.0, 0.0)))
@@ -711,7 +711,7 @@
                 τ_ach_full = link_full.J_thruster * thrust_full
                 @test norm(τ_ach_full - τ_req_full) / norm(τ_req_full) < 1e-6
 
-                link_singular = Link{0}(root=true, attitude_control_rate=0.1)
+                link_singular = Link(root=true, attitude_control_rate=0.1)
                 push!(link_singular.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 1.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
                 push!(link_singular.thrusters, Thruster(max_thrust=100.0, cutoff_frequency=1e6, min_firing_time=0.0, location=MVector{3, Float64}(0.0, 2.0, 0.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
                 τ_req_singular = SVector{3, Float64}(0.0, 1.0, 0.0)
@@ -724,7 +724,7 @@
                 τ_lsq_singular = link_singular.J_thruster * (pinv(link_singular.J_thruster) * τ_req_singular)
                 @test norm(τ_ach_singular - τ_lsq_singular) < 1e-6
 
-                link_degenerate = Link{0}(root=true, attitude_control_rate=0.1)
+                link_degenerate = Link(root=true, attitude_control_rate=0.1)
                 push!(
                     link_degenerate.thrusters,
                     Thruster(

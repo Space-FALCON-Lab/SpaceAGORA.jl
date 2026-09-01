@@ -1,39 +1,178 @@
-function _build_block_diagonal_jac_prototype(u0::ComponentVector)::SparseMatrixCSC{Float64, Int}
+"""
+Block-diagonal Jacobian sparsity for a constellation state, one block per satellite.
+
+`is_active` (when given) drops an inactive satellite's block to just its
+diagonal. The RHS already zeroes those derivatives, so their off-diagonal
+entries are structurally zero, and carrying them costs nnz in every W and one
+colour in every finite-difference Jacobian for the rest of the run. This is only
+sound because deactivation is permanent -- `p.is_active[idx] = false` in
+event_callbacks.jl is the sole write and nothing sets it back -- so a pattern
+built from a later snapshot can only be denser than the truth, never sparser.
+
+Satellite blocks are contiguous index ranges in the ComponentArray layout, which
+lets the CSC arrays be filled directly: `colptr` and `rowval` follow from each
+column's owning block, with no COO triple and no `sparse()` sort. The general
+path below still handles a layout where they are not contiguous.
+"""
+function _build_block_diagonal_jac_prototype(
+    u0::ComponentVector,
+    is_active::Union{Nothing, AbstractVector{Bool}}=nothing,
+)::SparseMatrixCSC{Float64, Int}
     n_sats = length(u0.sc)
     n_total = length(u0)
     # Probe every satellite block in ONE pass: stamp each satellite's slots with
-    # its own index, flatten once, then bucket the flat indices by the stamp.
-    # This still makes no assumption about uniform block size (heterogeneous
-    # n_bodies / heat_loads per satellite are recovered from the stamps), but it
-    # costs one O(n_total) copy + one O(n_total) scan instead of the per-
-    # satellite `zero(u0)` + full-length `Vector{Float64}` copy + full-length
-    # `findall` it used to, which made prototype construction O(n_sats * n_total)
-    # -- i.e. quadratic in constellation size. Measured in isolation: 8.7 ms ->
-    # 0.3 ms at 1024 satellites, 62.5 ms -> 2.2 ms at 4096. It is pure serial
-    # setup paid once per solve, so its cost lands entirely in Amdahl's serial
-    # fraction for exactly the large-constellation cases the scaling study cares
-    # about -- and it grew faster than the parallelisable work it sits alongside.
+    # its own index, flatten once, then read the stamps back. This makes no
+    # assumption about uniform block size (heterogeneous n_bodies / heat_loads
+    # per satellite are recovered from the stamps), and costs one O(n_total)
+    # copy plus one O(n_total) scan instead of the per-satellite `zero(u0)` +
+    # full-length copy + full-length `findall` it used to, which made
+    # construction O(n_sats * n_total) -- quadratic in constellation size.
     probe = zero(u0)
     @inbounds for i in 1:n_sats
         probe.sc[i] .= Float64(i)
     end
     flat = Vector{Float64}(probe)
-    blocks = [Int[] for _ in 1:n_sats]
+
+    owner = zeros(Int, n_total)
+    first_idx = fill(typemax(Int), n_sats)
+    last_idx = zeros(Int, n_sats)
+    counts = zeros(Int, n_sats)
     @inbounds for k in eachindex(flat)
         stamp = flat[k]
         stamp == 0.0 && continue
-        push!(blocks[Int(stamp)], k)
+        s = Int(stamp)
+        owner[k] = s
+        k < first_idx[s] && (first_idx[s] = k)
+        k > last_idx[s] && (last_idx[s] = k)
+        counts[s] += 1
     end
-    nnz_total = sum(length(b)^2 for b in blocks; init=0)
+
+    @inline _active(s::Int) = is_active === nothing || s > length(is_active) || is_active[s]
+
+    contiguous = true
+    @inbounds for s in 1:n_sats
+        counts[s] == 0 && continue
+        if last_idx[s] - first_idx[s] + 1 != counts[s]
+            contiguous = false
+            break
+        end
+    end
+
+    if contiguous
+        nnz_total = 0
+        @inbounds for s in 1:n_sats
+            counts[s] == 0 && continue
+            nnz_total += _active(s) ? counts[s] * counts[s] : counts[s]
+        end
+        # An index owned by no satellite still needs its diagonal, or the column
+        # is empty and W is structurally singular.
+        @inbounds for k in 1:n_total
+            owner[k] == 0 && (nnz_total += 1)
+        end
+
+        colptr = Vector{Int}(undef, n_total + 1)
+        rowval = Vector{Int}(undef, nnz_total)
+        pos = 1
+        @inbounds for j in 1:n_total
+            colptr[j] = pos
+            s = owner[j]
+            if s == 0 || !_active(s)
+                rowval[pos] = j
+                pos += 1
+            else
+                for i in first_idx[s]:last_idx[s]
+                    rowval[pos] = i
+                    pos += 1
+                end
+            end
+        end
+        colptr[n_total + 1] = pos
+        return SparseMatrixCSC(n_total, n_total, colptr, rowval, ones(Float64, nnz_total))
+    end
+
+    # Non-contiguous layout: fall back to assembling from index lists.
+    blocks = [Int[] for _ in 1:n_sats]
+    @inbounds for k in eachindex(flat)
+        owner[k] == 0 && continue
+        push!(blocks[owner[k]], k)
+    end
+    nnz_total = 0
+    @inbounds for (s, b) in enumerate(blocks)
+        nnz_total += _active(s) ? length(b)^2 : length(b)
+    end
     rows = Vector{Int}(undef, nnz_total)
     cols = Vector{Int}(undef, nnz_total)
     pos = 0
-    @inbounds for sat_idx in blocks, j in sat_idx, k in sat_idx
-        pos += 1
-        rows[pos] = k
-        cols[pos] = j
+    @inbounds for (s, b) in enumerate(blocks)
+        if _active(s)
+            for j in b, k in b
+                pos += 1
+                rows[pos] = k
+                cols[pos] = j
+            end
+        else
+            for j in b
+                pos += 1
+                rows[pos] = j
+                cols[pos] = j
+            end
+        end
     end
     return sparse(rows, cols, ones(Float64, nnz_total), n_total, n_total)
+end
+
+# Satellite-index fields an effector uses to name a satellite other than the one
+# it is being evaluated for. An effector carrying two of these with different
+# values reads across satellites, so its contribution to the Jacobian lands
+# off-block.
+const _CROSS_SATELLITE_INDEX_FIELDS = (:chaser_idx, :target_idx)
+
+"""Return whether `effector` reads state belonging to more than one satellite."""
+@inline function _effector_couples_satellites(effector)::Bool
+    first_idx = nothing
+    @inbounds for name in _CROSS_SATELLITE_INDEX_FIELDS
+        hasproperty(effector, name) || continue
+        idx = getproperty(effector, name)
+        idx isa Integer || continue
+        first_idx === nothing && (first_idx = idx; continue)
+        first_idx == idx || return true
+    end
+    return false
+end
+
+"""Return whether any configured effector couples one satellite's dynamics to another's."""
+function _config_has_cross_satellite_coupling(args)::Bool
+    for (model_name, effectors_name) in (
+        (:dynamics_model, :dynamic_effectors),
+        (:guidance_model, :guidance_effectors),
+        (:navigation_model, :navigation_effectors),
+        (:control_model, :control_effectors),
+    )
+        hasproperty(args, model_name) || continue
+        model = getproperty(args, model_name)
+        hasproperty(model, effectors_name) || continue
+        @inbounds for effector in getproperty(model, effectors_name)
+            _effector_couples_satellites(effector) && return true
+        end
+    end
+    return false
+end
+
+# Attach the block-diagonal sparsity to one component of a split problem.
+#
+# The prototype has to sit on the inner ODEFunction wrapping the component, NOT
+# on the enclosing SplitFunction. Passing `jac_prototype` to SplitFunction alone
+# builds a sparse W -- so KLUFactorization accepts it and nothing errors -- but
+# the finite-difference Jacobian is still taken dense, column by column, because
+# the sparsity that OrdinaryDiffEq colors is read off the component function it
+# actually differentiates. Measured on a 100-block/600-state IMEX repro:
+# SplitFunction-level prototype left the implicit-part evaluation count at 4351,
+# identical to no prototype at all; moving it onto the inner ODEFunction dropped
+# it to 228. The silent no-op is the whole reason this helper exists rather than
+# a `jac_prototype=` keyword at the SplitODEProblem call sites.
+@inline function _split_component_function(f, jac_prototype::Union{Nothing, SparseMatrixCSC{Float64, Int}})
+    jac_prototype === nothing && return f
+    return ODEFunction(f; jac_prototype=jac_prototype)
 end
 
 @inline function _build_typed_solver_problem(u0, tspan, p, callbacks, solver_mode::Symbol,
@@ -51,7 +190,7 @@ end
         )
     elseif mode == :split_imex
         return SplitODEProblem(
-            spacecraft_dynamics_implicit_atmosphere!,
+            _split_component_function(spacecraft_dynamics_implicit_atmosphere!, jac_prototype),
             spacecraft_dynamics_explicit_remainder!,
             u0,
             tspan,
@@ -60,8 +199,8 @@ end
         )
     elseif mode == :multirate
         return SplitODEProblem(
-            spacecraft_dynamics_slow!,
-            spacecraft_dynamics_fast_control!,
+            _split_component_function(spacecraft_dynamics_slow!, jac_prototype),
+            _split_component_function(spacecraft_dynamics_fast_control!, jac_prototype),
             u0,
             tspan,
             p,
@@ -317,11 +456,40 @@ function run_simulation(
     else
         _build_solver_tolerances(u_start, args)
     end
+    # Block-diagonal Jacobian sparsity for the implicit solver paths.
+    #
+    # :gravity_backbone_split is excluded because it integrates with an explicit
+    # symplectic method and never forms a Jacobian. :split_imex and :multirate
+    # are NOT excluded: both run implicit solvers (KenCarp*, Rodas5P) over the
+    # full constellation state, and without a prototype they build a dense n x n
+    # W and take the finite-difference Jacobian dense, costing n+1 RHS
+    # evaluations per Jacobian and an O(n^3) factorization. Measured on a
+    # 200-block/1200-state IMEX repro: 0.696 s and 8551 implicit-part
+    # evaluations dense, against 0.002 s and 228 with this prototype.
+    #
+    # The pattern asserts that satellite i's derivative depends only on
+    # satellite i's state. An effector that reads a second satellite (RPO
+    # planners and the RPO MPC controller both read the target's pos/vel while
+    # computing the chaser's wrench) breaks that assumption, and the entries it
+    # needs sit off-block where this pattern has structural zeros. Supplying a
+    # too-sparse Jacobian is not merely a Newton convergence penalty for
+    # Rodas5P: Rosenbrock methods carry the supplied Jacobian in their order
+    # conditions, so a truncated one reduces the order of the method. Fall back
+    # to a dense Jacobian in that case -- correctness first; extending the
+    # pattern with the coupling blocks would recover the sparsity and is the
+    # better fix, but it needs the effectors to report which pairs they couple.
     jac_prototype = (
-        solver_mode ∉ (:gravity_backbone_split, :split_imex, :multirate) &&
+        solver_mode != :gravity_backbone_split &&
         u_start isa ComponentVector &&
-        length(u_start.sc) > 1
-    ) ? _build_block_diagonal_jac_prototype(u_start) : nothing
+        length(u_start.sc) > 1 &&
+        !_config_has_cross_satellite_coupling(args)
+    ) ? _build_block_diagonal_jac_prototype(u_start, p.is_active) : nothing
+    # Satellites that finish early stop contributing off-diagonal structure.
+    # Rebuild between checkpoint segments when the active set has shrunk, so a
+    # long run does not keep paying peak Jacobian width after most of the
+    # constellation has dropped out. Deactivation is permanent, so the count
+    # alone identifies a change.
+    jac_prototype_active_count = jac_prototype === nothing ? 0 : count(identity, p.is_active)
 
     # Auto-calibration: time candidate execution plans before the solve and pin the
     # fastest one for the duration.  No-ops when budget <= 1, SPACEAGORA_RHS_CALIBRATE=off,
@@ -393,8 +561,19 @@ function run_simulation(
     # and _auto_stiff_switched/solver metadata read per-step solver state, so
     # those cases keep full storage.  Explicit SPACEAGORA_SOLVER_SAVE_* env
     # settings still override inside the solve helpers.
+    #
+    # simulation_settings.results is deliberately NOT a reason to keep the
+    # solution: the results pipeline builds its output from `saved_values`, the
+    # SavingCallback, which records on its own cadence regardless of
+    # save_everystep. The only solution access on that path is the final
+    # endpoint, which `save_end` governs separately. Requiring full storage here
+    # made every results-writing run retain a per-step trajectory nothing read.
+    # Verified by writing the same scenario both ways at 256 and 1024
+    # satellites: the CSV and feather outputs are byte-identical, while
+    # allocation fell 15% (638.6 MB -> 541.0 MB at 1024) and GC went from 10.3%
+    # to 0.9%.
     needs_full_solution = return_solution || return_solver_metadata ||
-        args.simulation_settings.results || solver_mode == :gravity_backbone_split
+        solver_mode == :gravity_backbone_split
 
     last_sol = nothing
     solver_trace = NamedTuple[]
@@ -413,9 +592,28 @@ function run_simulation(
             empty!(saved_values.t)
             empty!(saved_values.saveval)
             p.shared_buffers.solve_segment_end_time[] = t_next
+            if jac_prototype !== nothing
+                active_now = count(identity, p.is_active)
+                if active_now < jac_prototype_active_count
+                    jac_prototype = _build_block_diagonal_jac_prototype(u_cursor, p.is_active)
+                    jac_prototype_active_count = active_now
+                    # The cached integrator baked in the previous sparsity and
+                    # reinit! does not rebuild W, so it would quietly keep using
+                    # the old pattern and the narrower one would never take
+                    # effect. Drop it and let the next segment re-init.
+                    solver_cache === nothing || (solver_cache.integrator = nothing)
+                end
+            end
             prob = _build_typed_solver_problem(u_cursor, (t_cursor, t_next), p, callbacks, solver_mode, jac_prototype)
             seg_sol, solve_meta = try
-                _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol; needs_full_solution=needs_full_solution)
+                # Every segment resolves the same dtmax and save options, so the
+                # cache hits from the second segment on and each one reuses the
+                # integrator instead of rebuilding its cache, jac config, W and
+                # symbolic factorization. Safe here because the segment state is
+                # deepcopied into u_cursor below and _save_snapshot's getters
+                # materialise values (fresh SVectors), so nothing retains a
+                # reference into the integrator's own state buffer.
+                _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
             catch err
                 _try_save_simulation_results_if_enabled!(
                     args,

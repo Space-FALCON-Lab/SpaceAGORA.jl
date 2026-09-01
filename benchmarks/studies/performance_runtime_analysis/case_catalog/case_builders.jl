@@ -51,18 +51,18 @@ function make_spacecraft(
     panel_offset_y::Float64=1.2,
     prop_mass::Float64=0.0
 )::SpacecraftModel
-    root = Link{0}(root=true, m=root_mass, ref_area=root_area)
+    root = Link(root=true, m=root_mass, ref_area=root_area)
     links = Link[root]
     if with_panel
         panel_count >= 1 || throw(ArgumentError("panel_count must be >= 1 when with_panel=true (got $panel_count)."))
         if panel_count == 1
-            panel = Link{0}(root=false, m=panel_mass, ref_area=panel_area, r=MVector{3, Float64}(0.0, panel_offset_y, 0.0))
+            panel = Link(root=false, m=panel_mass, ref_area=panel_area, r=MVector{3, Float64}(0.0, panel_offset_y, 0.0))
             push!(links, panel)
         else
             # Spread appended bodies around the root to keep a balanced 5-body orientation benchmark.
             for panel_idx in 1:panel_count
                 θ = 2π * (panel_idx - 1) / panel_count
-                panel = Link{0}(
+                panel = Link(
                     root=false,
                     m=panel_mass,
                     ref_area=panel_area,
@@ -126,7 +126,7 @@ function make_blunted_cone_entry_spacecraft(
         h_m=h_m
     )
 
-    root = Link{0}(
+    root = Link(
         root=true,
         m=root_mass,
         ref_area=π * base_radius_m^2,

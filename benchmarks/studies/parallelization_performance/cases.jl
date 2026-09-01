@@ -135,12 +135,12 @@ function ppc_spacecraft(
     prop_mass::Float64=0.0,
     orientation_state=nothing
 )
-    root = Link{0}(root=true, m=root_mass, ref_area=root_area)
+    root = Link(root=true, m=root_mass, ref_area=root_area)
     links = Link[root]
     if with_panel
         for panel_idx in 1:panel_count
             theta = 2π * (panel_idx - 1) / max(1, panel_count)
-            panel = Link{0}(
+            panel = Link(
                 root=false,
                 m=8.0,
                 ref_area=3.0,

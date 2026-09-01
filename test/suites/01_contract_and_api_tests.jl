@@ -842,7 +842,7 @@ end
     @test ic.e == 0.0
 
     link = Link()
-    @test link isa Link{0}
+    @test link isa Link
 
     joint = Joint()
     @test joint isa Joint
@@ -851,7 +851,7 @@ end
     @test sc isa SpacecraftModel
     @test sc.root.root
 
-    custom_root = Link{0}(root=true, m=100.0)
+    custom_root = Link(root=true, m=100.0)
     sc_custom = SpacecraftModel(root=custom_root, id=42)
     @test sc_custom.id == 42
     @test sc_custom.root === custom_root

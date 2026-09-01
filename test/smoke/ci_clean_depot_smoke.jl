@@ -11,7 +11,7 @@ const run_simulation = SpaceAGORA.run_simulation
 spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 planet = Earth("", spice_path)
 
-root = Link{0}(root=true, m=120.0, ref_area=1.0)
+root = Link(root=true, m=120.0, ref_area=1.0)
 ic = InitialCondition(planet.Rp_e + 500e3, 0.0, 0.0, 0.0, 0.0, 0.0)
 spacecraft = SpacecraftModel(
     Joint[],

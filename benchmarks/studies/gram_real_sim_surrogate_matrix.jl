@@ -160,7 +160,7 @@ function _make_args(planet_name::String, scenario::ScenarioDef, initial_time::In
         ν=scenario.ν_deg
     )
 
-    root = Link{0}(root=true, m=391.0, ref_area=2.2 * 1.7)
+    root = Link(root=true, m=391.0, ref_area=2.2 * 1.7)
     spacecraft = SpacecraftModel(
         joints=Joint[],
         links=Link[root],

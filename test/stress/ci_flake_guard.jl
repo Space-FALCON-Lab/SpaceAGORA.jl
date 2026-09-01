@@ -74,7 +74,7 @@ function build_case(case::FlakeCase)
     spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
     planet = Earth("", spice_path)
 
-    root = Link{0}(root=true, m=150.0, ref_area=1.4)
+    root = Link(root=true, m=150.0, ref_area=1.4)
     ic = InitialCondition(
         ra=planet.Rp_e + 520e3,
         rp=planet.Rp_e + 500e3,

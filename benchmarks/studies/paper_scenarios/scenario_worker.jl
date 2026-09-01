@@ -80,7 +80,7 @@ function ps_build_config(; n_sats::Int, seed::Int=0, only_member::Int=0)
     member_range = only_member > 0 ? (only_member:only_member) : (1:n_sats)
     spacecraft = SpacecraftModel[]
     for i in member_range
-        root = Link{0}(root=true, m=500.0, ref_area=12.0)
+        root = Link(root=true, m=500.0, ref_area=12.0)
         phase = 50.0 * (i - 1) / max(n_sats, 1)
         ic = InitialCondition(
             ra=planet.Rp_e + alt_m + phase + alt_jitter_m,
@@ -177,7 +177,7 @@ function _ps_mc_sample_defn_expr()::Expr
             raan_jitter_deg = members ? 0.0 : 0.75 * seed
             spacecraft = SpacecraftModel[]
             for i in member_range
-                root = Link{0}(root=true, m=500.0, ref_area=12.0)
+                root = Link(root=true, m=500.0, ref_area=12.0)
                 phase = 50.0 * (i - 1) / max(n_sats, 1)
                 ic = InitialCondition(
                     ra=planet.Rp_e + alt_m + phase + alt_jitter_m,

@@ -28,7 +28,7 @@ function make_probe_spacecraft(;
     rp_alt_m::Float64=100e3,
     ν_deg::Float64=160.0
 )
-    root = Link{0}(root=true, m=500.0, ref_area=12.0)
+    root = Link(root=true, m=500.0, ref_area=12.0)
     ic = InitialCondition(
         ra=EARTH.Rp_e + ra_alt_m,
         rp=EARTH.Rp_e + rp_alt_m,

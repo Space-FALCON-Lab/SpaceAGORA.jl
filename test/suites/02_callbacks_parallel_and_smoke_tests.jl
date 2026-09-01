@@ -1345,8 +1345,8 @@ end
 
     @test dynamic_effectors._threadid_capacity() >= Threads.maxthreadid()
 
-    body_a = Link{0}(root=true)
-    body_b = Link{0}(root=false)
+    body_a = Link(root=true)
+    body_b = Link(root=false)
     body_a.net_force .= SVector{3, Float64}(1.0, 2.0, 3.0)
     body_a.net_torque .= SVector{3, Float64}(4.0, 5.0, 6.0)
     body_b.net_force .= SVector{3, Float64}(-0.5, 0.0, 0.5)

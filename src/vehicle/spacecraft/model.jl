@@ -244,7 +244,7 @@ function CartesianInitialCondition(
     )
 end
 
-mutable struct Link{N_RW}
+mutable struct Link
     root::Bool # Whether this link is a root link (i.e., the main bus or core body of the spacecraft).
     r::MVector{3, Float64} # Position of COM (Body frame for non-root, inertial frame for root)
     q::MVector{4, Float64} # Orientation (Body frame for non-root, inertial frame for root)
@@ -261,7 +261,7 @@ mutable struct Link{N_RW}
     β::Float64 # Sideslip angle, rad
     θ::Float64 # Flow angle, rad
     reflection_coefficient::Float64 # Reflection coefficient for aerodynamic calculations
-    rw_assembly::ReactionWheelAssembly{N_RW} # Reaction wheel assembly
+    rw_assembly::ReactionWheelAssembly # Reaction wheel assembly
     net_force::MVector{3, Float64} # Net force acting on the link, to be updated at each simulation step
     net_torque::MVector{3, Float64} # Net torque acting on the link, to be updated at each simulation step
     attitude_control_rate::Float64 # Rate at which the attitude control function is called, in seconds
@@ -270,7 +270,7 @@ mutable struct Link{N_RW}
     thrusters::Vector{Thruster}
     magnets::Vector{Magnet} # List of magnetic dipoles attached to the link
 
-    function Link{N_RW}(; root=false,
+    function Link(; root=false,
         r=MVector{3, Float64}(0, 0, 0),
         q=MVector{4, Float64}(0, 0, 0, 1),
         ṙ=MVector{3, Float64}(0, 0, 0),
@@ -288,8 +288,8 @@ mutable struct Link{N_RW}
         reflection_coefficient=1.0,
         max_torque=0.25,
         max_h=70.0,
-        rw=MVector{N_RW, Float64}(zeros(N_RW)),
-        J_rw=MMatrix{3, N_RW, Float64}(zeros(3, N_RW)),
+        rw=Float64[],
+        J_rw=zeros(Float64, 3, 0),
         rw_τ=MVector{3, Float64}(zeros(3)),
         net_force=MVector{3, Float64}(zeros(3)),
         net_torque=MVector{3, Float64}(zeros(3)),
@@ -297,21 +297,22 @@ mutable struct Link{N_RW}
         SRP_facets=Facet[],
         J_thruster=Matrix{Float64}(zeros(3, 1)),
         thrusters=Thruster[],
-        magnets=Magnet[]) where {N_RW}
+        magnets=Magnet[])
 
-        rw_assembly = ReactionWheelAssembly{N_RW}(
-            J_rw=J_rw,
+        n_rw = size(J_rw, 2)
+        rw_assembly = ReactionWheelAssembly(
+            n_wheels=n_rw,
+            J_rw=Matrix{Float64}(J_rw),
             max_wheel_torque=max_torque,
             max_wheel_h=max_h,
-            h_wheels=MVector{N_RW, Float64}(zeros(N_RW)), # h_wheels
-            h_dot_wheels=MVector{N_RW, Float64}(zeros(N_RW)), # h_dot_wheels
+            h_wheels=zeros(Float64, n_rw),
+            h_dot_wheels=zeros(Float64, n_rw),
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
-        new{N_RW}(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets)
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets)
     end
 end
 
-Link(; kwargs...) = Link{0}(; kwargs...)
 
 mutable struct Joint
     link1::Link
@@ -349,7 +350,7 @@ mutable struct Joint
             translational_displacement, rotational_displacement)
     end
 
-    function Joint(;link1=Link{0}(), link2=Link{0}(), p1=link1.bᵇ, 
+    function Joint(;link1=Link(), link2=Link(), p1=link1.bᵇ, 
         p2=link2.aᵇ, 
         Kx=SMatrix{3,3, Float64}(1.0I), 
         Kt=SMatrix{3,3, Float64}(1.0I), 
@@ -383,7 +384,7 @@ mutable struct SpacecraftModel
     id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
 end
 
-function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link{0}(root=true),
+function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link(root=true),
                             instant_actuation::Bool=true,
                             prop_mass::Float64=0.0,
                             inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),

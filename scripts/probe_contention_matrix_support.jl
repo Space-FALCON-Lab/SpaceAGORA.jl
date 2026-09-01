@@ -161,3 +161,39 @@ function build_harness_case(case_name::String; profile::String = "full")
     args = Base.invokelatest(getfield(Main, :ppc_single_config), case_name, cfg)
     return probe_params_from_args(args)
 end
+
+
+# GRAMSuite is a weak dependency living in a vendored submodule, so it needs its
+# path pushed onto LOAD_PATH before `import` resolves. Callers must invoke this
+# at TOP LEVEL, before any function that constructs a GRAM model: the ext's
+# keyword constructors are added to a newer world than a call already in flight,
+# and `@eval import` inside the same top-level statement leaves them
+# unreachable. Two probe scripts hit that separately.
+function ensure_gramsuite_for_probe!()
+    isdefined(SpaceAGORA, :GRAMSuite) && return true
+    vendored = normpath(joinpath(@__DIR__, "..", "data", "GRAMSuite.jl"))
+    try
+        if Base.find_package("GRAMSuite") === nothing && isdir(vendored)
+            pushfirst!(LOAD_PATH, vendored)
+        end
+        @eval Main import GRAMSuite
+        return true
+    catch err
+        @info "GRAMSuite not loadable." exception = err
+        return false
+    end
+end
+
+# A live-GRAM density shape: the one workload measured to hold the shared native
+# lock for most of an RHS pass (rho = 0.89), and therefore the one where an
+# Amdahl width cap should bind.
+function build_gram_case(; n_sats = _SUPPORT_N)
+    planet = SM.Earth(_SUPPORT_HARM_FILE)
+    return build_probe_case(
+        planet,
+        (SM.GravitationalHarmonicsModel(_SUPPORT_L, _SUPPORT_L, _SUPPORT_HARM_FILE, planet),
+         SM.AerodynamicCoefficientfM()),
+        Base.invokelatest(SM.GRAMAtmosphereModel; planet_name = "earth"),
+        SM.SpiceEphemeridesModel();
+        n_sats = n_sats, ra_alt_m = 200e3, rp_alt_m = 160e3)
+end

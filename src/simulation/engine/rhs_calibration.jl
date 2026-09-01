@@ -1291,6 +1291,42 @@ end
         "SPACEAGORA_RHS_IDENTIFY_PERSIST", true)
 end
 
+# Whether the native-lock Amdahl bound clamps inner width.
+#
+# OFF BY DEFAULT, and that is a measured result rather than caution.
+#
+# The premise was sound and the arithmetic is right: a lock caps achievable
+# speedup at 1/rho however wide the split, so widths above that ceiling add
+# contention and no throughput. Live GRAM density measures rho = 0.89 under a
+# pure-RHS probe -- a ceiling of 2, meaning threads cannot help it at all.
+#
+# It does not survive contact with a solve. On a live-GRAM solve at N=16 the
+# probe-derived rho came out below the 0.02 floor, so no ceiling was applied,
+# while the probe needed to reach that conclusion cost 13%: paired,
+# order-alternating, 11 pairs, cap on lost 1-10 at a median ratio of 1.13,
+# p = 0.012. A mechanism that measures a workload in order to decline to
+# constrain it has paid for nothing.
+#
+# Two things would have to change before this is worth enabling. The rho a
+# solve exhibits has to be established across configurations -- 0.89 under the
+# probe and below 0.02 in a solve of the same density model is not a
+# discrepancy that a floor constant resolves. And the measurement has to come
+# free, from evaluations the solve performs anyway, rather than from five extra
+# warm passes bolted onto setup.
+@inline function _rhs_lock_width_cap_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env(
+        "SPACEAGORA_RHS_LOCK_WIDTH_CAP", false)
+end
+
+# Occupancy below which no ceiling is computed. Below it the implied ceiling
+# exceeds any real core budget anyway, so "no constraint" is both cheaper and
+# more honest than a large number derived from a handful of acquisitions.
+@inline function _rhs_lock_cap_floor_rho()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_LOCK_CAP_FLOOR_RHO", "0.02"))
+    v = tryparse(Float64, raw)
+    return (v === nothing || v <= 0.0) ? 0.02 : v
+end
+
 @inline function _rhs_identify_enabled()::Bool
     return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_IDENTIFY", false)
 end

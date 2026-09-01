@@ -815,6 +815,16 @@ export RhsEffectorDecision, RhsExecutionPlan
         # steady state after identification is exactly the state a pre-solve
         # sweep would have produced.
         rhs_width_trial::Base.RefValue{Any} = Ref{Any}(nothing)
+        # Widest inner split the native lock admits for this solve, or
+        # `typemax(Int)` for "no constraint observed".
+        #
+        # A plain Int, computed once per solve, because the alternative is
+        # asking RuntimeServices for occupancy on the hot path -- and that
+        # answer is behind the very lock whose contention is being measured, so
+        # reading it per call would add an acquisition per RHS evaluation to
+        # avoid acquisitions. Written after calibration, which performs enough
+        # real RHS evaluations to be a representative window.
+        rhs_width_ceiling::Base.RefValue{Int} = Ref{Int}(typemax(Int))
         # Per-accepted-step cache of _rhs_execution_plan's routing decision, active
         # only when SPACEAGORA_RHS_PLAN_STEP_CACHE=on (_rhs_plan_step_cache_enabled,
         # setup.jl). N_sats/thread policy don't change mid-step, so re-deriving the

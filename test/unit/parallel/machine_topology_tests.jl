@@ -78,11 +78,16 @@ const MT = SpaceAGORA.ParallelProfiles
         end
     end
 
-    @testset "does not disturb existing sizing" begin
-        # The budget is computed and reported; nothing that R4/R5 consult may
-        # start answering differently because of it. process_max_workers is the
-        # one most likely to be "helpfully" switched over, and it must not be
-        # until the new allocator is the thing reading it.
-        @test SpaceAGORA.ParallelProfiles.OuterRouteTuning().process_max_workers == Sys.CPU_THREADS
+    @testset "the budget binds" begin
+        # process_max_workers now sizes from usable cores rather than from
+        # Sys.CPU_THREADS. On an SMT or affinity-constrained machine those
+        # differ, and the old default asked for more parallelism than the
+        # machine could deliver.
+        t = MT.machine_topology()
+        @test SpaceAGORA.ParallelProfiles.OuterRouteTuning().process_max_workers == t.usable_cores
+        @test SpaceAGORA.ParallelProfiles.OuterRouteTuning().process_max_workers <= Sys.CPU_THREADS
+        # Machine class is derived from the same budget, so a container or a
+        # taskset cannot classify a machine by cores it may not touch.
+        @test SpaceAGORA.ParallelProfiles._machine_parallel_class() in (:small, :medium, :large)
     end
 end

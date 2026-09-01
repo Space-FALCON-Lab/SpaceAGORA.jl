@@ -2022,7 +2022,10 @@ end
     # v5: bumped for the density-model term -- v4 keys were blind to the density
     # model, so a cached entry could replay a GRAM plan the sweep had refused to
     # rank.
-    @test startswith(sig_a, "v5|machine=")
+    #
+    # v6: invalidates entries whose elapsed_mean_ns came from the pre-2026-08-30
+    # asymmetric comparison, which is not comparable to a contiguous confirm.
+    @test startswith(sig_a, "v6|machine=")
     @test occursin("|sats=", sig_a)
     @test occursin("|effs=1|", sig_a)
     @test occursin("|harm=1", sig_a)

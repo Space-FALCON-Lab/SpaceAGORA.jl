@@ -140,8 +140,8 @@ function make_probe_spacecraft(;
     panel_area::Float64=6.0,
     links_override=nothing
 )
-    root = Link{0}(root=true, m=500.0, ref_area=root_area)
-    panel = Link{0}(root=false, m=30.0, ref_area=panel_area, r=MVector{3, Float64}(0.0, 1.2, 0.0))
+    root = Link(root=true, m=500.0, ref_area=root_area)
+    panel = Link(root=false, m=30.0, ref_area=panel_area, r=MVector{3, Float64}(0.0, 1.2, 0.0))
     ic = InitialCondition(
         ra=EARTH.Rp_e + 500e3,
         rp=EARTH.Rp_e + 450e3,
@@ -761,8 +761,8 @@ end
         p_zero = ODEParams(n_sats=1, args=probe_config(density_model=make_fake_gram(), spacecraft=[sc_zero]))
         @test CB._gram_entry_reference_area_m2(p_zero, 1) == 1.0
         # Links empty of area but positive root area: root fallback.
-        root_pos = Link{0}(root=true, m=500.0, ref_area=7.5)
-        panel_zero = Link{0}(root=false, m=30.0, ref_area=0.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
+        root_pos = Link(root=true, m=500.0, ref_area=7.5)
+        panel_zero = Link(root=false, m=30.0, ref_area=0.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
         sc_root = SpacecraftModel(Joint[], [panel_zero], root_pos, true, 530.0, 0.0, root_pos.inertia, 0, 0,
                                   InitialCondition(ra=EARTH.Rp_e + 500e3, rp=EARTH.Rp_e + 450e3, i=35.0, ω=40.0, Ω=10.0, ν=175.0), 1)
         p_root = ODEParams(n_sats=1, args=probe_config(density_model=make_fake_gram(), spacecraft=[sc_root]))

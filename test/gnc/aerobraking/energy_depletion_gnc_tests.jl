@@ -38,20 +38,20 @@ function _edg_test_context(;
     vel = SVector{3, Float64}(0.0, periapsis_speed, 0.0)
     ic = _EDG_SM.CartesianInitialCondition(pos, vel)
 
-    root = _EDG_SM.Link{0}(
+    root = _EDG_SM.Link(
         root=true,
         m=391.0,
         dims=MVector{3, Float64}(2.2, 2.6, 1.7),
         ref_area=2.2 * 1.7,
     )
-    left = _EDG_SM.Link{0}(
+    left = _EDG_SM.Link(
         root=false,
         m=10.0,
         dims=MVector{3, Float64}(0.01, 3.76 / 2.0, 1.93),
         ref_area=(3.76 / 2.0) * 1.93,
         r=MVector{3, Float64}(0.0, -2.0, 0.0),
     )
-    right = _EDG_SM.Link{0}(
+    right = _EDG_SM.Link(
         root=false,
         m=10.0,
         dims=MVector{3, Float64}(0.01, 3.76 / 2.0, 1.93),

@@ -715,8 +715,8 @@ function make_spacecraft(;
     ν_deg::Float64=175.0,
     orientation_state::Union{Nothing, Tuple{SVector{4, Float64}, SVector{3, Float64}}}=nothing
 )
-    root = Link{0}(root=true, m=500.0, ref_area=12.0)
-    panel = Link{0}(root=false, m=30.0, ref_area=6.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
+    root = Link(root=true, m=500.0, ref_area=12.0)
+    panel = Link(root=false, m=30.0, ref_area=6.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
 
     if isnothing(orientation_state)
         ic = InitialCondition(
@@ -764,7 +764,7 @@ function make_single_link_spacecraft(;
     m::Float64=500.0,
     ref_area::Float64=12.0
 )
-    root = Link{0}(root=true, m=m, ref_area=ref_area)
+    root = Link(root=true, m=m, ref_area=ref_area)
     ic = InitialCondition(
         ra=planet.Rp_e + ra_alt_m,
         rp=planet.Rp_e + rp_alt_m,
@@ -915,9 +915,9 @@ function interp_linear(times::AbstractVector{<:Real}, values::AbstractVector{<:R
 end
 
 function make_agora_earth_spacecraft()
-    main_bus = Link{0}(root=true, m=620.0, ref_area=2.05 * 2.8)
-    left_panel = Link{0}(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, -2.05 / 2.0 - 5.7 / 4.0, 0.0))
-    right_panel = Link{0}(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, 2.05 / 2.0 + 5.7 / 4.0, 0.0))
+    main_bus = Link(root=true, m=620.0, ref_area=2.05 * 2.8)
+    left_panel = Link(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, -2.05 / 2.0 - 5.7 / 4.0, 0.0))
+    right_panel = Link(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, 2.05 / 2.0 + 5.7 / 4.0, 0.0))
     ic = InitialCondition(
         ra=56_378.7978559e3,
         rp=EARTH.Rp_e + 200_590.0,

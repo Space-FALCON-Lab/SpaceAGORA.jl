@@ -84,9 +84,9 @@ function make_three_body_spacecraft(;
     # per-wing half-span (total array span / 2). Passing the full span here
     # doubles the array's drag/SRP area — the exact defect the April 2026
     # examples carried (5.7/1.0, 5.5/1.35) until August 2026.
-    main_bus = SM.Link{0}(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_ref_area, reflection_coefficient=reflection_coefficient)
-    left_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
-    right_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
+    main_bus = SM.Link(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_ref_area, reflection_coefficient=reflection_coefficient)
+    left_panel = SM.Link(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
+    right_panel = SM.Link(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
 
     return SM.SpacecraftModel(
         SM.Joint[],

@@ -1867,9 +1867,16 @@ end
     end
 
     h_wheel_body = SVector{3, Float64}(0.0, 0.0, 0.0)
+    rw_h_body_scratch = MVector{3, Float64}(0.0, 0.0, 0.0)
     if rw_assembly !== nothing && rw_assembly.n_wheels > 0
-        h_wheel_body = rw_assembly.J_rw * SVector{rw_assembly.n_wheels, Float64}(sc_view.h_wheels)
-        du_view.h_wheels .= rw_assembly.J_rw_pinv * (-rw_torque_body)
+        # J_rw maps wheel momenta into the 3-axis body frame, so the product is
+        # always length 3 regardless of wheel count. Build the SVector from that
+        # result rather than from the wheel vector: the old
+        # `SVector{rw_assembly.n_wheels, Float64}(...)` used a runtime field as a
+        # type parameter, which forced a dynamic dispatch on every call.
+        mul!(rw_h_body_scratch, rw_assembly.J_rw, sc_view.h_wheels)
+        h_wheel_body = SVector{3, Float64}(rw_h_body_scratch)
+        mul!(du_view.h_wheels, rw_assembly.J_rw_pinv, -rw_torque_body)
     end
 
     du_view.ω .= SimulationModel.DynamicsRotational.angular_acceleration(

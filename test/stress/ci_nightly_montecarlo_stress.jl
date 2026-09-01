@@ -34,7 +34,7 @@ struct StressMetrics
 end
 
 function make_spacecraft(rng::AbstractRNG, planet::Earth)
-    root = Link{0}(root=true, m=160.0, ref_area=1.5)
+    root = Link(root=true, m=160.0, ref_area=1.5)
 
     ra_alt = 530e3 + randn(rng) * 20e3
     rp_alt = 490e3 + randn(rng) * 20e3

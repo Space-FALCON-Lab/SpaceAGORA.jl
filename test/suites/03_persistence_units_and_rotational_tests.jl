@@ -1138,7 +1138,7 @@ end
         w0::SVector{3, Float64};
         id::Int64=1
     )
-        root = Link{0}(root=true, m=500.0, ref_area=12.0, inertia=inertia_tensor)
+        root = Link(root=true, m=500.0, ref_area=12.0, inertia=inertia_tensor)
         ic = InitialCondition(
             ra=EARTH.Rp_e + 500e3,
             rp=EARTH.Rp_e + 500e3,
@@ -1256,7 +1256,7 @@ function _make_reaction_wheel_spacecraft(;
     q0::SVector{4, Float64},
     ω0::SVector{3, Float64},
 )
-    root = Link{3}(
+    root = Link(
         root=true,
         m=500.0,
         ref_area=12.0,

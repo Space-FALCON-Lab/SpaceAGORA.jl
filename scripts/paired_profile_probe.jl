@@ -86,8 +86,8 @@ function mode_env(name::String)::Dict{String, String}
 end
 
 function make_sc(i, planet)
-    root = SM.Link{0}(root=true, m=500.0, ref_area=12.0)
-    panel = SM.Link{0}(root=false, m=30.0, ref_area=6.0, r=MVector{3,Float64}(0.0, 1.2, 0.0))
+    root = SM.Link(root=true, m=500.0, ref_area=12.0)
+    panel = SM.Link(root=false, m=30.0, ref_area=6.0, r=MVector{3,Float64}(0.0, 1.2, 0.0))
     ic = SM.InitialCondition(ra=planet.Rp_e + 500e3 + 10e3 * (i % 17),
                              rp=planet.Rp_e + 480e3 + 5e3 * (i % 13),
                              i=35.0, ω=40.0, Ω=10.0, ν=(120.0 + 3.0 * i) % 360.0)

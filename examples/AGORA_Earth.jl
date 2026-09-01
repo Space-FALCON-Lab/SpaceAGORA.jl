@@ -8,9 +8,9 @@ using StaticArrays
 
 planet = Earth("", SPICE_PATH)
 
-main_bus = Link{0}(root=true, m=620.0, ref_area=2.05 * 2.8)
-left_panel = Link{0}(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, -2.05 / 2.0 - 5.7 / 4.0, 0.0))
-right_panel = Link{0}(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, 2.05 / 2.0 + 5.7 / 4.0, 0.0))
+main_bus = Link(root=true, m=620.0, ref_area=2.05 * 2.8)
+left_panel = Link(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, -2.05 / 2.0 - 5.7 / 4.0, 0.0))
+right_panel = Link(root=false, m=10.0, ref_area=5.7 * 1.0 / 2.0, r=MVector{3, Float64}(0.0, 2.05 / 2.0 + 5.7 / 4.0, 0.0))
 
 ic = InitialCondition(
     ra=56_378.7978559e3,

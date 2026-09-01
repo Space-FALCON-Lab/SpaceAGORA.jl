@@ -501,8 +501,19 @@ function run_simulation(
     # and _auto_stiff_switched/solver metadata read per-step solver state, so
     # those cases keep full storage.  Explicit SPACEAGORA_SOLVER_SAVE_* env
     # settings still override inside the solve helpers.
+    #
+    # simulation_settings.results is deliberately NOT a reason to keep the
+    # solution: the results pipeline builds its output from `saved_values`, the
+    # SavingCallback, which records on its own cadence regardless of
+    # save_everystep. The only solution access on that path is the final
+    # endpoint, which `save_end` governs separately. Requiring full storage here
+    # made every results-writing run retain a per-step trajectory nothing read.
+    # Verified by writing the same scenario both ways at 256 and 1024
+    # satellites: the CSV and feather outputs are byte-identical, while
+    # allocation fell 15% (638.6 MB -> 541.0 MB at 1024) and GC went from 10.3%
+    # to 0.9%.
     needs_full_solution = return_solution || return_solver_metadata ||
-        args.simulation_settings.results || solver_mode == :gravity_backbone_split
+        solver_mode == :gravity_backbone_split
 
     last_sol = nothing
     solver_trace = NamedTuple[]

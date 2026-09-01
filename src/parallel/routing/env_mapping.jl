@@ -20,10 +20,15 @@ end
     if override_raw in ("small", "medium", "large")
         return Symbol(override_raw)
     end
-    cpu_threads = Sys.CPU_THREADS
-    if cpu_threads >= 24
+    # Cores this process may actually use, not logical CPUs the host advertises.
+    # The thresholds are unchanged, so what moves is only which machines meet
+    # them: the 12-physical/24-logical reference box classified :large on a
+    # count that included SMT siblings it measurably could not use, and a
+    # 4-core cgroup on a 64-core host classified :large outright.
+    cores = usable_core_budget()
+    if cores >= 24
         return :large
-    elseif cpu_threads >= 12
+    elseif cores >= 12
         return :medium
     end
     return :small

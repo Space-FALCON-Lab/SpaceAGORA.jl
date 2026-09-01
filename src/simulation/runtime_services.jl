@@ -82,6 +82,12 @@ const _native_lock_entry_site = Ref{Int}(length(NATIVE_LOCK_SITES))
 # measured rather than asserted.
 const _NATIVE_LOCK_STATS_ENABLED = Ref{Bool}(true)
 
+# When the counters were last zeroed, so occupancy can be expressed against a
+# window rather than against an unknown span. A duty cycle is a fraction of
+# something; without the denominator the counters are only comparable to
+# themselves.
+const _NATIVE_LOCK_RESET_NS = Ref{UInt64}(time_ns())
+
 function __init__()
     raw = lowercase(strip(get(ENV, "SPACEAGORA_NATIVE_LOCK_STATS", "1")))
     _NATIVE_LOCK_STATS_ENABLED[] = !(raw in ("0", "false", "no", "off"))
@@ -226,6 +232,7 @@ is only meaningful relative to a known elapsed window.
 """
 function reset_native_lock_stats!()::Nothing
     lock(SPICE_LOCK) do
+        _NATIVE_LOCK_RESET_NS[] = time_ns()
         for st in _NATIVE_LOCK_STATS
             st.acquisitions = 0
             st.contended = 0
@@ -272,6 +279,54 @@ function native_lock_stats_snapshot()
             sites = sites,
         )
     end
+end
+
+"""
+    native_lock_occupancy(; workers = 1) -> NamedTuple
+
+Occupancy over the window since the counters were last reset: `rho`, the
+`wait_hold` ratio, the acquisition count and the window itself.
+
+This is the per-solve form. `run_simulation` resets at the start of a solve, so
+a caller asking mid-solve or just after gets that solve's numbers rather than
+whatever the process has accumulated since it started -- which is the difference
+between a workload property and a process-lifetime statistic.
+
+`rho` is an Amdahl serial fraction: speedup is bounded by `1/rho` at any width.
+`wait_hold` says whether the width in use is already past what the lock admits.
+"""
+function native_lock_occupancy(; workers::Integer = 1)
+    snap = native_lock_stats_snapshot()
+    window_ns = Float64(time_ns() - _NATIVE_LOCK_RESET_NS[])
+    denom = window_ns * max(1.0, Float64(workers))
+    return (
+        rho = denom > 0.0 ? clamp(snap.hold_ns / denom, 0.0, 1.0) : 0.0,
+        wait_hold = snap.wait_hold_ratio,
+        acquisitions = snap.acquisitions,
+        window_s = window_ns / 1.0e9,
+    )
+end
+
+"""
+    lock_width_ceiling(; workers = 1, floor_rho = 0.02) -> Int
+
+The widest inner split the native lock admits: `ceil(1/rho)`, or `typemax(Int)`
+when occupancy is below `floor_rho`.
+
+A lock caps achievable speedup at `1/rho` however wide the split, so any width
+above that ceiling adds contention and no throughput. Measured on live GRAM
+density, `rho = 0.89` gives a ceiling of 2 -- threads cannot help it, which is
+why process isolation is the only route there.
+
+`floor_rho` exists so the ceiling is not computed from noise: below it the
+implied ceiling exceeds any real core budget anyway, so returning "no
+constraint" is both cheaper and more honest than returning a large number
+derived from a handful of acquisitions.
+"""
+function lock_width_ceiling(; workers::Integer = 1, floor_rho::Float64 = 0.02)::Int
+    occ = native_lock_occupancy(workers = workers)
+    occ.rho >= floor_rho || return typemax(Int)
+    return max(1, ceil(Int, 1.0 / occ.rho))
 end
 
 """

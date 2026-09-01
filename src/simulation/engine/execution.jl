@@ -326,6 +326,42 @@ function run_simulation(
     # Auto-calibration: time candidate execution plans before the solve and pin the
     # fastest one for the duration.  No-ops when budget <= 1, SPACEAGORA_RHS_CALIBRATE=off,
     # or a cached result already exists for this machine + scenario signature.
+    # The native-lock Amdahl bound for this solve.
+    #
+    # THE DENOMINATOR IS THE WHOLE DIFFICULTY. What bounds inner width is the
+    # fraction of an RHS EVALUATION spent holding the shared native lock,
+    # because that is the part a wider split cannot divide. Dividing instead by
+    # the solve's wall clock folds in the solver spine, the callbacks and the
+    # saving path -- work that has nothing to do with the RHS split -- and
+    # understates it by two orders of magnitude. Measured on a live-GRAM solve:
+    # hold over RHS time is 0.89, hold over solve wall is 0.008, and only the
+    # first is a statement about what widening the RHS can achieve. A first
+    # version of this took the wall-clock ratio and the cap never engaged on the
+    # one workload it exists for.
+    #
+    # `probe_contention_inputs!` measures exactly that ratio over warm passes,
+    # so the ceiling is derived from it rather than from the lock counters'
+    # running totals. A failed or invalid probe applies no constraint: "not
+    # measured" and "no constraint" must reach the same place, since a bound
+    # invented from a failed measurement is worse than none.
+    if _rhs_lock_width_cap_enabled()
+        contention = try
+            probe_contention_inputs!(
+                p, u_start, args;
+                k = 5,
+                t_step = Float64(args.mission_configuration.mission_time) / 8)
+        catch err
+            @debug "Lock width cap: contention probe failed; no constraint." exception=err
+            nothing
+        end
+        if contention !== nothing && contention.valid
+            rho = SimulationModel.ParallelCost.lock_duty_cycle(contention, 1)
+            if rho >= _rhs_lock_cap_floor_rho()
+                p.shared_buffers.rhs_width_ceiling[] = max(1, ceil(Int, 1.0 / rho))
+            end
+        end
+    end
+
     _calibrate_rhs_plan_if_needed!(p, u_start, args)
 
     # In-run width identification, AFTER the sweep and only where the sweep

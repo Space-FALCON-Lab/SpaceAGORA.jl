@@ -51,9 +51,22 @@ Base.@kwdef struct OuterRouteTuning
     mc_process_min_samples::Int = 16
     mc_process_min_mission_s::Float64 = 3600.0
     # Process workers run --threads=1 each and don't share the coordinator's
-    # thread pool, so they're capped by physical parallelism (Sys.CPU_THREADS),
-    # not Threads.nthreads() like the thread route.
-    process_max_workers::Int = Sys.CPU_THREADS
+    # thread pool, so they are capped by physical parallelism rather than by
+    # Threads.nthreads() like the thread route.
+    #
+    # `usable_core_budget()`, not `Sys.CPU_THREADS`. The latter counts SMT
+    # siblings, ignores an affinity mask and ignores a cgroup quota, so on the
+    # 12-physical/24-logical reference box this default was twice the useful
+    # width -- and every workload measured there regressed from 16 to 24
+    # threads. Under `taskset -c 0-3` it claimed 24 where four cores were
+    # available, and in a container it claims the host's count while the process
+    # is throttled to a fraction of it.
+    #
+    # This CHANGES ROUTING DECISIONS on any SMT or constrained machine, which is
+    # the point of the change rather than a side effect of it: numbers measured
+    # against the previous default describe a configuration that was asking for
+    # more parallelism than the machine could deliver.
+    process_max_workers::Int = usable_core_budget()
     trace::Bool = false
 end
 

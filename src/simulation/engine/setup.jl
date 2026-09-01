@@ -1039,6 +1039,25 @@ end
 # instead of re-deriving it (active-satellite count, effector cost decision,
 # routing heuristics) on every single stage call. See rhs_plan_step_cache's
 # docstring (runtime_types.jl) for how/when the cache is invalidated.
+# Clamp an inner width to what the native lock admits.
+#
+# A lock caps achievable speedup at 1/rho however wide the split, so width above
+# that ceiling buys no throughput and adds contention. This is an Amdahl bound
+# rather than a preference: it does not choose a width, it removes widths that
+# cannot pay. Whatever chose the plan -- heuristic, sweep, or a pinned override
+# -- keeps its choice below the ceiling.
+#
+# `satellite_batch` is exempt because it takes its width from Polyester's own
+# pool and honours neither `allotment` nor the inner thread budget, so clamping
+# the field would change what the plan reports without changing what it runs.
+@inline function _clamp_plan_to_lock_ceiling(plan, p)::SimulationModel.RhsExecutionPlan
+    (p !== nothing && hasproperty(p, :shared_buffers)) || return plan
+    ceiling = p.shared_buffers.rhs_width_ceiling[]
+    ceiling >= plan.allotment && return plan
+    plan.mode === :satellite_batch && return plan
+    return merge(plan, (allotment = max(1, ceiling),))
+end
+
 @inline function _rhs_execution_plan(
     args::SimulationConfiguration,
     p,
@@ -1048,11 +1067,13 @@ end
     if p !== nothing && hasproperty(p, :shared_buffers) && _rhs_plan_step_cache_enabled()
         cached = p.shared_buffers.rhs_plan_step_cache[]
         cached === nothing || return cached
-        plan = _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats)
+        plan = _clamp_plan_to_lock_ceiling(
+            _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats), p)
         p.shared_buffers.rhs_plan_step_cache[] = plan
         return plan
     end
-    return _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats)
+    return _clamp_plan_to_lock_ceiling(
+        _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats), p)
 end
 
 @inline function _rhs_execution_plan_uncached(

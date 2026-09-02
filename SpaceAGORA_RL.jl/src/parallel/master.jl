@@ -270,10 +270,16 @@ function _launch_spaceagora_physics_streaming_worker!(
     state = reset_scenario(config, scenario_rng)
     norm_obs = normalize_observation(observe_state(config, state), config.normalization_bounds)
     protected_first_pass = session.config.training.protected_first_pass
-    action_index = protected_first_pass ?
-                   zero_action_index() :
-                   actor_action(actor_snapshot, norm_obs, action_rng; test=false)
-    action = action_from_index(action_index)
+    selected_action = protected_first_pass ?
+                      zero_action_index() :
+                      actor_critic_action(
+                          actor_snapshot,
+                          session.learner.action_config,
+                          norm_obs,
+                          action_rng;
+                          test=false,
+                      )
+    _, action = _resolve_policy_action(selected_action)
     summary = empty_episode_summary(episode_index=episode_index, worker_id=worker_id, seed=seed)
     compatibility_config = DDQNConfig(
         obs_dim=session.learner.config.obs_dim,
@@ -301,7 +307,7 @@ function _launch_spaceagora_physics_streaming_worker!(
             template,
             state,
             norm_obs,
-            action_index,
+            selected_action,
             summary,
             episode_index,
             worker_id,
@@ -325,7 +331,7 @@ function _launch_spaceagora_physics_streaming_worker!(
             compatibility_config,
             state,
             norm_obs,
-            action_index,
+            selected_action,
             summary,
             episode_index,
             worker_id,
@@ -925,7 +931,20 @@ end
 struct A2CCollectedStep
     transition::Transition
     episode_end::Bool
+    action_delta_v_mps::Float32
 end
+
+function _a2c_prewarm_spaceagora_cache!(config::AerobrakingScenarioConfig,
+                                        max_passes_per_campaign::Integer)
+    _prewarm_spaceagora_rl_shared_ephemeris_cache!(config, max_passes_per_campaign)
+    return nothing
+end
+
+A2CCollectedStep(transition::Transition, episode_end::Bool) = A2CCollectedStep(
+    transition,
+    episode_end,
+    Float32(PAPER_ACTIONS_MPS[transition.action_index]),
+)
 
 function _a2c_worker_policy_seed(base_seed::Int, worker_id::Int)
     return base_seed + 1_000_000_007 + 10_000 * worker_id
@@ -1042,6 +1061,7 @@ function _a2c_batch_from_worker_rollouts(
     observations = zeros(Float32, learner.config.obs_dim, n_workers, segment_length)
     next_observations = zeros(Float32, learner.config.obs_dim, n_workers, segment_length)
     actions = zeros(Int, n_workers, segment_length)
+    continuous_actions = zeros(Float32, n_workers, segment_length)
     rewards = zeros(Float32, n_workers, segment_length)
     episode_end = falses(n_workers, segment_length)
     terminated = falses(n_workers, segment_length)
@@ -1051,6 +1071,7 @@ function _a2c_batch_from_worker_rollouts(
         observations[:, worker, t] .= transition.observation
         next_observations[:, worker, t] .= transition.next_observation
         actions[worker, t] = transition.action_index
+        continuous_actions[worker, t] = collected.action_delta_v_mps
         rewards[worker, t] = transition.reward
         episode_end[worker, t] = collected.episode_end
         terminated[worker, t] = transition.terminated
@@ -1065,13 +1086,17 @@ function _a2c_batch_from_worker_rollouts(
         next_values,
         learner.config.discount,
     )
-    return flatten_rollout(
-        observations,
-        actions,
-        returns,
-        valid;
-        policy_version=policy_version,
-    )
+    if uses_continuous_actions(learner.action_config)
+        return flatten_continuous_rollout(
+            observations,
+            continuous_actions,
+            returns,
+            valid;
+            policy_version=policy_version,
+        )
+    end
+    return flatten_rollout(observations, actions, returns, valid;
+                           policy_version=policy_version)
 end
 
 function _a2c_rollout_quotas(worker_ids::AbstractVector{Int}, remaining_steps::Int,
@@ -1101,6 +1126,7 @@ function _collect_a2c_segment!(session::TrainingSession{<:A2CLearner},
     segment_length = learner.config.segment_length
     observations = zeros(Float32, learner.config.obs_dim, n_workers, segment_length)
     actions = zeros(Int, n_workers, segment_length)
+    continuous_actions = zeros(Float32, n_workers, segment_length)
     rewards = zeros(Float32, n_workers, segment_length)
     next_observations = zeros(Float32, learner.config.obs_dim, n_workers, segment_length)
     episode_end = falses(n_workers, segment_length)
@@ -1125,7 +1151,7 @@ function _collect_a2c_segment!(session::TrainingSession{<:A2CLearner},
         end
 
         step_jobs = Vector{Union{Nothing,Task}}(nothing, n_workers)
-        chosen_actions = Vector{Int}(undef, n_workers)
+        chosen_actions = Vector{Union{Int,AerobrakingAction}}(undef, n_workers)
         previous_observations = Vector{Vector{Float32}}(undef, n_workers)
         remaining_steps = target_global_step - learner.global_step
         launched = 0
@@ -1134,10 +1160,16 @@ function _collect_a2c_segment!(session::TrainingSession{<:A2CLearner},
             worker.ready || continue
             launched < remaining_steps || break
             previous_observations[worker_index] = copy(worker.observation)
-            chosen_actions[worker_index] = actor_action(actor_snapshot, worker.observation,
-                                                        worker.policy_rng; test=false)
+            chosen_actions[worker_index] = actor_critic_action(
+                actor_snapshot,
+                learner.action_config,
+                worker.observation,
+                worker.policy_rng;
+                test=false,
+            )
+            action_index, _ = _resolve_policy_action(chosen_actions[worker_index])
             observations[:, worker_index, t] .= worker.observation
-            actions[worker_index, t] = chosen_actions[worker_index]
+            actions[worker_index, t] = action_index
             step_jobs[worker_index] = Threads.@spawn step_scenario(
                 $config,
                 $(worker.state),
@@ -1151,13 +1183,15 @@ function _collect_a2c_segment!(session::TrainingSession{<:A2CLearner},
         for (worker_index, worker) in pairs(workers)
             step_jobs[worker_index] === nothing && continue
             result = fetch(step_jobs[worker_index])
+            action_index, _ = _resolve_policy_action(chosen_actions[worker_index])
             transition = transition_from_step(previous_observations[worker_index],
-                                              chosen_actions[worker_index],
+                                              action_index,
                                               result,
                                               length(transitions) + 1)
             push!(transitions, transition)
             valid[worker_index, t] = true
             rewards[worker_index, t] = transition.reward
+            continuous_actions[worker_index, t] = Float32(result.action.delta_v_mps)
             next_observations[:, worker_index, t] .= transition.next_observation
             learner.global_step += 1
 
@@ -1188,6 +1222,15 @@ function _collect_a2c_segment!(session::TrainingSession{<:A2CLearner},
     next_values = _a2c_next_values(learner, next_observations, valid)
     returns = compute_discounted_returns(rewards, episode_end, terminated, valid,
                                          next_values, learner.config.discount)
+    if uses_continuous_actions(learner.action_config)
+        return flatten_continuous_rollout(
+            observations,
+            continuous_actions,
+            returns,
+            valid;
+            policy_version=policy_version,
+        )
+    end
     return flatten_rollout(observations, actions, returns, valid;
                            policy_version=policy_version)
 end
@@ -1382,16 +1425,20 @@ function _train_parallel_a2c_spaceagora_physics_streaming!(
                     worker_id in parked ||
                         throw(ErrorException("A2C live worker $worker_id was not parked at an update boundary"))
                     observation = parked_observations[worker_id]
-                    action_index = actor_action(
+                    selected_action = actor_critic_action(
                         actor_snapshot,
+                        session.learner.action_config,
                         observation,
                         action_rngs[worker_id];
                         test=false,
                     )
                     put!(
                         active[worker_id].handle.action_channel,
-                        (action_index=action_index, protected=false,
-                         policy_version=policy_version),
+                        _actor_critic_action_command(
+                            selected_action;
+                            protected=false,
+                            policy_version=policy_version,
+                        ),
                     )
                     delete!(parked, worker_id)
                     delete!(parked_observations, worker_id)
@@ -1446,7 +1493,11 @@ function _train_parallel_a2c_spaceagora_physics_streaming!(
                     push!(transitions, transition)
                     push!(
                         rollout_by_worker[event.worker_id],
-                        A2CCollectedStep(transition, event.done),
+                        A2CCollectedStep(
+                            transition,
+                            event.done,
+                            Float32(event.result.action.delta_v_mps),
+                        ),
                     )
                     collected[event.worker_id] += 1
                     session.learner.global_step += 1
@@ -1511,16 +1562,20 @@ function _train_parallel_a2c_spaceagora_physics_streaming!(
                         transition = event.transition
                         transition === nothing &&
                             throw(ErrorException("A2C worker event is missing its next observation"))
-                        next_action = actor_action(
+                        next_action = actor_critic_action(
                             actor_snapshot,
+                            session.learner.action_config,
                             transition.next_observation,
                             action_rngs[event.worker_id];
                             test=false,
                         )
                         put!(
                             worker.handle.action_channel,
-                            (action_index=next_action, protected=false,
-                             policy_version=policy_version),
+                            _actor_critic_action_command(
+                                next_action;
+                                protected=false,
+                                policy_version=policy_version,
+                            ),
                         )
                     else
                         put!(
@@ -1639,7 +1694,7 @@ function train_parallel!(session::TrainingSession{<:A2CLearner};
                 process_ids = setup_isolated_process_workers(active_workers)
                 try
                     _remotecall_wait_all(
-                        _prewarm_spaceagora_rl_shared_ephemeris_cache!,
+                        _a2c_prewarm_spaceagora_cache!,
                         process_ids,
                         session.config.scenario,
                         session.config.training.max_passes_per_campaign,

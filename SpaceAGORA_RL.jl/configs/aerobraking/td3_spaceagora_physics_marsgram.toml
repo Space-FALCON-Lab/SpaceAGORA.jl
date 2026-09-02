@@ -42,48 +42,49 @@ marsgram_seed_base = 1001
 [spaceagora_physics]
 atmosphere_model = "marsgram"
 gram_wind_mode = "perturbed"
-# Refresh native GRAM at initialization and after each accepted solver step.
-# Internal KenCarp4 stages use the held density, temperature, and wind sample.
 gram_once_per_step = true
 gravity_harmonics_degree = 20
 gravity_harmonics_order = 20
 gravity_harmonics_file = "data/Gravity_harmonics_data/Mars50c.csv"
 
-[a2c]
-action_space = "continuous"
-initial_log_std = -1.0
-log_std_min = -5.0
-log_std_max = 1.0
-learning_rate = 1.0e-4
+[td3]
+actor_learning_rate = 3.0e-4
+critic_learning_rate = 3.0e-4
 discount = 0.95
-segment_length = 10
-train_start = 0
-entropy_coef = 0.02
-value_coef = 0.5
-normalize_advantages = true
-gradient_clip_norm = 0.5
+batch_size = 256
+train_frequency = 1
+updates_per_step = 1
+train_start = 25000
+random_steps = 25000
+replay_size = 1000000
+exploration_noise = 0.10
+target_policy_noise = 0.20
+target_noise_clip = 0.50
+policy_delay = 2
+tau = 0.005
+gradient_clip_norm = 10.0
 adam_epsilon = 1.0e-6
+adam_beta1 = 0.9
+adam_beta2 = 0.999
 hidden_dim = 1024
+bootstrap_truncated = true
 
 [training]
 seed = 42
-algorithm = "a2c"
+algorithm = "td3"
 device = "cuda"
 global_steps = 1100000
 episodes = 25000
 max_passes_per_campaign = 1000
 n_workers = 16
-# Each rollout worker owns an OS process and therefore an independent native
-# GRAM runtime/lock. The learner remains in the parent process.
+# Native MarsGRAM workers remain isolated; the TD3 learner stays in the parent.
 worker_backend = "processes"
 checkpoint_frequency = 5000
 progress_frequency = 100
 validate_checkpoints = true
 validation_episodes = 40
 validation_seed = 1
-# Evaluate every 25,000 training steps; the final checkpoint is always included.
 validation_checkpoint_stride = 5
-# After a successful campaign, rerun the same randomized scenario nine times.
 successful_case_repetitions = 9
 output_dir = "SpaceAGORA_RL.jl/outputs/runs"
 protected_first_pass = true

@@ -169,9 +169,15 @@ function evaluate_frozen_checkpoint_modes(
 )
     payload = load_checkpoint(checkpoint_path)
     algorithm = Symbol(get(payload, :algorithm, haskey(payload, :actor) ? :a2c : :pr_drl))
-    policy = algorithm == :a2c ?
-             load_trained_a2c_policy(checkpoint_path) :
-             load_trained_pr_drl_policy(checkpoint_path)
+    policy = if algorithm == :a2c
+        load_trained_a2c_policy(checkpoint_path)
+    elseif algorithm == :a3c
+        load_trained_a3c_policy(checkpoint_path)
+    elseif algorithm == :td3
+        load_trained_td3_policy(checkpoint_path)
+    else
+        load_trained_pr_drl_policy(checkpoint_path)
+    end
     checkpoint_name = splitext(basename(checkpoint_path))[1]
     return evaluate_policy_modes(
         policy,

@@ -19,6 +19,7 @@ mutable struct A2CLearner
     actor::QNetwork
     critic::QNetwork
     config::A2CConfig
+    action_config::ActorCriticActionConfig
     actor_optimizer::AdamState
     critic_optimizer::AdamState
     global_step::Int
@@ -37,11 +38,15 @@ mutable struct A2CLearner
 end
 
 function A2CLearner(rng::AbstractRNG, config::A2CConfig=A2CConfig();
-                    device::AbstractTrainingDevice=CPUTrainingDevice())
-    actor = network_to_device(device, init_q_network(rng; input_dim=config.obs_dim,
-                                                     hidden_dim=config.hidden_dim,
-                                                     output_dim=config.action_dim,
-                                                     output_gain=0.01))
+                    device::AbstractTrainingDevice=CPUTrainingDevice(),
+                    action_config::ActorCriticActionConfig=ActorCriticActionConfig())
+    actor = network_to_device(device, init_actor_network(
+        rng,
+        config.obs_dim,
+        config.hidden_dim,
+        config.action_dim,
+        action_config,
+    ))
     critic = network_to_device(device, init_q_network(rng; input_dim=config.obs_dim,
                                                       hidden_dim=config.hidden_dim,
                                                       output_dim=1,
@@ -50,6 +55,7 @@ function A2CLearner(rng::AbstractRNG, config::A2CConfig=A2CConfig();
         actor,
         critic,
         config,
+        action_config,
         AdamState(actor, config),
         AdamState(critic, config),
         0,
@@ -94,7 +100,13 @@ end
 
 function select_action(learner::A2CLearner, observation::AbstractVector{<:Real};
                        rng::AbstractRNG=Random.default_rng(), test::Bool=false)
-    return actor_action(cpu_network(learner.actor), observation, rng; test=test)
+    return actor_critic_action(
+        cpu_network(learner.actor),
+        learner.action_config,
+        observation,
+        rng;
+        test=test,
+    )
 end
 
 function value_predictions(learner::A2CLearner, observations::AbstractMatrix{Float32})
@@ -151,7 +163,59 @@ function a2c_loss_and_gradients(learner::A2CLearner, batch::A2CRolloutBatch)
     return total_loss, policy_loss, entropy_loss, value_loss, actor_grads, critic_grads
 end
 
-function train_step!(learner::A2CLearner, batch::A2CRolloutBatch)
+function a2c_loss_and_gradients(learner::A2CLearner,
+                                batch::ContinuousA2CRolloutBatch)
+    uses_continuous_actions(learner.action_config) || throw(ArgumentError(
+        "continuous A2C batches require a continuous-action learner",
+    ))
+    n = length(batch)
+    n > 0 || throw(ArgumentError("A2C rollout batch must be nonempty"))
+    batch.policy_version == learner.policy_version ||
+        throw(ArgumentError(
+            "A2C rollout policy version $(batch.policy_version) does not match learner version $(learner.policy_version)",
+        ))
+    observations = to_device_array(learner.device, batch.observations)
+    returns = to_device_array(learner.device, batch.returns)
+    values = vec(predict_q(learner.critic, observations))
+    raw_advantages = returns .- values
+    raw_advantages_cpu = Float32.(to_cpu_array(raw_advantages))
+    advantages_cpu = if learner.config.normalize_advantages && n > 1
+        advantage_mean = Float32(mean(raw_advantages_cpu))
+        advantage_scale = Float32(std(raw_advantages_cpu; corrected=false)) + eps(Float32)
+        (raw_advantages_cpu .- advantage_mean) ./ advantage_scale
+    else
+        copy(raw_advantages_cpu)
+    end
+    advantages = to_device_array(learner.device, advantages_cpu)
+    actions_mps = to_device_array(learner.device, batch.actions_mps)
+    policy_loss, entropy, actor_delta = continuous_policy_loss_and_output_delta(
+        learner.actor,
+        learner.action_config,
+        observations,
+        actions_mps,
+        advantages,
+        learner.config.entropy_coef,
+    )
+    value_loss = Float64(mean(abs2, raw_advantages_cpu))
+    total_loss = policy_loss - learner.config.entropy_coef * entropy +
+                 learner.config.value_coef * value_loss
+    value_delta = (-2f0 * Float32(learner.config.value_coef) / Float32(n)) .*
+                  reshape(raw_advantages, 1, :)
+    actor_grads = network_gradients_from_output_delta(
+        learner.actor,
+        observations,
+        actor_delta,
+    )
+    critic_grads = network_gradients_from_output_delta(
+        learner.critic,
+        observations,
+        value_delta,
+    )
+    return total_loss, policy_loss, entropy, value_loss, actor_grads, critic_grads
+end
+
+function train_step!(learner::A2CLearner,
+                     batch::Union{A2CRolloutBatch,ContinuousA2CRolloutBatch})
     loss, policy_loss, entropy_loss, value_loss, actor_grads, critic_grads =
         a2c_loss_and_gradients(learner, batch)
 
@@ -187,7 +251,8 @@ end
 mean_training_loss(learner::A2CLearner) =
     learner.loss_count == 0 ? NaN : learner.loss_sum / learner.loss_count
 
-function maybe_train!(learner::A2CLearner, batch::A2CRolloutBatch)
+function maybe_train!(learner::A2CLearner,
+                      batch::Union{A2CRolloutBatch,ContinuousA2CRolloutBatch})
     learner.global_step >= learner.config.train_start || return nothing
     return train_step!(learner, batch)
 end

@@ -1071,6 +1071,7 @@ end
     @test a2c_config.training.algorithm == :a2c
     @test a2c_config.training.worker_backend == :processes
     @test a2c_config.a2c.normalize_advantages
+    @test a2c_config.actor_critic_action.mode == :continuous
     @test a2c_config.scenario.backend_mode == :spaceagora_physics
     @test a2c_config.scenario.spaceagora_atmosphere_model == :marsgram
     @test a2c_config.scenario.spaceagora_gram_wind_mode == :perturbed
@@ -1294,5 +1295,8 @@ end
     @test default_network.W3 == explicit_network.W3
 end
 
+include("a3c_tests.jl")
+include("continuous_actor_critic_tests.jl")
+include("td3_tests.jl")
 include("evaluate_rl_run_checkpoint_selection.jl")
 include("rpo_hypr_rl_tests.jl")

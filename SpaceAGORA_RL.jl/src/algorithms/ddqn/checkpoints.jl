@@ -65,6 +65,8 @@ function save_checkpoint(path::AbstractString, learner::A2CLearner; manifest=not
         :actor_optimizer => cpu_adam_state(learner.actor_optimizer),
         :critic_optimizer => cpu_adam_state(learner.critic_optimizer),
         :config => learner.config,
+        :action_config => learner.action_config,
+        :action_space => learner.action_config.mode,
         :global_step => learner.global_step,
         :train_steps => learner.train_steps,
         :last_loss => learner.last_loss,
@@ -80,6 +82,9 @@ function save_checkpoint(path::AbstractString, learner::A2CLearner; manifest=not
         :policy_version => learner.policy_version,
         :device => training_device_name(learner.device),
         :action_table => copy(PAPER_ACTIONS_MPS),
+        :action_bounds_mps => uses_continuous_actions(learner.action_config) ?
+                              (CONTINUOUS_ACTION_LOW_MPS, CONTINUOUS_ACTION_HIGH_MPS) :
+                              nothing,
         :manifest => _checkpoint_manifest_payload(manifest),
     )
     serialize(path, payload)

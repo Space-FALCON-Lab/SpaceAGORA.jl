@@ -88,7 +88,7 @@ predict_q(net::QNetwork, observations::AbstractMatrix{<:Real}) = forward_cache(n
 predict_q(net::QNetwork, observation::AbstractVector{<:Real}) =
     vec(predict_q(net, reshape(_as_float32_array(observation), :, 1)))
 
-function _network_gradients_from_output_delta(
+function _network_gradients_and_input_delta(
     net::QNetwork,
     cache::Tuple,
     dY::AbstractMatrix{Float32},
@@ -105,13 +105,43 @@ function _network_gradients_from_output_delta(
     dz1 = da1 .* Float32.(z1 .> 0)
     dW1 = dz1 * transpose(x)
     db1 = vec(sum(dz1; dims=2))
+    dx = transpose(net.W1) * dz1
 
-    return QNetworkGradients(dW1, db1, dW2, db2, dW3, db3)
+    return QNetworkGradients(dW1, db1, dW2, db2, dW3, db3), dx
+end
+
+function _network_gradients_from_output_delta(
+    net::QNetwork,
+    cache::Tuple,
+    dY::AbstractMatrix{Float32},
+)
+    gradients, _ = _network_gradients_and_input_delta(net, cache, dY)
+    return gradients
 end
 
 function network_gradients_from_output_delta(net::QNetwork, observations::AbstractMatrix{Float32},
                                              dY::AbstractMatrix{Float32})
     return _network_gradients_from_output_delta(net, forward_cache(net, observations), dY)
+end
+
+function network_gradients_and_input_delta(net::QNetwork,
+                                           observations::AbstractMatrix{Float32},
+                                           dY::AbstractMatrix{Float32})
+    return _network_gradients_and_input_delta(net, forward_cache(net, observations), dY)
+end
+
+function polyak_update!(target::QNetwork, source::QNetwork, tau::Real)
+    0 <= tau <= 1 || throw(ArgumentError("Polyak coefficient tau must be between 0 and 1"))
+    source_weight = Float32(tau)
+    target_weight = 1f0 - source_weight
+    for field in (:W1, :b1, :W2, :b2, :W3, :b3)
+        target_values = getfield(target, field)
+        source_values = getfield(source, field)
+        size(target_values) == size(source_values) ||
+            throw(DimensionMismatch("Polyak source and target networks must have matching shapes"))
+        target_values .= target_weight .* target_values .+ source_weight .* source_values
+    end
+    return target
 end
 
 function onehot_actions(actions::Vector{Int}, action_dim::Integer)

@@ -98,14 +98,26 @@ end
 
 function _spaceagora_physics_campaign_decode_action_command(command)
     if command isa NamedTuple
-        hasproperty(command, :action_index) ||
-            throw(ArgumentError("SpaceAGORA physics action command is missing action_index."))
+        selected = if hasproperty(command, :action)
+            action = getproperty(command, :action)
+            action isa AerobrakingAction || throw(ArgumentError(
+                "SpaceAGORA physics action command :action must be an AerobrakingAction.",
+            ))
+            action
+        elseif hasproperty(command, :action_index)
+            Int(getproperty(command, :action_index))
+        else
+            throw(ArgumentError(
+                "SpaceAGORA physics action command is missing :action or :action_index.",
+            ))
+        end
         protected = hasproperty(command, :protected) ? Bool(getproperty(command, :protected)) : false
         policy_version = hasproperty(command, :policy_version) ?
                          Int(getproperty(command, :policy_version)) : 0
-        return Int(getproperty(command, :action_index)), protected, policy_version
+        return selected, protected, policy_version
     end
-    return Int(command), false, 0
+    selected = command isa AerobrakingAction ? command : Int(command)
+    return selected, false, 0
 end
 
 function _spaceagora_physics_campaign_select_action!(rollout::SpaceAGORAPhysicsCampaignRollout)
@@ -365,11 +377,11 @@ function _spaceagora_physics_campaign_record_apoapsis!(spaceagora,
             rollout.terminated = true
             return _spaceagora_physics_campaign_terminate!(spaceagora, integrator)
         end
-        action_index, protected_next, policy_version =
+        selected_action, protected_next, policy_version =
             _spaceagora_physics_campaign_decode_action_command(command)
         rollout.protected_next_transition = protected_next
         rollout.policy_version = policy_version
-        _spaceagora_physics_campaign_set_action!(rollout, action_index)
+        _spaceagora_physics_campaign_set_action!(rollout, selected_action)
     else
         corridor_action = protected_transition ?
                           protected_corridor_action_index(
@@ -701,7 +713,7 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel,
                                                                   simulation_template::SpaceAGORAPhysicsSimulationTemplate,
                                                                   state::AerobrakingDecisionState,
                                                                   norm_obs::Vector{Float32},
-                                                                  action_index::Int,
+                                                                  selected_action,
                                                                   summary::EpisodeSummary,
                                                                   episode_index::Int,
                                                                   worker_id::Int,
@@ -714,6 +726,7 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel,
     rollout = nothing
     try
         pass_cap = _spaceagora_physics_campaign_mission_pass_cap(config, max_passes_per_campaign)
+        action_index, action = _resolve_policy_action(selected_action)
         rollout = SpaceAGORAPhysicsCampaignRollout(
             config = config,
             schedule = schedule,
@@ -729,7 +742,7 @@ function run_spaceagora_physics_campaign_streaming_worker_episode(event_channel,
             state = state,
             norm_obs = copy(norm_obs),
             action_index = action_index,
-            action = action_from_index(action_index),
+            action = action,
             summary = summary,
             transitions = Transition[],
             streaming = true,
@@ -819,7 +832,7 @@ function run_spaceagora_physics_campaign_process_worker_episode(event_channel,
                                                                 ddqn_config::DDQNConfig,
                                                                 state::AerobrakingDecisionState,
                                                                 norm_obs::Vector{Float32},
-                                                                action_index::Int,
+                                                                selected_action,
                                                                 summary::EpisodeSummary,
                                                                 episode_index::Int,
                                                                 worker_id::Int,
@@ -829,10 +842,11 @@ function run_spaceagora_physics_campaign_process_worker_episode(event_channel,
                                                                 protected_first_pass::Bool=false,
                                                                 protected_suppress_thermal_terminal::Bool=true,
                                                                 policy_version::Int=0)
+    _, action = _resolve_policy_action(selected_action)
     template = _spaceagora_physics_simulation_template(
         config,
         state,
-        action_from_index(action_index);
+        action;
         campaign_max_passes=_spaceagora_physics_campaign_mission_pass_cap(
             config,
             max_passes_per_campaign,
@@ -848,7 +862,7 @@ function run_spaceagora_physics_campaign_process_worker_episode(event_channel,
         template,
         state,
         norm_obs,
-        action_index,
+        selected_action,
         summary,
         episode_index,
         worker_id,
@@ -869,7 +883,7 @@ function start_spaceagora_physics_campaign_worker!(event_channel,
                                                    simulation_template::SpaceAGORAPhysicsSimulationTemplate,
                                                    state::AerobrakingDecisionState,
                                                    norm_obs::Vector{Float32},
-                                                   action_index::Int,
+                                                   selected_action,
                                                    summary::EpisodeSummary,
                                                    episode_index::Int,
                                                    worker_id::Int,
@@ -890,7 +904,7 @@ function start_spaceagora_physics_campaign_worker!(event_channel,
         $simulation_template,
         $state,
         $norm_obs,
-        $action_index,
+        $selected_action,
         $summary,
         $episode_index,
         $worker_id,

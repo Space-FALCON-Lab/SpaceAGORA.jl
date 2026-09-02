@@ -23,11 +23,16 @@ Base.@kwdef struct TrainingConfig
 end
 
 const DDQN_FAMILY_ALGORITHMS = (:ddqn, :pr_drl)
+const ACTOR_CRITIC_ALGORITHMS = (:a2c, :a3c)
+const CONTINUOUS_OFF_POLICY_ALGORITHMS = (:td3,)
 
 canonical_algorithm(value) = Symbol(replace(lowercase(String(value)), "-" => "_"))
 canonical_spaceagora_atmosphere_model(value) = Symbol(replace(lowercase(strip(String(value))), "-" => "_"))
 canonical_worker_backend(value) = Symbol(replace(lowercase(strip(String(value))), "-" => "_"))
 is_ddqn_family_algorithm(algorithm::Symbol) = algorithm in DDQN_FAMILY_ALGORITHMS
+is_actor_critic_algorithm(algorithm::Symbol) = algorithm in ACTOR_CRITIC_ALGORITHMS
+is_continuous_off_policy_algorithm(algorithm::Symbol) =
+    algorithm in CONTINUOUS_OFF_POLICY_ALGORITHMS
 algorithm_report_name(algorithm::Symbol) = algorithm == :pr_drl ? "pr_drl" : string(algorithm)
 algorithm_display_name(algorithm::Symbol) = algorithm == :pr_drl ? "PR-DRL" : uppercase(string(algorithm))
 
@@ -42,7 +47,10 @@ struct ResolvedConfig
     raw::Dict{String,Any}
     scenario::AerobrakingScenarioConfig
     ddqn::DDQNConfig
+    td3::TD3Config
     a2c::A2CConfig
+    a3c::A3CConfig
+    actor_critic_action::ActorCriticActionConfig
     epsilon::EpsilonSchedule
     training::TrainingConfig
     reports::ReportConfig
@@ -94,7 +102,9 @@ function resolve_config(raw::Dict{String,Any};
     term_table = _table(raw, "termination")
     random_table = _table(raw, "randomization")
     ddqn_table = _table(raw, "ddqn")
+    td3_table = _table(raw, "td3")
     a2c_table = _table(raw, "a2c")
+    a3c_table = _table(raw, "a3c")
     eps_table = _table(raw, "epsilon")
     train_table = _table(raw, "training")
     report_table = _table(raw, "reports")
@@ -194,6 +204,28 @@ function resolve_config(raw::Dict{String,Any};
         adam_epsilon = Float64(_get(ddqn_table, "adam_epsilon", 1e-6)),
         hidden_dim = Int(_get(ddqn_table, "hidden_dim", 1024)),
     )
+    td3 = TD3Config(
+        actor_learning_rate = Float64(_get(td3_table, "actor_learning_rate", 3e-4)),
+        critic_learning_rate = Float64(_get(td3_table, "critic_learning_rate", 3e-4)),
+        discount = Float64(_get(td3_table, "discount", 0.95)),
+        batch_size = Int(_get(td3_table, "batch_size", 256)),
+        train_frequency = Int(_get(td3_table, "train_frequency", 1)),
+        updates_per_step = Int(_get(td3_table, "updates_per_step", 1)),
+        train_start = Int(_get(td3_table, "train_start", 25_000)),
+        random_steps = Int(_get(td3_table, "random_steps", 25_000)),
+        replay_size = Int(_get(td3_table, "replay_size", 1_000_000)),
+        exploration_noise = Float64(_get(td3_table, "exploration_noise", 0.1)),
+        target_policy_noise = Float64(_get(td3_table, "target_policy_noise", 0.2)),
+        target_noise_clip = Float64(_get(td3_table, "target_noise_clip", 0.5)),
+        policy_delay = Int(_get(td3_table, "policy_delay", 2)),
+        tau = Float64(_get(td3_table, "tau", 0.005)),
+        gradient_clip_norm = Float64(_get(td3_table, "gradient_clip_norm", 10.0)),
+        adam_epsilon = Float64(_get(td3_table, "adam_epsilon", 1e-6)),
+        adam_beta1 = Float64(_get(td3_table, "adam_beta1", 0.9)),
+        adam_beta2 = Float64(_get(td3_table, "adam_beta2", 0.999)),
+        hidden_dim = Int(_get(td3_table, "hidden_dim", 1024)),
+        bootstrap_truncated = Bool(_get(td3_table, "bootstrap_truncated", true)),
+    )
     a2c = A2CConfig(
         learning_rate = Float64(_get(a2c_table, "learning_rate", 1e-4)),
         discount = Float64(_get(a2c_table, "discount", 0.95)),
@@ -206,6 +238,30 @@ function resolve_config(raw::Dict{String,Any};
         adam_epsilon = Float64(_get(a2c_table, "adam_epsilon", 1e-6)),
         hidden_dim = Int(_get(a2c_table, "hidden_dim", 1024)),
     )
+    a3c = A3CConfig(
+        learning_rate = Float64(_get(a3c_table, "learning_rate", 1e-4)),
+        discount = Float64(_get(a3c_table, "discount", 0.95)),
+        t_max = Int(_get(a3c_table, "t_max", 10)),
+        entropy_coef = Float64(_get(a3c_table, "entropy_coef", 0.01)),
+        value_coef = Float64(_get(a3c_table, "value_coef", 0.5)),
+        normalize_advantages = Bool(_get(a3c_table, "normalize_advantages", false)),
+        gradient_clip_norm = Float64(_get(a3c_table, "gradient_clip_norm", 0.5)),
+        adam_epsilon = Float64(_get(a3c_table, "adam_epsilon", 1e-6)),
+        adam_beta1 = Float64(_get(a3c_table, "adam_beta1", 0.9)),
+        adam_beta2 = Float64(_get(a3c_table, "adam_beta2", 0.99)),
+        hidden_dim = Int(_get(a3c_table, "hidden_dim", 1024)),
+        max_policy_lag = Int(_get(a3c_table, "max_policy_lag", -1)),
+    )
+    resolved_algorithm = canonical_algorithm(_get(train_table, "algorithm", "pr_drl"))
+    actor_critic_table = resolved_algorithm == :a3c ? a3c_table : a2c_table
+    actor_critic_action = ActorCriticActionConfig(
+        mode = canonical_actor_critic_action_mode(
+            _get(actor_critic_table, "action_space", "discrete"),
+        ),
+        initial_log_std = Float64(_get(actor_critic_table, "initial_log_std", -1.0)),
+        log_std_min = Float64(_get(actor_critic_table, "log_std_min", -5.0)),
+        log_std_max = Float64(_get(actor_critic_table, "log_std_max", 1.0)),
+    )
     epsilon = EpsilonSchedule(
         start = Float64(_get(eps_table, "start", 1.0)),
         stop = Float64(_get(eps_table, "stop", 0.0)),
@@ -214,7 +270,7 @@ function resolve_config(raw::Dict{String,Any};
     )
     training = TrainingConfig(
         seed = Int(_get(train_table, "seed", 42)),
-        algorithm = canonical_algorithm(_get(train_table, "algorithm", "pr_drl")),
+        algorithm = resolved_algorithm,
         device = Symbol(lowercase(String(_get(train_table, "device", "cpu")))),
         global_steps = Int(_get(train_table, "global_steps", 0)),
         episodes = Int(_get(train_table, "episodes", 4)),
@@ -253,14 +309,27 @@ function resolve_config(raw::Dict{String,Any};
         write_csv = Bool(_get(report_table, "write_csv", true)),
         write_plots = Bool(_get(report_table, "write_plots", true)),
     )
-    (is_ddqn_family_algorithm(training.algorithm) || training.algorithm == :a2c) ||
-        throw(ArgumentError("training.algorithm must be \"pr_drl\", \"ddqn\", or \"a2c\""))
+    (is_ddqn_family_algorithm(training.algorithm) ||
+     is_actor_critic_algorithm(training.algorithm) ||
+     is_continuous_off_policy_algorithm(training.algorithm)) ||
+        throw(ArgumentError(
+            "training.algorithm must be \"pr_drl\", \"ddqn\", \"td3\", \"a2c\", or \"a3c\"",
+        ))
     training.worker_backend in (:threads, :processes) ||
         throw(ArgumentError("training.worker_backend must be \"threads\" or \"processes\""))
     training.validation_checkpoint_stride > 0 ||
         throw(ArgumentError("training.validation_checkpoint_stride must be positive"))
     training.successful_case_repetitions >= 0 ||
         throw(ArgumentError("training.successful_case_repetitions must be nonnegative"))
+    if is_actor_critic_algorithm(training.algorithm)
+        actor_critic_action.mode in ACTOR_CRITIC_ACTION_MODES || throw(ArgumentError(
+            "$(training.algorithm).action_space must be \"discrete\" or \"continuous\"",
+        ))
+        actor_critic_action.log_std_min <= actor_critic_action.initial_log_std <=
+            actor_critic_action.log_std_max || throw(ArgumentError(
+                "$(training.algorithm).initial_log_std must be between log_std_min and log_std_max",
+            ))
+    end
     if training.algorithm == :a2c
         a2c.learning_rate > 0 || throw(ArgumentError("a2c.learning_rate must be positive"))
         0 <= a2c.discount <= 1 ||
@@ -272,7 +341,72 @@ function resolve_config(raw::Dict{String,Any};
         a2c.gradient_clip_norm > 0 ||
             throw(ArgumentError("a2c.gradient_clip_norm must be positive"))
     end
-    return ResolvedConfig(source_path, raw, scenario, ddqn, a2c, epsilon, training, reports)
+    if training.algorithm == :a3c
+        a3c.learning_rate > 0 || throw(ArgumentError("a3c.learning_rate must be positive"))
+        0 <= a3c.discount <= 1 ||
+            throw(ArgumentError("a3c.discount must be between 0 and 1"))
+        a3c.t_max > 0 || throw(ArgumentError("a3c.t_max must be positive"))
+        a3c.entropy_coef >= 0 || throw(ArgumentError("a3c.entropy_coef must be nonnegative"))
+        a3c.value_coef >= 0 || throw(ArgumentError("a3c.value_coef must be nonnegative"))
+        a3c.gradient_clip_norm > 0 ||
+            throw(ArgumentError("a3c.gradient_clip_norm must be positive"))
+        0 <= a3c.adam_beta1 < 1 ||
+            throw(ArgumentError("a3c.adam_beta1 must be in [0, 1)"))
+        0 <= a3c.adam_beta2 < 1 ||
+            throw(ArgumentError("a3c.adam_beta2 must be in [0, 1)"))
+        a3c.max_policy_lag >= -1 ||
+            throw(ArgumentError("a3c.max_policy_lag must be -1 or nonnegative"))
+    end
+    if training.algorithm == :td3
+        td3.actor_learning_rate > 0 ||
+            throw(ArgumentError("td3.actor_learning_rate must be positive"))
+        td3.critic_learning_rate > 0 ||
+            throw(ArgumentError("td3.critic_learning_rate must be positive"))
+        0 <= td3.discount <= 1 ||
+            throw(ArgumentError("td3.discount must be between 0 and 1"))
+        td3.batch_size > 0 || throw(ArgumentError("td3.batch_size must be positive"))
+        td3.train_frequency > 0 ||
+            throw(ArgumentError("td3.train_frequency must be positive"))
+        td3.updates_per_step > 0 ||
+            throw(ArgumentError("td3.updates_per_step must be positive"))
+        td3.train_start >= 0 || throw(ArgumentError("td3.train_start must be nonnegative"))
+        td3.random_steps >= 0 || throw(ArgumentError("td3.random_steps must be nonnegative"))
+        td3.replay_size >= td3.batch_size || throw(ArgumentError(
+            "td3.replay_size must be at least td3.batch_size",
+        ))
+        td3.exploration_noise >= 0 ||
+            throw(ArgumentError("td3.exploration_noise must be nonnegative"))
+        td3.target_policy_noise >= 0 ||
+            throw(ArgumentError("td3.target_policy_noise must be nonnegative"))
+        td3.target_noise_clip >= 0 ||
+            throw(ArgumentError("td3.target_noise_clip must be nonnegative"))
+        td3.policy_delay > 0 || throw(ArgumentError("td3.policy_delay must be positive"))
+        0 < td3.tau <= 1 || throw(ArgumentError("td3.tau must be in (0, 1]"))
+        td3.gradient_clip_norm > 0 ||
+            throw(ArgumentError("td3.gradient_clip_norm must be positive"))
+        td3.adam_epsilon > 0 || throw(ArgumentError("td3.adam_epsilon must be positive"))
+        0 <= td3.adam_beta1 < 1 ||
+            throw(ArgumentError("td3.adam_beta1 must be in [0, 1)"))
+        0 <= td3.adam_beta2 < 1 ||
+            throw(ArgumentError("td3.adam_beta2 must be in [0, 1)"))
+        td3.hidden_dim > 0 || throw(ArgumentError("td3.hidden_dim must be positive"))
+        td3.action_dim == 1 || throw(ArgumentError(
+            "aerobraking TD3 requires td3.action_dim=1",
+        ))
+    end
+    return ResolvedConfig(
+        source_path,
+        raw,
+        scenario,
+        ddqn,
+        td3,
+        a2c,
+        a3c,
+        actor_critic_action,
+        epsilon,
+        training,
+        reports,
+    )
 end
 
 function resolve_config(path::AbstractString=default_config_path(); gram_wind_mode=nothing)

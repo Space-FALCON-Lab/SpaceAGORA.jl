@@ -86,6 +86,8 @@ end
     specs = _comparison_policy_specs(sources)
     @test getfield.(specs, :key) == ["trained_pr_drl_1", "trained_a2c", "trained_pr_drl_2"]
     @test getfield.(specs, :label) == ["PR-DRL (pr-seed-1)", "A2C", "PR-DRL (pr-seed-2)"]
+    @test _policy_label("trained_pr_drl"; trained_label="TD3") == "TD3"
+    @test first(_default_flight_policy_specs("TD3")).label == "TD3"
 end
 
 @testset "parallel evaluation preserves transitions and episode order" begin
@@ -222,6 +224,52 @@ end
     )
     @test _generalization_evaluation_loss(a2c_payload, :a2c, [transition]) == 4.0
     @test _generalization_loss_definition(:a2c) == "a2c_critic_value_td_mse"
+
+    td3_actor = init_q_network(
+        MersenneTwister(43);
+        input_dim=3,
+        hidden_dim=4,
+        output_dim=1,
+    )
+    td3_critic1 = init_q_network(
+        MersenneTwister(44);
+        input_dim=4,
+        hidden_dim=4,
+        output_dim=1,
+    )
+    td3_critic2 = init_q_network(
+        MersenneTwister(45);
+        input_dim=4,
+        hidden_dim=4,
+        output_dim=1,
+    )
+    for network in (td3_actor, td3_critic1, td3_critic2)
+        for field in (:W1, :b1, :W2, :b2, :W3, :b3)
+            fill!(getfield(network, field), 0f0)
+        end
+    end
+    td3_payload = Dict(
+        :actor => td3_actor,
+        :target_actor => copy(td3_actor),
+        :critic1 => td3_critic1,
+        :critic2 => td3_critic2,
+        :target_critic1 => copy(td3_critic1),
+        :target_critic2 => copy(td3_critic2),
+        :config => TD3Config(obs_dim=3, action_dim=1),
+    )
+    @test _generalization_evaluation_loss(
+        td3_payload,
+        :td3,
+        [transition];
+        actions_mps=Float32[0.237],
+    ) == 4.0
+    @test_throws ArgumentError _generalization_evaluation_loss(
+        td3_payload,
+        :td3,
+        [transition],
+    )
+    @test _generalization_loss_definition(:td3) ==
+          "td3_twin_critic_action_value_td_mse"
 
     summary = EpisodeSummary(
         episode_reward=-3.0,

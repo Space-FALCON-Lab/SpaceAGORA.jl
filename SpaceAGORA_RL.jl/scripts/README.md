@@ -92,6 +92,44 @@ For live SpaceAGORA backends, `training.worker_backend` may be `threads` or
 central learner updates only after every active worker reaches the rollout
 barrier.
 
+Both A2C and A3C accept `action_space = "discrete"` or `"continuous"` in
+their algorithm table. Continuous mode uses a tanh-squashed Gaussian policy
+whose commanded delta-v is bounded by the outer paper-action limits of
+`-1.0` and `1.0` m/s. `initial_log_std`, `log_std_min`, and `log_std_max`
+control exploration. The supplied live MarsGRAM A2C and A3C configurations
+currently select continuous mode; configurations without this option retain
+the original discrete policy.
+
+## Asynchronous A3C training
+
+The A3C trainer keeps an independent actor, critic, rollout, and policy version
+for each environment worker. A worker applies its n-step update as soon as its
+rollout reaches `a3c.t_max` or its campaign ends, then refreshes only its own
+local model. Other workers continue propagating and do not wait at a rollout
+barrier. Native MarsGRAM continues to use one isolated OS process per worker,
+while optimizer updates are serialized in the parent process.
+
+From the SpaceAGORA repository root, run:
+
+```sh
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/train.jl \
+  SpaceAGORA_RL.jl/configs/aerobraking/a3c_spaceagora_physics_marsgram.toml
+```
+
+## Off-policy TD3 training
+
+TD3 uses the same continuous `-1.0` to `1.0` m/s aerobraking action range and
+the same isolated live MarsGRAM worker layout. A central CUDA learner maintains
+the deterministic actor, twin critics, target networks, and exact continuous
+action replay buffer. Run the matched campaign with:
+
+```sh
+julia --project=SpaceAGORA_RL.jl \
+  SpaceAGORA_RL.jl/scripts/train.jl \
+  SpaceAGORA_RL.jl/configs/aerobraking/td3_spaceagora_physics_marsgram.toml
+```
+
 ## Multi-run policy comparison
 
 Use `--compare-run` once per additional training run to compare PR-DRL and A2C

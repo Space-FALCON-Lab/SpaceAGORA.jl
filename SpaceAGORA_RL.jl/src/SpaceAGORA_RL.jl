@@ -49,14 +49,23 @@ include("algorithms/training_device.jl")
 include("algorithms/ddqn/replay_buffer.jl")
 include("algorithms/ddqn/masked_replay_buffer.jl")
 include("algorithms/ddqn/network.jl")
+include("algorithms/actor_critic_actions.jl")
 include("algorithms/ddqn/epsilon_schedule.jl")
 include("algorithms/ddqn/target_network.jl")
 include("algorithms/ddqn/learner.jl")
+include("algorithms/td3/replay_buffer.jl")
+include("algorithms/td3/learner.jl")
 include("algorithms/a2c/rollout_buffer.jl")
 include("algorithms/a2c/learner.jl")
+include("algorithms/a3c/rollout.jl")
+include("algorithms/a3c/learner.jl")
 include("algorithms/ddqn/checkpoints.jl")
+include("algorithms/td3/checkpoints.jl")
+include("algorithms/a3c/checkpoints.jl")
 include("algorithms/ddqn/policy.jl")
+include("algorithms/td3/policy.jl")
 include("algorithms/a2c/policy.jl")
+include("algorithms/a3c/policy.jl")
 
 include("tasks/rpo/types.jl")
 include("tasks/rpo/mdp/actions.jl")
@@ -74,6 +83,8 @@ include("runtime/training_history.jl")
 include("parallel/rollout_protocol.jl")
 include("parallel/worker.jl")
 include("parallel/master.jl")
+include("parallel/td3_master.jl")
+include("parallel/a3c_master.jl")
 include("parallel/distributed_backend.jl")
 
 export AbstractMDP, AbstractRLBackend, AbstractPolicy
@@ -120,10 +131,18 @@ export ReplayBuffer, ReplayBatch, MaskedTransition, MaskedReplayBuffer, MaskedRe
 export QNetwork, init_q_network, predict_q, copy_network!
 export EpsilonSchedule, epsilon_value
 export DDQNConfig, DDQNLearner, select_action, observe!, maybe_train!, compute_ddqn_targets
-export A2CConfig, A2CLearner, A2CRolloutBatch, compute_discounted_returns
+export ContinuousTransition, ContinuousReplayBuffer, ContinuousReplayBatch
+export TD3Config, TD3Learner, td3_targets, td3_actor_output
+export A2CConfig, A2CLearner, A2CRolloutBatch, ContinuousA2CRolloutBatch
+export compute_discounted_returns
+export A3CConfig, A3CLearner, A3CLocalModel, A3CRollout, A3CRolloutBatch
+export ContinuousA3CRolloutBatch
+export ActorCriticActionConfig, CONTINUOUS_ACTION_LOW_MPS, CONTINUOUS_ACTION_HIGH_MPS
 export save_checkpoint, load_checkpoint, GreedyDDQNPolicy, GreedyPRDRLPolicy
 export load_trained_ddqn_policy, load_trained_pr_drl_policy
+export GreedyTD3Policy, load_trained_td3_policy
 export GreedyA2CPolicy, load_trained_a2c_policy
+export GreedyA3CPolicy, load_trained_a3c_policy
 export CPUTrainingDevice, CUDATrainingDevice, resolve_training_device, training_device_name
 
 export RPOHyPRRLConfig, RPOHyPRRLScenario, RPOHyPRRLEvaluation, RPOHyPRRLState

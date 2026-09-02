@@ -129,7 +129,7 @@ end
 function _validate_checkpoints(session)
     config = session.config
     config.training.validate_checkpoints || return nothing
-    config.training.algorithm in (:pr_drl, :ddqn, :a2c) || return nothing
+    config.training.algorithm in (:pr_drl, :ddqn, :td3, :a2c, :a3c) || return nothing
     output_dir = joinpath(session.output_dir, "checkpoint_validation")
     return validate_frozen_checkpoints(
         session.output_dir,

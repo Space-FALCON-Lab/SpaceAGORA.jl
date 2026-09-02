@@ -11,6 +11,19 @@ A2CRolloutBatch(observations::Matrix{Float32}, actions::Vector{Int},
 
 Base.length(batch::A2CRolloutBatch) = length(batch.actions)
 
+struct ContinuousA2CRolloutBatch
+    observations::Matrix{Float32}
+    actions_mps::Vector{Float32}
+    returns::Vector{Float32}
+    policy_version::Int
+end
+
+ContinuousA2CRolloutBatch(observations::Matrix{Float32}, actions_mps::Vector{Float32},
+                          returns::Vector{Float32}) =
+    ContinuousA2CRolloutBatch(observations, actions_mps, returns, 0)
+
+Base.length(batch::ContinuousA2CRolloutBatch) = length(batch.actions_mps)
+
 function compute_discounted_returns(rewards::AbstractMatrix{Float32},
                                     done::AbstractMatrix{Bool},
                                     valid::AbstractMatrix{Bool},
@@ -94,4 +107,37 @@ function flatten_rollout(observations::Array{Float32,3}, actions::AbstractMatrix
         col += 1
     end
     return A2CRolloutBatch(obs_batch, action_batch, return_batch, Int(policy_version))
+end
+
+function flatten_continuous_rollout(observations::Array{Float32,3},
+                                    actions_mps::AbstractMatrix{Float32},
+                                    returns::AbstractMatrix{Float32},
+                                    valid::AbstractMatrix{Bool};
+                                    policy_version::Integer=0)
+    obs_dim, n_workers, segment_length = size(observations)
+    size(actions_mps) == (n_workers, segment_length) ||
+        throw(DimensionMismatch("continuous actions must be n_workers by segment_length"))
+    size(returns) == (n_workers, segment_length) ||
+        throw(DimensionMismatch("returns must be n_workers by segment_length"))
+    size(valid) == (n_workers, segment_length) ||
+        throw(DimensionMismatch("valid must be n_workers by segment_length"))
+
+    n = count(valid)
+    obs_batch = Matrix{Float32}(undef, obs_dim, n)
+    action_batch = Vector{Float32}(undef, n)
+    return_batch = Vector{Float32}(undef, n)
+    col = 1
+    for t in 1:segment_length, worker in 1:n_workers
+        valid[worker, t] || continue
+        obs_batch[:, col] .= @view observations[:, worker, t]
+        action_batch[col] = actions_mps[worker, t]
+        return_batch[col] = returns[worker, t]
+        col += 1
+    end
+    return ContinuousA2CRolloutBatch(
+        obs_batch,
+        action_batch,
+        return_batch,
+        Int(policy_version),
+    )
 end

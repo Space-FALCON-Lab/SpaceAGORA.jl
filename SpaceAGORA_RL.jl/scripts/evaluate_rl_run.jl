@@ -290,9 +290,15 @@ end
 function _load_policy(checkpoint_path::AbstractString)
     payload = load_checkpoint(checkpoint_path)
     algorithm = Symbol(get(payload, :algorithm, haskey(payload, :actor) ? :a2c : :pr_drl))
-    policy = algorithm == :a2c ?
-             load_trained_a2c_policy(checkpoint_path) :
-             load_trained_pr_drl_policy(checkpoint_path)
+    policy = if algorithm == :a2c
+        load_trained_a2c_policy(checkpoint_path)
+    elseif algorithm == :a3c
+        load_trained_a3c_policy(checkpoint_path)
+    elseif algorithm == :td3
+        load_trained_td3_policy(checkpoint_path)
+    else
+        load_trained_pr_drl_policy(checkpoint_path)
+    end
     return policy, algorithm, payload
 end
 
@@ -712,14 +718,14 @@ function _result_frames(results::Dict)
     return metrics, pass_logs
 end
 
-function _table_v(metrics::DataFrame)
+function _table_v(metrics::DataFrame; trained_label::AbstractString="PR-DRL")
     rows = NamedTuple[]
     for policy in ("trained_pr_drl", "aads_heuristic")
         data = metrics[metrics.policy .== policy, :]
         nrow(data) == 0 && continue
         errors = abs.(Float64.(data.target_error_km))
         push!(rows, (
-            policy = policy == "trained_pr_drl" ? "PR-DRL" : "AADS",
+            policy = policy == "trained_pr_drl" ? String(trained_label) : "AADS",
             episodes = nrow(data),
             mean_reward = mean(data.episode_reward),
             std_reward = _std(data.episode_reward),
@@ -737,13 +743,14 @@ function _table_v(metrics::DataFrame)
     return DataFrame(rows)
 end
 
-function _policy_label(policy)
-    policy == "trained_pr_drl" && return "PR-DRL"
+function _policy_label(policy; trained_label::AbstractString="PR-DRL")
+    policy == "trained_pr_drl" && return String(trained_label)
     policy == "aads_heuristic" && return "AADS"
     return replace(String(policy), "_" => " ")
 end
 
-function _paper_figure_10(pass_logs::DataFrame, scenario, path::AbstractString)
+function _paper_figure_10(pass_logs::DataFrame, scenario, path::AbstractString;
+                          trained_label::AbstractString="PR-DRL")
     heat = plot(
         xlabel="Atmospheric passage",
         ylabel="Heat rate (W/cm^2)",
@@ -768,7 +775,7 @@ function _paper_figure_10(pass_logs::DataFrame, scenario, path::AbstractString)
         first_trace = true
         for episode in episodes
             trace = policy_rows[policy_rows.episode .== episode, :]
-            label = first_trace ? _policy_label(policy) : ""
+            label = first_trace ? _policy_label(policy; trained_label=trained_label) : ""
             plot!(heat, trace.pass, trace.heat_rate_w_cm2;
                   label=label, color=colors[policy], alpha=0.45)
             plot!(action, trace.pass, trace.action_delta_v_mps;
@@ -806,8 +813,8 @@ function _target_reached_stats(metrics::DataFrame, policy::String;
     )
 end
 
-_default_flight_policy_specs() = [
-    (key="trained_pr_drl", label="PR-DRL"),
+_default_flight_policy_specs(trained_label::AbstractString="PR-DRL") = [
+    (key="trained_pr_drl", label=String(trained_label)),
     (key="aads_heuristic", label="AADS"),
 ]
 
@@ -955,13 +962,14 @@ function _paper_figure_11(metrics::DataFrame, path::AbstractString,
     return path
 end
 
-function _paper_figure_12(pass_logs::DataFrame, scenario, path::AbstractString)
+function _paper_figure_12(pass_logs::DataFrame, scenario, path::AbstractString;
+                          trained_label::AbstractString="PR-DRL")
     policy_rows = pass_logs[pass_logs.policy .== "trained_pr_drl", :]
     episode = minimum(policy_rows.episode)
     trace = policy_rows[policy_rows.episode .== episode, :]
     odyssey_heat = vcat(fill(0.20, 45), fill(0.13, 77), fill(0.04, 88))
     p = plot(trace.pass, trace.heat_rate_w_cm2;
-             label="PR-DRL example", linewidth=2, color=:steelblue,
+             label="$(trained_label) example", linewidth=2, color=:steelblue,
              xlabel="Orbit / atmospheric passage", ylabel="Heat rate (W/cm^2)")
     plot!(p, 1:length(odyssey_heat), odyssey_heat;
           label="Mars Odyssey phase medians (Table III)",
@@ -1270,16 +1278,56 @@ function _a2c_evaluation_td_loss(payload, transitions)
     return mean(abs2, values .- targets)
 end
 
-function _generalization_evaluation_loss(payload, algorithm::Symbol, transitions)
+function _td3_evaluation_td_loss(payload, transitions, actions_mps)
+    batch = _transition_batch(transitions)
+    batch === nothing && return NaN
+    actions_mps === nothing && throw(ArgumentError(
+        "TD3 generalization loss requires exact continuous actions",
+    ))
+    length(actions_mps) == length(transitions) || throw(DimensionMismatch(
+        "TD3 exact-action count must match the transition count",
+    ))
+    config = payload[:config]
+    action_scale = Float32((CONTINUOUS_ACTION_HIGH_MPS - CONTINUOUS_ACTION_LOW_MPS) / 2)
+    action_midpoint = Float32((CONTINUOUS_ACTION_HIGH_MPS + CONTINUOUS_ACTION_LOW_MPS) / 2)
+    normalized_actions = reshape(
+        clamp.((Float32.(actions_mps) .- action_midpoint) ./ action_scale, -1f0, 1f0),
+        config.action_dim,
+        :,
+    )
+    target_actor = get(payload, :target_actor, payload[:actor])
+    target_critic1 = get(payload, :target_critic1, payload[:critic1])
+    target_critic2 = get(payload, :target_critic2, payload[:critic2])
+    target_actions = td3_actor_output(target_actor, batch.next_observations)
+    target_inputs = vcat(batch.next_observations, target_actions)
+    next_q1 = vec(predict_q(target_critic1, target_inputs))
+    next_q2 = vec(predict_q(target_critic2, target_inputs))
+    targets = similar(batch.rewards)
+    for index in eachindex(targets)
+        done = batch.terminated[index] ||
+               (!config.bootstrap_truncated && batch.truncated[index])
+        bootstrap = done ? 0f0 : min(next_q1[index], next_q2[index])
+        targets[index] = batch.rewards[index] + Float32(config.discount) * bootstrap
+    end
+    inputs = vcat(batch.observations, normalized_actions)
+    q1 = vec(predict_q(payload[:critic1], inputs))
+    q2 = vec(predict_q(payload[:critic2], inputs))
+    return (mean(abs2, q1 .- targets) + mean(abs2, q2 .- targets)) / 2
+end
+
+function _generalization_evaluation_loss(payload, algorithm::Symbol, transitions;
+                                         actions_mps=nothing)
     algorithm in (:ddqn, :pr_drl) &&
         return _ddqn_evaluation_td_loss(payload, transitions)
-    algorithm == :a2c && return _a2c_evaluation_td_loss(payload, transitions)
+    algorithm in (:a2c, :a3c) && return _a2c_evaluation_td_loss(payload, transitions)
+    algorithm == :td3 && return _td3_evaluation_td_loss(payload, transitions, actions_mps)
     throw(ArgumentError("unsupported generalization-loss algorithm: $algorithm"))
 end
 
 _generalization_loss_definition(algorithm::Symbol) =
     algorithm in (:ddqn, :pr_drl) ? "ddqn_action_value_td_mse" :
-    algorithm == :a2c ? "a2c_critic_value_td_mse" : "unsupported"
+    algorithm in (:a2c, :a3c) ? "$(algorithm)_critic_value_td_mse" :
+    algorithm == :td3 ? "td3_twin_critic_action_value_td_mse" : "unsupported"
 
 function _generalization_record(case_name, result, evaluation_loss, reference_loss)
     summaries = result.summaries
@@ -1532,6 +1580,15 @@ function _generalization_table(policy, checkpoint_payload, algorithm, scenario,
                 checkpoint_payload,
                 algorithm,
                 results[case_name].transitions,
+                actions_mps=algorithm == :td3 ? Float32[
+                    action
+                    for summary in results[case_name].summaries
+                    for (action, protected) in zip(
+                        summary.action_trace,
+                        summary.protected_trace,
+                    )
+                    if !protected
+                ] : nothing,
             )
         end
     finally
@@ -1862,6 +1919,7 @@ function evaluate_final_flight_comparison(options)
     resolved = resolve_config(config_path; gram_wind_mode=options.wind_mode)
     checkpoint_path = _checkpoint_path(run_dir, options.checkpoint)
     policy, algorithm, _ = _load_policy(checkpoint_path)
+    trained_label = SpaceAGORA_RL.algorithm_display_name(algorithm)
     output_dir = abspath(options.output === nothing ?
                         joinpath(run_dir, "final_flight_comparison") :
                         options.output)
@@ -1916,13 +1974,14 @@ function evaluate_final_flight_comparison(options)
         output_dir,
         "final_flight_performance_comparison.csv",
     )
-    comparison = _flight_performance_table(metrics)
+    flight_policy_specs = _default_flight_policy_specs(trained_label)
+    comparison = _flight_performance_table(metrics, flight_policy_specs)
     CSV.write(comparison_path, comparison)
-    for policy in ("PR-DRL", "AADS")
-        row = only(eachrow(comparison[comparison.policy .== policy, :]))
+    for spec in flight_policy_specs
+        row = only(eachrow(comparison[comparison.policy .== spec.label, :]))
         @printf(
             "flight comparison target reached policy=%s tolerance_km=%.1f campaigns=%d/%d percent=%.1f%%\n",
-            policy,
+            spec.label,
             PAPER_TARGET_TOLERANCE_KM,
             row.target_reached_10km_count,
             row.episodes,
@@ -1933,6 +1992,7 @@ function evaluate_final_flight_comparison(options)
     figure_path = _paper_figure_11(
         metrics,
         joinpath(output_dir, "final_flight_performance_comparison.png"),
+        flight_policy_specs,
     )
 
     evaluation_manifest = joinpath(output_dir, "evaluation_manifest.toml")
@@ -2001,6 +2061,7 @@ function evaluate_run(options)
     resolved = resolve_config(config_path; gram_wind_mode=options.wind_mode)
     checkpoint_path = _checkpoint_path(run_dir, options.checkpoint)
     policy, algorithm, checkpoint_payload = _load_policy(checkpoint_path)
+    trained_label = SpaceAGORA_RL.algorithm_display_name(algorithm)
     default_output_name = options.generalization_only ?
                           "generalization_evaluation" : "paper_evaluation"
     output_dir = abspath(options.output === nothing ?
@@ -2066,11 +2127,12 @@ function evaluate_run(options)
     iid_paths = write_evaluation_artifacts(iid_dir, iid)
     iid_metrics, iid_pass_logs = _result_frames(iid)
     table_v_path = joinpath(output_dir, "paper_table_v_pr_drl_vs_aads.csv")
-    CSV.write(table_v_path, _table_v(iid_metrics))
+    CSV.write(table_v_path, _table_v(iid_metrics; trained_label=trained_label))
     fig10_path = _paper_figure_10(
         iid_pass_logs,
         scenario,
         joinpath(output_dir, "paper_fig10_heat_rate_and_delta_v.png"),
+        trained_label=trained_label,
     )
     fig9 = _paper_figure_9(iid_pass_logs, output_dir)
 
@@ -2086,14 +2148,17 @@ function evaluate_run(options)
     )
     flight_paths = write_evaluation_artifacts(flight_dir, flight)
     flight_metrics, flight_pass_logs = _result_frames(flight)
+    flight_policy_specs = _default_flight_policy_specs(trained_label)
     fig11_path = _paper_figure_11(
         flight_metrics,
         joinpath(output_dir, "paper_fig11_flight_performance_summary.png"),
+        flight_policy_specs,
     )
     fig12_path = _paper_figure_12(
         flight_pass_logs,
         flight_scenario,
         joinpath(output_dir, "paper_fig12_heat_rate_odyssey_comparison.png"),
+        trained_label=trained_label,
     )
 
     checkpoint_csv = ""

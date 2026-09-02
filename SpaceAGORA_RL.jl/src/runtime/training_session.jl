@@ -23,8 +23,22 @@ function _build_training_session(config::ResolvedConfig, run_id::Union{Nothing,S
                                  device::AbstractTrainingDevice)
     learner = if is_ddqn_family_algorithm(config.training.algorithm)
         DDQNLearner(rng, config.ddqn; schedule=config.epsilon, device=device)
+    elseif config.training.algorithm == :td3
+        TD3Learner(rng, config.td3; device=device)
     elseif config.training.algorithm == :a2c
-        A2CLearner(rng, config.a2c; device=device)
+        A2CLearner(
+            rng,
+            config.a2c;
+            device=device,
+            action_config=config.actor_critic_action,
+        )
+    elseif config.training.algorithm == :a3c
+        A3CLearner(
+            rng,
+            config.a3c;
+            device=device,
+            action_config=config.actor_critic_action,
+        )
     else
         throw(ArgumentError("unknown training algorithm: $(config.training.algorithm)"))
     end

@@ -23,7 +23,9 @@ const CASE_LABELS = Dict(
 const ALGORITHM_LABELS = Dict(
     "pr_drl" => "PR-DRL",
     "ddqn" => "DDQN",
+    "td3" => "TD3",
     "a2c" => "A2C",
+    "a3c" => "A3C",
 )
 
 function _usage(io::IO=stdout)
@@ -145,7 +147,8 @@ function render_generalization_table(csv_path::AbstractString,
             [_mean_std(row, :mean_thermal_violations,
                        :std_thermal_violations; digits=2) for row in rows]...,
         ],
-        ["Success", [@sprintf("%.1f%%", row.reached_goal_percent) for row in rows]...],
+        ["Success\n(% within 10 km)",
+         [@sprintf("%.1f%%", row.reached_goal_percent) for row in rows]...],
         [
             "Goal distance, km\n(mean +/- SD)",
             [_mean_std(row, :mean_goal_distance_km,
@@ -174,6 +177,7 @@ function render_generalization_table(csv_path::AbstractString,
                        :std_maneuver_count; digits=2) for row in rows]...,
         ],
     ]
+    metric_rows = vcat(primary_rows, campaign_rows)
 
     metadata = _metadata(csv_path)
     algorithm_label = _algorithm_label(metadata)
@@ -206,31 +210,15 @@ function render_generalization_table(csv_path::AbstractString,
     annotate!(report, 0.04, 0.915, text(subtitle, 10, :gray30, :left))
 
     annotate!(report, 0.04, 0.865,
-              text("Primary generalization metrics", 13, :navy, :left))
+              text("Generalization metrics and campaign statistics", 13, :navy, :left))
     _draw_table!(
         report,
         ["Metric", case_headers...],
-        primary_rows;
+        metric_rows;
         left=0.04,
         right=0.96,
         top=0.83,
         row_height=0.055,
-        widths=[0.20, fill(0.80 / length(rows), length(rows))...],
-        header_size=7,
-        cell_size=7,
-        highlight_column=iid_column,
-    )
-
-    annotate!(report, 0.04, 0.335,
-              text("Campaign and control statistics", 13, :navy, :left))
-    _draw_table!(
-        report,
-        ["Metric", case_headers...],
-        campaign_rows;
-        left=0.04,
-        right=0.96,
-        top=0.305,
-        row_height=0.045,
         widths=[0.20, fill(0.80 / length(rows), length(rows))...],
         header_size=7,
         cell_size=7,

@@ -12,7 +12,10 @@ struct RunManifest
     normalization_names::Vector{Symbol}
     reward_config::RewardConfig
     ddqn_config::DDQNConfig
+    td3_config::TD3Config
     a2c_config::A2CConfig
+    a3c_config::A3CConfig
+    actor_critic_action_config::ActorCriticActionConfig
 end
 
 function config_sha256(path::Union{Nothing,String})
@@ -60,7 +63,10 @@ function RunManifest(config::ResolvedConfig; run_id::Union{Nothing,String}=nothi
         config.scenario.normalization_bounds.names,
         config.scenario.reward_config,
         config.ddqn,
+        config.td3,
         config.a2c,
+        config.a3c,
+        config.actor_critic_action,
     )
 end
 
@@ -105,6 +111,62 @@ function manifest_dict(manifest::RunManifest; gram_wind_mode=nothing)
             "hidden_dim" => manifest.a2c_config.hidden_dim,
         ),
     )
+    if manifest.algorithm == :a2c
+        result["a2c"] = Dict{String,Any}(result["a2c"])
+        result["a2c"]["action_space"] = string(manifest.actor_critic_action_config.mode)
+    end
+    if manifest.algorithm == :td3
+        result["td3"] = Dict(
+            "actor_learning_rate" => manifest.td3_config.actor_learning_rate,
+            "critic_learning_rate" => manifest.td3_config.critic_learning_rate,
+            "discount" => manifest.td3_config.discount,
+            "batch_size" => manifest.td3_config.batch_size,
+            "train_frequency" => manifest.td3_config.train_frequency,
+            "updates_per_step" => manifest.td3_config.updates_per_step,
+            "train_start" => manifest.td3_config.train_start,
+            "random_steps" => manifest.td3_config.random_steps,
+            "replay_size" => manifest.td3_config.replay_size,
+            "exploration_noise" => manifest.td3_config.exploration_noise,
+            "target_policy_noise" => manifest.td3_config.target_policy_noise,
+            "target_noise_clip" => manifest.td3_config.target_noise_clip,
+            "policy_delay" => manifest.td3_config.policy_delay,
+            "tau" => manifest.td3_config.tau,
+            "gradient_clip_norm" => manifest.td3_config.gradient_clip_norm,
+            "hidden_dim" => manifest.td3_config.hidden_dim,
+            "bootstrap_truncated" => manifest.td3_config.bootstrap_truncated,
+        )
+    end
+    if manifest.algorithm == :a3c
+        result["a3c"] = Dict(
+            "learning_rate" => manifest.a3c_config.learning_rate,
+            "discount" => manifest.a3c_config.discount,
+            "t_max" => manifest.a3c_config.t_max,
+            "entropy_coef" => manifest.a3c_config.entropy_coef,
+            "value_coef" => manifest.a3c_config.value_coef,
+            "normalize_advantages" => manifest.a3c_config.normalize_advantages,
+            "gradient_clip_norm" => manifest.a3c_config.gradient_clip_norm,
+            "adam_beta1" => manifest.a3c_config.adam_beta1,
+            "adam_beta2" => manifest.a3c_config.adam_beta2,
+            "hidden_dim" => manifest.a3c_config.hidden_dim,
+            "max_policy_lag" => manifest.a3c_config.max_policy_lag,
+            "action_space" => string(manifest.actor_critic_action_config.mode),
+        )
+    end
+    if manifest.algorithm == :td3
+        result["continuous_action"] = Dict(
+            "low_mps" => CONTINUOUS_ACTION_LOW_MPS,
+            "high_mps" => CONTINUOUS_ACTION_HIGH_MPS,
+        )
+    elseif manifest.algorithm in (:a2c, :a3c) &&
+           uses_continuous_actions(manifest.actor_critic_action_config)
+        result["continuous_action"] = Dict(
+            "low_mps" => CONTINUOUS_ACTION_LOW_MPS,
+            "high_mps" => CONTINUOUS_ACTION_HIGH_MPS,
+            "initial_log_std" => manifest.actor_critic_action_config.initial_log_std,
+            "log_std_min" => manifest.actor_critic_action_config.log_std_min,
+            "log_std_max" => manifest.actor_critic_action_config.log_std_max,
+        )
+    end
     if gram_wind_mode !== nothing
         result["gram_wind_mode"] = String(canonical_gram_wind_mode(gram_wind_mode))
     end

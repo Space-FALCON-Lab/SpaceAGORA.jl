@@ -257,8 +257,30 @@ function _hint_choose_allotment(
         state = _persistent_hint_state[]
         bucket = get(state.history, signature, nothing)
         if bucket === nothing || isempty(bucket)
+            # WIDEST, not narrowest, on a cold signature.
+            #
+            # `candidate_pool` is sorted ascending, so `first` handed back the
+            # narrowest allotment -- typically 1 -- and the exploration loop
+            # below then walks the ladder upward. An adaptive profile therefore
+            # began every unseen workload effectively serial on the region it
+            # was deciding about, and paid the whole ramp again each time
+            # re-exploration reset it.
+            #
+            # The non-adaptive path answers `max(1, budget)` immediately, and on
+            # the workload where this was found that answer is right by a factor
+            # of 2.8: measured on atmo256_gram_surrogate_10min, threading the
+            # density callback takes the RHS from 1338 to 474 us, and the
+            # adaptive profile captured only about half of it (954 us) purely
+            # because it started narrow and cycled.
+            #
+            # Starting at the widest candidate makes an unseen workload no worse
+            # than the static profiles at the first call, and leaves the layer
+            # free to narrow on measured evidence. The risk is inverted rather
+            # than removed -- a workload whose optimum is narrow now pays until
+            # it learns -- but that cost is bounded by one window, where the ramp
+            # cost was paid on every re-exploration.
             return (
-                allotment=first(candidate_pool),
+                allotment=last(candidate_pool),
                 confidence=Inf,
                 regret_ns=0.0,
                 samples=Int64(0),

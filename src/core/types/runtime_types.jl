@@ -825,6 +825,11 @@ export RhsEffectorDecision, RhsExecutionPlan
         # avoid acquisitions. Written after calibration, which performs enough
         # real RHS evaluations to be a representative window.
         rhs_width_ceiling::Base.RefValue{Int} = Ref{Int}(typemax(Int))
+        # Whether the adaptation gate fired for this run: the workload has a
+        # concretely-typed single-effector tuple, so there is nothing to adapt.
+        # Set once at setup; read by the calibration sweep, which must not spend
+        # ~110 discarded RHS evaluations ranking plans that cannot differ.
+        adaptation_gated::Base.RefValue{Bool} = Ref{Bool}(false)
         # Per-accepted-step cache of _rhs_execution_plan's routing decision, active
         # only when SPACEAGORA_RHS_PLAN_STEP_CACHE=on (_rhs_plan_step_cache_enabled,
         # setup.jl). N_sats/thread policy don't change mid-step, so re-deriving the

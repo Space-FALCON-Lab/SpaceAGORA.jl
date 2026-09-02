@@ -1136,6 +1136,12 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
         return
     end
     _rhs_calibration_mode() == :off && return
+    # Nothing to rank. A concretely-typed single-effector tuple makes every
+    # candidate plan perform the same work in the same order, so the sweep would
+    # spend ~110 discarded RHS evaluations to discover that they tie -- and on
+    # exactly the light shapes where that fixed cost is largest relative to the
+    # solve. See `_adaptation_gated`.
+    p.shared_buffers.adaptation_gated[] && return
     SimulationModel.ParallelPolicy.effective_inner_thread_budget() <= 1 && return
 
     dynamic_effectors = args.dynamics_model.dynamic_effectors

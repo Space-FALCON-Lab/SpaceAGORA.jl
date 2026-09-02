@@ -17,7 +17,47 @@ function _ppb_active_phases(ppb::PPBConfig)::Vector{PPBPhase}
         push!(phases, by_id[id])
     end
     ppb.preview && (phases = _ppb_preview_phase.(phases))
+    phases = _ppb_cap_worker_counts.(phases, ppb.process_workers)
     return phases
+end
+
+# No phase may request more concurrent worker PROCESSES than the run was given.
+#
+# `--process-workers` capped the knob the phases without their own ladder read,
+# and nothing else. `worker_ladder` and `budget_grid` are hardcoded per phase --
+# B8 carries [1,2,4,8,16,32,64] and B13 a six-way split -- and both were honoured
+# verbatim regardless of the cap or of the machine.
+#
+# That is not merely a bad measurement point. Each worker is a separate Julia
+# process with SpaceAGORA, SPICE kernels and its own workspaces resident, so the
+# wide rungs are priced in gigabytes: B8's 32-worker rung drove the machine to
+# load 101 on twelve cores and 53.5 G in one cgroup scope, and systemd-oomd
+# killed the run mid-phase. Twice -- once at the hardcoded 32 before the cap
+# existed, and once after, because the cap did not reach the ladder.
+#
+# Rungs above the cap are dropped rather than clamped: clamping would run the
+# same width several times under different labels and report them as distinct
+# points on a scaling curve.
+function _ppb_cap_worker_counts(phase::PPBPhase, max_workers::Int)::PPBPhase
+    max_workers >= 1 || return phase
+    ladder = filter(w -> w <= max_workers, phase.worker_ladder)
+    isempty(ladder) && !isempty(phase.worker_ladder) && (ladder = [max_workers])
+    grid = filter(p -> p[1] <= max_workers && p[1] * p[2] <= max_workers, phase.budget_grid)
+    isempty(grid) && !isempty(phase.budget_grid) && (grid = [(1, max_workers)])
+    (ladder == phase.worker_ladder && grid == phase.budget_grid) && return phase
+    if ladder != phase.worker_ladder
+        println("[paper-benchmarks] phase $(phase.id): worker ladder capped at $(max_workers) -> $(ladder)")
+    end
+    if grid != phase.budget_grid
+        println("[paper-benchmarks] phase $(phase.id): budget grid capped at $(max_workers) -> $(grid)")
+    end
+    return PPBPhase(
+        id = phase.id, label = phase.label, cases = phase.cases,
+        parity_cases = phase.parity_cases, modes = phase.modes,
+        mc_samples = phase.mc_samples, repeats = phase.repeats,
+        warmup = phase.warmup, thread_mode = phase.thread_mode,
+        worker_ladder = ladder, budget_grid = grid,
+    )
 end
 
 # Rescales a phase's fixed-budget split grid to the machine actually running it.

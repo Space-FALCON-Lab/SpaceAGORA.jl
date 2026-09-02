@@ -923,8 +923,67 @@ end
 # shared buffers.  Called once from run_simulation setup so every value is
 # captured inside the active SimulationEngineConfig override scope; the RHS
 # and callback hot paths then read plain struct fields.
+# Whether this workload has anything for the router to adapt.
+#
+# A concretely-typed single-effector tuple has nothing. It does not box on
+# iteration (findings doc §7.1 measures 0 bytes against 240 for a heterogeneous
+# 3-tuple), and every candidate execution plan performs the same work in the
+# same order, so there is no ranking for a sweep to discover and no per-call
+# decision worth making. What the machinery costs on those shapes is measurable
+# and large -- against the best static route on the 2026-09-01 benchmark run,
+# R5 came in at +18% on heavy_4096sat_l50_1hr, +25% at twelve threads and +28%
+# at eight on gravity_4096sat_l50_vacuum_1hr, all 1-tuple vacuum cases.
+#
+# Deliberately narrow: `length == 1`, not "concrete eltype". A homogeneous
+# N-tuple also avoids boxing and the same reasoning would extend to it, but
+# every case measured is a 1-tuple and widening the rule on reasoning alone is
+# how a gate starts costing the wins it was built to protect. The wins are the
+# same size as the losses here -- -22% and -40% on the 3-tuple cases -- so this
+# has to be right rather than merely cautious.
+#
+# NOT ADDRESSED: atmo256_gram_surrogate_10min runs R5 at +67% against the best
+# static route on a 2-tuple, and atmo256_exponential_10min runs it at -38% on
+# the same tuple shape. One signal cannot separate those, so the surrogate
+# regression is left standing rather than risking the exponential win.
+# OFF BY DEFAULT, and that is a measured reversal of the design above.
+#
+# Flipping `adaptive_enabled` to false does NOT mean "do not adapt". Read
+# `thread_policy_decision`: with the adaptive branch skipped and mode `:auto`,
+# `desire` collapses to `max(1, budget)` and the allotment becomes the FULL
+# thread budget unconditionally. So the gate did not stop the machinery
+# choosing a width -- it pinned the width to the widest one available, which is
+# the wrong direction on exactly these shapes. The benchmark ladders show their
+# optimum at t4-t6, not t12.
+#
+# Measured on the 1-tuple gravity shape, paired and order-alternating, 15
+# pairs: gate on lost 1-14 at a median ratio of 1.14, p = 0.0010. It made the
+# case it was built to help 14% slower. On the 3-tuple case it correctly does
+# not fire (10-5, p = 0.30, indistinguishable), so the predicate is right and
+# the action is wrong.
+#
+# The action that matches the measured baseline is to force the inner callback
+# and effector MODES to `:off` -- which is what the `full_smart_innermodes_off`
+# ablation arm does, and what the static profiles the +18..28% regressions were
+# measured against actually run. Those live in the callback and RHS-plan env
+# snapshots, not in `PolicyDecisionEnvConfig`, so wiring it is a separate change
+# from this one.
+@inline function _adaptation_gate_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_ADAPTATION_GATE", false)
+end
+
+@inline function _adaptation_gated(args)::Bool
+    _adaptation_gate_enabled() || return false
+    effs = args.dynamics_model.dynamic_effectors
+    length(effs) == 1 || return false
+    return isconcretetype(eltype(effs))
+end
+
 function _initialize_runtime_env_config!(p)
-    p.shared_buffers.policy_env_config[] = SimulationModel.ParallelPolicy.snapshot_policy_decision_env()
+    gated = _adaptation_gated(p.args)
+    p.shared_buffers.adaptation_gated[] = gated
+    p.shared_buffers.policy_env_config[] =
+        SimulationModel.ParallelPolicy.snapshot_policy_decision_env(
+            adaptive_override = gated ? false : nothing)
     p.shared_buffers.rhs_env_config[] = _snapshot_rhs_plan_env_config()
     p.shared_buffers.callback_env_config[] = SimulationModel.SimulationCallbacks._snapshot_callback_env_config()
     return nothing

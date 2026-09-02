@@ -218,14 +218,22 @@ end
 end
 
 """
-    snapshot_policy_decision_env() -> PolicyDecisionEnvConfig
+    snapshot_policy_decision_env(; adaptive_override = nothing) -> PolicyDecisionEnvConfig
 
 Resolve the env-derived knobs consulted on every `thread_policy_decision` call
 and every `record_policy_observation!` call into a typed snapshot.  Built once
 at run_simulation setup so hot paths avoid process-global ENV access; values
 reflect ENV (and any active engine overrides) at snapshot time.
+
+`adaptive_override` forces `adaptive_enabled` regardless of the environment, so
+a caller that has decided this workload has nothing to adapt can say so without
+mutating process-global ENV. ENV would be the obvious route and is the wrong
+one: a threaded outer campaign runs several solves concurrently in one process,
+and `withenv` around a solve would leak the setting into its siblings.
 """
-function snapshot_policy_decision_env()::PolicyDecisionEnvConfig
+function snapshot_policy_decision_env(;
+    adaptive_override::Union{Nothing, Bool} = nothing
+)::PolicyDecisionEnvConfig
     return PolicyDecisionEnvConfig(
         effective_inner_thread_budget(),
         outer_parallel_active(),
@@ -233,7 +241,7 @@ function snapshot_policy_decision_env()::PolicyDecisionEnvConfig
         auto_thread_min_budget(:density_callback),
         auto_thread_min_budget(:density_callback_lockfree),
         auto_thread_min_budget(:thermal_callback),
-        adaptive_policy_enabled(),
+        adaptive_override === nothing ? adaptive_policy_enabled() : adaptive_override,
         persistent_hints_enabled(),
         adaptive_measured_reward_enabled(),
         adaptive_bootstrap_threads(),

@@ -631,7 +631,22 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # and the target box had ~140 GB free at sizing time, so a 64-worker pool
         # would run within a few GB of the limit for the sake of one more point.
         # (32, 2) already brackets the process-heavy end of the axis.
-        budget_grid  = [(1, 32), (2, 16), (4, 8), (8, 4), (16, 2), (32, 1)],
+        # One fixed budget split every way, at the USABLE core count.
+        #
+        # Was [(1,32), (2,16), (4,8), (8,4), (16,2), (32,1)] -- a total of 32,
+        # taken from Sys.CPU_THREADS on a machine with 12 physical cores. Two
+        # things were wrong with that. It is 2.7x oversubscribed before the
+        # measurement starts, so the wide-process rungs characterise contention
+        # rather than the split being studied. And it is not affordable: each
+        # process worker is a separate Julia instance with SpaceAGORA, SPICE
+        # kernels and its own aero/harmonics workspaces loaded, so the 32-worker
+        # rung exhausted 60 GB and took the machine's OOM killer with it
+        # (2026-09-01, kernel log: "julia invoked oom-killer ... global_oom").
+        #
+        # 12 is the usable core budget on this host. The grid keeps the phase's
+        # design -- one total, split from all-threads to all-processes -- and
+        # every rung now fits both the cores and the memory.
+        budget_grid  = [(1, 12), (2, 6), (3, 4), (4, 3), (6, 2), (12, 1)],
     ),
 
     PPBPhase(

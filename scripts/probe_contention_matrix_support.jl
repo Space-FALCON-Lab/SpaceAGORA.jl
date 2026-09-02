@@ -17,8 +17,8 @@ const _SUPPORT_L = parse(Int, get(ENV, "PCM_L", "20"))
 const _SUPPORT_MISSION_S = parse(Float64, get(ENV, "PCM_MISSION_S", "3600.0"))
 
 function _support_make_sc(planet; ra_alt_m, rp_alt_m, ν_deg)
-    root = SM.Link{0}(root = true, m = 500.0, ref_area = 12.0)
-    panel = SM.Link{0}(root = false, m = 30.0, ref_area = 6.0,
+    root = SM.Link(root = true, m = 500.0, ref_area = 12.0)
+    panel = SM.Link(root = false, m = 30.0, ref_area = 6.0,
                        r = MVector{3, Float64}(0.0, 1.2, 0.0))
     ic = SM.InitialCondition(ra = planet.Rp_e + ra_alt_m, rp = planet.Rp_e + rp_alt_m,
                              i = 35.0, ω = 40.0, Ω = 10.0, ν = ν_deg)

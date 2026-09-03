@@ -110,7 +110,7 @@ Base.@kwdef mutable struct _HintLayerStatsAccumulator
     signature_metric_count::Int64 = 0
 end
 
-Base.@kwdef mutable struct PolicyContext
+Base.@kwdef mutable struct PolicyContext <: AbstractPolicyContext
     telemetry::PolicyTelemetry = PolicyTelemetry()
     adaptive_state::Dict{Symbol, AdaptiveControllerState} = Dict{Symbol, AdaptiveControllerState}()
     decision_signature::Dict{Symbol, String} = Dict{Symbol, String}()

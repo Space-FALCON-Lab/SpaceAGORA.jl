@@ -12,9 +12,15 @@ function record_policy_observation!(
     num_items::Int,
     use_threads::Bool,
     elapsed_ns::Integer,
-    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
+    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing,
+    # The context the matching decision ran in, when the caller can supply it
+    # (`policy_context_hint(p)`). `nothing` resolves to the task's active
+    # context, which is the shipped behaviour and is wrong on a worker task --
+    # see policy_context_hint for why.
+    ctx::Union{Nothing, PolicyContext}=nothing
 )
     budget = env === nothing ? effective_inner_thread_budget() : env.inner_thread_budget
+    ctx = ctx === nothing ? _active_policy_context() : ctx
     elapsed_ns_i64 = try
         Int64(elapsed_ns)
     catch
@@ -54,11 +60,14 @@ function record_policy_observation!(
     # controller update -- a dict lookup plus ~8 field writes, and for R4 four
     # more ENV reads -- is skipped, and only when its result is unreadable.
     decision_forced = budget <= 1 || num_items <= 1
-    adaptive_possible = adaptive_enabled && !decision_forced
+    # V2 takes the static width (adaptive_decision.jl), so there is no
+    # controller state to feed; the telemetry writes below still happen.
+    adaptive_possible = adaptive_enabled && !decision_forced &&
+        !(env !== nothing && env.policy_v2)
     # Consulted only when it pays for itself on this machine; see
     # _hint_layer_pays and hint_work_ratio.
     hints_enabled = adaptive_possible &&
-        _hint_layer_pays(source, env) &&
+        _hint_layer_pays(source, env; ctx=ctx) &&
         (env === nothing ? persistent_hints_enabled() : env.persistent_hints)
     measured_reward = hints_enabled &&
         (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)
@@ -67,7 +76,6 @@ function record_policy_observation!(
     hint_allotment = Int64(1)
     adaptive_active = false
 
-    ctx = _active_policy_context()
     lock(ctx.lock) do
         t = ctx.telemetry
         # Keep the per-source work estimate current even when the adaptive
@@ -99,7 +107,7 @@ function record_policy_observation!(
             return nothing
         end
 
-        st = _adaptive_state_for(source)
+        st = _adaptive_state_for(ctx, source)
         if measured_reward
             st.desire = max(Int64(1), hint_allotment)
             st.last_classification = :measured_reward
@@ -197,7 +205,7 @@ function record_policy_observation!(
             hints_entries = _hint_entry_count(_persistent_hint_state[])
             hints_path = _persistent_hint_state[].path
         end
-        ctx2 = _active_policy_context()
+        ctx2 = ctx
         lock(ctx2.lock) do
             t = ctx2.telemetry
             t.persistent_hints_updates += 1

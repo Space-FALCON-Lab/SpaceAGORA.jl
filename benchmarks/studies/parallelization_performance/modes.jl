@@ -167,6 +167,28 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             allow_inner_with_outer=true
         ),
 
+        # R6: full_smart with SPACEAGORA_PARALLEL_POLICY_V2. Every routing knob
+        # below is identical to full_smart by construction (profile_config
+        # derives R6 from R5's settings); the switch itself arrives through
+        # ppc_mode_env_pairs' profile_env_pairs(mode.profile) call, so it is not
+        # duplicated here. The parity gate checks this block against R6.
+        "policy_v2" => PPCModeSpec(
+            name="policy_v2",
+            profile="R6",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true
+        ),
+
         # --- Attribution variants of full_smart -------------------------------
         # Not part of any reported ladder. R5 on a process-routed Monte Carlo
         # workload is ~60% slower per sample than the pinned process route, and

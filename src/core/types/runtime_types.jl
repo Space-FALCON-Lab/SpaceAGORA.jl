@@ -573,8 +573,8 @@ export RhsEffectorDecision, RhsExecutionPlan
 
     # Feeds ParallelPolicy.thread_policy_decision and budget-dependent routing.
     #
-    # The adaptive-controller knobs below (persistent_hints through
-    # adaptive_trim_quanta) were previously read straight from ENV on every
+    # The policy knobs below (persistent_hints through hint_work_ratio) were
+    # previously read straight from ENV on every
     # adaptive decision *and* every policy observation. Each read is a Dict
     # lookup plus strip/lowercase/parse, all of which allocate, and the
     # observation path fires once per RHS call on the flat-effector route --
@@ -596,12 +596,6 @@ export RhsEffectorDecision, RhsExecutionPlan
         adaptive_enabled::Bool
         persistent_hints::Bool
         adaptive_measured_reward::Bool
-        adaptive_bootstrap_threads::Bool
-        adaptive_control_tail_guard::Bool
-        adaptive_rho::Float64
-        adaptive_delta::Float64
-        adaptive_window::Int
-        adaptive_trim_quanta::Int
         # Multiple of one hint consultation that the work a decision guards must
         # exceed before the hint layer is consulted. Read on every decision AND
         # every observation, so it belongs in the snapshot rather than in ENV.

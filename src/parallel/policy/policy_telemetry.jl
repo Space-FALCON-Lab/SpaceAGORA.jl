@@ -125,8 +125,7 @@ function _record_policy_decision!(
         t.last_heavy_only = heavy_only
         t.last_heavy_work = heavy_work
         t.last_use_threads = use_threads
-        t.persistent_hints_enabled = (env === nothing || !policy_telemetry_uses_snapshot()) ?
-            persistent_hints_enabled() : env.persistent_hints
+        t.persistent_hints_enabled = env === nothing ? persistent_hints_enabled() : env.persistent_hints
         t.persistent_hints_loaded = hints_loaded
         t.persistent_hints_entries = hints_entries
         t.persistent_hints_path = _persistent_hint_state[].path
@@ -136,10 +135,8 @@ function _record_policy_decision!(
         t.last_hint_regret_ns = max(0.0, hint_regret_ns)
 
         # Folded in from thread_policy_decision's second lock block.
-        if policy_telemetry_uses_snapshot()
-            ctx.decision_signature[source] = signature
-            ctx.decision_allotment[source] = Int64(allotment)
-        end
+        ctx.decision_signature[source] = signature
+        ctx.decision_allotment[source] = Int64(allotment)
     end
     return nothing
 end
@@ -159,10 +156,6 @@ function policy_telemetry_snapshot()
     ctx = _active_policy_context()
     lock(ctx.lock) do
         t = ctx.telemetry
-        quantums_effective = max(0, t.quantums_total - min(t.quantums_total, t.trim_quanta_budget))
-        trimmed_accounted = min(t.quantums_accounted_proxy, quantums_effective)
-        accounted_fraction_proxy = t.quantums_total == 0 ? 0.0 : t.quantums_accounted_proxy / t.quantums_total
-        trimmed_accounted_fraction_proxy = quantums_effective == 0 ? 0.0 : trimmed_accounted / quantums_effective
         return (
             decisions_total=t.decisions_total,
             threads_enabled_total=t.threads_enabled_total,
@@ -197,16 +190,6 @@ function policy_telemetry_snapshot()
             elapsed_ns_total=t.elapsed_ns_total,
             threaded_elapsed_ns_total=t.threaded_elapsed_ns_total,
             serial_elapsed_ns_total=t.serial_elapsed_ns_total,
-            last_classification=String(t.last_classification),
-            last_utilization=t.last_utilization,
-            quantum_length=t.quantum_length,
-            trim_quanta_budget=t.trim_quanta_budget,
-            quantums_total=t.quantums_total,
-            quantums_inefficient=t.quantums_inefficient,
-            quantums_efficient_satisfied=t.quantums_efficient_satisfied,
-            quantums_efficient_deprived=t.quantums_efficient_deprived,
-            quantums_accounted_proxy=t.quantums_accounted_proxy,
-            quantums_deductible_proxy=t.quantums_deductible_proxy,
             persistent_hints_enabled=t.persistent_hints_enabled,
             persistent_hints_loaded=t.persistent_hints_loaded,
             persistent_hints_updates=t.persistent_hints_updates,
@@ -221,9 +204,7 @@ function policy_telemetry_snapshot()
             rhs_plan_allotment=t.rhs_plan_allotment,
             rhs_plan_scheduler=String(t.rhs_plan_scheduler),
             callback_width_density=t.callback_width_density,
-            callback_width_density_static=t.callback_width_density_static,
-            accounted_fraction_proxy=accounted_fraction_proxy,
-            trimmed_accounted_fraction_proxy=trimmed_accounted_fraction_proxy
+            callback_width_density_static=t.callback_width_density_static
         )
     end
 end

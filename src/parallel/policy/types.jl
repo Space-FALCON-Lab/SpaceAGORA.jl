@@ -6,13 +6,8 @@ Base.@kwdef mutable struct AdaptiveControllerState
     # it, and both sides of that comparison are measured rather than assumed.
     # Zero means no observation has been recorded yet.
     elapsed_ema_ns::Float64 = 0.0
+    # Width the hint layer last chose for this source (measured-reward mode).
     desire::Int64 = 1
-    window_calls::Int64 = 0
-    window_allotment_sum::Int64 = 0
-    window_useful_sum::Float64 = 0.0
-    window_deprived_calls::Int64 = 0
-    last_classification::Symbol = :none
-    last_utilization::Float64 = 1.0
 end
 
 Base.@kwdef mutable struct PolicyTelemetry
@@ -51,16 +46,6 @@ Base.@kwdef mutable struct PolicyTelemetry
     elapsed_ns_total::Int64 = 0
     threaded_elapsed_ns_total::Int64 = 0
     serial_elapsed_ns_total::Int64 = 0
-    last_classification::Symbol = :none
-    last_utilization::Float64 = 1.0
-    quantum_length::Int64 = 0
-    trim_quanta_budget::Int64 = 0
-    quantums_total::Int64 = 0
-    quantums_inefficient::Int64 = 0
-    quantums_efficient_satisfied::Int64 = 0
-    quantums_efficient_deprived::Int64 = 0
-    quantums_accounted_proxy::Int64 = 0
-    quantums_deductible_proxy::Int64 = 0
     persistent_hints_enabled::Bool = false
     persistent_hints_loaded::Bool = false
     persistent_hints_updates::Int64 = 0

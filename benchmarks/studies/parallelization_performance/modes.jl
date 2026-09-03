@@ -30,7 +30,6 @@ Base.@kwdef struct PPCModeSpec
     # `nothing` inherits the shipped profile's value; set only by attribution
     # arms that need to isolate one of these knobs. See ppc_mode_env_pairs.
     measured_reward::Union{Nothing, Bool} = nothing
-    tail_guard::Union{Nothing, Bool} = nothing
     persistent_override::Union{Nothing, Bool} = nothing
 end
 
@@ -262,21 +261,10 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             # this arm is still routing adaptively.
             inner_modes="off"
         ),
-        # Sixth and seventh attribution arms. Now that env construction derives
-        # from the shipped profile, an arm differs from full_smart in exactly the
-        # knob it names -- which was not true before: the tail guard used to be
-        # keyed on the literal mode name, so every arm below silently turned it
-        # off as well.
-        "full_smart_notailguard" => PPCModeSpec(
-            name="full_smart_notailguard",
-            profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
-            rhs_batch="auto", density="auto", control="auto", thermal="auto",
-            multibody="auto", effector="auto", scheduler="static", persistent=true,
-            allow_inner_with_outer=true,
-            # Only difference from full_smart: the control-callback tail guard,
-            # which R4 ships off and R5 ships on.
-            tail_guard=false
-        ),
+        # Attribution arms. Env construction derives from the shipped profile,
+        # so an arm differs from full_smart in exactly the knob it names. The
+        # former full_smart_notailguard arm went with the AIMD controller
+        # (2026-09-03).
         "full_smart_noreward" => PPCModeSpec(
             name="full_smart_noreward",
             profile="R5", backend="auto", outer_active=true, policy_adaptive=true,
@@ -382,9 +370,6 @@ function ppc_mode_env_pairs(
     end
     if mode.measured_reward !== nothing
         put!("SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD", mode.measured_reward ? "1" : "0")
-    end
-    if mode.tail_guard !== nothing
-        put!("SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD", mode.tail_guard ? "1" : "0")
     end
 
     for (k, v) in Pair{String, Union{Nothing, String}}[

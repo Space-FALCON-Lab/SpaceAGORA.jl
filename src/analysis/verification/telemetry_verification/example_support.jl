@@ -68,7 +68,10 @@ function make_three_body_spacecraft(;
     reflection_coefficient::Float64=1.0,
     prop_mass::Float64=0.0,
     id::Int64=1,
-    bus_ram_face::Symbol=:legacy
+    bus_ram_face::Symbol=:legacy,
+    bus_attitude_q::Union{Nothing, NTuple{4, Float64}}=nothing,
+    panel_attitude_q_left::Union{Nothing, NTuple{4, Float64}}=nothing,
+    panel_attitude_q_right::Union{Nothing, NTuple{4, Float64}}=nothing
 )
     # The Hart free-molecular coefficients are normalized by the face NORMAL to
     # the flow (for the translational fixed attitude the flow runs along body
@@ -84,9 +87,19 @@ function make_three_body_spacecraft(;
     # per-wing half-span (total array span / 2). Passing the full span here
     # doubles the array's drag/SRP area — the exact defect the April 2026
     # examples carried (5.7/1.0, 5.5/1.35) until August 2026.
-    main_bus = SM.Link(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_ref_area, reflection_coefficient=reflection_coefficient)
-    left_panel = SM.Link(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
-    right_panel = SM.Link(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient)
+    # Link attitude quaternions (x, y, z, w scalar-last). Root q is in the
+    # flow-aligned reference frame; panel q is relative to the bus frame
+    # (kinematics convention). Absent -> identity, the historical value the
+    # Link constructor defaults to, so existing callers are bit-identical.
+    # Intended for the fM :attitude incidence mode with orientation_sim=false
+    # (see AerodynamicCoefficientfM); note the historical :max_drag path also
+    # reads non-root quaternions, which is why the manifest layer rejects
+    # attitude keys under any other incidence mode.
+    _link_q(q) = q === nothing ?
+        MVector{4, Float64}(0.0, 0.0, 0.0, 1.0) : MVector{4, Float64}(q...)
+    main_bus = SM.Link(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_ref_area, reflection_coefficient=reflection_coefficient, q=_link_q(bus_attitude_q))
+    left_panel = SM.Link(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient, q=_link_q(panel_attitude_q_left))
+    right_panel = SM.Link(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient, q=_link_q(panel_attitude_q_right))
 
     return SM.SpacecraftModel(
         SM.Joint[],

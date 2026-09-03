@@ -3,7 +3,11 @@ end
 
 @kwdef struct SimpleEphemeridesModel <: AbstractEphemeridesModel
     reference_epoch_seconds::Float64 = 0.0
-    prime_meridian_at_reference_rad::Float64 = 0.0
+    # NaN is a sentinel meaning "planet-true prime meridian": Earth uses GMST
+    # (see planet_frame_lpi below), other planets keep a zero angle at the
+    # reference epoch. An explicit finite value selects the legacy linear model
+    # θ = pm + ω₃·(et − reference_epoch_seconds) exactly as given.
+    prime_meridian_at_reference_rad::Float64 = NaN
 end
 
 const _J2000_UTC = DateTime(2000, 1, 1, 12, 0, 0)
@@ -89,8 +93,27 @@ end
     return _spice_planet_frame_lpi(planet, et)
 end
 
+# IAU-82 GMST as a function of the simple model's own timeline: leap-second-free
+# UTC seconds past the J2000 epoch (2000-01-01T12:00 UTC), used directly as UT1
+# (|UT1 − UTC| < 0.9 s, under 4e-3 deg of Earth rotation).
+@inline function _earth_gmst_iau82_rad(ut1_seconds_past_j2000::Float64)::Float64
+    Tu = ut1_seconds_past_j2000 / (36525.0 * 86400.0)
+    gmst_s = @evalpoly(Tu, 67310.54841, 3.164400184812866e9, 0.093104, -6.2e-6)
+    return mod2pi(rem(gmst_s, 86400.0) * (2π / 86400.0))
+end
+
 @inline function planet_frame_lpi(planet, et::Float64, model::SimpleEphemeridesModel)::SMatrix{3, 3, Float64}
-    θ = model.prime_meridian_at_reference_rad + planet.ω[3] * (et - model.reference_epoch_seconds)
+    elapsed = et - model.reference_epoch_seconds
+    pm = model.prime_meridian_at_reference_rad
+    θ = if isnan(pm)
+        # Planet-true default. The J2000 x-axis is the vernal equinox, not the
+        # Greenwich meridian: Earth's rotation angle relative to it is GMST
+        # (280.46 deg at the J2000 epoch), so a zero angle here would misplace
+        # every geographic (lat/lon-keyed) model evaluation in longitude.
+        planet.name == "Earth" ? _earth_gmst_iau82_rad(elapsed) : planet.ω[3] * elapsed
+    else
+        pm + planet.ω[3] * elapsed
+    end
     # With J2000 as the internal inertial frame, the spin-axis rotation is the
     # direct J2000→PCPF transform for the simple ephemeris model.
     return _rotation_about_spin_axis(θ)
@@ -99,9 +122,12 @@ end
 @inline ephemerides_cache_key(::SpiceEphemeridesModel) = (:spice,)
 
 @inline function ephemerides_cache_key(model::SimpleEphemeridesModel)
+    pm = model.prime_meridian_at_reference_rad
     return (
         :simple,
         round(Int64, model.reference_epoch_seconds * 1e6),
-        round(Int64, model.prime_meridian_at_reference_rad * 1e12)
+        # NaN is the planet-true-default sentinel (round would throw on it);
+        # typemin is unreachable from any physically sane explicit override.
+        isnan(pm) ? typemin(Int64) : round(Int64, pm * 1e12)
     )
 end

@@ -817,7 +817,8 @@ function select_outer_route!(
             _any_candidate_proven(candidates, snapshot, tuning.adaptive_min_samples;
                                   must_measure=Symbol[c for c in candidates if c !== :none]) :
             _route_is_proven(candidates, snapshot, default_route, tuning.adaptive_min_samples)
-        explore = default_proven ?
+        # See OuterRouteTuning.explore_routes for why V2 never forces a trial.
+        explore = (default_proven || !tuning.explore_routes) ?
             nothing :
             _under_sampled_candidate(candidates, snapshot, default_route, tuning.adaptive_min_samples)
         if !(explore === nothing)
@@ -990,7 +991,10 @@ function select_outer_split!(
     widest_proven = tuning.explore_until_any_proven ?
         _any_candidate_proven(arms, snapshot, tuning.adaptive_min_samples) :
         _route_is_proven(arms, snapshot, widest_arm, tuning.adaptive_min_samples)
-    explore = widest_proven ?
+    # Under the split race, widths are explored by racing inside a campaign
+    # (SimulationCampaigns._run_campaign_split_race), never one width per
+    # campaign here; with history present this selector only exploits.
+    explore = (widest_proven || tuning.split_race) ?
         nothing :
         _under_sampled_candidate(arms, snapshot, widest_arm, tuning.adaptive_min_samples)
     if !(explore === nothing)

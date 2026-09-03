@@ -87,6 +87,11 @@ Base.@kwdef mutable struct PolicyTelemetry
     #                       the scheduler became part of the calibrated plan
     #                       rather than a process-global setting.
     rhs_plan_scheduler::Symbol = :none
+    # Pre-solve density-callback width calibration (V2): the pinned width (0 =
+    # static per-call decision retained) and the static width it was measured
+    # against. Accounting only.
+    callback_width_density::Int64 = 0
+    callback_width_density_static::Int64 = 0
 end
 
 Base.@kwdef mutable struct AdaptiveChoiceStats

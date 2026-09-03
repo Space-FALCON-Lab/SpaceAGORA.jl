@@ -1025,7 +1025,8 @@ function record_outer_split_feedback!(
     failures::Int,
     elapsed_success_s::Float64=0.0,
     elapsed_success_sq_sum_s::Float64=NaN,
-    tuning::OuterRouteTuning=OuterRouteTuning()
+    tuning::OuterRouteTuning=OuterRouteTuning(),
+    weight::Int=1,
 )::Nothing
     return record_outer_route_feedback!(
         state, f;
@@ -1036,5 +1037,24 @@ function record_outer_split_feedback!(
         elapsed_success_sq_sum_s=elapsed_success_sq_sum_s,
         tuning=tuning,
         signature_prefix=_SPLIT_SIGNATURE_PREFIX,
+        weight=weight,
     )
+end
+
+"""
+    outer_split_history_present(state, features, route) -> Bool
+
+Whether any split arm for `route` has been observed under this workload's
+split signature chain. False means the split selector would answer cold, which
+is what the in-campaign race exists to replace.
+"""
+function outer_split_history_present(state::OuterRouteState, f::OuterRouteFeatures, route::Symbol)::Bool
+    prefix = "split_" * String(route) * "_w"
+    for sig in _split_signature_chain(f)
+        snap = _outer_route_stats_snapshot_internal(state, sig)
+        for arm in keys(snap)
+            startswith(String(arm), prefix) && return true
+        end
+    end
+    return false
 end

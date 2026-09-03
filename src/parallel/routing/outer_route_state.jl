@@ -79,6 +79,10 @@ Base.@kwdef struct OuterRouteTuning
     # Follows SPACEAGORA_PARALLEL_POLICY_V2; off keeps the shipped threads
     # default.
     mc_route_by_core_budget::Bool = outer_route_policy_v2()
+    # Race the split widths inside the first campaign of an unseen signature
+    # instead of trying one width per campaign. Follows
+    # SPACEAGORA_PARALLEL_POLICY_V2. See SimulationCampaigns._run_campaign_split_race.
+    split_race::Bool = outer_route_policy_v2()
     trace::Bool = false
 end
 

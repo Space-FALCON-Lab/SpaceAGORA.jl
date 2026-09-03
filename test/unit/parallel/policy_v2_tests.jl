@@ -296,3 +296,75 @@ end
         end
     end
 end
+
+@testset "Density callback width ladder and no-regret chooser" begin
+    SE = SpaceAGORA.SimulationEngine
+    @test SE._callback_width_candidates(12) == [1, 2, 4, 8, 12]
+    @test SE._callback_width_candidates(8) == [1, 2, 4, 8]
+    @test SE._callback_width_candidates(1) == [1]
+    @test SE._callback_width_candidates(3) == [1, 2, 3]
+    # Static width 8 measured at 50; width 4 at 40 clears a 10% margin.
+    @test SE._choose_callback_width(Dict(1 => 100.0, 2 => 60.0, 4 => 40.0, 8 => 50.0), 8, 0.10) == 4
+    # Inside the margin: static retained (0 = no override).
+    @test SE._choose_callback_width(Dict(1 => 100.0, 2 => 60.0, 4 => 46.0, 8 => 50.0), 8, 0.10) == 0
+    # Static fastest: retained.
+    @test SE._choose_callback_width(Dict(1 => 100.0, 4 => 60.0, 8 => 50.0), 8, 0.10) == 0
+    # Static unmeasurable: the best measured candidate is taken.
+    @test SE._choose_callback_width(Dict(1 => 100.0, 4 => 60.0, 8 => Inf), 8, 0.10) == 4
+    # Ties resolve to the narrower width.
+    @test SE._choose_callback_width(Dict(2 => 40.0, 4 => 40.0, 8 => 50.0), 8, 0.10) == 2
+end
+
+@testset "Split race batch sizing" begin
+    @test SCamp._split_race_batch(64, [4, 8, 12]) == 12   # max(widest, cld(64, 12)) = 12; 1 + 36 + 12 <= 64
+    @test SCamp._split_race_batch(40, [2, 4]) == 5        # max(4, cld(40, 8)) = 5; 1 + 10 + 4 <= 40
+    @test SCamp._split_race_batch(16, [4, 8, 12]) == 0    # too small to race
+    @test SCamp._split_race_batch(64, [12]) == 0          # nothing to race
+    @test SCamp._split_race_batch(1, [2, 4]) == 0
+end
+
+@testset "In-campaign split race on the threads route" begin
+    if Threads.nthreads() >= 4
+        feat = _v2_feat()
+        st = PPr.OuterRouteState()
+        tuning = PPr.OuterRouteTuning(split_race = true, explore_until_any_proven = true,
+                                      mc_route_by_core_budget = false, process_max_workers = 1)
+        seeds = collect(101:140)
+        result = withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing,
+                         "SPACEAGORA_INNER_THREAD_BUDGET" => nothing) do
+            SCamp.run_monte_carlo(seeds; threads = :auto, route_features = feat,
+                                  route_state = st, route_tuning = tuning) do seed
+                seed * 2
+            end
+        end
+        cands = PPr.outer_split_candidates(:threads; budget = Threads.nthreads(), n_units = 40, tuning = tuning)
+        @test length(cands) >= 2
+        @test length(result.samples) == 40
+        @test [s.index for s in result.samples] == collect(1:40)
+        @test [s.seed for s in result.samples] == seeds
+        @test all(s -> s.success && s.value == 2 * s.seed, result.samples)
+        @test result.threads in cands
+        # Every raced width was recorded with min-samples weight, so the next
+        # campaign can exploit without re-trying each width.
+        sig = PPr._split_signature_chain(feat)[1]
+        snap = PPr._outer_route_stats_snapshot_internal(st, sig)
+        for w in cands
+            arm = PPr._split_arm(:threads, w)
+            @test haskey(snap, arm)
+            @test snap[arm].campaigns == tuning.adaptive_min_samples
+        end
+        @test PPr.outer_split_history_present(st, feat, :threads)
+        # Second campaign: history present, no race; the selector exploits.
+        result2 = withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing,
+                          "SPACEAGORA_INNER_THREAD_BUDGET" => nothing) do
+            SCamp.run_monte_carlo(seeds; threads = :auto, route_features = feat,
+                                  route_state = st, route_tuning = tuning) do seed
+                seed * 2
+            end
+        end
+        @test length(result2.samples) == 40
+        @test result2.threads in cands
+    else
+        @test_skip "needs >= 4 Julia threads"
+    end
+end

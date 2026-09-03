@@ -63,6 +63,13 @@ pairs      = 15
 mc_samples = 64
 seed       = 20260615
 procs      = 2
+# Harness profile the CASES are built under (test/smoke/full). It sets the
+# mission arc: montecarlo_heavy_aerobraking is 10 s / 600 s / 21600 s. The
+# paper phases run "full"; the default here stays "smoke" so existing
+# invocations are unchanged, but a comparison meant to stand beside B8/B13
+# numbers must pass --profile=full, or it measures a 36x shorter campaign in
+# which per-sample dispatch is most of the time.
+profile    = "smoke"
 cold_calib = false
 isolate    = false
 for arg in ARGS
@@ -73,6 +80,7 @@ for arg in ARGS
     startswith(arg, "--mc-samples=") && (global mc_samples = parse(Int, split(arg, "=", limit=2)[2]))
     startswith(arg, "--seed=")       && (global seed = parse(Int, split(arg, "=", limit=2)[2]))
     startswith(arg, "--procs=")      && (global procs = parse(Int, split(arg, "=", limit=2)[2]))
+    startswith(arg, "--profile=")    && (global profile = String(split(arg, "=", limit=2)[2]))
     arg == "--cold-calib"            && (global cold_calib = true)
     arg == "--isolate-calib"         && (global isolate = true)
 end
@@ -110,10 +118,41 @@ function _drop_calibration_memo!()
     return nothing
 end
 
+# Per-arm outer-route history.
+#
+# Both arms run in one process and the campaign router keeps ONE bandit state
+# (SimulationCampaigns._CAMPAIGN_OUTER_ROUTE_STATE) keyed by a signature that
+# carries no profile token. Left shared, arm A's route observations become arm
+# B's history and the reverse: an R6 process campaign would tell R5's selector
+# that process beats threads, and R5's threads campaigns would feed R6. Each arm
+# gets its own history, swapped into the global state around its campaign and
+# copied back out afterwards, so a pair compares two policies each learning
+# from its own campaigns only -- which is what repeated real campaigns do.
+const _ARM_ROUTE_HISTORY = Dict{String, Dict{String, Dict{Symbol, SpaceAGORA.ParallelProfiles.OuterRouteStats}}}()
+
+function _with_arm_route_state(f, arm::String)
+    st = SpaceAGORA.SimulationCampaigns._CAMPAIGN_OUTER_ROUTE_STATE
+    mine = get!(_ARM_ROUTE_HISTORY, arm) do
+        Dict{String, Dict{Symbol, SpaceAGORA.ParallelProfiles.OuterRouteStats}}()
+    end
+    lock(st.lock) do
+        empty!(st.history)
+        merge!(st.history, mine)
+    end
+    try
+        return f()
+    finally
+        lock(st.lock) do
+            empty!(mine)
+            merge!(mine, st.history)
+        end
+    end
+end
+
 function make_cfg(mode_name::String, calib_path::Union{Nothing, String})
     over = Dict{String, String}()
     calib_path === nothing || (over["SPACEAGORA_RHS_CALIBRATION_PATH"] = calib_path)
-    return (_ppc_with(PPCConfig();
+    return (_ppc_with(PPCConfig(; profile=profile);
                       worker_case="", worker_mode=mode_name, worker_seed=seed,
                       worker_threads=Threads.nthreads(), process_workers=procs,
                       warmup=0, mc_samples=[mc_samples], mc_samples_explicit=true),
@@ -128,17 +167,19 @@ function run_campaign(case_name::String, mode_name::String,
     cfg, over = make_cfg(mode_name, calib_path)
     cfg = _ppc_with(cfg; worker_case=case_name)
     cold_calib && _drop_calibration_memo!()
-    return withenv((k => v for (k, v) in over)...) do
-        batch = ppc_run_sample_batch(CATALOG[case_name], cfg, SPECS[mode_name], mc_samples)
-        all(r -> r.success, batch.results) ||
-            error("campaign failed on $(case_name)/$(mode_name)")
-        return Float64(batch.batch_wall_time_s)
+    return _with_arm_route_state(mode_name) do
+        withenv((k => v for (k, v) in over)...) do
+            batch = ppc_run_sample_batch(CATALOG[case_name], cfg, SPECS[mode_name], mc_samples)
+            all(r -> r.success, batch.results) ||
+                error("campaign failed on $(case_name)/$(mode_name)")
+            return Float64(batch.batch_wall_time_s)
+        end
     end
 end
 
 @printf("paired campaign probe: %s (A) vs %s (B)\n", a_name, b_name)
-@printf("  %d pairs, %d samples/campaign, %d threads, %d process workers%s%s\n\n",
-        pairs, mc_samples, Threads.nthreads(), procs,
+@printf("  %d pairs, %d samples/campaign, %d threads, %d process workers, profile %s%s%s\n\n",
+        pairs, mc_samples, Threads.nthreads(), procs, profile,
         cold_calib ? ", cold calibration memo" : "",
         isolate ? ", isolated calibration stores" : "")
 
@@ -161,6 +202,10 @@ for case in cases
         end
         push!(ratios, ta / tb)
         ta < tb ? (wins_a += 1) : (tb < ta ? (wins_b += 1) : nothing)
+        # Per-pair times, so a bimodal ratio distribution is visible as such
+        # rather than being read off a median.
+        @printf("    pair %2d  %s  A=%.3fs  B=%.3fs  A/B=%.3f\n",
+                i, isodd(i) ? "A-first" : "B-first", ta, tb, ta / tb)
     end
 
     sort!(ratios)

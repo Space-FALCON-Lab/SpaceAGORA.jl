@@ -281,11 +281,30 @@ end
         setsolve(5.0e9)
         @test SE._rhs_calib_solve_exceeds_threshold(sig)
         @test SE._rhs_calib_cached_verdict(sig, false) === nothing
+        # One heuristic verdict is not reproducible evidence on a long solve:
+        # the sweep's verdict flips on some workloads. Three in a row is.
+        @test SE._rhs_calib_heuristic_votes(sig) == 1
+        @test SE._rhs_calib_cached_verdict(sig, true) === nothing
+        SE._rhs_calib_store_heuristic!(sig, 1.0); setsolve(5.0e9)
+        @test SE._rhs_calib_heuristic_votes(sig) == 2
+        @test SE._rhs_calib_cached_verdict(sig, true) === nothing
+        SE._rhs_calib_store_heuristic!(sig, 1.0); setsolve(5.0e9)
+        @test SE._rhs_calib_heuristic_votes(sig) == 3
         @test SE._rhs_calib_cached_verdict(sig, true) === :heuristic
+        # The vote count persists through a save/load round trip.
+        SE._rhs_calib_save!()
+        lock(SE._rhs_calib_lock) do
+            empty!(SE._rhs_calib_cache)
+            SE._rhs_calib_loaded[] = false
+        end
+        @test SE._rhs_calib_heuristic_votes(sig) == 3
+        # A short solve honours any cached verdict, as shipped.
         setsolve(0.5e9)
         @test SE._rhs_calib_cached_verdict(sig, false) === :heuristic
-        # A cached PLAN is still re-swept on a long solve, switch or not.
+        # A cached PLAN is still re-swept on a long solve, switch or not, and
+        # a pinned plan resets the vote count.
         SE._rhs_calib_store!(sig, SE._make_calib_satellite_batch_plan(), 1.0)
+        @test SE._rhs_calib_heuristic_votes(sig) == 0
         setsolve(5.0e9)
         @test SE._rhs_calib_cached_verdict(sig, true) === nothing
         @test SE._rhs_calib_cached_verdict(sig, false) === nothing

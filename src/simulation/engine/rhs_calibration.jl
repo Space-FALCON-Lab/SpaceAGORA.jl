@@ -286,6 +286,7 @@ function _rhs_calib_load!()::Nothing
                 "scheduler"      => String(get(row, "scheduler", "auto")),
                 "elapsed_mean_ns"=> Float64(get(row, "elapsed_mean_ns", 0.0)),
                 "solve_ns"       => Float64(get(row, "solve_ns", 0.0)),
+                "heuristic_votes"=> Int(get(row, "heuristic_votes", 0)),
             )
             _rhs_calib_cache[sig] = entry
         end
@@ -310,6 +311,9 @@ function _rhs_calib_save!()::Nothing
                 # The gate below reads it; 0.0 means "never measured", which is
                 # treated as "sweep", not as "short".
                 "solve_ns"        => Float64(get(e, "solve_ns", 0.0)),
+                # How many consecutive sweeps ended with this verdict; see
+                # _rhs_calib_cached_verdict. Zero for a pinned plan.
+                "heuristic_votes" => Int(get(e, "heuristic_votes", 0)),
             )
             push!(rows, row)
         end
@@ -353,15 +357,42 @@ end
 function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0)::Nothing
     _rhs_calib_load!()
     lock(_rhs_calib_lock) do
+        prev = get(_rhs_calib_cache, sig, nothing)
+        votes = (prev !== nothing && get(prev, "mode", "") == _CALIB_HEURISTIC_MODE) ?
+            Int(get(prev, "heuristic_votes", 0)) + 1 : 1
         entry = Dict{String, Any}(
             "mode"            => _CALIB_HEURISTIC_MODE,
             "allotment"       => 1,
             "scheduler"       => "auto",
             "elapsed_mean_ns" => heuristic_ns,
+            "heuristic_votes" => votes,
         )
+        prev !== nothing && haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
         _rhs_calib_cache[sig] = entry
     end
     return nothing
+end
+
+# Consecutive sweeps that ended "the heuristic won" for this signature; 0 when
+# the cached verdict is a plan or there is none.
+function _rhs_calib_heuristic_votes(sig::String)::Int
+    _rhs_calib_load!()
+    return lock(_rhs_calib_lock) do
+        e = get(_rhs_calib_cache, sig, nothing)
+        (e === nothing || get(e, "mode", "") != _CALIB_HEURISTIC_MODE) ? 0 :
+            Int(get(e, "heuristic_votes", 0))
+    end
+end
+
+# How many consecutive heuristic verdicts a signature needs before a long
+# solve honours the cached verdict instead of re-sweeping (V2 only).
+@inline function _rhs_calibrate_heuristic_votes_needed()::Int
+    n = try
+        parse(Int, strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_HEURISTIC_VOTES", "3")))
+    catch
+        3
+    end
+    return max(1, n)
 end
 
 function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64)::Nothing
@@ -1150,7 +1181,23 @@ function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool)
     (long_solve && !honour_heuristic_verdict) && return nothing
     cached = _rhs_calib_lookup(sig)
     cached === nothing && return nothing
-    cached === :heuristic && return :heuristic
+    if cached === :heuristic
+        # On a long solve, only a REPRODUCIBLE heuristic verdict is honoured.
+        #
+        # The sweep's verdict is not stable on every workload: on
+        # interact_256sat_1hr it pins satellite_batch three to four times in
+        # five and otherwise retains the heuristic, a 17-point regret swing
+        # documented in the sweep record. Honouring the first heuristic verdict
+        # to land pinned the losing side of that coin flip for good -- measured
+        # in the paper run at eight threads: R6 replayed a cached heuristic
+        # verdict at 3.61 s while six R4/R5 sweeps in the same point pinned
+        # satellite_batch at 3.09 s. Requiring several consecutive heuristic
+        # verdicts keeps the re-sweep where the verdict flips and skips it
+        # where it does not (gravity_4096: heuristic 13 of 16 sweeps).
+        (long_solve && _rhs_calib_heuristic_votes(sig) < _rhs_calibrate_heuristic_votes_needed()) &&
+            return nothing
+        return :heuristic
+    end
     return long_solve ? nothing : cached
 end
 

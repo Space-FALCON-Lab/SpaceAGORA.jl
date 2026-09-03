@@ -814,8 +814,7 @@ function select_outer_route!(
         # earned exploitation, not whether the default has; see
         # _any_candidate_proven for the failure the narrower guard produces.
         default_proven = tuning.explore_until_any_proven ?
-            _any_candidate_proven(candidates, snapshot, tuning.adaptive_min_samples;
-                                  must_measure=Symbol[c for c in candidates if c !== :none]) :
+            _any_candidate_proven(candidates, snapshot, tuning.adaptive_min_samples) :
             _route_is_proven(candidates, snapshot, default_route, tuning.adaptive_min_samples)
         # See OuterRouteTuning.explore_routes for why V2 never forces a trial.
         explore = (default_proven || !tuning.explore_routes) ?

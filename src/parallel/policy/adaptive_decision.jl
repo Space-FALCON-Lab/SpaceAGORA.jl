@@ -87,10 +87,6 @@
     measured_reward = hint_layer_active &&
         (env === nothing ? persistent_hints_enabled() : env.persistent_hints) &&
         (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)
-    bootstrap_threads = adaptive_active &&
-        (env === nothing ? adaptive_bootstrap_threads() : env.adaptive_bootstrap_threads)
-    control_tail_guard = adaptive_active &&
-        (env === nothing ? adaptive_control_tail_guard() : env.adaptive_control_tail_guard)
     signature = ""
     hint_allotment = Int64(1)
     hint_confidence = 0.0
@@ -123,51 +119,15 @@
                 hints_entries = _hint_entry_count(_persistent_hint_state[])
             end
         end
-        ρ = env === nothing ? adaptive_rho() : env.adaptive_rho
-        desire_cap = _adaptive_desire_cap(budget, ρ)
+        # Measured-reward mode drives the width from the hint layer; otherwise
+        # it is the static answer, min(items, budget), the same one the
+        # non-adaptive branch below gives. The AIMD controller that used to sit
+        # here was removed: its window score was a fill ratio that never read
+        # elapsed time, and since the width seed at the cap it had been a fixed
+        # point at full width.
         lock(_active_policy_context().lock) do
             st = _adaptive_state_for(source)
-            st.desire = min(max(1, st.desire), desire_cap)
-            if measured_reward
-                # Measured-reward mode: drive desire directly from elapsed-time hint choice.
-                st.desire = min(desire_cap, max(1, Int(hint_allotment)))
-            else
-                # Tail guard: avoid a cold-start serial window on obviously parallel workloads.
-                # Seed at the WIDTH THE NON-ADAPTIVE PATH WOULD USE, not at 2.
-                #
-                # `desire` starts at 1 and this guard nudged it to 2, leaving
-                # AIMD to climb the rest of the way a window at a time. On a
-                # region whose parallel gain is large that ramp is most of the
-                # cost: measured on atmo256_gram_surrogate_10min, threading the
-                # density callback is worth 2.8x (1338 -> 474 us per RHS call),
-                # and the adaptive profile captured barely half of it (954 us)
-                # because it spent the solve climbing.
-                #
-                # The non-adaptive branch below answers `max(1, budget)` on its
-                # first call and is right here. Starting there makes adaptive no
-                # worse than the fixed policy at the first decision, which is
-                # the property that matters: the controller should earn its
-                # deviations from the static answer, not have to earn its way
-                # back up to it.
-                #
-                # AIMD still owns everything after the seed -- an inefficient
-                # window divides `desire` by rho exactly as before -- so a
-                # workload whose optimum is narrow converges down within a
-                # window or two rather than paying a ramp on every
-                # re-exploration.
-                if bootstrap_threads && st.desire == 1 && budget > 1 && num_items >= max(1, threshold)
-                    st.desire = desire_cap
-                end
-                if control_tail_guard && source == :control_callback && budget > 1 && num_items >= max(1, threshold)
-                    stable_desire = min(desire_cap, min(budget, max(2, num_items)))
-                    st.desire = max(st.desire, stable_desire)
-                end
-                if hint_allotment > 1
-                    # Blend persisted hint with live AIMD state; this reuses past wins without hard pinning.
-                    blended = max(st.desire, Int(hint_allotment))
-                    st.desire = min(desire_cap, max(1, blended))
-                end
-            end
+            st.desire = measured_reward ? max(1, min(Int(hint_allotment), budget)) : max(1, budget)
             desire = st.desire
         end
         allotment = max(1, min(desire, budget))
@@ -226,13 +186,6 @@
         hints_entries,
         env
     )
-    if !policy_telemetry_uses_snapshot()
-        ctx = _active_policy_context()
-        lock(ctx.lock) do
-            ctx.decision_signature[source] = signature
-            ctx.decision_allotment[source] = Int64(allotted)
-        end
-    end
     return (
         use_threads=use_threads,
         allotment=allotted,

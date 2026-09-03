@@ -124,6 +124,7 @@ def main():
     cases = sorted({k[0] for k in agg}, key=lambda c: list(LABEL).index(c) if c in LABEL else 99)
 
     rows, wins, ties, losses = [], 0, 0, 0
+    wins6, ties6, losses6 = 0, 0, 0
     best_counts = collections.Counter()
     fixed_penalty = collections.defaultdict(list)
     for case in cases:
@@ -133,6 +134,7 @@ def main():
                      if k[0] == case and k[1] == t and k[2] == mc}
             static = {m: v for m, v in modes.items() if m in STATIC}
             r4, r5 = modes.get("outer_inner_adaptive"), modes.get("full_smart")
+            r6 = modes.get("policy_v2")
             if not static or r5 is None:
                 continue
             bm = min(static, key=static.get)
@@ -142,10 +144,17 @@ def main():
                 fixed_penalty[PROFILE[m]].append(100.0 * (v / bv - 1.0))
             g4 = 100.0 * (r4 / bv - 1.0) if r4 else None
             g5 = 100.0 * (r5 / bv - 1.0)
+            g6 = 100.0 * (r6 / bv - 1.0) if r6 else None
             if g5 < -2.0:   wins += 1
             elif g5 <= 2.0: ties += 1
             else:           losses += 1
+            if g6 is not None:
+                if g6 < -2.0:   wins6 += 1
+                elif g6 <= 2.0: ties6 += 1
+                else:           losses6 += 1
             best5 = r"\textbf{%.3f}" % r5 if r5 <= bv else "%.3f" % r5
+            best6 = ("--" if r6 is None else
+                     (r"\textbf{%.3f}" % r6 if r6 <= bv else "%.3f" % r6))
             def fmt(g):
                 if g is None:
                     return "--"
@@ -154,8 +163,8 @@ def main():
                 mark = "^{\\dagger}" if (resolution > 0.0 and abs(g) <= resolution) else ""
                 return "$%+.0f\\%%%s$" % (g, mark)
             rows.append((LABEL.get(case, case.replace("_", r"\_")), t, mc, PROFILE[bm], bv,
-                         ("%.3f" % r4) if r4 else "--", best5,
-                         fmt(g4), fmt(g5)))
+                         ("%.3f" % r4) if r4 else "--", best5, best6,
+                         fmt(g4), fmt(g5), fmt(g6)))
 
     with open(out_path, "w") as fh:
         fh.write("\\begin{table}[htbp]\n\\centering\n")
@@ -180,23 +189,26 @@ def main():
         fh.write("}\n")
         fh.write("\\label{%s}\n\\small\n" % label)
         fh.write("\\setlength{\\tabcolsep}{4pt}\n\\renewcommand{\\arraystretch}{0.92}\n")
-        fh.write("\\begin{tabular}{lrrlrrrrr}\n\\toprule\n")
+        fh.write("\\begin{tabular}{lrrlrrrrrrr}\n\\toprule\n")
         fh.write("& & & \\multicolumn{2}{c}{Best static route} & "
-                 "\\multicolumn{2}{c}{Adaptive (s)} & \\multicolumn{2}{c}{Regret} \\\\\n")
-        fh.write("\\cmidrule(lr){4-5} \\cmidrule(lr){6-7} \\cmidrule(lr){8-9}\n")
-        fh.write("Workload & Threads & Samples & Profile & Time (s) & \\texttt{R4} & \\texttt{R5} & "
-                 "\\texttt{R4} & \\texttt{R5} \\\\\n\\midrule\n")
+                 "\\multicolumn{3}{c}{Adaptive (s)} & \\multicolumn{3}{c}{Regret} \\\\\n")
+        fh.write("\\cmidrule(lr){4-5} \\cmidrule(lr){6-8} \\cmidrule(lr){9-11}\n")
+        fh.write("Workload & Threads & Samples & Profile & Time (s) & \\texttt{R4} & \\texttt{R5} & \\texttt{R6} & "
+                 "\\texttt{R4} & \\texttt{R5} & \\texttt{R6} \\\\\n\\midrule\n")
         prev = None
-        for lbl, t, mc, prof, bv, r4, r5, g4, g5 in rows:
+        for lbl, t, mc, prof, bv, r4, r5, r6, g4, g5, g6 in rows:
             shown = lbl if lbl != prev else ""
             prev = lbl
-            fh.write("%s & %d & %d & %s & %.3f & %s & %s & %s & %s \\\\\n"
-                     % (shown, t, mc, prof, bv, r4, r5, g4, g5))
+            fh.write("%s & %d & %d & %s & %.3f & %s & %s & %s & %s & %s & %s \\\\\n"
+                     % (shown, t, mc, prof, bv, r4, r5, r6, g4, g5, g6))
         fh.write("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
 
     n = wins + ties + losses
     print("wrote %s: %d rows" % (out_path, len(rows)))
     print("R5 vs best static -- faster: %d, within 2%%: %d, slower: %d (of %d)" % (wins, ties, losses, n))
+    n6 = wins6 + ties6 + losses6
+    if n6:
+        print("R6 vs best static -- faster: %d, within 2%%: %d, slower: %d (of %d)" % (wins6, ties6, losses6, n6))
     # The cost of committing to one fixed route. This is the claim the table
     # actually supports: not that the adaptive router wins everywhere, but that
     # no fixed route does, and that guessing wrong is expensive.

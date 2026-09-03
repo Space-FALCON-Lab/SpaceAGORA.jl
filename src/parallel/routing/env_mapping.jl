@@ -132,16 +132,6 @@ function profile_env_pairs(
             cfg.inner_scheduler;
             preserve_existing=preserve_existing
         ),
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => _env_or_default(
-            "SPACEAGORA_PARALLEL_POLICY_WINDOW",
-            string(cfg.adaptive_window);
-            preserve_existing=preserve_existing
-        ),
-        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => _env_or_default(
-            "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD",
-            _coerce_env_bool(cfg.adaptive_control_tail_guard);
-            preserve_existing=preserve_existing
-        ),
         "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD" => _env_or_default(
             "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD",
             _coerce_env_bool(cfg.adaptive_measured_reward);

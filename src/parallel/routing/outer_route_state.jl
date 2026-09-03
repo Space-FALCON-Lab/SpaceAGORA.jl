@@ -68,9 +68,13 @@ Base.@kwdef struct OuterRouteTuning
     # more parallelism than the machine could deliver.
     process_max_workers::Int = _outer_process_worker_cap()
     # Stop forced exploration once ANY candidate is proven best, rather than
-    # only when the default is. See _any_candidate_proven. Follows
-    # SPACEAGORA_PARALLEL_POLICY_V2 so the shipped selector stays reproducible.
-    explore_until_any_proven::Bool = outer_route_policy_v2()
+    # only when the default is. See _any_candidate_proven. On by default since
+    # 2026-09-03: the default-only guard re-enabled exploration whenever the
+    # default was BEATEN, and diverted the campaign to an unmeasured route
+    # (serial) while a better-measured winner sat unconsulted; the test at
+    # outer_route_persistence_tests.jl:95 asserted the intended behaviour and
+    # failed. False restores the old guard for comparison only.
+    explore_until_any_proven::Bool = true
     # Whether the route selector may force a trial of an unmeasured route.
     # OFF under SPACEAGORA_PARALLEL_POLICY_V2, and that is a measured
     # decision: the core-budget default reproduces every Monte Carlo grid point
@@ -157,11 +161,6 @@ end
     v = tryparse(Int, raw)
     (v === nothing || v <= 0) && return cap
     return max(1, min(cap, v))
-end
-
-@inline function outer_route_discard_cold_observation()::Bool
-    raw = lowercase(strip(get(ENV, "SPACEAGORA_OUTER_ROUTE_DISCARD_COLD", "1")))
-    return raw in ("1", "true", "yes", "on")
 end
 
 Base.@kwdef mutable struct OuterRouteStats

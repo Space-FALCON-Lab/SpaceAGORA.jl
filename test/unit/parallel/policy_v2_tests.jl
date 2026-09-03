@@ -51,12 +51,12 @@ end
     withenv("SPACEAGORA_PARALLEL_POLICY_V2" => nothing) do
         @test !PP.policy_v2_enabled()
         @test !PP.snapshot_policy_decision_env().policy_v2
-        @test !PPr.OuterRouteTuning().explore_until_any_proven
+        @test !PPr.OuterRouteTuning().mc_route_by_core_budget
     end
     withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1") do
         @test PP.policy_v2_enabled()
         @test PP.snapshot_policy_decision_env().policy_v2
-        @test PPr.OuterRouteTuning().explore_until_any_proven
+        @test PPr.OuterRouteTuning().mc_route_by_core_budget
     end
 end
 

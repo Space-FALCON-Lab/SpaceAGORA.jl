@@ -57,7 +57,6 @@ const TV = TelemetryVerification
     @test cfg_r4.inner_adaptive == true
     @test cfg_r4.thermal_mode == "auto"
     @test cfg_r4.inner_scheduler == "static"
-    @test cfg_r4.adaptive_control_tail_guard == false
     @test cfg_r4.adaptive_measured_reward == false
     @test cfg_full.outer_route_adaptive == true
     @test cfg_full.label == "r5"
@@ -69,9 +68,7 @@ const TV = TelemetryVerification
     # "auto" on any workload.
     @test cfg_full.thermal_mode == "auto"
     @test cfg_full.inner_scheduler == "static"
-    @test cfg_full.adaptive_control_tail_guard == true
     @test cfg_full.adaptive_measured_reward == true
-    @test cfg_full.adaptive_window == 4
     @test cfg_full.persistent_hints == true
     @test cfg_full.persistent_state_persist == true
 
@@ -88,8 +85,6 @@ const TV = TelemetryVerification
     @test env_map_override["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "0"
     @test env_map_override["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "none"
     @test env_map_override["SPACEAGORA_RHS_BATCH_PARALLEL"] == "auto"
-    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "8"
-    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "0"
     @test parse(Float64, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) > 0.0
     @test parse(Int, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES"]) >= 1
     env_pairs_auto = PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false)
@@ -97,8 +92,6 @@ const TV = TelemetryVerification
     @test env_map_auto["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "auto"
     @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "auto"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "static"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "4"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST"] == "1"
@@ -460,7 +453,10 @@ const TV = TelemetryVerification
         merged = PP.load_outer_route_state!(loaded_state, cache_path; replace=false)
         @test merged.rows >= 3
         snap_merged = PP.outer_route_stats_snapshot(loaded_state, sig)
-        @test snap_merged[:process].samples == 2 * snap[:process].samples + 1
+        # The restored arm carries one observation, so the live record above is
+        # its second: cold eviction replaces the restored history with that one
+        # sample, and the merge then adds the file's samples back once.
+        @test snap_merged[:process].samples == snap[:process].samples + 1
     end
 
     PP.reset_outer_route_state!(state)

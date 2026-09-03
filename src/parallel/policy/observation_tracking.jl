@@ -107,82 +107,16 @@ function record_policy_observation!(
             return nothing
         end
 
-        st = _adaptive_state_for(ctx, source)
         if measured_reward
+            # Measured-reward mode: the hint layer drives the width.
+            st = _adaptive_state_for(ctx, source)
             st.desire = max(Int64(1), hint_allotment)
-            st.last_classification = :measured_reward
-            st.last_utilization = use_threads ? 1.0 : 0.0
-            st.window_calls = 0
-            st.window_allotment_sum = 0
-            st.window_useful_sum = 0.0
-            st.window_deprived_calls = 0
-
             t.adaptation_updates_total += 1
-            t.last_classification = st.last_classification
-            t.last_utilization = st.last_utilization
             t.last_desire = st.desire
-            t.quantum_length = 1
-            t.trim_quanta_budget = 0
-            t.quantums_total += 1
-            t.quantums_accounted_proxy += 1
-            return nothing
         end
-
-        ρ = env === nothing ? adaptive_rho() : env.adaptive_rho
-        δ = env === nothing ? adaptive_delta() : env.adaptive_delta
-        L = env === nothing ? adaptive_window_size() : env.adaptive_window
-        trim_quanta = env === nothing ? adaptive_trim_quanta_budget() : env.adaptive_trim_quanta
-
-        st.desire = min(max(1, st.desire), _adaptive_desire_cap(budget, ρ))
-        allotment = use_threads ? max(1, min(st.desire, budget)) : 1
-        useful = min(max(0, num_items), allotment)
-
-        st.window_calls += 1
-        st.window_allotment_sum += allotment
-        st.window_useful_sum += useful
-        st.window_deprived_calls += (allotment < st.desire) ? 1 : 0
-
-        if st.window_calls < L
-            return nothing
-        end
-
-        utilization = st.window_useful_sum / max(1, st.window_allotment_sum)
-        efficient = utilization >= δ
-        if !efficient
-            st.last_classification = :inefficient
-            st.desire = max(1, floor(Int, st.desire / ρ))
-        elseif st.window_deprived_calls == 0
-            st.last_classification = :efficient_satisfied
-            st.desire = min(_adaptive_desire_cap(budget, ρ), max(1, ceil(Int, st.desire * ρ)))
-        else
-            st.last_classification = :efficient_deprived
-        end
-
-        st.last_utilization = utilization
-        st.window_calls = 0
-        st.window_allotment_sum = 0
-        st.window_useful_sum = 0.0
-        st.window_deprived_calls = 0
-
-        t.adaptation_updates_total += 1
-        t.last_classification = st.last_classification
-        t.last_utilization = st.last_utilization
-        t.last_desire = st.desire
-        t.quantum_length = L
-        t.trim_quanta_budget = trim_quanta
-        t.quantums_total += 1
-        if st.last_classification == :inefficient
-            t.quantums_inefficient += 1
-            t.quantums_deductible_proxy += 1
-        elseif st.last_classification == :efficient_satisfied
-            t.quantums_efficient_satisfied += 1
-            t.quantums_deductible_proxy += 1
-        elseif st.last_classification == :efficient_deprived
-            t.quantums_efficient_deprived += 1
-            t.quantums_accounted_proxy += 1
-        else
-            t.quantums_deductible_proxy += 1
-        end
+        # No AIMD: without measured reward the width is static (see
+        # thread_policy_decision) and there is nothing to update.
+        return nothing
     end
 
     # `adaptive_active` already implies a non-empty signature, which in turn

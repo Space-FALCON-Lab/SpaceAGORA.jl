@@ -40,8 +40,6 @@ Base.@kwdef struct ParallelProfileConfig
     multibody_mode::String
     effector_mode::String
     inner_scheduler::String = "static"
-    adaptive_window::Int = 8
-    adaptive_control_tail_guard::Bool = false
     adaptive_measured_reward::Bool = false
     persistent_hints::Bool = false
     persistent_state_persist::Bool = false
@@ -258,8 +256,6 @@ function profile_config(profile_in)::ParallelProfileConfig
         # measurably wins. What changes is that it must now be earned rather than
         # assumed.
         inner_scheduler="static",
-        adaptive_window=4,
-        adaptive_control_tail_guard=true,
         adaptive_measured_reward=true,
         persistent_hints=true,
         persistent_state_persist=true,

@@ -14,7 +14,7 @@ function record_outer_route_feedback!(
     elapsed_success_sq_sum_s::Float64=NaN,
     tuning::OuterRouteTuning=OuterRouteTuning(),
     signature_prefix::String="",
-    discard_cold_observation::Bool=outer_route_discard_cold_observation(),
+    discard_cold_observation::Bool=true,
     # How many campaigns this observation counts for. The in-campaign split
     # race measures every width after a warm-up sample, in one campaign, and
     # records each as `adaptive_min_samples` observations so the selector can

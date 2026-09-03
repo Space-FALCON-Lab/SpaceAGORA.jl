@@ -54,6 +54,7 @@ include(joinpath(PPC_DIR, "execution.jl"))
 
 using Printf
 using Statistics
+using Distributed
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 cases      = ["montecarlo_mars_aerobraking"]
@@ -70,6 +71,18 @@ procs      = 2
 # numbers must pass --profile=full, or it measures a 36x shorter campaign in
 # which per-sample dispatch is most of the time.
 profile    = "smoke"
+# Untimed campaigns per arm before the pairs. One is not enough for a process
+# arm on a freshly built case: measured on independent_1sat_1hr at (12, 12),
+# the first three timed process campaigns ran 0.55-0.75 s before settling at
+# 0.27 s, and the sign test counted them as losses.
+warm_campaigns = 1
+# --src-runner dispatches each campaign through the SHIPPED campaign runner,
+# SimulationCampaigns.run_monte_carlo(threads=:auto), instead of the harness's
+# own batch dispatcher. The harness resolves a route and then runs the batch
+# itself, so it never exercises the runner's split selector, its in-campaign
+# split race, or its process pool. Adaptive modes only. Each arm keeps its own
+# OuterRouteState, passed explicitly, so no swapping is needed.
+src_runner = false
 cold_calib = false
 isolate    = false
 for arg in ARGS
@@ -81,7 +94,9 @@ for arg in ARGS
     startswith(arg, "--seed=")       && (global seed = parse(Int, split(arg, "=", limit=2)[2]))
     startswith(arg, "--procs=")      && (global procs = parse(Int, split(arg, "=", limit=2)[2]))
     startswith(arg, "--profile=")    && (global profile = String(split(arg, "=", limit=2)[2]))
+    startswith(arg, "--warm-campaigns=") && (global warm_campaigns = parse(Int, split(arg, "=", limit=2)[2]))
     arg == "--cold-calib"            && (global cold_calib = true)
+    arg == "--src-runner"            && (global src_runner = true)
     arg == "--isolate-calib"         && (global isolate = true)
 end
 
@@ -149,6 +164,75 @@ function _with_arm_route_state(f, arm::String)
     end
 end
 
+# ── Production-path runner (--src-runner) ─────────────────────────────────────
+
+const _ARM_ROUTE_STATE = Dict{String, SpaceAGORA.ParallelProfiles.OuterRouteState}()
+const _SRC_WORKERS_READY = Set{Int}()
+const _PPC_FILES = ("cli.jl", "modes.jl", "cases.jl", "trajectory_parity.jl",
+                    "reporting.jl", "execution.jl")
+
+# The shipped pool bootstraps workers with `using SpaceAGORA` only; the sample
+# closure below references harness functions, so those files are included on
+# each worker once. Grown up front so the first process campaign is not
+# charged worker startup (the runner's own warm-up covers only NEW workers).
+function _ensure_src_pool_ready!(n::Int)
+    SC = SpaceAGORA.SimulationCampaigns
+    ids = SC.ensure_process_workers!(SC.campaign_process_pool(), n)
+    for w in ids
+        w in _SRC_WORKERS_READY && continue
+        for file in _PPC_FILES
+            path = joinpath(PPC_DIR, file)
+            Distributed.remotecall_eval(Main, [w], :(Base.include(Main, $path)))
+        end
+        push!(_SRC_WORKERS_READY, w)
+    end
+    return ids
+end
+
+function run_campaign_src(case_name::String, mode_name::String,
+                          calib_path::Union{Nothing, String})::Float64
+    cfg, over = make_cfg(mode_name, calib_path)
+    cfg = _ppc_with(cfg; worker_case=case_name)
+    mode = SPECS[mode_name]
+    mode.backend == "auto" ||
+        error("--src-runner needs an adaptive mode (backend auto); '$(mode_name)' pins $(mode.backend)")
+    cold_calib && _drop_calibration_memo!()
+    seeds = [cfg.worker_seed + i - 1 for i in 1:mc_samples]
+    base_seed = cfg.worker_seed
+    # outer_tasks=1: the runner sets SPACEAGORA_OUTER_PARALLEL_ACTIVE itself
+    # around its threaded workers, and refuses to route at all if it finds the
+    # flag already set.
+    env_pairs = ppc_mode_env_pairs(mode, cfg; outer_tasks=1)
+    state = get!(_ARM_ROUTE_STATE, mode_name) do
+        SpaceAGORA.ParallelProfiles.OuterRouteState()
+    end
+    # On a Distributed worker the sample applies the mode env itself (one
+    # thread there, so mutating ENV is safe); on the coordinator the campaign
+    # is already inside it, and per-sample withenv under Threads.@spawn is not.
+    sample = seed -> begin
+        idx = seed - base_seed + 1
+        if Distributed.myid() == 1
+            ppc_run_sample_once(case_name, cfg, idx, seed)
+        else
+            withenv(env_pairs...) do
+                ppc_run_sample_once(case_name, cfg, idx, seed)
+            end
+        end
+    end
+    return withenv(env_pairs..., (k => v for (k, v) in over)...) do
+        probe = ppc_single_config(case_name, cfg; seed=cfg.worker_seed, mc_index=1)
+        features = SpaceAGORA.SimulationCampaigns.campaign_route_features(probe; samples=mc_samples)
+        # Tuning built INSIDE the mode env, so the profile's switches apply.
+        tuning = SpaceAGORA.ParallelProfiles.OuterRouteTuning()
+        result = SpaceAGORA.SimulationCampaigns.run_monte_carlo(
+            sample, seeds; threads=:auto, route_features=features,
+            route_state=state, route_tuning=tuning)
+        all(r -> r.success && r.value.success, result.samples) ||
+            error("campaign failed on $(case_name)/$(mode_name)")
+        return Float64(result.elapsed_s)
+    end
+end
+
 function make_cfg(mode_name::String, calib_path::Union{Nothing, String})
     over = Dict{String, String}()
     calib_path === nothing || (over["SPACEAGORA_RHS_CALIBRATION_PATH"] = calib_path)
@@ -164,6 +248,7 @@ end
 # process pool, deliberately kept outside its timed region.
 function run_campaign(case_name::String, mode_name::String,
                       calib_path::Union{Nothing, String})::Float64
+    src_runner && return run_campaign_src(case_name, mode_name, calib_path)
     cfg, over = make_cfg(mode_name, calib_path)
     cfg = _ppc_with(cfg; worker_case=case_name)
     cold_calib && _drop_calibration_memo!()
@@ -177,7 +262,9 @@ function run_campaign(case_name::String, mode_name::String,
     end
 end
 
-@printf("paired campaign probe: %s (A) vs %s (B)\n", a_name, b_name)
+src_runner && _ensure_src_pool_ready!(procs)
+@printf("paired campaign probe: %s (A) vs %s (B)%s\n", a_name, b_name,
+        src_runner ? " [production runner]" : "")
 @printf("  %d pairs, %d samples/campaign, %d threads, %d process workers, profile %s%s%s\n\n",
         pairs, mc_samples, Threads.nthreads(), procs, profile,
         cold_calib ? ", cold calibration memo" : "",
@@ -190,8 +277,10 @@ for case in cases
     # Warm both arms once. The first campaign in a process pays cold JIT of the
     # whole RHS/solver stack and, on the process route, worker startup; neither
     # belongs in a comparison of steady-state routing.
-    run_campaign(case, a_name, calib_a)
-    run_campaign(case, b_name, calib_b)
+    for _ in 1:max(1, warm_campaigns)
+        run_campaign(case, a_name, calib_a)
+        run_campaign(case, b_name, calib_b)
+    end
 
     ratios = Float64[]; wins_a = 0; wins_b = 0
     for i in 1:pairs

@@ -269,6 +269,18 @@ end
     env = _callback_env_config(p)
     penv = _policy_env_config(p)
     mode = env.density_parallel_mode
+    # A width pinned by the pre-solve sweep (V2) short-circuits the per-call
+    # decision. It is only ever set after the static decision below said
+    # "thread this", so the thread-safety check has already passed for it.
+    if p !== nothing && hasproperty(p, :shared_buffers)
+        sb = getproperty(p, :shared_buffers)
+        if hasproperty(sb, :density_callback_width)
+            w = sb.density_callback_width[]
+            if w > 0
+                return (use_threads=w > 1, allotment=w, mode=mode, policy_applied=false)
+            end
+        end
+    end
     outer_active = penv === nothing ? _callback_outer_parallel_hint() : penv.outer_parallel_active
     allow_with_outer = env.density_allow_with_outer
 

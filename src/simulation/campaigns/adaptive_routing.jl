@@ -263,7 +263,8 @@ function _campaign_route_plan(
         # split; running nested workers would oversubscribe the pool, and the
         # contended timings would poison the shared route statistics — run
         # serially and skip both selection and feedback.
-        return (route=:none, threads=1, inner_thread_budget=1, record=false)
+        return (route=:none, threads=1, inner_thread_budget=1, record=false,
+                split_race=false, split_candidates=Int[])
     end
     # Merge any persisted history before the first selection, so a repeat run on
     # the same machine exploits what the last one learned instead of re-paying
@@ -305,7 +306,108 @@ function _campaign_route_plan(
         tuning=tuning,
     )
     inner_thread_budget = max(1, fld(Base.Threads.nthreads(), workers))
-    return (route=route, threads=workers, inner_thread_budget=inner_thread_budget, record=true)
+    # Race the widths inside this campaign when the split selector would have
+    # answered cold (V2). See _run_campaign_split_race.
+    split_candidates = outer_split_candidates(
+        route; budget=Base.Threads.nthreads(), n_units=n_samples, tuning=tuning)
+    split_race = tuning.split_race && route in (:threads, :process) &&
+        length(split_candidates) >= 2 &&
+        !ParallelProfiles.outer_split_history_present(state, features, route)
+    return (route=route, threads=workers, inner_thread_budget=inner_thread_budget, record=true,
+            split_race=split_race, split_candidates=split_candidates)
+end
+
+# ── In-campaign split race (V2) ───────────────────────────────────────────────
+#
+# The split selector learns one observation per campaign, so it needs several
+# campaigns and a min-samples guarantee before it can prefer any width, and
+# its first answer on an unseen signature is always the widest split. Monte
+# Carlo samples are independent units, so the first campaign can measure the
+# widths itself: one warm-up sample serially (so JIT of `f` lands outside the
+# race), then a batch of samples at each candidate width, then the rest at the
+# width with the best per-sample throughput. Every sample is real work; the
+# only cost is the slower widths' inefficiency on their batch.
+#
+# Each raced width is recorded with weight `adaptive_min_samples`, so the next
+# campaign exploits the winner rather than re-trying every width once more.
+
+@inline function _plan_at_width(plan, w::Int)
+    return (route=plan.route, threads=w,
+            inner_thread_budget=max(1, fld(Base.Threads.nthreads(), w)),
+            record=plan.record, split_race=false, split_candidates=Int[])
+end
+
+# Samples per raced width, or 0 when the campaign is too small to race: each
+# width must get at least as many samples as it has workers, and at least the
+# widest split must be left over to exploit.
+function _split_race_batch(n_samples::Int, candidates::Vector{Int})::Int
+    n = length(candidates)
+    (n >= 2 && n_samples >= 2) || return 0
+    widest = maximum(candidates)
+    k = max(widest, cld(n_samples, 4 * n))
+    return n_samples >= 1 + n * k + widest ? k : 0
+end
+
+@inline function _reindexed_sample(s::MonteCarloSampleResult, index::Int)::MonteCarloSampleResult
+    return MonteCarloSampleResult(index=index, seed=s.seed, success=s.success,
+                                  elapsed_s=s.elapsed_s, value=s.value,
+                                  error=s.error, backtrace=s.backtrace)
+end
+
+function _run_campaign_split_race(
+    f, seeds::Vector, plan, features::OuterRouteFeatures, state::OuterRouteState,
+    tuning::OuterRouteTuning; fail_fast::Bool
+)::MonteCarloResult
+    candidates = sort(plan.split_candidates)
+    n = length(seeds)
+    k = _split_race_batch(n, candidates)
+    k > 0 || return _run_campaign_with_route_env(
+        f, MonteCarloSpec(seeds=seeds, threads=plan.threads, fail_fast=fail_fast), plan)
+
+    started = time_ns()
+    samples = MonteCarloSampleResult[]
+    # Warm-up: the first seed, serially.
+    warm = _run_campaign_with_route_env(
+        f, MonteCarloSpec(seeds=seeds[1:1], threads=1, fail_fast=fail_fast), _plan_at_width(plan, 1))
+    append!(samples, (_reindexed_sample(s, 1) for s in warm.samples))
+    offset = 1
+    per_sample = Dict{Int, Float64}()
+    weight = max(1, tuning.adaptive_min_samples)
+    for w in candidates
+        batch = seeds[(offset + 1):(offset + k)]
+        r = _run_campaign_with_route_env(
+            f, MonteCarloSpec(seeds=batch, threads=w, fail_fast=fail_fast), _plan_at_width(plan, w))
+        append!(samples, (_reindexed_sample(s, offset + s.index) for s in r.samples))
+        n_batch = max(1, length(r.samples))
+        per_sample[w] = r.elapsed_s / n_batch
+        successes = length(r.successful)
+        record_outer_split_feedback!(
+            state, features;
+            route=plan.route, workers=w,
+            successes=successes, failures=length(r.failed),
+            elapsed_success_s=per_sample[w] * successes,
+            elapsed_success_sq_sum_s=per_sample[w]^2 * successes,
+            tuning=tuning, weight=weight,
+        )
+        offset += k
+    end
+    # Fastest per-sample; ties go to the narrower width.
+    best_w = candidates[1]
+    for w in candidates
+        per_sample[w] < per_sample[best_w] && (best_w = w)
+    end
+    if offset < n
+        rest = seeds[(offset + 1):n]
+        r = _run_campaign_with_route_env(
+            f, MonteCarloSpec(seeds=rest, threads=best_w, fail_fast=fail_fast), _plan_at_width(plan, best_w))
+        append!(samples, (_reindexed_sample(s, offset + s.index) for s in r.samples))
+    end
+    sort!(samples; by=s -> s.index)
+    if tuning.trace
+        ladder = join(("w$(w)=$(round(per_sample[w] * 1e3; digits=2))ms" for w in candidates), " ")
+        println("[outer-split] race route=$(plan.route) k=$(k) chosen=w$(best_w) $(ladder)")
+    end
+    return MonteCarloResult(samples, (time_ns() - started) / 1.0e9, best_w)
 end
 
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
@@ -345,7 +447,11 @@ function _record_campaign_route_feedback!(
     features::OuterRouteFeatures,
     route::Symbol,
     result::MonteCarloResult;
-    tuning::OuterRouteTuning
+    tuning::OuterRouteTuning,
+    # False when the split race already recorded every width from its own
+    # batches; the whole-campaign time would otherwise be charged to the
+    # winning width a second time, racing overhead included.
+    record_split::Bool=true,
 )::Nothing
     n_samples = length(result.samples)
     n_samples <= 0 && return nothing
@@ -369,6 +475,7 @@ function _record_campaign_route_feedback!(
     # timing is credited as well as the route. Without it the split selector
     # would explore forever: it would never accumulate the samples its own
     # min-samples guarantee requires before it will exploit.
+    record_split || return nothing
     record_outer_split_feedback!(
         state,
         features;
@@ -395,10 +502,16 @@ function _run_campaign_adaptive(
     isempty(seed_values) && return MonteCarloResult(MonteCarloSampleResult[], 0.0, 0)
     routed_features = _campaign_features_for_routing(features, length(seed_values))
     plan = _campaign_route_plan(routed_features, length(seed_values); state=state, tuning=tuning)
-    spec = MonteCarloSpec(seeds=seed_values, threads=plan.threads, fail_fast=fail_fast)
-    result = _run_campaign_with_route_env(f, spec, plan)
+    raced = plan.split_race && _split_race_batch(length(seed_values), plan.split_candidates) > 0
+    result = if raced
+        _run_campaign_split_race(f, seed_values, plan, routed_features, state, tuning; fail_fast=fail_fast)
+    else
+        spec = MonteCarloSpec(seeds=seed_values, threads=plan.threads, fail_fast=fail_fast)
+        _run_campaign_with_route_env(f, spec, plan)
+    end
     if plan.record
-        _record_campaign_route_feedback!(state, routed_features, plan.route, result; tuning=tuning)
+        _record_campaign_route_feedback!(state, routed_features, plan.route, result;
+                                         tuning=tuning, record_split=!raced)
     end
     return result
 end

@@ -886,6 +886,12 @@ export RhsEffectorDecision, RhsExecutionPlan
         # hint-layer gate -- reading the scoped context -- could never see it.
         policy_context::Base.RefValue{Union{Nothing, AbstractPolicyContext}} =
             Ref{Union{Nothing, AbstractPolicyContext}}(nothing)
+        # Pre-solve calibrated width for the density callback (V2 only; see
+        # _calibrate_density_callback_width! in rhs_calibration.jl). 0 means no
+        # override: the per-call decision runs as usual. A positive value is
+        # returned by _density_callback_thread_decision without consulting the
+        # policy, with policy_applied=false since nothing was decided per call.
+        density_callback_width::Base.RefValue{Int} = Ref{Int}(0)
         rhs_env_config::Base.RefValue{Union{Nothing, RhsPlanEnvConfig}} = Ref{Union{Nothing, RhsPlanEnvConfig}}(nothing)
         callback_env_config::Base.RefValue{Union{Nothing, CallbackEnvConfig}} = Ref{Union{Nothing, CallbackEnvConfig}}(nothing)
     end

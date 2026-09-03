@@ -1603,3 +1603,141 @@ function _rhs_width_trial_commit!(p, wt::RhsWidthTrial)::Nothing
     p.shared_buffers.rhs_width_trial[] = nothing
     return nothing
 end
+
+# ── Pre-solve density-callback width calibration (V2) ─────────────────────────
+#
+# Under SPACEAGORA_PARALLEL_POLICY_V2 the per-call width layer is bypassed and
+# callbacks run at the static width, min(items, budget). The one instrument in
+# this codebase with measured wins is the pre-solve sweep with a no-regret
+# floor, so the density callback -- where atmo256_gram_surrogate_10min spends
+# most of its time (threading it is worth 2.8x) -- gets the same treatment:
+# time the callback body at a geometric width ladder up to the static width,
+# and pin a narrower width only if it beats the static one by the calibration
+# override margin. The static width is the floor: with no clear winner nothing
+# is pinned and the per-call decision runs exactly as before.
+#
+# The callback is driven the way its own `initialize` drives it, at u0 and
+# t = 0, through a stub carrying the three integrator fields its affect! reads.
+# The density buffers it writes are the ones the solve's first callback writes
+# again, so the probe leaves no state behind. Thermal and control callbacks are
+# not calibrated here: the thermal update advances state, and control needs a
+# live integrator.
+#
+#   SPACEAGORA_CALLBACK_WIDTH_CALIBRATE            on/off (default on under V2)
+#   SPACEAGORA_CALLBACK_WIDTH_CALIBRATE_N_TIMED    timed calls per width (4)
+#   SPACEAGORA_CALLBACK_WIDTH_CALIBRATE_MIN_STEPS  skip below this many
+#                                                  estimated accepted steps (200)
+
+@inline function _callback_width_calibrate_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env(
+        "SPACEAGORA_CALLBACK_WIDTH_CALIBRATE", true)
+end
+
+@inline function _callback_width_n_timed()::Int
+    n = try
+        parse(Int, strip(_engine_env_get("SPACEAGORA_CALLBACK_WIDTH_CALIBRATE_N_TIMED", "4")))
+    catch
+        4
+    end
+    return max(2, n)
+end
+
+@inline function _callback_width_min_steps()::Float64
+    v = tryparse(Float64, strip(_engine_env_get("SPACEAGORA_CALLBACK_WIDTH_CALIBRATE_MIN_STEPS", "200")))
+    return (v === nothing || v < 0.0) ? 200.0 : v
+end
+
+# Geometric ladder from 1 up to and including the static width.
+function _callback_width_candidates(static_allotment::Int)::Vector{Int}
+    cap = max(1, static_allotment)
+    out = Int[1]
+    w = 2
+    while w < cap
+        push!(out, w)
+        w *= 2
+    end
+    cap > 1 && push!(out, cap)
+    return out
+end
+
+# The width to pin, or 0 to keep the static per-call decision. A candidate
+# displaces the static width only by clearing `margin`; an unmeasurable static
+# width (Inf) yields to the best measured candidate, since retaining it would
+# hand the solve a width the probe could not even run.
+function _choose_callback_width(scores::Dict{Int, Float64}, static_w::Int, margin::Float64)::Int
+    static_ns = get(scores, static_w, Inf)
+    best_w = static_w
+    best_ns = static_ns
+    for w in sort!(collect(keys(scores)))
+        ns = scores[w]
+        isfinite(ns) || continue
+        if ns < best_ns
+            best_ns = ns
+            best_w = w
+        end
+    end
+    best_w == static_w && return 0
+    isfinite(static_ns) || return best_w
+    return best_ns < static_ns * (1.0 - margin) ? best_w : 0
+end
+
+# Accepted steps the solve will take, by the same crude estimate the in-run
+# identification length gate uses (evaluations / stages).
+@inline _estimated_accepted_steps(p)::Float64 = _rhs_estimated_evaluations(p) / 7.0
+
+function _calibrate_density_callback_width!(p, u0, args)::Nothing
+    sb = p.shared_buffers
+    sb.density_callback_width[] = 0
+    penv = sb.policy_env_config[]
+    (penv !== nothing && penv.policy_v2) || return nothing
+    _callback_width_calibrate_enabled() || return nothing
+    num_sats = count(identity, p.is_active)
+    num_sats >= 2 || return nothing
+    effectors = args.dynamics_model.dynamic_effectors
+    SC = SimulationModel.SimulationCallbacks
+    SC._requires_staged_density_callback(effectors, args) || return nothing
+    static = SC._density_callback_thread_decision(p, args, num_sats)
+    (static.use_threads && static.allotment >= 2) || return nothing
+    _estimated_accepted_steps(p) >= _callback_width_min_steps() || return nothing
+    candidates = _callback_width_candidates(static.allotment)
+    length(candidates) >= 2 || return nothing
+
+    verbose = args.simulation_settings.verbose
+    cb = SC.get_density_callback(num_sats, effectors, args)
+    stub = (p=p, u=u0, t=0.0)
+    n_timed = _callback_width_n_timed()
+    statistic = _rhs_calibrate_score_statistic()
+    scores = Dict{Int, Float64}()
+    try
+        # Warm the threaded and the serial path once each before timing.
+        sb.density_callback_width[] = static.allotment
+        cb.affect!(stub)
+        sb.density_callback_width[] = 1
+        cb.affect!(stub)
+        for w in candidates
+            sb.density_callback_width[] = w
+            cb.affect!(stub)
+            samples = Float64[]
+            for _ in 1:n_timed
+                t0 = time_ns()
+                cb.affect!(stub)
+                push!(samples, Float64(time_ns() - t0))
+            end
+            scores[w] = _rhs_reduce_samples(samples, statistic)
+        end
+    catch e
+        sb.density_callback_width[] = 0
+        @debug "density callback width calibration failed; static width retained" exception=e
+        return nothing
+    end
+    chosen = _choose_callback_width(scores, static.allotment, _rhs_calibrate_override_margin())
+    sb.density_callback_width[] = chosen
+    SimulationModel.ParallelPolicy.record_callback_width_selection!(
+        :density, chosen, static.allotment)
+    if verbose
+        ladder = join(("$(w)=$(round(scores[w] / 1e6, digits=3))ms" for w in candidates), " ")
+        println("[SpaceAGORA] density callback width: static=$(static.allotment) " *
+                (chosen == 0 ? "retained" : "pinned $(chosen)") * " ($(ladder))")
+    end
+    return nothing
+end

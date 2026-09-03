@@ -220,6 +220,8 @@ function policy_telemetry_snapshot()
             rhs_plan_mode=String(t.rhs_plan_mode),
             rhs_plan_allotment=t.rhs_plan_allotment,
             rhs_plan_scheduler=String(t.rhs_plan_scheduler),
+            callback_width_density=t.callback_width_density,
+            callback_width_density_static=t.callback_width_density_static,
             accounted_fraction_proxy=accounted_fraction_proxy,
             trimmed_accounted_fraction_proxy=trimmed_accounted_fraction_proxy
         )
@@ -250,6 +252,25 @@ function record_rhs_plan_selection!(
         t.rhs_plan_mode = mode
         t.rhs_plan_allotment = Int64(max(0, allotment))
         t.rhs_plan_scheduler = scheduler
+    end
+    return nothing
+end
+
+"""
+    record_callback_width_selection!(source::Symbol, chosen::Integer, static::Integer)
+
+Record the outcome of pre-solve callback width calibration for `source`
+(`:density` today): `chosen` is the pinned width, 0 when the static width was
+retained. Accounting only.
+"""
+function record_callback_width_selection!(source::Symbol, chosen::Integer, static::Integer)
+    ctx = _active_policy_context()
+    lock(ctx.lock) do
+        t = ctx.telemetry
+        if source === :density
+            t.callback_width_density = Int64(max(0, chosen))
+            t.callback_width_density_static = Int64(max(0, static))
+        end
     end
     return nothing
 end

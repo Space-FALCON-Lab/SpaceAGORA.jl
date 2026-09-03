@@ -321,6 +321,12 @@ end
     @test SCamp._split_race_batch(16, [4, 8, 12]) == 0    # too small to race
     @test SCamp._split_race_batch(64, [12]) == 0          # nothing to race
     @test SCamp._split_race_batch(1, [2, 4]) == 0
+    # A process-route warm-up batch touches every worker of the widest split.
+    @test SCamp._split_race_batch(64, [4, 8, 12]; warm = 12) == 12   # 12 + 36 + 12 <= 64
+    @test SCamp._split_race_batch(56, [4, 8, 12]; warm = 12) == 0    # 12 + 36 + 12 > 56
+    @test SCamp._split_race_warm_count((route = :process,), [4, 8, 12], 64) == 12
+    @test SCamp._split_race_warm_count((route = :process,), [4, 8, 12], 6) == 6
+    @test SCamp._split_race_warm_count((route = :threads,), [4, 8, 12], 64) == 1
 end
 
 @testset "In-campaign split race on the threads route" begin

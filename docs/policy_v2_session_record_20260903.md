@@ -2,8 +2,8 @@
 
 Branch `policy-v2` (worktree `.claude/worktrees/policy-v2`, cut from
 `3be5b0ec` on `router-eval-expanded-b6`). Reference machine: AMD Ryzen 9
-9900X, 12 physical cores / 24 SMT, 60 GB, Julia 1.12.1. Edits UNCOMMITTED at
-time of writing.
+9900X, 12 physical cores / 24 SMT, 60 GB, Julia 1.12.1. Nine commits on the
+branch (9a9022ac .. the commit carrying this section); not pushed.
 
 Companion: `docs/adaptive_policy_session_record_20260902.md` (the shipped
 policy's state and methodology), and the review findings in the memory note
@@ -133,14 +133,12 @@ Two PRE-EXISTING failures on the shipped path, unchanged by this branch:
 
 ---
 
-## 6. Not done
+## 6. Not done (as of the first pass; see section 7 for what the second pass added)
 
-- Pre-solve callback-width sweep (density update is a closure inside the
-  callback builder; needs a refactor to be timed pre-solve).
-- In-campaign outer-split race.
 - Deleting the AIMD path and inner-hint cold eviction.
 - Knob pruning; user docs for R6.
-- Second warm-up campaign for process arms in the campaign probe.
+- Thermal/control callback width calibration (state-advancing / integrator-bound).
+- The two pre-existing failing tests on the shipped path (section 5).
 
 ---
 

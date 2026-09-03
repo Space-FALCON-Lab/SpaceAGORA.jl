@@ -316,14 +316,17 @@ end
 end
 
 @testset "Split race batch sizing" begin
-    @test SCamp._split_race_batch(64, [4, 8, 12]) == 12   # max(widest, cld(64, 12)) = 12; 1 + 36 + 12 <= 64
-    @test SCamp._split_race_batch(40, [2, 4]) == 5        # max(4, cld(40, 8)) = 5; 1 + 10 + 4 <= 40
-    @test SCamp._split_race_batch(16, [4, 8, 12]) == 0    # too small to race
-    @test SCamp._split_race_batch(64, [12]) == 0          # nothing to race
+    # Three rounds per worker: 64 samples over [4, 8, 12] is one dispatch
+    # round per width and not a measurement, so it does not race.
+    @test SCamp._split_race_batch(64, [4, 8, 12]) == 0
+    @test SCamp._split_race_batch(256, [4, 8, 12]) == 36   # max(36, cld(256, 12)); 1 + 108 + 12 <= 256
+    @test SCamp._split_race_batch(40, [2, 4]) == 12        # max(12, cld(40, 8)); 1 + 24 + 4 <= 40
+    @test SCamp._split_race_batch(16, [4, 8, 12]) == 0     # too small to race
+    @test SCamp._split_race_batch(64, [12]) == 0           # nothing to race
     @test SCamp._split_race_batch(1, [2, 4]) == 0
     # A process-route warm-up batch touches every worker of the widest split.
-    @test SCamp._split_race_batch(64, [4, 8, 12]; warm = 12) == 12   # 12 + 36 + 12 <= 64
-    @test SCamp._split_race_batch(56, [4, 8, 12]; warm = 12) == 0    # 12 + 36 + 12 > 56
+    @test SCamp._split_race_batch(256, [4, 8, 12]; warm = 12) == 36   # 12 + 108 + 12 <= 256
+    @test SCamp._split_race_batch(130, [4, 8, 12]; warm = 12) == 0    # 12 + 108 + 12 > 130
     @test SCamp._split_race_warm_count((route = :process,), [4, 8, 12], 64) == 12
     @test SCamp._split_race_warm_count((route = :process,), [4, 8, 12], 6) == 6
     @test SCamp._split_race_warm_count((route = :threads,), [4, 8, 12], 64) == 1
@@ -373,4 +376,29 @@ end
     else
         @test_skip "needs >= 4 Julia threads"
     end
+end
+
+@testset "Under V2 the route selector does not manufacture evidence" begin
+    feat = _v2_feat()
+    v2 = PPr.OuterRouteTuning(explore_routes = false, explore_until_any_proven = true,
+                              mc_route_by_core_budget = true, process_max_workers = 12,
+                              outer_thread_budget = 12)
+    withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1") do
+        @test !PPr.OuterRouteTuning().explore_routes
+    end
+    withenv("SPACEAGORA_PARALLEL_POLICY_V2" => nothing) do
+        @test PPr.OuterRouteTuning().explore_routes
+    end
+    # Only the default measured: no trial of threads, the default stands.
+    st = PPr.OuterRouteState()
+    _v2_record!(st, feat, :process, 0.10; reps = 1)
+    @test PPr.select_outer_route!(st, feat; tuning = v2, machine_class = :large,
+                                  threads_available = true) === :process
+    _v2_record!(st, feat, :process, 0.10; reps = 3)
+    @test PPr.select_outer_route!(st, feat; tuning = v2, machine_class = :large,
+                                  threads_available = true) === :process
+    # History it already holds still decides: threads measured faster wins.
+    _v2_record!(st, feat, :threads, 0.02)
+    @test PPr.select_outer_route!(st, feat; tuning = v2, machine_class = :large,
+                                  threads_available = true) === :threads
 end

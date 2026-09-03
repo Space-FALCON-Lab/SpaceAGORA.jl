@@ -71,6 +71,19 @@ Base.@kwdef struct OuterRouteTuning
     # only when the default is. See _any_candidate_proven. Follows
     # SPACEAGORA_PARALLEL_POLICY_V2 so the shipped selector stays reproducible.
     explore_until_any_proven::Bool = outer_route_policy_v2()
+    # Whether the route selector may force a trial of an unmeasured route.
+    # OFF under SPACEAGORA_PARALLEL_POLICY_V2, and that is a measured
+    # decision: the core-budget default reproduces every Monte Carlo grid point
+    # measured, while a forced trial of the other parallel arm was paid for
+    # twice and never paid back. Measured through the production runner at
+    # (12 threads, 12 workers): on montecarlo_heavy_aerobraking the threads
+    # trial cost a 26-45 s campaign against 7 s; on independent_1sat_1hr the
+    # trial landed while the process pool was still warming (its first three
+    # campaigns read 0.66, 0.60, 0.28 s), the bandit rated process worse than
+    # threads on that evidence, and exploited threads for the rest of the run
+    # at 0.44 s against 0.27 s. A route still switches on history it already
+    # holds; it just does not spend campaigns manufacturing it.
+    explore_routes::Bool = !outer_route_policy_v2()
     # Threads the campaign's thread route can split across. The Monte Carlo
     # default compares it against process_max_workers (see
     # _priority_outer_route_montecarlo). Fixed for the life of the process.
@@ -83,6 +96,9 @@ Base.@kwdef struct OuterRouteTuning
     # instead of trying one width per campaign. Follows
     # SPACEAGORA_PARALLEL_POLICY_V2. See SimulationCampaigns._run_campaign_split_race.
     split_race::Bool = outer_route_policy_v2()
+    # Full collection on the coordinator before a campaign is dispatched.
+    # Follows SPACEAGORA_PARALLEL_POLICY_V2. See _run_campaign_with_route_env.
+    gc_before_dispatch::Bool = outer_route_policy_v2()
     trace::Bool = false
 end
 

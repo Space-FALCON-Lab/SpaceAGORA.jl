@@ -83,6 +83,9 @@ warm_campaigns = 1
 # split race, or its process pool. Adaptive modes only. Each arm keeps its own
 # OuterRouteState, passed explicitly, so no swapping is needed.
 src_runner = false
+# --trace-route: with --src-runner, print the route and split width the
+# shipped runner chose for every campaign (OuterRouteTuning(trace=true)).
+trace_route = false
 cold_calib = false
 isolate    = false
 for arg in ARGS
@@ -97,6 +100,7 @@ for arg in ARGS
     startswith(arg, "--warm-campaigns=") && (global warm_campaigns = parse(Int, split(arg, "=", limit=2)[2]))
     arg == "--cold-calib"            && (global cold_calib = true)
     arg == "--src-runner"            && (global src_runner = true)
+    arg == "--trace-route"           && (global trace_route = true)
     arg == "--isolate-calib"         && (global isolate = true)
 end
 
@@ -194,8 +198,8 @@ function run_campaign_src(case_name::String, mode_name::String,
     cfg, over = make_cfg(mode_name, calib_path)
     cfg = _ppc_with(cfg; worker_case=case_name)
     mode = SPECS[mode_name]
-    mode.backend == "auto" ||
-        error("--src-runner needs an adaptive mode (backend auto); '$(mode_name)' pins $(mode.backend)")
+    mode.backend in ("auto", "threads", "process") ||
+        error("--src-runner supports adaptive, threads or process modes; '$(mode_name)' pins $(mode.backend)")
     cold_calib && _drop_calibration_memo!()
     seeds = [cfg.worker_seed + i - 1 for i in 1:mc_samples]
     base_seed = cfg.worker_seed
@@ -223,10 +227,23 @@ function run_campaign_src(case_name::String, mode_name::String,
         probe = ppc_single_config(case_name, cfg; seed=cfg.worker_seed, mc_index=1)
         features = SpaceAGORA.SimulationCampaigns.campaign_route_features(probe; samples=mc_samples)
         # Tuning built INSIDE the mode env, so the profile's switches apply.
-        tuning = SpaceAGORA.ParallelProfiles.OuterRouteTuning()
-        result = SpaceAGORA.SimulationCampaigns.run_monte_carlo(
-            sample, seeds; threads=:auto, route_features=features,
-            route_state=state, route_tuning=tuning)
+        tuning = SpaceAGORA.ParallelProfiles.OuterRouteTuning(trace=trace_route)
+        trace_route && println("  [$(mode_name)] campaign start")
+        SC = SpaceAGORA.SimulationCampaigns
+        result = if mode.backend == "auto"
+            SC.run_monte_carlo(sample, seeds; threads=:auto, route_features=features,
+                               route_state=state, route_tuning=tuning)
+        elseif mode.backend == "threads"
+            SC.run_monte_carlo(sample, seeds; threads=Threads.nthreads())
+        else
+            # Pinned process route through the SHIPPED pool, at the probe's
+            # worker count: the reference the adaptive arm's process choice is
+            # measured against on this same dispatch path.
+            plan = (route=:process, threads=procs, inner_thread_budget=1, record=false,
+                    split_race=false, split_candidates=Int[])
+            SC._run_campaign_with_route_env(
+                sample, SC.MonteCarloSpec(seeds=seeds, threads=procs, fail_fast=false), plan)
+        end
         all(r -> r.success && r.value.success, result.samples) ||
             error("campaign failed on $(case_name)/$(mode_name)")
         return Float64(result.elapsed_s)

@@ -339,13 +339,31 @@ end
 
 # Samples per raced width, or 0 when the campaign is too small to race: each
 # width must get at least as many samples as it has workers, and at least the
-# widest split must be left over to exploit.
-function _split_race_batch(n_samples::Int, candidates::Vector{Int})::Int
+# widest split must be left over to exploit. `warm` is the warm-up batch that
+# precedes the race (see _split_race_warm_count).
+function _split_race_batch(n_samples::Int, candidates::Vector{Int}; warm::Int=1)::Int
     n = length(candidates)
     (n >= 2 && n_samples >= 2) || return 0
     widest = maximum(candidates)
     k = max(widest, cld(n_samples, 4 * n))
-    return n_samples >= 1 + n * k + widest ? k : 0
+    return n_samples >= max(1, warm) + n * k + widest ? k : 0
+end
+
+# How many samples the warm-up batch runs, and at what width.
+#
+# Threads: one sample, serially -- every thread shares the compiled `f`.
+# Process: one sample on EVERY worker the widest split will use. A worker
+# compiles `f` on its first call, and the runner's own warm-up covers only
+# workers it spawned itself; a pool that already exists (a second campaign
+# type in the same process, a pre-grown pool) is warm for the previous
+# workload and cold for this one. Measured with the paired campaign probe on
+# independent_1sat_1hr at (12 threads, 12 workers): with a serial warm-up the
+# race's batches carried each worker's JIT, the ranking they produced was
+# recorded with min-samples weight, and the selector exploited it for the rest
+# of the run at 0.64 s per campaign against 0.27 s for the right width.
+@inline function _split_race_warm_count(plan, candidates::Vector{Int}, n_samples::Int)::Int
+    plan.route === :process || return 1
+    return max(1, min(maximum(candidates), n_samples))
 end
 
 @inline function _reindexed_sample(s::MonteCarloSampleResult, index::Int)::MonteCarloSampleResult
@@ -360,17 +378,20 @@ function _run_campaign_split_race(
 )::MonteCarloResult
     candidates = sort(plan.split_candidates)
     n = length(seeds)
-    k = _split_race_batch(n, candidates)
+    warm_n = _split_race_warm_count(plan, candidates, n)
+    k = _split_race_batch(n, candidates; warm=warm_n)
     k > 0 || return _run_campaign_with_route_env(
         f, MonteCarloSpec(seeds=seeds, threads=plan.threads, fail_fast=fail_fast), plan)
 
     started = time_ns()
     samples = MonteCarloSampleResult[]
-    # Warm-up: the first seed, serially.
+    # Warm-up batch, untimed as far as the race is concerned; its samples are
+    # kept. See _split_race_warm_count.
     warm = _run_campaign_with_route_env(
-        f, MonteCarloSpec(seeds=seeds[1:1], threads=1, fail_fast=fail_fast), _plan_at_width(plan, 1))
-    append!(samples, (_reindexed_sample(s, 1) for s in warm.samples))
-    offset = 1
+        f, MonteCarloSpec(seeds=seeds[1:warm_n], threads=warm_n, fail_fast=fail_fast),
+        _plan_at_width(plan, warm_n))
+    append!(samples, (_reindexed_sample(s, s.index) for s in warm.samples))
+    offset = warm_n
     per_sample = Dict{Int, Float64}()
     weight = max(1, tuning.adaptive_min_samples)
     for w in candidates
@@ -502,7 +523,9 @@ function _run_campaign_adaptive(
     isempty(seed_values) && return MonteCarloResult(MonteCarloSampleResult[], 0.0, 0)
     routed_features = _campaign_features_for_routing(features, length(seed_values))
     plan = _campaign_route_plan(routed_features, length(seed_values); state=state, tuning=tuning)
-    raced = plan.split_race && _split_race_batch(length(seed_values), plan.split_candidates) > 0
+    raced = plan.split_race && _split_race_batch(
+        length(seed_values), plan.split_candidates;
+        warm=_split_race_warm_count(plan, plan.split_candidates, length(seed_values))) > 0
     result = if raced
         _run_campaign_split_race(f, seed_values, plan, routed_features, state, tuning; fail_fast=fail_fast)
     else

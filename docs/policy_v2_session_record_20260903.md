@@ -141,3 +141,64 @@ Two PRE-EXISTING failures on the shipped path, unchanged by this branch:
 - Deleting the AIMD path and inner-hint cold eviction.
 - Knob pruning; user docs for R6.
 - Second warm-up campaign for process arms in the campaign probe.
+
+---
+
+## 7. Second pass (2026-09-03, commits fc44c0cd .. f53b821a)
+
+Added under the same switch: a pre-solve density-callback width sweep with the
+no-regret floor; an in-campaign split race (three samples per worker per
+width, else the widest split; widths are never explored one per campaign);
+no forced route trials (the core-budget default stands unless held history
+says otherwise); a full collection on the coordinator before dispatch. The
+campaign probe gained `--src-runner` (dispatch through the shipped
+`run_monte_carlo(threads=:auto)`, pinned arms through the shipped pool),
+`--warm-campaigns`, `--trace-route`.
+
+Constellations, 15 pairs, with the density sweep (interact_256_aero threads
+its density callback):
+
+| case | threads | R6 vs R5 | R6 vs inner_only |
+|---|---|---|---|
+| interact_256_aero | 12 | +0.4% (7-8, n.s.) | +2.0% (6-9, n.s.) |
+| gravity_4096_l50 | 12 | +4.1% (5-10, n.s.) | -3.3% (9-6, n.s.) |
+| heavy_1024_l50_6hr | 12 | -0.1% (8-7, n.s.) | +0.9% (7-8, n.s.) |
+| interact_256_aero | 8 | -5.4% (8-7, n.s.) | -- |
+| gravity_4096_l50 | 8 | **-22.1% (13-2, p=0.007)** | -- |
+| heavy_1024_l50_6hr | 8 | **-4.4% (15-0, p=0.0001)** | -- |
+
+Monte Carlo through the PRODUCTION runner (`--src-runner --profile=full`,
+64 samples, 9 pairs, 2 warm campaigns), final code:
+
+| (threads, workers) | R6 vs R5 heavy | R6 vs R5 indep. | R6 vs pinned process (same pool) |
+|---|---|---|---|
+| (12, 12) | **-29.1% (9-0)** | -38.0% median (7-2; first 4 pairs are pool warm-up, steady 0.27 vs 0.44 s) | heavy -2.2%, indep. +3.4%, both n.s. |
+| ( 2,  6) | **-71.0% (9-0)** | **-67.0% (9-0)** | -- |
+| ( 6,  2) | **-2.7% (9-0)** | +0.7% (4-5, n.s.) | -- |
+
+R6 chose process on every campaign at the two wide-pool points and threads at
+the narrow-pool point; no route trial was spent.
+
+What the production-runner probe found on the way, each fixed in f53b821a:
+
+- With one serial warm-up sample, a race on a pre-existing pool timed each
+  worker's JIT into its batches (0.64 s steady against 0.27 s). Process-route
+  warm-up is now one sample per worker of the widest split.
+- One sample per worker per width is not a measurement (two runs of the same
+  code ranked [4, 8, 12] differently). Three rounds per worker, else no race.
+- Without a race the shipped split selector explored w4 and w8 for two
+  campaigns each: eight consecutive campaigns at 0.65 s. Under V2 the split
+  selector never force-explores.
+- A process campaign following a threaded campaign in the same coordinator
+  ran 2.6x slow (19.3 s vs 7.5 s): coordinator full collections stalling the
+  async dispatch loop. Collect before dispatch; the harness always did.
+- The must-measure threads trial cost a 26-45 s campaign on the heavy case
+  and, on the cheap case, landed while the pool was still warming; the
+  bandit then exploited threads for the rest of the run. Route trials are
+  off under V2.
+- R5's shipped guard spends a campaign on SERIAL for Monte Carlo (55 s
+  against 10 s threaded on the heavy case): its exploration order tries
+  `:none` before the default is proven. Previously misread as a JIT cost.
+- The process pool warms over several campaigns on a fresh case, not one:
+  the pinned-process arm read 0.66, 0.60, 0.28 s over its first three
+  campaigns on independent_1sat_1hr.

@@ -164,7 +164,15 @@ function ppc_resolve_outer_backend(
 )::PPCModeSpec
     mode.backend == "auto" || return mode
     sample_count > 1 || return _ppc_mode_with_backend(mode, "threads")
-    route = try
+    # Resolve UNDER THE MODE'S ENVIRONMENT. OuterRouteTuning's defaults read
+    # the profile switches from ENV (SPACEAGORA_PARALLEL_POLICY_V2 selects the
+    # core-budget Monte Carlo default and the SPACEAGORA_PERF_PROCS worker cap),
+    # and this used to run before ppc_run_sample_batch applied the mode env --
+    # so every adaptive profile was routed with the shipped defaults whatever
+    # its profile declared, and a paired R6-vs-R5 campaign probe measured two
+    # copies of the same route. The shipped R4/R5 defaults read nothing from
+    # ENV on the cold path, so their routing is unchanged by this.
+    route = try withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=sample_count)...) do
         probe = ppc_single_config(case.name, cfg; seed=cfg.worker_seed, mc_index=1)
         features = SpaceAGORA.SimulationCampaigns.campaign_route_features(
             probe; samples=sample_count
@@ -222,7 +230,7 @@ function ppc_resolve_outer_backend(
             threads_available=Threads.nthreads() > 1,
             parallel_enabled=true,
         )
-    catch err
+    end catch err
         @warn "Outer-route resolution failed; falling back to threads" case=case.name mode=mode.name exception=err
         :threads
     end

@@ -35,7 +35,7 @@ end
 end
 
 @inline function _inner_hint_defaults(cfg::ParallelProfileConfig)::NamedTuple{(:exploration, :min_samples), Tuple{Float64, Int}}
-    if cfg.profile != R5
+    if !(cfg.profile in (R5, R6))
         return (exploration=1.5, min_samples=2)
     end
     machine_class = _machine_parallel_class()
@@ -155,6 +155,11 @@ function profile_env_pairs(
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => _env_or_default(
             "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST",
             _coerce_env_bool(cfg.persistent_state_persist);
+            preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_PARALLEL_POLICY_V2" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_V2",
+            _coerce_env_bool(cfg.policy_v2);
             preserve_existing=preserve_existing
         ),
         "SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION" => _env_or_default(

@@ -66,7 +66,19 @@ Base.@kwdef struct OuterRouteTuning
     # the point of the change rather than a side effect of it: numbers measured
     # against the previous default describe a configuration that was asking for
     # more parallelism than the machine could deliver.
-    process_max_workers::Int = usable_core_budget()
+    process_max_workers::Int = _outer_process_worker_cap()
+    # Stop forced exploration once ANY candidate is proven best, rather than
+    # only when the default is. See _any_candidate_proven. Follows
+    # SPACEAGORA_PARALLEL_POLICY_V2 so the shipped selector stays reproducible.
+    explore_until_any_proven::Bool = outer_route_policy_v2()
+    # Threads the campaign's thread route can split across. The Monte Carlo
+    # default compares it against process_max_workers (see
+    # _priority_outer_route_montecarlo). Fixed for the life of the process.
+    outer_thread_budget::Int = Base.Threads.nthreads()
+    # Route a Monte Carlo campaign to whichever outer axis has more cores.
+    # Follows SPACEAGORA_PARALLEL_POLICY_V2; off keeps the shipped threads
+    # default.
+    mc_route_by_core_budget::Bool = outer_route_policy_v2()
     trace::Bool = false
 end
 
@@ -97,6 +109,34 @@ end
 @inline function proven_requires_all_candidates()::Bool
     raw = lowercase(strip(get(ENV, "SPACEAGORA_OUTER_ROUTE_PROVEN_ALL", "0")))
     return raw in ("1", "true", "yes", "on")
+end
+
+# Routing-layer read of SPACEAGORA_PARALLEL_POLICY_V2. ParallelProfiles is
+# assembled before ParallelPolicy, so it cannot borrow policy_v2_enabled; the
+# parse is the same one proven_requires_all_candidates uses. Read once per
+# OuterRouteTuning construction, i.e. once per campaign, never on a hot path.
+@inline function outer_route_policy_v2()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PARALLEL_POLICY_V2", "0")))
+    return raw in ("1", "true", "yes", "on")
+end
+
+# Process workers the campaign pool may use.
+#
+# `usable_core_budget()` as shipped. Under SPACEAGORA_PARALLEL_POLICY_V2 also
+# capped by SPACEAGORA_PERF_PROCS when it is set: that variable is how the
+# benchmark harness (and the HPC launch scripts) state how many worker
+# processes a run was given, and a router that ignores it sizes the pool from
+# the whole machine. On the B13 budget grid the runtime would have spawned
+# twelve workers at a point whose budget was two, and the core-budget default
+# below would then have compared twelve against six threads and chosen wrong.
+@inline function _outer_process_worker_cap()::Int
+    cap = usable_core_budget()
+    outer_route_policy_v2() || return cap
+    raw = strip(get(ENV, "SPACEAGORA_PERF_PROCS", ""))
+    isempty(raw) && return cap
+    v = tryparse(Int, raw)
+    (v === nothing || v <= 0) && return cap
+    return max(1, min(cap, v))
 end
 
 @inline function outer_route_discard_cold_observation()::Bool

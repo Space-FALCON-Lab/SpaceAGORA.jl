@@ -19,24 +19,37 @@
 # travels with them.
 @inline function _hint_layer_pays(
     source::Symbol,
-    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
+    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing;
+    ctx::Union{Nothing, PolicyContext}=nothing
 )::Bool
     ratio = env === nothing ? hint_work_ratio() : env.hint_work_ratio
     ratio <= 0.0 && return true
-    ctx = _active_policy_context()
-    work_ns = lock(ctx.lock) do
-        st = get(ctx.adaptive_state, source, nothing)
+    c = ctx === nothing ? _active_policy_context() : ctx
+    work_ns = lock(c.lock) do
+        st = get(c.adaptive_state, source, nothing)
         st === nothing ? 0.0 : st.elapsed_ema_ns
     end
-    work_ns <= 0.0 && return true
+    if work_ns <= 0.0
+        # No work estimate yet. The shipped answer is "consult anyway", which
+        # was meant to cover cold start and instead covered forever: a source
+        # whose observations never reach this context (see policy_context_hint)
+        # reads zero on every call and pays the lookup on every call. Under V2
+        # an unmeasured region fails CLOSED -- one skipped consultation until
+        # the first observation lands, against one paid consultation per call
+        # until it never does.
+        return !(env !== nothing && env.policy_v2)
+    end
     return work_ns >= ratio * hint_overhead_ns()
 end
 
-@inline function _adaptive_state_for(source::Symbol)::AdaptiveControllerState
-    ctx = _active_policy_context()
+@inline function _adaptive_state_for(ctx::PolicyContext, source::Symbol)::AdaptiveControllerState
     return get!(ctx.adaptive_state, source) do
         AdaptiveControllerState()
     end
+end
+
+@inline function _adaptive_state_for(source::Symbol)::AdaptiveControllerState
+    return _adaptive_state_for(_active_policy_context(), source)
 end
 
 # `env` carries the run-scoped PolicyDecisionEnvConfig when the caller has one.

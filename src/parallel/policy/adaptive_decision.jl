@@ -66,7 +66,21 @@
         num_items < max(1, threshold) ||
         (outer_active && !allow_with_outer) ||
         (heavy_only && !heavy_work)
-    adaptive_active = adaptive_enabled && !decision_forced
+    # V2: callback and effector widths come from the static rule,
+    # min(items, budget), not from the per-call hint store or AIMD.
+    #
+    # Nothing in the 2026-09-02 paper run shows the per-call layer winning. The
+    # AIMD branch never reads elapsed time (its window score is a fill ratio,
+    # observation_tracking.jl), so under R4 it is the static width plus lock and
+    # signature overhead; the R5 hint chooser was a two-sample greedy argmin
+    # (see _hint_mean_and_width). Where R5 wins large (stack256_e3..e5, -26% to
+    # -46%) the plan telemetry credits the sweep-pinned satellite_batch route,
+    # and on the one case dominated by a threaded callback
+    # (atmo256_gram_surrogate) the static inner_only route is best at both
+    # thread counts, with R5 +25% and +8% behind it. The hint and AIMD paths
+    # stay reachable with the switch off; R6 simply does not take them.
+    static_width_only = env !== nothing && env.policy_v2
+    adaptive_active = adaptive_enabled && !decision_forced && !static_width_only
     # The hint layer is consulted only when it pays for itself on this machine;
     # see _hint_layer_pays and hint_work_ratio.
     hint_layer_active = adaptive_active && _hint_layer_pays(source, env)
@@ -96,7 +110,11 @@
             heavy_work
         )
         if hint_layer_active
-            hint = _hint_choose_allotment(signature, _hint_candidate_allotments(num_items, budget))
+            hint = _hint_choose_allotment(
+                signature,
+                _hint_candidate_allotments(num_items, budget);
+                scaled_width=(env !== nothing && env.policy_v2)
+            )
             hint_allotment = hint.allotment
             hint_confidence = hint.confidence
             hint_regret_ns = hint.regret_ns

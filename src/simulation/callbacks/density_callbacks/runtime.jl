@@ -353,7 +353,8 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 num_items=num_sats,
                 use_threads=use_threads,
                 elapsed_ns=(time_ns() - started_ns),
-                env=_policy_env_config(p)
+                env=_policy_env_config(p),
+                ctx=ParallelPolicy.policy_context_hint(p)
             )
         end
     end

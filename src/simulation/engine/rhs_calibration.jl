@@ -1128,6 +1128,32 @@ function _rhs_calib_record_solve_time!()::Nothing
     return nothing
 end
 
+# Which cached verdict, if any, to honour without sweeping: `:heuristic`, a plan
+# NamedTuple, or `nothing` (sweep).
+#
+# As shipped, nothing is honoured on a long solve (see the solve-cost gate):
+# a pinned plan is a reading of the process that formed it, and above the
+# threshold re-sweeping is cheap insurance against replaying a stale one.
+#
+# `honour_heuristic_verdict` (SPACEAGORA_PARALLEL_POLICY_V2) honours a cached
+# "the heuristic won" verdict on a long solve too. That verdict pins nothing:
+# the heuristic re-derives per call and is the no-regret floor the sweep itself
+# falls back to, so re-running the sweep to confirm it can only cost. Measured
+# in the 2026-09-02 paper run: every eight-thread constellation point that lost
+# to the best static route (gravity_4096 +28%, heavy_1024_6hr +8%, cadence_1024
+# +8%) carried rhs_plan_source=sweep with verdict heuristic on every repeat,
+# while the same cases at twelve threads hit a cached heuristic verdict and sat
+# within 3%. A cached PLAN still re-sweeps on a long solve either way.
+function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool)
+    _rhs_calibration_mode() == :force && return nothing
+    long_solve = _rhs_calib_solve_exceeds_threshold(sig)
+    (long_solve && !honour_heuristic_verdict) && return nothing
+    cached = _rhs_calib_lookup(sig)
+    cached === nothing && return nothing
+    cached === :heuristic && return :heuristic
+    return long_solve ? nothing : cached
+end
+
 function _calibrate_rhs_plan_if_needed!(p, u0, args)
     # Ahead of every gate below: precompilation is single-threaded, so the
     # budget gate would otherwise return before either plan mode is exercised.
@@ -1159,8 +1185,10 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
         _rhs_calib_solve_start[sig] = time_ns()
     end
 
-    if _rhs_calibration_mode() != :force && !_rhs_calib_solve_exceeds_threshold(sig)
-        cached = _rhs_calib_lookup(sig)
+    penv = p.shared_buffers.policy_env_config[]
+    honour_heuristic_verdict = penv !== nothing && penv.policy_v2
+    cached = _rhs_calib_cached_verdict(sig, honour_heuristic_verdict)
+    if cached !== nothing
         if cached === :heuristic
             # Cached retain-the-heuristic verdict: pin nothing, and -- the point --
             # do not sweep. rhs_plan_override stays unset, so _rhs_execution_plan
@@ -1175,7 +1203,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
                 "[SpaceAGORA] RHS calibration: cached verdict → heuristic retained (no sweep)"
             )
             return
-        elseif cached !== nothing
+        else
             p.shared_buffers.rhs_plan_override[] = cached
             SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
                 :cache, cached.mode, cached.allotment, cached.scheduler

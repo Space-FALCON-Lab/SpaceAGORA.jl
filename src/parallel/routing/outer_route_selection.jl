@@ -370,9 +370,38 @@ end
     # The affordability and machine-class conditions are the same ones
     # outer_route_candidates uses to enumerate the process arm, so the default
     # can never name a route the selector did not offer.
+    process_affordable = machine_class in (:large, :medium) && _mc_process_worth_exploring(f, t)
     if !threads_available
-        return (machine_class in (:large, :medium) && _mc_process_worth_exploring(f, t)) ?
-            :process : :none
+        return process_affordable ? :process : :none
+    end
+    # V2: give the outer axis to whichever route has more cores.
+    #
+    # The measurement behind the threads default above was taken with the
+    # Distributed pool provisioned inside the timed window. The pool is now
+    # persistent and warmed before the clock, and the 2026-09-02 paper run at
+    # commit 3be5b0ec shows the opposite sign wherever the process route has at
+    # least as many workers as the thread route has threads -- and only there:
+    #
+    #     montecarlo_heavy_aerobraking, 64 samples, 12 physical cores
+    #     (threads, workers)   pinned threads   pinned process
+    #     (12, 1)                  10.2 s          59.2 s
+    #     ( 6, 2)                  13.9 s          31.5 s
+    #     ( 4, 3)                  19.3 s          20.8 s
+    #     ( 3, 4)                  24.1 s          16.2 s
+    #     ( 2, 6)                  34.7 s          11.9 s
+    #     ( 1,12)                  57.5 s           7.4 s
+    #     independent_1sat_1hr, 256 samples
+    #     (12,12)                   1.65 s          1.01 s
+    #     ( 8,12)                   1.88 s          1.03 s
+    #
+    # Comparing worker count against thread count reproduces every row. The
+    # shipped default chose threads on all of them and lost by up to 2.9x on
+    # the wide-pool points; exploration could not rescue it because the guard
+    # in _route_is_proven stops once threads beats serial, before process is
+    # ever tried (see must_measure).
+    if t.mc_route_by_core_budget && process_affordable &&
+       t.process_max_workers >= max(1, t.outer_thread_budget)
+        return :process
     end
     return :threads
 end
@@ -537,7 +566,12 @@ end
     candidates::Vector{Symbol},
     snapshot,
     route::Symbol,
-    min_samples::Int,
+    min_samples::Int;
+    # Arms that must have been measured before ANY arm counts as proven,
+    # whatever proven_requires_all_candidates says. The route selector under
+    # V2 names the parallel alternatives here: threads beating serial is no
+    # evidence about process, and process was the arm never reached.
+    must_measure::Vector{Symbol}=Symbol[],
 )::Bool
     info = get(snapshot, route, nothing)
     info === nothing && return false
@@ -573,6 +607,7 @@ end
         other === route && continue
         other_info = get(snapshot, other, nothing)
         if other_info === nothing || other_info.samples <= 0 || !isfinite(other_info.mean_s)
+            other in must_measure && return false
             unmeasured_alternative = true
             continue
         end
@@ -583,6 +618,34 @@ end
         return false
     end
     return tested_against_an_alternative
+end
+
+# Whether ANY enumerated candidate is proven best -- the guard the selectors
+# should be asking, where `_route_is_proven(default)` asks a narrower one.
+#
+# `_route_is_proven` returns false for a default as soon as a sampled
+# alternative beats it (its third clause, deliberately). Gating forced
+# exploration on that alone means a BEATEN default re-enables exploration, and
+# `_under_sampled_candidate` then diverts the campaign to whichever ranked
+# candidate has too few observations -- while the better-measured winner sits
+# unconsulted. Measured shape: process at 0.90 s, threads at 0.10 s, `:none`
+# never tried; the shipped selector runs `:none`.
+#
+# Proven-best for some candidate is the same predicate applied to that
+# candidate: enough campaigns, nothing sampled beats it, at least one
+# alternative tried. The exploration budget is spent only while no arm has
+# earned the right to be exploited.
+@inline function _any_candidate_proven(
+    candidates::Vector{Symbol},
+    snapshot,
+    min_samples::Int;
+    must_measure::Vector{Symbol}=Symbol[],
+)::Bool
+    for route in candidates
+        _route_is_proven(candidates, snapshot, route, min_samples;
+                         must_measure=must_measure) && return true
+    end
+    return false
 end
 
 @inline function _best_candidate(
@@ -747,7 +810,13 @@ function select_outer_route!(
         # beats it, ranking falls through to UCB, which still explores -- through
         # the confidence width on candidates it has data for -- but is no longer
         # obliged to spend a full trial on every candidate it does not.
-        default_proven = _route_is_proven(candidates, snapshot, default_route, tuning.adaptive_min_samples)
+        # Under explore_until_any_proven the question is whether ANY arm has
+        # earned exploitation, not whether the default has; see
+        # _any_candidate_proven for the failure the narrower guard produces.
+        default_proven = tuning.explore_until_any_proven ?
+            _any_candidate_proven(candidates, snapshot, tuning.adaptive_min_samples;
+                                  must_measure=Symbol[c for c in candidates if c !== :none]) :
+            _route_is_proven(candidates, snapshot, default_route, tuning.adaptive_min_samples)
         explore = default_proven ?
             nothing :
             _under_sampled_candidate(candidates, snapshot, default_route, tuning.adaptive_min_samples)
@@ -918,7 +987,10 @@ function select_outer_split!(
     isempty(snapshot) && return widest
 
     widest_arm = _split_arm(route, widest)
-    explore = _route_is_proven(arms, snapshot, widest_arm, tuning.adaptive_min_samples) ?
+    widest_proven = tuning.explore_until_any_proven ?
+        _any_candidate_proven(arms, snapshot, tuning.adaptive_min_samples) :
+        _route_is_proven(arms, snapshot, widest_arm, tuning.adaptive_min_samples)
+    explore = widest_proven ?
         nothing :
         _under_sampled_candidate(arms, snapshot, widest_arm, tuning.adaptive_min_samples)
     if !(explore === nothing)

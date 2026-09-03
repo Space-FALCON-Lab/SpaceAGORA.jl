@@ -251,6 +251,7 @@ function snapshot_policy_decision_env(;
         adaptive_window_size(),
         adaptive_trim_quanta_budget(),
         hint_work_ratio(),
+        policy_v2_enabled(),
     )
 end
 
@@ -266,6 +267,25 @@ end
 end
 
 @inline adaptive_policy_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_ADAPTIVE", false)
+
+# SPACEAGORA_PARALLEL_POLICY_V2: the one switch for the revised policy
+# behaviours. OFF reproduces the shipped algorithm bit for bit, so a paired
+# probe with this as its only difference attributes cleanly. Profile R6 sets it;
+# nothing else does.
+#
+# What it currently changes, each a defect found by reading the shipped code:
+#   - `_hint_layer_pays` fails CLOSED on a source with no work estimate yet,
+#     instead of consulting the hint store on every call forever.
+#   - The hint layer's confidence width is scaled by the arm's measured
+#     standard deviation, as the outer-route selector's already is; unscaled it
+#     was a few nanoseconds against means in microseconds, so the "UCB" chooser
+#     was a greedy argmin after two samples.
+#   - `record_policy_observation!` is handed the run's scoped context by callers
+#     that have the params, so observations made on worker tasks reach the
+#     context their decisions live in (see `policy_context_hint`).
+#   - The outer-route selectors stop forced exploration once ANY candidate is
+#     proven best, not only when the default is (`explore_until_any_proven`).
+@inline policy_v2_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_V2", false)
 @inline adaptive_window_size()::Int = parse_thread_threshold_env("SPACEAGORA_PARALLEL_POLICY_WINDOW", 8)
 @inline adaptive_trim_quanta_budget()::Int = parse_nonnegative_int_env("SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA", 0)
 @inline adaptive_bootstrap_threads()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS", true)

@@ -445,3 +445,70 @@ end
     a_inertial = rtn_accel_to_inertial(SVector{3, Float64}(2.0, 0.0, 0.0), r_t, v_t)
     @test a_inertial ≈ 2.0 * r_t / norm(r_t) atol = 1e-12
 end
+
+# ----------------------------------------------------------------------
+# SimpleEphemeridesModel Earth rotation: pinned against an independent GMST
+# computation and cross-checked against the SPICE-backed frame. Guards the
+# geographic registration of every lat/lon-keyed model (IGRF, tilted dipole,
+# atmospheres, tesseral harmonics) evaluated under the kernel-free backend —
+# a zero prime meridian at J2000 would park Greenwich on the vernal equinox,
+# ~280 deg away from where it belongs.
+# ----------------------------------------------------------------------
+@testset "SimpleEphemeridesModel Earth rotation pins" begin
+    # Independent GMST formulation (IAU-82 in degree form — not a transcription
+    # of the seconds-form series in simple_ephemerides.jl).
+    function gmst82_deg(jd_ut1::Float64)
+        d = jd_ut1 - 2451545.0
+        T = d / 36525.0
+        return mod(280.46061837 + 360.98564736629 * d + 3.87933e-4 * T^2 - T^3 / 3.871e7, 360.0)
+    end
+    zangle_deg(R) = rad2deg(atan(R[1, 2], R[1, 1]))  # rows [c s 0; -s c 0; 0 0 1]
+    rotangle_deg(R) = rad2deg(acos(clamp((tr(R) - 1) / 2, -1.0, 1.0)))
+    wrapdiff_deg(a, b) = mod(a - b + 180.0, 360.0) - 180.0
+
+    simple_default = SimulationModel.SimpleEphemeridesModel()
+    spice_backend = SimulationModel.SpiceEphemeridesModel()
+    j2000_utc = DateTime(2000, 1, 1, 12, 0, 0)
+
+    for utc in (DateTime(2000, 1, 1, 12), DateTime(2007, 6, 15, 3, 30),
+                DateTime(2015, 2, 24), DateTime(2024, 12, 31, 23, 59))
+        # The simple backend's timeline: leap-second-free UTC seconds past J2000.
+        et_simple = Dates.value(utc - j2000_utc) / 1000.0
+        l_pi = SimulationModel.planet_frame_lpi(EARTH, et_simple, simple_default)
+
+        # Pure spin about +z: exact invariant z block, orthonormal to roundoff.
+        @test l_pi[3, 3] == 1.0 && l_pi[1, 3] == 0.0 && l_pi[2, 3] == 0.0
+        @test l_pi' * l_pi ≈ SMatrix{3, 3, Float64}(I) atol = 1e-14
+
+        # Pin against the independent GMST computation (same UT1 ≈ UTC reading).
+        θ_expected = gmst82_deg(2451545.0 + et_simple / 86400.0)
+        @test wrapdiff_deg(zangle_deg(l_pi), θ_expected) ≈ 0.0 atol = 1e-5
+
+        # Cross-check against the SPICE frame chain: GMST vs the full
+        # precession/nutation/polar-motion transform stays sub-half-degree
+        # across the vendored kernels' 2000-2025 span.
+        et_spice = utc2et(Dates.format(utc, "yyyy-mm-ddTHH:MM:SS"))
+        l_pi_spice = SimulationModel.planet_frame_lpi(EARTH, et_spice, spice_backend)
+        @test rotangle_deg(l_pi * l_pi_spice') < 0.5
+    end
+
+    # Explicit prime-meridian override keeps the legacy linear model exactly.
+    override = SimulationModel.SimpleEphemeridesModel(
+        reference_epoch_seconds = 100.0,
+        prime_meridian_at_reference_rad = 0.3
+    )
+    l_pi_o = SimulationModel.planet_frame_lpi(EARTH, 350.0, override)
+    @test zangle_deg(l_pi_o) ≈ rad2deg(0.3 + EARTH.ω[3] * 250.0) rtol = 1e-12
+
+    # Non-Earth planets keep the zero-at-reference default convention.
+    mars_like = (name = "Mars", ω = SVector{3, Float64}(0.0, 0.0, 7.08823596e-5))
+    l_pi_m = SimulationModel.planet_frame_lpi(mars_like, 1.0e4, simple_default)
+    @test zangle_deg(l_pi_m) ≈ rad2deg(7.08823596e-5 * 1.0e4) rtol = 1e-12
+
+    # The NaN planet-true default must key the ephemerides cache without
+    # throwing, and distinctly from an explicit zero override.
+    key_default = SimulationModel.ephemerides_cache_key(simple_default)
+    key_zero = SimulationModel.ephemerides_cache_key(
+        SimulationModel.SimpleEphemeridesModel(prime_meridian_at_reference_rad = 0.0))
+    @test key_default != key_zero
+end

@@ -70,6 +70,19 @@ Base.@kwdef struct SpacecraftConfig
     # dims[2]*dims[3] face matching the Hart free-molecular coefficient
     # normalization (see make_three_body_spacecraft).
     bus_ram_face::Symbol = :legacy
+    # Optional per-link attitude quaternions (x, y, z, w scalar-last),
+    # normalized at parse time. The bus quaternion is expressed in the
+    # flow-aligned reference frame (see the AerodynamicCoefficientfM
+    # docstring); panel quaternions are relative to the BUS frame — the
+    # kinematics convention, and the natural way to express a fixed panel
+    # cant. `nothing` leaves the link at identity, bit-identical to the
+    # pre-capability spacecraft. The manifest layer requires
+    # aero_fixed_attitude_incidence = "attitude" whenever any of these is
+    # set: the historical :max_drag path reads non-root quaternions, so the
+    # combination would silently change default-mode physics.
+    bus_attitude_q::Union{Nothing, NTuple{4, Float64}} = nothing
+    panel_attitude_q_left::Union{Nothing, NTuple{4, Float64}} = nothing
+    panel_attitude_q_right::Union{Nothing, NTuple{4, Float64}} = nothing
 end
 
 abstract type AbstractScenarioConfig end
@@ -124,6 +137,10 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     srp_cr::Float64 = 1.3
     srp_area_m2::Float64 = 0.0
     drag_enabled::Bool = true
+    # Fixed-attitude incidence mode forwarded to AerodynamicCoefficientfM
+    # (:max_drag | :attitude | :tumbling_average); :max_drag preserves the
+    # historical accounting bit-identically.
+    aero_fixed_attitude_incidence::Symbol = :max_drag
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     maneuver_orbit_numbers::Vector{Int64} = Int64[]
@@ -200,6 +217,10 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     srp_cr::Float64 = 1.3
     srp_area_m2::Float64 = 0.0
     drag_enabled::Bool = true
+    # Fixed-attitude incidence mode forwarded to AerodynamicCoefficientfM
+    # (:max_drag | :attitude | :tumbling_average); :max_drag preserves the
+    # historical accounting bit-identically.
+    aero_fixed_attitude_incidence::Symbol = :max_drag
     include_wind::Bool = false
     orbit_altitude_mode::Symbol = :vacuum
     cartesian_ic_frame::Symbol = :inertial

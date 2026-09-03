@@ -43,7 +43,13 @@ jobs:
       # in test/gates/ci_coverage_quality_gate.jl burns down.
       SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
-      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
+      # Same trap as julia-ci's coverage job: probe subprocesses write .cov
+      # mid-suite, so the window must exceed the whole suite step's wall
+      # time or the threaded/GRAM probe coverage silently drops out and the
+      # per-file floors fail on files only those probes cover (this job at
+      # 1200s dropped exactly that cluster whenever the suite tail after
+      # suite 02 outgrew 20 min).
+      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "7200"
       SPACEAGORA_CAL_COVERAGE_MIN_OVERALL: "90.0"
       SPACEAGORA_CAL_COVERAGE_MIN_FILE: "70.0"
       SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"

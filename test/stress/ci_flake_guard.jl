@@ -20,9 +20,6 @@ const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
     const SimulationEngine = SpaceAGORA.SimulationEngine
 end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
-end
 
 Base.@kwdef struct FlakeCase
     name::String

@@ -9,7 +9,6 @@ const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 
 const SimulationEngine = SpaceAGORA.SimulationEngine
-const run_simulation = SimulationEngine.run_simulation
 const ODEParams = SimulationModel.ODEParams
 
 const EARTH = make_no_gram_planet(:earth)

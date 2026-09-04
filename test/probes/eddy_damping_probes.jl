@@ -11,7 +11,6 @@ const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 
 const SimulationEngine = SpaceAGORA.SimulationEngine
-const run_simulation = SimulationEngine.run_simulation
 const build_initial_conditions = SimulationEngine.build_initial_conditions
 const ODEParams = SimulationModel.ODEParams
 

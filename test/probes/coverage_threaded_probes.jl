@@ -22,9 +22,6 @@ end
 # Frame helpers called unqualified below (src/core/interfaces/reference_system.jl).
 const rtolatlong = SimulationEngine.rtolatlong
 const r_intor_p! = SimulationEngine.r_intor_p!
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
-end
 if !isdefined(@__MODULE__, :build_initial_conditions)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
 end

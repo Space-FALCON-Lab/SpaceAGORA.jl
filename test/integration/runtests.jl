@@ -49,7 +49,8 @@ const SimulationCampaigns = SpaceAGORA.SimulationCampaigns
 const RPOStationAssets = SpaceAGORA.RPOStationAssets
 
 const quat_mult = SimulationModel.quat_mult
-const run_simulation = SimulationEngine.run_simulation
+# `run_simulation` itself comes from `using SpaceAGORA` (the root export forwards
+# to SimulationEngine.run_simulation); do not rebind exported names here.
 
 # Frame-transform helpers the suites call unqualified. They are defined in
 # src/core/interfaces/reference_system.jl, which SimulationEngine carries.

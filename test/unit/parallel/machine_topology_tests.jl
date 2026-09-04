@@ -50,6 +50,15 @@ const MT = SpaceAGORA.ParallelProfiles
         @test t.memory_source in (:total, :cgroup)
         @test MT.process_rss_bytes() > 0
         @test MT.available_memory_bytes() > 0
+        # Never worse than the free list it used to report. On macOS that was
+        # the whole bug: Sys.free_memory() there sees only free pages, so the
+        # cap floored at zero and the process route was disabled outright.
+        @test MT.available_memory_bytes() >= Int(Sys.free_memory())
+        @test MT.available_memory_bytes() <= t.total_memory
+        if Sys.isapple()
+            @test MT._darwin_available_memory() > 0
+            @test MT._darwin_available_memory() >= Int(Sys.free_memory())
+        end
         @test MT.memory_worker_cap() >= 0
         # A worker never costs less than the floor unless overridden.
         @test MT.worker_memory_estimate_bytes() >= MT._WORKER_MEMORY_FLOOR_BYTES

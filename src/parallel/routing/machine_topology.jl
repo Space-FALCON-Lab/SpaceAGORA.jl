@@ -258,12 +258,61 @@ function cgroup_memory_limit()::Int
     return -1
 end
 
+# macOS has no MemAvailable, and `Sys.free_memory()` there reports only the free
+# list, which the unified buffer cache and the memory compressor hold near zero
+# by design: measured 0.50 GB "free" on an 18 GB machine carrying ~7 GB of
+# reclaimable pages. Read as "available" that floors memory_worker_cap() at zero
+# on essentially any Mac under normal use, which silently disables the process
+# route instead of sizing it -- policy_v2 declined a 4-worker pool and ran a
+# Monte Carlo campaign serially at 17.6 s where the pool did it in 6.7 s.
+#
+# vm_stat's buckets are the closest analogue of the reclaimable page cache
+# MemAvailable counts: the free list, read-ahead (speculative) pages, pages
+# explicitly marked purgeable, and the file-backed part of the inactive list.
+# Inactive is deliberately NOT taken whole. Its dirty anonymous pages can only
+# be reclaimed by compressing or swapping them, and counting those as available
+# is how a router over-provisions a pool and drives the machine into swap --
+# the failure this function's caller exists to prevent. vm_stat does not report
+# the intersection, so min(inactive, file_backed) bounds the file-backed part of
+# the inactive list without needing it.
+#
+# The buckets can overlap (speculative pages are file-backed; purgeable pages
+# may sit on either list), so this is an estimate rather than an accounting
+# identity. It is clamped to total memory above, and can never fall below the
+# free list, so it is never worse than the value it replaces.
+function _darwin_available_memory()::Int
+    try
+        pagesize = 0
+        counts = Dict{String, Int}()
+        for line in eachline(`vm_stat`)
+            header = match(r"page size of (\d+) bytes", line)
+            if header !== nothing
+                pagesize = parse(Int, header.captures[1])
+                continue
+            end
+            row = match(r"^\"?([^\":]+)\"?:\s+(\d+)\.?\s*$", line)
+            row === nothing && continue
+            counts[lowercase(row.captures[1])] = parse(Int, row.captures[2])
+        end
+        pagesize > 0 || return -1
+        at(key) = get(counts, key, 0)
+        free = at("pages free")
+        free > 0 || return -1
+        pages = free + at("pages speculative") + at("pages purgeable") +
+                min(at("pages inactive"), at("file-backed pages"))
+        return pages * pagesize
+    catch
+        return -1
+    end
+end
+
 """
     available_memory_bytes() -> Int
 
 Memory the kernel could hand out right now, in bytes: `MemAvailable` on Linux
-(which counts reclaimable page cache as available), else `Sys.free_memory()`.
-Read live.
+(which counts reclaimable page cache as available), the equivalent reclaimable
+buckets from `vm_stat` on macOS (see [`_darwin_available_memory`](@ref)), else
+`Sys.free_memory()`. Read live.
 """
 function available_memory_bytes()::Int
     if Sys.islinux() && isfile("/proc/meminfo")
@@ -275,6 +324,9 @@ function available_memory_bytes()::Int
             end
         catch
         end
+    elseif Sys.isapple()
+        bytes = _darwin_available_memory()
+        bytes > 0 && return min(bytes, _total_memory_bytes())
     end
     return Int(Sys.free_memory())
 end

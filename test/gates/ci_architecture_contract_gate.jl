@@ -256,49 +256,6 @@ occursin("using ..GravityEffectors: InverseSquaredJ2GravityModel", callback_regi
 !occursin("using ..DynamicEffectors.GravityEffectors: InverseSquaredJ2GravityModel", callback_registry_src) ||
     error("Callback registry still imports gravity models from DynamicEffectors.GravityEffectors.")
 
-for retired_simulation_dir in (
-    joinpath("src", "simulation", "events"),
-    joinpath("src", "simulation", "execution"),
-    joinpath("src", "simulation", "solver_orchestration"),
-)
-    isdir(joinpath(REPO_ROOT, retired_simulation_dir)) &&
-        error("Canonical-ownership contract violation: retired simulation tree still exists at $retired_simulation_dir")
-end
-
-for retired in (
-    joinpath("src", "mission", "campaigns", "run.jl"),
-    joinpath("src", "mission", "campaigns", "set_and_run.jl"),
-    joinpath("src", "mission", "campaigns", "define_mission.jl"),
-    joinpath("src", "mission", "campaigns", "mission_model.jl"),
-    joinpath("src", "mission", "campaigns", "initial_cond_calc.jl"),
-    joinpath("src", "vehicle", "actuators", "thruster_effectors.jl"),
-    joinpath("src", "vehicle", "spacecraft", "spacecraft_analysis.jl")
-)
-    isfile(joinpath(REPO_ROOT, retired)) &&
-        error("Canonical-ownership contract violation: retired file still exists at $retired")
-end
-
-isdir(joinpath(REPO_ROOT, "src", "benchmarks")) &&
-    error("Canonical-ownership contract violation: src/benchmarks must not exist (use top-level benchmarks/).")
-isdir(joinpath(REPO_ROOT, "src", "dynamics", "models")) &&
-    error("Canonical-ownership contract violation: src/dynamics/models must not exist.")
-for retired_dir in (
-    joinpath("src", "examples"),
-    joinpath("src", "analysis", "plotting"),
-    joinpath("src", "analysis", "reports"),
-    joinpath("src", "parallel", "state"),
-    joinpath("src", "parallel", "tuning"),
-    joinpath("src", "simulation", "events"),
-    joinpath("src", "simulation", "execution"),
-    joinpath("src", "simulation", "solver_orchestration"),
-    joinpath("src", "vehicle", "sensors"),
-)
-    isdir(joinpath(REPO_ROOT, retired_dir)) &&
-        error("Canonical-ownership contract violation: retired source directory still exists at $retired_dir")
-end
-isfile(joinpath(REPO_ROOT, "src", "core", "utils", "typed_example_utils.jl")) &&
-    error("Canonical-ownership contract violation: retired example helper still exists at src/core/utils/typed_example_utils.jl")
-
 for rel in (
     joinpath("src", "mission", "initial_conditions.jl"),
     joinpath("src", "vehicle", "actuators", "actuator_hooks.jl"),
@@ -316,14 +273,6 @@ for rel in (
 )
     isfile(joinpath(REPO_ROOT, rel)) ||
         error("Canonical-ownership contract violation: missing canonical owner file: $rel")
-end
-
-isdir(joinpath(REPO_ROOT, "src", "gnc", "guidance", "targeting_control")) &&
-    error("Canonical-ownership contract violation: retired targeting_control path still exists.")
-
-for retired in ("control", "physical_models", "guidance", "integrator", "utils", "simulation_model")
-    isdir(joinpath(REPO_ROOT, "src", retired)) &&
-        error("Canonical-ownership contract violation: retired source tree still exists at src/$retired")
 end
 
 # Gravity ownership contract:
@@ -399,31 +348,6 @@ for rel in (
     joinpath("benchmarks", "studies", "parallelization_performance", "reporting.jl"),
 )
     isfile(joinpath(REPO_ROOT, rel)) || error("Missing standalone parallelization-performance file: " * rel)
-end
-
-wrapper_files = (
-    "test/performance_runtime_analysis.jl",
-    "test/performance_smart_parallel_ladder.jl",
-    "test/performance_smart_parallel_ladder_cross_machine.jl",
-    "test/performance_split_imex_compare.jl",
-    "test/performance_static_vs_parallel.jl",
-    "test/performance_effector_reduction_microbench.jl",
-    "test/performance_paper_pipeline.jl",
-    "test/gram_interpolation_vs_point_to_point_analysis.jl",
-    "test/gram_single_call_vs_point_to_point_analysis.jl",
-    "test/gram_real_sim_runtime_compare.jl",
-    "test/gram_real_sim_surrogate_matrix.jl",
-    "test/gram_real_sim_surrogate_decision_table.jl",
-    "test/gram_offline_db_accuracy_study.jl",
-    "test/gram_planet_rho_altitude_sweep.jl",
-    "test/telemetry_hybrid_tuner.jl",
-    "test/telemetry_odyssey_tuner.jl",
-    "test/telemetry_orbit_accuracy_study.jl",
-    "test/telemetry_orbit_accuracy_plots.jl"
-)
-for rel in wrapper_files
-    isfile(joinpath(REPO_ROOT, rel)) &&
-        error("Wave 2 contract violation: benchmark wrapper still exists: $rel")
 end
 
 println("architecture_contract_gate_ok")

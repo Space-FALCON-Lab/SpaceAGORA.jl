@@ -33,4 +33,23 @@ for rel in THIN_ENTRY_PATHS
     occursin(r"^(Base\.@kwdef\s+)?struct\s"m, src) && error("Thin entry file must not own struct definitions: $rel")
 end
 
+# Benchmark launchers must stay thin forwarders to their split implementations
+# (moved here from the retired ci_benchmark_wrapper_parity_gate).
+let launcher = joinpath(REPO_ROOT, "benchmarks", "studies", "performance_runtime_analysis.jl")
+    src = read(launcher, String)
+    (
+        occursin(joinpath("performance_runtime_analysis", "main.jl"), src) ||
+        occursin("\"performance_runtime_analysis\", \"main.jl\"", src)
+    ) || error("Runtime-analysis canonical launcher does not include split main.jl")
+    count(==('\n'), src) + 1 <= 10 || error("Runtime-analysis canonical launcher is not thin (expected <=10 lines)")
+end
+let launcher = joinpath(REPO_ROOT, "benchmarks", "studies", "parallelization_performance.jl")
+    src = read(launcher, String)
+    (
+        occursin(joinpath("parallelization_performance", "execution.jl"), src) ||
+        occursin("\"parallelization_performance\", \"execution.jl\"", src)
+    ) || error("Parallelization-performance canonical launcher does not include standalone execution.jl")
+    count(==('\n'), src) + 1 <= 20 || error("Parallelization-performance canonical launcher is not thin (expected <=20 lines)")
+end
+
 println("thin_entry_files_gate_ok")

@@ -200,3 +200,73 @@ What the production-runner probe found on the way, each fixed in f53b821a:
 - The process pool warms over several campaigns on a fresh case, not one:
   the pinned-process arm read 0.66, 0.60, 0.28 s over its first three
   campaigns on independent_1sat_1hr.
+
+## 8. Paper benchmark with R6 (2026-09-03/04, outdirs 20260903_171907 and 20260903_214827)
+
+Phases B8, B13 (first outdir, commit 7066ce24) and B12, B7, B9, B10, B11,
+B14 (second outdir, commit 91af1d59), `--process-workers=12`, three repeats
+per point. The first attempt at B12 found R6 replaying a cached "heuristic
+won" verdict on interact_256sat_1hr (3.61 s against 3.09 s for R4/R5, which
+swept and pinned the batch plan): the sweep's verdict on that shape is a
+known coin flip and V2's cached-verdict rule had pinned the losing side.
+Fixed in 91af1d59 -- a long solve honours the cached heuristic verdict only
+after `SPACEAGORA_RHS_CALIBRATE_HEURISTIC_VOTES` (3) consecutive heuristic
+verdicts, and a pinned plan resets the count -- and B12 onwards re-run from a
+clean calibration store. B8 and B13 never reach calibration and stand.
+
+Per-phase speedup of each adaptive profile against the best static route at
+the same launch point (best static median / adaptive median; points with a
+serial baseline under 3 s excluded; `scripts/plot_adaptive_vs_best_static.py`):
+
+| phase | points | R4 min / median | R5 min / median | R6 min / median |
+|---|---|---|---|---|
+| B7 heavy thread ladder | 24 | 0.75 / 0.99 | 0.70 / 1.00 | 0.91 / 1.02 |
+| B8 heavy MC process throughput | 8 | -- | 0.96 / 0.97 | 0.92 / 1.00 |
+| B9 spacecraft count | 3 | 0.79 / 0.80 | 0.72 / 0.78 | 0.95 / 0.98 |
+| B10 atmosphere / GRAM | 12 | 0.92 / 0.97 | 0.93 / 0.97 | 0.96 / 0.99 |
+| B11 model count | 12 | 0.95 / 1.19 | 0.96 / 1.18 | 0.98 / 1.21 |
+| B12 interacting vs independent | 9 | 0.57 / 1.01 | 0.56 / 1.04 | 0.97 / 1.02 |
+| B13 budget split | 6 | 0.36 / 0.96 | 0.36 / 0.94 | 0.96 / 0.99 |
+| B14 duration / cadence | 9 | 0.85 / 0.98 | 0.95 / 0.97 | 0.93 / 0.98 |
+
+R6's worst point anywhere is 0.91 of the best static route (B7,
+heavy_1024sat_l50_6hr at 4 threads, a 2.33 s solve against 2.13 s). R5's
+worst points are 0.36 (B13, process-heavy splits, where it routes to
+threads) and 0.56 (B12 independent_1sat_1hr, same cause). Head to head at
+the 83 above-floor points both ran: R6 faster than R5 by more than 5% at 17,
+slower at 3, within 5% at 63; median R5/R6 = 1.019.
+
+The consolidated regret table (`scripts/make_router_regret_table.py` over
+both raw CSVs, 74 workload/thread rows): R5 faster than best static at 23,
+within 2% at 16, slower at 35; R6 faster at 24, within 2% at 31, slower at 19.
+
+Where the gain comes from, by phase:
+
+- B12 independent, B13, B8: the core-budget default sends Monte Carlo to
+  processes. R6 matches the pinned process route within 3% at every point;
+  R5 pays 40-64% wherever the process route wins.
+- B7 (heavy_1024sat_l50_6hr, heavy_4096sat_l50_1hr), B9, B10 GRAM, B14: the
+  sweep returns the heuristic on every run. R6 takes the cached verdict after
+  three votes and skips the sweep (rhs_plan_source=cache); R4/R5 re-sweep
+  every solve and pay 15-29% on the gravity cases, 3-4% on the 20 s GRAM
+  solves.
+- B7 (fullstack, coupled 6-DOF), B11, B12 interacting, B10 exponential: the
+  sweep pins a plan and R6 sweeps like R4/R5 (the votes never reach three);
+  the three profiles tie within 6% and beat every static route by 30-45%.
+- B11 actuated, B14 cadence 1 s: nothing to route (serial spine); all
+  profiles within 2-7% of the plain threads route.
+
+R5's 25% regret on the live GRAM workload quoted in the review does not
+reproduce here (3-4%); the number came from a harness state that no longer
+exists. Live GRAM scales ~2x at 8 threads and is flat at 12 for every route
+alike (GRAM's global lock).
+
+Not yet covered, queued behind the learning-mode probes
+(`scratchpad/tests_after_benchmark/followup_probes.sh`): B4 (cheap-sample
+MC, where the unconditional process route could lose), B5, B6 (below-floor
+control), the new B15 (nested campaigns, mcgrid_ 128 spacecraft-hour rungs
+over B13's budget grid, commit f199f826), cold-cache trajectories of R6 alone
+(`scripts/r6_cold_cache_trajectory.jl`), and production-runner probes on the
+nested cases. reporting.jl now carries policy_v2 in its adaptive-mode set,
+so future runs' own reports include R6; the 20260903_214827 report predates
+that and omits it.

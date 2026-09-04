@@ -272,6 +272,24 @@ end
         !f.gram_static_grid_enabled
 end
 
+"""
+    effective_process_workers(features, tuning) -> Int
+
+Workers the process route may actually use for this workload: the tuning cap,
+and under memory-aware routing (V2) no more than fit in memory beside this
+process, with native GRAM's per-spacecraft footprint added to each worker's
+estimate. `0` or `1` means the route is not worth offering.
+"""
+function effective_process_workers(f::OuterRouteFeatures, t::OuterRouteTuning)::Int
+    t.memory_aware || return t.process_max_workers
+    extra = _is_native_gram_point_density(f) ? native_gram_worker_extra_bytes(f.n_sats) : 0
+    return min(t.process_max_workers, memory_worker_cap(extra_per_worker=extra))
+end
+
+@inline function _process_route_fits(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
+    return !t.memory_aware || effective_process_workers(f, t) >= 2
+end
+
 @inline function _feature_heavy_for_process(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
     if _is_native_gram_point_density(f)
         # Native GRAM point calls are lock-limited; prefer outer process isolation.
@@ -379,7 +397,7 @@ end
     # winning. _mc_process_worth_exploring still applies: a campaign too small
     # to amortise a dispatch round stays on threads on any machine.
     class_ok = machine_class in (:large, :medium) || t.mc_route_by_core_budget
-    process_affordable = class_ok && _mc_process_worth_exploring(f, t)
+    process_affordable = class_ok && _mc_process_worth_exploring(f, t) && _process_route_fits(f, t)
     if !threads_available
         return process_affordable ? :process : :none
     end
@@ -408,8 +426,9 @@ end
     # the wide-pool points; exploration could not rescue it because the guard
     # in _route_is_proven stops once threads beats serial, before process is
     # ever tried (see must_measure).
+    # The worker count compared is the one memory allows, not the core cap.
     if t.mc_route_by_core_budget && process_affordable &&
-       t.process_max_workers >= max(1, t.outer_thread_budget)
+       effective_process_workers(f, t) >= max(1, t.outer_thread_budget)
         return :process
     end
     return :threads
@@ -508,9 +527,10 @@ function outer_route_candidates(
     allow_process = if lowercase(strip(f.category)) == "montecarlo"
         f.montecarlo_samples > 1 &&
             (machine_class in (:large, :medium) || tuning.mc_route_by_core_budget) &&
-            _mc_process_worth_exploring(f, tuning)
+            _mc_process_worth_exploring(f, tuning) &&
+            _process_route_fits(f, tuning)
     else
-        _feature_heavy_for_process(f, tuning)
+        _feature_heavy_for_process(f, tuning) && _process_route_fits(f, tuning)
     end
     if allow_process
         push!(candidates, :process)
@@ -913,11 +933,12 @@ function outer_split_candidates(
     route::Symbol;
     budget::Int,
     n_units::Int,
-    tuning::OuterRouteTuning=OuterRouteTuning()
+    tuning::OuterRouteTuning=OuterRouteTuning(),
+    max_process_workers::Int=tuning.process_max_workers
 )::Vector{Int}
     units = max(1, n_units)
     max_workers = if route === :process
-        max(1, min(units, tuning.process_max_workers))
+        max(1, min(units, max_process_workers))
     elseif route === :threads
         max(1, min(units, max(1, budget)))
     else
@@ -976,9 +997,11 @@ function select_outer_split!(
     route::Symbol,
     budget::Int,
     n_units::Int,
-    tuning::OuterRouteTuning=OuterRouteTuning()
+    tuning::OuterRouteTuning=OuterRouteTuning(),
+    max_process_workers::Int=tuning.process_max_workers
 )::Int
-    candidates = outer_split_candidates(route; budget=budget, n_units=n_units, tuning=tuning)
+    candidates = outer_split_candidates(route; budget=budget, n_units=n_units, tuning=tuning,
+                                        max_process_workers=max_process_workers)
     length(candidates) <= 1 && return isempty(candidates) ? 1 : candidates[1]
     widest = candidates[end]
     tuning.adaptive_enabled || return widest

@@ -86,7 +86,7 @@ const PPB_PREVIEW_WARMUP      = 1
 # the phases exist to stay above. Smoke-test them with an explicit
 # --phases=B10 --threads=1 run against the `test` profile instead.
 const PPB_PREVIEW_SKIP_PHASES =
-    Set{String}(["B7", "B8", "B9", "B10", "B11", "B12", "B13", "B14"])
+    Set{String}(["B7", "B8", "B9", "B10", "B11", "B12", "B13", "B14", "B15"])
 
 function _ppb_preview_phase(phase::PPBPhase)::PPBPhase
     cases = filter(c -> _ppb_n_sat(c) <= PPB_PREVIEW_MAX_N_SAT, phase.cases)
@@ -694,6 +694,43 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         repeats     = 3,
         warmup      = 2,
         thread_mode = :router_ladder,
+    ),
+
+    PPBPhase(
+        id    = "B15",
+        label = "Router Evaluation — Joint Routing on Nested Monte Carlo Constellations",
+        # Axis: aspect ratio of a nested campaign at fixed total work. Every
+        # other phase leaves one routing axis empty -- the Monte Carlo phases
+        # (B4, B8, B12, B13) carry one spacecraft per sample and the
+        # constellation phases carry one sample -- so in all of them the route
+        # follows from the workload shape and no trade between the outer
+        # (sample) and inner (spacecraft) axes is ever made. The mcgrid_ rungs
+        # put work on both at once: S samples of N spacecraft with N*S held at
+        # 128 spacecraft-hours, so a router that is genuinely choosing should
+        # answer differently at 32x4 than at 8x16. This is also the only regime
+        # in which the in-campaign split race has anything to race.
+        #
+        # The 128 spacecraft-hour grid rather than the 1024 one: ~9 s serial per
+        # rung against ~74 s, and the budget grid below multiplies each rung by
+        # six splits and five modes, which puts the larger grid past an
+        # overnight slot. The rungs supply their own sample counts (see
+        # execution.jl's joint_routing handling); the mc_samples entry here is
+        # a placeholder that the harness ignores for this family.
+        cases = [
+            "mcgrid_32sat_4mc",
+            "mcgrid_16sat_8mc",
+            "mcgrid_8sat_16mc",
+        ],
+        parity_cases = [
+            "mcgrid_16sat_8mc",
+        ],
+        modes        = ["outer_process", "outer_threads", "outer_inner_adaptive", "full_smart", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 2,
+        # Same fixed-budget split grid as B13, for the same reason: the total is
+        # held at the usable core count and only where it is spent varies.
+        budget_grid  = [(1, 12), (2, 6), (3, 4), (4, 3), (6, 2), (12, 1)],
     ),
 
 ]

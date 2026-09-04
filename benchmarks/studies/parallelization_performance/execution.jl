@@ -649,7 +649,16 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     scratch = joinpath(outdir, "worker_rows")
     mkpath(scratch)
     cases = ppc_resolve_cases(cfg.cases)
-    parity_cases = ppc_resolve_cases(cfg.parity_cases)
+    # An empty parity list means "no parity", not "every case". ppc_resolve_cases
+    # expands an empty request to the whole sorted catalog, which is what `cases`
+    # wants -- ppc_parse_cli fills its profile default in first, so the controller
+    # never sees an empty one -- but not what parity wants: a caller that builds a
+    # PPCConfig directly has no other way to say "none". ppb_quick_phases does
+    # exactly that, declaring parity_cases = String[] on all three of its phases,
+    # and read literally a --quick run queued parity for every catalog case
+    # against each non-serial mode. It stalled on atmo256_gram_live_10min, whose
+    # parity point is two outer_tasks=1 solves of live native GRAM at N=256.
+    parity_cases = isempty(cfg.parity_cases) ? String[] : ppc_resolve_cases(cfg.parity_cases)
     modes = ppc_mode_specs()
     unknown_modes = [m for m in cfg.modes if !haskey(modes, m)]
     isempty(unknown_modes) || throw(ArgumentError("Unknown mode(s): $(join(unknown_modes, ", "))"))

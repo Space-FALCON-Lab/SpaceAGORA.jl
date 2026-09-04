@@ -400,14 +400,13 @@
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "off",
         "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1"
     ) do
-        @test control_use_threads(control_thruster, 8, false) == false
+        @test control_use_threads(control_thruster, 8) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1"
     ) do
-        @test control_use_threads(control_thruster, 8, false) == has_worker_threads
-        @test control_use_threads(control_thruster, 8, true) == false
+        @test control_use_threads(control_thruster, 8) == has_worker_threads
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -416,7 +415,7 @@
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
     ) do
-        @test control_use_threads(control_thruster, 8, false) == false
+        @test control_use_threads(control_thruster, 8) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -425,7 +424,7 @@
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
-        @test control_use_threads(control_thruster, 8, false) == has_worker_threads
+        @test control_use_threads(control_thruster, 8) == has_worker_threads
     end
 
     n_parallel_sats = 4

@@ -25,39 +25,30 @@ end
 @inline control_requires_periodic_callback(::Any) = true
 @inline control_requires_periodic_callback(::BaseThrusterModel) = false
 
-@inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int, use_invokelatest::Bool)
+@inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int)
     @inbounds for guidance_model in integrator.p.args.guidance_model.guidance_effectors
-        if use_invokelatest
-            Base.invokelatest(calcGuidanceEffect!, guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
-        else
-            calcGuidanceEffect!(guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
-        end
+        calcGuidanceEffect!(guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
     end
     return nothing
 end
 
-@inline function _schedule_thruster_control!(integrator, control_model::BaseThrusterModel, sat_idx::Int, use_invokelatest::Bool)
-    _run_guidance_for_thruster_schedule!(integrator, sat_idx, use_invokelatest)
-    if use_invokelatest
-        Base.invokelatest(calcControlEffect!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
-    else
-        calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
-    end
+@inline function _schedule_thruster_control!(integrator, control_model::BaseThrusterModel, sat_idx::Int)
+    _run_guidance_for_thruster_schedule!(integrator, sat_idx)
+    calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
     _register_control_tstops!(integrator, control_model, sat_idx)
     return nothing
 end
 
 function schedule_event_driven_thruster_controls!(integrator, sat_idx::Int)
-    use_invokelatest = callback_use_invokelatest()
     @inbounds for control_model in integrator.p.args.control_model.control_effectors
         if control_model isa BaseThrusterModel
-            _schedule_thruster_control!(integrator, control_model, sat_idx, use_invokelatest)
+            _schedule_thruster_control!(integrator, control_model, sat_idx)
         end
     end
     return nothing
 end
 
-function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats::Int, args::SimulationConfiguration, use_invokelatest::Bool)
+function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats::Int, args::SimulationConfiguration)
     n_slots = length(control_model.thrust)
     if n_slots != num_sats
         throw(ArgumentError(
@@ -68,7 +59,7 @@ function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats
 
     function schedule_all!(integrator)
         @inbounds for sat_idx in 1:num_sats
-            _schedule_thruster_control!(integrator, control_model, sat_idx, use_invokelatest)
+            _schedule_thruster_control!(integrator, control_model, sat_idx)
         end
         return nothing
     end
@@ -85,7 +76,6 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
     # Perform the control effects' calculations at specific rates given by the control_rates field in the ControlModel
     control_models = args.control_model.control_effectors
     control_rates = args.control_model.control_rates
-    use_invokelatest = callback_use_invokelatest()
     callbacks = Any[]
     for i in eachindex(control_models)
         control_model = control_models[i]
@@ -100,31 +90,20 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
             end
         end
         if !control_requires_periodic_callback(control_model)
-            append!(callbacks, _thruster_schedule_callbacks(control_model, num_sats, args, use_invokelatest))
+            append!(callbacks, _thruster_schedule_callbacks(control_model, num_sats, args))
             continue
         end
         # Each control effector callback runs at its own rate and updates
         # all spacecraft states. The spacecraft index is passed explicitly
         # to avoid conflating effector-index with spacecraft-index.
-        apply_control! = if use_invokelatest
-            # Dev mode: keep hot-reload workflows free of world-age errors.
-            (integrator, sat_idx) -> begin
-                Base.invokelatest(calcControlEffect!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
-                if control_model isa BaseThrusterModel
-                    _register_control_tstops!(integrator, control_model, sat_idx)
-                end
-            end
-        else
-            # Production mode: direct dispatch avoids invokelatest overhead.
-            (integrator, sat_idx) -> begin
-                calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
-                if control_model isa BaseThrusterModel
-                    _register_control_tstops!(integrator, control_model, sat_idx)
-                end
+        apply_control! = (integrator, sat_idx) -> begin
+            calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+            if control_model isa BaseThrusterModel
+                _register_control_tstops!(integrator, control_model, sat_idx)
             end
         end
         control_func = (integrator) -> begin
-            decision = _control_callback_thread_decision(integrator.p, control_model, num_sats, use_invokelatest)
+            decision = _control_callback_thread_decision(integrator.p, control_model, num_sats)
             use_threads = decision.use_threads
             started_ns = time_ns()
             if use_threads

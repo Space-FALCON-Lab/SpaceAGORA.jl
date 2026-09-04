@@ -21,18 +21,6 @@ end
     return _parse_bool_env("SPACEAGORA_DENSITY_FREEZE_PER_STEP", false)
 end
 
-"""
-    _reset_cached_env_flags!()
-
-Clear all memoised ENV flag values so they are re-read from `ENV` on the next
-call.  Call this after modifying `ENV` in tests or interactive sessions.
-"""
-function _reset_cached_env_flags!()
-    # Callback ENV knobs are read directly so withenv-scoped changes take effect
-    # immediately. Keep this hook for compatibility with tests and REPL usage.
-    return nothing
-end
-
 @inline function _gram_entry_target_mode()::Symbol
     mode = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_ENTRY_TARGET_MODE", "allen_eggers")))
     if mode in ("off", "none", "0", "false", "no")
@@ -306,14 +294,11 @@ end
 @inline control_model_threadsafe(::Any)::Bool = false
 @inline control_model_threadsafe(::BaseThrusterModel)::Bool = true
 
-@inline function _control_callback_thread_decision(control_model, num_sats::Int, use_invokelatest::Bool)
-    return _control_callback_thread_decision(nothing, control_model, num_sats, use_invokelatest)
+@inline function _control_callback_thread_decision(control_model, num_sats::Int)
+    return _control_callback_thread_decision(nothing, control_model, num_sats)
 end
 
-@inline function _control_callback_thread_decision(p, control_model, num_sats::Int, use_invokelatest::Bool)
-    if use_invokelatest
-        return (use_threads=false, allotment=1, mode=:off, policy_applied=false)
-    end
+@inline function _control_callback_thread_decision(p, control_model, num_sats::Int)
     env = _callback_env_config(p)
     penv = _policy_env_config(p)
     mode = env.control_parallel_mode
@@ -336,8 +321,8 @@ end
     return (use_threads=policy.use_threads, allotment=policy.allotment, mode=mode, policy_applied=true)
 end
 
-@inline function _control_callback_use_threads(control_model, num_sats::Int, use_invokelatest::Bool)::Bool
-    return _control_callback_thread_decision(control_model, num_sats, use_invokelatest).use_threads
+@inline function _control_callback_use_threads(control_model, num_sats::Int)::Bool
+    return _control_callback_thread_decision(control_model, num_sats).use_threads
 end
 
 @inline function _thermal_callback_thread_decision(num_sats::Int)

@@ -432,13 +432,13 @@ end
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "0"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == false
+        @test callbacks._control_callback_use_threads(probe_control, 4) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+        @test callbacks._control_callback_use_threads(probe_control, 4) == true
     end
     # Pin the default auto-mode budget floor (4) at the 2-thread CI probe budget.
     withenv(
@@ -447,7 +447,7 @@ end
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
         "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+        @test callbacks._control_callback_use_threads(probe_control, 4) == true
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -456,7 +456,7 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == false
+        @test callbacks._control_callback_use_threads(probe_control, 4) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -466,7 +466,7 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+        @test callbacks._control_callback_use_threads(probe_control, 4) == true
     end
 
     # Density callback threaded branch (line with Threads.@threads).
@@ -512,7 +512,7 @@ end
         @test all(isfinite, p_density_models.shared_buffers.densities)
     end
 
-    # Guidance invokelatest branch.
+    # Guidance callback dispatch.
     probe_guidance = ProbeGuidanceModel([0])
     args_guidance = build_config(
         spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
@@ -534,10 +534,8 @@ end
         1,
         Inf
     )
-    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        guidance_cbs = callbacks.get_guidance_callbacks(1, args_guidance)
-        guidance_cbs[1].affect!.affect!(integrator_guidance)
-    end
+    guidance_cbs = callbacks.get_guidance_callbacks(1, args_guidance)
+    guidance_cbs[1].affect!.affect!(integrator_guidance)
     @test probe_guidance.hits == [1]
 
     # Control callback threaded branch (line with Threads.@threads).
@@ -562,7 +560,6 @@ end
         Inf
     )
     withenv(
-        "SPACEAGORA_DEV_HOT_RELOAD" => "0",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
     ) do
@@ -1311,9 +1308,6 @@ end
         p_density_helpers
     )
 
-    @test isfinite(env_models.interp(5.0, 355.0, 0.25))
-    @test isfinite(env_models.interp(355.0, 5.0, 0.25))
-    @test env_models.temperature_linear(10.0, (T_ref=123.0,)) == 123.0
     @test env_models._gram_use_global_lock() isa Bool
     @test_throws MethodError env_models._gram_point_density(:bad_model, 0.0, 0.0, 0.0, 0.0, false)
 

@@ -252,10 +252,7 @@
     )
     navigation_cbs[1].affect!.affect!(integrator_navigation)
     @test counting_navigation.hits == [1]
-    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        navigation_cbs_hot = SimulationModel.SimulationCallbacks.get_navigation_callbacks(1, args_navigation)
-        navigation_cbs_hot[1].affect!.affect!(integrator_navigation)
-    end
+    navigation_cbs[1].affect!.affect!(integrator_navigation)
     @test counting_navigation.hits == [2]
 
     counting_guidance = CountingGuidanceModel([0, 0])
@@ -297,10 +294,7 @@
     )
     guidance_cbs[1].affect!.affect!(integrator_guidance)
     @test counting_guidance.hits == [1, 1]
-    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        guidance_cbs_hot = SimulationModel.SimulationCallbacks.get_guidance_callbacks(2, args_guidance)
-        guidance_cbs_hot[1].affect!.affect!(integrator_guidance)
-    end
+    guidance_cbs[1].affect!.affect!(integrator_guidance)
     @test counting_guidance.hits == [2, 2]
 
     control_model = CountingControlModel([0, 0])
@@ -329,10 +323,8 @@
         1,
         Inf
     )
-    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        control_cbs = SimulationModel.SimulationCallbacks.get_control_callbacks(2, args_control)
-        control_cbs[1].affect!.affect!(integrator_control)
-    end
+    control_cbs = SimulationModel.SimulationCallbacks.get_control_callbacks(2, args_control)
+    control_cbs[1].affect!.affect!(integrator_control)
     @test control_model.hits == [1, 1]
 
     requires_density = SimulationModel.SimulationCallbacks._requires_density_callback
@@ -465,7 +457,6 @@
         Inf
     )
     withenv(
-        "SPACEAGORA_DEV_HOT_RELOAD" => "0",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
     ) do

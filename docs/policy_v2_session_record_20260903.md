@@ -63,7 +63,7 @@ inner_only route was best at both thread counts.
 
 | Mechanism | File | Under V2 |
 |---|---|---|
-| Monte Carlo default | `routing/outer_route_selection.jl` `_priority_outer_route_montecarlo` | process when `process_max_workers >= outer_thread_budget` and the campaign clears the size threshold; else threads |
+| Monte Carlo default | `routing/outer_route_selection.jl` `_priority_outer_route_montecarlo` | process when `process_max_workers >= outer_thread_budget` and the campaign clears the size threshold, on any machine class (the shipped `:medium`/`:large` gate is dropped under V2, 2026-09-04); else threads |
 | Process worker cap | `routing/outer_route_state.jl` `_outer_process_worker_cap` | `usable_core_budget()` capped by `SPACEAGORA_PERF_PROCS` when set |
 | Exploration guard | `_any_candidate_proven` + `must_measure` | forced exploration stops when ANY arm is proven, but threads and process must both have been measured; serial never required |
 | Calibration cache | `engine/rhs_calibration.jl` `_rhs_calib_cached_verdict` | a cached heuristic verdict is honoured regardless of solve length; a cached PLAN still re-sweeps on long solves |
@@ -270,3 +270,16 @@ over B13's budget grid, commit f199f826), cold-cache trajectories of R6 alone
 nested cases. reporting.jl now carries policy_v2 in its adaptive-mode set,
 so future runs' own reports include R6; the 20260903_214827 report predates
 that and omits it.
+
+## 9. Machine-class gate removed from the V2 Monte Carlo rule (2026-09-04)
+
+Reported from an M3 MacBook Pro: Monte Carlo campaigns stayed on threads
+although the process route was faster. Cause: `_priority_outer_route_montecarlo`
+and `outer_route_candidates` only ever afforded the process route on
+`:medium`/`:large` machines (12 and 24 usable cores), so below 12 cores the
+V2 core-budget comparison was never reached and the process arm was not even
+a bandit candidate. Under V2 the class gate is now bypassed and the
+worker-versus-thread comparison decides alone; the shipped rule is unchanged.
+The campaign-size threshold (16 samples or a 3600 s arc) still applies
+everywhere. Unit tests cover both classes; the suite re-run is queued behind
+the follow-up benchmarks.

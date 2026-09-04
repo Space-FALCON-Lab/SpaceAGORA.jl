@@ -179,16 +179,31 @@ end
                                        process_max_workers = w, outer_thread_budget = t)
         shipped = PPr.OuterRouteTuning(mc_route_by_core_budget = false,
                                        process_max_workers = w, outer_thread_budget = t)
-        @test PPr.default_outer_route(feat; tuning = revised, machine_class = :medium,
-                                      threads_available = t > 1) === expect
+        for class in (:medium, :small)
+            # The rule is the same on every machine class under V2: the class
+            # thresholds were a proxy for the core comparison, not a separate
+            # condition.
+            @test PPr.default_outer_route(feat; tuning = revised, machine_class = class,
+                                          threads_available = t > 1) === expect
+        end
         @test PPr.default_outer_route(feat; tuning = shipped, machine_class = :medium,
                                       threads_available = t > 1) === (t > 1 ? :threads : :process)
     end
     wide = PPr.OuterRouteTuning(mc_route_by_core_budget = true,
                                 process_max_workers = 12, outer_thread_budget = 4)
-    # A small machine never affords the process route.
+    narrow = PPr.OuterRouteTuning(mc_route_by_core_budget = false,
+                                  process_max_workers = 12, outer_thread_budget = 4)
+    # A small machine with a wide pool takes the process route under V2, and
+    # the process arm is a candidate there; the shipped rule still never
+    # affords it below :medium.
     @test PPr.default_outer_route(feat; tuning = wide, machine_class = :small,
+                                  threads_available = true) === :process
+    @test :process in PPr.outer_route_candidates(feat; tuning = wide, machine_class = :small,
+                                                 threads_available = true)
+    @test PPr.default_outer_route(feat; tuning = narrow, machine_class = :small,
                                   threads_available = true) === :threads
+    @test !(:process in PPr.outer_route_candidates(feat; tuning = narrow, machine_class = :small,
+                                                   threads_available = true))
     # Nor does a campaign below the size threshold.
     tiny = SCamp.campaign_route_features(samples = 8, n_sats = 1,
                                          density_family = "exponential", mission_time_s = 600.0)

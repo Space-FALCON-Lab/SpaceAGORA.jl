@@ -768,6 +768,22 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
 
 const PPB_QUICK_WORKER_GB = 3.0
 
+# Default for --process-workers when neither the flag nor the env sets it: the
+# machine's physical cores, bounded by three quarters of its memory at 3 GB per
+# worker, and by 32. It used to be a flat 32, which on an 18 GB laptop let B4's
+# and B8's worker ladders provision pools the machine could not hold; every
+# worker is a Julia process with SpaceAGORA and SPICE resident, and a GRAM
+# density-service worker adds its atmosphere tables on top.
+function _ppb_default_process_workers()::Int
+    cores = _ppc_physical_core_count()
+    mem_cap = try
+        max(1, floor(Int, 0.75 * Sys.total_memory() / (PPB_QUICK_WORKER_GB * 2^30)))
+    catch
+        cores
+    end
+    return max(1, min(32, cores, mem_cap))
+end
+
 function _ppb_quick_worker_cap(ppb::PPBConfig, cores::Int)::Int
     mem_cap = try
         max(1, floor(Int, 0.75 * Sys.total_memory() / (PPB_QUICK_WORKER_GB * 2^30)))
@@ -834,7 +850,9 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     phases          = _ppc_csv(get(ENV, "SPACEAGORA_PPB_PHASES", ""))
     outdir          = get(ENV, "SPACEAGORA_PPB_OUTDIR", PPB_DEFAULT_OUTDIR)
     threads         = _ppc_int_csv(get(ENV, "SPACEAGORA_PPB_THREADS", ""))
-    process_workers = parse(Int, get(ENV, "SPACEAGORA_PPB_PROCESS_WORKERS", "32"))
+    process_workers = let raw = strip(get(ENV, "SPACEAGORA_PPB_PROCESS_WORKERS", ""))
+        isempty(raw) ? _ppb_default_process_workers() : parse(Int, raw)
+    end
     mc_samples_max  = let raw = strip(get(ENV, "SPACEAGORA_PPB_MC_SAMPLES_MAX", ""))
         isempty(raw) ? nothing : parse(Int, raw)
     end

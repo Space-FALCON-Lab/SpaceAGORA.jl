@@ -42,6 +42,38 @@ const MT = SpaceAGORA.ParallelProfiles
         @test MT.usable_core_budget() == t.usable_cores
     end
 
+    @testset "memory" begin
+        t = MT.refresh_machine_topology!()
+        @test t.total_memory > 0
+        @test 0 < t.usable_memory <= t.total_memory
+        @test t.cgroup_memory == -1 || t.cgroup_memory > 0
+        @test t.memory_source in (:total, :cgroup)
+        @test MT.process_rss_bytes() > 0
+        @test MT.available_memory_bytes() > 0
+        @test MT.memory_worker_cap() >= 0
+        # A worker never costs less than the floor unless overridden.
+        @test MT.worker_memory_estimate_bytes() >= MT._WORKER_MEMORY_FLOOR_BYTES
+        @test MT.worker_memory_estimate_bytes(extra = 7) == MT.worker_memory_estimate_bytes() + 7
+        withenv("SPACEAGORA_MEMORY_BUDGET_GB" => "1024", "SPACEAGORA_PERF_WORKER_MEMORY_GB" => "0.001") do
+            @test MT.memory_budget_bytes() == 1024 * 2^30
+            @test MT.memory_worker_cap() >= 2
+        end
+        # A budget smaller than this process's own footprint fits no worker.
+        withenv("SPACEAGORA_MEMORY_BUDGET_GB" => "0.001") do
+            @test MT.memory_worker_cap() == 0
+        end
+        for bad in ("0", "-1", "abc")
+            withenv("SPACEAGORA_MEMORY_BUDGET_GB" => bad) do
+                @test_throws ArgumentError MT.memory_budget_bytes()
+            end
+        end
+        @test MT.native_gram_worker_extra_bytes(256) == 256 * MT._GRAM_SAT_MEMORY_BYTES
+        withenv("SPACEAGORA_GRAM_SAT_MEMORY_MB" => "0") do
+            @test MT.native_gram_worker_extra_bytes(256) == 0
+        end
+        @test MT.native_gram_worker_extra_bytes(0) == 0
+    end
+
     @testset "snapshot is cached" begin
         a = MT.machine_topology()
         b = MT.machine_topology()

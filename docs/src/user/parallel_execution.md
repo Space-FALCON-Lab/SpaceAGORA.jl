@@ -60,9 +60,17 @@ Under the switch:
 
 - A Monte Carlo campaign routes to whichever outer axis has more cores:
   process workers when the pool can match or exceed the thread count
-  (`SPACEAGORA_PERF_PROCS` caps the pool), threads otherwise. The router does
-  not spend campaigns trying the other route; it switches only on history it
-  already holds.
+  (`SPACEAGORA_PERF_PROCS` caps the pool), threads otherwise, on any machine
+  size. The router does not spend campaigns trying the other route; it
+  switches only on history it already holds.
+- The process pool is sized by memory as well as cores. Each worker is priced
+  at the coordinator's own resident set (never under 1.5 GB) plus 90 MB per
+  spacecraft for native GRAM, against the machine's memory (or its cgroup
+  limit) less a reserve and less what the coordinator already holds; the
+  route is offered only when at least two workers fit, and the split ladder
+  stops at the number that fit. `SPACEAGORA_MEMORY_BUDGET_GB`,
+  `SPACEAGORA_PERF_WORKER_MEMORY_GB` and `SPACEAGORA_GRAM_SAT_MEMORY_MB`
+  override the three terms.
 - The outer split width is learned by racing the candidate widths inside the
   first campaign of a new workload, with at least three samples per worker
   per width. A campaign too small to race takes the widest split. Widths are

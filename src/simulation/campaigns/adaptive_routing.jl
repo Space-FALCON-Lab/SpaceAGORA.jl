@@ -297,8 +297,13 @@ function _campaign_route_plan(
     # Process workers run --threads=1 each and don't share the coordinator's
     # thread pool, so they're sized off tuning.process_max_workers
     # (Sys.CPU_THREADS by default), not Threads.nthreads() like the thread route.
+    # Widths are drawn from the workers memory allows for THIS workload, not
+    # the core cap alone (effective_process_workers; identical when the tuning
+    # is not memory-aware).
+    process_cap = ParallelProfiles.effective_process_workers(features, tuning)
     split_candidates = outer_split_candidates(
-        route; budget=Base.Threads.nthreads(), n_units=n_samples, tuning=tuning)
+        route; budget=Base.Threads.nthreads(), n_units=n_samples, tuning=tuning,
+        max_process_workers=process_cap)
     split_history = ParallelProfiles.outer_split_history_present(state, features, route)
     # Under V2 widths are learned by RACING inside a campaign, never one width
     # per campaign. The shipped selector's forced exploration tries every
@@ -324,12 +329,15 @@ function _campaign_route_plan(
             budget=Base.Threads.nthreads(),
             n_units=n_samples,
             tuning=tuning,
+            max_process_workers=process_cap,
         )
     end
     inner_thread_budget = max(1, fld(Base.Threads.nthreads(), workers))
     if tuning.trace
         println("[outer-split] route=$(route) workers=$(workers) candidates=$(split_candidates) " *
-                "history=$(split_history) race=$(split_race)")
+                "history=$(split_history) race=$(split_race) " *
+                "process_cap=$(process_cap)/$(tuning.process_max_workers) " *
+                "(memory-aware=$(tuning.memory_aware), rss=$(round(ParallelProfiles.process_rss_bytes() / 2^30; digits=2)) GB)")
     end
     return (route=route, threads=workers, inner_thread_budget=inner_thread_budget, record=true,
             split_race=split_race, split_candidates=split_candidates,

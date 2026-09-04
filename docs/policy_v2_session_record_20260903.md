@@ -283,3 +283,26 @@ worker-versus-thread comparison decides alone; the shipped rule is unchanged.
 The campaign-size threshold (16 samples or a 3600 s arc) still applies
 everywhere. Unit tests cover both classes; the suite re-run is queued behind
 the follow-up benchmarks.
+
+## 10. Memory-aware routing (2026-09-04)
+
+The policy sized parallelism from cores alone. `machine_topology.jl` now also
+carries memory: physical memory, the cgroup limit, and a usable budget (the
+smaller of the two less a 10% / 1 GB reserve), plus live readings of this
+process's resident set and the kernel's available memory. Under V2
+(`OuterRouteTuning.memory_aware`) the process route is capped at
+`memory_worker_cap()`: the budget less the coordinator's resident set (or the
+available memory, whichever is smaller) divided by a per-worker estimate,
+which is the coordinator's own resident set with a 1.5 GB floor plus 90 MB per
+spacecraft on native GRAM (from the 22 GB single-process footprint measured
+at 256 spacecraft on the M3 MacBook). `effective_process_workers(features,
+tuning)` applies that cap per workload; the Monte Carlo core comparison, the
+candidate set, the heavy-constellation process route and the split ladder all
+read it, and fewer than two affordable workers withdraws the process route
+(serial when there are no worker threads either). The shipped tuning is not
+memory-aware and is unchanged. Overrides: `SPACEAGORA_MEMORY_BUDGET_GB`,
+`SPACEAGORA_PERF_WORKER_MEMORY_GB`, `SPACEAGORA_GRAM_SAT_MEMORY_MB`.
+
+Not covered: the GRAM density-service pool (only under the per-step density
+freeze, which no profile enables) and inner thread width, which does not
+scale memory.

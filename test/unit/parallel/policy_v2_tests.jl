@@ -211,6 +211,40 @@ end
                                   threads_available = true) === :threads
 end
 
+@testset "Memory bounds the process route under V2" begin
+    feat = _v2_feat()
+    wide = PPr.OuterRouteTuning(mc_route_by_core_budget = true, memory_aware = true,
+                                process_max_workers = 12, outer_thread_budget = 4)
+    shipped = PPr.OuterRouteTuning(mc_route_by_core_budget = false, memory_aware = false,
+                                   process_max_workers = 12, outer_thread_budget = 4)
+    # Plenty of memory: the core comparison decides, as before.
+    withenv("SPACEAGORA_MEMORY_BUDGET_GB" => "1024", "SPACEAGORA_PERF_WORKER_MEMORY_GB" => "0.001") do
+        @test PPr.effective_process_workers(feat, wide) == 12
+        @test PPr.default_outer_route(feat; tuning = wide, machine_class = :small,
+                                      threads_available = true) === :process
+    end
+    # No memory for a second process: the process route is neither the
+    # default nor a candidate, and with no worker threads the answer is serial.
+    withenv("SPACEAGORA_MEMORY_BUDGET_GB" => "0.001") do
+        @test PPr.effective_process_workers(feat, wide) == 0
+        @test PPr.default_outer_route(feat; tuning = wide, machine_class = :large,
+                                      threads_available = true) === :threads
+        @test !(:process in PPr.outer_route_candidates(feat; tuning = wide, machine_class = :large,
+                                                       threads_available = true))
+        @test PPr.default_outer_route(feat; tuning = wide, machine_class = :large,
+                                      threads_available = false) === :none
+        # The shipped tuning is not memory-aware and keeps its answer.
+        @test PPr.effective_process_workers(feat, shipped) == 12
+        @test :process in PPr.outer_route_candidates(feat; tuning = shipped, machine_class = :large,
+                                                     threads_available = true)
+    end
+    # A pool that fits only some workers narrows the split ladder to them.
+    c = PPr.outer_split_candidates(:process; budget = 12, n_units = 64, tuning = wide,
+                                   max_process_workers = 3)
+    @test maximum(c) == 3
+    @test maximum(PPr.outer_split_candidates(:process; budget = 12, n_units = 64, tuning = wide)) == 12
+end
+
 @testset "The process worker cap honours SPACEAGORA_PERF_PROCS under V2" begin
     cores = PPr.usable_core_budget()
     withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => "2") do

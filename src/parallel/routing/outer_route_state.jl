@@ -67,6 +67,12 @@ Base.@kwdef struct OuterRouteTuning
     # against the previous default describe a configuration that was asking for
     # more parallelism than the machine could deliver.
     process_max_workers::Int = _outer_process_worker_cap()
+    # V2: the process route is sized by memory as well as cores. Each worker is
+    # priced at this process's resident set (never under 1.5 GB) plus native
+    # GRAM's per-spacecraft footprint, against the memory budget less what this
+    # process already holds; fewer than two affordable workers means the
+    # process route is not offered at all. See machine_topology.jl (Memory).
+    memory_aware::Bool = outer_route_policy_v2()
     # Stop forced exploration once ANY candidate is proven best, rather than
     # only when the default is. See _any_candidate_proven. On by default since
     # 2026-09-03: the default-only guard re-enabled exploration whenever the
@@ -156,6 +162,9 @@ end
 @inline function _outer_process_worker_cap()::Int
     cap = usable_core_budget()
     outer_route_policy_v2() || return cap
+    # Memory binds here too, at the coordinator's footprint before any workload
+    # is built; effective_process_workers re-checks per workload.
+    cap = max(1, min(cap, memory_worker_cap()))
     raw = strip(get(ENV, "SPACEAGORA_PERF_PROCS", ""))
     isempty(raw) && return cap
     v = tryparse(Int, raw)

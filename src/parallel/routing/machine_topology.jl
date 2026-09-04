@@ -196,6 +196,168 @@ function allowed_cpus()::Set{Int}
     return Set{Int}()
 end
 
+# ── Memory ────────────────────────────────────────────────────────────────────
+#
+# What a process worker costs and what the machine can hold. Every campaign
+# worker is a full Julia process with SpaceAGORA, the SPICE kernels and the
+# workload's own state resident, so a pool sized from cores alone can exceed
+# the machine: twelve 2 GB workers on an 18 GB laptop, or -- on a native GRAM
+# constellation whose single-process footprint measured 22 GB at 256
+# spacecraft (2026-09-04, M3 MacBook Pro, atmo256_gram_live_10min) -- any
+# second worker at all. Cores bound the USEFUL width of the process route;
+# memory bounds the AFFORDABLE width, and the smaller of the two is the cap.
+#
+# The per-worker estimate is this process's own resident set (a worker loads
+# the same package and builds the same state), never below a 1.5 GB floor,
+# plus a per-spacecraft term for native GRAM. It is read live rather than
+# cached because it grows as the coordinator builds its first workload, which
+# is exactly when the estimate becomes informative.
+
+const _MEMORY_RESERVE_FRACTION = 0.10
+const _MEMORY_RESERVE_MIN_BYTES = 1 << 30
+const _WORKER_MEMORY_FLOOR_BYTES = 3 * (1 << 29)   # 1.5 GB: SpaceAGORA + SPICE resident
+const _GRAM_SAT_MEMORY_BYTES = 90 * (1 << 20)      # per spacecraft, native GRAM: ~22 GB / 256
+
+_total_memory_bytes()::Int = Int(Sys.total_memory())
+
+@inline function _memory_reserve_bytes(total::Int)::Int
+    return max(_MEMORY_RESERVE_MIN_BYTES, round(Int, _MEMORY_RESERVE_FRACTION * total))
+end
+
+function _positive_float_env(name::String)::Float64
+    raw = _topology_env(name)
+    isempty(raw) && return -1.0
+    value = tryparse(Float64, raw)
+    if value === nothing || value <= 0.0
+        throw(ArgumentError("$name must be a positive number, got '$raw'"))
+    end
+    return value
+end
+
+"""
+    cgroup_memory_limit() -> Int
+
+Memory limit of this process's cgroup in bytes, or `-1` when unlimited or
+unreadable. cgroup v2 (`memory.max`) first, then v1 (`memory.limit_in_bytes`,
+whose "unlimited" is a sentinel larger than physical memory).
+"""
+function cgroup_memory_limit()::Int
+    try
+        for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes")
+            isfile(path) || continue
+            raw = strip(read(path, String))
+            raw == "max" && return -1
+            v = tryparse(Int, raw)
+            v === nothing && continue
+            v >= _total_memory_bytes() && return -1
+            return v
+        end
+    catch
+        # An unreadable limit is "no limit known", not an error.
+    end
+    return -1
+end
+
+"""
+    available_memory_bytes() -> Int
+
+Memory the kernel could hand out right now, in bytes: `MemAvailable` on Linux
+(which counts reclaimable page cache as available), else `Sys.free_memory()`.
+Read live.
+"""
+function available_memory_bytes()::Int
+    if Sys.islinux() && isfile("/proc/meminfo")
+        try
+            for line in eachline("/proc/meminfo")
+                startswith(line, "MemAvailable:") || continue
+                kb = tryparse(Int, first(split(strip(split(line, ":", limit=2)[2]))))
+                kb === nothing || return kb * 1024
+            end
+        catch
+        end
+    end
+    return Int(Sys.free_memory())
+end
+
+"""
+    process_rss_bytes() -> Int
+
+This process's resident set in bytes: `/proc/self/statm` on Linux, else the
+peak from `Sys.maxrss()`. Read live.
+"""
+function process_rss_bytes()::Int
+    if Sys.islinux() && isfile("/proc/self/statm")
+        try
+            fields = split(read("/proc/self/statm", String))
+            pages = length(fields) >= 2 ? tryparse(Int, fields[2]) : nothing
+            pages === nothing || return pages * 4096
+        catch
+        end
+    end
+    return Int(Sys.maxrss())
+end
+
+"""
+    memory_budget_bytes() -> Int
+
+Memory a run may spend across all of its processes: `SPACEAGORA_MEMORY_BUDGET_GB`
+when set, else the topology snapshot's `usable_memory` (the smaller of physical
+memory and the cgroup limit, less a reserve for the OS).
+"""
+function memory_budget_bytes()::Int
+    gb = _positive_float_env("SPACEAGORA_MEMORY_BUDGET_GB")
+    gb > 0.0 && return round(Int, gb * (1 << 30))
+    return machine_topology().usable_memory
+end
+
+"""
+    worker_memory_estimate_bytes(; extra=0) -> Int
+
+Bytes one process worker is expected to hold: `SPACEAGORA_PERF_WORKER_MEMORY_GB`
+when set, else the larger of this process's resident set and a 1.5 GB floor;
+plus `extra` for workload state the estimate cannot see.
+"""
+function worker_memory_estimate_bytes(; extra::Int=0)::Int
+    gb = _positive_float_env("SPACEAGORA_PERF_WORKER_MEMORY_GB")
+    base = gb > 0.0 ? round(Int, gb * (1 << 30)) : max(_WORKER_MEMORY_FLOOR_BYTES, process_rss_bytes())
+    return base + max(0, extra)
+end
+
+"""
+    native_gram_worker_extra_bytes(n_sats) -> Int
+
+Per-worker memory a native GRAM constellation adds on top of the package
+footprint: `SPACEAGORA_GRAM_SAT_MEMORY_MB` (default 90 MB) per spacecraft, from
+the 22 GB single-process footprint measured at 256 spacecraft.
+"""
+function native_gram_worker_extra_bytes(n_sats::Int)::Int
+    raw = _topology_env("SPACEAGORA_GRAM_SAT_MEMORY_MB")
+    per = if isempty(raw)
+        _GRAM_SAT_MEMORY_BYTES
+    else
+        mb = tryparse(Float64, raw)
+        (mb === nothing || mb < 0.0) &&
+            throw(ArgumentError("SPACEAGORA_GRAM_SAT_MEMORY_MB must be non-negative, got '$raw'"))
+        round(Int, mb * (1 << 20))
+    end
+    return max(0, n_sats) * per
+end
+
+"""
+    memory_worker_cap(; extra_per_worker=0) -> Int
+
+How many process workers fit beside this process: the smaller of the memory
+budget less this process's resident set and what the kernel reports available,
+divided by the per-worker estimate. `0` means no worker fits, which routing
+treats as "the process route is not affordable".
+"""
+function memory_worker_cap(; extra_per_worker::Int=0)::Int
+    per = max(1, worker_memory_estimate_bytes(extra=extra_per_worker))
+    headroom = min(memory_budget_bytes() - process_rss_bytes(), available_memory_bytes())
+    headroom <= 0 && return 0
+    return Int(fld(headroom, per))
+end
+
 # ── cgroup quota ──────────────────────────────────────────────────────────────
 
 """
@@ -274,6 +436,12 @@ cached:
                         `-1` when no mask could be read.
   - `cgroup_quota`      fractional core quota, or `-1.0` when unlimited.
   - `usable_cores`      the binding minimum of the above — the budget.
+  - `total_memory`      physical memory in bytes.
+  - `cgroup_memory`     the cgroup memory limit in bytes, or `-1` when unlimited.
+  - `usable_memory`     the smaller of the two, less a reserve for the OS
+                        (10%, at least 1 GB). `SPACEAGORA_MEMORY_BUDGET_GB`
+                        overrides it at read time (see `memory_budget_bytes`).
+  - `memory_source`     `:total` or `:cgroup`, whichever bound `usable_memory`.
   - `smt_ratio`         `cpu_threads / physical_cores`; `1.0` means no SMT.
   - `source`            `:override` when `SPACEAGORA_CORE_BUDGET` set the
                         budget, otherwise which term bound it (`:physical`,
@@ -293,6 +461,15 @@ function machine_topology(; refresh::Bool = false)::NamedTuple
         physical = physical_core_count()
         affinity = _affinity_physical_cores(physical)
         quota = cgroup_cpu_quota()
+        total_mem = _total_memory_bytes()
+        cg_mem = cgroup_memory_limit()
+        usable_mem = total_mem
+        mem_source = :total
+        if cg_mem > 0 && cg_mem < usable_mem
+            usable_mem = cg_mem
+            mem_source = :cgroup
+        end
+        usable_mem = max(1, usable_mem - _memory_reserve_bytes(usable_mem))
 
         usable = physical
         source = :physical
@@ -322,6 +499,10 @@ function machine_topology(; refresh::Bool = false)::NamedTuple
             usable_cores = max(1, usable),
             smt_ratio = physical > 0 ? threads / physical : 1.0,
             source = source,
+            total_memory = total_mem,
+            cgroup_memory = cg_mem,
+            usable_memory = usable_mem,
+            memory_source = mem_source,
         )
         _TOPOLOGY_CACHE[] = snapshot
         return snapshot

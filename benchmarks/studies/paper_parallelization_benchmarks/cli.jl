@@ -52,6 +52,7 @@ Base.@kwdef struct PPBConfig
     cpu_pinning::Vector{Int} = Int[]
     dry_run::Bool           = false
     preview::Bool           = false
+    quick::Bool             = false
     resume::String          = ""
 end
 
@@ -735,6 +736,98 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
 
 ]
 
+# ── Quick benchmark (--quick) ─────────────────────────────────────────────────
+#
+# A sub-hour cut of the router evaluation, sized from the machine it runs on,
+# for checking a profile on hardware the full B-series was never run on. It
+# is not a replacement for the B-series: three phases, two repeats, no parity,
+# and one workload per axis. What it keeps is the three questions the
+# B-series answers -- does the constellation thread ladder track the best
+# pinned route (Q1), does calibration still find the pinned plan on a
+# workload that needs one (Q2), and does the Monte Carlo route follow the
+# better side of the thread/process split (Q3).
+#
+# Everything is derived from the host:
+#   cores    physical cores, capped at PPB_ROUTER_LADDER_MAX_THREADS
+#   ladder   the router ladder for that core count ([1, 8, 12] on 12 cores,
+#            [1, 4] on 4, [1, 8, 32] on 64)
+#   workers  min(cores, --process-workers, 3/4 of total memory / 3 GB): each
+#            process worker is a full Julia instance with SpaceAGORA and SPICE
+#            loaded. Total memory rather than free, so the grid is a property
+#            of the machine and not of whatever else is running at the time
+#   samples  4 per worker, clamped to [16, 64], so a campaign is a few dispatch
+#            rounds whatever the pool size
+#   splits   all-threads, all-processes, and one mixed split of the same budget
+#   N_sat    4096 spacecraft on 8+ cores, 1024 below, so the serial solve stays
+#            near 8 s on either
+#
+# Cost is dominated by the ~80 s of Julia startup and JIT per point, not by the
+# solves: Q1 is 10 points, Q2 is 4, Q3 is up to 12, which on a 12-core box came
+# to about 45 minutes. Points are the currency -- a bigger machine gets the
+# same point count on wider rungs, not more points.
+
+const PPB_QUICK_WORKER_GB = 3.0
+
+function _ppb_quick_worker_cap(ppb::PPBConfig, cores::Int)::Int
+    mem_cap = try
+        max(1, floor(Int, 0.75 * Sys.total_memory() / (PPB_QUICK_WORKER_GB * 2^30)))
+    catch
+        cores
+    end
+    return max(1, min(cores, ppb.process_workers, mem_cap))
+end
+
+# All-threads, all-processes, and the mixed split whose worker count is the
+# largest proper divisor of the budget at or below its square root, so the
+# three rungs bracket the axis B13 sweeps in full.
+function _ppb_quick_budget_grid(budget::Int)::Vector{Tuple{Int, Int}}
+    budget <= 1 && return [(1, 1)]
+    grid = [(1, budget), (budget, 1)]
+    mid = 0
+    for w in 2:isqrt(budget)
+        budget % w == 0 && (mid = w)
+    end
+    mid > 1 && insert!(grid, 2, (mid, budget ÷ mid))
+    return grid
+end
+
+function ppb_quick_phases(ppb::PPBConfig)::Vector{PPBPhase}
+    cores   = min(_ppc_physical_core_count(), PPB_ROUTER_LADDER_MAX_THREADS)
+    workers = _ppb_quick_worker_cap(ppb, cores)
+    budget  = min(cores, workers)
+    samples = clamp(4 * workers, 16, 64)
+    n_sat   = cores >= 8 ? 4096 : 1024
+    return PPBPhase[
+        PPBPhase(
+            id    = "Q1",
+            label = "Quick — Constellation Thread Ladder ($(n_sat) spacecraft, L50, vacuum)",
+            cases = ["gravity_$(n_sat)sat_l50_vacuum_1hr"],
+            parity_cases = String[],
+            modes = ["serial", "outer_threads", "full_smart", "policy_v2"],
+            mc_samples = [1], repeats = 2, warmup = 1,
+            thread_mode = :router_ladder,
+        ),
+        PPBPhase(
+            id    = "Q2",
+            label = "Quick — Calibration on a Pinned-Plan Workload (256 spacecraft, harmonics+SRP+aero+third body)",
+            cases = ["stack256_e4_nbody"],
+            parity_cases = String[],
+            modes = ["outer_threads", "outer_inner_static", "full_smart", "policy_v2"],
+            mc_samples = [1], repeats = 2, warmup = 1,
+            thread_mode = :max_only,
+        ),
+        PPBPhase(
+            id    = "Q3",
+            label = "Quick — Monte Carlo Thread vs. Process Split ($(samples) samples over $(budget) cores)",
+            cases = ["montecarlo_heavy_aerobraking"],
+            parity_cases = String[],
+            modes = ["outer_process", "outer_threads", "full_smart", "policy_v2"],
+            mc_samples = [samples], repeats = 2, warmup = 1,
+            budget_grid = _ppb_quick_budget_grid(budget),
+        ),
+    ]
+end
+
 # ── CLI parsing ───────────────────────────────────────────────────────────────
 
 function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
@@ -750,9 +843,10 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     cpu_pinning     = _ppc_parse_cpu_list(get(ENV, "SPACEAGORA_PPB_CPU_LIST", ""))
     dry_run         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_DRY_RUN", "0"))
     preview         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_PREVIEW", "0"))
+    quick           = _ppc_bool(get(ENV, "SPACEAGORA_PPB_QUICK", "0"))
     resume          = get(ENV, "SPACEAGORA_PPB_RESUME", "")
 
-    valid_phases = Set(p.id for p in PAPER_BENCHMARK_PHASES)
+    valid_phases = union(Set(p.id for p in PAPER_BENCHMARK_PHASES), Set(["Q1", "Q2", "Q3"]))
     for arg in args
         if arg in valid_phases
             push!(phases, arg)
@@ -776,6 +870,8 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
             dry_run = true
         elseif arg == "--preview"
             preview = true
+        elseif arg == "--quick"
+            quick = true
         elseif startswith(arg, "--resume=")
             resume = _ppc_arg_value(arg)
         else
@@ -803,6 +899,7 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
         cpu_pinning     = cpu_pinning,
         dry_run         = dry_run,
         preview         = preview,
+        quick           = quick,
         resume          = isempty(resume) ? "" : abspath(resume),
     )
 end

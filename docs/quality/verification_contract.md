@@ -12,6 +12,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_naming_contract_gate.jl`
    - `test/gates/ci_architecture_contract_gate.jl`
    - `test/gates/ci_path_policy_gate.jl`
+   - `test/gates/ci_thin_entry_files_gate.jl`
    - `test/gates/ci_no_artifact_files_gate.jl`
    - `test/gates/ci_vehicle_structure_boundary_gate.jl`
    - `test/gates/ci_src_completeness_contract_gate.jl`

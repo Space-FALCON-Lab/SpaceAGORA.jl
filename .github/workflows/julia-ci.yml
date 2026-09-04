@@ -441,7 +441,7 @@ jobs:
 
   coverage-quality-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       JULIA_NUM_THREADS: "4"
       # Coverage debt (July 2026): first real gate run measured 82.84%

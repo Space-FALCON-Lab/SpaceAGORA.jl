@@ -6,8 +6,11 @@
 # cut short. Catalog order is by phase number, which has nothing to do with which
 # axis a given paper deadline needs first.
 function _ppb_active_phases(ppb::PPBConfig)::Vector{PPBPhase}
-    by_id = Dict(p.id => p for p in PAPER_BENCHMARK_PHASES)
-    requested = isempty(ppb.phases) ? [p.id for p in PAPER_BENCHMARK_PHASES] : ppb.phases
+    # --quick swaps the catalog for the machine-sized Q1-Q3 set; --phases then
+    # selects among those (e.g. --quick --phases=Q3).
+    catalog = ppb.quick ? ppb_quick_phases(ppb) : PAPER_BENCHMARK_PHASES
+    by_id = Dict(p.id => p for p in catalog)
+    requested = isempty(ppb.phases) ? [p.id for p in catalog] : ppb.phases
     skip = ppb.preview ? PPB_PREVIEW_SKIP_PHASES : Set{String}()
     seen = Set{String}()
     phases = PPBPhase[]
@@ -350,6 +353,7 @@ function main_paper_benchmarks()
     println("[paper-benchmarks] cpu_pinning      = $(isempty(ppb.cpu_pinning) ? "off" : join(ppb.cpu_pinning, ","))")
     println("[paper-benchmarks] seed             = $(ppb.seed)")
     println("[paper-benchmarks] preview          = $(ppb.preview)")
+    println("[paper-benchmarks] quick            = $(ppb.quick)")
     println("[paper-benchmarks] dry_run          = $(ppb.dry_run)")
     println()
 

@@ -4,10 +4,11 @@ using StaticArrays
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 
-include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+const SimulationEngine = SpaceAGORA.SimulationEngine
 const run_simulation = SimulationEngine.run_simulation
 const ODEParams = SimulationModel.ODEParams
 

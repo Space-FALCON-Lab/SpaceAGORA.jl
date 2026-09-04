@@ -4,7 +4,8 @@ using Distributed
 const _WP_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, "..", ".."))
 
 if !isdefined(@__MODULE__, :ParallelProcess)
-    include(joinpath(_WP_REPO_ROOT, "src", "parallel", "process", "parallel_process.jl"))
+    using SpaceAGORA
+    const ParallelProcess = SpaceAGORA.ParallelProcess
     using .ParallelProcess
 end
 

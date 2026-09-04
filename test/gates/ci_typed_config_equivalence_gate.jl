@@ -2,13 +2,9 @@ using Test
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-module EngineSandbox
-include(joinpath(Main.REPO_ROOT, "src", "simulation", "runtime_services.jl"))
-include(joinpath(Main.REPO_ROOT, "src", "core", "simulation_model.jl"))
-include(joinpath(Main.REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-end
+using SpaceAGORA
 
-const SE = EngineSandbox.SimulationEngine
+const SE = SpaceAGORA.SimulationEngine
 
 @testset "typed_config_equivalence" begin
     cfg = SE.SimulationEngineConfig(

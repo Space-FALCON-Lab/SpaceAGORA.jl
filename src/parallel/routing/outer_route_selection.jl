@@ -370,7 +370,16 @@ end
     # The affordability and machine-class conditions are the same ones
     # outer_route_candidates uses to enumerate the process arm, so the default
     # can never name a route the selector did not offer.
-    process_affordable = machine_class in (:large, :medium) && _mc_process_worth_exploring(f, t)
+    # V2 drops the machine-class gate. The class thresholds (12 usable cores
+    # for :medium, 24 for :large) were a proxy for "has enough cores for a
+    # process pool to be worth it", and the core-budget comparison below asks
+    # that question directly. Left in, the gate kept an 8- or 11-core laptop
+    # on threads even with a worker pool as wide as its thread budget, which
+    # is exactly the configuration the B13 rows show the process route
+    # winning. _mc_process_worth_exploring still applies: a campaign too small
+    # to amortise a dispatch round stays on threads on any machine.
+    class_ok = machine_class in (:large, :medium) || t.mc_route_by_core_budget
+    process_affordable = class_ok && _mc_process_worth_exploring(f, t)
     if !threads_available
         return process_affordable ? :process : :none
     end
@@ -498,7 +507,7 @@ function outer_route_candidates(
     # measured feedback decide.
     allow_process = if lowercase(strip(f.category)) == "montecarlo"
         f.montecarlo_samples > 1 &&
-            machine_class in (:large, :medium) &&
+            (machine_class in (:large, :medium) || tuning.mc_route_by_core_budget) &&
             _mc_process_worth_exploring(f, tuning)
     else
         _feature_heavy_for_process(f, tuning)

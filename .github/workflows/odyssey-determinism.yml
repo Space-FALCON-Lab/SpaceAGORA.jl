@@ -1,0 +1,71 @@
+name: Odyssey determinism experiment
+
+# Temporary experiment (branch experiment/odyssey-determinism only): run the
+# Odyssey telemetry scenario twice in one process on a GitHub runner, under
+# the same conditions as the nightly telemetry regression (full profile,
+# ephemeris caches disabled, 4 Julia threads), and report whether the two
+# solves are bit-identical. Variants isolate the parallel policy.
+
+on:
+  push:
+    branches: ["experiment/odyssey-determinism"]
+  workflow_dispatch:
+
+concurrency:
+  group: odyssey-determinism-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  determinism:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: default-policy-4threads
+            threads: "4"
+            effector_parallel: "auto"
+          - label: effector-off-4threads
+            threads: "4"
+            effector_parallel: "off"
+          - label: single-thread
+            threads: "1"
+            effector_parallel: "auto"
+    env:
+      JULIA_NUM_THREADS: ${{ matrix.threads }}
+      SPACEAGORA_EFFECTOR_PARALLEL: ${{ matrix.effector_parallel }}
+      SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES: "1"
+      SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES: "1"
+      SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES: "1"
+      SPACEAGORA_WARN_DEPRECATED_CONFIG: "0"
+      SPACEAGORA_WARN_NORMALIZE: "0"
+      ODY_QUICK: "0"
+      ODY_ORBITS: "60"
+      ODY_REPS: "2"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          fetch-depth: 1
+      - name: Update GRAMSuite test submodule to dev main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+      - name: Instantiate vendored GRAMSuite
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+      - name: Instantiate
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Runner facts
+        run: |
+          nproc; lscpu | grep -E "Model name|Thread|Core|Socket|Flags" | cut -c1-160
+          julia --startup-file=no -e 'using InteractiveUtils; versioninfo()'
+      - name: Odyssey twice in one process (${{ matrix.label }})
+        run: julia --startup-file=no --project=. benchmarks/experiments/odyssey_determinism.jl

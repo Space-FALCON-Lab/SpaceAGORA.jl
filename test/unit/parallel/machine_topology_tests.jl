@@ -22,6 +22,19 @@ const MT = SpaceAGORA.ParallelProfiles
         @test n <= Sys.CPU_THREADS
     end
 
+    # The Windows physical-core probes cannot run here, but their output
+    # parsing can: wmic prints a header then one count per socket, PowerShell
+    # prints a single total, and a machine with no readable count must yield 0
+    # so the caller falls back rather than inventing a core count.
+    @testset "windows core-count parsing" begin
+        @test MT._sum_int_lines("NumberOfCores\n8\n\n") == 8
+        @test MT._sum_int_lines("NumberOfCores\r\n8\r\n12\r\n\r\n") == 20   # two sockets
+        @test MT._sum_int_lines("16\n") == 16                                   # PowerShell total
+        @test MT._sum_int_lines("") == 0
+        @test MT._sum_int_lines("NumberOfCores\n\n") == 0
+        @test MT._sum_int_lines("Kerne\n-1\n0\n") == 0                          # localised header, no usable count
+    end
+
     @testset "cgroup quota" begin
         q = MT.cgroup_cpu_quota()
         # Unlimited/unreadable is -1.0; anything else must be a positive

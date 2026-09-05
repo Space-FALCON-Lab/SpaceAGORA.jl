@@ -120,6 +120,56 @@ function _darwin_physical_cores()::Int
     end
 end
 
+# Sum every line of `raw` that is a positive integer, ignoring blanks and any
+# header or label line. Both Windows probes below reduce to this: `wmic` prints
+# a `NumberOfCores` header followed by one count per socket, and the PowerShell
+# form prints a single already-summed total. Pure, so it is tested on every
+# platform rather than only where the probes can run.
+function _sum_int_lines(raw::AbstractString)::Int
+    total = 0
+    for line in eachsplit(raw, '\n')
+        value = tryparse(Int, strip(line))
+        (value === nothing || value <= 0) && continue
+        total += value
+    end
+    return total
+end
+
+# Windows had no branch, so it fell through to `Sys.CPU_THREADS` -- logical
+# processors, SMT siblings included. That is the same class of error this file
+# exists to correct, pointing the other way: where an 11-core Mac under-reports
+# and loses the process route, a 6-core/12-thread Windows box reports 12,
+# clears the 12-core `:medium` threshold, and affords a process pool twice the
+# width of the cores it actually has. The header comment's note that the
+# reference box "classified :large on a count that included SMT siblings it
+# measurably could not use" is exactly this, uncorrected off Linux and macOS.
+#
+# PowerShell first: WMIC is deprecated and absent from Windows 11 24H2 onward.
+# One Win32_Processor instance per socket, hence the sum. Every failure path
+# returns -1 and leaves the caller on its existing fallback, so a blocked or
+# missing probe is never worse than the behaviour this replaces.
+#
+# NOT VERIFIED ON WINDOWS -- written from the documented behaviour of these two
+# commands, with no Windows machine available to run them on.
+function _windows_physical_cores()::Int
+    probes = (
+        `powershell -NoProfile -NonInteractive -Command "(Get-CimInstance -ClassName Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum"`,
+        `wmic cpu get NumberOfCores`,
+    )
+    for probe in probes
+        try
+            n = _sum_int_lines(read(probe, String))
+            # Physical cores cannot exceed logical ones, so this bounds a
+            # mis-parse (a summed serial number, a localised header that parses)
+            # back to the value the fallback would have returned anyway.
+            n > 0 && return min(n, max(1, Sys.CPU_THREADS))
+        catch
+            # Probe unavailable or blocked by policy; try the next one.
+        end
+    end
+    return -1
+end
+
 """
     physical_core_count() -> Int
 
@@ -143,6 +193,9 @@ function physical_core_count()::Int
         end
     elseif Sys.isapple()
         n = _darwin_physical_cores()
+        n > 0 && return n
+    elseif Sys.iswindows()
+        n = _windows_physical_cores()
         n > 0 && return n
     end
     return max(1, Sys.CPU_THREADS)

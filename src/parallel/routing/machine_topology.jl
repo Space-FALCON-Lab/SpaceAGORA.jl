@@ -449,18 +449,46 @@ function native_gram_worker_extra_bytes(n_sats::Int)::Int
 end
 
 """
+    resident_worker_count() -> Int
+
+Process workers this session has already provisioned, excluding the caller.
+`0` when Distributed has no workers or cannot be read.
+"""
+function resident_worker_count()::Int
+    try
+        return max(0, nprocs() - 1)
+    catch
+        return 0
+    end
+end
+
+"""
     memory_worker_cap(; extra_per_worker=0) -> Int
 
-How many process workers fit beside this process: the smaller of the memory
-budget less this process's resident set and what the kernel reports available,
-divided by the per-worker estimate. `0` means no worker fits, which routing
+How many process workers this session can have RESIDENT: the workers it already
+has, plus however many more fit in the smaller of the memory budget less this
+process's resident set and what the kernel reports available, divided by the
+per-worker estimate. `0` means no worker fits and none is running, which routing
 treats as "the process route is not affordable".
+
+The already-running workers are counted because their memory is spent and is
+already subtracted from the reading this divides. Without that credit the cap
+answers "how many MORE workers fit", which is the wrong question at every call
+site -- `effective_process_workers` and `_outer_process_worker_cap` both size a
+pool, not an increment -- and it makes the router argue itself out of a route it
+is already on: provisioning a pool lowers available memory, which lowers the
+cap, which retires the process route while its own workers are the reason it
+looks unaffordable. Measured on 18 GB: three workers took available memory
+4.65 -> 3.47 GB and the cap 3 -> 2, and `rmprocs` put both back. Under
+policy_v2, the one profile consulting the cap, that was enough to flip Q3's
+4w x 1t rung from the process route on its first repeat to serial on its second.
 """
 function memory_worker_cap(; extra_per_worker::Int=0)::Int
     per = max(1, worker_memory_estimate_bytes(extra=extra_per_worker))
+    resident = resident_worker_count()
     headroom = min(memory_budget_bytes() - process_rss_bytes(), available_memory_bytes())
-    headroom <= 0 && return 0
-    return Int(fld(headroom, per))
+    headroom <= 0 && return resident
+    return resident + Int(fld(headroom, per))
 end
 
 # ── cgroup quota ──────────────────────────────────────────────────────────────

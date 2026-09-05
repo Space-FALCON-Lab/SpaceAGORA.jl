@@ -250,8 +250,12 @@ end
     withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => "2") do
         @test PPr.OuterRouteTuning().process_max_workers == min(2, cores)
     end
+    # An unusable SPACEAGORA_PERF_PROCS leaves the cap to the other two bounds.
+    # Not `cores`: since the cap became memory-aware as well as core-aware,
+    # memory is free to be the binding one, and on a small-memory host it is.
     withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => "junk") do
-        @test PPr.OuterRouteTuning().process_max_workers == cores
+        @test PPr.OuterRouteTuning().process_max_workers ==
+              max(1, min(cores, PPr.memory_worker_cap()))
     end
     withenv("SPACEAGORA_PARALLEL_POLICY_V2" => nothing, "SPACEAGORA_PERF_PROCS" => "2") do
         @test PPr.OuterRouteTuning().process_max_workers == cores

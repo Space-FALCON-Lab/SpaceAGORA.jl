@@ -73,6 +73,15 @@ const MT = SpaceAGORA.ParallelProfiles
             @test MT._darwin_available_memory() >= Int(Sys.free_memory())
         end
         @test MT.memory_worker_cap() >= 0
+        # The cap sizes a pool, not an increment, so it can never report fewer
+        # workers than are already running -- otherwise provisioning a pool
+        # lowers available memory, lowers the cap, and retires the very route
+        # whose own workers made it look unaffordable.
+        @test MT.resident_worker_count() >= 0
+        @test MT.memory_worker_cap() >= MT.resident_worker_count()
+        withenv("SPACEAGORA_MEMORY_BUDGET_GB" => "0.001") do
+            @test MT.memory_worker_cap() == MT.resident_worker_count()
+        end
         # A worker never costs less than the floor unless overridden.
         @test MT.worker_memory_estimate_bytes() >= MT._WORKER_MEMORY_FLOOR_BYTES
         @test MT.worker_memory_estimate_bytes(extra = 7) == MT.worker_memory_estimate_bytes() + 7
@@ -80,9 +89,10 @@ const MT = SpaceAGORA.ParallelProfiles
             @test MT.memory_budget_bytes() == 1024 * 2^30
             @test MT.memory_worker_cap() >= 2
         end
-        # A budget smaller than this process's own footprint fits no worker.
+        # A budget smaller than this process's own footprint fits no ADDITIONAL
+        # worker; any already running are still affordable, being already paid for.
         withenv("SPACEAGORA_MEMORY_BUDGET_GB" => "0.001") do
-            @test MT.memory_worker_cap() == 0
+            @test MT.memory_worker_cap() == MT.resident_worker_count()
         end
         for bad in ("0", "-1", "abc")
             withenv("SPACEAGORA_MEMORY_BUDGET_GB" => bad) do

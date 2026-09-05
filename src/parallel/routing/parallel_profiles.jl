@@ -3,6 +3,9 @@ module ParallelProfiles
 
 using Dates
 using TOML
+# nprocs only, for resident_worker_count: the memory cap has to know how many
+# workers this session already owns so it does not bill itself for them twice.
+using Distributed: nprocs
 
 include(joinpath(@__DIR__, "machine_topology.jl"))
 include(joinpath(@__DIR__, "profile_definitions.jl"))

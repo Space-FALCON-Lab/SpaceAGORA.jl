@@ -37,6 +37,11 @@ SpaceAGORACalibration.jl/.CondaPkg/
 !data/telemetry/OPS-SAT1/UHF_TM_notebook/uhf_telemetry.csv
 data/telemetry/CYGNSS/
 data/telemetry/GRIFEX/
+# Simulator reference sets synced from Space-FALCON-Lab/spaceagora-verification-data
+# by scripts/dev/fetch_private_telemetry.sh (see data/telemetry/PRIVATE_TELEMETRY.md).
+data/telemetry/Basilisk_Examples/
+data/telemetry/Basilisk_Examples_Full/
+data/telemetry/GMAT_Examples/
 
 # Julia sub-environments (removed; use --project=. from root)
 .AGORA/

@@ -11,7 +11,7 @@ This default quickstart baseline is the Earth vacuum path:
 Shortest successful path:
 
 ```text
-git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate()"
 julia --project=. examples/AGORA_Basic_Quickstart.jl

@@ -26,18 +26,24 @@ end
 const TV = TelemetryVerification
 const SM = SimulationModel
 
-const _GMAT_EXAMPLES_DIR = joinpath(
+# Basilisk parity references and STK results are not tracked here; the
+# references are synced from the lab-org verification-data repo by
+# scripts/dev/fetch_private_telemetry.sh (see data/telemetry/PRIVATE_TELEMETRY.md).
+# The parity testsets skip cleanly when they are absent.
+const _BASILISK_REFERENCE_DIR = joinpath(
     _GMAT_REPO_ROOT,
     "data",
     "telemetry",
     "Basilisk_Examples_Full"
 )
+_basilisk_reference_available() = isdir(_BASILISK_REFERENCE_DIR)
 const _STK_RESULTS_DIR = joinpath(
     _GMAT_REPO_ROOT,
     "data",
     "telemetry",
     "stk_results"
 )
+_stk_reference_available() = isdir(_STK_RESULTS_DIR)
 
 const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/EarthGGM05C.csv" # For internal GMAT parity, matches the file used in the GMAT scenarios
 # Must match data/telemetry/gmat_matrix_parity_locked.py, which generated the
@@ -57,7 +63,7 @@ const _CYGNSS_CYG04_96HR_TELEMETRY_FEATHER = joinpath(_GMAT_REPO_ROOT, "data", "
 _cygnss_private_data_available() =
     isfile(_CYGNSS_48HR_TELEMETRY_FEATHER) && isfile(_CYGNSS_CYG04_96HR_TELEMETRY_FEATHER)
 const _CYGNSS_GMAT_COMPARISON_PATH = let
-    basilisk_path = joinpath(_GMAT_EXAMPLES_DIR, "Sim_CYGNSS_Comparison.feather")
+    basilisk_path = joinpath(_BASILISK_REFERENCE_DIR, "Sim_CYGNSS_Comparison.feather")
     isfile(basilisk_path) ? basilisk_path : joinpath(_GMAT_REPO_ROOT, "data", "telemetry", "GMAT_Examples", "Sim_CYGNSS_Comparison.feather")
 end
 const _GMAT_MATRIX_EXCLUDED_FILES = Set([
@@ -262,7 +268,7 @@ end
 function _gmat_matrix_expected_scenario_names()::Set{String}
     files = filter(
         f -> startswith(f, "Sim_") && endswith(lowercase(f), ".feather") && !(f in _GMAT_MATRIX_EXCLUDED_FILES),
-        readdir(_GMAT_EXAMPLES_DIR)
+        readdir(_BASILISK_REFERENCE_DIR)
     )
     return Set(_gmat_example_file_to_scenario_name.(files))
 end
@@ -871,18 +877,18 @@ end
     jtag = uppercase(parts[2])
     tbtag = parts[3] == "tbtrue" ? "TBTrue" : "TBFalse"
     basename = "Sim_$(body)_$(jtag)_$(tbtag).feather"
-    if isfile(joinpath(_GMAT_EXAMPLES_DIR, basename))
+    if isfile(joinpath(_BASILISK_REFERENCE_DIR, basename))
         return basename
     end
     full_basename = "Sim_$(body)_1M_$(jtag)_$(tbtag).feather"
-    if isfile(joinpath(_GMAT_EXAMPLES_DIR, full_basename))
+    if isfile(joinpath(_BASILISK_REFERENCE_DIR, full_basename))
         return full_basename
     end
     return basename
 end
 
 @inline function _scenario_basilisk_path(scenario_name::String)::String
-    return joinpath(_GMAT_EXAMPLES_DIR, _scenario_basilisk_file_name(scenario_name))
+    return joinpath(_BASILISK_REFERENCE_DIR, _scenario_basilisk_file_name(scenario_name))
 end
 
 @inline function _scenario_stk_file_name(scenario_name::String)::String
@@ -1039,7 +1045,7 @@ function _scenario_planet_fixed_position_rmse(errors::DataFrame, scenario_name::
     x_sim = Float64.(xrows.sim_interp_value_km[1:n])
     y_sim = Float64.(yrows.sim_interp_value_km[1:n])
     z_sim = Float64.(zrows.sim_interp_value_km[1:n])
-    basilisk_path = joinpath(_GMAT_EXAMPLES_DIR, _scenario_basilisk_file_name(scenario_name))
+    basilisk_path = joinpath(_BASILISK_REFERENCE_DIR, _scenario_basilisk_file_name(scenario_name))
     @test isfile(basilisk_path)
     telemetry_df = _read_tabular(basilisk_path)
     x_tel_pf_col = _required_column(telemetry_df, ["PlanetFixedX", "Sat.PlanetFixed.X"])
@@ -2214,6 +2220,12 @@ end
 
 if !_parse_bool_env("SPACEAGORA_SKIP_GMAT_MATRIX", false)
 
+if !_basilisk_reference_available()
+    @testset "Basilisk parity matrix" begin
+        @test_skip "Basilisk parity references not present under data/telemetry/Basilisk_Examples_Full/; run scripts/dev/fetch_private_telemetry.sh references to sync them, then re-run."
+    end
+else
+
 @testset "GMAT Early vs Full Error" begin
     result = _run_gmat_scenario_matrix_result_once()
     scenario_names = unique(String.(result.summary.scenario))
@@ -2286,6 +2298,14 @@ catch err
     end
 end
 
+end # Basilisk parity references present
+
+if !_stk_reference_available()
+    @testset "STK parity matrix" begin
+        @test_skip "STK reference results not present under data/telemetry/stk_results/; skipping."
+    end
+else
+
 try
     @testset "STK Strict Acceptance All Cases" begin
         summary = _run_stk_scenario_matrix_once()
@@ -2325,6 +2345,8 @@ catch err
         rethrow(err)
     end
 end
+
+end # STK reference results present
 
 end # SPACEAGORA_SKIP_GMAT_MATRIX (GMAT Early vs Full Error)
 

@@ -286,6 +286,7 @@ function _rhs_calib_load!()::Nothing
                 "scheduler"      => String(get(row, "scheduler", "auto")),
                 "elapsed_mean_ns"=> Float64(get(row, "elapsed_mean_ns", 0.0)),
                 "solve_ns"       => Float64(get(row, "solve_ns", 0.0)),
+                "heuristic_votes"=> Int(get(row, "heuristic_votes", 0)),
             )
             _rhs_calib_cache[sig] = entry
         end
@@ -310,6 +311,9 @@ function _rhs_calib_save!()::Nothing
                 # The gate below reads it; 0.0 means "never measured", which is
                 # treated as "sweep", not as "short".
                 "solve_ns"        => Float64(get(e, "solve_ns", 0.0)),
+                # How many consecutive sweeps ended with this verdict; see
+                # _rhs_calib_cached_verdict. Zero for a pinned plan.
+                "heuristic_votes" => Int(get(e, "heuristic_votes", 0)),
             )
             push!(rows, row)
         end
@@ -353,15 +357,42 @@ end
 function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0)::Nothing
     _rhs_calib_load!()
     lock(_rhs_calib_lock) do
+        prev = get(_rhs_calib_cache, sig, nothing)
+        votes = (prev !== nothing && get(prev, "mode", "") == _CALIB_HEURISTIC_MODE) ?
+            Int(get(prev, "heuristic_votes", 0)) + 1 : 1
         entry = Dict{String, Any}(
             "mode"            => _CALIB_HEURISTIC_MODE,
             "allotment"       => 1,
             "scheduler"       => "auto",
             "elapsed_mean_ns" => heuristic_ns,
+            "heuristic_votes" => votes,
         )
+        prev !== nothing && haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
         _rhs_calib_cache[sig] = entry
     end
     return nothing
+end
+
+# Consecutive sweeps that ended "the heuristic won" for this signature; 0 when
+# the cached verdict is a plan or there is none.
+function _rhs_calib_heuristic_votes(sig::String)::Int
+    _rhs_calib_load!()
+    return lock(_rhs_calib_lock) do
+        e = get(_rhs_calib_cache, sig, nothing)
+        (e === nothing || get(e, "mode", "") != _CALIB_HEURISTIC_MODE) ? 0 :
+            Int(get(e, "heuristic_votes", 0))
+    end
+end
+
+# How many consecutive heuristic verdicts a signature needs before a long
+# solve honours the cached verdict instead of re-sweeping (V2 only).
+@inline function _rhs_calibrate_heuristic_votes_needed()::Int
+    n = try
+        parse(Int, strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_HEURISTIC_VOTES", "3")))
+    catch
+        3
+    end
+    return max(1, n)
 end
 
 function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64)::Nothing
@@ -1128,6 +1159,48 @@ function _rhs_calib_record_solve_time!()::Nothing
     return nothing
 end
 
+# Which cached verdict, if any, to honour without sweeping: `:heuristic`, a plan
+# NamedTuple, or `nothing` (sweep).
+#
+# As shipped, nothing is honoured on a long solve (see the solve-cost gate):
+# a pinned plan is a reading of the process that formed it, and above the
+# threshold re-sweeping is cheap insurance against replaying a stale one.
+#
+# `honour_heuristic_verdict` (SPACEAGORA_PARALLEL_POLICY_V2) honours a cached
+# "the heuristic won" verdict on a long solve too. That verdict pins nothing:
+# the heuristic re-derives per call and is the no-regret floor the sweep itself
+# falls back to, so re-running the sweep to confirm it can only cost. Measured
+# in the 2026-09-02 paper run: every eight-thread constellation point that lost
+# to the best static route (gravity_4096 +28%, heavy_1024_6hr +8%, cadence_1024
+# +8%) carried rhs_plan_source=sweep with verdict heuristic on every repeat,
+# while the same cases at twelve threads hit a cached heuristic verdict and sat
+# within 3%. A cached PLAN still re-sweeps on a long solve either way.
+function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool)
+    _rhs_calibration_mode() == :force && return nothing
+    long_solve = _rhs_calib_solve_exceeds_threshold(sig)
+    (long_solve && !honour_heuristic_verdict) && return nothing
+    cached = _rhs_calib_lookup(sig)
+    cached === nothing && return nothing
+    if cached === :heuristic
+        # On a long solve, only a REPRODUCIBLE heuristic verdict is honoured.
+        #
+        # The sweep's verdict is not stable on every workload: on
+        # interact_256sat_1hr it pins satellite_batch three to four times in
+        # five and otherwise retains the heuristic, a 17-point regret swing
+        # documented in the sweep record. Honouring the first heuristic verdict
+        # to land pinned the losing side of that coin flip for good -- measured
+        # in the paper run at eight threads: R6 replayed a cached heuristic
+        # verdict at 3.61 s while six R4/R5 sweeps in the same point pinned
+        # satellite_batch at 3.09 s. Requiring several consecutive heuristic
+        # verdicts keeps the re-sweep where the verdict flips and skips it
+        # where it does not (gravity_4096: heuristic 13 of 16 sweeps).
+        (long_solve && _rhs_calib_heuristic_votes(sig) < _rhs_calibrate_heuristic_votes_needed()) &&
+            return nothing
+        return :heuristic
+    end
+    return long_solve ? nothing : cached
+end
+
 function _calibrate_rhs_plan_if_needed!(p, u0, args)
     # Ahead of every gate below: precompilation is single-threaded, so the
     # budget gate would otherwise return before either plan mode is exercised.
@@ -1159,8 +1232,10 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
         _rhs_calib_solve_start[sig] = time_ns()
     end
 
-    if _rhs_calibration_mode() != :force && !_rhs_calib_solve_exceeds_threshold(sig)
-        cached = _rhs_calib_lookup(sig)
+    penv = p.shared_buffers.policy_env_config[]
+    honour_heuristic_verdict = penv !== nothing && penv.policy_v2
+    cached = _rhs_calib_cached_verdict(sig, honour_heuristic_verdict)
+    if cached !== nothing
         if cached === :heuristic
             # Cached retain-the-heuristic verdict: pin nothing, and -- the point --
             # do not sweep. rhs_plan_override stays unset, so _rhs_execution_plan
@@ -1175,7 +1250,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
                 "[SpaceAGORA] RHS calibration: cached verdict → heuristic retained (no sweep)"
             )
             return
-        elseif cached !== nothing
+        else
             p.shared_buffers.rhs_plan_override[] = cached
             SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
                 :cache, cached.mode, cached.allotment, cached.scheduler
@@ -1573,5 +1648,143 @@ function _rhs_width_trial_commit!(p, wt::RhsWidthTrial)::Nothing
                 "alpha=$(round(alpha; digits=4)) beta=$(round(beta; digits=6))")
     end
     p.shared_buffers.rhs_width_trial[] = nothing
+    return nothing
+end
+
+# ── Pre-solve density-callback width calibration (V2) ─────────────────────────
+#
+# Under SPACEAGORA_PARALLEL_POLICY_V2 the per-call width layer is bypassed and
+# callbacks run at the static width, min(items, budget). The one instrument in
+# this codebase with measured wins is the pre-solve sweep with a no-regret
+# floor, so the density callback -- where atmo256_gram_surrogate_10min spends
+# most of its time (threading it is worth 2.8x) -- gets the same treatment:
+# time the callback body at a geometric width ladder up to the static width,
+# and pin a narrower width only if it beats the static one by the calibration
+# override margin. The static width is the floor: with no clear winner nothing
+# is pinned and the per-call decision runs exactly as before.
+#
+# The callback is driven the way its own `initialize` drives it, at u0 and
+# t = 0, through a stub carrying the three integrator fields its affect! reads.
+# The density buffers it writes are the ones the solve's first callback writes
+# again, so the probe leaves no state behind. Thermal and control callbacks are
+# not calibrated here: the thermal update advances state, and control needs a
+# live integrator.
+#
+#   SPACEAGORA_CALLBACK_WIDTH_CALIBRATE            on/off (default on under V2)
+#   SPACEAGORA_CALLBACK_WIDTH_CALIBRATE_N_TIMED    timed calls per width (4)
+#   SPACEAGORA_CALLBACK_WIDTH_CALIBRATE_MIN_STEPS  skip below this many
+#                                                  estimated accepted steps (200)
+
+@inline function _callback_width_calibrate_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env(
+        "SPACEAGORA_CALLBACK_WIDTH_CALIBRATE", true)
+end
+
+@inline function _callback_width_n_timed()::Int
+    n = try
+        parse(Int, strip(_engine_env_get("SPACEAGORA_CALLBACK_WIDTH_CALIBRATE_N_TIMED", "4")))
+    catch
+        4
+    end
+    return max(2, n)
+end
+
+@inline function _callback_width_min_steps()::Float64
+    v = tryparse(Float64, strip(_engine_env_get("SPACEAGORA_CALLBACK_WIDTH_CALIBRATE_MIN_STEPS", "200")))
+    return (v === nothing || v < 0.0) ? 200.0 : v
+end
+
+# Geometric ladder from 1 up to and including the static width.
+function _callback_width_candidates(static_allotment::Int)::Vector{Int}
+    cap = max(1, static_allotment)
+    out = Int[1]
+    w = 2
+    while w < cap
+        push!(out, w)
+        w *= 2
+    end
+    cap > 1 && push!(out, cap)
+    return out
+end
+
+# The width to pin, or 0 to keep the static per-call decision. A candidate
+# displaces the static width only by clearing `margin`; an unmeasurable static
+# width (Inf) yields to the best measured candidate, since retaining it would
+# hand the solve a width the probe could not even run.
+function _choose_callback_width(scores::Dict{Int, Float64}, static_w::Int, margin::Float64)::Int
+    static_ns = get(scores, static_w, Inf)
+    best_w = static_w
+    best_ns = static_ns
+    for w in sort!(collect(keys(scores)))
+        ns = scores[w]
+        isfinite(ns) || continue
+        if ns < best_ns
+            best_ns = ns
+            best_w = w
+        end
+    end
+    best_w == static_w && return 0
+    isfinite(static_ns) || return best_w
+    return best_ns < static_ns * (1.0 - margin) ? best_w : 0
+end
+
+# Accepted steps the solve will take, by the same crude estimate the in-run
+# identification length gate uses (evaluations / stages).
+@inline _estimated_accepted_steps(p)::Float64 = _rhs_estimated_evaluations(p) / 7.0
+
+function _calibrate_density_callback_width!(p, u0, args)::Nothing
+    sb = p.shared_buffers
+    sb.density_callback_width[] = 0
+    penv = sb.policy_env_config[]
+    (penv !== nothing && penv.policy_v2) || return nothing
+    _callback_width_calibrate_enabled() || return nothing
+    num_sats = count(identity, p.is_active)
+    num_sats >= 2 || return nothing
+    effectors = args.dynamics_model.dynamic_effectors
+    SC = SimulationModel.SimulationCallbacks
+    SC._requires_staged_density_callback(effectors, args) || return nothing
+    static = SC._density_callback_thread_decision(p, args, num_sats)
+    (static.use_threads && static.allotment >= 2) || return nothing
+    _estimated_accepted_steps(p) >= _callback_width_min_steps() || return nothing
+    candidates = _callback_width_candidates(static.allotment)
+    length(candidates) >= 2 || return nothing
+
+    verbose = args.simulation_settings.verbose
+    cb = SC.get_density_callback(num_sats, effectors, args)
+    stub = (p=p, u=u0, t=0.0)
+    n_timed = _callback_width_n_timed()
+    statistic = _rhs_calibrate_score_statistic()
+    scores = Dict{Int, Float64}()
+    try
+        # Warm the threaded and the serial path once each before timing.
+        sb.density_callback_width[] = static.allotment
+        cb.affect!(stub)
+        sb.density_callback_width[] = 1
+        cb.affect!(stub)
+        for w in candidates
+            sb.density_callback_width[] = w
+            cb.affect!(stub)
+            samples = Float64[]
+            for _ in 1:n_timed
+                t0 = time_ns()
+                cb.affect!(stub)
+                push!(samples, Float64(time_ns() - t0))
+            end
+            scores[w] = _rhs_reduce_samples(samples, statistic)
+        end
+    catch e
+        sb.density_callback_width[] = 0
+        @debug "density callback width calibration failed; static width retained" exception=e
+        return nothing
+    end
+    chosen = _choose_callback_width(scores, static.allotment, _rhs_calibrate_override_margin())
+    sb.density_callback_width[] = chosen
+    SimulationModel.ParallelPolicy.record_callback_width_selection!(
+        :density, chosen, static.allotment)
+    if verbose
+        ladder = join(("$(w)=$(round(scores[w] / 1e6, digits=3))ms" for w in candidates), " ")
+        println("[SpaceAGORA] density callback width: static=$(static.allotment) " *
+                (chosen == 0 ? "retained" : "pinned $(chosen)") * " ($(ladder))")
+    end
     return nothing
 end

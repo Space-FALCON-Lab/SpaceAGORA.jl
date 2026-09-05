@@ -30,6 +30,7 @@ const CHECKED = [
     ("serial", "R0"), ("outer_threads", "R1_a"), ("outer_process", "R1_b"),
     ("inner_only", "R2"), ("outer_inner_static", "R3"),
     ("outer_inner_adaptive", "R4"), ("full_smart", "R5"),
+    ("policy_v2", "R6"),
 ]
 
 # Pull one `key="value"` out of the PPCModeSpec block for `mode`.

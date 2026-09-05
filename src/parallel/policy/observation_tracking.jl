@@ -12,9 +12,15 @@ function record_policy_observation!(
     num_items::Int,
     use_threads::Bool,
     elapsed_ns::Integer,
-    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
+    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing,
+    # The context the matching decision ran in, when the caller can supply it
+    # (`policy_context_hint(p)`). `nothing` resolves to the task's active
+    # context, which is the shipped behaviour and is wrong on a worker task --
+    # see policy_context_hint for why.
+    ctx::Union{Nothing, PolicyContext}=nothing
 )
     budget = env === nothing ? effective_inner_thread_budget() : env.inner_thread_budget
+    ctx = ctx === nothing ? _active_policy_context() : ctx
     elapsed_ns_i64 = try
         Int64(elapsed_ns)
     catch
@@ -54,11 +60,14 @@ function record_policy_observation!(
     # controller update -- a dict lookup plus ~8 field writes, and for R4 four
     # more ENV reads -- is skipped, and only when its result is unreadable.
     decision_forced = budget <= 1 || num_items <= 1
-    adaptive_possible = adaptive_enabled && !decision_forced
+    # V2 takes the static width (adaptive_decision.jl), so there is no
+    # controller state to feed; the telemetry writes below still happen.
+    adaptive_possible = adaptive_enabled && !decision_forced &&
+        !(env !== nothing && env.policy_v2)
     # Consulted only when it pays for itself on this machine; see
     # _hint_layer_pays and hint_work_ratio.
     hints_enabled = adaptive_possible &&
-        _hint_layer_pays(source, env) &&
+        _hint_layer_pays(source, env; ctx=ctx) &&
         (env === nothing ? persistent_hints_enabled() : env.persistent_hints)
     measured_reward = hints_enabled &&
         (env === nothing ? adaptive_measured_reward_enabled() : env.adaptive_measured_reward)
@@ -67,7 +76,6 @@ function record_policy_observation!(
     hint_allotment = Int64(1)
     adaptive_active = false
 
-    ctx = _active_policy_context()
     lock(ctx.lock) do
         t = ctx.telemetry
         # Keep the per-source work estimate current even when the adaptive
@@ -99,82 +107,16 @@ function record_policy_observation!(
             return nothing
         end
 
-        st = _adaptive_state_for(source)
         if measured_reward
+            # Measured-reward mode: the hint layer drives the width.
+            st = _adaptive_state_for(ctx, source)
             st.desire = max(Int64(1), hint_allotment)
-            st.last_classification = :measured_reward
-            st.last_utilization = use_threads ? 1.0 : 0.0
-            st.window_calls = 0
-            st.window_allotment_sum = 0
-            st.window_useful_sum = 0.0
-            st.window_deprived_calls = 0
-
             t.adaptation_updates_total += 1
-            t.last_classification = st.last_classification
-            t.last_utilization = st.last_utilization
             t.last_desire = st.desire
-            t.quantum_length = 1
-            t.trim_quanta_budget = 0
-            t.quantums_total += 1
-            t.quantums_accounted_proxy += 1
-            return nothing
         end
-
-        ρ = env === nothing ? adaptive_rho() : env.adaptive_rho
-        δ = env === nothing ? adaptive_delta() : env.adaptive_delta
-        L = env === nothing ? adaptive_window_size() : env.adaptive_window
-        trim_quanta = env === nothing ? adaptive_trim_quanta_budget() : env.adaptive_trim_quanta
-
-        st.desire = min(max(1, st.desire), _adaptive_desire_cap(budget, ρ))
-        allotment = use_threads ? max(1, min(st.desire, budget)) : 1
-        useful = min(max(0, num_items), allotment)
-
-        st.window_calls += 1
-        st.window_allotment_sum += allotment
-        st.window_useful_sum += useful
-        st.window_deprived_calls += (allotment < st.desire) ? 1 : 0
-
-        if st.window_calls < L
-            return nothing
-        end
-
-        utilization = st.window_useful_sum / max(1, st.window_allotment_sum)
-        efficient = utilization >= δ
-        if !efficient
-            st.last_classification = :inefficient
-            st.desire = max(1, floor(Int, st.desire / ρ))
-        elseif st.window_deprived_calls == 0
-            st.last_classification = :efficient_satisfied
-            st.desire = min(_adaptive_desire_cap(budget, ρ), max(1, ceil(Int, st.desire * ρ)))
-        else
-            st.last_classification = :efficient_deprived
-        end
-
-        st.last_utilization = utilization
-        st.window_calls = 0
-        st.window_allotment_sum = 0
-        st.window_useful_sum = 0.0
-        st.window_deprived_calls = 0
-
-        t.adaptation_updates_total += 1
-        t.last_classification = st.last_classification
-        t.last_utilization = st.last_utilization
-        t.last_desire = st.desire
-        t.quantum_length = L
-        t.trim_quanta_budget = trim_quanta
-        t.quantums_total += 1
-        if st.last_classification == :inefficient
-            t.quantums_inefficient += 1
-            t.quantums_deductible_proxy += 1
-        elseif st.last_classification == :efficient_satisfied
-            t.quantums_efficient_satisfied += 1
-            t.quantums_deductible_proxy += 1
-        elseif st.last_classification == :efficient_deprived
-            t.quantums_efficient_deprived += 1
-            t.quantums_accounted_proxy += 1
-        else
-            t.quantums_deductible_proxy += 1
-        end
+        # No AIMD: without measured reward the width is static (see
+        # thread_policy_decision) and there is nothing to update.
+        return nothing
     end
 
     # `adaptive_active` already implies a non-empty signature, which in turn
@@ -197,7 +139,7 @@ function record_policy_observation!(
             hints_entries = _hint_entry_count(_persistent_hint_state[])
             hints_path = _persistent_hint_state[].path
         end
-        ctx2 = _active_policy_context()
+        ctx2 = ctx
         lock(ctx2.lock) do
             t = ctx2.telemetry
             t.persistent_hints_updates += 1

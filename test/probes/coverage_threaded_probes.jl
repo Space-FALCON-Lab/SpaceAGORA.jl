@@ -697,15 +697,6 @@ end
     policy._destroy_persistent_foreach_scope!(scope_id)
     @test !haskey(policy._persistent_foreach_pools, (scope_id, :probe_scope))
 
-    withenv("SPACEAGORA_PARALLEL_POLICY_DELTA" => "oops") do
-        @test_throws ArgumentError policy.adaptive_delta()
-    end
-    withenv("SPACEAGORA_PARALLEL_POLICY_RHO" => "1.0") do
-        @test_throws ArgumentError policy.adaptive_rho()
-    end
-    withenv("SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "oops") do
-        @test_throws ArgumentError policy.adaptive_trim_quanta_budget()
-    end
     withenv("SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => "guided") do
         @test_throws ArgumentError policy.inner_scheduler_mode()
     end
@@ -808,9 +799,6 @@ end
     policy.reset_policy_telemetry!()
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "3",
-        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "2"
     ) do
         _ = policy.thread_policy_decision(4; mode=:auto, threshold=1, source=:probe_obs)
@@ -1107,17 +1095,8 @@ end
     @test filtered_rows isa Vector
     @test isempty(filtered_rows)
 
-    withenv("SPACEAGORA_PARALLEL_POLICY_DELTA" => "1.2") do
-        @test_throws ArgumentError policy.adaptive_delta()
-    end
-
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "2",
-        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
-        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "1",
         "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "4"

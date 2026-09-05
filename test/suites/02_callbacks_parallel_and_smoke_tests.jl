@@ -954,22 +954,9 @@ end
     # Forced region: budget <= 1 or num_items <= 1 means the *next* decision
     # cannot read the controller (thread_policy_decision returns use_threads
     # false and allotment 1 before consulting desire), so record_policy_observation!
-    # must not move it. This block used to drive the AIMD arithmetic through
-    # exactly that region -- budget 1, num_items 1/1/0 -- and assert the
-    # classifications it produced. Those classifications were unreadable by
-    # construction, and worse, the arithmetic there is degenerate: at budget 1
-    # `allotment` collapses to 1 and `useful` to min(num_items, 1), so any
-    # num_items >= 1 scores utilization 1.0 and inflates desire on every call,
-    # which then leaks into a later higher-budget solve in the same process as
-    # a desire that was never earned. The controller is exercised for real in
-    # the live-budget block below; here the contract is that the forced region
-    # is inert.
+    # must not move it. Raw accounting still advances.
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "1"
     ) do
         @test policy.use_threads_policy(
@@ -989,40 +976,26 @@ end
             )
         end
         snap = policy.policy_telemetry_snapshot()
-        # Raw accounting still advances -- only the controller update is skipped.
         @test snap.observations_total >= 3
         @test snap.serial_elapsed_ns_total >= 33
         @test snap.adaptation_updates_total == 0
-        @test snap.quantums_total == 0
-        @test snap.last_classification == "none"
-        @test snap.accounted_fraction_proxy >= 0.0
-        @test snap.trimmed_accounted_fraction_proxy >= 0.0
     end
 
-    # Live budget: the controller can actually be read, so the three AIMD
-    # classifications are reachable and are asserted here instead.
-    #
-    # `inefficient` needs utilization < delta, i.e. num_items < delta * allotment
-    # with num_items >= 2 (below that the forced-region guard applies), so it
-    # needs an allotment of at least 3 and therefore a budget of at least 4.
-    # `efficient_deprived` needs desire > budget, which the rho ramp reaches
-    # after a few satisfied windows since the desire cap is ceil(rho * budget).
+    # Live budget, no measured reward: the width is the static answer,
+    # min(items, budget), and nothing adapts. The AIMD controller this block
+    # used to drive was removed on 2026-09-03: its window score was a fill
+    # ratio that never read elapsed time, and since the width seed at the cap
+    # (433b9e39) every window classified as efficient_deprived -- which is
+    # what the previous version of this block was failing on.
     if Threads.nthreads() >= 4
         policy.reset_policy_telemetry!()
         budget = Threads.nthreads()
         withenv(
             "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-            "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
+            "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "0",
             "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget)
         ) do
             saturating_items = 4 * budget
-            classifications = String[]
-            elapsed_total = 0
-            # Saturating windows: utilization pins at 1.0, so desire ramps by rho
-            # until it exceeds the budget and the allotment starts being clamped.
             for i in 1:8
                 decision = policy.thread_policy_decision(
                     saturating_items;
@@ -1030,7 +1003,9 @@ end
                     threshold=1,
                     source=:other_source
                 )
-                elapsed_total += 10 + i
+                @test decision.adaptive_enabled
+                @test decision.use_threads
+                @test decision.allotment == budget
                 policy.record_policy_observation!(
                     :other_source;
                     mode=:auto,
@@ -1038,39 +1013,24 @@ end
                     use_threads=decision.use_threads,
                     elapsed_ns=10 + i
                 )
-                push!(classifications, policy.policy_telemetry_snapshot().last_classification)
             end
-            @test "efficient_satisfied" in classifications
-            @test "efficient_deprived" in classifications
-            @test policy.policy_telemetry_snapshot().last_desire >= 2
+            snap = policy.policy_telemetry_snapshot()
+            @test snap.observations_total == 8
+            @test snap.adaptation_updates_total == 0
+            @test snap.last_allotment == budget
+            @test snap.last_desire == budget
 
-            # Starve the same controller: two items against an allotment that has
-            # ramped to at least 3 scores below delta.
+            # Fewer items than threads: the policy still answers the budget;
+            # the dispatch primitives clamp to the item count.
             starved = policy.thread_policy_decision(
                 2;
                 mode=:auto,
                 threshold=1,
                 source=:other_source
             )
-            policy.record_policy_observation!(
-                :other_source;
-                mode=:auto,
-                num_items=2,
-                use_threads=starved.use_threads,
-                elapsed_ns=13
-            )
-            elapsed_total += 13
-            snap = policy.policy_telemetry_snapshot()
-            @test snap.last_classification == "inefficient"
-            @test snap.last_utilization < 0.8
-            @test snap.adaptation_updates_total >= 3
-            @test snap.quantum_length == 1
-            @test snap.trim_quanta_budget == 1
-            @test snap.quantums_total >= 3
-            @test snap.quantums_inefficient >= 1
-            @test snap.quantums_efficient_satisfied >= 1
-            @test snap.quantums_efficient_deprived >= 1
-            @test snap.elapsed_ns_total >= elapsed_total
+            @test starved.use_threads
+            @test starved.allotment == budget
+            @test policy.thread_worker_count(2, starved.allotment) == 2
         end
     end
 
@@ -1078,9 +1038,6 @@ end
         policy.reset_policy_telemetry!()
         withenv(
             "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-            "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
             "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
         ) do
             use_history = Bool[]
@@ -1100,14 +1057,15 @@ end
                     elapsed_ns=1
                 )
             end
-            @test any(use_history)
-            @test use_history[end] == true
+            @test all(use_history)
         end
 
+        # A control callback above its threshold threads at the static width
+        # from the first call; there is no cold serial window to bootstrap out
+        # of any more.
         policy.reset_policy_telemetry!()
         withenv(
             "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "1",
             "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
         ) do
             decision = policy.thread_policy_decision(
@@ -1117,41 +1075,7 @@ end
                 source=:control_callback
             )
             @test decision.use_threads == true
-            @test decision.allotment >= 2
-        end
-
-        policy.reset_policy_telemetry!()
-        withenv(
-            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "0",
-            "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "0",
-            "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
-        ) do
-            decision = policy.thread_policy_decision(
-                8;
-                mode=:auto,
-                threshold=2,
-                source=:control_callback
-            )
-            @test decision.use_threads == false
-            @test decision.allotment == 1
-        end
-
-        policy.reset_policy_telemetry!()
-        withenv(
-            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "0",
-            "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "1",
-            "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
-        ) do
-            decision = policy.thread_policy_decision(
-                8;
-                mode=:auto,
-                threshold=2,
-                source=:control_callback
-            )
-            @test decision.use_threads == true
-            @test decision.allotment == min(Threads.nthreads(), 8)
+            @test decision.allotment == Threads.nthreads()
         end
     end
 
@@ -2354,14 +2278,20 @@ end
         # Feedback stores amortized campaign wall time per sample.
         @test isapprox(snap1[route1].mean_s, res1.elapsed_s / n_seeds; rtol=1e-6)
 
-        # A second identical campaign explores the under-sampled serial route,
-        # so repeated campaigns accumulate stats for every feasible allocation.
+        # Exploration is gated on CAMPAIGNS, not samples: the default needs
+        # adaptive_min_samples (2) campaigns before the selector looks past it,
+        # so the second campaign repeats threads and the third explores the
+        # under-sampled serial route. Repeated campaigns thereby accumulate
+        # stats for every feasible allocation.
         if Threads.nthreads() > 1
             res2 = SimulationCampaigns.run_monte_carlo(runner, 1:n_seeds; threads=:auto, route_state=state)
-            @test res2.threads == 1
-            snap2 = ParallelProfiles.outer_route_stats_snapshot(state, auto_sig)
-            @test snap2[:none].samples == n_seeds
-            @test snap2[:threads].samples == n_seeds
+            @test res2.threads == expected_workers
+            res3 = SimulationCampaigns.run_monte_carlo(runner, 1:n_seeds; threads=:auto, route_state=state)
+            @test res3.threads == 1
+            snap3 = ParallelProfiles.outer_route_stats_snapshot(state, auto_sig)
+            @test snap3[:none].samples == n_seeds
+            # Cold eviction replaced the first threads timing with the second.
+            @test snap3[:threads].samples == n_seeds
         end
 
         # Caller-provided route features are patched with the actual sample count.

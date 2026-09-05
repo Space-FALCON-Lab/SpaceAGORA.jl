@@ -157,13 +157,16 @@ end
         if sat_idx == 1
             _update_effector_cost_model!(p.shared_buffers, n_effectors, elapsed_ns, effector_decision.allotment)
         end
+        # This runs per satellite inside the satellite_batch `@batch` body, i.e.
+        # on a Polyester worker task, so the context must be passed explicitly.
         SimulationModel.ParallelPolicy.record_policy_observation!(
             :dynamic_effectors;
             mode=effector_decision.mode,
             num_items=n_effectors,
             use_threads=effector_decision.use_threads,
             elapsed_ns=elapsed_ns,
-            env=_policy_env_config(p)
+            env=_policy_env_config(p),
+            ctx=SimulationModel.ParallelPolicy.policy_context_hint(p)
         )
     end
     return nothing
@@ -1160,6 +1163,7 @@ function _accumulate_harmonics_flat_batch!(
             use_threads=true,
             elapsed_ns=elapsed_ns,
             env=_policy_env_config(p),
+            ctx=SimulationModel.ParallelPolicy.policy_context_hint(p),
         )
     end
     return nothing
@@ -1405,6 +1409,7 @@ function _accumulate_dynamic_effectors_flat_batch!(
             use_threads=true,
             elapsed_ns=elapsed_ns,
             env=_policy_env_config(p),
+            ctx=SimulationModel.ParallelPolicy.policy_context_hint(p),
         )
         if exec_plan.use_packets
             feedback_started_ns = time_ns()

@@ -24,6 +24,28 @@ end
     return UInt(objectid(ctx))
 end
 
+# The run's scoped context, read off the ODE params' shared buffers, or
+# `nothing` when the run did not capture one (SPACEAGORA_PARALLEL_POLICY_V2 off,
+# or hand-built params with no buffers).
+#
+# This exists because task-local storage does not cross task boundaries. The
+# per-satellite effector observation runs inside Polyester `@batch` bodies, so
+# `_active_policy_context()` there answers the GLOBAL context: the observation
+# takes the global lock and writes its elapsed-time EMA where the decision path
+# -- running in the solver task, in the scoped context -- never reads it. A
+# caller that has the params passes this result as `ctx` to
+# `record_policy_observation!`, and the observation lands beside its decision.
+#
+# `hasproperty` on a concrete params type folds at compile time, so on the
+# ordinary path this is one field read and one `isa`.
+@inline function policy_context_hint(p)::Union{Nothing, PolicyContext}
+    (p !== nothing && hasproperty(p, :shared_buffers)) || return nothing
+    sb = getproperty(p, :shared_buffers)
+    hasproperty(sb, :policy_context) || return nothing
+    c = sb.policy_context[]
+    return c isa PolicyContext ? c : nothing
+end
+
 @inline function _active_policy_scope_id()::UInt
     return _policy_scope_id(_active_policy_context())
 end

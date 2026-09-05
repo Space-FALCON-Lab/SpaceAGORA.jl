@@ -941,12 +941,15 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
             total_area += area
         end
     end
+    # Per satellite, and under satellite_batch on a Polyester worker task: pass
+    # the run's context rather than relying on task-local lookup.
     ParallelPolicy.record_policy_observation!(
         :multibody;
         mode=decision.mode,
         num_items=length(bodies),
         use_threads=use_threads,
-        elapsed_ns=(time_ns() - started_ns)
+        elapsed_ns=(time_ns() - started_ns),
+        ctx=ParallelPolicy.policy_context_hint(param)
     )
 
     if total_area > 0.0

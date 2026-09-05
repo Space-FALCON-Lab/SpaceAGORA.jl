@@ -228,11 +228,25 @@ end
 @inline function _hint_mean_and_width(
     stats::AdaptiveChoiceStats,
     total_samples::Int64,
-    explore_c::Float64
+    explore_c::Float64;
+    scaled::Bool=false
 )::Tuple{Float64, Float64}
     n = max(Int64(1), stats.samples)
     mean_ns = stats.elapsed_sum_ns / n
     width = explore_c * sqrt(log(max(2.0, Float64(total_samples))) / n)
+    if scaled
+        # Scale by the arm's own spread, as `_candidate_confidence_width` in the
+        # outer-route selector already does. Unscaled, the width is
+        # `c * sqrt(log N / n)` in RAW NANOSECONDS -- one or two ns -- against
+        # means measured in microseconds to milliseconds, so the bound equalled
+        # the mean and the chooser was a plain argmin over two-sample means.
+        # `confidence` reported through telemetry was likewise meaningless.
+        # Behind SPACEAGORA_PARALLEL_POLICY_V2 so the shipped chooser stays
+        # reproducible for the paired comparison.
+        mean_sq_ns = stats.elapsed_sq_sum_ns / n
+        std_ns = sqrt(max(0.0, mean_sq_ns - mean_ns^2))
+        width *= std_ns
+    end
     return mean_ns, width
 end
 
@@ -246,7 +260,10 @@ end
 
 function _hint_choose_allotment(
     signature::String,
-    candidates::Vector{Int64}
+    candidates::Vector{Int64};
+    # Scale the confidence width by each arm's measured spread; see
+    # _hint_mean_and_width. Off is the shipped chooser.
+    scaled_width::Bool=false
 )::NamedTuple{(:allotment, :confidence, :regret_ns, :samples, :exploring), Tuple{Int64, Float64, Float64, Int64, Bool}}
     _ensure_persistent_hint_state_loaded!()
     candidate_pool = isempty(candidates) ? Int64[1] : sort!(unique!(Int64[max(Int64(1), c) for c in candidates]))
@@ -309,7 +326,7 @@ function _hint_choose_allotment(
         if explore_candidate > 0
             stats = get(bucket, explore_candidate, nothing)
             confidence = if stats isa AdaptiveChoiceStats && stats.samples > 0 && total_samples > 0
-                _, width = _hint_mean_and_width(stats, total_samples, explore_c)
+                _, width = _hint_mean_and_width(stats, total_samples, explore_c; scaled=scaled_width)
                 width
             else
                 Inf
@@ -333,7 +350,7 @@ function _hint_choose_allotment(
             stats = get(bucket, c, nothing)
             stats isa AdaptiveChoiceStats || continue
             stats.samples > 0 || continue
-            mean_ns, width = _hint_mean_and_width(stats, total_samples, explore_c)
+            mean_ns, width = _hint_mean_and_width(stats, total_samples, explore_c; scaled=scaled_width)
             score = mean_ns - width
             push!(known_means, mean_ns)
             if score < best_score

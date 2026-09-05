@@ -19,24 +19,37 @@
 # travels with them.
 @inline function _hint_layer_pays(
     source::Symbol,
-    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
+    env::Union{Nothing, PolicyDecisionEnvConfig}=nothing;
+    ctx::Union{Nothing, PolicyContext}=nothing
 )::Bool
     ratio = env === nothing ? hint_work_ratio() : env.hint_work_ratio
     ratio <= 0.0 && return true
-    ctx = _active_policy_context()
-    work_ns = lock(ctx.lock) do
-        st = get(ctx.adaptive_state, source, nothing)
+    c = ctx === nothing ? _active_policy_context() : ctx
+    work_ns = lock(c.lock) do
+        st = get(c.adaptive_state, source, nothing)
         st === nothing ? 0.0 : st.elapsed_ema_ns
     end
-    work_ns <= 0.0 && return true
+    if work_ns <= 0.0
+        # No work estimate yet. The shipped answer is "consult anyway", which
+        # was meant to cover cold start and instead covered forever: a source
+        # whose observations never reach this context (see policy_context_hint)
+        # reads zero on every call and pays the lookup on every call. Under V2
+        # an unmeasured region fails CLOSED -- one skipped consultation until
+        # the first observation lands, against one paid consultation per call
+        # until it never does.
+        return !(env !== nothing && env.policy_v2)
+    end
     return work_ns >= ratio * hint_overhead_ns()
 end
 
-@inline function _adaptive_state_for(source::Symbol)::AdaptiveControllerState
-    ctx = _active_policy_context()
+@inline function _adaptive_state_for(ctx::PolicyContext, source::Symbol)::AdaptiveControllerState
     return get!(ctx.adaptive_state, source) do
         AdaptiveControllerState()
     end
+end
+
+@inline function _adaptive_state_for(source::Symbol)::AdaptiveControllerState
+    return _adaptive_state_for(_active_policy_context(), source)
 end
 
 # `env` carries the run-scoped PolicyDecisionEnvConfig when the caller has one.
@@ -112,8 +125,7 @@ function _record_policy_decision!(
         t.last_heavy_only = heavy_only
         t.last_heavy_work = heavy_work
         t.last_use_threads = use_threads
-        t.persistent_hints_enabled = (env === nothing || !policy_telemetry_uses_snapshot()) ?
-            persistent_hints_enabled() : env.persistent_hints
+        t.persistent_hints_enabled = env === nothing ? persistent_hints_enabled() : env.persistent_hints
         t.persistent_hints_loaded = hints_loaded
         t.persistent_hints_entries = hints_entries
         t.persistent_hints_path = _persistent_hint_state[].path
@@ -123,10 +135,8 @@ function _record_policy_decision!(
         t.last_hint_regret_ns = max(0.0, hint_regret_ns)
 
         # Folded in from thread_policy_decision's second lock block.
-        if policy_telemetry_uses_snapshot()
-            ctx.decision_signature[source] = signature
-            ctx.decision_allotment[source] = Int64(allotment)
-        end
+        ctx.decision_signature[source] = signature
+        ctx.decision_allotment[source] = Int64(allotment)
     end
     return nothing
 end
@@ -146,10 +156,6 @@ function policy_telemetry_snapshot()
     ctx = _active_policy_context()
     lock(ctx.lock) do
         t = ctx.telemetry
-        quantums_effective = max(0, t.quantums_total - min(t.quantums_total, t.trim_quanta_budget))
-        trimmed_accounted = min(t.quantums_accounted_proxy, quantums_effective)
-        accounted_fraction_proxy = t.quantums_total == 0 ? 0.0 : t.quantums_accounted_proxy / t.quantums_total
-        trimmed_accounted_fraction_proxy = quantums_effective == 0 ? 0.0 : trimmed_accounted / quantums_effective
         return (
             decisions_total=t.decisions_total,
             threads_enabled_total=t.threads_enabled_total,
@@ -184,16 +190,6 @@ function policy_telemetry_snapshot()
             elapsed_ns_total=t.elapsed_ns_total,
             threaded_elapsed_ns_total=t.threaded_elapsed_ns_total,
             serial_elapsed_ns_total=t.serial_elapsed_ns_total,
-            last_classification=String(t.last_classification),
-            last_utilization=t.last_utilization,
-            quantum_length=t.quantum_length,
-            trim_quanta_budget=t.trim_quanta_budget,
-            quantums_total=t.quantums_total,
-            quantums_inefficient=t.quantums_inefficient,
-            quantums_efficient_satisfied=t.quantums_efficient_satisfied,
-            quantums_efficient_deprived=t.quantums_efficient_deprived,
-            quantums_accounted_proxy=t.quantums_accounted_proxy,
-            quantums_deductible_proxy=t.quantums_deductible_proxy,
             persistent_hints_enabled=t.persistent_hints_enabled,
             persistent_hints_loaded=t.persistent_hints_loaded,
             persistent_hints_updates=t.persistent_hints_updates,
@@ -207,8 +203,8 @@ function policy_telemetry_snapshot()
             rhs_plan_mode=String(t.rhs_plan_mode),
             rhs_plan_allotment=t.rhs_plan_allotment,
             rhs_plan_scheduler=String(t.rhs_plan_scheduler),
-            accounted_fraction_proxy=accounted_fraction_proxy,
-            trimmed_accounted_fraction_proxy=trimmed_accounted_fraction_proxy
+            callback_width_density=t.callback_width_density,
+            callback_width_density_static=t.callback_width_density_static
         )
     end
 end
@@ -237,6 +233,25 @@ function record_rhs_plan_selection!(
         t.rhs_plan_mode = mode
         t.rhs_plan_allotment = Int64(max(0, allotment))
         t.rhs_plan_scheduler = scheduler
+    end
+    return nothing
+end
+
+"""
+    record_callback_width_selection!(source::Symbol, chosen::Integer, static::Integer)
+
+Record the outcome of pre-solve callback width calibration for `source`
+(`:density` today): `chosen` is the pinned width, 0 when the static width was
+retained. Accounting only.
+"""
+function record_callback_width_selection!(source::Symbol, chosen::Integer, static::Integer)
+    ctx = _active_policy_context()
+    lock(ctx.lock) do
+        t = ctx.telemetry
+        if source === :density
+            t.callback_width_density = Int64(max(0, chosen))
+            t.callback_width_density_static = Int64(max(0, static))
+        end
     end
     return nothing
 end

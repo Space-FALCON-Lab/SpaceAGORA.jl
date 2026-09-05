@@ -108,12 +108,15 @@ end
 # the best fixed route you could have picked for that exact point, matching
 # the review's point 8 formula.
 const PPB_STATIC_MODES   = Set(["serial", "outer_threads", "outer_process", "inner_only", "outer_inner_static"])
-const PPB_ADAPTIVE_MODES = Set(["outer_inner_adaptive", "full_smart"])
+const PPB_ADAPTIVE_MODES = Set(["outer_inner_adaptive", "full_smart", "policy_v2"])
 
 # The phases whose regret figures are the review's answer: B9-B14, the expanded
 # per-axis evaluation. B6 is retained as a below-the-floor control (see its
 # comment in cli.jl) and is deliberately NOT in this set.
-const PPB_ROUTER_PHASES = ["B9", "B10", "B11", "B12", "B13", "B14"]
+const PPB_ROUTER_PHASES = ["B9", "B10", "B11", "B12", "B13", "B14", "B15"]
+# Phases the regret summary covers: the router phases, the below-floor
+# control, and the --quick set (see ppb_quick_phases).
+const PPB_REGRET_PHASES = vcat(PPB_ROUTER_PHASES, "B6", "Q1", "Q2", "Q3")
 
 # Human-readable name of the workload axis each router phase varies. Used to
 # group the per-axis regret summary, which is what point 8 actually asks to see.
@@ -124,7 +127,11 @@ const PPB_ROUTER_AXIS_LABELS = Dict(
     "B12" => "Interacting vs. independent",
     "B13" => "Thread vs. process budget split",
     "B14" => "Mission duration and output cadence",
+    "B15" => "Nested campaign aspect ratio (joint routing)",
     "B6"  => "Small-workload control (below floor)",
+    "Q1"  => "Quick: constellation thread ladder",
+    "Q2"  => "Quick: calibration on a pinned-plan workload",
+    "Q3"  => "Quick: Monte Carlo thread vs. process split",
 )
 
 # Serial wall time below which no routing profile is distinguishable, so a regret
@@ -317,7 +324,7 @@ function _ppb_router_regret_summary(agg::DataFrame)::DataFrame
     )
     ("regret_vs_best_static" in names(agg) && nrow(agg) > 0) || return out
 
-    for phase in vcat(PPB_ROUTER_PHASES, "B6"), mode in sort(collect(PPB_ADAPTIVE_MODES)),
+    for phase in PPB_REGRET_PHASES, mode in sort(collect(PPB_ADAPTIVE_MODES)),
         (col, colname) in ((:regret_vs_best_static, "matched_budget"),
                            (:regret_vs_best_static_oracle, "oracle"))
         string(col) in names(agg) || continue
@@ -654,7 +661,7 @@ function _ppb_plot_profile_comparison(agg::DataFrame, outdir::String)::String
     nrow(df) == 0 && return ""
 
     cases      = sort(unique(df.case))
-    mode_order = ["serial", "outer_threads", "inner_only", "outer_inner_static", "outer_inner_adaptive", "full_smart"]
+    mode_order = ["serial", "outer_threads", "inner_only", "outer_inner_static", "outer_inner_adaptive", "full_smart", "policy_v2"]
     modes      = [m for m in mode_order if m in unique(df.mode)]
     n_c, n_m   = length(cases), length(modes)
     n_c == 0 || n_m == 0 && return ""
@@ -702,7 +709,7 @@ function _ppb_plot_router_regret(agg::DataFrame, outdir::String)::String
     ]
     nrow(base) == 0 && return ""
 
-    modes = [m for m in ["outer_inner_adaptive", "full_smart"] if m in unique(base.mode)]
+    modes = [m for m in ["outer_inner_adaptive", "full_smart", "policy_v2"] if m in unique(base.mode)]
     isempty(modes) && return ""
 
     panels = Any[]
@@ -947,7 +954,7 @@ function _ppb_write_report(
                 println(io, "### Worst point per case")
                 println(io)
                 regret_df = agg[
-                    (in.(coalesce.(agg.phase_id, ""), Ref(Set(vcat(PPB_ROUTER_PHASES, "B6"))))) .&
+                    (in.(coalesce.(agg.phase_id, ""), Ref(Set(PPB_REGRET_PHASES)))) .&
                     (in.(agg.mode, Ref(PPB_ADAPTIVE_MODES))) .&
                     .!ismissing.(agg.regret_vs_best_static),
                     :,
@@ -956,9 +963,9 @@ function _ppb_write_report(
                     has_plan = "rhs_plan_mode" in names(regret_df)
                     println(io, "| Phase | Case | Mode | Matched | Oracle | Best static was | Router chose | Threads | Workers | MC | Floor |")
                     println(io, "|-------|------|------|--------:|-------:|-----------------|--------------|--------:|--------:|---:|-------|")
-                    for phase in vcat(PPB_ROUTER_PHASES, "B6"),
+                    for phase in PPB_REGRET_PHASES,
                         case in sort(unique(regret_df[coalesce.(regret_df.phase_id, "") .== phase, :case])),
-                        mode in ["outer_inner_adaptive", "full_smart"]
+                        mode in ["outer_inner_adaptive", "full_smart", "policy_v2"]
                         sub = regret_df[
                             (coalesce.(regret_df.phase_id, "") .== phase) .&
                             (regret_df.case .== case) .& (regret_df.mode .== mode), :]

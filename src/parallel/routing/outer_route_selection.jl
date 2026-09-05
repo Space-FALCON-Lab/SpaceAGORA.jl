@@ -272,6 +272,24 @@ end
         !f.gram_static_grid_enabled
 end
 
+"""
+    effective_process_workers(features, tuning) -> Int
+
+Workers the process route may actually use for this workload: the tuning cap,
+and under memory-aware routing (V2) no more than fit in memory beside this
+process, with native GRAM's per-spacecraft footprint added to each worker's
+estimate. `0` or `1` means the route is not worth offering.
+"""
+function effective_process_workers(f::OuterRouteFeatures, t::OuterRouteTuning)::Int
+    t.memory_aware || return t.process_max_workers
+    extra = _is_native_gram_point_density(f) ? native_gram_worker_extra_bytes(f.n_sats) : 0
+    return min(t.process_max_workers, memory_worker_cap(extra_per_worker=extra))
+end
+
+@inline function _process_route_fits(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
+    return !t.memory_aware || effective_process_workers(f, t) >= 2
+end
+
 @inline function _feature_heavy_for_process(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
     if _is_native_gram_point_density(f)
         # Native GRAM point calls are lock-limited; prefer outer process isolation.
@@ -370,9 +388,48 @@ end
     # The affordability and machine-class conditions are the same ones
     # outer_route_candidates uses to enumerate the process arm, so the default
     # can never name a route the selector did not offer.
+    # V2 drops the machine-class gate. The class thresholds (12 usable cores
+    # for :medium, 24 for :large) were a proxy for "has enough cores for a
+    # process pool to be worth it", and the core-budget comparison below asks
+    # that question directly. Left in, the gate kept an 8- or 11-core laptop
+    # on threads even with a worker pool as wide as its thread budget, which
+    # is exactly the configuration the B13 rows show the process route
+    # winning. _mc_process_worth_exploring still applies: a campaign too small
+    # to amortise a dispatch round stays on threads on any machine.
+    class_ok = machine_class in (:large, :medium) || t.mc_route_by_core_budget
+    process_affordable = class_ok && _mc_process_worth_exploring(f, t) && _process_route_fits(f, t)
     if !threads_available
-        return (machine_class in (:large, :medium) && _mc_process_worth_exploring(f, t)) ?
-            :process : :none
+        return process_affordable ? :process : :none
+    end
+    # V2: give the outer axis to whichever route has more cores.
+    #
+    # The measurement behind the threads default above was taken with the
+    # Distributed pool provisioned inside the timed window. The pool is now
+    # persistent and warmed before the clock, and the 2026-09-02 paper run at
+    # commit 3be5b0ec shows the opposite sign wherever the process route has at
+    # least as many workers as the thread route has threads -- and only there:
+    #
+    #     montecarlo_heavy_aerobraking, 64 samples, 12 physical cores
+    #     (threads, workers)   pinned threads   pinned process
+    #     (12, 1)                  10.2 s          59.2 s
+    #     ( 6, 2)                  13.9 s          31.5 s
+    #     ( 4, 3)                  19.3 s          20.8 s
+    #     ( 3, 4)                  24.1 s          16.2 s
+    #     ( 2, 6)                  34.7 s          11.9 s
+    #     ( 1,12)                  57.5 s           7.4 s
+    #     independent_1sat_1hr, 256 samples
+    #     (12,12)                   1.65 s          1.01 s
+    #     ( 8,12)                   1.88 s          1.03 s
+    #
+    # Comparing worker count against thread count reproduces every row. The
+    # shipped default chose threads on all of them and lost by up to 2.9x on
+    # the wide-pool points; exploration could not rescue it because the guard
+    # in _route_is_proven stops once threads beats serial, before process is
+    # ever tried (see must_measure).
+    # The worker count compared is the one memory allows, not the core cap.
+    if t.mc_route_by_core_budget && process_affordable &&
+       effective_process_workers(f, t) >= max(1, t.outer_thread_budget)
+        return :process
     end
     return :threads
 end
@@ -469,10 +526,11 @@ function outer_route_candidates(
     # measured feedback decide.
     allow_process = if lowercase(strip(f.category)) == "montecarlo"
         f.montecarlo_samples > 1 &&
-            machine_class in (:large, :medium) &&
-            _mc_process_worth_exploring(f, tuning)
+            (machine_class in (:large, :medium) || tuning.mc_route_by_core_budget) &&
+            _mc_process_worth_exploring(f, tuning) &&
+            _process_route_fits(f, tuning)
     else
-        _feature_heavy_for_process(f, tuning)
+        _feature_heavy_for_process(f, tuning) && _process_route_fits(f, tuning)
     end
     if allow_process
         push!(candidates, :process)
@@ -537,7 +595,12 @@ end
     candidates::Vector{Symbol},
     snapshot,
     route::Symbol,
-    min_samples::Int,
+    min_samples::Int;
+    # Arms that must have been measured before ANY arm counts as proven,
+    # whatever proven_requires_all_candidates says. The route selector under
+    # V2 names the parallel alternatives here: threads beating serial is no
+    # evidence about process, and process was the arm never reached.
+    must_measure::Vector{Symbol}=Symbol[],
 )::Bool
     info = get(snapshot, route, nothing)
     info === nothing && return false
@@ -573,6 +636,7 @@ end
         other === route && continue
         other_info = get(snapshot, other, nothing)
         if other_info === nothing || other_info.samples <= 0 || !isfinite(other_info.mean_s)
+            other in must_measure && return false
             unmeasured_alternative = true
             continue
         end
@@ -583,6 +647,34 @@ end
         return false
     end
     return tested_against_an_alternative
+end
+
+# Whether ANY enumerated candidate is proven best -- the guard the selectors
+# should be asking, where `_route_is_proven(default)` asks a narrower one.
+#
+# `_route_is_proven` returns false for a default as soon as a sampled
+# alternative beats it (its third clause, deliberately). Gating forced
+# exploration on that alone means a BEATEN default re-enables exploration, and
+# `_under_sampled_candidate` then diverts the campaign to whichever ranked
+# candidate has too few observations -- while the better-measured winner sits
+# unconsulted. Measured shape: process at 0.90 s, threads at 0.10 s, `:none`
+# never tried; the shipped selector runs `:none`.
+#
+# Proven-best for some candidate is the same predicate applied to that
+# candidate: enough campaigns, nothing sampled beats it, at least one
+# alternative tried. The exploration budget is spent only while no arm has
+# earned the right to be exploited.
+@inline function _any_candidate_proven(
+    candidates::Vector{Symbol},
+    snapshot,
+    min_samples::Int;
+    must_measure::Vector{Symbol}=Symbol[],
+)::Bool
+    for route in candidates
+        _route_is_proven(candidates, snapshot, route, min_samples;
+                         must_measure=must_measure) && return true
+    end
+    return false
 end
 
 @inline function _best_candidate(
@@ -747,8 +839,14 @@ function select_outer_route!(
         # beats it, ranking falls through to UCB, which still explores -- through
         # the confidence width on candidates it has data for -- but is no longer
         # obliged to spend a full trial on every candidate it does not.
-        default_proven = _route_is_proven(candidates, snapshot, default_route, tuning.adaptive_min_samples)
-        explore = default_proven ?
+        # Under explore_until_any_proven the question is whether ANY arm has
+        # earned exploitation, not whether the default has; see
+        # _any_candidate_proven for the failure the narrower guard produces.
+        default_proven = tuning.explore_until_any_proven ?
+            _any_candidate_proven(candidates, snapshot, tuning.adaptive_min_samples) :
+            _route_is_proven(candidates, snapshot, default_route, tuning.adaptive_min_samples)
+        # See OuterRouteTuning.explore_routes for why V2 never forces a trial.
+        explore = (default_proven || !tuning.explore_routes) ?
             nothing :
             _under_sampled_candidate(candidates, snapshot, default_route, tuning.adaptive_min_samples)
         if !(explore === nothing)
@@ -835,11 +933,12 @@ function outer_split_candidates(
     route::Symbol;
     budget::Int,
     n_units::Int,
-    tuning::OuterRouteTuning=OuterRouteTuning()
+    tuning::OuterRouteTuning=OuterRouteTuning(),
+    max_process_workers::Int=tuning.process_max_workers
 )::Vector{Int}
     units = max(1, n_units)
     max_workers = if route === :process
-        max(1, min(units, tuning.process_max_workers))
+        max(1, min(units, max_process_workers))
     elseif route === :threads
         max(1, min(units, max(1, budget)))
     else
@@ -898,9 +997,11 @@ function select_outer_split!(
     route::Symbol,
     budget::Int,
     n_units::Int,
-    tuning::OuterRouteTuning=OuterRouteTuning()
+    tuning::OuterRouteTuning=OuterRouteTuning(),
+    max_process_workers::Int=tuning.process_max_workers
 )::Int
-    candidates = outer_split_candidates(route; budget=budget, n_units=n_units, tuning=tuning)
+    candidates = outer_split_candidates(route; budget=budget, n_units=n_units, tuning=tuning,
+                                        max_process_workers=max_process_workers)
     length(candidates) <= 1 && return isempty(candidates) ? 1 : candidates[1]
     widest = candidates[end]
     tuning.adaptive_enabled || return widest
@@ -918,7 +1019,13 @@ function select_outer_split!(
     isempty(snapshot) && return widest
 
     widest_arm = _split_arm(route, widest)
-    explore = _route_is_proven(arms, snapshot, widest_arm, tuning.adaptive_min_samples) ?
+    widest_proven = tuning.explore_until_any_proven ?
+        _any_candidate_proven(arms, snapshot, tuning.adaptive_min_samples) :
+        _route_is_proven(arms, snapshot, widest_arm, tuning.adaptive_min_samples)
+    # Under the split race, widths are explored by racing inside a campaign
+    # (SimulationCampaigns._run_campaign_split_race), never one width per
+    # campaign here; with history present this selector only exploits.
+    explore = (widest_proven || tuning.split_race) ?
         nothing :
         _under_sampled_candidate(arms, snapshot, widest_arm, tuning.adaptive_min_samples)
     if !(explore === nothing)
@@ -953,7 +1060,8 @@ function record_outer_split_feedback!(
     failures::Int,
     elapsed_success_s::Float64=0.0,
     elapsed_success_sq_sum_s::Float64=NaN,
-    tuning::OuterRouteTuning=OuterRouteTuning()
+    tuning::OuterRouteTuning=OuterRouteTuning(),
+    weight::Int=1,
 )::Nothing
     return record_outer_route_feedback!(
         state, f;
@@ -964,5 +1072,24 @@ function record_outer_split_feedback!(
         elapsed_success_sq_sum_s=elapsed_success_sq_sum_s,
         tuning=tuning,
         signature_prefix=_SPLIT_SIGNATURE_PREFIX,
+        weight=weight,
     )
+end
+
+"""
+    outer_split_history_present(state, features, route) -> Bool
+
+Whether any split arm for `route` has been observed under this workload's
+split signature chain. False means the split selector would answer cold, which
+is what the in-campaign race exists to replace.
+"""
+function outer_split_history_present(state::OuterRouteState, f::OuterRouteFeatures, route::Symbol)::Bool
+    prefix = "split_" * String(route) * "_w"
+    for sig in _split_signature_chain(f)
+        snap = _outer_route_stats_snapshot_internal(state, sig)
+        for arm in keys(snap)
+            startswith(String(arm), prefix) && return true
+        end
+    end
+    return false
 end

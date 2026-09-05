@@ -70,6 +70,7 @@ const _MODE_PROFILE = Dict(
     "outer_inner_static" => "R3",
     "outer_inner_adaptive" => "R4",
     "full_smart" => "R5",
+    "policy_v2" => "R6",
 )
 
 function mode_env(name::String)::Dict{String, String}
@@ -80,7 +81,7 @@ function mode_env(name::String)::Dict{String, String}
     # Pre-solve plan calibration follows the profile's adaptive flag, matching
     # modes.jl: the static profiles measure one fixed route, the adaptive ones
     # are meant to exercise everything they ship with.
-    adaptive = profile in ("R4", "R5")
+    adaptive = profile in ("R4", "R5", "R6")
     envd["SPACEAGORA_RHS_CALIBRATE"] = adaptive ? "auto" : "off"
     return merge(_COMMON, envd)
 end

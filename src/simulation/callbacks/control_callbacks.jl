@@ -143,7 +143,8 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
                     num_items=num_sats,
                     use_threads=use_threads,
                     elapsed_ns=(time_ns() - started_ns),
-                    env=_policy_env_config(integrator.p)
+                    env=_policy_env_config(integrator.p),
+                    ctx=ParallelPolicy.policy_context_hint(integrator.p)
                 )
             end
         end

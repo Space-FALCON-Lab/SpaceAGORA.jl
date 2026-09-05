@@ -164,7 +164,15 @@ function ppc_resolve_outer_backend(
 )::PPCModeSpec
     mode.backend == "auto" || return mode
     sample_count > 1 || return _ppc_mode_with_backend(mode, "threads")
-    route = try
+    # Resolve UNDER THE MODE'S ENVIRONMENT. OuterRouteTuning's defaults read
+    # the profile switches from ENV (SPACEAGORA_PARALLEL_POLICY_V2 selects the
+    # core-budget Monte Carlo default and the SPACEAGORA_PERF_PROCS worker cap),
+    # and this used to run before ppc_run_sample_batch applied the mode env --
+    # so every adaptive profile was routed with the shipped defaults whatever
+    # its profile declared, and a paired R6-vs-R5 campaign probe measured two
+    # copies of the same route. The shipped R4/R5 defaults read nothing from
+    # ENV on the cold path, so their routing is unchanged by this.
+    route = try withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=sample_count)...) do
         probe = ppc_single_config(case.name, cfg; seed=cfg.worker_seed, mc_index=1)
         features = SpaceAGORA.SimulationCampaigns.campaign_route_features(
             probe; samples=sample_count
@@ -222,7 +230,7 @@ function ppc_resolve_outer_backend(
             threads_available=Threads.nthreads() > 1,
             parallel_enabled=true,
         )
-    catch err
+    end catch err
         @warn "Outer-route resolution failed; falling back to threads" case=case.name mode=mode.name exception=err
         :threads
     end
@@ -641,7 +649,16 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     scratch = joinpath(outdir, "worker_rows")
     mkpath(scratch)
     cases = ppc_resolve_cases(cfg.cases)
-    parity_cases = ppc_resolve_cases(cfg.parity_cases)
+    # An empty parity list means "no parity", not "every case". ppc_resolve_cases
+    # expands an empty request to the whole sorted catalog, which is what `cases`
+    # wants -- ppc_parse_cli fills its profile default in first, so the controller
+    # never sees an empty one -- but not what parity wants: a caller that builds a
+    # PPCConfig directly has no other way to say "none". ppb_quick_phases does
+    # exactly that, declaring parity_cases = String[] on all three of its phases,
+    # and read literally a --quick run queued parity for every catalog case
+    # against each non-serial mode. It stalled on atmo256_gram_live_10min, whose
+    # parity point is two outer_tasks=1 solves of live native GRAM at N=256.
+    parity_cases = isempty(cfg.parity_cases) ? String[] : ppc_resolve_cases(cfg.parity_cases)
     modes = ppc_mode_specs()
     unknown_modes = [m for m in cfg.modes if !haskey(modes, m)]
     isempty(unknown_modes) || throw(ArgumentError("Unknown mode(s): $(join(unknown_modes, ", "))"))

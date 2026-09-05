@@ -2,11 +2,12 @@ module ParallelPolicy
 
 using Base.Threads
 using TOML
-using ..ConfigTypes: PolicyDecisionEnvConfig
+using ..ConfigTypes: PolicyDecisionEnvConfig, AbstractPolicyContext
 
 export parse_bool_env, parse_parallel_mode_env, parse_thread_threshold_env
 export outer_parallel_active, effective_inner_thread_budget, use_threads_policy
 export thread_policy_decision, threaded_foreach, threaded_reduce, threaded_foreach_persistent, threaded_foreach_worker_persistent, with_policy_context
+export policy_context_hint, policy_v2_enabled
 export threaded_foreach_worker_spin, harmonics_batch_spin_barrier_enabled
 export auto_thread_min_budget
 export snapshot_policy_decision_env

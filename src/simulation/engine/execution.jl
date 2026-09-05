@@ -531,6 +531,7 @@ function run_simulation(
     end
 
     _calibrate_rhs_plan_if_needed!(p, u_start, args)
+    _calibrate_density_callback_width!(p, u_start, args)
 
     # In-run width identification, AFTER the sweep and only where the sweep
     # produced no plan.

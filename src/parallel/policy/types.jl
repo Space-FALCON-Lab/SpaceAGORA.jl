@@ -6,13 +6,8 @@ Base.@kwdef mutable struct AdaptiveControllerState
     # it, and both sides of that comparison are measured rather than assumed.
     # Zero means no observation has been recorded yet.
     elapsed_ema_ns::Float64 = 0.0
+    # Width the hint layer last chose for this source (measured-reward mode).
     desire::Int64 = 1
-    window_calls::Int64 = 0
-    window_allotment_sum::Int64 = 0
-    window_useful_sum::Float64 = 0.0
-    window_deprived_calls::Int64 = 0
-    last_classification::Symbol = :none
-    last_utilization::Float64 = 1.0
 end
 
 Base.@kwdef mutable struct PolicyTelemetry
@@ -51,16 +46,6 @@ Base.@kwdef mutable struct PolicyTelemetry
     elapsed_ns_total::Int64 = 0
     threaded_elapsed_ns_total::Int64 = 0
     serial_elapsed_ns_total::Int64 = 0
-    last_classification::Symbol = :none
-    last_utilization::Float64 = 1.0
-    quantum_length::Int64 = 0
-    trim_quanta_budget::Int64 = 0
-    quantums_total::Int64 = 0
-    quantums_inefficient::Int64 = 0
-    quantums_efficient_satisfied::Int64 = 0
-    quantums_efficient_deprived::Int64 = 0
-    quantums_accounted_proxy::Int64 = 0
-    quantums_deductible_proxy::Int64 = 0
     persistent_hints_enabled::Bool = false
     persistent_hints_loaded::Bool = false
     persistent_hints_updates::Int64 = 0
@@ -87,6 +72,11 @@ Base.@kwdef mutable struct PolicyTelemetry
     #                       the scheduler became part of the calibrated plan
     #                       rather than a process-global setting.
     rhs_plan_scheduler::Symbol = :none
+    # Pre-solve density-callback width calibration (V2): the pinned width (0 =
+    # static per-call decision retained) and the static width it was measured
+    # against. Accounting only.
+    callback_width_density::Int64 = 0
+    callback_width_density_static::Int64 = 0
 end
 
 Base.@kwdef mutable struct AdaptiveChoiceStats
@@ -110,7 +100,7 @@ Base.@kwdef mutable struct _HintLayerStatsAccumulator
     signature_metric_count::Int64 = 0
 end
 
-Base.@kwdef mutable struct PolicyContext
+Base.@kwdef mutable struct PolicyContext <: AbstractPolicyContext
     telemetry::PolicyTelemetry = PolicyTelemetry()
     adaptive_state::Dict{Symbol, AdaptiveControllerState} = Dict{Symbol, AdaptiveControllerState}()
     decision_signature::Dict{Symbol, String} = Dict{Symbol, String}()

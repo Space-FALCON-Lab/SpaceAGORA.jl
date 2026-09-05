@@ -996,12 +996,15 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             )
         end
     end
+    # Per satellite, and under satellite_batch on a Polyester worker task: pass
+    # the run's context rather than relying on task-local lookup.
     ParallelPolicy.record_policy_observation!(
         :multibody;
         mode=decision.mode,
         num_items=n_bodies,
         use_threads=use_threads,
-        elapsed_ns=(time_ns() - started_ns)
+        elapsed_ns=(time_ns() - started_ns),
+        ctx=ParallelPolicy.policy_context_hint(param)
     )
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)

@@ -984,6 +984,13 @@ function _initialize_runtime_env_config!(p)
     p.shared_buffers.policy_env_config[] =
         SimulationModel.ParallelPolicy.snapshot_policy_decision_env(
             adaptive_override = gated ? false : nothing)
+    # Capture the run's scoped policy context HERE, in the task that owns the
+    # solve (execution.jl wraps this in with_policy_context), so observation
+    # sites that run on worker tasks can find it. V2 only; `nothing` leaves
+    # every caller on the shipped task-local lookup.
+    penv = p.shared_buffers.policy_env_config[]
+    p.shared_buffers.policy_context[] = (penv !== nothing && penv.policy_v2) ?
+        SimulationModel.ParallelPolicy._active_policy_context() : nothing
     p.shared_buffers.rhs_env_config[] = _snapshot_rhs_plan_env_config()
     p.shared_buffers.callback_env_config[] = SimulationModel.SimulationCallbacks._snapshot_callback_env_config()
     return nothing

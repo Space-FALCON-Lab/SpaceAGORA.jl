@@ -134,17 +134,18 @@ end
 
 @testset "Outer/inner split: candidate ladder" begin
     T = PPr.OuterRouteTuning(process_max_workers = 12)
-    # Geometric, and always including the widest split -- the widest is what the
-    # previous arithmetic rule produced, so the selector must be able to
-    # reproduce it exactly.
-    @test PPr.outer_split_candidates(:threads; budget = 12, n_units = 64, tuning = T) == [1, 2, 4, 8, 12]
+    # Geometric from a quarter of the width up, and always including the widest
+    # split -- the widest is what the previous arithmetic rule produced, so the
+    # selector must be able to reproduce it exactly. The narrow rungs are
+    # deliberately absent: see outer_split_candidates for the measurement.
+    @test PPr.outer_split_candidates(:threads; budget = 12, n_units = 64, tuning = T) == [4, 8, 12]
     # Capped by the work available, not just the budget: four samples cannot
     # occupy twelve workers.
-    @test PPr.outer_split_candidates(:threads; budget = 12, n_units = 4, tuning = T) == [1, 2, 4]
+    @test PPr.outer_split_candidates(:threads; budget = 12, n_units = 4, tuning = T) == [2, 4]
     # A serial route has exactly one width.
     @test PPr.outer_split_candidates(:none; budget = 12, n_units = 64, tuning = T) == [1]
     # Process width is bounded by process_max_workers rather than the thread pool.
-    @test PPr.outer_split_candidates(:process; budget = 2, n_units = 64, tuning = T) == [1, 2, 4, 8, 12]
+    @test PPr.outer_split_candidates(:process; budget = 2, n_units = 64, tuning = T) == [4, 8, 12]
 end
 
 @testset "Outer/inner split: cold behaviour matches the old arithmetic" begin
@@ -232,9 +233,10 @@ end
     # Split arms are not in the route signature's bucket at all.
     snap = PPr.outer_route_stats_snapshot(st, PPr.outer_route_signature(feat))
     @test !haskey(snap, Symbol("split_threads_w4"))
-    # Route arm only: 5 reps x 64 samples. Before the namespace split this
-    # summed to 384, because the split arm's 64 were counted again here.
-    @test sum(i.samples for i in values(snap)) == 320
+    # Route arm only: 5 reps x 64 samples, minus the first rep that cold
+    # eviction replaced -- 256. Before the namespace split this summed to 384,
+    # because the split arm's 64 were counted again here.
+    @test sum(i.samples for i in values(snap)) == 256
     split_snap = PPr.outer_route_stats_snapshot(
         st, "split|" * PPr.outer_route_signature(feat))
     @test haskey(split_snap, Symbol("split_threads_w4"))

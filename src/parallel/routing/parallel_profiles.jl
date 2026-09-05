@@ -20,5 +20,6 @@ export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapsh
 export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 export load_outer_route_state!, save_outer_route_state
 export outer_split_candidates, select_outer_split!, record_outer_split_feedback!
+export outer_split_history_present
 
 end # module ParallelProfiles

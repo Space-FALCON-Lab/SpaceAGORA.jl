@@ -571,29 +571,40 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # outer_process joins the mode ladder (it is only meaningful on the
         # independent side, and its presence there is the point).
         #
-        # inner_only was dropped here, on the reasoning that with no outer work to
-        # contend with it duplicates outer_inner_static on the interacting side.
-        # It is restored, because that reasoning is false: outer_active is not
-        # inert when there is no outer work, it is a suppression signal to the
-        # inner layer. _rhs_execution_plan_uncached gates on
-        # `outer_active && !env.harmonics_batch_allow_with_outer` at two sites
-        # (setup.jl, the :satellite_batch and :flat_constellation_effector_queue
-        # fallbacks) and pins the RHS to allotment 1 at both. R3 sets
-        # outer_active=1; R2 does not. R3's allow_inner_with_outer=true does not
-        # rescue it -- that flag maps to the density/control/thermal/multibody/
-        # effector ALLOW_WITH_OUTER vars only, never to
-        # SPACEAGORA_HARMONICS_BATCH_ALLOW_WITH_OUTER, which is the one those two
-        # sites read. So on a gravity-dominated interacting case the two modes are
-        # opposite ends of the axis, not duplicates.
+        # inner_only is kept, but not for the reason it was restored. It was
+        # dropped on the grounds that with no outer work to contend with it
+        # duplicates outer_inner_static on the interacting side; it was restored
+        # on the theory that outer_active is a suppression signal to the inner
+        # layer (R3 sets it, R2 does not), which would make the two modes
+        # opposite ends of the axis rather than duplicates.
         #
-        # Measured, run 20260902_153738: outer_inner_static reaches 1.01x at
-        # interact_64sat_1hr t8 and 4.39x at interact_256sat_1hr t8 -- same case
-        # family, only N differs, consistent with RHS calibration clearing the
-        # allotment-1 pin at 256 and not at 64. With inner_only absent, the
-        # adaptive routes were scored against a static field whose only
-        # unsuppressed member had been removed, and read -76% / -83% regret at
-        # 64 satellites. Those two numbers are not comparable to any phase that
-        # kept inner_only in the ladder.
+        # Run 20260905_183451 measured that and it is not what happens. At
+        # interact_64sat_1hr t8, inner_only is 4.380 s / 1.015x and
+        # outer_inner_static is 4.336 s / 1.026x -- indistinguishable. At
+        # interact_256sat_1hr t8 they are 3.614 s / 4.24x and 3.503 s / 4.38x,
+        # again together. Both static modes lose inner parallelism at 64
+        # spacecraft and both regain it at 256, so the size threshold is in the
+        # inner policy and is not an outer_active gate. The original
+        # near-duplicate claim was right on the measurement.
+        #
+        # The adaptive regret figures did not move either: outer_inner_adaptive
+        # at interact_64sat_1hr read -76.1% / -83.3% (t8/t12) without inner_only
+        # in the field and -75.6% / -81.0% with it. They were never an artifact
+        # of the missing baseline.
+        #
+        # What separates the two families is more likely pre-solve RHS
+        # calibration, which follows each mode's own adaptive flag (see
+        # parallelization_performance/modes.jl): R0-R3 run without it, R4/R5/R6
+        # with it, and that file records 29.90 s -> 5.71 s (5.2x) on
+        # heavy_1024sat_fullstack_1hr at 12 threads. The 4.3-4.8x gap here is
+        # the same size. Not isolated in this run, so it is the candidate
+        # mechanism and not a settled one -- but it means the interacting-case
+        # win is at risk of being read as a routing result when it is a
+        # calibration result.
+        #
+        # inner_only stays because a measured baseline is worth its nine points
+        # where an assumed duplicate was not, and because it is what establishes
+        # the paragraph above.
         cases = [
             # interact_16sat_1hr dropped: 1.38 s serial, below the floor.
             "interact_64sat_1hr",

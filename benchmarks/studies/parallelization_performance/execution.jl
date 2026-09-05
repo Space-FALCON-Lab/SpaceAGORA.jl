@@ -84,6 +84,37 @@ function ppc_process_sample_task(case_name::String, cfg::PPCConfig, mode_name::S
     end
 end
 
+# Tear the Distributed pool down and give the memory back.
+#
+# Nothing removed these before, and a pool that outlives the work it was
+# provisioned for is not free: memory_worker_cap() reads available memory LIVE,
+# so idle workers still holding SpaceAGORA, SPICE and their solver caches shrink
+# the headroom the router sees the next time it sizes a pool. Measured on an
+# 18 GB machine, three bare workers moved available memory 4.65 -> 3.47 GB and
+# the cap 3 -> 2; rmprocs plus a collection returned it to 5.53 GB and 3. That is
+# self-defeating feedback -- taking the process route is what makes the router
+# stop affording the process route -- and under policy_v2, which is the only
+# profile that consults the cap, it is enough to flip a point from the process
+# route to serial partway through its repeats.
+#
+# Called once a point's repeats are all done, NOT between them: the pool is
+# deliberately provisioned before the clock and amortised across repeats (see
+# ppc_run_sample_batch), and tearing it down per repeat would re-pay the tens of
+# seconds of addprocs and JIT that the amortisation exists to avoid. This only
+# guarantees the pool never outlives the point that asked for it.
+function ppc_release_process_workers!()::Nothing
+    try
+        existing = workers()
+        # `workers()` on a pool-less process returns [1], the caller itself.
+        removable = filter(w -> w != myid(), existing)
+        isempty(removable) || rmprocs(removable; waitfor=30.0)
+    catch err
+        @warn "Could not release Distributed workers; continuing." exception=err
+    end
+    GC.gc()
+    return nothing
+end
+
 function ppc_ensure_process_workers!(n::Int)::Vector{Int}
     desired = max(1, n)
     current_external = max(0, nprocs() - 1)
@@ -489,6 +520,7 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         effective_env=env_string
     ))
     end
+    ppc_release_process_workers!()
     ppc_write_rows(cfg.worker_outfile, rows)
     return nothing
 end
@@ -567,6 +599,7 @@ function ppc_run_worker_parity(cfg::PPCConfig)
             cmp_interface_count=missing
         ))
     end
+    ppc_release_process_workers!()
     ppc_write_rows(cfg.worker_outfile, rows)
     return nothing
 end

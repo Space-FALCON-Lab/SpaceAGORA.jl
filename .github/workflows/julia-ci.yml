@@ -5,6 +5,12 @@ on:
     branches: ["main", "master"]
   pull_request:
 
+# One live run per pull request (or per branch on push): a new push cancels
+# the stale run of the same PR instead of competing with it for runners.
+concurrency:
+  group: julia-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests-matrix:
     runs-on: ubuntu-latest

@@ -574,4 +574,17 @@ run_cli(args...; kwargs...) = SpaceAGORACLI.run_cli(args...; kwargs...)
 
 include(joinpath(@__DIR__, "precompile_workload.jl"))
 
+# Runtime wiring that must not be baked into the precompiled image: these Refs
+# hold closures over EnvironmentModels functions, so assigning them at include
+# time would serialize a closure from an earlier world age. __init__ runs on
+# every load of the cached image, which is what this needs.
+function __init__()
+    try
+        SimulationModel.SimulationCallbacks._install_density_service_hooks!()
+    catch err
+        @warn "Could not install distributed density service hooks; the service will be unavailable." exception=(err, catch_backtrace())
+    end
+    return nothing
+end
+
 end # module SpaceAGORA

@@ -546,6 +546,8 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
         gravity_harmonics_order = _optional_int(tbl, "gravity_harmonics_order", 0)
         raw_harmonics_file = _optional_str(tbl, "gravity_harmonics_file", "")
         gravity_harmonics_file = isempty(strip(raw_harmonics_file)) ? "" : _resolve_repo_path(raw_harmonics_file)
+        gravity_harmonics_gm_override_m3s2 = haskey(tbl, "gravity_harmonics_gm_override_m3s2") ?
+            _require_float(tbl, "gravity_harmonics_gm_override_m3s2", context) : nothing
         nbody_bodies = _optional_str_vector(tbl, "nbody_bodies")
         srp_enabled = _optional_bool(tbl, "srp_enabled", false)
         srp_cr = _optional_float(tbl, "srp_cr", 1.3)
@@ -607,6 +609,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 gravity_harmonics_degree=gravity_harmonics_degree,
                 gravity_harmonics_order=gravity_harmonics_order,
                 gravity_harmonics_file=gravity_harmonics_file,
+                gravity_harmonics_gm_override_m3s2=gravity_harmonics_gm_override_m3s2,
                 nbody_bodies=nbody_bodies,
                 srp_enabled=srp_enabled,
                 srp_cr=srp_cr,
@@ -675,6 +678,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 gravity_harmonics_degree=gravity_harmonics_degree,
                 gravity_harmonics_order=gravity_harmonics_order,
                 gravity_harmonics_file=gravity_harmonics_file,
+                gravity_harmonics_gm_override_m3s2=gravity_harmonics_gm_override_m3s2,
                 nbody_bodies=nbody_bodies,
                 srp_enabled=srp_enabled,
                 srp_cr=srp_cr,

@@ -61,9 +61,29 @@ end
     return abs(num) / scale
 end
 
+# Half-angle via atan2 rather than acos.
+#
+# The previous form was `2*acos(|dot|)`. For two *identical* unit quaternions the
+# normalise-then-dot round trip lands the dot product about two ULPs below 1.0,
+# and acos is ill-conditioned exactly there -- acos(1-x) ~ sqrt(2x), so a 2.2e-16
+# input error is amplified to 2.1e-8. The result was a constant, irreducible
+# 2*acos(1-eps) = 4.2146848510894035e-8 rad reported for bit-identical
+# trajectories, on every attitude-propagating case, against a q_angle_max_rad
+# tolerance of 1e-8 that is four times tighter than that floor. Every 6-DOF case
+# therefore failed parity permanently and regardless of correctness, which put a
+# real 0.0769 rad divergence and an exactly-zero one in the same bucket.
+#
+# atan2 of the orthogonal and parallel components is well conditioned at zero.
+# The orthogonal component is formed by subtraction rather than as sqrt(1-c^2),
+# so it carries no cancellation either. Sign alignment first resolves the double
+# cover, q and -q being the same rotation.
 @inline function _ppc_quat_angle(q_ref::SVector{4, Float64}, q_cmp::SVector{4, Float64})::Float64
-    dot_abs = abs(dot(q_ref / norm(q_ref), q_cmp / norm(q_cmp)))
-    return 2.0 * acos(clamp(dot_abs, -1.0, 1.0))
+    a = q_ref / norm(q_ref)
+    b = q_cmp / norm(q_cmp)
+    b = dot(a, b) < 0.0 ? -b : b
+    c = clamp(dot(a, b), -1.0, 1.0)     # cos(theta/2), non-negative after alignment
+    s = norm(a - c * b)                 # |sin(theta/2)|, by subtraction
+    return 2.0 * atan(s, c)
 end
 
 function _ppc_zero_crossings(signal::Vector{Float64}, times::Vector{Float64}; direction::Symbol)::Vector{Float64}

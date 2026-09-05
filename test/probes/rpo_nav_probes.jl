@@ -23,7 +23,7 @@ const EARTH = Earth("", SPICE_PATH)
 
 """Minimal simulation configuration used only to type ODEParams arguments."""
 function build_min_config()
-    root = Link{0}(root=true, m=500.0, ref_area=12.0)
+    root = Link(root=true, m=500.0, ref_area=12.0)
     ic = InitialCondition(
         ra=EARTH.Rp_e + 500e3,
         rp=EARTH.Rp_e + 450e3,

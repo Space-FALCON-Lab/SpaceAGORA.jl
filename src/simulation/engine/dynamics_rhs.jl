@@ -46,6 +46,54 @@ end
     return count
 end
 
+# Type-stable replacement for `for effector in dynamic_effectors`.
+#
+# `dynamic_effectors` is a heterogeneous tuple whose eltype is the abstract
+# AbstractForceTorqueModel, so iterating it leaves the loop variable abstract:
+# _evaluate_dynamic_effector becomes a dynamic dispatch and the force/torque it
+# returns are inferred as Any, which boxes on every accumulate. Measured
+# directly: 240 bytes per iteration for the 3-effector (gravity + SRP + aero)
+# mix, versus 0 bytes for a homogeneous 1-tuple. That per-satellite,
+# per-RHS-call cost is a large part of why the atmosphere constellation cases
+# allocate ~30 GB per solve while the single-effector vacuum cases allocate
+# ~1.6 GB, and allocation is what caps their thread scaling.
+#
+# Peeling one element at a time via Base.tail gives every recursion level a
+# concretely typed `first(effs)`, so the chain unrolls at compile time and stays
+# allocation-free. Effector tuples are small (1-5 entries), so recursion depth is
+# not a concern.
+@inline _accumulate_effector_chain!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    ::Tuple{},
+    sc_view,
+    state_sample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::Nothing = nothing
+
+@inline function _accumulate_effector_chain!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    effs::Tuple,
+    sc_view,
+    state_sample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::Nothing
+    force, torque = _evaluate_dynamic_effector(first(effs), sc_view, state_sample, p, sat_idx, t)
+    # Broadcast, matching the loop this replaced: the type-stability win comes
+    # from peeling the tuple, not from rewriting the accumulate, and keeping the
+    # original expression avoids gratuitously perturbing floating-point rounding.
+    forces .+= force
+    torques .+= torque
+    return _accumulate_effector_chain!(
+        forces, torques, Base.tail(effs), sc_view, state_sample, p, sat_idx, t
+    )
+end
+
 @inline function _accumulate_dynamic_effectors!(
     forces::MVector{3, Float64},
     torques::MVector{3, Float64},
@@ -100,23 +148,25 @@ end
             torques[3] = reduced[6]
         end
     else
-        @inbounds for effector in dynamic_effectors
-            force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
-            forces .+= force
-            torques .+= torque
-        end
+        _accumulate_effector_chain!(
+            forces, torques, dynamic_effectors, sc_view, state_sample, p, sat_idx, t
+        )
     end
     if needs_timing
         elapsed_ns = Int64(time_ns() - effector_started_ns)
         if sat_idx == 1
             _update_effector_cost_model!(p.shared_buffers, n_effectors, elapsed_ns, effector_decision.allotment)
         end
+        # This runs per satellite inside the satellite_batch `@batch` body, i.e.
+        # on a Polyester worker task, so the context must be passed explicitly.
         SimulationModel.ParallelPolicy.record_policy_observation!(
             :dynamic_effectors;
             mode=effector_decision.mode,
             num_items=n_effectors,
             use_threads=effector_decision.use_threads,
-            elapsed_ns=elapsed_ns
+            elapsed_ns=elapsed_ns,
+            env=_policy_env_config(p),
+            ctx=SimulationModel.ParallelPolicy.policy_context_hint(p)
         )
     end
     return nothing
@@ -223,6 +273,42 @@ end
         mass_rate += isfinite(control_mass_rate) ? control_mass_rate : 0.0
     end
     return mass_rate
+end
+
+# Drop a flat-effector partials buffer that is WIDER than the worker count the
+# solve will actually use.
+#
+# _ensure_rhs_flat_effector_scratch! grows the worker dimension and never
+# shrinks it, and it has an exact-size fast path: when size(partials,3) == workers
+# the per-call zeroing is one contiguous fill! (a memset), and otherwise it is a
+# strided broadcast over a non-contiguous view. That is a per-RHS-call cost, for
+# the whole solve.
+#
+# The calibration sweep walks an allotment ladder up to the full thread budget,
+# so it grows the buffer to the WIDEST candidate it tries -- and then the solve
+# runs at whatever allotment won, which is routinely narrower (this repo's own
+# ladder comment records every multi-effector constellation case peaking at 4 on
+# a 12-thread box). From then on every call takes the strided path. Static
+# profiles never sweep, so their buffer is allocated once at the heuristic's own
+# worker count and hits the memset path forever: this is a cost only the
+# calibrating profiles pay, created entirely by the measurement.
+#
+# Called once, after calibration settles, so the solve starts from a buffer
+# sized to the plan it is actually going to run.
+function _release_oversized_flat_scratch!(shared_buffers, workers::Int)::Nothing
+    shared_buffers === nothing && return nothing
+    hasproperty(shared_buffers, :rhs_flat_effector_partials) || return nothing
+    ref = shared_buffers.rhs_flat_effector_partials
+    partials = ref[]
+    partials === nothing && return nothing
+    if size(partials, 3) > max(1, workers)
+        # Hand back an empty array rather than a correctly-sized one: the next
+        # _ensure_rhs_flat_effector_scratch! allocates it at the exact
+        # (num_sats, workers) the RHS asks for, which is the only place that
+        # knows both. Sizing it here would have to duplicate that derivation.
+        ref[] = Array{Float64, 3}(undef, 6, 0, 0)
+    end
+    return nothing
 end
 
 @inline function _ensure_rhs_flat_effector_scratch!(
@@ -365,13 +451,27 @@ end
     return 1
 end
 
-@inline function _rhs_effector_static_cost_ns(effector)::Float64
+# Takes the per-item cost default as a value rather than reading it from the
+# environment. The env reader (`_effector_cost_ns_per_item_default`) goes through
+# _parse_positive_float_env, which allocates unconditionally -- `string(default)`
+# to build the fallback, then `strip` to produce a SubString, then a parse -- for
+# a measured 432 bytes per call. This function is on the RHS hot path (the flat
+# queue's cost model calls it per effector per RHS call, and
+# _rhs_effectors_have_heavy_or_heterogeneous_cost calls it per effector inside
+# the routing decision, which itself re-runs every RHS call unless the plan step
+# cache is on), so at constellation scale that reached multiple GB of pure
+# garbage per solve. The value is already snapshotted per run in
+# RhsPlanEnvConfig.effector_cost_ns_per_item_default -- this just reads it from
+# there. Same hoist as commit d4f5cce4 did for the other per-step env reads;
+# these cost-model ones were missed.
+@inline function _rhs_effector_static_cost_ns(effector, cost_ns_per_item_default::Float64)::Float64
     rank = _rhs_effector_cost_rank(effector)
-    return _effector_cost_ns_per_item_default() * Float64(rank * rank)
+    return cost_ns_per_item_default * Float64(rank * rank)
 end
 
 @inline function _rhs_effector_estimated_cost_ns(shared_buffers, dynamic_effectors::Tuple, eff_idx::Int)::Float64
-    fallback = _rhs_effector_static_cost_ns(dynamic_effectors[eff_idx])
+    cost_default = _rhs_env_config_from_buffers(shared_buffers).effector_cost_ns_per_item_default
+    fallback = _rhs_effector_static_cost_ns(dynamic_effectors[eff_idx], cost_default)
     return _rhs_effector_observed_cost_ns(shared_buffers, eff_idx, fallback)
 end
 
@@ -411,6 +511,22 @@ end
     return mod(item - 1, n_effectors) + 1
 end
 
+# Per-effector "does this belong in the flat queue" mask, built by peeling the
+# effector tuple one concretely typed element at a time so every predicate call
+# is a static dispatch. Returns NTuple{N, Bool}, which callers can index at a
+# runtime eff_idx without allocating (unlike the heterogeneous effector tuple
+# itself). Mirrors the skip logic that used to live inline in
+# _prepare_rhs_flat_work_items!'s inner loop.
+@inline _flat_selection_mask(::Tuple{}, partition)::Tuple{} = ()
+
+@inline function _flat_selection_mask(effs::Tuple, partition)
+    effector = first(effs)
+    keep = _flat_partition_selected(effector, partition) &&
+        # Effectors resolved by pre-passes already wrote into totals.
+        !(partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)))
+    return (keep, _flat_selection_mask(Base.tail(effs), partition)...)
+end
+
 function _prepare_rhs_flat_work_items!(
     work_items::Vector{Int},
     p,
@@ -424,14 +540,25 @@ function _prepare_rhs_flat_work_items!(
         resize!(work_items, required)
     end
 
+    # Which effectors belong in the flat queue depends only on eff_idx and the
+    # partition -- never on sat_idx -- so resolve it once, outside the per-
+    # satellite loop, into a homogeneous NTuple{N, Bool}.
+    #
+    # The previous form indexed `dynamic_effectors[eff_idx]` inside the inner
+    # loop, i.e. num_sats * n_effectors times per RHS call. That tuple is
+    # heterogeneous, so a runtime index infers to the Union of its element types
+    # and allocates a measured 144 bytes each time (0 bytes for a homogeneous
+    # tuple), which made this function one of the largest allocation sites in the
+    # 12-thread profile of the 1024-satellite atmosphere case. Indexing the Bool
+    # mask instead is allocation-free because NTuple{N, Bool} is homogeneous, and
+    # building the mask costs n_effectors type-stable predicate calls per RHS
+    # call rather than num_sats * n_effectors boxed ones.
+    selected = _flat_selection_mask(dynamic_effectors, partition)
     count_items = 0
     @inbounds for sat_idx in 1:num_sats
         p.is_active[sat_idx] || continue
         for eff_idx in 1:n_effectors
-            effector = dynamic_effectors[eff_idx]
-            _flat_partition_selected(effector, partition) || continue
-            # Skip effectors resolved by pre-passes — they already wrote into totals.
-            partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue
+            selected[eff_idx] || continue
             count_items += 1
             work_items[count_items] = _constellation_node_work_item(sat_idx, eff_idx, n_effectors)
         end
@@ -676,6 +803,25 @@ end
 # kernel writes force only, so a model configured with `gravity_gradient=true`
 # (which needs the per-satellite quaternion) must keep going through the
 # per-satellite wrench path instead.
+# Below this many satellites per reduction worker the dispatch costs more than
+# the reduction saves, so the serial path is kept. Sized off the measured
+# persistent-pool dispatch (a few microseconds at realistic widths) against a
+# six-element-per-satellite accumulate.
+#
+# SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER overrides it; setting it very
+# high forces the serial reduction, which is how the parallel path is A/B'd.
+@inline function _rhs_reduction_min_sats_per_worker()::Int
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER", "64"))
+    v = try
+        parse(Int, raw)
+    catch
+        throw(ArgumentError(
+            "SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER must be an integer, got '$raw'"
+        ))
+    end
+    return max(1, v)
+end
+
 @inline _batchable_effector(::Any)::Bool = false
 @inline _batchable_effector(::SimulationModel.NBodyGravityModel)::Bool = true
 @inline _batchable_effector(::SimulationModel.SolarRadiationPressureModel)::Bool = true
@@ -915,6 +1061,28 @@ end
     return nothing
 end
 
+# Forward a plan's `scheduler` to the dispatch primitives only when the plan came
+# from pre-solve calibration.
+#
+# Heuristic plans in setup.jl have carried a `scheduler` field since long before
+# the dispatch primitives honoured one -- they always read
+# SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER instead -- so those values have
+# never been measured against anything. Honouring them now would silently change
+# R0-R3 too, which is a different change from making the adaptive profiles'
+# scheduler a routed decision. A calibrated plan's scheduler is a swept, timed
+# choice, so that one is forwarded; everything else resolves to `:auto`, i.e.
+# the env var, exactly as before.
+#
+# The override Ref is also what the calibration sweep writes each candidate
+# into, so the sweep measures each candidate under its own scheduler.
+@inline function _dispatch_scheduler(p, plan)::Symbol
+    if p !== nothing && hasproperty(p, :shared_buffers) &&
+       p.shared_buffers.rhs_plan_override[] !== nothing
+        return plan.scheduler
+    end
+    return :auto
+end
+
 function _accumulate_harmonics_flat_batch!(
     sc_state,
     p,
@@ -973,7 +1141,8 @@ function _accumulate_harmonics_flat_batch!(
         dispatch_fn(
             :rhs_harmonics_batch,
             n_workers,
-            plan.allotment,
+            plan.allotment;
+            scheduler=_dispatch_scheduler(p, plan),
         ) do _worker_id, w
             item_start = (w - 1) * batch_size + 1
             item_end   = min(w * batch_size, count_items)
@@ -993,6 +1162,8 @@ function _accumulate_harmonics_flat_batch!(
             num_items=max(1, active_sats),
             use_threads=true,
             elapsed_ns=elapsed_ns,
+            env=_policy_env_config(p),
+            ctx=SimulationModel.ParallelPolicy.policy_context_hint(p),
         )
     end
     return nothing
@@ -1115,7 +1286,9 @@ function _accumulate_dynamic_effectors_flat_batch!(
             packet_overhead_ns += Int64(time_ns() - packet_prepare_started_ns)
         end
 
-        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_flat_queue_packets, packet_count, plan.allotment) do worker_id, packet_idx
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+            :rhs_flat_queue_packets, packet_count, plan.allotment; scheduler=_dispatch_scheduler(p, plan)
+        ) do worker_id, packet_idx
             packet_started_ns = needs_timing ? time_ns() : UInt64(0)
             @inbounds for item_idx in packet_starts[packet_idx]:packet_ends[packet_idx]
                 item = work_items[item_idx]
@@ -1141,7 +1314,9 @@ function _accumulate_dynamic_effectors_flat_batch!(
             return nothing
         end
     else
-        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_flat_queue, count_items, plan.allotment) do worker_id, item_idx
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+            :rhs_flat_queue, count_items, plan.allotment; scheduler=_dispatch_scheduler(p, plan)
+        ) do worker_id, item_idx
             item = work_items[item_idx]
             sat_idx = _constellation_node_sat_idx(item, exec_plan.n_effectors)
             eff_idx = _constellation_node_eff_idx(item, exec_plan.n_effectors)
@@ -1162,17 +1337,60 @@ function _accumulate_dynamic_effectors_flat_batch!(
         end
     end
 
-    # Worker-major reduction: partials is column-major 6×N×W, so for a fixed
-    # worker the satellite dimension is contiguous (stride 6); satellite-major
-    # order with the worker innermost would jump 6N doubles per iteration.
-    @inbounds for worker_id in 1:exec_plan.workers
-        for sat_idx in 1:num_sats
-            totals[1, sat_idx] += partials[1, sat_idx, worker_id]
-            totals[2, sat_idx] += partials[2, sat_idx, worker_id]
-            totals[3, sat_idx] += partials[3, sat_idx, worker_id]
-            totals[4, sat_idx] += partials[4, sat_idx, worker_id]
-            totals[5, sat_idx] += partials[5, sat_idx, worker_id]
-            totals[6, sat_idx] += partials[6, sat_idx, worker_id]
+    # Cross-worker reduction of the 6 x N x W partials into totals.
+    #
+    # This is O(N*W) work and it used to run serially on the calling thread,
+    # which made it a cost that GROWS with the worker count -- every extra
+    # worker added a full N-satellite pass to a loop nothing else overlapped.
+    # At 1024 satellites and 12 workers that is ~74k element-adds per RHS call
+    # charged entirely against wall time, so widening the split partly paid for
+    # itself in reduction.
+    #
+    # Splitting it over the same worker pool leaves the total work unchanged but
+    # divides the wall time, taking the term from O(N*W) to O(N) and making it
+    # very nearly allotment-independent -- which is also why the cost model does
+    # not need a discriminating term for it.
+    #
+    # Each worker owns a disjoint satellite range and accumulates every worker's
+    # partial for those satellites, so there is no write conflict and no atomic.
+    # Satellite-major within a worker is the right traversal here: partials is
+    # column-major 6 x N x W, so for fixed worker_id the satellite dimension is
+    # contiguous at stride 6, and the outer loop over worker_id keeps that inner
+    # access sequential.
+    reduce_workers = SimulationModel.ParallelPolicy.thread_worker_count(
+        num_sats, exec_plan.workers
+    )
+    if reduce_workers <= 1 || num_sats < _rhs_reduction_min_sats_per_worker() * 2
+        @inbounds for worker_id in 1:exec_plan.workers
+            for sat_idx in 1:num_sats
+                totals[1, sat_idx] += partials[1, sat_idx, worker_id]
+                totals[2, sat_idx] += partials[2, sat_idx, worker_id]
+                totals[3, sat_idx] += partials[3, sat_idx, worker_id]
+                totals[4, sat_idx] += partials[4, sat_idx, worker_id]
+                totals[5, sat_idx] += partials[5, sat_idx, worker_id]
+                totals[6, sat_idx] += partials[6, sat_idx, worker_id]
+            end
+        end
+    else
+        n_partials = exec_plan.workers
+        chunk = cld(num_sats, reduce_workers)
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+            :rhs_flat_reduce, reduce_workers, reduce_workers; scheduler = :static
+        ) do _worker_id, slice_idx
+            lo = (slice_idx - 1) * chunk + 1
+            hi = min(num_sats, slice_idx * chunk)
+            lo > num_sats && return nothing
+            @inbounds for worker_id in 1:n_partials
+                for sat_idx in lo:hi
+                    totals[1, sat_idx] += partials[1, sat_idx, worker_id]
+                    totals[2, sat_idx] += partials[2, sat_idx, worker_id]
+                    totals[3, sat_idx] += partials[3, sat_idx, worker_id]
+                    totals[4, sat_idx] += partials[4, sat_idx, worker_id]
+                    totals[5, sat_idx] += partials[5, sat_idx, worker_id]
+                    totals[6, sat_idx] += partials[6, sat_idx, worker_id]
+                end
+            end
+            return nothing
         end
     end
 
@@ -1190,6 +1408,8 @@ function _accumulate_dynamic_effectors_flat_batch!(
             num_items=max(1, count_items),
             use_threads=true,
             elapsed_ns=elapsed_ns,
+            env=_policy_env_config(p),
+            ctx=SimulationModel.ParallelPolicy.policy_context_hint(p),
         )
         if exec_plan.use_packets
             feedback_started_ns = time_ns()
@@ -1287,6 +1507,19 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
 
     decision = SimulationModel.SimulationCallbacks._density_callback_thread_decision(p.args, num_sats)
     worker_allotment = decision.use_threads ? decision.allotment : 1
+
+    # Whether the atmosphere half of this pass goes to the distributed density
+    # service. Decided once, before the loop, so every satellite in one
+    # derivative evaluation takes the same path -- a per-satellite decision would
+    # split one batch across two mechanisms and defeat the batching.
+    #
+    # This is the batch point the service needs, and the reason it can be exact:
+    # the loop below already computes every satellite's planet frame before any
+    # force is accumulated, so all N density queries for this evaluation are
+    # available together, at the true stage state. Nothing is frozen or reused.
+    batch_atmosphere = atmosphere &&
+        SimulationModel.SimulationCallbacks._rhs_density_service_candidate(p, num_sats)
+
     SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, worker_allotment) do _, sat_idx
         if p.is_active[sat_idx]
             @views sc_view = sc_state[sat_idx]
@@ -1298,8 +1531,28 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
                 planet_lat[sat_idx] = planet_frame.lat_rad
                 planet_lon[sat_idx] = planet_frame.lon_rad
             end
-            if atmosphere
+            if atmosphere && !batch_atmosphere
                 _sample_atmosphere_from_planet_frame(sc_view, planet_frame, p, sat_idx, t; write_buffers=true)
+            end
+        end
+    end
+
+    if batch_atmosphere
+        served = SimulationModel.SimulationCallbacks._rhs_density_service_fill!(
+            p, t, num_sats, planet_alt, planet_lat, planet_lon
+        )
+        if !served
+            # Service declined or a worker failed. The planet frames above are
+            # already in the buffers, so the fallback re-reads them rather than
+            # recomputing, and the result is identical to never having tried.
+            SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, worker_allotment) do _, sat_idx
+                if p.is_active[sat_idx]
+                    @views sc_view = sc_state[sat_idx]
+                    _sample_atmosphere_from_planet_frame(
+                        sc_view, sample_buffered_planet_frame(p, sat_idx), p, sat_idx, t;
+                        write_buffers=true,
+                    )
+                end
             end
         end
     end
@@ -1619,9 +1872,16 @@ end
     end
 
     h_wheel_body = SVector{3, Float64}(0.0, 0.0, 0.0)
+    rw_h_body_scratch = MVector{3, Float64}(0.0, 0.0, 0.0)
     if rw_assembly !== nothing && rw_assembly.n_wheels > 0
-        h_wheel_body = rw_assembly.J_rw * SVector{rw_assembly.n_wheels, Float64}(sc_view.h_wheels)
-        du_view.h_wheels .= rw_assembly.J_rw_pinv * (-rw_torque_body)
+        # J_rw maps wheel momenta into the 3-axis body frame, so the product is
+        # always length 3 regardless of wheel count. Build the SVector from that
+        # result rather than from the wheel vector: the old
+        # `SVector{rw_assembly.n_wheels, Float64}(...)` used a runtime field as a
+        # type parameter, which forced a dynamic dispatch on every call.
+        mul!(rw_h_body_scratch, rw_assembly.J_rw, sc_view.h_wheels)
+        h_wheel_body = SVector{3, Float64}(rw_h_body_scratch)
+        mul!(du_view.h_wheels, rw_assembly.J_rw_pinv, -rw_torque_body)
     end
 
     du_view.ω .= SimulationModel.DynamicsRotational.angular_acceleration(
@@ -1731,7 +1991,23 @@ end
     return nothing
 end
 
+# In-run width identification, when it is switched on.
+#
+# One `=== nothing` test per RHS call when it is off, which it is by default and
+# always is once identification has committed -- the trial clears itself from
+# shared_buffers on commit, so the steady state has no trial branch to take and
+# no per-call plan switching.
+#
+# The wrapper exists because the timing has to enclose the whole evaluation and
+# the body below has two exits (the flat-queue route returns early). Wrapping
+# here is the only place both are covered.
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    trial = p.shared_buffers.rhs_width_trial[]
+    trial === nothing && return _spacecraft_dynamics_dispatch!(du, u, p, t)
+    return rhs_width_trial_step!(du, u, p, t, trial, _spacecraft_dynamics_dispatch!)
+end
+
+function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
     sc_du = du.sc
     dynamics_model = p.args.dynamics_model

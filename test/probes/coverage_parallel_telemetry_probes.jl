@@ -58,15 +58,18 @@ const TV = TelemetryVerification
     @test cfg_r4.inner_adaptive == true
     @test cfg_r4.thermal_mode == "auto"
     @test cfg_r4.inner_scheduler == "static"
-    @test cfg_r4.adaptive_control_tail_guard == false
     @test cfg_r4.adaptive_measured_reward == false
     @test cfg_full.outer_route_adaptive == true
     @test cfg_full.label == "r5"
-    @test cfg_full.thermal_mode == "on"
-    @test cfg_full.inner_scheduler == "dynamic"
-    @test cfg_full.adaptive_control_tail_guard == true
+    # Both of these track measured reversals in profile_definitions.jl.
+    # inner_scheduler went dynamic -> static in 622ae2a0 (the sweep now measures
+    # the scheduler, so a profile constant must not pre-empt it) and this probe
+    # was not updated with it. thermal_mode went on -> auto for the same reason:
+    # R5 was the only profile forcing it, and "on" was never measured to beat
+    # "auto" on any workload.
+    @test cfg_full.thermal_mode == "auto"
+    @test cfg_full.inner_scheduler == "static"
     @test cfg_full.adaptive_measured_reward == true
-    @test cfg_full.adaptive_window == 4
     @test cfg_full.persistent_hints == true
     @test cfg_full.persistent_state_persist == true
 
@@ -83,17 +86,13 @@ const TV = TelemetryVerification
     @test env_map_override["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "0"
     @test env_map_override["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "none"
     @test env_map_override["SPACEAGORA_RHS_BATCH_PARALLEL"] == "auto"
-    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "8"
-    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "0"
     @test parse(Float64, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) > 0.0
     @test parse(Int, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES"]) >= 1
     env_pairs_auto = PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false)
     env_map_auto = Dict(env_pairs_auto)
     @test env_map_auto["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "auto"
-    @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "on"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "dynamic"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "4"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "1"
+    @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "auto"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "static"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST"] == "1"
@@ -171,8 +170,39 @@ const TV = TelemetryVerification
     @test PP.default_outer_route(f_const; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_heavy; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_heavy; tuning=tune, machine_class=:small, threads_available=false, parallel_enabled=true) == :none
-    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
+    # Threads, not process, and this is a measured reversal.
+    #
+    # The Monte Carlo rule used to return :process whenever the machine was
+    # medium/large and either the sample count or the SIMULATED mission time
+    # cleared a threshold. Neither is a proxy for per-sample compute, and the
+    # process route lost on every Monte Carlo case in the benchmark catalog --
+    # +33% to +201% against the best static route. Measured at 64 samples on 12
+    # threads, process against threads: 2.45x slower at 0.038 s/sample, 2.90x at
+    # 0.072, 1.46x at 0.072, 1.41x at 0.259 and 1.69x at 3.179 s/sample. No
+    # crossover anywhere in that range, so the premise was wrong rather than the
+    # constants.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+    # ...but the process route must stay a CANDIDATE, or the bandit could never
+    # rediscover it on a machine or workload where it wins, and the reversal
+    # above would be permanent and unfalsifiable.
+    @test :process in PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true)
+    # With NO worker threads the reversal inverts, because everything it was
+    # measured against was threads. One Julia thread leaves the process pool as
+    # the only parallelism a Monte Carlo campaign can use, and falling through
+    # to :none was the worst result in the benchmark set: at one thread the
+    # fastest fixed route is outer processes on every Monte Carlo case measured,
+    # and both adaptive profiles trailed it by 67 to 89 percent.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) == :process
+    # The default must never name a route the selector did not enumerate.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) in
+          PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true)
+    # A campaign too small to amortise process startup still stays serial rather
+    # than spawning a pool for nothing.
+    @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) == :none
+    # Native GRAM is unaffected: there the process route is a thread-safety
+    # requirement, decided before the Monte Carlo rule is consulted.
+    @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=false) == :none
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :process
@@ -192,8 +222,32 @@ const TV = TelemetryVerification
 
     state = PP.OuterRouteState()
     @test isempty(PP.outer_route_stats_snapshot(state, sig))
+
+    # Arm symbols are deliberately unrestricted. This assertion used to require
+    # that an unrecognised route be dropped, and e6dc7539 removed the
+    # restriction on purpose so the split selector could reuse the route
+    # bandit wholesale -- same bucket, same statistics, same confidence
+    # handling, same persistence -- by naming its arms split_<route>_w<N>.
+    # The probe was not updated with it. Recording an arbitrary arm is now the
+    # documented behaviour, so assert that rather than its opposite.
     PP.record_outer_route_feedback!(state, f_heavy; route=:bad_route, successes=1, failures=0, tuning=tune)
-    @test isempty(PP.outer_route_stats_snapshot(state, sig))
+    @test haskey(PP.outer_route_stats_snapshot(state, sig), :bad_route)
+
+    # What actually keeps split arms from polluting route statistics is the
+    # signature namespace, not arm validation: record_outer_split_feedback!
+    # passes signature_prefix="split|", so split arms are invisible to a
+    # snapshot taken on the bare signature and visible under the prefixed one.
+    # That is the invariant worth pinning, and nothing covered it before.
+    state_split = PP.OuterRouteState()
+    PP.record_outer_split_feedback!(
+        state_split, f_heavy;
+        route=:threads, workers=4, successes=2, failures=0,
+        elapsed_success_s=10.0, tuning=tune
+    )
+    @test isempty(PP.outer_route_stats_snapshot(state_split, sig))
+    split_snap = PP.outer_route_stats_snapshot(state_split, "split|" * sig)
+    @test haskey(split_snap, Symbol("split_threads_w4"))
+    @test split_snap[Symbol("split_threads_w4")].samples == 2
 
     PP.record_outer_route_feedback!(state, f_heavy; route=:threads, successes=2, failures=0, elapsed_success_s=100.0, tuning=tune)
     PP.record_outer_route_feedback!(state, f_heavy; route=:process, successes=2, failures=0, elapsed_success_s=10.0, tuning=tune)
@@ -400,7 +454,10 @@ const TV = TelemetryVerification
         merged = PP.load_outer_route_state!(loaded_state, cache_path; replace=false)
         @test merged.rows >= 3
         snap_merged = PP.outer_route_stats_snapshot(loaded_state, sig)
-        @test snap_merged[:process].samples == 2 * snap[:process].samples + 1
+        # The restored arm carries one observation, so the live record above is
+        # its second: cold eviction replaces the restored history with that one
+        # sample, and the merge then adds the file's samples back once.
+        @test snap_merged[:process].samples == snap[:process].samples + 1
     end
 
     PP.reset_outer_route_state!(state)

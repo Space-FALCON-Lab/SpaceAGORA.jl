@@ -29,6 +29,7 @@ export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
 export GramTrackCache, VacuumPredictedGRAMCache, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
 export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig
+export AbstractPolicyContext
 export RhsEffectorDecision, RhsExecutionPlan
     @kwdef struct Mission
         e::Int64 = 0
@@ -571,6 +572,20 @@ export RhsEffectorDecision, RhsExecutionPlan
     # (ParallelPolicy, SimulationCallbacks, SimulationEngine).
 
     # Feeds ParallelPolicy.thread_policy_decision and budget-dependent routing.
+    #
+    # The policy knobs below (persistent_hints through hint_work_ratio) were
+    # previously read straight from ENV on every
+    # adaptive decision *and* every policy observation. Each read is a Dict
+    # lookup plus strip/lowercase/parse, all of which allocate, and the
+    # observation path fires once per RHS call on the flat-effector route --
+    # so an L50 constellation solve paid several thousand of them per second
+    # for values that cannot change inside a run. They are snapshotted here
+    # for the same reason inner_thread_budget already was.
+    # Supertype for ParallelPolicy.PolicyContext, declared here so SharedBuffers
+    # can carry the run's context with a concrete field type (see
+    # SharedBuffers.policy_context). Only ParallelPolicy subtypes it.
+    abstract type AbstractPolicyContext end
+
     struct PolicyDecisionEnvConfig
         inner_thread_budget::Int
         outer_parallel_active::Bool
@@ -579,6 +594,20 @@ export RhsEffectorDecision, RhsExecutionPlan
         auto_min_budget_density_lockfree::Int
         auto_min_budget_thermal::Int
         adaptive_enabled::Bool
+        persistent_hints::Bool
+        adaptive_measured_reward::Bool
+        # Multiple of one hint consultation that the work a decision guards must
+        # exceed before the hint layer is consulted. Read on every decision AND
+        # every observation, so it belongs in the snapshot rather than in ENV.
+        hint_work_ratio::Float64
+        # SPACEAGORA_PARALLEL_POLICY_V2. One switch for the revised inner-policy
+        # behaviours (fail-closed hint gate, std-scaled hint confidence, explicit
+        # observation context). Off reproduces the shipped R4/R5 algorithm
+        # exactly, which is what makes the two separable under a paired probe.
+        # Snapshotted because it is consulted on the decision and observation
+        # hot paths, where a live ENV read is the cost this struct exists to
+        # remove.
+        policy_v2::Bool
     end
 
     # GRAM along-track density cache tolerances (built by
@@ -782,6 +811,33 @@ export RhsEffectorDecision, RhsExecutionPlan
         # as Any in the RHS, boxing every plan access and re-boxing ODEParams
         # (~1.6 KB inline) on each dynamics call — ~2/3 of solve-path allocations.
         rhs_plan_override::Base.RefValue{Union{Nothing, RhsExecutionPlan}} = Ref{Union{Nothing, RhsExecutionPlan}}(nothing)
+        # In-run width identification state, or `nothing` when it is off (the
+        # default). Typed `Any` because the trial lives in ParallelCost, which is
+        # included after this file; the RHS reads it behind a `=== nothing`
+        # branch and never touches it on the hot path once identification has
+        # finished, so the boxing costs one pointer comparison per call.
+        #
+        # Distinct from rhs_plan_override in what it is for: the override is a
+        # decision already made, this is the process of making one. The trial
+        # writes its answer INTO the override and then clears itself, so the
+        # steady state after identification is exactly the state a pre-solve
+        # sweep would have produced.
+        rhs_width_trial::Base.RefValue{Any} = Ref{Any}(nothing)
+        # Widest inner split the native lock admits for this solve, or
+        # `typemax(Int)` for "no constraint observed".
+        #
+        # A plain Int, computed once per solve, because the alternative is
+        # asking RuntimeServices for occupancy on the hot path -- and that
+        # answer is behind the very lock whose contention is being measured, so
+        # reading it per call would add an acquisition per RHS evaluation to
+        # avoid acquisitions. Written after calibration, which performs enough
+        # real RHS evaluations to be a representative window.
+        rhs_width_ceiling::Base.RefValue{Int} = Ref{Int}(typemax(Int))
+        # Whether the adaptation gate fired for this run: the workload has a
+        # concretely-typed single-effector tuple, so there is nothing to adapt.
+        # Set once at setup; read by the calibration sweep, which must not spend
+        # ~110 discarded RHS evaluations ranking plans that cannot differ.
+        adaptation_gated::Base.RefValue{Bool} = Ref{Bool}(false)
         # Per-accepted-step cache of _rhs_execution_plan's routing decision, active
         # only when SPACEAGORA_RHS_PLAN_STEP_CACHE=on (_rhs_plan_step_cache_enabled,
         # setup.jl). N_sats/thread policy don't change mid-step, so re-deriving the
@@ -807,6 +863,29 @@ export RhsEffectorDecision, RhsExecutionPlan
         # case. Effector tuples are fixed for a run, so no invalidation needed.
         robot_arm_present::Base.RefValue{Union{Nothing, Bool}} = Ref{Union{Nothing, Bool}}(nothing)
         policy_env_config::Base.RefValue{Union{Nothing, PolicyDecisionEnvConfig}} = Ref{Union{Nothing, PolicyDecisionEnvConfig}}(nothing)
+        # The run's scoped ParallelPolicy.PolicyContext, captured at setup in the
+        # task that owns the solve (SPACEAGORA_PARALLEL_POLICY_V2 only; `nothing`
+        # otherwise). Typed through AbstractPolicyContext because ConfigTypes is
+        # assembled before ParallelPolicy exists; a concrete union keeps the
+        # observation call's keyword tuple statically typed, where an `Any` here
+        # would cost a dynamic dispatch per satellite per RHS call.
+        #
+        # Why it must travel in the buffers: `with_policy_context` scopes the
+        # context through task-local storage, and task-local storage is NOT
+        # inherited by spawned tasks. The per-satellite effector observation in
+        # dynamics_rhs.jl runs inside Polyester `@batch` bodies, i.e. on worker
+        # tasks, so without this every such observation fell through to the
+        # process-global context: it took the global lock the per-context lock
+        # was introduced to avoid, and it wrote its elapsed-time EMA where the
+        # hint-layer gate -- reading the scoped context -- could never see it.
+        policy_context::Base.RefValue{Union{Nothing, AbstractPolicyContext}} =
+            Ref{Union{Nothing, AbstractPolicyContext}}(nothing)
+        # Pre-solve calibrated width for the density callback (V2 only; see
+        # _calibrate_density_callback_width! in rhs_calibration.jl). 0 means no
+        # override: the per-call decision runs as usual. A positive value is
+        # returned by _density_callback_thread_decision without consulting the
+        # policy, with policy_applied=false since nothing was decided per call.
+        density_callback_width::Base.RefValue{Int} = Ref{Int}(0)
         rhs_env_config::Base.RefValue{Union{Nothing, RhsPlanEnvConfig}} = Ref{Union{Nothing, RhsPlanEnvConfig}}(nothing)
         callback_env_config::Base.RefValue{Union{Nothing, CallbackEnvConfig}} = Ref{Union{Nothing, CallbackEnvConfig}}(nothing)
     end

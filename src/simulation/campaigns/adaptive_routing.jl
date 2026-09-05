@@ -4,6 +4,125 @@ using ..SimulationModel: SimulationConfiguration, EnvironmentModels, ParallelPol
 
 const _CAMPAIGN_OUTER_ROUTE_STATE = OuterRouteState()
 
+# Cross-session persistence for the outer-route bandit.
+#
+# `save_outer_route_state` and `load_outer_route_state!` have existed and been
+# exported since the state was written, and nothing in `src/` ever called them,
+# so the bandit started cold in every process. That is not a small loss on the
+# workloads it matters for: `select_outer_route!` refuses to exploit until every
+# candidate has `adaptive_min_samples` observations, so a fresh process spends
+# its first samples on `:none` and `:threads` before it will use `:process` --
+# even when `default_outer_route` already answers `:process` correctly and the
+# same machine learned that in the previous run. Measured on
+# montecarlo_heavy_aerobraking at 64 samples, the adaptive profiles ran ~19%
+# behind the pinned process route, and forced cold exploration is a direct
+# contributor.
+#
+# Persistence is gated on the same knob the inner hints use, which R5 already
+# sets (`persistent_state_persist=true` in profile_definitions.jl), so this
+# turns on for exactly the profile that declares it and stays off for the
+# static baselines that must not drift between runs.
+const _CAMPAIGN_ROUTE_STATE_LOADED = Ref(false)
+const _CAMPAIGN_ROUTE_STATE_ATEXIT = Ref(false)
+const _CAMPAIGN_ROUTE_STATE_LOCK = ReentrantLock()
+
+@inline function _campaign_route_state_persist_enabled()::Bool
+    return ParallelPolicy.persistent_hints_persist_enabled()
+end
+
+"""
+    campaign_route_state_path() -> String
+
+File backing the persisted outer-route history.
+
+Keyed by profile, machine label and thread count for the same reason the inner
+policy state is: routing statistics gathered under a different profile or a
+different thread budget describe a different machine as far as the bandit is
+concerned, and replaying them would be worse than starting cold.
+`SPACEAGORA_OUTER_ROUTE_STATE_PATH` overrides.
+"""
+function campaign_route_state_path()::String
+    override = strip(get(ENV, "SPACEAGORA_OUTER_ROUTE_STATE_PATH", ""))
+    if !isempty(override)
+        return normpath(isabspath(override) ? override : joinpath(pwd(), override))
+    end
+    profile = ParallelPolicy._safe_token(get(ENV, "SPACEAGORA_PARALLEL_PROFILE", "default"))
+    machine = ParallelPolicy._safe_token(get(ENV, "SPACEAGORA_PERF_MACHINE_LABEL", "default"))
+    return normpath(joinpath(
+        pwd(), "output", "parallel_policy_state",
+        "outer_route_state_$(profile)_$(machine)_t$(Base.Threads.nthreads()).toml",
+    ))
+end
+
+"""
+    ensure_campaign_route_state_loaded!(state = campaign_outer_route_state())
+
+Load persisted routing history into `state` once per process, and register an
+`atexit` hook to write it back.
+
+Loading is additive (`replace=false`): a session's own observations are merged
+with the persisted ones rather than discarding either. Failures are swallowed
+deliberately -- a missing, unreadable, or malformed state file must degrade the
+router to cold-start behaviour, never break a campaign that would otherwise run.
+"""
+function ensure_campaign_route_state_loaded!(state::OuterRouteState = campaign_outer_route_state())::Nothing
+    _campaign_route_state_persist_enabled() || return nothing
+    lock(_CAMPAIGN_ROUTE_STATE_LOCK) do
+        if !_CAMPAIGN_ROUTE_STATE_LOADED[]
+            _CAMPAIGN_ROUTE_STATE_LOADED[] = true
+            path = campaign_route_state_path()
+            try
+                load_outer_route_state!(state, path; replace=false)
+            catch err
+                @debug "Outer-route state could not be loaded; starting cold." path exception=err
+            end
+        end
+        if !_CAMPAIGN_ROUTE_STATE_ATEXIT[]
+            _CAMPAIGN_ROUTE_STATE_ATEXIT[] = true
+            atexit(() -> save_campaign_route_state())
+        end
+        return nothing
+    end
+    return nothing
+end
+
+"""
+    save_campaign_route_state(state = campaign_outer_route_state())
+
+Write the accumulated routing history back to [`campaign_route_state_path`](@ref).
+Returns without writing when persistence is disabled, and never throws: a state
+file that cannot be written must cost the router its memory, not the run.
+"""
+function save_campaign_route_state(state::OuterRouteState = campaign_outer_route_state())::Nothing
+    _campaign_route_state_persist_enabled() || return nothing
+    try
+        save_outer_route_state(
+            state,
+            campaign_route_state_path();
+            metadata=Dict{String, Any}(
+                "profile" => get(ENV, "SPACEAGORA_PARALLEL_PROFILE", "default"),
+                "threads" => Base.Threads.nthreads(),
+            ),
+        )
+    catch err
+        @debug "Outer-route state could not be saved." exception=err
+    end
+    return nothing
+end
+
+"""
+    reset_campaign_route_state_persistence!()
+
+Forget that persisted state was loaded, so the next campaign reloads it. Exists
+for tests; a normal process loads once and keeps the state in memory.
+"""
+function reset_campaign_route_state_persistence!()::Nothing
+    lock(_CAMPAIGN_ROUTE_STATE_LOCK) do
+        _CAMPAIGN_ROUTE_STATE_LOADED[] = false
+    end
+    return nothing
+end
+
 """
     campaign_outer_route_state() -> OuterRouteState
 
@@ -144,8 +263,13 @@ function _campaign_route_plan(
         # split; running nested workers would oversubscribe the pool, and the
         # contended timings would poison the shared route statistics — run
         # serially and skip both selection and feedback.
-        return (route=:none, threads=1, inner_thread_budget=1, record=false)
+        return (route=:none, threads=1, inner_thread_budget=1, record=false,
+                split_race=false, split_candidates=Int[], gc_first=false)
     end
+    # Merge any persisted history before the first selection, so a repeat run on
+    # the same machine exploits what the last one learned instead of re-paying
+    # for cold exploration.
+    ensure_campaign_route_state_loaded!(state)
     threads_available = Base.Threads.nthreads() > 1
     route = select_outer_route!(
         state,
@@ -155,21 +279,220 @@ function _campaign_route_plan(
         threads_available=threads_available,
         parallel_enabled=true
     )
+    # How wide to run the outer split is now selected rather than assumed.
+    #
+    # This used to take the widest split the route allowed and give inner
+    # parallelism whatever floor division left -- which, for a threads route
+    # using the whole pool, is exactly one thread. Inner parallelism was
+    # therefore disabled on every threaded campaign, not because that was
+    # measured to be right but because nothing chose otherwise. The two levels
+    # genuinely trade against each other, and which side wins depends on whether
+    # one sample can use several threads productively, which is a property of
+    # the workload.
+    #
+    # Cold, select_outer_split! returns the widest split, so an uncalibrated
+    # machine behaves exactly as it did before and the adaptation can only
+    # improve on that baseline.
+    #
     # Process workers run --threads=1 each and don't share the coordinator's
     # thread pool, so they're sized off tuning.process_max_workers
     # (Sys.CPU_THREADS by default), not Threads.nthreads() like the thread route.
-    workers = if route === :process
-        max(1, min(n_samples, tuning.process_max_workers))
-    elseif route === :threads
-        max(1, min(n_samples, Base.Threads.nthreads()))
+    # Widths are drawn from the workers memory allows for THIS workload, not
+    # the core cap alone (effective_process_workers; identical when the tuning
+    # is not memory-aware).
+    process_cap = ParallelProfiles.effective_process_workers(features, tuning)
+    split_candidates = outer_split_candidates(
+        route; budget=Base.Threads.nthreads(), n_units=n_samples, tuning=tuning,
+        max_process_workers=process_cap)
+    split_history = ParallelProfiles.outer_split_history_present(state, features, route)
+    # Under V2 widths are learned by RACING inside a campaign, never one width
+    # per campaign. The shipped selector's forced exploration tries every
+    # narrow rung for adaptive_min_samples campaigns each, and on a campaign
+    # too small to race that is the worst of both: measured through the
+    # production runner on independent_1sat_1hr, 64 samples over a 12-worker
+    # pool, eight consecutive campaigns ran at 0.65 s -- four workers' worth --
+    # against 0.27 s at the widest split. So: no history and no race possible
+    # -> the widest split (the shipped cold answer); history -> the selector
+    # exploits it (select_outer_split! does not force-explore under V2).
+    race_possible = tuning.split_race && route in (:threads, :process) &&
+        length(split_candidates) >= 2 &&
+        _split_race_batch(n_samples, split_candidates;
+                          warm=_split_race_warm_count((route=route,), split_candidates, n_samples)) > 0
+    split_race = race_possible && !split_history
+    workers = if tuning.split_race && !split_history
+        isempty(split_candidates) ? 1 : maximum(split_candidates)
     else
-        1
+        select_outer_split!(
+            state,
+            features;
+            route=route,
+            budget=Base.Threads.nthreads(),
+            n_units=n_samples,
+            tuning=tuning,
+            max_process_workers=process_cap,
+        )
     end
     inner_thread_budget = max(1, fld(Base.Threads.nthreads(), workers))
-    return (route=route, threads=workers, inner_thread_budget=inner_thread_budget, record=true)
+    if tuning.trace
+        println("[outer-split] route=$(route) workers=$(workers) candidates=$(split_candidates) " *
+                "history=$(split_history) race=$(split_race) " *
+                "process_cap=$(process_cap)/$(tuning.process_max_workers) " *
+                "(memory-aware=$(tuning.memory_aware), rss=$(round(ParallelProfiles.process_rss_bytes() / 2^30; digits=2)) GB)")
+    end
+    return (route=route, threads=workers, inner_thread_budget=inner_thread_budget, record=true,
+            split_race=split_race, split_candidates=split_candidates,
+            gc_first=tuning.gc_before_dispatch)
+end
+
+# ── In-campaign split race (V2) ───────────────────────────────────────────────
+#
+# The split selector learns one observation per campaign, so it needs several
+# campaigns and a min-samples guarantee before it can prefer any width, and
+# its first answer on an unseen signature is always the widest split. Monte
+# Carlo samples are independent units, so the first campaign can measure the
+# widths itself: one warm-up sample serially (so JIT of `f` lands outside the
+# race), then a batch of samples at each candidate width, then the rest at the
+# width with the best per-sample throughput. Every sample is real work; the
+# only cost is the slower widths' inefficiency on their batch.
+#
+# Each raced width is recorded with weight `adaptive_min_samples`, so the next
+# campaign exploits the winner rather than re-trying every width once more.
+
+@inline function _plan_at_width(plan, w::Int)
+    return (route=plan.route, threads=w,
+            inner_thread_budget=max(1, fld(Base.Threads.nthreads(), w)),
+            record=plan.record, split_race=false, split_candidates=Int[],
+            gc_first=plan.gc_first)
+end
+
+# Samples per raced width, or 0 when the campaign is too small to race, in
+# which case the selector's cold answer (the widest split) stands.
+#
+# Each width must get at least _SPLIT_RACE_ROUNDS samples per worker, and at
+# least the widest split must be left over to exploit. One sample per worker
+# is not a measurement: measured on independent_1sat_1hr at 64 samples over
+# [4, 8, 12] workers, a twelve-sample batch is one dispatch round whose
+# makespan is the slowest worker plus dispatch latency, and two runs of the
+# same code ranked the widths differently -- one landed on the right width at
+# 0.27 s per campaign, the other at 0.44 s for the rest of the run. `warm` is
+# the warm-up batch that precedes the race (see _split_race_warm_count).
+const _SPLIT_RACE_ROUNDS = 3
+
+function _split_race_batch(n_samples::Int, candidates::Vector{Int}; warm::Int=1)::Int
+    n = length(candidates)
+    (n >= 2 && n_samples >= 2) || return 0
+    widest = maximum(candidates)
+    k = max(_SPLIT_RACE_ROUNDS * widest, cld(n_samples, 4 * n))
+    return n_samples >= max(1, warm) + n * k + widest ? k : 0
+end
+
+# How many samples the warm-up batch runs, and at what width.
+#
+# Threads: one sample, serially -- every thread shares the compiled `f`.
+# Process: one sample on EVERY worker the widest split will use. A worker
+# compiles `f` on its first call, and the runner's own warm-up covers only
+# workers it spawned itself; a pool that already exists (a second campaign
+# type in the same process, a pre-grown pool) is warm for the previous
+# workload and cold for this one. Measured with the paired campaign probe on
+# independent_1sat_1hr at (12 threads, 12 workers): with a serial warm-up the
+# race's batches carried each worker's JIT, the ranking they produced was
+# recorded with min-samples weight, and the selector exploited it for the rest
+# of the run at 0.64 s per campaign against 0.27 s for the right width.
+@inline function _split_race_warm_count(plan, candidates::Vector{Int}, n_samples::Int)::Int
+    plan.route === :process || return 1
+    return max(1, min(maximum(candidates), n_samples))
+end
+
+@inline function _reindexed_sample(s::MonteCarloSampleResult, index::Int)::MonteCarloSampleResult
+    return MonteCarloSampleResult(index=index, seed=s.seed, success=s.success,
+                                  elapsed_s=s.elapsed_s, value=s.value,
+                                  error=s.error, backtrace=s.backtrace)
+end
+
+# Returns the campaign result and the per-sample time to credit the ROUTE
+# with: the exploit phase's when it is at least one full round of the chosen
+# width, else the chosen width's race batch. The whole-campaign figure would
+# charge the route for the slower widths' batches and the warm-up, and on a
+# case where two routes are within a factor of two that is enough to invert
+# the route bandit's next choice.
+function _run_campaign_split_race(
+    f, seeds::Vector, plan, features::OuterRouteFeatures, state::OuterRouteState,
+    tuning::OuterRouteTuning; fail_fast::Bool
+)::Tuple{MonteCarloResult, Union{Nothing, Float64}}
+    candidates = sort(plan.split_candidates)
+    n = length(seeds)
+    warm_n = _split_race_warm_count(plan, candidates, n)
+    k = _split_race_batch(n, candidates; warm=warm_n)
+    k > 0 || return (_run_campaign_with_route_env(
+        f, MonteCarloSpec(seeds=seeds, threads=plan.threads, fail_fast=fail_fast), plan), nothing)
+
+    started = time_ns()
+    samples = MonteCarloSampleResult[]
+    # Warm-up batch, untimed as far as the race is concerned; its samples are
+    # kept. See _split_race_warm_count.
+    warm = _run_campaign_with_route_env(
+        f, MonteCarloSpec(seeds=seeds[1:warm_n], threads=warm_n, fail_fast=fail_fast),
+        _plan_at_width(plan, warm_n))
+    append!(samples, (_reindexed_sample(s, s.index) for s in warm.samples))
+    offset = warm_n
+    per_sample = Dict{Int, Float64}()
+    weight = max(1, tuning.adaptive_min_samples)
+    for w in candidates
+        batch = seeds[(offset + 1):(offset + k)]
+        r = _run_campaign_with_route_env(
+            f, MonteCarloSpec(seeds=batch, threads=w, fail_fast=fail_fast), _plan_at_width(plan, w))
+        append!(samples, (_reindexed_sample(s, offset + s.index) for s in r.samples))
+        n_batch = max(1, length(r.samples))
+        per_sample[w] = r.elapsed_s / n_batch
+        successes = length(r.successful)
+        record_outer_split_feedback!(
+            state, features;
+            route=plan.route, workers=w,
+            successes=successes, failures=length(r.failed),
+            elapsed_success_s=per_sample[w] * successes,
+            elapsed_success_sq_sum_s=per_sample[w]^2 * successes,
+            tuning=tuning, weight=weight,
+        )
+        offset += k
+    end
+    # Fastest per-sample; ties go to the narrower width.
+    best_w = candidates[1]
+    for w in candidates
+        per_sample[w] < per_sample[best_w] && (best_w = w)
+    end
+    route_per_sample = per_sample[best_w]
+    if offset < n
+        rest = seeds[(offset + 1):n]
+        r = _run_campaign_with_route_env(
+            f, MonteCarloSpec(seeds=rest, threads=best_w, fail_fast=fail_fast), _plan_at_width(plan, best_w))
+        append!(samples, (_reindexed_sample(s, offset + s.index) for s in r.samples))
+        if length(r.samples) >= best_w
+            route_per_sample = r.elapsed_s / max(1, length(r.samples))
+        end
+    end
+    sort!(samples; by=s -> s.index)
+    if tuning.trace
+        ladder = join(("w$(w)=$(round(per_sample[w] * 1e3; digits=2))ms" for w in candidates), " ")
+        println("[outer-split] race route=$(plan.route) k=$(k) chosen=w$(best_w) $(ladder) " *
+                "route_credit=$(round(route_per_sample * 1e3; digits=2))ms/sample")
+    end
+    return (MonteCarloResult(samples, (time_ns() - started) / 1.0e9, best_w), route_per_sample)
 end
 
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
+    # Collect BEFORE dispatch (V2). A threaded campaign leaves the coordinator
+    # with a heap of many GiB, and the process route's dispatch loop -- a set
+    # of async tasks each blocking on one remote call -- then stalls in the
+    # coordinator's own full collections while every worker sits idle.
+    # Measured through the production runner on montecarlo_heavy_aerobraking
+    # at (12 threads, 12 workers): a process campaign that followed a threaded
+    # campaign took 19.3 s against 7.5 s in steady state, and 0.86-1.08 s
+    # against 0.44 s on independent_1sat_1hr. The route bandit recorded those
+    # readings and drifted to threads. The benchmark harness has always
+    # collected before each batch, which is why it never showed this; in
+    # production it lands once, on the process campaign after the must-measure
+    # threads exploration, and that is the one the bandit learns from.
+    (hasproperty(plan, :gc_first) && plan.gc_first) && GC.gc()
     worker_count = min(spec.threads, length(spec.seeds))
     worker_count > 1 || return run_monte_carlo(f, spec)
     if plan.route === :process
@@ -206,7 +529,13 @@ function _record_campaign_route_feedback!(
     features::OuterRouteFeatures,
     route::Symbol,
     result::MonteCarloResult;
-    tuning::OuterRouteTuning
+    tuning::OuterRouteTuning,
+    # False when the split race already recorded every width from its own
+    # batches; the whole-campaign time would otherwise be charged to the
+    # winning width a second time, racing overhead included.
+    record_split::Bool=true,
+    # The race's clean per-sample estimate for the route, when it raced.
+    per_sample_override::Union{Nothing, Float64}=nothing,
 )::Nothing
     n_samples = length(result.samples)
     n_samples <= 0 && return nothing
@@ -215,11 +544,27 @@ function _record_campaign_route_feedback!(
     # Amortized campaign wall time per sample, not per-sample latency: threaded
     # samples overlap, so summing individual elapsed_s would charge the route
     # for concurrency instead of crediting its throughput.
-    per_sample_s = result.elapsed_s / n_samples
+    per_sample_s = per_sample_override === nothing ? result.elapsed_s / n_samples : per_sample_override
     record_outer_route_feedback!(
         state,
         features;
         route=route,
+        successes=successes,
+        failures=failures,
+        elapsed_success_s=per_sample_s * successes,
+        elapsed_success_sq_sum_s=per_sample_s^2 * successes,
+        tuning=tuning
+    )
+    # The split arm gets the same observation, so the width that produced this
+    # timing is credited as well as the route. Without it the split selector
+    # would explore forever: it would never accumulate the samples its own
+    # min-samples guarantee requires before it will exploit.
+    record_split || return nothing
+    record_outer_split_feedback!(
+        state,
+        features;
+        route=route,
+        workers=max(1, result.threads),
         successes=successes,
         failures=failures,
         elapsed_success_s=per_sample_s * successes,
@@ -241,10 +586,22 @@ function _run_campaign_adaptive(
     isempty(seed_values) && return MonteCarloResult(MonteCarloSampleResult[], 0.0, 0)
     routed_features = _campaign_features_for_routing(features, length(seed_values))
     plan = _campaign_route_plan(routed_features, length(seed_values); state=state, tuning=tuning)
-    spec = MonteCarloSpec(seeds=seed_values, threads=plan.threads, fail_fast=fail_fast)
-    result = _run_campaign_with_route_env(f, spec, plan)
+    raced = plan.split_race && _split_race_batch(
+        length(seed_values), plan.split_candidates;
+        warm=_split_race_warm_count(plan, plan.split_candidates, length(seed_values))) > 0
+    route_credit = nothing
+    result = if raced
+        r, route_credit = _run_campaign_split_race(
+            f, seed_values, plan, routed_features, state, tuning; fail_fast=fail_fast)
+        r
+    else
+        spec = MonteCarloSpec(seeds=seed_values, threads=plan.threads, fail_fast=fail_fast)
+        _run_campaign_with_route_env(f, spec, plan)
+    end
     if plan.record
-        _record_campaign_route_feedback!(state, routed_features, plan.route, result; tuning=tuning)
+        _record_campaign_route_feedback!(state, routed_features, plan.route, result;
+                                         tuning=tuning, record_split=!raced,
+                                         per_sample_override=route_credit)
     end
     return result
 end

@@ -28,8 +28,23 @@ spaceagora-remote — sync SpaceAGORA.jl to a remote box and run a job there.
 
 Usage:
   spaceagora-remote push [--remote NAME] [--threads N] [--ram SIZE]
+                          [--process-workers N]
                           [--attach] [--sync-data] [--poll-interval SEC]
                           -- <command> [args...]
+
+  --threads N          Sets JULIA_NUM_THREADS/SPACEAGORA_PERF_PROCS (older
+                        paper_scenarios/ladder pipeline) *and*
+                        SPACEAGORA_PPB_THREADS/SPACEAGORA_PPC_THREADS
+                        (paper_parallelization_benchmarks, B1-B6).
+  --process-workers N  Sets SPACEAGORA_PPB_PROCESS_WORKERS/
+                        SPACEAGORA_PPC_PROCESS_WORKERS. Matters for any
+                        outer_process-mode point: a pool larger than that
+                        point's own mc_samples count is pure cold-start
+                        overhead (each repeat is a fresh subprocess, so the
+                        whole pool -- default 32 -- gets spun up from
+                        scratch every time) with no throughput benefit, and
+                        can make outer_process look far slower than serial.
+                        For B6 specifically (mc_samples=[1,8]), pass 8.
   spaceagora-remote seed-data [--remote NAME]
   spaceagora-remote list       [--remote NAME]
   spaceagora-remote status     [--remote NAME] <job-id>
@@ -141,12 +156,13 @@ new_job_id() {
 }
 
 cmd_push() {
-  local remote="" threads="" ram="" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
+  local remote="" threads="" ram="" process_workers="" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --remote) remote="$2"; shift 2 ;;
       --threads) threads="$2"; shift 2 ;;
       --ram) ram="$2"; shift 2 ;;
+      --process-workers) process_workers="$2"; shift 2 ;;
       --attach) attach=1; shift ;;
       --sync-data) sync_data_flag=1; shift ;;
       --poll-interval) poll_interval="$2"; shift 2 ;;
@@ -189,8 +205,73 @@ export JULIA_DEPOT_PATH="$REMOTE_BASE/shared_depot"
 export JULIA_NUM_THREADS="${threads:-}"
 export SPACEAGORA_PERF_PROCS="${threads:-}"
 export SPACEAGORA_REMOTE_JOB_RAM_HINT="${ram:-}"
+EOF
+  # paper_parallelization_benchmarks (B1-B6) and its lower-level
+  # parallelization_performance study read their own SPACEAGORA_PPB_*/
+  # SPACEAGORA_PPC_* env vars, not JULIA_NUM_THREADS/SPACEAGORA_PERF_PROCS
+  # above (those are the older paper_scenarios/ladder pipeline's knobs) --
+  # --threads/--process-workers were previously silently ignored by a B6
+  # push. Only emitted when the flag was actually passed: each of these vars
+  # defaults to "use the full machine-scaled ladder" / "32" when *unset*, but
+  # `parse(Int, "")` throws, so exporting them empty-but-present on every
+  # push (rather than omitting the export entirely) would break the
+  # zero-flags case instead of just leaving it as the default.
+  if [[ -n "$threads" ]]; then
+    cat >> "$run_sh" <<EOF
+export SPACEAGORA_PPB_THREADS="$threads"
+export SPACEAGORA_PPC_THREADS="$threads"
+EOF
+  fi
+  if [[ -n "$process_workers" ]]; then
+    cat >> "$run_sh" <<EOF
+export SPACEAGORA_PPB_PROCESS_WORKERS="$process_workers"
+export SPACEAGORA_PPC_PROCESS_WORKERS="$process_workers"
+EOF
+  fi
+  cat >> "$run_sh" <<EOF
 echo "PID=\$\$" >> "$job_dir/job.meta"
 echo "START=\$(date -Iseconds)" >> "$job_dir/job.meta"
+# Purge the precompile cache for the LOCAL-SOURCE packages before every job.
+#
+# Julia 1.12 writes a native pkgimage (.so) beside the .ji in the shared depot.
+# That cache was observed serving an image built from an EARLIER release while
+# Base.locate_package resolved correctly to the current one, so a job executed a
+# previous release's src/ while its CSV rows recorded the commit that had just
+# been deployed. Nothing in the output showed the divergence: harness files
+# under benchmarks/ are include()d and always reflect the release, so only
+# changes under src/ went missing, and only silently.
+#
+# Scoped to SpaceAGORA and its extensions on purpose. The ~500 cached
+# dependencies are immutable at a resolved version and rebuilding them would add
+# roughly twenty minutes to every job for no correctness gain.
+rm -rf "$REMOTE_BASE"/shared_depot/compiled/v*/SpaceAGORA*
+echo "PURGED_PKGIMAGES=\$(date -Iseconds)" >> "$job_dir/job.meta"
+# Persist the adaptive policy's learned state ACROSS releases.
+#
+# Four subsystems write into pwd()/output/parallel_policy_state/ -- the inner
+# policy's hints (policy/env_config.jl), the cost-model constants
+# (cost/machine_calibration.jl), the outer-route state
+# (campaigns/adaptive_routing.jl) and the RHS plan calibration
+# (engine/rhs_calibration.jl). Every release gets a fresh output/, so on a
+# remote host all four started empty on every job and the "learn across runs"
+# half of the policy could never accumulate anything.
+#
+# That is not merely lost speed, it is a measured regression: R5 differs from
+# R4 only by persistent=true, and on a host where the state is discarded R5
+# pays the bookkeeping and collects none of the benefit. Measured on trx50,
+# interact_256sat_1hr at 8 threads: best static 3.06 s, R4 3.23 s, R5 3.57 s --
+# the profile with the memory was the slowest of the three. On the local
+# machine, where this directory lives in the repo and had been accumulating for
+# days, R5 is the fastest.
+#
+# Symlinked at directory level rather than via the per-file env overrides
+# (SPACEAGORA_PARALLEL_POLICY_STATE_PATH, _COST_CONSTANTS_PATH,
+# _OUTER_ROUTE_STATE_PATH, _RHS_CALIBRATION_PATH) so that any future state file
+# is covered without a matching change here.
+mkdir -p "$REMOTE_BASE/policy_state"
+rm -rf "$release_dir/output/parallel_policy_state"
+ln -s "$REMOTE_BASE/policy_state" "$release_dir/output/parallel_policy_state"
+echo "POLICY_STATE=$REMOTE_BASE/policy_state" >> "$job_dir/job.meta"
 julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$job_dir/instantiate.log" 2>&1
 INSTANTIATE_EXIT=\$?
 if [ \$INSTANTIATE_EXIT -ne 0 ]; then
@@ -216,6 +297,7 @@ EOF
     echo "COMMAND=$cmd_str"
     echo "THREADS=${threads:-unset}"
     echo "RAM_HINT=${ram:-unset}"
+    echo "PROCESS_WORKERS=${process_workers:-unset}"
   } | rsh "cat > '$job_dir/job.meta'"
 
   echo "==> launching (tmux session: $session)"

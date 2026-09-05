@@ -51,4 +51,16 @@ end
 
 @setup_workload begin
     @compile_workload _run_spaceagora_precompile_workload()
+    # MANDATORY whenever a workload above touches a SPICE-backed planet, and
+    # cheap insurance when none does. `_FURNISHED_KERNELS` and the planet
+    # instance caches are module-level `const`s, so anything furnished HERE is
+    # serialised into the pkgimage; at run time `_furnsh_once` would then skip
+    # the furnish for a kernel CSPICE never actually loaded, and every lookup
+    # needing it fails against an empty pool (`utc2et` losing the leapseconds
+    # kernel is the first symptom). Same hazard `_reset_furnished_kernels!`
+    # documents for `kclear()`, reached by a different route. Verified by
+    # observation, not theory: a workload constructing `Earth(...)` here left
+    # every subsequent process unable to resolve a UTC epoch until the pkgimage
+    # was rebuilt.
+    SimulationModel.Planets._reset_furnished_kernels!()
 end

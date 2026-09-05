@@ -124,6 +124,14 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     gravity_harmonics_degree::Int = 0
     gravity_harmonics_order::Int = 0
     gravity_harmonics_file::String = ""
+    # Explicit override for the central-body GM (m^3/s^2) used by the harmonics
+    # model, bypassing both the file's declared `gm_m3s2` header and the
+    # generic `planet.μ` fallback. Used when a scenario must match a specific
+    # reference tool's own GM convention for a body (e.g. GMAT's vs. STK's own
+    # J0 defaults, which do not always agree with each other -- see
+    # spaceagora_j0_gm_parity_investigation.md). `nothing` preserves the
+    # existing degree/file-driven behavior.
+    gravity_harmonics_gm_override_m3s2::Union{Nothing, Float64} = nothing
     nbody_bodies::Vector{String} = String[]
     srp_enabled::Bool = false
     srp_cr::Float64 = 1.3
@@ -196,6 +204,14 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     gravity_harmonics_degree::Int = 0
     gravity_harmonics_order::Int = 0
     gravity_harmonics_file::String = ""
+    # Explicit override for the central-body GM (m^3/s^2) used by the harmonics
+    # model, bypassing both the file's declared `gm_m3s2` header and the
+    # generic `planet.μ` fallback. Used when a scenario must match a specific
+    # reference tool's own GM convention for a body (e.g. GMAT's vs. STK's own
+    # J0 defaults, which do not always agree with each other -- see
+    # spaceagora_j0_gm_parity_investigation.md). `nothing` preserves the
+    # existing degree/file-driven behavior.
+    gravity_harmonics_gm_override_m3s2::Union{Nothing, Float64} = nothing
     nbody_bodies::Vector{String} = String[]
     srp_enabled::Bool = false
     srp_cr::Float64 = 1.3

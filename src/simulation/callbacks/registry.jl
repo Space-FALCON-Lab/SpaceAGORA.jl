@@ -6,7 +6,7 @@ using DiffEqCallbacks
 using LinearAlgebra
 using SPICE
 using Dates
-using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK
+using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK, tracked_lock
 using ..SimulationModel: PlanetFrameEphemerisCache, rot
 using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice
 using ..ParallelPolicy

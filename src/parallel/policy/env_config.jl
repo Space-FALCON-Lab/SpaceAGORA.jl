@@ -72,6 +72,37 @@ end
 
 @inline persistent_hints_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS", false)
 
+# How much work a decision must guard before the persistent-hint layer is worth
+# consulting, expressed as a multiple of what one consultation costs.
+#
+# Both sides of that comparison are MEASURED, so nothing here is tuned to one
+# machine. The cost side is probed at first use by
+# `hint_overhead_ns()` (240 ns on this repo's reference box, something else
+# elsewhere); the work side is `AdaptiveControllerState.elapsed_ema_ns`, the
+# moving average of the region each decision for that source actually guards.
+# Only the ratio between them is a constant, and a ratio is dimensionless: at
+# the default the layer is consulted whenever a consultation would cost under
+# one percent of the work it is deciding about, on any machine.
+#
+# This replaced a hard-coded "off whenever an outer split is active", which was
+# the right call on the workloads it was measured on and the wrong KIND of rule:
+# it baked a threshold discovered on a 12-core box into a boolean. The
+# distinction it was really reaching for is that Monte Carlo samples guard very
+# little work per decision while constellation solves guard a great deal, and
+# that is exactly what this measures directly.
+#
+# Zero disables the gate and always consults the layer, which is the behaviour
+# before any of this and what the isolating A/B reverts to on its B side.
+@inline function hint_work_ratio()::Float64
+    raw = strip(get(ENV, "SPACEAGORA_PARALLEL_POLICY_HINT_WORK_RATIO", "100"))
+    v = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_PARALLEL_POLICY_HINT_WORK_RATIO must be a float, got '$raw'"))
+    end
+    return max(0.0, v)
+end
+
 @inline function persistent_hints_persist_enabled()::Bool
     return parse_bool_env("SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST", persistent_hints_enabled())
 end
@@ -175,14 +206,22 @@ end
 end
 
 """
-    snapshot_policy_decision_env() -> PolicyDecisionEnvConfig
+    snapshot_policy_decision_env(; adaptive_override = nothing) -> PolicyDecisionEnvConfig
 
 Resolve the env-derived knobs consulted on every `thread_policy_decision` call
-into a typed snapshot.  Built once at run_simulation setup so hot paths avoid
-process-global ENV access; values reflect ENV (and any active engine
-overrides) at snapshot time.
+and every `record_policy_observation!` call into a typed snapshot.  Built once
+at run_simulation setup so hot paths avoid process-global ENV access; values
+reflect ENV (and any active engine overrides) at snapshot time.
+
+`adaptive_override` forces `adaptive_enabled` regardless of the environment, so
+a caller that has decided this workload has nothing to adapt can say so without
+mutating process-global ENV. ENV would be the obvious route and is the wrong
+one: a threaded outer campaign runs several solves concurrently in one process,
+and `withenv` around a solve would leak the setting into its siblings.
 """
-function snapshot_policy_decision_env()::PolicyDecisionEnvConfig
+function snapshot_policy_decision_env(;
+    adaptive_override::Union{Nothing, Bool} = nothing
+)::PolicyDecisionEnvConfig
     return PolicyDecisionEnvConfig(
         effective_inner_thread_budget(),
         outer_parallel_active(),
@@ -190,7 +229,11 @@ function snapshot_policy_decision_env()::PolicyDecisionEnvConfig
         auto_thread_min_budget(:density_callback),
         auto_thread_min_budget(:density_callback_lockfree),
         auto_thread_min_budget(:thermal_callback),
-        adaptive_policy_enabled(),
+        adaptive_override === nothing ? adaptive_policy_enabled() : adaptive_override,
+        persistent_hints_enabled(),
+        adaptive_measured_reward_enabled(),
+        hint_work_ratio(),
+        policy_v2_enabled(),
     )
 end
 
@@ -206,28 +249,28 @@ end
 end
 
 @inline adaptive_policy_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_ADAPTIVE", false)
-@inline adaptive_window_size()::Int = parse_thread_threshold_env("SPACEAGORA_PARALLEL_POLICY_WINDOW", 8)
-@inline adaptive_trim_quanta_budget()::Int = parse_nonnegative_int_env("SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA", 0)
-@inline adaptive_bootstrap_threads()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS", true)
-@inline adaptive_control_tail_guard()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD", false)
+
+# SPACEAGORA_PARALLEL_POLICY_V2: the one switch for the revised policy
+# behaviours. OFF reproduces the shipped algorithm bit for bit, so a paired
+# probe with this as its only difference attributes cleanly. Profile R6 sets it;
+# nothing else does.
+#
+# What it currently changes, each a defect found by reading the shipped code:
+#   - `_hint_layer_pays` fails CLOSED on a source with no work estimate yet,
+#     instead of consulting the hint store on every call forever.
+#   - The hint layer's confidence width is scaled by the arm's measured
+#     standard deviation, as the outer-route selector's already is; unscaled it
+#     was a few nanoseconds against means in microseconds, so the "UCB" chooser
+#     was a greedy argmin after two samples.
+#   - `record_policy_observation!` is handed the run's scoped context by callers
+#     that have the params, so observations made on worker tasks reach the
+#     context their decisions live in (see `policy_context_hint`).
+#   - The outer-route selectors stop forced exploration once ANY candidate is
+#     proven best, not only when the default is (`explore_until_any_proven`).
+@inline policy_v2_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_V2", false)
+# The AIMD controller (window / delta / rho / trim-quanta / bootstrap / tail
+# guard) was removed on 2026-09-03. Its window score was a fill ratio that
+# never read elapsed time, and since the width seed at the cap it had been a
+# fixed point at full width; no measured case showed it winning. Without
+# measured reward the width is the static min(items, budget).
 @inline adaptive_measured_reward_enabled()::Bool = parse_bool_env("SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD", persistent_hints_enabled())
-
-@inline function adaptive_delta()::Float64
-    δ = parse_float_env("SPACEAGORA_PARALLEL_POLICY_DELTA", 0.85)
-    if !(0.0 < δ <= 1.0)
-        throw(ArgumentError("SPACEAGORA_PARALLEL_POLICY_DELTA must satisfy 0 < δ <= 1, got '$δ'"))
-    end
-    return δ
-end
-
-@inline function adaptive_rho()::Float64
-    ρ = parse_float_env("SPACEAGORA_PARALLEL_POLICY_RHO", 1.5)
-    if !(ρ > 1.0)
-        throw(ArgumentError("SPACEAGORA_PARALLEL_POLICY_RHO must satisfy ρ > 1, got '$ρ'"))
-    end
-    return ρ
-end
-
-@inline function _adaptive_desire_cap(pool_size::Int, ρ::Float64)::Int
-    return max(1, ceil(Int, ρ * max(1, pool_size)))
-end

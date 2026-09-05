@@ -205,22 +205,52 @@ struct GravitationalHarmonicsModel{P <: AbstractPlanet} <: AbstractForceTorqueMo
     sqrt_2n_plus_3::Vector{Float64} # Precalculated sqrt(2n+3) values
     coefficient_normalization::Symbol # Canonicalized source normalization keyword
     active_orders_by_degree::Vector{Vector{Int}} # Nonzero tesseral/sectoral orders per degree (m >= 1)
-    reference_radius_m::Float64 # Reference radius associated with the harmonics coefficients
+    reference_radius_m::Float64 # Reference radius the harmonics coefficients were solved/normalized against
+    gm_m3s2::Float64 # Gravitational parameter associated with this specific gravity solution
     include_central::Bool # Include the inverse-square primary-body term in this gravity model
     planet::P # Planet data for primary body
 end
 
+# Gravity coefficient files may carry a `#`-prefixed metadata header (reference
+# radius, GM, source citation) documenting the specific gravity solution the
+# coefficients were fit against -- this is *not* the same thing as the generic
+# per-planet Rp_e/μ used elsewhere (atmosphere, orbit propagation, etc.), since
+# different gravity solutions for the same body are commonly normalized against
+# slightly different reference radii/GM (e.g. Mars-50c vs GMM-2B differ by
+# ~0.08% in reference radius). `CSV.File`/`CSV.Rows` are called with
+# `comment="#"` elsewhere in this file so these lines are transparently
+# skipped by the coefficient parser; this function re-reads them separately to
+# recover the values.
+@inline function _read_harmonics_source_metadata(coefficients_file::String)::Dict{String, Float64}
+    metadata = Dict{String, Float64}()
+    isfile(coefficients_file) || return metadata
+    open(coefficients_file) do io
+        for line in eachline(io)
+            startswith(line, "#") || break
+            m = match(r"^#\s*(reference_radius_m|gm_m3s2)\s*[:=]\s*([-+0-9.eE]+)\s*$", line)
+            m === nothing && continue
+            metadata[m.captures[1]] = parse(Float64, m.captures[2])
+        end
+    end
+    return metadata
+end
+
 @inline function _infer_harmonics_reference_radius_m(coefficients_file::String, planet::AbstractPlanet)::Float64
-    file_name = lowercase(basename(coefficients_file))
-    if file_name == "lp165p.csv"
-        # LP165P is conventionally distributed with a 1738.0 km lunar reference radius.
-        return 1.7380e6
-    end
-    if planet.name == "Mars"
-        # Mars gravity field files used by this project are referenced to 3396.0 km.
-        return 3.3960e6
-    end
+    metadata = _read_harmonics_source_metadata(coefficients_file)
+    haskey(metadata, "reference_radius_m") && return metadata["reference_radius_m"]
+    # No sourced metadata available for this file: fall back to the generic
+    # per-planet radius. This is a poor substitute for the file's own
+    # normalization radius (see the metadata header format above) and should
+    # be treated as a last resort, not a validated value.
     return planet.Rp_e
+end
+
+@inline function _infer_harmonics_gm_m3s2(coefficients_file::String, planet::AbstractPlanet)::Float64
+    metadata = _read_harmonics_source_metadata(coefficients_file)
+    haskey(metadata, "gm_m3s2") && return metadata["gm_m3s2"]
+    # No sourced metadata available for this file: fall back to the generic
+    # per-planet GM. See _infer_harmonics_reference_radius_m.
+    return planet.μ
 end
 
 @inline function _make_harmonics_scratch_workspace(model::GravitationalHarmonicsModel)::HarmonicsScratchWorkspace
@@ -379,7 +409,7 @@ function _harmonics_flat_batch_kernel!(
     L = model.L
     M = model.M
     RE = model.reference_radius_m
-    μ = model.planet.μ
+    μ = model.gm_m3s2
     A = ws.A
     R = ws.R
     I = ws.I
@@ -647,7 +677,7 @@ function NBodyGravityModel(body_names::Vector{String}, primary_body_name::String
 end
 
 const _HARMONICS_MODEL_CACHE_LOCK = ReentrantLock()
-const _HARMONICS_MODEL_CACHE = Dict{Tuple{Int64, Int64, String, Symbol, Bool, Symbol, Union{Nothing, Float64}, Bool, UInt}, Any}()
+const _HARMONICS_MODEL_CACHE = Dict{Tuple{Int64, Int64, String, Symbol, Bool, Symbol, Union{Nothing, Float64}, Union{Nothing, Float64}, Bool, UInt}, Any}()
 
 # `GravitationalHarmonicsModel(L, M, coefficients_file, planet)` streams and parses the
 # whole coefficients file on every call (row-by-row CSV.Rows iteration, real I/O; some
@@ -665,10 +695,10 @@ const _HARMONICS_MODEL_CACHE = Dict{Tuple{Int64, Int64, String, Symbol, Bool, Sy
 @inline function _harmonics_model_cache_key(
     L::Int64, M::Int64, coefficients_file::String, coefficient_normalization::Symbol,
     coefficients_normalized::Bool, j2_source::Symbol, reference_radius_m::Union{Nothing, Float64},
-    include_central::Bool, planet::AbstractPlanet,
+    gm_m3s2::Union{Nothing, Float64}, include_central::Bool, planet::AbstractPlanet,
 )
     return (L, M, coefficients_file, coefficient_normalization, coefficients_normalized,
-            j2_source, reference_radius_m, include_central, objectid(planet))
+            j2_source, reference_radius_m, gm_m3s2, include_central, objectid(planet))
 end
 
 """
@@ -695,6 +725,7 @@ function GravitationalHarmonicsModel(
     coefficients_normalized::Bool=true,
     j2_source::Symbol=:file_c20,
     reference_radius_m::Union{Nothing, Float64}=nothing,
+    gm_m3s2::Union{Nothing, Float64}=nothing,
     include_central::Bool=true
 ) where P <: AbstractPlanet
     if L < 0 || M < 0
@@ -705,7 +736,7 @@ function GravitationalHarmonicsModel(
     end
     cache_key = _harmonics_model_cache_key(
         L, M, coefficients_file, coefficient_normalization, coefficients_normalized,
-        j2_source, reference_radius_m, include_central, planet,
+        j2_source, reference_radius_m, gm_m3s2, include_central, planet,
     )
     cached = lock(_HARMONICS_MODEL_CACHE_LOCK) do
         get(_HARMONICS_MODEL_CACHE, cache_key, nothing)
@@ -717,9 +748,13 @@ function GravitationalHarmonicsModel(
     # Use CSV.Rows for streaming/lazy reading instead of materializing entire file.
     # This is critical for large files like Venus MGNP180U.csv (16K+ rows).
     # We process rows on-the-fly and skip those beyond our requested degree/order.
+    # `comment="#"` skips any leading source-metadata header lines (reference
+    # radius/GM/citation for this specific gravity solution -- see
+    # _read_harmonics_source_metadata above) so they never reach the
+    # degree/order/C/S column parser below.
 
     # First: Quick structure validation using CSV.File to detect headers (minimal overhead for small inspection)
-    test_parse = CSV.File(coefficients_file; delim=',', stripwhitespace=true, ignorerepeated=true, limit=1)
+    test_parse = CSV.File(coefficients_file; delim=',', stripwhitespace=true, ignorerepeated=true, comment="#", limit=1)
     has_degree_header = hasproperty(test_parse, :degree)
 
     # Now do the expensive iteration with streaming to avoid materializing full columns
@@ -729,7 +764,7 @@ function GravitationalHarmonicsModel(
 
     # Parse the entire file row-by-row using CSV.Rows (lazy evaluation)
     open(coefficients_file) do io
-        rows = CSV.Rows(io; delim=',', stripwhitespace=true, ignorerepeated=true)
+        rows = CSV.Rows(io; delim=',', stripwhitespace=true, ignorerepeated=true, comment="#")
         for (row_num, row) in enumerate(rows)
             # Skip header row if it exists
             if row_num == 1 && has_degree_header
@@ -894,6 +929,7 @@ function GravitationalHarmonicsModel(
         normalized_source,
         active_orders_by_degree,
         reference_radius_m === nothing ? _infer_harmonics_reference_radius_m(coefficients_file, planet) : reference_radius_m,
+        gm_m3s2 === nothing ? _infer_harmonics_gm_m3s2(coefficients_file, planet) : gm_m3s2,
         include_central,
         planet
     )
@@ -960,12 +996,15 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
             )
         end
     end
+    # Per satellite, and under satellite_batch on a Polyester worker task: pass
+    # the run's context rather than relying on task-local lookup.
     ParallelPolicy.record_policy_observation!(
         :multibody;
         mode=decision.mode,
         num_items=n_bodies,
         use_threads=use_threads,
-        elapsed_ns=(time_ns() - started_ns)
+        elapsed_ns=(time_ns() - started_ns),
+        ctx=ParallelPolicy.policy_context_hint(param)
     )
 
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -1557,7 +1596,7 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
     a1 = a2 = a3 = a4 = 0.0
 
     max_recur_row = 2
-    ρ_np1 = -model.planet.μ * inv_r * ρ
+    ρ_np1 = -model.gm_m3s2 * inv_r * ρ
     @inbounds @fastmath for l = 1:L
         row = l + 1
 
@@ -1620,7 +1659,7 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
 
     g_pp_generic = SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4)
     g_pp = if model.include_central
-        g_pp_generic - model.planet.μ * inv_r^3 * rVec_cart
+        g_pp_generic - model.gm_m3s2 * inv_r^3 * rVec_cart
     else
         g_pp_generic
     end
@@ -1635,7 +1674,7 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
             z2 = z_pp * z_pp
             J2 = -sqrt(5.0) * C20
 
-            common = 1.5 * model.planet.μ * J2 * RE^2 / r4
+            common = 1.5 * model.gm_m3s2 * J2 * RE^2 / r4
             g_pp_analytic = SVector{3, Float64}(
                 common * (x_pp / r) * (5.0 * z2 / r2 - 1.0),
                 common * (y_pp / r) * (5.0 * z2 / r2 - 1.0),
@@ -1709,7 +1748,7 @@ end
         end
 
         ρ = RE / r
-        ρ_np1 = -model.planet.μ / r * ρ
+        ρ_np1 = -model.gm_m3s2 / r * ρ
         a1 = a2 = a3 = a4 = 0.0
         @inbounds for degree = 1:L
             idx = degree + 1
@@ -1746,7 +1785,7 @@ end
         end
         g_pp_generic = SVector{3, Float64}(-a1 - s * a4, -a2 - n * a4, -a3 - u * a4)
         g_pp = if model.include_central
-            g_pp_generic - model.planet.μ * inv_r^3 * rVec_cart
+            g_pp_generic - model.gm_m3s2 * inv_r^3 * rVec_cart
         else
             g_pp_generic
         end

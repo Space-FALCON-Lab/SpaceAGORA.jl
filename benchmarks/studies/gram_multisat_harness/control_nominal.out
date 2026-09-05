@@ -1,0 +1,10 @@
+Control: identical config, density model swapped. dt_max=5 s, deg/ord-20 harmonics.
+
+  exp   N=1   reltol=1e-09  mission=60   s    43.18s  Success  accept=missing reject=missing rhs=missing  RSS   +480MB
+  exp   N=4   reltol=1e-09  mission=60   s    25.64s  Success  accept=missing reject=missing rhs=missing  RSS    +69MB
+  exp   N=16  reltol=1e-09  mission=60   s    24.49s  Success  accept=missing reject=missing rhs=missing  RSS    +63MB
+Reading MERRA2 data from /home/space-falcon-1/Documents/SpaceAGORA.jl/data/GRAMSuite.jl/GRAM Suite 2.0/Earth/data/MERRA2data//All Mean/MERRA2All_01.bin
+
+  gram  N=1   reltol=1e-09  mission=60   s    38.84s  Success  accept=missing reject=missing rhs=missing  RSS   -135MB
+  gram  N=4   reltol=1e-09  mission=60   s    24.07s  Success  accept=missing reject=missing rhs=missing  RSS   +327MB
+  gram  N=16  reltol=1e-09  mission=60   s    23.71s  Success  accept=missing reject=missing rhs=missing  RSS    +38MB

@@ -228,11 +228,25 @@ end
 @inline function _hint_mean_and_width(
     stats::AdaptiveChoiceStats,
     total_samples::Int64,
-    explore_c::Float64
+    explore_c::Float64;
+    scaled::Bool=false
 )::Tuple{Float64, Float64}
     n = max(Int64(1), stats.samples)
     mean_ns = stats.elapsed_sum_ns / n
     width = explore_c * sqrt(log(max(2.0, Float64(total_samples))) / n)
+    if scaled
+        # Scale by the arm's own spread, as `_candidate_confidence_width` in the
+        # outer-route selector already does. Unscaled, the width is
+        # `c * sqrt(log N / n)` in RAW NANOSECONDS -- one or two ns -- against
+        # means measured in microseconds to milliseconds, so the bound equalled
+        # the mean and the chooser was a plain argmin over two-sample means.
+        # `confidence` reported through telemetry was likewise meaningless.
+        # Behind SPACEAGORA_PARALLEL_POLICY_V2 so the shipped chooser stays
+        # reproducible for the paired comparison.
+        mean_sq_ns = stats.elapsed_sq_sum_ns / n
+        std_ns = sqrt(max(0.0, mean_sq_ns - mean_ns^2))
+        width *= std_ns
+    end
     return mean_ns, width
 end
 
@@ -246,7 +260,10 @@ end
 
 function _hint_choose_allotment(
     signature::String,
-    candidates::Vector{Int64}
+    candidates::Vector{Int64};
+    # Scale the confidence width by each arm's measured spread; see
+    # _hint_mean_and_width. Off is the shipped chooser.
+    scaled_width::Bool=false
 )::NamedTuple{(:allotment, :confidence, :regret_ns, :samples, :exploring), Tuple{Int64, Float64, Float64, Int64, Bool}}
     _ensure_persistent_hint_state_loaded!()
     candidate_pool = isempty(candidates) ? Int64[1] : sort!(unique!(Int64[max(Int64(1), c) for c in candidates]))
@@ -257,8 +274,30 @@ function _hint_choose_allotment(
         state = _persistent_hint_state[]
         bucket = get(state.history, signature, nothing)
         if bucket === nothing || isempty(bucket)
+            # WIDEST, not narrowest, on a cold signature.
+            #
+            # `candidate_pool` is sorted ascending, so `first` handed back the
+            # narrowest allotment -- typically 1 -- and the exploration loop
+            # below then walks the ladder upward. An adaptive profile therefore
+            # began every unseen workload effectively serial on the region it
+            # was deciding about, and paid the whole ramp again each time
+            # re-exploration reset it.
+            #
+            # The non-adaptive path answers `max(1, budget)` immediately, and on
+            # the workload where this was found that answer is right by a factor
+            # of 2.8: measured on atmo256_gram_surrogate_10min, threading the
+            # density callback takes the RHS from 1338 to 474 us, and the
+            # adaptive profile captured only about half of it (954 us) purely
+            # because it started narrow and cycled.
+            #
+            # Starting at the widest candidate makes an unseen workload no worse
+            # than the static profiles at the first call, and leaves the layer
+            # free to narrow on measured evidence. The risk is inverted rather
+            # than removed -- a workload whose optimum is narrow now pays until
+            # it learns -- but that cost is bounded by one window, where the ramp
+            # cost was paid on every re-exploration.
             return (
-                allotment=first(candidate_pool),
+                allotment=last(candidate_pool),
                 confidence=Inf,
                 regret_ns=0.0,
                 samples=Int64(0),
@@ -287,7 +326,7 @@ function _hint_choose_allotment(
         if explore_candidate > 0
             stats = get(bucket, explore_candidate, nothing)
             confidence = if stats isa AdaptiveChoiceStats && stats.samples > 0 && total_samples > 0
-                _, width = _hint_mean_and_width(stats, total_samples, explore_c)
+                _, width = _hint_mean_and_width(stats, total_samples, explore_c; scaled=scaled_width)
                 width
             else
                 Inf
@@ -311,7 +350,7 @@ function _hint_choose_allotment(
             stats = get(bucket, c, nothing)
             stats isa AdaptiveChoiceStats || continue
             stats.samples > 0 || continue
-            mean_ns, width = _hint_mean_and_width(stats, total_samples, explore_c)
+            mean_ns, width = _hint_mean_and_width(stats, total_samples, explore_c; scaled=scaled_width)
             score = mean_ns - width
             push!(known_means, mean_ns)
             if score < best_score
@@ -336,6 +375,48 @@ function _hint_choose_allotment(
             exploring=false
         )
     end
+end
+
+# What one hint consultation costs ON THIS MACHINE, measured rather than assumed.
+#
+# The hint layer is worth consulting when the work a decision guards is large
+# compared with the cost of consulting it. That comparison has two sides and
+# both are machine-dependent: a lookup costs 183 ns on this repo's 12-core
+# reference box and will cost something else elsewhere, and the guarded work
+# varies by four orders of magnitude across the workloads in the benchmark
+# catalog. Hard-coding either side ports badly, which is why this is probed at
+# first use instead.
+#
+# Measured once per process against a synthetic signature that hits the same
+# code path a real consultation does -- candidate enumeration, the store lookup
+# and the lock -- and then cached. The probe itself costs roughly a quarter of a
+# millisecond, once, against a solve measured in seconds.
+const _HINT_OVERHEAD_NS = Ref{Float64}(-1.0)
+
+function hint_overhead_ns()::Float64
+    _HINT_OVERHEAD_NS[] >= 0.0 && return _HINT_OVERHEAD_NS[]
+    probe_sig = _hint_workload_signature(:_probe, 8, 1, 8, false, false, true)
+    candidates = _hint_candidate_allotments(8, 8)
+    best = Inf
+    try
+        for _ in 1:200                      # warm the path
+            _hint_choose_allotment(probe_sig, candidates)
+        end
+        for _ in 1:5                        # min of five blocks of 200
+            t0 = time_ns()
+            for _ in 1:200
+                _hint_choose_allotment(probe_sig, candidates)
+            end
+            sample = (time_ns() - t0) / 200
+            sample < best && (best = sample)
+        end
+    catch
+        # A probe failure must not disable routing. Fall back to a value that
+        # keeps the layer enabled for anything but the very cheapest regions.
+        best = 200.0
+    end
+    _HINT_OVERHEAD_NS[] = isfinite(best) ? max(1.0, best) : 200.0
+    return _HINT_OVERHEAD_NS[]
 end
 
 function _hint_record_observation!(

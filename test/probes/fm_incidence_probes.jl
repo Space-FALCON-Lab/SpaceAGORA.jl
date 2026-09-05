@@ -21,7 +21,7 @@ const AeroFM = SimulationModel.DynamicEffectors.AerodynamicEffectors
 # dims, so the fixed-attitude incidence modes are separable analytically.
 
 function make_prism_spacecraft(alt_km::Float64; dims=(0.1, 0.1, 0.3), q_root=MVector{4, Float64}(0, 0, 0, 1))
-    root = Link{0}(
+    root = Link(
         root=true, m=4.0,
         dims=MVector{3, Float64}(dims[1], dims[2], dims[3]),
         ref_area=dims[2] * dims[3],
@@ -109,7 +109,7 @@ end
 # Direct Hart coefficient evaluation at a controlled incidence for expected
 # ratios (mirrors the wrench's 3-arg call reading body.α).
 function hart_cd(alpha::Float64; dims=(0.1, 0.1, 0.3))
-    b = Link{0}(root=true, m=4.0,
+    b = Link(root=true, m=4.0,
         dims=MVector{3, Float64}(dims[1], dims[2], dims[3]),
         ref_area=dims[2] * dims[3])
     b.α = alpha
@@ -126,17 +126,17 @@ end
         @test AerodynamicCoefficientfM().fixed_attitude_incidence === :max_drag
         @test_throws ArgumentError AeroFM._validate_fm_incidence(:junk)
         # Cauchy mean projected area: box and thin panel
-        box = Link{0}(root=true, m=1.0, dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03)
+        box = Link(root=true, m=1.0, dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03)
         @test AeroFM._aero_link_area(box, :tumbling_average) ≈ 0.5 * (0.01 + 0.03 + 0.03)
         @test AeroFM._aero_link_area(box, :max_drag) == 0.03
-        panel = Link{0}(m=0.2, dims=MVector{3, Float64}(0.0, 0.1, 0.3), ref_area=0.03)
+        panel = Link(m=0.2, dims=MVector{3, Float64}(0.0, 0.1, 0.3), ref_area=0.03)
         @test AeroFM._aero_link_area(panel, :tumbling_average) ≈ 0.015  # one-sided area / 2, zero-thickness limit
         # :attitude composes child incidence with the root attitude (child
         # quaternions are root-relative): an identity-quaternion child rigidly
         # mounted on a 45-degree-pitched root shares the root's incidence.
         q45 = MVector{4, Float64}(0.0, sin(pi / 8), 0.0, cos(pi / 8))
-        root45 = Link{0}(root=true, m=4.0, dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03, q=q45)
-        child_id = Link{0}(m=1.0, dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03)
+        root45 = Link(root=true, m=4.0, dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03, q=q45)
+        child_id = Link(m=1.0, dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03)
         α_root = AeroFM._attitude_link_alpha(root45, root45)
         @test abs(α_root - pi / 2) ≈ pi / 4 atol = 1e-12   # 45-degree incidence off flow-normal
         @test AeroFM._attitude_link_alpha(child_id, root45) ≈ α_root atol = 1e-12
@@ -158,7 +158,7 @@ end
         @test e_att > e_max  # less dissipation (higher remaining energy) at oblique incidence
         # quantitative: dissipation ratio tracks the Hart CD ratio (same area)
         ratio_measured = (e_j2 - e_att) / (e_j2 - e_max)
-        root45 = Link{0}(root=true, m=4.0, dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03, q=q45)
+        root45 = Link(root=true, m=4.0, dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03, q=q45)
         α45 = AeroFM._attitude_link_alpha(root45, root45)
         ratio_expected = hart_cd(α45) / hart_cd(pi / 2)
         @test isapprox(ratio_measured, ratio_expected; rtol=0.08)

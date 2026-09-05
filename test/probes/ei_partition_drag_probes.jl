@@ -32,7 +32,7 @@ end
 # ── Config builders ──────────────────────────────────────────────────────────
 
 function make_probe_spacecraft(alt_km::Float64)
-    root = Link{0}(root=true, m=100.0, ref_area=10.0)
+    root = Link(root=true, m=100.0, ref_area=10.0)
     ic = InitialCondition(
         ra=EARTH.Rp_e + alt_km * 1e3,
         rp=EARTH.Rp_e + alt_km * 1e3,

@@ -951,12 +951,12 @@ end
     policy = SimulationModel.ParallelPolicy
     policy.reset_policy_telemetry!()
 
+    # Forced region: budget <= 1 or num_items <= 1 means the *next* decision
+    # cannot read the controller (thread_policy_decision returns use_threads
+    # false and allotment 1 before consulting desire), so record_policy_observation!
+    # must not move it. Raw accounting still advances.
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "1"
     ) do
         @test policy.use_threads_policy(
@@ -966,56 +966,78 @@ end
             source=:density_callback
         ) == false
 
-        policy.record_policy_observation!(
-            :density_callback;
-            mode=:auto,
-            num_items=1,
-            use_threads=false,
-            elapsed_ns=10
-        )
-        snap1 = policy.policy_telemetry_snapshot()
-        @test snap1.last_classification == "efficient_satisfied"
-        @test snap1.adaptation_updates_total >= 1
-        @test snap1.last_desire >= 2
+        for (items, ns) in ((1, 10), (1, 11), (0, 12))
+            policy.record_policy_observation!(
+                :density_callback;
+                mode=:auto,
+                num_items=items,
+                use_threads=false,
+                elapsed_ns=ns
+            )
+        end
+        snap = policy.policy_telemetry_snapshot()
+        @test snap.observations_total >= 3
+        @test snap.serial_elapsed_ns_total >= 33
+        @test snap.adaptation_updates_total == 0
+    end
 
-        policy.record_policy_observation!(
-            :density_callback;
-            mode=:auto,
-            num_items=1,
-            use_threads=false,
-            elapsed_ns=11
-        )
-        snap2 = policy.policy_telemetry_snapshot()
-        @test snap2.last_classification == "efficient_deprived"
+    # Live budget, no measured reward: the width is the static answer,
+    # min(items, budget), and nothing adapts. The AIMD controller this block
+    # used to drive was removed on 2026-09-03: its window score was a fill
+    # ratio that never read elapsed time, and since the width seed at the cap
+    # (433b9e39) every window classified as efficient_deprived -- which is
+    # what the previous version of this block was failing on.
+    if Threads.nthreads() >= 4
+        policy.reset_policy_telemetry!()
+        budget = Threads.nthreads()
+        withenv(
+            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
+            "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "0",
+            "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget)
+        ) do
+            saturating_items = 4 * budget
+            for i in 1:8
+                decision = policy.thread_policy_decision(
+                    saturating_items;
+                    mode=:auto,
+                    threshold=1,
+                    source=:other_source
+                )
+                @test decision.adaptive_enabled
+                @test decision.use_threads
+                @test decision.allotment == budget
+                policy.record_policy_observation!(
+                    :other_source;
+                    mode=:auto,
+                    num_items=saturating_items,
+                    use_threads=decision.use_threads,
+                    elapsed_ns=10 + i
+                )
+            end
+            snap = policy.policy_telemetry_snapshot()
+            @test snap.observations_total == 8
+            @test snap.adaptation_updates_total == 0
+            @test snap.last_allotment == budget
+            @test snap.last_desire == budget
 
-        policy.record_policy_observation!(
-            :density_callback;
-            mode=:auto,
-            num_items=0,
-            use_threads=false,
-            elapsed_ns=12
-        )
-        snap3 = policy.policy_telemetry_snapshot()
-        @test snap3.last_classification == "inefficient"
-        @test snap3.last_utilization <= 0.1
-        @test snap3.serial_elapsed_ns_total >= 33
-        @test snap3.quantum_length == 1
-        @test snap3.trim_quanta_budget == 1
-        @test snap3.quantums_total >= 3
-        @test snap3.quantums_inefficient >= 1
-        @test snap3.quantums_efficient_satisfied >= 1
-        @test snap3.quantums_efficient_deprived >= 1
-        @test snap3.accounted_fraction_proxy >= 0.0
-        @test snap3.trimmed_accounted_fraction_proxy >= 0.0
+            # Fewer items than threads: the policy still answers the budget;
+            # the dispatch primitives clamp to the item count.
+            starved = policy.thread_policy_decision(
+                2;
+                mode=:auto,
+                threshold=1,
+                source=:other_source
+            )
+            @test starved.use_threads
+            @test starved.allotment == budget
+            @test policy.thread_worker_count(2, starved.allotment) == 2
+        end
     end
 
     if Threads.nthreads() > 1
         policy.reset_policy_telemetry!()
         withenv(
             "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-            "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
             "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
         ) do
             use_history = Bool[]
@@ -1035,14 +1057,15 @@ end
                     elapsed_ns=1
                 )
             end
-            @test any(use_history)
-            @test use_history[end] == true
+            @test all(use_history)
         end
 
+        # A control callback above its threshold threads at the static width
+        # from the first call; there is no cold serial window to bootstrap out
+        # of any more.
         policy.reset_policy_telemetry!()
         withenv(
             "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "1",
             "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
         ) do
             decision = policy.thread_policy_decision(
@@ -1052,41 +1075,7 @@ end
                 source=:control_callback
             )
             @test decision.use_threads == true
-            @test decision.allotment >= 2
-        end
-
-        policy.reset_policy_telemetry!()
-        withenv(
-            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "0",
-            "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "0",
-            "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
-        ) do
-            decision = policy.thread_policy_decision(
-                8;
-                mode=:auto,
-                threshold=2,
-                source=:control_callback
-            )
-            @test decision.use_threads == false
-            @test decision.allotment == 1
-        end
-
-        policy.reset_policy_telemetry!()
-        withenv(
-            "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-            "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "0",
-            "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "1",
-            "SPACEAGORA_INNER_THREAD_BUDGET" => string(Threads.nthreads())
-        ) do
-            decision = policy.thread_policy_decision(
-                8;
-                mode=:auto,
-                threshold=2,
-                source=:control_callback
-            )
-            @test decision.use_threads == true
-            @test decision.allotment == min(Threads.nthreads(), 8)
+            @test decision.allotment == Threads.nthreads()
         end
     end
 
@@ -1280,8 +1269,8 @@ end
 
     @test dynamic_effectors._threadid_capacity() >= Threads.maxthreadid()
 
-    body_a = Link{0}(root=true)
-    body_b = Link{0}(root=false)
+    body_a = Link(root=true)
+    body_b = Link(root=false)
     body_a.net_force .= SVector{3, Float64}(1.0, 2.0, 3.0)
     body_a.net_torque .= SVector{3, Float64}(4.0, 5.0, 6.0)
     body_b.net_force .= SVector{3, Float64}(-0.5, 0.0, 0.5)
@@ -1365,6 +1354,419 @@ end
     end
 end
 
+# Test doubles for the cost probe. Defined at file scope because the probe
+# dispatches on their concrete types.
+#
+# _ProbeWorkEffector stands in for a user-defined effector with no
+# effector_cost_terms method: the whole point of the probe is that such an
+# effector needs to implement nothing to be routable. _ProbeThrowingEffector
+# stands in for one that fails when evaluated, which must degrade the model to
+# "cannot predict" rather than take the solve down with it.
+struct _ProbeWorkEffector <: SimulationModel.AbstractForceTorqueModel
+    iterations::Int
+end
+
+function SimulationModel.calcForceTorque(
+    model::_ProbeWorkEffector, x::AbstractVector{Float64}, param::ODEParams, i::Int64
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    acc = 0.0
+    @inbounds for j in 1:model.iterations
+        acc = muladd(x[1], 1.0000001, acc)
+    end
+    return (SVector{3, Float64}(acc * 0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+end
+
+struct _ProbeThrowingEffector <: SimulationModel.AbstractForceTorqueModel end
+
+function SimulationModel.calcForceTorque(
+    ::_ProbeThrowingEffector, ::AbstractVector{Float64}, ::ODEParams, ::Int64
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    error("deliberate probe failure")
+end
+
+# Survives the warm-up RHS, then throws once the probe starts hammering it.
+# This is the failure mode the per-effector try/catch exists for: an effector
+# that works in the RHS but not under isolated re-evaluation. The
+# always-throwing double above cannot exercise it, because it takes the warm-up
+# down first and nothing is ever probed.
+const _PROBE_FLAKY_CALLS = Ref(0)
+
+struct _ProbeFlakyEffector <: SimulationModel.AbstractForceTorqueModel
+    succeed_for::Int
+end
+
+function SimulationModel.calcForceTorque(
+    model::_ProbeFlakyEffector, ::AbstractVector{Float64}, ::ODEParams, ::Int64
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    _PROBE_FLAKY_CALLS[] += 1
+    _PROBE_FLAKY_CALLS[] > model.succeed_for && error("deliberate probe failure")
+    return (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+end
+
+@testset "Effector Cost Probe" begin
+    PC = SimulationModel.ParallelCost
+    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics = GravitationalHarmonicsModel(4, 4, harmonics_file, EARTH)
+    cheap = _ProbeWorkEffector(64)
+    dear  = _ProbeWorkEffector(16_384)
+
+    args_probe = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
+            for i in 1:4
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(harmonics, cheap, dear),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_probe = ODEParams(n_sats=4, args=args_probe)
+    _initialize_heat_rate_buffers!(p_probe)
+    _initialize_harmonics_workspace_buffers!(p_probe)
+    SimulationEngine._initialize_density_model_instances!(p_probe)
+    SimulationEngine._initialize_density_cache_buffers!(p_probe)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_probe)
+    _initialize_aero_workspace_buffers!(p_probe)
+    _initialize_nbody_workspace_buffers!(p_probe)
+    u_probe = build_initial_conditions(args_probe)
+
+    probes = SimulationEngine.probe_effector_costs!(p_probe, u_probe, args_probe)
+
+    @test length(probes) == 3
+    @test all(haskey(probes, i) for i in 1:3)
+
+    # Harmonics declares analytic terms, so it is probed only to validate.
+    @test probes[1].declared
+    @test !probes[2].declared
+    @test !probes[3].declared
+
+    # A user-defined effector with no trait method is measured, and the
+    # measurement is real work rather than a folded-away constant.
+    floor_ns = PC.timing_noise_floor()
+    for i in 2:3
+        @test isfinite(probes[i].ns_per_sat)
+        @test probes[i].ns_per_sat > floor_ns
+        @test isfinite(probes[i].reference_ratio)
+        @test probes[i].reference_ratio > 0.0
+    end
+
+    # The probe must order effectors by cost -- that is the only property the
+    # model actually consumes from it. 256x the inner iterations must read as
+    # materially dearer; the bound is loose because SIMD width and loop overhead
+    # make the true factor machine-specific.
+    @test probes[3].ns_per_sat > 4 * probes[2].ns_per_sat
+
+    # probe_ns_map feeds constellation_work_counts and must omit declared
+    # effectors, whose cost comes from their counts -- including them would
+    # double-count.
+    ns_map = PC.probe_ns_map(probes)
+    @test !haskey(ns_map, 1)
+    @test haskey(ns_map, 2) && haskey(ns_map, 3)
+
+    # Second call, post-compilation: the probe runs at every solve setup, so
+    # its own cost has to stay negligible against the sweep it replaces (which
+    # evaluated the whole RHS 15 times for each of up to 10 candidate plans).
+    probe_elapsed_s = @elapsed SimulationEngine.probe_effector_costs!(p_probe, u_probe, args_probe)
+    @info "Effector cost probe overhead" effectors=3 seconds=probe_elapsed_s
+    @test probe_elapsed_s < 0.5
+
+    counts = PC.constellation_work_counts(args_probe, 4; probe=ns_map)
+    @test counts.unknown_effectors == 2
+    @test counts.probe_ns ≈ ns_map[2] + ns_map[3]
+    @test counts.simd_terms > 0.0                     # harmonics contributed analytically
+    # Harmonics is pre-pass handled; the two doubles are not, so only they
+    # produce queue nodes.
+    @test counts.queue_nodes == 4 * 2
+    @test counts.in_domain
+end
+
+@testset "Effector Cost Probe: failures do not break the run" begin
+    PC = SimulationModel.ParallelCost
+    args_bad = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
+            for i in 1:2
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredJ2GravityModel(), _ProbeThrowingEffector()),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_bad = ODEParams(n_sats=2, args=args_bad)
+    _initialize_heat_rate_buffers!(p_bad)
+    _initialize_harmonics_workspace_buffers!(p_bad)
+    SimulationEngine._initialize_density_model_instances!(p_bad)
+    SimulationEngine._initialize_density_cache_buffers!(p_bad)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_bad)
+    _initialize_aero_workspace_buffers!(p_bad)
+    _initialize_nbody_workspace_buffers!(p_bad)
+    u_bad = build_initial_conditions(args_bad)
+
+    # An effector that cannot be evaluated at all takes the warm-up RHS down,
+    # so nothing is probed. That must return empty rather than throw: a solve
+    # whose RHS fails once was not going to run regardless, and the probe is
+    # not the place to surface it.
+    probes = SimulationEngine.probe_effector_costs!(p_bad, u_bad, args_bad)
+    @test isempty(probes)
+
+    # And the model must decline rather than treat the unmeasured effector as
+    # free -- the whole point of routing an unknown effector to the probe is
+    # lost if a failed probe silently becomes zero cost.
+    counts = PC.constellation_work_counts(args_bad, 2; probe=PC.probe_ns_map(probes))
+    @test counts.unknown_effectors == 1
+    @test !counts.in_domain
+end
+
+@testset "Effector Cost Probe: isolated-evaluation failure is contained" begin
+    PC = SimulationModel.ParallelCost
+    _PROBE_FLAKY_CALLS[] = 0
+    args_flaky = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
+            for i in 1:2
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        # succeed_for covers the warm-up RHS (one call per active satellite),
+        # then the probe's own repeated calls trip the failure.
+        dynamic_effectors=(InverseSquaredJ2GravityModel(), _ProbeFlakyEffector(2)),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_flaky = ODEParams(n_sats=2, args=args_flaky)
+    _initialize_heat_rate_buffers!(p_flaky)
+    _initialize_harmonics_workspace_buffers!(p_flaky)
+    SimulationEngine._initialize_density_model_instances!(p_flaky)
+    SimulationEngine._initialize_density_cache_buffers!(p_flaky)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_flaky)
+    _initialize_aero_workspace_buffers!(p_flaky)
+    _initialize_nbody_workspace_buffers!(p_flaky)
+    u_flaky = build_initial_conditions(args_flaky)
+
+    probes = SimulationEngine.probe_effector_costs!(p_flaky, u_flaky, args_flaky)
+    @test haskey(probes, 2)
+    @test isnan(probes[2].ns_per_sat)
+    @test isnan(probes[2].reference_ratio)
+
+    # NaN must not leak into the counts as a number.
+    counts = PC.constellation_work_counts(args_flaky, 2; probe=PC.probe_ns_map(probes))
+    @test !counts.in_domain
+    @test counts.probe_ns == 0.0
+    @test !isnan(counts.probe_ns)
+end
+
+@testset "Declaration mismatch is warned, not enforced" begin
+    PC = SimulationModel.ParallelCost
+    # Agreement inside the factor, disagreement outside it.
+    @test PC.validate_declaration(100.0, 150.0)
+    @test PC.validate_declaration(150.0, 100.0)
+    @test !PC.validate_declaration(100.0, 10.0)
+    @test !PC.validate_declaration(10.0, 100.0)
+    # An unmeasurable probe cannot invalidate a declaration.
+    @test PC.validate_declaration(NaN, 100.0)
+
+    probes = Dict(
+        1 => PC.EffectorProbe(100.0, 5.0, true),    # declared, agrees
+        2 => PC.EffectorProbe(100.0, 5.0, true),    # declared, disagrees 10x
+        3 => PC.EffectorProbe(100.0, 5.0, false),   # undeclared, never checked
+    )
+    predicted = Dict(1 => 120.0, 2 => 10.0, 3 => 1.0)
+    mismatches = SimulationEngine.warn_on_declaration_mismatch(probes, predicted)
+    @test mismatches == 1
+end
+
+@testset "Successive-halving sweep" begin
+    # The sweep now eliminates candidates in rounds instead of giving every one
+    # the full timed block. What must hold is that it still returns a plan drawn
+    # from the candidate set, that it survives a budget of 1, and that a
+    # candidate set it cannot evaluate degrades to "no override" rather than to
+    # an exception -- the calibration is an optimisation and must never be able
+    # to take a solve down.
+    Threads.nthreads() > 1 || return
+
+    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    args_sweep = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i,
+                            ν_deg=120.0 + 5.0 * i)
+            for i in 1:16
+        ],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(GravitationalHarmonicsModel(8, 8, harmonics_file, EARTH),),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_sweep = ODEParams(n_sats=16, args=args_sweep)
+    _initialize_heat_rate_buffers!(p_sweep)
+    _initialize_harmonics_workspace_buffers!(p_sweep)
+    SimulationEngine._initialize_density_model_instances!(p_sweep)
+    SimulationEngine._initialize_density_cache_buffers!(p_sweep)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_sweep)
+    _initialize_aero_workspace_buffers!(p_sweep)
+    _initialize_nbody_workspace_buffers!(p_sweep)
+    SimulationEngine._initialize_runtime_env_config!(p_sweep)
+    u_sweep = build_initial_conditions(args_sweep)
+
+    effs = args_sweep.dynamics_model.dynamic_effectors
+    withenv("SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1") do
+        SimulationEngine._initialize_runtime_env_config!(p_sweep)
+        candidates = SimulationEngine._rhs_plan_candidates(p_sweep, effs)
+        @test length(candidates) > 1
+
+        plan, elapsed = SimulationEngine._run_rhs_sweep!(p_sweep, u_sweep, effs, false)
+        @test plan !== nothing
+        @test elapsed > 0.0
+        @test any(c -> c.mode === plan.mode && c.allotment == plan.allotment &&
+                       c.scheduler === plan.scheduler, candidates)
+
+        # A one-call budget must still terminate and still choose. Successive
+        # halving doubles its repetition count each round, so a budget that is
+        # already reached on the first round has to break immediately rather
+        # than loop.
+        withenv("SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "1",
+                "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1") do
+            plan_min, elapsed_min = SimulationEngine._run_rhs_sweep!(p_sweep, u_sweep, effs, false)
+            @test plan_min !== nothing
+            @test elapsed_min > 0.0
+        end
+    end
+    # The sweep must leave no override behind: it restores the Ref on every path,
+    # including the error path, or a candidate would leak into the real solve.
+    @test p_sweep.shared_buffers.rhs_plan_override[] === nothing
+end
+
+@testset "Flat-queue reduction: parallel path is bit-identical to serial" begin
+    # The cross-worker partials reduction was serial O(N*W) and now splits over
+    # the worker pool. Each worker owns a disjoint satellite range and still
+    # accumulates worker_id 1..W in order for every satellite it owns, so the
+    # floating-point summation order per satellite is UNCHANGED and the result
+    # must be bit-identical -- not merely close. Anything else would mean the
+    # optimisation silently altered trajectories.
+    Threads.nthreads() > 1 || return
+
+    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    args_red = build_config_multi(
+        spacecraft=[
+            make_spacecraft(ra_alt_m=500e3 + 10e3 * (i % 7), rp_alt_m=480e3 + 5e3 * (i % 5),
+                            ν_deg=(120.0 + 7.0 * i) % 360.0)
+            for i in 1:160
+        ],
+        # Harmonics is pre-pass handled; the aerodynamic effector is flat-queue
+        # only, which is what makes the partials reduction actually run.
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        dynamic_effectors=(GravitationalHarmonicsModel(8, 8, harmonics_file, EARTH),
+                           AerodynamicCoefficientConstant()),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_red = ODEParams(n_sats=160, args=args_red)
+    _initialize_heat_rate_buffers!(p_red)
+    _initialize_harmonics_workspace_buffers!(p_red)
+    SimulationEngine._initialize_density_model_instances!(p_red)
+    SimulationEngine._initialize_density_cache_buffers!(p_red)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_red)
+    _initialize_aero_workspace_buffers!(p_red)
+    _initialize_nbody_workspace_buffers!(p_red)
+    SimulationEngine._initialize_runtime_env_config!(p_red)
+    u_red = build_initial_conditions(args_red)
+    du_red = zero(u_red)
+
+    function derivative_at(allot::Int, min_sats::String)
+        withenv("SPACEAGORA_RHS_REDUCTION_MIN_SATS_PER_WORKER" => min_sats) do
+            SimulationEngine._initialize_runtime_env_config!(p_red)
+            p_red.shared_buffers.rhs_plan_override[] =
+                SimulationEngine._make_calib_flat_plan(allot, :static)
+            try
+                SimulationEngine.spacecraft_dynamics!(du_red, u_red, p_red, 0.0)
+                return [du_red.sc[i][j] for i in 1:160 for j in 4:6]
+            finally
+                p_red.shared_buffers.rhs_plan_override[] = nothing
+            end
+        end
+    end
+
+    # "999999" forces the serial path regardless of satellite count.
+    reference = derivative_at(1, "999999")
+    @test any(!iszero, reference)
+
+    for allot in (2, 4, Threads.nthreads())
+        serial_result = derivative_at(allot, "999999")
+        parallel_result = derivative_at(allot, "1")
+        @test serial_result == reference
+        @test parallel_result == reference
+    end
+end
+
+@testset "Light-work effector short-circuit keeps the cost model fed" begin
+    # _dynamic_effector_thread_decision returns before consulting the policy when
+    # heavy-only rejects light work. That return MUST keep policy_applied true:
+    # at the call site it gates both the elapsed-time measurement and
+    # _update_effector_cost_model!, and that cost model is what computes
+    # heavy_work in the first place. Returning false freezes the estimate, so
+    # work classified light once can never be reclassified, and the guard latches
+    # permanently on its first observation.
+    args_light = build_config_multi(
+        spacecraft=[make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i,
+                                    ν_deg=120.0 + 5.0 * i) for i in 1:2],
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=false,
+        mission_time=30.0,
+        EI_km=120.0,
+        # Two cheap effectors, both thread-safe so the decision actually reaches
+        # the heavy-work guard. AerodynamicCoefficientConstant would not: it is
+        # not declared thread-safe, so _dynamic_effectors_parallel_supported
+        # rejects the set earlier and the guard under test never runs.
+        dynamic_effectors=(InverseSquaredGravityModel(), InverseSquaredJ2GravityModel()),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
+    )
+    p_light = ODEParams(n_sats=2, args=args_light)
+    _initialize_heat_rate_buffers!(p_light)
+    _initialize_harmonics_workspace_buffers!(p_light)
+    SimulationEngine._initialize_density_model_instances!(p_light)
+    SimulationEngine._initialize_density_cache_buffers!(p_light)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_light)
+    _initialize_aero_workspace_buffers!(p_light)
+    _initialize_nbody_workspace_buffers!(p_light)
+    SimulationEngine._initialize_runtime_env_config!(p_light)
+    u_light = build_initial_conditions(args_light)
+    du_light = zero(u_light)
+
+    withenv("SPACEAGORA_EFFECTOR_PARALLEL" => "auto",
+            "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY" => "1") do
+        SimulationEngine._initialize_runtime_env_config!(p_light)
+        decision = SimulationEngine._dynamic_effector_thread_decision(
+            args_light, p_light, args_light.dynamics_model.dynamic_effectors, 2
+        )
+        # Light work must not thread, but must still be timed.
+        @test decision.use_threads == false
+        @test decision.allotment == 1
+        @test decision.policy_applied == true
+
+        # And the cost model must actually accumulate samples across RHS calls,
+        # which is the observable consequence.
+        before = p_light.shared_buffers.effector_cost_samples[]
+        for _ in 1:5
+            SimulationEngine.spacecraft_dynamics!(du_light, u_light, p_light, 0.0)
+        end
+        @test p_light.shared_buffers.effector_cost_samples[] > before
+    end
+end
+
 @testset "RHS Plan Calibration" begin
     # ── Env var parsing ──────────────────────────────────────────────────────
     withenv("SPACEAGORA_RHS_CALIBRATE" => "off") do
@@ -1417,7 +1819,7 @@ end
     @test flat_plan_floor.allotment == 1
 
     # ── In-memory store / lookup round-trip ──────────────────────────────────
-    test_sig = "v1|machine=test_gate|budget=8|sats=2_4|effs=1|harm=1"
+    test_sig = "v3|machine=test_gate|budget=8|sats=2_4|effs=1|harm=1"
     SimulationEngine._rhs_calib_store!(test_sig, sat_batch_plan, 1.5e6)
     retrieved = SimulationEngine._rhs_calib_lookup(test_sig)
     @test retrieved !== nothing
@@ -1429,12 +1831,24 @@ end
     @test retrieved_flat.mode == :flat_constellation_effector_queue
     @test retrieved_flat.allotment == 4
 
+    # Scheduler survives store/lookup: it is a swept axis now, so a cache entry
+    # that dropped it would silently hand the solve back to the env var.
+    for sched in (:static, :dynamic)
+        sig_sched = "v3|machine=test_gate_$(sched)|budget=8|sats=2_4|effs=1|harm=1"
+        SimulationEngine._rhs_calib_store!(
+            sig_sched, SimulationEngine._make_calib_flat_plan(4, sched), 0.8e6
+        )
+        round_tripped = SimulationEngine._rhs_calib_lookup(sig_sched)
+        @test round_tripped !== nothing
+        @test round_tripped.scheduler == sched
+    end
+
     # ── TOML persistence round-trip (temp directory) ─────────────────────────
     mktempdir() do tmp
         calib_path = joinpath(tmp, "calib_test.toml")
         withenv("SPACEAGORA_RHS_CALIBRATION_PATH" => calib_path) do
             # Store and save to disk
-            sig_disk = "v1|machine=disktest|budget=4|sats=2_4|effs=1|harm=1"
+            sig_disk = "v3|machine=disktest|budget=4|sats=2_4|effs=1|harm=1"
             SimulationEngine._rhs_calib_store!(sig_disk, flat_plan, 2.0e6)
             SimulationEngine._rhs_calib_save!()
             @test isfile(calib_path)
@@ -1444,6 +1858,8 @@ end
             @test parsed["schema_version"] == 1
             rows = parsed["calibrations"]
             @test any(r -> get(r, "signature", "") == sig_disk, rows)
+            disk_row = only(filter(r -> get(r, "signature", "") == sig_disk, rows))
+            @test get(disk_row, "scheduler", "") == String(flat_plan.scheduler)
         end
     end
 
@@ -1507,13 +1923,40 @@ end
     end
 
     # ── Signature stability ───────────────────────────────────────────────────
-    sig_a = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
-    sig_b = SimulationEngine._rhs_calib_signature(p_calib, args_calib.dynamics_model.dynamic_effectors)
+    sig_a = SimulationEngine._rhs_calib_signature(
+        p_calib, args_calib.dynamics_model.dynamic_effectors,
+        args_calib.environment_model.density_model
+    )
+    sig_b = SimulationEngine._rhs_calib_signature(
+        p_calib, args_calib.dynamics_model.dynamic_effectors,
+        args_calib.environment_model.density_model
+    )
     @test sig_a == sig_b
-    @test startswith(sig_a, "v1|machine=")
+    # v4: bumped again for the effector-identity and outer-split terms. v3
+    # entries key on effector COUNT and are blind to the outer split, so
+    # replaying one is exactly the collision those terms exist to prevent --
+    # measured: gravity_4096sat_l50 calibrates to "retain the heuristic" 16/16
+    # with no outer split and to a pinned flat plan 16/16 with one, and under v3
+    # those two shared a single cache key.
+    #
+    # (v3 itself was the no-regret floor bump: a cached entry short-circuits the
+    # sweep, and the floor only runs inside a sweep, so pre-floor entries would
+    # keep pinning plans the floor exists to reject, indefinitely.)
+    #
+    # v5: bumped for the density-model term -- v4 keys were blind to the density
+    # model, so a cached entry could replay a GRAM plan the sweep had refused to
+    # rank.
+    #
+    # v6: invalidates entries whose elapsed_mean_ns came from the pre-2026-08-30
+    # asymmetric comparison, which is not comparable to a contiguous confirm.
+    @test startswith(sig_a, "v6|machine=")
     @test occursin("|sats=", sig_a)
     @test occursin("|effs=1|", sig_a)
     @test occursin("|harm=1", sig_a)
+    # Effector identity, not just count: two shapes with the same effector count
+    # must not share a cache key.
+    @test occursin("|eff=", sig_a)
+    @test occursin("|outer=", sig_a)
 
     # ── Multi-sat + harmonics calibration (requires worker threads) ───────────
     if Threads.nthreads() > 1
@@ -1528,14 +1971,75 @@ end
             "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1",
             "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
             "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1",
-            "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(mktempdir(), "calib_force_gate.toml")
+            "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(mktempdir(), "calib_force_gate.toml"),
+            "SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN" => "0.0"
         ) do
+            # End to end, EITHER outcome is correct and which one occurs is a
+            # timing race: at margin zero the heuristic is still retained
+            # whenever it is faster by any amount, which on a four-satellite
+            # fixture it often is. An earlier version of this asserted an
+            # override was installed and passed only by luck of the draw. So
+            # assert the outcome is well formed rather than which way it went.
             p_calib.shared_buffers.rhs_plan_override[] = nothing
             SimulationEngine._calibrate_rhs_plan_if_needed!(p_calib, u_calib, args_calib)
             override = p_calib.shared_buffers.rhs_plan_override[]
-            @test override !== nothing
-            @test override.mode ∈ (:satellite_batch, :flat_constellation_effector_queue)
-            @test override.policy_applied == true
+            if override !== nothing
+                @test override.mode ∈ (:satellite_batch, :flat_constellation_effector_queue)
+                @test override.policy_applied == true
+            else
+                @test override === nothing
+            end
+        end
+
+        # That the sweep CAN produce a plan is tested directly, without the
+        # floor, so it does not depend on which side wins a timing race:
+        # passing no `args` means no heuristic candidate and therefore no floor.
+        withenv(
+            "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1",
+            "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
+            "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1"
+        ) do
+            plan, elapsed = SimulationEngine._run_rhs_sweep!(
+                p_calib, u_calib, args_calib.dynamics_model.dynamic_effectors, false
+            )
+            @test plan !== nothing
+            @test plan.mode ∈ (:satellite_batch, :flat_constellation_effector_queue)
+            @test elapsed > 0.0
+            @test p_calib.shared_buffers.rhs_plan_override[] === nothing
+        end
+
+        # ── No-regret floor ──────────────────────────────────────────────────
+        # The sweep may only displace the runtime heuristic when it beats it by
+        # more than the sweep's own resolution. Without this the sweep could pin
+        # a plan worse than doing nothing and no measurement could detect it,
+        # because the heuristic's answer was never one of its candidates:
+        # measured on gravity_4096sat_l50_vacuum_1hr and heavy_1024sat_l50_6hr
+        # at eight threads, where policy_decisions_total is zero for every
+        # profile and the whole 10-12% gap was a pinned plan losing to the
+        # heuristic it was never compared against.
+        withenv(
+            "SPACEAGORA_RHS_CALIBRATE" => "force",
+            "SPACEAGORA_RHS_CALIBRATE_N_WARMUP" => "1",
+            "SPACEAGORA_RHS_CALIBRATE_N_TIMED" => "2",
+            "SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER" => "1",
+            "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(mktempdir(), "calib_floor_gate.toml"),
+            # An unreachable margin: nothing can clear it, so the heuristic must
+            # always be retained regardless of what the sweep measured.
+            "SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN" => "0.89"
+        ) do
+            p_calib.shared_buffers.rhs_plan_override[] = nothing
+            SimulationEngine._calibrate_rhs_plan_if_needed!(p_calib, u_calib, args_calib)
+            @test p_calib.shared_buffers.rhs_plan_override[] === nothing
+        end
+
+        @test SimulationEngine._rhs_calibrate_override_margin() ≈ 0.10
+        withenv("SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN" => "0.25") do
+            @test SimulationEngine._rhs_calibrate_override_margin() ≈ 0.25
+        end
+        # Clamped into [0, 0.9] so a mistyped value cannot disable calibration
+        # entirely or make every sweep override.
+        withenv("SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN" => "5.0") do
+            @test SimulationEngine._rhs_calibrate_override_margin() ≈ 0.9
         end
     end
 end
@@ -1774,14 +2278,20 @@ end
         # Feedback stores amortized campaign wall time per sample.
         @test isapprox(snap1[route1].mean_s, res1.elapsed_s / n_seeds; rtol=1e-6)
 
-        # A second identical campaign explores the under-sampled serial route,
-        # so repeated campaigns accumulate stats for every feasible allocation.
+        # Exploration is gated on CAMPAIGNS, not samples: the default needs
+        # adaptive_min_samples (2) campaigns before the selector looks past it,
+        # so the second campaign repeats threads and the third explores the
+        # under-sampled serial route. Repeated campaigns thereby accumulate
+        # stats for every feasible allocation.
         if Threads.nthreads() > 1
             res2 = SimulationCampaigns.run_monte_carlo(runner, 1:n_seeds; threads=:auto, route_state=state)
-            @test res2.threads == 1
-            snap2 = ParallelProfiles.outer_route_stats_snapshot(state, auto_sig)
-            @test snap2[:none].samples == n_seeds
-            @test snap2[:threads].samples == n_seeds
+            @test res2.threads == expected_workers
+            res3 = SimulationCampaigns.run_monte_carlo(runner, 1:n_seeds; threads=:auto, route_state=state)
+            @test res3.threads == 1
+            snap3 = ParallelProfiles.outer_route_stats_snapshot(state, auto_sig)
+            @test snap3[:none].samples == n_seeds
+            # Cold eviction replaced the first threads timing with the second.
+            @test snap3[:threads].samples == n_seeds
         end
 
         # Caller-provided route features are patched with the actual sample count.

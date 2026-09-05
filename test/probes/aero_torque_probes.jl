@@ -30,7 +30,7 @@ function sample_env()
 end
 
 function box_link(; cop=(0.0, 0.0, 0.0), r=(0.0, 0.0, 0.0), q=(0.0, 0.0, 0.0, 1.0), root=true)
-    return Link{0}(root=root, m=4.0,
+    return Link(root=root, m=4.0,
         dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03,
         r=MVector{3, Float64}(r...),
         q=MVector{4, Float64}(q...),

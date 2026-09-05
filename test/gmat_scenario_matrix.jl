@@ -951,7 +951,104 @@ function _matrix_initial_conditions(scenario_name::String)
     error("Unsupported matrix scenario planet in $scenario_name")
 end
 
-function _matrix_scenario_overrides(scenario_name::String)::Dict{String, Any}
+# Central-body GM (m^3/s^2), reconstructed directly from each reference
+# tool's own trajectories via μ = |r×v|^2 / (a(1-e^2)) at the initial
+# state (exact for unperturbed two-body motion, and equally valid at J2/J50
+# since the *initial* Keplerian->Cartesian seeding is unaffected by
+# whatever degree the subsequent force model integrates with -- confirmed
+# by reconstructing it from row 0 of the J0/J2/J50 reference files
+# independently and getting identical values per (body, tool) regardless
+# of degree). GMAT's and STK's own conventions do not agree with each
+# other -- confirmed by swapping Mars's J0 μ, which cut the GMAT
+# comparison's error 16x but grew the STK comparison's error from ~5e-6 km
+# to ~2.2 km -- so each comparison target gets its own value here rather
+# than a single shared μ per body. See spaceagora_j0_gm_parity_investigation.md.
+const _MATRIX_GM_OVERRIDE_M3S2 = Dict{Tuple{String, Symbol}, Float64}(
+    ("earth", :gmat) => 398600.436000e9,
+    ("earth", :stk)  => 398600.441500e9,
+    ("mars",  :gmat) => 42828.314258067e9,
+    ("mars",  :stk)  => 42828.372854188e9,
+    ("venus", :gmat) => 324858.599000e9,
+    ("venus", :stk)  => 324858.589726e9,
+    ("moon",  :gmat) => 4902.799000e9,
+    ("moon",  :stk)  => 4902.800306e9,
+)
+
+# J2 tesseral order, per (body, reference_target). GMAT's and STK's own
+# checked-in "J2" reference data do not agree on what "J2" means: STK's
+# generator (generate_stk_cases.py) genuinely uses zonal-only (degree=2,
+# order=0) for every body. GMAT's checked-in reference
+# (data/telemetry/Basilisk_Examples_Full/Sim_*_1M_J2_TBFalse.feather) is
+# zonal-only for Earth but *full tesseral* (degree=2, order=2) for
+# Mars/Venus/Moon -- confirmed 2026-08-19/20
+# (mars_j2_investigation_spaceagora.md) and reconfirmed here by forcing
+# SpaceAGORA back to (2,2): the GMAT-comparison error collapsed from
+# 50.6/8.5/0.53 km (Mars/Moon/Venus, zonal SA vs. tesseral reference) down
+# to 0.54/0.07/0.01 km, while the STK-comparison error exploded from
+# 5e-6/8e-5/6e-6 km to 291/50/0.9 km -- i.e. the two references disagree
+# with each other on Mars/Venus/Moon's J2 field shape, not just SpaceAGORA
+# disagreeing with one of them. Degree stays 2 for both targets; only the
+# order (0=zonal vs 2=tesseral) differs.
+const _MATRIX_J2_ORDER_OVERRIDE = Dict{Tuple{String, Symbol}, Int}(
+    ("earth", :gmat) => 0,
+    ("earth", :stk)  => 0,
+    ("mars",  :gmat) => 2,
+    ("mars",  :stk)  => 0,
+    ("venus", :gmat) => 2,
+    ("venus", :stk)  => 0,
+    ("moon",  :gmat) => 2,
+    ("moon",  :stk)  => 0,
+)
+
+# STK's own Lunar Prospector gravity file declares a C(2,0) that differs from
+# data/Gravity_harmonics_data/LP165P.csv's (GMAT-sourced, byte-verified against
+# LP165P.cof) by ~0.047% -- confirmed by a 3-point calibration that collapsed the
+# moon_j2-vs-STK secular drift from 202 m to 0.24 m at t=600,000 s (down to the
+# same floor as the harmonics-free J0 case) once this value was substituted. This
+# is ordinary cross-distribution variance, smaller than the already-documented
+# Mars C20 gap between Mars50c/GMM2B (mars_j2_investigation_spaceagora.md), not a
+# SpaceAGORA bug -- see spaceagora_luna_j2_stk_c20_investigation.md. Left out of
+# the shared, citation-backed LP165P.csv (which should stay a faithful transcription
+# of one named source) and scoped here to just the STK-target Moon J2 matrix case
+# instead, via a derived copy of that file with only this one coefficient changed.
+# J2-only, NOT also J50: LP165P.csv's full 50x50 field already matches STK's own
+# J50 dynamics well as a self-consistent whole (moon_j50 vs. STK already passes
+# unmodified); perturbing just C(2,0) inside that field made J50 measurably worse
+# (33 m -> 148.5 m) rather than better when tried, so the override applies only
+# where C(2,0) is the sole harmonic term present.
+const _LUNA_STK_C20 = -9.09330986562e-05
+const _LUNA_STK_ADJUSTED_HARMONICS_FILE = Ref{Union{Nothing, String}}(nothing)
+
+function _luna_stk_c20_adjusted_harmonics_file()::String
+    cached = _LUNA_STK_ADJUSTED_HARMONICS_FILE[]
+    cached !== nothing && return cached
+
+    src = joinpath(_GMAT_REPO_ROOT, _GMAT_HARMONICS_MOON_FILE)
+    dst_dir = mktempdir(; prefix="spaceagora_luna_stk_c20_")
+    dst = joinpath(dst_dir, "LP165P_stk_c20_adjusted.csv")
+    row_pattern = r"^2,0,(-?[\d.eE+-]+),(.*)$"
+    replaced = false
+    open(dst, "w") do out
+        for line in eachline(src)
+            m = match(row_pattern, line)
+            if m === nothing
+                println(out, line)
+            else
+                replaced = true
+                println(out, "2,0,$(_LUNA_STK_C20),$(m.captures[2])")
+            end
+        end
+    end
+    replaced || throw(ArgumentError("Could not find the C(2,0) row in $src to adjust for the STK-target Moon J2/J50 comparison."))
+
+    _LUNA_STK_ADJUSTED_HARMONICS_FILE[] = dst
+    return dst
+end
+
+function _matrix_scenario_overrides(scenario_name::String, reference_target::Symbol=:gmat)::Dict{String, Any}
+    reference_target in (:gmat, :stk) || throw(ArgumentError(
+        "reference_target must be :gmat or :stk, got $reference_target"
+    ))
     parts = split(scenario_name, "_")
     @test length(parts) == 3
     planet, gravity_tag, tb_tag = parts
@@ -959,7 +1056,7 @@ function _matrix_scenario_overrides(scenario_name::String)::Dict{String, Any}
     gravity_degree, gravity_order = if gravity_tag == "j0"
         (0, 0)
     elseif gravity_tag == "j2"
-        planet == "earth" ? (2, 0) : (2, 2)
+        (2, _MATRIX_J2_ORDER_OVERRIDE[(planet, reference_target)])
     elseif gravity_tag == "j50"
         (50, 50)
     else
@@ -986,6 +1083,8 @@ function _matrix_scenario_overrides(scenario_name::String)::Dict{String, Any}
         _GMAT_HARMONICS_MARS_FILE
     elseif planet == "venus"
         _GMAT_HARMONICS_VENUS_FILE
+    elseif planet == "moon" && reference_target == :stk && gravity_tag == "j2"
+        _luna_stk_c20_adjusted_harmonics_file()
     elseif planet == "moon"
         _GMAT_HARMONICS_MOON_FILE
     else
@@ -1001,6 +1100,21 @@ function _matrix_scenario_overrides(scenario_name::String)::Dict{String, Any}
         "nbody_bodies" => nbody_bodies,
         "orbit_altitude_mode" => "oblate"
     )
+
+    # GMAT's reference data uses one uniform per-body GM across J0/J2/J50 alike
+    # (confirmed: applying the J0-reconstructed GM at J2/J50 too improved the
+    # GMAT comparison at every degree, e.g. Mars J50 0.274->0.085 km, Venus J50
+    # 0.0124->0.0016 km). STK's reference data does not follow the same
+    # pattern: its J2/J50 dynamics already match the harmonics file's own
+    # declared `gm_m3s2` almost exactly (this is why the STK comparison was
+    # already excellent, e.g. Mars J2 ~2e-4 km, before any override), and only
+    # J0 (no potential file loaded, or loaded but not used for the central
+    # term) uses a distinct GM -- applying the J0 STK value at J2/J50 measurably
+    # regressed those cases instead (e.g. Venus J2 STK 5.9e-6->0.024 km, Mars
+    # J2 STK 2.2e-4->0.093 km), so the STK override stays scoped to J0.
+    if reference_target == :gmat || gravity_tag == "j0"
+        overrides["gravity_harmonics_gm_override_m3s2"] = _MATRIX_GM_OVERRIDE_M3S2[(planet, reference_target)]
+    end
 
     if scenario_name == "earth_j0_tbtrue"
         merge!(overrides, Dict{String, Any}(
@@ -1098,7 +1212,8 @@ function _run_reference_scenario_matrix_result_once(
     path_resolver::Function,
     result_cache::Base.RefValue{Union{Nothing, TV.VerificationResult}},
     summary_cache::Base.RefValue{Union{Nothing, DataFrame}},
-    cache_key_ref::Base.RefValue{String}
+    cache_key_ref::Base.RefValue{String};
+    reference_target::Symbol=:gmat
 )::TV.VerificationResult
     cache_key = _gmat_matrix_cache_key()
     if result_cache[] !== nothing && cache_key_ref[] == cache_key
@@ -1153,7 +1268,7 @@ function _run_reference_scenario_matrix_result_once(
         scenarios = Dict{String, Any}[]
         for scenario_name in active_scenarios
             scenario = _base_scenario_dict(scenario_name, trajectories[scenario_name].telemetry_path)
-            merge!(scenario, _matrix_scenario_overrides(scenario_name))
+            merge!(scenario, _matrix_scenario_overrides(scenario_name, reference_target))
             push!(scenarios, scenario)
         end
 
@@ -1191,7 +1306,8 @@ function _run_gmat_scenario_matrix_result_once()::TV.VerificationResult
         _scenario_basilisk_path,
         _GMAT_MATRIX_RESULT_CACHE,
         _GMAT_MATRIX_SUMMARY_CACHE,
-        _GMAT_MATRIX_CACHE_KEY
+        _GMAT_MATRIX_CACHE_KEY;
+        reference_target=:gmat
     )
 end
 
@@ -1204,7 +1320,8 @@ function _run_stk_scenario_matrix_result_once()::TV.VerificationResult
         _scenario_stk_path,
         _STK_MATRIX_RESULT_CACHE,
         _STK_MATRIX_SUMMARY_CACHE,
-        _STK_MATRIX_CACHE_KEY
+        _STK_MATRIX_CACHE_KEY;
+        reference_target=:stk
     )
 end
 

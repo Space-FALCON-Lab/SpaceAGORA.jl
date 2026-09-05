@@ -1,4 +1,34 @@
-function threaded_foreach(num_items::Int, allotment::Int, f::F) where {F <: Function}
+# Scheduler resolution for the inner dispatch primitives.
+#
+# `SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER` used to be the only input here:
+# every dispatch read it from ENV, and the `scheduler` field that RHS execution
+# plans already carried was dead. That made the static/dynamic choice a profile
+# constant rather than a routed decision -- R5 declares `dynamic`, so it paid
+# an atomic RMW per chunk on work items that are uniform by construction (the
+# harmonics SIMD batch slices, the flat effector queue), and the pre-solve
+# calibration sweep could not discover that `static` was faster because it held
+# the scheduler fixed while sweeping allotment.
+#
+# Callers now pass the plan's own scheduler. `:auto` (and any unrecognised
+# value) falls back to the env var, which is what every non-plan caller and the
+# heuristic routes still do -- so behaviour is unchanged wherever a plan does
+# not express a preference.
+@inline function _resolve_scheduler(scheduler::Symbol)::Symbol
+    (scheduler === :static || scheduler === :dynamic) && return scheduler
+    return inner_scheduler_mode()
+end
+
+@inline function _resolve_chunk(chunk::Int)::Int
+    return chunk > 0 ? chunk : inner_dynamic_chunk_size()
+end
+
+function threaded_foreach(
+    num_items::Int,
+    allotment::Int,
+    f::F;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
+) where {F <: Function}
     num_items <= 0 && return nothing
     workers = _thread_worker_count(num_items, allotment)
     if workers <= 1 || Threads.nthreads() <= 1
@@ -7,16 +37,15 @@ function threaded_foreach(num_items::Int, allotment::Int, f::F) where {F <: Func
         end
         return nothing
     end
-    scheduler = inner_scheduler_mode()
-    if scheduler == :dynamic
-        chunk = inner_dynamic_chunk_size()
+    if _resolve_scheduler(scheduler) == :dynamic
+        chunk_size = _resolve_chunk(chunk)
         next_index = Threads.Atomic{Int}(1)
         Threads.@sync for _ in 1:workers
             Threads.@spawn begin
                 @inbounds while true
-                    start_idx = Threads.atomic_add!(next_index, chunk)
+                    start_idx = Threads.atomic_add!(next_index, chunk_size)
                     start_idx > num_items && break
-                    stop_idx = min(num_items, start_idx + chunk - 1)
+                    stop_idx = min(num_items, start_idx + chunk_size - 1)
                     for idx in start_idx:stop_idx
                         f(idx)
                     end
@@ -35,8 +64,14 @@ function threaded_foreach(num_items::Int, allotment::Int, f::F) where {F <: Func
     return nothing
 end
 
-function threaded_foreach(f::F, num_items::Int, allotment::Int) where {F <: Function}
-    return threaded_foreach(num_items, allotment, f)
+function threaded_foreach(
+    f::F,
+    num_items::Int,
+    allotment::Int;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
+) where {F <: Function}
+    return threaded_foreach(num_items, allotment, f; scheduler=scheduler, chunk=chunk)
 end
 
 @inline callback_persistent_workers_enabled()::Bool = parse_bool_env("SPACEAGORA_CALLBACK_PERSISTENT_WORKERS", true)
@@ -58,10 +93,12 @@ function _threaded_foreach_persistent!(
     pool::_PersistentForeachPool,
     num_items::Int,
     workers::Int,
-    f::F
+    f::F;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
 ) where {F <: Function}
-    scheduler = inner_scheduler_mode()
-    chunk = inner_dynamic_chunk_size()
+    resolved_scheduler = _resolve_scheduler(scheduler)
+    resolved_chunk = resolved_scheduler == :dynamic ? _resolve_chunk(chunk) : 1
     next_index = Threads.Atomic{Int}(1)
     lock(pool.run_lock) do
         @inbounds for worker_id in 1:workers
@@ -70,8 +107,8 @@ function _threaded_foreach_persistent!(
                 (
                     num_items=num_items,
                     active_workers=workers,
-                    scheduler=scheduler,
-                    chunk=chunk,
+                    scheduler=resolved_scheduler,
+                    chunk=resolved_chunk,
                     next_index=next_index,
                     f=f
                 )
@@ -95,24 +132,32 @@ function threaded_foreach_persistent(
     source::Symbol,
     num_items::Int,
     allotment::Int,
-    f::F
+    f::F;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
 ) where {F <: Function}
     num_items <= 0 && return nothing
     workers = _thread_worker_count(num_items, allotment)
     if workers <= 1 || !callback_persistent_workers_enabled()
-        return threaded_foreach(num_items, allotment, f)
+        return threaded_foreach(num_items, allotment, f; scheduler=scheduler, chunk=chunk)
     end
     pool = _persistent_pool_for(source)
-    return _threaded_foreach_persistent!(pool, num_items, workers, f)
+    return _threaded_foreach_persistent!(
+        pool, num_items, workers, f; scheduler=scheduler, chunk=chunk
+    )
 end
 
 function threaded_foreach_persistent(
     f::F,
     source::Symbol,
     num_items::Int,
-    allotment::Int
+    allotment::Int;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
 ) where {F <: Function}
-    return threaded_foreach_persistent(source, num_items, allotment, f)
+    return threaded_foreach_persistent(
+        source, num_items, allotment, f; scheduler=scheduler, chunk=chunk
+    )
 end
 
 function _persistent_worker_pool_for(source::Symbol)::_PersistentForeachPool
@@ -128,24 +173,32 @@ function threaded_foreach_worker_persistent(
     source::Symbol,
     num_items::Int,
     allotment::Int,
-    f::F
+    f::F;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
 ) where {F <: Function}
     num_items <= 0 && return nothing
     workers = _thread_worker_count(num_items, allotment)
     if workers <= 1 || !callback_persistent_workers_enabled()
-        return threaded_foreach_worker(num_items, allotment, f)
+        return threaded_foreach_worker(num_items, allotment, f; scheduler=scheduler, chunk=chunk)
     end
     pool = _persistent_worker_pool_for(source)
-    return _threaded_foreach_persistent!(pool, num_items, workers, f)
+    return _threaded_foreach_persistent!(
+        pool, num_items, workers, f; scheduler=scheduler, chunk=chunk
+    )
 end
 
 function threaded_foreach_worker_persistent(
     f::F,
     source::Symbol,
     num_items::Int,
-    allotment::Int
+    allotment::Int;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
 ) where {F <: Function}
-    return threaded_foreach_worker_persistent(source, num_items, allotment, f)
+    return threaded_foreach_worker_persistent(
+        source, num_items, allotment, f; scheduler=scheduler, chunk=chunk
+    )
 end
 
 # Spin-barrier variant: workers spin-poll an atomic generation counter instead of
@@ -155,11 +208,17 @@ end
 @inline harmonics_batch_spin_barrier_enabled()::Bool =
     parse_bool_env("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER", false)
 
+# `scheduler`/`chunk` are accepted and ignored: the spin barrier partitions its
+# range statically by construction, so there is no dynamic variant to select.
+# They exist only so this and threaded_foreach_worker_persistent stay
+# interchangeable through the `dispatch_fn` binding in the harmonics batch.
 function threaded_foreach_worker_spin(
     source::Symbol,
     num_items::Int,
     allotment::Int,
-    f::F,
+    f::F;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
 ) where {F <: Function}
     num_items <= 0 && return nothing
     workers = _thread_worker_count(num_items, allotment)
@@ -177,9 +236,13 @@ function threaded_foreach_worker_spin(
     f::F,
     source::Symbol,
     num_items::Int,
-    allotment::Int,
+    allotment::Int;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
 ) where {F <: Function}
-    return threaded_foreach_worker_spin(source, num_items, allotment, f)
+    return threaded_foreach_worker_spin(
+        source, num_items, allotment, f; scheduler=scheduler, chunk=chunk
+    )
 end
 
 @inline function _thread_worker_count(num_items::Int, allotment::Int)::Int
@@ -196,7 +259,13 @@ end
     return _thread_worker_count(num_items, allotment)
 end
 
-function threaded_foreach_worker(num_items::Int, allotment::Int, f::F) where {F <: Function}
+function threaded_foreach_worker(
+    num_items::Int,
+    allotment::Int,
+    f::F;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
+) where {F <: Function}
     num_items <= 0 && return nothing
     workers = _thread_worker_count(num_items, allotment)
     if workers <= 1
@@ -205,16 +274,15 @@ function threaded_foreach_worker(num_items::Int, allotment::Int, f::F) where {F 
         end
         return nothing
     end
-    scheduler = inner_scheduler_mode()
-    if scheduler == :dynamic
-        chunk = inner_dynamic_chunk_size()
+    if _resolve_scheduler(scheduler) == :dynamic
+        chunk_size = _resolve_chunk(chunk)
         next_index = Threads.Atomic{Int}(1)
         Threads.@sync for worker_id in 1:workers
             Threads.@spawn begin
                 @inbounds while true
-                    start_idx = Threads.atomic_add!(next_index, chunk)
+                    start_idx = Threads.atomic_add!(next_index, chunk_size)
                     start_idx > num_items && break
-                    stop_idx = min(num_items, start_idx + chunk - 1)
+                    stop_idx = min(num_items, start_idx + chunk_size - 1)
                     for idx in start_idx:stop_idx
                         f(worker_id, idx)
                     end
@@ -233,8 +301,14 @@ function threaded_foreach_worker(num_items::Int, allotment::Int, f::F) where {F 
     return nothing
 end
 
-function threaded_foreach_worker(f::F, num_items::Int, allotment::Int) where {F <: Function}
-    return threaded_foreach_worker(num_items, allotment, f)
+function threaded_foreach_worker(
+    f::F,
+    num_items::Int,
+    allotment::Int;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
+) where {F <: Function}
+    return threaded_foreach_worker(num_items, allotment, f; scheduler=scheduler, chunk=chunk)
 end
 
 function threaded_reduce(
@@ -242,7 +316,9 @@ function threaded_reduce(
     allotment::Int,
     init::I,
     body!::B,
-    combine!::C
+    combine!::C;
+    scheduler::Symbol=:auto,
+    chunk::Int=0,
 ) where {I <: Function, B <: Function, C <: Function}
     workers = _thread_worker_count(num_items, allotment)
     acc0 = init()
@@ -258,17 +334,16 @@ function threaded_reduce(
 
     partials = Vector{typeof(acc0)}(undef, workers)
     partials[1] = acc0
-    scheduler = inner_scheduler_mode()
-    if scheduler == :dynamic
-        chunk = inner_dynamic_chunk_size()
+    if _resolve_scheduler(scheduler) == :dynamic
+        chunk_size = _resolve_chunk(chunk)
         next_index = Threads.Atomic{Int}(1)
         Threads.@sync for worker_id in 1:workers
             Threads.@spawn begin
                 local_acc = worker_id == 1 ? partials[1] : init()
                 @inbounds while true
-                    start_idx = Threads.atomic_add!(next_index, chunk)
+                    start_idx = Threads.atomic_add!(next_index, chunk_size)
                     start_idx > num_items && break
-                    stop_idx = min(num_items, start_idx + chunk - 1)
+                    stop_idx = min(num_items, start_idx + chunk_size - 1)
                     for idx in start_idx:stop_idx
                         body!(local_acc, idx)
                     end

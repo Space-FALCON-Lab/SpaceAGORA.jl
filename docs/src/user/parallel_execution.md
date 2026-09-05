@@ -36,6 +36,63 @@ For a machine with many cores running a multi-satellite campaign, start with
 mode. Enable adaptive policy and persistent hints for repeated performance
 studies after validating correctness against a forced serial run.
 
+## Parallel profiles
+
+A profile is a named bundle of the routing and policy settings above, applied
+through `with_parallel_profile` or `SPACEAGORA_PARALLEL_PROFILE`:
+
+| Profile | Outer route | Inner modes | What it adds |
+|---|---|---|---|
+| `R0` | serial | off | The true serial baseline; nothing is threaded, at any thread count |
+| `R1_a` | threads | off | Outer parallelism only, on Julia threads |
+| `R1_b` | process | off | Outer parallelism only, on worker processes |
+| `R2` | serial | auto | Inner parallelism only |
+| `R3` | auto | auto | Heuristic outer route with static inner widths |
+| `R4` | auto, adaptive | auto | The outer-route bandit and pre-solve RHS plan calibration |
+| `R5` | auto, adaptive | auto | R4 plus persistent hints and the measured-reward width chooser |
+| `R6` | auto, adaptive | auto | R5 plus `SPACEAGORA_PARALLEL_POLICY_V2` |
+
+`R6` is the recommended profile for both single constellations and Monte
+Carlo campaigns. Everything it changes sits behind one switch,
+`SPACEAGORA_PARALLEL_POLICY_V2`, so that with the switch off it is exactly
+`R5`; the switch is what a paired comparison between the two measures.
+Under the switch:
+
+- A Monte Carlo campaign routes to whichever outer axis has more cores:
+  process workers when the pool can match or exceed the thread count
+  (`SPACEAGORA_PERF_PROCS` caps the pool), threads otherwise, on any machine
+  size. The router does not spend campaigns trying the other route; it
+  switches only on history it already holds.
+- The process pool is sized by memory as well as cores. Each worker is priced
+  at the coordinator's own resident set (never under 1.5 GB) plus 90 MB per
+  spacecraft for native GRAM, against the machine's memory (or its cgroup
+  limit) less a reserve and less what the coordinator already holds; the
+  route is offered only when at least two workers fit, and the split ladder
+  stops at the number that fit. `SPACEAGORA_MEMORY_BUDGET_GB`,
+  `SPACEAGORA_PERF_WORKER_MEMORY_GB` and `SPACEAGORA_GRAM_SAT_MEMORY_MB`
+  override the three terms.
+- The outer split width is learned by racing the candidate widths inside the
+  first campaign of a new workload, with at least three samples per worker
+  per width. A campaign too small to race takes the widest split. Widths are
+  never explored one per campaign.
+- A cached "the heuristic won" verdict from RHS plan calibration is honoured
+  on long solves instead of re-running the sweep in every process.
+- Callback and effector widths take the static `min(items, budget)`. The
+  density callback additionally gets a short pre-solve width sweep, and a
+  narrower width is pinned only if it beats the static one by the calibration
+  margin.
+- The coordinator collects garbage before dispatching a campaign, so a
+  threaded campaign's heap does not stall the next campaign's process
+  dispatch.
+
+Measured on the reference 12-core machine, `R6` matches the fastest fixed
+route on every constellation and Monte Carlo case in the paper harness and
+beats `R5` by 20 to 70 percent where `R5`'s Monte Carlo route or its
+eight-thread re-sweep was wrong. Measure it with
+`scripts/paired_profile_probe.jl` and `scripts/paired_campaign_probe.jl
+--src-runner --profile=full`, not with the block-ordered benchmark harness,
+whose resolution is about eight points.
+
 ## Using environment variables
 
 For CLI runs or scripted batch execution, set the controls before launching:

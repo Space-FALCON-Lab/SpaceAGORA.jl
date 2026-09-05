@@ -4,17 +4,24 @@ Two kinds of verification data are kept out of this public repository and
 synced into gitignored paths under `data/telemetry/` on demand:
 
 - **Simulator reference sets** (Basilisk and GMAT runs of the parity matrix,
-  about half a gigabyte) live in the lab-org repository
+  about half a gigabyte) and **public flight sets** (ESA OPS-SAT-1 re-entry
+  telemetry) live in the lab-org repository
   `Space-FALCON-Lab/spaceagora-verification-data`. Lab members have access
   through the organisation. Its `manifest.toml` records provenance, the
   generator scripts, and per-file checksums; the fetch script verifies them.
 - **Flight telemetry** provided under data-sharing agreements
   (`data/telemetry/CYGNSS/`, `data/telemetry/GRIFEX/`) lives in a separate
   access-restricted repository with per-person access granted by the PI. It
-  must never be committed here.
+  must never be committed here. The CYGNSS preparation and comparison scripts
+  live beside that data (`CYGNSS/tools/` there, `data/telemetry/CYGNSS/tools/`
+  after a fetch) because their inputs and outputs are not public.
 
 The public repository keeps only the small truth files that CI grades (Odyssey,
 VEx, GMAT Earth aerobraking; under 3 MB) plus the verification harness itself.
+`ci_tracked_feather_registry_gate` fails on any tracked feather that is neither
+named in `test/telemetry_benchmark_manifest.toml` nor under an in-tree required
+asset of `data/assets_manifest.toml`; the fetched (lab-private) directories do
+not count, so a force-added file under them still fails.
 
 ## Getting the data
 

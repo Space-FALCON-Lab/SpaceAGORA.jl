@@ -30,12 +30,21 @@ on:
       - ".github/workflows/nightly-stress.yml"
   workflow_dispatch:
 
+# One live run per pull request (or per branch for schedule/push): a new
+# push cancels the stale run of the same PR instead of competing with it.
+concurrency:
+  group: nightly-stress-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   nightly-stress:
     runs-on: ubuntu-latest
     # Observed green runs take 3h14-3h25 and hosted-runner speed swings ~1.6x
     # between hosts; 240 left ~35 min of headroom and would flake on slow hosts.
-    timeout-minutes: 300
+    # The full tier takes about four hours on an idle runner (recent green runs:
+    # 225 to 250 min), so 300 cancelled it whenever runners were contended.
+    # 360 is the GitHub-hosted maximum.
+    timeout-minutes: 360
     env:
       JULIA_NUM_THREADS: "4"
       # Coverage debt (July 2026): first real gate run after the CI dark

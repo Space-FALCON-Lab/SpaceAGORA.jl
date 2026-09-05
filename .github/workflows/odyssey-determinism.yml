@@ -23,35 +23,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: multibody-off-4threads
+          - label: pinned-4-workers
             threads: "4"
-            effector_parallel: "auto"
-            multibody_parallel: "off"
-            persistent_workers: "1"
-            reps: "2"
-          - label: effector-and-multibody-off-4threads
-            threads: "4"
-            effector_parallel: "off"
-            multibody_parallel: "off"
-            persistent_workers: "1"
-            reps: "2"
-          - label: persistent-workers-off-4threads
-            threads: "4"
-            effector_parallel: "auto"
-            multibody_parallel: "auto"
-            persistent_workers: "0"
-            reps: "2"
-          - label: two-processes-4threads
-            threads: "4"
-            effector_parallel: "auto"
+            effector_parallel: "on"
             multibody_parallel: "auto"
             persistent_workers: "1"
-            reps: "1"
+            max_threads: "4"
+            reps: "2"
+          - label: pinned-2-workers
+            threads: "4"
+            effector_parallel: "on"
+            multibody_parallel: "auto"
+            persistent_workers: "1"
+            max_threads: "2"
+            reps: "2"
     env:
       JULIA_NUM_THREADS: ${{ matrix.threads }}
       SPACEAGORA_EFFECTOR_PARALLEL: ${{ matrix.effector_parallel }}
       SPACEAGORA_MULTIBODY_PARALLEL: ${{ matrix.multibody_parallel }}
       SPACEAGORA_CALLBACK_PERSISTENT_WORKERS: ${{ matrix.persistent_workers }}
+      SPACEAGORA_EFFECTOR_MAX_THREADS: ${{ matrix.max_threads }}
+      SPACEAGORA_INNER_THREAD_BUDGET: "4"
+      SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY: "0"
+      SPACEAGORA_EFFECTOR_THREAD_THRESHOLD: "1"
       SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES: "1"
       SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES: "1"
       SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES: "1"

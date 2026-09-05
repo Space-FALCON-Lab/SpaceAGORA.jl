@@ -21,6 +21,7 @@ for i in 1:reps
     println("rep$i: rows=", nrow(df), " wall=", round(dt; digits=1), "s")
 end
 numcols = [c for c in names(dfs[1]) if eltype(dfs[1][!, c]) <: Real]
+println("nthreads_default=", Threads.nthreads(:default), " nthreads_interactive=", Threads.nthreads(:interactive), " cpu_threads=", Sys.CPU_THREADS)
 println("threads=", Threads.nthreads(), " orbits=", orbits, " quick=", quick, " reps=", reps, " numeric_cols=", length(numcols))
 for (i, df) in enumerate(dfs)
     fp = hash(reduce(vcat, [Float64.(df[!, c]) for c in numcols]))

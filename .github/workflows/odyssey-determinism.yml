@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: odyssey-determinism-${{ github.ref }}
+  group: odyssey-determinism-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -23,18 +23,35 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: default-policy-4threads
+          - label: multibody-off-4threads
             threads: "4"
             effector_parallel: "auto"
-          - label: effector-off-4threads
+            multibody_parallel: "off"
+            persistent_workers: "1"
+            reps: "2"
+          - label: effector-and-multibody-off-4threads
             threads: "4"
             effector_parallel: "off"
-          - label: single-thread
-            threads: "1"
+            multibody_parallel: "off"
+            persistent_workers: "1"
+            reps: "2"
+          - label: persistent-workers-off-4threads
+            threads: "4"
             effector_parallel: "auto"
+            multibody_parallel: "auto"
+            persistent_workers: "0"
+            reps: "2"
+          - label: two-processes-4threads
+            threads: "4"
+            effector_parallel: "auto"
+            multibody_parallel: "auto"
+            persistent_workers: "1"
+            reps: "1"
     env:
       JULIA_NUM_THREADS: ${{ matrix.threads }}
       SPACEAGORA_EFFECTOR_PARALLEL: ${{ matrix.effector_parallel }}
+      SPACEAGORA_MULTIBODY_PARALLEL: ${{ matrix.multibody_parallel }}
+      SPACEAGORA_CALLBACK_PERSISTENT_WORKERS: ${{ matrix.persistent_workers }}
       SPACEAGORA_NBODY_EPHEMERIS_CACHE_MAX_SAMPLES: "1"
       SPACEAGORA_SRP_EPHEMERIS_CACHE_MAX_SAMPLES: "1"
       SPACEAGORA_PLANET_FRAME_CACHE_MAX_SAMPLES: "1"
@@ -42,7 +59,7 @@ jobs:
       SPACEAGORA_WARN_NORMALIZE: "0"
       ODY_QUICK: "0"
       ODY_ORBITS: "60"
-      ODY_REPS: "2"
+      ODY_REPS: ${{ matrix.reps }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -67,5 +84,8 @@ jobs:
         run: |
           nproc; lscpu | grep -E "Model name|Thread|Core|Socket|Flags" | cut -c1-160
           julia --startup-file=no -e 'using InteractiveUtils; versioninfo()'
-      - name: Odyssey twice in one process (${{ matrix.label }})
+      - name: Odyssey solves in one process (${{ matrix.label }})
+        run: julia --startup-file=no --project=. benchmarks/experiments/odyssey_determinism.jl
+      - name: Second process (only for the two-process variant)
+        if: matrix.reps == '1'
         run: julia --startup-file=no --project=. benchmarks/experiments/odyssey_determinism.jl

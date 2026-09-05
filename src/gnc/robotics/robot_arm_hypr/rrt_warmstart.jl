@@ -96,11 +96,6 @@ function _robot_arm_rrt_connect!(
     return status, idx
 end
 
-"""Reconstruct a robot-arm RRT path from a tree node."""
-function _robot_arm_rrt_tree_path(tree::RobotArmRRTConnectTree, idx::Integer)
-    return hypr_rrt_tree_path(tree, idx)
-end
-
 """Join start and goal robot-arm RRT trees into one path."""
 function _robot_arm_rrt_join_paths(
     start_tree::RobotArmRRTConnectTree,

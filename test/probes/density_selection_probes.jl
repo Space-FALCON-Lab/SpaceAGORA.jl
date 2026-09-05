@@ -720,7 +720,7 @@ end
         @test isapprox(alt_peri, 120e3; atol=40e3)
         @test CB._gram_periapsis_target(pos_h, vel_h, EARTH) === nothing
         @test CB._gram_periapsis_target(pos_e, vel_e, nothing) === nothing
-        @test CB._gram_descending_periapsis_target(pos_e, vel_e, EARTH; include_j2=false) == peri
+        @test CB._gram_periapsis_target(pos_e, vel_e, EARTH; include_j2=false) == peri
 
         # Orbit-period targeting.
         orbit = CB._gram_orbit_period_target(pos_c, vel_c, EARTH; include_j2=false)

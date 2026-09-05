@@ -133,7 +133,16 @@ jobs:
       # mid-step. 3G was over-tight: the step went 115 -> 218+ min in GC
       # thrash and hit the job timeout. 10G leaves room for native GRAM
       # and the OS while restoring throughput.
+      # Effector-level threading off for the graded regression: with it on, two
+      # solves of the same Odyssey scenario in one process differ bit-for-bit on
+      # the 4-vCPU runners (rows, impact time, termination cause), which is what
+      # made this job's duration bimodal (about 4 h vs over 6 h). With it off the
+      # two solves are identical on the same runners; the n-body inner threading
+      # and the other 4-thread paths stay on. Single-satellite runs gain nothing
+      # from effector-level threading. See branch experiment/odyssey-determinism.
       - name: Telemetry full regression (GRAM deterministic)
+        env:
+          SPACEAGORA_EFFECTOR_PARALLEL: "off"
         run: julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
 
       - name: Stress suite

@@ -16,7 +16,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
 10. `no-artifact-files-gate` (`test/gates/ci_no_artifact_files_gate.jl`)
 11. `canonical-path-contract-gate` (`test/gates/ci_canonical_path_contract_gate.jl`)
 12. `rotational-ownership-gate` (`test/gates/ci_rotational_ownership_gate.jl`)
-13. `tracked-feather-registry-gate` (`test/gates/ci_tracked_feather_registry_gate.jl`): every tracked feather is named in `test/telemetry_benchmark_manifest.toml` or lies under a `data/assets_manifest.toml` path
+13. `tracked-feather-registry-gate` (`test/gates/ci_tracked_feather_registry_gate.jl`): every tracked feather is named in `test/telemetry_benchmark_manifest.toml` or lies under an in-tree required (non lab-private) `data/assets_manifest.toml` asset; fetched reference directories do not count
 
 Additional required smoke checks for this migration track:
 1. `test/gates/ci_clean_depot_smoke.jl`

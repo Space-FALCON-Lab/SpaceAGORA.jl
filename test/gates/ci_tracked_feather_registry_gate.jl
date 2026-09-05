@@ -1,9 +1,13 @@
 # Every tracked feather file must be a registered truth input: either named in
 # test/telemetry_benchmark_manifest.toml (graded by the telemetry regression)
-# or under a relative_path declared in data/assets_manifest.toml. Large
-# reference sets are fetched into gitignored paths, never committed; this gate
-# keeps a force-added feather from slipping in silently (which is how ~480 MB
-# of simulator output accumulated under data/telemetry before September 2026).
+# or under the relative_path of an in-tree asset in data/assets_manifest.toml,
+# meaning an entry with `required = true` that is not `lab-private`. Fetched
+# reference sets are also listed in the assets manifest (optional, lab-private)
+# but their directories are gitignored and must never hold tracked files, so
+# they are deliberately NOT part of the allowlist: a force-added feather under
+# data/telemetry/GMAT_Examples still fails here. This gate keeps such a file
+# from slipping in silently (which is how ~480 MB of simulator output
+# accumulated under data/telemetry before September 2026).
 using TOML
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
@@ -26,6 +30,8 @@ function _registered_paths()::Vector{String}
     walk(manifest)
     assets = TOML.parsefile(joinpath(REPO_ROOT, "data", "assets_manifest.toml"))
     for entry in get(assets, "asset", Any[])
+        get(entry, "required", false) === true || continue
+        get(entry, "licensing", "") == "lab-private" && continue
         rel = get(entry, "relative_path", "")
         isempty(rel) || rel == "." || push!(paths, normpath(rel))
     end

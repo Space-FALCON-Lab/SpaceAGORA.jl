@@ -18,8 +18,10 @@ synced into gitignored paths under `data/telemetry/` on demand:
 
 The public repository keeps only the small truth files that CI grades (Odyssey,
 VEx, GMAT Earth aerobraking; under 3 MB) plus the verification harness itself.
-`ci_tracked_feather_registry_gate` fails on any tracked feather that neither
-`test/telemetry_benchmark_manifest.toml` nor `data/assets_manifest.toml` names.
+`ci_tracked_feather_registry_gate` fails on any tracked feather that is neither
+named in `test/telemetry_benchmark_manifest.toml` nor under an in-tree required
+asset of `data/assets_manifest.toml`; the fetched (lab-private) directories do
+not count, so a force-added file under them still fails.
 
 ## Getting the data
 

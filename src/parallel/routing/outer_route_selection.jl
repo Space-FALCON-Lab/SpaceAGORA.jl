@@ -290,6 +290,60 @@ end
     return !t.memory_aware || effective_process_workers(f, t) >= 2
 end
 
+"""
+    mixed_local_slots(features, tuning, workers) -> Int
+
+Samples the coordinator runs on its own threads beside `workers` pool
+processes when the process route is taken (V2, `tuning.mixed_dispatch`).
+
+Pool workers start with `--threads=1` and run one sample each, so at a split
+of W workers on a T-thread coordinator the process route alone uses W cores
+and the threads route alone uses T: on a 12-core box the (2 workers, 6
+threads) split leaves either 10 or 6 cores idle, and the B15 nested-campaign
+axis measured the two static routes at 5.85 s and 4.05 s there for eight
+16-spacecraft samples that fit in one round at 8 slots. Filling the remainder
+from the coordinator gives W + L slots with
+
+    L = min(T - 1, usable_cores - W)
+
+Thread 1 is kept free for the `@async` feeders that keep the workers
+supplied: they are sticky to it, and a compute-bound sample there starves
+them because run_simulation rarely yields. The sum never exceeds the usable
+core budget, so a (12, 1) split stays pure process and a (1, 12) split is
+already threads (one worker withdraws the route).
+
+Native GRAM point density is lock-bound within one process, so at most one
+local slot; under memory-aware routing the local working sets are charged
+against the budget (`memory_local_slot_cap`).
+"""
+function mixed_local_slots(f::OuterRouteFeatures, t::OuterRouteTuning, workers::Int)::Int
+    t.mixed_dispatch || return 0
+    workers >= 1 || return 0
+    nthreads = Base.Threads.nthreads()
+    nthreads > 1 || return 0
+    slots = min(nthreads - 1, usable_core_budget() - workers)
+    slots <= 0 && return 0
+    gram = _is_native_gram_point_density(f)
+    gram && (slots = min(slots, 1))
+    if t.memory_aware
+        extra = gram ? native_gram_worker_extra_bytes(f.n_sats) : 0
+        slots = min(slots, memory_local_slot_cap(workers; extra_per_worker=extra))
+    end
+    return max(0, slots)
+end
+
+"""
+    mixed_capacity(features, tuning) -> Int
+
+Concurrent samples the process route can run: its affordable workers plus the
+coordinator slots beside them. Equals `effective_process_workers` when mixed
+dispatch is off, so the shipped rule is unchanged.
+"""
+function mixed_capacity(f::OuterRouteFeatures, t::OuterRouteTuning)::Int
+    w = effective_process_workers(f, t)
+    return w + mixed_local_slots(f, t, w)
+end
+
 @inline function _feature_heavy_for_process(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
     if _is_native_gram_point_density(f)
         # Native GRAM point calls are lock-limited; prefer outer process isolation.
@@ -427,8 +481,12 @@ end
     # in _route_is_proven stops once threads beats serial, before process is
     # ever tried (see must_measure).
     # The worker count compared is the one memory allows, not the core cap.
+    # The comparison is of concurrent samples, not of process workers: with
+    # mixed dispatch the process route also fills the coordinator's spare
+    # threads, so W workers + L local slots against the T-thread budget. Off
+    # mixed dispatch, mixed_capacity is effective_process_workers as before.
     if t.mc_route_by_core_budget && process_affordable &&
-       effective_process_workers(f, t) >= max(1, t.outer_thread_budget)
+       mixed_capacity(f, t) >= max(1, t.outer_thread_budget)
         return :process
     end
     return :threads

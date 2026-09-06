@@ -93,7 +93,7 @@ const PPB_BEST_STATIC_WINNERS = Dict{String, Vector{String}}(
     "B12" => ["outer_inner_static", "outer_process", "outer_threads"],
     "B13" => ["outer_process", "outer_threads"],
     "B14" => ["inner_only", "outer_inner_static", "outer_threads"],
-    "B15" => ["outer_process", "outer_threads"],
+    "B15" => ["outer_process", "outer_threads", "inner_only"],   # inner_only: control, see the phase
 )
 
 """
@@ -831,11 +831,27 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
             "mcgrid_32sat_4mc",
             "mcgrid_16sat_8mc",
             "mcgrid_8sat_16mc",
+            # The 1024 spacecraft-hour grid too (~74 s serial per rung, eight
+            # times the 128 grid): the open question this axis exists for is
+            # whether outer concurrency stays the right answer once each sample
+            # carries many spacecraft, and 8-32 spacecraft cannot ask it. The
+            # router's cold rule prefers outer for Monte Carlo; 64 spacecraft
+            # per sample is where inner parallelism (the harmonics flat queue
+            # reaches ~4-5x at 12 threads on B7/B9) starts to compete.
+            "mcgrid_64sat_16mc",
+            "mcgrid_32sat_32mc",
+            "mcgrid_16sat_64mc",
         ],
         parity_cases = [
             "mcgrid_16sat_8mc",
         ],
-        modes        = ["outer_process", "outer_threads", "outer_inner_adaptive", "full_smart", "policy_v2"],
+        # inner_only is the inner-first static extreme -- samples run one at a
+        # time, each with the whole thread pool -- and is the control the
+        # many-spacecraft question needs: outer_process and outer_threads are
+        # both outer-first, so a ladder of only those two cannot show inner
+        # parallelism winning at 64 spacecraft per sample even if it does.
+        modes        = ["outer_process", "outer_threads", "inner_only",
+                        "outer_inner_adaptive", "full_smart", "policy_v2"],
         mc_samples   = [1],
         repeats      = 3,
         warmup       = 2,

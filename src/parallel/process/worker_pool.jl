@@ -215,6 +215,29 @@ function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing)::
 end
 
 """
+    adopt_process_workers!(pool::ProcessPool, worker_ids) -> Vector{Int}
+
+Register Distributed workers that already exist -- and are already
+bootstrapped with everything the campaign's `f` needs -- with `pool`, so a
+later `ensure_process_workers!` finds them instead of spawning a second pool
+beside them. Returns the pool's worker ids. Nothing is spawned, bootstrapped
+or validated here: the caller vouches for the workers.
+
+Written for the paper benchmark harness, which starts its own workers with
+its study files loaded and then measures the adaptive profiles through the
+shipped campaign runner; without adoption that runner would add its own
+workers, doubling the pool's memory and oversubscribing the cores.
+"""
+function adopt_process_workers!(pool::ProcessPool, worker_ids::AbstractVector{<:Integer})::Vector{Int}
+    lock(pool.lock) do
+        for w in worker_ids
+            Int(w) in pool.workers || push!(pool.workers, Int(w))
+        end
+        return copy(pool.workers)
+    end
+end
+
+"""
     shutdown_process_pool!(pool::ProcessPool) -> Nothing
 
 Remove every worker currently in `pool` via `rmprocs` and clear it. Mainly

@@ -264,7 +264,8 @@ function _campaign_route_plan(
         # contended timings would poison the shared route statistics — run
         # serially and skip both selection and feedback.
         return (route=:none, threads=1, inner_thread_budget=1, record=false,
-                split_race=false, split_candidates=Int[], gc_first=false)
+                split_race=false, split_candidates=Int[], gc_first=false,
+                local_slots=0, local_slots_at=(w -> 0))
     end
     # Merge any persisted history before the first selection, so a repeat run on
     # the same machine exploits what the last one learned instead of re-paying
@@ -333,15 +334,22 @@ function _campaign_route_plan(
         )
     end
     inner_thread_budget = max(1, fld(Base.Threads.nthreads(), workers))
+    # Process route: the coordinator's spare threads run samples beside the
+    # pool (mixed dispatch). Kept as a function of the width so the split race
+    # and _plan_at_width recompute it per candidate.
+    local_slots_at = route === :process ?
+        (w -> ParallelProfiles.mixed_local_slots(features, tuning, w)) : (w -> 0)
     if tuning.trace
-        println("[outer-split] route=$(route) workers=$(workers) candidates=$(split_candidates) " *
+        println("[outer-split] route=$(route) workers=$(workers) local_slots=$(local_slots_at(workers)) " *
+                "candidates=$(split_candidates) " *
                 "history=$(split_history) race=$(split_race) " *
                 "process_cap=$(process_cap)/$(tuning.process_max_workers) " *
                 "(memory-aware=$(tuning.memory_aware), rss=$(round(ParallelProfiles.process_rss_bytes() / 2^30; digits=2)) GB)")
     end
     return (route=route, threads=workers, inner_thread_budget=inner_thread_budget, record=true,
             split_race=split_race, split_candidates=split_candidates,
-            gc_first=tuning.gc_before_dispatch)
+            gc_first=tuning.gc_before_dispatch,
+            local_slots=local_slots_at(workers), local_slots_at=local_slots_at)
 end
 
 # ── In-campaign split race (V2) ───────────────────────────────────────────────
@@ -362,7 +370,8 @@ end
     return (route=plan.route, threads=w,
             inner_thread_budget=max(1, fld(Base.Threads.nthreads(), w)),
             record=plan.record, split_race=false, split_candidates=Int[],
-            gc_first=plan.gc_first)
+            gc_first=plan.gc_first,
+            local_slots=plan.local_slots_at(w), local_slots_at=plan.local_slots_at)
 end
 
 # Samples per raced width, or 0 when the campaign is too small to race, in
@@ -476,7 +485,9 @@ function _run_campaign_split_race(
         println("[outer-split] race route=$(plan.route) k=$(k) chosen=w$(best_w) $(ladder) " *
                 "route_credit=$(round(route_per_sample * 1e3; digits=2))ms/sample")
     end
-    return (MonteCarloResult(samples, (time_ns() - started) / 1.0e9, best_w), route_per_sample)
+    return (MonteCarloResult(samples, (time_ns() - started) / 1.0e9, best_w;
+                             route=plan.route, local_slots=plan.local_slots_at(best_w)),
+            route_per_sample)
 end
 
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
@@ -506,11 +517,23 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
         # rather than silently inside this call's own timed dispatch below.
         worker_ids = ensure_process_workers!(pool, worker_count; warmup_fn=() -> f(first(spec.seeds)))
         active_workers = worker_ids[1:min(worker_count, length(worker_ids))]
+        # Mixed dispatch: the coordinator's spare threads take samples from the
+        # same queue as the workers. Their inner budget is their share of this
+        # process's pool, declared once around the whole dispatch -- never per
+        # task, since ENV is process-global and the tasks run concurrently.
+        local_slots = hasproperty(plan, :local_slots) ? Int(plan.local_slots) : 0
         start_ns = time_ns()
-        samples = _run_monte_carlo_process(f, spec.seeds, spec, active_workers)
+        samples = if local_slots > 0
+            withenv(outer_split_env_pairs(local_slots)...) do
+                _run_monte_carlo_mixed(f, spec.seeds, spec, active_workers, local_slots)
+            end
+        else
+            _run_monte_carlo_process(f, spec.seeds, spec, active_workers)
+        end
         elapsed_s = (time_ns() - start_ns) / 1.0e9
         spec.fail_fast && _throw_first_monte_carlo_failure(samples)
-        return MonteCarloResult(samples, elapsed_s, length(active_workers))
+        return MonteCarloResult(samples, elapsed_s, length(active_workers) + local_slots;
+                                route=:process, local_slots=local_slots)
     end
     env_pairs = Pair{String, String}["SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"]
     if isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))

@@ -1427,13 +1427,14 @@
     nbody_ws = dyn._make_nbody_scratch_workspace(1)
     dyn._ensure_nbody_workspace_capacity!(nbody_ws, 3, 4)
     @test length(nbody_ws.pos_primary_k_all) == 3
-    @test length(nbody_ws.thread_force) == 4
+    # per-body slots (summed in body order); the worker count no longer sizes anything
+    @test length(nbody_ws.body_force_ii) == 3
     nbody_ws_typed = @inferred dyn._nbody_workspace_for_sat!(p_nbody_srp, 1, 2, 2)
     @test nbody_ws_typed isa NBodyScratchWorkspace
     @test p_nbody_srp.shared_buffers.nbody_workspaces[1] === nbody_ws_typed
     nbody_ws_oob = @inferred dyn._nbody_workspace_for_sat!(p_nbody_srp, 5, 2, 2)
     @test length(nbody_ws_oob.pos_primary_k_all) == 2
-    @test length(nbody_ws_oob.thread_force) == 2
+    @test length(nbody_ws_oob.body_force_ii) == 2
 
     aero_ws_typed = @inferred dyn._aero_workspace_for_sat!(p_workspace_resize, 1, 2)
     @test aero_ws_typed isa AeroScratchWorkspace

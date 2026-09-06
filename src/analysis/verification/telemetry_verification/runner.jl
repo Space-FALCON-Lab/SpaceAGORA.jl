@@ -154,12 +154,14 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
     best_cd = cd_candidates[1]
     best_cr = cr_candidates[1]
     best_score = Inf
+    reused_eval_run = nothing
 
     if use_calibration
         for cd_scale in cd_candidates, cr_value in cr_candidates
             args_eval = _make_orbit_args(cfg, eval_orbits; cd_scale=cd_scale, cr_override=cr_value)
             args_eval = _with_study_settings(args_eval; quick=eval_is_quick)
             eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile)
+            reused_eval_run = eval_run
             eval_df = eval_run.results_df
             eval_rows, eval_errors = _orbit_rows_errors(cfg, args_eval, eval_df, eval_points)
             if cal.fit_bias
@@ -179,7 +181,9 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
 
     args_final = _make_orbit_args(cfg, final_orbits; cd_scale=best_cd, cr_override=best_cr)
     args_final = _with_study_settings(args_final; quick=final_is_quick)
-    final_run = _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+    final_run = _final_run_or_reused_eval(reused_eval_run, use_calibration, cd_candidates, cr_candidates, eval_profile, profile, cfg.name, best_cd, best_cr) do
+        _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+    end
     final_df = final_run.results_df
     selected_runtime_s = final_run.elapsed_s
     solver_info = final_run.solver_info
@@ -235,6 +239,7 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
     best_cd = cd_candidates[1]
     best_cr = cr_candidates[1]
     best_score = Inf
+    reused_eval_run = nothing
 
     if use_calibration
         for cd_scale in cd_candidates, cr_value in cr_candidates
@@ -247,6 +252,7 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
             )
             args_eval = _with_study_settings(args_eval; quick=eval_is_quick)
             eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile)
+            reused_eval_run = eval_run
             eval_df = eval_run.results_df
             eval_rows, eval_errors = _time_aligned_rows_errors(cfg, args_eval, eval_df, eval_telemetry)
             if cal.fit_bias
@@ -272,7 +278,9 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
         cr_override=best_cr
     )
     args_final = _with_study_settings(args_final; quick=final_is_quick)
-    final_run = _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+    final_run = _final_run_or_reused_eval(reused_eval_run, use_calibration, cd_candidates, cr_candidates, eval_profile, profile, cfg.name, best_cd, best_cr) do
+        _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+    end
     final_df = final_run.results_df
     selected_runtime_s = final_run.elapsed_s
     solver_info = final_run.solver_info
@@ -298,8 +306,50 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
     return annotated_rows, final_errors, calibration_runtime_s
 end
 
+"""
+    _final_run_or_reused_eval(solve, reused_eval_run, use_calibration, cd_candidates, cr_candidates, eval_profile, profile, name, best_cd, best_cr)
+
+Return the eval solve when the calibration grid had a single point and the
+same profile (its configuration equals the final one), otherwise call `solve`.
+"""
+function _final_run_or_reused_eval(
+    solve::F,
+    reused_eval_run,
+    use_calibration::Bool,
+    cd_candidates::AbstractVector,
+    cr_candidates::AbstractVector,
+    eval_profile::Symbol,
+    profile::Symbol,
+    scenario_name::AbstractString,
+    best_cd::Float64,
+    best_cr::Float64
+) where {F <: Function}
+    if reused_eval_run !== nothing && _single_point_calibration(use_calibration, cd_candidates, cr_candidates, eval_profile, profile)
+        println("calibration grid for $(scenario_name) has a single point (cd_scale=$(best_cd), cr=$(best_cr)); reusing the eval solve as the final solve")
+        return reused_eval_run
+    end
+    return solve()
+end
+
+"""
+    _select_scenarios(scenarios, requested) -> Vector
+
+Keep the manifest scenarios whose names appear in `requested`; an empty
+request keeps all of them. Unknown names are an error so a typo in CI cannot
+silently skip a scenario.
+"""
+function _select_scenarios(scenarios::AbstractVector, requested::Vector{String})
+    isempty(requested) && return scenarios
+    names = String[lowercase(String(sc.name)) for sc in scenarios]
+    unknown = setdiff(requested, names)
+    isempty(unknown) || throw(ArgumentError(
+        "Unknown telemetry scenario(s) $(join(unknown, ", ")); the manifest defines: $(join(names, ", "))"
+    ))
+    return [sc for sc in scenarios if lowercase(String(sc.name)) in requested]
+end
+
 function _run_verification(cfg::StudyConfig)::VerificationResult
-    scenarios = _load_scenarios_from_manifest(cfg.manifest_path)
+    scenarios = _select_scenarios(_load_scenarios_from_manifest(cfg.manifest_path), cfg.scenarios)
 
     summary_rows = NamedTuple[]
     error_tables = DataFrame[]
@@ -308,6 +358,7 @@ function _run_verification(cfg::StudyConfig)::VerificationResult
     println("Telemetry Orbit Accuracy Study")
     println(@sprintf("profile=%s enforce=%s", String(cfg.profile), string(cfg.enforce)))
     println("manifest=$(cfg.manifest_path)")
+    println("scenarios=$(isempty(cfg.scenarios) ? "all" : join(cfg.scenarios, ","))")
     println("deterministic_mode=GRAM(per-scenario atmosphere_truth from manifest)")
 
     for sc in scenarios
@@ -440,7 +491,8 @@ function run_verification_cli(args::Vector{String}=copy(ARGS))::VerificationResu
         out_errors=request.out_errors,
         manifest_path=request.manifest_path,
         enforce=cfg.enforce,
-        generate_plots=cfg.generate_plots
+        generate_plots=cfg.generate_plots,
+        scenarios=cfg.scenarios
     )
     return run_verification(request)
 end

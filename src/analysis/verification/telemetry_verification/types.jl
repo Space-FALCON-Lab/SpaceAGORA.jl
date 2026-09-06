@@ -233,6 +233,17 @@ Base.@kwdef struct StudyConfig
     manifest_path::String
     enforce::Bool
     generate_plots::Bool
+    scenarios::Vector{String} = String[]   # empty = every scenario in the manifest
+end
+
+"""
+    _parse_scenario_list(raw) -> Vector{String}
+
+Split a comma-separated scenario selection (`"odyssey,vex"`) into trimmed,
+lower-cased names; blanks are dropped and an empty string selects everything.
+"""
+@inline function _parse_scenario_list(raw::AbstractString)::Vector{String}
+    return String[lowercase(strip(tok)) for tok in split(String(raw), ',') if !isempty(strip(tok))]
 end
 
 """
@@ -249,6 +260,7 @@ Base.@kwdef struct VerificationRequest
     manifest_path::String = abspath(get(ENV, "SPACEAGORA_TELEMETRY_MANIFEST", DEFAULT_MANIFEST_PATH))
     enforce::Bool = false
     generate_plots::Bool = _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_PLOTS", "1"), true)
+    scenarios::Vector{String} = _parse_scenario_list(get(ENV, "SPACEAGORA_TELEMETRY_SCENARIOS", ""))
 end
 
 """

@@ -46,6 +46,24 @@ licensing = "open-repo"
 detail = "Repository data directory for topography harmonics inputs."
 
 [[asset]]
+name = "basilisk_parity_references"
+scope = "verification reference data"
+relative_path = "data/telemetry/Basilisk_Examples_Full"
+kind = "directory"
+required = false
+licensing = "lab-private"
+detail = "Basilisk runs of the parity matrix graded by test/gmat_scenario_matrix.jl. Synced from Space-FALCON-Lab/spaceagora-verification-data by scripts/dev/fetch_private_telemetry.sh references."
+
+[[asset]]
+name = "gmat_parity_references"
+scope = "verification reference data"
+relative_path = "data/telemetry/GMAT_Examples"
+kind = "directory"
+required = false
+licensing = "lab-private"
+detail = "GMAT runs of the parity matrix (incl. the CYGNSS comparison propagation). Synced from Space-FALCON-Lab/spaceagora-verification-data by scripts/dev/fetch_private_telemetry.sh references."
+
+[[asset]]
 name = "gram_surrogate_directory"
 scope = "GRAM surrogate grids"
 relative_path = "data/GRAM_surrogate"

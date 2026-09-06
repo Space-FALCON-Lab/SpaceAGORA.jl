@@ -11,6 +11,9 @@ using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
 using Quaternions
+# Suite 01 reaches SatelliteToolbox directly; it used to arrive here as a
+# leaked import of the raw-included reference_system.jl.
+using SatelliteToolbox
 using SatelliteToolboxGravityModels
 using SPICE
 using SpecialFunctions: loggamma
@@ -28,36 +31,45 @@ end
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+# Load the package the way users and the CI example jobs do. Every module name
+# below is an alias into SpaceAGORA, so there is exactly one SimulationModel /
+# SimulationEngine in this process. (Raw-including src/ here used to build a
+# second, independent copy of every module next to the package's own -- the
+# "module-replacement" bug class -- and each probe subprocess recompiled the
+# package from source.)
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
-include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
+const RuntimeServices = SpaceAGORA.RuntimeServices
+const SimulationEngine = SpaceAGORA.SimulationEngine
+const TelemetryVerification = SpaceAGORA.TelemetryVerification
+const ParallelProfiles = SpaceAGORA.ParallelProfiles
+const ParallelProcess = SpaceAGORA.ParallelProcess
+const SimulationCampaigns = SpaceAGORA.SimulationCampaigns
+const RPOStationAssets = SpaceAGORA.RPOStationAssets
+
+const quat_mult = SimulationModel.quat_mult
+# `run_simulation` itself comes from `using SpaceAGORA` (the root export forwards
+# to SimulationEngine.run_simulation); do not rebind exported names here.
+
+# Frame-transform helpers the suites call unqualified. They are defined in
+# src/core/interfaces/reference_system.jl, which SimulationEngine carries.
+const rtolatlong = SimulationEngine.rtolatlong
+const orbitalelemtorv = SimulationEngine.orbitalelemtorv
+const rvtoorbitalelement = SimulationEngine.rvtoorbitalelement
+const r_intor_p! = SimulationEngine.r_intor_p!
+const latlongtoNED = SimulationEngine.latlongtoNED
+const orbital_elements_to_lvlh_quaternion = SimulationEngine.orbital_elements_to_lvlh_quaternion
+
+# The firing-plan tables are not part of the package; suite 01 and
+# examples/AGORA_Odyssey.jl still consume them by path.
 include(joinpath(REPO_ROOT, "src", "mission", "operations", "maneuver_plans.jl"))
 
-# SimulationEngine uses SimulationModel and provides canonical runtime entrypoints.
-const quat_mult = SimulationModel.quat_mult
-if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
-end
-if !isdefined(@__MODULE__, :TelemetryVerification)
-    include(joinpath(REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
-end
-if !isdefined(@__MODULE__, :ParallelProfiles)
-    # SimulationCampaigns consumes the outer-route bandit via `..ParallelProfiles`.
-    include(joinpath(REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
-end
-if !isdefined(@__MODULE__, :ParallelProcess)
-    # SimulationCampaigns consumes the process-route outer pool via `..ParallelProcess`.
-    include(joinpath(REPO_ROOT, "src", "parallel", "process", "parallel_process.jl"))
-end
-if !isdefined(@__MODULE__, :SimulationCampaigns)
-    include(joinpath(REPO_ROOT, "src", "simulation", "campaigns", "simulation_campaigns.jl"))
-end
-if !isdefined(@__MODULE__, :SpaceAGORA)
-    include(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
-end
+# GRAM-backed behaviour comes from the SpaceAGORAGRAMSuiteExt package
+# extension, which Julia loads on its own once GRAMSuite is importable. The
+# integration suites only ever wrap dummy cores in GRAMAtmosphereModel, so no
+# suite depends on it; HAS_GRAMSUITE mirrors CI and is available to probes
+# that inherit this scope.
 const HAS_GRAMSUITE = let
     vendored_gramsuite = joinpath(REPO_ROOT, "data", "GRAMSuite.jl")
     try
@@ -65,167 +77,15 @@ const HAS_GRAMSUITE = let
             pushfirst!(LOAD_PATH, vendored_gramsuite)
         end
         @eval import GRAMSuite
-        true
+        if Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt) === nothing
+            @info "GRAMSuite imported but SpaceAGORAGRAMSuiteExt did not load; GRAM-backed checks are skipped (the vendored data/GRAMSuite.jl checkout is probably older than the extension expects)"
+            false
+        else
+            true
+        end
     catch err
         @info "Skipping GRAMSuite-backed test checks" exception=(err, catch_backtrace())
         false
-    end
-end
-
-if HAS_GRAMSUITE
-    const TEST_GRAM_LOCK = RuntimeServices.GRAM_LOCK
-    const EM = SimulationModel.EnvironmentModels
-
-    EM._GRAM_USE_GLOBAL_LOCK_FN[] = () -> GRAMSuite.gram_use_global_lock()
-    EM._GRAM_DEFAULT_SURROGATE_FILE_FN[] = planet -> GRAMSuite.gram_default_surrogate_file(planet)
-    EM._CLEAR_GRAM_STATIC_GRID_CACHE_FN[] = () -> GRAMSuite.clear_gram_static_grid_cache!()
-    EM._CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN[] = () -> GRAMSuite.clear_gram_offline_surrogate_cache!()
-
-    function EM.GRAMAtmosphereModel(; kwargs...)
-        return EM.GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
-    end
-
-    function EM.GRAMAtmosphereModelSurrogate(;
-        surrogate_file::String="",
-        point_fallback_below_m::Union{Nothing, Real}=nothing,
-        kwargs...
-    )
-        base_model = EM.GRAMAtmosphereModel(; kwargs...)
-        file = isempty(strip(surrogate_file)) ?
-            GRAMSuite.gram_default_surrogate_file(base_model.planet_name; gram_root=base_model.gram_root) :
-            GRAMSuite.resolve_path(surrogate_file)
-        point_fallback = if point_fallback_below_m === nothing
-            GRAMSuite.gram_default_point_fallback_below_m(base_model.planet_name)
-        else
-            value = Float64(point_fallback_below_m)
-            value >= 0.0 || throw(ArgumentError("point_fallback_below_m must be >= 0.0 m, got $value"))
-            value
-        end
-        return EM.GRAMAtmosphereModelSurrogate(base_model, file, point_fallback)
-    end
-
-    function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
-        haskey(stackdict, model) && return stackdict[model]
-        copied = lock(TEST_GRAM_LOCK) do
-            EM.GRAMAtmosphereModel(deepcopy(model.core))
-        end
-        stackdict[model] = copied
-        return copied
-    end
-
-    function Base.deepcopy_internal(model::EM.GRAMAtmosphereModelSurrogate, stackdict::IdDict)
-        haskey(stackdict, model) && return stackdict[model]
-        copied = lock(TEST_GRAM_LOCK) do
-            EM.GRAMAtmosphereModelSurrogate(
-                deepcopy(model.base_model),
-                model.surrogate_file,
-                model.point_fallback_below_m
-            )
-        end
-        stackdict[model] = copied
-        return copied
-    end
-
-    function EM._gram_core_density_state(
-        core::GRAMSuite.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool,
-        lock_obj,
-        vacuum_temperature::Float64
-    )::Tuple{Float64, Float64, SVector{3, Float64}}
-        return GRAMSuite.density_state(
-            core, h, lat, lon, el_time, wind;
-            lock_obj=lock_obj,
-            vacuum_temperature=vacuum_temperature
-        )
-    end
-
-    @inline function EM._gram_point_density(
-        model::EM.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool
-    )::Tuple{Float64, Float64, SVector{3, Float64}}
-        h_gram = max(h, -30.0)
-        return GRAMSuite.point_density_state(model.core, h_gram, lat, lon, el_time, wind; lock_obj=TEST_GRAM_LOCK)
-    end
-
-    function EM.getDensity(
-        model::EM.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool,
-        p::params
-    )::Tuple{Float64, Float64, SVector{3, Float64}} where {params}
-        EI = p.args.environment_model.EI * 1e3
-        drag_state = h - EI <= 0.0
-
-        if h > 2000.0e3
-            rho = 0.0
-            T = p.args.environment_model.planet.T_ref
-            wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-        elseif !drag_state && !p.args.mission_configuration.keplerian
-            rho, T, wind_vec = EM.density_polyfit(h, p)
-        else
-            h_gram = max(h, -30.0)
-            rho, T, wind_vec = GRAMSuite.density_state(
-                model.core,
-                h_gram,
-                lat,
-                lon,
-                el_time,
-                wind;
-                lock_obj=TEST_GRAM_LOCK,
-                vacuum_temperature=p.args.environment_model.planet.T_ref
-            )
-        end
-
-        return rho, T, wind_vec
-    end
-
-    function EM.getDensity(
-        model::EM.GRAMAtmosphereModelSurrogate,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool,
-        p::params
-    )::Tuple{Float64, Float64, SVector{3, Float64}} where {params}
-        EI = p.args.environment_model.EI * 1e3
-        drag_state = h - EI <= 0.0
-
-        if h > 2000.0e3
-            return 0.0, p.args.environment_model.planet.T_ref, SVector{3, Float64}(0.0, 0.0, 0.0)
-        elseif !drag_state && !p.args.mission_configuration.keplerian
-            return EM.density_polyfit(h, p)
-        end
-
-        base_model = model.base_model isa EM.GRAMAtmosphereModel ? model.base_model.core : model.base_model
-        point_fallback = model.base_model isa EM.GRAMAtmosphereModel ? nothing :
-            (m, h_i, lat_i, lon_i, t_i, w_i) -> EM._gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
-        h_gram = max(h, -30.0)
-
-        return GRAMSuite.surrogate_density_state(
-            base_model,
-            model.surrogate_file,
-            model.point_fallback_below_m,
-            h_gram,
-            lat,
-            lon,
-            el_time,
-            wind;
-            lock_obj=TEST_GRAM_LOCK,
-            point_density_fallback=point_fallback,
-            vacuum_temperature=p.args.environment_model.planet.T_ref
-        )
     end
 end
 

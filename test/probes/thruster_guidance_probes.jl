@@ -6,12 +6,12 @@ using LinearAlgebra
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
-include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
 if !isdefined(@__MODULE__, :build_initial_conditions)
     const build_initial_conditions = SimulationEngine.build_initial_conditions

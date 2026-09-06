@@ -1,6 +1,7 @@
 @testset "Probe Drivers" begin
-    # Each probe file is standalone (bootstraps its own SimulationModel include),
-    # so it runs as a subprocess like the Coverage Threaded Probe Driver above.
+    # Each probe file is standalone (it does `using SpaceAGORA` and binds its own
+    # module aliases, so its top-level helpers never collide with this scope), so
+    # it runs as a subprocess like the Coverage Threaded Probe Driver above.
     # Unlike that driver these run in every suite pass — they are regular tests
     # for the probe files under test/probes/ (the paid-off July 2026 coverage-debt register); the subprocess inherits
     # the coverage flag so the coverage gates see their line data.

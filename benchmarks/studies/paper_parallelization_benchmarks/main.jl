@@ -20,6 +20,7 @@ function _ppb_active_phases(ppb::PPBConfig)::Vector{PPBPhase}
         push!(phases, by_id[id])
     end
     ppb.preview && (phases = _ppb_preview_phase.(phases))
+    ppb.lean_modes && (phases = _ppb_lean_phase.(phases))
     phases = _ppb_cap_worker_counts.(phases, ppb.process_workers)
     return phases
 end
@@ -354,6 +355,7 @@ function main_paper_benchmarks()
     println("[paper-benchmarks] seed             = $(ppb.seed)")
     println("[paper-benchmarks] preview          = $(ppb.preview)")
     println("[paper-benchmarks] quick            = $(ppb.quick)")
+    println("[paper-benchmarks] lean_modes       = $(ppb.lean_modes)")
     println("[paper-benchmarks] dry_run          = $(ppb.dry_run)")
     println()
 

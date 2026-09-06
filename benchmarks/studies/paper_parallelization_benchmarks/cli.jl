@@ -53,7 +53,83 @@ Base.@kwdef struct PPBConfig
     dry_run::Bool           = false
     preview::Bool           = false
     quick::Bool             = false
+    lean_modes::Bool        = false
     resume::String          = ""
+end
+
+# Which static routes have actually won a launch point in this phase, measured.
+#
+# --lean-modes trims each phase's ladder to serial + these + policy_v2, on the
+# reasoning that the shipped profiles are not what is under test any more. Both
+# laptop routing fixes (254957e7 machine-class gate, 0b333ad0 memory-aware
+# process sizing) are gated behind OuterRouteTuning fields that only R6 sets,
+# and both commit messages say the shipped rule/tuning is unchanged -- so
+# re-measuring R4 and R5 re-measures behaviour that did not change.
+#
+# The winners are per PHASE, not per case: the best static route moves with
+# thread count within a single case (B11 e4: outer_threads at t8,
+# outer_inner_static at t12; B12 interact_64: outer_threads at t8,
+# outer_process at t12). Pinning one static route per phase would score the
+# router against a baseline that is not the best one at every rung, which is
+# the error 1d41a327 already made once with inner_only. Every mode that won
+# anywhere is therefore kept.
+#
+# Derived from run 20260902_153738 + 20260905_183451 + the policy-v2 worktree
+# runs, via scripts/plot_adaptive_vs_best_static.py's best_static_mode column.
+# Re-derive it before trusting it on a new machine: a different core count
+# moves which route wins.
+const PPB_BEST_STATIC_WINNERS = Dict{String, Vector{String}}(
+    "B1"  => ["outer_threads"],
+    "B2"  => ["outer_threads"],
+    "B3"  => ["outer_threads"],
+    "B4"  => ["outer_process"],
+    "B5"  => ["inner_only", "outer_threads"],
+    "B6"  => ["outer_process", "outer_threads"],
+    "B7"  => ["outer_threads"],
+    "B8"  => ["outer_process"],
+    "B9"  => ["inner_only", "outer_inner_static", "outer_threads"],
+    "B10" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "B11" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "B12" => ["outer_inner_static", "outer_process", "outer_threads"],
+    "B13" => ["outer_process", "outer_threads"],
+    "B14" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "B15" => ["outer_process", "outer_threads"],
+)
+
+"""
+    _ppb_lean_phase(phase) -> PPBPhase
+
+Trim `phase.modes` to serial + its measured best-static winners + policy_v2,
+preserving the phase's own ordering. serial is kept wherever the phase already
+had it: the harness derives speedup, thread/process efficiency and the
+below-noise-floor flag from the serial median, and a phase that drops it loses
+the floor test that decides which points are reportable at all.
+
+A phase with no recorded winners is returned unchanged rather than guessed at.
+"""
+function _ppb_lean_phase(phase::PPBPhase)::PPBPhase
+    winners = get(PPB_BEST_STATIC_WINNERS, phase.id, String[])
+    isempty(winners) && return phase
+    keep = Set{String}(winners)
+    push!(keep, "serial")
+    push!(keep, "policy_v2")
+    modes = [m for m in phase.modes if m in keep]
+    isempty(modes) && return phase
+    modes == phase.modes && return phase
+    println("[paper-benchmarks] phase $(phase.id): lean modes -> $(join(modes, ", "))")
+    return PPBPhase(
+        id            = phase.id,
+        label         = phase.label,
+        cases         = phase.cases,
+        parity_cases  = phase.parity_cases,
+        modes         = modes,
+        mc_samples    = phase.mc_samples,
+        repeats       = phase.repeats,
+        warmup        = phase.warmup,
+        thread_mode   = phase.thread_mode,
+        worker_ladder = phase.worker_ladder,
+        budget_grid   = phase.budget_grid,
+    )
 end
 
 # Preview mode: caps N_sat at 64, MC samples at 16, workers at 4, repeats at 2.
@@ -896,6 +972,7 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     dry_run         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_DRY_RUN", "0"))
     preview         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_PREVIEW", "0"))
     quick           = _ppc_bool(get(ENV, "SPACEAGORA_PPB_QUICK", "0"))
+    lean_modes      = _ppc_bool(get(ENV, "SPACEAGORA_PPB_LEAN_MODES", "0"))
     resume          = get(ENV, "SPACEAGORA_PPB_RESUME", "")
 
     valid_phases = union(Set(p.id for p in PAPER_BENCHMARK_PHASES), Set(["Q1", "Q2", "Q3"]))
@@ -924,6 +1001,8 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
             preview = true
         elseif arg == "--quick"
             quick = true
+        elseif arg == "--lean-modes"
+            lean_modes = true
         elseif startswith(arg, "--resume=")
             resume = _ppc_arg_value(arg)
         else
@@ -952,6 +1031,7 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
         dry_run         = dry_run,
         preview         = preview,
         quick           = quick,
+        lean_modes      = lean_modes,
         resume          = isempty(resume) ? "" : abspath(resume),
     )
 end

@@ -109,31 +109,36 @@ end
     per_link_atmosphere::Bool = false
 end
 
-@inline function _make_aero_scratch_workspace(n_threads::Int)::AeroScratchWorkspace
-    n_threads >= 1 || throw(ArgumentError("Aerodynamic scratch workspace thread count must be >= 1, got $n_threads"))
-    thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
-    thread_cl = zeros(Float64, n_threads)
-    thread_cd = zeros(Float64, n_threads)
-    thread_area = zeros(Float64, n_threads)
-    return AeroScratchWorkspace(thread_force, thread_cl, thread_cd, thread_area)
+@inline function _make_aero_scratch_workspace(n_links::Int)::AeroScratchWorkspace
+    n_links >= 1 || throw(ArgumentError("Aerodynamic scratch workspace link count must be >= 1, got $n_links"))
+    zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    return AeroScratchWorkspace(
+        fill(zero3, n_links), fill(zero3, n_links), fill(zero3, n_links), fill(zero3, n_links),
+        zeros(Float64, n_links), zeros(Float64, n_links), zeros(Float64, n_links)
+    )
 end
 
 @inline function _ensure_aero_workspace_capacity!(
     workspace::AeroScratchWorkspace,
-    n_threads::Int
+    n_links::Int
 )::AeroScratchWorkspace
-    n_threads >= 1 || throw(ArgumentError("Aerodynamic scratch workspace thread count must be >= 1, got $n_threads"))
-    if length(workspace.thread_force) < n_threads
-        old_len = length(workspace.thread_force)
-        resize!(workspace.thread_force, n_threads)
-        @inbounds for tid in (old_len + 1):n_threads
-            workspace.thread_force[tid] = MVector{3, Float64}(0.0, 0.0, 0.0)
+    n_links >= 1 || throw(ArgumentError("Aerodynamic scratch workspace link count must be >= 1, got $n_links"))
+    if length(workspace.link_force) < n_links
+        zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+        for v in (workspace.link_force, workspace.link_drag, workspace.link_lift, workspace.link_cross)
+            old_len = length(v)
+            resize!(v, n_links)
+            @inbounds for idx in (old_len + 1):n_links
+                v[idx] = zero3
+            end
         end
-    end
-    if length(workspace.thread_cl) < n_threads
-        resize!(workspace.thread_cl, n_threads)
-        resize!(workspace.thread_cd, n_threads)
-        resize!(workspace.thread_area, n_threads)
+        for v in (workspace.link_cl_area, workspace.link_cd_area, workspace.link_area)
+            old_len = length(v)
+            resize!(v, n_links)
+            @inbounds for idx in (old_len + 1):n_links
+                v[idx] = 0.0
+            end
+        end
     end
     return workspace
 end
@@ -826,56 +831,48 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     cross_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
 
     started_ns = time_ns()
+    # Collect-then-sum over links: each link's wrench goes into its own slot
+    # (in parallel or not), then the slots are summed in link order on this
+    # thread, so the multibody aero wrench does not depend on the worker count.
+    n_links = length(bodies)
+    workspace = _aero_workspace_for_sat!(param, i, n_links)
+    slot_force = workspace.link_force
+    slot_drag = workspace.link_drag
+    slot_lift = workspace.link_lift
+    slot_cross = workspace.link_cross
+    slot_cl_area = workspace.link_cl_area
+    slot_cd_area = workspace.link_cd_area
+    slot_area = workspace.link_area
+    store_link! = idx -> begin
+        force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
+        @inbounds begin
+            slot_force[idx] = SVector{3, Float64}(force_body)
+            slot_drag[idx] = SVector{3, Float64}(drag_body)
+            slot_lift[idx] = SVector{3, Float64}(lift_body)
+            slot_cross[idx] = SVector{3, Float64}(cross_body)
+            slot_cl_area[idx] = cl_area
+            slot_cd_area[idx] = cd_area
+            slot_area[idx] = area
+        end
+        return nothing
+    end
     if use_threads
-        workspace = _aero_workspace_for_sat!(param, i, n_workers)
-        thread_force = workspace.thread_force
-        thread_drag = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
-        thread_lift = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
-        thread_cross = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
-        thread_cl = workspace.thread_cl
-        thread_cd = workspace.thread_cd
-        thread_area = workspace.thread_area
-        @inbounds for worker_id in 1:n_workers
-            thread_force[worker_id] .= 0.0
-            thread_drag[worker_id] .= 0.0
-            thread_lift[worker_id] .= 0.0
-            thread_cross[worker_id] .= 0.0
-            thread_cl[worker_id] = 0.0
-            thread_cd[worker_id] = 0.0
-            thread_area[worker_id] = 0.0
-        end
-
-        ParallelPolicy.threaded_foreach_worker_persistent(:rhs_aero, length(bodies), decision.allotment) do worker_id, idx
-            force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
-            thread_force[worker_id] .+= force_body
-            thread_drag[worker_id] .+= drag_body
-            thread_lift[worker_id] .+= lift_body
-            thread_cross[worker_id] .+= cross_body
-            thread_cl[worker_id] += cl_area
-            thread_cd[worker_id] += cd_area
-            thread_area[worker_id] += area
-        end
-
-        @inbounds for worker_id in 1:n_workers
-            force_ii .+= thread_force[worker_id]
-            drag_ii .+= thread_drag[worker_id]
-            lift_ii .+= thread_lift[worker_id]
-            cross_ii .+= thread_cross[worker_id]
-            CL += thread_cl[worker_id]
-            CD += thread_cd[worker_id]
-            total_area += thread_area[worker_id]
+        ParallelPolicy.threaded_foreach_worker_persistent(:rhs_aero, n_links, decision.allotment) do _, idx
+            store_link!(idx)
         end
     else
-        @inbounds for idx in eachindex(bodies)
-            force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
-            force_ii .+= force_body
-            drag_ii .+= drag_body
-            lift_ii .+= lift_body
-            cross_ii .+= cross_body
-            CL += cl_area
-            CD += cd_area
-            total_area += area
+        @inbounds for idx in 1:n_links
+            store_link!(idx)
         end
+    end
+    @inbounds for idx in 1:n_links
+        force_ii .+= slot_force[idx]
+        drag_ii .+= slot_drag[idx]
+        lift_ii .+= slot_lift[idx]
+        cross_ii .+= slot_cross[idx]
+        CL += slot_cl_area[idx]
+        CD += slot_cd_area[idx]
+        total_area += slot_area[idx]
     end
     ParallelPolicy.record_policy_observation!(
         :multibody;

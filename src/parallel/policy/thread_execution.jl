@@ -237,6 +237,43 @@ function threaded_foreach_worker(f::F, num_items::Int, allotment::Int) where {F 
     return threaded_foreach_worker(num_items, allotment, f)
 end
 
+"""
+    threaded_collect!(results, num_items, allotment, f)
+    threaded_collect_persistent!(source, results, num_items, allotment, f)
+
+Evaluate `f(idx)` for every item on the worker pool and store the value in
+`results[idx]`. Nothing is accumulated on the workers: the caller sums
+`results` in index order on one thread, so the arithmetic that touches the
+total is the same as in the serial loop and the outcome does not depend on
+the worker count, the scheduler, or which worker evaluated which item. Use
+this instead of per-worker partial sums wherever the result feeds the
+integrator.
+"""
+function threaded_collect!(results::AbstractVector, num_items::Int, allotment::Int, f::F) where {F <: Function}
+    threaded_foreach_worker(num_items, allotment) do _, idx
+        @inbounds results[idx] = f(idx)
+        return nothing
+    end
+    return results
+end
+
+function threaded_collect_persistent!(source::Symbol, results::AbstractVector, num_items::Int, allotment::Int, f::F) where {F <: Function}
+    threaded_foreach_worker_persistent(source, num_items, allotment) do _, idx
+        @inbounds results[idx] = f(idx)
+        return nothing
+    end
+    return results
+end
+
+# do-block orderings (the block is the first positional argument)
+function threaded_collect!(f::F, results::AbstractVector, num_items::Int, allotment::Int) where {F <: Function}
+    return threaded_collect!(results, num_items, allotment, f)
+end
+
+function threaded_collect_persistent!(f::F, source::Symbol, results::AbstractVector, num_items::Int, allotment::Int) where {F <: Function}
+    return threaded_collect_persistent!(source, results, num_items, allotment, f)
+end
+
 function threaded_reduce(
     num_items::Int,
     allotment::Int,

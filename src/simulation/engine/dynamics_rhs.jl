@@ -67,37 +67,22 @@ end
     else
         nothing
     end
+    # Deterministic by construction: the workers only evaluate effectors into
+    # per-effector slots; the sum happens below, in effector order, on this
+    # thread, with exactly the statements of the serial loop. The thread
+    # count, the scheduler and the runtime policy decision therefore change
+    # timing only, never bits.
     if effector_decision.use_threads
-        reduced = SimulationModel.ParallelPolicy.threaded_reduce(
-            n_effectors,
-            effector_decision.allotment,
-            () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-            (local_sum, eff_idx) -> begin
-                effector = dynamic_effectors[eff_idx]
-                force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
-                local_sum[1] += force[1]
-                local_sum[2] += force[2]
-                local_sum[3] += force[3]
-                local_sum[4] += torque[1]
-                local_sum[5] += torque[2]
-                local_sum[6] += torque[3]
-                return nothing
-            end,
-            (dest, src) -> begin
-                @inbounds for i in 1:6
-                    dest[i] += src[i]
-                end
-                return nothing
-            end
-        )
-        # Unpack reduced MVector directly into forces/torques without an intermediate SVector.
-        @inbounds begin
-            forces[1] = reduced[1]
-            forces[2] = reduced[2]
-            forces[3] = reduced[3]
-            torques[1] = reduced[4]
-            torques[2] = reduced[5]
-            torques[3] = reduced[6]
+        contributions = Vector{Tuple{SVector{3, Float64}, SVector{3, Float64}}}(undef, n_effectors)
+        SimulationModel.ParallelPolicy.threaded_collect!(contributions, n_effectors, effector_decision.allotment) do eff_idx
+            effector = dynamic_effectors[eff_idx]
+            force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
+            return (SVector{3, Float64}(force), SVector{3, Float64}(torque))
+        end
+        @inbounds for eff_idx in 1:n_effectors
+            force, torque = contributions[eff_idx]
+            forces .+= force
+            torques .+= torque
         end
     else
         @inbounds for effector in dynamic_effectors
@@ -143,32 +128,25 @@ end
         nothing
     end
 
+    # Same collect-then-sum pattern as _accumulate_dynamic_effectors!; the
+    # serial sum skips effectors outside the partition exactly as the serial
+    # loop below does.
     if effector_decision.use_threads && selected_count > 1
-        reduced = SimulationModel.ParallelPolicy.threaded_reduce(
-            length(dynamic_effectors),
-            effector_decision.allotment,
-            () -> MVector{6, Float64}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-            (local_sum, eff_idx) -> begin
-                effector = dynamic_effectors[eff_idx]
-                _effector_in_partition(effector, partition) || return nothing
-                force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
-                local_sum[1] += force[1]
-                local_sum[2] += force[2]
-                local_sum[3] += force[3]
-                local_sum[4] += torque[1]
-                local_sum[5] += torque[2]
-                local_sum[6] += torque[3]
-                return nothing
-            end,
-            (dest, src) -> begin
-                @inbounds for i in 1:6
-                    dest[i] += src[i]
-                end
-                return nothing
-            end
-        )
-        forces .= SVector{3, Float64}(reduced[1], reduced[2], reduced[3])
-        torques .= SVector{3, Float64}(reduced[4], reduced[5], reduced[6])
+        n_effectors = length(dynamic_effectors)
+        zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+        contributions = Vector{Tuple{SVector{3, Float64}, SVector{3, Float64}}}(undef, n_effectors)
+        SimulationModel.ParallelPolicy.threaded_collect!(contributions, n_effectors, effector_decision.allotment) do eff_idx
+            effector = dynamic_effectors[eff_idx]
+            _effector_in_partition(effector, partition) || return (zero3, zero3)
+            force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
+            return (SVector{3, Float64}(force), SVector{3, Float64}(torque))
+        end
+        @inbounds for eff_idx in 1:n_effectors
+            _effector_in_partition(dynamic_effectors[eff_idx], partition) || continue
+            force, torque = contributions[eff_idx]
+            forces .+= force
+            torques .+= torque
+        end
         return nothing
     end
 

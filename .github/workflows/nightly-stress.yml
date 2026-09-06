@@ -3,10 +3,12 @@ name: Nightly Stress
 on:
   schedule:
     - cron: "0 7 * * *"
-  # On pull requests this heavy tier (~3.5 h: full suite + coverage + full
-  # telemetry regression + stress suite) auto-triggers only when the change
-  # can move the spacecraft or change the grading. Everything else gets the
-  # fast tier (Julia CI) and the nightly run on main stands guard.
+  # On pull requests this heavy tier (the full-profile telemetry regression,
+  # one job per scenario, plus the stress and contract suites) auto-triggers
+  # only when the change can move the spacecraft or change the grading.
+  # Everything else gets the fast tier (Julia CI) and the nightly run on main
+  # stands guard. The coverage-instrumented test suites are NOT repeated here:
+  # Julia CI runs them on every PR and on every push to main.
   pull_request:
     paths:
       - "src/dynamics/**"
@@ -37,31 +39,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Everything the PR tier does not already run, minus the telemetry regression
+  # (which has its own matrix job below so the three scenarios run in parallel).
   nightly-stress:
     runs-on: ubuntu-latest
-    # Observed green runs take 3h14-3h25 and hosted-runner speed swings ~1.6x
-    # between hosts; 240 left ~35 min of headroom and would flake on slow hosts.
-    # The full tier takes about four hours on an idle runner (recent green runs:
-    # 225 to 250 min), so 300 cancelled it whenever runners were contended.
-    # 360 is the GitHub-hosted maximum.
-    timeout-minutes: 360
+    timeout-minutes: 120
     env:
       JULIA_NUM_THREADS: "4"
-      # Coverage debt (July 2026): first real gate run after the CI dark
-      # period measured 82.84% overall; restore to 90.0 as the debt register
-      # in test/gates/ci_coverage_quality_gate.jl burns down.
-      SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
-      SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
-      # Same trap as julia-ci's coverage job: probe subprocesses write .cov
-      # mid-suite, so the window must exceed the whole suite step's wall
-      # time or the threaded/GRAM probe coverage silently drops out and the
-      # per-file floors fail on files only those probes cover (this job at
-      # 1200s dropped exactly that cluster whenever the suite tail after
-      # suite 02 outgrew 20 min).
-      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "7200"
-      SPACEAGORA_CAL_COVERAGE_MIN_OVERALL: "90.0"
-      SPACEAGORA_CAL_COVERAGE_MIN_FILE: "70.0"
-      SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -98,18 +82,6 @@ jobs:
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
 
-      - name: Full test suite with coverage
-        run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
-
-      - name: Coverage quality gate
-        run: julia --startup-file=no --project=. test/gates/ci_coverage_quality_gate.jl
-
-      - name: SpaceAGORACalibration tests with coverage
-        run: julia --startup-file=no --project=. --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
-
-      - name: SpaceAGORACalibration coverage quality gate
-        run: julia --startup-file=no --project=. SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
-
       - name: Contract suite
         run: julia --startup-file=no --project=. test/contracts/nightly_runtests.jl
 
@@ -126,34 +98,83 @@ jobs:
       - name: Example regression stress
         run: julia --startup-file=no --depwarn=error --project=. test/integration/examples/runtests.jl
 
-      # --heap-size-hint keeps Julia's GC high-water mark under the hosted
-      # runner's physical memory (public-repo ubuntu-latest: 4 vCPU/16 GB):
-      # without it this step intermittently starves the runner agent
-      # ("runner lost communication with the server") and the job dies
-      # mid-step. 3G was over-tight: the step went 115 -> 218+ min in GC
-      # thrash and hit the job timeout. 10G leaves room for native GRAM
-      # and the OS while restoring throughput.
-      # Effector-level threading off for the graded regression: with it on, two
-      # solves of the same Odyssey scenario in one process differ bit-for-bit on
-      # the 4-vCPU runners (rows, impact time, termination cause), which is what
-      # made this job's duration bimodal (about 4 h vs over 6 h). With it off the
-      # two solves are identical on the same runners; the n-body inner threading
-      # and the other 4-thread paths stay on. Single-satellite runs gain nothing
-      # from effector-level threading. See branch experiment/odyssey-determinism.
-      - name: Telemetry full regression (GRAM deterministic)
-        env:
-          SPACEAGORA_EFFECTOR_PARALLEL: "off"
-        run: julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
-
       - name: Stress suite
         run: julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=. test/stress/runtests.jl
+
+  # Full-profile telemetry regression, one runner per scenario. Each job is
+  # about a quarter of the old single step: the scenarios no longer queue
+  # behind each other, and the Odyssey scenario no longer solves twice (the
+  # runner reuses the calibration eval solve when the grid has one point).
+  telemetry-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [odyssey, vex, earth_gmat]
+    env:
+      JULIA_NUM_THREADS: "4"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          fetch-depth: 0
+
+      - name: Update GRAMSuite test submodule to dev main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate vendored GRAMSuite
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+
+      - name: GRAMSuite load smoke
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
+
+      - name: Instantiate
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh --clean
+
+      - name: Fetch base ref (PR only)
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
+
+      # --heap-size-hint keeps Julia's GC high-water mark under the hosted
+      # runner's physical memory (public-repo ubuntu-latest: 4 vCPU/16 GB):
+      # without it this step intermittently starves the runner agent and the
+      # job dies mid-step. 10G leaves room for native GRAM and the OS.
+      # Effector-level threading off for the graded regression: with it on, two
+      # solves of the same Odyssey scenario in one process differ bit-for-bit on
+      # the 4-vCPU runners (the automatic policy re-decides the execution path
+      # every step from a wall-clock cost estimate). With it off the solves are
+      # identical on the same runner. See branch experiment/odyssey-determinism.
+      - name: Telemetry full regression (${{ matrix.scenario }})
+        env:
+          SPACEAGORA_EFFECTOR_PARALLEL: "off"
+        run: >-
+          julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=.
+          benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
+          --scenarios=${{ matrix.scenario }}
+          --out-summary=output/telemetry_${{ matrix.scenario }}_summary.csv
+          --out-errors=output/telemetry_${{ matrix.scenario }}_errors.csv
 
       - name: Upload telemetry nightly artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: telemetry-full-${{ github.run_id }}
+          name: telemetry-full-${{ matrix.scenario }}-${{ github.run_id }}
           path: |
-            output/telemetry_orbit_accuracy_summary.csv
-            output/telemetry_orbit_accuracy_errors.csv
+            output/telemetry_${{ matrix.scenario }}_summary.csv
+            output/telemetry_${{ matrix.scenario }}_errors.csv
           if-no-files-found: warn

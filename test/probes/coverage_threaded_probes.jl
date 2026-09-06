@@ -11,17 +11,17 @@ using TOML
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
-include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 
 const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
-end
+# Frame helpers called unqualified below (src/core/interfaces/reference_system.jl).
+const rtolatlong = SimulationEngine.rtolatlong
+const r_intor_p! = SimulationEngine.r_intor_p!
 if !isdefined(@__MODULE__, :build_initial_conditions)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
 end
@@ -36,6 +36,12 @@ const HAS_GRAMSUITE = let
             pushfirst!(LOAD_PATH, vendored_gramsuite)
         end
         @eval import GRAMSuite
+        # GRAM-backed behaviour now comes from the SpaceAGORAGRAMSuiteExt
+        # package extension; if it failed to load, the vendored GRAMSuite
+        # checkout is older than the extension expects -- skip, do not shim.
+        if Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt) === nothing
+            error("GRAMSuite imported but SpaceAGORAGRAMSuiteExt did not load")
+        end
         # Importing the package is not enough: the GRAM-backed probes construct
         # real models, which needs the native GRAM Suite root (Build/ + Julia/).
         # Dev machines often have the Julia wrapper but no native build; skip
@@ -46,91 +52,6 @@ const HAS_GRAMSUITE = let
     catch err
         @info "Skipping GRAMSuite-backed threaded coverage probes" exception=(err, catch_backtrace())
         false
-    end
-end
-
-if HAS_GRAMSUITE
-    const EM = SimulationModel.EnvironmentModels
-    const TEST_GRAM_LOCK = ReentrantLock()
-
-    function EM.GRAMAtmosphereModel(; kwargs...)
-        return EM.GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
-    end
-
-    function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
-        haskey(stackdict, model) && return stackdict[model]
-        copied = EM.GRAMAtmosphereModel(deepcopy(model.core))
-        stackdict[model] = copied
-        return copied
-    end
-
-    function EM._gram_core_density_state(
-        core::GRAMSuite.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool,
-        lock_obj,
-        vacuum_temperature::Float64
-    )::Tuple{Float64, Float64, SVector{3, Float64}}
-        return GRAMSuite.density_state(
-            core,
-            h,
-            lat,
-            lon,
-            el_time,
-            wind;
-            lock_obj=lock_obj,
-            vacuum_temperature=vacuum_temperature
-        )
-    end
-
-    @inline function EM._gram_point_density(
-        model::EM.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool
-    )::Tuple{Float64, Float64, SVector{3, Float64}}
-        h_gram = max(h, -30.0)
-        return GRAMSuite.point_density_state(model.core, h_gram, lat, lon, el_time, wind; lock_obj=TEST_GRAM_LOCK)
-    end
-
-    function EM.getDensity(
-        model::EM.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool,
-        p::params
-    )::Tuple{Float64, Float64, SVector{3, Float64}} where {params}
-        EI = p.args.environment_model.EI * 1e3
-        drag_state = h - EI <= 0.0
-
-        if h > 2000.0e3
-            rho = 0.0
-            T = p.args.environment_model.planet.T_ref
-            wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-        elseif !drag_state && !p.args.mission_configuration.keplerian
-            rho, T, wind_vec = EM.density_polyfit(h, p)
-        else
-            h_gram = max(h, -30.0)
-            rho, T, wind_vec = GRAMSuite.density_state(
-                model.core,
-                h_gram,
-                lat,
-                lon,
-                el_time,
-                wind;
-                lock_obj=TEST_GRAM_LOCK,
-                vacuum_temperature=p.args.environment_model.planet.T_ref
-            )
-        end
-
-        return rho, T, wind_vec
     end
 end
 

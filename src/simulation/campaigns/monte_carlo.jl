@@ -206,6 +206,34 @@ function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker
 end
 
 """
+    outer_split_env_pairs(worker_count) -> Vector{Pair{String,String}}
+
+Environment a threaded outer split must run its samples under: the split is
+declared active, and -- unless the caller set one -- each sample's inner
+thread budget is its share of the pool, `fld(Threads.nthreads(), worker_count)`.
+
+Without the budget a sample resolves `effective_inner_thread_budget()` to the
+whole pool. The shipped inner policy (R4/R5) survives that because its AIMD
+controller sees the contention and backs off; the V2 static width rule takes
+`min(items, budget)` and holds it, so every concurrent sample threads its
+callbacks at full pool width. Measured on B15 mcgrid_16sat_8mc at 12 threads,
+8 concurrent samples: 10.33 s per sample with the pool advertised, 3.07 s with
+the share advertised, 4.56 s for R5 under the same overstatement.
+
+The adaptive campaign runner already did this for the `threads=:auto` path
+(adaptive_routing.jl); `run_monte_carlo(f, seeds; threads=N)` did not, so the
+integer-threads API paid the full cost. An explicit user budget always wins.
+"""
+function outer_split_env_pairs(worker_count::Int)::Vector{Pair{String, String}}
+    pairs = Pair{String, String}["SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"]
+    if isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))
+        share = max(1, fld(Base.Threads.nthreads(), max(1, worker_count)))
+        push!(pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(share))
+    end
+    return pairs
+end
+
+"""
     run_monte_carlo(f, seeds; threads=1, fail_fast=false,
                     route_features=nothing, route_state=nothing,
                     route_tuning=nothing) -> MonteCarloResult
@@ -263,7 +291,13 @@ function run_monte_carlo(f, spec::MonteCarloSpec)
     samples = if worker_count == 1
         _run_monte_carlo_serial(f, seeds, spec)
     else
-        _run_monte_carlo_threaded(f, seeds, spec, worker_count)
+        # Every sample that runs beside others must be told its share of the
+        # pool. See outer_split_env_pairs: without this each of the concurrent
+        # solves believes it owns every thread, and under the V2 static width
+        # rule that belief is acted on for the whole solve.
+        withenv(outer_split_env_pairs(worker_count)...) do
+            _run_monte_carlo_threaded(f, seeds, spec, worker_count)
+        end
     end
     elapsed_s = (time_ns() - start_ns) / 1.0e9
     return MonteCarloResult(samples, elapsed_s, worker_count)

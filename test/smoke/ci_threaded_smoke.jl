@@ -133,6 +133,15 @@ det_effectors = (
     InverseSquaredGravityModel(),
     NBodyGravityModel(["Sun", "Moon"], "Earth", spice_path),
     GravitationalHarmonicsModel(4, 4, harmonics_file, planet),
+    AerodynamicCoefficientfM(),   # exercises the per-link aero loop (legacy path) as well
+)
+det_environment = EnvironmentModel(
+    planet=planet,
+    EI=120.0,
+    density_model=ExponentialAtmosphereModel(planet),
+    thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
+    topography=false,
+    wind=false
 )
 det_args = SimulationConfiguration(
     simulation_settings=args.simulation_settings,
@@ -144,7 +153,7 @@ det_args = SimulationConfiguration(
         orientation_sim=false,
         num_steps_to_save=50
     ),
-    environment_model=args.environment_model,
+    environment_model=det_environment,
     dynamics_model=DynamicsModel([sc1, sc2], det_effectors),
     guidance_model=args.guidance_model,
     navigation_model=args.navigation_model,

@@ -836,23 +836,23 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     # thread, so the multibody aero wrench does not depend on the worker count.
     n_links = length(bodies)
     workspace = _aero_workspace_for_sat!(param, i, n_links)
-    link_force = workspace.link_force
-    link_drag = workspace.link_drag
-    link_lift = workspace.link_lift
-    link_cross = workspace.link_cross
-    link_cl_area = workspace.link_cl_area
-    link_cd_area = workspace.link_cd_area
-    link_area = workspace.link_area
+    slot_force = workspace.link_force
+    slot_drag = workspace.link_drag
+    slot_lift = workspace.link_lift
+    slot_cross = workspace.link_cross
+    slot_cl_area = workspace.link_cl_area
+    slot_cd_area = workspace.link_cd_area
+    slot_area = workspace.link_area
     store_link! = idx -> begin
         force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
         @inbounds begin
-            link_force[idx] = SVector{3, Float64}(force_body)
-            link_drag[idx] = SVector{3, Float64}(drag_body)
-            link_lift[idx] = SVector{3, Float64}(lift_body)
-            link_cross[idx] = SVector{3, Float64}(cross_body)
-            link_cl_area[idx] = cl_area
-            link_cd_area[idx] = cd_area
-            link_area[idx] = area
+            slot_force[idx] = SVector{3, Float64}(force_body)
+            slot_drag[idx] = SVector{3, Float64}(drag_body)
+            slot_lift[idx] = SVector{3, Float64}(lift_body)
+            slot_cross[idx] = SVector{3, Float64}(cross_body)
+            slot_cl_area[idx] = cl_area
+            slot_cd_area[idx] = cd_area
+            slot_area[idx] = area
         end
         return nothing
     end
@@ -866,13 +866,13 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
         end
     end
     @inbounds for idx in 1:n_links
-        force_ii .+= link_force[idx]
-        drag_ii .+= link_drag[idx]
-        lift_ii .+= link_lift[idx]
-        cross_ii .+= link_cross[idx]
-        CL += link_cl_area[idx]
-        CD += link_cd_area[idx]
-        total_area += link_area[idx]
+        force_ii .+= slot_force[idx]
+        drag_ii .+= slot_drag[idx]
+        lift_ii .+= slot_lift[idx]
+        cross_ii .+= slot_cross[idx]
+        CL += slot_cl_area[idx]
+        CD += slot_cd_area[idx]
+        total_area += slot_area[idx]
     end
     ParallelPolicy.record_policy_observation!(
         :multibody;

@@ -1803,33 +1803,6 @@ function get_magnetic_field_dipole(r_ecef::AbstractVector, L_PI::MMatrix{3, 3, F
     return L_PI' * B_ecef
 end
 
-"""
-    get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
-
-Computes the Earth's magnetic field vector in the inertial frame using the
-International Geomagnetic Reference Field (IGRF).
-
-# Args
-
-- `date`: The `DateTime` of the measurement (sets the IGRF epoch).
-- `lat_rad`: The geodetic latitude of the observer [radians].
-- `lon_rad`: The longitude of the observer [radians].
-- `alt_m`: The altitude above the WGS84 ellipsoid [meters].
-- `L_PI`: The inertial-to-planet-fixed rotation matrix.
-
-# Returns
-
-- A 3-element vector representing the magnetic field in the inertial frame in
-  nanoTeslas [nT]. Note the unit: [`get_magnetic_field_dipole`](@ref) returns
-  Tesla, so the two are NOT drop-in interchangeable.
-"""
-function get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
-    # The IGRF evaluation returns NED components in nT.
-    B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geodetic))
-    B_pp = ned_to_ecef(B_ned, lat_rad, lon_rad, alt_m)
-    B_ii = L_PI' * B_pp
-    return B_ii
-end
 
 """
     calculate_magnetic_torque(m::AbstractVector, B::AbstractVector)
@@ -2366,49 +2339,4 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
     else # No eclipse condition
         return 1.0 # If the satellite is not in eclipse, return 1.0
     end
-end
-
-function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P_srp::Float64, eclipse_ratio::Float64, orientation::Bool)
-    """
-    Calculate force on a body due to solar radiation pressure.
-
-    Parameters
-    ----------
-    pos_ii : SVector{3, Float64}
-        Position of the body in the inertial frame (J2000)
-    sun_dir_ii : SVector{3, Float64}
-        Unit vector in the direction of the Sun expressed in the inertial frame
-    body : Body struct
-        Struct containing physical information about the body
-    r_sun_norm : Float64
-        Magnitude of the spacecraft distance to the Sun
-    P_srp : Float64
-        Magnitude of the solar radiation pressure force at r_sun_norm meters from the Sun
-    
-    Returns
-    -------
-    F_srp : SVector{3, Float64}
-        Force on the body in the inertial frame
-    """
-    rot_inertial = config.rotate_to_inertial(model, body, root_index)
-    rot_body_to_inertial = rot(model.links[root_index].q)
-    @inbounds for facet in body.SRP_facets
-        rot_RF = rot_inertial * rot(facet.attitude)' # Rotation matrix from facet frame to inertial frame
-        n = normalize(rot_RF * facet.normal_vector) # Normal vector of the facet in the inertial frame
-        cos_α_srp = dot(n, sun_dir_ii) / norm(n) / norm(sun_dir_ii)
-
-        if cos_α_srp > 0 && eclipse_ratio != 0.0 # If the facet is illuminated by the Sun
-            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * n) * eclipse_ratio
-            body.net_force += F_SRP # Rotate F_SRP from body frame to inertial frame
-
-            if orientation
-                R_facet = rot_inertial*facet.cp + rot_body_to_inertial'*body.r # Vector from CoM of spacecraft to facet Cp in inertial frame
-                # R_facet_body = config.rotate_to_body(body)*facet.cp + body.r
-                body.net_torque += rot_body_to_inertial * cross(R_facet, F_SRP) # Calculate body frame net torque
-            end
-        end
-    end
-    # CSV.write("facet_forces.csv", df)
-    # return F_SRP_tracker
-    # println("Total F_SRP: $F_SRP_tracker")
 end

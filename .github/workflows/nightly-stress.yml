@@ -154,14 +154,10 @@ jobs:
       # runner's physical memory (public-repo ubuntu-latest: 4 vCPU/16 GB):
       # without it this step intermittently starves the runner agent and the
       # job dies mid-step. 10G leaves room for native GRAM and the OS.
-      # Effector-level threading off for the graded regression: with it on, two
-      # solves of the same Odyssey scenario in one process differ bit-for-bit on
-      # the 4-vCPU runners (the automatic policy re-decides the execution path
-      # every step from a wall-clock cost estimate). With it off the solves are
-      # identical on the same runner. See branch experiment/odyssey-determinism.
+      # The threaded force reductions are independent of the thread count since
+      # #103 (collect-then-sum), so the graded regression runs with the default
+      # parallel policy: serial and threaded evaluation give the same bits.
       - name: Telemetry full regression (${{ matrix.scenario }})
-        env:
-          SPACEAGORA_EFFECTOR_PARALLEL: "off"
         run: >-
           julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=.
           benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true

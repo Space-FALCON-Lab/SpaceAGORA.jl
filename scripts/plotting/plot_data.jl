@@ -1,5 +1,3 @@
-include(joinpath(@__DIR__, "..", "..", "src", "core", "utils", "misc.jl"))
-
 using .SimulationModel
 
 using PlotlyJS

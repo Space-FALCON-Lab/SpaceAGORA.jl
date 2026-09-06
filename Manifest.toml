@@ -2,7 +2,7 @@
 
 julia_version = "1.12.1"
 manifest_format = "2.0"
-project_hash = "40172ac5897979c5b5d0494922d3ed2be33daaef"
+project_hash = "8dc8df1af8f6d323e43b3a83996677ef1aa47474"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -137,11 +137,6 @@ deps = ["JSON", "Pidfile", "SHA"]
 git-tree-sha1 = "902b85010203830d4bc02259f5450d2e16b316d8"
 uuid = "bf4720bc-e11a-5d0c-854e-bdca1663c893"
 version = "0.1.1"
-
-[[deps.AssociatedLegendrePolynomials]]
-git-tree-sha1 = "c5b6a5ac656586d038dd04441b6e165a21c80f09"
-uuid = "2119f1ac-fb78-50f5-8cc0-dda848ebdb19"
-version = "1.0.2"
 
 [[deps.AstroTime]]
 deps = ["Dates", "EarthOrientation", "Graphs", "LeapSeconds", "MacroTools", "MuladdMacro", "Reexport"]
@@ -393,23 +388,6 @@ version = "1.6.0"
 git-tree-sha1 = "439e35b0b36e2e5881738abc8857bd92ad6ff9a8"
 uuid = "d38c429a-6771-53c6-b99e-75d170b6e991"
 version = "0.6.3"
-
-[[deps.ControlSystemsBase]]
-deps = ["ForwardDiff", "Hungarian", "LinearAlgebra", "MacroTools", "MatrixEquations", "MatrixPencils", "Polynomials", "PrecompileTools", "Printf", "Random", "RecipesBase", "StaticArraysCore", "UUIDs"]
-git-tree-sha1 = "cfc01bc7e5a51764fede0c1bb493ebf5697c6f1f"
-uuid = "aaaaaaaa-a6ca-5380-bf3e-84a91bcd477e"
-version = "1.20.2"
-
-    [deps.ControlSystemsBase.extensions]
-    ControlSystemsBaseDSPExt = ["DSP"]
-    ControlSystemsBaseImplicitDifferentiationExt = ["ImplicitDifferentiation", "ComponentArrays"]
-    ControlSystemsBaseMakieExt = ["Makie"]
-
-    [deps.ControlSystemsBase.weakdeps]
-    ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
-    DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
-    ImplicitDifferentiation = "57b37032-215b-411a-8a7c-41a003a55207"
-    Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 
 [[deps.CpuId]]
 deps = ["Markdown"]
@@ -992,12 +970,6 @@ git-tree-sha1 = "af9ab7d1f70739a47f03be78771ebda38c3c71bf"
 uuid = "3e5b6fbb-0976-4d2c-9146-d79de83f2fb0"
 version = "0.1.18"
 
-[[deps.Hungarian]]
-deps = ["LinearAlgebra", "SparseArrays"]
-git-tree-sha1 = "4f84db415ccb0ea750b10738bfecdd55388fd1b6"
-uuid = "e91730f6-4275-51fb-a7a0-7064cfbd3b39"
-version = "0.7.0"
-
 [[deps.IOCapture]]
 deps = ["Logging", "Random"]
 git-tree-sha1 = "0ee181ec08df7d7c911901ea38baf16f755114dc"
@@ -1282,18 +1254,6 @@ deps = ["Libdl", "OpenBLAS_jll", "libblastrampoline_jll"]
 uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 version = "1.12.0"
 
-[[deps.LinearMaps]]
-deps = ["LinearAlgebra"]
-git-tree-sha1 = "7f6be2e4cdaaf558623d93113d6ddade7b916209"
-uuid = "7a12625a-238d-50fd-b39a-03d52299707e"
-version = "3.11.4"
-weakdeps = ["ChainRulesCore", "SparseArrays", "Statistics"]
-
-    [deps.LinearMaps.extensions]
-    LinearMapsChainRulesCoreExt = "ChainRulesCore"
-    LinearMapsSparseArraysExt = "SparseArrays"
-    LinearMapsStatisticsExt = "Statistics"
-
 [[deps.LinearSolve]]
 deps = ["ArrayInterface", "ChainRulesCore", "ConcreteStructs", "DocStringExtensions", "EnumX", "GPUArraysCore", "InteractiveUtils", "Krylov", "Libdl", "LinearAlgebra", "MKL_jll", "Markdown", "OpenBLAS_jll", "PrecompileTools", "Preferences", "RecursiveArrayTools", "Reexport", "SciMLBase", "SciMLLogging", "SciMLOperators", "Setfield", "StaticArraysCore"]
 git-tree-sha1 = "1e487940a06ed9562de685e5f336633cdc14e011"
@@ -1446,18 +1406,6 @@ version = "1.51.0"
     [deps.MathOptInterface.weakdeps]
     BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
     CliqueTrees = "60701a23-6482-424a-84db-faee86b9b1f8"
-
-[[deps.MatrixEquations]]
-deps = ["LinearAlgebra", "LinearMaps"]
-git-tree-sha1 = "51f3fade0b4ff2cf90b36b3312425460631abb56"
-uuid = "99c1a7ee-ab34-5fd5-8076-27c950a045f4"
-version = "2.5.6"
-
-[[deps.MatrixPencils]]
-deps = ["LinearAlgebra", "MatrixEquations", "Polynomials", "Random"]
-git-tree-sha1 = "d852fb5efe6eea8f764d44a3e6a559664fa88e20"
-uuid = "48965c70-4690-11ea-1f13-43a2532b2fa8"
-version = "1.9.1"
 
 [[deps.MaybeInplace]]
 deps = ["ArrayInterface", "LinearAlgebra", "MacroTools"]
@@ -2062,26 +2010,6 @@ git-tree-sha1 = "5f807b5345093487f733e520a1b7395ee9324825"
 uuid = "3a141323-8675-5d76-9d11-e1df1406c778"
 version = "1.0.0"
 
-[[deps.Polynomials]]
-deps = ["LinearAlgebra", "OrderedCollections", "Setfield", "SparseArrays"]
-git-tree-sha1 = "2d99b4c8a7845ab1342921733fa29366dae28b24"
-uuid = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
-version = "4.1.1"
-
-    [deps.Polynomials.extensions]
-    PolynomialsChainRulesCoreExt = "ChainRulesCore"
-    PolynomialsFFTWExt = "FFTW"
-    PolynomialsMakieExt = "Makie"
-    PolynomialsMutableArithmeticsExt = "MutableArithmetics"
-    PolynomialsRecipesBaseExt = "RecipesBase"
-
-    [deps.Polynomials.weakdeps]
-    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-    FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
-    Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
-    MutableArithmetics = "d8a4904e-b15c-11e9-3269-09a3773c0cb0"
-    RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
-
 [[deps.PooledArrays]]
 deps = ["DataAPI", "Future"]
 git-tree-sha1 = "36d8b4b899628fb92c2749eb488d884a926614d3"
@@ -2309,16 +2237,6 @@ version = "2.2.13"
     SymPy = "24249f21-da20-56a4-8eb1-6a02cf4ae2e6"
     SymPyPythonCall = "bc8888f7-b21e-4b7c-a06a-5d9c9496438c"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
-
-[[deps.Rotations]]
-deps = ["LinearAlgebra", "Quaternions", "Random", "StaticArrays"]
-git-tree-sha1 = "5680a9276685d392c87407df00d57c9924d9f11e"
-uuid = "6038ab10-8711-5258-84ad-4b1120ba62dc"
-version = "1.7.1"
-weakdeps = ["RecipesBase"]
-
-    [deps.Rotations.extensions]
-    RotationsRecipesBaseExt = "RecipesBase"
 
 [[deps.RuntimeGeneratedFunctions]]
 deps = ["ExprTools", "SHA", "Serialization"]
@@ -2587,7 +2505,7 @@ uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
 version = "1.2.2"
 
 [[deps.SpaceAGORA]]
-deps = ["ADTypes", "Aqua", "Arrow", "AssociatedLegendrePolynomials", "AstroTime", "CSV", "ComponentArrays", "ControlSystemsBase", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Documenter", "Interpolations", "LinearAlgebra", "Logging", "LoopVectorization", "MatrixEquations", "NLsolve", "OSQP", "OrdinaryDiffEq", "PlotlyJS", "Plots", "Polyester", "PreallocationTools", "PrecompileTools", "Printf", "Quaternions", "Random", "RecursiveArrayTools", "Reexport", "Roots", "Rotations", "SHA", "SPICE", "SatelliteToolbox", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "SatelliteToolboxTransformations", "Serialization", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
+deps = ["ADTypes", "Aqua", "Arrow", "AstroTime", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Documenter", "Interpolations", "LinearAlgebra", "Logging", "LoopVectorization", "NLsolve", "OSQP", "OrdinaryDiffEq", "PlotlyJS", "Plots", "Polyester", "PrecompileTools", "Printf", "Quaternions", "Random", "RecursiveArrayTools", "Reexport", "Roots", "SHA", "SPICE", "SatelliteToolbox", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "Serialization", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML", "Tables"]
 path = "."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
 version = "0.1.0"
@@ -3152,7 +3070,7 @@ uuid = "1317d2d5-d96f-522e-a858-c73665f53c3e"
 version = "2022.0.0+1"
 
 [[deps.p7zip_jll]]
-deps = ["Artifacts", "Libdl"]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
 uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 version = "17.5.0+2"
 

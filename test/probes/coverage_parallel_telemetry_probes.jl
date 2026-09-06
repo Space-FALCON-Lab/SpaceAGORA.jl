@@ -7,18 +7,21 @@ using StaticArrays
 
 const _COV_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, "..", ".."))
 
+using SpaceAGORA
+
 if !isdefined(@__MODULE__, :SimulationModel)
-    include(joinpath(_COV_REPO_ROOT, "src", "core", "simulation_model.jl"))
+    const SimulationModel = SpaceAGORA.SimulationModel
     using .SimulationModel
 end
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(_COV_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
 if !isdefined(@__MODULE__, :TelemetryVerification)
-    include(joinpath(_COV_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+    const TelemetryVerification = SpaceAGORA.TelemetryVerification
 end
-
-include(joinpath(_COV_REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+if !isdefined(@__MODULE__, :ParallelProfiles)
+    const ParallelProfiles = SpaceAGORA.ParallelProfiles
+end
 
 const PP = ParallelProfiles
 const TV = TelemetryVerification

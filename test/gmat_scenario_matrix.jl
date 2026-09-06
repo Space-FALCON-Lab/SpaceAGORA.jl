@@ -11,16 +11,18 @@ using StaticArrays
 
 const _GMAT_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, ".."))
 
+using SpaceAGORA
+
 if !isdefined(@__MODULE__, :SimulationModel)
-    include(joinpath(_GMAT_REPO_ROOT, "src", "core", "simulation_model.jl"))
+    const SimulationModel = SpaceAGORA.SimulationModel
 end
 
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(_GMAT_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
 
 if !isdefined(@__MODULE__, :TelemetryVerification)
-    include(joinpath(_GMAT_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+    const TelemetryVerification = SpaceAGORA.TelemetryVerification
 end
 
 const TV = TelemetryVerification

@@ -98,6 +98,16 @@ data/GRAM_surrogate
 This bundle is optional. It accelerates selected GRAM-backed workflows but is
 not required for the no-GRAM baseline mode.
 
+### Verification reference data
+
+The simulator-to-simulator reference sets that the parity matrix
+(`test/gmat_scenario_matrix.jl`) grades against, and the flight telemetry used
+by the mission studies, are not tracked in this repository. They are synced
+into gitignored `data/telemetry/` paths by
+`scripts/dev/fetch_private_telemetry.sh`; see
+`data/telemetry/PRIVATE_TELEMETRY.md` for the sources, access rules and what
+happens when they are absent (the affected testsets skip).
+
 ## Check the current machine
 
 The package-owned asset check distinguishes:

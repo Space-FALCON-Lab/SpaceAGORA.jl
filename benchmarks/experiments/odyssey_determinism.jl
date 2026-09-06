@@ -15,9 +15,12 @@ function once()
     return r.results_df, time() - t0
 end
 dfs = Any[]
+using CSV
+mkpath(joinpath(ROOT, "output", "experiment"))
 for i in 1:reps
     df, dt = once()
     push!(dfs, df)
+    CSV.write(joinpath(ROOT, "output", "experiment", "odyssey_orbits$(orbits)_rep$(i).csv"), df)
     println("rep$i: rows=", nrow(df), " wall=", round(dt; digits=1), "s")
 end
 numcols = [c for c in names(dfs[1]) if eltype(dfs[1][!, c]) <: Real]

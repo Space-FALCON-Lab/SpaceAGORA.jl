@@ -39,14 +39,6 @@ jobs:
             max_threads: "4"
             reps: "1"
             orbits: "20"
-          - label: arc-40
-            threads: "4"
-            effector_parallel: "off"
-            multibody_parallel: "auto"
-            persistent_workers: "1"
-            max_threads: "4"
-            reps: "1"
-            orbits: "40"
     env:
       JULIA_NUM_THREADS: ${{ matrix.threads }}
       SPACEAGORA_EFFECTOR_PARALLEL: ${{ matrix.effector_parallel }}
@@ -90,3 +82,10 @@ jobs:
           julia --startup-file=no -e 'using InteractiveUtils; versioninfo()'
       - name: Odyssey solves in one process (${{ matrix.label }})
         run: julia --startup-file=no --project=. benchmarks/experiments/odyssey_determinism.jl
+      - name: Upload the results tables
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odyssey-results-${{ matrix.label }}-${{ github.run_id }}
+          path: output/experiment/*.csv
+          if-no-files-found: warn

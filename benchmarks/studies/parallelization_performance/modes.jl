@@ -418,6 +418,22 @@ function ppc_mode_env_pairs(
     ]
         put!(k, v)
     end
+    # The threads backend runs every sample of the batch concurrently
+    # (Threads.@threads over sample_indices in ppc_run_sample_batch), so each
+    # sample's share of the pool is fld(nthreads, outer_tasks). Left unset, a
+    # sample resolves its inner budget to the WHOLE pool and the V2 static
+    # width rule threads its callbacks at that width beside outer_tasks-1
+    # siblings doing the same: 8 x 12 on 12 cores, measured 10.33 s/sample
+    # against 3.07 s with the share set (B15 mcgrid_16sat_8mc, 12 threads).
+    # The production runner (run_monte_carlo) now sets this itself; this
+    # harness dispatches with Threads.@threads directly, so it must say the
+    # same thing. Process workers are --threads=1 and run one sample each --
+    # their own pool IS their share -- so nothing is emitted for that backend,
+    # and a mode that pins its own budget keeps it.
+    if outer_active && mode.backend == "threads" && outer_tasks > 1 &&
+       !haskey(merged, "SPACEAGORA_INNER_THREAD_BUDGET")
+        put!("SPACEAGORA_INNER_THREAD_BUDGET", string(max(1, fld(Threads.nthreads(), outer_tasks))))
+    end
     return Pair{String, Union{Nothing, String}}[k => merged[k] for k in order]
 end
 

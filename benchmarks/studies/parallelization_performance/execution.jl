@@ -356,6 +356,11 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         actual_backend=actual_backend,
         execution_scope=execution_scope,
         outer_tasks=outer_tasks,
+        # The mode as RESOLVED (backend auto -> threads/process), which is the
+        # one the timed batch ran under. The caller records the row's env from
+        # it; recording from the unresolved mode wrote backend=auto and hid
+        # every backend-conditional pair (the inner budget among them).
+        mode=mode,
         policy=ppc_policy_columns(
             isempty(results) ? nothing :
                 (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
@@ -436,7 +441,7 @@ function ppc_run_worker_performance(cfg::PPCConfig)
     batch = ppc_run_sample_batch(case, repeat_cfg, mode, samples)
     # Built from the batch's own outer_tasks so the recorded env matches what
     # the timed run actually saw (see ppc_mode_env_pairs).
-    env_string = ppc_effective_env_string(mode, repeat_cfg; outer_tasks=batch.outer_tasks)
+    env_string = ppc_effective_env_string(batch.mode, repeat_cfg; outer_tasks=batch.outer_tasks)
     sample_results = batch.results
     total_success = all(r -> r.success, sample_results)
     sample_wall_sum = sum(r -> Float64(r.wall_time_s), sample_results)

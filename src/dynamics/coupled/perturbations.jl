@@ -1,5 +1,4 @@
 using LoopVectorization
-using AssociatedLegendrePolynomials
 using LinearAlgebra
 using SatelliteToolbox
 using SatelliteToolboxGeomagneticField
@@ -7,7 +6,6 @@ using CSV
 using DataFrames
 using SpecialFunctions: loggamma
 include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
-include(joinpath(@__DIR__, "..", "..", "environment", "ephemerides", "planet_data.jl"))
 # import .config
 # Define delta function
 δ(x,y) = ==(x,y)

@@ -300,7 +300,6 @@ isfile(joinpath(REPO_ROOT, "src", "core", "utils", "typed_example_utils.jl")) &&
     error("Canonical-ownership contract violation: retired example helper still exists at src/core/utils/typed_example_utils.jl")
 
 for rel in (
-    joinpath("src", "mission", "initial_conditions.jl"),
     joinpath("src", "vehicle", "actuators", "actuator_hooks.jl"),
     joinpath("src", "vehicle", "actuators", "thruster", "thruster_hooks.jl"),
     joinpath("src", "vehicle", "structure", "structure_models.jl"),

@@ -187,6 +187,29 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             persistent=true,
             allow_inner_with_outer=true
         ),
+        # Attribution variants of policy_v2, mirroring the full_smart_* set:
+        "policy_v2_nocalib" => PPCModeSpec(
+            name="policy_v2_nocalib",
+            profile="R6", backend="auto", outer_active=true, policy_adaptive=true,
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
+            multibody="auto", effector="auto", scheduler="static", persistent=true,
+            allow_inner_with_outer=true,
+            # Only difference from policy_v2: no pre-solve plan sweep.
+            calibrate="off"
+        ),
+        "policy_v2_innermodes_off" => PPCModeSpec(
+            name="policy_v2_innermodes_off",
+            profile="R6", backend="auto", outer_active=true, policy_adaptive=true,
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
+            multibody="auto", effector="auto", scheduler="static", persistent=true,
+            allow_inner_with_outer=true,
+            # Only difference from policy_v2: the five inner parallel-mode knobs
+            # are off, so no inner decision or observation bookkeeping is entered
+            # at all. Outer route selection is untouched -- backend is still
+            # "auto" and SPACEAGORA_PERF_OUTER_ROUTE_ADAPTIVE is still 1 -- so
+            # this arm is still routing adaptively.
+            inner_modes="off"
+        ),
 
         # --- Attribution variants of full_smart -------------------------------
         # Not part of any reported ladder. R5 on a process-routed Monte Carlo

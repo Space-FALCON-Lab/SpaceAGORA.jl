@@ -47,6 +47,8 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
             success=true,
             retcode=string(sol.retcode),
             wall_time_s=Float64(timed.time),
+            gc_time_s=Float64(timed.gctime),
+            alloc_bytes=Int(timed.bytes),
             terminal=ppc_terminal_metrics(sol),
             error_type="",
             error_message="",
@@ -67,6 +69,8 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
         success=false,
         retcode=retcode,
         wall_time_s=Float64(timed.time),
+        gc_time_s=Float64(timed.gctime),
+        alloc_bytes=Int(timed.bytes),
         terminal=(terminal_time_s=missing, pos_norm_m=missing, vel_norm_mps=missing, mass_kg=missing),
         error_type=retcode,
         error_message=errmsg,
@@ -247,6 +251,11 @@ end
 function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSpec, sample_count::Int)
     sample_indices = collect(1:sample_count)
     sample_seeds = [cfg.worker_seed + i - 1 for i in sample_indices]
+    # Adaptive profiles run their batch through the shipped campaign runner
+    # (see ppc_run_adaptive_batch); the static modes below pin their dispatch.
+    if sample_count > 1 && mode.backend == "auto" && mode.policy_adaptive && ppc_adaptive_via_runner()
+        return ppc_run_adaptive_batch(case, cfg, mode, sample_indices, sample_seeds)
+    end
     # Adaptive profiles (backend="auto") ask the router here; every other mode
     # keeps the backend its spec declares. Done once, before warm-up, so the
     # warm-up, the env recorded in the row, and the timed dispatch below all
@@ -361,6 +370,132 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         # it; recording from the unresolved mode wrote backend=auto and hid
         # every backend-conditional pair (the inner budget among them).
         mode=mode,
+        env_extra=Pair{String, String}[],
+        policy=ppc_policy_columns(
+            isempty(results) ? nothing :
+                (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
+        )
+    )
+end
+
+# SPACEAGORA_PPC_ADAPTIVE_VIA_RUNNER=0 restores the pinned dispatch for the
+# adaptive modes (route resolved once, then this harness's own threads/process
+# loop), for attribution runs against the runner.
+@inline function ppc_adaptive_via_runner()::Bool
+    return _ppc_bool(get(ENV, "SPACEAGORA_PPC_ADAPTIVE_VIA_RUNNER", "1"))
+end
+
+"""
+    ppc_run_adaptive_batch(case, cfg, mode, sample_indices, sample_seeds)
+
+Time an adaptive profile's sample batch through `run_monte_carlo(threads=:auto)`
+-- the shipped campaign runner -- rather than this harness's own dispatch.
+
+This harness used to resolve the adaptive route once (ppc_resolve_outer_backend)
+and then run the batch itself: `Threads.@threads` for threads, `pmap` over its
+pool for process. That measured the route DECISION but not the route's
+EXECUTION, and the two diverged once V2 gave the process route mixed dispatch
+(pool workers plus the coordinator's spare threads consuming one queue): a
+harness `pmap` over W one-thread workers can only ever show W-way concurrency,
+so B15's middle splits could not show the change at all. The runner is what a
+user's campaign actually calls, so its dispatch is the thing to measure.
+
+Preserved from the pinned path: the route decision is still cold (a fresh
+OuterRouteState per batch), the same warm-ups run first, and the pool is
+provisioned and warmed before the clock starts -- this harness's workers,
+which carry the study files, are ADOPTED into the runner's pool rather than
+letting it spawn a second set. The coordinator's mode env is applied with
+outer_tasks=1, i.e. without declaring an outer split: the runner yields to an
+enclosing split and would run serially, and it declares the split (and each
+sample's inner budget) itself around the dispatch.
+
+The sample function runs a coordinator-side sample directly and a worker-side
+one through ppc_process_sample_task, whose own withenv is the worker's --
+never a withenv inside a concurrent coordinator task, since ENV is
+process-global.
+"""
+function ppc_run_adaptive_batch(
+    case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSpec,
+    sample_indices::Vector{Int}, sample_seeds::Vector{Int}
+)
+    sample_count = length(sample_seeds)
+    SCamp = SpaceAGORA.SimulationCampaigns
+    PP = SpaceAGORA.ParallelProfiles
+    # Warm-ups as on the pinned path; the timed samples will see an active
+    # outer split, and so should these.
+    withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=sample_count)...) do
+        for warmup_idx in 1:cfg.warmup
+            warmup_args = ppc_single_config(case.name, cfg; seed=cfg.worker_seed - warmup_idx, mc_index=warmup_idx)
+            try
+                ppc_solve_once(warmup_args, cfg)
+            catch
+            end
+        end
+    end
+    # Pool before the clock, adopted into the runner's pool. One worker can
+    # never carry the process route (it withdraws below two), so none then.
+    case_name = case.name
+    mode_name = mode.name
+    worker_seed = cfg.worker_seed
+    sample_fn = seed -> begin
+        idx = seed - worker_seed + 1
+        Distributed.myid() == 1 ?
+            ppc_run_sample_once(case_name, cfg, idx, seed) :
+            ppc_process_sample_task(case_name, cfg, mode_name, idx, seed)
+    end
+    if cfg.process_workers >= 2
+        ids = ppc_ensure_process_workers!(cfg.process_workers)
+        SpaceAGORA.adopt_process_workers!(SpaceAGORA.campaign_process_pool(), ids)
+        # Warm each worker through the SAME path the runner will use -- the
+        # sample closure wrapped by _run_monte_carlo_sample -- not just
+        # ppc_process_sample_task: the closure's first call on a worker JITs
+        # that wrapper, and measured at (2 workers, 6 threads) that first call
+        # put 2.4 s on repeat 1 alone (5.45 s against 3.01 / 3.48 s).
+        if cfg.warmup > 0 && !isempty(ids)
+            @sync for (offset, w) in enumerate(ids)
+                @async try
+                    remotecall_wait(w, cfg.worker_seed - offset) do warm_seed
+                        SpaceAGORA.SimulationCampaigns._run_monte_carlo_sample(sample_fn, 0, warm_seed)
+                    end
+                catch
+                end
+            end
+        end
+    end
+    GC.gc()
+    batch_started = time()
+    r = withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...) do
+        probe = ppc_single_config(case_name, cfg; seed=worker_seed, mc_index=1)
+        features = SCamp.campaign_route_features(probe; samples=sample_count)
+        SCamp.run_monte_carlo(sample_fn, sample_seeds; threads=:auto,
+                              route_features=features, route_state=PP.OuterRouteState())
+    end
+    batch_wall = Float64(time() - batch_started)
+    results = Vector{Any}(undef, sample_count)
+    for smp in r.samples
+        # ppc_run_sample_once reports solver failures in its own row; a failure
+        # surfacing HERE is infrastructure (a dead worker, a serialization
+        # error) and the point should fail loudly, as the pinned path did.
+        smp.success || throw(ErrorException(
+            "adaptive batch sample $(smp.index) failed outside the solve: $(sprint(showerror, smp.error))"))
+        results[smp.index] = smp.value
+    end
+    # What the runner declared to the coordinator-side samples, for the row.
+    share = r.local_slots > 0 ? max(1, fld(Threads.nthreads(), r.local_slots)) :
+            (r.route === :threads ? max(1, fld(Threads.nthreads(), max(1, r.threads))) : 0)
+    env_extra = Pair{String, String}["SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"]
+    share > 0 && push!(env_extra, "SPACEAGORA_INNER_THREAD_BUDGET" => string(share))
+    scope = r.local_slots > 0 ?
+        "adaptive_mixed_w$(r.threads - r.local_slots)_l$(r.local_slots)_sample_batch" :
+        "adaptive_$(r.route)_sample_batch"
+    return (
+        results=results,
+        batch_wall_time_s=batch_wall,
+        actual_backend=string(r.route),
+        execution_scope=scope,
+        outer_tasks=r.threads,
+        mode=mode,
+        env_extra=env_extra,
         policy=ppc_policy_columns(
             isempty(results) ? nothing :
                 (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
@@ -442,9 +577,17 @@ function ppc_run_worker_performance(cfg::PPCConfig)
     # Built from the batch's own outer_tasks so the recorded env matches what
     # the timed run actually saw (see ppc_mode_env_pairs).
     env_string = ppc_effective_env_string(batch.mode, repeat_cfg; outer_tasks=batch.outer_tasks)
+    if !isempty(batch.env_extra)
+        env_string *= ";" * join(("$(k)=$(v)" for (k, v) in batch.env_extra), ";")
+    end
     sample_results = batch.results
     total_success = all(r -> r.success, sample_results)
     sample_wall_sum = sum(r -> Float64(r.wall_time_s), sample_results)
+    # GC time and allocation, summed over the batch's samples: the two numbers that
+    # separate 'this route does more work' from 'this route allocates and the
+    # collector stops every concurrent sample' -- same wall time, different cause.
+    sample_gc_sum = sum(r -> Float64(get(r, :gc_time_s, 0.0)), sample_results; init=0.0)
+    sample_alloc_mb = sum(r -> Float64(get(r, :alloc_bytes, 0)), sample_results; init=0.0) / 2^20
     final_result = sample_results[end]
     final_retcode = total_success ? string(final_result.retcode) : join(unique(string(r.retcode) for r in sample_results if !r.success), "|")
     final_terminal = final_result.terminal
@@ -472,6 +615,8 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         wall_time_s=batch.batch_wall_time_s,
         sample_wall_time_sum_s=sample_wall_sum,
         mean_sample_wall_time_s=sample_wall_sum / max(1, samples),
+        sample_gc_time_sum_s=sample_gc_sum,
+        sample_alloc_mb_sum=sample_alloc_mb,
         execution_scope=batch.execution_scope,
         outer_backend_actual=batch.actual_backend,
         outer_tasks=samples,

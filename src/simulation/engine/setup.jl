@@ -390,8 +390,38 @@ end
     return num_spacecraft >= env.batch_thread_threshold && Polyester.num_cores() > 1
 end
 
+"""
+    _rhs_batch_workers(p) -> Int
+
+Threads the satellite_batch RHS may fan its Polyester loop across: the
+physical cores, bounded by this solve's inner thread budget.
+
+The loop used to size itself from `Polyester.num_cores()` alone, so every
+sample of a threaded outer campaign with >= 16 spacecraft ran its RHS across
+every core beside its siblings doing the same -- nested oversubscription by
+construction, invisible to the plan (whose satellite_batch allotment is always
+1) and to the budget the campaign advertised. Measured on B15 mcgrid_32sat_4mc,
+four concurrent samples at 12 threads: 4.9 s per sample, against 0.63 s for the
+same sample alone; the CPU profile of the concurrent run is Polyester batch
+dispatch and ThreadingUtilities spin-waits. Bounded by the share, four
+3-wide batches use the same 12 cores without contention.
+
+With no budget advertised the bound is the pool, i.e. `num_cores` as before,
+so a single simulation is unchanged.
+"""
+@inline function _rhs_batch_workers(p)::Int
+    penv = _policy_env_config(p)
+    budget = penv === nothing ?
+        SimulationModel.ParallelPolicy.effective_inner_thread_budget() : penv.inner_thread_budget
+    return max(1, min(Polyester.num_cores(), budget))
+end
+
+@inline function _rhs_batch_minbatch(p, num_items::Int)::Int
+    return max(1, cld(max(1, num_items), _rhs_batch_workers(p)))
+end
+
 @inline function _rhs_batch_parallel_enabled(p, num_spacecraft::Int)::Bool
-    return _rhs_batch_parallel_enabled(_rhs_env_config(p), num_spacecraft)
+    return _rhs_batch_parallel_enabled(_rhs_env_config(p), num_spacecraft) && _rhs_batch_workers(p) > 1
 end
 
 @inline function _effector_thread_threshold()::Int

@@ -358,6 +358,24 @@ function memory_worker_cap(; extra_per_worker::Int=0)::Int
     return Int(fld(headroom, per))
 end
 
+"""
+    memory_local_slot_cap(workers; extra_per_worker=0) -> Int
+
+How many samples the coordinator can run beside `workers` pool processes and
+stay inside the memory budget. A local sample adds only its workload's working
+set -- the package footprint is already resident in this process -- so the cap
+is the headroom left once the workers are charged, divided by that working
+set. `extra_per_worker` is that estimate (native GRAM's per-spacecraft term);
+with none there is nothing measurable to reserve and the cap is unbounded.
+"""
+function memory_local_slot_cap(workers::Int; extra_per_worker::Int=0)::Int
+    extra_per_worker > 0 || return typemax(Int) >> 1
+    headroom = min(memory_budget_bytes() - process_rss_bytes(), available_memory_bytes())
+    headroom -= max(0, workers) * worker_memory_estimate_bytes(extra=extra_per_worker)
+    headroom <= 0 && return 0
+    return Int(fld(headroom, extra_per_worker))
+end
+
 # ── cgroup quota ──────────────────────────────────────────────────────────────
 
 """

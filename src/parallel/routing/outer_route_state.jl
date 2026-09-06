@@ -109,6 +109,9 @@ Base.@kwdef struct OuterRouteTuning
     # Full collection on the coordinator before a campaign is dispatched.
     # Follows SPACEAGORA_PARALLEL_POLICY_V2. See _run_campaign_with_route_env.
     gc_before_dispatch::Bool = outer_route_policy_v2()
+    # Process route fills the coordinator's spare threads with samples too
+    # (mixed_local_slots). V2 only.
+    mixed_dispatch::Bool = outer_route_mixed_dispatch()
     trace::Bool = false
 end
 
@@ -159,6 +162,15 @@ end
 # the whole machine. On the B13 budget grid the runtime would have spawned
 # twelve workers at a point whose budget was two, and the core-budget default
 # below would then have compared twelve against six threads and chosen wrong.
+# V2: the process route also runs samples on the coordinator's spare threads
+# (ParallelProfiles.mixed_local_slots). SPACEAGORA_PARALLEL_MIXED_DISPATCH=0
+# turns that off for attribution runs; it is never on outside V2.
+@inline function outer_route_mixed_dispatch()::Bool
+    outer_route_policy_v2() || return false
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_PARALLEL_MIXED_DISPATCH", "1")))
+    return raw in ("1", "true", "yes", "on")
+end
+
 @inline function _outer_process_worker_cap()::Int
     cap = usable_core_budget()
     outer_route_policy_v2() || return cap

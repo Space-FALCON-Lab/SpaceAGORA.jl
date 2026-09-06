@@ -105,7 +105,22 @@ end
     effector_decision
 )
     # Only pay the time_ns() syscall overhead when telemetry is actually needed.
-    needs_timing = effector_decision.policy_applied
+    #
+    # Under V2 that is once per RHS call, not once per satellite. This body runs
+    # on every Polyester worker of the satellite_batch loop, and the observation
+    # it records takes the solve's context lock -- under V2 one context is
+    # captured at setup and shared by all of them, so a 32-spacecraft sample on
+    # 12 threads contended on that lock ~1.5 million times per solve. The
+    # per-satellite EMA the observation maintains is read only by the shipped
+    # hint layer, which V2's static width rule never consults; the one reading
+    # V2 does use, the effector cost model, is fed from satellite 1 alone (see
+    # below). Measured on B15 mcgrid_32sat_4mc, four concurrent samples at 12
+    # threads, RHS route held fixed: 5.06 s per sample with the per-satellite
+    # observation, 3.20 s for the same route without any policy observation.
+    # The shipped profiles keep the per-satellite observation.
+    penv = _policy_env_config(p)
+    needs_timing = effector_decision.policy_applied &&
+        (penv === nothing || !penv.policy_v2 || sat_idx == 1)
     effector_started_ns = needs_timing ? time_ns() : UInt64(0)
     n_effectors = length(dynamic_effectors)
     needs_state_sample = any(_wrench_method_available(effector) for effector in dynamic_effectors)
@@ -165,7 +180,7 @@ end
             num_items=n_effectors,
             use_threads=effector_decision.use_threads,
             elapsed_ns=elapsed_ns,
-            env=_policy_env_config(p),
+            env=penv,
             ctx=SimulationModel.ParallelPolicy.policy_context_hint(p)
         )
     end
@@ -1800,7 +1815,7 @@ function _gravity_backbone_half_kick!(u_state, p, t::Float64, half_dt::Float64)
     use_rhs_batch = _rhs_batch_parallel_enabled(p, length(vel_state.sc))
 
     if use_rhs_batch
-        minbatch = max(1, Int(ceil(length(vel_state.sc) / Polyester.num_cores())))
+        minbatch = _rhs_batch_minbatch(p, length(vel_state.sc))
         @batch minbatch=minbatch for i in eachindex(vel_state.sc)
             if !p.is_active[i]
                 continue
@@ -1830,7 +1845,7 @@ function spacecraft_dynamics_gravity_backbone!(ddu, dq, q, p, t::Float64)
     p.shared_buffers.current_time[] = t
     use_rhs_batch = _rhs_batch_parallel_enabled(p, length(q_state))
     if use_rhs_batch
-        minbatch = max(1, Int(ceil(length(q_state) / Polyester.num_cores())))
+        minbatch = _rhs_batch_minbatch(p, length(q_state))
         @batch minbatch=minbatch for i in eachindex(q_state)
             if !p.is_active[i]
                 ddu_state[i].vel .= 0.0
@@ -2025,7 +2040,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
     if use_rhs_batch
-        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
             if !p.is_active[i]
                 sc_du[i] .= 0.0
@@ -2139,7 +2154,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
     if use_rhs_batch
-        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
             if !p.is_active[i]
                 sc_du[i] .= 0.0
@@ -2295,7 +2310,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
     if use_rhs_batch
-        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
             if !p.is_active[i] || _spacecraft_outside_atmosphere_for_current_state(sc_state[i], p, i, t)
                 sc_du[i] .= 0.0
@@ -2394,7 +2409,7 @@ function spacecraft_dynamics_explicit_remainder!(du::ComponentVector, u::Compone
         _prefill_shared_body_samples!(p, t, sc_state, dynamic_effectors)
     end
     if use_rhs_batch
-        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
             if !p.is_active[i]
                 sc_du[i] .= 0.0
@@ -2499,7 +2514,7 @@ function spacecraft_dynamics_fast_control!(du::ComponentVector, u::ComponentVect
     p.shared_buffers.current_time[] = t
     use_rhs_batch = _rhs_batch_parallel_enabled(p, length(spacecraft))
     if use_rhs_batch
-        minbatch = max(1, Int(ceil(length(spacecraft) / Polyester.num_cores())))
+        minbatch = _rhs_batch_minbatch(p, length(spacecraft))
         @batch minbatch=minbatch for i in eachindex(sc_state)
             if !p.is_active[i]
                 sc_du[i] .= 0.0

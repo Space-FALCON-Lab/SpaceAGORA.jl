@@ -20,7 +20,7 @@ using .ParallelProfiles: parse_parallel_profile, parallel_profile_name, profile_
 using .ParallelProfiles: OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
 using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
-using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
+using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
 import .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
@@ -422,6 +422,7 @@ calcControlMassFlowRate
 @doc (@doc ParallelProcess.campaign_process_pool) campaign_process_pool
 @doc (@doc ParallelProcess.ensure_process_workers!) ensure_process_workers!
 @doc (@doc ParallelProcess.shutdown_process_pool!) shutdown_process_pool!
+@doc (@doc ParallelProcess.adopt_process_workers!) adopt_process_workers!
 
 @doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest
 @doc (@doc TelemetryVerification.VerificationResult) VerificationResult
@@ -437,7 +438,7 @@ export parse_parallel_profile, parallel_profile_name, profile_config, profile_en
 export OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
 export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
-export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
+export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!

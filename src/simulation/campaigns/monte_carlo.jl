@@ -46,7 +46,11 @@ Aggregate result returned by [`run_monte_carlo`](@ref).
 
 `samples` preserves seed order for all samples that ran. `successful` and
 `failed` are convenience subsets of `samples`. `elapsed_s` is the total campaign
-wall time, and `threads` is the worker-task count used by the run.
+wall time, and `threads` is the number of samples the run kept in flight at
+once. `route` is the outer route that ran them (`:none`, `:threads` or
+`:process`), and `local_slots` how many of those in-flight samples the
+coordinator ran on its own threads beside the process pool (mixed dispatch;
+zero for every other route).
 """
 struct MonteCarloResult
     samples::Vector{MonteCarloSampleResult}
@@ -54,12 +58,15 @@ struct MonteCarloResult
     failed::Vector{MonteCarloSampleResult}
     elapsed_s::Float64
     threads::Int
+    route::Symbol
+    local_slots::Int
 end
 
-function MonteCarloResult(samples::Vector{MonteCarloSampleResult}, elapsed_s::Real, threads::Integer)
+function MonteCarloResult(samples::Vector{MonteCarloSampleResult}, elapsed_s::Real, threads::Integer;
+                          route::Symbol = (threads > 1 ? :threads : :none), local_slots::Integer = 0)
     successful = MonteCarloSampleResult[s for s in samples if s.success]
     failed = MonteCarloSampleResult[s for s in samples if !s.success]
-    return MonteCarloResult(samples, successful, failed, Float64(elapsed_s), Int(threads))
+    return MonteCarloResult(samples, successful, failed, Float64(elapsed_s), Int(threads), route, Int(local_slots))
 end
 
 function _validate_monte_carlo_threads(threads::Int)
@@ -162,7 +169,27 @@ end
 # sample. The dispatch loop itself uses `@async`/`@sync` (not `Threads.@spawn`):
 # each task just blocks on IPC waiting for a worker's reply, so it should not
 # occupy an OS thread the way genuinely CPU-bound work would.
-function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int})
+"""
+    _run_monte_carlo_mixed(f, seeds, spec, worker_ids, local_slots) -> Vector{MonteCarloSampleResult}
+
+One job queue, two kinds of consumer: one `@async` feeder per pool worker,
+each blocking on a `remotecall_fetch` of a single sample, and `local_slots`
+`Threads.@spawn` tasks running samples in this process. Whichever finishes a
+sample first takes the next, so a slow slot (a 1-thread worker on a heavy
+sample) is balanced against a fast one without any static partition.
+
+Pool workers are `--threads=1`, so with W workers on a T-thread coordinator a
+process-only campaign uses W cores and leaves T idle; the local slots are how
+the process route fills them (see `ParallelProfiles.mixed_local_slots` for
+how many). The caller sets the local samples' inner budget with
+`outer_split_env_pairs(local_slots)` around this call; the workers' own pool
+is their share. `local_slots = 0` is the process-only dispatch.
+"""
+function _run_monte_carlo_mixed(
+    f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int}, local_slots::Int
+)
+    (isempty(worker_ids) && local_slots < 1) && throw(ArgumentError(
+        "_run_monte_carlo_mixed needs at least one pool worker or one local slot."))
     jobs = Channel{Tuple{Int, Any}}(length(seeds))
     for (index, seed) in enumerate(seeds)
         put!(jobs, (index, seed))
@@ -171,29 +198,33 @@ function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker
 
     samples = Vector{Union{Nothing, MonteCarloSampleResult}}(nothing, length(seeds))
     stop_requested = Base.Threads.Atomic{Bool}(false)
-
-    pool = CachingPool(worker_ids)
     run_sample = (index, seed) -> _run_monte_carlo_sample(f, index, seed)
+    consume = run -> begin
+        for (index, seed) in jobs
+            spec.fail_fast && stop_requested[] && break
+            sample = run(index, seed)
+            samples[index] = sample
+            if spec.fail_fast && !sample.success
+                Base.Threads.atomic_xchg!(stop_requested, true)
+                break
+            end
+        end
+    end
+
+    pool = isempty(worker_ids) ? nothing : CachingPool(worker_ids)
     try
         Base.@sync begin
             for _ in worker_ids
-                Base.@async begin
-                    for (index, seed) in jobs
-                        spec.fail_fast && stop_requested[] && break
-                        sample = remotecall_fetch(run_sample, pool, index, seed)
-                        samples[index] = sample
-                        if spec.fail_fast && !sample.success
-                            Base.Threads.atomic_xchg!(stop_requested, true)
-                            break
-                        end
-                    end
-                end
+                Base.@async consume((index, seed) -> remotecall_fetch(run_sample, pool, index, seed))
+            end
+            for _ in 1:local_slots
+                Base.Threads.@spawn consume(run_sample)
             end
         end
     finally
         # Drop the cached closure on the workers; it can capture large
         # configuration state that should not outlive the campaign.
-        Distributed.clear!(pool)
+        pool === nothing || Distributed.clear!(pool)
     end
 
     # samples[index] writes plus the in-order filter above already leave
@@ -203,6 +234,11 @@ function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker
         _throw_first_monte_carlo_failure(completed)
     end
     return completed
+end
+
+# Process-backend dispatch: the mixed dispatcher with no local slots.
+function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int})
+    return _run_monte_carlo_mixed(f, seeds, spec, worker_ids, 0)
 end
 
 """

@@ -541,16 +541,20 @@ export RhsEffectorDecision, RhsExecutionPlan
         vac_positions::Vector{SVector{3, Float64}} # vacuum-predicted inertial position at each knot
     end
 
+    # Per-link results of the multibody aerodynamic wrench; summed in link order.
     struct AeroScratchWorkspace
-        thread_force::Vector{MVector{3, Float64}}
-        thread_cl::Vector{Float64}
-        thread_cd::Vector{Float64}
-        thread_area::Vector{Float64}
+        link_force::Vector{SVector{3, Float64}}
+        link_drag::Vector{SVector{3, Float64}}
+        link_lift::Vector{SVector{3, Float64}}
+        link_cross::Vector{SVector{3, Float64}}
+        link_cl_area::Vector{Float64}
+        link_cd_area::Vector{Float64}
+        link_area::Vector{Float64}
     end
 
     struct NBodyScratchWorkspace
         pos_primary_k_all::Vector{SVector{3, Float64}}
-        thread_force::Vector{MVector{3, Float64}}
+        body_force_ii::Vector{SVector{3, Float64}}   # per-body contribution, summed in body order
     end
 
     struct HarmonicsScratchWorkspace

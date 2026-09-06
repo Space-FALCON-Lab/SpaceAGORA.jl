@@ -1,5 +1,4 @@
 using LoopVectorization
-using AssociatedLegendrePolynomials
 using LinearAlgebra
 using SatelliteToolbox
 using SatelliteToolboxGeomagneticField
@@ -7,7 +6,6 @@ using CSV
 using DataFrames
 using SpecialFunctions: loggamma
 include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
-include(joinpath(@__DIR__, "..", "..", "environment", "ephemerides", "planet_data.jl"))
 # import .config
 # Define delta function
 δ(x,y) = ==(x,y)
@@ -94,10 +92,9 @@ end
 
 @inline function _make_nbody_scratch_workspace(n_bodies::Int)::NBodyScratchWorkspace
     n_bodies >= 0 || throw(ArgumentError("NBody scratch workspace size must be >= 0, got $n_bodies"))
-    n_workers = 1
     pos_primary_k_all = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_bodies]
-    thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
-    return NBodyScratchWorkspace(pos_primary_k_all, thread_force)
+    body_force_ii = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_bodies]
+    return NBodyScratchWorkspace(pos_primary_k_all, body_force_ii)
 end
 
 @inline function _ensure_nbody_workspace_capacity!(
@@ -108,14 +105,27 @@ end
     if length(workspace.pos_primary_k_all) < n_bodies
         resize!(workspace.pos_primary_k_all, n_bodies)
     end
-    if length(workspace.thread_force) < n_workers
-        old_len = length(workspace.thread_force)
-        resize!(workspace.thread_force, n_workers)
-        @inbounds for worker_id in (old_len + 1):n_workers
-            workspace.thread_force[worker_id] = MVector{3, Float64}(0.0, 0.0, 0.0)
-        end
+    if length(workspace.body_force_ii) < n_bodies
+        resize!(workspace.body_force_ii, n_bodies)
     end
     return workspace
+end
+
+# One body's third-body force on the spacecraft. Both the serial and the
+# threaded n-body loops call this same function, so the per-body values are
+# identical and the sum below runs in body order either way.
+@inline function _nbody_body_force_ii(
+    pos_primary_k::SVector{3, Float64},
+    pos_ii::SVector{3, Float64},
+    mass::Float64,
+    mu_k::Float64
+)::SVector{3, Float64}
+    pos_spacecraft_k = pos_primary_k - pos_ii
+    pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+    pos_primary_k_mag = norm(pos_primary_k)
+    return @fastmath mass * mu_k * (
+        (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
+    )
 end
 
 @inline function _nbody_workspace_for_sat!(
@@ -932,33 +942,21 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     end
 
     started_ns = time_ns()
+    # Collect-then-sum: each body's contribution goes into its own slot (in
+    # parallel or not), then the slots are summed in body order on this thread.
+    # Serial and threaded evaluation are bit-identical by construction.
+    body_force_ii = workspace.body_force_ii
     if use_threads
-        thread_force = workspace.thread_force
-        @inbounds for worker_id in 1:n_workers
-            thread_force[worker_id] .= 0.0
-        end
-        ParallelPolicy.threaded_foreach_worker_persistent(:rhs_nbody, n_bodies, decision.allotment) do worker_id, k
-            pos_primary_k = pos_primary_k_all[k]
-            pos_spacecraft_k = pos_primary_k - pos_ii
-            pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            pos_primary_k_mag = norm(pos_primary_k)
-            @fastmath thread_force[worker_id] .+= mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
-            )
-        end
-        @inbounds for worker_id in 1:n_workers
-            force_ii .+= thread_force[worker_id]
+        ParallelPolicy.threaded_collect_persistent!(:rhs_nbody, body_force_ii, n_bodies, decision.allotment) do k
+            @inbounds _nbody_body_force_ii(pos_primary_k_all[k], pos_ii, mass, model.body_mus[k])
         end
     else
-        @inbounds for k in eachindex(pos_primary_k_all)
-            pos_primary_k = pos_primary_k_all[k]
-            pos_spacecraft_k = pos_primary_k - pos_ii
-            pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            pos_primary_k_mag = norm(pos_primary_k)
-            @fastmath force_ii += mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
-            )
+        @inbounds for k in 1:n_bodies
+            body_force_ii[k] = _nbody_body_force_ii(pos_primary_k_all[k], pos_ii, mass, model.body_mus[k])
         end
+    end
+    @inbounds for k in 1:n_bodies
+        force_ii .+= body_force_ii[k]
     end
     ParallelPolicy.record_policy_observation!(
         :multibody;
@@ -1805,33 +1803,6 @@ function get_magnetic_field_dipole(r_ecef::AbstractVector, L_PI::MMatrix{3, 3, F
     return L_PI' * B_ecef
 end
 
-"""
-    get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
-
-Computes the Earth's magnetic field vector in the inertial frame using the
-International Geomagnetic Reference Field (IGRF).
-
-# Args
-
-- `date`: The `DateTime` of the measurement (sets the IGRF epoch).
-- `lat_rad`: The geodetic latitude of the observer [radians].
-- `lon_rad`: The longitude of the observer [radians].
-- `alt_m`: The altitude above the WGS84 ellipsoid [meters].
-- `L_PI`: The inertial-to-planet-fixed rotation matrix.
-
-# Returns
-
-- A 3-element vector representing the magnetic field in the inertial frame in
-  nanoTeslas [nT]. Note the unit: [`get_magnetic_field_dipole`](@ref) returns
-  Tesla, so the two are NOT drop-in interchangeable.
-"""
-function get_magnetic_field(date::DateTime, lat_rad::Number, lon_rad::Number, alt_m::Number, L_PI::MMatrix{3, 3, Float64})
-    # The IGRF evaluation returns NED components in nT.
-    B_ned = igrf(yeardecimal(date), alt_m, lat_rad, lon_rad, Val(:geodetic))
-    B_pp = ned_to_ecef(B_ned, lat_rad, lon_rad, alt_m)
-    B_ii = L_PI' * B_pp
-    return B_ii
-end
 
 """
     calculate_magnetic_torque(m::AbstractVector, B::AbstractVector)
@@ -2368,49 +2339,4 @@ function eclipse_area_calc(r_sat::SVector{3, Float64}, r_sun::SVector{3, Float64
     else # No eclipse condition
         return 1.0 # If the satellite is not in eclipse, return 1.0
     end
-end
-
-function srp!(model, root_index::Int64, sun_dir_ii::SVector{3, Float64}, body, P_srp::Float64, eclipse_ratio::Float64, orientation::Bool)
-    """
-    Calculate force on a body due to solar radiation pressure.
-
-    Parameters
-    ----------
-    pos_ii : SVector{3, Float64}
-        Position of the body in the inertial frame (J2000)
-    sun_dir_ii : SVector{3, Float64}
-        Unit vector in the direction of the Sun expressed in the inertial frame
-    body : Body struct
-        Struct containing physical information about the body
-    r_sun_norm : Float64
-        Magnitude of the spacecraft distance to the Sun
-    P_srp : Float64
-        Magnitude of the solar radiation pressure force at r_sun_norm meters from the Sun
-    
-    Returns
-    -------
-    F_srp : SVector{3, Float64}
-        Force on the body in the inertial frame
-    """
-    rot_inertial = config.rotate_to_inertial(model, body, root_index)
-    rot_body_to_inertial = rot(model.links[root_index].q)
-    @inbounds for facet in body.SRP_facets
-        rot_RF = rot_inertial * rot(facet.attitude)' # Rotation matrix from facet frame to inertial frame
-        n = normalize(rot_RF * facet.normal_vector) # Normal vector of the facet in the inertial frame
-        cos_α_srp = dot(n, sun_dir_ii) / norm(n) / norm(sun_dir_ii)
-
-        if cos_α_srp > 0 && eclipse_ratio != 0.0 # If the facet is illuminated by the Sun
-            F_SRP = -P_srp * facet.area * cos_α_srp * ((1 - facet.δ) * sun_dir_ii + 2 * (facet.ρ / 3 + facet.δ * cos_α_srp) * n) * eclipse_ratio
-            body.net_force += F_SRP # Rotate F_SRP from body frame to inertial frame
-
-            if orientation
-                R_facet = rot_inertial*facet.cp + rot_body_to_inertial'*body.r # Vector from CoM of spacecraft to facet Cp in inertial frame
-                # R_facet_body = config.rotate_to_body(body)*facet.cp + body.r
-                body.net_torque += rot_body_to_inertial * cross(R_facet, F_SRP) # Calculate body frame net torque
-            end
-        end
-    end
-    # CSV.write("facet_forces.csv", df)
-    # return F_SRP_tracker
-    # println("Total F_SRP: $F_SRP_tracker")
 end

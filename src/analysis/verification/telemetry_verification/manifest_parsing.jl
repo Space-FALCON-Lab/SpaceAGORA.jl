@@ -716,6 +716,7 @@ function parse_cli(args::Vector{String})::StudyConfig
     manifest_path = get(ENV, "SPACEAGORA_TELEMETRY_MANIFEST", DEFAULT_MANIFEST_PATH)
     enforce = _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_ENFORCE", "0"), false)
     generate_plots = _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_PLOTS", "1"), true)
+    scenarios = _parse_scenario_list(get(ENV, "SPACEAGORA_TELEMETRY_SCENARIOS", ""))
 
     i = 1
     while i <= length(args)
@@ -734,8 +735,10 @@ function parse_cli(args::Vector{String})::StudyConfig
             enforce = _safe_parse_bool(split(arg, "=", limit=2)[2], enforce)
         elseif startswith(arg, "--plots=")
             generate_plots = _safe_parse_bool(split(arg, "=", limit=2)[2], generate_plots)
+        elseif startswith(arg, "--scenarios=")
+            scenarios = _parse_scenario_list(split(arg, "=", limit=2)[2])
         else
-            throw(ArgumentError("Unsupported argument '$arg'. Supported: [quick|full], --profile=..., --manifest=..., --out-summary=..., --out-errors=..., --enforce=true|false, --plots=true|false"))
+            throw(ArgumentError("Unsupported argument '$arg'. Supported: [quick|full], --profile=..., --manifest=..., --scenarios=a,b,..., --out-summary=..., --out-errors=..., --enforce=true|false, --plots=true|false"))
         end
         i += 1
     end
@@ -747,7 +750,8 @@ function parse_cli(args::Vector{String})::StudyConfig
         out_errors=abspath(out_errors),
         manifest_path=abspath(manifest_path),
         enforce=enforce,
-        generate_plots=generate_plots
+        generate_plots=generate_plots,
+        scenarios=scenarios
     )
 end
 
@@ -760,7 +764,8 @@ end
         out_errors=abspath(request.out_errors),
         manifest_path=abspath(request.manifest_path),
         enforce=request.enforce,
-        generate_plots=request.generate_plots
+        generate_plots=request.generate_plots,
+        scenarios=copy(request.scenarios)
     )
 end
 
@@ -771,6 +776,7 @@ end
         out_errors=cfg.out_errors,
         manifest_path=cfg.manifest_path,
         enforce=cfg.enforce,
-        generate_plots=cfg.generate_plots
+        generate_plots=cfg.generate_plots,
+        scenarios=copy(cfg.scenarios)
     )
 end

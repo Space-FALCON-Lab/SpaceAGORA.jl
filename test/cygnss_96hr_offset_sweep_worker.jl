@@ -17,14 +17,16 @@ using Statistics
 
 const _REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
+using SpaceAGORA
+
 if !isdefined(Main, :SimulationModel)
-    include(joinpath(_REPO_ROOT, "src", "core", "simulation_model.jl"))
+    const SimulationModel = SpaceAGORA.SimulationModel
 end
 if !isdefined(Main, :SimulationEngine)
-    include(joinpath(_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
 if !isdefined(Main, :TelemetryVerification)
-    include(joinpath(_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+    const TelemetryVerification = SpaceAGORA.TelemetryVerification
 end
 
 const TV = TelemetryVerification

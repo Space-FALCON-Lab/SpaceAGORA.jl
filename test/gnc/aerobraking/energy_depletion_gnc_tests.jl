@@ -3,7 +3,8 @@ if !isdefined(@__MODULE__, :REPO_ROOT)
 end
 
 if !isdefined(@__MODULE__, :SimulationModel)
-    include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+    using SpaceAGORA
+    const SimulationModel = SpaceAGORA.SimulationModel
     using .SimulationModel
 end
 

@@ -257,7 +257,6 @@ occursin("using ..GravityEffectors: InverseSquaredJ2GravityModel", callback_regi
     error("Callback registry still imports gravity models from DynamicEffectors.GravityEffectors.")
 
 for rel in (
-    joinpath("src", "mission", "initial_conditions.jl"),
     joinpath("src", "vehicle", "actuators", "actuator_hooks.jl"),
     joinpath("src", "vehicle", "actuators", "thruster", "thruster_hooks.jl"),
     joinpath("src", "vehicle", "structure", "structure_models.jl"),

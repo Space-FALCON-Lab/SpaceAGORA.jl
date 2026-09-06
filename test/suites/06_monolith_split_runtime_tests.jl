@@ -22,6 +22,7 @@
         @test reparsed.profile == parsed.profile
         @test reparsed.manifest_path == parsed.manifest_path
         @test reparsed.generate_plots == parsed.generate_plots
+        @test reparsed.scenarios == parsed.scenarios == String[]
     end
 
     @testset "Telemetry comparison and calibration helpers" begin

@@ -14,6 +14,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_path_policy_gate.jl`
    - `test/gates/ci_thin_entry_files_gate.jl`
    - `test/gates/ci_no_artifact_files_gate.jl`
+   - `test/gates/ci_tracked_feather_registry_gate.jl` (every tracked feather is named in `test/telemetry_benchmark_manifest.toml` or lies under an in-tree required, non lab-private `data/assets_manifest.toml` asset)
    - `test/gates/ci_vehicle_structure_boundary_gate.jl`
    - `test/gates/ci_src_completeness_contract_gate.jl`
    - `test/gates/ci_no_legacy_include_chains_gate.jl`

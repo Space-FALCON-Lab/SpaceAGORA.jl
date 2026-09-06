@@ -470,22 +470,6 @@ function _gram_core_density_state(
     _gram_not_loaded_error("GRAMAtmosphereModel density evaluation")
 end
 
-function interp(a, b, x)
-    if abs(b - a) > 20.0
-        if b <= 360.0 && b >= 350.0
-            b = 360.0 - b
-        elseif a <= 360.0 && a >= 350.0
-            a = 360.0 - a
-        end
-    end
-
-    return x * (b - a) + a
-end
-
-function temperature_linear(h, p)
-    return p.T_ref
-end
-
 @inline function _exponential_density(ρ_ref::Float64, h_ref::Float64, H::Float64, h::Float64)::Float64
     return ρ_ref * exp((h_ref - h) / H)
 end

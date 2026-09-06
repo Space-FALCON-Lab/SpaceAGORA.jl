@@ -7,18 +7,21 @@ using StaticArrays
 
 const _COV_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, "..", ".."))
 
+using SpaceAGORA
+
 if !isdefined(@__MODULE__, :SimulationModel)
-    include(joinpath(_COV_REPO_ROOT, "src", "core", "simulation_model.jl"))
+    const SimulationModel = SpaceAGORA.SimulationModel
     using .SimulationModel
 end
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(_COV_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
 if !isdefined(@__MODULE__, :TelemetryVerification)
-    include(joinpath(_COV_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+    const TelemetryVerification = SpaceAGORA.TelemetryVerification
 end
-
-include(joinpath(_COV_REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+if !isdefined(@__MODULE__, :ParallelProfiles)
+    const ParallelProfiles = SpaceAGORA.ParallelProfiles
+end
 
 const PP = ParallelProfiles
 const TV = TelemetryVerification
@@ -704,7 +707,33 @@ end
         @test parsed_cli.profile == :quick
         @test parsed_cli.enforce == true
         @test parsed_cli.generate_plots == false
+        @test parsed_cli.scenarios == String[]
         @test_throws ArgumentError TV.parse_cli(["--unknown=1"])
+        parsed_sel = TV.parse_cli(["quick", "--manifest=$(manifest_path)", "--scenarios=Odyssey, vex,"])
+        @test parsed_sel.scenarios == ["odyssey", "vex"]
+        @test TV._request_from_study_config(parsed_sel).scenarios == ["odyssey", "vex"]
+        withenv("SPACEAGORA_TELEMETRY_SCENARIOS" => "earth_gmat") do
+            @test TV.parse_cli(["quick", "--manifest=$(manifest_path)"]).scenarios == ["earth_gmat"]
+            @test TV.VerificationRequest().scenarios == ["earth_gmat"]
+        end
+        loaded = TV._load_scenarios_from_manifest(manifest_path)
+        @test TV._select_scenarios(loaded, String[]) === loaded
+        first_name = lowercase(String(first(loaded).name))
+        @test [String(sc.name) for sc in TV._select_scenarios(loaded, [first_name])] == [String(first(loaded).name)]
+        @test_throws ArgumentError TV._select_scenarios(loaded, ["no_such_scenario"])
+        @test TV._single_point_calibration(true, [1.0], [1.3], :full, :full)
+        @test !TV._single_point_calibration(false, [1.0], [1.3], :full, :full)
+        @test !TV._single_point_calibration(true, [0.9, 1.1], [1.3], :full, :full)
+        @test !TV._single_point_calibration(true, [1.0], [1.15, 1.45], :full, :full)
+        @test !TV._single_point_calibration(true, [1.0], [1.3], :quick, :full)
+        reused = TV._final_run_or_reused_eval((; tag=:eval), true, [1.0], [1.3], :full, :full, "x", 1.0, 1.3) do
+            error("must not solve again")
+        end
+        @test reused.tag == :eval
+        solved = TV._final_run_or_reused_eval(nothing, true, [1.0], [1.3], :full, :full, "x", 1.0, 1.3) do
+            (; tag=:final)
+        end
+        @test solved.tag == :final
     end
 
     req = TV.VerificationRequest(

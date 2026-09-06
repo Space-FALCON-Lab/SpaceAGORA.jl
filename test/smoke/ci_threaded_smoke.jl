@@ -119,3 +119,74 @@ mktempdir() do tmp
 end
 
 println("threaded_smoke_ok")
+
+# ---------------------------------------------------------------------------
+# Thread-count independence. The effector loop, the n-body loop and the
+# multibody aero loop collect per-item results and sum them in a fixed order on
+# one thread, so the same configuration must give bit-identical trajectories
+# whether the effectors are evaluated serially or on 2 or 4 workers, and
+# whether the n-body bodies are evaluated serially or on 2 workers. Three
+# effectors with different costs make the partition non-trivial.
+# ---------------------------------------------------------------------------
+harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+det_effectors = (
+    InverseSquaredGravityModel(),
+    NBodyGravityModel(["Sun", "Moon"], "Earth", spice_path),
+    GravitationalHarmonicsModel(4, 4, harmonics_file, planet),
+)
+det_args = SimulationConfiguration(
+    simulation_settings=args.simulation_settings,
+    mission_configuration=MissionConfiguration(
+        mission_type=MissionTime,
+        keplerian=true,
+        number_of_orbits=1,
+        mission_time=300.0,
+        orientation_sim=false,
+        num_steps_to_save=50
+    ),
+    environment_model=args.environment_model,
+    dynamics_model=DynamicsModel([sc1, sc2], det_effectors),
+    guidance_model=args.guidance_model,
+    navigation_model=args.navigation_model,
+    control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
+    initial_time=args.initial_time,
+    integration_tolerances=args.integration_tolerances
+)
+
+function det_run(env_pairs::Vector{Pair{String, String}})::Matrix{Float64}
+    return withenv(env_pairs...) do
+        mktempdir() do tmp
+            cd(tmp) do
+                run_simulation(det_args)
+                df = CSV.read(joinpath(det_args.simulation_settings.results_directory, "simulation_results.csv"), DataFrame)
+                cols = [c for c in names(df) if eltype(df[!, c]) <: Real]
+                return Matrix{Float64}(df[:, cols])
+            end
+        end
+    end
+end
+
+det_force_on = [
+    "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY" => "0",
+    "SPACEAGORA_EFFECTOR_THREAD_THRESHOLD" => "1",
+    "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "1",
+]
+det_ref = det_run(["SPACEAGORA_EFFECTOR_PARALLEL" => "off", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"])
+size(det_ref, 1) >= 10 || error("Determinism check produced too few rows: $(size(det_ref, 1))")
+det_variants = [
+    "effectors on 2 workers" => vcat(det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "2", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
+    "effectors on 4 workers" => vcat(det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "4", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
+    "n-body on 2 workers"    => vcat(det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "off", "SPACEAGORA_MULTIBODY_PARALLEL" => "on", "SPACEAGORA_MULTIBODY_MAX_THREADS" => "2"]),
+    "everything on"          => vcat(det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "4", "SPACEAGORA_MULTIBODY_PARALLEL" => "on", "SPACEAGORA_MULTIBODY_MAX_THREADS" => "2"]),
+]
+for (label, env_pairs) in det_variants
+    out = det_run(env_pairs)
+    if size(out) != size(det_ref)
+        error("Threaded determinism: $label produced $(size(out)) rows/cols, serial produced $(size(det_ref))")
+    end
+    if !isequal(out, det_ref)
+        worst = maximum(abs.(out .- det_ref))
+        error("Threaded determinism: $label differs from the serial run (max abs difference $worst)")
+    end
+end
+println("threaded_determinism_ok variants=$(length(det_variants)) rows=$(size(det_ref, 1))")

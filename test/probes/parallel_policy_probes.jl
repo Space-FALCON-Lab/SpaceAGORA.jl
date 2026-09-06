@@ -100,6 +100,19 @@ end
             policy.threaded_foreach_worker((w, i) -> (worker_ids[i] = w), 5, 2)
             @test all(i -> worker_ids[i] == mod1(i, 2), 1:5)
 
+            # threaded_collect!: every slot filled with f(idx), independent of the
+            # allotment (serial, 2 workers, more workers than items).
+            for allot in (1, 2, 8)
+                slots = fill(-1, 5)
+                @test policy.threaded_collect!(slots, 5, allot, i -> 10 * i) === slots
+                @test slots == [10, 20, 30, 40, 50]
+            end
+            empty_slots = Int[]
+            @test policy.threaded_collect!(empty_slots, 0, 2, i -> error("never")) === empty_slots
+            persist_slots = zeros(Float64, 6)
+            policy.threaded_collect_persistent!(:probe_collect, persist_slots, 6, 2, i -> 0.5 * i)
+            @test persist_slots == 0.5 .* (1:6)
+
             # threaded_reduce: empty returns init, serial, threaded static.
             reduce_empty = policy.threaded_reduce(
                 0, 2,

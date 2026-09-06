@@ -94,10 +94,9 @@ end
 
 @inline function _make_nbody_scratch_workspace(n_bodies::Int)::NBodyScratchWorkspace
     n_bodies >= 0 || throw(ArgumentError("NBody scratch workspace size must be >= 0, got $n_bodies"))
-    n_workers = 1
     pos_primary_k_all = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_bodies]
-    thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
-    return NBodyScratchWorkspace(pos_primary_k_all, thread_force)
+    body_force_ii = [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_bodies]
+    return NBodyScratchWorkspace(pos_primary_k_all, body_force_ii)
 end
 
 @inline function _ensure_nbody_workspace_capacity!(
@@ -108,14 +107,27 @@ end
     if length(workspace.pos_primary_k_all) < n_bodies
         resize!(workspace.pos_primary_k_all, n_bodies)
     end
-    if length(workspace.thread_force) < n_workers
-        old_len = length(workspace.thread_force)
-        resize!(workspace.thread_force, n_workers)
-        @inbounds for worker_id in (old_len + 1):n_workers
-            workspace.thread_force[worker_id] = MVector{3, Float64}(0.0, 0.0, 0.0)
-        end
+    if length(workspace.body_force_ii) < n_bodies
+        resize!(workspace.body_force_ii, n_bodies)
     end
     return workspace
+end
+
+# One body's third-body force on the spacecraft. Both the serial and the
+# threaded n-body loops call this same function, so the per-body values are
+# identical and the sum below runs in body order either way.
+@inline function _nbody_body_force_ii(
+    pos_primary_k::SVector{3, Float64},
+    pos_ii::SVector{3, Float64},
+    mass::Float64,
+    mu_k::Float64
+)::SVector{3, Float64}
+    pos_spacecraft_k = pos_primary_k - pos_ii
+    pos_spacecraft_k_mag = norm(pos_spacecraft_k)
+    pos_primary_k_mag = norm(pos_primary_k)
+    return @fastmath mass * mu_k * (
+        (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
+    )
 end
 
 @inline function _nbody_workspace_for_sat!(
@@ -932,33 +944,21 @@ function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, p
     end
 
     started_ns = time_ns()
+    # Collect-then-sum: each body's contribution goes into its own slot (in
+    # parallel or not), then the slots are summed in body order on this thread.
+    # Serial and threaded evaluation are bit-identical by construction.
+    body_force_ii = workspace.body_force_ii
     if use_threads
-        thread_force = workspace.thread_force
-        @inbounds for worker_id in 1:n_workers
-            thread_force[worker_id] .= 0.0
-        end
-        ParallelPolicy.threaded_foreach_worker_persistent(:rhs_nbody, n_bodies, decision.allotment) do worker_id, k
-            pos_primary_k = pos_primary_k_all[k]
-            pos_spacecraft_k = pos_primary_k - pos_ii
-            pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            pos_primary_k_mag = norm(pos_primary_k)
-            @fastmath thread_force[worker_id] .+= mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
-            )
-        end
-        @inbounds for worker_id in 1:n_workers
-            force_ii .+= thread_force[worker_id]
+        ParallelPolicy.threaded_collect_persistent!(:rhs_nbody, body_force_ii, n_bodies, decision.allotment) do k
+            @inbounds _nbody_body_force_ii(pos_primary_k_all[k], pos_ii, mass, model.body_mus[k])
         end
     else
-        @inbounds for k in eachindex(pos_primary_k_all)
-            pos_primary_k = pos_primary_k_all[k]
-            pos_spacecraft_k = pos_primary_k - pos_ii
-            pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-            pos_primary_k_mag = norm(pos_primary_k)
-            @fastmath force_ii += mass * model.body_mus[k] * (
-                (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
-            )
+        @inbounds for k in 1:n_bodies
+            body_force_ii[k] = _nbody_body_force_ii(pos_primary_k_all[k], pos_ii, mass, model.body_mus[k])
         end
+    end
+    @inbounds for k in 1:n_bodies
+        force_ii .+= body_force_ii[k]
     end
     ParallelPolicy.record_policy_observation!(
         :multibody;

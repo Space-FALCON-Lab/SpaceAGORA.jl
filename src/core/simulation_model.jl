@@ -67,8 +67,6 @@ include(joinpath(@__DIR__, "..", "vehicle", "kinematics", "kinematics.jl"))
 @reexport using .Kinematics
 
 # 6. Generic and actuator-specific hook surfaces
-include(joinpath(@__DIR__, "..", "vehicle", "actuators", "actuator_hooks.jl"))
-@reexport using .ActuatorHooks
 include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster", "thruster_hooks.jl"))
 @reexport using .ThrusterHooks
 
@@ -112,8 +110,6 @@ include(joinpath(@__DIR__, "..", "io", "config", "io_config.jl"))
 @reexport using .IOConfig
 include(joinpath(@__DIR__, "..", "io", "serialization", "io_serialization.jl"))
 @reexport using .IOSerialization
-include(joinpath(@__DIR__, "..", "io", "logging", "io_logging.jl"))
-@reexport using .IOLogging
 include(joinpath(@__DIR__, "..", "io", "outputs", "io_outputs.jl"))
 @reexport using .IOOutputs
 

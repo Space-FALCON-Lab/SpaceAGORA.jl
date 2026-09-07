@@ -257,7 +257,6 @@ occursin("using ..GravityEffectors: InverseSquaredJ2GravityModel", callback_regi
     error("Callback registry still imports gravity models from DynamicEffectors.GravityEffectors.")
 
 for rel in (
-    joinpath("src", "vehicle", "actuators", "actuator_hooks.jl"),
     joinpath("src", "vehicle", "actuators", "thruster", "thruster_hooks.jl"),
     joinpath("src", "vehicle", "structure", "structure_models.jl"),
     joinpath("src", "vehicle", "structure", "assembly_graph.jl"),
@@ -305,10 +304,7 @@ for (root, _, files) in walkdir(engine_dir)
     for file in files
         endswith(file, ".jl") || continue
         rel = relpath(joinpath(root, file), REPO_ROOT)
-        rel in (
-            joinpath("src", "simulation", "engine", "adapters", "from_env.jl"),
-            joinpath("src", "simulation", "engine", "adapters", "from_simulation_configuration.jl")
-        ) && continue
+        rel == joinpath("src", "simulation", "engine", "adapters", "from_env.jl") && continue
         src = read(joinpath(root, file), String)
         if occursin("get(ENV", src) || occursin("ENV[", src)
             error("ENV usage found outside engine adapters: $rel")

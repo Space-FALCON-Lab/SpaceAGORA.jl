@@ -75,7 +75,6 @@ const RETIRED_PATHS = (
 const REQUIRED_PATHS = (
     joinpath("src", "io", "config", "io_config.jl"),
     joinpath("src", "io", "serialization", "io_serialization.jl"),
-    joinpath("src", "io", "logging", "io_logging.jl"),
     joinpath("src", "io", "outputs", "io_outputs.jl"),
     joinpath("benchmarks", "studies", "performance_runtime_analysis.jl"),
     joinpath("benchmarks", "studies", "performance_smart_parallel_ladder.jl"),

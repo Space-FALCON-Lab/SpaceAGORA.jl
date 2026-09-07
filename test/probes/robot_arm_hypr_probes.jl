@@ -3,7 +3,6 @@ using Dates
 using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
-using Quaternions
 using Serialization
 using StaticArrays
 using ComponentArrays

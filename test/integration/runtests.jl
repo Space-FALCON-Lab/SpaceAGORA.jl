@@ -10,7 +10,6 @@ using ComponentArrays
 using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
-using Quaternions
 # Suite 01 reaches SatelliteToolbox directly; it used to arrive here as a
 # leaked import of the raw-included reference_system.jl.
 using SatelliteToolbox

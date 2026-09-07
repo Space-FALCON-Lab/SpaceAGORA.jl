@@ -714,8 +714,10 @@ function getDensity(model::TabulatedFlightAtmosphereModel, h::Float64, lat::Floa
     # Adaptive trial steps can probe a non-finite state (deep-impact blowup
     # before the termination callback fires, seen on +1 sigma envelope runs);
     # a NaN altitude passes both tail branches of _tab_flight_interp and
-    # indexes past the profile end. Vacuum lets the solver reject the step.
-    isfinite(h) && isfinite(el_time) || return 0.0, 150.0, SVector{3, Float64}(0.0, 0.0, 0.0)
+    # indexes past the profile end. Answer NaN, not vacuum: a NaN derivative is
+    # what makes the solver reject the trial step (PR #88's contract, pinned by
+    # the certification-mode probe), whereas vacuum would let it accept it.
+    isfinite(h) && isfinite(el_time) || return NaN, NaN, SVector{3, Float64}(0.0, 0.0, 0.0)
     ts = model.pass_peri_el_s
     j = clamp(searchsortedlast(ts, el_time), 1, length(ts))
     if j < length(ts) && abs(ts[j+1] - el_time) < abs(el_time - ts[j])

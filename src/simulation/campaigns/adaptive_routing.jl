@@ -234,8 +234,9 @@ end
 
 function _campaign_route_tuning()::OuterRouteTuning
     # Campaign runners can route to a real :process backend (ParallelProcess),
-    # so the default thresholds apply unmodified.
-    return OuterRouteTuning()
+    # so the default thresholds apply unmodified. The pool's alive workers are
+    # declared so the memory-aware caps do not re-charge their footprint.
+    return OuterRouteTuning(process_workers_resident=length(campaign_process_pool().workers))
 end
 
 function _campaign_features_for_routing(f::OuterRouteFeatures, samples::Int)::OuterRouteFeatures
@@ -521,6 +522,13 @@ end
 # the static process route at t=1 / t=12 with identical per-sample times.
 const _GC_DEBT = Base.Threads.Atomic{Bool}(false)
 
+# SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1 prints where a campaign's wall went:
+# route plan, pool readiness, the dispatch itself, feedback. Read once per
+# campaign.
+@inline function _dispatch_trace_enabled()::Bool
+    return lowercase(strip(get(ENV, "SPACEAGORA_CAMPAIGN_DISPATCH_TRACE", "0"))) in ("1", "true", "yes", "on")
+end
+
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
     # Collect BEFORE dispatch (V2). A threaded campaign leaves the coordinator
     # with a heap of many GiB, and the process route's dispatch loop -- a set
@@ -545,6 +553,7 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
         # Threads.nthreads() -- not meaningful here, since process workers
         # aren't Julia threads) and dispatches straight to the process pool.
         pool = campaign_process_pool()
+        t_ensure = time_ns()
         # warmup_fn reuses f itself (the exact closure about to be dispatched
         # for real) so a newly-added worker's large one-time JIT/specialization
         # cost (see ensure_process_workers!'s docstring) is paid here, once,
@@ -557,6 +566,8 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
         # task, since ENV is process-global and the tasks run concurrently.
         local_slots = hasproperty(plan, :local_slots) ? Int(plan.local_slots) : 0
         start_ns = time_ns()
+        _dispatch_trace_enabled() && println("[dispatch-trace] ensure_process_workers=$(round((start_ns - t_ensure) / 1e9; digits=3))s " *
+            "workers=$(length(active_workers)) local_slots=$(local_slots) pool_size=$(length(worker_ids))")
         samples = if local_slots > 0
             withenv(outer_split_env_pairs(local_slots)...) do
                 _run_monte_carlo_mixed(f, spec.seeds, spec, active_workers, local_slots)
@@ -565,6 +576,12 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
             _run_monte_carlo_process(f, spec.seeds, spec, active_workers)
         end
         elapsed_s = (time_ns() - start_ns) / 1.0e9
+        if _dispatch_trace_enabled()
+            fin = sort!(Float64[x.finished_ns for x in samples if isfinite(x.finished_ns)])
+            rel = isempty(fin) ? Float64[] : round.((fin .- start_ns) ./ 1e9; digits=2)
+            println("[dispatch-trace] process dispatch=$(round(elapsed_s; digits=3))s n=$(length(samples)) " *
+                "worker_elapsed_sum=$(round(sum(x.elapsed_s for x in samples); digits=2))s completions_s=$(rel)")
+        end
         # The local slots ran samples on the coordinator's own heap, exactly
         # as a threaded dispatch does, and leave the same debt behind.
         local_slots > 0 && (_GC_DEBT[] = true)
@@ -650,8 +667,12 @@ function _run_campaign_adaptive(
 )::MonteCarloResult
     seed_values = collect(seeds)
     isempty(seed_values) && return MonteCarloResult(MonteCarloSampleResult[], 0.0, 0)
+    t0 = time_ns()
     routed_features = _campaign_features_for_routing(features, length(seed_values))
     plan = _campaign_route_plan(routed_features, length(seed_values); state=state, tuning=tuning)
+    trace = _dispatch_trace_enabled()
+    trace && println("[dispatch-trace] plan=$(round((time_ns() - t0) / 1e9; digits=3))s route=$(plan.route) threads=$(plan.threads) race=$(plan.split_race)")
+    t1 = time_ns()
     raced = plan.split_race && _split_race_batch(
         length(seed_values), plan.split_candidates;
         warm=_split_race_warm_count(plan, plan.split_candidates, length(seed_values))) > 0
@@ -664,11 +685,13 @@ function _run_campaign_adaptive(
         spec = MonteCarloSpec(seeds=seed_values, threads=plan.threads, fail_fast=fail_fast)
         _run_campaign_with_route_env(f, spec, plan)
     end
+    t2 = time_ns()
     if plan.record
         _record_campaign_route_feedback!(state, routed_features, plan.route, result;
                                          tuning=tuning, record_split=!raced,
                                          per_sample_override=route_credit)
     end
+    trace && println("[dispatch-trace] campaign=$(round((t2 - t1) / 1e9; digits=3))s feedback=$(round((time_ns() - t2) / 1e9; digits=3))s total=$(round((time_ns() - t0) / 1e9; digits=3))s")
     return result
 end
 

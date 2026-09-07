@@ -69,9 +69,6 @@ end
     return mod(ν, 2pi)
 end
 
-@inline _gram_j2_rates(a::Float64, e::Float64, i::Float64, n::Float64, planet)::Tuple{Float64, Float64} =
-    j2_secular_rates(a, e, i, planet)
-
 function _gram_kepler_target(
     pos::SVector{3, Float64},
     vel::SVector{3, Float64},
@@ -97,7 +94,7 @@ function _gram_kepler_target(
         Ω1 = Ω
         ω1 = ω
         if include_j2
-            Ωdot, ωdot = _gram_j2_rates(a, e, i, n, planet)
+            Ωdot, ωdot = j2_secular_rates(a, e, i, planet)
             Ω1 += Ωdot * dt
             ω1 += ωdot * dt
         end
@@ -143,9 +140,6 @@ function _gram_periapsis_target(
         return nothing
     end
 end
-
-@inline _gram_descending_periapsis_target(pos::SVector{3, Float64}, vel::SVector{3, Float64}, planet; include_j2::Bool = true) =
-    _gram_periapsis_target(pos, vel, planet; include_j2=include_j2)
 
 function _gram_orbit_period_target(
     pos::SVector{3, Float64},

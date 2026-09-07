@@ -155,15 +155,3 @@ function _gram_track_cache_config()::GramTrackCacheConfig
         transition_band_m
     )
 end
-
-# Backward-compatibility shims for older cached method bodies/tests that still
-# reference the previous "segment cache" helper names.
-@inline _gram_segment_cache_mode() = _gram_track_cache_mode()
-@inline _gram_segment_cache_config() = _gram_track_cache_config()
-@inline _gram_segment_cache_enabled(cfg::GramTrackCacheConfig, density_model) = _gram_track_cache_enabled(cfg, density_model)
-@inline _gram_segment_cache_profile(cfg::GramTrackCacheConfig, p, alt::Float64) = _gram_track_cache_profile(cfg, p, alt)
-@inline _gram_segment_cache_ready(cache::GramTrackCache, t::Float64, alt::Float64, lat::Float64, lon::Float64, alt_tol_m::Float64, ang_tol_rad::Float64) =
-    _gram_track_cache_ready(cache, t, alt, lat, lon, alt_tol_m, ang_tol_rad)
-@inline _gram_segment_cache_eval(cache::GramTrackCache, idx::Int, x::Float64) = _gram_track_cache_eval(cache, idx, x)
-@inline _gram_segment_cache_refresh!(cache::GramTrackCache, density_model, p, pos::SVector{3, Float64}, vel::SVector{3, Float64}, alt::Float64, lat::Float64, lon::Float64, t::Float64, horizon_s::Float64, n_points::Int) =
-    _gram_track_cache_refresh!(cache, density_model, p, pos, vel, alt, lat, lon, t, horizon_s, n_points)

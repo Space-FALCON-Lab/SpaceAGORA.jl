@@ -688,6 +688,14 @@ end
     if !_dynamic_effectors_parallel_supported(dynamic_effectors)
         return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
     end
+    # A single satellite gains nothing from effector-level threading: a handful
+    # of small evaluations per step cannot pay for the per-step task overhead
+    # (measured 1.5 to 2x slower on a 12-core Mac and on the 4-vCPU CI runners,
+    # September 2026). Evaluate serially unless threading is explicitly forced
+    # on; the automatic policy only applies from two satellites up.
+    if num_sats <= 1 && mode != :on
+        return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
+    end
 
     outer_active = penv === nothing ? _effector_outer_parallel_hint() : penv.outer_parallel_active
     allow_with_outer = env.effector_allow_with_outer

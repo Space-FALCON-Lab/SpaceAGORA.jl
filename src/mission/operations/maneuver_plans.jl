@@ -231,27 +231,6 @@ function Odyssey_firing_plan_true_beginning(planet=nothing, ra=0.0, rp=0.0, numb
     return args
 end
 
-function heat_rate_control_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
-    max_q = 0.15 # Max heat rate
-    min_q = 0.13 # Min heat rate
-    estimated_ρ = planet.ρ_ref * exp(-(rp - planet.Rp_e) / planet.H)
-    periapsis_velocity = sqrt(planet.μ *(2/rp - 2/(ra+rp)))
-    q = 0.5 * estimated_ρ * periapsis_velocity^3 * config.cnf.α
-    
-    if q < max_q
-        rp_new = -planet.H*log(2*min_q/(planet.ρ_ref*periapsis_velocity^3*config.cnf.α)) + planet.Rp_e
-        println("Aerobraking at ", rp, " m")
-        println("New periapsis: ", rp_new, " m")
-        args[:delta_v] = abs(sqrt(2*planet.μ/rp - planet.μ*2/(rp+ra)) - sqrt(2*planet.μ/rp_new - planet.μ*2/(rp_new+ra)))
-        args[:phi] = deg2rad(0.0)
-    else
-        args[:delta_v] = 0.0
-        args[:phi] = deg2rad(180.0)
-    end
-    
-    return args
-end
-
 function Earth_firing_plan(planet=nothing, ra=0.0, rp=0.0, numberofpassage=0.0, args=nothing)
     if rp < 120e3 + planet.Rp_e
         target_periapsis_altitude = 140e3 # Target periapsis altitude in meters

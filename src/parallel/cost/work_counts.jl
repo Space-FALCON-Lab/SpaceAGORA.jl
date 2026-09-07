@@ -8,7 +8,7 @@
 # whereas a fabricated formula is confidently wrong and silently mis-routes.
 
 @inline function _alf_recurrence_iterations(L::Int, M::Int)::Int
-    # Associated-Legendre recurrence rows in _harmonics_flat_batch_kernel! phase 4.
+    # Associated-Legendre recurrence rows in the harmonics kernel, phase 4.
     #
     # The kernel fills rows lazily behind a `max_recur_row` high-water mark, so
     # every row from 3 to L+2 is computed exactly once even though the loop body
@@ -28,7 +28,7 @@ end
 """
     effector_cost_terms(model::GravitationalHarmonicsModel) -> WorkCounts
 
-Counts for `_harmonics_flat_batch_kernel!`, phase by phase.
+Counts for the harmonics kernel (`_harmonics_scalar_force_ii`, run per satellite by the flat pre-pass), phase by phase.
 
 The count is driven by `active_orders_by_degree`, not by `(L+1)(L+2)/2`. That
 matters more than it looks: a zonal-only field (no tesseral or sectoral terms,
@@ -62,7 +62,7 @@ function effector_cost_terms(model::GravitationalHarmonicsModel)::WorkCounts
     # error concentrated exactly where the mix of pass types changes, which is
     # across degree and order.
     #
-    # Weights below are counted off `_harmonics_flat_batch_kernel!` body by
+    # Weights below are counted off the harmonics kernel body by
     # body. Multiplies and adds count 1 each; a muladd counts 2, matching the
     # calibration kernel's own accounting so the rate and the count are in the
     # same units.
@@ -119,7 +119,7 @@ function effector_cost_terms(model::GravitationalHarmonicsModel)::WorkCounts
     # expose this being the wrong aggregate.
     table_bytes = 6.0 * (L + 2) * (M + 2) * 8.0
 
-    # The A workspace the batch kernel carries per satellite: (L+3) x (M+2)
+    # The A workspace the kernel carries per satellite: (L+3) x (M+2)
     # Float64. Multiplied by batch width this is what the SIMD lane rate is
     # indexed on, because at wide batch it leaves cache entirely.
     workspace_per_sat = Float64((L + 3) * (M + 2) * 8)
@@ -180,7 +180,7 @@ end
 Whether an effector produces flat-queue work items.
 
 Effectors resolved by a pre-pass -- the batchable ones that write straight into
-`totals` from position buffers, and harmonics with its own SIMD batch -- have
+`totals` from position buffers, and harmonics with its own per-satellite pre-pass -- have
 already written their contribution by the time the queue runs, and the queue
 skips them. Counting them as nodes overstates `queue_nodes` by a factor of
 (total effectors)/(queue-only effectors), which for a vacuum harmonics-only

@@ -21,6 +21,7 @@
         "allocator_assets_probes.jl",
         "process_pool_probes.jl",
         "campaign_process_route_probes.jl",
+        "flat_route_parity_probes.jl",
     ]
     coverage_flags = Base.JLOptions().code_coverage == 0 ? String[] : ["--code-coverage=user"]
     for probe in probe_files

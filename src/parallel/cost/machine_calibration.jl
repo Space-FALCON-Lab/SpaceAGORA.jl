@@ -101,7 +101,7 @@ Measure every rate constant on this machine.
 
 Order matters in one place: the coefficient-touch curve is measured first so its
 contribution can be subtracted from the SIMD-lane readings, which are taken with
-the batch kernel and therefore include a small number of touches.
+the harmonics pre-pass and therefore include a small number of touches.
 """
 function calibrate_machine(; k::Int = 15, verbose::Bool = false)::MachineConstants
     verbose && println("[calibrate] fingerprint = $(machine_fingerprint())")

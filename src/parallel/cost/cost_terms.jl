@@ -38,7 +38,7 @@ stated explicitly:
 - `scalar_items`    PER SATELLITE. Setup/teardown that does not vectorize.
 - `coeff_touches`   PER PASS, *not* per satellite. Distinct coefficient-table
                     reads needed to sweep the model once. This is the term that
-                    separates the routing candidates: the SIMD batch kernel
+                    separates the routing candidates: the per-satellite harmonics pre-pass
                     loads each coefficient once and broadcasts it across its
                     whole satellite batch, so it pays this once per worker,
                     while a per-satellite kernel re-walks the table for every

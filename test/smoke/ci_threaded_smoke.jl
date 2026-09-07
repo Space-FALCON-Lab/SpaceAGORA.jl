@@ -235,7 +235,9 @@ println("threaded_determinism_ok variants=$(length(det_variants)) rows=$(size(de
 # scalar route at the last bit on a given CPU; print how much so the number is
 # on record for every runner, without failing the job.
 det_routes = [
-    "satellite_batch" => vcat(det_pinned, ["SPACEAGORA_RHS_EXECUTION_MODE" => "satellite", "SPACEAGORA_EFFECTOR_PARALLEL" => "off", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
+    # Two spacecraft sit below SPACEAGORA_RHS_BATCH_THREAD_THRESHOLD (default 16),
+    # so the batch loop only runs when the switch is forced on.
+    "satellite_batch" => vcat(det_pinned, ["SPACEAGORA_RHS_EXECUTION_MODE" => "satellite", "SPACEAGORA_RHS_BATCH_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_PARALLEL" => "off", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
     "flat"            => vcat(det_pinned, det_force_on, ["SPACEAGORA_RHS_EXECUTION_MODE" => "flat", "SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "4", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
 ]
 for (label, env_pairs) in det_routes

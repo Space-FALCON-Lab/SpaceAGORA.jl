@@ -588,4 +588,29 @@ function __init__()
     return nothing
 end
 
+# The Monte Carlo dispatchers compile on their first campaign in a process --
+# the job channel, the feeders and local consumers of the mixed dispatcher, the
+# sample wrapper, the steady-cost estimator. Measured on the paper harness
+# (L12, independent_1sat_1hr, 64 samples): the runner's first pool campaign
+# cost 3.1-3.2 s against 1.8-2.2 s for the static pool path's own cold start
+# on both machines, and 0.2-0.6 s warm. A production process pays that once;
+# the harness pays it on the first repeat of every point. Exercised here with a
+# trivial sample so the generic machinery is in the pkgimage; the user's sample
+# closure itself still specialises on first call.
+@setup_workload begin
+    _pc_sample = seed -> seed * 2
+    _pc_seeds = collect(1:4)
+    @compile_workload begin
+        _pc_spec1 = SimulationCampaigns.MonteCarloSpec(seeds = _pc_seeds, threads = 1)
+        _pc_serial = SimulationCampaigns._run_monte_carlo_serial(_pc_sample, _pc_seeds, _pc_spec1)
+        SimulationCampaigns._run_monte_carlo_mixed(_pc_sample, _pc_seeds, _pc_spec1, Int[], 1)
+        if Base.Threads.nthreads() > 1
+            _pc_spec2 = SimulationCampaigns.MonteCarloSpec(seeds = _pc_seeds, threads = 2)
+            SimulationCampaigns._run_monte_carlo_threaded(_pc_sample, _pc_seeds, _pc_spec2, 2)
+            SimulationCampaigns._run_monte_carlo_mixed(_pc_sample, _pc_seeds, _pc_spec2, Int[], 2)
+        end
+        SimulationCampaigns.steady_per_sample_s(SimulationCampaigns.MonteCarloResult(_pc_serial, 0.01, 1))
+    end
+end
+
 end # module SpaceAGORA

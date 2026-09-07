@@ -37,6 +37,20 @@ Base.@kwdef struct MonteCarloSampleResult
     value::Any = nothing
     error::Any = nothing
     backtrace::Any = nothing
+    # Coordinator clock (`time_ns`) at which this sample's result was in hand,
+    # stamped by the dispatcher that collected it (`_stamp_finished`). NaN when
+    # the sample was constructed elsewhere and never collected -- on a process
+    # worker, before the round trip home. The route bandit reads the spread of
+    # these to credit a route with its steady per-sample cost rather than the
+    # campaign's mean (see `steady_per_sample_s`).
+    finished_ns::Float64 = NaN
+end
+
+@inline function _stamp_finished(s::MonteCarloSampleResult)::MonteCarloSampleResult
+    return MonteCarloSampleResult(index=s.index, seed=s.seed, success=s.success,
+                                  elapsed_s=s.elapsed_s, value=s.value,
+                                  error=s.error, backtrace=s.backtrace,
+                                  finished_ns=Float64(time_ns()))
 end
 
 """
@@ -67,6 +81,38 @@ function MonteCarloResult(samples::Vector{MonteCarloSampleResult}, elapsed_s::Re
     successful = MonteCarloSampleResult[s for s in samples if s.success]
     failed = MonteCarloSampleResult[s for s in samples if !s.success]
     return MonteCarloResult(samples, successful, failed, Float64(elapsed_s), Int(threads), route, Int(local_slots))
+end
+
+"""
+    steady_per_sample_s(result::MonteCarloResult) -> Float64
+
+The campaign's per-sample cost once it was running steadily: the wall between
+the median completion and the last one, divided by the samples that completed
+in that window. Falls back to `elapsed_s / n` when fewer than four samples
+carry a completion stamp.
+
+`elapsed_s / n` is what a campaign cost; this is what the next one will. The
+difference is everything the first campaign of a route pays once -- the
+process pool spinning up, a worker JIT-compiling the sample closure, the
+coordinator compiling the dispatcher -- and it is not small: measured on the
+TRX50's L12 (independent_1sat_1hr, 64 samples, 24 workers) the process route's
+first campaign took 3.16 s against 0.20 s at steady state. Credited with the
+mean, the route bandit rated the pool at 49 ms per sample against the threads
+route's 16 ms, chose threads, and had no reason ever to re-try the pool it had
+mis-measured; the static process route ran the same shape 3x faster.
+"""
+function steady_per_sample_s(result::MonteCarloResult)::Float64
+    n = length(result.samples)
+    n <= 0 && return 0.0
+    mean_s = result.elapsed_s / n
+    stamps = Float64[s.finished_ns for s in result.samples if isfinite(s.finished_ns)]
+    length(stamps) >= 4 || return mean_s
+    sort!(stamps)
+    half = length(stamps) ÷ 2
+    span_s = (stamps[end] - stamps[half]) / 1.0e9
+    tail = length(stamps) - half
+    (isfinite(span_s) && span_s > 0.0 && tail > 0) || return mean_s
+    return span_s / tail
 end
 
 function _validate_monte_carlo_threads(threads::Int)
@@ -116,7 +162,7 @@ end
 function _run_monte_carlo_serial(f, seeds::Vector, spec::MonteCarloSpec)
     samples = MonteCarloSampleResult[]
     for (index, seed) in enumerate(seeds)
-        sample = _run_monte_carlo_sample(f, index, seed)
+        sample = _stamp_finished(_run_monte_carlo_sample(f, index, seed))
         push!(samples, sample)
         if spec.fail_fast && !sample.success
             _throw_first_monte_carlo_failure(samples)
@@ -140,7 +186,7 @@ function _run_monte_carlo_threaded(f, seeds::Vector, spec::MonteCarloSpec, worke
             Base.Threads.@spawn begin
                 for (index, seed) in jobs
                     spec.fail_fast && stop_requested[] && break
-                    sample = _run_monte_carlo_sample(f, index, seed)
+                    sample = _stamp_finished(_run_monte_carlo_sample(f, index, seed))
                     samples[index] = sample
                     if spec.fail_fast && !sample.success
                         Base.Threads.atomic_xchg!(stop_requested, true)
@@ -202,7 +248,7 @@ function _run_monte_carlo_mixed(
     consume = run -> begin
         for (index, seed) in jobs
             spec.fail_fast && stop_requested[] && break
-            sample = run(index, seed)
+            sample = _stamp_finished(run(index, seed))
             samples[index] = sample
             if spec.fail_fast && !sample.success
                 Base.Threads.atomic_xchg!(stop_requested, true)

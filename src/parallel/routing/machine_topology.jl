@@ -344,16 +344,33 @@ function native_gram_worker_extra_bytes(n_sats::Int)::Int
 end
 
 """
-    memory_worker_cap(; extra_per_worker=0) -> Int
+    memory_worker_cap(; extra_per_worker=0, resident=0) -> Int
 
 How many process workers fit beside this process: the smaller of the memory
 budget less this process's resident set and what the kernel reports available,
 divided by the per-worker estimate. `0` means no worker fits, which routing
 treats as "the process route is not affordable".
+
+`resident` is how many pool workers are already alive. Their package footprint
+is already spent -- it is part of what the kernel reports as used -- so the
+headroom pays only for their workload term (`extra_per_worker`) and for the
+full estimate of any worker beyond them. Without it the cap answered "how
+many more could be spawned" for a pool that already existed: on a 60 GB box
+with twelve 2 GB workers adopted from the harness it said 10, the campaign ran
+on 10 of the 12 and took four rounds instead of three (B15/L15 at (12,1),
++24 %), while the 250 GB TRX50 ran the same point on all 12.
 """
-function memory_worker_cap(; extra_per_worker::Int=0)::Int
+function memory_worker_cap(; extra_per_worker::Int=0, resident::Int=0)::Int
     per = max(1, worker_memory_estimate_bytes(extra=extra_per_worker))
     headroom = min(memory_budget_bytes() - process_rss_bytes(), available_memory_bytes())
+    alive = max(0, resident)
+    if alive > 0
+        extra = max(0, extra_per_worker)
+        owed = alive * extra
+        # Not even the alive workers' working sets fit: as many of them as do.
+        headroom < owed && return extra > 0 ? Int(fld(max(0, headroom), extra)) : alive
+        return alive + Int(fld(headroom - owed, per))
+    end
     headroom <= 0 && return 0
     return Int(fld(headroom, per))
 end
@@ -368,10 +385,14 @@ is the headroom left once the workers are charged, divided by that working
 set. `extra_per_worker` is that estimate (native GRAM's per-spacecraft term);
 with none there is nothing measurable to reserve and the cap is unbounded.
 """
-function memory_local_slot_cap(workers::Int; extra_per_worker::Int=0)::Int
+function memory_local_slot_cap(workers::Int; extra_per_worker::Int=0, resident::Int=0)::Int
     extra_per_worker > 0 || return typemax(Int) >> 1
     headroom = min(memory_budget_bytes() - process_rss_bytes(), available_memory_bytes())
-    headroom -= max(0, workers) * worker_memory_estimate_bytes(extra=extra_per_worker)
+    # Workers already alive are charged their workload term only (see
+    # memory_worker_cap); the rest the full estimate.
+    alive = clamp(resident, 0, max(0, workers))
+    headroom -= alive * max(0, extra_per_worker)
+    headroom -= max(0, workers - alive) * worker_memory_estimate_bytes(extra=extra_per_worker)
     headroom <= 0 && return 0
     return Int(fld(headroom, extra_per_worker))
 end

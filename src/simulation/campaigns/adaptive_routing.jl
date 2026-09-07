@@ -435,7 +435,8 @@ end
 @inline function _reindexed_sample(s::MonteCarloSampleResult, index::Int)::MonteCarloSampleResult
     return MonteCarloSampleResult(index=index, seed=s.seed, success=s.success,
                                   elapsed_s=s.elapsed_s, value=s.value,
-                                  error=s.error, backtrace=s.backtrace)
+                                  error=s.error, backtrace=s.backtrace,
+                                  finished_ns=s.finished_ns)
 end
 
 # Returns the campaign result and the per-sample time to credit the ROUTE
@@ -604,8 +605,12 @@ function _record_campaign_route_feedback!(
     failures = length(result.failed)
     # Amortized campaign wall time per sample, not per-sample latency: threaded
     # samples overlap, so summing individual elapsed_s would charge the route
-    # for concurrency instead of crediting its throughput.
-    per_sample_s = per_sample_override === nothing ? result.elapsed_s / n_samples : per_sample_override
+    # for concurrency instead of crediting its throughput. And the STEADY
+    # figure, not the campaign mean: the mean carries the route's one-time
+    # costs (pool spin-up, worker JIT), which is what the next campaign will
+    # not pay and what a rounds-tie comparison must not be decided by. See
+    # steady_per_sample_s.
+    per_sample_s = per_sample_override === nothing ? steady_per_sample_s(result) : per_sample_override
     record_outer_route_feedback!(
         state,
         features;

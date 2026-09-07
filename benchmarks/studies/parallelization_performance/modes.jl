@@ -211,6 +211,19 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             inner_modes="off"
         ),
 
+        "policy_v2_nopersist" => PPCModeSpec(
+            name="policy_v2_nopersist",
+            profile="R6", backend="auto", outer_active=true, policy_adaptive=true,
+            rhs_batch="auto", density="auto", control="auto", thermal="auto",
+            multibody="auto", effector="auto", scheduler="static", persistent=true,
+            allow_inner_with_outer=true,
+            # Only difference from policy_v2: no persisted hints / state (and
+            # so no measured reward), on the coordinator and on every pool
+            # worker. Attribution arm for the process route's per-sample
+            # bookkeeping.
+            persistent_override=false
+        ),
+
         # --- Attribution variants of full_smart -------------------------------
         # Not part of any reported ladder. R5 on a process-routed Monte Carlo
         # workload is ~60% slower per sample than the pinned process route, and

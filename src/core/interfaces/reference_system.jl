@@ -367,7 +367,7 @@ function latlongtoOE(LATLONGH, planet, γ, α, v)
     return OE
 end
 
-function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topography::Bool=false)
+@noinline function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topography::Bool=false)
     # From PCPF to LLA through Bowring's method https://www.mathworks.com/help/aeroblks/ecefpositiontolla.html;jsessionid=2ae36964c7d5f2115d2c21286db0?nocookie=true
     x_p = r_p[1]
     y_p = r_p[2]

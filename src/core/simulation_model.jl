@@ -15,7 +15,6 @@ isdefined(parentmodule(@__MODULE__), :RuntimeServices) ||
 include(joinpath(@__DIR__, "..", "core", "numerics", "quaternion_utils.jl"))
 include(joinpath(@__DIR__, "..", "core", "state", "reference_system_config.jl"))
 include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planet_shapes.jl"))
-include(joinpath(@__DIR__, "..", "core", "utils", "orbital_elements.jl"))
 
 # --- Submodules ---
 # We include the files, which define their own modules.
@@ -94,6 +93,11 @@ include(joinpath(@__DIR__, "..", "core", "types", "runtime_types.jl"))
 # Shared parallel policy used by callbacks and dynamic effectors.
 include(joinpath(@__DIR__, "..", "parallel", "policy", "parallel_policy.jl"))
 
+# --- Constellation Types ---
+# Included here (before force_torque_models.jl) so LaserLinkEffectors can reference constellation_struct.
+include(joinpath(@__DIR__, "..", "simulation", "constellation.jl"))
+@reexport using .Constellations
+
 # --- Rotational Dynamics ---
 include(joinpath(@__DIR__, "..", "dynamics", "rotational", "rotational_models.jl"))
 @reexport using .DynamicsRotational
@@ -140,19 +144,7 @@ include(joinpath(@__DIR__, "..", "gnc", "control", "control_hooks.jl"))
 	include(joinpath(@__DIR__, "..", "core", "state", "no_gram_presets.jl"))
 	@reexport using .NoGramPresets
 
-	# --- ORACLE scenario option types ---
-	include(joinpath(@__DIR__, "..", "core", "types", "oracle_types.jl"))
-
-export OracleOptions, _validate_options, _with
-export ORACLE_PAPER_TARGET_ALTITUDES_KM, ORACLE_PAPER_TARGET_INCLINATIONS_DEG
-export ORACLE_PAPER_HELPER_COUNTS, ORACLE_PAPER_FIXED_HELPER_ALTITUDE_KM, ORACLE_PAPER_FIXED_HELPER_INCLINATION_DEG
-
 # --- Integrator Callbacks ---
 include(joinpath(@__DIR__, "..", "simulation", "callbacks", "callbacks.jl"))
 @reexport using .SimulationCallbacks
-
-# rtn_dcm_from_inertial and rvtoorbitalelement are defined in reference_system.jl
-# (included inside SimulationCallbacks) but not exported there; expose them here.
-import .SimulationCallbacks: rtn_dcm_from_inertial, rvtoorbitalelement
-export rtn_dcm_from_inertial, rvtoorbitalelement
 end # module SimulationModel

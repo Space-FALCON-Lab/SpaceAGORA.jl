@@ -704,6 +704,11 @@ const _TAB_FLIGHT_H_MAX_M = 12000.0
 
 @inline function _tab_flight_interp(alts::Vector{Float64}, logs::Vector{Float64}, sigs::Vector{Float64}, h::Float64, sigma_scale::Float64)::Tuple{Float64, Float64}
     n = length(alts)
+    # A NaN altitude (adaptive-solver trial states do reach the RHS) fails both
+    # tail guards below while searchsortedlast places it past the last bin,
+    # indexing alts[n+1]. Return NaN so the solver rejects the step upstream
+    # instead of a BoundsError killing the whole ensemble task.
+    isnan(h) && return (NaN, NaN)
     if h <= alts[1]
         H = n >= 2 ? (alts[2] - alts[1]) / max(logs[1] - logs[2], 1e-9) : 8000.0
         H = clamp(H, _TAB_FLIGHT_H_MIN_M, _TAB_FLIGHT_H_MAX_M)

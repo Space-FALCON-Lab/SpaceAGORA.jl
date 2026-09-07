@@ -45,7 +45,7 @@ function planet_data(ip)
         p = 101400.0               # surface pressure, km/(m⋅s)
         J2 = 1.08263e-3            # Earth's dynamic form factor
         k = 1.83e-4                # Chapman heating coefficient, kg^0.5/m
-        ω = [0.0, 0.0, 7.2921066e-5]   # Earth's rotation rate, rad/s
+        ω = [0.0, 0.0, 7.2921158553e-5]   # Earth's rotation rate, rad/s (IAU-82 GMST mean rate)
         μ_fluid = 1.5*10e-5        # kinematic viscosity, m²/s
         Lz = -9.8/1e3              # vertical temperature gradient, K/m
         α = 0.0                    # Right ascension of the north pole of rotation, radians

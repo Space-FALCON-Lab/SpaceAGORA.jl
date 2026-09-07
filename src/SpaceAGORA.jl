@@ -11,7 +11,6 @@ include(joinpath(@__DIR__, "core", "simulation_model.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "simulation", "campaigns", "simulation_campaigns.jl"))
 include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
-include(joinpath(@__DIR__, "analysis", "visualization", "oracle", "oracle.jl"))
 include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
 include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
 include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
@@ -80,6 +79,7 @@ using .SimulationModel: SolarPanelAngleOfAttackControlModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionControlModel) AerobrakingEnergyDepletionControlModel
 @doc (@doc SimulationModel.SolarPanelAngleOfAttackControlModel) SolarPanelAngleOfAttackControlModel
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
+using .SimulationModel: constellation_struct, build_constellation, activate_link!, deactivate_link!, reset_active_links!
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
 using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
@@ -241,10 +241,20 @@ happen before the first atmosphere evaluation.
 init_nrlmsise_space_indices!
 
 """
-    SimpleEphemeridesModel(; reference_epoch_seconds=0.0, prime_meridian_at_reference_rad=0.0)
+    SimpleEphemeridesModel(; reference_epoch_seconds=0.0, prime_meridian_at_reference_rad=NaN)
 
 Analytic ephemerides/frame backend for onboarding and open-data runs that should
 not depend on local SPICE kernels.
+
+By default (`prime_meridian_at_reference_rad = NaN`) the planet-fixed frame uses
+the planet's true prime-meridian convention: Earth's rotation angle is GMST
+(IAU-82, treating the model's leap-second-free UTC timeline as UT1), so
+geographic longitude-keyed models — IGRF and tilted-dipole magnetic fields,
+lat/lon-dependent atmospheres, tesseral gravity harmonics — sample the correct
+longitudes. Other planets keep a zero prime-meridian angle at the reference
+epoch. Passing an explicit finite `prime_meridian_at_reference_rad` selects the
+legacy linear rotation `θ = pm + ω₃·(et − reference_epoch_seconds)` exactly as
+given.
 """
 SimpleEphemeridesModel
 
@@ -439,21 +449,6 @@ export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractC
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 export StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
 export ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
-# Core spacecraft model types needed by any simulation script
-using .SimulationModel: Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition
-using .SimulationModel: GuidanceModel, NavigationModel, ControlModel
-export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition
-export GuidanceModel, NavigationModel, ControlModel
-# Simulation configuration types
-using .SimulationModel: SimulationConfiguration, SimulationSettings, MissionConfiguration
-using .SimulationModel: MissionTime, MissionOrbits, EnvironmentModel
-using .SimulationModel: InitialTime, IntegrationTolerances
-export SimulationConfiguration, SimulationSettings, MissionConfiguration
-export MissionTime, MissionOrbits, EnvironmentModel
-export InitialTime, IntegrationTolerances
-# Gravity and thermal models commonly used in example scripts
-using .SimulationModel: InverseSquaredJ2GravityModel, MaxwellianHeat
-export InverseSquaredJ2GravityModel, MaxwellianHeat
 export ClothArmBasePose, ClothArmLink, ClothArmJoint, ClothArmModel, ClothArmPose, ClothArmState
 export default_cloth_arm_model, cloth_fk, cloth_fk_state, cloth_end_effector_pose
 export cloth_ik, cloth_total_reach, closest_surface_target
@@ -480,7 +475,12 @@ export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosp
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
+export constellation_struct, build_constellation, activate_link!, deactivate_link!, reset_active_links!
 export calcForceTorque, wrench, environment_requirements, solver_partition
+export LaserThrusterParams, LaserCommunicationParams, LaserPowerTransferParams
+export LaserLinkModel, build_LaserLinkModel, laser_link_scheduler_callback
+export choose_active_links!
+export LaserImpulseTracker, laser_impulse_callback
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export getDensity, getDensityBatch!
@@ -493,32 +493,6 @@ export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
-
-# --- Laser-link effector (from DynamicEffectors / LaserLinkEffectors) ---
-using .SimulationModel: OpenCavityLaserLinkModel, laser_link_scheduler_callback
-using .SimulationModel: LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
-export OpenCavityLaserLinkModel, laser_link_scheduler_callback
-export LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
-
-# --- Orbital element converters ---
-using .SimulationModel: rv2coe, rv2coe_2pi
-export rv2coe, rv2coe_2pi
-
-using .SimulationModel: rtn_dcm_from_inertial, rvtoorbitalelement
-export rtn_dcm_from_inertial, rvtoorbitalelement
-
-# --- SaveField / default_save_fields (needed by ORACLE runners and examples) ---
-using .SimulationModel: SaveField, default_save_fields
-export SaveField, default_save_fields
-
-# --- ORACLE scenario types and constants ---
-using .SimulationModel: OracleOptions, _validate_options, _with
-using .SimulationModel: ORACLE_PAPER_TARGET_ALTITUDES_KM, ORACLE_PAPER_TARGET_INCLINATIONS_DEG
-using .SimulationModel: ORACLE_PAPER_HELPER_COUNTS, ORACLE_PAPER_FIXED_HELPER_ALTITUDE_KM
-using .SimulationModel: ORACLE_PAPER_FIXED_HELPER_INCLINATION_DEG
-export OracleOptions, _validate_options, _with
-export ORACLE_PAPER_TARGET_ALTITUDES_KM, ORACLE_PAPER_TARGET_INCLINATIONS_DEG
-export ORACLE_PAPER_HELPER_COUNTS, ORACLE_PAPER_FIXED_HELPER_ALTITUDE_KM, ORACLE_PAPER_FIXED_HELPER_INCLINATION_DEG
 
 """
     run_simulation(args...; isolate_state=true, kwargs...)

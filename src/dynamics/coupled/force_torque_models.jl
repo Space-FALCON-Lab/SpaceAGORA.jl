@@ -25,6 +25,7 @@ module DynamicEffectors
     using .AerodynamicEffectors: _make_aero_scratch_workspace, _ensure_aero_workspace_capacity!, _aero_workspace_for_sat!
     using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
     using .PerturbationEffectors: MagneticTorqueRodModel, get_magnetic_field_dipole, get_magnetic_field, calculate_magnetic_torque
+    using .PerturbationEffectors: EddyCurrentDampingModel, eddy_damping_torque
     using .PerturbationEffectors: LVLHCascadeAttitudeControlModel
     using .PerturbationEffectors: srp, srp_cannonball_accel, _spice_query_name
     using .PerturbationEffectors: planetary_albedo_accel, planetary_ir_accel
@@ -35,15 +36,16 @@ module DynamicEffectors
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using .RobotArmReactionEffectors: RobotArmReactionEffector
-    using .LaserLinkEffectors: OpenCavityLaserLinkModel, laser_link_scheduler_callback
-    using .LaserLinkEffectors: laser_link_force_magnitude, laser_link_pair_force, laser_link_active_pair
-    using .LaserLinkEffectors: update_laser_link_schedule!, accumulate_laser_link_forces!
-    using .LaserLinkEffectors: LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
+    using .LaserLinkEffectors: LaserThrusterParams, LaserCommunicationParams, LaserPowerTransferParams
+    using .LaserLinkEffectors: LaserLinkModel, build_LaserLinkModel, laser_link_scheduler_callback
+    using .LaserLinkEffectors: choose_active_links!
+    using .LaserLinkEffectors: LaserImpulseTracker, laser_impulse_callback
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
     export MagneticTorqueRodModel, get_magnetic_field_dipole, get_magnetic_field, calculate_magnetic_torque
+    export EddyCurrentDampingModel, eddy_damping_torque
     export LVLHCascadeAttitudeControlModel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     export calcForceTorque
@@ -51,6 +53,8 @@ module DynamicEffectors
     export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
     export RobotArmReactionEffector
-    export OpenCavityLaserLinkModel, laser_link_scheduler_callback
-    export LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
+    export LaserThrusterParams, LaserCommunicationParams, LaserPowerTransferParams
+    export LaserLinkModel, build_LaserLinkModel, laser_link_scheduler_callback
+    export choose_active_links!
+    export LaserImpulseTracker, laser_impulse_callback
 end

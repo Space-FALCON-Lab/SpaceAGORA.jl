@@ -5,256 +5,134 @@ using StaticArrays
 using DiffEqBase
 
 using ...AbstractTypes: AbstractForceTorqueModel
-import ..DynamicEffectors: calcForceTorque, solver_partition
+using ...EffectorSampling: StateSample, EnvironmentSample
+using ...Constellations: constellation_struct
+import ..DynamicEffectors: wrench
 
-export OpenCavityLaserLinkModel, laser_link_scheduler_callback
-export laser_link_force_magnitude, laser_link_pair_force, laser_link_active_pair
-export update_laser_link_schedule!, accumulate_laser_link_forces!
-export LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
+include(joinpath(@__DIR__, "..", "..", "..", "core", "interfaces", "reference_system.jl"))
+
+export LaserThrusterParams, LaserCommunicationParams, LaserPowerTransferParams
+export LaserLinkModel, build_LaserLinkModel, laser_link_scheduler_callback
+export choose_active_links!
+export LaserImpulseTracker, laser_impulse_callback
 
 const SPEED_OF_LIGHT_MPS = 299_792_458.0
-const SUPPORTED_LASER_SCHEDULES = (
-    :naive_next_entering,
-    :positive_along_track,
-    :gve_sma,   # maximise semi-major axis rate
-    :gve_ecc,   # maximise eccentricity rate
-    :gve_inc,   # maximise inclination rate
-    :gve_raan,  # maximise RAAN rate
-    :gve_argp,  # maximise argument-of-periapsis rate
-)
+const _MU_EARTH_GVE = 3.986004418e14  # Earth gravitational parameter [m³/s²]
 
-"""
-    OpenCavityLaserLinkModel(; kwargs...)
+# ── Model construction ──────────────────────────────────────────────────────
+# Params type picked by laser_type (e.g. LaserThrusterParams for :thruster).
+abstract type AbstractLaserLinkParams end
 
-Open-cavity laser interlink force model for one target satellite and a helper
-population. The model applies at most one active target-helper link at a time,
-with equal-and-opposite inertial-frame forces along the instantaneous
-inter-satellite line of sight.
-"""
-mutable struct OpenCavityLaserLinkModel <: AbstractForceTorqueModel
-    target_idx::Int
-    helper_indices::Vector{Int}
-    range_m::Float64
+# Thruster physics, used when laser_type === :thruster.
+struct LaserThrusterParams <: AbstractLaserLinkParams
     power_w::Float64
     magnification::Float64
     beta::Float64
     eta::Float64
+end
+
+# Comms physics, used when laser_type === :communication.
+struct LaserCommunicationParams <: AbstractLaserLinkParams
+    power_w::Float64
+end
+
+# Power-transfer physics, used when laser_type === :power_transfer.
+struct LaserPowerTransferParams <: AbstractLaserLinkParams
+    power_w::Float64
+end
+
+# One laser link between two satellites. Shared scheduling state lives on constellation_struct, not here.
+mutable struct LaserLinkModel <: AbstractForceTorqueModel
+    sat_i::Int
+    sat_j::Int
+    range_m::Float64
     schedule::Symbol
-    active_helper_idx::Int
-    previous_in_range::Vector{Bool}
-    link_activation_count::Int
-    active_link_step_count::Int
+    laser_type::Symbol                              # :communication, :power_transfer, :thruster
+    params::Union{Nothing, AbstractLaserLinkParams} # picked by laser_type
 end
 
-function OpenCavityLaserLinkModel(;
-    target_idx::Integer=1,
-    helper_indices::AbstractVector{<:Integer}=Int[],
+function build_LaserLinkModel(;
+    sat_i::Integer,
+    sat_j::Integer,
     range_m::Real=200e3,
+    schedule::Symbol=:naive_next_entering,
+    laser_type::Symbol=:thruster,
     power_w::Real=10_000.0,
     magnification::Real=100.0,
     beta::Real=1.0,
     eta::Real=2.0,
-    schedule::Symbol=:naive_next_entering,
-    active_helper_idx::Integer=0,
-    previous_in_range::AbstractVector{Bool}=Bool[],
-    link_activation_count::Integer=0,
-    active_link_step_count::Integer=0,
 )
-    model = OpenCavityLaserLinkModel(
-        Int(target_idx),
-        collect(Int, helper_indices),
-        Float64(range_m),
-        Float64(power_w),
-        Float64(magnification),
-        Float64(beta),
-        Float64(eta),
-        schedule,
-        Int(active_helper_idx),
-        collect(Bool, previous_in_range),
-        Int(link_activation_count),
-        Int(active_link_step_count),
-    )
-    _validate_laser_link_model!(model)
-    _ensure_laser_link_state!(model)
-    return model
-end
-
-function OpenCavityLaserLinkModel(
-    target_idx::Integer,
-    helper_indices::AbstractVector{<:Integer};
-    range_m::Real=200e3,
-    power_w::Real=10_000.0,
-    magnification::Real=100.0,
-    beta::Real=1.0,
-    eta::Real=2.0,
-    schedule::Symbol=:naive_next_entering,
-)
-    model = OpenCavityLaserLinkModel(
-        target_idx=Int(target_idx),
-        helper_indices=collect(Int, helper_indices),
-        range_m=Float64(range_m),
-        power_w=Float64(power_w),
-        magnification=Float64(magnification),
-        beta=Float64(beta),
-        eta=Float64(eta),
-        schedule=schedule,
-    )
-    _validate_laser_link_model!(model)
-    _ensure_laser_link_state!(model)
-    return model
-end
-
-function _validate_laser_link_model!(model::OpenCavityLaserLinkModel)::Nothing
-    model.target_idx > 0 || throw(ArgumentError("OpenCavityLaserLinkModel.target_idx must be positive."))
-    isempty(model.helper_indices) && throw(ArgumentError("OpenCavityLaserLinkModel requires at least one helper index."))
-    any(==(model.target_idx), model.helper_indices) &&
-        throw(ArgumentError("OpenCavityLaserLinkModel helper_indices cannot include target_idx."))
-    length(unique(model.helper_indices)) == length(model.helper_indices) ||
-        throw(ArgumentError("OpenCavityLaserLinkModel helper_indices must be unique."))
-    model.range_m >= 0.0 || throw(ArgumentError("OpenCavityLaserLinkModel.range_m must be >= 0.0."))
-    model.power_w >= 0.0 || throw(ArgumentError("OpenCavityLaserLinkModel.power_w must be >= 0.0."))
-    model.magnification >= 0.0 || throw(ArgumentError("OpenCavityLaserLinkModel.magnification must be >= 0.0."))
-    model.beta >= 0.0 || throw(ArgumentError("OpenCavityLaserLinkModel.beta must be >= 0.0."))
-    model.eta >= 0.0 || throw(ArgumentError("OpenCavityLaserLinkModel.eta must be >= 0.0."))
-    model.schedule in SUPPORTED_LASER_SCHEDULES ||
-        throw(ArgumentError("Unsupported OpenCavityLaserLinkModel.schedule=$(repr(model.schedule)). Supported schedules: $(SUPPORTED_LASER_SCHEDULES)."))
-    return nothing
-end
-
-@inline function _ensure_laser_link_state!(model::OpenCavityLaserLinkModel)::Nothing
-    if length(model.previous_in_range) != length(model.helper_indices)
-        resize!(model.previous_in_range, length(model.helper_indices))
-        fill!(model.previous_in_range, false)
+    # pick params by laser_type, then build the link.
+    params = if laser_type === :thruster
+        LaserThrusterParams(power_w, magnification, beta, eta)
+    elseif laser_type === :communication
+        LaserCommunicationParams(power_w)
+    elseif laser_type === :power_transfer
+        LaserPowerTransferParams(power_w)
+    else
+        nothing
     end
-    return nothing
+    return LaserLinkModel(Int(sat_i), Int(sat_j), Float64(range_m), schedule, laser_type, params)
 end
 
-@inline solver_partition(::OpenCavityLaserLinkModel) = :explicit
-
-function calcForceTorque(
-    ::OpenCavityLaserLinkModel,
-    x,
-    p,
-    i::Int64,
+# Laser force is applied via callback, not the ODE RHS, so wrench is always zero.
+@inline function wrench(
+    ::LaserLinkModel,
+    ::StateSample,
+    ::EnvironmentSample,
+    ::Float64,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-@inline laser_link_force_magnitude(model::OpenCavityLaserLinkModel)::Float64 =
-    model.eta * model.beta * model.magnification * model.power_w / SPEED_OF_LIGHT_MPS
 
-@inline function _extract_pos_vel_mass(x)
-    pos = SVector{3, Float64}(x[1], x[2], x[3])
-    vel = SVector{3, Float64}(x[4], x[5], x[6])
-    mass = length(x) >= 7 ? Float64(x[7]) : NaN
-    return pos, vel, mass
-end
-
-function _state_vectors(u)::Tuple{Vector{SVector{3, Float64}}, Vector{SVector{3, Float64}}}
-    sc_state = u.sc
-    pos = Vector{SVector{3, Float64}}(undef, length(sc_state))
-    vel = Vector{SVector{3, Float64}}(undef, length(sc_state))
-    @inbounds for idx in eachindex(sc_state)
-        pos[idx], vel[idx], _ = _extract_pos_vel_mass(sc_state[idx])
-    end
-    return pos, vel
-end
-
-@inline _helper_slot(model::OpenCavityLaserLinkModel, helper_idx::Int)::Union{Nothing, Int} =
-    findfirst(==(helper_idx), model.helper_indices)
-
-function _in_range_flags!(
-    flags::Vector{Bool},
-    model::OpenCavityLaserLinkModel,
-    pos::AbstractVector{SVector{3, Float64}},
-)::Vector{Bool}
-    _ensure_laser_link_state!(model)
-    if length(flags) != length(model.helper_indices)
-        resize!(flags, length(model.helper_indices))
-    end
-    target_pos = pos[model.target_idx]
-    @inbounds for slot in eachindex(model.helper_indices)
-        helper_idx = model.helper_indices[slot]
-        flags[slot] = norm(pos[helper_idx] - target_pos) <= model.range_m
-    end
-    return flags
-end
-
-@inline function _rtn_basis(pos_t::SVector{3, Float64}, vel_t::SVector{3, Float64})
-    rnorm = norm(pos_t)
-    rhat = rnorm > 0.0 ? pos_t / rnorm : SVector{3, Float64}(1.0, 0.0, 0.0)
-    h = cross(pos_t, vel_t)
-    hnorm = norm(h)
-    nhat = hnorm > 0.0 ? h / hnorm : SVector{3, Float64}(0.0, 0.0, 1.0)
-    that = cross(nhat, rhat)
-    return rhat, that, nhat
-end
-
-# Projects the unit laser force direction (helper → target) onto the target's along-track
-# (T) axis. Positive means the force on the target is in the +T direction, i.e., the
-# helper is trailing behind the target and the laser accelerates it forward.
+# ── Helper-scoring (one scoring function per scheduling policy) ────────────────
+# Projection of the emitter->receiver laser direction onto the receiver's along-track axis;
+# positive means the laser pushes the receiver prograde.
 @inline function _along_track_projection(
-    model::OpenCavityLaserLinkModel,
-    helper_idx::Int,
+    receiver::Int,
+    emitter::Int,
     pos::AbstractVector{SVector{3, Float64}},
     vel::AbstractVector{SVector{3, Float64}},
 )::Float64
-    target_pos = pos[model.target_idx]
-    rel = target_pos - pos[helper_idx]   # force direction: helper → target
+    receiver_pos = pos[receiver]
+    rel = receiver_pos - pos[emitter]       # emitter → receiver
     rho = norm(rel)
-    rho > 0.0 || return 0.0
-    _, that, _ = _rtn_basis(target_pos, vel[model.target_idx])
+    that = rtn_dcm_from_inertial(receiver_pos, vel[receiver])[:, 2]
     return dot(rel / rho, that)
 end
 
-# Earth gravitational parameter used in GVE computations [m³/s²]
-const _MU_EARTH_GVE = 3.986004418e14
-
-# General GVE score for any classical orbital element.
-# Implements the Gauss Variational Equations (Eq. 24) to compute the instantaneous
-# rate contribution to element `elem` from firing the laser link to `helper_idx`.
-# Positive score ⇒ link increases the element; negative ⇒ decreases it.
-# Force magnitude is common to all helpers so it cancels in the argmax.
-#
-# Supported `elem` symbols:
-#   :gve_sma  — semi-major axis ȧ
-#   :gve_ecc  — eccentricity ė
-#   :gve_inc  — inclination i̇  (N-component only)
-#   :gve_raan — RAAN Ω̇           (N-component only, singular at i=0)
-#   :gve_argp — argument of periapsis ω̇ (all three components)
+# Scores the instantaneous rate of change of orbital element `elem` if the laser fires emitter -> receiver.
 function _gve_score(
     elem::Symbol,
-    model::OpenCavityLaserLinkModel,
-    helper_idx::Int,
+    receiver::Int,
+    emitter::Int,
     pos::AbstractVector{SVector{3, Float64}},
     vel::AbstractVector{SVector{3, Float64}},
 )::Float64
-    tgt_pos = pos[model.target_idx]
-    tgt_vel = vel[model.target_idx]
+    tgt_pos = pos[receiver]
+    tgt_vel = vel[receiver]
 
-    # Unit force direction on target (helper → target)
-    rel = tgt_pos - pos[helper_idx]
+    # Unit force direction on receiver (emitter → receiver)
+    rel = tgt_pos - pos[emitter]
     rho = norm(rel)
-    rho > 0.0 || return 0.0
     f̂ = rel / rho
 
     # RTN decomposition of force direction
-    rhat, that, nhat = _rtn_basis(tgt_pos, tgt_vel)
+    C = rtn_dcm_from_inertial(tgt_pos, tgt_vel)
+    rhat, that, nhat = C[:, 1], C[:, 2], C[:, 3]
     aR = dot(f̂, rhat)
     aT = dot(f̂, that)
     aN = dot(f̂, nhat)
 
-    # --- Orbital state of target ---
+    # Step 2: compute the target's orbital elements and anomaly.
     r  = norm(tgt_pos)
-    r > 0.0 || return 0.0
     v2 = dot(tgt_vel, tgt_vel)
     a  = -_MU_EARTH_GVE / (v2 - 2.0 * _MU_EARTH_GVE / r)   # vis-viva
-    a > 0.0 || return 0.0                                     # skip hyperbolic
 
     h_vec  = cross(tgt_pos, tgt_vel)
     h_sq   = dot(h_vec, h_vec)
     h_norm = sqrt(h_sq)
-    h_norm > 0.0 || return 0.0
     p_slr  = h_sq / _MU_EARTH_GVE                            # semi-latus rectum
 
     e_vec = cross(tgt_vel, h_vec) / _MU_EARTH_GVE - tgt_pos / r
@@ -267,7 +145,32 @@ function _gve_score(
     ν = acos(clamp(dot(e_vec / max(e, 1e-12), tgt_pos / r), -1.0, 1.0))
     dot(tgt_pos, tgt_vel) < 0.0 && (ν = 2π - ν)
 
-    # --- GVE scoring per element ---
+    # Inclination/argument-of-latitude terms needed by gve_inc, gve_raan, gve_argp.
+    i_rad  = acos(clamp(h_vec[3] / h_norm, -1.0, 1.0))
+    sin_i  = sin(i_rad)
+    cos_i  = cos(i_rad)
+
+    # Ascending node vector (n_asc = k̂ × ĥ)
+    n_asc  = cross(SVector(0.0, 0.0, 1.0), h_vec)
+    n_mag  = norm(n_asc)
+
+    # Argument of latitude u = ν + ω
+    u = if n_mag > 1e-12 && e > 1e-12
+        # General case
+        ω = acos(clamp(dot(n_asc / n_mag, e_vec / e), -1.0, 1.0))
+        e_vec[3] < 0.0 && (ω = 2π - ω)
+        ν + ω
+    elseif n_mag > 1e-12
+        # Circular orbit: use angle from node to position
+        u_tmp = acos(clamp(dot(n_asc / n_mag, tgt_pos / r), -1.0, 1.0))
+        tgt_pos[3] < 0.0 ? 2π - u_tmp : u_tmp
+    else
+        # Equatorial: use true longitude from x-axis
+        atan(tgt_pos[2], tgt_pos[1])
+    end
+
+    denom = n_mean * a * a * sqrt_1me2
+
     if elem === :gve_sma
         # ȧ = 2/(n√(1-e²)) * (e sinν · aR  +  p/r · aT)
         return (2.0 / (n_mean * sqrt_1me2)) * (e * sin(ν) * aR + (p_slr / r) * aT)
@@ -277,289 +180,251 @@ function _gve_score(
         coeff_T = cos(ν) + (e + cos(ν)) / (1.0 + e * cos(ν))
         return (sqrt_1me2 / (n_mean * a)) * (sin(ν) * aR + coeff_T * aT)
 
-    else
-        # :gve_inc, :gve_raan, :gve_argp all need inclination and argument of latitude u
-        i_rad  = acos(clamp(h_vec[3] / h_norm, -1.0, 1.0))
-        sin_i  = sin(i_rad)
-        cos_i  = cos(i_rad)
+    elseif elem === :gve_inc
+        # i̇ = r cos(u) / (na²√(1-e²)) · aN
+        return (r * cos(u) / denom) * aN
 
-        # Ascending node vector (n_asc = k̂ × ĥ)
-        n_asc  = cross(SVector(0.0, 0.0, 1.0), h_vec)
-        n_mag  = norm(n_asc)
+    elseif elem === :gve_raan
+        # Ω̇ = r sin(u) / (na²√(1-e²) sin i) · aN   [singular at i = 0 — kept: our default scenario is equatorial]
+        abs(sin_i) < 1e-6 && return 0.0
+        return (r * sin(u) / (denom * sin_i)) * aN
 
-        # Argument of latitude u = ν + ω
-        u = if n_mag > 1e-12 && e > 1e-12
-            # General case
-            ω = acos(clamp(dot(n_asc / n_mag, e_vec / e), -1.0, 1.0))
-            e_vec[3] < 0.0 && (ω = 2π - ω)
-            ν + ω
-        elseif n_mag > 1e-12
-            # Circular orbit: use angle from node to position
-            u_tmp = acos(clamp(dot(n_asc / n_mag, tgt_pos / r), -1.0, 1.0))
-            tgt_pos[3] < 0.0 ? 2π - u_tmp : u_tmp
-        else
-            # Equatorial: use true longitude from x-axis
-            atan(tgt_pos[2], tgt_pos[1])
-        end
-
-        denom = n_mean * a * a * sqrt_1me2
-
-        if elem === :gve_inc
-            # i̇ = r cos(u) / (na²√(1-e²)) · aN
-            return (r * cos(u) / denom) * aN
-
-        elseif elem === :gve_raan
-            # Ω̇ = r sin(u) / (na²√(1-e²) sin i) · aN   [singular at i = 0]
-            abs(sin_i) < 1e-6 && return 0.0
-            return (r * sin(u) / (denom * sin_i)) * aN
-
-        else  # :gve_argp
-            # ω̇ = √(1-e²)/(nae) [-cosν · aR + (1+r/p) sinν · aT]
-            #       - r sin(u) cos(i) / (na²√(1-e²) sin i) · aN
-            abs(e) < 1e-6    && return 0.0   # circular: ω undefined
-            abs(sin_i) < 1e-6 && return 0.0   # equatorial: ω undefined
-            term_RT = (sqrt_1me2 / (n_mean * a * e)) *
-                      (-cos(ν) * aR + (1.0 + r / p_slr) * sin(ν) * aT)
-            term_N  = -(r * sin(u) * cos_i / (denom * sin_i)) * aN
-            return term_RT + term_N
-        end
+    else  # :gve_argp
+        # ω̇ = √(1-e²)/(nae) [-cosν · aR + (1+r/p) sinν · aT]
+        #       - r sin(u) cos(i) / (na²√(1-e²) sin i) · aN   [singular for e=0 or i=0 — kept: our defaults]
+        abs(e) < 1e-6    && return 0.0
+        abs(sin_i) < 1e-6 && return 0.0
+        term_RT = (sqrt_1me2 / (n_mean * a * e)) *
+                  (-cos(ν) * aR + (1.0 + r / p_slr) * sin(ν) * aT)
+        term_N  = -(r * sin(u) * cos_i / (denom * sin_i)) * aN
+        return term_RT + term_N
     end
 end
 
-function _closest_in_range_helper(
-    model::OpenCavityLaserLinkModel,
-    pos::AbstractVector{SVector{3, Float64}},
-    in_range::AbstractVector{Bool},
-)::Int
-    target_pos = pos[model.target_idx]
-    best_idx = 0
-    best_range = Inf
-    @inbounds for slot in eachindex(model.helper_indices)
-        in_range[slot] || continue
-        helper_idx = model.helper_indices[slot]
-        rho = norm(pos[helper_idx] - target_pos)
-        if rho < best_range
-            best_idx = helper_idx
-            best_range = rho
-        end
+# ── Scheduling: choose which links fire each step, and wire it into the ODE solver ──
+# Extracts position and velocity arrays for all spacecraft from the ODE state.
+# Input: ODE state u with u.sc array of per-spacecraft state views.
+# Output: two Vector{SVector{3,Float64}} — positions and velocities for all N spacecraft.
+function _state_vectors(u)::Tuple{Vector{SVector{3, Float64}}, Vector{SVector{3, Float64}}}
+    # Step 1: allocate position and velocity vectors for all spacecraft.
+    sc_state = u.sc
+    pos = Vector{SVector{3, Float64}}(undef, length(sc_state))
+    vel = Vector{SVector{3, Float64}}(undef, length(sc_state))
+    # Step 2: copy each spacecraft's position and velocity from the ODE state.
+    @inbounds for idx in eachindex(sc_state)
+        sc = sc_state[idx]
+        pos[idx] = SVector{3, Float64}(sc[1], sc[2], sc[3])
+        vel[idx] = SVector{3, Float64}(sc[4], sc[5], sc[6])
     end
-    return best_idx
+    # Step 3: return the extracted state vectors.
+    return pos, vel
 end
 
-function _closest_entering_helper(
-    model::OpenCavityLaserLinkModel,
-    pos::AbstractVector{SVector{3, Float64}},
-    in_range::AbstractVector{Bool},
-)::Int
-    target_pos = pos[model.target_idx]
-    best_idx = 0
-    best_range = Inf
-    @inbounds for slot in eachindex(model.helper_indices)
-        in_range[slot] || continue
-        model.previous_in_range[slot] && continue
-        helper_idx = model.helper_indices[slot]
-        rho = norm(pos[helper_idx] - target_pos)
-        if rho < best_range
-            best_idx = helper_idx
-            best_range = rho
-        end
+# Greedily assigns satellite-disjoint links from `candidates` (highest priority first) on top of `kept`.
+# Input: kept (already-selected links, endpoints pre-claimed), candidates (priority-ordered pool), used (claimed satellites).
+# Output: Vector{Tuple{Int,Int}} — kept plus every candidate whose endpoints were still free when its turn came.
+function _assign_disjoint_links!(
+    kept::Vector{Tuple{Int, Int}},
+    candidates::AbstractVector{Tuple{Int, Int}},
+    used::Set{Int},
+)::Vector{Tuple{Int, Int}}
+    # Step 1: walk the priority-ordered candidates, claiming any whose endpoints are still free.
+    for (r, e) in candidates
+        (r in used || e in used) && continue                                    # one or both satellites already committed this tick
+        push!(kept, (r, e))                                                     # claim the link
+        push!(used, r)
+        push!(used, e)                                                          # mark both endpoints as committed
     end
-    return best_idx
+    # Step 2: return the combined selection.
+    return kept
 end
 
-function _activate_helper!(model::OpenCavityLaserLinkModel, helper_idx::Int)::Nothing
-    if helper_idx > 0 && model.active_helper_idx != helper_idx
-        model.link_activation_count += 1
+# Runs the constellation's scheduling policy and updates its shared link state.
+# Each satellite may appear in at most one entry of constellation.active_links at a time (enforced by the
+# matching below). Assumes every registered LaserLinkModel shares the same schedule.
+# Input: constellation (owns possible_links/active_links/previous_in_range_links), integrator.
+# Output: nothing (mutates constellation.active_links and constellation.previous_in_range_links).
+function choose_active_links!(constellation::constellation_struct, integrator)::Nothing
+    # Step 1: extract positions and velocities once, shared by every registered link.
+    pos, vel = _state_vectors(integrator.u)                                       # positions/velocities for every spacecraft
+    models = filter(m -> m isa LaserLinkModel, integrator.p.args.dynamics_model.dynamic_effectors)  # all registered links
+    schedule = models[1].schedule                                                # shared by every registered link
+
+    # Step 2: calculate the currently in-range subset of every registered link.
+    in_range = [
+        (m.sat_i, m.sat_j) for m in models
+        if norm(pos[m.sat_j] - pos[m.sat_i]) <= m.range_m                        # true if within this link's own range
+    ]
+    in_range_set = Set(in_range)                                                 # fast membership test for the matching below
+
+    used = Set{Int}()                                                            # satellites already claimed this tick
+    selected = Tuple{Int, Int}[]                                                 # this tick's constellation-wide active-link selection
+
+    # Step 3: apply the configured scheduling policy as a satellite-disjoint matching over in_range.
+    if schedule === :naive_next_entering
+        # Sticky: keep any currently active link that is still in range.
+        kept = [link for link in constellation.active_links if link in in_range_set]  # links carried over from last tick
+        for (r, e) in kept
+            push!(used, r); push!(used, e)                                       # claim both endpoints of every kept link
+        end
+        # Rank unclaimed in-range links: newly-entering ones outrank already-in-range ones; ties broken by distance.
+        entering  = Tuple{Int, Int}[]                                            # in-range links not seen last tick
+        remaining = Tuple{Int, Int}[]                                            # in-range links already seen last tick
+        for link in in_range
+            link in kept && continue                                             # already carried over above
+            if link in constellation.previous_in_range_links
+                push!(remaining, link)                                           # was already in range last tick
+            else
+                push!(entering, link)                                            # newly entered range this tick
+            end
+        end
+        sort!(entering;  by = link -> norm(pos[link[2]] - pos[link[1]]))         # closest entering link first
+        sort!(remaining; by = link -> norm(pos[link[2]] - pos[link[1]]))         # closest already-in-range link first
+        _assign_disjoint_links!(kept, entering, used)                            # claim entering links first
+        selected = _assign_disjoint_links!(kept, remaining, used)                # then fill remaining free satellites
+    elseif schedule === :positive_along_track
+        # Sticky: keep any currently active link that is still in range and still pushing prograde.
+        kept = [
+            link for link in constellation.active_links
+            if link in in_range_set && _along_track_projection(link[1], link[2], pos, vel) > 0.0
+        ]                                                                        # links carried over from last tick
+        for (r, e) in kept
+            push!(used, r); push!(used, e)                                       # claim both endpoints of every kept link
+        end
+        scored = [
+            (link, _along_track_projection(link[1], link[2], pos, vel))
+            for link in in_range if !(link in kept)
+        ]                                                                                 # (link, projection) for unclaimed in-range links
+        filter!(x -> x[2] > 0.0, scored)                                                  # only prograde-pushing candidates qualify
+        sort!(scored; by = x -> x[2], rev = true)                                         # best projection first
+        selected = _assign_disjoint_links!(kept, first.(scored), used)                    # claim links in descending projection order
+    elseif schedule in (:gve_sma, :gve_ecc, :gve_inc, :gve_raan, :gve_argp)               # GVE-optimal scheduling: not sticky, fully re-matched every tick.
+        scored = [
+            (link, _gve_score(schedule, link[1], link[2], pos, vel))
+            for link in in_range
+        ]                                                                                 # (link, GVE score) for every in-range link
+        filter!(x -> x[2] > 0.0, scored)                                                  # only links that actually help qualify
+        sort!(scored; by = x -> x[2], rev = true)                                         # best score first
+        selected = _assign_disjoint_links!(Tuple{Int, Int}[], first.(scored), used)       # claim links in descending score order
     end
-    model.active_helper_idx = helper_idx
+
+    # Step 4: commit the constellation-wide selection and range history for next tick's entering-detection.
+    constellation.active_links = selected                                        # publish this tick's active links
+    constellation.previous_in_range_links = in_range                             # remember this tick's in-range links
     return nothing
 end
 
-function update_laser_link_schedule!(
-    model::OpenCavityLaserLinkModel,
-    pos::AbstractVector{SVector{3, Float64}},
-    vel::AbstractVector{SVector{3, Float64}},
-)::Int
-    _validate_laser_link_model!(model)
-    in_range = _in_range_flags!(Bool[], model, pos)
-
-    if model.schedule === :naive_next_entering
-        if model.active_helper_idx > 0
-            slot = _helper_slot(model, model.active_helper_idx)
-            if slot === nothing || !in_range[slot]
-                model.active_helper_idx = 0
-                helper_idx = _closest_entering_helper(model, pos, in_range)
-                helper_idx > 0 && _activate_helper!(model, helper_idx)
-            end
-        else
-            helper_idx = any(model.previous_in_range) ?
-                _closest_entering_helper(model, pos, in_range) :
-                _closest_in_range_helper(model, pos, in_range)
-            helper_idx > 0 && _activate_helper!(model, helper_idx)
-        end
-    elseif model.schedule === :positive_along_track
-        if model.active_helper_idx > 0
-            slot = _helper_slot(model, model.active_helper_idx)
-            valid = slot !== nothing &&
-                in_range[slot] &&
-                _along_track_projection(model, model.active_helper_idx, pos, vel) > 0.0
-            valid || (model.active_helper_idx = 0)
-        end
-        if model.active_helper_idx == 0
-            best_idx = 0
-            best_projection = 0.0
-            @inbounds for slot in eachindex(model.helper_indices)
-                in_range[slot] || continue
-                helper_idx = model.helper_indices[slot]
-                projection = _along_track_projection(model, helper_idx, pos, vel)
-                if projection > best_projection
-                    best_projection = projection
-                    best_idx = helper_idx
-                end
-            end
-            best_idx > 0 && _activate_helper!(model, best_idx)
-        end
-    elseif model.schedule === :maximize_sma || model.schedule in (:gve_sma, :gve_ecc, :gve_inc, :gve_raan, :gve_argp)
-        # GVE-optimal scheduling: always fire the helper that maximises the chosen element rate.
-        # No sticky retention — globally re-evaluated every scheduler step.
-        elem = model.schedule === :maximize_sma ? :gve_sma : model.schedule
-        best_idx   = 0
-        best_score = 0.0
-        @inbounds for slot in eachindex(model.helper_indices)
-            in_range[slot] || continue
-            helper_idx = model.helper_indices[slot]
-            score = _gve_score(elem, model, helper_idx, pos, vel)
-            if score > best_score
-                best_score = score
-                best_idx   = helper_idx
-            end
-        end
-        _activate_helper!(model, best_idx)   # switches to best, or deactivates if none qualify
-    end
-
-    model.previous_in_range .= in_range
-    model.active_helper_idx > 0 && (model.active_link_step_count += 1)
-    return model.active_helper_idx
-end
-
-function update_laser_link_schedule!(model::OpenCavityLaserLinkModel, u)::Int
-    pos, vel = _state_vectors(u)
-    return update_laser_link_schedule!(model, pos, vel)
-end
-
-@inline laser_link_active_pair(model::OpenCavityLaserLinkModel)::Tuple{Int, Int} =
-    (model.target_idx, model.active_helper_idx)
-
-function laser_link_pair_force(
-    model::OpenCavityLaserLinkModel,
-    target_pos::SVector{3, Float64},
-    helper_pos::SVector{3, Float64},
-)::SVector{3, Float64}
-    rel = target_pos - helper_pos
-    rho = norm(rel)
-    (rho > 0.0 && rho <= model.range_m) || return SVector{3, Float64}(0.0, 0.0, 0.0)
-    return laser_link_force_magnitude(model) * rel / rho
-end
-
-function accumulate_laser_link_forces!(
-    totals::AbstractMatrix{Float64},
-    model::OpenCavityLaserLinkModel,
-    pos::AbstractVector{SVector{3, Float64}},
-    active_flags,
-)::Nothing
-    helper_idx = model.active_helper_idx
-    helper_idx > 0 || return nothing
-    target_idx = model.target_idx
-    target_idx <= length(pos) && helper_idx <= length(pos) || return nothing
-    active_flags[target_idx] && active_flags[helper_idx] || return nothing
-
-    force = laser_link_pair_force(model, pos[target_idx], pos[helper_idx])
-    @inbounds begin
-        totals[1, target_idx] += force[1]
-        totals[2, target_idx] += force[2]
-        totals[3, target_idx] += force[3]
-        totals[1, helper_idx] -= force[1]
-        totals[2, helper_idx] -= force[2]
-        totals[3, helper_idx] -= force[3]
-    end
-    return nothing
-end
-
-function _update_matching_laser_models!(template::OpenCavityLaserLinkModel, integrator)::Nothing
-    for effector in integrator.p.args.dynamics_model.dynamic_effectors
-        effector isa OpenCavityLaserLinkModel || continue
-        if effector === template ||
-           (effector.target_idx == template.target_idx && effector.helper_indices == template.helper_indices)
-            update_laser_link_schedule!(effector, integrator.u)
-        end
-    end
-    return nothing
-end
-
-function laser_link_scheduler_callback(model::OpenCavityLaserLinkModel)
-    condition(u, t, integrator) = true
-    affect!(integrator) = _update_matching_laser_models!(model, integrator)
-    initialize = (cb, u, t, integrator) -> _update_matching_laser_models!(model, integrator)
+# Builds a DiscreteCallback that runs the link scheduler at every accepted ODE step.
+# Input: constellation (captured by closure; mutated in place by choose_active_links!).
+# Output: DiffEqBase.DiscreteCallback that mutates constellation.active_links each step.
+function laser_link_scheduler_callback(constellation::constellation_struct)
+    # Step 1: define a condition that runs the scheduler at every accepted step.
+    condition(u, t, integrator) = true                                                             # always trigger
+    # Step 2: update the constellation's link state when the callback fires or initializes.
+    affect!(integrator) = choose_active_links!(constellation, integrator)                          # run the scheduler
+    initialize = (cb, u, t, integrator) -> choose_active_links!(constellation, integrator)          # also run it at setup
+    # Step 3: return the configured discrete callback.
     return DiffEqBase.DiscreteCallback(condition, affect!; initialize=initialize)
 end
 
-# Accumulates laser ΔV in RTN at every accepted ODE step via DiscreteCallback.
+# ── Impulse application: apply the velocity kick and track cumulative ΔV ──────────
+
+# Running accumulator for laser ΔV in RTN components; also stores the full time-series history.
 Base.@kwdef mutable struct LaserImpulseTracker
-    t_prev::Float64            = 0.0
-    dv_R::Float64              = 0.0
-    dv_T::Float64              = 0.0
-    dv_N::Float64              = 0.0
-    t_hist::Vector{Float64}    = Float64[]
-    dv_R_hist::Vector{Float64} = Float64[]
-    dv_T_hist::Vector{Float64} = Float64[]
-    dv_N_hist::Vector{Float64} = Float64[]
+    t_prev::Float64            = 0.0                                             # time of the previous callback invocation
+    dv_R::Dict{Tuple{Int, Int}, Float64}              = Dict{Tuple{Int, Int}, Float64}()             # cumulative radial ΔV per link
+    dv_T::Dict{Tuple{Int, Int}, Float64}              = Dict{Tuple{Int, Int}, Float64}()             # cumulative along-track ΔV per link
+    dv_N::Dict{Tuple{Int, Int}, Float64}              = Dict{Tuple{Int, Int}, Float64}()             # cumulative normal ΔV per link
+    active_link_steps::Int     = 0                                               # count of steps with at least one active link
+    t_hist::Vector{Float64}    = Float64[]                                       # time at each recorded step
+    dv_R_hist::Dict{Tuple{Int, Int}, Vector{Float64}} = Dict{Tuple{Int, Int}, Vector{Float64}}()     # radial ΔV time series per link
+    dv_T_hist::Dict{Tuple{Int, Int}, Vector{Float64}} = Dict{Tuple{Int, Int}, Vector{Float64}}()     # along-track ΔV time series per link
+    dv_N_hist::Dict{Tuple{Int, Int}, Vector{Float64}} = Dict{Tuple{Int, Int}, Vector{Float64}}()     # normal ΔV time series per link
 end
 
+# Records `value` into link's history vector, backfilling with zeros if this is the link's first appearance.
+function _push_link_hist!(
+    hist::Dict{Tuple{Int, Int}, Vector{Float64}},
+    link::Tuple{Int, Int},
+    value::Float64,
+    n_steps::Int,
+)::Nothing
+    v = get!(() -> zeros(n_steps - 1), hist, link)                               # existing history, or zero-padded if new
+    push!(v, value)                                                              # append this step's cumulative value
+    return nothing
+end
+
+# Finds the registered thruster-type LaserLinkModel matching `link`, if any.
+# Input: dynamic_effectors (from the integrator), link (a (sat_i, sat_j) pair).
+# Output: the matching LaserLinkModel, or nothing (e.g. link is :communication / :power_transfer, not yet modeled).
+function _find_thruster_model(dynamic_effectors, link::Tuple{Int, Int})::Union{Nothing, LaserLinkModel}
+    for model in dynamic_effectors
+        model isa LaserLinkModel || continue                                     # skip non-laser effectors
+        model.laser_type === :thruster || continue                               # skip comms/power-transfer links
+        (model.sat_i, model.sat_j) == link && return model                       # matching link found
+    end
+    return nothing                                                               # no thruster-type model registered for this link
+end
+
+# Builds a DiscreteCallback that applies a discrete velocity kick and accumulates RTN ΔV each step.
+# Input: constellation (for active_links), tracker (accumulates ΔV history, keyed per link), mass_kg of target.
+# Output: DiffEqBase.DiscreteCallback that mutates integrator.u velocities and tracker fields.
 function laser_impulse_callback(
-    model::OpenCavityLaserLinkModel,
+    constellation::constellation_struct,
     tracker::LaserImpulseTracker,
     mass_kg::Float64,
 )
+    # Step 1: define the callback that processes each accepted integration step.
     function affect!(integrator)
+        # Step 2: calculate elapsed time since the previous callback.
         dt = integrator.t - tracker.t_prev
-        if dt > 0.0
-            helper_idx = model.active_helper_idx
-            if helper_idx > 0
-                sc      = integrator.u.sc
-                tgt_pos = SVector{3, Float64}(sc[model.target_idx].pos)
-                tgt_vel = SVector{3, Float64}(sc[model.target_idx].vel)
-                hlp_pos = SVector{3, Float64}(sc[helper_idx].pos)
-                rel     = tgt_pos - hlp_pos
-                rho     = norm(rel)
-                if rho > 0.0 && rho <= model.range_m
-                    F_mag = model.eta * model.beta * model.magnification *
-                            model.power_w / SPEED_OF_LIGHT_MPS
-                    force = F_mag * rel / rho
-                    rhat, that, nhat = _rtn_basis(tgt_pos, tgt_vel)
-                    accel = force / mass_kg
-                    tracker.dv_R += dot(accel, rhat) * dt
-                    tracker.dv_T += dot(accel, that) * dt
-                    tracker.dv_N += dot(accel, nhat) * dt
+        if dt > 0.0                                                              # time actually elapsed?
+            isempty(constellation.active_links) || (tracker.active_link_steps += 1)  # count this step if any link is active
+            for link in constellation.active_links                              # apply the kick for every currently active link
+                model = _find_thruster_model(integrator.p.args.dynamics_model.dynamic_effectors, link)
+                model === nothing && continue                                    # not a thruster link — no mechanical kick (yet)
+                (receiver, emitter) = link
+                sc      = integrator.u.sc                                        # all spacecraft states
+                tgt_pos = SVector{3, Float64}(sc[receiver].pos)                  # receiver position
+                tgt_vel = SVector{3, Float64}(sc[receiver].vel)                  # receiver velocity
+                hlp_pos = SVector{3, Float64}(sc[emitter].pos)                   # emitter position
+                rel     = tgt_pos - hlp_pos                                      # emitter-to-receiver vector
+                rho     = norm(rel)                                              # distance between them
+                if rho <= model.range_m                                          # still within laser range
+                    # Step 3: calculate the active laser force and RTN acceleration.
+                    tp = model.params::LaserThrusterParams
+                    force = (tp.eta * tp.beta * tp.magnification * tp.power_w / SPEED_OF_LIGHT_MPS) * rel / rho
+                    C = rtn_dcm_from_inertial(tgt_pos, tgt_vel)                  # receiver's RTN basis
+                    rhat, that, nhat = C[:, 1], C[:, 2], C[:, 3]                 # radial/along-track/normal axes
+                    accel = force / mass_kg                                      # force to acceleration
+                    # Step 4: RTN delta-V computing, accumulated per link.
+                    tracker.dv_R[link] = get(tracker.dv_R, link, 0.0) + dot(accel, rhat) * dt   # add radial ΔV
+                    tracker.dv_T[link] = get(tracker.dv_T, link, 0.0) + dot(accel, that) * dt   # add along-track ΔV
+                    tracker.dv_N[link] = get(tracker.dv_N, link, 0.0) + dot(accel, nhat) * dt   # add normal ΔV
+                    # Step 5: apply kick in integrator for receiver and the emitter
+                    dv = accel * dt                                              # velocity change this step
+                    integrator.u.sc[receiver].vel .+= dv                         # push the receiver
+                    integrator.u.sc[emitter].vel .-= dv                          # recoil on the emitter
+                    DiffEqBase.u_modified!(integrator, true)                     # tell the solver state changed
                 end
             end
         end
-        tracker.t_prev = integrator.t
-        push!(tracker.t_hist,    integrator.t)
-        push!(tracker.dv_R_hist, tracker.dv_R)
-        push!(tracker.dv_T_hist, tracker.dv_T)
-        push!(tracker.dv_N_hist, tracker.dv_N)
+        # Step 5: record callback time and cumulative delta-V history for every link seen so far.
+        tracker.t_prev = integrator.t                                            # remember this callback's time
+        push!(tracker.t_hist, integrator.t)                                      # log the time
+        n_steps = length(tracker.t_hist)
+        for link in keys(tracker.dv_R)                                          # every link that has ever fired
+            _push_link_hist!(tracker.dv_R_hist, link, tracker.dv_R[link], n_steps)   # log cumulative radial ΔV
+            _push_link_hist!(tracker.dv_T_hist, link, tracker.dv_T[link], n_steps)   # log cumulative along-track ΔV
+            _push_link_hist!(tracker.dv_N_hist, link, tracker.dv_N[link], n_steps)   # log cumulative normal ΔV
+        end
     end
+    # Step 6: return the configured impulse callback.
     return DiffEqBase.DiscreteCallback(
         (u, t, integrator) -> true,
         affect!;
         save_positions=(false, false),
     )
-end
-
-function tracked_dv_at(tracker::LaserImpulseTracker, t::Float64)
-    isempty(tracker.t_hist) && return (0.0, 0.0, 0.0)
-    k = clamp(searchsortedlast(tracker.t_hist, t), 1, length(tracker.t_hist))
-    return (tracker.dv_R_hist[k], tracker.dv_T_hist[k], tracker.dv_N_hist[k])
 end
 
 end

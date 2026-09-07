@@ -55,14 +55,12 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [weakdeps]
 GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
-GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 
 [extensions]
 SpaceAGORAGRAMSuiteExt = "GRAMSuite"
 
 [extras]
 GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
-GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 
 [sources]
 GRAMSuite = {path = "data/GRAMSuite.jl"}
@@ -81,7 +79,6 @@ DiffEqBase = "6"
 DiffEqCallbacks = "4"
 Documenter = "1"
 GRAMSuite = "0.1"
-GLMakie = "0.13"
 Interpolations = "0.16"
 LoopVectorization = "0.12"
 MatrixEquations = "2"

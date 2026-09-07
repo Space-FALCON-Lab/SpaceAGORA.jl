@@ -68,7 +68,7 @@ module Planets
         mass::Float64  = 5.972e24 # Mass in kg
         p::Float64 = 101325.0 # Surface pressure in Pascals
         k::Float64 = 1.83e-4 # Chapman heating coefficient, kg^0.5/m
-        ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 7.2921066e-5) # Angular velocity vector in rad/s
+        ω::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 7.2921158553e-5) # Angular velocity vector in rad/s (IAU-82 GMST mean rate, matching the SimpleEphemeridesModel Earth frame propagation)
         # μ::Float64 = 3.986004415e14 # Standard gravitational parameter in m^3/s^2, GMAT default value
         μ::Float64 = 3.98600436233e14 # Standard gravitational parameter in m^3/s^2, DE421 value ends with 233 after 436
         J2::Float64 = 1.08263e-3 # J2 coefficient

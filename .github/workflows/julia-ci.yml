@@ -449,7 +449,14 @@ jobs:
       # test/gates/ci_coverage_quality_gate.jl burns down.
       SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
-      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
+      # The window is measured back from the NEWEST .cov file (written when
+      # the main suite process exits), but probe SUBPROCESSES (suites 02/09)
+      # write their .cov at their own exit, up to a full suite-duration
+      # earlier. 1200s silently dropped the threaded/GRAM probe coverage
+      # whenever the post-probe tail of the suite outgrew 20 min, failing
+      # per-file floors on files those probes cover. Must exceed the whole
+      # suite step's wall time on the slowest hosted runner.
+      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "7200"
     steps:
       - name: Checkout
         uses: actions/checkout@v7

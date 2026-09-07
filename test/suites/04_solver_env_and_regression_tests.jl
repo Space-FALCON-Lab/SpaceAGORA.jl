@@ -1519,10 +1519,20 @@
                 SVector{3, Float64}(4.8e6, 2.1e6, 1.7e6),
                 SVector{3, Float64}(-3.9e6, 5.2e6, 2.4e6)
             )
+            # The effector takes an inertial position and returns an inertial
+            # force, rotating through the ephemerides model's planet frame.
+            # Evaluate that same frame here and compare in planet-fixed axes,
+            # so the parity check is independent of the frame convention (the
+            # Earth frame is GMST-aligned, not identity, at the epoch).
+            et_compare = p_harmonics_compare.shared_buffers.et_start[] +
+                         p_harmonics_compare.shared_buffers.current_time[]
+            l_pi_compare = SimulationModel.planet_frame_lpi(
+                EARTH, et_compare, args_harmonics_compare.environment_model.ephemerides_model)
             for pos_pp in sample_positions_pp
-                state = ComponentVector(pos=collect(pos_pp), vel=[0.0, 0.0, 0.0], mass=200.0)
-                force_pp, torque_pp = calcForceTorque(model_full, state, p_harmonics_compare, 1)
-                acc_pp = force_pp / state.mass
+                pos_ii = l_pi_compare' * pos_pp
+                state = ComponentVector(pos=collect(pos_ii), vel=[0.0, 0.0, 0.0], mass=200.0)
+                force_ii, torque_pp = calcForceTorque(model_full, state, p_harmonics_compare, 1)
+                acc_pp = (l_pi_compare * force_ii) / state.mass
                 ref_total_pp = SVector{3, Float64}(
                     SatelliteToolboxGravityModels.GravityModels.gravitational_acceleration(
                         ref_model,

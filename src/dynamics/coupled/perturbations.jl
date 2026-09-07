@@ -1,6 +1,6 @@
 using LoopVectorization
 using LinearAlgebra
-using SatelliteToolbox
+using SatelliteToolboxTransformations: ned_to_ecef
 using SatelliteToolboxGeomagneticField
 using CSV
 using DataFrames

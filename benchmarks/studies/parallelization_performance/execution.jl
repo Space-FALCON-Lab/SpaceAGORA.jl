@@ -349,6 +349,13 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
                 case_name, local_cfg, mode_name, sample_idx, sample_seed = task
                 ppc_process_sample_task(case_name, local_cfg, mode_name, sample_idx, sample_seed)
             end
+            # As the campaign runner does after its own dispatch: collect on the
+            # idle workers between batches so the next batch does not pay a
+            # mid-round stall. Keeps the static process route and the adaptive
+            # runner on the same footing.
+            for w in worker_ids
+                Distributed.remote_do(GC.gc, w)
+            end
         end
     else
         withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do

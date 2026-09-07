@@ -582,6 +582,21 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
             println("[dispatch-trace] process dispatch=$(round(elapsed_s; digits=3))s n=$(length(samples)) " *
                 "worker_elapsed_sum=$(round(sum(x.elapsed_s for x in samples); digits=2))s completions_s=$(rel)")
         end
+        # Collect on the workers NOW, while they sit idle between campaigns,
+        # rather than letting each one collect mid-round in the next campaign
+        # and stall the whole round on the straggler. Measured on
+        # independent_1sat_1hr, 64 samples over 12 workers (~950 MB allocated
+        # per campaign across the pool): a campaign is 0.27 s except when a
+        # worker's collection lands inside it -- 0.38 s, 0.57 s, with 0.4-1.7 s
+        # of GC summed across the workers against 0.1 s -- and that lands on
+        # every second or third campaign. The noise it put on the route
+        # bandit's observations is what made the tie decision unreliable here.
+        # Fire-and-forget: a worker that is handed the next campaign's first
+        # sample right away runs the collection first, which is the same work
+        # at the start of the round instead of in the middle of it.
+        for w in active_workers
+            Distributed.remote_do(GC.gc, w)
+        end
         # The local slots ran samples on the coordinator's own heap, exactly
         # as a threaded dispatch does, and leave the same debt behind.
         local_slots > 0 && (_GC_DEBT[] = true)

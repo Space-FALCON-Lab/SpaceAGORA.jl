@@ -133,7 +133,14 @@ Base.@kwdef struct OuterRouteTuning
     # tie bounds what the trial can cost (see explore_routes). Off, the tie
     # resolves to the pool and stays there.
     explore_route_ties::Bool = outer_route_policy_v2()
-    tie_explore_min_campaigns::Int = 1
+    # Two, not one: an arm's first campaign in a process is its cold one
+    # (pool spin-up, JIT on the workers, the collection that follows), and
+    # OuterRouteStats evicts that first reading only once a warm one exists.
+    # Judged on one campaign each, the pool lost the tie at 3-4x its steady
+    # cost on both machines (L12). The second campaign of each arm is the one
+    # the comparison is made on; the cost is two more exploratory campaigns
+    # per tie shape per machine, persisted.
+    tie_explore_min_campaigns::Int = 2
     trace::Bool = false
 end
 

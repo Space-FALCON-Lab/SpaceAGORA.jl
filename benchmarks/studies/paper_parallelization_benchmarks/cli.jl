@@ -894,7 +894,11 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         parity_cases = ["montecarlo_heavy_aerobraking"],
         modes        = ["serial", "outer_process", "policy_v2"],
         mc_samples   = [16],
-        repeats      = 3,
+        # Five repeats on every Monte Carlo light phase: an adaptive point's
+        # repeats are cold, then up to two exploratory campaigns per arm on a
+        # rounds tie, then exploitation; three repeats put the median on an
+        # exploration campaign by construction.
+        repeats      = 5,
         warmup       = 1,
         thread_mode   = :single,
         worker_ladder = [4, 12],
@@ -939,7 +943,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         parity_cases = ["independent_1sat_1hr"],
         modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "policy_v2"],
         mc_samples   = [64],
-        repeats      = 3,
+        repeats      = 5,
         warmup       = 1,
         thread_mode  = :low_high,
     ),
@@ -950,7 +954,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         parity_cases = ["montecarlo_heavy_aerobraking"],
         modes        = ["outer_process", "outer_threads", "policy_v2"],
         mc_samples   = [16],
-        repeats      = 3,
+        repeats      = 5,
         warmup       = 1,
         budget_grid  = [(1, 12), (3, 4), (12, 1)],
     ),
@@ -974,7 +978,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         parity_cases = ["mcgrid_16sat_8mc"],
         modes        = ["outer_process", "outer_threads", "policy_v2"],
         mc_samples   = [1],
-        repeats      = 3,
+        repeats      = 5,
         warmup       = 1,
         budget_grid  = [(1, 12), (2, 6), (12, 1)],
     ),

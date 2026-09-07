@@ -39,20 +39,26 @@ end
             @test_skip "no rounds tie reachable on this machine's core budget"
         else
             f = _feat(n_tie + 1)
+            n = f.montecarlo_samples
+            rec(st, route, per) = PPr.record_outer_route_feedback!(st, f; route = route, successes = n,
+                failures = 0, elapsed_success_s = per * n, tuning = t)
             st = PPr.OuterRouteState()
+            # Each parallel arm gets tie_explore_min_campaigns (2) campaigns: the
+            # first is the cold one and is evicted by the second.
             @test PPr.select_outer_route!(st, f; _kw(t)...) === :process        # cold: the pool
-            PPr.record_outer_route_feedback!(st, f; route = :process, successes = f.montecarlo_samples,
-                failures = 0, elapsed_success_s = 1.0 * f.montecarlo_samples, tuning = t)
-            @test PPr.select_outer_route!(st, f; _kw(t)...) === :threads        # the unmeasured arm
-            PPr.record_outer_route_feedback!(st, f; route = :threads, successes = f.montecarlo_samples,
-                failures = 0, elapsed_success_s = 0.5 * f.montecarlo_samples, tuning = t)
+            rec(st, :process, 3.0)                                              # cold reading
+            @test PPr.select_outer_route!(st, f; _kw(t)...) === :process        # the pool again, warm
+            rec(st, :process, 1.0)
+            @test PPr.select_outer_route!(st, f; _kw(t)...) === :threads        # the other arm
+            rec(st, :threads, 0.5)
+            @test PPr.select_outer_route!(st, f; _kw(t)...) === :threads
+            rec(st, :threads, 0.5)
             @test PPr.select_outer_route!(st, f; _kw(t)...) === :threads        # measured faster
-            # The other way round: the pool measured faster is kept.
+            # The other way round: a pool whose warm campaign is the faster wins
+            # even though its cold campaign was the slowest reading of all.
             st2 = PPr.OuterRouteState()
-            PPr.record_outer_route_feedback!(st2, f; route = :process, successes = f.montecarlo_samples,
-                failures = 0, elapsed_success_s = 0.5 * f.montecarlo_samples, tuning = t)
-            PPr.record_outer_route_feedback!(st2, f; route = :threads, successes = f.montecarlo_samples,
-                failures = 0, elapsed_success_s = 1.0 * f.montecarlo_samples, tuning = t)
+            rec(st2, :process, 3.0); rec(st2, :process, 0.3)
+            rec(st2, :threads, 0.6); rec(st2, :threads, 0.6)
             @test PPr.select_outer_route!(st2, f; _kw(t)...) === :process
             # Off, the tie is never explored: the pool answers every time.
             st3 = PPr.OuterRouteState()

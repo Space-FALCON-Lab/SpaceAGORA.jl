@@ -845,7 +845,7 @@ end
     end
 end
 
-@inline function _nbody_body_position_from_cache_j2000_m(
+@noinline function _nbody_body_position_from_cache_j2000_m(
     cache::NBodyEphemerisCache,
     et::Float64,
     body_name_spice::String,
@@ -1220,7 +1220,7 @@ end
     end
 end
 
-@inline function _srp_sun_position_from_cache_j2000_m(cache::SRPSunEphemerisCache, et::Float64)::Union{Nothing, SVector{3, Float64}}
+@noinline function _srp_sun_position_from_cache_j2000_m(cache::SRPSunEphemerisCache, et::Float64)::Union{Nothing, SVector{3, Float64}}
     ets = cache.ets
     n_samples = length(ets)
     n_samples >= 2 || return nothing

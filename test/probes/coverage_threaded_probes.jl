@@ -952,8 +952,11 @@ end
                 Int64(2) => policy.AdaptiveChoiceStats(samples=4, successes=3, failures=1, elapsed_sum_ns=120.0, elapsed_sq_sum_ns=3_600.0)
             )
         end
+        # A cold signature starts at the widest candidate (see the comment in
+        # _hint_choose_allotment: an unseen workload must not begin serial and
+        # walk the ladder up on every re-exploration).
         miss_choice = policy._hint_choose_allotment("sig_missing", Int64[1, 2])
-        @test miss_choice.allotment == 1
+        @test miss_choice.allotment == 2
         zero_choice = policy._hint_choose_allotment("sig_zero", Int64[1])
         @test zero_choice.allotment == 1
         chosen = policy._hint_choose_allotment("sig_choose", Int64[1, 2])
@@ -1017,7 +1020,15 @@ end
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
         "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0",
-        "SPACEAGORA_INNER_THREAD_BUDGET" => "4"
+        "SPACEAGORA_INNER_THREAD_BUDGET" => "4",
+        # This block tests the hint bookkeeping, not the policy gates in front
+        # of it, so pin those gates open: the layer is consulted only when it
+        # pays for itself against the measured work of the source
+        # (_hint_layer_pays; the synthetic 10 ns observations never would), and
+        # the adaptive branch runs only from auto_thread_min_budget threads up
+        # (the probe driver runs this file with two).
+        "SPACEAGORA_PARALLEL_POLICY_HINT_WORK_RATIO" => "0",
+        "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "1"
     ) do
         # The telemetry lock now lives on the context it guards, not process-wide.
         ctx_reset = policy._active_policy_context()

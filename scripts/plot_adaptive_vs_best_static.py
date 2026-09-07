@@ -91,12 +91,21 @@ PHASE_LABELS = {
     "Q1": "Quick: constellation thread ladder",
     "Q2": "Quick: calibration on a pinned-plan workload",
     "Q3": "Quick: Monte Carlo thread vs. process split",
+    "L8": "Light: heavy Monte Carlo process throughput",
+    "L9": "Light: spacecraft count",
+    "L10": "Light: atmosphere and GRAM surrogate",
+    "L11": "Light: force and actuator model count",
+    "L12": "Light: interacting vs. independent",
+    "L13": "Light: thread vs. process budget split",
+    "L14": "Light: mission duration and output cadence",
+    "L15": "Light: nested campaign aspect ratio",
 }
 
 
 def phase_sort_key(p: str):
-    # B-series first in numeric order, then the --quick Q-series.
-    return (0 if p.startswith("B") else 1, int(p[1:])) if p[1:].isdigit() else (2, p)
+    # B-series first in numeric order, then the --light L-series, then the --quick Q-series.
+    order = {"B": 0, "L": 1, "Q": 2}
+    return (order.get(p[:1], 3), int(p[1:])) if p[1:].isdigit() else (4, p)
 
 
 # ── Loading ──────────────────────────────────────────────────────────────────
@@ -115,7 +124,7 @@ def _load_csv_rows(path: str):
 
 def _phase_from_worker_path(outdir: str, path: str):
     rel = os.path.relpath(path, outdir).split(os.sep)
-    return rel[0] if rel and rel[0][:1] in ("B", "Q") and rel[0][1:].isdigit() else None
+    return rel[0] if rel and rel[0][:1] in ("B", "Q", "L") and rel[0][1:].isdigit() else None
 
 
 def load_outdirs(outdirs: list[str]):
@@ -135,7 +144,7 @@ def load_outdirs(outdirs: list[str]):
                 if not phase:
                     continue
                 per_point[_key(phase, r)]["raw"].append(r)
-        for wf in glob.glob(os.path.join(outdir, "[BQ]*", "**", "worker_rows", "perf_*.csv"), recursive=True):
+        for wf in glob.glob(os.path.join(outdir, "[BQL]*", "**", "worker_rows", "perf_*.csv"), recursive=True):
             phase = _phase_from_worker_path(outdir, wf)
             if phase is None:
                 continue

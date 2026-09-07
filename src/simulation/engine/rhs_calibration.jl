@@ -287,6 +287,8 @@ function _rhs_calib_load!()::Nothing
                 "elapsed_mean_ns"=> Float64(get(row, "elapsed_mean_ns", 0.0)),
                 "solve_ns"       => Float64(get(row, "solve_ns", 0.0)),
                 "heuristic_votes"=> Int(get(row, "heuristic_votes", 0)),
+                "sweep_ns"       => Float64(get(row, "sweep_ns", 0.0)),
+                "honoured_ns"    => Float64(get(row, "honoured_ns", 0.0)),
             )
             _rhs_calib_cache[sig] = entry
         end
@@ -314,6 +316,11 @@ function _rhs_calib_save!()::Nothing
                 # How many consecutive sweeps ended with this verdict; see
                 # _rhs_calib_cached_verdict. Zero for a pinned plan.
                 "heuristic_votes" => Int(get(e, "heuristic_votes", 0)),
+                # What the sweep that formed this verdict cost, and how much
+                # solve time has been run on the verdict since. The two decide
+                # when a long solve re-verifies (_rhs_calib_reverify_due).
+                "sweep_ns"        => Float64(get(e, "sweep_ns", 0.0)),
+                "honoured_ns"     => Float64(get(e, "honoured_ns", 0.0)),
             )
             push!(rows, row)
         end
@@ -354,7 +361,7 @@ function _rhs_calib_lookup(sig::String)::Union{Nothing, Symbol, NamedTuple}
     return nothing
 end
 
-function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0)::Nothing
+function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; sweep_ns::Float64 = 0.0)::Nothing
     _rhs_calib_load!()
     lock(_rhs_calib_lock) do
         prev = get(_rhs_calib_cache, sig, nothing)
@@ -366,6 +373,8 @@ function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0)::
             "scheduler"       => "auto",
             "elapsed_mean_ns" => heuristic_ns,
             "heuristic_votes" => votes,
+            "sweep_ns"        => sweep_ns,
+            "honoured_ns"     => 0.0,
         )
         prev !== nothing && haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
         _rhs_calib_cache[sig] = entry
@@ -395,17 +404,24 @@ end
     return max(1, n)
 end
 
-function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64)::Nothing
+function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns::Float64 = 0.0)::Nothing
     # Settle the lazy one-time disk load first: otherwise a later first lookup
     # would load persisted entries over fresher in-process stores.
     _rhs_calib_load!()
     lock(_rhs_calib_lock) do
+        prev = get(_rhs_calib_cache, sig, nothing)
         entry = Dict{String, Any}(
             "mode"            => String(plan.mode),
             "allotment"       => Int(plan.allotment),
             "scheduler"       => String(plan.scheduler),
             "elapsed_mean_ns" => elapsed_mean_ns,
+            "sweep_ns"        => sweep_ns,
+            "honoured_ns"     => 0.0,
         )
+        # The solve length is a property of the shape, not of the verdict;
+        # dropping it here put every freshly pinned plan back into "never
+        # measured", i.e. the sweep regime, until the next solve re-measured it.
+        prev !== nothing && haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
         _rhs_calib_cache[sig] = entry
     end
     return nothing
@@ -1126,6 +1142,54 @@ end
 # this feeds a threshold comparison, not a measurement, so a lost sample costs a
 # redundant sweep rather than a wrong answer.
 const _rhs_calib_solve_start = Dict{String, UInt64}()
+# Signature -> the solve about to run honours a cached verdict (no sweep), so
+# its time is charged to that verdict's honoured clock when it finishes.
+const _rhs_calib_solve_honoured = Dict{String, Bool}()
+
+# Share of solve time the pre-solve sweep may spend re-verifying a cached
+# verdict on a long solve. Dimensionless, so it means the same thing on every
+# machine: the sweep's cost is measured where it runs and the solves it insures
+# are measured where they run.
+@inline function _rhs_calibrate_reverify_share()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE", "0.05"))
+    v = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE must be a float, got '$raw'"))
+    end
+    return max(0.0, v)
+end
+
+# Whether a cached verdict on a long solve has earned its re-verification.
+#
+# As shipped, a long solve re-swept on EVERY solve: the premise was that above
+# a one-second solve the sweep is cheap insurance. It is not cheap where the
+# sweep's cost grows -- with the spacecraft count, and with the arm count,
+# which is O(log budget) x 2 schedulers plus the batch rungs, i.e. with the
+# machine. Measured on the 64-core TRX50's L9 (4096 spacecraft, 24 threads,
+# cold store): rhs_plan_source=sweep on every repeat, 3.7 GB allocated per
+# solve against 1.4 GB for the static route, R6 at 1.61x the best static
+# route; the same shape on the 12-core box with a warm store sat within noise.
+#
+# So the sweep is amortised instead: a verdict is honoured until the solve
+# time run on it reaches sweep_ns / share, at which point one re-sweep is due
+# and the clock restarts. The sweep's total share of solve time is bounded by
+# `share` on any machine. A verdict whose sweep cost was never measured
+# (sweep_ns = 0: written by an older store, or by the in-run width trial) is
+# re-verified as before, which is the conservative reading.
+function _rhs_calib_reverify_due(sig::String)::Bool
+    _rhs_calib_load!()
+    entry = lock(_rhs_calib_lock) do
+        get(_rhs_calib_cache, sig, nothing)
+    end
+    entry === nothing && return true
+    sweep_ns = Float64(get(entry, "sweep_ns", 0.0))
+    (isfinite(sweep_ns) && sweep_ns > 0.0) || return true
+    share = _rhs_calibrate_reverify_share()
+    share > 0.0 || return false
+    honoured_ns = Float64(get(entry, "honoured_ns", 0.0))
+    return honoured_ns * share >= sweep_ns
+end
 
 # True when this signature has been seen to solve for longer than the threshold,
 # i.e. we are in the always-sweep regime. An unmeasured signature answers TRUE:
@@ -1149,10 +1213,12 @@ function _rhs_calib_record_solve_time!()::Nothing
         isempty(_rhs_calib_solve_start) && return nothing
         for (sig, started) in collect(_rhs_calib_solve_start)
             delete!(_rhs_calib_solve_start, sig)
+            honoured = pop!(_rhs_calib_solve_honoured, sig, false)
             now > started || continue
             entry = get(_rhs_calib_cache, sig, nothing)
             entry === nothing && continue
             sample = Float64(now - started)
+            honoured && (entry["honoured_ns"] = Float64(get(entry, "honoured_ns", 0.0)) + sample)
             # MINIMUM across samples, not the latest.
             #
             # The first solve in a process is dominated by compilation -- 24.6 s
@@ -1197,6 +1263,14 @@ function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool)
     (long_solve && !honour_heuristic_verdict) && return nothing
     cached = _rhs_calib_lookup(sig)
     cached === nothing && return nothing
+    # V2 on a long solve: a pinned plan, and a heuristic verdict that has not
+    # yet reproduced, are honoured until the re-verification budget is spent
+    # (_rhs_calib_reverify_due); a reproduced heuristic verdict is honoured
+    # outright, below.
+    if long_solve && honour_heuristic_verdict &&
+       (cached !== :heuristic || _rhs_calib_heuristic_votes(sig) < _rhs_calibrate_heuristic_votes_needed())
+        return _rhs_calib_reverify_due(sig) ? nothing : cached
+    end
     if cached === :heuristic
         # On a long solve, only a REPRODUCIBLE heuristic verdict is honoured.
         #
@@ -1252,6 +1326,9 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     honour_heuristic_verdict = penv !== nothing && penv.policy_v2
     cached = _rhs_calib_cached_verdict(sig, honour_heuristic_verdict)
     if cached !== nothing
+        lock(_rhs_calib_lock) do
+            _rhs_calib_solve_honoured[sig] = true
+        end
         if cached === :heuristic
             # Cached retain-the-heuristic verdict: pin nothing, and -- the point --
             # do not sweep. rhs_plan_override stays unset, so _rhs_execution_plan
@@ -1286,8 +1363,16 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     # did was removed, see the solve-cost gate above -- but the sweep still
     # computes them and they are the natural place to hang outcome feedback off
     # when phase 6 lands.
+    sweep_started = time_ns()
     best_plan, best_elapsed, verdict, _rival_ns, _rival_plan =
         _run_rhs_sweep!(p, u0, dynamic_effectors, verbose, args)
+    sweep_ns = Float64(time_ns() - sweep_started)
+    # The solve is timed from here, not from before the sweep: the gate reads
+    # solve_ns as the solve's own length, and charging the sweep to it would
+    # make every swept shape look longer than it is.
+    lock(_rhs_calib_lock) do
+        _rhs_calib_solve_start[sig] = time_ns()
+    end
 
     if best_plan === nothing
         # The sweep ran and grew the buffer even though nothing was pinned, so
@@ -1299,7 +1384,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
             SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
                 :sweep, :heuristic, 0, :none
             )
-            _rhs_calib_store_heuristic!(sig, best_elapsed)
+            _rhs_calib_store_heuristic!(sig, best_elapsed; sweep_ns=sweep_ns)
             _rhs_calib_save!()
         end
         return
@@ -1313,7 +1398,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
         :sweep, best_plan.mode, best_plan.allotment, best_plan.scheduler
     )
-    _rhs_calib_store!(sig, best_plan, best_elapsed)
+    _rhs_calib_store!(sig, best_plan, best_elapsed; sweep_ns=sweep_ns)
     _rhs_calib_save!()
 
     return nothing

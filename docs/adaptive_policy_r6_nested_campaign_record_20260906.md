@@ -249,6 +249,114 @@ Unverifiable here: whether the defaults are right on a box that is not this
 one. The light set (§4.4) and the full B8–B15 set are what to run on the
 TRX50 when it is reachable.
 
+### 3.2 The policy at this point in time, top down (fix C `883ede03`, fixes D and E in the commit that follows)
+
+**0. What R6 is.** `SPACEAGORA_PARALLEL_PROFILE=R6` is R5's adaptive
+machinery plus `SPACEAGORA_PARALLEL_POLICY_V2=1`, which flips a set of
+`OuterRouteTuning` fields (`mc_route_by_core_budget`, `split_race`,
+`gc_before_dispatch`, `memory_aware`, `mixed_dispatch`, `explore_route_ties`)
+and the inner policy's V2 behaviours (static callback widths, cached
+calibration verdicts honoured, class-gate bypass). Everything below is what
+those switches turn on.
+
+**1. The outer route of a Monte Carlo campaign** (`_campaign_route_plan`,
+once per campaign). Input: `OuterRouteFeatures` — a probe simulation's shape
+(satellite count, effectors, density family, mission time, …) plus
+`montecarlo_samples = n`.
+
+- *Capacities.* `budget = T`, the coordinator's threads. Pool workers
+  `W = effective_process_workers` = min(usable physical cores, memory cap for
+  this workload, `--process-workers`). Local slots
+  `L = min(T − 1, usable_cores − W)`, capped by memory (and to 1 under native
+  GRAM). `cap = W + L`.
+- *Default rule* (`default_outer_route`). If the pool is affordable (≥ 2
+  workers, enough samples or mission time), count rounds:
+  `rp = cld(n, cap)`, `rt = cld(n, T)`. `rp < rt` → `:process` (mixed
+  dispatch); `rp > rt` → `:threads`; a tie — equal capacities included —
+  → `:process` as the cold answer, because a pool sample's cost is fixed by
+  its isolation while a thread sample's grows with T.
+- *Bandit on top* (`select_outer_route!`). Per shape signature, per-route
+  statistics (per-sample cost, success rate) persisted in `OuterRouteState`;
+  with history the route is picked by lower-confidence-bound UCB. V2 never
+  forces exploration, with one exception: on a rounds tie it spends one
+  campaign on the other parallel arm (reason `explore_tie`), then exploits
+  whichever measured cheaper. Fix E is what makes that comparison fair: the
+  arm is credited with its steady per-sample cost, not its cold first
+  campaign.
+
+**2. Split width and local slots.**
+
+- *Threads route.* Candidate widths are a geometric ladder from `T/4` to
+  `T`. Unseen shape → the in-campaign split race: one warm-up sample, a batch
+  at each width, the rest at the fastest per-sample width; every width's
+  result is recorded so the next campaign exploits without racing. Seen shape
+  → the split bandit picks.
+- *Process route.* No race (a pool worker's per-sample cost does not depend
+  on W), widest split. Local slots `L` as above, capped at the width the
+  threads route measured best on this shape once such history exists — a
+  local slot is a threads split of the coordinator.
+
+**3. Dispatch.**
+
+- `:threads` — `run_monte_carlo` with W concurrent samples; each advertises
+  `SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and an inner budget of `fld(T, W)` so
+  its inner layer cannot oversubscribe.
+- `:process` (mixed) — one job channel; W `@async` feeders each blocking on
+  `remotecall_fetch` to a `--threads=1` worker, plus L `Threads.@spawn` local
+  consumers under an inner budget of `fld(T, L)`. Pool workers are adopted
+  from the harness or spawned and warmed through the sample closure.
+- GC: a full collection before a process dispatch only when a threaded or
+  mixed dispatch has left heap behind since the last one (`_GC_DEBT`).
+
+**4. Inside a sample: the inner (RHS) layer.** Budget = the advertised share,
+or the whole pool for a lone simulation.
+
+- *RHS plan*, i.e. how a step's per-satellite work is parallelised:
+  `satellite_batch` (Polyester over satellites, width ≤ budget and ≤ a pinned
+  plan's allotment), a `flat` queue at some allotment with a static or
+  dynamic scheduler, or serial. Chosen, in order, by: a cached *verdict* for
+  the shape's signature
+  (`v6|machine|budget|sats-bucket|effectors|harmonics|density|outer`); else
+  the pre-solve *calibration sweep* (every candidate timed for 5 warm-up + 10
+  calls; ladder `[1, 2, 4, …, budget] × {static, dynamic}` plus batch at
+  `budget, budget/2, budget/4`); else the in-run *width trial* when the solve
+  is long enough to amortise it; else the per-call *heuristic*. Verdict rules
+  as shipped: solve < 1 s → the cached verdict is honoured; solve ≥ 1 s → a
+  pinned plan is re-swept on every solve and a heuristic verdict honoured only
+  after three consecutive votes. Fix D replaces "every solve" with "once the
+  solves run on the verdict have cost 20× the sweep".
+- *Callbacks* (density and the rest) run at the static width
+  `min(items, budget)` under V2 — no per-call AIMD — with the V2 pre-solve
+  density-callback width calibration on GRAM-surrogate shapes.
+- *Observation* for the policy telemetry: one per RHS call (satellite 1),
+  not one per satellite.
+
+**5. What persists, per machine.** `output/parallel_policy_state/`: the
+outer-route bandit state (routes and split widths, keyed by shape signature,
+profile, machine and T), the RHS calibration store (verdicts, solve length,
+votes; fix D adds the sweep's cost and the solve time run on the verdict),
+the cost-model constants, and the inner policy's hints. A new machine starts
+cold and pays: one split race per threads shape, one tie exploration per tie
+shape, one sweep per RHS signature bucket (three for a heuristic verdict).
+Every later campaign replays.
+
+**6. Measured versus constant.** Measured on the host: core and memory
+capacities, rounds, the route at a tie, split widths, the local-slot cap, the
+RHS plan and width, the sweep's cost and the solve length (D), the steady
+per-sample route cost (E). The remaining constants are dimensionless or
+structural: the 1 s long-solve threshold, three heuristic votes, the 5 %
+re-verification share (D), the `T/4` ladder floor, "second half" for the
+steady estimate (E), and the direction of the tie default (the pool). None of
+them encodes a core count.
+
+**7. Where the light set puts it** (L8–L14 on both machines, §4.4): parity
+or better wherever the store was warm; ahead by 1.4–10× where the static
+heuristics mis-thread (the 256-satellite stacks, 64-body interaction, the
+exponential atmosphere); 25 % ahead on the mixed split. The losses are the
+two cold-store mechanisms D and E address: the per-solve sweep on long
+solves (L9/L10 on the TRX50, 1.35–1.61×) and the pool judged on its cold
+campaign at a tie (L12 on the TRX50, 1.61×).
+
 ## 4. Measurements
 
 ### 4.1 B15, 128 spacecraft-hour grid, fixes 1–4 only (run `20260906_205919`, split 1 of 6 only)

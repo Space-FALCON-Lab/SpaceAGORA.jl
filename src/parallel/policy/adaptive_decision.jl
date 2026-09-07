@@ -9,6 +9,24 @@
     source::Symbol=:other,
     env::Union{Nothing, PolicyDecisionEnvConfig}=nothing
 )
+    # One OS thread: nothing here can thread, and the two ENV reads below
+    # (budget, minimum auto budget) would be spent re-deriving that on every
+    # call -- once per callback source per RHS call on a serial coordinator,
+    # and on every one-thread pool worker. Measured at t = 1 on the light set:
+    # every adaptive profile ran 2-10 % over the serial profile with nothing to
+    # decide (TRX50 L9: 9.0-9.1 s against 8.2 s).
+    if Base.Threads.nthreads() <= 1
+        return (
+            use_threads=false,
+            allotment=1,
+            budget=1,
+            mode=mode,
+            threshold=max(1, threshold),
+            num_items=max(0, num_items),
+            adaptive_enabled=(mode == :auto) && env !== nothing && env.adaptive_enabled,
+            desire=1
+        )
+    end
     budget = env === nothing ? effective_inner_thread_budget() : env.inner_thread_budget
     min_auto_budget = env === nothing ? auto_thread_min_budget(source) : _snapshot_auto_min_budget(env, source)
     auto_budget_allowed = mode != :auto || budget >= min_auto_budget

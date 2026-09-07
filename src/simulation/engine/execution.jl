@@ -530,6 +530,9 @@ function run_simulation(
         end
     end
 
+    # Per-solve refresh of the multibody parallel mode the per-satellite
+    # decision reads (see _multibody_parallel_mode).
+    SimulationModel.DynamicEffectors.AerodynamicEffectors.refresh_multibody_parallel_mode!()
     _calibrate_rhs_plan_if_needed!(p, u_start, args)
     _calibrate_density_callback_width!(p, u_start, args)
 

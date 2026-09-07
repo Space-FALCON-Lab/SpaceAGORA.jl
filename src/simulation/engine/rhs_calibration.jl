@@ -289,6 +289,7 @@ function _rhs_calib_load!()::Nothing
                 "heuristic_votes"=> Int(get(row, "heuristic_votes", 0)),
                 "sweep_ns"       => Float64(get(row, "sweep_ns", 0.0)),
                 "honoured_ns"    => Float64(get(row, "honoured_ns", 0.0)),
+                "plan_votes"     => Int(get(row, "plan_votes", 0)),
             )
             _rhs_calib_cache[sig] = entry
         end
@@ -321,6 +322,10 @@ function _rhs_calib_save!()::Nothing
                 # when a long solve re-verifies (_rhs_calib_reverify_due).
                 "sweep_ns"        => Float64(get(e, "sweep_ns", 0.0)),
                 "honoured_ns"     => Float64(get(e, "honoured_ns", 0.0)),
+                # Consecutive sweeps that pinned this same plan; the heuristic
+                # counterpart is heuristic_votes. A plan with one vote is
+                # re-verified sooner (_rhs_calib_reverify_due).
+                "plan_votes"      => Int(get(e, "plan_votes", 0)),
             )
             push!(rows, row)
         end
@@ -410,6 +415,10 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
     _rhs_calib_load!()
     lock(_rhs_calib_lock) do
         prev = get(_rhs_calib_cache, sig, nothing)
+        same_plan = prev !== nothing &&
+            get(prev, "mode", "") == String(plan.mode) &&
+            Int(get(prev, "allotment", 1)) == Int(plan.allotment) &&
+            get(prev, "scheduler", "auto") == String(plan.scheduler)
         entry = Dict{String, Any}(
             "mode"            => String(plan.mode),
             "allotment"       => Int(plan.allotment),
@@ -417,6 +426,7 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
             "elapsed_mean_ns" => elapsed_mean_ns,
             "sweep_ns"        => sweep_ns,
             "honoured_ns"     => 0.0,
+            "plan_votes"      => same_plan ? Int(get(prev, "plan_votes", 0)) + 1 : 1,
         )
         # The solve length is a property of the shape, not of the verdict;
         # dropping it here put every freshly pinned plan back into "never
@@ -1160,6 +1170,25 @@ const _rhs_calib_solve_honoured = Dict{String, Bool}()
     return max(0.0, v)
 end
 
+# The share a pinned plan that only ONE sweep has voted for may spend. A sweep
+# ranks arms from fifteen calls each and can pin a loser -- the TRX50's L9
+# pinned flat@16 dynamic once, 2.9 s against 1.4 s for the heuristic it beat
+# in the sample -- and before the amortised budget existed the next solve's
+# re-sweep corrected it. So a first pin is checked after 1/share of its sweep
+# cost (five sweeps' worth at the default), and once a second sweep agrees the
+# plan earns the confirmed share. A wrong pin is bounded to a few solves, a
+# right one still amortises. The heuristic is the no-regret side and keeps the
+# confirmed share from its first vote.
+@inline function _rhs_calibrate_reverify_share_unconfirmed()::Float64
+    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE_UNCONFIRMED", "0.20"))
+    v = try
+        parse(Float64, raw)
+    catch
+        throw(ArgumentError("SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE_UNCONFIRMED must be a float, got '$raw'"))
+    end
+    return max(0.0, v)
+end
+
 # Whether a cached verdict on a long solve has earned its re-verification.
 #
 # As shipped, a long solve re-swept on EVERY solve: the premise was that above
@@ -1185,7 +1214,9 @@ function _rhs_calib_reverify_due(sig::String)::Bool
     entry === nothing && return true
     sweep_ns = Float64(get(entry, "sweep_ns", 0.0))
     (isfinite(sweep_ns) && sweep_ns > 0.0) || return true
-    share = _rhs_calibrate_reverify_share()
+    is_plan = get(entry, "mode", "") != _CALIB_HEURISTIC_MODE
+    unconfirmed = is_plan && Int(get(entry, "plan_votes", 0)) < 2
+    share = unconfirmed ? _rhs_calibrate_reverify_share_unconfirmed() : _rhs_calibrate_reverify_share()
     share > 0.0 || return false
     honoured_ns = Float64(get(entry, "honoured_ns", 0.0))
     return honoured_ns * share >= sweep_ns

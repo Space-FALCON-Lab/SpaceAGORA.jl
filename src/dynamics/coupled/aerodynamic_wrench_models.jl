@@ -5,8 +5,30 @@ const inv_sqrt_π = 1 / sqrt(π)
 
 @inline _parse_bool_env(name::String, default::Bool)::Bool = ParallelPolicy.parse_bool_env(name, default)
 
+# SPACEAGORA_MULTIBODY_PARALLEL, read once per solve. _multibody_thread_decision
+# runs per satellite per RHS call from two effector sites, and the ENV read
+# (getenv + a fresh String, then strip/lowercase) was the one cost left in it
+# after the forced-false short-circuits: one per satellite per call on every
+# route. The engine refreshes the cache at each solve start
+# (refresh_multibody_parallel_mode!), which is where a harness `withenv` can
+# have changed the value; between solves it is a Ref read.
+const _MULTIBODY_MODE_CACHE = Ref{Union{Nothing, Symbol}}(nothing)
+
+"""
+    refresh_multibody_parallel_mode!() -> Symbol
+
+Re-read `SPACEAGORA_MULTIBODY_PARALLEL` into the per-solve cache the
+per-satellite thread decision consults. Called by the engine at solve start.
+"""
+function refresh_multibody_parallel_mode!()::Symbol
+    mode = ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_MULTIBODY_PARALLEL")
+    _MULTIBODY_MODE_CACHE[] = mode
+    return mode
+end
+
 @inline function _multibody_parallel_mode()::Symbol
-    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_MULTIBODY_PARALLEL")
+    cached = _MULTIBODY_MODE_CACHE[]
+    return cached === nothing ? refresh_multibody_parallel_mode!() : cached
 end
 
 @inline function _multibody_thread_threshold()::Int

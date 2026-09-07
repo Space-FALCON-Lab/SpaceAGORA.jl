@@ -2096,12 +2096,6 @@ git-tree-sha1 = "672c938b4b4e3e0169a07a5f227029d4905456f2"
 uuid = "e99dba38-086e-5de3-a5b1-6e4c66e897c3"
 version = "6.10.2+1"
 
-[[deps.Quaternions]]
-deps = ["LinearAlgebra", "Random", "RealDot"]
-git-tree-sha1 = "4d8c1b7c3329c1885b857abb50d08fa3f4d9e3c8"
-uuid = "94ee1d12-ae83-5a48-8b1c-48b8ff168ae0"
-version = "0.7.7"
-
 [[deps.REPL]]
 deps = ["InteractiveUtils", "JuliaSyntaxHighlighting", "Markdown", "Sockets", "StyledStrings", "Unicode"]
 uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -2505,7 +2499,7 @@ uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
 version = "1.2.2"
 
 [[deps.SpaceAGORA]]
-deps = ["ADTypes", "Aqua", "Arrow", "AstroTime", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Documenter", "Interpolations", "LinearAlgebra", "Logging", "LoopVectorization", "NLsolve", "OSQP", "OrdinaryDiffEq", "PlotlyJS", "Plots", "Polyester", "PrecompileTools", "Printf", "Quaternions", "Random", "RecursiveArrayTools", "Reexport", "Roots", "SHA", "SPICE", "SatelliteToolbox", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "Serialization", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML", "Tables"]
+deps = ["ADTypes", "Aqua", "Arrow", "AstroTime", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Documenter", "Interpolations", "LinearAlgebra", "Logging", "LoopVectorization", "NLsolve", "OSQP", "OrdinaryDiffEq", "PlotlyJS", "Plots", "Polyester", "PrecompileTools", "Printf", "Random", "RecursiveArrayTools", "Reexport", "Roots", "SHA", "SPICE", "SatelliteToolbox", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "Serialization", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML", "Tables"]
 path = "."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
 version = "0.1.0"

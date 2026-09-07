@@ -113,7 +113,8 @@ const PPB_ADAPTIVE_MODES = Set(["outer_inner_adaptive", "full_smart", "policy_v2
 # The phases whose regret figures are the review's answer: B9-B14, the expanded
 # per-axis evaluation. B6 is retained as a below-the-floor control (see its
 # comment in cli.jl) and is deliberately NOT in this set.
-const PPB_ROUTER_PHASES = ["B9", "B10", "B11", "B12", "B13", "B14", "B15"]
+const PPB_ROUTER_PHASES = ["B9", "B10", "B11", "B12", "B13", "B14", "B15",
+                           "L9", "L10", "L11", "L12", "L13", "L14", "L15"]
 # Phases the regret summary covers: the router phases, the below-floor
 # control, and the --quick set (see ppb_quick_phases).
 const PPB_REGRET_PHASES = vcat(PPB_ROUTER_PHASES, "B6", "Q1", "Q2", "Q3")
@@ -132,6 +133,13 @@ const PPB_ROUTER_AXIS_LABELS = Dict(
     "Q1"  => "Quick: constellation thread ladder",
     "Q2"  => "Quick: calibration on a pinned-plan workload",
     "Q3"  => "Quick: Monte Carlo thread vs. process split",
+    "L9"  => "Light: spacecraft count",
+    "L10" => "Light: atmosphere / GRAM surrogate",
+    "L11" => "Light: force and actuator model count",
+    "L12" => "Light: interacting vs. independent",
+    "L13" => "Light: thread vs. process budget split",
+    "L14" => "Light: mission duration and output cadence",
+    "L15" => "Light: nested campaign aspect ratio (joint routing)",
 )
 
 # Serial wall time below which no routing profile is distinguishable, so a regret

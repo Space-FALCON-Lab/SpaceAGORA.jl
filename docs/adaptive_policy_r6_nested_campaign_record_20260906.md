@@ -173,6 +173,82 @@ extended to fill the rest of the machine.
 Expected slots per B15 split on this machine: (1,12)→threads 8; (2,6)→2+5;
 (3,4)→3+3; (4,3)→4+2; (6,2)→6+1; (12,1)→12+0.
 
+### 3.1 Fix C: the residual overheads, and the machine-independent form of the rule
+
+Three residuals were left after §4.2/§4.3 (all measured through the harness):
+
+1. **(12,1) and B12-independent, B8**: R6 ran the same per-sample times as the
+   static process route but lost 12–36 % of wall to the race × pre-dispatch
+   GC: five dispatches per campaign, each preceded by an unconditional
+   `GC.gc()`, on the one route whose per-sample cost does not depend on the
+   split width (pool workers are one thread each), so the race could not find
+   anything. Fix: the collection is owed only after a dispatch that ran
+   samples on the coordinator's heap (`_GC_DEBT`, set by a threaded or mixed
+   dispatch, cleared by the collection); the race is gated to the threads
+   route; the race result reports `W + L` in-flight so the harness label reads
+   `w3_l3` rather than `w0_l3`.
+2. **Small-sample ties on the (2,6)/(3,4) splits**: 1.05–1.11 at 4–8 samples,
+   every one a launch point where mixed dispatch and the threads route need
+   the same number of rounds, `cld(n, W+L) == cld(n, T)`.
+3. **The static routes' `satellite_batch` width** (§2.1): the batch kernel ran
+   at the whole inner budget and nothing else.
+
+The first version of the tie rule was a threshold fitted to the 36 B15 points
+of this box — "tie → threads at 1–2 rounds, → pool at 3" — and it agreed with
+the faster measured route at every tie point here. It was dropped before it
+ran, on the question of whether the policy would hold on another machine. It
+would not: the rule assumes a thread-slot sample and a pool-slot sample cost
+the same, which is true at ≤ 12 threads after the budget fix and false on the
+64-core TRX50, whose own thread ladder (paper_scenarios S1, 2048 spacecraft)
+degrades from 2.69 s at 8–16 threads to 3.30 s at 32 and 6.54 s at 64. On that
+box a 2-round tie at (32, 32) would hand 64 samples to 32 shared-heap threads
+instead of 63 mostly-isolated slots. The same assumption sat under two more
+places: local slots filled every spare thread (`T − 1`, validated only to 5),
+and the batch kernel had no width search.
+
+So fix C makes each of those decisions a measurement on the host rather than
+a constant from this one:
+
+- **Rounds rule** (`mc_route_rounds`, `default_outer_route`): fewer rounds
+  wins outright. At equal rounds — equal capacities included, since W
+  isolated workers against T threads on one heap are different per-sample
+  costs and not the same route twice — the pool is the *cold* answer, chosen
+  because its downside is bounded (a pool sample's cost is fixed by its
+  isolation; a thread sample's grows with the coordinator's thread count),
+  and the tie is then
+  **measured**: `select_outer_route!` spends one campaign on the other
+  parallel arm (`OuterRouteTuning.explore_route_ties`,
+  `tie_explore_min_campaigns = 1`, reason `explore_tie`) and the existing
+  route bandit exploits the faster one from then on. This is the only place
+  V2 forces a trial, because a rounds tie bounds what the trial can cost;
+  `explore_routes` stays off everywhere else for the reason recorded on it.
+- **Local slots** (`_campaign_route_plan`): a slot is a threads-route split
+  of the coordinator (its inner budget is its share, exactly as under the
+  threads route at that width), so once the threads route has split history
+  on the shape — which the tie's threads campaign supplies through the split
+  race — the slots are capped at the width the split selector measured best.
+  Cold, the cap is absent and the slots fill the spare threads as before.
+- **`satellite_batch` width** (`_rhs_plan_candidates`, `_rhs_batch_workers`):
+  the calibration trial now carries batch rungs at budget/2 and budget/4
+  beside the full-budget arm; a pinned batch plan's `allotment > 1` bounds the
+  Polyester width (1 keeps the legacy meaning, the whole budget, so every
+  cached verdict written before this stays valid). Two rungs, not the flat
+  ladder's seven, for the arm-count reason recorded on the trial.
+
+What this gives up: on the first campaign of a tie shape the policy is not
+measured, it is defaulted (to the pool), and on this box that default costs
+5–11 % at 1–2-round ties once — the measured B15 points at (2,6)/(3,4) with
+4–8 samples. From the second campaign the choice is the measured one. The
+harness now reflects that use: one `OuterRouteState` per worker process,
+shared by a point's repeats (`_ppc_adaptive_route_state`), so repeat 1 is the
+cold answer, repeat 2 the exploration, repeat 3 the exploitation, and the
+row's median is the majority. Points remain cold with respect to each other,
+and the state path is pinned to a file no run writes.
+
+Unverifiable here: whether the defaults are right on a box that is not this
+one. The light set (§4.4) and the full B8–B15 set are what to run on the
+TRX50 when it is reachable.
+
 ## 4. Measurements
 
 ### 4.1 B15, 128 spacecraft-hour grid, fixes 1–4 only (run `20260906_205919`, split 1 of 6 only)
@@ -290,7 +366,49 @@ inner budget -- for the process route (and mixed, whose local slots do not
 depend on W) a narrower width only idles workers, so the widest split is the
 answer and the race is pure cost.
 
-TODO: B8, B9, B14, B10, B11 as they land.
+**B8** `montecarlo_heavy_aerobraking`, worker ladder [1,2,4,8] × {16, 64} samples (1h14m): R6 / process route
+
+| workers | 1 | 2 | 4 | 8 |
+|---|---|---|---|---|
+| 16 samples | 1.03 (route `none` = serial) | 1.04 | 1.08 | 1.18 |
+| 64 samples | 1.01 | 1.01 | **1.36** | 1.09 |
+
+Every point is the runner's pre-dispatch collection (+0.4–0.8 s per
+campaign, once per dispatch, including the `none` route); the 1.36 is the one
+point where the race is possible (candidates [2,4]: 12 samples with half the
+pool idle, four dispatches, four collections). Same mechanism as B12; fix C.
+
+**B9** `gravity_4096sat_l50_vacuum_1hr`, single simulation, thread ladder (16m): R6 / best static 1.00 / 1.09 / 1.04 at t = 1 / 8 / 12 (before: 1.09 / 1.11 / 1.06). No outer split, nothing here changed by this work; the t8 rung is the pre-existing open item of the 2026-09-02 record.
+
+**B14** 1024-satellite duration/cadence cases, single simulation, thread ladder (1h25m): R6 / best static
+
+| case | t=1 | t=8 | t=12 |
+|---|---|---|---|
+| `cadence_1024sat_10s` | 1.02 | 0.99 | 1.01 |
+| `cadence_1024sat_1s` | 1.02 | 1.01 | 1.00 |
+| `heavy_1024sat_l50_6hr` | 1.03 | 1.01 | 1.07 |
+
+(before: 0.98–1.07). The best static route is `inner_only` at t ≤ 8 and
+`outer_threads` / `outer_inner_static` at t = 12; R6 picks the same layer at
+every rung. The 1.07 at heavy t = 12 is the fix-C class-gate/race overhead on
+a 2.3 s run, inside the 8 % band.
+
+**B10** 256-satellite atmosphere / GRAM-usage cases, single simulation, thread ladder (2h22m): R6 / best static
+
+| case | t=1 | t=8 | t=12 |
+|---|---|---|---|
+| `atmo256_exponential_10min` | 0.96 | 0.86 | 0.75 |
+| `atmo256_gram_live_10min` | 1.00 | 1.00 | 1.01 |
+| `atmo256_gram_live_nbody_10min` | 1.00 | 1.00 | 1.01 |
+| `atmo256_gram_surrogate_10min` | 0.99 | 1.03 | 1.04 |
+
+(before: 0.68–1.10). The GRAM-live cases are pinned to the GRAM lock, so every
+route is the same 19–41 s and R6 matches. The exponential case is where R6 is
+clearly ahead of every static route: the static heuristics choose a narrower
+batch width for a 256-satellite 10-minute run than the calibrated
+`satellite_batch` width R6 keeps from its cached verdict.
+
+TODO: B11 as it lands.
 
 ## 5. Changes to SpaceAGORA itself (`src/`)
 
@@ -298,11 +416,16 @@ TODO: B8, B9, B14, B10, B11 as they land.
 |---|---|
 | `simulation/campaigns/monte_carlo.jl` | `outer_split_env_pairs`; threaded dispatch advertises the share; `MonteCarloResult` gains `route`, `local_slots` (3-arg constructor unchanged); `_run_monte_carlo_mixed`; `_run_monte_carlo_process` is now the no-local-slots case |
 | `simulation/campaigns/adaptive_routing.jl` | plan carries `local_slots`/`local_slots_at`; process branch dispatches mixed under `outer_split_env_pairs(local_slots)`; race result carries the route; trace prints local slots |
+| `simulation/campaigns/adaptive_routing.jl` (fix C) | `_GC_DEBT` (collect before a process dispatch only after a threaded/mixed one); split race gated to `:threads`; race result reports `W + L`; local slots capped by the threads route's measured best width |
 | `simulation/engine/setup.jl` | `_rhs_batch_workers`, `_rhs_batch_minbatch`; `_rhs_batch_parallel_enabled(p, n)` refuses a 1-wide batch |
+| `simulation/engine/setup.jl` (fix C) | `_rhs_batch_workers` honours a pinned `satellite_batch` plan's `allotment > 1` |
+| `simulation/engine/rhs_calibration.jl` (fix C) | `_make_calib_satellite_batch_plan(allotment)`; batch rungs at budget/2, budget/4 in `_rhs_plan_candidates`; `_rhs_plan_width` and the store round-trip carry the batch width |
 | `simulation/engine/dynamics_rhs.jl` | the seven `satellite_batch` `@batch` loops sized by the inner budget; V2 records one effector observation per RHS call |
 | `SpaceAGORA.jl` | imports and exports `adopt_process_workers!` |
 | `parallel/routing/outer_route_selection.jl` | `mixed_local_slots`, `mixed_capacity`; V2 Monte Carlo rule compares mixed capacity |
+| `parallel/routing/outer_route_selection.jl` (fix C) | `mc_route_rounds`, `mc_route_tie`; the V2 Monte Carlo rule counts rounds, ties default to the pool; `select_outer_route!` explores a tie's other arm once (`explore_tie`) |
 | `parallel/routing/outer_route_state.jl` | `outer_route_mixed_dispatch()` (`SPACEAGORA_PARALLEL_MIXED_DISPATCH`, V2 only); `OuterRouteTuning.mixed_dispatch` |
+| `parallel/routing/outer_route_state.jl` (fix C) | `OuterRouteTuning.explore_route_ties`, `tie_explore_min_campaigns` |
 | `parallel/routing/machine_topology.jl` | `memory_local_slot_cap` |
 | `parallel/process/worker_pool.jl` | `adopt_process_workers!` (exported) |
 
@@ -310,11 +433,12 @@ Harness (`benchmarks/`): `ppc_mode_env_pairs` share for the threads backend;
 `ppc_run_adaptive_batch` (adaptive modes through the runner,
 `SPACEAGORA_PPC_ADAPTIVE_VIA_RUNNER=0` restores pinned dispatch); row env from
 the resolved mode plus the runner's additions; B15 cases and ladder;
-`--lean-modes` (`81075084`).
+`--lean-modes` (`81075084`). Fix C: the probe/features are built before the clock; one `OuterRouteState` per worker process across a point's repeats; `--light` = phases L8–L15 (`PPB_LIGHT_PHASES`), the B8–B15 axes at ~100 points, in `PPB_ROUTER_PHASES` for the regret summary.
 
 Tests: `test/unit/parallel/outer_split_budget_tests.jl`,
 `test/unit/parallel/mixed_dispatch_tests.jl`,
-`test/unit/parallel/rhs_batch_budget_tests.jl`.
+`test/unit/parallel/rhs_batch_budget_tests.jl`,
+`test/unit/parallel/mc_route_tie_tests.jl` (fix C: rounds rule, tie exploration and exploitation both ways, local-slot cap, race gating, GC debt, batch rungs).
 
 ## 6. Open items
 
@@ -326,18 +450,10 @@ Tests: `test/unit/parallel/outer_split_budget_tests.jl`,
   The first split's rows stand; nothing else from that run does.
 - The static routes' heuristic picks a serial `flat/1` RHS for a 32-spacecraft
   single simulation where `satellite_batch` is 6.8× faster (§2.1). Not touched.
-- Found in the B15 re-run, to fix after it: (a) a race result reports
-  `threads = best_w` (workers only), so `execution_scope` reads
-  `adaptive_mixed_w0_l3` where it should read `w3_l3` -- label only, one line
-  in `_run_campaign_split_race`; (b) every small-sample loss so far (1.05–1.11
-  at 4–8 samples on the (2,6)/(3,4) splits) is a launch point where mixed
-  dispatch and the threads route need the same number of rounds,
-  `cld(n, W+L) == cld(n, T)`, so the pool's dispatch round-trip buys nothing.
-  Candidate rule for the V2 Monte Carlo default: take the process (mixed)
-  route only when it saves a round; fits 12 of the first 13 mixed points,
-  costs a 9% win on 16sat×64mc at (2,6). The regression set is insensitive
-  to it (many-sample or single-sample campaigns), so it can land after that
-  run without invalidating it.
-- The 1024 spacecraft-hour B15 rungs are running (`20260906_220830`);
-  `inner_only` loses by 3–8× at every point so far, including 64
-  spacecraft per sample -- outer-first holds across this grid on this box.
+- `_multibody_thread_decision` reads `ENV` once per satellite per RHS call, on
+  every route. Not touched.
+- The tie default, the local-slot cap and the batch rungs are measured on
+  this box only (§3.1). The TRX50 run is the check that matters and needs
+  the machine reachable; the `--light` set is sized for it.
+- B11 of run `20260907_050609` (pre-fix-C code) was stopped at 33 of 60 rows
+  to start fix C; its axis is covered by L11 on the final code.

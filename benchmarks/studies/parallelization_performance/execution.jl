@@ -414,6 +414,27 @@ one through ppc_process_sample_task, whose own withenv is the worker's --
 never a withenv inside a concurrent coordinator task, since ENV is
 process-global.
 """
+# One outer-route state per worker process, shared by a point's repeats.
+#
+# The adaptive policy is used as a sequence of campaigns of one shape on one
+# machine, and that is how it is measured here: repeat 1 is its cold answer,
+# the later repeats are what it learned from the earlier ones (a rounds tie
+# spends repeat 2 on the other parallel arm -- select_outer_route!'s
+# explore_tie -- and exploits from repeat 3). Points are separate processes
+# and stay cold with respect to each other. The state path is pinned to a file
+# no run writes (the runner only persists its own global state, never this
+# one), so production history on the machine never leaks into a row.
+const _PPC_ADAPTIVE_ROUTE_STATE = Ref{Any}(nothing)
+
+function _ppc_adaptive_route_state()
+    st = _PPC_ADAPTIVE_ROUTE_STATE[]
+    if st === nothing
+        st = SpaceAGORA.ParallelProfiles.OuterRouteState()
+        _PPC_ADAPTIVE_ROUTE_STATE[] = st
+    end
+    return st
+end
+
 function ppc_run_adaptive_batch(
     case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSpec,
     sample_indices::Vector{Int}, sample_seeds::Vector{Int}
@@ -462,13 +483,20 @@ function ppc_run_adaptive_batch(
             end
         end
     end
+    # The probe config and route features are the route DECISION's inputs; the
+    # pinned path resolves its route before the clock, so this does too.
+    features = withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...) do
+        probe = ppc_single_config(case_name, cfg; seed=worker_seed, mc_index=1)
+        SCamp.campaign_route_features(probe; samples=sample_count)
+    end
+    route_state = _ppc_adaptive_route_state()
+    state_path = joinpath(tempdir(), "spaceagora_ppc_outer_route_state_$(getpid()).toml")
     GC.gc()
     batch_started = time()
-    r = withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...) do
-        probe = ppc_single_config(case_name, cfg; seed=worker_seed, mc_index=1)
-        features = SCamp.campaign_route_features(probe; samples=sample_count)
+    r = withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...,
+                "SPACEAGORA_OUTER_ROUTE_STATE_PATH" => state_path) do
         SCamp.run_monte_carlo(sample_fn, sample_seeds; threads=:auto,
-                              route_features=features, route_state=PP.OuterRouteState())
+                              route_features=features, route_state=route_state)
     end
     batch_wall = Float64(time() - batch_started)
     results = Vector{Any}(undef, sample_count)

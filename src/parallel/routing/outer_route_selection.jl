@@ -344,6 +344,40 @@ function mixed_capacity(f::OuterRouteFeatures, t::OuterRouteTuning)::Int
     return w + mixed_local_slots(f, t, w)
 end
 
+"""
+    mc_route_rounds(features, tuning) -> Union{Nothing, NamedTuple}
+
+Rounds a Monte Carlo campaign needs on each parallel route under mixed
+dispatch: `process` over the pool plus the coordinator's local slots
+(`mixed_capacity`), `threads` over the thread budget, with the two capacities
+as `cap` and `budget`. `nothing` when mixed dispatch is off or the campaign has
+no samples, in which case the V2 rule compares the raw capacities.
+"""
+function mc_route_rounds(f::OuterRouteFeatures, t::OuterRouteTuning)
+    (t.mixed_dispatch && f.montecarlo_samples > 0) || return nothing
+    cap = mixed_capacity(f, t)
+    budget = max(1, t.outer_thread_budget)
+    n = f.montecarlo_samples
+    return (process = cld(n, cap), threads = cld(n, budget), cap = cap, budget = budget)
+end
+
+"""
+    mc_route_tie(features, tuning) -> Bool
+
+Whether the V2 Monte Carlo rule's two parallel routes need the same number of
+rounds: the one region where the rule's cold answer is a default rather than
+a measurement, and the only one where `select_outer_route!` spends a campaign
+measuring the other arm (`OuterRouteTuning.explore_route_ties`). Equal
+capacities tie too -- W isolated workers (plus local slots) against T threads
+on one heap are different per-sample costs, not the same route twice.
+"""
+function mc_route_tie(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
+    t.mc_route_by_core_budget || return false
+    rounds = mc_route_rounds(f, t)
+    rounds === nothing && return false
+    return rounds.process == rounds.threads
+end
+
 @inline function _feature_heavy_for_process(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
     if _is_native_gram_point_density(f)
         # Native GRAM point calls are lock-limited; prefer outer process isolation.
@@ -485,9 +519,20 @@ end
     # mixed dispatch the process route also fills the coordinator's spare
     # threads, so W workers + L local slots against the T-thread budget. Off
     # mixed dispatch, mixed_capacity is effective_process_workers as before.
-    if t.mc_route_by_core_budget && process_affordable &&
-       mixed_capacity(f, t) >= max(1, t.outer_thread_budget)
-        return :process
+    if t.mc_route_by_core_budget && process_affordable
+        rounds = mc_route_rounds(f, t)
+        if rounds !== nothing
+            # A campaign of n samples finishes in cld(n, slots) rounds on
+            # either route. Fewer rounds wins outright. At equal rounds the
+            # routes differ by per-sample terms whose sign depends on the
+            # machine (a pool sample skips the coordinator's shared heap, a
+            # thread sample contends with T-1 siblings; a pool dispatch costs
+            # a round trip), so the tie is not decided here: the pool is the
+            # bounded-downside default and select_outer_route! measures the
+            # other arm once (explore_route_ties).
+            return rounds.process <= rounds.threads ? :process : :threads
+        end
+        mixed_capacity(f, t) >= max(1, t.outer_thread_budget) && return :process
     end
     return :threads
 end
@@ -904,12 +949,24 @@ function select_outer_route!(
             _any_candidate_proven(candidates, snapshot, tuning.adaptive_min_samples) :
             _route_is_proven(candidates, snapshot, default_route, tuning.adaptive_min_samples)
         # See OuterRouteTuning.explore_routes for why V2 never forces a trial.
-        explore = (default_proven || !tuning.explore_routes) ?
-            nothing :
+        # A rounds tie (mc_route_tie) is the one place V2 forces a trial: the
+        # two parallel arms are within a few percent of each other on the
+        # machine this was measured on and can differ by multiples on
+        # another, and equal rounds bound what the trial can cost. Only the
+        # two parallel arms are ranked; the tie says nothing about serial.
+        tie = tuning.explore_route_ties && :process in candidates && :threads in candidates &&
+            lowercase(strip(f.category)) == "montecarlo" && mc_route_tie(f, tuning)
+        explore = if tie
+            _under_sampled_candidate(Symbol[:process, :threads], snapshot, default_route,
+                                     tuning.tie_explore_min_campaigns)
+        elseif default_proven || !tuning.explore_routes
+            nothing
+        else
             _under_sampled_candidate(candidates, snapshot, default_route, tuning.adaptive_min_samples)
+        end
         if !(explore === nothing)
             chosen = explore
-            reason = "explore_hier"
+            reason = tie ? "explore_tie" : "explore_hier"
         else
             best = _best_candidate_confidence(
                 candidates,

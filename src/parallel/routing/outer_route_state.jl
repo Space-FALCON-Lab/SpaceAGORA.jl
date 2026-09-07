@@ -112,6 +112,23 @@ Base.@kwdef struct OuterRouteTuning
     # Process route fills the coordinator's spare threads with samples too
     # (mixed_local_slots). V2 only.
     mixed_dispatch::Bool = outer_route_mixed_dispatch()
+    # Monte Carlo rounds tie: the mixed process route and the threads route
+    # need the same number of rounds (default_outer_route, mc_route_tie),
+    # equal capacities included. The
+    # pool is the cold answer because its downside is bounded -- a pool
+    # sample's cost is fixed by its isolation, a thread sample's grows with
+    # the coordinator's thread count -- and the gap between the two arms is a
+    # property of the machine: on the 12-core reference box the threads route
+    # wins 1-2-round ties by 5-11 % and mixed wins 3-round ties by 7-9 %
+    # (B15); the 64-core TRX50's own thread ladder inverts past 16 threads.
+    # So the tie is measured rather than assumed: select_outer_route! spends
+    # `tie_explore_min_campaigns` campaigns on the unmeasured parallel arm
+    # (reason explore_tie) and the route bandit exploits from then on. This
+    # is the one place V2 forces a trial, and only there, because a rounds
+    # tie bounds what the trial can cost (see explore_routes). Off, the tie
+    # resolves to the pool and stays there.
+    explore_route_ties::Bool = outer_route_policy_v2()
+    tie_explore_min_campaigns::Int = 1
     trace::Bool = false
 end
 

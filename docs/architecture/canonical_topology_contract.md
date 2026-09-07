@@ -16,9 +16,8 @@ This contract defines canonical ownership for the topology cleanup that answers 
    aerobraking policy live under `src/mission/operations/*`.
 6. Simulation execution ownership belongs to `src/simulation/engine/*`; legacy `src/simulation/events/*`, `src/simulation/execution/*`, and `src/simulation/solver_orchestration/*` are retired.
 7. Shared runtime serialization services are owned by `src/simulation/runtime_services.jl`, not by `SimulationModel`.
-8. Actuator ownership is split between:
-   - generic hook surface: `src/vehicle/actuators/actuator_hooks.jl`
-   - thruster-specific hooks: `src/vehicle/actuators/thruster/thruster_hooks.jl`
+8. Actuator ownership: thruster-specific hooks live in
+   `src/vehicle/actuators/thruster/thruster_hooks.jl`.
 9. Vehicle boundary is:
    - `src/vehicle/spacecraft/*` for composition/integration
    - `src/vehicle/structure/*` for mass/inertia/geometry/structure analysis
@@ -28,12 +27,11 @@ This contract defines canonical ownership for the topology cleanup that answers 
 2. `src/simulation/engine/execution.jl`
 3. `src/simulation/runtime_services.jl`
 4. `src/dynamics/coupled/force_torque_models.jl`
-5. `src/vehicle/actuators/actuator_hooks.jl`
-6. `src/vehicle/actuators/thruster/thruster_hooks.jl`
-7. `src/vehicle/structure/structure_models.jl`
-8. `src/vehicle/structure/assembly_graph.jl`
-9. `src/vehicle/structure/mass_properties.jl`
-10. `src/vehicle/structure/geometry_properties.jl`
+5. `src/vehicle/actuators/thruster/thruster_hooks.jl`
+6. `src/vehicle/structure/structure_models.jl`
+7. `src/vehicle/structure/assembly_graph.jl`
+8. `src/vehicle/structure/mass_properties.jl`
+9. `src/vehicle/structure/geometry_properties.jl`
 
 ## Path Policy
 1. This contract documents canonical owners only.
@@ -45,7 +43,7 @@ This contract defines canonical ownership for the topology cleanup that answers 
 ## Canonical GNC and Runtime IO Owners
 1. GNC hook owners: `src/gnc/control/control_hooks.jl`, `src/gnc/guidance/guidance_hooks.jl`, `src/gnc/navigation/navigation_hooks.jl`.
 2. GNC bridge helper owner: `src/gnc/internal/bridge_helpers.jl`.
-3. Runtime IO owners: `src/io/config/io_config.jl`, `src/io/serialization/io_serialization.jl`, `src/io/logging/io_logging.jl`, `src/io/outputs/io_outputs.jl`; `src/simulation/engine/*` orchestrates IO but does not own serialization or output implementations.
+3. Runtime IO owners: `src/io/config/io_config.jl`, `src/io/serialization/io_serialization.jl`, `src/io/outputs/io_outputs.jl`; `src/simulation/engine/*` orchestrates IO but does not own serialization or output implementations.
 4. No `legacy_` identifiers in `src/`.
 
 ## Enforcement Gates

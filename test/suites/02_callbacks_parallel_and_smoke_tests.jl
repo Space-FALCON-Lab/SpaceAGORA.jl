@@ -911,6 +911,9 @@ end
 
 @testset "Multibody Parallel Policy Gates" begin
     use_threads = SimulationModel.DynamicEffectors._multibody_use_threads
+    # The mode is cached once per solve (the engine refreshes it at solve
+    # start); a `withenv` between solves has to refresh it explicitly.
+    refresh_mode! = SimulationModel.DynamicEffectors.AerodynamicEffectors.refresh_multibody_parallel_mode!
     has_worker_threads = Threads.nthreads() > 1
 
     withenv(
@@ -918,6 +921,7 @@ end
         "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "1",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"
     ) do
+        refresh_mode!()
         @test use_threads(64) == false
     end
 
@@ -926,6 +930,7 @@ end
         "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0"
     ) do
+        refresh_mode!()
         @test use_threads(64) == has_worker_threads
     end
 
@@ -933,8 +938,10 @@ end
         "SPACEAGORA_MULTIBODY_PARALLEL" => "on",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"
     ) do
+        refresh_mode!()
         @test use_threads(64) == has_worker_threads
     end
+    refresh_mode!()
 end
 
 @testset "Parallel Policy Adaptive Controller" begin
@@ -1236,7 +1243,10 @@ end
 
     @test dynamic_effectors._multibody_use_threads(1) == false
     if Threads.nthreads() > 1
+        # The mode is cached per solve; refresh it after each `withenv`.
+        refresh_mode! = dynamic_effectors.AerodynamicEffectors.refresh_multibody_parallel_mode!
         withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
+            refresh_mode!()
             @test dynamic_effectors._multibody_use_threads(64) == true
         end
         withenv(
@@ -1245,6 +1255,7 @@ end
             "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
             "SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER" => "0"
         ) do
+            refresh_mode!()
             @test dynamic_effectors._multibody_use_threads(64) == false
         end
         withenv(
@@ -1253,8 +1264,10 @@ end
             "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
             "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "1"
         ) do
+            refresh_mode!()
             @test dynamic_effectors._multibody_use_threads(64; heavy_work=false) == false
         end
+        refresh_mode!()
     end
 
     @test dynamic_effectors._threadid_capacity() >= Threads.maxthreadid()

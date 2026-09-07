@@ -349,7 +349,7 @@ function _rhs_calib_lookup(sig::String)::Union{Nothing, Symbol, NamedTuple}
     if mode_str == _CALIB_HEURISTIC_MODE
         return _rhs_calibrate_cache_heuristic() ? :heuristic : nothing
     end
-    mode_str == "satellite_batch"                  && return _make_calib_satellite_batch_plan()
+    mode_str == "satellite_batch"                  && return _make_calib_satellite_batch_plan(allotment)
     mode_str == "flat_constellation_effector_queue" && return _make_calib_flat_plan(allotment, scheduler)
     return nothing
 end
@@ -420,10 +420,13 @@ const _CALIB_SERIAL_EFFECTOR_DECISION = (
     policy_applied = false,
 )
 
-@inline function _make_calib_satellite_batch_plan()
+# `allotment` 1 is the legacy meaning, the whole inner budget (what every
+# cached verdict written before the batch rungs existed says); above 1 it caps
+# the batch kernel's Polyester width (_rhs_batch_workers).
+@inline function _make_calib_satellite_batch_plan(allotment::Int = 1)
     return (
         mode           = :satellite_batch,
-        allotment      = 1,
+        allotment      = max(1, allotment),
         scheduler      = :static,
         dominant_axis  = :satellite,
         policy_applied = true,
@@ -455,6 +458,19 @@ function _rhs_plan_candidates(p, dynamic_effectors)
     viable_workers = fld(active_sats, max(1, min_sats_floor))
 
     candidates = Any[_make_calib_satellite_batch_plan()]
+    # satellite_batch below the full budget too. The batch kernel took its
+    # width from the whole inner budget and nothing else, so on a budget past
+    # the shape's knee it was only ever measured at the width that loses: the
+    # 64-core TRX50's own thread ladder puts 2048 satellites at 2.69 s on 8-16
+    # threads against 6.54 s on 64, and the flat ladder below can find 16 while
+    # the batch route could not. Two rungs, budget/2 and budget/4, so the trial
+    # can find the knee without the arm count the flat ladder's comment warns
+    # about. Below a budget of 4 there is no rung to add.
+    if budget >= 4
+        for w in (budget ÷ 2, budget ÷ 4)
+            w >= 2 && push!(candidates, _make_calib_satellite_batch_plan(w))
+        end
+    end
 
     if viable_workers >= 2 && _rhs_flat_supported(dynamic_effectors)
         # Ladder is geometric in the THREAD BUDGET, not in viable_workers.
@@ -1545,8 +1561,10 @@ end
 # neither `allotment` nor the inner thread budget, so it is reported at the full
 # budget rather than at whatever its allotment field happens to say.
 @inline function _rhs_plan_width(plan)::Int
-    plan.mode === :satellite_batch &&
-        return max(1, SimulationModel.ParallelPolicy.effective_inner_thread_budget())
+    if plan.mode === :satellite_batch
+        budget = max(1, SimulationModel.ParallelPolicy.effective_inner_thread_budget())
+        return Int(plan.allotment) > 1 ? min(budget, Int(plan.allotment)) : budget
+    end
     return max(1, Int(plan.allotment))
 end
 

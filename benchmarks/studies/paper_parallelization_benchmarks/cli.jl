@@ -94,6 +94,17 @@ const PPB_BEST_STATIC_WINNERS = Dict{String, Vector{String}}(
     "B13" => ["outer_process", "outer_threads"],
     "B14" => ["inner_only", "outer_inner_static", "outer_threads"],
     "B15" => ["outer_process", "outer_threads", "inner_only"],   # inner_only: control, see the phase
+    # The light set mirrors its B phase's winners (the modes it lists already
+    # are the lean set, so trimming is a no-op; the entries keep --lean-modes
+    # honest if a light phase ever grows a mode).
+    "L8"  => ["outer_process"],
+    "L9"  => ["inner_only", "outer_inner_static", "outer_threads"],
+    "L10" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "L11" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "L12" => ["outer_inner_static", "outer_process", "outer_threads"],
+    "L13" => ["outer_process", "outer_threads"],
+    "L14" => ["inner_only", "outer_inner_static", "outer_threads"],
+    "L15" => ["outer_process", "outer_threads"],
 )
 
 """
@@ -163,7 +174,23 @@ const PPB_PREVIEW_WARMUP      = 1
 # the phases exist to stay above. Smoke-test them with an explicit
 # --phases=B10 --threads=1 run against the `test` profile instead.
 const PPB_PREVIEW_SKIP_PHASES =
-    Set{String}(["B7", "B8", "B9", "B10", "B11", "B12", "B13", "B14", "B15"])
+    Set{String}(["B7", "B8", "B9", "B10", "B11", "B12", "B13", "B14", "B15",
+                 "L8", "L9", "L10", "L11", "L12", "L13", "L14", "L15"])
+
+# --light: the router-evaluation axes of B8-B15 at a fraction of the points.
+# Every axis and every mechanism the B phases exercise (worker ladder, thread
+# ladder, GRAM surrogate, force-model stack, interacting vs. independent Monte
+# Carlo, the budget split, cadence, and the nested Monte Carlo grid with its
+# rounds ties) is kept; what goes is rungs, cases and repeats. Per-point cost
+# is ~80 s of Julia start-up and JIT plus the solves, so the point count is
+# the wall clock: L8-L15 is ~100 points against ~330 for the lean B8-B15, and
+# runs in about 3 h on the 12-core reference box against ~12 h. Cases are the
+# B cases themselves, so every serial baseline stays above the 3 s floor and
+# a light row is directly comparable with the same case's B row. Not in the
+# light set: atmo256_gram_live* (the GRAM lock pins every route to the same
+# 19-41 s), interact_256sat, the 4-8 sample and 64-sample mcgrid corners,
+# and B12's 256-sample campaigns (64 here).
+const PPB_LIGHT_PHASES = ["L8", "L9", "L10", "L11", "L12", "L13", "L14", "L15"]
 
 function _ppb_preview_phase(phase::PPBPhase)::PPBPhase
     cases = filter(c -> _ppb_n_sat(c) <= PPB_PREVIEW_MAX_N_SAT, phase.cases)
@@ -859,7 +886,98 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # held at the usable core count and only where it is spent varies.
         budget_grid  = [(1, 12), (2, 6), (3, 4), (4, 3), (6, 2), (12, 1)],
     ),
-
+    # ── Light router evaluation (--light): see PPB_LIGHT_PHASES ──────────────
+    PPBPhase(
+        id    = "L8",
+        label = "Light — Heavy Monte Carlo Process Throughput",
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = ["montecarlo_heavy_aerobraking"],
+        modes        = ["serial", "outer_process", "policy_v2"],
+        mc_samples   = [16],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode   = :single,
+        worker_ladder = [4, 12],
+    ),
+    PPBPhase(
+        id    = "L9",
+        label = "Light — Spacecraft Count (thread ladder ends)",
+        cases        = ["gravity_4096sat_l50_vacuum_1hr"],
+        parity_cases = ["gravity_4096sat_l50_vacuum_1hr"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 2,
+        warmup       = 1,
+        thread_mode  = :low_high,
+    ),
+    PPBPhase(
+        id    = "L10",
+        label = "Light — Atmosphere and GRAM Surrogate",
+        cases        = ["atmo256_exponential_10min", "atmo256_gram_surrogate_10min"],
+        parity_cases = ["atmo256_exponential_10min"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 2,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "L11",
+        label = "Light — Force and Actuator Model Count",
+        cases        = ["stack256_e4_nbody", "stack32_e6_actuated"],
+        parity_cases = ["stack32_e6_actuated"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 2,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "L12",
+        label = "Light — Interacting vs. Independent Propagation",
+        cases        = ["interact_64sat_1hr", "independent_1sat_1hr"],
+        parity_cases = ["independent_1sat_1hr"],
+        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "policy_v2"],
+        mc_samples   = [64],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :low_high,
+    ),
+    PPBPhase(
+        id    = "L13",
+        label = "Light — Thread vs. Process Budget Split",
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = ["montecarlo_heavy_aerobraking"],
+        modes        = ["outer_process", "outer_threads", "policy_v2"],
+        mc_samples   = [16],
+        repeats      = 3,
+        warmup       = 1,
+        budget_grid  = [(1, 12), (3, 4), (12, 1)],
+    ),
+    PPBPhase(
+        id    = "L14",
+        label = "Light — Mission Duration and Output Cadence",
+        cases        = ["cadence_1024sat_10s", "heavy_1024sat_l50_6hr"],
+        parity_cases = ["cadence_1024sat_10s"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 2,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "L15",
+        label = "Light — Joint Routing on Nested Monte Carlo Constellations",
+        # One case per tie regime: 16sat_8mc ties at one round on (2,6),
+        # 8sat_16mc at three, 32sat_32mc has the pool ahead by a round.
+        cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc", "mcgrid_32sat_32mc"],
+        parity_cases = ["mcgrid_16sat_8mc"],
+        modes        = ["outer_process", "outer_threads", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        budget_grid  = [(1, 12), (2, 6), (12, 1)],
+    ),
 ]
 
 # ── Quick benchmark (--quick) ─────────────────────────────────────────────────
@@ -989,6 +1107,7 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
     preview         = _ppc_bool(get(ENV, "SPACEAGORA_PPB_PREVIEW", "0"))
     quick           = _ppc_bool(get(ENV, "SPACEAGORA_PPB_QUICK", "0"))
     lean_modes      = _ppc_bool(get(ENV, "SPACEAGORA_PPB_LEAN_MODES", "0"))
+    light           = _ppc_bool(get(ENV, "SPACEAGORA_PPB_LIGHT", "0"))
     resume          = get(ENV, "SPACEAGORA_PPB_RESUME", "")
 
     valid_phases = union(Set(p.id for p in PAPER_BENCHMARK_PHASES), Set(["Q1", "Q2", "Q3"]))
@@ -1019,6 +1138,8 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
             quick = true
         elseif arg == "--lean-modes"
             lean_modes = true
+        elseif arg == "--light"
+            light = true
         elseif startswith(arg, "--resume=")
             resume = _ppc_arg_value(arg)
         else
@@ -1026,6 +1147,12 @@ function ppb_parse_cli(args::Vector{String}=ARGS)::PPBConfig
         end
     end
 
+    # --light selects the L8-L15 set (a --phases list narrows it) and implies
+    # --lean-modes, which is a no-op on the light phases' own mode lists.
+    if light
+        isempty(phases) && append!(phases, PPB_LIGHT_PHASES)
+        lean_modes = true
+    end
     unique!(phases)
     unknown = [p for p in phases if p ∉ valid_phases]
     isempty(unknown) || throw(ArgumentError("Unknown phase(s): $(join(unknown, ", "))."))

@@ -51,8 +51,12 @@ end
     if n > 2
         @test r_off === :threads
     end
-    if n > 1 && 2 + min(n - 1, usable - 2) >= n
-        @test r_on === :process
+    # With mixed dispatch on the rule counts rounds (mc_route_rounds): the pool
+    # wins outright when it saves a round and is the cold answer at a tie
+    # (which is then measured, see mc_route_tie_tests).
+    rounds = PPr.mc_route_rounds(f, t_on)
+    if n > 1 && rounds !== nothing
+        @test r_on === (rounds.process <= rounds.threads ? :process : :threads)
     end
 end
 

@@ -315,7 +315,13 @@ function _campaign_route_plan(
     # against 0.27 s at the widest split. So: no history and no race possible
     # -> the widest split (the shipped cold answer); history -> the selector
     # exploits it (select_outer_split! does not force-explore under V2).
-    race_possible = tuning.split_race && route in (:threads, :process) &&
+    # Only the threads route has a width trade to race: a narrower split buys
+    # each sample inner budget. For the process route (workers are 1 thread)
+    # and for mixed dispatch (the local slots do not depend on W) a narrower
+    # width only idles workers, so the widest split is the answer and racing
+    # it is pure cost -- 108 of 256 samples at reduced width on B12's
+    # independent campaign.
+    race_possible = tuning.split_race && route === :threads &&
         length(split_candidates) >= 2 &&
         _split_race_batch(n_samples, split_candidates;
                           warm=_split_race_warm_count((route=route,), split_candidates, n_samples)) > 0
@@ -337,8 +343,22 @@ function _campaign_route_plan(
     # Process route: the coordinator's spare threads run samples beside the
     # pool (mixed dispatch). Kept as a function of the width so the split race
     # and _plan_at_width recompute it per candidate.
+    # Local slots are a threads-route split of the coordinator -- each slot's
+    # inner budget is its share of the pool, exactly as under the threads
+    # route at that width -- so what the threads route has measured about its
+    # own width on this shape bounds them: past the width the split selector
+    # found best, more concurrent local samples cost more than they return.
+    # Cold (no threads history on this shape) the bound is absent and the
+    # slots fill the spare threads as before; the threads campaign a rounds
+    # tie spends (explore_route_ties) is what supplies the measurement.
+    local_cap = typemax(Int)
+    if route === :process && ParallelProfiles.outer_split_history_present(state, features, :threads)
+        local_cap = max(1, select_outer_split!(
+            state, features; route=:threads, budget=Base.Threads.nthreads(),
+            n_units=n_samples, tuning=tuning, max_process_workers=process_cap))
+    end
     local_slots_at = route === :process ?
-        (w -> ParallelProfiles.mixed_local_slots(features, tuning, w)) : (w -> 0)
+        (w -> min(local_cap, ParallelProfiles.mixed_local_slots(features, tuning, w))) : (w -> 0)
     if tuning.trace
         println("[outer-split] route=$(route) workers=$(workers) local_slots=$(local_slots_at(workers)) " *
                 "candidates=$(split_candidates) " *
@@ -485,10 +505,20 @@ function _run_campaign_split_race(
         println("[outer-split] race route=$(plan.route) k=$(k) chosen=w$(best_w) $(ladder) " *
                 "route_credit=$(round(route_per_sample * 1e3; digits=2))ms/sample")
     end
-    return (MonteCarloResult(samples, (time_ns() - started) / 1.0e9, best_w;
-                             route=plan.route, local_slots=plan.local_slots_at(best_w)),
+    best_local = plan.local_slots_at(best_w)
+    return (MonteCarloResult(samples, (time_ns() - started) / 1.0e9, best_w + best_local;
+                             route=plan.route, local_slots=best_local),
             route_per_sample)
 end
+
+# Set by a threaded dispatch, cleared by the collection it motivates (below).
+# A process campaign that follows nothing threaded -- the first campaign of a
+# session, a race's own batches, every point of the paper harness -- has a
+# clean heap and pays nothing. Measured through the harness at B12
+# independent_1sat_1hr (256 x 37 ms samples, 12 workers): the unconditional
+# collection, multiplied by the race's five dispatches, put R6 at 3.4x / 1.7x
+# the static process route at t=1 / t=12 with identical per-sample times.
+const _GC_DEBT = Base.Threads.Atomic{Bool}(false)
 
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
     # Collect BEFORE dispatch (V2). A threaded campaign leaves the coordinator
@@ -503,7 +533,10 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
     # collected before each batch, which is why it never showed this; in
     # production it lands once, on the process campaign after the must-measure
     # threads exploration, and that is the one the bandit learns from.
-    (hasproperty(plan, :gc_first) && plan.gc_first) && GC.gc()
+    if hasproperty(plan, :gc_first) && plan.gc_first && plan.route === :process && _GC_DEBT[]
+        GC.gc()
+        _GC_DEBT[] = false
+    end
     worker_count = min(spec.threads, length(spec.seeds))
     worker_count > 1 || return run_monte_carlo(f, spec)
     if plan.route === :process
@@ -531,6 +564,9 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
             _run_monte_carlo_process(f, spec.seeds, spec, active_workers)
         end
         elapsed_s = (time_ns() - start_ns) / 1.0e9
+        # The local slots ran samples on the coordinator's own heap, exactly
+        # as a threaded dispatch does, and leave the same debt behind.
+        local_slots > 0 && (_GC_DEBT[] = true)
         spec.fail_fast && _throw_first_monte_carlo_failure(samples)
         return MonteCarloResult(samples, elapsed_s, length(active_workers) + local_slots;
                                 route=:process, local_slots=local_slots)
@@ -542,9 +578,11 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
         # always wins.
         push!(env_pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(plan.inner_thread_budget))
     end
-    return withenv(env_pairs...) do
+    result = withenv(env_pairs...) do
         run_monte_carlo(f, spec)
     end
+    worker_count > 1 && (_GC_DEBT[] = true)
+    return result
 end
 
 function _record_campaign_route_feedback!(

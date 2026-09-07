@@ -407,13 +407,22 @@ dispatch and ThreadingUtilities spin-waits. Bounded by the share, four
 3-wide batches use the same 12 cores without contention.
 
 With no budget advertised the bound is the pool, i.e. `num_cores` as before,
-so a single simulation is unchanged.
+so a single simulation is unchanged -- unless the calibration pinned a
+`satellite_batch` plan with an allotment above 1, which is its measured width
+for this shape (rhs_calibration's batch rungs) and bounds the loop too.
 """
 @inline function _rhs_batch_workers(p)::Int
     penv = _policy_env_config(p)
     budget = penv === nothing ?
         SimulationModel.ParallelPolicy.effective_inner_thread_budget() : penv.inner_thread_budget
-    return max(1, min(Polyester.num_cores(), budget))
+    width = budget
+    if p !== nothing && hasproperty(p, :shared_buffers)
+        pinned = p.shared_buffers.rhs_plan_override[]
+        if pinned !== nothing && pinned.mode === :satellite_batch && Int(pinned.allotment) > 1
+            width = min(width, Int(pinned.allotment))
+        end
+    end
+    return max(1, min(Polyester.num_cores(), width))
 end
 
 @inline function _rhs_batch_minbatch(p, num_items::Int)::Int
@@ -1143,9 +1152,10 @@ end
 # cannot pay. Whatever chose the plan -- heuristic, sweep, or a pinned override
 # -- keeps its choice below the ceiling.
 #
-# `satellite_batch` is exempt because it takes its width from Polyester's own
-# pool and honours neither `allotment` nor the inner thread budget, so clamping
-# the field would change what the plan reports without changing what it runs.
+# `satellite_batch` is exempt: its allotment of 1 means the whole inner budget
+# (a sentinel, not a width), so writing a ceiling of 1 into it would widen the
+# plan rather than clamp it; a calibrated batch rung above 1 is already the
+# measured width and needs no ceiling.
 @inline function _clamp_plan_to_lock_ceiling(plan, p)::SimulationModel.RhsExecutionPlan
     (p !== nothing && hasproperty(p, :shared_buffers)) || return plan
     ceiling = p.shared_buffers.rhs_width_ceiling[]

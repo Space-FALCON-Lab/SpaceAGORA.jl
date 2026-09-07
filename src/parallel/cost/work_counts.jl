@@ -87,10 +87,12 @@ function effector_cost_terms(model::GravitationalHarmonicsModel)::WorkCounts
     # like the vectorized terms -- not as "two passes", which is what they were
     # and which understated them by roughly forty-fold.
     #
-    # These are the only parts of the kernel that are NOT vectorized (plain
-    # `@inbounds for b = 1:B`, no `@turbo`), and they are dense: a 3x3
-    # matrix-vector product, a norm with its square root, a reciprocal, and a
-    # second matrix-vector product on the way out. For a zonal field they
+    # These were the only parts of the batched kernel that did not vectorize,
+    # and they are dense: a 3x3 matrix-vector product, a norm with its square
+    # root, a reciprocal, and a second matrix-vector product on the way out.
+    # The kernel is scalar per satellite on every route now, so the split into
+    # `simd_terms` and `scalar_items` is one of rate constants rather than of
+    # vectorization, and the counts are unchanged. For a zonal field they
     # dominate the whole kernel, which is why treating them as negligible made
     # the model predict that a 1024-satellite L20 zonal solve was too cheap to
     # be worth parallelising -- when measurement says the opposite.

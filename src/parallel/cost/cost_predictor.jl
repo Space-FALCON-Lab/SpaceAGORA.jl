@@ -90,19 +90,24 @@ Wall time, not summed work: the per-worker terms are divided by the satellite
 split because workers run concurrently, so what the solve waits for is one
 worker's share. The terms that do *not* divide are the ones that matter:
 
-  - `coeff_touches` is paid once per worker on the flat route, because the SIMD
-    pre-pass evaluates each satellite with the same compiled kernel across the whole
-    satellite batch. On `satellite_batch` it is paid once per satellite, because
-    that route re-walks the table for every one. This asymmetry is the entire
-    discriminator between the two candidates; everything else is symmetric.
+  - `coeff_touches` is paid once per satellite on both routes. The flat
+    harmonics pre-pass evaluates every satellite with the scalar kernel the
+    serial route runs (one compiled body, which is what makes the two routes
+    bit-identical) and re-walks the coefficient table for each one, exactly as
+    `satellite_batch` does. The batched SIMD pre-pass that paid it once per
+    worker is gone, and with it the asymmetry that used to be the main
+    discriminator. What separates the candidates now is the dispatch
+    mechanism, the dynamic scheduler's atomic, the per-node queue bookkeeping
+    and the contention correction.
   - the dynamic scheduler's atomic is a single contended cache line, so its
     increments serialise rather than spreading across workers, and the cost
     scales with total items rather than items per worker.
 
-The lane rate is evaluated at the batch width the route actually produces, which
-is why `satellite_batch` is expensive in a way a flat-rate model would miss: it
-runs at batch width 1, where the measured lane rate is ~90x the plateau because
-per-pass loop overhead has nothing to amortise over.
+The lane rate is evaluated at one satellite's workspace on both routes, because
+both run the harmonics kernel one satellite at a time. That is the width-1 end
+of the calibrated curve, where the measured rate is far above the plateau
+because per-pass loop overhead has nothing to amortise over; a flat-rate model
+would miss it on either route.
 """
 function predict_plan_ns(
     counts::WorkCounts,
@@ -173,14 +178,18 @@ function predict_plan_ns(
             batch * counts.coeff_touches * touch +
             scalar + probe)
     else
-        lane = rate_at(mc.simd_lane, max(8.0, batch * counts.simd_workspace_bytes_per_sat))
+        # The flat pre-pass runs the scalar per-satellite kernel, so its
+        # workspace is one satellite's worth and every satellite re-walks the
+        # coefficient table: the same lane rate and the same per-satellite
+        # touch charge as `satellite_batch`.
+        lane1 = rate_at(mc.simd_lane, max(8.0, counts.simd_workspace_bytes_per_sat))
         touch = rate_at(mc.coeff_touch, counts.coeff_table_bytes)
         nodes_per_worker = counts.queue_nodes / workers
         atomics = candidate.scheduler === :dynamic && workers > 1 ?
             counts.queue_nodes * mc.ns_per_atomic : 0.0
         dispatch + atomics + contention_factor * (
-            batch * counts.simd_terms * lane +
-            counts.coeff_touches * touch +
+            batch * counts.simd_terms * lane1 +
+            batch * counts.coeff_touches * touch +
             nodes_per_worker * mc.ns_per_queue_node +
             scalar + probe)
     end

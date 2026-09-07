@@ -879,3 +879,4 @@ include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.j
 include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "08_cli_and_assets_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "suites", "09_probe_drivers.jl"))
+include(joinpath(REPO_ROOT, "test", "suites", "10_parallel_unit_tests.jl"))

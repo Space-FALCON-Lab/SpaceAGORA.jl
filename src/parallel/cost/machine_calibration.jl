@@ -7,7 +7,8 @@
 # The design matrix is synthetic on purpose. Measured across every configuration
 # the real harmonics kernel can produce, `simd_terms` and `coeff_touches` stay
 # 0.998 correlated, so a fit against real workloads cannot separate them -- and
-# the separation is exactly what distinguishes the routing candidates. The
+# the two sit on rates that depend on different cache levels, so constants
+# that cannot tell them apart do not transfer between table sizes. The
 # synthetic kernels take touch count and arithmetic-per-touch as independent
 # arguments, so the two columns can be made orthogonal by construction.
 #

@@ -1,6 +1,7 @@
 # include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
 
-using SatelliteToolbox
+using SatelliteToolboxAtmosphericModels: AtmosphericModels
+using SpaceIndices
 using StaticArrays
 using LinearAlgebra
 using Dates
@@ -278,8 +279,8 @@ the solver starts.
 function init_nrlmsise_space_indices!(; force_download::Bool=false)
     lock(_NRLMSISE00_SPACE_INDICES_LOCK) do
         if force_download || !_NRLMSISE00_SPACE_INDICES_READY[]
-            SatelliteToolbox.AtmosphericModels.SpaceIndices.init(
-                SatelliteToolbox.AtmosphericModels.SpaceIndices.Celestrak;
+            SpaceIndices.init(
+                SpaceIndices.Celestrak;
                 force_download=force_download
             )
             _NRLMSISE00_SPACE_INDICES_READY[] = true
@@ -511,7 +512,7 @@ end
 end
 
 @inline function _nrlmsise_space_indices_lookup(index::Val, instant::DateTime)
-    return SatelliteToolbox.AtmosphericModels.SpaceIndices.space_index(index, instant)
+    return SpaceIndices.space_index(index, instant)
 end
 
 @inline function _nrlmsise_space_indices_f107(lookup, instant::DateTime)::Float64
@@ -642,7 +643,7 @@ end
     lon::Float64
 )::Tuple{Float64, Float64, SVector{3, Float64}}
     indices = _nrlmsise_resolved_indices(model, instant, h, lat, lon)
-    atmo = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+    atmo = AtmosphericModels.nrlmsise00(
         instant,
         h,
         lat,

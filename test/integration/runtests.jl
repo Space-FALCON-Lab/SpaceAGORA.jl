@@ -10,9 +10,9 @@ using ComponentArrays
 using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
-# Suite 01 reaches SatelliteToolbox directly; it used to arrive here as a
+# Suite 01 reaches SatelliteToolboxAtmosphericModels directly; it used to arrive here as a
 # leaked import of the raw-included reference_system.jl.
-using SatelliteToolbox
+using SatelliteToolboxAtmosphericModels
 using SatelliteToolboxGravityModels
 using SPICE
 using SpecialFunctions: loggamma

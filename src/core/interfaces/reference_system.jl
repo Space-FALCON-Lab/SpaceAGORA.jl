@@ -3,7 +3,6 @@
 using LinearAlgebra
 using AstroTime
 using StaticArrays
-using SatelliteToolbox
 using SPICE
 
 const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"

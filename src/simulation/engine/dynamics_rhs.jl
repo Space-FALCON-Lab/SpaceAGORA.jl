@@ -1,4 +1,8 @@
-@inline function _evaluate_dynamic_effector(
+# Never inlined: the serial tuple loop and the threaded collect closure would
+# otherwise each get their own compilation of the effector kernels, and LLVM
+# decides per compilation context whether StaticArrays' `muladd` products are
+# fused, so the two copies can round differently on the same input.
+@noinline function _evaluate_dynamic_effector(
     effector,
     sc_view,
     state_sample,

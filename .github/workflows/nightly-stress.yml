@@ -154,11 +154,12 @@ jobs:
       # runner's physical memory (public-repo ubuntu-latest: 4 vCPU/16 GB):
       # without it this step intermittently starves the runner agent and the
       # job dies mid-step. 10G leaves room for native GRAM and the OS.
-      # Effector-level threading off for the graded regression: with it on, two
-      # solves of the same Odyssey scenario in one process differ bit-for-bit on
-      # the 4-vCPU runners (the automatic policy re-decides the execution path
-      # every step from a wall-clock cost estimate). With it off the solves are
-      # identical on the same runner. See branch experiment/odyssey-determinism.
+      # Effector-level threading off for the graded regression. Since #103 the
+      # threaded reductions give the same bits as serial, and since the engine
+      # evaluates a single satellite's effectors serially by default this pin
+      # is redundant; it stays as an explicit statement of the setting the
+      # regression is graded under (single-satellite threading measured 1.5 to
+      # 2x slower on the 4-vCPU runners).
       - name: Telemetry full regression (${{ matrix.scenario }})
         env:
           SPACEAGORA_EFFECTOR_PARALLEL: "off"

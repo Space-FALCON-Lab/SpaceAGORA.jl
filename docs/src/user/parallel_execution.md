@@ -101,6 +101,12 @@ export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=0
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
+The automatic mode only threads the effector loop from two satellites up: a
+single satellite's handful of force evaluations per step cannot pay for the
+task overhead (measured 1.5 to 2x slower), so it is evaluated serially unless
+`SPACEAGORA_EFFECTOR_PARALLEL=on` forces threading. Threaded and serial
+evaluation give bit-identical results either way.
+
 The same environment variables can be scoped in Julia with `withenv` when you
 want one process to run several scenarios with different settings.
 

@@ -247,9 +247,50 @@ conditional on a "GC debt" flag that a threaded dispatch sets and the
 collection clears, so the production case keeps its measured benefit and a
 clean heap pays nothing. Both after the regression run.
 
-### 4.3 Regression: B8–B14 lean
+### 4.3 Regression: B8–B14 (+B12) lean, run `20260907_050609`, `78bf070f`
 
-TODO
+Cell = R6 wall / best static wall (< 1 is R6 ahead); "before" = run
+`20260902_153738` (pre-fix R4/R5/R6 ladder) for the same launch point.
+
+**B13** `montecarlo_heavy_aerobraking`, 64 samples, fixed 12-core budget split six ways (1h05m):
+
+| split | (1,12) | (2,6) | (3,4) | (4,3) | (6,2) | (12,1) |
+|---|---|---|---|---|---|---|
+| R6 / best static | 0.99 | **0.80** | **0.82** | **0.87** | **0.90** | 1.11 |
+| R6 dispatch | threads | mixed 2+5 | mixed 3+3 | mixed 4+2 | mixed 6+1 | process |
+| before (R6) | 1.02 | 1.05 | 0.98 | 1.52 | 2.94 | 1.01 |
+
+The two splits where the shipped profiles lost by 1.5× and 2.9× are now
+ahead of both static routes. The one miss is the (12,1) wall overhead of
+§4.2a (7.81 vs 7.05 s), not a routing error.
+
+**B12** interacting vs. independent (1h16m):
+
+| case | t | R6 / best | before | note |
+|---|---|---|---|---|
+| interact_64sat_1hr | 8 / 12 | 0.24 / 0.18 | 0.24 / 0.18 | unchanged (§ B12 record, calibration effect) |
+| interact_256sat_1hr | 8 / 12 | 0.89 / 0.73 | 0.89 / 0.70 | unchanged |
+| independent_1sat_1hr | 1 / 8 / 12 | **3.40 / 1.72 / 1.65** | 0.95 / 1.05 / 0.94 | REGRESSION, route correct (`process`) |
+
+The independent campaign is 256 one-satellite samples of ~37 ms each. New
+for it in this run is the runner dispatch: at 256 samples the split race runs
+(warm 12, then 36 at each of widths 4/8/12, then the rest), and every raced
+batch goes through `_run_campaign_with_route_env`, which performs V2's full
+`GC.gc()` before each dispatch -- five collections inside one timed campaign,
+single-threaded at t=1. The previous run dispatched with the harness's own
+`pmap`: no race, no collection. Same mechanism, one collection, is the (12,1)
+overhead of §4.2a.
+
+Two changes follow, both `adaptive_routing.jl`: collect before a dispatch
+only when a threaded dispatch has run since the last collection (a "GC debt"
+flag -- the production case the collection was measured for keeps it; a
+clean heap pays nothing, and a race pays it at most once); and race split
+widths only for the `:threads` route, where a narrower width buys each sample
+inner budget -- for the process route (and mixed, whose local slots do not
+depend on W) a narrower width only idles workers, so the widest split is the
+answer and the race is pure cost.
+
+TODO: B8, B9, B14, B10, B11 as they land.
 
 ## 5. Changes to SpaceAGORA itself (`src/`)
 

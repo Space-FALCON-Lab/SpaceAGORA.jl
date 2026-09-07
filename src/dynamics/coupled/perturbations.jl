@@ -123,7 +123,7 @@ end
     pos_spacecraft_k = pos_primary_k - pos_ii
     pos_spacecraft_k_mag = norm(pos_spacecraft_k)
     pos_primary_k_mag = norm(pos_primary_k)
-    return @fastmath mass * mu_k * (
+    return mass * mu_k * (
         (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
     )
 end
@@ -1535,7 +1535,7 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
     # We only need to refresh the sub-diagonal entries that depend on the current
     # position (u = z/r changes every call).
     A[2, 1] = u * sqrt_3
-    @inbounds @fastmath for n = 1:L+1
+    @inbounds for n = 1:L+1
         row = n + 1
         A[row + 1, row] = u * model.sqrt_2n_plus_3[n] * A[row, row]
     end
@@ -1545,7 +1545,7 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
     I[1] = 0.0
     Rn = 1.0
     In = 0.0
-    @inbounds @fastmath for j = 2:(M + 2)
+    @inbounds for j = 2:(M + 2)
         Rn, In = s * Rn - t * In, s * In + t * Rn
         R[j] = Rn
         I[j] = In
@@ -1556,7 +1556,7 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
 
     max_recur_row = 2
     ρ_np1 = -model.planet.μ * inv_r * ρ
-    @inbounds @fastmath for l = 1:L
+    @inbounds for l = 1:L
         row = l + 1
 
         if row > max_recur_row
@@ -1590,7 +1590,7 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
         sum4 += model.VR11[row, 1] * A[row + 1, 2] * D0
 
         active_orders = model.active_orders_by_degree[row]
-        @inbounds @fastmath for idx in eachindex(active_orders)
+        @inbounds for idx in eachindex(active_orders)
             m = active_orders[idx]
             j = m + 1
             C = model.C[row, j]
@@ -1683,9 +1683,9 @@ end
     u = rVec_cart[3] * inv_r
     L = model.L
     M = model.M
-    @fastmath begin
+    begin
         A[2, 1] = u * sqrt_3
-        @inbounds @simd for degree = 1:L+1
+        @inbounds for degree = 1:L+1
             idx = degree + 1
             A[idx + 1, idx] = u * model.sqrt_2n_plus_3[degree] * A[idx, idx]
         end

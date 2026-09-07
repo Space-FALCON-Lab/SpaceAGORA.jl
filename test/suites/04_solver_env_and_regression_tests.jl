@@ -113,13 +113,29 @@
         "SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD" => "1000.0",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0"
     ) do
+        # One satellite never threads its effectors under the automatic policy,
+        # however heavy the estimated work: the per-step task overhead loses.
         decision_single = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 1)
+        @test decision_single.use_threads == false
+        @test decision_single.allotment == 1
+        @test decision_single.policy_applied == false
+        # Forcing threading on still threads a single satellite.
+        withenv("SPACEAGORA_EFFECTOR_PARALLEL" => "on") do
+            decision_single_on = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 1)
+            if Threads.nthreads() > 1
+                @test decision_single_on.use_threads == true
+                @test decision_single_on.allotment >= 2
+                @test decision_single_on.allotment <= min(Threads.nthreads(), 4)
+            else
+                @test decision_single_on.use_threads == false
+            end
+        end
+        # The same heavy estimate with two satellites keeps the automatic path.
+        decision_pair = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 2)
         if Threads.nthreads() > 1
-            @test decision_single.use_threads == true
-            @test decision_single.allotment >= 2
-            @test decision_single.allotment <= min(Threads.nthreads(), 4)
+            @test decision_pair.use_threads == true
         else
-            @test decision_single.use_threads == false
+            @test decision_pair.use_threads == false
         end
     end
 

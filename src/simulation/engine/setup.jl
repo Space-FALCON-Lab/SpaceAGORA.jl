@@ -774,7 +774,7 @@ end
 end
 
 # Effectors whose flat-mode routing benefit satellite_batch cannot replicate at any
-# thread count: harmonics gets the cache-friendly SIMD batch kernel across the whole
+# thread count: harmonics gets the per-satellite pre-pass across the whole
 # satellite batch (satellite_batch's Polyester loop instead calls the ordinary
 # per-satellite Pines recursion once per satellite), and (J2-)inverse-square gravity
 # gets a batched pre-pass specifically to avoid per-satellite Polyester dispatch
@@ -870,7 +870,7 @@ end
         _rhs_harmonics_flat_experimental_enabled()
 end
 
-# Minimum satellites per worker for the harmonics SIMD batch (SIMD efficiency floor).
+# Minimum satellites per worker for the harmonics pre-pass (worker efficiency floor).
 # The formula workers = min(budget, fld(active_sats, floor)) automatically scales with
 # both satellite count and thread budget.  Default 4: one AVX2 / half AVX-512 register
 # width — enough for @turbo to have a full SIMD iteration while allowing 16 workers at
@@ -1290,14 +1290,15 @@ end
 
     # ── Auto routing ─────────────────────────────────────────────────────────────
 
-    # Single-harmonics SIMD batch: route through flat_constellation whenever the
+    # Single-harmonics pre-pass: route through flat_constellation whenever the
     # constellation is large enough to give each worker at least min_sats_per_worker
     # satellites (viable_workers >= 2), or when running single-threaded (budget <= 1).
-    # The SIMD batch kernel loads each spherical harmonic coefficient pair once and
-    # broadcasts it to the full satellite batch via @turbo, which is more cache-efficient
-    # than Polyester @batch where every thread independently traverses the coefficient
-    # table for its satellite slice.  The worker count is capped at viable_workers inside
-    # _accumulate_harmonics_flat_batch!, so this routing is safe at any thread budget.
+    # The pre-pass evaluates the satellites in contiguous worker slices with one
+    # compiled harmonics kernel and shares the frame and coefficient lookups per
+    # step, which costs less than Polyester @batch where every task pays the
+    # per-satellite effector dispatch. The worker count is capped at
+    # viable_workers inside _accumulate_harmonics_flat_batch!, so this routing is
+    # safe at any thread budget.
     single_harmonics_flat = _rhs_single_harmonics_flat_supported(env, dynamic_effectors)
     if single_harmonics_flat && active_sats >= env.flat_min_sats && active_sats > 1
         # A higher-level campaign (or benchmark harness) already owns an outer
@@ -1310,7 +1311,7 @@ end
         # The constraint that hazard imposes is "do not start a nested *thread*
         # split", not "take a different route": clamping this route's allotment
         # to 1 already satisfies it, because _accumulate_harmonics_flat_batch!
-        # calls the SIMD batch kernel inline when n_workers <= 1 and
+        # runs the pre-pass slice inline when n_workers <= 1 and
         # _spacecraft_dynamics_flat_constellation_effector_queue!'s
         # threaded_foreach degenerates to a serial loop at allotment 1 -- no
         # tasks are spawned on either path. Routing to :satellite_batch instead
@@ -1352,7 +1353,7 @@ end
 
     # Single inverse-square (J2-)gravity fast path: the effector body is a few
     # FLOPs, far too cheap to ever amortise Polyester per-satellite task-spawn
-    # overhead (unlike harmonics, there's no per-worker SIMD batch to size —
+    # overhead (unlike harmonics, there is no per-worker pre-pass slice to size —
     # the win is entirely from replacing satellite_batch's per-task effector
     # dispatch with a single serial pre-pass). Threading is reserved for the
     # subsequent per-satellite RHS-assembly pass, which every route (including

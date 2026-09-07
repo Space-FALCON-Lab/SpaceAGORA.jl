@@ -5,7 +5,7 @@
 # plans already carried was dead. That made the static/dynamic choice a profile
 # constant rather than a routed decision -- R5 declares `dynamic`, so it paid
 # an atomic RMW per chunk on work items that are uniform by construction (the
-# harmonics SIMD batch slices, the flat effector queue), and the pre-solve
+# harmonics pre-pass slices, the flat effector queue), and the pre-solve
 # calibration sweep could not discover that `static` was faster because it held
 # the scheduler fixed while sweeping allotment.
 #
@@ -203,7 +203,7 @@ end
 
 # Spin-barrier variant: workers spin-poll an atomic generation counter instead of
 # sleeping on a Channel. Dispatch overhead is ~10-50 ns vs ~1-5 µs for channels,
-# allowing the harmonics SIMD batch to scale to 32-128+ threads.
+# allowing the harmonics pre-pass to scale to 32-128+ threads.
 # Opt-in via SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=1.
 @inline harmonics_batch_spin_barrier_enabled()::Bool =
     parse_bool_env("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER", false)

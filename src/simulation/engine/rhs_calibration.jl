@@ -554,7 +554,7 @@ function _rhs_plan_candidates(p, dynamic_effectors)
     if viable_workers >= 2 && _rhs_flat_supported(dynamic_effectors)
         # Ladder is geometric in the THREAD BUDGET, not in viable_workers.
         #
-        # viable_workers is a SIMD batch-sizing quantity (active_sats /
+        # viable_workers is a pre-pass slice-sizing quantity (active_sats /
         # min_sats_per_worker) and is routinely far larger than the budget: at
         # 1024 satellites with the default floor of 4 it is 256, against a
         # 12-thread budget. The old ladder was built from it -- 2,

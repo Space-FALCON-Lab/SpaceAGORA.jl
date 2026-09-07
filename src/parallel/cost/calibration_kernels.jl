@@ -7,7 +7,7 @@
 # arithmetic is what consumes the table and the two cannot be varied apart.
 #
 # That collinearity is fatal here rather than merely inconvenient, because the
-# two routing candidates weight `coeff_touches` differently: the flat SIMD batch
+# two routing candidates weight `coeff_touches` differently: the flat harmonics pre-pass
 # walks the coefficient table once per worker, `satellite_batch` walks it once
 # per satellite. Two coefficient splits that predict flat identically can
 # predict batch 49% apart (measured at N=1024, a=12, L=50 full field: 38.1x

@@ -91,7 +91,7 @@ split because workers run concurrently, so what the solve waits for is one
 worker's share. The terms that do *not* divide are the ones that matter:
 
   - `coeff_touches` is paid once per worker on the flat route, because the SIMD
-    batch kernel loads each coefficient once and broadcasts it across the whole
+    pre-pass evaluates each satellite with the same compiled kernel across the whole
     satellite batch. On `satellite_batch` it is paid once per satellite, because
     that route re-walks the table for every one. This asymmetry is the entire
     discriminator between the two candidates; everything else is symmetric.

@@ -50,6 +50,7 @@ $env:SPACEAGORA_MULTIBODY_PARALLEL = "auto"
 $env:SPACEAGORA_EFFECTOR_PARALLEL = "auto"
 $env:SPACEAGORA_RHS_BATCH_PARALLEL = "auto"
 $env:SPACEAGORA_RHS_EXECUTION_MODE = "auto"
+$env:SPACEAGORA_RHS_CALIBRATE = "auto"
 $env:SPACEAGORA_PARALLEL_POLICY_ADAPTIVE = "1"
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
@@ -66,6 +67,7 @@ set SPACEAGORA_MULTIBODY_PARALLEL=auto
 set SPACEAGORA_EFFECTOR_PARALLEL=auto
 set SPACEAGORA_RHS_BATCH_PARALLEL=auto
 set SPACEAGORA_RHS_EXECUTION_MODE=auto
+set SPACEAGORA_RHS_CALIBRATE=auto
 set SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
@@ -82,6 +84,7 @@ export SPACEAGORA_MULTIBODY_PARALLEL=auto
 export SPACEAGORA_EFFECTOR_PARALLEL=auto
 export SPACEAGORA_RHS_BATCH_PARALLEL=auto
 export SPACEAGORA_RHS_EXECUTION_MODE=auto
+export SPACEAGORA_RHS_CALIBRATE=auto
 export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
@@ -97,6 +100,7 @@ export SPACEAGORA_MULTIBODY_PARALLEL=off
 export SPACEAGORA_EFFECTOR_PARALLEL=off
 export SPACEAGORA_RHS_BATCH_PARALLEL=off
 export SPACEAGORA_RHS_EXECUTION_MODE=serial
+export SPACEAGORA_RHS_CALIBRATE=off
 export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=0
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
@@ -106,6 +110,20 @@ single satellite's handful of force evaluations per step cannot pay for the
 task overhead (measured 1.5 to 2x slower), so it is evaluated serially unless
 `SPACEAGORA_EFFECTOR_PARALLEL=on` forces threading. Threaded and serial
 evaluation give bit-identical results either way.
+
+That guarantee holds within an RHS execution route. The flat constellation
+route (`SPACEAGORA_RHS_EXECUTION_MODE=flat`, also one of the candidates the
+start-up calibration sweep may select for two or more satellites) evaluates the
+batched gravity terms through SIMD kernels and sums contributions in a
+different order, so its trajectories agree with the serial and per-satellite
+routes only to the last bit of the force, not bit for bit. For runs that must
+be reproducible across machines and thread counts, pin the route and skip the
+sweep:
+
+```bash
+export SPACEAGORA_RHS_CALIBRATE=off
+export SPACEAGORA_RHS_EXECUTION_MODE=per_satellite   # or serial
+```
 
 The same environment variables can be scoped in Julia with `withenv` when you
 want one process to run several scenarios with different settings.

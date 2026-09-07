@@ -127,6 +127,14 @@ println("threaded_smoke_ok")
 # whether the effectors are evaluated serially or on 2 or 4 workers, and
 # whether the n-body bodies are evaluated serially or on 2 workers. Three
 # effectors with different costs make the partition non-trivial.
+#
+# The RHS execution route is pinned for every run below. By default the engine
+# times the candidate routes at start-up (SPACEAGORA_RHS_CALIBRATE=auto) and
+# keeps the fastest, and the batched routes (satellite_batch, flat) evaluate the
+# harmonics through @fastmath/@turbo kernels that are not bit-identical to the
+# per-satellite scalar path on every CPU. That choice is a wall-clock decision,
+# so leaving it unpinned turned this check into a lottery on the CI runners.
+# The route drift itself is measured and printed further down, not asserted.
 # ---------------------------------------------------------------------------
 harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 det_effectors = (
@@ -162,40 +170,83 @@ det_args = SimulationConfiguration(
     integration_tolerances=args.integration_tolerances
 )
 
-function det_run(env_pairs::Vector{Pair{String, String}})::Matrix{Float64}
+function det_run(env_pairs::Vector{Pair{String, String}})::Tuple{Matrix{Float64}, Vector{String}}
     return withenv(env_pairs...) do
         mktempdir() do tmp
             cd(tmp) do
                 run_simulation(det_args)
                 df = CSV.read(joinpath(det_args.simulation_settings.results_directory, "simulation_results.csv"), DataFrame)
                 cols = [c for c in names(df) if eltype(df[!, c]) <: Real]
-                return Matrix{Float64}(df[:, cols])
+                return Matrix{Float64}(df[:, cols]), cols
             end
         end
     end
 end
 
+# Describe a mismatch precisely enough to act on from a CI log alone.
+function det_describe_difference(out::Matrix{Float64}, ref::Matrix{Float64}, cols::Vector{String})::String
+    d = abs.(out .- ref)
+    d[isnan.(d)] .= Inf   # NaN in one run only counts as a difference
+    bad = findall(>(0.0), vec(maximum(d; dims=1)))
+    rows = unique(getindex.(findall(>(0.0), d), 1))
+    io = IOBuffer()
+    print(io, "max abs difference ", maximum(d), " in ", length(bad), " column(s) over ", length(rows), "/", size(d, 1), " row(s)")
+    for j in bad[1:min(end, 8)]
+        i = argmax(view(d, :, j))
+        print(io, "; ", cols[j], "[", i, "] ref=", repr(ref[i, j]), " out=", repr(out[i, j]))
+    end
+    return String(take!(io))
+end
+
+det_machine = let info = Sys.cpu_info()
+    "cpu=$(isempty(info) ? "unknown" : String(info[1].model)) threads=$(Threads.nthreads())"
+end
+
+det_pinned = [
+    "SPACEAGORA_RHS_CALIBRATE" => "off",
+]
 det_force_on = [
     "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY" => "0",
     "SPACEAGORA_EFFECTOR_THREAD_THRESHOLD" => "1",
     "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "1",
 ]
-det_ref = det_run(["SPACEAGORA_EFFECTOR_PARALLEL" => "off", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"])
+det_serial_route = vcat(det_pinned, ["SPACEAGORA_RHS_EXECUTION_MODE" => "serial"])
+det_per_sat_route = vcat(det_pinned, ["SPACEAGORA_RHS_EXECUTION_MODE" => "per_satellite"])
+det_ref, det_cols = det_run(vcat(det_serial_route, ["SPACEAGORA_EFFECTOR_PARALLEL" => "off", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]))
 size(det_ref, 1) >= 10 || error("Determinism check produced too few rows: $(size(det_ref, 1))")
 det_variants = [
-    "effectors on 2 workers" => vcat(det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "2", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
-    "effectors on 4 workers" => vcat(det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "4", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
-    "n-body on 2 workers"    => vcat(det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "off", "SPACEAGORA_MULTIBODY_PARALLEL" => "on", "SPACEAGORA_MULTIBODY_MAX_THREADS" => "2"]),
-    "everything on"          => vcat(det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "4", "SPACEAGORA_MULTIBODY_PARALLEL" => "on", "SPACEAGORA_MULTIBODY_MAX_THREADS" => "2"]),
+    "effectors on 2 workers" => vcat(det_per_sat_route, det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "2", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
+    "effectors on 4 workers" => vcat(det_per_sat_route, det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "4", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
+    "n-body on 2 workers"    => vcat(det_serial_route, det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "off", "SPACEAGORA_MULTIBODY_PARALLEL" => "on", "SPACEAGORA_MULTIBODY_MAX_THREADS" => "2"]),
+    "everything on"          => vcat(det_per_sat_route, det_force_on, ["SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "4", "SPACEAGORA_MULTIBODY_PARALLEL" => "on", "SPACEAGORA_MULTIBODY_MAX_THREADS" => "2"]),
 ]
 for (label, env_pairs) in det_variants
-    out = det_run(env_pairs)
+    out, _ = det_run(env_pairs)
     if size(out) != size(det_ref)
-        error("Threaded determinism: $label produced $(size(out)) rows/cols, serial produced $(size(det_ref))")
+        error("Threaded determinism: $label produced $(size(out)) rows/cols, serial produced $(size(det_ref)) [$det_machine]")
     end
     if !isequal(out, det_ref)
-        worst = maximum(abs.(out .- det_ref))
-        error("Threaded determinism: $label differs from the serial run (max abs difference $worst)")
+        error("Threaded determinism: $label differs from the serial run: $(det_describe_difference(out, det_ref, det_cols)) [$det_machine]")
     end
 end
-println("threaded_determinism_ok variants=$(length(det_variants)) rows=$(size(det_ref, 1))")
+println("threaded_determinism_ok variants=$(length(det_variants)) rows=$(size(det_ref, 1)) route=per_satellite $det_machine")
+
+# Route drift report. The batched routes may legitimately differ from the
+# scalar route at the last bit on a given CPU; print how much so the number is
+# on record for every runner, without failing the job.
+det_routes = [
+    # Two spacecraft sit below SPACEAGORA_RHS_BATCH_THREAD_THRESHOLD (default 16),
+    # so the batch loop only runs when the switch is forced on.
+    "satellite_batch" => vcat(det_pinned, ["SPACEAGORA_RHS_EXECUTION_MODE" => "satellite", "SPACEAGORA_RHS_BATCH_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_PARALLEL" => "off", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
+    "flat"            => vcat(det_pinned, det_force_on, ["SPACEAGORA_RHS_EXECUTION_MODE" => "flat", "SPACEAGORA_EFFECTOR_PARALLEL" => "on", "SPACEAGORA_EFFECTOR_MAX_THREADS" => "4", "SPACEAGORA_MULTIBODY_PARALLEL" => "off"]),
+]
+for (label, env_pairs) in det_routes
+    out, _ = det_run(env_pairs)
+    if size(out) != size(det_ref)
+        println("threaded_route_report route=$label result=size_mismatch $(size(out)) vs $(size(det_ref)) [$det_machine]")
+    elseif isequal(out, det_ref)
+        println("threaded_route_report route=$label result=identical [$det_machine]")
+    else
+        println("threaded_route_report route=$label result=differs $(det_describe_difference(out, det_ref, det_cols)) [$det_machine]")
+    end
+end

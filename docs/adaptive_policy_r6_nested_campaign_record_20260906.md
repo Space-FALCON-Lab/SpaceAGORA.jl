@@ -175,13 +175,77 @@ Expected slots per B15 split on this machine: (1,12)→threads 8; (2,6)→2+5;
 
 ## 4. Measurements
 
-### 4.1 B15, 128 spacecraft-hour grid, fixes 1–4 only (run `20260906_205919`)
+### 4.1 B15, 128 spacecraft-hour grid, fixes 1–4 only (run `20260906_205919`, split 1 of 6 only)
 
-TODO
+| case (1 worker, 12 threads) | best static wall | R6 wall | R6 / best |
+|---|---|---|---|
+| mcgrid_16sat_8mc | 2.87 (`outer_threads`) | 3.37 | 1.17 |
+| mcgrid_32sat_4mc | 3.73 (`outer_threads`) | 5.52 | 1.48 |
+| mcgrid_8sat_16mc | 1.55 (`outer_threads`) | 1.59 | 1.03 |
 
-### 4.2 B15 with mixed dispatch, 128 + 1024 grids
+The run died at split 2 (see §6). The two lagging points are what §2.1 traced.
 
-TODO
+### 4.1a Point validation of fixes A+B (harness worker, mcgrid_32sat_4mc, 1 worker × 12 threads, 3 repeats)
+
+| | before A+B | after A+B |
+|---|---|---|
+| R6, 4 concurrent samples, wall | 5.25 s | **2.09 s** |
+| R6, per-sample | 4.86 s | 1.97 s |
+| static `outer_threads`, 4 samples, wall | 3.25 s | 2.24 s (fix A alone) |
+| R6, one sample | 0.63 s | 0.56 s |
+
+R6 goes from +62% to −7% against the static route at the point that was
+worst; the static route itself gains from fix A; a single simulation is
+unchanged.
+
+### 4.2 B15 with mixed dispatch and fixes A+B, 128 + 1024 grids (run `20260906_220830`, 6h56m, `78bf070f`)
+
+Lean ladder: `outer_process`, `outer_threads`, `inner_only`, `policy_v2`. Cell = R6 wall / best static wall at that launch point (< 1 is R6 ahead).
+
+| case | (1,12) | (2,6) | (3,4) | (4,3) | (6,2) | (12,1) |
+|---|---|---|---|---|---|---|
+| mcgrid_32sat_4mc  | 1.03 | 1.11 | 1.06 | 0.99 | 1.06 | 0.97 |
+| mcgrid_16sat_8mc  | 1.01 | 1.05 | 1.09 | 0.89 | 0.68 | 1.20 |
+| mcgrid_8sat_16mc  | 0.99 | 0.91 | 0.87 | 0.82 | 1.06 | 1.25 |
+| mcgrid_64sat_16mc | 0.92 | 0.93 | 0.70 | 0.72 | 0.67 | 1.00 |
+| mcgrid_32sat_32mc | 0.96 | 0.80 | 0.84 | 0.92 | 0.69 | 1.22 |
+| mcgrid_16sat_64mc | 0.95 | 0.84 | 0.78 | 0.79 | 0.81 | 1.12 |
+
+36 launch points: min 0.67, median 0.94, max 1.25; 23 strictly ahead, 30 within
+the 8% band. Best static is `outer_threads` at (1,12)–(3,4) and `outer_process`
+from (4,3) on. `inner_only` is never within 3× of the outer routes, at 64
+spacecraft per sample included: inner scaling on this workload is ~1.5× at 12
+threads, so outer-first holds across the whole grid on this machine.
+
+Misses: two small-sample ties at (2,6)/(3,4) where mixed dispatch needs the
+same number of rounds as the threads route (§6, rounds rule), and four at
+(12,1) -- the pure-process split, where R6 has no extra slots and should equal
+`outer_process` -- at 1.12–1.25. See §4.2a.
+
+### 4.2a The (12,1) misses are wall, not work
+
+At the pure-process split R6 has no local slot and dispatches exactly as
+`outer_process` does, yet reads 1.12–1.25× on four cases. Its **per-sample**
+times are lower at every case (0.61 vs 0.71, 1.36 vs 1.49, 2.70 vs 2.84,
+1.53 vs 1.63, 5.10 vs 5.41 s); the **wall** carries a fixed ~0.35 s on the
+8–16-sample campaigns and intermittent 1–2 s stalls on the 32/64-sample ones
+(32sat×32mc repeats: R6 11.04 / 8.72 / 10.56 vs process 9.88 / 8.67 / 8.56 --
+repeat 2 matched to 0.05 s). Two things sit inside the harness's adaptive
+timing and nowhere else:
+
+- `ppc_run_adaptive_batch` builds the probe config and route features after
+  `batch_started`; the pinned path resolves its route before the clock.
+- V2's `gc_before_dispatch` runs a full `GC.gc()` before a process dispatch,
+  inside the campaign. Its rationale is a threaded campaign leaving a
+  multi-GiB heap that the process route's async feeders then stall on
+  (measured 19.3 s vs 7.5 s in production). Every harness point is a fresh
+  process whose heap the harness already collected, so here the collection is
+  pure overhead; with a single coordinator thread it is also serial.
+
+Planned: move the probe outside the clock; make the pre-dispatch collection
+conditional on a "GC debt" flag that a threaded dispatch sets and the
+collection clears, so the production case keeps its measured benefit and a
+clean heap pays nothing. Both after the regression run.
 
 ### 4.3 Regression: B8–B14 lean
 
@@ -221,4 +285,18 @@ Tests: `test/unit/parallel/outer_split_budget_tests.jl`,
   The first split's rows stand; nothing else from that run does.
 - The static routes' heuristic picks a serial `flat/1` RHS for a 32-spacecraft
   single simulation where `satellite_batch` is 6.8× faster (§2.1). Not touched.
-- The 1024 spacecraft-hour B15 rungs have not run yet.
+- Found in the B15 re-run, to fix after it: (a) a race result reports
+  `threads = best_w` (workers only), so `execution_scope` reads
+  `adaptive_mixed_w0_l3` where it should read `w3_l3` -- label only, one line
+  in `_run_campaign_split_race`; (b) every small-sample loss so far (1.05–1.11
+  at 4–8 samples on the (2,6)/(3,4) splits) is a launch point where mixed
+  dispatch and the threads route need the same number of rounds,
+  `cld(n, W+L) == cld(n, T)`, so the pool's dispatch round-trip buys nothing.
+  Candidate rule for the V2 Monte Carlo default: take the process (mixed)
+  route only when it saves a round; fits 12 of the first 13 mixed points,
+  costs a 9% win on 16sat×64mc at (2,6). The regression set is insensitive
+  to it (many-sample or single-sample campaigns), so it can land after that
+  run without invalidating it.
+- The 1024 spacecraft-hour B15 rungs are running (`20260906_220830`);
+  `inner_only` loses by 3–8× at every point so far, including 64
+  spacecraft per sample -- outer-first holds across this grid on this box.

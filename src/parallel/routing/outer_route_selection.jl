@@ -283,7 +283,8 @@ estimate. `0` or `1` means the route is not worth offering.
 function effective_process_workers(f::OuterRouteFeatures, t::OuterRouteTuning)::Int
     t.memory_aware || return t.process_max_workers
     extra = _is_native_gram_point_density(f) ? native_gram_worker_extra_bytes(f.n_sats) : 0
-    return min(t.process_max_workers, memory_worker_cap(extra_per_worker=extra))
+    return min(t.process_max_workers,
+               memory_worker_cap(extra_per_worker=extra, resident=t.process_workers_resident))
 end
 
 @inline function _process_route_fits(f::OuterRouteFeatures, t::OuterRouteTuning)::Bool
@@ -327,7 +328,8 @@ function mixed_local_slots(f::OuterRouteFeatures, t::OuterRouteTuning, workers::
     gram && (slots = min(slots, 1))
     if t.memory_aware
         extra = gram ? native_gram_worker_extra_bytes(f.n_sats) : 0
-        slots = min(slots, memory_local_slot_cap(workers; extra_per_worker=extra))
+        slots = min(slots, memory_local_slot_cap(workers; extra_per_worker=extra,
+                                                 resident=t.process_workers_resident))
     end
     return max(0, slots)
 end

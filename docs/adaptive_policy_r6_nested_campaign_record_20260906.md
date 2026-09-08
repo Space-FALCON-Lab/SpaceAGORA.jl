@@ -725,8 +725,7 @@ Reading:
   `satellite_batch`, 25 % slower than the heuristic over the solve; the
   previous cold run pinned `flat` and read 0.92 — the sweep's ranking flips
   on this shape) and L14 heavy_1024_6hr 1.25 (a re-verification sweep
-  landed in timed repeat 1; the store entry reads `mode=heuristic` with zero
-  votes, which none of the sweep's writers produce — to trace). L12 (24,24)
+  landed in timed repeat 1; see §4.5a for the shared-bucket mechanism). L12 (24,24)
   by median is the exploration campaign; by steady figure R6's pool at
   0.27 s is 2.4× ahead of the best static route.
 - G3 is visible at t = 1 on the TRX50 (L9: 9.09 → 8.18 s, level with the
@@ -734,6 +733,46 @@ Reading:
   the process route in the harness (3.2–3.5 s cold on both machines, as
   before) — the specialisation that dominates is on the user's sample
   closure, which a package workload cannot reach.
+
+
+#### 4.5a The single-simulation phases again, with J (local `20260908_021610`, TRX50 job `20260907-221556-3867164`, cold store)
+
+| phase | case / point | local median | local steady | TRX50 median | TRX50 steady |
+|---|---|---|---|---|---|
+| L9 | gravity_4096sat_l50_vacuum_1hr (12,1) | 1.01 | 1.01 | — | — |
+| L9 | gravity_4096sat_l50_vacuum_1hr (12,12) | 1.01 | 1.01 | — | — |
+| L9 | gravity_4096sat_l50_vacuum_1hr (24,1) | — | — | 0.98 | 0.98 |
+| L9 | gravity_4096sat_l50_vacuum_1hr (24,24) | — | — | 0.97 | 0.97 |
+| L10 | atmo256_exponential_10min (12,12) | 0.79 | 0.79 | — | — |
+| L10 | atmo256_exponential_10min (24,24) | — | — | 0.42 | 0.42 |
+| L10 | atmo256_gram_surrogate_10min (12,12) | 1.02 | 1.02 | — | — |
+| L10 | atmo256_gram_surrogate_10min (24,24) | — | — | 1.02 | 1.02 |
+| L11 | stack256_e4_nbody (12,12) | 0.59 | 0.59 | — | — |
+| L11 | stack256_e4_nbody (24,24) | — | — | 0.41 | 0.41 |
+| L11 | stack32_e6_actuated (12,12) | 1.07 | 1.07 | — | — |
+| L11 | stack32_e6_actuated (24,24) | — | — | 1.10 | 1.10 |
+| L14 | cadence_1024sat_10s (12,12) | 1.00 | 1.00 | — | — |
+| L14 | cadence_1024sat_10s (24,24) | — | — | 1.00 | 1.00 |
+| L14 | heavy_1024sat_l50_6hr (12,12) | 0.99 | 0.99 | — | — |
+| L14 | heavy_1024sat_l50_6hr (24,24) | — | — | 1.32 | 1.32 |
+
+J did what it was for: the TRX50's gram_surrogate verdict is now "retain
+the heuristic" from the first timed repeat (1.02, was 1.28), the stack256
+pin still lands (0.41, with its confirming sweep inside repeat 1), and
+every local point is unchanged within noise. The TRX50's heavy_1024_6hr
+(1.32) is the cost of J on a store that is cold *and* shared: it sits in the
+same signature bucket (`sats=257p`, L50, vacuum) as L9's 4096-satellite
+case, and across L9 and L14 three consecutive sweeps pinned three different
+plans before J settled the bucket on the heuristic — two of those sweeps
+fell inside L14's two timed repeats (4.40 s `sweep`/flat, 3.02 s
+`sweep`/heuristic, against 2.82 for the static route). On a store that
+persists — every use outside this harness, and the TRX50 in the D–F run
+where the bucket was already warm (1.00) — the next solve is a cache hit at
+parity. The "zero-vote heuristic entry" noted earlier was a reading error
+(a grep window that cut the entry); the store carries `heuristic_votes = 1`.
+The stack32_e6_actuated 1.07/1.10 are heuristic verdicts J does not touch,
+55–60 s solves at two repeats that read 0.97–1.03 in the three previous
+runs.
 
 ## 5. Changes to SpaceAGORA itself (`src/`)
 

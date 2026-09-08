@@ -713,13 +713,20 @@ end
         @test parsed_sel.scenarios == ["odyssey", "vex"]
         @test TV._request_from_study_config(parsed_sel).scenarios == ["odyssey", "vex"]
         withenv("SPACEAGORA_TELEMETRY_SCENARIOS" => "earth_gmat") do
+            # The environment filter belongs to the CLI path only; a request
+            # built in code (the initial-condition fit's, for one) is never
+            # narrowed by it.
             @test TV.parse_cli(["quick", "--manifest=$(manifest_path)"]).scenarios == ["earth_gmat"]
-            @test TV.VerificationRequest().scenarios == ["earth_gmat"]
+            @test TV.VerificationRequest().scenarios == String[]
         end
         loaded = TV._load_scenarios_from_manifest(manifest_path)
         @test TV._select_scenarios(loaded, String[]) === loaded
+        @test TV._select_scenarios(loaded, ["", "  "]) === loaded
         first_name = lowercase(String(first(loaded).name))
         @test [String(sc.name) for sc in TV._select_scenarios(loaded, [first_name])] == [String(first(loaded).name)]
+        # A typed request bypasses the CLI parser; the selector normalises
+        # case and whitespace itself.
+        @test [String(sc.name) for sc in TV._select_scenarios(loaded, ["  " * uppercase(first_name) * " "])] == [String(first(loaded).name)]
         @test_throws ArgumentError TV._select_scenarios(loaded, ["no_such_scenario"])
         @test TV._single_point_calibration(true, [1.0], [1.3], :full, :full)
         @test !TV._single_point_calibration(false, [1.0], [1.3], :full, :full)

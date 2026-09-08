@@ -339,13 +339,16 @@ request keeps all of them. Unknown names are an error so a typo in CI cannot
 silently skip a scenario.
 """
 function _select_scenarios(scenarios::AbstractVector, requested::Vector{String})
-    isempty(requested) && return scenarios
+    # Normalise here as well as in the CLI parser: a typed request can carry
+    # any case and whitespace, and the manifest names are compared lowercased.
+    wanted = unique(String[lowercase(strip(name)) for name in requested if !isempty(strip(name))])
+    isempty(wanted) && return scenarios
     names = String[lowercase(String(sc.name)) for sc in scenarios]
-    unknown = setdiff(requested, names)
+    unknown = setdiff(wanted, names)
     isempty(unknown) || throw(ArgumentError(
         "Unknown telemetry scenario(s) $(join(unknown, ", ")); the manifest defines: $(join(names, ", "))"
     ))
-    return [sc for sc in scenarios if lowercase(String(sc.name)) in requested]
+    return [sc for sc in scenarios if lowercase(String(sc.name)) in wanted]
 end
 
 function _run_verification(cfg::StudyConfig)::VerificationResult

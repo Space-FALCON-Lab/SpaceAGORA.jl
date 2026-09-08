@@ -1835,6 +1835,14 @@ end
     @test retrieved !== nothing
     @test retrieved.mode == :satellite_batch
 
+    # A different plan pinned over an existing pin is the sweep's undecided
+    # outcome (two sweeps that could not agree), and the store answers it with
+    # the heuristic entry rather than honouring whichever landed last.
+    SimulationEngine._rhs_calib_store!(test_sig, flat_plan, 0.9e6)
+    flipped = SimulationEngine._rhs_calib_lookup(test_sig)
+    @test flipped == (SimulationEngine._rhs_calibrate_cache_heuristic() ? :heuristic : nothing)
+
+    # A plan pinned over the heuristic entry is stored as a fresh pin.
     SimulationEngine._rhs_calib_store!(test_sig, flat_plan, 0.9e6)
     retrieved_flat = SimulationEngine._rhs_calib_lookup(test_sig)
     @test retrieved_flat !== nothing

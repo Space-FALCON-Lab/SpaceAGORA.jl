@@ -43,7 +43,7 @@ What it was — a lie about the inner thread budget:
 3. R6's `allow_inner_with_outer=true` lifts the outer clamp for the callback
    layer, and V2's width is the static `min(items, budget)` = 12
    (`adaptive_decision.jl:82`), held for the whole solve — the AIMD that would
-   have shrunk it was retired in `67c5d7da`.
+   have shrunk it was retired in `8621325f`.
 4. Eight samples × 12-wide callbacks on 12 cores. Superlinear in width.
 
 Measured ladder, advertised budget → per-sample wall (all else identical):
@@ -70,9 +70,9 @@ harness bypasses `run_monte_carlo` entirely.
 
 | # | change | result | kept |
 |---|---|---|---|
-| 1 | `outer_split_env_pairs(worker_count)` around the threaded dispatch in `run_monte_carlo(f, spec)` | integer-threads API now advertises `fld(nthreads, workers)`; user budget wins | yes (`f1b94ba0`) |
-| 2 | harness `ppc_mode_env_pairs` emits the same share for the threads backend | harness worker, unmodified env: 3.06 s/sample, 0 callback threads, wall 3.25 s vs static 3.19 s | yes (`f1b94ba0`) |
-| 3 | row env recorded from the RESOLVED mode | audit string stops saying `backend=auto` and hiding backend-conditional pairs | yes (`f1b94ba0`) |
+| 1 | `outer_split_env_pairs(worker_count)` around the threaded dispatch in `run_monte_carlo(f, spec)` | integer-threads API now advertises `fld(nthreads, workers)`; user budget wins | yes (`1a44143e`) |
+| 2 | harness `ppc_mode_env_pairs` emits the same share for the threads backend | harness worker, unmodified env: 3.06 s/sample, 0 callback threads, wall 3.25 s vs static 3.19 s | yes (`1a44143e`) |
+| 3 | row env recorded from the RESOLVED mode | audit string stops saying `backend=auto` and hiding backend-conditional pairs | yes (`1a44143e`) |
 | 4 | purge the 15 `outer=1` calibration entries formed under the overstatement | backup `rhs_calibration_*.toml.bak_20260906_outer1_purge` | yes |
 | 5 | mixed dispatch: process route fills the coordinator's spare threads | end-to-end at (2 workers, 6 threads), 16sat_8mc: 3.48 s wall vs static 4.05 / 5.85 (R6 before: 10.36) | yes |
 | 6 | harness measures adaptive profiles through `run_monte_carlo(threads=:auto)` | required to see 5 at all: the harness's own `pmap` over W one-thread workers can only show W-way concurrency | yes |
@@ -249,7 +249,7 @@ Unverifiable here: whether the defaults are right on a box that is not this
 one. The light set (§4.4) and the full B8–B15 set are what to run on the
 TRX50 when it is reachable.
 
-### 3.2 The policy at this point in time, top down (fix C `883ede03`, fixes D and E in the commit that follows)
+### 3.2 The policy at this point in time, top down (fix C `1327e56f`, fixes D and E in the commit that follows)
 
 **0. What R6 is.** `SPACEAGORA_PARALLEL_PROFILE=R6` is R5's adaptive
 machinery plus `SPACEAGORA_PARALLEL_POLICY_V2=1`, which flips a set of
@@ -453,7 +453,7 @@ R6 goes from +62% to −7% against the static route at the point that was
 worst; the static route itself gains from fix A; a single simulation is
 unchanged.
 
-### 4.2 B15 with mixed dispatch and fixes A+B, 128 + 1024 grids (run `20260906_220830`, 6h56m, `78bf070f`)
+### 4.2 B15 with mixed dispatch and fixes A+B, 128 + 1024 grids (run `20260906_220830`, 6h56m, `239e6f53`)
 
 Lean ladder: `outer_process`, `outer_threads`, `inner_only`, `policy_v2`. Cell = R6 wall / best static wall at that launch point (< 1 is R6 ahead).
 
@@ -502,7 +502,7 @@ conditional on a "GC debt" flag that a threaded dispatch sets and the
 collection clears, so the production case keeps its measured benefit and a
 clean heap pays nothing. Both after the regression run.
 
-### 4.3 Regression: B8–B14 (+B12) lean, run `20260907_050609`, `78bf070f`
+### 4.3 Regression: B8–B14 (+B12) lean, run `20260907_050609`, `239e6f53`
 
 Cell = R6 wall / best static wall (< 1 is R6 ahead); "before" = run
 `20260902_153738` (pre-fix R4/R5/R6 ladder) for the same launch point.
@@ -589,7 +589,7 @@ batch width for a 256-satellite 10-minute run than the calibrated
 
 TODO: B11 as it lands.
 
-### 4.4 The light set (L8–L15) on two machines, fix C `883ede03`, cold store on the TRX50
+### 4.4 The light set (L8–L15) on two machines, fix C `1327e56f`, cold store on the TRX50
 
 Runs: space-falcon-1 (12 cores) `20260907_142158`, 3h20m; TRX50 (64-core
 Threadripper PRO 9985WX, 250 GB) job `20260907-102158-2709167`, 24 threads,
@@ -667,7 +667,7 @@ is slower too (pool spin-up), by less.
 
 ### 4.5 The light set with every fix (C–I): final runs on both machines
 
-Runs: space-falcon-1 `20260907_213108` (`c3490dcc`); TRX50 job
+Runs: space-falcon-1 `20260907_213108` (`c4da8fb0`); TRX50 job
 `20260907-173055-3424382`, same pinning as §4.4, store set aside again so
 every verdict is formed cold. Monte Carlo phases at five repeats. Two
 figures per machine: **median** of the repeats (what the harness reports),
@@ -818,7 +818,7 @@ Harness (`benchmarks/`): `ppc_mode_env_pairs` share for the threads backend;
 `ppc_run_adaptive_batch` (adaptive modes through the runner,
 `SPACEAGORA_PPC_ADAPTIVE_VIA_RUNNER=0` restores pinned dispatch); row env from
 the resolved mode plus the runner's additions; B15 cases and ladder;
-`--lean-modes` (`81075084`). Fix C: the probe/features are built before the clock; one `OuterRouteState` per worker process across a point's repeats; `--light` = phases L8–L15 (`PPB_LIGHT_PHASES`), the B8–B15 axes at ~100 points, in `PPB_ROUTER_PHASES` for the regret summary.
+`--lean-modes` (`509ca0de`). Fix C: the probe/features are built before the clock; one `OuterRouteState` per worker process across a point's repeats; `--light` = phases L8–L15 (`PPB_LIGHT_PHASES`), the B8–B15 axes at ~100 points, in `PPB_ROUTER_PHASES` for the regret summary.
 
 Tests: `test/unit/parallel/outer_split_budget_tests.jl`,
 `test/unit/parallel/mixed_dispatch_tests.jl`,

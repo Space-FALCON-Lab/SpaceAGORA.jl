@@ -365,15 +365,21 @@ campaign at a tie (L12 on the TRX50, 1.61×).
   repeat (L9 1.61×, L10 gram_surrogate 1.35×). Now a verdict is honoured until
   the solves run on it have cost `sweep_ns / share` (`honoured_ns`,
   `SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE` = 0.05), then one re-sweep is due.
-- **G1 — a fresh pin is checked sooner.** D's side-effect: a wrong pin (the
-  sweep ranks arms from 15 calls; L9 repeat 1 pinned `flat@16 dynamic` at
-  2.9 s against the heuristic's 1.4 s) would have lived 20 sweeps' worth. A
-  plan with one sweep's vote (`plan_votes`) is re-verified at
-  `SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE_UNCONFIRMED` = 0.20 (five sweeps'
-  worth); once a second sweep agrees it earns the confirmed share. The
-  heuristic verdict — the no-regret side — keeps 0.05 from its first vote.
-  The sweep's 10 % override margin over the heuristic
-  (`SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN`) already gated the pin itself.
+- **G1 → J — a pin needs two agreeing sweeps.** D's side-effect: a wrong
+  pin would have lived 20 sweeps' worth. G1 first made a one-vote pin
+  re-verify at 5× its cost; the sweep-vs-trial probe then showed the real
+  shape of the problem — on the TRX50 at 24 threads two cold stores on the
+  same shape pinned `satellite_batch` (1.28× the static route over the
+  solve) and `flat@4` (0.93×), and the in-run width trial is 1.5–2× worse
+  than either on both machines. So (J): a pinned plan is honoured on a long
+  solve only once a second sweep has agreed with it (`plan_votes ≥ 2`, the
+  first pin is re-verified on the next long solve); if the second sweep pins
+  a different plan the sweep has shown it cannot separate the arms, and the
+  verdict becomes "retain the heuristic" — the sweep's own undecided outcome
+  and the no-regret floor. One extra sweep per newly pinned shape per
+  machine. The heuristic verdict keeps its three-vote rule and the confirmed
+  0.05 share. The sweep's 10 % override margin over the heuristic
+  (`SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN`) still gates the pin itself.
 - **E — steady route credit.** The route bandit is credited with the wall
   from the median completion to the last (`steady_per_sample_s`), not
   `elapsed/n`: the pool's first campaign carries spin-up and JIT (TRX50 L12:
@@ -752,7 +758,7 @@ Reading:
 | `parallel/routing/outer_route_state.jl` (I) | `tie_explore_min_campaigns = 2` |
 | `simulation/campaigns/adaptive_routing.jl` (fix F, trace) | `_campaign_route_tuning()` declares the pool's alive workers; `SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1` prints plan / pool / dispatch / feedback timings and the completion timeline |
 | `simulation/engine/rhs_calibration.jl` (fix D) | amortised re-verification: `sweep_ns`, `honoured_ns`, `_rhs_calib_reverify_due`, `SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE` |
-| `simulation/engine/rhs_calibration.jl` (G1) | `plan_votes`; an unconfirmed pin re-verifies at `SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE_UNCONFIRMED` |
+| `simulation/engine/rhs_calibration.jl` (J) | `plan_votes`; a pin is honoured on a long solve once two consecutive sweeps agree (`_RHS_PLAN_VOTES_TO_HONOUR`); a flip between sweeps stores the heuristic verdict |
 | `SpaceAGORA.jl` (G2) | `@compile_workload` for the Monte Carlo dispatchers |
 | `parallel/policy/adaptive_decision.jl` (G3) | `thread_policy_decision` one-thread early return |
 | `dynamics/coupled/aerodynamic_wrench_models.jl`, `simulation/engine/execution.jl` (G4) | `refresh_multibody_parallel_mode!` per solve; `_multibody_parallel_mode` reads the cache |

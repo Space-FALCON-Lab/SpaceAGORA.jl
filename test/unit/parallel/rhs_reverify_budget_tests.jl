@@ -26,10 +26,12 @@ function _with_entry(f, entry)
     end
 end
 
+# A CONFIRMED pin (two agreeing sweeps): the amortised budget is what this file
+# tests; an unconfirmed pin's own rule is in rhs_reverify_unconfirmed_tests.
 _plan_entry(; solve_ns, sweep_ns, honoured_ns) = Dict{String, Any}(
     "mode" => "flat_constellation_effector_queue", "allotment" => 4, "scheduler" => "static",
     "elapsed_mean_ns" => 1.0e6, "solve_ns" => solve_ns, "heuristic_votes" => 0,
-    "sweep_ns" => sweep_ns, "honoured_ns" => honoured_ns)
+    "sweep_ns" => sweep_ns, "honoured_ns" => honoured_ns, "plan_votes" => 2)
 _heur_entry(; votes, solve_ns, sweep_ns, honoured_ns) = Dict{String, Any}(
     "mode" => SEng._CALIB_HEURISTIC_MODE, "allotment" => 1, "scheduler" => "auto",
     "elapsed_mean_ns" => 1.0e6, "solve_ns" => solve_ns, "heuristic_votes" => votes,

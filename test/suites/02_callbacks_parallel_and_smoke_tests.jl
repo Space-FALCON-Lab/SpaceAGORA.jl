@@ -1854,15 +1854,17 @@ end
                 @test retrieved !== nothing
                 @test retrieved.mode == :satellite_batch
 
-                # A different plan stored against the SAME signature is a flip,
-                # and a flip is deliberately recorded as the heuristic verdict
-                # rather than as the newly stored plan, so the lookup would
-                # answer `:heuristic` and not a plan at all. The flat round-trip
-                # therefore gets its own signature; the flip behaviour itself is
-                # covered in test/unit/parallel/rhs_reverify_unconfirmed_tests.jl.
-                test_sig_flat = "v3|machine=test_gate_flat|budget=8|sats=2_4|effs=1|harm=1"
-                SimulationEngine._rhs_calib_store!(test_sig_flat, flat_plan, 0.9e6)
-                retrieved_flat = SimulationEngine._rhs_calib_lookup(test_sig_flat)
+                # A different plan stored against the SAME signature is a flip --
+                # the sweep's undecided outcome, two sweeps that could not agree --
+                # and the store answers it with the heuristic entry rather than
+                # honouring whichever landed last.
+                SimulationEngine._rhs_calib_store!(test_sig, flat_plan, 0.9e6)
+                flipped = SimulationEngine._rhs_calib_lookup(test_sig)
+                @test flipped == (SimulationEngine._rhs_calibrate_cache_heuristic() ? :heuristic : nothing)
+
+                # A plan pinned over the heuristic entry is stored as a fresh pin.
+                SimulationEngine._rhs_calib_store!(test_sig, flat_plan, 0.9e6)
+                retrieved_flat = SimulationEngine._rhs_calib_lookup(test_sig)
                 @test retrieved_flat !== nothing
                 @test retrieved_flat.mode == :flat_constellation_effector_queue
                 @test retrieved_flat.allotment == 4

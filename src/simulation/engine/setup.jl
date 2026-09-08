@@ -626,10 +626,12 @@ end
     args::SimulationConfiguration,
     p,
     dynamic_effectors::Tuple,
-    num_sats::Int
+    num_sats::Int;
+    active_sats::Int=num_sats
 )
     return _dynamic_effector_thread_decision(
-        _rhs_env_config(p), _policy_env_config(p), args, p, dynamic_effectors, num_sats
+        _rhs_env_config(p), _policy_env_config(p), args, p, dynamic_effectors, num_sats;
+        active_sats=active_sats
     )
 end
 
@@ -639,7 +641,8 @@ end
     args::SimulationConfiguration,
     p,
     dynamic_effectors::Tuple,
-    num_sats::Int
+    num_sats::Int;
+    active_sats::Int=num_sats
 )
     mode = env.effector_parallel_mode
     n_effectors = length(dynamic_effectors)
@@ -653,8 +656,11 @@ end
     # of small evaluations per step cannot pay for the per-step task overhead
     # (measured 1.5 to 2x slower on a 12-core Mac and on the 4-vCPU CI runners,
     # September 2026). Evaluate serially unless threading is explicitly forced
-    # on; the automatic policy only applies from two satellites up.
-    if num_sats <= 1 && mode != :on
+    # on; the automatic policy only applies from two satellites up. The gate
+    # reads the ACTIVE count: a constellation whose other spacecraft have
+    # impacted is a single satellite from then on, and the configured count
+    # would keep paying the task overhead for the survivor.
+    if active_sats <= 1 && mode != :on
         return (use_threads=false, allotment=1, mode=mode, policy_applied=false)
     end
 
@@ -1056,7 +1062,7 @@ end
         SimulationModel.ParallelPolicy.outer_parallel_active() : penv.outer_parallel_active
     # Compute the threading preference from the policy; route selection below may
     # override it via _with_serial_effector_decision when satellite_batch is chosen.
-    effector_decision = _dynamic_effector_thread_decision(env, penv, args, p, dynamic_effectors, num_sats)
+    effector_decision = _dynamic_effector_thread_decision(env, penv, args, p, dynamic_effectors, num_sats; active_sats=active_sats)
 
     # ── Forced modes ────────────────────────────────────────────────────────────
     # Satellite_batch and serial always disable inner effector threading:

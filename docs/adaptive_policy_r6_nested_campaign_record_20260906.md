@@ -783,6 +783,17 @@ The stack32_e6_actuated 1.07/1.10 are heuristic verdicts J does not touch,
 55–60 s solves at two repeats that read 0.97–1.03 in the three previous
 runs.
 
+**L14 on the TRX50 with K, store kept** (job `20260908-102457-709604`, two
+back-to-back runs): run 1 converges the shared bucket (cadence 1.14 with
+`sweep, sweep`; heavy 1.26 with `sweep, cache`), run 2 is the warm figure —
+cadence_1024sat_10s **1.00** (4.92 vs 4.94 s, both repeats `cache`),
+heavy_1024sat_l50_6hr 1.10 by median with the cached repeat at **0.94**
+(2.68 vs 2.85 s; the other repeat carried the bucket's third indecisive
+sweep). The store entry ends at `heuristic_votes = 3`: every later solve of
+either case on that machine is a cache hit. Three sweeps that could not
+separate the arms were the price of that bucket on a cold store; K is what
+makes them add up instead of resetting.
+
 ## 5. Changes to SpaceAGORA itself (`src/`)
 
 | file | change |

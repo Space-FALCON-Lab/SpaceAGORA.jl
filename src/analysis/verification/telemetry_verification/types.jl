@@ -260,7 +260,11 @@ Base.@kwdef struct VerificationRequest
     manifest_path::String = abspath(get(ENV, "SPACEAGORA_TELEMETRY_MANIFEST", DEFAULT_MANIFEST_PATH))
     enforce::Bool = false
     generate_plots::Bool = _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_PLOTS", "1"), true)
-    scenarios::Vector{String} = _parse_scenario_list(get(ENV, "SPACEAGORA_TELEMETRY_SCENARIOS", ""))
+    # Empty = every scenario in the manifest. The SPACEAGORA_TELEMETRY_SCENARIOS
+    # environment filter is applied by the CLI path only (parse_cli), so a
+    # request built in code, such as the initial-condition fit's, is never
+    # narrowed by an environment variable it did not ask for.
+    scenarios::Vector{String} = String[]
 end
 
 """

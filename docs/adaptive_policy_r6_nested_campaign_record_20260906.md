@@ -365,15 +365,21 @@ campaign at a tie (L12 on the TRX50, 1.61×).
   repeat (L9 1.61×, L10 gram_surrogate 1.35×). Now a verdict is honoured until
   the solves run on it have cost `sweep_ns / share` (`honoured_ns`,
   `SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE` = 0.05), then one re-sweep is due.
-- **G1 — a fresh pin is checked sooner.** D's side-effect: a wrong pin (the
-  sweep ranks arms from 15 calls; L9 repeat 1 pinned `flat@16 dynamic` at
-  2.9 s against the heuristic's 1.4 s) would have lived 20 sweeps' worth. A
-  plan with one sweep's vote (`plan_votes`) is re-verified at
-  `SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE_UNCONFIRMED` = 0.20 (five sweeps'
-  worth); once a second sweep agrees it earns the confirmed share. The
-  heuristic verdict — the no-regret side — keeps 0.05 from its first vote.
-  The sweep's 10 % override margin over the heuristic
-  (`SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN`) already gated the pin itself.
+- **G1 → J — a pin needs two agreeing sweeps.** D's side-effect: a wrong
+  pin would have lived 20 sweeps' worth. G1 first made a one-vote pin
+  re-verify at 5× its cost; the sweep-vs-trial probe then showed the real
+  shape of the problem — on the TRX50 at 24 threads two cold stores on the
+  same shape pinned `satellite_batch` (1.28× the static route over the
+  solve) and `flat@4` (0.93×), and the in-run width trial is 1.5–2× worse
+  than either on both machines. So (J): a pinned plan is honoured on a long
+  solve only once a second sweep has agreed with it (`plan_votes ≥ 2`, the
+  first pin is re-verified on the next long solve); if the second sweep pins
+  a different plan the sweep has shown it cannot separate the arms, and the
+  verdict becomes "retain the heuristic" — the sweep's own undecided outcome
+  and the no-regret floor. One extra sweep per newly pinned shape per
+  machine. The heuristic verdict keeps its three-vote rule and the confirmed
+  0.05 share. The sweep's 10 % override margin over the heuristic
+  (`SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN`) still gates the pin itself.
 - **E — steady route credit.** The route bandit is credited with the wall
   from the median completion to the last (`steady_per_sample_s`), not
   `elapsed/n`: the pool's first campaign carries spin-up and JIT (TRX50 L12:
@@ -650,6 +656,85 @@ threads shape ~2.5 s, the first sweep), repeat 2 the tie exploration where
 there is one, repeat 3 the exploitation. The static routes' own first repeat
 is slower too (pool spin-up), by less.
 
+### 4.5 The light set with every fix (C–I): final runs on both machines
+
+Runs: space-falcon-1 `20260907_213108` (`c3490dcc`); TRX50 job
+`20260907-173055-3424382`, same pinning as §4.4, store set aside again so
+every verdict is formed cold. Monte Carlo phases at five repeats. Two
+figures per machine: **median** of the repeats (what the harness reports),
+and **steady** — the median of the last two repeats — because on a
+rounds-tie shape R6's repeats are cold, two per arm exploring, then
+exploiting, and a five-repeat median is still an exploration campaign. Both
+are R6 / best static route; the static route's steady figure is its own
+last-two median.
+
+| phase | case / point | local median | local steady | TRX50 median | TRX50 steady |
+|---|---|---|---|---|---|
+| L8 | montecarlo_heavy_aerobraking (4,1) | 0.96 | 0.94 | 1.02 | 1.03 |
+| L8 | montecarlo_heavy_aerobraking (12,1) | 0.95 | 0.96 | 0.99 | 0.91 |
+| L9 | gravity_4096sat_l50_vacuum_1hr (12,1) | 1.03 | 1.03 | — | — |
+| L9 | gravity_4096sat_l50_vacuum_1hr (12,12) | 1.04 | 1.04 | — | — |
+| L9 | gravity_4096sat_l50_vacuum_1hr (24,1) | — | — | 1.00 | 1.00 |
+| L9 | gravity_4096sat_l50_vacuum_1hr (24,24) | — | — | 1.02 | 1.02 |
+| L10 | atmo256_exponential_10min (12,12) | 0.83 | 0.83 | — | — |
+| L10 | atmo256_exponential_10min (24,24) | — | — | 0.35 | 0.35 |
+| L10 | atmo256_gram_surrogate_10min (12,12) | 1.04 | 1.04 | — | — |
+| L10 | atmo256_gram_surrogate_10min (24,24) | — | — | 1.28 | 1.28 |
+| L11 | stack256_e4_nbody (12,12) | 0.58 | 0.58 | — | — |
+| L11 | stack256_e4_nbody (24,24) | — | — | 0.40 | 0.40 |
+| L11 | stack32_e6_actuated (12,12) | 1.03 | 1.03 | — | — |
+| L11 | stack32_e6_actuated (24,24) | — | — | 0.98 | 0.98 |
+| L12 | independent_1sat_1hr (12,1) | 0.95 | 0.97 | — | — |
+| L12 | independent_1sat_1hr (12,12) | 1.27 | 1.00 | — | — |
+| L12 | independent_1sat_1hr (24,1) | — | — | 0.96 | 0.99 |
+| L12 | independent_1sat_1hr (24,24) | — | — | 1.04 | 0.74 |
+| L12 | interact_64sat_1hr (12,1) | 0.98 | 0.98 | — | — |
+| L12 | interact_64sat_1hr (12,12) | 0.17 | 0.17 | — | — |
+| L12 | interact_64sat_1hr (24,1) | — | — | 0.94 | 0.94 |
+| L12 | interact_64sat_1hr (24,24) | — | — | 0.10 | 0.10 |
+| L13 | montecarlo_heavy_aerobraking (1,12) | 1.00 | 1.01 | 1.02 | 0.92 |
+| L13 | montecarlo_heavy_aerobraking (3,4) | 0.69 | 0.68 | 0.72 | 0.79 |
+| L13 | montecarlo_heavy_aerobraking (12,1) | 0.96 | 0.96 | 0.97 | 1.06 |
+| L14 | cadence_1024sat_10s (12,12) | 0.99 | 0.99 | — | — |
+| L14 | cadence_1024sat_10s (24,24) | — | — | 1.00 | 1.00 |
+| L14 | heavy_1024sat_l50_6hr (12,12) | 1.00 | 1.00 | — | — |
+| L14 | heavy_1024sat_l50_6hr (24,24) | — | — | 1.25 | 1.25 |
+| L15 | mcgrid_16sat_8mc (1,12) | 0.96 | 0.97 | 0.95 | 0.95 |
+| L15 | mcgrid_16sat_8mc (2,6) | 0.97 | 0.97 | 0.97 | 0.95 |
+| L15 | mcgrid_16sat_8mc (12,1) | 0.95 | 0.95 | 0.93 | 0.96 |
+| L15 | mcgrid_32sat_32mc (1,12) | 0.95 | 0.95 | 0.97 | 0.97 |
+| L15 | mcgrid_32sat_32mc (2,6) | 0.81 | 0.81 | 0.82 | 0.82 |
+| L15 | mcgrid_32sat_32mc (12,1) | 0.96 | 0.95 | 0.94 | 0.93 |
+| L15 | mcgrid_8sat_16mc (1,12) | 0.96 | 0.96 | 0.94 | 0.94 |
+| L15 | mcgrid_8sat_16mc (2,6) | 0.97 | 0.95 | 0.97 | 0.96 |
+| L15 | mcgrid_8sat_16mc (12,1) | 0.91 | 0.91 | 0.92 | 0.93 |
+
+Reading:
+
+- **Every local point is at or under 1.04 by median** and every Monte Carlo
+  point is ahead of the best static route, the tie splits included
+  (L15 (2,6): mixed dispatch exploited after two campaigns per arm, 0.81–0.97;
+  L12 (12,12): pool exploited at 0.36 s against threads' 0.39, steady 1.00).
+- **Fix H moved both routes**: the static pool route itself went from 2.55
+  to 1.86 s on L8 at 12 workers and from 0.38/0.57 to a flat 0.27 s on L12,
+  and the mixed split's lead widened to ~30 %; R6 at (12,1) reaches 9.3×
+  serial on L12 and 7.7× on L8 (of 8× possible).
+- **The TRX50** is at or ahead everywhere by steady figure except two
+  single-simulation points, both cold-store calibration verdicts rather than
+  routing: L10 gram_surrogate 1.28 (the warm-up sweep pinned
+  `satellite_batch`, 25 % slower than the heuristic over the solve; the
+  previous cold run pinned `flat` and read 0.92 — the sweep's ranking flips
+  on this shape) and L14 heavy_1024_6hr 1.25 (a re-verification sweep
+  landed in timed repeat 1; the store entry reads `mode=heuristic` with zero
+  votes, which none of the sweep's writers produce — to trace). L12 (24,24)
+  by median is the exploration campaign; by steady figure R6's pool at
+  0.27 s is 2.4× ahead of the best static route.
+- G3 is visible at t = 1 on the TRX50 (L9: 9.09 → 8.18 s, level with the
+  static routes); G2's precompile did not remove the first-campaign cost of
+  the process route in the harness (3.2–3.5 s cold on both machines, as
+  before) — the specialisation that dominates is on the user's sample
+  closure, which a package workload cannot reach.
+
 ## 5. Changes to SpaceAGORA itself (`src/`)
 
 | file | change |
@@ -673,7 +758,7 @@ is slower too (pool spin-up), by less.
 | `parallel/routing/outer_route_state.jl` (I) | `tie_explore_min_campaigns = 2` |
 | `simulation/campaigns/adaptive_routing.jl` (fix F, trace) | `_campaign_route_tuning()` declares the pool's alive workers; `SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1` prints plan / pool / dispatch / feedback timings and the completion timeline |
 | `simulation/engine/rhs_calibration.jl` (fix D) | amortised re-verification: `sweep_ns`, `honoured_ns`, `_rhs_calib_reverify_due`, `SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE` |
-| `simulation/engine/rhs_calibration.jl` (G1) | `plan_votes`; an unconfirmed pin re-verifies at `SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE_UNCONFIRMED` |
+| `simulation/engine/rhs_calibration.jl` (J) | `plan_votes`; a pin is honoured on a long solve once two consecutive sweeps agree (`_RHS_PLAN_VOTES_TO_HONOUR`); a flip between sweeps stores the heuristic verdict |
 | `SpaceAGORA.jl` (G2) | `@compile_workload` for the Monte Carlo dispatchers |
 | `parallel/policy/adaptive_decision.jl` (G3) | `thread_policy_decision` one-thread early return |
 | `dynamics/coupled/aerodynamic_wrench_models.jl`, `simulation/engine/execution.jl` (G4) | `refresh_multibody_parallel_mode!` per solve; `_multibody_parallel_mode` reads the cache |

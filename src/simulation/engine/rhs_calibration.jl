@@ -419,6 +419,28 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
             get(prev, "mode", "") == String(plan.mode) &&
             Int(get(prev, "allotment", 1)) == Int(plan.allotment) &&
             get(prev, "scheduler", "auto") == String(plan.scheduler)
+        # Two consecutive sweeps that pinned DIFFERENT plans: the sweep cannot
+        # separate the arms on this shape, which is its own undecided outcome,
+        # and the answer to undecided is the heuristic -- the plan that adapts
+        # per call and the no-regret floor. Measured on the TRX50 at 24
+        # threads, atmo256_gram_surrogate, cold store twice: satellite_batch
+        # (1.28x the static route over the solve) and flat@4 (0.93x). Honouring
+        # whichever landed first pinned a coin flip.
+        if prev !== nothing && !same_plan && get(prev, "mode", "") != _CALIB_HEURISTIC_MODE
+            entry = Dict{String, Any}(
+                "mode"            => _CALIB_HEURISTIC_MODE,
+                "allotment"       => 1,
+                "scheduler"       => "auto",
+                "elapsed_mean_ns" => elapsed_mean_ns,
+                "heuristic_votes" => 1,
+                "sweep_ns"        => sweep_ns,
+                "honoured_ns"     => 0.0,
+                "plan_votes"      => 0,
+            )
+            haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
+            _rhs_calib_cache[sig] = entry
+            return nothing
+        end
         entry = Dict{String, Any}(
             "mode"            => String(plan.mode),
             "allotment"       => Int(plan.allotment),
@@ -1164,24 +1186,17 @@ const _rhs_calib_solve_honoured = Dict{String, Bool}()
     return max(0.0, v)
 end
 
-# The share a pinned plan that only ONE sweep has voted for may spend. A sweep
-# ranks arms from fifteen calls each and can pin a loser -- the TRX50's L9
-# pinned flat@16 dynamic once, 2.9 s against 1.4 s for the heuristic it beat
-# in the sample -- and before the amortised budget existed the next solve's
-# re-sweep corrected it. So a first pin is checked after 1/share of its sweep
-# cost (five sweeps' worth at the default), and once a second sweep agrees the
-# plan earns the confirmed share. A wrong pin is bounded to a few solves, a
-# right one still amortises. The heuristic is the no-regret side and keeps the
-# confirmed share from its first vote.
-@inline function _rhs_calibrate_reverify_share_unconfirmed()::Float64
-    raw = strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE_UNCONFIRMED", "0.20"))
-    v = try
-        parse(Float64, raw)
-    catch
-        throw(ArgumentError("SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE_UNCONFIRMED must be a float, got '$raw'"))
-    end
-    return max(0.0, v)
-end
+# A pinned plan needs two consecutive sweeps to agree before it is honoured on
+# a long solve (plan_votes >= 2). A sweep ranks arms from fifteen calls each and
+# can pin a loser: the TRX50's L9 pinned flat@16 dynamic once at 2.9 s against
+# the heuristic's 1.4 s, and on atmo256_gram_surrogate two cold stores on the
+# same machine pinned satellite_batch (1.28x the static route) and flat@4
+# (0.93x). One measurement is not a verdict -- the heuristic verdict already
+# needs three -- so a first pin is re-verified on the very next long solve;
+# agreement confirms it for the amortised period, disagreement retains the
+# heuristic (_rhs_calib_store!). The cost is one extra sweep per newly pinned
+# shape per machine.
+const _RHS_PLAN_VOTES_TO_HONOUR = 2
 
 # Whether a cached verdict on a long solve has earned its re-verification.
 #
@@ -1209,8 +1224,8 @@ function _rhs_calib_reverify_due(sig::String)::Bool
     sweep_ns = Float64(get(entry, "sweep_ns", 0.0))
     (isfinite(sweep_ns) && sweep_ns > 0.0) || return true
     is_plan = get(entry, "mode", "") != _CALIB_HEURISTIC_MODE
-    unconfirmed = is_plan && Int(get(entry, "plan_votes", 0)) < 2
-    share = unconfirmed ? _rhs_calibrate_reverify_share_unconfirmed() : _rhs_calibrate_reverify_share()
+    is_plan && Int(get(entry, "plan_votes", 0)) < _RHS_PLAN_VOTES_TO_HONOUR && return true
+    share = _rhs_calibrate_reverify_share()
     share > 0.0 || return false
     honoured_ns = Float64(get(entry, "honoured_ns", 0.0))
     return honoured_ns * share >= sweep_ns

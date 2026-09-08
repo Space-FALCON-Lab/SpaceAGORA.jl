@@ -23,6 +23,7 @@ using .ParallelProfiles: default_outer_route, outer_route_candidates, select_out
 using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
+using .SimulationModel: StateAnchor, get_state_anchor_callback
 import .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 using .SimulationCampaigns: run_constellation_ensemble
@@ -78,6 +79,8 @@ using .SimulationModel: SolarPanelAngleOfAttackControlModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionGuidanceModel) AerobrakingEnergyDepletionGuidanceModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionControlModel) AerobrakingEnergyDepletionControlModel
 @doc (@doc SimulationModel.SolarPanelAngleOfAttackControlModel) SolarPanelAngleOfAttackControlModel
+@doc (@doc SimulationModel.StateAnchor) StateAnchor
+@doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study

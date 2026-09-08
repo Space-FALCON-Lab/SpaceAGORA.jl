@@ -2658,6 +2658,18 @@ end
         @test cfg.state_anchor_states_j2000_m[2] == NTuple{6, Float64}(state_b)
         @test TV._state_anchor_count(cfg) == 2
         @test length(TV._scenario_extra_callbacks(cfg)) == 1
+        # Without a burn replay there is nothing to keep aligned and the
+        # anchors leave the orbit counter alone; with one, the count is
+        # B - offset + 1.
+        @test all(a -> a.orbit_count === nothing, TV._scenario_state_anchors(cfg))
+        with_burns = merge(anchored, Dict("maneuvers" => Dict(
+            "orbit_numbers" => [25, 32], "delta_v_mps" => [0.1, -0.1], "orbit_number_offset" => 18,
+            "thrust_n" => 4.0, "isp_s" => 220.0,
+        )))
+        write_manifest(with_burns)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.maneuver_orbit_number_offset == 18
+        @test [a.orbit_count for a in TV._scenario_state_anchors(cfg)] == [8, 15]
 
         # Disabled block keeps the data but schedules nothing.
         disabled = merge(scenario, Dict("state_anchors" => Dict(

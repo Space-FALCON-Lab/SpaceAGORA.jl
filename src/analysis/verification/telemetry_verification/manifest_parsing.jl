@@ -246,7 +246,8 @@ function _parse_maneuver_config(tbl, context::String)
             thrust_n=0.0,
             isp_s=0.0,
             guidance_rate_s=30.0,
-            control_rate_s=10.0
+            control_rate_s=10.0,
+            orbit_number_offset=0
         )
     end
     mtbl = _require_table(tbl, "maneuvers", context)
@@ -312,7 +313,8 @@ function _parse_maneuver_config(tbl, context::String)
         thrust_n=_optional_float(mtbl, "thrust_n", 4.0),
         isp_s=_optional_float(mtbl, "isp_s", 220.0),
         guidance_rate_s=_optional_float(mtbl, "guidance_rate_s", 30.0),
-        control_rate_s=_optional_float(mtbl, "control_rate_s", 10.0)
+        control_rate_s=_optional_float(mtbl, "control_rate_s", 10.0),
+        orbit_number_offset=offset
     )
 end
 
@@ -658,6 +660,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 maneuver_isp_s=maneuver.isp_s,
                 maneuver_guidance_rate_s=maneuver.guidance_rate_s,
                 maneuver_control_rate_s=maneuver.control_rate_s,
+                maneuver_orbit_number_offset=maneuver.orbit_number_offset,
                 state_anchors_enabled=anchors.enabled,
                 state_anchor_burn_orbit_numbers=anchors.burn_orbit_numbers,
                 state_anchor_elapsed_s=anchors.elapsed_s,

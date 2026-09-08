@@ -57,7 +57,11 @@ velocity with the supplied J2000 planet-centred state (m and m/s, the same
 convention as `initial_state_j2000_m`); the propagation between anchors is the
 engine's own, and the engine prints one `state_anchor` line per anchor with the
 position and velocity drift it removed, which is the open-loop error of the
-segment just ended.
+segment just ended. An anchor can also reset the satellite's orbit counter
+(`orbit_count`), which the Odyssey scenario derives from each burn's mission
+orbit number and the maneuver offset, so the orbit-keyed burn replay stays
+aligned with the anchored trajectory even when the propagated one had drifted
+across an apoapsis crossing.
 
 The Odyssey scenario anchors to the NAV reconstruction after each of the
 mission's trim burns (`[scenarios.state_anchors]` in
@@ -74,5 +78,7 @@ The summary carries the number of anchors in `state_anchor_count`.
 
 The mechanism is general: `StateAnchor(elapsed_s, sat_idx, state)` and
 `get_state_anchor_callback(anchors)` build a discrete callback that any run can
-pass through `run_simulation(args; extra_callbacks=(cb,))`.
+pass through `run_simulation(args; extra_callbacks=(cb,))`. It is supported on
+the first-order solver paths; under `SPACEAGORA_SOLVER_MODE=gravity_backbone_split`
+the callback throws at initialisation.
 

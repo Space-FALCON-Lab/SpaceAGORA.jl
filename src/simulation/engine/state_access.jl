@@ -57,26 +57,22 @@ end
     return SVector{3, Float64}(sc_state[4], sc_state[5], sc_state[6])
 end
 
-# Overwrite one satellite's inertial position and velocity in place, in either
-# state layout. Used by the scheduled state anchors (state_anchor_callbacks.jl),
-# which re-initialise a satellite from an external trajectory at given times.
+# Overwrite one satellite's inertial position and velocity in place, in the
+# first-order state layout. Used by the scheduled state anchors
+# (state_anchor_callbacks.jl), which re-initialise a satellite from an external
+# trajectory at given times. The gravity-backbone split is refused by the
+# callback: its symplectic stepper ends the solve at the next tstop after an
+# in-place state edit (observed with KahanLi8), so an anchor there would
+# silently truncate the run.
 @inline function _set_state_position_velocity_ii!(
     u,
     sat_idx::Int,
     pos::SVector{3, Float64},
     vel::SVector{3, Float64},
 )::Nothing
-    if _is_gravity_backbone_state(u)
-        position_state = _gravity_backbone_position_state(u)
-        velocity_state = _gravity_backbone_velocity_state(u)
-        psc = hasproperty(position_state, :sc) ? position_state.sc[sat_idx] : position_state[sat_idx]
-        vsc = hasproperty(velocity_state, :sc) ? velocity_state.sc[sat_idx] : velocity_state[sat_idx]
-        @inbounds for k in 1:3
-            psc[k] = pos[k]
-            vsc[k] = vel[k]
-        end
-        return nothing
-    end
+    _is_gravity_backbone_state(u) && throw(ArgumentError(
+        "Scheduled state anchors are supported on the first-order solver paths only; the gravity-backbone split cannot be re-anchored."
+    ))
     sc_state = u.sc[sat_idx]
     @inbounds for k in 1:3
         sc_state[k] = pos[k]

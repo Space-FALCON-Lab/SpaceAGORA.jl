@@ -1,15 +1,33 @@
 # Scheduled state anchors for a scenario, as the engine callback the runner
 # passes through run_simulation's extra_callbacks. Empty when the scenario
 # declares none or has them disabled.
-function _scenario_extra_callbacks(cfg::OrbitEventsScenarioConfig)
-    (cfg.state_anchors_enabled && !isempty(cfg.state_anchor_elapsed_s)) || return ()
-    anchors = [
-        SimulationModel.StateAnchor(t, 1, collect(state))
-        for (t, state) in zip(cfg.state_anchor_elapsed_s, cfg.state_anchor_states_j2000_m)
+function _scenario_state_anchors(cfg::OrbitEventsScenarioConfig)
+    (cfg.state_anchors_enabled && !isempty(cfg.state_anchor_elapsed_s)) || return SimulationModel.StateAnchor[]
+    burns = cfg.state_anchor_burn_orbit_numbers
+    offset = cfg.maneuver_orbit_number_offset
+    # The counter is reset only when the scenario replays burns: that is the
+    # orbit-keyed logic the reset keeps aligned, and the burn numbers share
+    # the maneuver block's numbering. Without a replay the anchors leave the
+    # counter alone.
+    replays_burns = !isempty(cfg.maneuver_orbit_numbers_campaign)
+    return [
+        SimulationModel.StateAnchor(
+            t, 1, collect(state);
+            # The anchor sits between burn B's apoapsis (epoch-relative apoapsis
+            # B - offset, where the counter reads B - offset) and the next, so
+            # the counter there is B - offset + 1.
+            orbit_count=(!replays_burns || isempty(burns) || burns[k] - offset + 1 < 1) ? nothing : burns[k] - offset + 1,
+        )
+        for (k, (t, state)) in enumerate(zip(cfg.state_anchor_elapsed_s, cfg.state_anchor_states_j2000_m))
     ]
+end
+_scenario_state_anchors(::AbstractScenarioConfig) = SimulationModel.StateAnchor[]
+
+function _scenario_extra_callbacks(cfg::AbstractScenarioConfig)
+    anchors = _scenario_state_anchors(cfg)
+    isempty(anchors) && return ()
     return (SimulationModel.get_state_anchor_callback(anchors),)
 end
-_scenario_extra_callbacks(::AbstractScenarioConfig) = ()
 
 function _run_simulation_dataframe(
     args::SimulationConfiguration,

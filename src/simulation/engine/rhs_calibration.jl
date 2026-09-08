@@ -370,8 +370,13 @@ function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; s
     _rhs_calib_load!()
     lock(_rhs_calib_lock) do
         prev = get(_rhs_calib_cache, sig, nothing)
-        votes = (prev !== nothing && get(prev, "mode", "") == _CALIB_HEURISTIC_MODE) ?
-            Int(get(prev, "heuristic_votes", 0)) + 1 : 1
+        # Heuristic votes are never reset by a pin: a sweep that ends on the
+        # heuristic after a pinned plan is one more sweep that could not
+        # separate the arms, and the bucket converges on "retain the
+        # heuristic" instead of alternating pin / re-verify / heuristic
+        # forever. Measured on the TRX50's sats=257p bucket (L9 and L14 share
+        # it): with the reset, four timed solves in a row re-swept.
+        votes = prev === nothing ? 1 : Int(get(prev, "heuristic_votes", 0)) + 1
         entry = Dict{String, Any}(
             "mode"            => _CALIB_HEURISTIC_MODE,
             "allotment"       => 1,
@@ -432,7 +437,9 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
                 "allotment"       => 1,
                 "scheduler"       => "auto",
                 "elapsed_mean_ns" => elapsed_mean_ns,
-                "heuristic_votes" => 1,
+                # A flip is a heuristic vote on top of those the bucket already
+                # carried through the pin (see _rhs_calib_store_heuristic!).
+                "heuristic_votes" => Int(get(prev, "heuristic_votes", 0)) + 1,
                 "sweep_ns"        => sweep_ns,
                 "honoured_ns"     => 0.0,
                 "plan_votes"      => 0,
@@ -449,6 +456,8 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
             "sweep_ns"        => sweep_ns,
             "honoured_ns"     => 0.0,
             "plan_votes"      => same_plan ? Int(get(prev, "plan_votes", 0)) + 1 : 1,
+            # Carried, not reset (see _rhs_calib_store_heuristic!).
+            "heuristic_votes" => prev === nothing ? 0 : Int(get(prev, "heuristic_votes", 0)),
         )
         # The solve length is a property of the shape, not of the verdict;
         # dropping it here put every freshly pinned plan back into "never

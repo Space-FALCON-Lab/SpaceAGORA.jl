@@ -652,7 +652,7 @@ end
         )
 
         fixed_nrl = NRLMSISE00AtmosphereModel(f107a=120.0, f107=130.0, ap=6.0)
-        expected_nrl_fixed = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+        expected_nrl_fixed = SatelliteToolboxAtmosphericModels.AtmosphericModels.nrlmsise00(
             dt_nrl, 400.0e3, 0.1, 0.2, 120.0, 130.0, 6.0
         )
         # NRLMSISE-00 is calendar-dependent: the 6-arg form has no scenario
@@ -674,7 +674,7 @@ end
                 environment_model=(planet=EARTH,),
             ),
         )
-        expected_nrl_july = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+        expected_nrl_july = SatelliteToolboxAtmosphericModels.AtmosphericModels.nrlmsise00(
             DateTime(2024, 7, 1, 0, 0, 0), 400.0e3, 0.1, 0.2, 120.0, 130.0, 6.0
         )
         rho_nrl_july, T_nrl_july, _ = getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, 0.0, false, p_nrl_july)
@@ -689,7 +689,7 @@ end
                 return (f107a=95.0, f107=105.0, ap=[8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0])
             end
         )
-        expected_nrl_provider = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+        expected_nrl_provider = SatelliteToolboxAtmosphericModels.AtmosphericModels.nrlmsise00(
             dt_nrl, 400.0e3, 0.1, 0.2, 95.0, 105.0, [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0]
         )
         rho_nrl_provider, T_nrl_provider, wind_nrl_provider = getDensity(provider_nrl, 400.0e3, 0.1, 0.2, 0.0, false, p_nrl)

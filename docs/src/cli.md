@@ -79,6 +79,7 @@ Supported options:
 | `--output-dir=<dir>` | Writes telemetry CSV outputs under this directory |
 | `--enforce=0|1` | Fails the command when verification thresholds fail |
 | `--plots=0|1` | Enables or disables telemetry plot generation |
+| `--scenarios=a,b` | Runs only the named manifest scenarios (default: all); unknown names are an error |
 | `--print-only` | Prints the resolved launcher without running it |
 
 Plot generation is off by default in the CLI path so the telemetry command

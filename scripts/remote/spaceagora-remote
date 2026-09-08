@@ -16,7 +16,6 @@ DEFAULT_DATA_ALLOWLIST=(
   "data/GRAM_surrogate"
   "data/Topography_harmonics_data"
   "data/Gravity_harmonics_data"
-  "Magnetic_field_harmonics_data"
   "data/spice.txt"
 )
 DEFAULT_PULL_PATHS=("output" "results")

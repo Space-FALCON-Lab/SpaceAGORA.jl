@@ -380,6 +380,15 @@ campaign at a tie (L12 on the TRX50, 1.61×).
   machine. The heuristic verdict keeps its three-vote rule and the confirmed
   0.05 share. The sweep's 10 % override margin over the heuristic
   (`SPACEAGORA_RHS_CALIBRATE_OVERRIDE_MARGIN`) still gates the pin itself.
+- **K — heuristic votes survive a pin.** With J alone a bucket whose sweep
+  keeps flipping alternated pin → re-verify → flip → heuristic (one vote) →
+  re-verify …: the reset to one vote on every flip meant the three-vote
+  threshold was never reached, and with a shared bucket's cheap `sweep_ns`
+  the amortised budget came due every couple of solves (TRX50 L14 on a warm
+  store: four timed solves in a row swept). Votes now carry through a pin
+  and every undecided sweep — a flip included — adds one, so the bucket
+  converges on a reproduced heuristic verdict after three sweeps that could
+  not separate the arms, whatever they pinned in between.
 - **E — steady route credit.** The route bandit is credited with the wall
   from the median completion to the last (`steady_per_sample_s`), not
   `elapsed/n`: the pool's first campaign carries spin-up and JIT (TRX50 L12:
@@ -797,6 +806,7 @@ runs.
 | `parallel/routing/outer_route_state.jl` (I) | `tie_explore_min_campaigns = 2` |
 | `simulation/campaigns/adaptive_routing.jl` (fix F, trace) | `_campaign_route_tuning()` declares the pool's alive workers; `SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1` prints plan / pool / dispatch / feedback timings and the completion timeline |
 | `simulation/engine/rhs_calibration.jl` (fix D) | amortised re-verification: `sweep_ns`, `honoured_ns`, `_rhs_calib_reverify_due`, `SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE` |
+| `simulation/engine/rhs_calibration.jl` (K) | heuristic votes carried through pins; a flip and an undecided sweep after a pin each add a vote |
 | `simulation/engine/rhs_calibration.jl` (J) | `plan_votes`; a pin is honoured on a long solve once two consecutive sweeps agree (`_RHS_PLAN_VOTES_TO_HONOUR`); a flip between sweeps stores the heuristic verdict |
 | `SpaceAGORA.jl` (G2) | `@compile_workload` for the Monte Carlo dispatchers |
 | `parallel/policy/adaptive_decision.jl` (G3) | `thread_policy_decision` one-thread early return |

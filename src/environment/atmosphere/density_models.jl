@@ -1,6 +1,7 @@
 # include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
 
-using SatelliteToolbox
+using SatelliteToolboxAtmosphericModels: AtmosphericModels
+using SpaceIndices
 using StaticArrays
 using LinearAlgebra
 using Dates
@@ -278,8 +279,8 @@ the solver starts.
 function init_nrlmsise_space_indices!(; force_download::Bool=false)
     lock(_NRLMSISE00_SPACE_INDICES_LOCK) do
         if force_download || !_NRLMSISE00_SPACE_INDICES_READY[]
-            SatelliteToolbox.AtmosphericModels.SpaceIndices.init(
-                SatelliteToolbox.AtmosphericModels.SpaceIndices.Celestrak;
+            SpaceIndices.init(
+                SpaceIndices.Celestrak;
                 force_download=force_download
             )
             _NRLMSISE00_SPACE_INDICES_READY[] = true
@@ -470,22 +471,6 @@ function _gram_core_density_state(
     _gram_not_loaded_error("GRAMAtmosphereModel density evaluation")
 end
 
-function interp(a, b, x)
-    if abs(b - a) > 20.0
-        if b <= 360.0 && b >= 350.0
-            b = 360.0 - b
-        elseif a <= 360.0 && a >= 350.0
-            a = 360.0 - a
-        end
-    end
-
-    return x * (b - a) + a
-end
-
-function temperature_linear(h, p)
-    return p.T_ref
-end
-
 @inline function _exponential_density(ρ_ref::Float64, h_ref::Float64, H::Float64, h::Float64)::Float64
     return ρ_ref * exp((h_ref - h) / H)
 end
@@ -527,7 +512,7 @@ end
 end
 
 @inline function _nrlmsise_space_indices_lookup(index::Val, instant::DateTime)
-    return SatelliteToolbox.AtmosphericModels.SpaceIndices.space_index(index, instant)
+    return SpaceIndices.space_index(index, instant)
 end
 
 @inline function _nrlmsise_space_indices_f107(lookup, instant::DateTime)::Float64
@@ -658,7 +643,7 @@ end
     lon::Float64
 )::Tuple{Float64, Float64, SVector{3, Float64}}
     indices = _nrlmsise_resolved_indices(model, instant, h, lat, lon)
-    atmo = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+    atmo = AtmosphericModels.nrlmsise00(
         instant,
         h,
         lat,

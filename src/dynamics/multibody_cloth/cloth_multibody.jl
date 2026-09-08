@@ -161,15 +161,6 @@ end
     )
 end
 
-"""Return the skew-symmetric matrix for a 3-vector cross product."""
-@inline function _hat(v::SVector{3, Float64})::SMatrix{3, 3, Float64}
-    return SMatrix{3, 3, Float64}(
-        0.0, v[3], -v[2],
-        -v[3], 0.0, v[1],
-        v[2], -v[1], 0.0,
-    )
-end
-
 """Convert a quaternion error into an axis-angle error vector."""
 function _axis_angle_error(q_err_raw)::SVector{3, Float64}
     q_err = _unit_quat(q_err_raw)

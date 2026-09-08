@@ -50,3 +50,24 @@ end
         @test lock(SEng._rhs_calib_lock) do; SEng._rhs_calib_cache["sig"]["plan_votes"]; end == 1
     end
 end
+
+@testset "heuristic votes survive a pin and every undecided sweep adds one" begin
+    _with_entry(Dict{String, Any}("mode" => SEng._CALIB_HEURISTIC_MODE, "allotment" => 1, "scheduler" => "auto",
+            "elapsed_mean_ns" => 1.0e6, "solve_ns" => 2.0e9, "heuristic_votes" => 2, "sweep_ns" => 0.5e9,
+            "honoured_ns" => 0.0, "plan_votes" => 0)) do
+        # A pin carries the two votes through.
+        SEng._rhs_calib_store!("sig", SEng._make_calib_flat_plan(4, :static), 1.0e6; sweep_ns = 0.5e9)
+        e = lock(SEng._rhs_calib_lock) do; SEng._rhs_calib_cache["sig"]; end
+        @test e["plan_votes"] == 1 && e["heuristic_votes"] == 2
+        # A flip is the third vote: the bucket is now a reproduced heuristic verdict.
+        SEng._rhs_calib_store!("sig", SEng._make_calib_flat_plan(8, :static), 1.0e6; sweep_ns = 0.5e9)
+        e = lock(SEng._rhs_calib_lock) do; SEng._rhs_calib_cache["sig"]; end
+        @test e["mode"] == SEng._CALIB_HEURISTIC_MODE && e["heuristic_votes"] == 3
+        @test SEng._rhs_calib_cached_verdict("sig", true) === :heuristic
+        # And a sweep that ends on the heuristic after a pin also counts.
+        SEng._rhs_calib_store!("sig", SEng._make_calib_flat_plan(4, :static), 1.0e6; sweep_ns = 0.5e9)
+        SEng._rhs_calib_store_heuristic!("sig", 1.0e6; sweep_ns = 0.5e9)
+        e = lock(SEng._rhs_calib_lock) do; SEng._rhs_calib_cache["sig"]; end
+        @test e["heuristic_votes"] == 4
+    end
+end

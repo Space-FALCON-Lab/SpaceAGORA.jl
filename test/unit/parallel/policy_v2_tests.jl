@@ -406,7 +406,12 @@ end
         st = PPr.OuterRouteState()
         tuning = PPr.OuterRouteTuning(split_race = true, explore_until_any_proven = true,
                                       mc_route_by_core_budget = false, process_max_workers = 1)
-        seeds = collect(101:140)
+        # Enough samples for the race to fit at any thread count the ladder
+        # can produce: one warm-up, then _SPLIT_RACE_ROUNDS rounds of the
+        # widest width per candidate, then at least one full round -- at 12
+        # threads (widths 4, 8, 12) that is 1 + 3*12*3 + 12 = 121. Forty was
+        # only enough at <= 4 threads.
+        seeds = collect(101:260)
         result = withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing,
                          "SPACEAGORA_INNER_THREAD_BUDGET" => nothing) do
             SCamp.run_monte_carlo(seeds; threads = :auto, route_features = feat,
@@ -414,10 +419,10 @@ end
                 seed * 2
             end
         end
-        cands = PPr.outer_split_candidates(:threads; budget = Threads.nthreads(), n_units = 40, tuning = tuning)
+        cands = PPr.outer_split_candidates(:threads; budget = Threads.nthreads(), n_units = length(seeds), tuning = tuning)
         @test length(cands) >= 2
-        @test length(result.samples) == 40
-        @test [s.index for s in result.samples] == collect(1:40)
+        @test length(result.samples) == length(seeds)
+        @test [s.index for s in result.samples] == collect(1:length(seeds))
         @test [s.seed for s in result.samples] == seeds
         @test all(s -> s.success && s.value == 2 * s.seed, result.samples)
         @test result.threads in cands
@@ -439,7 +444,7 @@ end
                 seed * 2
             end
         end
-        @test length(result2.samples) == 40
+        @test length(result2.samples) == length(seeds)
         @test result2.threads in cands
     else
         @test_skip "needs >= 4 Julia threads"

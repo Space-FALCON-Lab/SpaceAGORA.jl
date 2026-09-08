@@ -3,7 +3,6 @@ using Dates
 using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
-using Quaternions
 using Serialization
 using StaticArrays
 using ComponentArrays
@@ -11,17 +10,17 @@ using TOML
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
-include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 
 const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
-end
+# Frame helpers called unqualified below (src/core/interfaces/reference_system.jl).
+const rtolatlong = SimulationEngine.rtolatlong
+const r_intor_p! = SimulationEngine.r_intor_p!
 if !isdefined(@__MODULE__, :build_initial_conditions)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
 end
@@ -36,6 +35,12 @@ const HAS_GRAMSUITE = let
             pushfirst!(LOAD_PATH, vendored_gramsuite)
         end
         @eval import GRAMSuite
+        # GRAM-backed behaviour now comes from the SpaceAGORAGRAMSuiteExt
+        # package extension; if it failed to load, the vendored GRAMSuite
+        # checkout is older than the extension expects -- skip, do not shim.
+        if Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt) === nothing
+            error("GRAMSuite imported but SpaceAGORAGRAMSuiteExt did not load")
+        end
         # Importing the package is not enough: the GRAM-backed probes construct
         # real models, which needs the native GRAM Suite root (Build/ + Julia/).
         # Dev machines often have the Julia wrapper but no native build; skip
@@ -46,91 +51,6 @@ const HAS_GRAMSUITE = let
     catch err
         @info "Skipping GRAMSuite-backed threaded coverage probes" exception=(err, catch_backtrace())
         false
-    end
-end
-
-if HAS_GRAMSUITE
-    const EM = SimulationModel.EnvironmentModels
-    const TEST_GRAM_LOCK = ReentrantLock()
-
-    function EM.GRAMAtmosphereModel(; kwargs...)
-        return EM.GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
-    end
-
-    function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
-        haskey(stackdict, model) && return stackdict[model]
-        copied = EM.GRAMAtmosphereModel(deepcopy(model.core))
-        stackdict[model] = copied
-        return copied
-    end
-
-    function EM._gram_core_density_state(
-        core::GRAMSuite.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool,
-        lock_obj,
-        vacuum_temperature::Float64
-    )::Tuple{Float64, Float64, SVector{3, Float64}}
-        return GRAMSuite.density_state(
-            core,
-            h,
-            lat,
-            lon,
-            el_time,
-            wind;
-            lock_obj=lock_obj,
-            vacuum_temperature=vacuum_temperature
-        )
-    end
-
-    @inline function EM._gram_point_density(
-        model::EM.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool
-    )::Tuple{Float64, Float64, SVector{3, Float64}}
-        h_gram = max(h, -30.0)
-        return GRAMSuite.point_density_state(model.core, h_gram, lat, lon, el_time, wind; lock_obj=TEST_GRAM_LOCK)
-    end
-
-    function EM.getDensity(
-        model::EM.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool,
-        p::params
-    )::Tuple{Float64, Float64, SVector{3, Float64}} where {params}
-        EI = p.args.environment_model.EI * 1e3
-        drag_state = h - EI <= 0.0
-
-        if h > 2000.0e3
-            rho = 0.0
-            T = p.args.environment_model.planet.T_ref
-            wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-        elseif !drag_state && !p.args.mission_configuration.keplerian
-            rho, T, wind_vec = EM.density_polyfit(h, p)
-        else
-            h_gram = max(h, -30.0)
-            rho, T, wind_vec = GRAMSuite.density_state(
-                model.core,
-                h_gram,
-                lat,
-                lon,
-                el_time,
-                wind;
-                lock_obj=TEST_GRAM_LOCK,
-                vacuum_temperature=p.args.environment_model.planet.T_ref
-            )
-        end
-
-        return rho, T, wind_vec
     end
 end
 
@@ -432,13 +352,13 @@ end
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "0"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == false
+        @test callbacks._control_callback_use_threads(probe_control, 4) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+        @test callbacks._control_callback_use_threads(probe_control, 4) == true
     end
     # Pin the default auto-mode budget floor (4) at the 2-thread CI probe budget.
     withenv(
@@ -447,7 +367,7 @@ end
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
         "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+        @test callbacks._control_callback_use_threads(probe_control, 4) == true
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -456,7 +376,7 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == false
+        @test callbacks._control_callback_use_threads(probe_control, 4) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -466,7 +386,7 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+        @test callbacks._control_callback_use_threads(probe_control, 4) == true
     end
 
     # Density callback threaded branch (line with Threads.@threads).
@@ -512,7 +432,7 @@ end
         @test all(isfinite, p_density_models.shared_buffers.densities)
     end
 
-    # Guidance invokelatest branch.
+    # Guidance callback dispatch.
     probe_guidance = ProbeGuidanceModel([0])
     args_guidance = build_config(
         spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
@@ -534,10 +454,8 @@ end
         1,
         Inf
     )
-    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        guidance_cbs = callbacks.get_guidance_callbacks(1, args_guidance)
-        guidance_cbs[1].affect!.affect!(integrator_guidance)
-    end
+    guidance_cbs = callbacks.get_guidance_callbacks(1, args_guidance)
+    guidance_cbs[1].affect!.affect!(integrator_guidance)
     @test probe_guidance.hits == [1]
 
     # Control callback threaded branch (line with Threads.@threads).
@@ -562,7 +480,6 @@ end
         Inf
     )
     withenv(
-        "SPACEAGORA_DEV_HOT_RELOAD" => "0",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
     ) do
@@ -1292,9 +1209,6 @@ end
         p_density_helpers
     )
 
-    @test isfinite(env_models.interp(5.0, 355.0, 0.25))
-    @test isfinite(env_models.interp(355.0, 5.0, 0.25))
-    @test env_models.temperature_linear(10.0, (T_ref=123.0,)) == 123.0
     @test env_models._gram_use_global_lock() isa Bool
     @test_throws MethodError env_models._gram_point_density(:bad_model, 0.0, 0.0, 0.0, 0.0, false)
 

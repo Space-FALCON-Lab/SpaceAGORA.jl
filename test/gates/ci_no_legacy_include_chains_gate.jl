@@ -23,7 +23,6 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "core", "simulation_model.jl"),
     joinpath("src", "environment", "physical_models.jl"),
     joinpath("src", "environment", "ephemerides", "ephemerides_models.jl"),
-    joinpath("src", "environment", "ephemerides", "planet_data.jl"),
     joinpath("src", "environment", "ephemerides", "planets.jl"),
     joinpath("src", "gnc", "control", "control_hooks.jl"),
     joinpath("src", "gnc", "control", "propulsive_maneuvers.jl"),

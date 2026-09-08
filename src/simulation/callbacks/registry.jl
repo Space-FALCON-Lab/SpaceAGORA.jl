@@ -35,7 +35,6 @@ const _simulation_model_module = parentmodule(@__MODULE__)
 end
 
 @inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
-@inline callback_use_invokelatest() = get(ENV, "SPACEAGORA_DEV_HOT_RELOAD", "0") == "1"
 const _gram_track_cache_warning_emitted = Ref(false)
 
 Base.@kwdef mutable struct GramRuntimeStats

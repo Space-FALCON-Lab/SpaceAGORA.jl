@@ -112,7 +112,7 @@ is used for extrapolation.
 
 ## NRLMSISE00AtmosphereModel
 
-Standard empirical atmosphere model backed by `SatelliteToolbox.jl`. Covers
+Standard empirical atmosphere model backed by `SatelliteToolboxAtmosphericModels.jl`. Covers
 approximately 0–1000 km altitude. Accepts three input modes:
 
 ### Fixed geophysical indices

@@ -1202,18 +1202,25 @@ end
         @test_throws ArgumentError dynamic_effectors._parse_bool_env("SPACEAGORA_TEST_BOOL_PARSE", false)
     end
 
+    # The mode accessor is a per-solve cache; the parser is exercised through
+    # the refresh the engine calls at solve start.
+    refresh_mode! = dynamic_effectors.AerodynamicEffectors.refresh_multibody_parallel_mode!
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "off") do
+        @test refresh_mode!() == :off
         @test dynamic_effectors._multibody_parallel_mode() == :off
     end
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
+        @test refresh_mode!() == :on
         @test dynamic_effectors._multibody_parallel_mode() == :on
     end
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "auto") do
+        @test refresh_mode!() == :auto
         @test dynamic_effectors._multibody_parallel_mode() == :auto
     end
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "invalid") do
-        @test_throws ArgumentError dynamic_effectors._multibody_parallel_mode()
+        @test_throws ArgumentError refresh_mode!()
     end
+    refresh_mode!()
 
     withenv("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "4") do
         @test dynamic_effectors._multibody_thread_threshold() == 4

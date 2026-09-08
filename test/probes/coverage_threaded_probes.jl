@@ -489,13 +489,16 @@ end
     end
     @test probe_control.hits == ones(Int, 4)
 
-    # Aerodynamic helper branches and threaded accumulation branch.
+    # Aerodynamic helper branches and threaded accumulation branch. The mode
+    # is cached per solve, so each `withenv` refreshes it explicitly.
+    refresh_mode! = dyn.AerodynamicEffectors.refresh_multibody_parallel_mode!
     withenv(
         "SPACEAGORA_MULTIBODY_PARALLEL" => "auto",
         "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER" => "0"
     ) do
+        refresh_mode!()
         @test dyn._multibody_use_threads(8) == false
     end
     withenv(
@@ -504,6 +507,7 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
         "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "1"
     ) do
+        refresh_mode!()
         @test dyn._multibody_use_threads(8; heavy_work=false) == false
     end
     withenv(
@@ -513,8 +517,10 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
         "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "0"
     ) do
+        refresh_mode!()
         @test dyn._multibody_use_threads(8; heavy_work=true) == true
     end
+    refresh_mode!()
 
     args_aero = build_config(
         spacecraft=make_spacecraft(

@@ -26,7 +26,7 @@ for fn in (
     "function _rhs_calib_save!()",
     "function _rhs_calib_lookup(sig::String)",
     "function _rhs_calib_store!(sig::String",
-    "function _make_calib_satellite_batch_plan()",
+    "function _make_calib_satellite_batch_plan(allotment::Int",
     # Scheduler is a swept axis, not a constant: the flat plan constructor takes
     # it as a second argument and the sweep crosses it with the allotment ladder.
     "function _make_calib_flat_plan(allotment::Int, scheduler::Symbol",

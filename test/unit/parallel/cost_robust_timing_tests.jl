@@ -122,7 +122,14 @@ end
     # A cache-line touch that misses L1 costs materially more than one lane of
     # L1-resident FMA; if this ever stops holding, the memory reference is not
     # doing its job and the stride-bound terms are effectively unnormalised.
-    fma = PC.reference_kernel_ns()
-    mem = PC.reference_memory_kernel_ns()
-    @test mem > fma
+    if Base.JLOptions().code_coverage != 0
+        # Line-coverage instrumentation inflates the tight FMA loop far more
+        # than the strided touch (measured 2x the other way on the CI runner),
+        # so the ordering says nothing about the machine under coverage.
+        @test_skip false
+    else
+        fma = PC.reference_kernel_ns()
+        mem = PC.reference_memory_kernel_ns()
+        @test mem > fma
+    end
 end

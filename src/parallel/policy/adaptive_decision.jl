@@ -16,6 +16,16 @@
     # every adaptive profile ran 2-10 % over the serial profile with nothing to
     # decide (TRX50 L9: 9.0-9.1 s against 8.2 s).
     if Base.Threads.nthreads() <= 1
+        # The decision is still a decision: it is counted in the telemetry
+        # (decisions_total, the per-source buckets) exactly as the full path
+        # counts it -- one lock, no ENV read -- so callers and tests that read
+        # policy_telemetry_snapshot() see the same counts at one thread.
+        one_thread_adaptive = (mode == :auto) && env !== nothing && env.adaptive_enabled
+        _record_policy_decision!(
+            source, mode, max(1, threshold), max(0, num_items), 1, one_thread_adaptive, 1, 1,
+            outer_active, allow_with_outer, heavy_only, heavy_work, false,
+            "", Int64(0), 0.0, 0.0, false, Int64(0), env,
+        )
         return (
             use_threads=false,
             allotment=1,
@@ -23,7 +33,7 @@
             mode=mode,
             threshold=max(1, threshold),
             num_items=max(0, num_items),
-            adaptive_enabled=(mode == :auto) && env !== nothing && env.adaptive_enabled,
+            adaptive_enabled=one_thread_adaptive,
             desire=1
         )
     end

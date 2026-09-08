@@ -137,6 +137,12 @@
         else
             @test decision_pair.use_threads == false
         end
+        # Two configured satellites of which one is still active (the other
+        # impacted) are a single satellite for this gate: serial from then on.
+        decision_survivor = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 2; active_sats=1)
+        @test decision_survivor.use_threads == false
+        @test decision_survivor.allotment == 1
+        @test decision_survivor.policy_applied == false
     end
 
     args_eff_multi = build_config(

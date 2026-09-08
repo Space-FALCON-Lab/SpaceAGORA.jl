@@ -1195,18 +1195,29 @@ end
         @test_throws ArgumentError dynamic_effectors._parse_bool_env("SPACEAGORA_TEST_BOOL_PARSE", false)
     end
 
+    # `_multibody_parallel_mode` answers from a per-solve cache rather than
+    # reading SPACEAGORA_MULTIBODY_PARALLEL on every call -- it runs per
+    # satellite per RHS call, and the ENV read was the cost left in it. The
+    # engine calls refresh_multibody_parallel_mode! at solve start, which is
+    # where a withenv can have changed the value, so each case here refreshes
+    # the way a solve would before asserting.
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "off") do
+        @test dynamic_effectors.refresh_multibody_parallel_mode!() == :off
         @test dynamic_effectors._multibody_parallel_mode() == :off
     end
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
+        @test dynamic_effectors.refresh_multibody_parallel_mode!() == :on
         @test dynamic_effectors._multibody_parallel_mode() == :on
     end
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "auto") do
+        @test dynamic_effectors.refresh_multibody_parallel_mode!() == :auto
         @test dynamic_effectors._multibody_parallel_mode() == :auto
     end
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "invalid") do
-        @test_throws ArgumentError dynamic_effectors._multibody_parallel_mode()
+        @test_throws ArgumentError dynamic_effectors.refresh_multibody_parallel_mode!()
     end
+    # Leave the cache agreeing with the ambient environment for later testsets.
+    dynamic_effectors.refresh_multibody_parallel_mode!()
 
     withenv("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "4") do
         @test dynamic_effectors._multibody_thread_threshold() == 4
@@ -1809,28 +1820,65 @@ end
     @test flat_plan_floor.allotment == 1
 
     # ── In-memory store / lookup round-trip ──────────────────────────────────
-    test_sig = "v3|machine=test_gate|budget=8|sats=2_4|effs=1|harm=1"
-    SimulationEngine._rhs_calib_store!(test_sig, sat_batch_plan, 1.5e6)
-    retrieved = SimulationEngine._rhs_calib_lookup(test_sig)
-    @test retrieved !== nothing
-    @test retrieved.mode == :satellite_batch
+    # `_rhs_calib_store!` writes through to the persisted store and
+    # `_rhs_calib_lookup` begins by loading it, so this section runs against a
+    # temp path with the process-global cache cleared on the way in and out.
+    # Without that it leaves its `test_gate` signatures in the real store under
+    # output/, and the next local run reads them back as a prior verdict --
+    # which makes the first store below a plan flip rather than a first write.
+    mktempdir() do calib_roundtrip_dir
+        withenv("SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(calib_roundtrip_dir, "store.toml")) do
+            # Snapshot and restore rather than just clearing: _rhs_calib_save!
+            # rewrites the whole store file from the cache, so leaving the cache
+            # empty lets whatever saves next truncate the real store under
+            # output/ down to its own entries.
+            prev_calib_cache = lock(SimulationEngine._rhs_calib_lock) do
+                copy(SimulationEngine._rhs_calib_cache)
+            end
+            prev_calib_loaded = SimulationEngine._rhs_calib_loaded[]
+            lock(SimulationEngine._rhs_calib_lock) do
+                SimulationEngine._rhs_calib_loaded[] = true
+                empty!(SimulationEngine._rhs_calib_cache)
+            end
+            try
+                test_sig = "v3|machine=test_gate|budget=8|sats=2_4|effs=1|harm=1"
+                SimulationEngine._rhs_calib_store!(test_sig, sat_batch_plan, 1.5e6)
+                retrieved = SimulationEngine._rhs_calib_lookup(test_sig)
+                @test retrieved !== nothing
+                @test retrieved.mode == :satellite_batch
 
-    SimulationEngine._rhs_calib_store!(test_sig, flat_plan, 0.9e6)
-    retrieved_flat = SimulationEngine._rhs_calib_lookup(test_sig)
-    @test retrieved_flat !== nothing
-    @test retrieved_flat.mode == :flat_constellation_effector_queue
-    @test retrieved_flat.allotment == 4
+                # A different plan stored against the SAME signature is a flip,
+                # and a flip is deliberately recorded as the heuristic verdict
+                # rather than as the newly stored plan, so the lookup would
+                # answer `:heuristic` and not a plan at all. The flat round-trip
+                # therefore gets its own signature; the flip behaviour itself is
+                # covered in test/unit/parallel/rhs_reverify_unconfirmed_tests.jl.
+                test_sig_flat = "v3|machine=test_gate_flat|budget=8|sats=2_4|effs=1|harm=1"
+                SimulationEngine._rhs_calib_store!(test_sig_flat, flat_plan, 0.9e6)
+                retrieved_flat = SimulationEngine._rhs_calib_lookup(test_sig_flat)
+                @test retrieved_flat !== nothing
+                @test retrieved_flat.mode == :flat_constellation_effector_queue
+                @test retrieved_flat.allotment == 4
 
-    # Scheduler survives store/lookup: it is a swept axis now, so a cache entry
-    # that dropped it would silently hand the solve back to the env var.
-    for sched in (:static, :dynamic)
-        sig_sched = "v3|machine=test_gate_$(sched)|budget=8|sats=2_4|effs=1|harm=1"
-        SimulationEngine._rhs_calib_store!(
-            sig_sched, SimulationEngine._make_calib_flat_plan(4, sched), 0.8e6
-        )
-        round_tripped = SimulationEngine._rhs_calib_lookup(sig_sched)
-        @test round_tripped !== nothing
-        @test round_tripped.scheduler == sched
+                # Scheduler survives store/lookup: it is a swept axis now, so a cache entry
+                # that dropped it would silently hand the solve back to the env var.
+                for sched in (:static, :dynamic)
+                    sig_sched = "v3|machine=test_gate_$(sched)|budget=8|sats=2_4|effs=1|harm=1"
+                    SimulationEngine._rhs_calib_store!(
+                        sig_sched, SimulationEngine._make_calib_flat_plan(4, sched), 0.8e6
+                    )
+                    round_tripped = SimulationEngine._rhs_calib_lookup(sig_sched)
+                    @test round_tripped !== nothing
+                    @test round_tripped.scheduler == sched
+                end
+            finally
+                lock(SimulationEngine._rhs_calib_lock) do
+                    empty!(SimulationEngine._rhs_calib_cache)
+                    merge!(SimulationEngine._rhs_calib_cache, prev_calib_cache)
+                    SimulationEngine._rhs_calib_loaded[] = prev_calib_loaded
+                end
+            end
+        end
     end
 
     # ── TOML persistence round-trip (temp directory) ─────────────────────────
@@ -1851,6 +1899,17 @@ end
             disk_row = only(filter(r -> get(r, "signature", "") == sig_disk, rows))
             @test get(disk_row, "scheduler", "") == String(flat_plan.scheduler)
         end
+    end
+    # That block loaded and stored against a temp path. Leaving the cache marked
+    # loaded would carry those temp-derived entries back to the real store the
+    # next time anything saves -- _rhs_calib_save! rewrites the whole file from
+    # the cache rather than merging into it, so the real store under output/
+    # would be truncated to whatever the test left behind. Emptying makes the
+    # next save a no-op, and clearing the flag makes the next store or lookup
+    # reload the real store first.
+    lock(SimulationEngine._rhs_calib_lock) do
+        empty!(SimulationEngine._rhs_calib_cache)
+        SimulationEngine._rhs_calib_loaded[] = false
     end
 
     # ── Calibration guard: SPACEAGORA_RHS_CALIBRATE=off skips entirely ───────
@@ -2266,7 +2325,16 @@ end
         @test snap1[route1].samples == n_seeds
         @test snap1[route1].success_rate == 1.0
         # Feedback stores amortized campaign wall time per sample.
-        @test isapprox(snap1[route1].mean_s, res1.elapsed_s / n_seeds; rtol=1e-6)
+        # The route bandit is credited with the campaign's STEADY per-sample cost
+        # (SimulationCampaigns.steady_per_sample_s), deliberately excluding the
+        # one-time route-selection and dispatch overhead, so elapsed_s / n_seeds
+        # is not the recorded figure -- with a trivial runner it is almost all
+        # overhead and the two differ by orders of magnitude.
+        @test isapprox(
+            snap1[route1].mean_s,
+            SimulationCampaigns.steady_per_sample_s(res1);
+            rtol=1e-6
+        )
 
         # Exploration is gated on CAMPAIGNS, not samples: the default needs
         # adaptive_min_samples (2) campaigns before the selector looks past it,

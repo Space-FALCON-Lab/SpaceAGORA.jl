@@ -3,12 +3,11 @@
     # files (each does `using SpaceAGORA` and binds its own module aliases), so
     # they run as subprocesses exactly like the probe drivers in suite 09 and
     # inherit the coverage flag, which is what makes the cost-model, contention
-    # and dispatch modules visible to the coverage gates. Three files are left
-    # to the standalone `test/unit/runtests.jl` driver because they assert
-    # machine-specific facts (`machine_topology_tests.jl` assumes physical
-    # cores <= Sys.CPU_THREADS, false on Apple Silicon where Julia counts only
-    # performance cores; `mc_route_tie_tests.jl` and `policy_v2_tests.jl`
-    # assume the host's full thread and process budget).
+    # and dispatch modules visible to the coverage gates. Two files are left
+    # to the standalone `test/unit/runtests.jl` driver because they assume the
+    # host's full thread and process budget (`mc_route_tie_tests.jl`,
+    # `policy_v2_tests.jl`); `machine_topology_tests.jl` runs on Linux only,
+    # see below.
     unit_files = [
         "contention_inputs_tests.jl",
         "cost_machine_calibration_tests.jl",
@@ -28,6 +27,10 @@
         "streaming_trial_tests.jl",
         "usl_tests.jl",
     ]
+    # The topology assertions assume Julia's CPU_THREADS counts every core,
+    # which holds on the Linux runners and not on Apple Silicon (performance
+    # cores only), so the file runs where the assumption is true.
+    Sys.islinux() && push!(unit_files, "machine_topology_tests.jl")
     coverage_flags = Base.JLOptions().code_coverage == 0 ? String[] : ["--code-coverage=user"]
     for unit in unit_files
         unit_script = joinpath(REPO_ROOT, "test", "unit", "parallel", unit)

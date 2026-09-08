@@ -1023,6 +1023,11 @@ end
         # measured per-call work (_hint_layer_pays); this probe's 10 ns fake
         # observations never would, so the gate is switched off for it.
         "SPACEAGORA_PARALLEL_POLICY_HINT_WORK_RATIO" => "0",
+        # The probe driver runs this file at --threads=2, which clamps the
+        # budget to 2 -- below the default auto minimum budget of 4, at which
+        # the decision is forced and the hint store is never consulted. Lower
+        # the minimum to the budget this process actually has.
+        "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "4"
     ) do
         # The telemetry lock now lives on the context it guards, not process-wide.

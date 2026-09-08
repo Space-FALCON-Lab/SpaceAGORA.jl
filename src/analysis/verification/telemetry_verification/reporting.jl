@@ -123,6 +123,8 @@ end
 end
 
 @inline _maneuver_count(cfg::OrbitEventsScenarioConfig) = length(cfg.maneuver_orbit_numbers)
+@inline _state_anchor_count(cfg::OrbitEventsScenarioConfig) = cfg.state_anchors_enabled ? length(cfg.state_anchor_elapsed_s) : 0
+@inline _state_anchor_count(::AbstractScenarioConfig) = 0
 @inline _maneuver_count(::TimeAlignedScenarioConfig) = 0
 
 @inline _maneuver_replay_scale_mode(cfg::OrbitEventsScenarioConfig) = cfg.maneuver_replay_scale_mode

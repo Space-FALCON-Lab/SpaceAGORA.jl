@@ -148,6 +148,18 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     maneuver_isp_s::Float64 = 0.0
     maneuver_guidance_rate_s::Float64 = 30.0
     maneuver_control_rate_s::Float64 = 10.0
+    # Scheduled state anchors: at each elapsed time the simulated state is
+    # replaced by the supplied J2000 planet-centred state (m, m/s), the same
+    # convention as initial_state_j2000_m. The Odyssey replay anchors to the
+    # NAV reconstruction after each trim burn, so the graded arc is a sequence
+    # of open-loop segments between burns instead of one 340-orbit
+    # propagation whose end region amplifies rounding into kilometres.
+    # burn_orbit_numbers is documentation (mission P-numbering of the burn each
+    # anchor follows); elapsed_s drives the callback.
+    state_anchors_enabled::Bool = false
+    state_anchor_burn_orbit_numbers::Vector{Int64} = Int64[]
+    state_anchor_elapsed_s::Vector{Float64} = Float64[]
+    state_anchor_states_j2000_m::Vector{NTuple{6, Float64}} = NTuple{6, Float64}[]
     atmosphere_truth::AtmosphereTruthConfig = AtmosphereTruthConfig()
     calibration::CalibrationConfig = CalibrationConfig()
     EI_km::Float64

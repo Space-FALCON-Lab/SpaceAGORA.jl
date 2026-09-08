@@ -444,6 +444,7 @@ export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 export run_constellation_ensemble
 export campaign_route_features, campaign_outer_route_state
+export StateAnchor, get_state_anchor_callback
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 export StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample

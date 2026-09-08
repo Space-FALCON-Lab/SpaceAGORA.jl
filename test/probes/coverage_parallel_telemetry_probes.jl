@@ -2596,6 +2596,93 @@ end
     @test fields[1].column_prefix == "pos" && fields[2].column_prefix == "vel"
 end
 
+@testset "manifest state_anchors block" begin
+    scenario = Dict(
+        "name" => "anchor_key_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    state_a = [7.0e6, 0.0, 0.0, 0.0, 7.5e3, 0.0]
+    state_b = [0.0, 7.0e6, 0.0, -7.5e3, 0.0, 0.0]
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+
+        # Absent block: no anchors, nothing scheduled.
+        write_manifest(scenario)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == false
+        @test isempty(cfg.state_anchor_elapsed_s)
+        @test TV._scenario_extra_callbacks(cfg) === ()
+        @test TV._state_anchor_count(cfg) == 0
+
+        # Present block: parsed in order, counted in the summary, one callback.
+        anchored = merge(scenario, Dict("state_anchors" => Dict(
+            "burn_orbit_numbers" => [25, 32],
+            "elapsed_s" => [1000.0, 2000.0],
+            "states_j2000_m" => [state_a, state_b],
+        )))
+        write_manifest(anchored)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == true
+        @test cfg.state_anchor_burn_orbit_numbers == [25, 32]
+        @test cfg.state_anchor_elapsed_s == [1000.0, 2000.0]
+        @test cfg.state_anchor_states_j2000_m[2] == NTuple{6, Float64}(state_b)
+        @test TV._state_anchor_count(cfg) == 2
+        @test length(TV._scenario_extra_callbacks(cfg)) == 1
+
+        # Disabled block keeps the data but schedules nothing.
+        disabled = merge(scenario, Dict("state_anchors" => Dict(
+            "enabled" => false, "elapsed_s" => [1000.0], "states_j2000_m" => [state_a],
+        )))
+        write_manifest(disabled)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == false
+        @test TV._state_anchor_count(cfg) == 0
+        @test TV._scenario_extra_callbacks(cfg) === ()
+
+        # Guards: length mismatch, non-increasing times, short state, non-finite.
+        for bad in (
+            Dict("elapsed_s" => [1000.0, 2000.0], "states_j2000_m" => [state_a]),
+            Dict("elapsed_s" => [2000.0, 1000.0], "states_j2000_m" => [state_a, state_b]),
+            Dict("elapsed_s" => [1000.0], "states_j2000_m" => [state_a[1:3]]),
+            Dict("elapsed_s" => [1000.0], "states_j2000_m" => [state_a], "burn_orbit_numbers" => [1, 2]),
+            Dict("elapsed_s" => [-5.0], "states_j2000_m" => [state_a]),
+        )
+            write_manifest(merge(scenario, Dict("state_anchors" => bad)))
+            @test_throws ArgumentError TV._load_scenarios_from_manifest(manifest_path)
+        end
+    end
+end
+
 @testset "manifest link attitude quaternions" begin
     scenario = Dict(
         "name" => "link_attitude_probe",

@@ -130,3 +130,7 @@ SpaceAGORA.so
 # Remote job push tool
 scripts/remote/remotes.conf
 remote_runs/
+
+# Vulcan agent working dir and standalone vulcan_map repo
+.vulcan/
+vulcan_map/

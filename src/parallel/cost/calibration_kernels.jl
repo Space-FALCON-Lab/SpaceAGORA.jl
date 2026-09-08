@@ -6,14 +6,16 @@
 # (exactly 1.000 for a zonal field, where both are linear in L), because the
 # arithmetic is what consumes the table and the two cannot be varied apart.
 #
-# That collinearity is fatal here rather than merely inconvenient, because the
-# two routing candidates weight `coeff_touches` differently: the flat SIMD batch
-# walks the coefficient table once per worker, `satellite_batch` walks it once
-# per satellite. Two coefficient splits that predict flat identically can
-# predict batch 49% apart (measured at N=1024, a=12, L=50 full field: 38.1x
-# versus 19.6x for the batch/flat ratio). A fit that cannot separate the two
-# terms therefore matches whatever it was shown and mis-ranks the candidate it
-# was not.
+# That collinearity used to be fatal rather than merely inconvenient, because
+# the two routing candidates weighted `coeff_touches` differently (the batched
+# flat pre-pass walked the coefficient table once per worker, `satellite_batch`
+# once per satellite), so two splits that predicted flat identically could
+# predict batch 49% apart. The batched pre-pass is gone and every route now
+# walks the table once per satellite, so a mis-split no longer mis-ranks the
+# candidates. The separation still matters for the absolute prediction, which
+# is what the abstain margin and the serial comparison are decided on: the two
+# terms sit on rates that depend on different cache levels, and constants that
+# cannot tell them apart do not transfer between table sizes.
 #
 # The synthetic kernel breaks the tie by taking the touch count and the
 # arithmetic-per-touch count as independent arguments, so the calibration design

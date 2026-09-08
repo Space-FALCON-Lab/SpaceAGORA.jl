@@ -14,7 +14,6 @@ const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
 const CONTRACT_PAGES = [
     ("architecture", "canonical_topology_contract.md"),
-    ("architecture", "final_clean_contract.md"),
     ("architecture", "gnc_aerobraking_boundary_contract.md"),
     ("architecture", "src_canonical_owner_audit.md"),
     ("architecture", "src_completeness_contract.md"),
@@ -158,7 +157,6 @@ makedocs(
             "API Policy" => "public_api_policy.md",
             "Contracts" => "contracts.md",
             "generated/contracts/architecture/canonical_topology_contract.md",
-            "generated/contracts/architecture/final_clean_contract.md",
             "generated/contracts/architecture/gnc_aerobraking_boundary_contract.md",
             "generated/contracts/architecture/src_canonical_owner_audit.md",
             "generated/contracts/architecture/src_completeness_contract.md",

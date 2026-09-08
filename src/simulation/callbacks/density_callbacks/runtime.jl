@@ -1,7 +1,4 @@
 @inline function _extract_pos_vel(x)
-    if hasproperty(x, :pos) && hasproperty(x, :vel)
-        return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
-    end
     return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
 end
 
@@ -215,8 +212,6 @@ end
 function get_density_callback(num_sats::Int, args::SimulationConfiguration)
     return get_density_callback(num_sats, args.dynamics_model.dynamic_effectors, args)
 end
-
-@inline _density_callback_et(p, t::Float64) = p.shared_buffers.et_start[] + t
 
 function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)
     # GRAM knobs are read from the run-scoped env snapshot at invocation time

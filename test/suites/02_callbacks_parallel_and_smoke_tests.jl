@@ -252,10 +252,7 @@
     )
     navigation_cbs[1].affect!.affect!(integrator_navigation)
     @test counting_navigation.hits == [1]
-    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        navigation_cbs_hot = SimulationModel.SimulationCallbacks.get_navigation_callbacks(1, args_navigation)
-        navigation_cbs_hot[1].affect!.affect!(integrator_navigation)
-    end
+    navigation_cbs[1].affect!.affect!(integrator_navigation)
     @test counting_navigation.hits == [2]
 
     counting_guidance = CountingGuidanceModel([0, 0])
@@ -297,10 +294,7 @@
     )
     guidance_cbs[1].affect!.affect!(integrator_guidance)
     @test counting_guidance.hits == [1, 1]
-    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        guidance_cbs_hot = SimulationModel.SimulationCallbacks.get_guidance_callbacks(2, args_guidance)
-        guidance_cbs_hot[1].affect!.affect!(integrator_guidance)
-    end
+    guidance_cbs[1].affect!.affect!(integrator_guidance)
     @test counting_guidance.hits == [2, 2]
 
     control_model = CountingControlModel([0, 0])
@@ -329,10 +323,8 @@
         1,
         Inf
     )
-    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        control_cbs = SimulationModel.SimulationCallbacks.get_control_callbacks(2, args_control)
-        control_cbs[1].affect!.affect!(integrator_control)
-    end
+    control_cbs = SimulationModel.SimulationCallbacks.get_control_callbacks(2, args_control)
+    control_cbs[1].affect!.affect!(integrator_control)
     @test control_model.hits == [1, 1]
 
     requires_density = SimulationModel.SimulationCallbacks._requires_density_callback
@@ -408,14 +400,13 @@
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "off",
         "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1"
     ) do
-        @test control_use_threads(control_thruster, 8, false) == false
+        @test control_use_threads(control_thruster, 8) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
         "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "1"
     ) do
-        @test control_use_threads(control_thruster, 8, false) == has_worker_threads
-        @test control_use_threads(control_thruster, 8, true) == false
+        @test control_use_threads(control_thruster, 8) == has_worker_threads
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -424,7 +415,7 @@
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
     ) do
-        @test control_use_threads(control_thruster, 8, false) == false
+        @test control_use_threads(control_thruster, 8) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -433,7 +424,7 @@
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
-        @test control_use_threads(control_thruster, 8, false) == has_worker_threads
+        @test control_use_threads(control_thruster, 8) == has_worker_threads
     end
 
     n_parallel_sats = 4
@@ -465,7 +456,6 @@
         Inf
     )
     withenv(
-        "SPACEAGORA_DEV_HOT_RELOAD" => "0",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
     ) do
@@ -921,6 +911,9 @@ end
 
 @testset "Multibody Parallel Policy Gates" begin
     use_threads = SimulationModel.DynamicEffectors._multibody_use_threads
+    # The mode is cached once per solve (the engine refreshes it at solve
+    # start); a `withenv` between solves has to refresh it explicitly.
+    refresh_mode! = SimulationModel.DynamicEffectors.AerodynamicEffectors.refresh_multibody_parallel_mode!
     has_worker_threads = Threads.nthreads() > 1
 
     withenv(
@@ -928,6 +921,7 @@ end
         "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "1",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"
     ) do
+        refresh_mode!()
         @test use_threads(64) == false
     end
 
@@ -936,6 +930,7 @@ end
         "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0"
     ) do
+        refresh_mode!()
         @test use_threads(64) == has_worker_threads
     end
 
@@ -943,8 +938,10 @@ end
         "SPACEAGORA_MULTIBODY_PARALLEL" => "on",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"
     ) do
+        refresh_mode!()
         @test use_threads(64) == has_worker_threads
     end
+    refresh_mode!()
 end
 
 @testset "Parallel Policy Adaptive Controller" begin
@@ -1205,18 +1202,25 @@ end
         @test_throws ArgumentError dynamic_effectors._parse_bool_env("SPACEAGORA_TEST_BOOL_PARSE", false)
     end
 
+    # The mode accessor is a per-solve cache; the parser is exercised through
+    # the refresh the engine calls at solve start.
+    refresh_mode! = dynamic_effectors.AerodynamicEffectors.refresh_multibody_parallel_mode!
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "off") do
+        @test refresh_mode!() == :off
         @test dynamic_effectors._multibody_parallel_mode() == :off
     end
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
+        @test refresh_mode!() == :on
         @test dynamic_effectors._multibody_parallel_mode() == :on
     end
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "auto") do
+        @test refresh_mode!() == :auto
         @test dynamic_effectors._multibody_parallel_mode() == :auto
     end
     withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "invalid") do
-        @test_throws ArgumentError dynamic_effectors._multibody_parallel_mode()
+        @test_throws ArgumentError refresh_mode!()
     end
+    refresh_mode!()
 
     withenv("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "4") do
         @test dynamic_effectors._multibody_thread_threshold() == 4
@@ -1246,7 +1250,10 @@ end
 
     @test dynamic_effectors._multibody_use_threads(1) == false
     if Threads.nthreads() > 1
+        # The mode is cached per solve; refresh it after each `withenv`.
+        refresh_mode! = dynamic_effectors.AerodynamicEffectors.refresh_multibody_parallel_mode!
         withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
+            refresh_mode!()
             @test dynamic_effectors._multibody_use_threads(64) == true
         end
         withenv(
@@ -1255,6 +1262,7 @@ end
             "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
             "SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER" => "0"
         ) do
+            refresh_mode!()
             @test dynamic_effectors._multibody_use_threads(64) == false
         end
         withenv(
@@ -1263,8 +1271,10 @@ end
             "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
             "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "1"
         ) do
+            refresh_mode!()
             @test dynamic_effectors._multibody_use_threads(64; heavy_work=false) == false
         end
+        refresh_mode!()
     end
 
     @test dynamic_effectors._threadid_capacity() >= Threads.maxthreadid()
@@ -1825,6 +1835,14 @@ end
     @test retrieved !== nothing
     @test retrieved.mode == :satellite_batch
 
+    # A different plan pinned over an existing pin is the sweep's undecided
+    # outcome (two sweeps that could not agree), and the store answers it with
+    # the heuristic entry rather than honouring whichever landed last.
+    SimulationEngine._rhs_calib_store!(test_sig, flat_plan, 0.9e6)
+    flipped = SimulationEngine._rhs_calib_lookup(test_sig)
+    @test flipped == (SimulationEngine._rhs_calibrate_cache_heuristic() ? :heuristic : nothing)
+
+    # A plan pinned over the heuristic entry is stored as a fresh pin.
     SimulationEngine._rhs_calib_store!(test_sig, flat_plan, 0.9e6)
     retrieved_flat = SimulationEngine._rhs_calib_lookup(test_sig)
     @test retrieved_flat !== nothing
@@ -2275,8 +2293,11 @@ end
         @test haskey(snap1, route1)
         @test snap1[route1].samples == n_seeds
         @test snap1[route1].success_rate == 1.0
-        # Feedback stores amortized campaign wall time per sample.
-        @test isapprox(snap1[route1].mean_s, res1.elapsed_s / n_seeds; rtol=1e-6)
+        # Feedback credits the route with its steady per-sample cost (the wall
+        # between the median completion and the last one, per sample in that
+        # window), not the campaign mean, so a route's cold first campaign does
+        # not price it out of every later comparison.
+        @test isapprox(snap1[route1].mean_s, SimulationCampaigns.steady_per_sample_s(res1); rtol=1e-6)
 
         # Exploration is gated on CAMPAIGNS, not samples: the default needs
         # adaptive_min_samples (2) campaigns before the selector looks past it,

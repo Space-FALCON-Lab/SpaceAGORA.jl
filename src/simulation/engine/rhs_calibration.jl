@@ -523,7 +523,7 @@ function _rhs_plan_candidates(p, dynamic_effectors)
     if viable_workers >= 2 && _rhs_flat_supported(dynamic_effectors)
         # Ladder is geometric in the THREAD BUDGET, not in viable_workers.
         #
-        # viable_workers is a SIMD batch-sizing quantity (active_sats /
+        # viable_workers is a pre-pass slice-sizing quantity (active_sats /
         # min_sats_per_worker) and is routinely far larger than the budget: at
         # 1024 satellites with the default floor of 4 it is 256, against a
         # 12-thread budget. The old ladder was built from it -- 2,
@@ -629,12 +629,6 @@ end
         throw(ArgumentError("SPACEAGORA_RHS_CALIBRATE_TIE_MARGIN must be a float, got '$raw'"))
     end
     return clamp(v, 0.0, 0.5)
-end
-
-@inline function _rhs_calibrate_release_scratch()::Bool
-    return SimulationModel.ParallelPolicy.parse_bool_env(
-        "SPACEAGORA_RHS_CALIBRATE_RELEASE_SCRATCH", true
-    )
 end
 
 # DEFAULT OFF since 2026-08-30, and the reasoning that put it on is still
@@ -1421,11 +1415,6 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     end
 
     if best_plan === nothing
-        # The sweep ran and grew the buffer even though nothing was pinned, so
-        # the heuristic now inherits a partials buffer sized to the widest
-        # candidate tried. Release it for the same reason as the pinned path.
-        _rhs_calibrate_release_scratch() &&
-            _release_oversized_flat_scratch!(p.shared_buffers, 1)
         if verdict === :heuristic && _rhs_calibrate_cache_heuristic()
             SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
                 :sweep, :heuristic, 0, :none
@@ -1437,22 +1426,14 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     end
 
     p.shared_buffers.rhs_plan_override[] = best_plan
-    # The sweep grew the flat partials buffer to its widest candidate; the solve
-    # runs at best_plan.allotment. Leaving it oversized costs a strided zeroing
-    # instead of a memset on every RHS call for the rest of the run.
-    _rhs_release_oversized_scratch(p, best_plan)
+    # The flat effector slots are sized by (effector, satellite) and do not
+    # depend on the allotment, so the sweep leaves nothing oversized behind.
     SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
         :sweep, best_plan.mode, best_plan.allotment, best_plan.scheduler
     )
     _rhs_calib_store!(sig, best_plan, best_elapsed; sweep_ns=sweep_ns)
     _rhs_calib_save!()
 
-    return nothing
-end
-
-@inline function _rhs_release_oversized_scratch(p, plan)::Nothing
-    _rhs_calibrate_release_scratch() || return nothing
-    _release_oversized_flat_scratch!(p.shared_buffers, max(1, plan.allotment))
     return nothing
 end
 

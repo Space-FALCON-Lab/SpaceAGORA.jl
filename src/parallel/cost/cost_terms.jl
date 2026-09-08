@@ -29,29 +29,27 @@ by worker counts.
 Units differ per field and the distinction is the whole model, so they are
 stated explicitly:
 
-- `simd_terms`      PER SATELLITE. Vectorized inner-loop iterations, counted as
-                    work units per satellite: each `@turbo` loop in the kernel
-                    performs one unit for every satellite in its batch, so the
-                    loop count and the per-satellite unit count coincide. Scales
-                    with the satellites a worker holds, hence shrinks under a
-                    split.
+- `simd_terms`      PER SATELLITE. Inner-loop arithmetic of the harmonics
+                    kernel, counted in flops per satellite. The name is kept
+                    for the calibration schema: the kernel is scalar and runs
+                    one satellite at a time on every route since the batched
+                    `@turbo` pre-pass was retired, so the count is the same
+                    work the serial route does. Scales with the satellites a
+                    worker holds, hence shrinks under a split.
 - `scalar_items`    PER SATELLITE. Setup/teardown that does not vectorize.
-- `coeff_touches`   PER PASS, *not* per satellite. Distinct coefficient-table
-                    reads needed to sweep the model once. This is the term that
-                    separates the routing candidates: the SIMD batch kernel
-                    loads each coefficient once and broadcasts it across its
-                    whole satellite batch, so it pays this once per worker,
-                    while a per-satellite kernel re-walks the table for every
-                    satellite and pays it N times. Everything else in the model
-                    is symmetric between the candidates; this is what makes them
-                    differ, and what makes the crossover predictable.
-- `simd_workspace_bytes_per_sat` SIZE ARGUMENT. Scratch the vectorized kernel
-                    holds per satellite in its batch; multiplied by batch width
-                    it gives the footprint that decides the SIMD lane rate. For
-                    harmonics the A workspace is batch x (L+3) x (M+2), which at
-                    batch 1024 and L=20 is 4.1 MB -- nowhere near cache, and the
-                    reason a rate indexed by batch width alone under-predicted
-                    the serial case by ~2x.
+- `coeff_touches`   PER PASS of one satellite. Distinct coefficient-table
+                    reads needed to sweep the model once for one satellite.
+                    Every route now runs the scalar kernel and re-walks the
+                    table for each satellite, so the predictor charges this
+                    once per satellite on `satellite_batch` and on the flat
+                    route alike. (The batched pre-pass that loaded each
+                    coefficient once per worker, and made this term the
+                    discriminator between the candidates, is gone.)
+- `simd_workspace_bytes_per_sat` SIZE ARGUMENT. Scratch the kernel holds for
+                    one satellite; it is the footprint that decides the lane
+                    rate on every route, because every route runs the kernel
+                    one satellite at a time. For harmonics the A workspace is
+                    (L+3) x (M+2) Float64 per satellite.
 - `queue_nodes`     TOTAL. Flat-queue work items (satellites x effectors),
                     driving per-node dispatch bookkeeping.
 - `coeff_table_bytes` SIZE ARGUMENT, not a count. The footprint strided over

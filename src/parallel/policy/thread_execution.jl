@@ -5,7 +5,7 @@
 # plans already carried was dead. That made the static/dynamic choice a profile
 # constant rather than a routed decision -- R5 declares `dynamic`, so it paid
 # an atomic RMW per chunk on work items that are uniform by construction (the
-# harmonics SIMD batch slices, the flat effector queue), and the pre-solve
+# harmonics pre-pass slices, the flat effector queue), and the pre-solve
 # calibration sweep could not discover that `static` was faster because it held
 # the scheduler fixed while sweeping allotment.
 #
@@ -203,7 +203,7 @@ end
 
 # Spin-barrier variant: workers spin-poll an atomic generation counter instead of
 # sleeping on a Channel. Dispatch overhead is ~10-50 ns vs ~1-5 µs for channels,
-# allowing the harmonics SIMD batch to scale to 32-128+ threads.
+# allowing the harmonics pre-pass to scale to 32-128+ threads.
 # Opt-in via SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=1.
 @inline harmonics_batch_spin_barrier_enabled()::Bool =
     parse_bool_env("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER", false)
@@ -309,6 +309,43 @@ function threaded_foreach_worker(
     chunk::Int=0,
 ) where {F <: Function}
     return threaded_foreach_worker(num_items, allotment, f; scheduler=scheduler, chunk=chunk)
+end
+
+"""
+    threaded_collect!(results, num_items, allotment, f)
+    threaded_collect_persistent!(source, results, num_items, allotment, f)
+
+Evaluate `f(idx)` for every item on the worker pool and store the value in
+`results[idx]`. Nothing is accumulated on the workers: the caller sums
+`results` in index order on one thread, so the arithmetic that touches the
+total is the same as in the serial loop and the outcome does not depend on
+the worker count, the scheduler, or which worker evaluated which item. Use
+this instead of per-worker partial sums wherever the result feeds the
+integrator.
+"""
+function threaded_collect!(results::AbstractVector, num_items::Int, allotment::Int, f::F) where {F <: Function}
+    threaded_foreach_worker(num_items, allotment) do _, idx
+        @inbounds results[idx] = f(idx)
+        return nothing
+    end
+    return results
+end
+
+function threaded_collect_persistent!(source::Symbol, results::AbstractVector, num_items::Int, allotment::Int, f::F) where {F <: Function}
+    threaded_foreach_worker_persistent(source, num_items, allotment) do _, idx
+        @inbounds results[idx] = f(idx)
+        return nothing
+    end
+    return results
+end
+
+# do-block orderings (the block is the first positional argument)
+function threaded_collect!(f::F, results::AbstractVector, num_items::Int, allotment::Int) where {F <: Function}
+    return threaded_collect!(results, num_items, allotment, f)
+end
+
+function threaded_collect_persistent!(f::F, source::Symbol, results::AbstractVector, num_items::Int, allotment::Int) where {F <: Function}
+    return threaded_collect_persistent!(source, results, num_items, allotment, f)
 end
 
 function threaded_reduce(

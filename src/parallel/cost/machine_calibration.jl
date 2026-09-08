@@ -7,7 +7,8 @@
 # The design matrix is synthetic on purpose. Measured across every configuration
 # the real harmonics kernel can produce, `simd_terms` and `coeff_touches` stay
 # 0.998 correlated, so a fit against real workloads cannot separate them -- and
-# the separation is exactly what distinguishes the routing candidates. The
+# the two sit on rates that depend on different cache levels, so constants
+# that cannot tell them apart do not transfer between table sizes. The
 # synthetic kernels take touch count and arithmetic-per-touch as independent
 # arguments, so the two columns can be made orthogonal by construction.
 #
@@ -101,7 +102,7 @@ Measure every rate constant on this machine.
 
 Order matters in one place: the coefficient-touch curve is measured first so its
 contribution can be subtracted from the SIMD-lane readings, which are taken with
-the batch kernel and therefore include a small number of touches.
+the harmonics pre-pass and therefore include a small number of touches.
 """
 function calibrate_machine(; k::Int = 15, verbose::Bool = false)::MachineConstants
     verbose && println("[calibrate] fingerprint = $(machine_fingerprint())")

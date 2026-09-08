@@ -1002,8 +1002,9 @@ end
     dyn = SimulationModel.DynamicEffectors
     workspace = dyn._make_aero_scratch_workspace(1)
     dyn._ensure_aero_workspace_capacity!(workspace, 3)
-    @test length(workspace.thread_force) == 3
-    @test length(workspace.thread_cl) == 3
+    # per-link slots (summed in link order); sized by links, not threads
+    @test length(workspace.link_force) == 3
+    @test length(workspace.link_cl_area) == 3
     @test dyn.AerodynamicEffectors._constant_drag_coefficient(0.1) > 0.8
 
     args_aero = build_config(
@@ -1018,7 +1019,7 @@ end
     )
     p_aero = ODEParams(n_sats=1, args=args_aero)
     fresh_workspace = dyn._aero_workspace_for_sat!(p_aero, 5, 2)
-    @test length(fresh_workspace.thread_force) == 2
+    @test length(fresh_workspace.link_force) == 2
 
     state = SimulationModel.StateSample(
         SVector{3, Float64}(EARTH.Rp_e + 400e3, 0.0, 0.0),

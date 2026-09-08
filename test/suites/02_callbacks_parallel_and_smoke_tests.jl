@@ -2285,8 +2285,11 @@ end
         @test haskey(snap1, route1)
         @test snap1[route1].samples == n_seeds
         @test snap1[route1].success_rate == 1.0
-        # Feedback stores amortized campaign wall time per sample.
-        @test isapprox(snap1[route1].mean_s, res1.elapsed_s / n_seeds; rtol=1e-6)
+        # Feedback credits the route with its steady per-sample cost (the wall
+        # between the median completion and the last one, per sample in that
+        # window), not the campaign mean, so a route's cold first campaign does
+        # not price it out of every later comparison.
+        @test isapprox(snap1[route1].mean_s, SimulationCampaigns.steady_per_sample_s(res1); rtol=1e-6)
 
         # Exploration is gated on CAMPAIGNS, not samples: the default needs
         # adaptive_min_samples (2) campaigns before the selector looks past it,

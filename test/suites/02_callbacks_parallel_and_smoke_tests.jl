@@ -910,7 +910,13 @@ end
 end
 
 @testset "Multibody Parallel Policy Gates" begin
-    use_threads = SimulationModel.DynamicEffectors._multibody_use_threads
+    # SPACEAGORA_MULTIBODY_PARALLEL is read once per solve into a cache
+    # (refresh_multibody_parallel_mode!); each case here changes it, so read it
+    # the way a solve start would before deciding.
+    use_threads = n -> begin
+        SimulationModel.DynamicEffectors.AerodynamicEffectors.refresh_multibody_parallel_mode!()
+        SimulationModel.DynamicEffectors._multibody_use_threads(n)
+    end
     has_worker_threads = Threads.nthreads() > 1
 
     withenv(
@@ -935,6 +941,7 @@ end
     ) do
         @test use_threads(64) == has_worker_threads
     end
+    SimulationModel.DynamicEffectors.AerodynamicEffectors.refresh_multibody_parallel_mode!()
 end
 
 @testset "Parallel Policy Adaptive Controller" begin

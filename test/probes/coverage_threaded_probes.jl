@@ -951,8 +951,11 @@ end
                 Int64(2) => policy.AdaptiveChoiceStats(samples=4, successes=3, failures=1, elapsed_sum_ns=120.0, elapsed_sq_sum_ns=3_600.0)
             )
         end
+        # A signature with no history starts at the WIDEST candidate, not the
+        # narrowest: the adaptive profile begins where the fixed policy begins
+        # (see the cold-signature comment in _hint_choose_allotment).
         miss_choice = policy._hint_choose_allotment("sig_missing", Int64[1, 2])
-        @test miss_choice.allotment == 1
+        @test miss_choice.allotment == 2
         zero_choice = policy._hint_choose_allotment("sig_zero", Int64[1])
         @test zero_choice.allotment == 1
         chosen = policy._hint_choose_allotment("sig_choose", Int64[1, 2])
@@ -1016,6 +1019,10 @@ end
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
         "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0",
+        # The hint layer only updates when it pays for itself against the
+        # measured per-call work (_hint_layer_pays); this probe's 10 ns fake
+        # observations never would, so the gate is switched off for it.
+        "SPACEAGORA_PARALLEL_POLICY_HINT_WORK_RATIO" => "0",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "4"
     ) do
         # The telemetry lock now lives on the context it guards, not process-wide.

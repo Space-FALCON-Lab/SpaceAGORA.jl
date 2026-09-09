@@ -802,6 +802,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         rhs_planet_frame_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_atmosphere_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)
+        rhs_harmonics_batch_pool::Base.RefValue{Any} = Ref{Any}(nothing)
         # Per-satellite atmosphere presence flag, maintained by get_drag_state_callback.
         # The timestamp is NaN until the callback has staged a value for a known
         # integrator time, so RHS code can distinguish current state from defaults.

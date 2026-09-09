@@ -306,6 +306,296 @@ end
     return workspace
 end
 
+# ---------------------------------------------------------------------------
+# Batched harmonics workspace — satellite index is the first (fastest) dimension
+# so that @inbounds loops over the batch are unit-stride in memory.
+# ---------------------------------------------------------------------------
+
+struct HarmonicsBatchWorkspace
+    A::Array{Float64, 3}    # [B, L+4, L+4]
+    R::Matrix{Float64}       # [B, M+3]
+    I::Matrix{Float64}       # [B, M+3]
+    s_vec::Vector{Float64}   # x/r per satellite
+    t_vec::Vector{Float64}   # y/r per satellite
+    u_vec::Vector{Float64}   # z/r per satellite
+    inv_r::Vector{Float64}
+    mass::Vector{Float64}
+    rVec::Matrix{Float64}    # [3, B] planet-frame positions
+    ρ::Vector{Float64}
+    ρ_np1::Vector{Float64}
+    rr::Vector{Float64}
+    a1::Vector{Float64}
+    a2::Vector{Float64}
+    a3::Vector{Float64}
+    a4::Vector{Float64}
+    sum1::Vector{Float64}
+    sum2::Vector{Float64}
+    sum3::Vector{Float64}
+    sum4::Vector{Float64}
+end
+
+function _make_harmonics_batch_workspace(model::GravitationalHarmonicsModel, batch_size::Int)
+    L = model.L
+    M = model.M
+    B = batch_size
+    A = zeros(Float64, B, L + 4, L + 4)
+    # Diagonal elements are position-independent; initialise once and never overwrite.
+    A[:, 1, 1] .= 1.0
+    @inbounds for l = 1:(L + 2)
+        i = l + 1
+        diag_val = sqrt((2 * l + 1) / (2 * l)) * A[1, i - 1, i - 1]
+        A[:, i, i] .= diag_val
+    end
+    z = B -> zeros(Float64, B)
+    return HarmonicsBatchWorkspace(
+        A,
+        zeros(Float64, B, M + 3),
+        zeros(Float64, B, M + 3),
+        z(B), z(B), z(B), z(B), z(B),
+        zeros(Float64, 3, B),
+        z(B), z(B), z(B), z(B), z(B), z(B), z(B), z(B), z(B), z(B), z(B),
+    )
+end
+
+# Per-worker workspace pool keyed by objectid(model).
+# Indexed by worker number (1..n_workers); resized on first use or constellation change.
+const _HARMONICS_BATCH_POOL = Dict{UInt, Vector{HarmonicsBatchWorkspace}}()
+const _HARMONICS_BATCH_POOL_LOCK = ReentrantLock()
+
+function _get_harmonics_batch_pool(
+    model::GravitationalHarmonicsModel,
+    n_workers::Int,
+    batch_size::Int,
+)::Vector{HarmonicsBatchWorkspace}
+    key = objectid(model)
+    pool = get(_HARMONICS_BATCH_POOL, key, nothing)
+    if pool !== nothing && length(pool) >= n_workers && size(pool[1].A, 1) >= batch_size
+        return pool
+    end
+    lock(_HARMONICS_BATCH_POOL_LOCK) do
+        pool = get(_HARMONICS_BATCH_POOL, key, nothing)
+        if pool === nothing || length(pool) < n_workers || size(pool[1].A, 1) < batch_size
+            _HARMONICS_BATCH_POOL[key] = [_make_harmonics_batch_workspace(model, batch_size) for _ in 1:n_workers]
+        end
+    end
+    return _HARMONICS_BATCH_POOL[key]
+end
+
+# Fetch the batch pool from a per-solve cached ref to avoid the global Dict lookup
+# on every RHS call. Falls through to _get_harmonics_batch_pool on first use or resize.
+function _get_harmonics_batch_pool_cached!(
+    pool_ref::Base.RefValue{Any},
+    model::GravitationalHarmonicsModel,
+    n_workers::Int,
+    batch_size::Int,
+)::Vector{HarmonicsBatchWorkspace}
+    cached = pool_ref[]
+    if cached isa Vector{HarmonicsBatchWorkspace} &&
+       length(cached) >= n_workers &&
+       !isempty(cached) && size(cached[1].A, 1) >= batch_size
+        return cached
+    end
+    fresh = _get_harmonics_batch_pool(model, n_workers, batch_size)
+    pool_ref[] = fresh
+    return fresh
+end
+
+# Batched harmonics kernel: processes satellites item_start..item_end together.
+# Coefficients (C, S, VR01, VR11) are loaded once per (degree, order) pair
+# and reused across the batch, whose loops LLVM is free to vectorise.
+#
+# BIT-IDENTICAL to `_harmonics_scalar_force_ii` by construction. Two properties
+# make that true and both are load-bearing:
+#
+#   1. No `@turbo`, `@fastmath` or `@simd`. Those license reassociation and FMA
+#      contraction, which is what made the previous batched kernel round
+#      differently from the scalar one. Plain `@inbounds` loops leave every
+#      floating-point operation where the scalar kernel puts it; LLVM can still
+#      vectorise the batch loops, because their iterations are independent and
+#      proving that needs no fast-math.
+#   2. The nesting is degree, then order, then batch. For any one satellite the
+#      sum1..sum4 accumulations therefore run in exactly the scalar kernel's
+#      sequence. Hoisting the batch loop outwards, or reducing across the batch,
+#      would break it.
+function _harmonics_flat_batch_kernel!(
+    slots::Array{Float64, 3},
+    eff_idx::Int,
+    model::GravitationalHarmonicsModel,
+    sc_state,
+    work_items::Vector{Int},
+    item_start::Int,
+    item_end::Int,
+    lpi::SMatrix{3, 3, Float64, 9},
+    ws::HarmonicsBatchWorkspace,
+)::Nothing
+    B = item_end - item_start + 1
+    B <= 0 && return nothing
+
+    L = model.L
+    M = model.M
+    RE = model.reference_radius_m
+    μ = model.gm_m3s2
+    A = ws.A
+    R = ws.R
+    I = ws.I
+
+    # Phase 1: gather per-satellite position components and initialise accumulators.
+    @inbounds for b = 1:B
+        sat_idx = work_items[item_start + b - 1]
+        sc = sc_state[sat_idx]
+        pos_ii = SVector{3, Float64}(sc[1], sc[2], sc[3])
+        rVec, inv_r_b, s_b, t_b, u_b = _harmonics_frame_terms(lpi, pos_ii)
+        ws.rVec[1, b] = rVec[1]
+        ws.rVec[2, b] = rVec[2]
+        ws.rVec[3, b] = rVec[3]
+        ws.s_vec[b]   = s_b
+        ws.t_vec[b]   = t_b
+        ws.u_vec[b]   = u_b
+        ws.inv_r[b]   = inv_r_b
+        ws.mass[b]    = sc[7]
+        ws.ρ[b]       = RE * inv_r_b
+        ws.ρ_np1[b]   = -μ * inv_r_b * ws.ρ[b]
+        ws.a1[b] = 0.0
+        ws.a2[b] = 0.0
+        ws.a3[b] = 0.0
+        ws.a4[b] = 0.0
+    end
+
+    # Phase 2: A sub-diagonal — A[b, row+1, row] = u[b] * sqrt_2n_plus_3[n] * A[b, row, row].
+    # Diagonal A[b,i,i] was set once at workspace construction and is never overwritten.
+    @inbounds for b = 1:B
+        A[b, 2, 1] = ws.u_vec[b] * sqrt_3
+    end
+    @inbounds for n = 1:(L + 1)
+        row = n + 1
+        s2n3 = model.sqrt_2n_plus_3[n]
+        @inbounds for b = 1:B
+            A[b, row + 1, row] = ws.u_vec[b] * s2n3 * A[b, row, row]
+        end
+    end
+
+    # Phase 3: longitude trig recurrence R[b,j] + i*I[b,j] = (s[b]+i*t[b])^(j-1).
+    @inbounds for b = 1:B
+        R[b, 1] = 1.0
+        I[b, 1] = 0.0
+    end
+    @inbounds for j = 2:(M + 2)
+        @inbounds for b = 1:B
+            sv  = ws.s_vec[b]
+            tv  = ws.t_vec[b]
+            Rn  = R[b, j - 1]
+            In  = I[b, j - 1]
+            R[b, j] = sv * Rn - tv * In
+            I[b, j] = sv * In + tv * Rn
+        end
+    end
+
+    # Phase 4: main degree/order accumulation — coefficients loaded once per (l,m)
+    # pair and reused across the batch. The nesting (degree, then order, then
+    # batch) is what makes this bit-identical to the scalar kernel: for a fixed
+    # satellite the sums are accumulated in exactly the scalar sequence.
+    max_recur_row = 2
+    @inbounds for l = 1:L
+        row = l + 1
+
+        if row > max_recur_row
+            jmax = min(max(M, 1) + 1, l - 1)
+            for j = 1:jmax
+                N1v = model.N1[row, j]
+                N2v = model.N2[row, j]
+                @inbounds for b = 1:B
+                    A[b, row, j] = ws.u_vec[b] * N1v * A[b, row - 1, j] - N2v * A[b, row - 2, j]
+                end
+            end
+            max_recur_row = row
+        end
+
+        next_row = row + 1
+        if next_row > max_recur_row
+            jmax_next = min(max(M, 1) + 1, l)
+            for j = 1:jmax_next
+                N1v = model.N1[next_row, j]
+                N2v = model.N2[next_row, j]
+                @inbounds for b = 1:B
+                    A[b, next_row, j] = ws.u_vec[b] * N1v * A[b, next_row - 1, j] - N2v * A[b, next_row - 2, j]
+                end
+            end
+            max_recur_row = next_row
+        end
+
+        @inbounds for b = 1:B
+            ws.ρ_np1[b] *= ws.ρ[b]
+            ws.rr[b]   = ws.ρ_np1[b] / RE
+            ws.sum1[b] = 0.0
+            ws.sum2[b] = 0.0
+            ws.sum3[b] = 0.0
+            ws.sum4[b] = 0.0
+        end
+
+        # m=0 zonal term: I[b,1]==0 and R[b,1]==1 always, so D0 = C0*sqrt_2.
+        C0      = model.C[row, 1]
+        D0      = C0 * sqrt_2
+        VR01_r1 = model.VR01[row, 1]
+        VR11_r1 = model.VR11[row, 1]
+        @inbounds for b = 1:B
+            ws.sum3[b] += VR01_r1 * A[b, row, 2] * D0
+            ws.sum4[b] += VR11_r1 * A[b, row + 1, 2] * D0
+        end
+
+        active_orders = model.active_orders_by_degree[row]
+        for idx in eachindex(active_orders)
+            ord    = active_orders[idx]
+            j      = ord + 1
+            Cv     = model.C[row, j]
+            Sv     = model.S[row, j]
+            VR01v  = model.VR01[row, j]
+            VR11v  = model.VR11[row, j]
+            ordf   = Float64(ord)
+            @inbounds for b = 1:B
+                R_prev = R[b, j - 1]
+                I_prev = I[b, j - 1]
+                Rj     = R[b, j]
+                Ij     = I[b, j]
+                D = (Cv * Rj    + Sv * Ij)    * sqrt_2
+                E = (Cv * R_prev + Sv * I_prev) * sqrt_2
+                F = (Sv * R_prev - Cv * I_prev) * sqrt_2
+                mA = ordf * A[b, row, j]
+                ws.sum1[b] += mA * E
+                ws.sum2[b] += mA * F
+                ws.sum3[b] += VR01v * A[b, row, j + 1] * D
+                ws.sum4[b] += VR11v * A[b, row + 1, j + 1] * D
+            end
+        end
+
+        @inbounds for b = 1:B
+            ws.a1[b] += ws.rr[b] * ws.sum1[b]
+            ws.a2[b] += ws.rr[b] * ws.sum2[b]
+            ws.a3[b] += ws.rr[b] * ws.sum3[b]
+            ws.a4[b] -= ws.rr[b] * ws.sum4[b]
+        end
+    end
+
+    # Phase 5: back-transform to inertial frame and scatter into totals.
+    include_central = model.include_central
+    @inbounds for b = 1:B
+        sat_idx  = work_items[item_start + b - 1]
+        sv       = ws.s_vec[b]
+        tv       = ws.t_vec[b]
+        uv       = ws.u_vec[b]
+        inv_r_b  = ws.inv_r[b]
+        mass_b   = ws.mass[b]
+        rVec_b   = SVector{3, Float64}(ws.rVec[1, b], ws.rVec[2, b], ws.rVec[3, b])
+        force_ii, _ = _harmonics_back_transform(
+            ws.a1[b], ws.a2[b], ws.a3[b], ws.a4[b], sv, tv, uv, inv_r_b,
+            mass_b, rVec_b, lpi, μ, include_central,
+        )
+        slots[1, eff_idx, sat_idx] = force_ii[1]
+        slots[2, eff_idx, sat_idx] = force_ii[2]
+        slots[3, eff_idx, sat_idx] = force_ii[3]
+    end
+    return nothing
+end
+
 @inline function _harmonics_lpi_cache_key(model::GravitationalHarmonicsModel, param::ODEParams, et::Float64)
     return (
         model.planet.name,
@@ -1294,6 +1584,44 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
 # Compiled once and never inlined: StaticArrays products use `muladd`, whose
 # fusion LLVM decides per compilation context, so the same expression written in
 # two functions can round differently. One body, one codegen, one answer.
+# Per-satellite frame terms, as ONE compiled body shared by the scalar kernel and
+# the batched one. `L_PI * pos_ii` is a StaticArrays product and StaticArrays uses
+# `muladd`, which LLVM may contract to an FMA or not depending on the surrounding
+# context. Computing it at two call sites therefore yields `u` values differing in
+# the last bit, and `A[2,1] = u * sqrt_3` propagates that through the whole
+# Legendre recurrence. Measured before this was shared: scalar A[2,1]
+# 0.92297461883779863 against batched 0.92297461883779841.
+@noinline function _harmonics_frame_terms(
+    L_PI::SMatrix{3, 3, Float64, 9},
+    pos_ii::SVector{3, Float64},
+)::Tuple{SVector{3, Float64}, Float64, Float64, Float64, Float64}
+    rVec_cart = L_PI * pos_ii
+    inv_r = 1.0 / norm(rVec_cart)
+    return rVec_cart, inv_r, rVec_cart[1] * inv_r, rVec_cart[2] * inv_r, rVec_cart[3] * inv_r
+end
+
+# The harmonics back-transform, as ONE compiled body shared by the scalar kernel
+# and the batched one. It is `@noinline` for the same reason the kernels are:
+# these are StaticArrays products, StaticArrays uses `muladd`, and `muladd` is
+# free to contract to an FMA or not. Two call sites that each got their own
+# inlined copy could therefore round differently, which is exactly the class of
+# difference the flat-route parity probe exists to catch.
+@noinline function _harmonics_back_transform(
+    a1::Float64, a2::Float64, a3::Float64, a4::Float64,
+    s::Float64, t::Float64, u::Float64, inv_r::Float64,
+    mass::Float64, rVec_cart::SVector{3, Float64},
+    L_PI::SMatrix{3, 3, Float64, 9}, gm::Float64, include_central::Bool,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    g_pp_generic = SVector{3, Float64}(-a1 - s * a4, -a2 - t * a4, -a3 - u * a4)
+    g_pp = if include_central
+        g_pp_generic - gm * inv_r^3 * rVec_cart
+    else
+        g_pp_generic
+    end
+    force_ii = mass * L_PI' * g_pp
+    return force_ii, g_pp_generic
+end
+
 @noinline function _harmonics_scalar_force_ii(
     model::GravitationalHarmonicsModel,
     workspace::HarmonicsScratchWorkspace,
@@ -1301,17 +1629,12 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
     mass::Float64,
     L_PI::SMatrix{3, 3, Float64, 9},
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    rVec_cart = L_PI * pos_ii # inertial to planet-fixed, inside the one compiled body
+    rVec_cart, inv_r, s, t, u = _harmonics_frame_terms(L_PI, pos_ii)
     A = workspace.A
     R = workspace.R
     I = workspace.I
 
     RE = model.reference_radius_m
-    r = norm(rVec_cart)
-    inv_r = 1.0 / r
-    s = rVec_cart[1] * inv_r
-    t = rVec_cart[2] * inv_r
-    u = rVec_cart[3] * inv_r
     L = model.L
     M = model.M
 
@@ -1400,14 +1723,10 @@ not be paired with a separate `InverseSquaredGravityModel` for the same primary 
         a4 -= rr * sum4
     end
 
-    g_pp_generic = SVector{3, Float64}(-a1 - s*a4, -a2 - t*a4, -a3 - u*a4)
-    g_pp = if model.include_central
-        g_pp_generic - model.gm_m3s2 * inv_r^3 * rVec_cart
-    else
-        g_pp_generic
-    end
-    force_ii = mass * L_PI' * g_pp
-    return force_ii, g_pp_generic
+    return _harmonics_back_transform(
+        a1, a2, a3, a4, s, t, u, inv_r, mass, rVec_cart,
+        L_PI, model.gm_m3s2, model.include_central,
+    )
 end
 
 @inline function _harmonics_calcforcetorque_with_lpi(

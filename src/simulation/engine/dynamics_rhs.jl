@@ -1066,26 +1066,25 @@ function _accumulate_harmonics_flat_batch!(
     n_workers = min(workers, count_items)
     batch_size = cld(count_items, max(1, n_workers))
     pert = SimulationModel.DynamicEffectors.PerturbationEffectors
-    # One kernel for every route: each satellite goes through the same compiled
-    # harmonics body the serial route uses, with its own scratch workspace, so
-    # the pre-pass cannot round differently from the serial loop. Workers take
-    # contiguous slices of the active satellites.
-    run_slice! = (item_start, item_end) -> begin
-        @inbounds for item in item_start:item_end
-            sat_idx = work_items[item]
-            sc = sc_state[sat_idx]
-            pos_ii = SVector{3, Float64}(sc[1], sc[2], sc[3])
-            mass = Float64(sc[7])
-            workspace = pert._harmonics_workspace_for_sat!(model, p, sat_idx)
-            force_ii, _ = pert._harmonics_scalar_force_ii(model, workspace, pos_ii, mass, lpi)
-            slots[1, eff_idx, sat_idx] = force_ii[1]
-            slots[2, eff_idx, sat_idx] = force_ii[2]
-            slots[3, eff_idx, sat_idx] = force_ii[3]
-        end
+    # Batched, and still bit-identical to the serial route. The batch kernel
+    # loads each (degree, order) coefficient once and reuses it across the
+    # slice, which is the whole reason this pre-pass is worth batching; it
+    # carries no `@turbo`/`@fastmath`/`@simd`, and its loop nesting leaves every
+    # satellite's accumulation in the scalar kernel's order, so it rounds
+    # exactly as `_harmonics_scalar_force_ii` does. Workers take contiguous
+    # slices of the active satellites and each writes only its own satellites'
+    # per-effector slots, so the reduction afterwards is unaffected.
+    pool = pert._get_harmonics_batch_pool_cached!(
+        p.shared_buffers.rhs_harmonics_batch_pool, model, n_workers, batch_size,
+    )
+    run_slice! = (item_start, item_end, w) -> begin
+        pert._harmonics_flat_batch_kernel!(
+            slots, eff_idx, model, sc_state, work_items, item_start, item_end, lpi, pool[w],
+        )
         return nothing
     end
     if n_workers <= 1
-        run_slice!(1, count_items)
+        run_slice!(1, count_items, 1)
     else
         dispatch_fn = rhs_env.harmonics_batch_spin_barrier ?
             SimulationModel.ParallelPolicy.threaded_foreach_worker_spin :
@@ -1099,7 +1098,7 @@ function _accumulate_harmonics_flat_batch!(
             item_start = (w - 1) * batch_size + 1
             item_end   = min(w * batch_size, count_items)
             item_start > count_items && return
-            run_slice!(item_start, item_end)
+            run_slice!(item_start, item_end, w)
         end
     end
     if needs_timing

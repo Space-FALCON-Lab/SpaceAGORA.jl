@@ -141,7 +141,11 @@ solution storage entirely (`save_on=false`, endpoints kept). This is the
 dominant allocation in campaign runs — skipping it is what lets
 `run_constellation_ensemble` scale near-linearly with threads. Explicitly
 set `SPACEAGORA_SOLVER_SAVE_EVERYSTEP` / `SPACEAGORA_SOLVER_SAVE_ON`
-values override this default in either direction.
+values override this default in either direction. With storage on, a run
+holds one copy of the state (plus the interpolant stages) per accepted step
+and the before/after saves of continuous events; the per-step housekeeping
+callbacks (planet frame, density and thermal samples, quaternion projection)
+add no saves of their own.
 
 ## Monte Carlo campaigns
 

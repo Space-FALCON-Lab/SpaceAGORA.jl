@@ -87,5 +87,8 @@ function update_planet_frame_callback()
         affect!(integrator) # Call the affect! function at the start of the simulation to initialize the planet frame
     end
 
-    return DiscreteCallback(condition, affect!, initialize=init_affect!)
+    # Housekeeping, not an event: the affect writes p and never u, so the
+    # integrator's before/after saves (the DiscreteCallback default) would only
+    # append two more copies of every accepted step to the solution.
+    return DiscreteCallback(condition, affect!; initialize=init_affect!, save_positions=(false, false))
 end

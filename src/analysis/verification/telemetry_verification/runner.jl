@@ -1,8 +1,40 @@
+# Scheduled state anchors for a scenario, as the engine callback the runner
+# passes through run_simulation's extra_callbacks. Empty when the scenario
+# declares none or has them disabled.
+function _scenario_state_anchors(cfg::OrbitEventsScenarioConfig)
+    (cfg.state_anchors_enabled && !isempty(cfg.state_anchor_elapsed_s)) || return SimulationModel.StateAnchor[]
+    burns = cfg.state_anchor_burn_orbit_numbers
+    offset = cfg.maneuver_orbit_number_offset
+    # The counter is reset only when the scenario replays burns: that is the
+    # orbit-keyed logic the reset keeps aligned, and the burn numbers share
+    # the maneuver block's numbering. Without a replay the anchors leave the
+    # counter alone.
+    replays_burns = !isempty(cfg.maneuver_orbit_numbers_campaign)
+    return [
+        SimulationModel.StateAnchor(
+            t, 1, collect(state);
+            # The anchor sits between burn B's apoapsis (epoch-relative apoapsis
+            # B - offset, where the counter reads B - offset) and the next, so
+            # the counter there is B - offset + 1.
+            orbit_count=(!replays_burns || isempty(burns) || burns[k] - offset + 1 < 1) ? nothing : burns[k] - offset + 1,
+        )
+        for (k, (t, state)) in enumerate(zip(cfg.state_anchor_elapsed_s, cfg.state_anchor_states_j2000_m))
+    ]
+end
+_scenario_state_anchors(::AbstractScenarioConfig) = SimulationModel.StateAnchor[]
+
+function _scenario_extra_callbacks(cfg::AbstractScenarioConfig)
+    anchors = _scenario_state_anchors(cfg)
+    isempty(anchors) && return ()
+    return (SimulationModel.get_state_anchor_callback(anchors),)
+end
+
 function _run_simulation_dataframe(
     args::SimulationConfiguration,
     scenario_name::String,
     truth::AtmosphereTruthConfig,
-    profile::Symbol
+    profile::Symbol;
+    extra_callbacks=()
 )
     return mktempdir() do tmp
         cfg_run = SimulationConfiguration(
@@ -38,6 +70,8 @@ function _run_simulation_dataframe(
                     "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
                     "SPACEAGORA_SOLVER_MODE" => solver_mode,
                     "SPACEAGORA_SOLVER_MAXITERS" => string(maxiters),
+                    "SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => _telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", solver_mode),
+                    "SPACEAGORA_SOLVER_SAVE_ON" => _telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", solver_mode),
                     "SPACEAGORA_GRAM_OFFLINE_SURROGATE" => truth.gram_offline_surrogate,
                     "SPACEAGORA_GRAM_STATIC_GRID" => truth.gram_static_grid ? "on" : "off",
                     "SPACEAGORA_GRAM_TRACK_CACHE" => truth.gram_track_cache ? "on" : "off",
@@ -49,7 +83,8 @@ function _run_simulation_dataframe(
                             isolate_state=false,
                             save_fields=save_fields,
                             return_solution=true,
-                            return_solver_metadata=true
+                            return_solver_metadata=true,
+                            extra_callbacks=extra_callbacks
                         )
                     end
                 end
@@ -160,7 +195,7 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
         for cd_scale in cd_candidates, cr_value in cr_candidates
             args_eval = _make_orbit_args(cfg, eval_orbits; cd_scale=cd_scale, cr_override=cr_value)
             args_eval = _with_study_settings(args_eval; quick=eval_is_quick)
-            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile)
+            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile; extra_callbacks=_scenario_extra_callbacks(cfg))
             reused_eval_run = eval_run
             eval_df = eval_run.results_df
             eval_rows, eval_errors = _orbit_rows_errors(cfg, args_eval, eval_df, eval_points)
@@ -182,7 +217,7 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
     args_final = _make_orbit_args(cfg, final_orbits; cd_scale=best_cd, cr_override=best_cr)
     args_final = _with_study_settings(args_final; quick=final_is_quick)
     final_run = _final_run_or_reused_eval(reused_eval_run, use_calibration, cd_candidates, cr_candidates, eval_profile, profile, cfg.name, best_cd, best_cr) do
-        _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+        _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile; extra_callbacks=_scenario_extra_callbacks(cfg))
     end
     final_df = final_run.results_df
     selected_runtime_s = final_run.elapsed_s
@@ -251,7 +286,7 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
                 cr_override=cr_value
             )
             args_eval = _with_study_settings(args_eval; quick=eval_is_quick)
-            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile)
+            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile; extra_callbacks=_scenario_extra_callbacks(cfg))
             reused_eval_run = eval_run
             eval_df = eval_run.results_df
             eval_rows, eval_errors = _time_aligned_rows_errors(cfg, args_eval, eval_df, eval_telemetry)
@@ -279,7 +314,7 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
     )
     args_final = _with_study_settings(args_final; quick=final_is_quick)
     final_run = _final_run_or_reused_eval(reused_eval_run, use_calibration, cd_candidates, cr_candidates, eval_profile, profile, cfg.name, best_cd, best_cr) do
-        _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+        _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile; extra_callbacks=_scenario_extra_callbacks(cfg))
     end
     final_df = final_run.results_df
     selected_runtime_s = final_run.elapsed_s
@@ -391,6 +426,7 @@ function _run_verification(cfg::StudyConfig)::VerificationResult
                     orbit_altitude_mode=_orbit_altitude_mode(sc),
                     maneuver_count=_maneuver_count(sc),
                     maneuver_replay_scale_mode=_maneuver_replay_scale_mode(sc),
+                    state_anchor_count=_state_anchor_count(sc),
                     simulation_runtime_s=elapsed_s,
                     timestamp_utc=string(now(UTC)),
                     atmosphere_truth_id=sc.atmosphere_truth.assumption_id,

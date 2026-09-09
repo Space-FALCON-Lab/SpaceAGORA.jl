@@ -132,8 +132,12 @@ end
     @test SEng._make_calib_satellite_batch_plan(6).allotment == 6
     @test SEng._make_calib_satellite_batch_plan(0).allotment == 1
     withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "12", "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1") do
-        @test SEng._rhs_plan_width(SEng._make_calib_satellite_batch_plan()) == 12
-        @test SEng._rhs_plan_width(SEng._make_calib_satellite_batch_plan(6)) == 6
-        @test SEng._rhs_plan_width(SEng._make_calib_satellite_batch_plan(64)) == 12   # never above the budget
+        # The advertised budget is itself capped by the process's thread count
+        # (12 here on a 12-thread run, 4 on the 4-thread CI runners).
+        budget = SpaceAGORA.SimulationModel.ParallelPolicy.effective_inner_thread_budget()
+        @test 1 <= budget <= 12
+        @test SEng._rhs_plan_width(SEng._make_calib_satellite_batch_plan()) == budget
+        @test SEng._rhs_plan_width(SEng._make_calib_satellite_batch_plan(6)) == min(6, budget)
+        @test SEng._rhs_plan_width(SEng._make_calib_satellite_batch_plan(64)) == budget   # never above the budget
     end
 end

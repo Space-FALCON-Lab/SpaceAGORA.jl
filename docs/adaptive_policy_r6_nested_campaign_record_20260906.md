@@ -854,3 +854,35 @@ Tests: `test/unit/parallel/outer_split_budget_tests.jl`,
   the machine reachable; the `--light` set is sized for it.
 - B11 of run `20260907_050609` (pre-fix-C code) was stopped at 33 of 60 rows
   to start fix C; its axis is covered by L11 on the final code.
+- Coverage gate (2026-09-08). The first CI runs on the PR failed the coverage
+  quality gate on ten files. Nine are new or heavily extended on this branch
+  (`machine_topology.jl`, `parallel/cost/*`, `gram_process_batch.jl`,
+  `adaptive_routing.jl`, `rhs_calibration.jl`, the jac-prototype and lock-cap
+  paths of `execution.jl`) and their tests lived in `test/unit/`, which no CI
+  job ran and the default `test/runtests.jl` chain never included:
+  `machine_calibration.jl` reached the gate at 0 %. The tenth,
+  `SpaceAGORA.jl`, fell because a `@compile_workload` block's lines never
+  execute in a test process. Suite 09 now runs the unit tree once as a
+  coverage-forwarded subprocess; a new in-process probe
+  (`test/probes/coverage_r6_routing_probes.jl`, suite 05) covers the branches
+  the unit tests do not reach; the workload body is
+  `SimulationCampaigns._warm_campaign_dispatchers`, compiled into the
+  pkgimage and callable under test.
+- Calibration store truncation, root-caused and fixed (2026-09-08). The store
+  was rewritten whole from a cache whose loaded flag ignored WHICH path it had
+  loaded, so a test that redirected `SPACEAGORA_RHS_CALIBRATION_PATH` and let
+  it revert had the next real-path save overwrite the real store. It happened
+  three times in one day (twice during merge testing, once when the coverage
+  run of the default entrypoint at four threads ran alongside a benchmark, so
+  the loss surfaced only as an odd store mtime hours later). The cache now
+  records its source path, reloads on a change, and a save refuses to write a
+  cache that mirrors another file (`rhs_store_path_tests.jl`); the store was
+  restored to its 79 verdicts from a backup merged with the evening's clean
+  L10 verdicts, and a full entrypoint run against a seeded copy left it
+  byte-identical.
+- Machine sharing. Three sessions worked this checkout on 2026-09-08 evening;
+  a coverage run of mine overlapped the first 12 minutes of another
+  session's L10 measurement and contended 10 of its 15 points, which it
+  discarded and re-ran (`20260909_015547`, clean). Benchmark runs and test
+  sweeps on one box must be serialised by explicit hand-off, not by load
+  checks or process-name patterns, both of which failed that night.

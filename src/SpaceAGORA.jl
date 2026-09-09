@@ -594,23 +594,13 @@ end
 # (L12, independent_1sat_1hr, 64 samples): the runner's first pool campaign
 # cost 3.1-3.2 s against 1.8-2.2 s for the static pool path's own cold start
 # on both machines, and 0.2-0.6 s warm. A production process pays that once;
-# the harness pays it on the first repeat of every point. Exercised here with a
+# the harness pays it on the first repeat of every point. Exercised with a
 # trivial sample so the generic machinery is in the pkgimage; the user's sample
-# closure itself still specialises on first call.
-@setup_workload begin
-    _pc_sample = seed -> seed * 2
-    _pc_seeds = collect(1:4)
-    @compile_workload begin
-        _pc_spec1 = SimulationCampaigns.MonteCarloSpec(seeds = _pc_seeds, threads = 1)
-        _pc_serial = SimulationCampaigns._run_monte_carlo_serial(_pc_sample, _pc_seeds, _pc_spec1)
-        SimulationCampaigns._run_monte_carlo_mixed(_pc_sample, _pc_seeds, _pc_spec1, Int[], 1)
-        if Base.Threads.nthreads() > 1
-            _pc_spec2 = SimulationCampaigns.MonteCarloSpec(seeds = _pc_seeds, threads = 2)
-            SimulationCampaigns._run_monte_carlo_threaded(_pc_sample, _pc_seeds, _pc_spec2, 2)
-            SimulationCampaigns._run_monte_carlo_mixed(_pc_sample, _pc_seeds, _pc_spec2, Int[], 2)
-        end
-        SimulationCampaigns.steady_per_sample_s(SimulationCampaigns.MonteCarloResult(_pc_serial, 0.01, 1))
-    end
+# closure itself still specialises on first call. The body lives in
+# `SimulationCampaigns._warm_campaign_dispatchers` so the test suite can run
+# the same code at run time.
+@compile_workload begin
+    SimulationCampaigns._warm_campaign_dispatchers()
 end
 
 end # module SpaceAGORA

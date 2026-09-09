@@ -157,3 +157,33 @@ end
         @test fast == expected
     end
 end
+
+@testset "a non-contiguous layout falls back to the general assembly" begin
+    # ComponentArrays lays satellite blocks out contiguously, which is what the
+    # direct-CSC path relies on. A strided view axis breaks that on purpose: two
+    # six-slot satellites on the odd slots of a 24-slot vector, so each block
+    # spans eleven positions of which only six are its own. The general path
+    # must produce the same block structure from the ownership stamps alone.
+    inner = Axis(pos = 1:3, vel = 4:6)
+    u = ComponentVector(zeros(24), Axis(sc = ViewAxis(1:2:24, PartitionedAxis(6, inner))))
+    @test length(u.sc) == 2
+    owner = zeros(Int, 24)
+    owner[1:2:11] .= 1
+    owner[13:2:23] .= 2
+
+    J = SE._build_block_diagonal_jac_prototype(u)
+    @test size(J) == (24, 24)
+    @test nnz(J) == 2 * 36
+    rows_, cols_, _ = findnz(J)
+    @test all(((r, c),) -> owner[r] != 0 && owner[r] == owner[c], zip(rows_, cols_))
+    for s in 1:2, r in findall(==(s), owner), c in findall(==(s), owner)
+        @test J[r, c] != 0.0
+    end
+
+    # An inactive satellite keeps only its diagonal, here too.
+    J2 = SE._build_block_diagonal_jac_prototype(u, [true, false])
+    @test nnz(J2) == 36 + 6
+    rows2, cols2, _ = findnz(J2)
+    @test all(((r, c),) -> owner[r] == 1 || r == c, zip(rows2, cols2))
+    @test all(J2[r, r] != 0.0 for r in findall(==(2), owner))
+end

@@ -115,6 +115,33 @@ function steady_per_sample_s(result::MonteCarloResult)::Float64
     return span_s / tail
 end
 
+"""
+    _warm_campaign_dispatchers()
+
+Run every Monte Carlo dispatcher once on a trivial sample: the serial loop, the
+mixed dispatcher on local slots, and -- given a second thread -- the threaded
+dispatcher and the mixed dispatcher at width two, then the steady-cost
+estimator over the result. This is the body of the package's precompile
+workload (see `@compile_workload` in `SpaceAGORA.jl`), kept as a function so
+it is one piece of code compiled into the pkgimage at precompile time and
+exercised by the test suite at run time; a `@compile_workload` block's own
+lines never execute in a test process.
+"""
+function _warm_campaign_dispatchers()::Nothing
+    sample = seed -> seed * 2
+    seeds = collect(1:4)
+    spec1 = MonteCarloSpec(seeds = seeds, threads = 1)
+    serial = _run_monte_carlo_serial(sample, seeds, spec1)
+    _run_monte_carlo_mixed(sample, seeds, spec1, Int[], 1)
+    if Base.Threads.nthreads() > 1
+        spec2 = MonteCarloSpec(seeds = seeds, threads = 2)
+        _run_monte_carlo_threaded(sample, seeds, spec2, 2)
+        _run_monte_carlo_mixed(sample, seeds, spec2, Int[], 2)
+    end
+    steady_per_sample_s(MonteCarloResult(serial, 0.01, 1))
+    return nothing
+end
+
 function _validate_monte_carlo_threads(threads::Int)
     available = Base.Threads.nthreads()
     if threads > available

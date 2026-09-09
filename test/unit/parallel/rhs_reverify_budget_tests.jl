@@ -10,7 +10,7 @@ function _with_entry(f, entry)
                 "SPACEAGORA_RHS_CALIBRATE" => "auto",
                 "SPACEAGORA_RHS_CALIBRATE_REVERIFY_SHARE" => "0.05") do
             lock(SEng._rhs_calib_lock) do
-                SEng._rhs_calib_loaded[] = true
+                SEng._rhs_calib_loaded[] = true; SEng._rhs_calib_loaded_path[] = SEng._rhs_calib_path()
                 empty!(SEng._rhs_calib_cache)
                 SEng._rhs_calib_cache["sig"] = entry
             end
@@ -19,7 +19,7 @@ function _with_entry(f, entry)
             finally
                 lock(SEng._rhs_calib_lock) do
                     empty!(SEng._rhs_calib_cache)
-                    SEng._rhs_calib_loaded[] = false
+                    SEng._rhs_calib_loaded[] = false; SEng._rhs_calib_loaded_path[] = ""
                 end
             end
         end

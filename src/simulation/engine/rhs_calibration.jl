@@ -30,6 +30,13 @@ const _CALIB_MACHINE_LABEL    = Ref{String}("")
 const _rhs_calib_cache        = Dict{String, Dict{String, Any}}()
 const _rhs_calib_lock         = ReentrantLock()
 const _rhs_calib_loaded       = Ref{Bool}(false)
+# The path the cache was loaded from. The cache is a mirror of ONE file, and
+# _rhs_calib_save! rewrites that file from the cache wholesale; if the path
+# changes under a loaded cache (a test redirecting SPACEAGORA_RHS_CALIBRATION_PATH
+# and letting it revert), a later save would write the old file's contents over
+# the new one. Twice on 2026-09-08 that truncated the real store under output/
+# from 82 verdicts to a handful. So a path change invalidates the cache.
+const _rhs_calib_loaded_path  = Ref{String}("")
 
 @inline function _rhs_calibration_mode()::Symbol
     raw = lowercase(strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE", "auto")))
@@ -269,9 +276,19 @@ end
 
 function _rhs_calib_load!()::Nothing
     lock(_rhs_calib_lock) do
-        _rhs_calib_loaded[] && return nothing
-        _rhs_calib_loaded[] = true
         path = _rhs_calib_path()
+        if _rhs_calib_loaded[]
+            # A cache marked loaded by hand (tests inject entries this way)
+            # belongs to whatever path is current; record that once.
+            isempty(_rhs_calib_loaded_path[]) && (_rhs_calib_loaded_path[] = path)
+            _rhs_calib_loaded_path[] == path && return nothing
+        end
+        # A different store than the one the cache mirrors: drop the mirror and
+        # load the file at the current path, so a save can only ever rewrite the
+        # file it was populated from (plus what this process added since).
+        empty!(_rhs_calib_cache)
+        _rhs_calib_loaded[] = true
+        _rhs_calib_loaded_path[] = path
         isfile(path) || return nothing
         parsed = try TOML.parsefile(path) catch; return nothing end
         rows = get(parsed, "calibrations", Any[])
@@ -301,6 +318,11 @@ function _rhs_calib_save!()::Nothing
     lock(_rhs_calib_lock) do
         isempty(_rhs_calib_cache) && return nothing
         path = _rhs_calib_path()
+        # Never write a cache that mirrors another file over this one; see
+        # _rhs_calib_loaded_path. Every store! loads first, so this only trips
+        # when the path moved between that load and this save.
+        isempty(_rhs_calib_loaded_path[]) && (_rhs_calib_loaded_path[] = path)
+        _rhs_calib_loaded_path[] == path || return nothing
         rows = Dict{String, Any}[]
         for sig in sort!(collect(keys(_rhs_calib_cache)))
             e = _rhs_calib_cache[sig]

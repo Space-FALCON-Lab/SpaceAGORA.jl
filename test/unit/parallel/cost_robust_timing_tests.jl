@@ -124,5 +124,15 @@ end
     # doing its job and the stride-bound terms are effectively unnormalised.
     fma = PC.reference_kernel_ns()
     mem = PC.reference_memory_kernel_ns()
-    @test mem > fma
+    if Base.JLOptions().code_coverage == 0
+        @test mem > fma
+    else
+        # Line-coverage instrumentation adds a counter increment to every
+        # iteration of the FMA kernel's inner loop and dilutes the memory
+        # kernel far less; measured under --code-coverage=user the FMA
+        # reference read 25 ns against 11 ns for the memory one. The ordering
+        # is a property of the machine, not of the instrumented build.
+        @test mem > 0.0 && fma > 0.0
+        @test_skip "reference ordering is not measurable under coverage instrumentation"
+    end
 end

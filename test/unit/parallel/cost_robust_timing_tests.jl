@@ -26,7 +26,7 @@ end
 # returning a constant rather than of doing the work. A 4x-work comparison then
 # read as 137x. The `timed_min` sink defeats dead-code elimination but not
 # constant folding, so a pure kernel must be given opaque inputs.
-const _SPIN_BUF = [1.0 + i * 1e-9 for i in 1:8192]
+const _SPIN_BUF = [1.0 + i * 1e-9 for i in 1:32768]
 
 function _spin(n::Int)::Float64
     acc = 0.0
@@ -50,8 +50,12 @@ end
 end
 
 @testset "timed_min recovers relative cost" begin
-    t1 = PC.timed_min(() -> _spin(512))
-    t4 = PC.timed_min(() -> _spin(2048))
+    # Sizes large enough that the kernel, not the per-call overhead of the
+    # closure and the sink, is what is being timed. At 512 and 2048 elements
+    # on a hosted CI runner the fixed cost dominated: 4x the work read as
+    # 1.66x, and the per-lane ratio as 0.42.
+    t1 = PC.timed_min(() -> _spin(8192))
+    t4 = PC.timed_min(() -> _spin(32768))
     @test t1 > 0.0
     @test t4 > 0.0
     # Ratios are far more stable than absolute durations, so the model's
@@ -61,7 +65,7 @@ end
     @test 2.0 < t4 / t1 < 8.0
     # Per-lane cost should be near-constant across sizes once the kernel is
     # opaque -- this is what a correctly-scaling estimator looks like.
-    @test 0.6 < (t4 / 2048) / (t1 / 512) < 1.7
+    @test 0.6 < (t4 / 32768) / (t1 / 8192) < 1.7
 end
 
 @testset "timed_min is not fooled by one-sided interference" begin

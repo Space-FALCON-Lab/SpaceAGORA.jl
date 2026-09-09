@@ -32,6 +32,24 @@ Convenience wrappers:
 - Linux/macOS: `./bin/spaceagora`
 - Windows: `bin\spaceagora.bat`
 
+## What works on a fresh clone
+
+`run`, `assets check`, `assets manifest` and `assets setup-open` work on a
+fresh clone after `Pkg.instantiate()` (checked in September 2026). The
+`telemetry` and `benchmark` subcommands start their child process with the
+project `.AGORA/` at the repository root, a directory that no clone contains,
+so on a fresh checkout they stop with "Package SpaceAGORA not found in current
+path" or "Package Plots not found in current path" (`--print-only` shows the
+project the child would get). Until that launcher is corrected, run the study
+and benchmark scripts directly with `--project=.`:
+
+```text
+julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
+```
+
+The `run` subcommand is not affected because every example re-activates the
+repository project itself.
+
 ## Commands
 
 ### Run an example

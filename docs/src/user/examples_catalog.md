@@ -31,7 +31,7 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 If the quickstart already works and you want a fuller no-GRAM run, use:
 
 ```text
-julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
 ```
 
 If you prefer the CLI wrapper:
@@ -48,22 +48,34 @@ the CSV, Feather, and manifest files under `output/`.
 ### First no-GRAM run
 
 Use this path when you want something runnable without GRAM, SPICE, or licensed
-assets:
+assets. These three run on a fresh clone with nothing but `Pkg.instantiate()`:
 
 ```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
-julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
+julia --project=. examples/AGORA_Earth_MonteCarlo.jl
 ```
 
-Related scripts:
+### Runs that need the SPICE kernels but not GRAM
 
-- `AGORA_Earth_NoGRAM.jl`
-- `AGORA_Keplerian.jl`
-- `AGORA_Earth_MonteCarlo.jl`
+`Earth_Thruster_Test.jl` and `AGORA_Keplerian.jl` use no atmosphere but build
+their planet with `Earth("", SPICE_PATH)` / `Mars("", SPICE_PATH)`, which loads
+the SPICE kernels shipped in the `data/GRAMSuite.jl` submodule. On a fresh clone
+they stop with "Required SPICE kernel not found: .../GRAM Suite 2.0/SPICE/...".
+Initialise the submodule first ([GRAMSuite Setup](gramsuite_setup.md)); the
+native GRAM library is not needed for these two.
+
+```text
+julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Keplerian.jl
+```
 
 ### GRAM-backed atmosphere run
 
-Use this path only after [GRAMSuite Setup](gramsuite_setup.md) succeeds:
+Use this path only after [GRAMSuite Setup](gramsuite_setup.md) succeeds. The
+scripts call `setup_gram_example!()`, which loads the vendored `GRAMSuite`
+package; without the submodule they stop with "GRAM-backed examples require
+loading `GRAMSuite`", and that includes the `--smoke` form below.
 
 ```text
 julia --project=. examples/AGORA_Basic_GRAMEarth.jl
@@ -141,7 +153,8 @@ Related scripts:
 
 | Group | Scripts |
 |---|---|
-| First runs | `AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, `AGORA_Earth_MonteCarlo.jl` |
+| First runs (no assets) | `AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl` |
+| First runs (SPICE kernels from the GRAMSuite submodule) | `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl` |
 | GRAM and missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl`, `AGORA_Mars_NoGRAM.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` |
 | Controls and torques | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` |
 | RPO and robotics | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl`, `Robot_Arm_Planner_Cloth_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl` |

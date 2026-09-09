@@ -36,6 +36,28 @@ The Feather file is always written. The CSV is written when
 `schema_version`, `created_utc`, `mission_time_s`, `steps`,
 `spacecraft_count`, and SHA-256 hashes for each data file.
 
+## Where the examples write, and how to keep runs apart
+
+The repository examples build their configuration with `make_example_config`,
+whose `results_directory` is `<repository root>/output` unless
+`SPACEAGORA_CLI_OUTPUT_DIR` is set; the CLI's `--output-dir` sets exactly that
+variable. The three file names never change, so:
+
+- two script runs in a row overwrite each other in `output/`;
+- `julia --project=. src/cli/main.jl run --example=<script> --output-dir=output/<name>`
+  gives each run its own directory;
+- for your own scripts, pass `results_directory=` to `make_example_config` or
+  set it on `SimulationSettings`.
+
+The quickstart example additionally saves four PNG plots under
+`<results_directory>/plots/`; other examples write only the three files.
+
+Smoke mode (`--smoke` on the CLI, or `SPACEAGORA_EXAMPLE_SMOKE=1` for a script)
+shortens the mission to at most 120 s and one orbit and writes to the same
+place; results are kept only when `SPACEAGORA_EXAMPLE_SMOKE_RESULTS=1`, which
+the CLI sets for you. A smoke run therefore replaces the previous full results
+in that directory.
+
 ## Loading results in Julia
 
 ```julia

@@ -143,8 +143,11 @@ is the geodetic altitude above the ellipsoid and differs by up to a few
 kilometres.
 
 **Why a clean stop matters.** `terminate!` lets the solver finish the step,
-save the last row and return with the return code `Terminated`; throwing an
-error inside the callback would lose the results file.
+save the last row and return normally with the return code `Terminated`, so
+the script can go on to read the solution. An error thrown inside the callback
+also ends the run, but as a failure: the engine still writes the rows saved so
+far (checked: the same 130 rows), then re-raises the error, so nothing after
+`run_simulation` in your script executes.
 
 ## Expected result
 

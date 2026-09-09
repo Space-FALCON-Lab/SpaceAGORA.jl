@@ -110,8 +110,8 @@ columns.
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_heat_rate` | W/m² | Instantaneous stagnation heat rate |
-| `sc1_heat_load` | J/m² | Accumulated heat load (time-integral of heat rate) |
+| `sc1_heat_rate` | W/cm² | Largest of the per-link stagnation heat rates (the built-in Maxwellian model returns W/cm²) |
+| `sc1_heat_load` | J/cm² | Largest of the per-link accumulated heat loads (each link integrates its own rate, without an area-unit conversion); not the sum over links |
 
 ### Attitude (orientation_sim only)
 

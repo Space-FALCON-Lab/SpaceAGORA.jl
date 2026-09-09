@@ -67,6 +67,12 @@ using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleratio
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+using .SimulationModel: KSPropagationParams, ks_position, ks_velocity
+using .SimulationModel: ks_energy_parameter, specific_energy_from_ks
+using .SimulationModel: cartesian_to_ks_state, ks_state_to_cartesian
+using .SimulationModel: ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs, ks_rk4_step
+using .SimulationModel: ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si
+using .SimulationModel: ks_rhs_jacobian, ks_step_jacobian
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
@@ -74,6 +80,7 @@ using .SimulationModel: AerobrakingMPCMode, TargetEnergyMode, MaxEnergyDepletion
 using .SimulationModel: AerobrakingMPCParams, AerobrakingMPCConfig, AerobrakingMPCProblem
 using .SimulationModel: AerobrakingMPCSolution, AerobrakingMPCState, AerobrakingMPCConstraintSet
 using .SimulationModel: AerobrakingMPCReferenceConfig, AerobrakingMPCControlModel
+using .SimulationModel: AerobrakingMPCCampaignState, AerobrakingMPCCampaignControlModel, mpc_campaign_save_fields
 using .SimulationModel: mpc_constraints, constraint_active, constraint_names, apply_constraints
 using .SimulationModel: mpc_params_from_spaceagora, mpc_prediction_gravity_model
 using .SimulationModel: spacecraft_mass_kg, spacecraft_reference_areas, mpc_config_from_spaceagora
@@ -491,6 +498,12 @@ export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+export KSPropagationParams, ks_position, ks_velocity
+export ks_energy_parameter, specific_energy_from_ks
+export cartesian_to_ks_state, ks_state_to_cartesian
+export ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs, ks_rk4_step
+export ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si
+export ks_rhs_jacobian, ks_step_jacobian
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
@@ -498,6 +511,7 @@ export AerobrakingMPCMode, TargetEnergyMode, MaxEnergyDepletionMode
 export AerobrakingMPCParams, AerobrakingMPCConfig, AerobrakingMPCProblem
 export AerobrakingMPCSolution, AerobrakingMPCState, AerobrakingMPCConstraintSet
 export AerobrakingMPCReferenceConfig, AerobrakingMPCControlModel
+export AerobrakingMPCCampaignState, AerobrakingMPCCampaignControlModel, mpc_campaign_save_fields
 export mpc_constraints, constraint_active, constraint_names, apply_constraints
 export mpc_params_from_spaceagora, mpc_prediction_gravity_model
 export spacecraft_mass_kg, spacecraft_reference_areas, mpc_config_from_spaceagora

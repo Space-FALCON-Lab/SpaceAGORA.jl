@@ -101,6 +101,10 @@ include(joinpath(@__DIR__, "..", "dynamics", "rotational", "rotational_models.jl
 include(joinpath(@__DIR__, "..", "dynamics", "translational", "translational_models.jl"))
 @reexport using .DynamicsTranslational
 
+# --- Kustaanheimo-Stiefel Dynamics ---
+include(joinpath(@__DIR__, "..", "dynamics", "ks_dynamics", "ks_dynamics.jl"))
+@reexport using .DynamicsKS
+
 # --- Coupled Dynamic Force/Torque Effectors ---
 include(joinpath(@__DIR__, "..", "dynamics", "coupled", "force_torque_models.jl"))
 @reexport using .DynamicEffectors

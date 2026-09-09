@@ -1,0 +1,282 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>SpaceAGORA Guidebook — First Draft Edition</title>
+<style>
+@page { size: Letter; margin: 0.72in 0.68in 0.72in 0.68in; }
+body { font-family: "Liberation Sans", Arial, sans-serif; color:#16202a; font-size:10.2pt; line-height:1.35; }
+h1 { color:#123c69; font-size:22pt; border-bottom:2px solid #2a7f9e; padding-bottom:5px; page-break-before:always; }
+h1.first { page-break-before:avoid; border:0; font-size:30pt; margin-top:1.2in; }
+h2 { color:#176b87; font-size:15pt; margin-top:18px; } h3 { color:#224f67; font-size:11.5pt; }
+p { margin:6px 0; } ul,ol { margin:5px 0 8px 20px; } li { margin:2px 0; }
+code { font-family:"Liberation Mono", monospace; font-size:8.8pt; background:#eef3f5; }
+pre { font-family:"Liberation Mono", monospace; font-size:8.0pt; background:#eef3f5; border-left:4px solid #2a7f9e; padding:8px; white-space:pre-wrap; }
+table { border-collapse:collapse; width:100%; margin:8px 0 12px; font-size:8.8pt; }
+th { background:#123c69; color:white; text-align:left; } th,td { border:1px solid #9eacb5; padding:5px; vertical-align:top; }
+.titlebox { text-align:center; } .subtitle { font-size:16pt; color:#466675; } .meta { margin-top:1in; color:#526772; }
+.note { border:1px solid #75a5b8; background:#edf7fa; padding:8px; margin:8px 0; }
+.warn { border:1px solid #c58a35; background:#fff7e8; padding:8px; margin:8px 0; }
+.small { font-size:8.5pt; color:#50616a; } .pagebreak { page-break-before:always; }
+</style></head><body>
+<div class="titlebox">
+<h1 class="first">SpaceAGORA.jl Guidebook</h1>
+<div class="subtitle">Mission simulation, environment modeling, dynamics, GNC, campaigns, and analysis</div>
+<p class="meta"><b>First draft edition</b><br>Repository snapshot: commit <code>be8cee5f</code><br>Prepared 1 September 2026</p>
+<p style="margin-top:1.2in">A source-grounded working manual for users and developers of SpaceAGORA.</p>
+</div>
+
+<h1>About this edition</h1>
+<p>This is the first integrated guidebook draft for the current SpaceAGORA repository. It explains the supported workflow, configuration layers, model families, planets, numerical engines, GNC systems, examples, outputs, and extension contracts. The source tree remains authoritative when this draft and code differ.</p>
+<div class="note"><b>Scope convention.</b> “Public API” means names exported by <code>SpaceAGORA</code>. Some examples also use names re-exported by included repository support files. Underscore-prefixed helpers and nested-module internals are implementation details and are not stable interfaces.</div>
+<h2>How to use this guide</h2>
+<ol><li>New users: Chapters 1–4, then run the quickstart.</li><li>Mission authors: Chapters 5–10 and the examples matrix.</li><li>Aerobraking/MPC users: Chapter 11 in full.</li><li>Campaign and HPC users: Chapters 12–14.</li><li>Developers: Chapters 15–17 and the API/source appendices.</li></ol>
+<h2>Contents</h2>
+<table><tr><td>1. System map</td><td>2. Installation</td><td>3. First run</td></tr><tr><td>4. Configuration</td><td>5. Initial conditions</td><td>6. Planets</td></tr><tr><td>7. Atmospheres/ephemerides</td><td>8. Dynamics</td><td>9. Spacecraft</td></tr><tr><td>10. GNC</td><td>11. Aerobraking MPC</td><td>12. Engine/solvers</td></tr><tr><td>13. Campaigns/HPC</td><td>14. Outputs/verification</td><td>15. RPO/robotics/cloth</td></tr><tr><td>16. Examples</td><td>17. Extension guide</td><td>Appendices</td></tr></table>
+
+<h1>1. System map</h1>
+<p>SpaceAGORA is a Julia spacecraft mission simulation framework. A simulation combines initial state, environment, spacecraft, force/torque effectors, GNC models, solver policy, callbacks, and output policy into a <code>SimulationConfiguration</code>, then executes it through <code>run_simulation</code>.</p>
+<pre>SimulationConfiguration
+ ├─ MissionConfiguration + InitialTime
+ ├─ EnvironmentModel (planet, atmosphere, ephemerides, EI, wind, terrain)
+ ├─ DynamicsModel (spacecraft + force/torque effectors)
+ ├─ GuidanceModel / NavigationModel / ControlModel
+ ├─ IntegrationTolerances + SolverConfig
+ └─ SimulationSettings + FilePaths
+                 │
+                 ▼
+        run_simulation(...)
+                 │
+       solution + callbacks + CSV/Feather/manifest</pre>
+<h2>Repository domains</h2>
+<table><tr><th>Domain</th><th>Responsibility</th><th>Source</th></tr>
+<tr><td>Core</td><td>Abstract contracts, runtime/state types, frames, orbital-element and quaternion utilities, configuration</td><td><code>src/core</code></td></tr>
+<tr><td>Environment</td><td>Planet data, atmosphere/density, ephemerides, gravity, aerodynamics, winds and physical models</td><td><code>src/environment</code></td></tr>
+<tr><td>Vehicle</td><td>Spacecraft links/joints/facets, actuators, structures, kinematics, thermal and robotics</td><td><code>src/vehicle</code></td></tr>
+<tr><td>Dynamics</td><td>Translational, rotational, coupled effectors, perturbations, compliant multibody/cloth</td><td><code>src/dynamics</code></td></tr>
+<tr><td>GNC</td><td>Aerobraking guidance/control, MPC, RPO, navigation, attitude control, robot-arm planning</td><td><code>src/gnc</code></td></tr>
+<tr><td>Simulation</td><td>Engine, solver policy, RHS assembly, callbacks, campaigns, persistence</td><td><code>src/simulation</code></td></tr>
+<tr><td>Operations</td><td>CLI, telemetry verification, visualization, benchmarks and assets</td><td><code>src/cli</code>, <code>src/verification</code>, <code>src/visualization</code></td></tr></table>
+
+<h1>2. Installation and assets</h1>
+<h2>Base environment</h2>
+<pre>cd /path/to/SpaceAGORA.jl
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia --project=. examples/AGORA_Basic_Quickstart.jl</pre>
+<p>The project environment in <code>Project.toml</code>/<code>Manifest.toml</code> should be activated for examples, tests, CLI calls, and development. Do not silently substitute a global Julia environment.</p>
+<h2>Asset tiers</h2>
+<ul><li><b>No-GRAM baseline:</b> analytic/tabulated atmospheres and simple ephemerides; intended for portable runs and CI.</li><li><b>SPICE-backed:</b> kernel assets support body frames and higher-fidelity ephemerides.</li><li><b>GRAM-backed:</b> GRAMSuite assets and installation are optional and must be configured separately.</li><li><b>Geometry assets:</b> RPO station CAD/point-cloud data are checked and loaded through package paths.</li></ul>
+<pre>julia --project=. src/cli/main.jl assets check</pre>
+<p><code>check_assets</code> returns an <code>AssetCheckReport</code>; <code>render_asset_report</code> formats it. The CLI surface supports <code>run</code>, <code>telemetry</code>, <code>benchmark</code>, and <code>assets check</code>.</p>
+
+<h1>3. First simulation</h1>
+<p>The fastest health check is:</p><pre>julia --project=. examples/AGORA_Basic_Quickstart.jl</pre>
+<p>For a fuller portable Earth case:</p><pre>julia --project=. examples/AGORA_Earth_NoGRAM.jl</pre>
+<h2>Canonical construction pattern</h2>
+<pre>using SpaceAGORA
+
+planet = Earth()
+spacecraft = SpacecraftModel(...)
+args = SimulationConfiguration(
+    mission_configuration = MissionConfiguration(...),
+    environment_model = EnvironmentModel(
+        planet=planet,
+        density_model=ExponentialAtmosphereModel(planet),
+        ephemerides_model=SimpleEphemeridesModel()),
+    dynamics_model = DynamicsModel(
+        spacecraft=[spacecraft],
+        dynamic_effectors=(InverseSquaredJ2GravityModel(),)),
+    initial_time = InitialTime(...),
+)
+sol = run_simulation(args; return_solution=true)</pre>
+<p>In repository examples, <code>examples/common.jl</code> supplies convenience builders such as <code>make_example_config</code>. That function is an examples-layer helper, not the core configuration type. Production integrations should understand the resulting <code>SimulationConfiguration</code>.</p>
+
+<h1>4. Configuration reference</h1>
+<table><tr><th>Type</th><th>Principal settings</th></tr>
+<tr><td><code>SimulationConfiguration</code></td><td><code>file_paths</code>, <code>simulation_settings</code>, <code>mission_configuration</code>, <code>environment_model</code>, <code>dynamics_model</code>, <code>guidance_model</code>, <code>navigation_model</code>, <code>control_model</code>, <code>initial_time</code>, <code>integration_tolerances</code>, <code>solver_config</code></td></tr>
+<tr><td><code>MissionConfiguration</code></td><td><code>mission_type</code> (<code>MissionTime</code> or <code>MissionOrbits</code>), <code>mission_time</code>, <code>number_of_orbits</code>, <code>keplerian</code>, <code>orientation_sim</code>, saved-step count, data rate</td></tr>
+<tr><td><code>EnvironmentModel</code></td><td>planet, atmospheric-interface altitude <code>EI</code> in km, density and ephemerides models, topography degree/order, wind, thermal model</td></tr>
+<tr><td><code>SimulationSettings</code></td><td>results enablement/directory, verbosity, plot and filename generation, normalization, CSV saving, checkpoint and resume controls</td></tr>
+<tr><td><code>IntegrationTolerances</code></td><td>general and state-group absolute/relative tolerances; orbit and atmosphere maximum step sizes</td></tr>
+<tr><td><code>SolverConfig</code></td><td>solver mode, maximum iterations, symplectic step, gravity-backbone step, IMEX choice, multirate settings</td></tr>
+<tr><td><code>FilePaths</code></td><td>repository asset and data locations used by configured models</td></tr>
+<tr><td><code>InitialTime</code></td><td>calendar epoch used by frames, atmosphere, and ephemerides</td></tr></table>
+<div class="warn"><b>User-owned mission values.</b> Planet, orbit, epoch, EI altitude, forces, atmosphere, GNC mode, constraints, numerical limits, output location, and solver settings belong in the mission/example file. Avoid hidden Earth defaults in a Mars, Venus, Titan, or Moon scenario.</div>
+
+<h1>5. Initial conditions and reference frames</h1>
+<p><code>InitialCondition</code> supports orbital-element construction, including apoapsis/periapsis radii and angular elements. <code>CartesianInitialCondition</code> accepts position/velocity state directly. Be explicit about units: repository orbital radii and Cartesian positions are SI unless a field is explicitly labeled otherwise; example angular inputs follow constructor documentation.</p>
+<h2>Frame and orbit utilities</h2>
+<ul><li><code>orbitalelemtorv</code>, <code>rvtoorbitalelement</code>: orbital elements ↔ Cartesian state.</li><li><code>r_intor_p!</code>, <code>r_pintor_i</code>: inertial ↔ planet-fixed states.</li><li><code>rtolatlong</code>, <code>latlongtor</code>, <code>latlongtoOE</code>: planetographic conversions.</li><li><code>rtn_dcm_from_inertial</code>, <code>inertial_to_rtn_relative_state</code>, <code>rtn_to_inertial_relative_state</code>, <code>rtn_accel_to_inertial</code>: RPO/RTN transformations.</li><li>Quaternion utilities cover derivatives, multiplication, Cayley maps, DCM conversion, and Euler-angle conversion.</li></ul>
+<p>Oblate-body altitude, planet orientation, and epoch matter. Do not treat a spherical radius subtraction as equivalent to the configured topographic/oblate altitude model.</p>
+
+<h1>6. Planets and environments</h1>
+<h2>Included planet constructors</h2>
+<table><tr><th>Planet</th><th>Typical use</th><th>Model data carried</th></tr>
+<tr><td><code>Earth()</code></td><td>LEO, aerobraking studies, navigation, RPO, attitude tests</td><td rowspan="5">Equatorial/polar/mean radii, mass, μ, J2, rotation vector, gravity reference, atmosphere reference values, scale height/gas properties, orientation and optional terrain/polynomial data</td></tr>
+<tr><td><code>Mars()</code></td><td>Mars aerobraking, Odyssey and RAAN scenarios</td></tr>
+<tr><td><code>Venus()</code></td><td>VEX/Magellan and dense-atmosphere missions</td></tr>
+<tr><td><code>Moon()</code></td><td>Airless-body orbital dynamics</td></tr>
+<tr><td><code>Titan()</code></td><td>Titan atmospheric flight/aerobraking</td></tr></table>
+<p><code>make_no_gram_planet</code>, <code>make_no_gram_density_model</code>, and <code>make_no_gram_environment</code> provide portable environment construction.</p>
+<h2>Atmospheric interface (EI)</h2>
+<div class="note">EI is primarily a named altitude boundary used by atmosphere-aware solver policy, tolerances, callbacks, and mission logic. For most density models it is <em>not</em> automatically a physical gate that forces density/aerodynamics to zero above EI. A model may explicitly declare that its density vanishes above the interface.</div>
+<p>Therefore an Earth choice near 300 km can be a sensible interface or reference cutoff for a particular study, but it is not universal. Select EI from the planet, atmosphere, trajectory, and desired numerical transition.</p>
+
+<h1>7. Atmosphere, ephemerides, gravity, and aerodynamics</h1>
+<h2>Density models</h2>
+<table><tr><th>Model</th><th>Purpose</th></tr>
+<tr><td><code>NoAtmosphereModel</code></td><td>Vacuum; no atmospheric density.</td></tr>
+<tr><td><code>ExponentialAtmosphereModel</code></td><td>Single-scale-height analytic atmosphere.</td></tr>
+<tr><td><code>PiecewiseExponentialAtmosphereModel</code></td><td>Altitude bands with piecewise parameters.</td></tr>
+<tr><td><code>PolynomialFitAtmosphereModel</code></td><td>Planet-specific polynomial-fit density; used by the Mars MPC example.</td></tr>
+<tr><td><code>NRLMSISE00AtmosphereModel</code></td><td>Earth empirical thermosphere model; initialize indices with <code>init_nrlmsise_space_indices!</code>.</td></tr>
+<tr><td><code>GRAMAtmosphereModel</code></td><td>High-fidelity GRAM integration requiring optional assets.</td></tr>
+<tr><td><code>GRAMAtmosphereModelSurrogate</code></td><td>Surrogate/wrapped GRAM behavior.</td></tr>
+<tr><td><code>TabulatedFlightAtmosphereModel</code></td><td>Density sampled against flight coordinates.</td></tr>
+<tr><td><code>TimeTabulatedAtmosphereModel</code></td><td>Time-indexed atmosphere history.</td></tr>
+<tr><td><code>ConstantDensityModel</code></td><td>Test/reference constant density (internal model family).</td></tr></table>
+<p>Use <code>getDensity</code> for scalar samples and <code>getDensityBatch!</code> for batch evaluation. Atmosphere samples can carry density, temperature, wind and related state through <code>AtmosphereSample</code>/<code>EnvironmentSample</code>.</p>
+<h2>Ephemerides</h2>
+<ul><li><code>SimpleEphemeridesModel</code>: portable analytic/simple path.</li><li><code>SpiceEphemeridesModel</code>: SPICE-based frames/body positions and optional cache paths.</li><li><code>prewarm_nbody_ephemeris_cache</code> and <code>load_nbody_ephemeris_cache!</code>: reuse deterministic ephemeris samples across campaign workers.</li></ul>
+<h2>Gravity and external perturbations</h2>
+<ul><li><code>ConstantGravityModel</code>, <code>InverseSquaredGravityModel</code>, <code>InverseSquaredJ2GravityModel</code>.</li><li><code>NBodyGravityModel</code> for third bodies.</li><li><code>GravitationalHarmonicsModel</code> for degree/order gravity fields.</li><li><code>SolarRadiationPressureModel</code>, <code>EddyCurrentDampingModel</code>, <code>MagneticTorqueRodModel</code>, gravity-gradient and attitude-related effectors.</li></ul>
+<p><code>InverseSquaredJ2GravityModel</code> is defined/exported from <code>src/environment/gravity/gravity_effectors.jl</code>. The aerobraking MPC adapter inspects the configured dynamics to select the corresponding prediction gravity model.</p>
+<h2>Aerodynamics and thermal response</h2>
+<p>Aerodynamic effectors convert relative flow, facet geometry, density, gas-surface properties and attitude into force/torque. <code>AerodynamicCoefficientfM</code> is the free-molecular coefficient effector used in the current MPC example. Thermal implementations include convective, radiative/combined calculation paths and <code>MaxwellianHeat</code> through <code>getHeatRate</code>.</p>
+
+<h1>8. Dynamics and force/torque architecture</h1>
+<h2>State propagation</h2>
+<ul><li><b>Translational:</b> position derivative, acceleration from force, mass derivative, full/slow/control-only/force-only RHS assignment.</li><li><b>Rotational:</b> quaternion derivative, angular acceleration, body torque and angular velocity, torque combination.</li><li><b>Coupled:</b> spacecraft effectors share sampled state/environment and return force, torque, mass flow, or partition information.</li></ul>
+<h2>Effector contract</h2>
+<p>New physical models subtype <code>AbstractForceTorqueModel</code>. The main calculation surfaces are <code>calcForceTorque</code> and the newer sampled <code>wrench</code> interface. <code>environment_requirements</code> declares what an effector needs, and <code>solver_partition</code> classifies it for split/multirate execution. Gravity-backbone functions expose acceleration structure for symplectic and split solvers.</p>
+<p>Typed samples include <code>StateSample</code>, <code>PlanetFrameSample</code>, <code>AtmosphereSample</code>, <code>SolarEphemerisSample</code>, <code>ThirdBodyEphemerisSample</code>, and <code>EnvironmentSample</code>.</p>
+
+<h1>9. Spacecraft, components, actuators, and thermal models</h1>
+<h2>Spacecraft assembly</h2>
+<ul><li><code>SpacecraftModel</code> contains links, joints, a root link, initial condition and spacecraft-level properties.</li><li><code>Link</code> represents rigid bodies and attached components; <code>Joint</code> defines connectivity/motion.</li><li><code>Facet</code> supplies area, normal, attitude and surface properties for aero/SRP/thermal calculations.</li><li><code>add_body!</code>, <code>add_joint!</code>, <code>add_facet!</code>, <code>add_magnet!</code>, <code>add_thruster!</code> assemble a model.</li><li><code>create_facet_list</code> builds repeated facet definitions.</li></ul>
+<h2>Actuators</h2>
+<ul><li>Thrusters: <code>BaseThrusterModel</code>, <code>SixAxisThrusterModel</code>, Schmitt-trigger and impulse integration hooks.</li><li>Reaction wheels: <code>ReactionWheelAssembly</code> and allocation/control paths.</li><li>Magnets/magnetic torquers and momentum management.</li><li>Generic hooks: <code>apply_actuator_hook!</code>, <code>apply_actuator_hooks!</code>.</li></ul>
+<h2>Control effector contract</h2>
+<p>Control models subtype <code>AbstractControlEffectorModel</code> and implement the appropriate combination of <code>calcControlEffect!</code>, <code>calcControlForceTorque</code>, and <code>calcControlMassFlowRate</code>. Control rates are assigned in <code>ControlModel</code>.</p>
+
+<h1>10. Guidance, navigation, and control</h1>
+<h2>Guidance</h2>
+<ul><li>Aerobraking campaign propulsive maneuver guidance.</li><li>Apoapsis-target/periapsis-raise guidance.</li><li>Energy-depletion guidance with maximum-depletion and terminal-targeting strategies.</li><li>RPO plan buffers, guidance models, HYPR/RRT planning and replanning.</li></ul>
+<h2>Navigation</h2>
+<p>Navigation is configured independently through <code>NavigationModel</code>. RPO navigation includes CubeSat/station reference geometry, KD-tree-backed station geometry, relative-frame states, and reference geometry loaders.</p>
+<h2>Control</h2>
+<ul><li>Solar-panel angle-of-attack control.</li><li>Aerobraking energy-depletion control with heat rate, heat load, structural load and targeting logic.</li><li>Aerobraking MPC with constrained area commands.</li><li>RPO LQ-MPC, six-axis thruster allocation and reaction-wheel allocation.</li><li>Magnetic momentum management and LVLH/cascade attitude control.</li><li>Robot-arm joint MPC and reaction effectors.</li></ul>
+
+<h1>11. Aerobraking MPC</h1>
+<h2>Purpose and modes</h2>
+<p>The controller predicts a drag passage in Kustaanheimo–Stiefel coordinates, linearizes the prediction, condenses it into a quadratic program, solves it with OSQP, commands exposed area, and maps that area to solar-panel angle of attack.</p>
+<table><tr><th>Mode</th><th>Objective</th></tr><tr><td><code>TargetEnergyMode</code></td><td>Drive predicted terminal specific orbital energy toward a user-defined target.</td></tr><tr><td><code>MaxEnergyDepletionMode</code></td><td>Maximize energy removal while respecting active constraints and regularization.</td></tr></table>
+<h2>Constraint selection</h2>
+<p><code>mpc_constraints</code> activates a subset of <code>:heat_rate</code>, <code>:heat_load</code>, <code>:drag</code>, and <code>:slew</code>. Inspect with <code>constraint_names</code>/<code>constraint_active</code>; apply a set with <code>apply_constraints</code>. Limits and weights live in <code>AerobrakingMPCConfig</code>, including heat-rate/load bounds, drag bound, area slew, area/energy/slack weights, and OSQP tolerances.</p>
+<div class="warn"><b>Constraint meaning.</b> A declared numeric limit is not active unless its constraint is selected. Validate the saved histories after every scenario. Slack-enabled optimization may preserve feasibility by reporting a violation; audit solver status, active limit, slack, and measured/predicted constraint traces.</div>
+<h2>SpaceAGORA integration</h2>
+<ul><li><code>mpc_params_from_spaceagora</code> derives μ, radius, rotation and prediction parameters from the configured planet.</li><li><code>mpc_prediction_gravity_model</code> maps the main dynamics model into MPC gravity fidelity.</li><li><code>spacecraft_mass_kg</code> and <code>spacecraft_reference_areas</code> derive vehicle data.</li><li><code>mpc_config_from_spaceagora</code> builds an MPC configuration from the scenario plus user overrides.</li><li><code>density_and_gradient_from_spaceagora</code>/<code>density_function_from_spaceagora</code> adapt atmosphere evaluation.</li><li><code>build_reference_drag_pass</code>, <code>build_mpc_problem</code>, and <code>solve_mpc_qp</code> form the prediction/optimization pipeline.</li></ul>
+<h2>Area-to-AOA callback path</h2>
+<pre>QP area command
+  → commanded_area_fraction(config, area)
+  → alpha_from_commanded_area(..., min_alpha_rad, max_alpha_rad)
+  → apply_commanded_area!(...)
+  → controlled panel link attitudes updated by AerobrakingMPCControlModel
+  → aerodynamic effector sees the new exposed geometry</pre>
+<p>The inverse mapping <code>commanded_area_from_alpha</code> supports validation. <code>mpc_control_save_fields</code> exposes controller telemetry including commanded area and constraint quantities.</p>
+<h2>When does it solve?</h2>
+<p>The integrated <code>AerobrakingMPCControlModel</code> is called at <code>control_dt_s</code>. A new QP solve is permitted according to <code>solve_interval_s</code>; reference rebuilding follows <code>build_reference_on_tick</code> and the reference configuration. <code>h_cut_m</code> is the reference drag-pass cutoff. It is not, by itself, a universal callback saying “solve exactly once when altitude crosses 300 km.”</p>
+<p>In <code>examples/AGORA_MPC_Aerobraking.jl</code>, the current settings are <code>control_dt_s=0.5</code> s, <code>solve_interval_s=10</code> s (60 s in smoke mode), and <code>h_cut_m=300 km</code>. The configured environment EI is 160 km for that Mars case.</p>
+<h2>Mars energy correctness</h2>
+<p>The example does not hard-code −6.41 MJ/kg. It computes:</p>
+<pre>target_apoapsis_radius_m = ra - 50e3
+target_energy_mj_kg = -planet.μ /
+    (target_apoapsis_radius_m + rp) / 1e6</pre>
+<p>This is the specific orbital energy <code>−μ/(2a)</code>, with <code>2a = ra + rp</code>, using <code>Mars().μ</code>. Energy targets must be derived from the selected planet and orbit.</p>
+<h2>Example-owned MPC settings</h2>
+<p>The example exposes planet, mode, orbit, epoch, constraint selection, every limit, QP weights/tolerances, controlled links, AOA bounds, control and solve periods, reference cutoff/step limits, density/ephemerides/gravity/aero choices, and output directory. It also asserts heat-rate, drag, area-slew, and nonconstant area-command histories after the run.</p>
+
+<h1>12. Simulation engine and solver policy</h1>
+<h2>Engine configuration</h2>
+<p><code>SimulationEngineConfig</code> groups <code>ParallelConfig</code>, engine <code>SolverConfig</code>, <code>RuntimePolicyConfig</code>, and <code>ArtifactConfig</code>. <code>simulation_engine_config_from_env</code> maps supported environment variables into an explicit configuration.</p>
+<h2>Solver families</h2>
+<ul><li>Adaptive general-purpose integration (default mode commonly <code>:tsit5</code>).</li><li>Split/IMEX integration (configured e.g. with <code>:kencarp4</code>).</li><li>Symplectic/gravity-backbone integration with explicit backbone step.</li><li>Multirate execution separating force/effect update cadence where model partitions permit.</li></ul>
+<p>Atmosphere/orbit step caps and group tolerances matter during sharp drag passages. Use solver changes as scenario decisions, then verify conservation, event timing, constraint traces, and convergence against a tighter reference.</p>
+<h2>Isolation</h2>
+<p><code>run_simulation</code> defaults to <code>isolate_state=true</code>, deep-copying configuration so mutable controller/campaign state is not shared accidentally. Use <code>isolate_state=false</code> only when the caller owns the configuration and accepts mutation/reuse risks.</p>
+
+<h1>13. Parallel execution, Monte Carlo, and constellations</h1>
+<h2>Profiles and routing</h2>
+<p><code>ParallelProfile</code>/<code>ParallelProfileConfig</code> provide named execution policies. Functions parse profiles, expose profile environment pairs, and run code under a selected profile. Adaptive outer routing uses <code>OuterRouteFeatures</code>, tuning/state, candidate selection, statistics, and feedback.</p>
+<h2>Campaigns</h2>
+<ul><li><code>MonteCarloSpec</code>: seeds, thread count and fail-fast policy.</li><li><code>run_monte_carlo</code>: serial, threaded, process, or adaptively routed sample execution.</li><li><code>MonteCarloSampleResult</code>/<code>MonteCarloResult</code>: per-sample and aggregate results.</li><li><code>run_constellation_ensemble</code>: ensemble execution for multi-spacecraft studies.</li><li><code>campaign_route_features</code>/<code>campaign_outer_route_state</code>: inspect campaign routing context.</li></ul>
+<h2>Processes</h2>
+<p><code>ProcessPool</code>, <code>campaign_process_pool</code>, <code>ensure_process_workers!</code>, and <code>shutdown_process_pool!</code> manage worker processes. Prewarm and load ephemeris caches per worker when SPICE/N-body work is repeated.</p>
+<div class="note">Reproducibility requires explicit seeds, isolated mutable configurations, recorded profile/environment settings, and stable assets—not merely the same thread count.</div>
+
+<h1>14. Callbacks, persistence, outputs, and verification</h1>
+<h2>Callbacks and saved fields</h2>
+<p><code>SaveField</code defines derived output extraction. <code>default_save_fields(args)</code> provides the standard set; <code>get_callbacks</code> assembles callbacks. Controller-specific fields can be appended, as the MPC example does with <code>mpc_control_save_fields</code>.</p>
+<h2>Outputs</h2>
+<p>Depending on <code>SimulationSettings</code> and artifact policy, runs can produce CSV, Feather, manifests, plots, checkpoints, and related metadata beneath the selected results directory. Keep each campaign/sample in a unique output path.</p>
+<h2>Checkpointing</h2>
+<p>Checkpoint/resume settings are part of <code>SimulationSettings</code>. Resume compatibility depends on scenario, model state and code version; treat checkpoint files as versioned artifacts and validate continuation results.</p>
+<h2>Verification</h2>
+<p><code>VerificationRequest</code> describes a telemetry/study request; <code>run_verification</code>, <code>run_verification_cli</code>, and <code>run_study</code> execute verification workflows and return <code>VerificationResult</code>. Benchmarks and smoke tests answer different questions: smoke tests establish execution, while verification establishes numerical/physical agreement against declared acceptance criteria.</p>
+
+<h1>15. RPO, robotics, and compliant cloth</h1>
+<h2>Rendezvous and proximity operations</h2>
+<p>RPO features include RTN-state transformations, station/CubeSat reference geometry, point-cloud/CAD loading, RRT/HYPR planning, buffered guidance, replanning, HCW-based LQ-MPC, six-axis thruster allocation, reaction-wheel allocation, and batch/planner-comparison examples.</p>
+<h2>Robot arm</h2>
+<ul><li>Geometry/state: <code>ClothArmBasePose</code>, links, joints, model, pose and state.</li><li>Kinematics: forward kinematics, end-effector pose, inverse kinematics, reach, closest-surface target.</li><li>Planning: <code>RobotArmPlannerConfig</code>, <code>RobotArmPlan</code>, collision spheres, HYPR configuration/result, planning and sampling.</li><li>Control: joint MPC, reference preview, measured joint state, held actuation and control/reaction effectors.</li></ul>
+<h2>Compliant multibody and cloth</h2>
+<p><code>CompliantBody</code>, <code>CompliantJoint</code>, topology nodes/edges/build results, joint actuators/loads, inertia helpers, rectangular grids, state packing, dynamics and RK4/implicit-midpoint stepping support flexible structures. Coupled cloth–robot-arm functions initialize and propagate combined state and simulate a planned motion. The solar-panel deployment demo exercises the same compliant machinery.</p>
+
+<h1>16. Examples catalog</h1>
+<table><tr><th>Category</th><th>Examples</th></tr>
+<tr><td>First runs/no-GRAM</td><td><code>AGORA_Basic_Quickstart.jl</code>, <code>AGORA_Earth_NoGRAM.jl</code>, <code>AGORA_Mars_NoGRAM.jl</code>, <code>AGORA_Keplerian.jl</code>, <code>Earth_Thruster_Test.jl</code></td></tr>
+<tr><td>Atmospheric missions</td><td><code>AGORA_Basic_GRAMEarth.jl</code>, <code>AGORA_Earth.jl</code>, <code>AGORA_Earth_Aerobraking.jl</code>, <code>AGORA_MPC_Aerobraking.jl</code>, <code>AGORA_LOFTID.jl</code></td></tr>
+<tr><td>Planetary missions</td><td><code>AGORA_Odyssey.jl</code>, <code>AGORA_Mars_RAAN_Scenario.jl</code>, <code>AGORA_Magellan.jl</code>, <code>AGORA_Vex.jl</code>, <code>AGORA_Titan.jl</code></td></tr>
+<tr><td>Forces/attitude/control</td><td>Earth GG, SRP, constant-torque, torque-free, reaction-wheel, momentum-manager, navigation and control tests; Odyssey/Titan/VEX control tests</td></tr>
+<tr><td>Space missions</td><td><code>CYGNSS_test.jl</code>, <code>GRIFEX_test.jl</code></td></tr>
+<tr><td>RPO</td><td><code>Earth_RPO_CubeSat_MPC.jl</code>, batch, planner-comparison, and replanning variants</td></tr>
+<tr><td>Robotics/flexible systems</td><td><code>Robot_Arm_Planner_Cloth_Demo.jl</code>, <code>Solar_Panel_Cloth_Deployment_Demo.jl</code></td></tr></table>
+<h2>Smoke-mode pattern</h2>
+<pre>SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=. examples/AGORA_MPC_Aerobraking.jl</pre>
+<p>Smoke mode shortens expensive cases and can change cadence/node counts. It proves the path runs; it does not replace a full-duration constraint or science validation.</p>
+
+<h1>17. Extension and validation guide</h1>
+<h2>Add a force/torque model</h2>
+<ol><li>Subtype <code>AbstractForceTorqueModel</code>.</li><li>Declare environment needs.</li><li>Implement <code>wrench</code> or the compatible force/torque contract.</li><li>Declare solver partition/backbone behavior where applicable.</li><li>Add unit tests, a minimal example, and conservation/limit checks.</li></ol>
+<h2>Add an atmosphere</h2>
+<ol><li>Subtype <code>AbstractDensityModel</code>.</li><li>Implement scalar density and, when performance matters, batch evaluation.</li><li>Specify units, valid altitude/time domain, EI behavior, extrapolation, and required indices/assets.</li><li>Test boundary continuity, vacuum behavior and gradients used by controllers.</li></ol>
+<h2>Add a controller</h2>
+<ol><li>Subtype <code>AbstractControlEffectorModel</code>.</li><li>Implement the effect/force/mass-flow interfaces needed by the actuator.</li><li>Make update cadence explicit in <code>ControlModel</code>.</li><li>Expose commands, solver status, limits and fallback state as saved fields.</li><li>Test saturation, inactive/active constraints, update timing and failure fallback.</li></ol>
+<h2>Mission validation checklist</h2>
+<ul><li>All quantities use the selected planet’s μ, radii, rotation and atmosphere.</li><li>Initial radius/energy are physically compatible with that planet.</li><li>Epoch and ephemerides/assets are available.</li><li>EI and atmosphere validity ranges are deliberate.</li><li>Every intended constraint is both numerically set and activated.</li><li>Commands vary when expected and remain within actuator geometry/rate limits.</li><li>Control callbacks actually alter the geometry/actuator consumed by dynamics.</li><li>Solver status, fallback, slack and saved telemetry are audited.</li><li>Results converge under tighter tolerances/smaller steps.</li><li>A benchmark or independent physics check is recorded.</li></ul>
+
+<h1>Appendix A. Public API quick index</h1>
+<p><b>Execution/config:</b> <code>run_simulation</code>, <code>SimulationEngineConfig</code>, <code>ParallelConfig</code>, <code>SolverConfig</code>, <code>RuntimePolicyConfig</code>, <code>ArtifactConfig</code>, <code>simulation_engine_config_from_env</code>.</p>
+<p><b>Parallel/campaign:</b> <code>ParallelProfile</code>, profile parsing/selection functions, outer-route feature/tuning/state functions, <code>ProcessPool</code>, worker lifecycle functions, Monte Carlo types/functions, constellation ensemble and campaign routing.</p>
+<p><b>Model contracts:</b> abstract force/planet/density/control/ephemerides/thermal/thruster/guidance types; state and environment sample types; <code>calcForceTorque</code>, <code>wrench</code>, environment requirements, solver partition and gravity-backbone functions.</p>
+<p><b>Environment:</b> no/exponential/piecewise/NRLMSISE atmosphere types, NRLMSISE initialization, simple ephemerides, no-GRAM constructors, density scalar/batch functions, N-body cache functions.</p>
+<p><b>Aerobraking EDG:</b> depletion config/state/guidance/control, solar-panel AOA control and apoapsis-target periapsis-raise guidance.</p>
+<p><b>Aerobraking MPC:</b> modes, params/config/problem/solution/state/constraint/reference/control types; constraint, adapter, density, reference, problem, QP, objective, area/AOA and telemetry functions.</p>
+<p><b>Robotics/cloth:</b> arm geometry, IK/FK, conventional and HYPR planners, collision/clearance/cost functions, compliant-body topology/dynamics/integration, coupled cloth-arm simulation, joint MPC and effectors.</p>
+<p><b>Verification/assets/CLI:</b> verification request/result and run functions; station geometry/CAD paths/loaders; asset report/check functions; <code>run_cli</code>.</p>
+
+<h1>Appendix B. Source-finding map</h1>
+<table><tr><th>Question</th><th>Start here</th></tr>
+<tr><td>Where is <code>make_example_config</code>?</td><td><code>examples/common.jl</code></td></tr>
+<tr><td>Where is <code>InverseSquaredJ2GravityModel</code>?</td><td><code>src/environment/gravity/gravity_effectors.jl</code></td></tr>
+<tr><td>Where is aerobraking MPC?</td><td><code>src/gnc/control/aerobraking_mpc/</code>; integration in <code>spaceagora_control_model.jl</code></td></tr>
+<tr><td>Where are configurations?</td><td><code>src/core/state/simulation_configuration.jl</code> and engine config under <code>src/simulation/engine</code></td></tr>
+<tr><td>Where are planets?</td><td><code>src/environment/ephemerides/planets.jl</code> and planet data files</td></tr>
+<tr><td>Where are atmosphere models?</td><td><code>src/environment/atmosphere/density_models.jl</code></td></tr>
+<tr><td>Where are callbacks/saved fields?</td><td><code>src/simulation/callbacks/</code></td></tr>
+<tr><td>Where is the public export surface?</td><td><code>src/SpaceAGORA.jl</code></td></tr>
+<tr><td>Where are user docs?</td><td><code>docs/src/user/</code>, plus <code>docs/src/cli.md</code>, <code>contracts.md</code>, <code>extensibility.md</code></td></tr></table>
+
+<h1>Appendix C. Draft limitations and review prompts</h1>
+<p>This edition inventories the current exported surface and major implemented internal model families. It is not an autogenerated signature reference for every private helper. The next edition should add tested copy/paste recipes for each planet, generated signatures/default tables, diagrams from the actual runtime call graph, and benchmark acceptance tables.</p>
+<h2>Requested reviewer feedback</h2>
+<ul><li>Which audience should dominate: mission analysts, controller developers, or package maintainers?</li><li>Should the next edition include full field-by-field constructor tables?</li><li>Which planetary scenarios need validated reference configurations?</li><li>Which results and figures should become canonical benchmarks?</li><li>Should aerobraking MPC receive a separate operator handbook?</li></ul>
+<p class="small">End of first draft edition. Generated from the SpaceAGORA.jl repository context; review against the referenced commit before operational use.</p>
+</body></html>

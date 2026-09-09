@@ -135,6 +135,8 @@ makedocs(
             "First Simulation" => "user/first_simulation.md",
             "Simulation Configuration" => "user/simulation_configuration.md",
             "Atmosphere Models" => "user/atmosphere_models.md",
+            "KS Dynamics" => "user/ks_dynamics.md",
+            "Cartesian versus KS Comparison" => "user/ks_cartesian_propagator_comparison.md",
             "Solver Configuration" => "user/solver_configuration.md",
             "Simulation Outputs" => "user/outputs.md",
             "Parallel Execution" => "user/parallel_execution.md",

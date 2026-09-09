@@ -86,6 +86,8 @@ Base.@kwdef mutable struct AerobrakingMPCState
     plan_time_s::Vector{Float64} = Float64[]
     plan_area_m2::Vector{Float64} = Float64[]
     predicted_terminal_energy::Float64 = NaN
+    solve_armed::Bool = true
+    solve_count::Int = 0
     last_solution::Union{Nothing, AerobrakingMPCSolution} = nothing
     last_error::Union{Nothing, String} = nothing
 end

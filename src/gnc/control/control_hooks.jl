@@ -18,6 +18,11 @@ module ControlHooks
     using ..LinearAlgebra
     using ..StaticArrays
     using ..Kinematics
+    using ..DynamicsKS: KSPropagationParams
+    using ..DynamicsKS: ks_energy_parameter, specific_energy_from_ks
+    using ..DynamicsKS: cartesian_to_ks_state, ks_state_to_cartesian
+    using ..DynamicsKS: ks_rk4_step, ks_step_jacobian, ks_kinematics_jacobians
+    using ..DynamicsKS: _ks_lambda, _ks_skew_rotation
     using SparseArrays
     using OSQP
 
@@ -29,6 +34,7 @@ module ControlHooks
     export AerobrakingMPCParams, AerobrakingMPCConfig, AerobrakingMPCProblem
     export AerobrakingMPCSolution, AerobrakingMPCState, AerobrakingMPCConstraintSet
     export AerobrakingMPCReferenceConfig, AerobrakingMPCControlModel
+    export AerobrakingMPCCampaignState, AerobrakingMPCCampaignControlModel, mpc_campaign_save_fields
     export mpc_constraints, constraint_active, constraint_names, apply_constraints
     export mpc_params_from_spaceagora, mpc_prediction_gravity_model
     export spacecraft_mass_kg, spacecraft_reference_areas, mpc_config_from_spaceagora

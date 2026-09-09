@@ -236,6 +236,8 @@ if !isdefined(@__MODULE__, :make_example_config)
 end
 
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_gnc_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "mpc_campaign_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "dynamics", "ks_dynamics_tests.jl"))
 
 if !isdefined(@__MODULE__, :_solver_policy_mode)
     const build_initial_conditions = SimulationEngine.build_initial_conditions

@@ -22,6 +22,7 @@ Base.@kwdef mutable struct AerobrakingMPCControlModel <: AbstractControlEffector
     prediction_latitude_rad::Float64
     prediction_longitude_rad::Float64
     prediction_wind::Bool
+    solve_trigger_altitude_m::Union{Nothing, Float64} = nothing
 end
 
 function _mpc_control_sat_state(u, i::Int)
@@ -77,8 +78,7 @@ function _mpc_interpolated_plan_area(model::AerobrakingMPCControlModel, t::Float
 end
 
 function _mpc_relative_speed(pos, vel, params::AerobrakingMPCParams)
-    Ωx = @SMatrix [0.0 -params.Ω 0.0; params.Ω 0.0 0.0; 0.0 0.0 0.0]
-    return norm(vel - Ωx * pos)
+    return norm(vel - _ks_skew_rotation(params) * pos)
 end
 
 function _mpc_runtime_atmosphere(model::AerobrakingMPCControlModel, p, altitude_m::Float64, t::Float64)
@@ -282,6 +282,20 @@ function _mpc_update_plan!(
     params = mpc_params_from_spaceagora(p.args)
     sc_state = _mpc_control_sat_state(u, sat_idx)
     pos, vel = _mpc_control_pos_vel(sc_state)
+    if model.solve_trigger_altitude_m !== nothing
+        altitude_m = norm(pos) - params.Re
+        radial_velocity_m_s = dot(pos, vel) / norm(pos)
+        if altitude_m > model.solve_trigger_altitude_m
+            model.state.solve_armed = true
+            desired_area = _mpc_interpolated_plan_area(model, t)
+            _mpc_area_command_from_constraints!(model, p, pos, vel, t, desired_area)
+            return nothing
+        elseif !(model.state.solve_armed && radial_velocity_m_s < 0.0)
+            desired_area = _mpc_interpolated_plan_area(model, t)
+            _mpc_area_command_from_constraints!(model, p, pos, vel, t, desired_area)
+            return nothing
+        end
+    end
     if t - model.state.last_solve_time_s < model.solve_interval_s
         desired_area = _mpc_interpolated_plan_area(model, t)
         _mpc_area_command_from_constraints!(model, p, pos, vel, t, desired_area)
@@ -294,6 +308,8 @@ function _mpc_update_plan!(
         wind=model.prediction_wind,
     )
     model.state.last_solve_time_s = t
+    model.state.solve_armed = false
+    model.state.solve_count += 1
     if !model.build_reference_on_tick
         _mpc_area_command_from_constraints!(model, p, pos, vel, t)
         model.state.plan_epoch_s = NaN

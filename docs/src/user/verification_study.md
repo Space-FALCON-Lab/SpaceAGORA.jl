@@ -76,10 +76,10 @@ the window where the result depends on the model alone, and the flight
 comparison, the measured-density atmosphere and the thresholds are unchanged.
 The summary carries the number of anchors in `state_anchor_count`. The nightly
 integrates the Odyssey scenario with plain Tsit5 rather than the automatic
-stiff sequence: the Rosenbrock fallback is pathological in the final orbits
-after the walk-out raise (about 60% longer over the whole profile, most of it
-in the last ten orbits) for metrics identical to the fourth digit. The
-harness keeps no per-step solver storage: every trajectory sample comes from
+stiff sequence: the Rosenbrock fallback engages in the final orbits after the
+walk-out raise, the whole profile takes about twice as long, and the metrics
+agree to three significant digits. The harness keeps no per-step solver
+storage: every trajectory sample comes from
 the results CSV, and the returned solution is read only for its return code
 and solver trace. The automatic stiff sequence is the exception, because the
 engine detects a switch from the per-step algorithm record, and an explicit

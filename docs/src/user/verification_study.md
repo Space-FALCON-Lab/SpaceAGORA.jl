@@ -78,7 +78,13 @@ The summary carries the number of anchors in `state_anchor_count`. The nightly
 integrates the Odyssey scenario with plain Tsit5 rather than the automatic
 stiff sequence: the Rosenbrock fallback is pathological in the final orbits
 after the walk-out raise (about 60% longer over the whole profile, most of it
-in the last ten orbits) for metrics identical to the fourth digit.
+in the last ten orbits) for metrics identical to the fourth digit. The
+harness keeps no per-step solver storage: every trajectory sample comes from
+the results CSV, and the returned solution is read only for its return code
+and solver trace. The automatic stiff sequence is the exception, because the
+engine detects a switch from the per-step algorithm record, and an explicit
+`SPACEAGORA_SOLVER_SAVE_EVERYSTEP` / `SPACEAGORA_SOLVER_SAVE_ON` value in the
+environment is passed through unchanged.
 
 The mechanism is general: `StateAnchor(elapsed_s, sat_idx, state)` and
 `get_state_anchor_callback(anchors)` build a discrete callback that any run can

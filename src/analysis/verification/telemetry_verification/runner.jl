@@ -70,6 +70,8 @@ function _run_simulation_dataframe(
                     "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
                     "SPACEAGORA_SOLVER_MODE" => solver_mode,
                     "SPACEAGORA_SOLVER_MAXITERS" => string(maxiters),
+                    "SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => _telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", solver_mode),
+                    "SPACEAGORA_SOLVER_SAVE_ON" => _telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", solver_mode),
                     "SPACEAGORA_GRAM_OFFLINE_SURROGATE" => truth.gram_offline_surrogate,
                     "SPACEAGORA_GRAM_STATIC_GRID" => truth.gram_static_grid ? "on" : "off",
                     "SPACEAGORA_GRAM_TRACK_CACHE" => truth.gram_track_cache ? "on" : "off",

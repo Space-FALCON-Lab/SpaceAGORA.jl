@@ -51,6 +51,25 @@ end
     return isempty(mode) ? "auto_stiff" : mode
 end
 
+# Per-step solver storage. The harness reads every trajectory sample from the
+# results CSV the saving callback writes and reads the returned solution only
+# for its return code and solver trace, so the per-step storage (the state and
+# the interpolant stages at every accepted step) is never used. It is the
+# dominant allocation of a long replay: with it the anchored Odyssey campaign
+# grows past the hosted runner's memory, without it the run stays small. The
+# automatic stiff sequence is the exception: the engine detects a switch from
+# sol.alg_choice, which is recorded per saved step, so any mode that contains
+# it keeps the storage. A SPACEAGORA_SOLVER_SAVE_* value already set in the
+# environment is passed through unchanged.
+@inline _telemetry_mode_reads_saved_steps(solver_mode::AbstractString)::Bool =
+    occursin("auto_stiff", lowercase(solver_mode))
+
+@inline function _telemetry_solver_save_env(name::String, solver_mode::AbstractString)::String
+    explicit = strip(get(ENV, name, ""))
+    isempty(explicit) || return String(explicit)
+    return _telemetry_mode_reads_saved_steps(solver_mode) ? "true" : "false"
+end
+
 @inline _is_maxiters_error(err)::Bool = occursin("MaxIters", sprint(showerror, err))
 
 @inline function _require_key(tbl, key::String, context::String)

@@ -461,6 +461,20 @@ end
     withenv("SPACEAGORA_TELEMETRY_SOLVER_MODE" => "", "SPACEAGORA_SOLVER_MODE" => "rodas5p") do
         @test TV._telemetry_solver_mode() == "rodas5p"
     end
+    # Per-step solver storage is off for the harness unless the mode
+    # autoswitches (the switch detector reads the per-step algorithm record)
+    # or the caller pinned the knob.
+    withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => nothing, "SPACEAGORA_SOLVER_SAVE_ON" => nothing) do
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "tsit5") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "tsit5") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "rodas5p") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "auto_stiff") == "true"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "multirate:auto_stiff/rodas5p") == "true"
+    end
+    withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => "1", "SPACEAGORA_SOLVER_SAVE_ON" => "0") do
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "tsit5") == "1"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "auto_stiff") == "0"
+    end
     withenv("SPACEAGORA_TELEMETRY_SOLVER_MODE" => "", "SPACEAGORA_SOLVER_MODE" => "") do
         @test TV._telemetry_solver_mode() == "auto_stiff"
     end

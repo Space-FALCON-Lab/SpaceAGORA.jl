@@ -2784,6 +2784,11 @@ end
     # the whole trajectory, not the cached endpoints-only integrator.
     sol_full = run_simulation(args_cache; return_solution=true, solver_cache=cache)
     @test length(sol_full.t) > 2
+    # One saved state per accepted step plus the start: the per-step
+    # housekeeping callbacks (planet frame, density and thermal samples,
+    # quaternion projection) add no before/after saves of their own, and no
+    # continuous event fires in the first 600 s of this orbit.
+    @test length(sol_full.t) == sol_full.stats.naccept + 1
     @test cache.integrator !== integ_no_output
     @test cache.save_on == true
 

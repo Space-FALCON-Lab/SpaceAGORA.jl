@@ -67,7 +67,8 @@ function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats
     init_callback = DiscreteCallback(
         (u, t, integrator) -> false,
         schedule_all!;
-        initialize=(cb, u, t, integrator) -> schedule_all!(integrator)
+        initialize=(cb, u, t, integrator) -> schedule_all!(integrator),
+        save_positions=(false, false)
     )
     return (init_callback,)
 end

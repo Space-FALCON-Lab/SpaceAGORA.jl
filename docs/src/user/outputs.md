@@ -53,10 +53,13 @@ The quickstart example additionally saves four PNG plots under
 `<results_directory>/plots/`; other examples write only the three files.
 
 Smoke mode (`--smoke` on the CLI, or `SPACEAGORA_EXAMPLE_SMOKE=1` for a script)
-shortens the mission to at most 120 s and one orbit and writes to the same
-place; results are kept only when `SPACEAGORA_EXAMPLE_SMOKE_RESULTS=1`, which
-the CLI sets for you. A smoke run therefore replaces the previous full results
-in that directory.
+shortens the mission to at most 120 s and one orbit. It does not honour
+`--output-dir` or `SPACEAGORA_CLI_OUTPUT_DIR`: the smoke configuration sets
+`results_directory` to `output/` under the current working directory, so a
+smoke run replaces the results of a previous full run in that `output/`
+(run from the repository root, that is the same `output/` the quickstart
+writes to). Results are kept only when `SPACEAGORA_EXAMPLE_SMOKE_RESULTS=1`,
+which the CLI sets for you.
 
 ## Loading results in Julia
 

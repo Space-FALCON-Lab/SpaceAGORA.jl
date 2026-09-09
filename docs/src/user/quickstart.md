@@ -48,6 +48,20 @@ output/
 example writes the same three file names there, so a second run overwrites
 the first; see [Simulation Outputs](outputs.md) for keeping runs apart.
 
+On Windows the variable is set in a separate statement. PowerShell:
+
+```text
+$env:GIT_LFS_SKIP_SMUDGE = "1"
+git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+```
+
+Command Prompt:
+
+```text
+set GIT_LFS_SKIP_SMUDGE=1
+git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+```
+
 `GIT_LFS_SKIP_SMUDGE=1` on the clone line keeps the seven GRAM surrogate grids
 under `data/GRAM_surrogate/` as small Git LFS pointers. They are about 2.5 GB,
 nothing on this path reads them, and `git lfs pull --include
@@ -72,9 +86,10 @@ julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --outp
 ```
 
 `--output-dir` is what keeps this run's files apart from the script run above:
-they land under `output/cli_run/` with the same names. Add `--smoke` for a
-two-minute mission that only checks the path end to end; it also writes to
-`output/` (or the directory you give) and overwrites what is there.
+they land under `output/cli_run/` with the same names. `--smoke` runs a
+two-minute mission that only checks the path end to end. Note its limitation:
+smoke mode ignores `--output-dir` and always writes to `output/` under the
+directory you run from, so it overwrites whatever a previous run left there.
 
 ## When to stop using this page
 

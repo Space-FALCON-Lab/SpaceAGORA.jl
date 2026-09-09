@@ -27,6 +27,20 @@ cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate()"
 ```
 
+On Windows the variable is set in a separate statement. PowerShell:
+
+```text
+$env:GIT_LFS_SKIP_SMUDGE = "1"
+git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+```
+
+Command Prompt:
+
+```text
+set GIT_LFS_SKIP_SMUDGE=1
+git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+```
+
 `GIT_LFS_SKIP_SMUDGE=1` leaves the seven GRAM surrogate grids under `data/GRAM_surrogate/` as small Git LFS pointers instead of downloading about 2.5 GB that nothing on the quickstart path reads (a benchmark study is their only consumer; `git lfs pull --include "data/GRAM_surrogate/*"` fetches them later if you need that study). The `--filter=blob:none` keeps the clone to the current tree: the repository history carries large data blobs that no longer exist in `main`, and a plain clone downloads all of them.
 
 That gives you the baseline open-data onboarding path immediately. You do not

@@ -19,6 +19,10 @@ julia --project=. -e "using Pkg; Pkg.instantiate()"
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
+On Windows set the variable first (PowerShell `$env:GIT_LFS_SKIP_SMUDGE = "1"`,
+Command Prompt `set GIT_LFS_SKIP_SMUDGE=1`) and run the same `git clone` line
+without the prefix; the [Quickstart](user/quickstart.md) shows both forms.
+
 ## Choose your path
 
 ### No-GRAM first run

@@ -38,14 +38,25 @@ The Feather file is always written. The CSV is written when
 
 ## Where the examples write, and how to keep runs apart
 
-The repository examples build their configuration with `make_example_config`,
+Most repository examples build their configuration with `make_example_config`,
 whose `results_directory` is `<repository root>/output` unless
 `SPACEAGORA_CLI_OUTPUT_DIR` is set; the CLI's `--output-dir` sets exactly that
 variable. The three file names never change, so:
 
 - two script runs in a row overwrite each other in `output/`;
 - `julia --project=. src/cli/main.jl run --example=<script> --output-dir=output/<name>`
-  gives each run its own directory;
+  gives each run its own directory, for the scripts that take their directory
+  from `make_example_config`: the first-run scripts (`AGORA_Basic_Quickstart.jl`,
+  `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`), the controls and torque
+  tests, and the mission scripts `AGORA_Basic_GRAMEarth.jl`, `AGORA_Odyssey.jl`,
+  `AGORA_Vex.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`,
+  `AGORA_Mars_NoGRAM.jl` and `Earth_Thruster_Test.jl`;
+- `--output-dir` has no effect on the scripts that choose their own directory:
+  `AGORA_Earth.jl`, `AGORA_Keplerian.jl` and `Earth_Navigation.jl` write to
+  `output/` directly, `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
+  `AGORA_Mars_RAAN_Scenario.jl` to `output/mars_raan_scenario/`, and the RPO,
+  robot-arm and cloth demos to their own `output/<demo>/` directories; running
+  one of them twice overwrites its previous results;
 - for your own scripts, pass `results_directory=` to `make_example_config` or
   set it on `SimulationSettings`.
 

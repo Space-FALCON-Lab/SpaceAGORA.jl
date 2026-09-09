@@ -47,8 +47,12 @@ and benchmark scripts directly with `--project=.`:
 julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
 ```
 
-The `run` subcommand is not affected because every example re-activates the
-repository project itself.
+The `run` subcommand works for the examples that include `examples/common.jl`
+(directly, or through the script they include), because that file re-activates
+the repository project before `using SpaceAGORA`. The one exception is
+`Solar_Panel_Cloth_Deployment_Demo.jl`, which loads the package directly and
+fails under the CLI on a fresh clone the same way; run it as a script
+(`julia --project=. examples/Solar_Panel_Cloth_Deployment_Demo.jl`).
 
 ## Commands
 

@@ -117,7 +117,12 @@ Measured on a fresh `GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none`
 
 `julia --project=. src/cli/main.jl assets check` prints the same picture for
 the machine you are on: `available`, `missing-optional`, and the licensing
-class of each entry.
+class of each entry. One qualification: for directory entries the check only
+tests that the directory exists, so after a clone with `GIT_LFS_SKIP_SMUDGE=1`
+it reports `gram_surrogate_directory: available` while the seven `.jls` files
+are still Git LFS pointers; `git lfs ls-files` shows them with `-` instead of
+`*`, and `git lfs pull --include "data/GRAM_surrogate/*"` fetches them before a
+surrogate-backed benchmark.
 
 ### Verification reference data
 

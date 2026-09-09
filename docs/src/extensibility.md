@@ -13,6 +13,7 @@ templates/force_torque_model_template.jl
 
 What to read next:
 
+- [Adding a Force or Torque of Your Own](user/custom_effector.md) (a complete, tested walkthrough of the force/torque hook)
 - [Public API](generated/public_api.md)
 - [Concepts](user/concepts.md)
 - [Maintainer Overview](maintainer/index.md)

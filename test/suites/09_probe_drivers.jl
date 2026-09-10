@@ -21,6 +21,7 @@
         "allocator_assets_probes.jl",
         "process_pool_probes.jl",
         "campaign_process_route_probes.jl",
+        "state_anchor_probes.jl",
         "flat_route_parity_probes.jl",
         "kinematics_probes.jl",
     ]

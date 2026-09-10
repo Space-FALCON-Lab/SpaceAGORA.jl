@@ -104,5 +104,9 @@ function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
         end
     end
 
-    return DiscreteCallback(condition, affect!, initialize=(cb, u, t, integrator) -> affect!(integrator))
+    # Housekeeping, not an event: the affect refreshes the thermal samples in
+    # p and never touches u, so the before/after saves of the DiscreteCallback
+    # default would only append two more copies of every accepted step.
+    return DiscreteCallback(condition, affect!; initialize=(cb, u, t, integrator) -> affect!(integrator),
+        save_positions=(false, false))
 end

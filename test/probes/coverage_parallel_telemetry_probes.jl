@@ -518,6 +518,20 @@ end
     withenv("SPACEAGORA_TELEMETRY_SOLVER_MODE" => "", "SPACEAGORA_SOLVER_MODE" => "rodas5p") do
         @test TV._telemetry_solver_mode() == "rodas5p"
     end
+    # Per-step solver storage is off for the harness unless the mode
+    # autoswitches (the switch detector reads the per-step algorithm record)
+    # or the caller pinned the knob.
+    withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => nothing, "SPACEAGORA_SOLVER_SAVE_ON" => nothing) do
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "tsit5") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "tsit5") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "rodas5p") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "auto_stiff") == "true"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "multirate:auto_stiff/rodas5p") == "true"
+    end
+    withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => "1", "SPACEAGORA_SOLVER_SAVE_ON" => "0") do
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "tsit5") == "1"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "auto_stiff") == "0"
+    end
     withenv("SPACEAGORA_TELEMETRY_SOLVER_MODE" => "", "SPACEAGORA_SOLVER_MODE" => "") do
         @test TV._telemetry_solver_mode() == "auto_stiff"
     end
@@ -770,13 +784,20 @@ end
         @test parsed_sel.scenarios == ["odyssey", "vex"]
         @test TV._request_from_study_config(parsed_sel).scenarios == ["odyssey", "vex"]
         withenv("SPACEAGORA_TELEMETRY_SCENARIOS" => "earth_gmat") do
+            # The environment filter belongs to the CLI path only; a request
+            # built in code (the initial-condition fit's, for one) is never
+            # narrowed by it.
             @test TV.parse_cli(["quick", "--manifest=$(manifest_path)"]).scenarios == ["earth_gmat"]
-            @test TV.VerificationRequest().scenarios == ["earth_gmat"]
+            @test TV.VerificationRequest().scenarios == String[]
         end
         loaded = TV._load_scenarios_from_manifest(manifest_path)
         @test TV._select_scenarios(loaded, String[]) === loaded
+        @test TV._select_scenarios(loaded, ["", "  "]) === loaded
         first_name = lowercase(String(first(loaded).name))
         @test [String(sc.name) for sc in TV._select_scenarios(loaded, [first_name])] == [String(first(loaded).name)]
+        # A typed request bypasses the CLI parser; the selector normalises
+        # case and whitespace itself.
+        @test [String(sc.name) for sc in TV._select_scenarios(loaded, ["  " * uppercase(first_name) * " "])] == [String(first(loaded).name)]
         @test_throws ArgumentError TV._select_scenarios(loaded, ["no_such_scenario"])
         @test TV._single_point_calibration(true, [1.0], [1.3], :full, :full)
         @test !TV._single_point_calibration(false, [1.0], [1.3], :full, :full)
@@ -2651,6 +2672,105 @@ end
     fields = TV._save_fields_for_study()
     @test length(fields) == 2
     @test fields[1].column_prefix == "pos" && fields[2].column_prefix == "vel"
+end
+
+@testset "manifest state_anchors block" begin
+    scenario = Dict(
+        "name" => "anchor_key_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    state_a = [7.0e6, 0.0, 0.0, 0.0, 7.5e3, 0.0]
+    state_b = [0.0, 7.0e6, 0.0, -7.5e3, 0.0, 0.0]
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+
+        # Absent block: no anchors, nothing scheduled.
+        write_manifest(scenario)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == false
+        @test isempty(cfg.state_anchor_elapsed_s)
+        @test TV._scenario_extra_callbacks(cfg) === ()
+        @test TV._state_anchor_count(cfg) == 0
+
+        # Present block: parsed in order, counted in the summary, one callback.
+        anchored = merge(scenario, Dict("state_anchors" => Dict(
+            "burn_orbit_numbers" => [25, 32],
+            "elapsed_s" => [1000.0, 2000.0],
+            "states_j2000_m" => [state_a, state_b],
+        )))
+        write_manifest(anchored)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == true
+        @test cfg.state_anchor_burn_orbit_numbers == [25, 32]
+        @test cfg.state_anchor_elapsed_s == [1000.0, 2000.0]
+        @test cfg.state_anchor_states_j2000_m[2] == NTuple{6, Float64}(state_b)
+        @test TV._state_anchor_count(cfg) == 2
+        @test length(TV._scenario_extra_callbacks(cfg)) == 1
+        # Without a burn replay there is nothing to keep aligned and the
+        # anchors leave the orbit counter alone; with one, the count is
+        # B - offset + 1.
+        @test all(a -> a.orbit_count === nothing, TV._scenario_state_anchors(cfg))
+        with_burns = merge(anchored, Dict("maneuvers" => Dict(
+            "orbit_numbers" => [25, 32], "delta_v_mps" => [0.1, -0.1], "orbit_number_offset" => 18,
+            "thrust_n" => 4.0, "isp_s" => 220.0,
+        )))
+        write_manifest(with_burns)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.maneuver_orbit_number_offset == 18
+        @test [a.orbit_count for a in TV._scenario_state_anchors(cfg)] == [8, 15]
+
+        # Disabled block keeps the data but schedules nothing.
+        disabled = merge(scenario, Dict("state_anchors" => Dict(
+            "enabled" => false, "elapsed_s" => [1000.0], "states_j2000_m" => [state_a],
+        )))
+        write_manifest(disabled)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == false
+        @test TV._state_anchor_count(cfg) == 0
+        @test TV._scenario_extra_callbacks(cfg) === ()
+
+        # Guards: length mismatch, non-increasing times, short state, non-finite.
+        for bad in (
+            Dict("elapsed_s" => [1000.0, 2000.0], "states_j2000_m" => [state_a]),
+            Dict("elapsed_s" => [2000.0, 1000.0], "states_j2000_m" => [state_a, state_b]),
+            Dict("elapsed_s" => [1000.0], "states_j2000_m" => [state_a[1:3]]),
+            Dict("elapsed_s" => [1000.0], "states_j2000_m" => [state_a], "burn_orbit_numbers" => [1, 2]),
+            Dict("elapsed_s" => [-5.0], "states_j2000_m" => [state_a]),
+        )
+            write_manifest(merge(scenario, Dict("state_anchors" => bad)))
+            @test_throws ArgumentError TV._load_scenarios_from_manifest(manifest_path)
+        end
+    end
 end
 
 @testset "manifest link attitude quaternions" begin

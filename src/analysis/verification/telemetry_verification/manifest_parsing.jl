@@ -51,6 +51,25 @@ end
     return isempty(mode) ? "auto_stiff" : mode
 end
 
+# Per-step solver storage. The harness reads every trajectory sample from the
+# results CSV the saving callback writes and reads the returned solution only
+# for its return code and solver trace, so the per-step storage (the state and
+# the interpolant stages at every accepted step) is never used. It is the
+# dominant allocation of a long replay: with it the anchored Odyssey campaign
+# grows past the hosted runner's memory, without it the run stays small. The
+# automatic stiff sequence is the exception: the engine detects a switch from
+# sol.alg_choice, which is recorded per saved step, so any mode that contains
+# it keeps the storage. A SPACEAGORA_SOLVER_SAVE_* value already set in the
+# environment is passed through unchanged.
+@inline _telemetry_mode_reads_saved_steps(solver_mode::AbstractString)::Bool =
+    occursin("auto_stiff", lowercase(solver_mode))
+
+@inline function _telemetry_solver_save_env(name::String, solver_mode::AbstractString)::String
+    explicit = strip(get(ENV, name, ""))
+    isempty(explicit) || return String(explicit)
+    return _telemetry_mode_reads_saved_steps(solver_mode) ? "true" : "false"
+end
+
 @inline _is_maxiters_error(err)::Bool = occursin("MaxIters", sprint(showerror, err))
 
 @inline function _require_key(tbl, key::String, context::String)
@@ -202,6 +221,39 @@ end
     throw(ArgumentError("Unsupported truth_mask='$raw' in $context; use none|nightside|dayside."))
 end
 
+function _parse_state_anchor_config(tbl, context::String)
+    empty = (enabled=false, burn_orbit_numbers=Int64[], elapsed_s=Float64[], states_j2000_m=NTuple{6, Float64}[])
+    haskey(tbl, "state_anchors") || return empty
+    atbl = _require_table(tbl, "state_anchors", context)
+    enabled = _optional_bool(atbl, "enabled", true)
+    elapsed_s = _optional_float64_vector(atbl, "elapsed_s")
+    burn_orbit_numbers = _optional_int64_vector(atbl, "burn_orbit_numbers")
+    raw_states = get(atbl, "states_j2000_m", Any[])
+    raw_states isa AbstractVector || throw(ArgumentError("state_anchors.states_j2000_m must be an array of six-element arrays in $context"))
+    isempty(elapsed_s) && throw(ArgumentError("state_anchors.elapsed_s must be non-empty in $context"))
+    length(raw_states) == length(elapsed_s) || throw(ArgumentError(
+        "state_anchors.states_j2000_m length ($(length(raw_states))) must match state_anchors.elapsed_s length ($(length(elapsed_s))) in $context"
+    ))
+    if !isempty(burn_orbit_numbers)
+        length(burn_orbit_numbers) == length(elapsed_s) || throw(ArgumentError(
+            "state_anchors.burn_orbit_numbers length ($(length(burn_orbit_numbers))) must match state_anchors.elapsed_s length ($(length(elapsed_s))) in $context"
+        ))
+    end
+    all(t -> isfinite(t) && t > 0.0, elapsed_s) || throw(ArgumentError("state_anchors.elapsed_s entries must be positive and finite in $context"))
+    issorted(elapsed_s; lt=(<)) && allunique(elapsed_s) || throw(ArgumentError("state_anchors.elapsed_s must be strictly increasing in $context"))
+    states = NTuple{6, Float64}[]
+    for (k, row) in enumerate(raw_states)
+        (row isa AbstractVector && length(row) == 6) || throw(ArgumentError(
+            "state_anchors.states_j2000_m[$k] must have six components (x, y, z in m; vx, vy, vz in m/s) in $context"
+        ))
+        vals = Float64[Float64(v) for v in row]
+        all(isfinite, vals) || throw(ArgumentError("state_anchors.states_j2000_m[$k] must be finite in $context"))
+        push!(states, NTuple{6, Float64}(vals))
+    end
+    enabled && println("state_anchors context=$context count=$(length(elapsed_s)) first_elapsed_s=$(first(elapsed_s)) last_elapsed_s=$(last(elapsed_s))")
+    return (enabled=enabled, burn_orbit_numbers=burn_orbit_numbers, elapsed_s=elapsed_s, states_j2000_m=states)
+end
+
 function _parse_maneuver_config(tbl, context::String)
     if !haskey(tbl, "maneuvers")
         return (
@@ -213,7 +265,8 @@ function _parse_maneuver_config(tbl, context::String)
             thrust_n=0.0,
             isp_s=0.0,
             guidance_rate_s=30.0,
-            control_rate_s=10.0
+            control_rate_s=10.0,
+            orbit_number_offset=0
         )
     end
     mtbl = _require_table(tbl, "maneuvers", context)
@@ -279,7 +332,8 @@ function _parse_maneuver_config(tbl, context::String)
         thrust_n=_optional_float(mtbl, "thrust_n", 4.0),
         isp_s=_optional_float(mtbl, "isp_s", 220.0),
         guidance_rate_s=_optional_float(mtbl, "guidance_rate_s", 30.0),
-        control_rate_s=_optional_float(mtbl, "control_rate_s", 10.0)
+        control_rate_s=_optional_float(mtbl, "control_rate_s", 10.0),
+        orbit_number_offset=offset
     )
 end
 
@@ -575,6 +629,7 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
         include_wind = _optional_bool(tbl, "include_wind", false)
         orbit_altitude_mode = _parse_orbit_altitude_mode(_optional_str(tbl, "orbit_altitude_mode", "vacuum"), context)
         maneuver = _parse_maneuver_config(tbl, context)
+        anchors = _parse_state_anchor_config(tbl, context)
         atmosphere_truth = _parse_atmosphere_truth_config(tbl, context)
         calibration = _parse_calibration_config(tbl, context)
 
@@ -627,6 +682,11 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 maneuver_isp_s=maneuver.isp_s,
                 maneuver_guidance_rate_s=maneuver.guidance_rate_s,
                 maneuver_control_rate_s=maneuver.control_rate_s,
+                maneuver_orbit_number_offset=maneuver.orbit_number_offset,
+                state_anchors_enabled=anchors.enabled,
+                state_anchor_burn_orbit_numbers=anchors.burn_orbit_numbers,
+                state_anchor_elapsed_s=anchors.elapsed_s,
+                state_anchor_states_j2000_m=anchors.states_j2000_m,
                 atmosphere_truth=atmosphere_truth,
                 calibration=calibration,
                 EI_km=EI_km

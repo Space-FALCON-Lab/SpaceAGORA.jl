@@ -137,6 +137,12 @@
         else
             @test decision_pair.use_threads == false
         end
+        # Two configured satellites of which one is still active (the other
+        # impacted) are a single satellite for this gate: serial from then on.
+        decision_survivor = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 2; active_sats=1)
+        @test decision_survivor.use_threads == false
+        @test decision_survivor.allotment == 1
+        @test decision_survivor.policy_applied == false
     end
 
     args_eff_multi = build_config(
@@ -2784,6 +2790,11 @@ end
     # the whole trajectory, not the cached endpoints-only integrator.
     sol_full = run_simulation(args_cache; return_solution=true, solver_cache=cache)
     @test length(sol_full.t) > 2
+    # One saved state per accepted step plus the start: the per-step
+    # housekeeping callbacks (planet frame, density and thermal samples,
+    # quaternion projection) add no before/after saves of their own, and no
+    # continuous event fires in the first 600 s of this orbit.
+    @test length(sol_full.t) == sol_full.stats.naccept + 1
     @test cache.integrator !== integ_no_output
     @test cache.save_on == true
 

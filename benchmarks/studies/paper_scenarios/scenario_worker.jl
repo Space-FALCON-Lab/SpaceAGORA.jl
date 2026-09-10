@@ -49,6 +49,21 @@ const PS_ALT_KM = parse(Float64, get(ENV, "PS_ALT_KM", PS_DENSITY == "none" ? "5
 const _NEEDS_GRAM = startswith(PS_DENSITY, "gram")
 _NEEDS_GRAM && ensure_gramsuite_loaded!()
 
+# The vacuum scenarios need no ephemeris beyond Earth's own constants, but the
+# SPICE-backed `Earth(topo, spice_path)` constructor demands its kernel bundle
+# unconditionally. A checkout without the GRAM/SPICE submodule -- the documented
+# baseline no-GRAM tier -- therefore could not run S1 at all. Fall back to the
+# built-in `Earth()` when the bundle is absent, and honour `PS_NO_SPICE=1` to
+# force that path on a machine that does have kernels (so the two can be
+# compared). A GRAM density mode still requires the real bundle.
+const PS_NO_SPICE = get(ENV, "PS_NO_SPICE", "0") == "1"
+const PS_SPICE_AVAILABLE = !PS_NO_SPICE && isfile(joinpath(SPICE_PATH, "pck", "pck00011.tpc"))
+if _NEEDS_GRAM && !PS_SPICE_AVAILABLE
+    error("PS_DENSITY=$(PS_DENSITY) needs the SPICE kernels under $(SPICE_PATH); none found.")
+end
+
+ps_earth() = PS_SPICE_AVAILABLE ? Earth("", SPICE_PATH) : Earth()
+
 function _ps_density_model()
     PS_DENSITY == "none" && return NoAtmosphereModel()
     PS_DENSITY == "gram_surrogate" && return SimulationModel.GRAMAtmosphereModelSurrogate(planet_name="earth")
@@ -70,7 +85,7 @@ end
 # single satellite of the constellation (ensemble-member mode), keeping the exact
 # same orbit geometry formula so member and monolithic runs are comparable.
 function ps_build_config(; n_sats::Int, seed::Int=0, only_member::Int=0)
-    planet = Earth("", SPICE_PATH)
+    planet = ps_earth()
     gravity = _ps_gravity_effector(planet)
     effectors = PS_DENSITY == "none" ? (gravity,) : (gravity, AerodynamicCoefficientfM())
     alt_m = PS_ALT_KM * 1e3
@@ -111,7 +126,8 @@ function ps_build_config(; n_sats::Int, seed::Int=0, only_member::Int=0)
             density_model=_ps_density_model(),
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
             topography=false,
-            wind=false
+            wind=false,
+            ephemerides_model=PS_SPICE_AVAILABLE ? SpiceEphemeridesModel() : SimpleEphemeridesModel()
         ),
         dynamics_model=DynamicsModel(spacecraft, effectors),
         guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
@@ -136,7 +152,7 @@ function ps_constellation_workload()
     else
         () -> SpaceAGORA.with_parallel_profile(solve, PS_PROFILE)
     end
-    return run_once, "constellation n_sats=$(PS_N_SATS) gravity=$(PS_GRAVITY) density=$(PS_DENSITY) profile=$(PS_PROFILE)"
+    return run_once, "constellation n_sats=$(PS_N_SATS) gravity=$(PS_GRAVITY) density=$(PS_DENSITY) profile=$(PS_PROFILE) spice=$(PS_SPICE_AVAILABLE)"
 end
 
 # Expression eval'd on each Distributed pool worker to define Main._ps_mc_sample.
@@ -148,7 +164,7 @@ function _ps_mc_sample_defn_expr()::Expr
     gravity = PS_GRAVITY
     return quote
         function _ps_mc_sample(seed::Int)::Bool
-            planet = Earth("", $(SPICE_PATH))
+            planet = $(PS_SPICE_AVAILABLE) ? Earth("", $(SPICE_PATH)) : Earth()
             gravity_eff = if $(gravity) == "invsq"
                 InverseSquaredGravityModel()
             else
@@ -207,7 +223,8 @@ function _ps_mc_sample_defn_expr()::Expr
                     density_model=density_model,
                     thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
                     topography=false,
-                    wind=false
+                    wind=false,
+                    ephemerides_model=$(PS_SPICE_AVAILABLE) ? SpiceEphemeridesModel() : SimpleEphemeridesModel()
                 ),
                 dynamics_model=DynamicsModel(spacecraft, effectors),
                 guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),

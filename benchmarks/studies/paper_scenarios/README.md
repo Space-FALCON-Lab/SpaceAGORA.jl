@@ -78,6 +78,7 @@ rsync -az <ssh-alias>:<remote-base>/releases/<job-id>/benchmarks/studies/paper_s
 | `PS_PROC_WORKERS` | S2 process-mode worker count | `min(8, PS_THREADS)` |
 | `PS_TIMEOUT_S` | Per-point kill deadline | 3600 s |
 | `PS_GRAVITY` / `PS_DENSITY` | S1-only: force-model override (`invsq\|l20\|l50` / `none\|gram_standard\|gram_lookahead\|gram_surrogate`), isolates per-satellite cost as a variable | `l20` / `none` |
+| `PS_NO_SPICE` | Build the workload's Earth from the built-in constants and `SimpleEphemeridesModel` instead of the SPICE-backed constructor. Set automatically when the SPICE bundle is absent, so a baseline no-GRAM checkout runs S1 unchanged; set it explicitly on a machine that does have kernels to reproduce that path. Measured within 2% of the SPICE path at N=256 (serial 1.869 vs 1.903 s, parallel 0.806 vs 0.791 s), so the two are comparable. A `PS_DENSITY=gram*` mode still requires the real bundle and errors without it | auto |
 | `PS_RESULTS_SUFFIX` | Appended to `results/<hostname>` — use for exploratory runs (e.g. a thread-count sweep, or a one-off thread-budget override) so they land in their own pseudo-host directory instead of overwriting the canonical per-host baseline CSV | (empty) |
 
 Mission lengths were chosen so each point is long enough that per-step work

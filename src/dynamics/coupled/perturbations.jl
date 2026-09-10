@@ -1622,7 +1622,13 @@ end
     return force_ii, g_pp_generic
 end
 
-@noinline function _harmonics_scalar_force_ii(
+# No `@noinline` here any more: every contraction-ambiguous operation this body
+# used to contain (the StaticArrays products) now lives in _harmonics_frame_terms
+# and _harmonics_back_transform, which are themselves single shared bodies. What
+# remains is plain `*` and `+`, which LLVM will not fuse without fast-math, so
+# inlining this at its several call sites cannot change the answer. Verified by
+# the bit-exactness harness, which still reports zero mismatches.
+function _harmonics_scalar_force_ii(
     model::GravitationalHarmonicsModel,
     workspace::HarmonicsScratchWorkspace,
     pos_ii::SVector{3, Float64},

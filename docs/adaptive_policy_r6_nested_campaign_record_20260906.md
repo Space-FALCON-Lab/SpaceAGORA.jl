@@ -794,6 +794,126 @@ either case on that machine is a cache hit. Three sweeps that could not
 separate the arms were the price of that bucket on a cold store; K is what
 makes them add up instead of resetting.
 
+### 4.6 The determinism change (PR #111) and the cost of making it free
+
+PR #111 makes the flat constellation route reproduce the serial route bit for
+bit. It does that by giving every producer its own `(effector, satellite)` slot
+and reducing them in fixed effector order, and by routing every effector through
+one compiled kernel instead of two hand-written ones. The reason it matters is
+measured elsewhere in this repository, not assumed: a ~1e-16 rounding difference
+between a serial and a threaded grouping of the same sums amplified to
+`pos_rel_max = 1.02e-2` over a 1200 s drag propagation
+(`parallelization_measurement_and_allocation_findings.md`). With route selection
+driven by a wall-clock sweep, that is a ~1% position difference decided by a
+timer.
+
+**As written, it cost about 4x on high-degree harmonics, on every route
+including serial.** `gravity_4096sat_l50_vacuum_1hr` at (12,1): serial
+8.159 -> 38.172 s, `inner_only` 8.046 -> 40.057, `outer_inner_static`
+7.990 -> 38.137, R6 8.147 -> 37.837. Serial is the tell. The deleted `@turbo`
+batched kernel was called even at `n_workers <= 1`, so it was never a parallel
+optimisation: it was a vectorised batch evaluation that every multi-satellite
+path used, loading each `(degree, order)` coefficient once and reusing it across
+the batch.
+
+`@turbo` was doing two separable things — vectorising the batch loop, and
+licensing reassociation and FMA contraction. Only the second causes the
+nondeterminism. The kernel is therefore restored without `@turbo`, `@fastmath`
+or `@simd`: its nesting is degree, then order, then batch, so for any one
+satellite the `sum1..sum4` accumulations run in exactly the scalar kernel's
+sequence, and LLVM may still vectorise the batch loops because their iterations
+are independent and proving that needs no fast-math. It writes per-effector
+slots, so the fixed-order reduction is untouched.
+
+Bit-identity needed two further fixes, neither about batching. `L_PI * pos_ii`
+and `mass * L_PI' * g_pp` are StaticArrays products, StaticArrays uses `muladd`,
+and LLVM contracts `muladd` to an FMA or not depending on the surrounding
+context; computed at two call sites they differ in the last bit. Both are now
+single `@noinline` bodies shared by the scalar and batched kernels
+(`_harmonics_frame_terms`, `_harmonics_back_transform`). Separately, the scalar
+kernel grouped the back-transform `(mass * L_PI') * g_pp` and the batched one
+`mass * (L_PI' * g_pp)`. How little the first took to matter: a 1-ulp difference
+in `u` put `A[2,1]` at 0.92297461883779841 instead of ...863, and that one entry
+propagated into 30 mismatched entries of the Legendre matrix. It appeared in 3
+of 14 satellites and was identical at every batch size, which is what ruled out
+batching as the cause.
+
+Verified bit-for-bit against the scalar kernel at (L,M) of (4,4), (20,20),
+(50,50), (50,0) and (6,6) over 1, 2, 3 and 5 worker slices: 1488 values, zero
+mismatches, worst relative difference 0.0. End to end,
+`test/probes/flat_route_parity_probes.jl` passes 7/7.
+
+**Cost with the kernel restored.** Light set, space-falcon-1, 12 cores, both
+passes seeded from the same 79-row store and run back to back on an idle
+machine; row counts match the baseline in every phase. Ratios are this branch
+over the pre-PR-111 branch head, medians of the repeats, so values under about
+1.05 are not resolved.
+
+| phase | case (W,T,n) | R6 base | R6 now | R6 ratio | best static base | best static now | static ratio |
+|---|---|---|---|---|---|---|---|
+| L8 | `montecarlo_heavy_aerobraking` (4,1,16) | 3.730 | 3.652 | **0.98x** | 3.586 | 3.665 | 1.02x |
+| L8 | `montecarlo_heavy_aerobraking` (12,1,16) | 1.682 | 1.746 | **1.04x** | 1.746 | 1.817 | 1.04x |
+| L9 | `gravity_4096sat_l50_vacuum_1hr` (12,1,1) | 8.147 | 9.461 | **1.16x** | 7.990 | 9.232 | 1.16x |
+| L9 | `gravity_4096sat_l50_vacuum_1hr` (12,12,1) | 1.910 | 2.212 | **1.16x** | 1.837 | 2.200 | 1.20x |
+| L10 | `atmo256_exponential_10min` (12,12,1) | 0.869 | 1.004 | **1.15x** | 1.265 | 1.505 | 1.19x |
+| L10 | `atmo256_gram_surrogate_10min` (12,12,1) | 3.580 | 4.190 | **1.17x** | 2.185 | 3.199 | 1.46x |
+| L11 | `stack256_e4_nbody` (12,12,1) | 5.651 | 5.289 | **0.94x** | 9.240 | 7.068 | 0.76x |
+| L11 | `stack32_e6_actuated` (12,12,1) | 49.538 | 49.913 | **1.01x** | 47.279 | 47.923 | 1.01x |
+| L12 | `independent_1sat_1hr` (12,1,64) | 0.254 | 0.258 | **1.02x** | 0.264 | 0.266 | 1.01x |
+| L12 | `independent_1sat_1hr` (12,12,64) | 0.429 | 0.428 | **1.00x** | 0.415 | 0.399 | 0.96x |
+| L12 | `interact_64sat_1hr` (12,1,1) | 4.705 | 4.462 | **0.95x** | 4.751 | 4.488 | 0.94x |
+| L12 | `interact_64sat_1hr` (12,12,1) | 1.039 | 1.037 | **1.00x** | 5.301 | 3.179 | 0.60x |
+| L13 | `montecarlo_heavy_aerobraking` (1,12,16) | 2.701 | 2.670 | **0.99x** | 2.653 | 2.752 | 1.04x |
+| L13 | `montecarlo_heavy_aerobraking` (3,4,16) | 2.959 | 3.201 | **1.08x** | 4.171 | 4.514 | 1.08x |
+| L13 | `montecarlo_heavy_aerobraking` (12,1,16) | 1.717 | 1.724 | **1.00x** | 1.748 | 1.826 | 1.04x |
+| L14 | `cadence_1024sat_10s` (12,12,1) | 4.522 | 4.742 | **1.05x** | 4.541 | 4.735 | 1.04x |
+| L14 | `heavy_1024sat_l50_6hr` (12,12,1) | 2.800 | 4.079 | **1.46x** | 2.591 | 3.578 | 1.38x |
+| L15 | `mcgrid_16sat_8mc` (1,12,8) | 1.593 | 1.715 | **1.08x** | 1.621 | 1.707 | 1.05x |
+| L15 | `mcgrid_16sat_8mc` (2,6,8) | 2.828 | 2.845 | **1.01x** | 2.912 | 3.020 | 1.04x |
+| L15 | `mcgrid_16sat_8mc` (12,1,8) | 1.313 | 1.427 | **1.09x** | 1.404 | 1.470 | 1.05x |
+| L15 | `mcgrid_32sat_32mc` (1,12,32) | 10.147 | 10.648 | **1.05x** | 10.689 | 11.173 | 1.05x |
+| L15 | `mcgrid_32sat_32mc` (2,6,32) | 13.507 | 13.768 | **1.02x** | 17.620 | 17.317 | 0.98x |
+| L15 | `mcgrid_32sat_32mc` (12,1,32) | 8.562 | 8.457 | **0.99x** | 8.842 | 8.874 | 1.00x |
+| L15 | `mcgrid_8sat_16mc` (1,12,16) | 1.454 | 1.509 | **1.04x** | 1.651 | 1.670 | 1.01x |
+| L15 | `mcgrid_8sat_16mc` (2,6,16) | 1.934 | 1.978 | **1.02x** | 2.043 | 2.070 | 1.01x |
+| L15 | `mcgrid_8sat_16mc` (12,1,16) | 1.206 | 1.256 | **1.04x** | 1.326 | 1.344 | 1.01x |
+
+Median over the 26 launch points: R6 **1.031x**, best static route **1.037x**.
+So the determinism is worth about 3% overall, not 4x. It is not uniform:
+
+- **Harmonics-dominated shapes keep a residual.** `gravity_4096sat_l50` 1.16x,
+  `heavy_1024sat_l50_6hr` ~1.4x. The residual is larger at 1024 satellites than
+  at 4096, consistent with shorter inner loops vectorising less well: what is
+  left is the gap between LLVM's auto-vectoriser and LoopVectorization, not
+  anything about determinism. Recovering it would need explicit SIMD with a
+  fixed reduction tree. Note this shape is noisy — the same configuration read
+  1.52x and 1.37x on two runs — so ~1.4x is the honest resolution.
+- **`atmo256_gram_surrogate` static routes pay 1.46x.** Serial is 1.02x there,
+  so this is the flat-route restructuring (slots, shared bodies) rather than the
+  harmonics kernel, and it lands on the pinned parallel routes only.
+- **Two phases are faster than before.** `stack256_e4_nbody` best static 0.76x
+  and `interact_64sat_1hr` at (12,12) 0.60x, from replacing the separately
+  written n-body formula with one shared kernel.
+
+**For §4.5's framing:** the regret ratios survive (median R6/best-static 0.910
+-> 0.935), but on the shapes where the pinned routes got faster, R6's margin
+narrows — 0.196 -> 0.336 on `interact_64sat_1hr` (12,12), 0.612 -> 0.741 on
+`stack256_e4_nbody`. R6 still wins those points outright. Part of the headline
+margin in §4.5 was measured against pinned routes this change improves, and that
+should be stated rather than left implicit.
+
+**A null result worth recording.** With the two products moved into shared
+bodies, `_harmonics_scalar_force_ii` no longer holds contraction-ambiguous
+arithmetic — its body compiles to zero FMA instructions — so its `@noinline` is
+vestigial and was removed. Verified neutral three ways: FMA count zero,
+batched-vs-scalar still bit-identical, and the scalar kernel's own output
+identical across 160 rows dumped from trees with and without the annotation.
+The expectation was that inlining would recover part of the residual by removing
+two non-inlined calls per satellite. It recovered nothing measurable on L8, L9,
+L11 or L14 — at 4096 satellites that is ~8192 calls per RHS evaluation and it
+still does not register against the kernel's own work. The removal is a
+simplification, not an optimisation, and the residual is vectorisation quality.
+
 ## 5. Changes to SpaceAGORA itself (`src/`)
 
 | file | change |

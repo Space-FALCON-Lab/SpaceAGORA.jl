@@ -93,4 +93,54 @@
         setup_text = sprint(io -> @test SpaceAGORA.run_cli(["assets", "setup-open"]; io=io, errio=io) == 0)
         @test occursin("No downloads are required for baseline no-GRAM mode", setup_text)
     end
+
+    @testset "CLI children run under the repository project" begin
+        # The child launched by `run` must find SpaceAGORA through the project the
+        # CLI hands it and nothing else. The probe loads the package directly (no
+        # examples/common.jl re-activation), and the child's load path is reduced
+        # to its own project so a globally installed SpaceAGORA cannot satisfy the
+        # import; both would have hidden the original defect (a child launched with
+        # a `.AGORA` project directory that does not exist).
+        probe_dir = mktempdir()
+        probe = joinpath(probe_dir, "cli_project_probe.jl")
+        write(probe, """
+            using SpaceAGORA
+            println("PROBE_PROJECT=", Base.active_project())
+            println("PROBE_PACKAGE=", pathof(SpaceAGORA))
+            """)
+        expected_project = joinpath(REPO_ROOT, "Project.toml")
+        expected_package = joinpath(REPO_ROOT, "src", "SpaceAGORA.jl")
+
+        log_path = joinpath(probe_dir, "child.log")
+        code = withenv("JULIA_LOAD_PATH" => "@", "JULIA_PROJECT" => nothing) do
+            open(log_path, "w") do log
+                SpaceAGORA.run_cli(["run", "--example=$(probe)"]; io=log, errio=log)
+            end
+        end
+        child_output = read(log_path, String)
+        @test code == 0
+        @test occursin("PROBE_PROJECT=$(expected_project)", child_output)
+        @test occursin("PROBE_PACKAGE=$(expected_package)", child_output)
+
+        # The printed launcher must agree with what actually launches: the same
+        # project on the `project=` line and inside the `cmd=` line, for every
+        # subcommand that spawns a child.
+        for args in (
+            ["run", "--example=$(probe)", "--print-only"],
+            ["telemetry", "quick", "--output-dir=$(mktempdir())", "--print-only"],
+            ["benchmark", "runtime-analysis", "smoke", "--output-dir=$(mktempdir())", "--print-only"],
+            ["benchmark", "smart-parallel-ladder", "smoke", "--output-dir=$(mktempdir())", "--print-only"],
+        )
+            printed = sprint(io -> @test SpaceAGORA.run_cli(args; io=io, errio=io) == 0)
+            project_line = match(r"^project=(.+)$"m, printed)
+            cmd_project = match(r"--project=(\S+)", printed)
+            @test project_line !== nothing && cmd_project !== nothing
+            if project_line !== nothing && cmd_project !== nothing
+                same_dir(a, b) = rstrip(normpath(a), '/') == rstrip(normpath(b), '/')
+                @test same_dir(project_line.captures[1], REPO_ROOT)
+                @test same_dir(cmd_project.captures[1], REPO_ROOT)
+            end
+            @test !occursin(".AGORA", printed)
+        end
+    end
 end

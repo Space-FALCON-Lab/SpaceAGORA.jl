@@ -52,6 +52,12 @@ Supported options:
 Use `--smoke` for long examples that support
 `SPACEAGORA_EXAMPLE_SMOKE=1`.
 
+Every child process the CLI starts (`run`, `telemetry`, `benchmark`) runs
+under the repository project, the same environment as `julia --project=.`,
+so the script can load `SpaceAGORA` whether or not it activates the project
+itself. `--print-only` prints that project on its `project=` line and the
+full command on its `cmd=` line without running anything.
+
 ### Run telemetry verification
 
 ```text

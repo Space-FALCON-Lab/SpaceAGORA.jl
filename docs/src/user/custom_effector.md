@@ -266,7 +266,7 @@ its own: only the built-in aerodynamic model writes per-force diagnostics.
   (rotating) frame. That is the air-relative velocity only when the wind is
   zero; a drag model must subtract the wind, `env.atmosphere.wind_pp`, after
   bringing it into the same frame (the engine's thermal callback shows the
-  conversion from the wind's north, east and up components). With
+  conversion from the wind's east, north and up components, in that order). With
   `NoAtmosphereModel()` the density is zero; `ExponentialAtmosphereModel(planet)`
   gives a simple open-data profile with zero wind.
 - **Add a torque.** Return a non-zero second element and run with
@@ -293,7 +293,7 @@ and the gravity-backbone hooks.
 | `SpaceAGORA.AbstractForceTorqueModel` | Supertype of every dynamic effector. |
 | `SpaceAGORA.wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)` | The hook. Returns `(force_ii::SVector{3}, torque_body::SVector{3})`, SI units, force inertial, torque bus-fixed. Must be pure. |
 | `SpaceAGORA.StateSample` | Fields `pos_ii`, `vel_ii` (m, m/s, inertial), `mass_kg`, `q_ib` (inertial-to-body quaternion, scalar-last `[x, y, z, w]`, or `nothing`), `ω_body` (rad/s, or `nothing`), `spacecraft` (the typed spacecraft model, for geometry and inertia). |
-| `SpaceAGORA.EnvironmentSample` | Fields `planet` (always), `planet_frame` (`alt_m`, `lat_rad`, `lon_rad`, `pos_pp`, `vel_pp`, `l_pi`: position and velocity in the planet-fixed frame and the inertial-to-planet-fixed rotation matrix), `atmosphere` (`rho_kg_m3`, `temperature_k`, `wind_pp` as north, east, up components), `solar` (`sun_pos_ii`), `third_bodies` (`names`, `positions_ii`). Each optional field is `nothing` unless requested. |
+| `SpaceAGORA.EnvironmentSample` | Fields `planet` (always), `planet_frame` (`alt_m`, `lat_rad`, `lon_rad`, `pos_pp`, `vel_pp`, `l_pi`: position and velocity in the planet-fixed frame and the inertial-to-planet-fixed rotation matrix), `atmosphere` (`rho_kg_m3`, `temperature_k`, `wind_pp` as east, north, up components, in that order), `solar` (`sun_pos_ii`), `third_bodies` (`names`, `positions_ii`). Each optional field is `nothing` unless requested. |
 | `SpaceAGORA.environment_requirements(model)` | Returns `EffectorEnvironmentRequirements(planet_frame=, atmosphere=, solar=, third_body_names=)`; the default requests nothing. |
 | `SpaceAGORA.calcForceTorque(model, x, p, i)` | The older hook, kept for existing models; `x` is the spacecraft's raw state block, `p` the engine parameters, `i` the spacecraft index. Same return convention. Used when no `wrench` method matches; the built-in gravitational-harmonics model is routed to it deliberately for its buffer reuse. |
 | `SpaceAGORA.solver_partition(model)` | `:explicit` (default) or `:implicit`; only matters under the `split_imex` solver mode. |

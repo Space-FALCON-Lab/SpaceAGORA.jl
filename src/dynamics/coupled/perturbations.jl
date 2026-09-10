@@ -537,7 +537,7 @@ function _harmonics_flat_batch_kernel!(
         D0      = C0 * sqrt_2
         VR01_r1 = model.VR01[row, 1]
         VR11_r1 = model.VR11[row, 1]
-        @inbounds for b = 1:B
+        @inbounds @simd ivdep for b = 1:B
             ws.sum3[b] += VR01_r1 * A[b, row, 2] * D0
             ws.sum4[b] += VR11_r1 * A[b, row + 1, 2] * D0
         end
@@ -551,7 +551,7 @@ function _harmonics_flat_batch_kernel!(
             VR01v  = model.VR01[row, j]
             VR11v  = model.VR11[row, j]
             ordf   = Float64(ord)
-            @inbounds for b = 1:B
+            @inbounds @simd ivdep for b = 1:B
                 R_prev = R[b, j - 1]
                 I_prev = I[b, j - 1]
                 Rj     = R[b, j]
@@ -567,7 +567,7 @@ function _harmonics_flat_batch_kernel!(
             end
         end
 
-        @inbounds for b = 1:B
+        @inbounds @simd ivdep for b = 1:B
             ws.a1[b] += ws.rr[b] * ws.sum1[b]
             ws.a2[b] += ws.rr[b] * ws.sum2[b]
             ws.a3[b] += ws.rr[b] * ws.sum3[b]

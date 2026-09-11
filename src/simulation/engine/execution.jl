@@ -748,10 +748,20 @@ function run_simulation(
         catch
             nothing
         end
-        # `solution` stays in the tuple at its old position so callers that read
-        # result.solution keep working; it is `nothing` in the metadata-only
-        # case, which is the point of that case. `retcode` is new, and is what a
-        # caller that only wanted to know the solve succeeded should read.
+        # `solution` stays first so callers that read result.solution keep
+        # working; it is `nothing` in the metadata-only case, which is the point
+        # of that case. `retcode` is new, and is what a caller that wanted only
+        # the outcome should read instead of reaching through the solution.
+        #
+        # Two things it does not do. It does not report failure: an unsuccessful
+        # retcode throws above, before this tuple is built, so the values
+        # reachable here are the successful ones and a callback termination. And
+        # it is `nothing` when no solve ran at all, which happens when a resumed
+        # checkpoint is already at mission end — a caller comparing it against
+        # "Success" reads that as failure, so test the mission, not the field,
+        # if resuming is in play. Note also that appending `retcode` here shifts
+        # the position of every later field, which matters only to a caller
+        # destructuring the tuple positionally; none in this repository does.
         return (
             solution=return_solution ? last_sol : nothing,
             retcode=last_sol === nothing ? nothing : string(last_sol.retcode),

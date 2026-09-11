@@ -36,7 +36,12 @@ args = SimulationConfiguration(
     solver_config          = base.solver_config,
 )
 
-SpaceAGORA.run_simulation(args; isolate_state=false)      # warm
+# Two warm-ups, not one. The results-writing path JITs across more than one
+# call, and this probe used to get a second warm solve by accident, from the
+# unconditional `main()` that including scenario_worker.jl once ran.
+for _ in 1:2
+    SpaceAGORA.run_simulation(args; isolate_state=false)
+end
 ts=Float64[]; al=Float64[]
 for _ in 1:2
     GC.gc(); GC.gc()

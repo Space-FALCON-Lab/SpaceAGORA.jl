@@ -47,7 +47,6 @@ const PS_REPEATS = parse(Int, get(ENV, "PS_REPEATS", "3"))
 const PS_ALT_KM = parse(Float64, get(ENV, "PS_ALT_KM", PS_DENSITY == "none" ? "550.0" : "150.0"))
 
 const _NEEDS_GRAM = startswith(PS_DENSITY, "gram")
-_NEEDS_GRAM && ensure_gramsuite_loaded!()
 
 # The vacuum scenarios need no ephemeris beyond Earth's own constants, but the
 # SPICE-backed `Earth(topo, spice_path)` constructor demands its kernel bundle
@@ -59,8 +58,13 @@ _NEEDS_GRAM && ensure_gramsuite_loaded!()
 const PS_NO_SPICE = get(ENV, "PS_NO_SPICE", "0") == "1"
 const PS_SPICE_AVAILABLE = !PS_NO_SPICE && isfile(joinpath(SPICE_PATH, "pck", "pck00011.tpc"))
 if _NEEDS_GRAM && !PS_SPICE_AVAILABLE
-    error("PS_DENSITY=$(PS_DENSITY) needs the SPICE kernels under $(SPICE_PATH); none found.")
+    error(PS_NO_SPICE ?
+        "PS_DENSITY=$(PS_DENSITY) needs SPICE, but PS_NO_SPICE=1 was set." :
+        "PS_DENSITY=$(PS_DENSITY) needs the SPICE kernels under $(SPICE_PATH); none found.")
 end
+# After the guard, so a no-SPICE run reports the real cause instead of failing
+# inside the GRAMSuite import.
+_NEEDS_GRAM && ensure_gramsuite_loaded!()
 
 ps_earth() = PS_SPICE_AVAILABLE ? Earth("", SPICE_PATH) : Earth()
 
@@ -277,7 +281,7 @@ function ps_mc_workload()
             samples = SpaceAGORA.SimulationCampaigns._run_monte_carlo_process(f, seeds, spec, active)
             count(s -> s.success, samples) == n_samples
         end
-        return run_once, describe
+        return run_once, describe * " spice=$(PS_SPICE_AVAILABLE)"
     end
 
     # serial/threads backends: sample function lives in this process.
@@ -332,7 +336,8 @@ function main()
     med = median(times)
     println("PS_RESULT ok=$(ok) median_s=$(round(med; digits=4)) min_s=$(round(minimum(times); digits=4)) " *
             "max_s=$(round(maximum(times); digits=4)) times_s=$(join(round.(times; digits=4), '|')) " *
-            "maxrss_mb=$(round(maxrss_mb; digits=1)) workers_rss_mb=$(round(workers_rss_mb; digits=1))")
+            "maxrss_mb=$(round(maxrss_mb; digits=1)) workers_rss_mb=$(round(workers_rss_mb; digits=1)) " *
+            "spice=$(PS_SPICE_AVAILABLE)")
     flush(stdout)
 
     # Shut the pool down explicitly: orphaned pool workers holding this process's
@@ -341,4 +346,9 @@ function main()
     return nothing
 end
 
-main()
+# Only when run as a program. The probes under `probes/` include this file for
+# `ps_build_config`, and an unconditional `main()` ran a whole extra solve at
+# their N as an import side effect -- minutes, at the 32768 they default to.
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

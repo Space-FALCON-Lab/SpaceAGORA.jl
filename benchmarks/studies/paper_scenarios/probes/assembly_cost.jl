@@ -28,11 +28,22 @@ function bench(num_sats, n_rows)
     for (label, data, field) in (("vector(3)", vec_data, F(:position,true,"pos")),
                                  ("scalar",    sca_data, F(:altitude,true,"alt")))
         for (impl, fn) in (("generic", generic!), ("direct", fast!))
-            fn(DataFrame(), field, data, num_sats)   # warm
-            GC.gc(); GC.gc()
-            s = @timed fn(DataFrame(), field, data, num_sats)
+            # `fast!` returns the Bool from `_direct_assembly_columns!`. If it ever
+            # declined, this would be timing an empty no-op and still printing a
+            # plausible line, so the probe refuses to report that.
+            took = fn(DataFrame(), field, data, num_sats)   # warm
+            impl == "direct" && took !== true &&
+                error("the fast path declined sats=$num_sats rows=$n_rows field=$label; " *
+                      "these numbers would measure nothing")
+            times = Float64[]; bytes = Float64[]
+            for _ in 1:5
+                GC.gc(); GC.gc()
+                s = @timed fn(DataFrame(), field, data, num_sats)
+                push!(times, s.time); push!(bytes, s.bytes / 2^20)
+            end
             println("ASM sats=$num_sats rows=$n_rows field=$label impl=$impl " *
-                    "s=$(round(s.time,digits=4)) alloc_mib=$(round(s.bytes/2^20,digits=2))")
+                    "s=$(round(median(times),digits=4)) alloc_mib=$(round(median(bytes),digits=2)) " *
+                    "reps=5")
         end
     end
 end

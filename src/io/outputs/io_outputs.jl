@@ -101,6 +101,17 @@ function _direct_assembly_columns!(results_df::DataFrame, field, saved_data::Vec
     return _fill_per_satellite_columns!(results_df, field.column_prefix, values, num_sats)
 end
 
+# Both concrete methods below require the same two things of their input, and
+# both learned it the hard way. `T` must be concrete: `T <: Real` admits `Real`
+# and `Union{Int, Float64}`, and a `Vector{T}` built from those carries a
+# different element type than the generic path's narrowing comprehension
+# produces -- which for a union is a different Arrow schema, not just a
+# different `eltype`. And every row must be indexed `1:num_sats`: `length` alone
+# proves the count, not the index range, so a row indexed `0:num_sats-1` passed
+# the old guard and the `@inbounds` write then read outside it.
+@inline _rows_are_one_based(values, num_sats::Int)::Bool =
+    all(row -> axes(row) == (Base.OneTo(num_sats),), values)
+
 # Anything the two concrete methods below do not claim stays with the generic path.
 _fill_per_satellite_columns!(::DataFrame, ::String, values, ::Int)::Bool = false
 
@@ -108,8 +119,9 @@ _fill_per_satellite_columns!(::DataFrame, ::String, values, ::Int)::Bool = false
 function _fill_per_satellite_columns!(
     results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
 )::Bool where {T <: Real, V <: AbstractVector{T}}
+    isconcretetype(T) || return false
     n_rows = length(values)
-    all(row -> length(row) == num_sats, values) || return false
+    _rows_are_one_based(values, num_sats) || return false
     for sat_idx in 1:num_sats
         column = Vector{T}(undef, n_rows)
         @inbounds for row in 1:n_rows
@@ -123,9 +135,9 @@ end
 # `n_comp` columns per satellite, named `_1`.._n` to match the generic path's
 # `eachindex` walk.
 #
-# The column set has to be a property of the field, so every entry must carry
-# the same number of components and be indexed from 1. That is checked here
-# rather than inferred from the element type. `isbitstype(S)` was used for it
+# The column set has to be a property of the field, so every entry must be
+# indexed `1:n_comp` for one fixed `n_comp`. That is checked here rather than
+# inferred from the element type. `isbitstype(S)` was used for it
 # once and is not proof of anything of the kind: it says the element type has a
 # fixed bit layout, not a fixed length, and `UnitRange{Int}` -- two `Int`s, so a
 # bitstype -- carries its length as runtime data. Both ways of getting it wrong
@@ -137,12 +149,13 @@ end
 function _fill_per_satellite_columns!(
     results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
 )::Bool where {T <: Real, S <: AbstractVector{T}, V <: AbstractVector{S}}
+    isconcretetype(T) || return false
     n_rows = length(values)
-    all(row -> length(row) == num_sats, values) || return false
+    _rows_are_one_based(values, num_sats) || return false
     n_comp = length(first(first(values)))
     n_comp > 0 || return false
     for row in values, entry in row
-        (length(entry) == n_comp && firstindex(entry) == 1) || return false
+        axes(entry) == (Base.OneTo(n_comp),) || return false
     end
     for sat_idx in 1:num_sats
         columns = [Vector{T}(undef, n_rows) for _ in 1:n_comp]

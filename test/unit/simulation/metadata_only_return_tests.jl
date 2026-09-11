@@ -73,7 +73,10 @@ end
     @test bundled.solution !== nothing
     @test string(bundled.solution.retcode) == "Success"
     # `retcode` is new; it must say the same thing the solution did, so callers
-    # can move off `result.solution.retcode` without changing meaning.
+    # can move off `result.solution.retcode` without changing meaning. Note it
+    # cannot report a *failure*: `run_simulation` throws on any unsuccessful
+    # retcode before the tuple is built, so the only values reachable here are
+    # the successful ones and a callback termination.
     @test bundled.retcode == string(bundled.solution.retcode)
     @test metadata.retcode == bundled.retcode
     @test metadata.solver_mode == bundled.solver_mode
@@ -86,4 +89,30 @@ end
     solution = run_simulation(args; isolate_state=false, return_solution=true)
     @test solution !== nothing
     @test string(solution.retcode) == "Success"
+end
+
+# Everything above checks the return *shape*. None of it can see whether storage
+# was actually skipped, which is the entire point of the change: re-adding
+# `return_solver_metadata` to `needs_full_solution` — undoing it completely —
+# left every assertion above passing. `solve_meta` does not record the resolved
+# save options, so allocation is the only observable.
+@testset "metadata-only actually skips per-step storage" begin
+    args = _metadata_test_config(mission_s=20_000.0)
+    meta_run()    = run_simulation(args; isolate_state=false, return_solver_metadata=true)
+    bundled_run() = run_simulation(args; isolate_state=false,
+                                   return_solution=true, return_solver_metadata=true)
+    meta_run(); bundled_run()   # compile both before measuring
+
+    bundled = bundled_run()
+    n_steps = length(bundled.solution.t)
+    @test n_steps > 5_000                      # full storage really is on in the bundled case
+    trajectory_bytes = n_steps * length(bundled.solution.u[1]) * sizeof(Float64)
+
+    meta_bytes    = @allocated meta_run()
+    bundled_bytes = @allocated bundled_run()
+    # An absolute difference, not a ratio: both runs pay the same large setup
+    # floor, so the retained trajectory only shows up as the gap between them.
+    # `trajectory_bytes` is itself a floor — it counts `u` and ignores the dense
+    # interpolation coefficients stored alongside it.
+    @test bundled_bytes - meta_bytes > trajectory_bytes
 end

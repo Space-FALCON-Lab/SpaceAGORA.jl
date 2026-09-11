@@ -127,6 +127,81 @@ end
                    begin s = _SaveData(); s[:x] = [1.0]; s end], 2)
 end
 
+# A real-valued vector indexed from 0. `OffsetArrays` is a transitive dependency
+# only, and this is all the fast path can see of such a type anyway: `axes`,
+# `length`, `getindex`.
+struct _ZeroBased{T} <: AbstractVector{T}
+    data::Vector{T}
+end
+Base.size(z::_ZeroBased) = size(z.data)
+Base.axes(z::_ZeroBased) = (0:length(z.data) - 1,)
+Base.getindex(z::_ZeroBased, i::Int) = (Base.checkbounds(z, i); z.data[i + 1])
+Base.checkbounds(::Type{Bool}, z::_ZeroBased, i::Int) = 0 <= i < length(z.data)
+
+# Each of these was a surviving mutant: the guard existed but no test reached it,
+# so deleting the guard left every test passing.
+@testset "guards that mutation testing found unreached" begin
+    function _declines(label, rows, num_sats)
+        @testset "$label" begin
+            df = DataFrame()
+            @test !IOO._direct_assembly_columns!(df, _SaveFieldStub(:x, true, "x"), rows, num_sats)
+            @test isempty(names(df))
+        end
+    end
+    row(v) = begin snapshot = _SaveData(); snapshot[:x] = v; snapshot end
+
+    # Row index range, not just row length. `length(row) == num_sats` proves the
+    # count and not the indices, so a row indexed 0:n-1 satisfied it and the
+    # `@inbounds` write then read outside the row.
+    _declines("row indexed from 0", [row(_ZeroBased([1.0, 2.0]))], 2)
+    _declines("entry indexed from 0",
+              [row([_ZeroBased([1.0, 2.0, 3.0]), _ZeroBased([4.0, 5.0, 6.0])])], 2)
+
+    # A row shorter or longer than the constellation. Every vector-entry case
+    # elsewhere in this file builds exactly `num_sats` entries, so the component
+    # method's row guard was never exercised and could be deleted outright.
+    _declines("row shorter than num_sats", [row([SVector{2, Float64}(1, 2)])], 2)
+    _declines("row longer than num_sats",
+              [row([SVector{2, Float64}(1, 2), SVector{2, Float64}(3, 4), SVector{2, Float64}(5, 6)])], 2)
+
+    # Abstract or union element types. The fast path would allocate `Vector{T}`
+    # where the generic comprehension narrows to the concrete type present; for
+    # a union that is a different Arrow schema, not merely a different `eltype`.
+    _declines("union element type", [row(Union{Int, Float64}[1.0, 2.0])], 2)
+    _declines("abstract element type", [row(Real[1.0, 2.0])], 2)
+    _declines("abstract element type inside entries",
+              [row([SVector{2, Real}(1.0, 2.0), SVector{2, Real}(3.0, 4.0)])], 2)
+end
+
+# The generic path names a non-1-based entry's columns by its own axis, so the
+# fallback is not merely safe here, it is the only path that names them right.
+@testset "the fallback names non-1-based entries by their axis" begin
+    rows = [begin
+        snapshot = _SaveData()
+        snapshot[:x] = [_ZeroBased([10.0r, 20.0r, 30.0r]) for _ in 1:2]
+        snapshot
+    end for r in 1:3]
+    full = DataFrame()
+    IOO._append_save_field_columns!(full, _SaveFieldStub(:x, true, "x"), rows, 2)
+    @test names(full) == ["sc1_x_0", "sc1_x_1", "sc1_x_2", "sc2_x_0", "sc2_x_1", "sc2_x_2"]
+    @test full[!, "sc1_x_0"] == [10.0, 20.0, 30.0]
+    @test full[!, "sc2_x_2"] == [30.0, 60.0, 90.0]
+end
+
+# A field that is not per-satellite must stay on the generic path whatever its
+# shape: dropping the `field.per_satellite` test at the entry point left every
+# test passing, and would have renamed a global field's columns to `sc1_...`.
+@testset "a non-per-satellite field is never claimed by the fast path" begin
+    rows = [begin
+        snapshot = _SaveData()
+        snapshot[:g] = [1.0, 2.0]
+        snapshot
+    end for _ in 1:3]
+    df = DataFrame()
+    IOO._append_save_field_columns!(df, _SaveFieldStub(:g, false, "g"), rows, 2)
+    @test names(df) == ["g_1", "g_2"]
+end
+
 # The cases above are hand-picked, which is their weakness: they encode what the
 # author thought the fast path had to handle, so they cannot falsify the
 # author's own assumptions. The `isbitstype` defect survived them for exactly

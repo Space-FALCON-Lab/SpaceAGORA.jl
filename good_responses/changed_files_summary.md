@@ -82,7 +82,7 @@ Simple explanation: generates charts for altitude, delta-v, orbit geometry, and 
 
 ### 9. [4_SpaceAGORA.jl-main/output](4_SpaceAGORA.jl-main/output)
 
-Purpose: output folder for generated simulation results and plots.
+Purpose: output folder for generated simulation results and plots;
 
 Simple explanation: runtime artifacts produced by the example runs.
 

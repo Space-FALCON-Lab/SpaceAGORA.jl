@@ -1,0 +1,62 @@
+name: Release Tag Gate
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  nightly-stress-release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    env:
+      # Informational window: 2026-03-02 through 2026-03-08.
+      # Enforcement begins on 2026-03-09 UTC.
+      SPACEAGORA_NIGHTLY_ENFORCEMENT_START: "2026-03-09T00:00:00Z"
+      SPACEAGORA_NIGHTLY_MAX_AGE_HOURS: "36"
+    steps:
+      - name: Validate recent successful nightly-stress run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const startIso = process.env.SPACEAGORA_NIGHTLY_ENFORCEMENT_START;
+            const maxAgeHours = Number(process.env.SPACEAGORA_NIGHTLY_MAX_AGE_HOURS || "36");
+            const start = new Date(startIso);
+            const now = new Date();
+
+            core.info(`now=${now.toISOString()} enforcement_start=${start.toISOString()} max_age_hours=${maxAgeHours}`);
+
+            if (now < start) {
+              core.notice("Nightly-stress release gate is informational during the 7-day rollout window.");
+              return;
+            }
+
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "nightly-stress.yml",
+              branch: "main",
+              status: "completed",
+              per_page: 30
+            });
+
+            const successfulRuns = data.workflow_runs.filter((run) => run.conclusion === "success");
+            if (successfulRuns.length === 0) {
+              core.setFailed("No successful nightly-stress run found on main.");
+              return;
+            }
+
+            const latest = successfulRuns[0];
+            const updatedAt = new Date(latest.updated_at);
+            const ageHours = (now.getTime() - updatedAt.getTime()) / 3600000;
+
+            core.info(`latest_successful_nightly=${latest.html_url}`);
+            core.info(`latest_updated_at=${latest.updated_at} age_hours=${ageHours.toFixed(2)}`);
+
+            if (ageHours > maxAgeHours) {
+              core.setFailed(`Latest successful nightly-stress run is too old (${ageHours.toFixed(2)}h > ${maxAgeHours}h).`);
+            }

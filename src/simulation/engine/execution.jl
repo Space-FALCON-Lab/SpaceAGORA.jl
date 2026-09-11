@@ -562,9 +562,22 @@ function run_simulation(
 
     # Skip per-step solution/dense storage when nothing reads the trajectory.
     # gravity_backbone_split backfills save data from interior solution points,
-    # and _auto_stiff_switched/solver metadata read per-step solver state, so
-    # those cases keep full storage.  Explicit SPACEAGORA_SOLVER_SAVE_* env
-    # settings still override inside the solve helpers.
+    # so it keeps full storage.  Explicit SPACEAGORA_SOLVER_SAVE_* env settings
+    # still override inside the solve helpers.
+    #
+    # return_solver_metadata is deliberately NOT a reason to keep the solution
+    # either. Every field of the metadata tuple is produced beside the solve
+    # rather than read out of it: solver_mode and solver_trace come from
+    # _solve_with_solver_policy's own return, parallel_policy from the policy
+    # telemetry snapshot, spice_counters from the shared buffers, and retcode
+    # from the ODESolution object, which exists at any storage setting. The one
+    # metadata field that does read per-step solver state -- :auto_stiff's
+    # fallback_used, from _auto_stiff_switched(sol).alg_choice -- is computed
+    # inside the solver_policy branch that pins its own per-step storage on
+    # regardless of this flag, so it is unaffected. Requiring full storage here
+    # meant a caller that wanted a retcode and nothing else paid for a whole
+    # trajectory, and (because the metadata was only reachable under
+    # return_solution) got `nothing` back for it.
     #
     # simulation_settings.results is deliberately NOT a reason to keep the
     # solution: the results pipeline builds its output from `saved_values`, the
@@ -576,8 +589,7 @@ function run_simulation(
     # satellites: the CSV and feather outputs are byte-identical, while
     # allocation fell 15% (638.6 MB -> 541.0 MB at 1024) and GC went from 10.3%
     # to 0.9%.
-    needs_full_solution = return_solution || return_solver_metadata ||
-        solver_mode == :gravity_backbone_split
+    needs_full_solution = return_solution || solver_mode == :gravity_backbone_split
 
     last_sol = nothing
     solver_trace = NamedTuple[]
@@ -726,26 +738,30 @@ function run_simulation(
         backbone_saved_data,
     )
 
-    if return_solution
-        if checkpoint_active && args.simulation_settings.checkpoint_interval_s < mission_end
-            @warn "return_solution=true with checkpointed integration returns the final segment ODESolution, not a stitched full-history ODESolution."
-        end
-        if return_solver_metadata
-            parallel_policy = try
-                SimulationModel.ParallelPolicy.policy_telemetry_snapshot()
-            catch
-                nothing
-            end
-            return (
-                solution=last_sol,
-                solver_mode=string(solver_mode),
-                solver_trace=solver_trace,
-                parallel_policy=parallel_policy,
-                spice_counters=_spice_runtime_counters_snapshot(p)
-            )
-        end
-        return last_sol
+    if return_solution && checkpoint_active && args.simulation_settings.checkpoint_interval_s < mission_end
+        @warn "return_solution=true with checkpointed integration returns the final segment ODESolution, not a stitched full-history ODESolution."
     end
+
+    if return_solver_metadata
+        parallel_policy = try
+            SimulationModel.ParallelPolicy.policy_telemetry_snapshot()
+        catch
+            nothing
+        end
+        # `solution` stays in the tuple at its old position so callers that read
+        # result.solution keep working; it is `nothing` in the metadata-only
+        # case, which is the point of that case. `retcode` is new, and is what a
+        # caller that only wanted to know the solve succeeded should read.
+        return (
+            solution=return_solution ? last_sol : nothing,
+            retcode=last_sol === nothing ? nothing : string(last_sol.retcode),
+            solver_mode=string(solver_mode),
+            solver_trace=solver_trace,
+            parallel_policy=parallel_policy,
+            spice_counters=_spice_runtime_counters_snapshot(p)
+        )
+    end
+    return_solution && return last_sol
     return nothing
     end
 end

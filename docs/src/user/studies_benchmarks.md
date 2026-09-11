@@ -27,11 +27,13 @@ If you only need to check that the benchmark path works, run:
 julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
 ```
 
-On a fresh clone this stops with "Package Plots not found in current path": the
-CLI starts its child with a `.AGORA/` project that the clone does not have (see
-[CLI](../cli.md)); the benchmark launchers under `benchmarks/` run directly
-with `--project=.` in the meantime. All benchmark and study launchers also need
-the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](gramsuite_setup.md)).
+All benchmark and study launchers, through the CLI or run directly with
+`--project=.`, need the `data/GRAMSuite.jl` submodule
+([GRAMSuite Setup](gramsuite_setup.md)); the GRAM-backed benchmark cases also
+need the native GRAM library built. Without the submodule the command stops
+with "Package GRAMSuite not found in current path". The CLI runs its child
+under the repository project, so nothing else is needed beyond
+`Pkg.instantiate()`.
 
 If you need telemetry verification outputs, run:
 

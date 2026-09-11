@@ -32,27 +32,27 @@ Convenience wrappers:
 - Linux/macOS: `./bin/spaceagora`
 - Windows: `bin\spaceagora.bat`
 
-## What works on a fresh clone
+## What each command needs
 
-`run`, `assets check`, `assets manifest` and `assets setup-open` work on a
-fresh clone after `Pkg.instantiate()` (checked in September 2026). The
-`telemetry` and `benchmark` subcommands start their child process with the
-project `.AGORA/` at the repository root, a directory that no clone contains,
-so on a fresh checkout they stop with "Package SpaceAGORA not found in current
-path" or "Package Plots not found in current path" (`--print-only` shows the
-project the child would get). Until that launcher is corrected, run the study
-and benchmark scripts directly with `--project=.`:
+Every child process the CLI starts (`run`, `telemetry`, `benchmark`) runs
+under the repository project, the same environment as `julia --project=.`,
+so the script can load `SpaceAGORA` whether or not it activates the project
+itself. `--print-only` prints that project on its `project=` line and the
+full command on its `cmd=` line without running anything.
 
-```text
-julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
-```
+What a command needs beyond `Pkg.instantiate()` depends on the script it
+starts, not on the CLI:
 
-The `run` subcommand works for the examples that include `examples/common.jl`
-(directly, or through the script they include), because that file re-activates
-the repository project before `using SpaceAGORA`. The one exception is
-`Solar_Panel_Cloth_Deployment_Demo.jl`, which loads the package directly and
-fails under the CLI on a fresh clone the same way; run it as a script
-(`julia --project=. examples/Solar_Panel_Cloth_Deployment_Demo.jl`).
+| Command | Needs on top of the instantiated repository |
+|---|---|
+| `assets check`, `assets manifest`, `assets setup-open` | nothing |
+| `run --example=<no-GRAM example>` (`AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`, the RPO examples) | nothing |
+| `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, and the others listed on the [Examples Catalog](user/examples_catalog.md)) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed ones also need the native GRAM library built |
+| `telemetry ...` | the `data/GRAMSuite.jl` submodule: the study loads the vendored `GRAMSuite` package before it reads any scenario, even for `--scenarios=odyssey`; the truth files it grades are in the repository |
+| `benchmark ...` | the `data/GRAMSuite.jl` submodule, and for the GRAM-backed cases the native GRAM library |
+
+Without the submodule, `telemetry` and `benchmark` stop with "Package
+GRAMSuite not found in current path"; that is the prerequisite, not the CLI.
 
 ## Commands
 

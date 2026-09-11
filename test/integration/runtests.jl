@@ -869,13 +869,52 @@ end
 const GUIDANCE_SANDBOX = GuidanceSandbox
 
 
-include(joinpath(REPO_ROOT, "test", "suites", "01_contract_and_api_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "02_callbacks_parallel_and_smoke_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "03_persistence_units_and_rotational_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "04_solver_env_and_regression_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "08_cli_and_assets_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "09_probe_drivers.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "10_parallel_unit_tests.jl"))
+# The numbered suites are raw-included into this scope because they depend on the
+# helpers defined above. `SPACEAGORA_TEST_SUITES` selects which of them run, as a
+# comma-separated list of their numbers ("04,05"); unset runs all of them, which
+# is what a local `julia --project=. test/runtests.jl` does and what the default
+# entrypoint has always meant.
+#
+# It exists so CI can shard one 32-minute sequential job across parallel ones:
+# the suites are wildly uneven (09 alone is 46% of the wall clock, 06 and 08
+# together are under a second), so an even split by count would not help. The
+# helper preamble above runs in every shard, which costs a few seconds of
+# definitions, and `test/gates/ci_test_suite_shard_gate.jl` asserts that the
+# shards named in the workflow cover every suite exactly once.
+const _ALL_SUITES = [
+    "01_contract_and_api_tests.jl",
+    "02_callbacks_parallel_and_smoke_tests.jl",
+    "03_persistence_units_and_rotational_tests.jl",
+    "04_solver_env_and_regression_tests.jl",
+    "05_thruster_control_and_quality_tests.jl",
+    "06_monolith_split_runtime_tests.jl",
+    "07_no_gram_onboarding_tests.jl",
+    "08_cli_and_assets_tests.jl",
+    "09_probe_drivers.jl",
+    "10_parallel_unit_tests.jl",
+]
+
+const _SELECTED_SUITES = let raw = strip(get(ENV, "SPACEAGORA_TEST_SUITES", ""))
+    if isempty(raw)
+        _ALL_SUITES
+    else
+        wanted = [strip(tok) for tok in split(raw, ",") if !isempty(strip(tok))]
+        isempty(wanted) && error("SPACEAGORA_TEST_SUITES is set but names no suite.")
+        selected = String[]
+        for token in wanted
+            # Accept "4" as readily as "04"; a typo must fail loudly rather than
+            # silently run nothing, which would look like a green shard.
+            padded = lpad(token, 2, '0')
+            matches = filter(name -> startswith(name, padded * "_"), _ALL_SUITES)
+            isempty(matches) && error("SPACEAGORA_TEST_SUITES names unknown suite \"$(token)\"; " *
+                                      "known: $(join([first(split(n, '_')) for n in _ALL_SUITES], ", "))")
+            append!(selected, matches)
+        end
+        unique(selected)
+    end
+end
+
+println("test suites selected: ", join(_SELECTED_SUITES, ", "))
+for _suite in _SELECTED_SUITES
+    include(joinpath(REPO_ROOT, "test", "suites", _suite))
+end

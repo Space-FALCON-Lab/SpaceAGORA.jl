@@ -25,6 +25,30 @@
         "flat_route_parity_probes.jl",
         "kinematics_probes.jl",
     ]
+    # This suite is 46% of the default entrypoint's wall clock, and every probe is
+    # an independent subprocess, so it is the one worth sharding across CI jobs.
+    # `SPACEAGORA_PROBE_SHARD="i/n"` runs probes i, i+n, i+2n, ... of the list.
+    # Unset runs all of them. Round-robin rather than contiguous blocks, which is
+    # a cheap heuristic and not a good one: measured at 2 shards it splits 9
+    # probes each into 4m29s and 8m09s, because the probes differ in cost by far
+    # more than index parity captures. The workflow compensates by giving the
+    # lighter shard the unit-tree driver (about 2m05s) rather than by balancing
+    # here, so nobody has to maintain a per-probe cost table. If the shard count
+    # changes, re-measure rather than assuming this still evens out.
+    probe_files = let raw = strip(get(ENV, "SPACEAGORA_PROBE_SHARD", ""))
+        if isempty(raw)
+            probe_files
+        else
+            parts = split(raw, "/")
+            length(parts) == 2 || error("SPACEAGORA_PROBE_SHARD must look like \"1/3\", got \"$(raw)\"")
+            idx = tryparse(Int, parts[1]); count = tryparse(Int, parts[2])
+            (idx === nothing || count === nothing || count < 1 || idx < 1 || idx > count) &&
+                error("SPACEAGORA_PROBE_SHARD=\"$(raw)\" is not a valid i/n with 1 <= i <= n")
+            selected = [probe_files[i] for i in idx:count:length(probe_files)]
+            println("probe shard $(idx)/$(count): $(length(selected)) of $(length(probe_files)) probes")
+            selected
+        end
+    end
     coverage_flags = Base.JLOptions().code_coverage == 0 ? String[] : ["--code-coverage=user"]
     for probe in probe_files
         probe_script = joinpath(REPO_ROOT, "test", "probes", probe)
@@ -55,7 +79,15 @@
     end
 end
 
+# The unit tree is one subprocess and cannot be split, so when suite 09 is
+# sharded it must run in exactly one shard. `SPACEAGORA_SKIP_UNIT_DRIVER=1` lets
+# the other shards leave it alone; the shard gate checks exactly one omits it.
+const _RUN_UNIT_DRIVER = get(ENV, "SPACEAGORA_SKIP_UNIT_DRIVER", "0") != "1"
+
 @testset "Standalone Unit Suite Driver" begin
+    if !_RUN_UNIT_DRIVER
+        @test true   # claimed by another shard
+    else
     # test/unit/**/*_tests.jl are standalone (`using SpaceAGORA`) function-level
     # tests for the parallel routing, cost and calibration layers: machine
     # topology, the cost hierarchy, robust timing, the streaming paired trial,
@@ -91,4 +123,5 @@ end
         println("----- end unit suite output -----")
     end
     @test success(proc)
+    end
 end

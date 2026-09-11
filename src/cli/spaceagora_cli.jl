@@ -57,9 +57,16 @@ function _print_usage(io::IO=stdout)
     return 0
 end
 
+# The one place the child command is built. `--print-only` renders exactly this
+# object, so what is printed is what launches, and the CLI tests compare its
+# arguments directly rather than parsing the printed line (a path with spaces
+# is one argument here and a broken one in any whitespace-split rendering).
+function _child_command(script::String, script_args::Vector{String})::Cmd
+    return `$(Base.julia_cmd()) --project=$CHILD_PROJECT $script $script_args`
+end
+
 function _run_subprocess(script::String, script_args::Vector{String}; env_pairs::Vector{Pair{String,String}}=Pair{String,String}[], print_only::Bool=false, io::IO=stdout, errio::IO=stderr)::Int
-    cmd = Base.julia_cmd()
-    full = `$cmd --project=$CHILD_PROJECT $script $script_args`
+    full = _child_command(script, script_args)
     if print_only
         println(io, "project=$(CHILD_PROJECT)")
         println(io, "script=$(script)")

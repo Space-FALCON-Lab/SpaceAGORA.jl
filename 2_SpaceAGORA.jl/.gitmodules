@@ -1,5 +1,5 @@
 [submodule "GRAMSuite.jl"]
-	path = data/GRAMSuite.jl
+	path = 2_SpaceAGORA.jl/data/GRAMSuite.jl
 	url = https://github.com/Space-FALCON-Lab/GRAMSuite.jl.git
 	branch = main
 	shallow = true

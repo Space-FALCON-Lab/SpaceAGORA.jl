@@ -13,28 +13,10 @@
 # Flat-vector index helper: satellite i (1-based), state offset off (1=x…3=z, 4=vx…6=vz)
 @inline idx(i, off) = 6*(i-1) + off
 
-# Convert one SpaceAGORA structured state to a plain Float64 flat vector of length 6N
-function _sa_to_flat_u(u, N::Int)::Vector{Float64}
-    flat = Vector{Float64}(undef, 6N)
-    for i in 1:N
-        sc = u.sc[i]
-        flat[idx(i,1)] = sc.pos[1]; flat[idx(i,2)] = sc.pos[2]; flat[idx(i,3)] = sc.pos[3]
-        flat[idx(i,4)] = sc.vel[1]; flat[idx(i,5)] = sc.vel[2]; flat[idx(i,6)] = sc.vel[3]
-    end
-    return flat
-end
-
 # Lightweight sol adapter that presents flat-vector .u to downstream functions
 struct _FlatSol
     t::Vector{Float64}
     u::Vector{Vector{Float64}}
-end
-
-# Build a _FlatSol from a SpaceAGORA solution and total spacecraft count N
-function _make_flat_sol(sa_sol, N::Int)::_FlatSol
-    t = Float64.(sa_sol.t)
-    u = [_sa_to_flat_u(sa_sol.u[k], N) for k in eachindex(sa_sol.t)]
-    return _FlatSol(t, u)
 end
 
 # Build a _FlatSol directly from a feather/Arrow DataFrame written by SpaceAGORA's

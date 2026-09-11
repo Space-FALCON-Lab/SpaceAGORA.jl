@@ -1,23 +1,5 @@
 include(joinpath(@__DIR__, "0_Spacecraft.jl"))
 
-
-# Compute cumulative orbit count for the TARGET satellite using the instantaneous
-# semi-major axis a(t) at each saved time step. Correctly accounts for orbital period
-# changes caused by the laser (a grows → T grows → fewer orbits per second).
-# orbit_count(t) = ∫₀ᵗ dt'/T(t')  ≈  cumsum(Δt / T_mid(tₖ))
-function _orbit_count_from_sol(sol, mu::Float64)
-    T_series = [begin
-        sc = u.sc[1]
-        r  = SVector{3, Float64}(sc.pos)
-        v  = SVector{3, Float64}(sc.vel)
-        a  = _rv_to_elements(r, v, mu).a
-        2pi * sqrt(a^3 / mu)
-    end for u in sol.u]
-    dt    = diff(Float64.(sol.t))
-    T_mid = (T_series[1:end-1] .+ T_series[2:end]) ./ 2
-    return cumsum([0.0; dt ./ T_mid])  # length == length(sol.t)
-end
-
 # Builds the configuration for the case 2 of the Oracle simulation.
 # Pass results_directory to enable SpaceAGORA's native output pipeline.
 function build_case_config(opts::OracleCase2Options, results_directory::Union{String, Nothing}=nothing)
@@ -45,8 +27,8 @@ function build_case_config(opts::OracleCase2Options, results_directory::Union{St
 
     # 4. Build the laser model
     laser_model = OpenCavityLaserLinkModel(
-        1,  # target is spacecraft #1
-        collect(2:(opts.helpers + 1)); # helpers are #2..N+1
+        target_idx=1,
+        helper_indices=collect(2:(opts.helpers + 1)),
         range_m=opts.laser_range_km * 1e3,
         power_w=opts.laser_power_w,
         magnification=opts.magnification,
@@ -76,8 +58,8 @@ function build_case_config(opts::OracleCase2Options, results_directory::Union{St
             number_of_orbits=1,
             mission_time=mission_time_s,
             orientation_sim=false,
-            num_steps_to_save=1000,
-            data_rate=max(10.0, mission_time_s / 1000.0),
+            num_steps_to_save=opts.timeseries_points - 1,
+            data_rate=max(10.0, mission_time_s / (opts.timeseries_points - 1)),
         ), # 6.2. Sets the stop condition (MissionTime), how many solution snapshots to save (~1000), and the data output rate
 
         environment_model=EnvironmentModel(

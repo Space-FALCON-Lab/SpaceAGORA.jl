@@ -1,0 +1,16 @@
+steps = 1001
+orientation_sim = false
+created_utc = "2026-09-08T17:30:01.119"
+mission_time_s = 214442.0293099949
+schema_version = "1"
+spacecraft_count = 16
+
+[files.feather]
+size_bytes = 3306626
+sha256 = "26326061a2e71c39344756fad0111315b7dd1a75c8b1121fcd37ec7d4f6b7601"
+path = "/home/space-falcon-3/Desktop/ORACLE_SpaceAGORA_Integration/2_SpaceAGORA.jl/output/Nihal_firing_plan/simulation_results.feather"
+
+[files.csv]
+size_bytes = 4199030
+sha256 = "116175438414c373c2884b5859c2dfce95f289db7d1e3842a0e8e60a1eba7f8e"
+path = "/home/space-falcon-3/Desktop/ORACLE_SpaceAGORA_Integration/2_SpaceAGORA.jl/output/Nihal_firing_plan/simulation_results.csv"

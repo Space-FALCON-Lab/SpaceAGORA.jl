@@ -14,7 +14,7 @@ const DEFAULT_INITIAL_CONDITION_ANG_VEL = SVector{3, Float64}(0.0, 0.0, 0.0)
 
 abstract type AbstractInitialCondition end
 
-struct InitialCondition <: AbstractInitialCondition
+struct InitialCondition <: AbstractInitialCondition 
     a::Float64 # Semimajor axis (m)
     e::Float64 # Eccentricity (nd)
     i::Float64 # Inclination (rad)

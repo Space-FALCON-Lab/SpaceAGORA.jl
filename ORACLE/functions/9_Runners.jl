@@ -43,8 +43,9 @@ end
 # Activate with --native-output on the command line.
 # The return value has no `timeseries` field; use `results_dir` to find the output.
 function run_open_cavity_case_native(opts::OracleCase2Options)
-    # --- Compute per-scenario output directory BEFORE building args ---
-    # (We need target_period_s to build the stem, and that requires knowing the planet radius.)
+
+    # --- Initialize ---
+    # step 1: Compute per-scenario output file directory BEFORE building args
     _validate_options(opts)
     _planet_pre        = make_no_gram_planet(:earth)
     _target_radius_m   = _planet_pre.Rp_e + opts.target_altitude_km * 1e3
@@ -58,25 +59,27 @@ function run_open_cavity_case_native(opts::OracleCase2Options)
         @sprintf("%s_e%.4f_nu%.4f",        string(opts.schedule), opts.target_ecc, opts.target_nu_deg),
     )
 
-    # --- Block 1: build config with native output enabled ---
-    args, laser_model, target_period_s = build_case_config(opts, results_dir)
+    # --- Simulation Settings ---
+    # step 2: build config with native output enabled
+    args, laser_model, target_period_s = build_case_config(opts, results_dir) # this tells simulator the output directory and enables native output
 
-    # --- Block 2: initial orbital elements ---
+    # step 3: initial orbital elements
     u0  = SimulationEngine.build_initial_conditions(args)
     r0  = SVector{3, Float64}(u0.sc[1].pos)
     v0  = SVector{3, Float64}(u0.sc[1].vel)
     oe0 = _rv_to_elements(r0, v0, args.environment_model.planet.μ)
 
-    # --- Block 3: callbacks ---
+    # step 4: callbacks
     impulse_tracker = LaserImpulseTracker()
     impulse_cb   = laser_impulse_callback(laser_model, impulse_tracker, opts.mass_kg)
     scheduler_cb = laser_link_scheduler_callback(laser_model)
 
-    # --- Block 4: build save fields (SpaceAGORA defaults + laser extras) ---
+    # step 5: build save fields (SpaceAGORA defaults + laser extras)
     laser_fields = _build_laser_save_fields(impulse_tracker, laser_model)
     all_save_fields = vcat(SimulationModel.default_save_fields(args), laser_fields)
 
-    # --- Block 5: run — SpaceAGORA writes feather + csv + manifest automatically ---
+    # --- Run Simulation ---
+    # step 6: run — SpaceAGORA writes feather + csv + manifest automatically
     # SPACEAGORA_SOLVER_SAVE_EVERYSTEP=false: the ODE solver keeps only start+end
     # in the sol object (System 1).  The feather file (System 2, SavedValues callback)
     # still captures all 1001 output points independently — no data is lost.
@@ -89,27 +92,28 @@ function run_open_cavity_case_native(opts::OracleCase2Options)
             extra_callbacks=(impulse_cb, scheduler_cb),
             save_fields=all_save_fields,
         )
-    end
+    end # output directory already in args
 
-    # --- Block 6: post-simulation quantities ---
+    # step 7: post-simulation quantities
     sol = result.solution   # minimal 2-point sol (start + end only; used for retcode/solver)
 
-    # Read the feather written by SpaceAGORA's native pipeline (System 2 — 1001 points)
+    # --- Post-Analysis ---
+    # Step 8: Read the simulation_results.feather saved by the solver
     feather_path = joinpath(results_dir, "simulation_results.feather")
     feather_df   = DataFrame(Arrow.Table(feather_path))
     flat_sol     = _make_flat_sol_from_feather(feather_df, opts.helpers + 1)
 
-    # Orbit count from feather (1001 evenly-spaced points → accurate varying-period integration)
+    # Step 9: Orbit count from feather
     orbit_counts   = _orbit_count_from_flat_sol(flat_sol, args.environment_model.planet.μ)
     orbits_elapsed = orbit_counts[end]
 
-    # Final orbital state from sol.u[end] (save_end=true guarantees this is always present)
+    # Step 10: Final orbital state from sol.u[end]
     final_state = sol.u[end].sc[1]
     rf  = SVector{3, Float64}(final_state.pos)
     vf  = SVector{3, Float64}(final_state.vel)
     oef = _rv_to_elements(rf, vf, args.environment_model.planet.μ)
 
-    # --- Block 7: summary row (SpaceAGORA has no concept of a one-row summary) ---
+    # Step 11: summary row (SpaceAGORA has no concept of a one-row summary)
     summary = (
         case_id=_case_id(opts),
         helpers=opts.helpers,
@@ -142,7 +146,7 @@ function run_open_cavity_case_native(opts::OracleCase2Options)
         solver=result.solver_trace[end].solver,
     )
 
-    # Write the one-row summary CSV (skipped when feather_only=true)
+    # Step 12: Write the one-row summary CSV (skipped when feather_only=true)
     opts.feather_only || _write_csv!(joinpath(results_dir, "summary.csv"), [summary])
 
     return (summary=summary, flat_sol=flat_sol, sol=sol,
@@ -163,7 +167,7 @@ end
                              IMG_DIR = "output/oracle_case2_laser_links/images/",
                              target_only = false)
 
-Generate the full diagnostic figure suite for a completed Case-2 simulation.
+Input simulation data, output post-analysis and plot the results.
 
 The function:
 1. Wraps SpaceAGORA's `result.sol` in a flat-vector `_FlatSol` adapter so all

@@ -76,8 +76,8 @@ function build_oracle_case_config(opts::OracleOptions, results_directory::Union{
     end
 
     laser_model = OpenCavityLaserLinkModel(
-        1,
-        collect(2:(opts.helpers + 1));
+        target_idx=1,
+        helper_indices=collect(2:(opts.helpers + 1)),
         range_m=opts.laser_range_km * 1e3,
         power_w=opts.laser_power_w,
         magnification=opts.magnification,

@@ -54,19 +54,17 @@ Base.@kwdef struct OracleCase2Options
     animate::Bool = false
 end
 
-# --------- Functions ---------
 #include("functions/0_Module_Setup.jl")
-include("functions/1_LOS_Metrics.jl")
 # LaserImpulseTracker and helpers now live in src/ (laser_link_effectors.jl)
 include("functions/3_Dynamics.jl")
 include("functions/4_Diagnostics.jl")
 include("functions/5_OE_Converters.jl")
 include("functions/6_OE_and_dv_in_RTN.jl")
 include("functions/7_Plots.jl")
-include("functions/8_LoS_time_series.jl")
 include("functions/9_Runners.jl")
 #include("functions/10_Animation_ver2.jl")  # loaded conditionally above (requires --animate)
 
+# --------- Functions ---------
 # 6. help text printed when you run the script with --help.
 function _usage()
     return """
@@ -160,6 +158,7 @@ end
 _with(opts::OracleCase2Options; kwargs...) =
     OracleCase2Options(; (f => getfield(opts, f) for f in fieldnames(OracleCase2Options))..., kwargs...)
 
+# --------- Main ---------
 function main(argv=ARGS)
     opts = _parse_options(argv)  # parse command-line arguments into an OracleCase2Options struct
 
@@ -177,10 +176,10 @@ function main(argv=ARGS)
                         helper_inclination_deg=PAPER_FIXED_HELPER_INCLINATION_DEG,
                         output_dir=joinpath(opts.output_dir, "paper_plot_mode"),
                         animate=false,
-                    )
+                    ) # step 1: prepare case options
                     elapsed = @elapsed begin
                         result = run_open_cavity_case_native(case_opts)
-                    end
+                    end # step 2: run the case and measure elapsed time
                     s = result.summary
                     results_dir = result.results_dir
                     println("  → $results_dir")
@@ -188,9 +187,9 @@ function main(argv=ARGS)
                         "helpers=%d target_alt_km=%.1f target_inc_deg=%.1f dv_R=%.6e dv_T=%.6e dv_N=%.6e activations=%d  [%.1f s]\n",
                         s.helpers, s.target_altitude_km, s.target_inclination_deg,
                         s.dv_r_mps, s.dv_t_mps, s.dv_n_mps, s.activations, elapsed
-                    )
-                    result = nothing  # release the large sol object before the next scenario
-                    GC.gc()
+                    ) # step 3: print summary for this scenario
+                    result = nothing 
+                    GC.gc()  # step 4: release the large sol object & free memory before the next scenario
                 end
             end
         end
@@ -201,13 +200,12 @@ function main(argv=ARGS)
         println("Running single-case mode...")
         elapsed = @elapsed begin
             result = run_open_cavity_case_native(_with(opts; output_dir=joinpath(opts.output_dir, "single_case_mode")))
-        end
+        end # step 1: run the single case and measure elapsed time
         s = result.summary
         _print_summary(s)
         @printf("  run time: %.1f s\n", elapsed)
-        println("Output directory: $(result.results_dir)")
+        println("Output directory: $(result.results_dir)") # step 2: print output directory for the single case
 
-        # --- Mirror feather + toml into paper_plot_mode for use by plotting scripts ---
         let
             single_root  = joinpath(opts.output_dir, "single_case_mode")
             rel_path     = relpath(result.results_dir, single_root)
@@ -220,14 +218,11 @@ function main(argv=ARGS)
                 cp(src, dst; force=true)
             end
             println("Mirrored feather/toml → $(paper_dest)")
-        end
+        end # step 3: mirror feather + toml into paper_plot_mode for use by plotting scripts
 
         img_dir = joinpath(result.results_dir, "images")
+        opts.feather_only || plot_open_cavity_results(result, opts; IMG_DIR=img_dir, target_only=false) # step 4: generate diagnostic plots (unless --feather-only is specified, then don't plot)
 
-        # --- Diagnostic plots (skipped when --feather-only) ---
-        opts.feather_only || plot_open_cavity_results(result, opts; IMG_DIR=img_dir, target_only=false)
-
-        # --- Optional 3D animation (only if --animate was passed and GLMakie loaded) ---
         if opts.animate
             if _HAS_GLMAKIE
                 p_anim = Dict{Symbol, Any}(:N => opts.helpers + 1)  # total spacecraft count
@@ -239,7 +234,7 @@ function main(argv=ARGS)
                 @warn "GLMakie is not installed — animation skipped. " *
                       "Install it with: using Pkg; Pkg.add(\"GLMakie\")"
             end
-        end
+        end # step 5: optional 3D animation
     end
     return nothing
 end

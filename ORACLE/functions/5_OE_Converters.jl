@@ -11,6 +11,7 @@ Robust to circular and equatorial orbits (returns u for circular, ν=NaN).
 """
 function rv2coe(r::SVector{3,Float64}, v::SVector{3,Float64}, μ::Float64; tol=1e-10)
     rnorm = norm(r); v2 = dot(v,v); h = cross(r,v); hnorm = norm(h)
+    ĥ  = h / (hnorm+tol)  # ω/ν sign must be measured about the orbit normal, not Ẑ
     i  = acos(clamp(h[3]/(hnorm+tol), -1.0, 1.0))
     n  = cross(Ẑ, h); nnorm = norm(n)
     evec = (cross(v,h)/μ) - r/(rnorm+tol); e = norm(evec)
@@ -19,12 +20,12 @@ function rv2coe(r::SVector{3,Float64}, v::SVector{3,Float64}, μ::Float64; tol=1
     p  = hnorm^2/μ
     Ω  = nnorm > tol ? atan(n[2], n[1]) : 0.0
     if e > 1e-8 && nnorm > tol
-        ω = atan(dot(Ẑ, cross(n,evec))/(nnorm*e+tol), dot(n,evec)/(nnorm*e+tol))
-        ν = atan(dot(Ẑ, cross(evec,r))/(e*rnorm+tol), dot(evec,r)/(e*rnorm+tol))
+        ω = atan(dot(ĥ, cross(n,evec))/(nnorm*e+tol), dot(n,evec)/(nnorm*e+tol))
+        ν = atan(dot(ĥ, cross(evec,r))/(e*rnorm+tol), dot(evec,r)/(e*rnorm+tol))
         u = NaN
     else
         ω = 0.0
-        u = nnorm > tol ? atan(dot(Ẑ,cross(n,r))/(nnorm*rnorm+tol), dot(n,r)/(nnorm*rnorm+tol)) :
+        u = nnorm > tol ? atan(dot(ĥ,cross(n,r))/(nnorm*rnorm+tol), dot(n,r)/(nnorm*rnorm+tol)) :
                           atan(r[2], r[1])
         ν = u
     end
@@ -37,6 +38,7 @@ end
 """
 function rv2coe_2pi(r::SVector{3,Float64}, v::SVector{3,Float64}, μ::Float64; tol=1e-10)
     rnorm = norm(r); v2 = dot(v,v); h = cross(r,v); hnorm = norm(h)
+    ĥ  = h / (hnorm+tol)  # ω/ν sign must be measured about the orbit normal, not Ẑ
     i  = acos(clamp(h[3]/(hnorm+tol), -1.0, 1.0))
     n  = cross(Ẑ, h); nnorm = norm(n)
     evec = (cross(v,h)/μ) - r/(rnorm+tol); e = norm(evec)
@@ -45,12 +47,12 @@ function rv2coe_2pi(r::SVector{3,Float64}, v::SVector{3,Float64}, μ::Float64; t
     p  = hnorm^2/μ
     Ω  = nnorm > tol ? mod(atan(n[2], n[1]), 2π) : 0.0
     if e > 1e-8 && nnorm > tol
-        ω = mod(atan(dot(Ẑ,cross(n,evec))/(nnorm*e+tol), dot(n,evec)/(nnorm*e+tol)), 2π)
-        ν = mod(atan(dot(Ẑ,cross(evec,r))/(e*rnorm+tol), dot(evec,r)/(e*rnorm+tol)), 2π)
+        ω = mod(atan(dot(ĥ,cross(n,evec))/(nnorm*e+tol), dot(n,evec)/(nnorm*e+tol)), 2π)
+        ν = mod(atan(dot(ĥ,cross(evec,r))/(e*rnorm+tol), dot(evec,r)/(e*rnorm+tol)), 2π)
         u = NaN
     else
         ω = 0.0
-        u = nnorm > tol ? mod(atan(dot(Ẑ,cross(n,r))/(nnorm*rnorm+tol), dot(n,r)/(nnorm*rnorm+tol)), 2π) :
+        u = nnorm > tol ? mod(atan(dot(ĥ,cross(n,r))/(nnorm*rnorm+tol), dot(n,r)/(nnorm*rnorm+tol)), 2π) :
                           mod(atan(r[2], r[1]), 2π)
         ν = u
     end
@@ -82,4 +84,19 @@ function _rv_to_elements(r::SVector{3, Float64}, v::SVector{3, Float64}, mu::Flo
     inc = acos(clamp(h[3] / hmag, -1.0, 1.0))
     raan = nmag <= 1e-12 ? 0.0 : mod(atan(n[2], n[1]), 2pi)
     return (a=a, e=e, i=inc, raan=raan)
+end
+
+# Solves Kepler's equation M = E - e sin(E) by Newton iteration, then converts E to true anomaly.
+function _mean_to_true_anomaly_deg(M_deg::Float64, e::Float64; tol::Float64=1e-13, max_iter::Int=30)
+    M_norm = mod(deg2rad(M_deg) + pi, 2pi) - pi
+    E = e < 0.8 ? M_norm : pi
+    for _ in 1:max_iter
+        f  = E - e * sin(E) - M_norm
+        fp = 1.0 - e * cos(E)
+        Δ  = f / fp
+        E -= Δ
+        abs(Δ) < tol && break
+    end
+    ν = 2.0 * atan(sqrt((1.0 + e) / (1.0 - e)) * tan(E / 2.0))
+    return rad2deg(mod(ν, 2pi))
 end

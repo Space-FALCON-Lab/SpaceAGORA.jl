@@ -1,0 +1,141 @@
+name: Nightly Stress
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  # On pull requests this heavy tier (~3.5 h: full suite + coverage + full
+  # telemetry regression + stress suite) auto-triggers only when the change
+  # can move the spacecraft or change the grading. Everything else gets the
+  # fast tier (Julia CI) and the nightly run on main stands guard.
+  pull_request:
+    paths:
+      - "src/dynamics/**"
+      - "src/environment/**"
+      - "src/simulation/**"
+      - "src/core/**"
+      - "src/gnc/**"
+      - "src/vehicle/**"
+      - "src/mission/**"
+      - "src/parallel/**"
+      - "src/analysis/verification/**"
+      - "ext/**"
+      - "data/GRAMSuite.jl"
+      - "data/telemetry/**"
+      - "data/Gravity_harmonics_data/**"
+      - "test/telemetry_benchmark_manifest.toml"
+      - "test/stress/**"
+      - "benchmarks/studies/telemetry_orbit_accuracy_study.jl"
+      - "Project.toml"
+      - "Manifest.toml"
+      - ".github/workflows/nightly-stress.yml"
+  workflow_dispatch:
+
+jobs:
+  nightly-stress:
+    runs-on: ubuntu-latest
+    # Observed green runs take 3h14-3h25 and hosted-runner speed swings ~1.6x
+    # between hosts; 240 left ~35 min of headroom and would flake on slow hosts.
+    timeout-minutes: 300
+    env:
+      JULIA_NUM_THREADS: "4"
+      # Coverage debt (July 2026): first real gate run after the CI dark
+      # period measured 82.84% overall; restore to 90.0 as the debt register
+      # in test/gates/ci_coverage_quality_gate.jl burns down.
+      SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
+      SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
+      # Same trap as julia-ci's coverage job: probe subprocesses write .cov
+      # mid-suite, so the window must exceed the whole suite step's wall
+      # time or the threaded/GRAM probe coverage silently drops out and the
+      # per-file floors fail on files only those probes cover (this job at
+      # 1200s dropped exactly that cluster whenever the suite tail after
+      # suite 02 outgrew 20 min).
+      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "7200"
+      SPACEAGORA_CAL_COVERAGE_MIN_OVERALL: "90.0"
+      SPACEAGORA_CAL_COVERAGE_MIN_FILE: "70.0"
+      SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          fetch-depth: 0
+
+      - name: Update GRAMSuite test submodule to dev main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate vendored GRAMSuite
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+
+      - name: GRAMSuite load smoke
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
+
+      - name: Instantiate
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh --clean
+
+      - name: Fetch base ref (PR only)
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
+
+      - name: Full test suite with coverage
+        run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
+
+      - name: Coverage quality gate
+        run: julia --startup-file=no --project=. test/gates/ci_coverage_quality_gate.jl
+
+      - name: SpaceAGORACalibration tests with coverage
+        run: julia --startup-file=no --project=. --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
+
+      - name: SpaceAGORACalibration coverage quality gate
+        run: julia --startup-file=no --project=. SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
+
+      - name: Contract suite
+        run: julia --startup-file=no --project=. test/contracts/nightly_runtests.jl
+
+      - name: AI review artifact gate (PR only)
+        if: github.event_name == 'pull_request'
+        env:
+          SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
+          SPACEAGORA_BASE_REF: ${{ github.base_ref }}
+        run: julia --startup-file=no --project=. test/gates/ci_ai_review_artifact_gate.jl
+
+      - name: Threaded smoke stress
+        run: julia --startup-file=no --depwarn=error --project=. test/smoke/ci_threaded_smoke.jl
+
+      - name: Example regression stress
+        run: julia --startup-file=no --depwarn=error --project=. test/integration/examples/runtests.jl
+
+      # --heap-size-hint keeps Julia's GC high-water mark under the hosted
+      # runner's physical memory (public-repo ubuntu-latest: 4 vCPU/16 GB):
+      # without it this step intermittently starves the runner agent
+      # ("runner lost communication with the server") and the job dies
+      # mid-step. 3G was over-tight: the step went 115 -> 218+ min in GC
+      # thrash and hit the job timeout. 10G leaves room for native GRAM
+      # and the OS while restoring throughput.
+      - name: Telemetry full regression (GRAM deterministic)
+        run: julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true
+
+      - name: Stress suite
+        run: julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=. test/stress/runtests.jl
+
+      - name: Upload telemetry nightly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetry-full-${{ github.run_id }}
+          path: |
+            output/telemetry_orbit_accuracy_summary.csv
+            output/telemetry_orbit_accuracy_errors.csv
+          if-no-files-found: warn

@@ -1,0 +1,112 @@
+version = 1
+
+[[scenarios]]
+name = "earth_gmat"
+kind = "time_aligned_state"
+planet = "earth"
+events = ["altitude_time", "state_x_time", "state_y_time", "state_z_time"]
+comparison_mode = "time_aligned_state"
+orbit_altitude_mode = "oblate"
+telemetry = "data/telemetry/GMAT_Earth_Aerobraking/Earth_Aerobraking_test.feather"
+max_points_quick = 800
+max_points_full = 2000
+min_eval_points = 4
+gravity_model = "inverse_squared"
+gravity_harmonics_degree = 50
+gravity_harmonics_order = 50
+gravity_harmonics_file = "data/Gravity_harmonics_data/EarthGGM05C.csv"
+nbody_bodies = ["sun", "moon"]
+EI_km = 300.0
+
+[scenarios.atmosphere_truth]
+assumption_id = "earth_gmat_gram_deterministic_v1"
+atmosphere_model = "GRAM"
+atmosphere_dataset = "MERRA2 All Mean"
+space_weather_model = "EarthGRAM MERRA2 climatology (deterministic)"
+solar_flux_model = "EarthGRAM/MERRA2 epoch-fixed defaults"
+gram_seed = 1001
+gram_perturbation_scales = [0.0, 0.0, 0.0, 0.0]
+gram_offline_surrogate = "off"
+gram_static_grid = false
+gram_track_cache = false
+gram_global_lock = "on"
+
+[scenarios.calibration]
+enabled = false
+profiles = ["full"]
+fit_cd_scale = false
+fit_cr = false
+fit_bias = false
+
+[scenarios.initial_time]
+year = 2014
+month = 5
+day = 19
+hour = 14
+minute = 7
+second = 32.0
+
+[scenarios.telemetry_columns]
+time = "DefaultSC.ElapsedSecs"
+altitude = "DefaultSC.Earth.Altitude"
+x = "DefaultSC.EarthMJ2000Eq.X"
+y = "DefaultSC.EarthMJ2000Eq.Y"
+z = "DefaultSC.EarthMJ2000Eq.Z"
+sma = "DefaultSC.Earth.SMA"
+ecc = "DefaultSC.Earth.ECC"
+inc = "DefaultSC.EarthMJ2000Eq.INC"
+aop = "DefaultSC.EarthMJ2000Eq.AOP"
+raan = "DefaultSC.EarthMJ2000Eq.RAAN"
+ta = "DefaultSC.Earth.TA"
+
+[scenarios.spacecraft]
+bus_dims_m = [2.05, 3.7, 2.8]
+panel_dims_m = [0.01, 2.85, 1.0]
+bus_mass_kg = 620.0
+panel_mass_each_kg = 10.0
+panel_offset_y_m = 2.45
+prop_mass_kg = 10.0
+id = 1003
+
+[scenarios.units]
+x = "s"
+altitude_time = "km"
+state_x_time = "km"
+state_y_time = "km"
+state_z_time = "km"
+
+[scenarios.tolerances_quick.altitude_time]
+max_abs_km = 2500.0
+max_nmae = 0.35
+
+[scenarios.tolerances_quick.state_x_time]
+max_abs_km = 2500.0
+max_nmae = 0.35
+
+[scenarios.tolerances_quick.state_y_time]
+max_abs_km = 2500.0
+max_nmae = 0.35
+
+[scenarios.tolerances_quick.state_z_time]
+max_abs_km = 2500.0
+max_nmae = 0.35
+
+[scenarios.tolerances_full.altitude_time]
+max_abs_km = 2.794
+max_nmae = 0.25
+max_rmse_km = 1.173
+
+[scenarios.tolerances_full.state_x_time]
+max_abs_km = 184.562
+max_nmae = 0.25
+max_rmse_km = 92.728
+
+[scenarios.tolerances_full.state_y_time]
+max_abs_km = 184.562
+max_nmae = 0.25
+max_rmse_km = 92.728
+
+[scenarios.tolerances_full.state_z_time]
+max_abs_km = 184.562
+max_nmae = 0.25
+max_rmse_km = 92.728

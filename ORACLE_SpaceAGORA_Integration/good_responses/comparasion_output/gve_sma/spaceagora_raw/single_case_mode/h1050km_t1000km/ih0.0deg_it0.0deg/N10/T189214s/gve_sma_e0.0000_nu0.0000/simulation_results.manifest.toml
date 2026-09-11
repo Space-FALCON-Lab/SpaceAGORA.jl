@@ -1,0 +1,11 @@
+steps = 18923
+orientation_sim = false
+created_utc = "2026-09-07T19:19:51.349"
+mission_time_s = 189213.5681351643
+schema_version = "1"
+spacecraft_count = 11
+
+[files.feather]
+size_bytes = 42431394
+sha256 = "dc2dade9bccfef9b5b0b348080d40791a532ea2bd8773e4baea4fdc9373bcd5f"
+path = "/home/space-falcon-3/Desktop/ORACLE_SpaceAGORA_Integration/good_responses/comparasion_output/gve_sma/spaceagora_raw/single_case_mode/h1050km_t1000km/ih0.0deg_it0.0deg/N10/T189214s/gve_sma_e0.0000_nu0.0000/simulation_results.feather"

@@ -1,0 +1,19 @@
+# Config for scripts/remote/spaceagora-remote.
+# Copy this file to remotes.conf (gitignored) and edit for your own remotes.
+#
+# One block per named remote. "<name>_host" must match a Host alias already
+# defined in ~/.ssh/config (recommended: with ControlMaster/ControlPersist so a
+# passphrase-protected key only prompts once per session — see
+# docs/architecture/remote_job_push_plan.md §3 for the trx50 example).
+
+REMOTES[trx50_host]="trx50"
+REMOTES[trx50_base]="~/spaceagora_remote"
+
+# Add more remotes by repeating the pattern with a new name:
+# REMOTES[zen5_host]="zen5"
+# REMOTES[zen5_base]="~/spaceagora_remote"
+
+# Optional per-remote override of the data allowlist synced by `seed-data` /
+# `push --sync-data` (space-separated paths relative to the repo root). If
+# unset, DEFAULT_DATA_ALLOWLIST in the main script is used.
+# REMOTES[trx50_data_allowlist]="data/GRAMSuite.jl data/GRAM_surrogate data/telemetry"

@@ -32,6 +32,28 @@ Convenience wrappers:
 - Linux/macOS: `./bin/spaceagora`
 - Windows: `bin\spaceagora.bat`
 
+## What each command needs
+
+Every child process the CLI starts (`run`, `telemetry`, `benchmark`) runs
+under the repository project, the same environment as `julia --project=.`,
+so the script can load `SpaceAGORA` whether or not it activates the project
+itself. `--print-only` prints that project on its `project=` line and the
+full command on its `cmd=` line without running anything.
+
+What a command needs beyond `Pkg.instantiate()` depends on the script it
+starts, not on the CLI:
+
+| Command | Needs on top of the instantiated repository |
+|---|---|
+| `assets check`, `assets manifest`, `assets setup-open` | nothing |
+| `run --example=<no-GRAM example>` (`AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`, the RPO examples) | nothing |
+| `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, and the others listed on the [Examples Catalog](user/examples_catalog.md)) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed ones also need the native GRAM library built |
+| `telemetry ...` | the `data/GRAMSuite.jl` submodule: the study loads the vendored `GRAMSuite` package before it reads any scenario, even for `--scenarios=odyssey`; the truth files it grades are in the repository |
+| `benchmark ...` | the `data/GRAMSuite.jl` submodule, and for the GRAM-backed cases the native GRAM library |
+
+Without the submodule, `telemetry` and `benchmark` stop with "Package
+GRAMSuite not found in current path"; that is the prerequisite, not the CLI.
+
 ## Commands
 
 ### Run an example

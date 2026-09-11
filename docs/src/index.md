@@ -13,11 +13,15 @@ Use this path if you want the fastest successful run on a machine that does not
 have GRAM or SPICE configured yet.
 
 ```text
-git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate()"
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
+
+On Windows set the variable first (PowerShell `$env:GIT_LFS_SKIP_SMUDGE = "1"`,
+Command Prompt `set GIT_LFS_SKIP_SMUDGE=1`) and run the same `git clone` line
+without the prefix; the [Quickstart](user/quickstart.md) shows both forms.
 
 ## Choose your path
 

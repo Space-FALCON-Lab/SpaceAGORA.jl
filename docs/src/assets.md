@@ -98,6 +98,32 @@ data/GRAM_surrogate
 This bundle is optional. It accelerates selected GRAM-backed workflows but is
 not required for the no-GRAM baseline mode.
 
+### What a fresh clone contains, and what it does not
+
+Measured on a fresh `GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none`
+(September 2026):
+
+| Asset | In the clone? | Access | Needed by |
+|---|---|---|---|
+| Built-in planets, fallback atmospheres, `SimpleEphemeridesModel` | yes | open | the quickstart, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl` |
+| Gravity harmonics CSVs (`data/Gravity_harmonics_data`) | yes | open | missions and the verification study |
+| Topography harmonics (`data/Topography_harmonics_data`) | yes | open | nothing on the default path |
+| Odyssey, VEx and GMAT Earth truth files (`data/telemetry/...`, under 3 MB) | yes | open | the verification study |
+| RPO Gateway Core STL (`data/rpo/...`) | yes | open | the RPO examples |
+| GRAM surrogate grids (`data/GRAM_surrogate/*.jls`, seven LFS objects, about 2.5 GB) | pointers only with `GIT_LFS_SKIP_SMUDGE=1`, downloaded otherwise | Git LFS | one benchmark study; the runtime resolves surrogates through the submodule |
+| `data/GRAMSuite.jl` submodule: the vendored `GRAMSuite` package, the SPICE kernels and the GRAM Suite 2.0 tree | empty directory until you initialise it | public Git repository with Git LFS payloads of several GB; what is fetched and what you must provide yourself is on [GRAMSuite Setup](user/gramsuite_setup.md) | GRAM-backed examples, `Earth("", SPICE_PATH)`-style planets, the verification study and benchmark launchers |
+| Simulator reference sets (Basilisk, GMAT parity matrix) and public OPS-SAT-1 telemetry | no (gitignored) | lab organisation, `scripts/dev/fetch_private_telemetry.sh references` | the parity matrix `test/gmat_scenario_matrix.jl` |
+| CYGNSS and GRIFEX flight telemetry | no (gitignored) | per-person, granted by the PI; never commit or re-share | the mission studies that name them |
+
+`julia --project=. src/cli/main.jl assets check` prints the same picture for
+the machine you are on: `available`, `missing-optional`, and the licensing
+class of each entry. One qualification: for directory entries the check only
+tests that the directory exists, so after a clone with `GIT_LFS_SKIP_SMUDGE=1`
+it reports `gram_surrogate_directory: available` while the seven `.jls` files
+are still Git LFS pointers; `git lfs ls-files` shows them with `-` instead of
+`*`, and `git lfs pull --include "data/GRAM_surrogate/*"` fetches them before a
+surrogate-backed benchmark.
+
 ### Verification reference data
 
 The simulator-to-simulator reference sets that the parity matrix

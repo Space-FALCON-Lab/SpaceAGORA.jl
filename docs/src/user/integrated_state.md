@@ -150,7 +150,7 @@ frame fixed to the spacecraft bus, in which the inertia tensor is given.
 | `heat_loads` | one per link | Accumulated heat load of each link: the time integral of that link's stagnation heat rate. Starts at zero; grows only inside an atmosphere. The built-in Maxwellian model returns its heat rate in **W/cm²**, and the engine integrates it without an area-unit conversion, so the loads are in **J/cm²**, not SI. | J/cm² | – | always (one entry per link of the spacecraft) |
 | `q` | 4 | Attitude quaternion rotating inertial coordinates into bus coordinates, stored **scalar-last** as `[x, y, z, w]`; `[0, 0, 0, 1]` is "bus axes aligned with inertial axes". Kept on the unit sphere by a projection after every step. | – | inertial to bus | `orientation_sim = true` |
 | `ω` | 3 | Angular velocity of the bus. Its rate comes from the bus-frame torques and the inertia tensor (Euler's rotational equation). | rad/s | bus | `orientation_sim = true` |
-| `h_wheels` | number of wheels | Angular momentum stored in each reaction wheel. Changes only when a control effector commands wheel torque. | N·m·s | wheel axes | `orientation_sim = true` and the root link was built with wheels, `SM.Link{N}` with `N > 0` |
+| `h_wheels` | number of wheels | Angular momentum stored in each reaction wheel. Changes only when a control effector commands wheel torque. | N·m·s | wheel axes | `orientation_sim = true` and the root link was built with wheels: on `main` at the tested commit a `SM.Link{N}` with `N > 0`; on the router branch (PR #90), which drops the type parameter, a `SM.Link` whose `J_rw` matrix has `N` columns |
 | `arm_r`, `arm_q`, `arm_v`, `arm_ω` | 3×n, 4×n, 3×n, 3×n | Position, attitude quaternion (scalar-last), velocity and angular velocity of each of the `n` links of a robot arm coupled to a cloth model. The rotation convention of the arm quaternions is documented with the robot-arm subsystem and was not verified here. | m, –, m/s, rad/s | inertial for `arm_r` and `arm_v`; link-related for `arm_q` and `arm_ω` | a coupled cloth robot-arm plan is configured (the robot-arm demo); not in ordinary runs |
 
 Two things are worth knowing about how the state is advanced:
@@ -215,10 +215,12 @@ from `pos` and `vel` through the orbital energy, as the effector page does.
 Tested on `main` at `80240c2b`, fresh clone, no GRAM or SPICE:
 
 - the script above, for the two cases shown;
-- the four-wheel case (a bus built as `SM.Link{4}` with a `J_rw` mapping and
-  the keyword `SM.SpacecraftModel(; links, root, inertia_tensor,
-  n_reaction_wheels=4, initial_condition, id)` constructor): `h_wheels` of
-  size 4, 21 numbers;
+- the four-wheel case (a bus with a 3-by-4 `J_rw` mapping, built as
+  `SM.Link{4}` on the tested commit and as `SM.Link(...; J_rw=...)` on the
+  router branch that removes the type parameter, then the keyword
+  `SM.SpacecraftModel(; links, root, inertia_tensor, n_reaction_wheels=4,
+  initial_condition, id)` constructor): `h_wheels` of size 4 and 21 numbers
+  on both;
 - the heat aggregation, with a 60 s run at 150 km under
   `ExponentialAtmosphereModel(planet)` (no aerodynamic effector, so the
   atmosphere heats but does not decelerate): the three per-link loads were

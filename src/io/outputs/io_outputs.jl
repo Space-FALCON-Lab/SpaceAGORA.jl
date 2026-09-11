@@ -71,7 +71,86 @@ function _append_series_columns!(results_df::DataFrame, prefix::String, series)
     return nothing
 end
 
+# Direct assembly for the shape every built-in per-satellite save field has:
+# each snapshot holds one `Vector` of `num_sats` entries, and each entry is
+# either a real or a fixed-width vector of reals.
+#
+# The generic path reaches those columns through three layers of throwaway
+# intermediates -- one `sat_series` per satellite, then one `child_series` per
+# component, and `collect` copies that last one again. For a 3-vector field that
+# is 72 bytes of allocation per (satellite, row) to produce 24 bytes of column.
+# Here each final column is allocated once and filled in one pass.
+#
+# The reason this is split across a function barrier rather than written as one
+# loop: `saved_data` is a `Vector{SaveData}` and `SaveData` is
+# `Dict{Symbol, Any}`, so a snapshot lookup is `Any`. Doing the fills directly
+# off that makes every element access a dynamic dispatch, which measured *three
+# times worse* than the generic path it was meant to replace -- the generic
+# comprehensions are fast precisely because `[snapshot[name] for ...]` narrows
+# to a concrete element type. So the narrowing comprehension is kept, and the
+# concrete `values` is handed to a method that dispatches on its element type.
+#
+# Column order and column element types must match the generic path exactly,
+# because the feather schema is part of the output. On types, note that the
+# generic component path builds `value === nothing ? nothing : value[idx]` but
+# still yields a `Vector{T}`, not a `Vector{Union{Nothing, T}}` -- the
+# comprehension narrows to the element type actually produced.
+function _direct_assembly_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int)::Bool
+    (isempty(saved_data) || num_sats <= 0) && return false
+    values = [snapshot[field.name] for snapshot in saved_data]
+    return _fill_per_satellite_columns!(results_df, field.column_prefix, values, num_sats)
+end
+
+# Anything the two concrete methods below do not claim stays with the generic path.
+_fill_per_satellite_columns!(::DataFrame, ::String, values, ::Int)::Bool = false
+
+# One scalar column per satellite.
+function _fill_per_satellite_columns!(
+    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
+)::Bool where {T <: Real, V <: AbstractVector{T}}
+    n_rows = length(values)
+    all(row -> length(row) == num_sats, values) || return false
+    for sat_idx in 1:num_sats
+        column = Vector{T}(undef, n_rows)
+        @inbounds for row in 1:n_rows
+            column[row] = values[row][sat_idx]
+        end
+        results_df[!, "sc$(sat_idx)_$(prefix)"] = column
+    end
+    return true
+end
+
+# `n_comp` columns per satellite, named `_1`.._n` to match the generic path's
+# `eachindex` walk. `isbitstype(S)` is what guarantees a fixed width for every
+# entry: it admits `SVector{3, Float64}` and rules out `Vector{Float64}`, whose
+# rows could differ in length.
+function _fill_per_satellite_columns!(
+    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
+)::Bool where {T <: Real, S <: AbstractVector{T}, V <: AbstractVector{S}}
+    isbitstype(S) || return false
+    n_rows = length(values)
+    all(row -> length(row) == num_sats, values) || return false
+    n_comp = length(values[1][1])
+    n_comp > 0 || return false
+    for sat_idx in 1:num_sats
+        columns = [Vector{T}(undef, n_rows) for _ in 1:n_comp]
+        @inbounds for row in 1:n_rows
+            entry = values[row][sat_idx]
+            for comp in 1:n_comp
+                columns[comp][row] = entry[comp]
+            end
+        end
+        for comp in 1:n_comp
+            results_df[!, "sc$(sat_idx)_$(prefix)_$(comp)"] = columns[comp]
+        end
+    end
+    return true
+end
+
 function _append_save_field_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int)
+    if field.per_satellite && _direct_assembly_columns!(results_df, field, saved_data, num_sats)
+        return nothing
+    end
     field_series = [snapshot[field.name] for snapshot in saved_data]
     if field.per_satellite
         for sat_idx in 1:num_sats
@@ -170,6 +249,7 @@ end
 
 export _append_saved_segment!
 export _append_series_columns!
+export _direct_assembly_columns!
 export _build_results_dataframe
 export _write_results_csv!
 export _write_results_bundle!

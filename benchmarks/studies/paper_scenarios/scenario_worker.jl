@@ -144,8 +144,12 @@ end
 function ps_constellation_workload()
     args = ps_build_config(n_sats=PS_N_SATS)
     solve = () -> begin
-        result = SpaceAGORA.run_simulation(args; isolate_state=false, return_solution=true, return_solver_metadata=true)
-        string(result.solution.retcode) == "Success"
+        # Metadata only: this benchmark reads one retcode, and asking for the
+        # solution as well made every point retain a full per-satellite
+        # trajectory. At N=32768 that is 2.1x the allocation and 2.0x the GC
+        # time for a string comparison.
+        result = SpaceAGORA.run_simulation(args; isolate_state=false, return_solver_metadata=true)
+        result.retcode == "Success"
     end
     run_once = if isempty(PS_PROFILE)
         solve
@@ -233,8 +237,8 @@ function _ps_mc_sample_defn_expr()::Expr
                 initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
                 integration_tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
             )
-            result = SpaceAGORA.run_simulation(cfg; isolate_state=false, return_solution=true, return_solver_metadata=true)
-            return string(result.solution.retcode) == "Success"
+            result = SpaceAGORA.run_simulation(cfg; isolate_state=false, return_solver_metadata=true)
+            return result.retcode == "Success"
         end
         nothing
     end

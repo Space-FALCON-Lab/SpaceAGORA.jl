@@ -21,32 +21,8 @@ jobs:
       fail-fast: false
       matrix:
         julia-version: ["1.12"]
-        # The suite is one 32-minute sequential process and wildly uneven: 09 is
-        # 46% of the wall clock and 06+08 together are under a second, so an even
-        # split by count would not help. Shard membership comes from measured
-        # per-suite times (09 879s, 04 334s, 05 198s, 03 172s, 10 108s, 02 90s,
-        # 01 90s, 07 47s, 06+08 under 1s). 09 is split further by its probe list,
-        # one subprocess per probe; that split is round-robin and lands 4m29s
-        # against 8m09s, so the lighter half also carries the unit-tree driver.
-        # `ci_test_suite_shard_gate` fails if a suite ends up in no shard, in two
-        # shards, or if the unit driver is not claimed by exactly one.
-        include:
-          - shard: probes-a
-            suites: "09"
-            probe_shard: "1/2"
-          - shard: probes-b
-            suites: "09"
-            probe_shard: "2/2"
-            skip_unit_driver: "1"
-          - shard: solver-thruster
-            suites: "04,05"
-          - shard: rest
-            suites: "01,02,03,06,07,08,10"
     env:
       JULIA_NUM_THREADS: "4"
-      SPACEAGORA_TEST_SUITES: ${{ matrix.suites }}
-      SPACEAGORA_PROBE_SHARD: ${{ matrix.probe_shard }}
-      SPACEAGORA_SKIP_UNIT_DRIVER: ${{ matrix.skip_unit_driver }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -94,23 +70,8 @@ jobs:
       - name: Instantiate
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      # Under coverage, once. The suite used to run twice per PR: plain here and
-      # instrumented again in coverage-quality-gate. The instrumented leg is a
-      # strict superset -- suite 02's threaded probe driver runs only under
-      # coverage, 09 and 10 merely forward the flag to their subprocesses, and
-      # the robust-timing ratios are skipped whenever CI=true either way -- so
-      # the plain leg tested nothing the instrumented one does not. Uninstrumented
-      # code still runs in threaded-smoke, clean-depot-smoke and the example jobs.
-      - name: Run test suite (instrumented)
-        run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
-
-      - name: Upload coverage data
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.shard }}
-          path: "src/**/*.cov"
-          retention-days: 1
-          if-no-files-found: error
+      - name: Run test suite
+        run: julia --startup-file=no --project=. test/runtests.jl
 
       - name: Depwarn smoke (Earth thruster example)
         if: matrix.julia-version == '1.12'
@@ -486,14 +447,51 @@ jobs:
 
   coverage-quality-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs:
-      - tests-matrix
+    timeout-minutes: 120
+    env:
+      JULIA_NUM_THREADS: "4"
+      # Coverage debt (July 2026): first real gate run measured 82.84%
+      # overall; restore to 90.0 as the debt register in
+      # test/gates/ci_coverage_quality_gate.jl burns down.
+      SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
+      SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
+      # The window is measured back from the NEWEST .cov file (written when
+      # the main suite process exits), but probe SUBPROCESSES (suites 02/09)
+      # write their .cov at their own exit, up to a full suite-duration
+      # earlier. 1200s silently dropped the threaded/GRAM probe coverage
+      # whenever the post-probe tail of the suite outgrew 20 min, failing
+      # per-file floors on files those probes cover. Must exceed the whole
+      # suite step's wall time on the slowest hosted runner.
+      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "7200"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
+      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          # Jobs have crashed with ENOSPC mid-run (the runner worker dies
+          # writing its own logs, so the step never even reports a failure —
+          # seen on coverage-quality-gate for main@8e7be423 and PR #35).
+          # Reclaim aggressively: none of these preinstalled toolchains are
+          # used by Julia CI.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/.ghcup \
+            /usr/local/share/powershell /usr/local/lib/node_modules \
+            /usr/lib/google-cloud-sdk /usr/lib/jvm /opt/az /opt/microsoft \
+            /opt/pipx /usr/share/miniconda /usr/local/share/chromium \
+            /usr/local/share/boost
+          sudo docker image prune --all --force > /dev/null 2>&1 || true
+          sudo apt-get clean > /dev/null 2>&1 || true
+          df -h /
+
+      - name: Update GRAMSuite test submodule to dev main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -503,25 +501,23 @@ jobs:
       - name: Cache Julia artifacts
         uses: julia-actions/cache@v2
 
+      - name: Instantiate vendored GRAMSuite
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+
+      - name: GRAMSuite load smoke
+        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
+
       - name: Instantiate
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      # Every shard's .cov files land back under src/. The gate keys line counts
-      # on (source, line) and sums them, so the union across shards is exactly
-      # the coverage one unsharded run would have produced. Filenames carry the
-      # producing PID, so shards cannot collide.
-      - name: Download coverage from every shard
-        uses: actions/download-artifact@v4
-        with:
-          pattern: coverage-*
-          merge-multiple: true
+      - name: Ensure native GRAM build
+        run: ./scripts/ensure_gram_native.sh --clean
+
+      - name: Run tests with coverage
+        run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
 
       - name: Coverage quality gate
-        env:
-          # download-artifact rewrites mtimes to extraction time, so the gate's
-          # freshness window has to span the download rather than the test run.
-          SPACEAGORA_COVERAGE_WINDOW_SECONDS: "7200"
-        run: julia --startup-file=no --project=. test/coverage/runtests.jl
+        run: julia --startup-file=no --project=. test/gates/ci_coverage_quality_gate.jl
 
   calibration-coverage-quality-gate:
     runs-on: ubuntu-latest
@@ -595,7 +591,27 @@ jobs:
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          # Jobs have crashed with ENOSPC mid-run (the runner worker dies
+          # writing its own logs, so the step never even reports a failure —
+          # seen on coverage-quality-gate for main@8e7be423 and PR #35).
+          # Reclaim aggressively: none of these preinstalled toolchains are
+          # used by Julia CI.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/.ghcup \
+            /usr/local/share/powershell /usr/local/lib/node_modules \
+            /usr/lib/google-cloud-sdk /usr/lib/jvm /opt/az /opt/microsoft \
+            /opt/pipx /usr/share/miniconda /usr/local/share/chromium \
+            /usr/local/share/boost
+          sudo docker image prune --all --force > /dev/null 2>&1 || true
+          sudo apt-get clean > /dev/null 2>&1 || true
+          df -h /
 
+      - name: Update GRAMSuite test submodule to dev main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -659,7 +675,27 @@ jobs:
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
+      - name: Free runner disk space
+        run: |
+          # Jobs have crashed with ENOSPC mid-run (the runner worker dies
+          # writing its own logs, so the step never even reports a failure —
+          # seen on coverage-quality-gate for main@8e7be423 and PR #35).
+          # Reclaim aggressively: none of these preinstalled toolchains are
+          # used by Julia CI.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/.ghcup \
+            /usr/local/share/powershell /usr/local/lib/node_modules \
+            /usr/lib/google-cloud-sdk /usr/lib/jvm /opt/az /opt/microsoft \
+            /opt/pipx /usr/share/miniconda /usr/local/share/chromium \
+            /usr/local/share/boost
+          sudo docker image prune --all --force > /dev/null 2>&1 || true
+          sudo apt-get clean > /dev/null 2>&1 || true
+          df -h /
 
+      - name: Update GRAMSuite test submodule to dev main
+        env:
+          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+        run: bash .github/scripts/update_gramsuite_submodule.sh dev
 
       - name: Fetch base ref
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}

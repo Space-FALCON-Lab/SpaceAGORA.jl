@@ -127,8 +127,8 @@ function make_spacecraft(;
     ν_deg::Float64=175.0,
     orientation_state::Union{Nothing, Tuple{SVector{4, Float64}, SVector{3, Float64}}}=nothing
 )
-    root = Link{0}(root=true, m=500.0, ref_area=12.0)
-    panel = Link{0}(root=false, m=30.0, ref_area=6.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
+    root = Link(root=true, m=500.0, ref_area=12.0)
+    panel = Link(root=false, m=30.0, ref_area=6.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
 
     if isnothing(orientation_state)
         ic = InitialCondition(
@@ -488,13 +488,16 @@ end
     end
     @test probe_control.hits == ones(Int, 4)
 
-    # Aerodynamic helper branches and threaded accumulation branch.
+    # Aerodynamic helper branches and threaded accumulation branch. The mode
+    # is cached per solve, so each `withenv` refreshes it explicitly.
+    refresh_mode! = dyn.AerodynamicEffectors.refresh_multibody_parallel_mode!
     withenv(
         "SPACEAGORA_MULTIBODY_PARALLEL" => "auto",
         "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER" => "0"
     ) do
+        refresh_mode!()
         @test dyn._multibody_use_threads(8) == false
     end
     withenv(
@@ -503,6 +506,7 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
         "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "1"
     ) do
+        refresh_mode!()
         @test dyn._multibody_use_threads(8; heavy_work=false) == false
     end
     withenv(
@@ -512,8 +516,10 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
         "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "0"
     ) do
+        refresh_mode!()
         @test dyn._multibody_use_threads(8; heavy_work=true) == true
     end
+    refresh_mode!()
 
     args_aero = build_config(
         spacecraft=make_spacecraft(
@@ -614,15 +620,6 @@ end
     policy._destroy_persistent_foreach_scope!(scope_id)
     @test !haskey(policy._persistent_foreach_pools, (scope_id, :probe_scope))
 
-    withenv("SPACEAGORA_PARALLEL_POLICY_DELTA" => "oops") do
-        @test_throws ArgumentError policy.adaptive_delta()
-    end
-    withenv("SPACEAGORA_PARALLEL_POLICY_RHO" => "1.0") do
-        @test_throws ArgumentError policy.adaptive_rho()
-    end
-    withenv("SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "oops") do
-        @test_throws ArgumentError policy.adaptive_trim_quanta_budget()
-    end
     withenv("SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => "guided") do
         @test_throws ArgumentError policy.inner_scheduler_mode()
     end
@@ -725,9 +722,6 @@ end
     policy.reset_policy_telemetry!()
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "3",
-        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "2"
     ) do
         _ = policy.thread_policy_decision(4; mode=:auto, threshold=1, source=:probe_obs)
@@ -963,8 +957,11 @@ end
                 Int64(2) => policy.AdaptiveChoiceStats(samples=4, successes=3, failures=1, elapsed_sum_ns=120.0, elapsed_sq_sum_ns=3_600.0)
             )
         end
+        # A signature with no history starts at the WIDEST candidate, not the
+        # narrowest: the adaptive profile begins where the fixed policy begins
+        # (see the cold-signature comment in _hint_choose_allotment).
         miss_choice = policy._hint_choose_allotment("sig_missing", Int64[1, 2])
-        @test miss_choice.allotment == 1
+        @test miss_choice.allotment == 2
         zero_choice = policy._hint_choose_allotment("sig_zero", Int64[1])
         @test zero_choice.allotment == 1
         chosen = policy._hint_choose_allotment("sig_choose", Int64[1, 2])
@@ -1024,23 +1021,25 @@ end
     @test filtered_rows isa Vector
     @test isempty(filtered_rows)
 
-    withenv("SPACEAGORA_PARALLEL_POLICY_DELTA" => "1.2") do
-        @test_throws ArgumentError policy.adaptive_delta()
-    end
-
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "2",
-        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
-        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "1",
         "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0",
+        # The hint layer only updates when it pays for itself against the
+        # measured per-call work (_hint_layer_pays); this probe's 10 ns fake
+        # observations never would, so the gate is switched off for it.
+        "SPACEAGORA_PARALLEL_POLICY_HINT_WORK_RATIO" => "0",
+        # The probe driver runs this file at --threads=2, which clamps the
+        # budget to 2 -- below the default auto minimum budget of 4, at which
+        # the decision is forced and the hint store is never consulted. Lower
+        # the minimum to the budget this process actually has.
+        "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "4"
     ) do
-        lock(policy._policy_telemetry_lock) do
-            ctx = policy._active_policy_context()
+        # The telemetry lock now lives on the context it guards, not process-wide.
+        ctx_reset = policy._active_policy_context()
+        lock(ctx_reset.lock) do
+            ctx = ctx_reset
             ctx.telemetry = policy.PolicyTelemetry()
             empty!(ctx.adaptive_state)
             empty!(ctx.decision_signature)

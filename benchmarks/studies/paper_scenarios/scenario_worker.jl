@@ -47,7 +47,26 @@ const PS_REPEATS = parse(Int, get(ENV, "PS_REPEATS", "3"))
 const PS_ALT_KM = parse(Float64, get(ENV, "PS_ALT_KM", PS_DENSITY == "none" ? "550.0" : "150.0"))
 
 const _NEEDS_GRAM = startswith(PS_DENSITY, "gram")
+
+# The vacuum scenarios need no ephemeris beyond Earth's own constants, but the
+# SPICE-backed `Earth(topo, spice_path)` constructor demands its kernel bundle
+# unconditionally. A checkout without the GRAM/SPICE submodule -- the documented
+# baseline no-GRAM tier -- therefore could not run S1 at all. Fall back to the
+# built-in `Earth()` when the bundle is absent, and honour `PS_NO_SPICE=1` to
+# force that path on a machine that does have kernels (so the two can be
+# compared). A GRAM density mode still requires the real bundle.
+const PS_NO_SPICE = get(ENV, "PS_NO_SPICE", "0") == "1"
+const PS_SPICE_AVAILABLE = !PS_NO_SPICE && isfile(joinpath(SPICE_PATH, "pck", "pck00011.tpc"))
+if _NEEDS_GRAM && !PS_SPICE_AVAILABLE
+    error(PS_NO_SPICE ?
+        "PS_DENSITY=$(PS_DENSITY) needs SPICE, but PS_NO_SPICE=1 was set." :
+        "PS_DENSITY=$(PS_DENSITY) needs the SPICE kernels under $(SPICE_PATH); none found.")
+end
+# After the guard, so a no-SPICE run reports the real cause instead of failing
+# inside the GRAMSuite import.
 _NEEDS_GRAM && ensure_gramsuite_loaded!()
+
+ps_earth() = PS_SPICE_AVAILABLE ? Earth("", SPICE_PATH) : Earth()
 
 function _ps_density_model()
     PS_DENSITY == "none" && return NoAtmosphereModel()
@@ -70,7 +89,7 @@ end
 # single satellite of the constellation (ensemble-member mode), keeping the exact
 # same orbit geometry formula so member and monolithic runs are comparable.
 function ps_build_config(; n_sats::Int, seed::Int=0, only_member::Int=0)
-    planet = Earth("", SPICE_PATH)
+    planet = ps_earth()
     gravity = _ps_gravity_effector(planet)
     effectors = PS_DENSITY == "none" ? (gravity,) : (gravity, AerodynamicCoefficientfM())
     alt_m = PS_ALT_KM * 1e3
@@ -80,7 +99,7 @@ function ps_build_config(; n_sats::Int, seed::Int=0, only_member::Int=0)
     member_range = only_member > 0 ? (only_member:only_member) : (1:n_sats)
     spacecraft = SpacecraftModel[]
     for i in member_range
-        root = Link{0}(root=true, m=500.0, ref_area=12.0)
+        root = Link(root=true, m=500.0, ref_area=12.0)
         phase = 50.0 * (i - 1) / max(n_sats, 1)
         ic = InitialCondition(
             ra=planet.Rp_e + alt_m + phase + alt_jitter_m,
@@ -111,7 +130,8 @@ function ps_build_config(; n_sats::Int, seed::Int=0, only_member::Int=0)
             density_model=_ps_density_model(),
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
             topography=false,
-            wind=false
+            wind=false,
+            ephemerides_model=PS_SPICE_AVAILABLE ? SpiceEphemeridesModel() : SimpleEphemeridesModel()
         ),
         dynamics_model=DynamicsModel(spacecraft, effectors),
         guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
@@ -128,15 +148,19 @@ end
 function ps_constellation_workload()
     args = ps_build_config(n_sats=PS_N_SATS)
     solve = () -> begin
-        result = SpaceAGORA.run_simulation(args; isolate_state=false, return_solution=true, return_solver_metadata=true)
-        string(result.solution.retcode) == "Success"
+        # Metadata only: this benchmark reads one retcode, and asking for the
+        # solution as well made every point retain a full per-satellite
+        # trajectory. At N=32768 that is 2.1x the allocation and 2.0x the GC
+        # time for a string comparison.
+        result = SpaceAGORA.run_simulation(args; isolate_state=false, return_solver_metadata=true)
+        result.retcode == "Success"
     end
     run_once = if isempty(PS_PROFILE)
         solve
     else
         () -> SpaceAGORA.with_parallel_profile(solve, PS_PROFILE)
     end
-    return run_once, "constellation n_sats=$(PS_N_SATS) gravity=$(PS_GRAVITY) density=$(PS_DENSITY) profile=$(PS_PROFILE)"
+    return run_once, "constellation n_sats=$(PS_N_SATS) gravity=$(PS_GRAVITY) density=$(PS_DENSITY) profile=$(PS_PROFILE) spice=$(PS_SPICE_AVAILABLE)"
 end
 
 # Expression eval'd on each Distributed pool worker to define Main._ps_mc_sample.
@@ -148,7 +172,7 @@ function _ps_mc_sample_defn_expr()::Expr
     gravity = PS_GRAVITY
     return quote
         function _ps_mc_sample(seed::Int)::Bool
-            planet = Earth("", $(SPICE_PATH))
+            planet = $(PS_SPICE_AVAILABLE) ? Earth("", $(SPICE_PATH)) : Earth()
             gravity_eff = if $(gravity) == "invsq"
                 InverseSquaredGravityModel()
             else
@@ -177,7 +201,7 @@ function _ps_mc_sample_defn_expr()::Expr
             raan_jitter_deg = members ? 0.0 : 0.75 * seed
             spacecraft = SpacecraftModel[]
             for i in member_range
-                root = Link{0}(root=true, m=500.0, ref_area=12.0)
+                root = Link(root=true, m=500.0, ref_area=12.0)
                 phase = 50.0 * (i - 1) / max(n_sats, 1)
                 ic = InitialCondition(
                     ra=planet.Rp_e + alt_m + phase + alt_jitter_m,
@@ -207,7 +231,8 @@ function _ps_mc_sample_defn_expr()::Expr
                     density_model=density_model,
                     thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
                     topography=false,
-                    wind=false
+                    wind=false,
+                    ephemerides_model=$(PS_SPICE_AVAILABLE) ? SpiceEphemeridesModel() : SimpleEphemeridesModel()
                 ),
                 dynamics_model=DynamicsModel(spacecraft, effectors),
                 guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
@@ -216,8 +241,8 @@ function _ps_mc_sample_defn_expr()::Expr
                 initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
                 integration_tolerances=IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=2.0)
             )
-            result = SpaceAGORA.run_simulation(cfg; isolate_state=false, return_solution=true, return_solver_metadata=true)
-            return string(result.solution.retcode) == "Success"
+            result = SpaceAGORA.run_simulation(cfg; isolate_state=false, return_solver_metadata=true)
+            return result.retcode == "Success"
         end
         nothing
     end
@@ -256,7 +281,7 @@ function ps_mc_workload()
             samples = SpaceAGORA.SimulationCampaigns._run_monte_carlo_process(f, seeds, spec, active)
             count(s -> s.success, samples) == n_samples
         end
-        return run_once, describe
+        return run_once, describe * " spice=$(PS_SPICE_AVAILABLE)"
     end
 
     # serial/threads backends: sample function lives in this process.
@@ -311,7 +336,8 @@ function main()
     med = median(times)
     println("PS_RESULT ok=$(ok) median_s=$(round(med; digits=4)) min_s=$(round(minimum(times); digits=4)) " *
             "max_s=$(round(maximum(times); digits=4)) times_s=$(join(round.(times; digits=4), '|')) " *
-            "maxrss_mb=$(round(maxrss_mb; digits=1)) workers_rss_mb=$(round(workers_rss_mb; digits=1))")
+            "maxrss_mb=$(round(maxrss_mb; digits=1)) workers_rss_mb=$(round(workers_rss_mb; digits=1)) " *
+            "spice=$(PS_SPICE_AVAILABLE)")
     flush(stdout)
 
     # Shut the pool down explicitly: orphaned pool workers holding this process's
@@ -320,4 +346,9 @@ function main()
     return nothing
 end
 
-main()
+# Only when run as a program. The probes under `probes/` include this file for
+# `ps_build_config`, and an unconditional `main()` ran a whole extra solve at
+# their N as an import side effect -- minutes, at the 32768 they default to.
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

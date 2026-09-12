@@ -12,6 +12,11 @@ configure outer-routing and inner callback/RHS policy.
     R3
     R4
     R5
+    # R5 plus SPACEAGORA_PARALLEL_POLICY_V2. A separate profile rather than a
+    # change to R5, so the shipped algorithm and the revised one can be run
+    # side by side under the paired probe and the benchmark harness, and so
+    # either can be deleted cleanly once the comparison is settled.
+    R6
 end
 
 # Backward-compatible alias for historical profile naming.
@@ -35,11 +40,11 @@ Base.@kwdef struct ParallelProfileConfig
     multibody_mode::String
     effector_mode::String
     inner_scheduler::String = "static"
-    adaptive_window::Int = 8
-    adaptive_control_tail_guard::Bool = false
     adaptive_measured_reward::Bool = false
     persistent_hints::Bool = false
     persistent_state_persist::Bool = false
+    # SPACEAGORA_PARALLEL_POLICY_V2; true only for R6.
+    policy_v2::Bool = false
 end
 
 """
@@ -60,8 +65,10 @@ Return the canonical string label for a `ParallelProfile`.
         return "R3"
     elseif profile == R4
         return "R4"
+    elseif profile == R5
+        return "R5"
     end
-    return "R5"
+    return "R6"
 end
 
 @inline function _normalize_profile_token(raw::AbstractString)::String
@@ -102,9 +109,11 @@ function parse_parallel_profile(raw::AbstractString)::ParallelProfile
         "r4_calibration_full_auto"
     )
         return R5
+    elseif token in ("r6", "r6_policy_v2", "policy_v2")
+        return R6
     end
     throw(ArgumentError(
-        "Unsupported parallel profile '$raw'. Use one of: R0, R1_a, R1_b, R2, R3, R4, R5."
+        "Unsupported parallel profile '$raw'. Use one of: R0, R1_a, R1_b, R2, R3, R4, R5, R6."
     ))
 end
 
@@ -198,22 +207,58 @@ function profile_config(profile_in)::ParallelProfileConfig
             effector_mode="auto"
         )
     end
+    # R5 and R6 share every setting below; R6 differs only in policy_v2. That
+    # is deliberate -- the comparison R6 exists for is "the shipped algorithm
+    # against the revised one, everything else equal".
     return ParallelProfileConfig(
         profile=profile,
-        label="r5",
+        label=(profile == R6 ? "r6_policy_v2" : "r5"),
         outer_backend=:auto,
         inner_adaptive=true,
         outer_route_adaptive=true,
         density_mode="auto",
         control_mode="auto",
-        thermal_mode="on",
+        # Auto, not on, and this is the same reversal as the scheduler below.
+        #
+        # R5 was the only profile that forced the thermal callback parallel:
+        # R2, R3 and R4 all declare "auto". A profile-level constant that
+        # pre-empts a routed decision is exactly the defect the inner_scheduler
+        # comment below describes, and this was its twin, three fields up in the
+        # same constructor.
+        #
+        # The +11.1% originally attributed to it was an artifact of block
+        # ordering and was correctly retracted; the paired re-measurement put it
+        # at +1.7%, and that residual was then filed with the retraction rather
+        # than acted on. "on" was never measured to be better than "auto" on any
+        # workload -- it was asserted.
+        thermal_mode="auto",
         multibody_mode="auto",
         effector_mode="auto",
-        inner_scheduler="dynamic",
-        adaptive_window=4,
-        adaptive_control_tail_guard=true,
+        # Static, not dynamic, and this is a measured reversal.
+        #
+        # R5 hard-coded the dynamic scheduler, which pre-empts the very choice
+        # calibration now measures: the scheduler became part of the calibrated
+        # RHS plan, and the dispatch sites honour that plan's scheduler. But when
+        # calibration declines to override -- which the no-regret floor makes the
+        # common outcome on workloads the heuristic already handles well -- the
+        # dispatch falls back to this profile-level setting, so the hard-coded
+        # value silently decided what the router was supposed to measure.
+        #
+        # It cost 7.0% on gravity_4096sat_l50_vacuum_1hr (paired probe, 21 pairs,
+        # 4 wins against 17, p = 0.0072), which was the last remaining
+        # statistically significant regression of R5 against the best static
+        # route. On interact_256 with a live flat queue, static is not worse
+        # (p = 0.30, not distinguishable), so nothing that currently wins depends
+        # on the dynamic default.
+        #
+        # Dynamic scheduling remains reachable: the calibration sweep crosses
+        # both schedulers with the allotment ladder and pins dynamic where it
+        # measurably wins. What changes is that it must now be earned rather than
+        # assumed.
+        inner_scheduler="static",
         adaptive_measured_reward=true,
         persistent_hints=true,
-        persistent_state_persist=true
+        persistent_state_persist=true,
+        policy_v2=(profile == R6)
     )
 end

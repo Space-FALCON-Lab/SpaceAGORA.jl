@@ -5,7 +5,7 @@ using AstroTime
 using StaticArrays
 using SPICE
 
-using ...RuntimeServices: SPICE_LOCK
+using ...RuntimeServices: SPICE_LOCK, tracked_lock
 using ..AbstractTypes: AbstractEphemeridesModel
 
 export SpiceEphemeridesModel, SimpleEphemeridesModel

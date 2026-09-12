@@ -37,6 +37,20 @@ Base.@kwdef struct MonteCarloSampleResult
     value::Any = nothing
     error::Any = nothing
     backtrace::Any = nothing
+    # Coordinator clock (`time_ns`) at which this sample's result was in hand,
+    # stamped by the dispatcher that collected it (`_stamp_finished`). NaN when
+    # the sample was constructed elsewhere and never collected -- on a process
+    # worker, before the round trip home. The route bandit reads the spread of
+    # these to credit a route with its steady per-sample cost rather than the
+    # campaign's mean (see `steady_per_sample_s`).
+    finished_ns::Float64 = NaN
+end
+
+@inline function _stamp_finished(s::MonteCarloSampleResult)::MonteCarloSampleResult
+    return MonteCarloSampleResult(index=s.index, seed=s.seed, success=s.success,
+                                  elapsed_s=s.elapsed_s, value=s.value,
+                                  error=s.error, backtrace=s.backtrace,
+                                  finished_ns=Float64(time_ns()))
 end
 
 """
@@ -46,7 +60,11 @@ Aggregate result returned by [`run_monte_carlo`](@ref).
 
 `samples` preserves seed order for all samples that ran. `successful` and
 `failed` are convenience subsets of `samples`. `elapsed_s` is the total campaign
-wall time, and `threads` is the worker-task count used by the run.
+wall time, and `threads` is the number of samples the run kept in flight at
+once. `route` is the outer route that ran them (`:none`, `:threads` or
+`:process`), and `local_slots` how many of those in-flight samples the
+coordinator ran on its own threads beside the process pool (mixed dispatch;
+zero for every other route).
 """
 struct MonteCarloResult
     samples::Vector{MonteCarloSampleResult}
@@ -54,12 +72,74 @@ struct MonteCarloResult
     failed::Vector{MonteCarloSampleResult}
     elapsed_s::Float64
     threads::Int
+    route::Symbol
+    local_slots::Int
 end
 
-function MonteCarloResult(samples::Vector{MonteCarloSampleResult}, elapsed_s::Real, threads::Integer)
+function MonteCarloResult(samples::Vector{MonteCarloSampleResult}, elapsed_s::Real, threads::Integer;
+                          route::Symbol = (threads > 1 ? :threads : :none), local_slots::Integer = 0)
     successful = MonteCarloSampleResult[s for s in samples if s.success]
     failed = MonteCarloSampleResult[s for s in samples if !s.success]
-    return MonteCarloResult(samples, successful, failed, Float64(elapsed_s), Int(threads))
+    return MonteCarloResult(samples, successful, failed, Float64(elapsed_s), Int(threads), route, Int(local_slots))
+end
+
+"""
+    steady_per_sample_s(result::MonteCarloResult) -> Float64
+
+The campaign's per-sample cost once it was running steadily: the wall between
+the median completion and the last one, divided by the samples that completed
+in that window. Falls back to `elapsed_s / n` when fewer than four samples
+carry a completion stamp.
+
+`elapsed_s / n` is what a campaign cost; this is what the next one will. The
+difference is everything the first campaign of a route pays once -- the
+process pool spinning up, a worker JIT-compiling the sample closure, the
+coordinator compiling the dispatcher -- and it is not small: measured on the
+TRX50's L12 (independent_1sat_1hr, 64 samples, 24 workers) the process route's
+first campaign took 3.16 s against 0.20 s at steady state. Credited with the
+mean, the route bandit rated the pool at 49 ms per sample against the threads
+route's 16 ms, chose threads, and had no reason ever to re-try the pool it had
+mis-measured; the static process route ran the same shape 3x faster.
+"""
+function steady_per_sample_s(result::MonteCarloResult)::Float64
+    n = length(result.samples)
+    n <= 0 && return 0.0
+    mean_s = result.elapsed_s / n
+    stamps = Float64[s.finished_ns for s in result.samples if isfinite(s.finished_ns)]
+    length(stamps) >= 4 || return mean_s
+    sort!(stamps)
+    half = length(stamps) ÷ 2
+    span_s = (stamps[end] - stamps[half]) / 1.0e9
+    tail = length(stamps) - half
+    (isfinite(span_s) && span_s > 0.0 && tail > 0) || return mean_s
+    return span_s / tail
+end
+
+"""
+    _warm_campaign_dispatchers()
+
+Run every Monte Carlo dispatcher once on a trivial sample: the serial loop, the
+mixed dispatcher on local slots, and -- given a second thread -- the threaded
+dispatcher and the mixed dispatcher at width two, then the steady-cost
+estimator over the result. This is the body of the package's precompile
+workload (see `@compile_workload` in `SpaceAGORA.jl`), kept as a function so
+it is one piece of code compiled into the pkgimage at precompile time and
+exercised by the test suite at run time; a `@compile_workload` block's own
+lines never execute in a test process.
+"""
+function _warm_campaign_dispatchers()::Nothing
+    sample = seed -> seed * 2
+    seeds = collect(1:4)
+    spec1 = MonteCarloSpec(seeds = seeds, threads = 1)
+    serial = _run_monte_carlo_serial(sample, seeds, spec1)
+    _run_monte_carlo_mixed(sample, seeds, spec1, Int[], 1)
+    if Base.Threads.nthreads() > 1
+        spec2 = MonteCarloSpec(seeds = seeds, threads = 2)
+        _run_monte_carlo_threaded(sample, seeds, spec2, 2)
+        _run_monte_carlo_mixed(sample, seeds, spec2, Int[], 2)
+    end
+    steady_per_sample_s(MonteCarloResult(serial, 0.01, 1))
+    return nothing
 end
 
 function _validate_monte_carlo_threads(threads::Int)
@@ -109,7 +189,7 @@ end
 function _run_monte_carlo_serial(f, seeds::Vector, spec::MonteCarloSpec)
     samples = MonteCarloSampleResult[]
     for (index, seed) in enumerate(seeds)
-        sample = _run_monte_carlo_sample(f, index, seed)
+        sample = _stamp_finished(_run_monte_carlo_sample(f, index, seed))
         push!(samples, sample)
         if spec.fail_fast && !sample.success
             _throw_first_monte_carlo_failure(samples)
@@ -133,7 +213,7 @@ function _run_monte_carlo_threaded(f, seeds::Vector, spec::MonteCarloSpec, worke
             Base.Threads.@spawn begin
                 for (index, seed) in jobs
                     spec.fail_fast && stop_requested[] && break
-                    sample = _run_monte_carlo_sample(f, index, seed)
+                    sample = _stamp_finished(_run_monte_carlo_sample(f, index, seed))
                     samples[index] = sample
                     if spec.fail_fast && !sample.success
                         Base.Threads.atomic_xchg!(stop_requested, true)
@@ -162,7 +242,27 @@ end
 # sample. The dispatch loop itself uses `@async`/`@sync` (not `Threads.@spawn`):
 # each task just blocks on IPC waiting for a worker's reply, so it should not
 # occupy an OS thread the way genuinely CPU-bound work would.
-function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int})
+"""
+    _run_monte_carlo_mixed(f, seeds, spec, worker_ids, local_slots) -> Vector{MonteCarloSampleResult}
+
+One job queue, two kinds of consumer: one `@async` feeder per pool worker,
+each blocking on a `remotecall_fetch` of a single sample, and `local_slots`
+`Threads.@spawn` tasks running samples in this process. Whichever finishes a
+sample first takes the next, so a slow slot (a 1-thread worker on a heavy
+sample) is balanced against a fast one without any static partition.
+
+Pool workers are `--threads=1`, so with W workers on a T-thread coordinator a
+process-only campaign uses W cores and leaves T idle; the local slots are how
+the process route fills them (see `ParallelProfiles.mixed_local_slots` for
+how many). The caller sets the local samples' inner budget with
+`outer_split_env_pairs(local_slots)` around this call; the workers' own pool
+is their share. `local_slots = 0` is the process-only dispatch.
+"""
+function _run_monte_carlo_mixed(
+    f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int}, local_slots::Int
+)
+    (isempty(worker_ids) && local_slots < 1) && throw(ArgumentError(
+        "_run_monte_carlo_mixed needs at least one pool worker or one local slot."))
     jobs = Channel{Tuple{Int, Any}}(length(seeds))
     for (index, seed) in enumerate(seeds)
         put!(jobs, (index, seed))
@@ -171,29 +271,33 @@ function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker
 
     samples = Vector{Union{Nothing, MonteCarloSampleResult}}(nothing, length(seeds))
     stop_requested = Base.Threads.Atomic{Bool}(false)
-
-    pool = CachingPool(worker_ids)
     run_sample = (index, seed) -> _run_monte_carlo_sample(f, index, seed)
+    consume = run -> begin
+        for (index, seed) in jobs
+            spec.fail_fast && stop_requested[] && break
+            sample = _stamp_finished(run(index, seed))
+            samples[index] = sample
+            if spec.fail_fast && !sample.success
+                Base.Threads.atomic_xchg!(stop_requested, true)
+                break
+            end
+        end
+    end
+
+    pool = isempty(worker_ids) ? nothing : CachingPool(worker_ids)
     try
         Base.@sync begin
             for _ in worker_ids
-                Base.@async begin
-                    for (index, seed) in jobs
-                        spec.fail_fast && stop_requested[] && break
-                        sample = remotecall_fetch(run_sample, pool, index, seed)
-                        samples[index] = sample
-                        if spec.fail_fast && !sample.success
-                            Base.Threads.atomic_xchg!(stop_requested, true)
-                            break
-                        end
-                    end
-                end
+                Base.@async consume((index, seed) -> remotecall_fetch(run_sample, pool, index, seed))
+            end
+            for _ in 1:local_slots
+                Base.Threads.@spawn consume(run_sample)
             end
         end
     finally
         # Drop the cached closure on the workers; it can capture large
         # configuration state that should not outlive the campaign.
-        Distributed.clear!(pool)
+        pool === nothing || Distributed.clear!(pool)
     end
 
     # samples[index] writes plus the in-order filter above already leave
@@ -203,6 +307,39 @@ function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker
         _throw_first_monte_carlo_failure(completed)
     end
     return completed
+end
+
+# Process-backend dispatch: the mixed dispatcher with no local slots.
+function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int})
+    return _run_monte_carlo_mixed(f, seeds, spec, worker_ids, 0)
+end
+
+"""
+    outer_split_env_pairs(worker_count) -> Vector{Pair{String,String}}
+
+Environment a threaded outer split must run its samples under: the split is
+declared active, and -- unless the caller set one -- each sample's inner
+thread budget is its share of the pool, `fld(Threads.nthreads(), worker_count)`.
+
+Without the budget a sample resolves `effective_inner_thread_budget()` to the
+whole pool. The shipped inner policy (R4/R5) survives that because its AIMD
+controller sees the contention and backs off; the V2 static width rule takes
+`min(items, budget)` and holds it, so every concurrent sample threads its
+callbacks at full pool width. Measured on B15 mcgrid_16sat_8mc at 12 threads,
+8 concurrent samples: 10.33 s per sample with the pool advertised, 3.07 s with
+the share advertised, 4.56 s for R5 under the same overstatement.
+
+The adaptive campaign runner already did this for the `threads=:auto` path
+(adaptive_routing.jl); `run_monte_carlo(f, seeds; threads=N)` did not, so the
+integer-threads API paid the full cost. An explicit user budget always wins.
+"""
+function outer_split_env_pairs(worker_count::Int)::Vector{Pair{String, String}}
+    pairs = Pair{String, String}["SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"]
+    if isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))
+        share = max(1, fld(Base.Threads.nthreads(), max(1, worker_count)))
+        push!(pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(share))
+    end
+    return pairs
 end
 
 """
@@ -263,7 +400,13 @@ function run_monte_carlo(f, spec::MonteCarloSpec)
     samples = if worker_count == 1
         _run_monte_carlo_serial(f, seeds, spec)
     else
-        _run_monte_carlo_threaded(f, seeds, spec, worker_count)
+        # Every sample that runs beside others must be told its share of the
+        # pool. See outer_split_env_pairs: without this each of the concurrent
+        # solves believes it owns every thread, and under the V2 static width
+        # rule that belief is acted on for the whole solve.
+        withenv(outer_split_env_pairs(worker_count)...) do
+            _run_monte_carlo_threaded(f, seeds, spec, worker_count)
+        end
     end
     elapsed_s = (time_ns() - start_ns) / 1.0e9
     return MonteCarloResult(samples, elapsed_s, worker_count)

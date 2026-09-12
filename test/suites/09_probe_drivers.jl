@@ -22,6 +22,8 @@
         "process_pool_probes.jl",
         "campaign_process_route_probes.jl",
         "state_anchor_probes.jl",
+        "flat_route_parity_probes.jl",
+        "kinematics_probes.jl",
     ]
     coverage_flags = Base.JLOptions().code_coverage == 0 ? String[] : ["--code-coverage=user"]
     for probe in probe_files
@@ -51,4 +53,42 @@
         end
         @test success(proc)
     end
+end
+
+@testset "Standalone Unit Suite Driver" begin
+    # test/unit/**/*_tests.jl are standalone (`using SpaceAGORA`) function-level
+    # tests for the parallel routing, cost and calibration layers: machine
+    # topology, the cost hierarchy, robust timing, the streaming paired trial,
+    # the R6 route rules, RHS re-verification. No CI job ran test/unit/runtests.jl,
+    # so the code they exercise reached the coverage gate with no line data at
+    # all -- parallel/cost/machine_calibration.jl measured 0%. Run the whole
+    # unit tree here as one subprocess: one Julia start-up, the coverage flag
+    # forwarded, and four threads where the machine has them because several
+    # testsets (rounds ties, the split race) skip below that.
+    unit_script = joinpath(REPO_ROOT, "test", "unit", "runtests.jl")
+    coverage_flags = Base.JLOptions().code_coverage == 0 ? String[] : ["--code-coverage=user"]
+    unit_threads = clamp(Sys.CPU_THREADS, 2, 4)
+    cmd = Cmd([
+        Base.julia_cmd().exec...,
+        "--startup-file=no",
+        "--project=$(REPO_ROOT)",
+        coverage_flags...,
+        "--threads=$(unit_threads)",
+        unit_script,
+    ])
+    cmd = addenv(
+        cmd,
+        "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
+        "SPACEAGORA_WARN_NORMALIZE" => "0"
+    )
+
+    output = IOBuffer()
+    proc = run(pipeline(ignorestatus(cmd), stdout=output, stderr=output))
+    text = String(take!(output))
+    if !success(proc)
+        println("----- begin unit suite output -----")
+        println(text)
+        println("----- end unit suite output -----")
+    end
+    @test success(proc)
 end

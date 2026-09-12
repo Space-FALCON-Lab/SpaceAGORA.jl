@@ -18,7 +18,7 @@ spice_path = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 planet = Earth("", spice_path)
 
 function make_sc(id::Int64, ν_deg::Float64)
-    root = Link{0}(root=true, m=140.0, ref_area=1.2)
+    root = Link(root=true, m=140.0, ref_area=1.2)
     ic = InitialCondition(
         ra=planet.Rp_e + 520e3,
         rp=planet.Rp_e + 500e3,

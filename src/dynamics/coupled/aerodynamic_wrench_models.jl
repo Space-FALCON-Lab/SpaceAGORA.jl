@@ -5,9 +5,32 @@ const inv_sqrt_π = 1 / sqrt(π)
 
 @inline _parse_bool_env(name::String, default::Bool)::Bool = ParallelPolicy.parse_bool_env(name, default)
 
-@inline function _multibody_parallel_mode()::Symbol
-    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_MULTIBODY_PARALLEL")
+# SPACEAGORA_MULTIBODY_PARALLEL, read once per solve. _multibody_thread_decision
+# runs per satellite per RHS call from two effector sites, and the ENV read
+# (getenv + a fresh String, then strip/lowercase) was the one cost left in it
+# after the forced-false short-circuits: one per satellite per call on every
+# route. The engine refreshes the cache at each solve start
+# (refresh_multibody_parallel_mode!), which is where a harness `withenv` can
+# have changed the value; between solves it is a Ref read.
+const _MULTIBODY_MODE_CACHE = Ref{Union{Nothing, Symbol}}(nothing)
+
+"""
+    refresh_multibody_parallel_mode!() -> Symbol
+
+Re-read `SPACEAGORA_MULTIBODY_PARALLEL` into the per-solve cache the
+per-satellite thread decision consults. Called by the engine at solve start.
+"""
+function refresh_multibody_parallel_mode!()::Symbol
+    mode = ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_MULTIBODY_PARALLEL")
+    _MULTIBODY_MODE_CACHE[] = mode
+    return mode
 end
+
+@inline function _multibody_parallel_mode()::Symbol
+    cached = _MULTIBODY_MODE_CACHE[]
+    return cached === nothing ? refresh_multibody_parallel_mode!() : cached
+end
+
 
 @inline function _multibody_thread_threshold()::Int
     return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD", 4)
@@ -34,7 +57,33 @@ end
 
 @inline function _multibody_thread_decision(num_items::Int; heavy_work::Bool=true)
     mode = _multibody_parallel_mode()
+
+    # Cheap forced-false checks before the policy call, because this runs PER
+    # SATELLITE PER RHS CALL.
+    #
+    # Both call sites -- the n-body force and the aerodynamic wrench -- invoke
+    # this from inside the per-satellite effector chain, and the answer does not
+    # depend on the satellite: it is a function of `num_items` (third bodies, or
+    # aerodynamic links), which is the same for every one of them. Reaching
+    # thread_policy_decision costs roughly nine ENV reads, each allocating
+    # through strip/lowercase, plus two telemetry lock acquisitions. On a
+    # 256-satellite constellation with third-body gravity that is ~2300 ENV
+    # reads and 512 lock acquisitions per RHS call, to re-derive one answer 256
+    # times.
+    #
+    # The common case never had a decision to make. SPACEAGORA_MULTIBODY_THREAD_THRESHOLD
+    # defaults to 4 and a typical third-body set is Sun plus Moon, so num_items
+    # is 2 and threading is refused on the threshold -- after all that work.
+    #
+    # `mode == :on` is excluded from the threshold check because it forces
+    # threading regardless of item count, so its answer is not forced here.
+    if mode == :off || num_items <= 1 || Threads.nthreads() <= 1
+        return (use_threads=false, allotment=1, mode=mode)
+    end
     threshold = _multibody_thread_threshold()
+    if mode != :on && num_items < max(1, threshold)
+        return (use_threads=false, allotment=1, mode=mode)
+    end
     outer_active = _multibody_outer_parallel_hint()
     allow_with_outer = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER", false)
     heavy_only = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY", true)
@@ -178,22 +227,61 @@ end
     error("SimulationModel.planet_frame_lpi not found in module ancestry for aerodynamic_wrench_models.jl")
 end
 
+# Guards the lazy-growth path below, and nothing else.
+#
+# Not on the hot path: `_initialize_save_cache_buffers!` (engine/setup.jl) sizes
+# these caches to the satellite count before any threaded dispatch can begin, so
+# in a solve the growth branch is never taken and this lock is never acquired.
+const _SAVE_CACHE_GROW_LOCK = ReentrantLock()
+
 @inline function _store_vector_cache!(
     cache::Vector{SVector{3, Float64}},
     sat_idx::Int,
     value::SVector{3, Float64}
 )::Nothing
     if length(cache) < sat_idx
-        resize!(cache, sat_idx)
-        @inbounds for idx in eachindex(cache)
-            if !isassigned(cache, idx)
-                cache[idx] = SVector{3, Float64}(0.0, 0.0, 0.0)
+        # Growing a SHARED vector from inside a parallel region.
+        #
+        # AerodynamicCoefficientfM's wrench is dispatched across persistent
+        # worker threads by the flat-constellation-effector-queue route, so two
+        # satellites on different workers can both see the cache too short and
+        # both call `resize!` on the same Vector. Julia 1.12 catches that as a
+        # ConcurrencyViolationError; at larger satellite counts, where the race
+        # window is tighter, it has instead corrupted memory badly enough to
+        # segfault.
+        #
+        # `_initialize_save_cache_buffers!` pre-sizes the caches and is called by
+        # `run_simulation`, which is why solves do not hit this. But safety then
+        # rests on every construction path remembering one call, and the paths
+        # that build `ODEParams` directly to drive the RHS -- the cost-model
+        # validation script and the contention probes -- did not. A missed call
+        # should cost a lock acquisition on a cold path, not a segfault at N=1024.
+        #
+        # Double-checked: the length is re-tested under the lock, so concurrent
+        # arrivals grow once and the losers fall through to the indexed write.
+        #
+        # This serialises growth against growth. It does NOT serialise growth
+        # against a concurrent indexed write lower down the same vector, which
+        # `resize!` can invalidate by reallocating -- guarding every write would
+        # put a lock on the hot path to fix a case that should not arise. So
+        # this is a survivability net, not a licence to skip initialisation:
+        # pre-sizing remains the only correct configuration, and callers that
+        # build `ODEParams` themselves must still call
+        # `_initialize_save_cache_buffers!`.
+        lock(_SAVE_CACHE_GROW_LOCK) do
+            if length(cache) < sat_idx
+                old_len = length(cache)
+                resize!(cache, sat_idx)
+                @inbounds for idx in (old_len + 1):sat_idx
+                    cache[idx] = SVector{3, Float64}(0.0, 0.0, 0.0)
+                end
             end
         end
     end
     @inbounds cache[sat_idx] = value
     return nothing
 end
+
 
 @inline function _store_aero_caches!(
     param::ODEParams,
@@ -874,12 +962,15 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
         CD += slot_cd_area[idx]
         total_area += slot_area[idx]
     end
+    # Per satellite, and under satellite_batch on a Polyester worker task: pass
+    # the run's context rather than relying on task-local lookup.
     ParallelPolicy.record_policy_observation!(
         :multibody;
         mode=decision.mode,
         num_items=length(bodies),
         use_threads=use_threads,
-        elapsed_ns=(time_ns() - started_ns)
+        elapsed_ns=(time_ns() - started_ns),
+        ctx=ParallelPolicy.policy_context_hint(param)
     )
 
     if total_area > 0.0

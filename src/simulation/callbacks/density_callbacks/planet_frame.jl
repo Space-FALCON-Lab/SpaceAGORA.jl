@@ -5,7 +5,11 @@
     return planet_frame_lpi(planet, et, ephemerides_model)
 end
 
-@inline function _planet_lpi_from_cache(cache::PlanetFrameEphemerisCache, et::Float64)::Union{Nothing, SMatrix{3, 3, Float64}}
+# The environment helpers below are compiled once and never inlined: the
+# serial route and the flat route's pre-fill call them from different sites,
+# and LLVM decides per compilation context whether the muladd products inside
+# StaticArrays operations are fused. One body keeps the two routes bit-identical.
+@noinline function _planet_lpi_from_cache(cache::PlanetFrameEphemerisCache, et::Float64)::Union{Nothing, SMatrix{3, 3, Float64}}
     ets = cache.ets
     n_samples = length(ets)
     n_samples >= 2 || return nothing
@@ -37,7 +41,7 @@ end
     return rot(q_interp)
 end
 
-@inline function _planet_lpi_at(p, t::Float64)::SMatrix{3, 3, Float64}
+@noinline function _planet_lpi_at(p, t::Float64)::SMatrix{3, 3, Float64}
     planet = p.args.environment_model.planet
     ephemerides_model = p.args.environment_model.ephemerides_model
     et = p.shared_buffers.et_start[] + t
@@ -51,7 +55,7 @@ end
     end
 end
 
-@inline function _planet_relative_state(
+@noinline function _planet_relative_state(
     pos_ii::SVector{3, Float64},
     vel_ii::SVector{3, Float64},
     planet,

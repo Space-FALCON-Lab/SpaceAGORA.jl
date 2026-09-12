@@ -712,6 +712,16 @@ const _TAB_FLIGHT_H_MAX_M = 12000.0
 end
 
 function getDensity(model::TabulatedFlightAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
+    # Adaptive trial steps can probe a non-finite state (deep-impact blowup
+    # before the termination callback fires, seen on +1 sigma envelope runs);
+    # a NaN altitude passes both tail branches of _tab_flight_interp and
+    # indexes past the profile end. The answer is NaN, not vacuum: NaN
+    # propagates into the derivative and the solver rejects the trial step,
+    # whereas a zero density would let a step with a non-finite time or
+    # altitude succeed with no drag -- a silently different trajectory, not
+    # a rejected one. (An empty profile leg below is a different case: a
+    # finite state with no data for that pass, which is a vacuum.)
+    isfinite(h) && isfinite(el_time) || return NaN, NaN, SVector{3, Float64}(0.0, 0.0, 0.0)
     ts = model.pass_peri_el_s
     j = clamp(searchsortedlast(ts, el_time), 1, length(ts))
     if j < length(ts) && abs(ts[j+1] - el_time) < abs(el_time - ts[j])

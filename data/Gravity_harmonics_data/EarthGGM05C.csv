@@ -1,3 +1,10 @@
+# gravity_harmonics_source_metadata_v1
+# source_model: GGM05C (Earth, combined GRACE/GOCE/terrestrial model, degree/order 360x360; this file: truncated as loaded by the caller)
+# reference_radius_m: 6378136.3
+# gm_m3s2: 3.986004415e14
+# normalization: fully_normalized
+# citation: Ries, J., Bettadpur, S., Eanes, R., Kang, Z., Ko, U., McCullough, C., Nagel, P., Pie, N., Poole, S., Richter, T., Save, H., Tapley, B. (2016), "The Development and Evaluation of the Global Gravity Model GGM05," CSR Report CSR-16-02, Center for Space Research, University of Texas at Austin.
+# origin: ICGEM-format GGM05C.ICGEM / GGM05C.GEO distribution (header fields earth_gravity_constant=3.986004415E+14, radius=6.378136300E+06); coefficient values below verified to match the ICGEM file's gfc rows.
 degree,order,C,S
 0,0,0,0
 1,0,0,0

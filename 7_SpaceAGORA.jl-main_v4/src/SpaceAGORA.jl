@@ -2,7 +2,7 @@ __precompile__(true)
 
 module SpaceAGORA
 
-using PrecompileTools: @compile_workload, @setup_workload
+# using PrecompileTools: @compile_workload, @setup_workload
 
 include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "parallel", "process", "parallel_process.jl"))
@@ -11,9 +11,9 @@ include(joinpath(@__DIR__, "core", "simulation_model.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "simulation", "campaigns", "simulation_campaigns.jl"))
 include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
-include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
-include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
-include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
+# include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
+# include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
+# include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
 
 using .ParallelProfiles: ParallelProfile, ParallelProfileConfig
 using .ParallelProfiles: parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
@@ -82,9 +82,9 @@ using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
 using .SimulationModel: constellation_struct, build_constellation, activate_link!, deactivate_link!, reset_active_links!
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
-using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
-using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
-using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
+# using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+# using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
+# using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 
 @doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
 @doc (@doc SimulationEngine.SolverConfig) SolverConfig
@@ -178,11 +178,11 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationModel.robot_arm_joint_mpc_control) robot_arm_joint_mpc_control
 @doc (@doc SimulationModel.robot_arm_measured_joint_state) robot_arm_measured_joint_state
 @doc (@doc SimulationModel.ApoapsisTargetPeriapsisRaiseGuidanceModel) ApoapsisTargetPeriapsisRaiseGuidanceModel
-@doc (@doc RPOStationAssets.station_geometry_path) station_geometry_path
-@doc (@doc RPOStationAssets.station_cad_path) station_cad_path
-@doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
-@doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
-@doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
+# @doc (@doc RPOStationAssets.station_geometry_path) station_geometry_path
+# @doc (@doc RPOStationAssets.station_cad_path) station_cad_path
+# @doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
+# @doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
+# @doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
 
 """
     NoAtmosphereModel()
@@ -430,8 +430,8 @@ calcControlMassFlowRate
 @doc (@doc TelemetryVerification.run_verification_cli) run_verification_cli
 @doc (@doc TelemetryVerification.run_study) run_study
 
-@doc (@doc SpaceAGORACLI.AssetCheckItem) AssetCheckItem
-@doc (@doc SpaceAGORACLI.AssetCheckReport) AssetCheckReport
+# @doc (@doc SpaceAGORACLI.AssetCheckItem) AssetCheckItem
+# @doc (@doc SpaceAGORACLI.AssetCheckReport) AssetCheckReport
 
 export ParallelProfile, ParallelProfileConfig
 export parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
@@ -491,8 +491,8 @@ export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
-export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
-export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
+# export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+# export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 """
     run_simulation(args...; isolate_state=true, kwargs...)
@@ -549,6 +549,7 @@ precomputed SPICE cache once before running many trajectories.
 """
 load_nbody_ephemeris_cache!(args...; kwargs...) = SimulationEngine.load_nbody_ephemeris_cache!(args...; kwargs...)
 
+#=
 """
     check_assets(; repo_root=pwd()) -> AssetCheckReport
 
@@ -577,7 +578,8 @@ Stable CLI entrypoint for SpaceAGORA operational commands:
 This is the package-owned command surface used by the `bin/spaceagora` wrapper.
 """
 run_cli(args...; kwargs...) = SpaceAGORACLI.run_cli(args...; kwargs...)
+=#
 
-include(joinpath(@__DIR__, "precompile_workload.jl"))
+# include(joinpath(@__DIR__, "precompile_workload.jl"))
 
 end # module SpaceAGORA

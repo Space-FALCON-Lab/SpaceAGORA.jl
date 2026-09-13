@@ -9,7 +9,7 @@ include(joinpath(@__DIR__, "oracle_laser_plots.jl"))
 using StaticArrays
 using LinearAlgebra
 using Printf
-using SpaceAGORA.TelemetryVerification: rvtoorbitalelement
+using SpaceAGORA.SimulationEngine: rvtoorbitalelement
 
 # ── Options ────────────────────────────────────────────────────────────────────
 

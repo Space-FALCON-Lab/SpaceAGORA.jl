@@ -12,7 +12,7 @@ using SpaceAGORA
 using SpaceAGORA: SimulationEngine, RuntimeServices, run_simulation
 using SpaceAGORA.SimulationModel; using SpaceAGORA: SimulationModel as SM
 using SpaceAGORA.SimulationModel: quat_mult
-using SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
+# using SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
 
 
 ## 3. SPICE Helper Functions

@@ -10,7 +10,7 @@ include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "core", "simulation_model.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "simulation", "campaigns", "simulation_campaigns.jl"))
-include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
+# include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
 # include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
 # include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
 # include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
@@ -80,8 +80,8 @@ using .SimulationModel: SolarPanelAngleOfAttackControlModel
 @doc (@doc SimulationModel.SolarPanelAngleOfAttackControlModel) SolarPanelAngleOfAttackControlModel
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
 using .SimulationModel: constellation_struct, build_constellation, activate_link!, deactivate_link!, reset_active_links!
-using .TelemetryVerification: VerificationRequest, VerificationResult
-using .TelemetryVerification: run_verification, run_verification_cli, run_study
+# using .TelemetryVerification: VerificationRequest, VerificationResult
+# using .TelemetryVerification: run_verification, run_verification_cli, run_study
 # using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 # using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
 # using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
@@ -424,11 +424,11 @@ calcControlMassFlowRate
 @doc (@doc ParallelProcess.ensure_process_workers!) ensure_process_workers!
 @doc (@doc ParallelProcess.shutdown_process_pool!) shutdown_process_pool!
 
-@doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest
-@doc (@doc TelemetryVerification.VerificationResult) VerificationResult
-@doc (@doc TelemetryVerification.run_verification) run_verification
-@doc (@doc TelemetryVerification.run_verification_cli) run_verification_cli
-@doc (@doc TelemetryVerification.run_study) run_study
+# @doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest
+# @doc (@doc TelemetryVerification.VerificationResult) VerificationResult
+# @doc (@doc TelemetryVerification.run_verification) run_verification
+# @doc (@doc TelemetryVerification.run_verification_cli) run_verification_cli
+# @doc (@doc TelemetryVerification.run_study) run_study
 
 # @doc (@doc SpaceAGORACLI.AssetCheckItem) AssetCheckItem
 # @doc (@doc SpaceAGORACLI.AssetCheckReport) AssetCheckReport
@@ -489,8 +489,9 @@ export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
-export VerificationRequest, VerificationResult
-export run_verification, run_verification_cli, run_study, run_simulation
+# export VerificationRequest, VerificationResult
+# export run_verification, run_verification_cli, run_study
+export run_simulation
 # export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 # export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 

@@ -19,6 +19,10 @@ GRAMpy/*
 *.csv
 # ...but gravity-coefficient assets are versioned (see test/gmat_scenario_matrix.jl)
 !data/Gravity_harmonics_data/*.csv
+# Viewer surface textures: public-domain NASA/USGS mosaics registered in data/textures/manifest.toml
+!data/textures/
+!data/textures/*.jpg
+!data/textures/manifest.toml
 *.png
 *.tex
 .DS_Store
@@ -134,3 +138,5 @@ remote_runs/
 # MERRA-2 native model-level granules for the EDL aerocapture GP study.
 # ~2.1 GB per day, fetched with a NASA Earthdata login; never committed.
 data/merra2_native/
+# Viewer development payload written by write_viewer_dev_payload
+viewer/dev_data.js

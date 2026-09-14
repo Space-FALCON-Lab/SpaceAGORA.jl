@@ -116,3 +116,12 @@ kind = "file"
 required = false
 licensing = "open-repo"
 detail = "Gateway Core STL used by the RPO station reference geometry and MPC RPO test case."
+
+[[asset]]
+name = "visualization_textures"
+scope = "visualization"
+relative_path = "data/textures"
+kind = "directory"
+required = false
+licensing = "open-repo"
+detail = "Public-domain NASA/USGS surface textures for the post-hoc 3D viewer, registered in data/textures/manifest.toml."

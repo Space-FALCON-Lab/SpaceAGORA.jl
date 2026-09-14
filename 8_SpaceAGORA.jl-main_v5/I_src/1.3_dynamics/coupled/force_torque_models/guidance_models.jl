@@ -1,0 +1,5 @@
+module GuidanceModels
+    using ...GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel, ApoapsisTargetPeriapsisRaiseGuidanceModel
+
+    export AerobrakingCampaignPropulsiveManeuverGuidanceModel, ApoapsisTargetPeriapsisRaiseGuidanceModel
+end

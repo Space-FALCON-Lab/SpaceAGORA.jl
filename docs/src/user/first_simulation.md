@@ -9,8 +9,13 @@ and want a concrete next command.
 Shortest successful command:
 
 ```text
-julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
 ```
+
+`Earth_Thruster_Test.jl`, which this page used to recommend, builds its planet
+with `Earth("", SPICE_PATH)` and needs the SPICE kernels shipped in the
+`data/GRAMSuite.jl` submodule; on a fresh clone it stops with "Required SPICE
+kernel not found". Run it after [GRAMSuite Setup](gramsuite_setup.md).
 
 What to read next:
 
@@ -27,8 +32,12 @@ What to read next:
 Use a repository-owned example when you want the smallest amount of setup:
 
 ```text
-julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
 ```
+
+It is the quickstart's planet and ephemerides (`make_no_gram_planet(:earth)`,
+`SimpleEphemeridesModel()`) with a fuller mission configuration, and it writes
+the same three result files under `output/` (no plots).
 
 ### CLI wrapper
 

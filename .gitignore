@@ -25,7 +25,6 @@ GRAMpy/*
 !data/textures/manifest.toml
 # 3D models for the viewer (public-domain NASA assets, see data/models/README.md)
 !data/models/
-!data/models/*.glb
 !data/models/README.md
 *.png
 *.tex
@@ -115,6 +114,8 @@ CLAUDE.md
 *.[fF][bB][xX]
 *.[dD][aA][eE]
 *.[gG][lL][bB]
+# ...except the viewer models registered in data/models/README.md (this must follow the *.glb rule)
+!data/models/*.glb
 *.[gG][lL][tT][fF]
 *.[pP][lL][yY]
 *.[wW][rR][lL]

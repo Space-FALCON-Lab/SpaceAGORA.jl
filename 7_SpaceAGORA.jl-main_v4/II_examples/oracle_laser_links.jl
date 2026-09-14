@@ -11,8 +11,7 @@ using LinearAlgebra
 using Printf
 using SpaceAGORA.SimulationEngine: rvtoorbitalelement
 
-# ── Options ────────────────────────────────────────────────────────────────────
-
+##  Options
 Base.@kwdef struct OracleLaserOptions
     helpers::Int               = 10
     helper_altitude_km::Float64 = 1050.0
@@ -70,7 +69,9 @@ const _FLOAT_OPTS_ORACLE  = (                                                   
     :mass_kg, :dt_max_s,
 )
 
+# parse command-line options into an OracleLaserOptions instance
 function _parse_options(argv)::OracleLaserOptions
+    #
     opts = Dict{Symbol, Any}()
     i = 1
     while i <= length(argv)
@@ -91,10 +92,8 @@ function _parse_options(argv)::OracleLaserOptions
     return OracleLaserOptions(; opts...)
 end
 
-# ── Spacecraft factory ─────────────────────────────────────────────────────────
-
+## Spacecraft factory
 # Minimal single-body spacecraft matching the ORACLE bus: one rigid box, no panels.
-# id is a placeholder — build_constellation reassigns it by position.
 function _make_oracle_sc(initial_conditions, mass_kg::Float64)
     bus = Link(root=true, m=mass_kg)
     return SpacecraftModel(
@@ -111,8 +110,8 @@ function _make_oracle_sc(initial_conditions, mass_kg::Float64)
         id                = 0,
     )
 end
-# ── Main runner ────────────────────────────────────────────────────────────────
 
+## Main runner
 function run_oracle_laser(opts::OracleLaserOptions)
     planet = make_no_gram_planet(:earth)
 
@@ -235,9 +234,7 @@ function run_oracle_laser(opts::OracleLaserOptions)
     rf  = SVector{3,Float64}(final_state.pos)
     vf  = SVector{3,Float64}(final_state.vel)
     oef = rvtoorbitalelement(rf, vf, planet)
-
-    # Locate the feather file written by run_simulation
-    feather_path = joinpath(results_dir, "simulation_results.feather")
+    feather_path = joinpath(results_dir, "simulation_results.feather")     # Locate the feather file written by run_simulation
 
     return (
         dv_r_mps        = sum(values(impulse_tracker.dv_R); init=0.0),
@@ -256,14 +253,13 @@ function run_oracle_laser(opts::OracleLaserOptions)
     )
 end
 
-# ── Entry point ────────────────────────────────────────────────────────────────
-
+## Entry point
 function main(argv=ARGS)
     opts = _parse_options(argv)
     println("Running ORACLE laser-link simulation...")
     println("  helpers=$(opts.helpers)  schedule=$(opts.schedule)  orbits=$(opts.orbits)")
 
-    elapsed = @elapsed s = run_oracle_laser(opts)
+    elapsed = @elapsed s = run_oracle_laser(opts) # Run the ORACLE laser-link simulation and measure elapsed time
 
     println("\n── Results ──────────────────────────────────────────")
     @printf("  dv_R  = %+.6e m/s\n", s.dv_r_mps)

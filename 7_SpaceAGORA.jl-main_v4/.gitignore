@@ -13,7 +13,7 @@ GRAM Suite 2.0/simulation/GRAM/gram.env
 GRAM Suite 2.0/simulation/GRAM/gram.env.ps1
 GRAM Suite 2.0/simulation/GRAM/.gram-build-manifest
 GRAM_Data/*
-output/*
+III_output/*
 GRAMpy/*
 *.pdf
 *.csv
@@ -26,7 +26,7 @@ docs/site/
 docs/src/generated/
 docs/.CondaPkg/
 docs/Manifest.toml
-output/calibration/
+III_output/calibration/
 SpaceAGORACalibration.jl/test/output/
 SpaceAGORACalibration.jl/.CondaPkg/
 data/telemetry/CYGNSS/

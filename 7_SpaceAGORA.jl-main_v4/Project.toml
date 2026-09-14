@@ -1,4 +1,5 @@
 name = "SpaceAGORA"
+entryfile = "I_src/6_SpaceAGORA.jl"
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
 version = "0.1.0"
 authors = ["SpaceAGORA Contributors"]

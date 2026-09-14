@@ -2,36 +2,31 @@ __precompile__(true)
 
 module SpaceAGORA
 
-using PrecompileTools: @compile_workload, @setup_workload
+# using PrecompileTools: @compile_workload, @setup_workload
 
-include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
-include(joinpath(@__DIR__, "parallel", "process", "parallel_process.jl"))
-include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))
-include(joinpath(@__DIR__, "core", "simulation_model.jl"))
-include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
-include(joinpath(@__DIR__, "simulation", "campaigns", "simulation_campaigns.jl"))
-include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
-include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
-include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
-include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
+include(joinpath(@__DIR__, "4_parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(@__DIR__, "4_parallel", "process", "parallel_process.jl"))
+include(joinpath(@__DIR__, "5_simulation", "runtime_services.jl"))
+include(joinpath(@__DIR__, "1_core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "5_simulation", "engine", "simulation_engine.jl"))
+include(joinpath(@__DIR__, "5_simulation", "campaigns", "simulation_campaigns.jl"))
+# include(joinpath(@__DIR__, "2_analysis", "verification", "telemetry_verification.jl"))
+# include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
+# include(joinpath(@__DIR__, "2_analysis", "visualization", "rpo", "rpo_visualization.jl"))
+# include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
 
 using .ParallelProfiles: ParallelProfile, ParallelProfileConfig
 using .ParallelProfiles: parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
 using .ParallelProfiles: OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
 using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
-
 using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
-
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
-using .SimulationEngine: run_simulation
-using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
-
+import .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 using .SimulationCampaigns: run_constellation_ensemble
 using .SimulationCampaigns: campaign_route_features, campaign_outer_route_state
-
 using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel
 using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
@@ -75,19 +70,6 @@ using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlM
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
-using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
-using .SimulationModel: constellation_struct, build_constellation, activate_link!, deactivate_link!, reset_active_links!
-
-using .TelemetryVerification: VerificationRequest, VerificationResult
-using .TelemetryVerification: run_verification, run_verification_cli, run_study
-
-using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
-
-using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
-
-using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
-using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
-
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
@@ -96,6 +78,27 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionGuidanceModel) AerobrakingEnergyDepletionGuidanceModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionControlModel) AerobrakingEnergyDepletionControlModel
 @doc (@doc SimulationModel.SolarPanelAngleOfAttackControlModel) SolarPanelAngleOfAttackControlModel
+using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
+using .SimulationModel: constellation_struct, build_constellation, activate_link!, deactivate_link!, reset_active_links!
+# using .TelemetryVerification: VerificationRequest, VerificationResult
+# using .TelemetryVerification: run_verification, run_verification_cli, run_study
+# using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+# using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
+# using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
+
+@doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
+@doc (@doc SimulationEngine.SolverConfig) SolverConfig
+@doc (@doc SimulationEngine.RuntimePolicyConfig) RuntimePolicyConfig
+@doc (@doc SimulationEngine.ArtifactConfig) ArtifactConfig
+@doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
+@doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
+@doc (@doc SimulationCampaigns.MonteCarloSpec) MonteCarloSpec
+@doc (@doc SimulationCampaigns.MonteCarloSampleResult) MonteCarloSampleResult
+@doc (@doc SimulationCampaigns.MonteCarloResult) MonteCarloResult
+@doc (@doc SimulationCampaigns.run_monte_carlo) run_monte_carlo
+@doc (@doc SimulationCampaigns.run_constellation_ensemble) run_constellation_ensemble
+@doc (@doc SimulationCampaigns.campaign_route_features) campaign_route_features
+@doc (@doc SimulationCampaigns.campaign_outer_route_state) campaign_outer_route_state
 @doc (@doc SimulationModel.AbstractTypes.AbstractForceTorqueModel) AbstractForceTorqueModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractPlanet) AbstractPlanet
 @doc (@doc SimulationModel.AbstractTypes.AbstractDensityModel) AbstractDensityModel
@@ -111,6 +114,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ThirdBodyEphemerisSample) ThirdBodyEphemerisSample
 @doc (@doc SimulationModel.EnvironmentSample) EnvironmentSample
 @doc (@doc SimulationModel.EffectorEnvironmentRequirements) EffectorEnvironmentRequirements
+
 @doc (@doc SimulationModel.ClothArmModel) ClothArmModel
 @doc (@doc SimulationModel.ClothArmBasePose) ClothArmBasePose
 @doc (@doc SimulationModel.ClothArmLink) ClothArmLink
@@ -174,27 +178,11 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.robot_arm_joint_mpc_control) robot_arm_joint_mpc_control
 @doc (@doc SimulationModel.robot_arm_measured_joint_state) robot_arm_measured_joint_state
 @doc (@doc SimulationModel.ApoapsisTargetPeriapsisRaiseGuidanceModel) ApoapsisTargetPeriapsisRaiseGuidanceModel
-
-@doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
-@doc (@doc SimulationEngine.SolverConfig) SolverConfig
-@doc (@doc SimulationEngine.RuntimePolicyConfig) RuntimePolicyConfig
-@doc (@doc SimulationEngine.ArtifactConfig) ArtifactConfig
-@doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
-@doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
-
-@doc (@doc SimulationCampaigns.MonteCarloSpec) MonteCarloSpec
-@doc (@doc SimulationCampaigns.MonteCarloSampleResult) MonteCarloSampleResult
-@doc (@doc SimulationCampaigns.MonteCarloResult) MonteCarloResult
-@doc (@doc SimulationCampaigns.run_monte_carlo) run_monte_carlo
-@doc (@doc SimulationCampaigns.run_constellation_ensemble) run_constellation_ensemble
-@doc (@doc SimulationCampaigns.campaign_route_features) campaign_route_features
-@doc (@doc SimulationCampaigns.campaign_outer_route_state) campaign_outer_route_state
-
-@doc (@doc RPOStationAssets.station_geometry_path) station_geometry_path
-@doc (@doc RPOStationAssets.station_cad_path) station_cad_path
-@doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
-@doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
-@doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
+# @doc (@doc RPOStationAssets.station_geometry_path) station_geometry_path
+# @doc (@doc RPOStationAssets.station_cad_path) station_cad_path
+# @doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
+# @doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
+# @doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
 
 """
     NoAtmosphereModel()
@@ -436,14 +424,14 @@ calcControlMassFlowRate
 @doc (@doc ParallelProcess.ensure_process_workers!) ensure_process_workers!
 @doc (@doc ParallelProcess.shutdown_process_pool!) shutdown_process_pool!
 
-@doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest
-@doc (@doc TelemetryVerification.VerificationResult) VerificationResult
-@doc (@doc TelemetryVerification.run_verification) run_verification
-@doc (@doc TelemetryVerification.run_verification_cli) run_verification_cli
-@doc (@doc TelemetryVerification.run_study) run_study
+# @doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest
+# @doc (@doc TelemetryVerification.VerificationResult) VerificationResult
+# @doc (@doc TelemetryVerification.run_verification) run_verification
+# @doc (@doc TelemetryVerification.run_verification_cli) run_verification_cli
+# @doc (@doc TelemetryVerification.run_study) run_study
 
-@doc (@doc SpaceAGORACLI.AssetCheckItem) AssetCheckItem
-@doc (@doc SpaceAGORACLI.AssetCheckReport) AssetCheckReport
+# @doc (@doc SpaceAGORACLI.AssetCheckItem) AssetCheckItem
+# @doc (@doc SpaceAGORACLI.AssetCheckReport) AssetCheckReport
 
 export ParallelProfile, ParallelProfileConfig
 export parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
@@ -501,10 +489,11 @@ export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
-export VerificationRequest, VerificationResult
-export run_verification, run_verification_cli, run_study, run_simulation
-export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
-export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
+# export VerificationRequest, VerificationResult
+# export run_verification, run_verification_cli, run_study
+export run_simulation
+# export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+# export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 """
     run_simulation(args...; isolate_state=true, kwargs...)
@@ -531,7 +520,8 @@ julia> length(sol.t) > 1
 true
 ```
 """
-run_simulation
+run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
+run_simulation(config::SimulationEngineConfig, args...; kwargs...) = SimulationEngine.run_simulation(config, args...; kwargs...)
 
 """
     prewarm_nbody_ephemeris_cache(args; dt_s=nothing, mission_end_s=nothing, save_path=nothing) -> cache
@@ -547,7 +537,7 @@ If `save_path` is provided, the cache is also serialized to disk so other Julia
 worker processes can call [`load_nbody_ephemeris_cache!`](@ref) and reuse the
 same precomputed ephemeris without rebuilding it from SPICE.
 """
-prewarm_nbody_ephemeris_cache
+prewarm_nbody_ephemeris_cache(args...; kwargs...) = SimulationEngine.prewarm_nbody_ephemeris_cache(args...; kwargs...)
 
 """
     load_nbody_ephemeris_cache!(path; replace=true) -> cache
@@ -558,22 +548,23 @@ process so later [`run_simulation`](@ref) calls can reuse it. This is intended
 for multi-process Monte Carlo campaigns where each worker should load the same
 precomputed SPICE cache once before running many trajectories.
 """
-load_nbody_ephemeris_cache!
+load_nbody_ephemeris_cache!(args...; kwargs...) = SimulationEngine.load_nbody_ephemeris_cache!(args...; kwargs...)
 
+#=
 """
     check_assets(; repo_root=pwd()) -> AssetCheckReport
 
 Inspect the current repository asset layout and report which baseline, optional,
 and high-fidelity asset roots are available.
 """
-check_assets
+check_assets(args...; kwargs...) = SpaceAGORACLI.check_assets(args...; kwargs...)
 
 """
     render_asset_report(report; io=stdout)
 
 Render a human-readable asset status report.
 """
-render_asset_report
+render_asset_report(args...; kwargs...) = SpaceAGORACLI.render_asset_report(args...; kwargs...)
 
 """
     run_cli([args=ARGS]; io=stdout, errio=stderr) -> Int
@@ -587,8 +578,9 @@ Stable CLI entrypoint for SpaceAGORA operational commands:
 
 This is the package-owned command surface used by the `bin/spaceagora` wrapper.
 """
-run_cli
+run_cli(args...; kwargs...) = SpaceAGORACLI.run_cli(args...; kwargs...)
+=#
 
-include(joinpath(@__DIR__, "precompile_workload.jl"))
+# include(joinpath(@__DIR__, "precompile_workload.jl"))
 
 end # module SpaceAGORA

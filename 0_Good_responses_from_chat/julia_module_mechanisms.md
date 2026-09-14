@@ -15,6 +15,7 @@ names are available, and which names a module exposes to its users.
 | `import SomeModule: helper` | Brings the selected name into scope and, for a function, permits adding methods using its unqualified name. | For merely calling `helper`, selective `using` also works. |
 | `export helper` | Marks a name as part of the names made available by `using` the current module. | Does not define, import, or load `helper`. The module must separately establish its binding. |
 | `@reexport using SomeModule` | Imports and re-exports another module's exported API through the current module. | Provided by the external `Reexport.jl` package, not a Julia built-in keyword. Does not recursively expose every internal name. |
+| `@doc (@doc SomeModule.helper) helper` | Retrieves documentation for the source name and attaches it to the destination name in the current module. | Forwards documentation, not code. Does not import or export the name, call the function, or create a wrapper. |
 | `const SM = SimulationModel` | Creates a constant alias referring to the same module object. | Does not copy the module, reload its code, or start a simulation. |
 | `SpaceAGORA.SimulationModel` | Accesses the `SimulationModel` binding inside `SpaceAGORA`. | This is a qualified Julia name, not a filesystem path. |
 | `using .SimulationModel` | Accesses `SimulationModel` relative to the current module and makes its exports available. | The module binding must already be available, for example through an alias. The dot is not a folder reference. |
@@ -103,6 +104,60 @@ run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kw
 
 When this defines a new function in the current module, it is a wrapper that calls
 the engine function, not an alias to the engine function.
+
+## Documentation Forwarding: `@doc (@doc ...)`
+
+`@doc` is Julia's documentation macro. With one argument it retrieves
+documentation; with documentation and a target it attaches documentation.
+This pattern combines both forms:
+
+```julia
+@doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
+```
+
+Read it from the inside out:
+
+1. `@doc SimulationEngine.ParallelConfig` retrieves the existing documentation.
+2. The outer `@doc` attaches that documentation to `ParallelConfig` in the
+   current module, such as `SpaceAGORA`.
+
+For an imported API name, establish the binding first:
+
+```julia
+module DocumentationExample
+  module ModelTools
+    """Return twice the supplied value."""
+    helper(value) = 2 * value
+  end
+
+  using .ModelTools: helper
+  @doc (@doc ModelTools.helper) helper
+  export helper
+end
+```
+
+These three statements have separate jobs:
+
+| Statement | Job |
+| --- | --- |
+| `using .ModelTools: helper` | Makes the existing function available through the current module. |
+| `@doc (@doc ModelTools.helper) helper` | Registers the retrieved documentation for the current module's name. |
+| `export helper` | Makes that name available to users of `using .DocumentationExample`. |
+
+The function identity and behavior are unchanged:
+
+```julia
+DocumentationExample.helper === DocumentationExample.ModelTools.helper  # true
+DocumentationExample.helper(3)  # 6
+@doc(DocumentationExample.helper)
+```
+
+SpaceAGORA uses this pattern so documentation tools can resolve documentation
+through public names such as `SpaceAGORA.ParallelConfig`. Imported names may
+already expose documentation through Julia's lookup mechanisms; explicit
+forwarding registers it at the destination binding as well. It is documentation
+support, not a requirement for calling the function or constructing the type.
+The source must have meaningful documentation for forwarding to be useful.
 
 ## Why Examples Have Shared Setup
 

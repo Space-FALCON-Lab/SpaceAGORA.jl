@@ -21,6 +21,15 @@
 @inline _write_results_csv!(results_df::DataFrame, args)::String =
     SimulationModel.IOOutputs._write_results_csv!(results_df, args)
 
+# Viewer scene sidecar (docs/architecture/interactive_visualization_plan.md).
+# Opt-in: nothing is written unless `save_visualization_scene` is set, and it
+# never runs when results themselves are disabled.
+@inline function _write_visualization_scene_if_enabled!(args; density_params=nothing)::Union{Nothing, String}
+    args.simulation_settings.results || return nothing
+    args.simulation_settings.save_visualization_scene || return nothing
+    return SimulationModel.SceneVisualization.write_visualization_scene!(args; density_params=density_params)
+end
+
 @inline function _write_results_bundle!(
     results_df::DataFrame,
     times::Vector{Float64},

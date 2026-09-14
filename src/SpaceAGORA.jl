@@ -86,6 +86,14 @@ using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
 using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
+using .SimulationModel: VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec
+using .SimulationModel: ArmGeometry, arm_geometry
+using .SimulationModel: spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
+using .SimulationModel: visualization_scene_path, write_visualization_scene, read_visualization_scene
+using .SimulationModel: velocity_aligned_quaternion, visualization_frame_budget
+using .SimulationModel: export_visualization, with_visualization_scene, write_viewer_dev_payload
+using .SimulationModel: EnsembleSample, sample_results_directory, with_results_directory, write_ensemble_manifest, export_ensemble_visualization
+using .SimulationCampaigns: run_monte_carlo_visualization
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 
 @doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
@@ -185,6 +193,32 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
 @doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
 @doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
+@doc (@doc SimulationModel.SceneVisualization.VisualizationScene) VisualizationScene
+@doc (@doc SimulationModel.SceneVisualization.PlanetSpec) PlanetSpec
+@doc (@doc SimulationModel.SceneVisualization.SpacecraftGeometry) SpacecraftGeometry
+@doc (@doc SimulationModel.SceneVisualization.LinkBox) LinkBox
+@doc (@doc SimulationModel.SceneVisualization.AtmosphereSpec) AtmosphereSpec
+@doc (@doc SimulationModel.SceneVisualization.atmosphere_spec) atmosphere_spec
+@doc (@doc SimulationModel.SceneVisualization.ArmGeometry) ArmGeometry
+@doc (@doc SimulationModel.SceneVisualization.arm_geometry) arm_geometry
+@doc (@doc SimulationModel.SceneVisualization.spacecraft_geometry) spacecraft_geometry
+@doc (@doc SimulationModel.SceneVisualization.planet_spec) planet_spec
+@doc (@doc SimulationModel.SceneVisualization.planet_rotation_table) planet_rotation_table
+@doc (@doc SimulationModel.SceneVisualization.build_visualization_scene) build_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.visualization_scene_path) visualization_scene_path
+@doc (@doc SimulationModel.SceneVisualization.write_visualization_scene) write_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.read_visualization_scene) read_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.velocity_aligned_quaternion) velocity_aligned_quaternion
+@doc (@doc SimulationModel.SceneVisualization.visualization_frame_budget) visualization_frame_budget
+@doc (@doc SimulationModel.SceneVisualization.export_visualization) export_visualization
+@doc (@doc SimulationModel.SceneVisualization.with_visualization_scene) with_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.write_viewer_dev_payload) write_viewer_dev_payload
+@doc (@doc SimulationModel.SceneVisualization.EnsembleSample) EnsembleSample
+@doc (@doc SimulationModel.SceneVisualization.sample_results_directory) sample_results_directory
+@doc (@doc SimulationModel.SceneVisualization.with_results_directory) with_results_directory
+@doc (@doc SimulationModel.SceneVisualization.write_ensemble_manifest) write_ensemble_manifest
+@doc (@doc SimulationModel.SceneVisualization.export_ensemble_visualization) export_ensemble_visualization
+@doc (@doc SimulationCampaigns.run_monte_carlo_visualization) run_monte_carlo_visualization
 
 """
     NoAtmosphereModel()
@@ -491,6 +525,13 @@ export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
+export spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
+export visualization_scene_path, write_visualization_scene, read_visualization_scene
+export velocity_aligned_quaternion, visualization_frame_budget
+export export_visualization, with_visualization_scene, write_viewer_dev_payload
+export EnsembleSample, sample_results_directory, with_results_directory, write_ensemble_manifest
+export export_ensemble_visualization, run_monte_carlo_visualization
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 """
@@ -568,7 +609,8 @@ render_asset_report(args...; kwargs...) = SpaceAGORACLI.render_asset_report(args
 
 Stable CLI entrypoint for SpaceAGORA operational commands:
 
-- `run`
+- `run` (add `--visualize` for the 3D viewer page)
+- `visualize`
 - `telemetry`
 - `benchmark`
 - `assets check`

@@ -136,6 +136,7 @@ makedocs(
             "Atmosphere Models" => "user/atmosphere_models.md",
             "Solver Configuration" => "user/solver_configuration.md",
             "Simulation Outputs" => "user/outputs.md",
+            "Interactive Visualization" => "user/visualization.md",
             "Parallel Execution" => "user/parallel_execution.md",
             "Verification Study" => "user/verification_study.md",
             "Examples Catalog" => "user/examples_catalog.md",

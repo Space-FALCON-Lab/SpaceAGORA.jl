@@ -140,6 +140,8 @@ include(joinpath(@__DIR__, "..", "gnc", "control", "control_hooks.jl"))
 	@reexport using .NoGramPresets
 
 # --- Integrator Callbacks ---
+include(joinpath(@__DIR__, "..", "analysis", "visualization", "scene", "scene_visualization.jl"))
+@reexport using .SceneVisualization
 include(joinpath(@__DIR__, "..", "simulation", "callbacks", "callbacks.jl"))
 @reexport using .SimulationCallbacks
 end # module SimulationModel

@@ -179,6 +179,37 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Visualization Scene",
+        items = [
+            (owner = :SpaceAGORA, symbol = :VisualizationScene, rendered = "SpaceAGORA.VisualizationScene"),
+            (owner = :SpaceAGORA, symbol = :PlanetSpec, rendered = "SpaceAGORA.PlanetSpec"),
+            (owner = :SpaceAGORA, symbol = :SpacecraftGeometry, rendered = "SpaceAGORA.SpacecraftGeometry"),
+            (owner = :SpaceAGORA, symbol = :LinkBox, rendered = "SpaceAGORA.LinkBox"),
+            (owner = :SpaceAGORA, symbol = :AtmosphereSpec, rendered = "SpaceAGORA.AtmosphereSpec"),
+            (owner = :SpaceAGORA, symbol = :atmosphere_spec, rendered = "SpaceAGORA.atmosphere_spec"),
+            (owner = :SpaceAGORA, symbol = :ArmGeometry, rendered = "SpaceAGORA.ArmGeometry"),
+            (owner = :SpaceAGORA, symbol = :arm_geometry, rendered = "SpaceAGORA.arm_geometry"),
+            (owner = :SpaceAGORA, symbol = :spacecraft_geometry, rendered = "SpaceAGORA.spacecraft_geometry"),
+            (owner = :SpaceAGORA, symbol = :planet_spec, rendered = "SpaceAGORA.planet_spec"),
+            (owner = :SpaceAGORA, symbol = :planet_rotation_table, rendered = "SpaceAGORA.planet_rotation_table"),
+            (owner = :SpaceAGORA, symbol = :build_visualization_scene, rendered = "SpaceAGORA.build_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :visualization_scene_path, rendered = "SpaceAGORA.visualization_scene_path"),
+            (owner = :SpaceAGORA, symbol = :write_visualization_scene, rendered = "SpaceAGORA.write_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :read_visualization_scene, rendered = "SpaceAGORA.read_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :velocity_aligned_quaternion, rendered = "SpaceAGORA.velocity_aligned_quaternion"),
+            (owner = :SpaceAGORA, symbol = :visualization_frame_budget, rendered = "SpaceAGORA.visualization_frame_budget"),
+            (owner = :SpaceAGORA, symbol = :export_visualization, rendered = "SpaceAGORA.export_visualization"),
+            (owner = :SpaceAGORA, symbol = :with_visualization_scene, rendered = "SpaceAGORA.with_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :write_viewer_dev_payload, rendered = "SpaceAGORA.write_viewer_dev_payload"),
+            (owner = :SpaceAGORA, symbol = :EnsembleSample, rendered = "SpaceAGORA.EnsembleSample"),
+            (owner = :SpaceAGORA, symbol = :sample_results_directory, rendered = "SpaceAGORA.sample_results_directory"),
+            (owner = :SpaceAGORA, symbol = :with_results_directory, rendered = "SpaceAGORA.with_results_directory"),
+            (owner = :SpaceAGORA, symbol = :write_ensemble_manifest, rendered = "SpaceAGORA.write_ensemble_manifest"),
+            (owner = :SpaceAGORA, symbol = :export_ensemble_visualization, rendered = "SpaceAGORA.export_ensemble_visualization"),
+            (owner = :SimulationCampaigns, symbol = :run_monte_carlo_visualization, rendered = "SpaceAGORA.run_monte_carlo_visualization")
+        ]
+    ),
+    (
         title = "Parallel Profiles and Routing",
         items = [
             (owner = :ParallelProfiles, symbol = :ParallelProfile, rendered = "SpaceAGORA.ParallelProfile"),

@@ -26,7 +26,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 
 | Path | Owns |
 |---|---|
-| `vendor/three.module.js`, `vendor/OrbitControls.js`, `vendor/STLLoader.js` | three.js r160 (MIT, `LICENSE.three`) |
+| `vendor/three.module.js`, `vendor/OrbitControls.js`, `vendor/STLLoader.js`, `vendor/OBJLoader.js`, `vendor/GLTFLoader.js`, `vendor/BufferGeometryUtils.js` | three.js r160 (MIT, `LICENSE.three`); GLTFLoader's one relative import is rewritten to the bare `three/addons/utils/...` specifier so it resolves from a `data:` URL |
 | `src/data.js` | payload decoding, frame interpolation, rotation table lookup |
 | `src/globe.js` | textured oblate sphere, graticule, rotation with the body |
 | `src/spacecraft.js` | marker cloud, fading trails, labels, orbit period estimate |
@@ -79,9 +79,10 @@ the recorded `link_pose` columns when the run had them, otherwise their
 configured pose. Thrusters are orange cones with the apex at the thruster
 location pointing along the thrust direction, facets are translucent squares
 of the facet area with their normal drawn, and the body axes are red, green
-and blue for x, y, z. Each of these has a toggle. An STL file passed through
-`export_visualization(...; stl=Dict(id => path), stl_scale=...)` replaces the
-boxes for that spacecraft; the glyphs stay.
+and blue for x, y, z. Each of these has a toggle. A 3D model passed through
+`export_visualization(...; models=Dict(id => path), model_scale=..., model_rotation_deg=...)`
+(STL, OBJ, glTF or GLB, parsed in the browser) replaces the boxes for that
+spacecraft; the glyphs stay.
 
 Runs with at most 64 spacecraft embed positions as Float64 so the metre-scale
 models do not jitter at planetary distances; follow mode also re-centres the

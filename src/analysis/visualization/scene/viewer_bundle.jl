@@ -13,6 +13,16 @@ const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
     "three/addons/loaders/STLLoader.js" => joinpath("vendor", "STLLoader.js"),
+    "three/addons/loaders/OBJLoader.js" => joinpath("vendor", "OBJLoader.js"),
+    "three/addons/loaders/GLTFLoader.js" => joinpath("vendor", "GLTFLoader.js"),
+    "three/addons/utils/BufferGeometryUtils.js" => joinpath("vendor", "BufferGeometryUtils.js"),
+)
+# 3D model overrides the viewer can parse in the browser, by file extension.
+const MODEL_FORMATS = Dict{String, Tuple{String, String}}(
+    ".stl" => ("stl", "model/stl"),
+    ".obj" => ("obj", "model/obj"),
+    ".glb" => ("glb", "model/gltf-binary"),
+    ".gltf" => ("gltf", "model/gltf+json"),
 )
 # Runs up to this many spacecraft embed Float64 positions so a 3 m assembly
 # does not jitter at planetary distances; larger runs keep Float32.
@@ -326,25 +336,57 @@ end
 @inline _script_safe_json(value)::String = replace(JSON.json(value), "</" => "<\\/")
 
 """
-    model_payloads(scene; stl=Dict(), stl_scale=1.0) -> Dict{String, Any}
+    model_format(path) -> (format, mime)
 
-STL overrides keyed by spacecraft id: `stl` maps an id to a file path and
-wins over the `stl_path` recorded in the scene. Each entry is
-`{"url" => data URI, "scale" => metres per STL unit}`.
+Viewer model format from the file extension: `"stl"`, `"obj"`, `"glb"` or
+`"gltf"`. Throws for anything else.
 """
-function model_payloads(scene::VisualizationScene; stl::AbstractDict=Dict{Int, String}(), stl_scale::Real=1.0)::Dict{String, Any}
-    models = Dict{String, Any}()
+function model_format(path::AbstractString)::Tuple{String, String}
+    ext = lowercase(splitext(String(path))[2])
+    haskey(MODEL_FORMATS, ext) || throw(ArgumentError("Unsupported 3D model format $(repr(ext)) for $(path); use .stl, .obj, .glb or .gltf."))
+    return MODEL_FORMATS[ext]
+end
+
+@inline _per_id(value, id::Int, default)::Float64 = value isa AbstractDict ? Float64(get(value, id, default)) : Float64(value)
+
+"""
+    model_payloads(scene; models=Dict(), model_scale=1.0, model_rotation_deg=Dict(), stl=Dict(), stl_scale=1.0) -> Dict{String, Any}
+
+3D model overrides keyed by spacecraft id. `models` maps an id to an STL,
+OBJ, glTF or GLB file and wins over the `stl_path` recorded in the scene
+(`stl` is an older spelling of the same mapping). `model_scale` is metres per
+model unit, a number for all or a `Dict` per id (`stl_scale` applies when the
+id is absent). `model_rotation_deg` maps an id to XYZ Euler angles in degrees
+applied to the model in the body frame. Each entry is
+`{"url" => data URI, "format" => ..., "scale" => ..., "rotation_deg" => [rx, ry, rz], "source" => file name}`.
+A `.gltf` file must embed its buffers; external files are not carried along.
+"""
+function model_payloads(
+    scene::VisualizationScene;
+    models::AbstractDict=Dict{Int, String}(),
+    model_scale=nothing,
+    model_rotation_deg::AbstractDict=Dict{Int, Any}(),
+    stl::AbstractDict=Dict{Int, String}(),
+    stl_scale::Real=1.0
+)::Dict{String, Any}
+    out = Dict{String, Any}()
     for sc in scene.spacecraft
-        path = haskey(stl, sc.id) ? String(stl[sc.id]) : sc.stl_path
+        path = haskey(models, sc.id) ? String(models[sc.id]) : (haskey(stl, sc.id) ? String(stl[sc.id]) : sc.stl_path)
         path === nothing && continue
-        isfile(path) || throw(ArgumentError("STL override for spacecraft $(sc.id) not found: $(path)"))
-        models[string(sc.id)] = Dict{String, Any}(
-            "url" => _data_url(read(path), "model/stl"),
-            "scale" => Float64(stl_scale),
+        isfile(path) || throw(ArgumentError("3D model for spacecraft $(sc.id) not found: $(path)"))
+        format, mime = model_format(path)
+        scale = model_scale === nothing ? Float64(stl_scale) : _per_id(model_scale, sc.id, stl_scale)
+        rot = get(model_rotation_deg, sc.id, (0.0, 0.0, 0.0))
+        length(rot) == 3 || throw(ArgumentError("model_rotation_deg entries must be three angles (rx, ry, rz) in degrees."))
+        out[string(sc.id)] = Dict{String, Any}(
+            "url" => _data_url(read(path), mime),
+            "format" => format,
+            "scale" => scale,
+            "rotation_deg" => Float64[Float64(r) for r in rot],
             "source" => basename(path),
         )
     end
-    return models
+    return out
 end
 
 """
@@ -362,6 +404,9 @@ function viewer_payload(
     options::AbstractDict=Dict{String, Any}(),
     max_frames::Integer=DEFAULT_MAX_FRAMES,
     data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
+    models::AbstractDict=Dict{Int, String}(),
+    model_scale=nothing,
+    model_rotation_deg::AbstractDict=Dict{Int, Any}(),
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0
 )::Dict{String, Any}
@@ -374,7 +419,7 @@ function viewer_payload(
         "scene" => scene_dict(scene),
         "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb),
         "textures" => textures,
-        "models" => model_payloads(scene; stl=stl, stl_scale=stl_scale),
+        "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, stl=stl, stl_scale=stl_scale),
         "options" => Dict{String, Any}(options),
     )
 end
@@ -422,9 +467,11 @@ is `:inertial` (default) or `:planet_fixed`; `speed` is the initial playback
 rate in simulated seconds per wall second; `title` names the page;
 `textures=false` skips the surface texture and `texture_resolution` picks a
 tier (`:best`, the default, takes the largest registered, e.g. 8k for Earth;
-`"4k"` keeps the page small); `stl` maps spacecraft ids to STL files drawn
-instead of the link boxes, at `stl_scale` metres per STL unit; `viewer_dir`
-and `textures_dir` override the repository locations.
+`"4k"` keeps the page small); `models` maps spacecraft ids to STL, OBJ, glTF
+or GLB files drawn instead of the link boxes, at `model_scale` metres per
+model unit (a number or a per-id `Dict`) and rotated by `model_rotation_deg`
+(per-id XYZ Euler angles); `stl`/`stl_scale` are the older spelling for STL
+only; `viewer_dir` and `textures_dir` override the repository locations.
 """
 function export_visualization(
     prefix::AbstractString;
@@ -438,6 +485,9 @@ function export_visualization(
     title::Union{Nothing, AbstractString}=nothing,
     textures::Bool=true,
     texture_resolution=:best,
+    models::AbstractDict=Dict{Int, String}(),
+    model_scale=nothing,
+    model_rotation_deg::AbstractDict=Dict{Int, Any}(),
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0,
     viewer_dir::AbstractString=VIEWER_DIR,
@@ -454,7 +504,8 @@ function export_visualization(
         scene, df;
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title),
-        max_frames=max_frames, data_budget_mb=data_budget_mb, stl=stl, stl_scale=stl_scale
+        max_frames=max_frames, data_budget_mb=data_budget_mb,
+        models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, stl=stl, stl_scale=stl_scale
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     html = render_viewer_html(payload; viewer_dir=viewer_dir, title=page_title)

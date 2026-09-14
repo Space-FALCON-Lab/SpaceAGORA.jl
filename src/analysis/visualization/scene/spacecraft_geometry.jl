@@ -127,8 +127,8 @@ end
 
 Convert a `SpacecraftModel` into boxes and glyphs. Link order is root first,
 then `link_pose_link_indices(model)`. Thruster, facet and joint glyphs refer to
-links by that geometry index. `stl_path` records a CAD override the viewer may
-use instead of the boxes; it is stored verbatim.
+links by that geometry index. `stl_path` records a 3D model override (STL,
+OBJ, glTF or GLB) the viewer may use instead of the boxes; it is stored verbatim.
 """
 function spacecraft_geometry(
     model::SpacecraftModel;

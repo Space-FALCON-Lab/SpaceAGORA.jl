@@ -8,6 +8,8 @@
 // hysteresis so the switch does not flicker.
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { decodeBytes, velocityAlignedQuaternion } from 'viewer/data.js';
 
 const M_TO_KM = 1e-3;
@@ -84,21 +86,44 @@ function buildAssembly(spec, models, scLength) {
     linkGroups.push(g);
   });
 
-  // STL override: the CAD mesh replaces the boxes, glyphs stay attached to their links.
+  // 3D model override (STL, OBJ, glTF/GLB): the mesh replaces the boxes, glyphs stay on their links.
   const model = models && models[String(spec.id)];
   if (model && model.url) {
+    const install = (object) => {
+      const s = model.scale || 1;
+      object.scale.setScalar(s);
+      const r = model.rotation_deg || [0, 0, 0];
+      object.rotation.set(THREE.MathUtils.degToRad(r[0]), THREE.MathUtils.degToRad(r[1]), THREE.MathUtils.degToRad(r[2]), 'XYZ');
+      object.traverse((child) => {
+        if (child.isMesh) {
+          if (!child.material || model.format === 'obj' || model.format === 'stl') {
+            child.material = new THREE.MeshStandardMaterial({ color: STL_COLOR, roughness: 0.55, metalness: 0.2 });
+          }
+          child.castShadow = false;
+        }
+      });
+      linkGroups[0].add(object);
+      linkGroups.forEach((g) => { g.userData.boxes.visible = false; });
+      group.userData.model = object;
+    };
     try {
       const bytes = decodeBytes(model.url.split(',')[1] || '');
-      const geometry = new STLLoader().parse(bytes.buffer);
-      geometry.computeVertexNormals();
-      const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: STL_COLOR, roughness: 0.55, metalness: 0.2 }));
-      const s = model.scale || 1;
-      mesh.scale.setScalar(s);
-      linkGroups[0].add(mesh);
-      linkGroups.forEach((g) => { g.userData.boxes.visible = false; });
-      group.userData.stl = mesh;
+      const format = model.format || 'stl';
+      if (format === 'stl') {
+        const geometry = new STLLoader().parse(bytes.buffer);
+        geometry.computeVertexNormals();
+        install(new THREE.Mesh(geometry));
+      } else if (format === 'obj') {
+        install(new OBJLoader().parse(new TextDecoder().decode(bytes)));
+      } else if (format === 'glb' || format === 'gltf') {
+        const loader = new GLTFLoader();
+        const payload = format === 'glb' ? bytes.buffer : new TextDecoder().decode(bytes);
+        loader.parse(payload, '', (gltf) => install(gltf.scene), (err) => console.warn(`glTF for ${spec.name} failed to parse; showing boxes instead.`, err));
+      } else {
+        console.warn(`Unknown model format ${format} for ${spec.name}; showing boxes.`);
+      }
     } catch (err) {
-      console.warn(`STL for ${spec.name} could not be parsed; showing boxes instead.`, err);
+      console.warn(`Model for ${spec.name} could not be parsed; showing boxes instead.`, err);
     }
   }
 

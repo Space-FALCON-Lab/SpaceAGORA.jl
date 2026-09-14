@@ -23,6 +23,10 @@ GRAMpy/*
 !data/textures/
 !data/textures/*.jpg
 !data/textures/manifest.toml
+# 3D models for the viewer (public-domain NASA assets, see data/models/README.md)
+!data/models/
+!data/models/*.glb
+!data/models/README.md
 *.png
 *.tex
 .DS_Store

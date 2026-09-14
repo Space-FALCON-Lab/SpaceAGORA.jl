@@ -223,6 +223,37 @@ end
         @test many_frames["vel_kms"] === nothing
     end
 
+    @testset "model formats" begin
+        @test SV.model_format("bus.stl") == ("stl", "model/stl")
+        @test SV.model_format("BUS.OBJ") == ("obj", "model/obj")
+        @test SV.model_format("iss.glb") == ("glb", "model/gltf-binary")
+        @test SV.model_format("a.gltf") == ("gltf", "model/gltf+json")
+        @test_throws ArgumentError SV.model_format("mesh.fbx")
+
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        scene = build_visualization_scene(args; rotation_max_samples=4)
+        obj = joinpath(dir, "bus.obj")
+        write(obj, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
+        fake_glb = joinpath(dir, "bus.glb")
+        write(fake_glb, vcat(Vector{UInt8}("glTF"), zeros(UInt8, 20)))
+        models = SV.model_payloads(scene; models=Dict(1 => obj), model_scale=Dict(1 => 0.5), model_rotation_deg=Dict(1 => (-90.0, 0.0, -90.0)))
+        @test models["1"]["format"] == "obj"
+        @test startswith(models["1"]["url"], "data:model/obj;base64,")
+        @test models["1"]["scale"] == 0.5
+        @test models["1"]["rotation_deg"] == [-90.0, 0.0, -90.0]
+        glb = SV.model_payloads(scene; models=Dict(1 => fake_glb), model_scale=3.0)
+        @test glb["1"]["format"] == "glb" && glb["1"]["scale"] == 3.0 && glb["1"]["rotation_deg"] == [0.0, 0.0, 0.0]
+        @test startswith(glb["1"]["url"], "data:model/gltf-binary;base64,")
+        @test_throws ArgumentError SV.model_payloads(scene; models=Dict(1 => obj), model_rotation_deg=Dict(1 => (1.0, 2.0)))
+        @test_throws ArgumentError SV.model_payloads(scene; models=Dict(1 => joinpath(dir, "x.fbx")))
+
+        # The shipped NASA ISS model embeds as GLB.
+        iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
+        @test isfile(iss)
+        @test read(iss, 4) == Vector{UInt8}("glTF")
+    end
+
     @testset "STL overrides" begin
         dir = mktempdir()
         args = _viewer_config(results_directory=dir)
@@ -252,7 +283,7 @@ end
 
     @testset "import map and HTML assembly" begin
         imports = SV.viewer_import_map()["imports"]
-        for key in ("three", "three/addons/controls/OrbitControls.js", "three/addons/loaders/STLLoader.js", "viewer/main.js", "viewer/globe.js", "viewer/data.js", "viewer/spacecraft.js", "viewer/lod.js", "viewer/timeline.js", "viewer/ui.js")
+        for key in ("three", "three/addons/controls/OrbitControls.js", "three/addons/loaders/STLLoader.js", "three/addons/loaders/OBJLoader.js", "three/addons/loaders/GLTFLoader.js", "three/addons/utils/BufferGeometryUtils.js", "viewer/main.js", "viewer/globe.js", "viewer/data.js", "viewer/spacecraft.js", "viewer/lod.js", "viewer/timeline.js", "viewer/ui.js")
             @test haskey(imports, key)
             @test startswith(imports[key], "data:text/javascript;base64,")
         end
@@ -303,6 +334,18 @@ end
         @test payload["frames"]["sats"] == 1
         @test payload["frames"]["link_pose"]["counts"] == [2]
         @test payload["options"]["frame"] == "inertial"
+
+        iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
+        iss_page = export_visualization(args; out=joinpath(dir, "iss.html"), textures=false, models=Dict(1 => iss), model_scale=2.4, model_rotation_deg=Dict(1 => (-90, 0, -90)))
+        iss_html = read(iss_page, String)
+        @test occursin("data:model/gltf-binary;base64,", iss_html)
+        @test occursin("\"format\":\"glb\"", iss_html)
+        @test occursin("iss_nasa_3d_resources_b.glb", iss_html)
+        @test occursin("GLTFLoader", iss_html)
+        cli_out = IOBuffer()
+        @test run_cli(["visualize", "--run=$(dir)", "--out=$(joinpath(dir, "cli_iss.html"))", "--no-textures", "--model=1=$(iss)", "--model-scale=2.4"]; io=cli_out) == 0
+        @test occursin("\"scale\":2.4", read(joinpath(dir, "cli_iss.html"), String))
+        @test_throws ArgumentError run_cli(["visualize", "--run=$(dir)", "--model=1"]; io=devnull)
 
         stl = _write_tiny_stl(joinpath(dir, "bus.stl"))
         custom = export_visualization(args; out=joinpath(dir, "custom.html"), textures=false, frame=:planet_fixed, trail_orbits=5, speed=10.0, stl=Dict(1 => stl), stl_scale=0.01)

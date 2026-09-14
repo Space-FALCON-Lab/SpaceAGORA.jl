@@ -41,7 +41,7 @@ end
 function _print_usage(io::IO=stdout)
     println(io, "Usage:")
     println(io, "  spaceagora run --example=<file> [--output-dir=<dir>] [--smoke] [--visualize] [--print-only]")
-    println(io, "  spaceagora visualize --run=<results dir or bundle prefix> [--out=<html>] [--max-frames=<n>] [--frame=inertial|planet_fixed] [--texture=best|4k|8k] [--trail-orbits=<n>] [--ensemble]")
+    println(io, "  spaceagora visualize --run=<results dir or bundle prefix> [--out=<html>] [--max-frames=<n>] [--frame=inertial|planet_fixed] [--texture=best|4k|8k] [--trail-orbits=<n>] [--model=<id>=<stl|obj|glb>] [--model-scale=<m per unit>] [--ensemble]")
     println(io, "  spaceagora telemetry [quick|full|smoke] [--output-dir=<dir>] [--enforce=0|1] [--plots=0|1] [--print-only]")
     println(io, "  spaceagora benchmark runtime-analysis [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
     println(io, "  spaceagora benchmark smart-parallel-ladder [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
@@ -114,6 +114,7 @@ function _run_visualize(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::
     run = ""
     out = nothing
     ensemble = false
+    models = Dict{Int, String}()
     kwargs = Pair{Symbol, Any}[]
     for arg in args
         if _starts_with(arg, "--run=")
@@ -133,6 +134,13 @@ function _run_visualize(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::
             push!(kwargs, :title => _value_after_equals(arg, "--title="))
         elseif arg == "--no-textures"
             push!(kwargs, :textures => false)
+        elseif _starts_with(arg, "--model=")
+            spec = _value_after_equals(arg, "--model=")
+            occursin("=", spec) || throw(ArgumentError("--model expects <spacecraft id>=<file>, got '$spec'."))
+            id_text, path = split(spec, "="; limit=2)
+            models[parse(Int, id_text)] = String(path)
+        elseif _starts_with(arg, "--model-scale=")
+            push!(kwargs, :model_scale => parse(Float64, _value_after_equals(arg, "--model-scale=")))
         elseif arg == "--ensemble"
             ensemble = true
         else
@@ -142,6 +150,10 @@ function _run_visualize(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::
     isempty(run) && throw(ArgumentError("visualize requires --run=<results dir or bundle prefix>."))
     run = abspath(run)
     out === nothing || push!(kwargs, :out => out)
+    if !isempty(models)
+        ensemble && throw(ArgumentError("--model applies to single-run pages, not --ensemble."))
+        push!(kwargs, :models => models)
+    end
     page = if ensemble
         SimulationModel.SceneVisualization.export_ensemble_visualization(run; kwargs...)
     else

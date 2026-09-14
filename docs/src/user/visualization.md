@@ -56,6 +56,26 @@ flag set when you build configurations by hand. Runs that pass their own
   translucent squares. `stl=Dict(id => "bus.stl")` swaps in a CAD mesh.
 - **Frames.** Inertial by default; "Planet-fixed" holds the body still.
 
+## CAD and other 3D models
+
+Any spacecraft can be drawn from a 3D model instead of its link boxes:
+
+```julia
+export_visualization("output/simulation_results";
+    models=Dict(1 => "data/models/iss_nasa_3d_resources_b.glb"),
+    model_scale=2.4,                            # metres per model unit (or a Dict per id)
+    model_rotation_deg=Dict(1 => (-90, 0, -90))) # XYZ Euler angles in the body frame
+```
+
+```text
+spaceagora visualize --run=output --model=1=data/models/iss_nasa_3d_resources_b.glb --model-scale=2.4
+```
+
+STL, OBJ and glTF/GLB are supported and embedded in the page; a `.gltf` must
+carry its buffers inline. The model sits in the body frame at the root link,
+so attitude, link poses and glyphs still apply. `data/models/README.md` lists
+the shipped models; the NASA ISS model there is public domain.
+
 ## Robot arms
 
 A spacecraft whose control model carries a `RobotArmControlEffector` with a

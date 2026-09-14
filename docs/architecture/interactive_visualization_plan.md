@@ -314,6 +314,16 @@ altitude or speed on an inferno scale, and the selection panel reads the
 same quantities. A wind arrow was left out because the saved wind vector's
 frame is not recorded; the panel shows wind speed only.
 
+## 3D models (added 2026-09-14)
+
+The STL override became a general model override: `models=Dict(id => path)`
+accepts STL, OBJ and glTF/GLB, embedded as data URIs with a `format`, a
+`scale` (metres per unit, per id or global) and `rotation_deg` (XYZ Euler in
+the body frame); the viewer parses them with three's STL, OBJ and glTF
+loaders (vendored; GLTFLoader's relative import rewritten to a bare
+specifier). `data/models/` ships NASA's public-domain ISS (B) glTF, checked
+in the tests and used for an ISS page.
+
 ## Robot arms (added 2026-09-14)
 
 The cloth robot-arm chain, left out of phase 1, is now rendered. Geometry:

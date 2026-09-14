@@ -349,6 +349,42 @@ end
 
 @inline _per_id(value, id::Int, default)::Float64 = value isa AbstractDict ? Float64(get(value, id, default)) : Float64(value)
 
+# Extensions three's GLTFLoader can only handle with an extra decoder the
+# page does not carry (Draco, meshopt, KTX2/Basis textures).
+const GLTF_UNSUPPORTED_REQUIRED = ("KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu")
+
+"""
+    gltf_required_extensions(path) -> Vector{String}
+
+`extensionsRequired` of a `.glb` or `.gltf` file (empty when none).
+"""
+function gltf_required_extensions(path::AbstractString)::Vector{String}
+    bytes = read(path)
+    json_text = if length(bytes) >= 20 && bytes[1:4] == Vector{UInt8}("glTF")
+        chunk_len = Int(reinterpret(UInt32, bytes[13:16])[1])
+        String(bytes[21:min(20 + chunk_len, length(bytes))])
+    else
+        String(bytes)
+    end
+    parsed = try
+        JSON.parse(json_text)
+    catch
+        return String[]
+    end
+    parsed isa AbstractDict || return String[]
+    return String[String(x) for x in get(parsed, "extensionsRequired", Any[])]
+end
+
+function _check_gltf_supported(path::AbstractString)
+    required = gltf_required_extensions(path)
+    bad = [e for e in required if e in GLTF_UNSUPPORTED_REQUIRED]
+    isempty(bad) || throw(ArgumentError(
+        "$(basename(path)) requires $(join(bad, ", ")), which the viewer cannot decode. " *
+        "Re-export it without compression, e.g. `npx @gltf-transform/cli copy in.glb out.glb` " *
+        "(decodes Draco on read) or Blender's glTF export with compression off."))
+    return nothing
+end
+
 """
     model_payloads(scene; models=Dict(), model_scale=1.0, model_rotation_deg=Dict(), stl=Dict(), stl_scale=1.0) -> Dict{String, Any}
 
@@ -375,6 +411,7 @@ function model_payloads(
         path === nothing && continue
         isfile(path) || throw(ArgumentError("3D model for spacecraft $(sc.id) not found: $(path)"))
         format, mime = model_format(path)
+        format in ("glb", "gltf") && _check_gltf_supported(path)
         scale = model_scale === nothing ? Float64(stl_scale) : _per_id(model_scale, sc.id, stl_scale)
         rot = get(model_rotation_deg, sc.id, (0.0, 0.0, 0.0))
         length(rot) == 3 || throw(ArgumentError("model_rotation_deg entries must be three angles (rx, ry, rz) in degrees."))

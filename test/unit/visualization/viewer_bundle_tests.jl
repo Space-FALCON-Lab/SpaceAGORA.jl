@@ -246,12 +246,30 @@ end
         @test glb["1"]["format"] == "glb" && glb["1"]["scale"] == 3.0 && glb["1"]["rotation_deg"] == [0.0, 0.0, 0.0]
         @test startswith(glb["1"]["url"], "data:model/gltf-binary;base64,")
         @test_throws ArgumentError SV.model_payloads(scene; models=Dict(1 => obj), model_rotation_deg=Dict(1 => (1.0, 2.0)))
+        # A glTF that needs a Draco decoder is refused with guidance, not embedded to fail silently.
+        draco_json = "{\"asset\":{\"version\":\"2.0\"},\"extensionsRequired\":[\"KHR_draco_mesh_compression\"]}"
+        draco_gltf = joinpath(dir, "packed.gltf")
+        write(draco_gltf, draco_json)
+        @test SV.gltf_required_extensions(draco_gltf) == ["KHR_draco_mesh_compression"]
+        err = try; SV.model_payloads(scene; models=Dict(1 => draco_gltf)); nothing; catch e; e; end
+        @test err isa ArgumentError && occursin("gltf-transform", err.msg)
+        draco_glb = joinpath(dir, "packed.glb")
+        open(draco_glb, "w") do io
+            payload = Vector{UInt8}(draco_json)
+            while length(payload) % 4 != 0; push!(payload, UInt8(' ')); end
+            write(io, "glTF"); write(io, UInt32(2)); write(io, UInt32(12 + 8 + length(payload)))
+            write(io, UInt32(length(payload))); write(io, "JSON"); write(io, payload)
+        end
+        @test SV.gltf_required_extensions(draco_glb) == ["KHR_draco_mesh_compression"]
+        @test_throws ArgumentError SV.model_payloads(scene; models=Dict(1 => draco_glb))
+        @test SV.gltf_required_extensions(fake_glb) == String[]
         @test_throws ArgumentError SV.model_payloads(scene; models=Dict(1 => joinpath(dir, "x.fbx")))
 
         # The shipped NASA ISS model embeds as GLB.
         iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
         @test isfile(iss)
         @test read(iss, 4) == Vector{UInt8}("glTF")
+        @test SV.gltf_required_extensions(iss) == String[]   # shipped decompressed; the NASA original needs Draco
     end
 
     @testset "STL overrides" begin

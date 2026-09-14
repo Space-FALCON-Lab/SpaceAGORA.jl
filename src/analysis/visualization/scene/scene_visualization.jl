@@ -36,7 +36,7 @@ export build_visualization_scene, visualization_scene_path, with_visualization_s
 export write_visualization_scene, read_visualization_scene, write_visualization_scene!
 export velocity_aligned_quaternion, visualization_frame_budget
 export export_visualization, write_viewer_dev_payload
-export texture_manifest, texture_entry, texture_payload, build_viewer_frames, viewer_payload, model_payloads, model_format
+export texture_manifest, texture_entry, texture_payload, build_viewer_frames, viewer_payload, model_payloads, model_format, gltf_required_extensions
 export render_viewer_html, viewer_import_map, kept_row_indices
 export EnsembleSample, sample_results_directory, with_results_directory, default_sample_scalar
 export write_ensemble_manifest, read_ensemble_manifest, discover_ensemble_samples

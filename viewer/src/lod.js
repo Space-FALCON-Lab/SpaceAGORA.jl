@@ -88,8 +88,12 @@ function buildAssembly(spec, models, scLength) {
 
   // 3D model override (STL, OBJ, glTF/GLB): the mesh replaces the boxes, glyphs stay on their links.
   const model = models && models[String(spec.id)];
+  group.userData.modelStatus = model && model.url ? 'loading' : null;
   if (model && model.url) {
     const install = (object) => {
+      let meshes = 0;
+      object.traverse((child) => { if (child.isMesh) meshes++; });
+      group.userData.modelStatus = `${model.format} (${meshes} mesh${meshes === 1 ? '' : 'es'}, ×${model.scale || 1})`;
       const s = model.scale || 1;
       object.scale.setScalar(s);
       const r = model.rotation_deg || [0, 0, 0];
@@ -118,11 +122,15 @@ function buildAssembly(spec, models, scLength) {
       } else if (format === 'glb' || format === 'gltf') {
         const loader = new GLTFLoader();
         const payload = format === 'glb' ? bytes.buffer : new TextDecoder().decode(bytes);
-        loader.parse(payload, '', (gltf) => install(gltf.scene), (err) => console.warn(`glTF for ${spec.name} failed to parse; showing boxes instead.`, err));
+        loader.parse(payload, '', (gltf) => install(gltf.scene), (err) => {
+          group.userData.modelStatus = `failed: ${err && err.message ? err.message : err}`;
+          console.warn(`glTF for ${spec.name} failed to parse; showing boxes instead.`, err);
+        });
       } else {
-        console.warn(`Unknown model format ${format} for ${spec.name}; showing boxes.`);
+        group.userData.modelStatus = `failed: unknown format ${format}`;
       }
     } catch (err) {
+      group.userData.modelStatus = `failed: ${err && err.message ? err.message : err}`;
       console.warn(`Model for ${spec.name} could not be parsed; showing boxes instead.`, err);
     }
   }
@@ -284,5 +292,6 @@ export function createAssemblies(sidecar, frames, options = {}) {
     setFacetsVisible(v) { facetsVisible = v; for (const it of items) for (const f of it.glyphs.facets) f.visible = v; },
     setAxesVisible(v) { axesVisible = v; for (const it of items) if (it.group) it.group.userData.axes.visible = v; },
     get enabled() { return enabled; },
+    modelStatus(s) { const it = items[s]; return it && it.group ? it.group.userData.modelStatus : null; },
   };
 }

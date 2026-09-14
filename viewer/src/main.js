@@ -235,6 +235,8 @@ export function start(payload, container = document.body) {
     if (frames.hasScalar('wind')) out.wind = `${frames.scalarAt('wind', t, s, Re).toFixed(1)} m/s`;
     out.links = String(spec.links.length);
     out.model = lod.visible[s] ? `3D (${lod.pxSize[s].toFixed(0)} px)` : `marker (${lod.pxSize[s].toFixed(1)} px)`;
+    const status = lod.modelStatus(s);
+    if (status) out['3D model'] = status;
     return out;
   }
 

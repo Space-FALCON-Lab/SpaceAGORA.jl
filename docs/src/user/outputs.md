@@ -36,6 +36,71 @@ The Feather file is always written. The CSV is written when
 `schema_version`, `created_utc`, `mission_time_s`, `steps`,
 `spacecraft_count`, and SHA-256 hashes for each data file.
 
+### Visualization scene sidecar (opt-in)
+
+Setting `simulation_settings.save_visualization_scene = true` adds one more
+file and one more group of columns, both consumed by the post-hoc 3D viewer
+described in `docs/architecture/interactive_visualization_plan.md`:
+
+```text
+output/
+  simulation_results_scene.json  ← planet, epoch, spacecraft geometry, frame rotation samples
+```
+
+The sidecar carries everything the viewer needs besides the trajectory rows:
+the central body's radii, spin and texture key, a table of J2000-to-body-fixed
+quaternions sampled over the mission span (so the viewer needs no SPICE
+kernels), and every spacecraft's links as boxes built from `Link.dims`, with
+thruster, facet and joint glyphs. It is written after the results bundle by
+the same run, and only when the flag is set; the default output is unchanged.
+
+With the flag on, spacecraft that have non-root links also get the
+`link_pose` save field: columns `sc{N}_link_pose_1` .. `sc{N}_link_pose_7n`
+holding `[rx, ry, rz, qx, qy, qz, qw]` per non-root link, in the link order
+recorded in the sidecar. These are the link poses relative to the root bus
+at each saved step, so articulated panels play back as they moved. Reading
+the sidecar back:
+
+```julia
+using SpaceAGORA
+scene = read_visualization_scene("output/simulation_results_scene.json")
+scene.planet.name, length(scene.spacecraft), scene.spacecraft[1].bounding_radius_m
+```
+
+### Interactive viewer page
+
+With the sidecar present, `export_visualization` builds a self-contained
+HTML page next to the bundle, or pass `visualization=true` to `run_simulation`
+to do both in one go:
+
+```julia
+run_simulation(args; visualization=true)
+# or, from an existing flagged run
+export_visualization("output/simulation_results"; max_frames=2000, frame=:inertial)
+```
+
+Setting `SPACEAGORA_VISUALIZATION=1` in the environment does the same for a
+script you do not want to edit, for example
+`SPACEAGORA_VISUALIZATION=1 julia --project=. examples/AGORA_Earth.jl`.
+
+```text
+output/
+  simulation_results_viewer.html  ← three.js viewer: textured globe, markers, trails, timeline
+```
+
+The page embeds three.js, the surface texture from `data/textures/`
+(Earth, Mars, Venus, Titan, Moon are registered in `manifest.toml`), the
+sidecar and a decimated copy of the trajectory, so it opens from disk in any
+modern browser without a server. `max_frames` and `data_budget_mb` bound the
+embedded rows; the info panel shows the effective cadence. `trail_orbits`
+sets how much history trails behind each spacecraft (default three orbits,
+selectable on the page). Zooming in on a spacecraft, or selecting it and
+pressing F, swaps its marker for the link-box assembly with thruster and
+facet glyphs; `stl=Dict(id => "model.stl")` draws a CAD mesh instead.
+The [Interactive Visualization](visualization.md) page covers the options,
+ensembles and textures; `viewer/README.md` documents the controls and how to
+develop the viewer itself.
+
 ## Loading results in Julia
 
 ```julia
@@ -118,7 +183,7 @@ These columns are present only when `mission_configuration.orientation_sim = tru
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_q_1` | — | Attitude quaternion component 1 (scalar-first convention) |
+| `sc1_q_1` | — | Attitude quaternion component 1 (vector part; scalar-last convention, `q_4` is the scalar) |
 | `sc1_q_2` | — | Attitude quaternion component 2 |
 | `sc1_q_3` | — | Attitude quaternion component 3 |
 | `sc1_q_4` | — | Attitude quaternion component 4 |

@@ -21,6 +21,13 @@ This contract defines canonical ownership for the topology cleanup that answers 
 9. Vehicle boundary is:
    - `src/vehicle/spacecraft/*` for composition/integration
    - `src/vehicle/structure/*` for mass/inertia/geometry/structure analysis
+10. Visualization boundary is:
+   - `src/analysis/visualization/scene/*` owns the renderer-independent scene
+     layer (scene types, spacecraft geometry conversion, planet rotation
+     sampling, the JSON sidecar) as a `SimulationModel` submodule
+   - `src/analysis/visualization/rpo/*` owns the PlotlyJS RPO plots
+   - the browser viewer itself is owned only by top-level `viewer/` (never
+     under `src/viewer/`)
 
 ## Required Canonical Files
 1. `src/simulation/engine/public_api.jl`

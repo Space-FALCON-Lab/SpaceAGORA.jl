@@ -9,6 +9,7 @@ import { createSpacecraft, estimateOrbitPeriod } from 'viewer/spacecraft.js';
 import { createAssemblies } from 'viewer/lod.js';
 import { createEnsemble } from 'viewer/ensemble.js';
 import { createAtmosphere } from 'viewer/atmosphere.js';
+import { createPaths } from 'viewer/paths.js';
 import { TRAIL_COLOR_MODES } from 'viewer/spacecraft.js';
 import { Timeline } from 'viewer/timeline.js';
 import { createUI } from 'viewer/ui.js';
@@ -16,7 +17,7 @@ import { createUI } from 'viewer/ui.js';
 const DEFAULT_TRAIL_ORBITS = 3;
 
 export function start(payload, container = document.body) {
-  const { scene: sidecar, frames: rawFrames, textures = {}, models = {}, options = {}, ensemble: ensembleSpec = null } = payload;
+  const { scene: sidecar, frames: rawFrames, textures = {}, models = {}, options = {}, ensemble: ensembleSpec = null, paths: pathSpecs = [] } = payload;
   const frames = new FrameData(rawFrames);
   const planet = sidecar.planet;
   const Re = planet.equatorial_radius_m / 1000, Rp = planet.polar_radius_m / 1000;
@@ -69,6 +70,9 @@ export function start(payload, container = document.body) {
   const lod = createAssemblies(sidecar, frames, { models, enabled: options.assemblies ?? true, assemblyLimit: options.assembly_limit ?? 256 });
   world.add(lod.group);
 
+  const refPaths = createPaths(pathSpecs, frames, {});
+  if (refPaths.items.length) world.add(refPaths.group);
+
   // The ensemble panel needs `state.select` before `state` is built; it reads
   // through this reference, which is filled in below.
   const stateRef = { selected: -1, select: (i) => state.select(i) };
@@ -90,6 +94,8 @@ export function start(payload, container = document.body) {
     trailColorModes: craft.availableColorModes(),
     trailColorLabels: Object.fromEntries(Object.entries(TRAIL_COLOR_MODES).map(([k, v]) => [k, v.label])),
     hasAtmosphere: !!atmosphere,
+    hasPaths: refPaths.items.length > 0,
+    setPaths(v) { refPaths.setVisible(v); },
     hasDensityMap: !!(atmosphere && atmosphere.map),
     setTrailColor(mode) { ui.setTrailLegend(craft.setTrailColorMode(mode)); },
     setAtmosphereLimb(v) { atmosphere && atmosphere.setLimbVisible(v); },
@@ -144,6 +150,7 @@ export function start(payload, container = document.body) {
     attitude: frames.q ? 'saved quaternion' : 'velocity-aligned',
     'link poses': frames.linkPose ? 'recorded' : 'configured',
     ...(ensemble ? { samples: `${ensembleSpec.count} × ${ensemble.perSample} spacecraft` } : {}),
+    ...(refPaths.items.length ? { paths: refPaths.items.map((it) => it.spec.name).join(', ') } : {}),
     ...(atmosphere ? {
       atmosphere: `${atmosphere.info.model.replace('AtmosphereModel', '')}, EI ${atmosphere.info.ei_km.toFixed(0)} km`,
       ...(atmosphere.info.map ? { 'density map': `${atmosphere.info.map.altitude_km.toFixed(0)} km, ${atmosphere.info.map.min.toExponential(1)}–${atmosphere.info.map.max.toExponential(1)} kg/m³` } : {}),
@@ -285,6 +292,7 @@ export function start(payload, container = document.body) {
     world.updateMatrixWorld();
     const viewportHeight = renderer.domElement.clientHeight || window.innerHeight;
     lod.update(t, camera, viewportHeight, lod.group.matrixWorld, anchor);
+    if (refPaths.items.length) refPaths.update(t, anchor);
     if (ensemble) ensemble.update(state.follow);
     craft.update(t, camera, lod.markerHidden, state.selected, craft.group.matrixWorld, anchor, ensemble ? ensemble.dimMask : null);
     controls.update();

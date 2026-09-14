@@ -98,6 +98,9 @@ function buildAssembly(spec, models, scLength) {
       object.scale.setScalar(s);
       const r = model.rotation_deg || [0, 0, 0];
       object.rotation.set(THREE.MathUtils.degToRad(r[0]), THREE.MathUtils.degToRad(r[1]), THREE.MathUtils.degToRad(r[2]), 'XYZ');
+      // body = R * S * (v - c): translate by -R*S*c so the bounding-box centre sits on the spacecraft.
+      const c = model.center || [0, 0, 0];
+      object.position.set(-c[0] * s, -c[1] * s, -c[2] * s).applyEuler(object.rotation);
       object.traverse((child) => {
         if (child.isMesh) {
           if (!child.material || model.format === 'obj' || model.format === 'stl') {

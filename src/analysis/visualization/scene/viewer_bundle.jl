@@ -8,7 +8,7 @@
 
 const VIEWER_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "viewer"))
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data", "textures"))
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "timeline.js", "ui.js", "main.js")
+const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "timeline.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
@@ -393,8 +393,10 @@ OBJ, glTF or GLB file and wins over the `stl_path` recorded in the scene
 (`stl` is an older spelling of the same mapping). `model_scale` is metres per
 model unit, a number for all or a `Dict` per id (`stl_scale` applies when the
 id is absent). `model_rotation_deg` maps an id to XYZ Euler angles in degrees
-applied to the model in the body frame. Each entry is
-`{"url" => data URI, "format" => ..., "scale" => ..., "rotation_deg" => [rx, ry, rz], "source" => file name}`.
+applied to the model in the body frame. `model_center` (a Bool or a per-id
+`Dict`, default true) shifts the model so its bounding-box centre sits on
+the spacecraft. Each entry is
+`{"url" => data URI, "format" => ..., "scale" => ..., "rotation_deg" => [rx, ry, rz], "center" => [cx, cy, cz] (model units), "source" => file name}`.
 A `.gltf` file must embed its buffers; external files are not carried along.
 """
 function model_payloads(
@@ -402,6 +404,7 @@ function model_payloads(
     models::AbstractDict=Dict{Int, String}(),
     model_scale=nothing,
     model_rotation_deg::AbstractDict=Dict{Int, Any}(),
+    model_center=true,
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0
 )::Dict{String, Any}
@@ -415,11 +418,21 @@ function model_payloads(
         scale = model_scale === nothing ? Float64(stl_scale) : _per_id(model_scale, sc.id, stl_scale)
         rot = get(model_rotation_deg, sc.id, (0.0, 0.0, 0.0))
         length(rot) == 3 || throw(ArgumentError("model_rotation_deg entries must be three angles (rx, ry, rz) in degrees."))
+        centred = model_center isa AbstractDict ? Bool(get(model_center, sc.id, true)) : Bool(model_center)
+        center = [0.0, 0.0, 0.0]
+        if centred
+            try
+                center = collect(Float64, model_bounding_box_center(path))
+            catch err
+                @warn "Could not read $(basename(path)) to centre it; the viewer will use the file's own origin." exception=(err, catch_backtrace())
+            end
+        end
         out[string(sc.id)] = Dict{String, Any}(
             "url" => _data_url(read(path), mime),
             "format" => format,
             "scale" => scale,
             "rotation_deg" => Float64[Float64(r) for r in rot],
+            "center" => center,
             "source" => basename(path),
         )
     end
@@ -444,8 +457,10 @@ function viewer_payload(
     models::AbstractDict=Dict{Int, String}(),
     model_scale=nothing,
     model_rotation_deg::AbstractDict=Dict{Int, Any}(),
+    model_center=true,
     stl::AbstractDict=Dict{Int, String}(),
-    stl_scale::Real=1.0
+    stl_scale::Real=1.0,
+    paths=()
 )::Dict{String, Any}
     textures = Dict{String, Any}()
     if include_textures
@@ -456,9 +471,43 @@ function viewer_payload(
         "scene" => scene_dict(scene),
         "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb),
         "textures" => textures,
-        "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, stl=stl, stl_scale=stl_scale),
+        "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, stl=stl, stl_scale=stl_scale),
+        "paths" => path_payloads(paths),
         "options" => Dict{String, Any}(options),
     )
+end
+
+"""
+    path_payloads(paths) -> Vector{Dict{String, Any}}
+
+Reference polylines drawn beside the flown trajectories. Each entry of
+`paths` is a NamedTuple or Dict with `name`, `points_m` (3 x N, metres),
+`frame` (`:inertial`, or `:rtn` for the radial/transverse/normal frame of
+spacecraft `target`, 1-based index into the run's spacecraft list, or
+`:body` for that spacecraft's body frame) and optionally `color` (hex
+string) and `dashed` (Bool).
+"""
+function path_payloads(paths)::Vector{Dict{String, Any}}
+    out = Dict{String, Any}[]
+    for (k, path) in enumerate(paths)
+        get_ = (key, default) -> path isa AbstractDict ? get(path, key, get(path, String(key), default)) : (hasproperty(path, key) ? getproperty(path, key) : default)
+        pts = get_(:points_m, nothing)
+        pts === nothing && throw(ArgumentError("path $(k) needs points_m (3 x N, metres)."))
+        M = Matrix{Float64}(pts)
+        size(M, 1) == 3 || throw(ArgumentError("path $(k): points_m must be 3 x N."))
+        frame = Symbol(get_(:frame, :inertial))
+        frame in (:inertial, :rtn, :body) || throw(ArgumentError("path $(k): frame must be :inertial, :rtn or :body."))
+        push!(out, Dict{String, Any}(
+            "name" => String(get_(:name, "path $(k)")),
+            "frame" => String(frame),
+            "target" => Int(get_(:target, 1)),
+            "color" => String(get_(:color, "#7fe0ff")),
+            "dashed" => Bool(get_(:dashed, true)),
+            "points_km" => _float32_base64(vec(M) ./ 1000.0),
+            "count" => size(M, 2),
+        ))
+    end
+    return out
 end
 
 """
@@ -507,8 +556,10 @@ tier (`:best`, the default, takes the largest registered, e.g. 8k for Earth;
 `"4k"` keeps the page small); `models` maps spacecraft ids to STL, OBJ, glTF
 or GLB files drawn instead of the link boxes, at `model_scale` metres per
 model unit (a number or a per-id `Dict`) and rotated by `model_rotation_deg`
-(per-id XYZ Euler angles); `stl`/`stl_scale` are the older spelling for STL
-only; `viewer_dir` and `textures_dir` override the repository locations.
+(per-id XYZ Euler angles) and centred on the spacecraft unless
+`model_center=false`; `stl`/`stl_scale` are the older spelling for STL only; `paths` overlays
+reference polylines (see `path_payloads`), e.g. a planned RPO path in the
+target's RTN frame; `viewer_dir` and `textures_dir` override the repository locations.
 """
 function export_visualization(
     prefix::AbstractString;
@@ -525,8 +576,10 @@ function export_visualization(
     models::AbstractDict=Dict{Int, String}(),
     model_scale=nothing,
     model_rotation_deg::AbstractDict=Dict{Int, Any}(),
+    model_center=true,
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0,
+    paths=(),
     viewer_dir::AbstractString=VIEWER_DIR,
     textures_dir::AbstractString=TEXTURES_DIR
 )::String
@@ -542,7 +595,8 @@ function export_visualization(
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
-        models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, stl=stl, stl_scale=stl_scale
+        models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, stl=stl, stl_scale=stl_scale,
+        paths=paths
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     html = render_viewer_html(payload; viewer_dir=viewer_dir, title=page_title)

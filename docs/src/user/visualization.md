@@ -72,9 +72,36 @@ spaceagora visualize --run=output --model=1=data/models/iss_nasa_3d_resources_b.
 ```
 
 STL, OBJ and glTF/GLB are supported and embedded in the page; a `.gltf` must
-carry its buffers inline. The model sits in the body frame at the root link,
-so attitude, link poses and glyphs still apply. `data/models/README.md` lists
-the shipped models; the NASA ISS model there is public domain.
+carry its buffers inline, and glTF files must not require Draco, meshopt or
+KTX2 (the exporter refuses them and names the conversion command). By
+default the model's bounding-box centre is placed on the spacecraft
+(`model_center=false` keeps the file's own origin). The model sits in the
+body frame at the root link, so attitude, link poses and glyphs still
+apply, and the selection panel's "3D model" row reports the parsed mesh
+count or the reason a model failed. `data/models/README.md` lists the
+shipped models; the NASA ISS model there is public domain.
+
+The same file can feed a planner. `sample_model_pointcloud(path; n_points,
+scale, rotation_deg)` returns surface samples after the viewer's scale and
+rotation, centred the same way, so an RPO station built from it (for
+example through the `station_points` keyword of the CubeSat MPC demo
+builder) is exactly the geometry the page draws:
+
+```julia
+points = sample_model_pointcloud("data/models/iss_nasa_3d_resources_b.glb";
+    n_points=12000, scale=2.4, rotation_deg=(-90, 0, -90))
+demo = build_rpo_cubesat_mpc_demo(; station_points=points, station_keepout_radius_m=3.0,
+    start_rtn=SVector(-170.0, -100.0, 60.0), goal_rtn=SVector(70.0, 20.0, 0.0),
+    search_margin_m=80.0, sample_ds_m=0.5, mission_time=900.0)
+run_simulation(demo.args; visualization=true)
+export_visualization(prefix; models=Dict(201 => iss), model_scale=2.4, model_rotation_deg=Dict(201 => (-90, 0, -90)),
+    paths=[(name="HyPR plan", points_m=Matrix(demo.plan_result.path), frame=:rtn, target=2)])
+```
+
+`paths` overlays reference polylines: a planned path in a target's
+radial/transverse/normal frame (`frame=:rtn`, re-expressed from the target's
+state every frame), in a spacecraft's body frame (`:body`) or in inertial
+axes, with a colour and dashed or solid style, toggled on the page.
 
 ## Robot arms
 

@@ -76,6 +76,7 @@ export function createUI(container, timeline, state, info) {
       <select data-role="trailcolor" title="Trail colour"></select>
       <span class="sa-trail-legend" data-role="trail-legend" hidden><span data-role="legend-lo"></span><span class="sa-bar-inferno"></span><span data-role="legend-hi"></span></span>
       <label><input type="checkbox" data-role="labels" checked> labels</label>
+      <label data-role="paths-label"><input type="checkbox" data-role="paths" checked> planned paths</label>
       <label><input type="checkbox" data-role="grid" checked> graticule</label>
       <span class="sa-sep"></span>
       <label><input type="checkbox" data-role="assemblies" checked> 3D models</label>
@@ -143,6 +144,8 @@ export function createUI(container, timeline, state, info) {
   follow.addEventListener('click', () => state.setFollow(!state.follow));
   trail.addEventListener('change', () => state.setTrailOrbits(Number(trail.value)));
   q('labels').addEventListener('change', (e) => state.setLabels(e.target.checked));
+  q('paths-label').hidden = !state.hasPaths;
+  q('paths').addEventListener('change', (e) => state.setPaths(e.target.checked));
   q('grid').addEventListener('change', (e) => state.setGraticule(e.target.checked));
   q('assemblies').addEventListener('change', (e) => state.setAssemblies(e.target.checked));
   q('thrusters').addEventListener('change', (e) => state.setThrusters(e.target.checked));

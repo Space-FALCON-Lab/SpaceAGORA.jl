@@ -13,6 +13,7 @@ using Dates
 using JSON
 using TOML
 using Base64
+using Random
 using Arrow
 using DataFrames
 
@@ -36,8 +37,9 @@ export build_visualization_scene, visualization_scene_path, with_visualization_s
 export write_visualization_scene, read_visualization_scene, write_visualization_scene!
 export velocity_aligned_quaternion, visualization_frame_budget
 export export_visualization, write_viewer_dev_payload
-export texture_manifest, texture_entry, texture_payload, build_viewer_frames, viewer_payload, model_payloads, model_format, gltf_required_extensions
+export texture_manifest, texture_entry, texture_payload, build_viewer_frames, viewer_payload, model_payloads, model_format, gltf_required_extensions, path_payloads
 export render_viewer_html, viewer_import_map, kept_row_indices
+export load_model_triangles, model_bounding_box, model_bounding_box_center, sample_model_pointcloud
 export EnsembleSample, sample_results_directory, with_results_directory, default_sample_scalar
 export write_ensemble_manifest, read_ensemble_manifest, discover_ensemble_samples
 export build_ensemble_frames, ensemble_time_axis, export_ensemble_visualization
@@ -187,6 +189,7 @@ include(joinpath(@__DIR__, "spacecraft_geometry.jl"))
 include(joinpath(@__DIR__, "planet_spec.jl"))
 include(joinpath(@__DIR__, "scene_export.jl"))
 include(joinpath(@__DIR__, "viewer_bundle.jl"))
+include(joinpath(@__DIR__, "model_geometry.jl"))
 include(joinpath(@__DIR__, "ensemble_export.jl"))
 
 end # module SceneVisualization

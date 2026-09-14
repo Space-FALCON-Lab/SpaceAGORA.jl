@@ -41,7 +41,7 @@ end
 function _print_usage(io::IO=stdout)
     println(io, "Usage:")
     println(io, "  spaceagora run --example=<file> [--output-dir=<dir>] [--smoke] [--visualize] [--print-only]")
-    println(io, "  spaceagora visualize --run=<results dir or bundle prefix> [--out=<html>] [--max-frames=<n>] [--frame=inertial|planet_fixed] [--texture=best|4k|8k] [--trail-orbits=<n>] [--model=<id>=<stl|obj|glb>] [--model-scale=<m per unit>] [--ensemble]")
+    println(io, "  spaceagora visualize --run=<results dir or bundle prefix> [--out=<html>] [--max-frames=<n>] [--frame=inertial|planet_fixed] [--texture=best|4k|8k] [--trail-orbits=<n>] [--model=<id>=<stl|obj|glb>] [--model-scale=<m per unit>] [--model-center=0|1] [--ensemble]")
     println(io, "  spaceagora telemetry [quick|full|smoke] [--output-dir=<dir>] [--enforce=0|1] [--plots=0|1] [--print-only]")
     println(io, "  spaceagora benchmark runtime-analysis [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
     println(io, "  spaceagora benchmark smart-parallel-ladder [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
@@ -141,6 +141,8 @@ function _run_visualize(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::
             models[parse(Int, id_text)] = String(path)
         elseif _starts_with(arg, "--model-scale=")
             push!(kwargs, :model_scale => parse(Float64, _value_after_equals(arg, "--model-scale=")))
+        elseif _starts_with(arg, "--model-center=")
+            push!(kwargs, :model_center => lowercase(strip(_value_after_equals(arg, "--model-center="))) in ("1", "true", "yes", "on"))
         elseif arg == "--ensemble"
             ensemble = true
         else

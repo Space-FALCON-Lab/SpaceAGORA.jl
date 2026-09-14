@@ -324,6 +324,18 @@ loaders (vendored; GLTFLoader's relative import rewritten to a bare
 specifier). `data/models/` ships NASA's public-domain ISS (B) glTF, checked
 in the tests and used for an ISS page.
 
+## Model geometry, point clouds and planned paths (added 2026-09-14)
+
+`model_geometry.jl` reads STL, OBJ and embedded glTF/GLB triangle soups,
+which gives the bundler bounding boxes (models are centred on the spacecraft
+by default, `model_center`) and gives planners `sample_model_pointcloud`,
+area-weighted surface samples after the viewer's scale and rotation. The
+RPO CubeSat MPC demo builder accepts `station_points` and the related
+keep-out, safe-distance, search-margin and sampling-step overrides, so a
+HyPR/PSO rendezvous can be planned around the same ISS model the page
+draws. `paths` embeds reference polylines (inertial, RTN of a target, or
+body frame) that `paths.js` re-expresses every frame.
+
 ## Robot arms (added 2026-09-14)
 
 The cloth robot-arm chain, left out of phase 1, is now rendered. Geometry:

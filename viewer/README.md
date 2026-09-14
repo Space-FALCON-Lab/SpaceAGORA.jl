@@ -32,6 +32,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/spacecraft.js` | marker cloud, fading trails, labels, orbit period estimate |
 | `src/lod.js` | close-up box assemblies, thruster/facet glyphs, STL override, visibility by projected size |
 | `src/ensemble.js` | ensemble colouring, spaghetti histories, sample selector |
+| `src/paths.js` | reference polylines in inertial, RTN or body frames |
 | `src/atmosphere.js` | limb glow, density shells, density map |
 | `src/colormaps.js` | inferno and viridis |
 | `src/timeline.js` | playback clock and time formatting |
@@ -105,6 +106,14 @@ spacecraft.
 embeds the largest by default (`texture_resolution=:best`); the globe
 downscales on load when the GPU's maximum texture size is smaller than the
 image, and the info panel shows the tier and the GPU limit.
+
+## Planned paths
+
+`payload.paths` carries reference polylines (`src/paths.js`): points in km,
+a frame (`inertial`, `rtn` of a target spacecraft, or that spacecraft's
+`body` frame), colour and dash style. RTN and body paths are rebuilt every
+frame from the target's position, velocity or attitude, and the group sits
+at the floating origin like the markers.
 
 ## Robot arm
 

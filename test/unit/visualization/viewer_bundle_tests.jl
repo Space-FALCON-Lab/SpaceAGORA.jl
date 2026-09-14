@@ -5,6 +5,7 @@ using DataFrames
 using Arrow
 using JSON
 using Base64
+using Random
 
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
@@ -242,7 +243,7 @@ end
         @test startswith(models["1"]["url"], "data:model/obj;base64,")
         @test models["1"]["scale"] == 0.5
         @test models["1"]["rotation_deg"] == [-90.0, 0.0, -90.0]
-        glb = SV.model_payloads(scene; models=Dict(1 => fake_glb), model_scale=3.0)
+        glb = SV.model_payloads(scene; models=Dict(1 => fake_glb), model_scale=3.0, model_center=false)   # not a real glTF: no centring
         @test glb["1"]["format"] == "glb" && glb["1"]["scale"] == 3.0 && glb["1"]["rotation_deg"] == [0.0, 0.0, 0.0]
         @test startswith(glb["1"]["url"], "data:model/gltf-binary;base64,")
         @test_throws ArgumentError SV.model_payloads(scene; models=Dict(1 => obj), model_rotation_deg=Dict(1 => (1.0, 2.0)))
@@ -270,6 +271,66 @@ end
         @test isfile(iss)
         @test read(iss, 4) == Vector{UInt8}("glTF")
         @test SV.gltf_required_extensions(iss) == String[]   # shipped decompressed; the NASA original needs Draco
+    end
+
+    @testset "model geometry readers and point clouds" begin
+        dir = mktempdir()
+        obj = joinpath(dir, "quad.obj")
+        write(obj, "v 0 0 0\nv 2 0 0\nv 2 1 0\nv 0 1 0\nf 1 2 3 4\n")
+        tris = load_model_triangles(obj)
+        @test size(tris) == (3, 6)          # one quad, fan-triangulated
+        lo, hi = model_bounding_box(obj)
+        @test lo == SVector(0.0, 0.0, 0.0) && hi == SVector(2.0, 1.0, 0.0)
+        @test SV.model_bounding_box_center(obj) == SVector(1.0, 0.5, 0.0)
+        # scale then XYZ Euler rotation: (-90, 0, -90) sends model x -> body z, y -> x, z -> y
+        rotated = load_model_triangles(obj; scale=2.0, rotation_deg=(-90, 0, -90))
+        @test maximum(rotated[3, :]) ≈ 4.0 atol=1e-12
+        @test maximum(rotated[1, :]) ≈ 2.0 atol=1e-12
+        @test all(abs.(rotated[2, :]) .< 1e-12)
+
+        stl = _write_tiny_stl(joinpath(dir, "tri.stl"))
+        @test size(load_model_triangles(stl)) == (3, 3)
+        @test model_bounding_box(stl)[2] == SVector(1.0, 1.0, 0.0)
+
+        iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
+        iss_tris = load_model_triangles(iss)
+        @test size(iss_tris, 2) > 100_000 && size(iss_tris, 2) % 3 == 0
+        lo, hi = model_bounding_box(iss)
+        @test lo ≈ SVector(-11.13, -4.17, -22.86) atol=0.01
+        @test hi ≈ SVector(3.29, 41.26, 22.68) atol=0.01
+        cloud = sample_model_pointcloud(iss; n_points=2000, rng=MersenneTwister(3), scale=2.4, rotation_deg=(-90, 0, -90))
+        @test size(cloud) == (3, 2000)
+        # centred and rotated: the ~46-unit truss now spans about 109 m along body y, centred on zero
+        @test maximum(cloud[2, :]) - minimum(cloud[2, :]) > 100.0
+        @test abs(maximum(cloud[2, :]) + minimum(cloud[2, :])) < 6.0
+        @test maximum(abs.(cloud[3, :])) < 20.0
+        raw = sample_model_pointcloud(iss; n_points=500, rng=MersenneTwister(3), center=false)
+        @test minimum(raw[2, :]) > -5.0 && maximum(raw[2, :]) > 30.0   # model units, uncentred
+
+        # A glTF whose buffers live in an external file is refused.
+        write(joinpath(dir, "ext.gltf"), "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"data.bin\",\"byteLength\":4}]}")
+        @test_throws ArgumentError load_model_triangles(joinpath(dir, "ext.gltf"))
+
+        # The payload carries the centre the viewer subtracts, unless centring is off.
+        args = _viewer_config(results_directory=dir)
+        scene = build_visualization_scene(args; rotation_max_samples=4)
+        m = SV.model_payloads(scene; models=Dict(1 => iss), model_scale=2.4)
+        @test m["1"]["center"] ≈ [-3.92, 18.55, -0.09] atol=0.01
+        @test SV.model_payloads(scene; models=Dict(1 => iss), model_center=false)["1"]["center"] == [0.0, 0.0, 0.0]
+        @test SV.model_payloads(scene; models=Dict(1 => iss), model_center=Dict(1 => false))["1"]["center"] == [0.0, 0.0, 0.0]
+    end
+
+    @testset "reference paths" begin
+        pts = [0.0 100.0 200.0; 0.0 10.0 0.0; 0.0 0.0 5.0]
+        out = SV.path_payloads([(name="plan", points_m=pts, frame=:rtn, target=2, color="#ff0000", dashed=false)])
+        @test length(out) == 1 && out[1]["name"] == "plan" && out[1]["frame"] == "rtn" && out[1]["target"] == 2
+        @test out[1]["count"] == 3 && !out[1]["dashed"] && out[1]["color"] == "#ff0000"
+        @test _decode_f32(out[1]["points_km"]) ≈ Float32.(vec(pts) ./ 1000.0)
+        d = SV.path_payloads([Dict("points_m" => pts)])
+        @test d[1]["frame"] == "inertial" && d[1]["dashed"] && d[1]["name"] == "path 1"
+        @test_throws ArgumentError SV.path_payloads([(points_m=pts, frame=:lvlh)])
+        @test_throws ArgumentError SV.path_payloads([(points_m=pts[1:2, :],)])
+        @test SV.path_payloads(()) == Dict{String, Any}[]
     end
 
     @testset "STL overrides" begin
@@ -363,6 +424,8 @@ end
         cli_out = IOBuffer()
         @test run_cli(["visualize", "--run=$(dir)", "--out=$(joinpath(dir, "cli_iss.html"))", "--no-textures", "--model=1=$(iss)", "--model-scale=2.4"]; io=cli_out) == 0
         @test occursin("\"scale\":2.4", read(joinpath(dir, "cli_iss.html"), String))
+        with_path = export_visualization(args; out=joinpath(dir, "paths.html"), textures=false, paths=[(name="ref", points_m=[0.0 10.0; 0.0 0.0; 0.0 1.0], frame=:rtn, target=1)])
+        @test occursin("\"paths\":[{", read(with_path, String)) || occursin("\"paths\":[", read(with_path, String))
         @test_throws ArgumentError run_cli(["visualize", "--run=$(dir)", "--model=1"]; io=devnull)
 
         stl = _write_tiny_stl(joinpath(dir, "bus.stl"))

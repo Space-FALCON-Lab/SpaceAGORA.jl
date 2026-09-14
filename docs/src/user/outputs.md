@@ -15,6 +15,7 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 
 What to read next:
 
+- [The Integrated State](integrated_state.md) (which columns are integrated and which are derived)
 - [Simulation Configuration](simulation_configuration.md)
 - [Verification Study](verification_study.md)
 - [Recipes](recipes.md)
@@ -109,8 +110,8 @@ columns.
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_heat_rate` | W/m² | Instantaneous stagnation heat rate |
-| `sc1_heat_load` | J/m² | Accumulated heat load (time-integral of heat rate) |
+| `sc1_heat_rate` | W/cm² | Largest of the per-link stagnation heat rates (the built-in Maxwellian model returns W/cm²) |
+| `sc1_heat_load` | J/cm² | Largest of the per-link accumulated heat loads (each link integrates its own rate, without an area-unit conversion); not the sum over links |
 
 ### Attitude (orientation_sim only)
 
@@ -118,10 +119,10 @@ These columns are present only when `mission_configuration.orientation_sim = tru
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_q_1` | — | Attitude quaternion component 1 (scalar-first convention) |
-| `sc1_q_2` | — | Attitude quaternion component 2 |
-| `sc1_q_3` | — | Attitude quaternion component 3 |
-| `sc1_q_4` | — | Attitude quaternion component 4 |
+| `sc1_q_1` | — | Attitude quaternion component `x` (scalar-last convention `[x, y, z, w]`, inertial to body) |
+| `sc1_q_2` | — | Attitude quaternion component `y` |
+| `sc1_q_3` | — | Attitude quaternion component `z` |
+| `sc1_q_4` | — | Attitude quaternion scalar component `w`; `[0, 0, 0, 1]` is the identity attitude |
 
 ## Multi-spacecraft runs
 

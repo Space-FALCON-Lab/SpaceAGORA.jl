@@ -548,7 +548,12 @@ function _harmonics_flat_batch_kernel!(
                 A[b, slot_next, j] = ws.u_vec[b] * N1v * A[b, slot_row, j] - N2v * A[b, slot_prev, j]
             end
         end
-        zcol_next = (next_row - 1) <= M ? (next_row + 1) : (M + 2)
+        # m_cap, not M: the recursion's column bound is min(max(M, 1) + 1, l), so
+        # at M = 0 it still writes column 2 and zeroing M + 2 = 2 here would
+        # clobber it. Every M >= 1 is unaffected, which is why only the
+        # zonal-only configuration saw it.
+        m_cap = max(M, 1)
+        zcol_next = (next_row - 1) <= m_cap ? (next_row + 1) : (m_cap + 2)
         if zcol_next <= L + 4
             @inbounds for b = 1:B
                 A[b, slot_next, zcol_next] = 0.0

@@ -53,6 +53,57 @@ function buildArm(spec) {
   return { group, links, tip };
 }
 
+// Parse a model override (an entry of payload.models: data URL, format,
+// scale, rotation_deg, center) and hand back an object with the scale,
+// rotation and centring applied, authored in metres. `onReady(object,
+// status)` runs synchronously for STL/OBJ and after the parse for glTF;
+// `onFail(message)` when the bytes cannot be decoded. Shared by the
+// assemblies and the reference ghosts so both draw the same geometry.
+export function loadModelObject(model, label, onReady, onFail) {
+  const install = (object) => {
+    let meshes = 0;
+    object.traverse((child) => { if (child.isMesh) meshes++; });
+    const s = model.scale || 1;
+    object.scale.setScalar(s);
+    const r = model.rotation_deg || [0, 0, 0];
+    object.rotation.set(THREE.MathUtils.degToRad(r[0]), THREE.MathUtils.degToRad(r[1]), THREE.MathUtils.degToRad(r[2]), 'XYZ');
+    // body = R * S * (v - c): translate by -R*S*c so the bounding-box centre sits on the spacecraft.
+    const c = model.center || [0, 0, 0];
+    object.position.set(-c[0] * s, -c[1] * s, -c[2] * s).applyEuler(object.rotation);
+    object.traverse((child) => {
+      if (child.isMesh) {
+        if (!child.material || model.format === 'obj' || model.format === 'stl') {
+          child.material = new THREE.MeshStandardMaterial({ color: STL_COLOR, roughness: 0.55, metalness: 0.2 });
+        }
+        child.castShadow = false;
+      }
+    });
+    onReady(object, `${model.format} (${meshes} mesh${meshes === 1 ? '' : 'es'}, ×${s})`);
+  };
+  const message = (err) => (err && err.message ? err.message : String(err));
+  try {
+    const bytes = decodeBytes(model.url.split(',')[1] || '');
+    const format = model.format || 'stl';
+    if (format === 'stl') {
+      const geometry = new STLLoader().parse(bytes.buffer);
+      geometry.computeVertexNormals();
+      install(new THREE.Mesh(geometry));
+    } else if (format === 'obj') {
+      install(new OBJLoader().parse(new TextDecoder().decode(bytes)));
+    } else if (format === 'glb' || format === 'gltf') {
+      const loader = new GLTFLoader();
+      const payload = format === 'glb' ? bytes.buffer : new TextDecoder().decode(bytes);
+      loader.parse(payload, '', (gltf) => {
+        try { install(gltf.scene); } catch (err) { onFail(message(err)); }
+      }, (err) => onFail(message(err)));
+    } else {
+      onFail(`unknown format ${format}`);
+    }
+  } catch (err) {
+    onFail(message(err));
+  }
+}
+
 function boxMesh(dims, color) {
   const geometry = new THREE.BoxGeometry(Math.max(dims[0], 1e-3), Math.max(dims[1], 1e-3), Math.max(dims[2], 1e-3));
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.15 }));
@@ -90,52 +141,15 @@ function buildAssembly(spec, models, scLength) {
   const model = models && models[String(spec.id)];
   group.userData.modelStatus = model && model.url ? 'loading' : null;
   if (model && model.url) {
-    const install = (object) => {
-      let meshes = 0;
-      object.traverse((child) => { if (child.isMesh) meshes++; });
-      group.userData.modelStatus = `${model.format} (${meshes} mesh${meshes === 1 ? '' : 'es'}, ×${model.scale || 1})`;
-      const s = model.scale || 1;
-      object.scale.setScalar(s);
-      const r = model.rotation_deg || [0, 0, 0];
-      object.rotation.set(THREE.MathUtils.degToRad(r[0]), THREE.MathUtils.degToRad(r[1]), THREE.MathUtils.degToRad(r[2]), 'XYZ');
-      // body = R * S * (v - c): translate by -R*S*c so the bounding-box centre sits on the spacecraft.
-      const c = model.center || [0, 0, 0];
-      object.position.set(-c[0] * s, -c[1] * s, -c[2] * s).applyEuler(object.rotation);
-      object.traverse((child) => {
-        if (child.isMesh) {
-          if (!child.material || model.format === 'obj' || model.format === 'stl') {
-            child.material = new THREE.MeshStandardMaterial({ color: STL_COLOR, roughness: 0.55, metalness: 0.2 });
-          }
-          child.castShadow = false;
-        }
-      });
+    loadModelObject(model, spec.name, (object, status) => {
       linkGroups[0].add(object);
       linkGroups.forEach((g) => { g.userData.boxes.visible = false; });
       group.userData.model = object;
-    };
-    try {
-      const bytes = decodeBytes(model.url.split(',')[1] || '');
-      const format = model.format || 'stl';
-      if (format === 'stl') {
-        const geometry = new STLLoader().parse(bytes.buffer);
-        geometry.computeVertexNormals();
-        install(new THREE.Mesh(geometry));
-      } else if (format === 'obj') {
-        install(new OBJLoader().parse(new TextDecoder().decode(bytes)));
-      } else if (format === 'glb' || format === 'gltf') {
-        const loader = new GLTFLoader();
-        const payload = format === 'glb' ? bytes.buffer : new TextDecoder().decode(bytes);
-        loader.parse(payload, '', (gltf) => install(gltf.scene), (err) => {
-          group.userData.modelStatus = `failed: ${err && err.message ? err.message : err}`;
-          console.warn(`glTF for ${spec.name} failed to parse; showing boxes instead.`, err);
-        });
-      } else {
-        group.userData.modelStatus = `failed: unknown format ${format}`;
-      }
-    } catch (err) {
-      group.userData.modelStatus = `failed: ${err && err.message ? err.message : err}`;
-      console.warn(`Model for ${spec.name} could not be parsed; showing boxes instead.`, err);
-    }
+      group.userData.modelStatus = status;
+    }, (message) => {
+      group.userData.modelStatus = `failed: ${message}`;
+      console.warn(`Model for ${spec.name} could not be parsed; showing boxes instead.`, message);
+    });
   }
 
   const coneH = Math.max(0.05, 0.12 * r), coneR = 0.35 * coneH;

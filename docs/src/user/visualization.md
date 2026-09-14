@@ -103,6 +103,31 @@ radial/transverse/normal frame (`frame=:rtn`, re-expressed from the target's
 state every frame), in a spacecraft's body frame (`:body`) or in inertial
 axes, with a colour and dashed or solid style, toggled on the page.
 
+## Reference ghosts
+
+`references` draws a second, translucent copy of a spacecraft that follows a
+state table the integrator did not produce: a SPICE reconstruction of the
+real mission, a telemetry record, or a plan. The ghost copies the geometry
+(and the 3D model) of the spacecraft it refers to, carries its own line over
+the whole reference span and a ring marker, and the selection panel of the
+flown spacecraft reports the separation between the two at the current time.
+Times are seconds from the run epoch; positions are inertial (J2000,
+planet-centred) metres, embedded as Float64.
+
+```julia
+# Sample the mission SPK on the run's saved times, relative to the planet centre.
+et0 = str2et(scene_epoch_utc)
+states = [spkezr("MAGELLAN", et0 + t, "J2000", "NONE", "VENUS")[1] for t in times_s]
+pos_m = 1e3 .* reduce(hcat, [s[1:3] for s in states])
+vel_mps = 1e3 .* reduce(hcat, [s[4:6] for s in states])
+export_visualization(prefix; models=Dict(1 => "data/models/magellan_nasa_3d_resources.glb"),
+    references=[(name="Magellan (SPICE)", t_s=times_s, pos_m=pos_m, vel_mps=vel_mps, target=1, color="#ff8c69")])
+```
+
+Attitude comes from a `q` column (4 x N, scalar-last) when given and is
+velocity-aligned otherwise. `scripts/dev/viewer_demos/` has drivers that
+build such ghosts for Magellan at Venus and Cassini at Titan.
+
 ## Robot arms
 
 A spacecraft whose control model carries a `RobotArmControlEffector` with a

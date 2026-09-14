@@ -33,6 +33,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/lod.js` | close-up box assemblies, thruster/facet glyphs, STL override, visibility by projected size |
 | `src/ensemble.js` | ensemble colouring, spaghetti histories, sample selector |
 | `src/paths.js` | reference polylines in inertial, RTN or body frames |
+| `src/references.js` | reference ghosts: translucent copies of a spacecraft driven by an external state table |
 | `src/atmosphere.js` | limb glow, density shells, density map |
 | `src/colormaps.js` | inferno and viridis |
 | `src/timeline.js` | playback clock and time formatting |
@@ -114,6 +115,18 @@ a frame (`inertial`, `rtn` of a target spacecraft, or that spacecraft's
 `body` frame), colour and dash style. RTN and body paths are rebuilt every
 frame from the target's position, velocity or attitude, and the group sits
 at the floating origin like the markers.
+
+## Reference ghosts
+
+`payload.references` carries state tables (`src/references.js`): Float64
+times and positions on their own grid, optional velocities and attitude
+quaternions, the index of the spacecraft whose geometry the ghost copies,
+colour and opacity. Each ghost is a translucent copy of that spacecraft's
+model override (through `loadModelObject`, shared with `lod.js`) or of its
+link boxes, with a ring marker and label, a line over the whole reference
+span, and the same pixel-size switch as the assemblies. The selection panel
+of the flown spacecraft shows the separation from each ghost that refers to
+it. Times outside the table hide the ghost.
 
 ## Robot arm
 

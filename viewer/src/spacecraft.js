@@ -87,7 +87,7 @@ const POINT_FRAGMENT = `
     gl_FragColor = vec4(color, 1.0);
   }`;
 
-function makeLabelSprite(text, color) {
+export function makeLabelSprite(text, color) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   const font = '500 26px system-ui, sans-serif';

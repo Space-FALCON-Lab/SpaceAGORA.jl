@@ -10,6 +10,7 @@ import { createAssemblies } from 'viewer/lod.js';
 import { createEnsemble } from 'viewer/ensemble.js';
 import { createAtmosphere } from 'viewer/atmosphere.js';
 import { createPaths } from 'viewer/paths.js';
+import { createReferences } from 'viewer/references.js';
 import { TRAIL_COLOR_MODES } from 'viewer/spacecraft.js';
 import { Timeline } from 'viewer/timeline.js';
 import { createUI } from 'viewer/ui.js';
@@ -17,7 +18,7 @@ import { createUI } from 'viewer/ui.js';
 const DEFAULT_TRAIL_ORBITS = 3;
 
 export function start(payload, container = document.body) {
-  const { scene: sidecar, frames: rawFrames, textures = {}, models = {}, options = {}, ensemble: ensembleSpec = null, paths: pathSpecs = [] } = payload;
+  const { scene: sidecar, frames: rawFrames, textures = {}, models = {}, options = {}, ensemble: ensembleSpec = null, paths: pathSpecs = [], references: referenceSpecs = [] } = payload;
   const frames = new FrameData(rawFrames);
   const planet = sidecar.planet;
   const Re = planet.equatorial_radius_m / 1000, Rp = planet.polar_radius_m / 1000;
@@ -73,6 +74,10 @@ export function start(payload, container = document.body) {
   const refPaths = createPaths(pathSpecs, frames, {});
   if (refPaths.items.length) world.add(refPaths.group);
 
+  // Reference ghosts (SPICE reconstructions, telemetry, plans) beside the flown spacecraft.
+  const refs = createReferences(referenceSpecs, sidecar, frames, models, {});
+  if (refs.items.length) world.add(refs.group);
+
   // The ensemble panel needs `state.select` before `state` is built; it reads
   // through this reference, which is filled in below.
   const stateRef = { selected: -1, select: (i) => state.select(i) };
@@ -96,6 +101,8 @@ export function start(payload, container = document.body) {
     hasAtmosphere: !!atmosphere,
     hasPaths: refPaths.items.length > 0,
     setPaths(v) { refPaths.setVisible(v); },
+    hasReferences: refs.items.length > 0,
+    setReferences(v) { refs.setVisible(v); },
     hasDensityMap: !!(atmosphere && atmosphere.map),
     setTrailColor(mode) { ui.setTrailLegend(craft.setTrailColorMode(mode)); },
     setAtmosphereLimb(v) { atmosphere && atmosphere.setLimbVisible(v); },
@@ -119,7 +126,7 @@ export function start(payload, container = document.body) {
       ui.render();
     },
     setTrailOrbits(n) { state.trailOrbits = n; applyTrail(); },
-    setLabels(v) { craft.setLabelsVisible(v); },
+    setLabels(v) { craft.setLabelsVisible(v); refs.setLabelsVisible(v); },
     setGraticule(v) { globe.grid.visible = v; globe.axis.visible = v; },
     setAssemblies(v) { lod.setEnabled(v); },
     setThrusters(v) { lod.setThrustersVisible(v); },
@@ -151,6 +158,7 @@ export function start(payload, container = document.body) {
     'link poses': frames.linkPose ? 'recorded' : 'configured',
     ...(ensemble ? { samples: `${ensembleSpec.count} × ${ensemble.perSample} spacecraft` } : {}),
     ...(refPaths.items.length ? { paths: refPaths.items.map((it) => it.spec.name).join(', ') } : {}),
+    ...(refs.items.length ? { references: refs.items.map((it) => it.spec.name).join(', ') } : {}),
     ...(atmosphere ? {
       atmosphere: `${atmosphere.info.model.replace('AtmosphereModel', '')}, EI ${atmosphere.info.ei_km.toFixed(0)} km`,
       ...(atmosphere.info.map ? { 'density map': `${atmosphere.info.map.altitude_km.toFixed(0)} km, ${atmosphere.info.map.min.toExponential(1)}–${atmosphere.info.map.max.toExponential(1)} kg/m³` } : {}),
@@ -244,6 +252,13 @@ export function start(payload, container = document.body) {
     out.model = lod.visible[s] ? `3D (${lod.pxSize[s].toFixed(0)} px)` : `marker (${lod.pxSize[s].toFixed(1)} px)`;
     const status = lod.modelStatus(s);
     if (status) out['3D model'] = status;
+    refs.items.forEach((it, k) => {
+      if (it.target !== s) return;
+      const sep = refs.separationKm(t, k);
+      out[`vs ${it.spec.name}`] = Number.isFinite(sep) ? (sep >= 10 ? `${sep.toFixed(1)} km` : `${(1000 * sep).toFixed(1)} m`) : 'not covered';
+      const ghost = refs.modelStatus(k);
+      if (ghost && ghost !== 'boxes') out[`${it.spec.name} model`] = ghost;
+    });
     return out;
   }
 
@@ -289,10 +304,12 @@ export function start(payload, container = document.body) {
     }
     craft.group.position.set(anchor[0], anchor[1], anchor[2]);
     lod.group.position.set(anchor[0], anchor[1], anchor[2]);
+    refs.group.position.set(anchor[0], anchor[1], anchor[2]);
     world.updateMatrixWorld();
     const viewportHeight = renderer.domElement.clientHeight || window.innerHeight;
     lod.update(t, camera, viewportHeight, lod.group.matrixWorld, anchor);
     if (refPaths.items.length) refPaths.update(t, anchor);
+    if (refs.items.length) refs.update(t, camera, viewportHeight, refs.group.matrixWorld, anchor);
     if (ensemble) ensemble.update(state.follow);
     craft.update(t, camera, lod.markerHidden, state.selected, craft.group.matrixWorld, anchor, ensemble ? ensemble.dimMask : null);
     controls.update();
@@ -301,7 +318,7 @@ export function start(payload, container = document.body) {
   }
   requestAnimationFrame(animate);
 
-  return { renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, ensemble, timeline, frames, state, period };
+  return { renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, ensemble, references: refs, paths: refPaths, timeline, frames, state, period };
 }
 
 function defaultSpeed(frames) {

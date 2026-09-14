@@ -122,10 +122,14 @@ export function createGlobe(planet, textureEntry, options = {}) {
     grid,
     axis,
     radiusKm: Re,
-    // Body-to-inertial quaternion at elapsed time t (seconds since epoch).
+    // Body-to-inertial quaternion at elapsed time t (seconds since epoch),
+    // into a THREE.Quaternion or a 4-element array. (A typed array's `set`
+    // takes an array, not four numbers, so the two cases differ.)
     rotationAt(t, out) {
       table.at(t, q);
-      return out.set(q[0], q[1], q[2], q[3]);
+      if (out.isQuaternion) return out.set(q[0], q[1], q[2], q[3]);
+      out[0] = q[0]; out[1] = q[1]; out[2] = q[2]; out[3] = q[3];
+      return out;
     },
     update(t) {
       table.at(t, q);

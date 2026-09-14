@@ -336,6 +336,19 @@ HyPR/PSO rendezvous can be planned around the same ISS model the page
 draws. `paths` embeds reference polylines (inertial, RTN of a target, or
 body frame) that `paths.js` re-expresses every frame.
 
+## Reference ghosts (added 2026-09-14)
+
+`references` embeds state tables that did not come from the integrator
+(`reference_payloads`: Float64 times and positions, optional velocities and
+scalar-last quaternions, a target spacecraft index, colour, opacity) and
+`references.js` draws each as a translucent copy of the target's model or
+link boxes with its own line and marker. The first use is a "ghost" flown
+from a mission SPK next to the simulated spacecraft: Magellan's aerobraking
+kernel at Venus and Cassini's reconstructed Titan flybys, sampled in the
+demo drivers with `spkezr` relative to the planet centre on the run's saved
+times. The floating origin and the pixel-size switch are shared with the
+assemblies; the selection panel reports the separation.
+
 ## Robot arms (added 2026-09-14)
 
 The cloth robot-arm chain, left out of phase 1, is now rendered. Geometry:

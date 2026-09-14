@@ -8,7 +8,7 @@
 
 const VIEWER_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "viewer"))
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data", "textures"))
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "timeline.js", "ui.js", "main.js")
+const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "timeline.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
@@ -460,7 +460,8 @@ function viewer_payload(
     model_center=true,
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0,
-    paths=()
+    paths=(),
+    references=()
 )::Dict{String, Any}
     textures = Dict{String, Any}()
     if include_textures
@@ -473,6 +474,7 @@ function viewer_payload(
         "textures" => textures,
         "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, stl=stl, stl_scale=stl_scale),
         "paths" => path_payloads(paths),
+        "references" => reference_payloads(references, scene),
         "options" => Dict{String, Any}(options),
     )
 end
@@ -505,6 +507,63 @@ function path_payloads(paths)::Vector{Dict{String, Any}}
             "dashed" => Bool(get_(:dashed, true)),
             "points_km" => _float32_base64(vec(M) ./ 1000.0),
             "count" => size(M, 2),
+        ))
+    end
+    return out
+end
+
+"""
+    reference_payloads(references, scene) -> Vector{Dict{String, Any}}
+
+Reference trajectories drawn as translucent ghosts of a spacecraft on the
+run's own timeline: a SPICE reconstruction, a telemetry record or a plan.
+Each entry of `references` is a NamedTuple or Dict with `name`, `t_s`
+(elapsed seconds from the run epoch, length N, non-decreasing), `pos_m`
+(3 x N, inertial metres) and optionally `vel_mps` (3 x N), `q` (4 x N,
+scalar-last body-to-inertial attitude; velocity-aligned when absent),
+`target` (1-based index of the spacecraft whose geometry and 3D model the
+ghost copies, default 1), `color` (hex string), `opacity` (0..1, default
+0.45) and `trail` (draw the whole reference line, default true). Times and
+positions are embedded as Float64 so a ghost sits within metres of the flown
+spacecraft when the two agree.
+"""
+function reference_payloads(references, scene::VisualizationScene)::Vector{Dict{String, Any}}
+    out = Dict{String, Any}[]
+    n_sc = length(scene.spacecraft)
+    for (k, ref) in enumerate(references)
+        get_ = (key, default) -> ref isa AbstractDict ? get(ref, key, get(ref, String(key), default)) : (hasproperty(ref, key) ? getproperty(ref, key) : default)
+        t = get_(:t_s, nothing)
+        t === nothing && throw(ArgumentError("reference $(k) needs t_s (elapsed seconds from the run epoch)."))
+        times = Float64[Float64(x) for x in vec(collect(t))]
+        N = length(times)
+        N >= 1 || throw(ArgumentError("reference $(k): t_s is empty."))
+        all(isfinite, times) && issorted(times) || throw(ArgumentError("reference $(k): t_s must be finite and non-decreasing."))
+        pts = get_(:pos_m, nothing)
+        pts === nothing && throw(ArgumentError("reference $(k) needs pos_m (3 x N, metres)."))
+        P = Matrix{Float64}(pts)
+        size(P) == (3, N) || throw(ArgumentError("reference $(k): pos_m must be 3 x $(N) to match t_s, got $(size(P))."))
+        all(isfinite, P) || throw(ArgumentError("reference $(k): pos_m has non-finite entries."))
+        vel = get_(:vel_mps, nothing)
+        V = vel === nothing ? nothing : Matrix{Float64}(vel)
+        V === nothing || size(V) == (3, N) || throw(ArgumentError("reference $(k): vel_mps must be 3 x $(N)."))
+        qs = get_(:q, nothing)
+        Q = qs === nothing ? nothing : Matrix{Float64}(qs)
+        Q === nothing || size(Q) == (4, N) || throw(ArgumentError("reference $(k): q must be 4 x $(N) (scalar-last)."))
+        target = Int(get_(:target, 1))
+        1 <= target <= n_sc || throw(ArgumentError("reference $(k): target must be a spacecraft index in 1:$(n_sc), got $(target)."))
+        opacity = Float64(get_(:opacity, 0.45))
+        0.0 <= opacity <= 1.0 || throw(ArgumentError("reference $(k): opacity must be within 0..1."))
+        push!(out, Dict{String, Any}(
+            "name" => String(get_(:name, "reference $(k)")),
+            "target" => target,
+            "count" => N,
+            "t_s" => _float64_base64(times),
+            "pos_km" => _float64_base64(vec(P) ./ 1000.0),
+            "vel_kms" => V === nothing ? nothing : _float32_base64(vec(V) ./ 1000.0),
+            "q" => Q === nothing ? nothing : _float32_base64(vec(Q)),
+            "color" => String(get_(:color, "#ff8c69")),
+            "opacity" => opacity,
+            "trail" => Bool(get_(:trail, true)),
         ))
     end
     return out
@@ -557,7 +616,9 @@ tier (`:best`, the default, takes the largest registered, e.g. 8k for Earth;
 or GLB files drawn instead of the link boxes, at `model_scale` metres per
 model unit (a number or a per-id `Dict`) and rotated by `model_rotation_deg`
 (per-id XYZ Euler angles) and centred on the spacecraft unless
-`model_center=false`; `stl`/`stl_scale` are the older spelling for STL only; `paths` overlays
+`model_center=false`; `stl`/`stl_scale` are the older spelling for STL only; `references` draws
+reference trajectories as translucent ghosts of a spacecraft (see
+`reference_payloads`); `paths` overlays
 reference polylines (see `path_payloads`), e.g. a planned RPO path in the
 target's RTN frame; `viewer_dir` and `textures_dir` override the repository locations.
 """
@@ -580,6 +641,7 @@ function export_visualization(
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0,
     paths=(),
+    references=(),
     viewer_dir::AbstractString=VIEWER_DIR,
     textures_dir::AbstractString=TEXTURES_DIR
 )::String
@@ -596,7 +658,7 @@ function export_visualization(
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, stl=stl, stl_scale=stl_scale,
-        paths=paths
+        paths=paths, references=references
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     html = render_viewer_html(payload; viewer_dir=viewer_dir, title=page_title)

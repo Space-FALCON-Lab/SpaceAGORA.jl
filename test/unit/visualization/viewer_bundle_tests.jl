@@ -333,6 +333,44 @@ end
         @test SV.path_payloads(()) == Dict{String, Any}[]
     end
 
+    @testset "reference ghosts" begin
+        dir = mktempdir()
+        args = with_visualization_scene(_viewer_config(results_directory=dir), true)
+        scene = build_visualization_scene(args; rotation_max_samples=4)
+        t = [0.0, 10.0, 20.0, 30.0]
+        pos = [3.9e6 3.91e6 3.92e6 3.93e6; 0.0 1.0e4 2.0e4 3.0e4; 100.0 200.0 300.0 400.0]
+        vel = [0.0 0.0 0.0 0.0; 3.4e3 3.4e3 3.4e3 3.4e3; 0.0 0.0 0.0 0.0]
+        q = repeat([0.0, 0.0, 0.0, 1.0], 1, 4)
+        out = SV.reference_payloads([(name="SPICE", t_s=t, pos_m=pos, vel_mps=vel, q=q, target=1, color="#123456", opacity=0.3, trail=false)], scene)
+        @test length(out) == 1
+        r = out[1]
+        @test r["name"] == "SPICE" && r["target"] == 1 && r["count"] == 4 && r["color"] == "#123456" && r["opacity"] == 0.3 && !r["trail"]
+        @test _decode_f64(r["t_s"]) == t
+        @test _decode_f64(r["pos_km"]) ≈ vec(pos) ./ 1000.0
+        @test _decode_f32(r["vel_kms"]) ≈ Float32.(vec(vel) ./ 1000.0)
+        @test _decode_f32(r["q"]) == Float32.(vec(q))
+        # Defaults, dictionary spelling, and optional blocks left out.
+        d = SV.reference_payloads([Dict("t_s" => t, "pos_m" => pos)], scene)
+        @test d[1]["name"] == "reference 1" && d[1]["target"] == 1 && d[1]["vel_kms"] === nothing && d[1]["q"] === nothing
+        @test d[1]["opacity"] == 0.45 && d[1]["trail"] && d[1]["color"] == "#ff8c69"
+        @test SV.reference_payloads((), scene) == Dict{String, Any}[]
+        # Validation: shapes must agree with t_s, times ordered, target in range.
+        @test_throws ArgumentError SV.reference_payloads([(pos_m=pos,)], scene)
+        @test_throws ArgumentError SV.reference_payloads([(t_s=t,)], scene)
+        @test_throws ArgumentError SV.reference_payloads([(t_s=t, pos_m=pos[:, 1:3])], scene)
+        @test_throws ArgumentError SV.reference_payloads([(t_s=reverse(t), pos_m=pos)], scene)
+        @test_throws ArgumentError SV.reference_payloads([(t_s=t, pos_m=pos, vel_mps=vel[:, 1:2])], scene)
+        @test_throws ArgumentError SV.reference_payloads([(t_s=t, pos_m=pos, q=q[1:3, :])], scene)
+        @test_throws ArgumentError SV.reference_payloads([(t_s=t, pos_m=pos, target=2)], scene)
+        @test_throws ArgumentError SV.reference_payloads([(t_s=t, pos_m=pos, opacity=1.5)], scene)
+        @test_throws ArgumentError SV.reference_payloads([(t_s=Float64[], pos_m=zeros(3, 0))], scene)
+        # The payload carries the block and the page ships the module that draws it.
+        df = _synthetic_results(scene)
+        payload = SV.viewer_payload(scene, df; include_textures=false, references=[(t_s=t, pos_m=pos)])
+        @test length(payload["references"]) == 1
+        @test haskey(SV.viewer_import_map()["imports"], "viewer/references.js")
+    end
+
     @testset "STL overrides" begin
         dir = mktempdir()
         args = _viewer_config(results_directory=dir)
@@ -426,6 +464,13 @@ end
         @test occursin("\"scale\":2.4", read(joinpath(dir, "cli_iss.html"), String))
         with_path = export_visualization(args; out=joinpath(dir, "paths.html"), textures=false, paths=[(name="ref", points_m=[0.0 10.0; 0.0 0.0; 0.0 1.0], frame=:rtn, target=1)])
         @test occursin("\"paths\":[{", read(with_path, String)) || occursin("\"paths\":[", read(with_path, String))
+        ghost_times = [0.0, 100.0, 200.0]
+        ghost = export_visualization(args; out=joinpath(dir, "ghost.html"), textures=false,
+            references=[(name="ghost", t_s=ghost_times, pos_m=fill(4.0e6, 3, 3), target=1)])
+        ghost_html = read(ghost, String)
+        @test occursin("\"references\":[{", ghost_html)
+        @test occursin("\"name\":\"ghost\"", ghost_html)
+        @test occursin("viewer/references.js", ghost_html)
         @test_throws ArgumentError run_cli(["visualize", "--run=$(dir)", "--model=1"]; io=devnull)
 
         stl = _write_tiny_stl(joinpath(dir, "bus.stl"))

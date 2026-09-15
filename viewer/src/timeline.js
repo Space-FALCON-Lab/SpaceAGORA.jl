@@ -6,7 +6,7 @@ export class Timeline {
     this.t = tStart;
     this.playing = options.autoplay ?? true;
     this.speed = options.speed ?? 60; // simulated seconds per wall second
-    this.loop = options.loop ?? true;
+    this.loop = options.loop ?? false;   // playback stops at the end; Play from the end starts over
     this.listeners = new Set();
   }
 
@@ -28,7 +28,11 @@ export class Timeline {
   seek(t) { this.t = Math.min(this.tEnd, Math.max(this.tStart, t)); this.emit(); }
   seekFraction(f) { this.seek(this.tStart + f * (this.tEnd - this.tStart)); }
   fraction() { const d = this.tEnd - this.tStart; return d > 0 ? (this.t - this.tStart) / d : 0; }
-  togglePlay() { this.playing = !this.playing; this.emit(); }
+  togglePlay() {
+    if (!this.playing && this.t >= this.tEnd) this.t = this.tStart;
+    this.playing = !this.playing;
+    this.emit();
+  }
   setSpeed(s) { this.speed = s; this.emit(); }
 }
 

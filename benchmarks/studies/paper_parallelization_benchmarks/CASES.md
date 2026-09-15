@@ -376,6 +376,58 @@ controller run that re-executes the whole mode × sample × repeat grid, and
 the batch in-process at `thread_mode = :single`), so their cost is paid seven
 times over. 64 samples across 64 workers is already exactly one dispatch round.
 
+## Paper routing figures (P1–P5)
+
+The four comparisons the parallelization paper reports, each one a table of
+**R6 (`policy_v2`) against the serial baseline and against the best static
+route** at the same point, with raw medians and the ratio to serial:
+
+| Phase | Axis | Cases | Modes |
+|---|---|---|---|
+| P1 | constellation size at a fixed budget | `gravity_{1,16,64,256,1024,4096}sat_l50_vacuum_1hr` | serial, outer_threads, inner_only, outer_inner_static, policy_v2 |
+| P2 | thread budget at a fixed size | `gravity_4096sat_l50_vacuum_1hr` | same as P1 |
+| P3 | Monte Carlo resource ladder, 1 spacecraft/sample | `independent_1sat_1hr`, 64 samples | serial, outer_threads, outer_process, policy_v2 |
+| P4 | the same ladder, compute-bound samples | `montecarlo_heavy_aerobraking`, 32 samples | same as P3 |
+| P5 | worker/thread split of one fixed budget | `mcgrid_16sat_8mc`, `mcgrid_8sat_16mc` | serial, outer_threads, outer_process, outer_inner_static, policy_v2 |
+
+Every ladder and grid is derived from the host's physical core count (capped at
+`PPB_ROUTER_LADDER_MAX_THREADS`, override with `SPACEAGORA_PPB_PAPER_BUDGET`),
+because the same five phases run on each paper machine: 12 cores gives a
+`[1, 2, 4, 8, 12]` budget ladder and the six splits of 12, while 64 cores gives
+`[1, 2, 4, 8, 16, 32]` and the six splits of 32.
+
+**P3/P4 sweep the budget; P5 sweeps the split.** A P3 grid entry is `(b, b)`:
+`b` worker processes *and* `b` threads, so each route gets `b` units of the
+resource it actually spends and the routes are comparable at every rung — the
+question is how a campaign scales as the budget grows, and which route the
+router picks at each size. B13's grid holds the total fixed and varies where it
+is spent, which is the right axis only once the samples themselves carry
+constellations (P5) and both levels of parallelism are live at once. Phases
+sized this way set `budget_grid_fixed`, which exempts them from the rescale in
+`_ppb_budget_grid` and the `w * t <= max_workers` filter in
+`_ppb_cap_worker_counts`; both exist to fit a grid *declared* against a 32-core
+reference box onto a smaller machine, and applied to an already host-sized grid
+they would replace it with divisor pairs of the worker cap.
+
+Serial is in every P phase's mode list, at every grid entry. It is
+budget-independent, so those runs are redundant as measurements — but the
+aggregation joins the serial baseline on
+`(phase_id, case, mc_samples, process_workers)`, and a point with no serial row
+at its own worker count gets no `speedup` and no ratio column at all. That is
+why L15 reports `serial_median_s = 0`.
+
+Run and tabulate:
+
+```bash
+# 12-core machine (~5 h)
+julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+    --phases=P1,P2,P3,P4,P5 --threads=1,2,4,8,12 --process-workers=12
+
+# tables (markdown + LaTeX) from one or more runs
+python3 scripts/make_paper_routing_tables.py \
+    output/performance/paper_benchmarks/<stamp> --out output/paper_routing_tables
+```
+
 ## Underlying case families (`parallelization_performance/cases.jl`)
 
 The phases above draw from a shared case catalog, grouped into families:

@@ -42,6 +42,17 @@ PHASE_TITLE = {
     "P5": "Monte Carlo over constellations, worker/thread split at a fixed budget",
 }
 
+# Phases whose axis is derived from the case name itself (P1's spacecraft count)
+# put every case in ONE table, one row per axis value; phases that measure
+# several distinct workloads over the same axis get one table each.
+GROUP_BY_CASE = {"P1": False, "P2": True, "P3": True, "P4": True, "P5": True}
+
+# Below this serial baseline the harness treats a point as unreportable router
+# performance -- dispatch overhead and machine noise are the same size as the
+# difference being measured. Marked, not dropped: the small rungs are still the
+# evidence that the router does not *lose* where there is nothing to win.
+NOISE_FLOOR_S = 3.0
+
 # Which column is the x-axis of each phase's table, and how to label it.
 PHASE_AXIS = {
     "P1": ("n_sat", "spacecraft"),
@@ -50,6 +61,12 @@ PHASE_AXIS = {
     "P4": ("process_workers", "budget"),
     "P5": ("split", "workers x threads"),
 }
+
+
+def _mission_s_from_case(case: str):
+    """Simulated mission length when the case name carries one (the iso-work ladder)."""
+    m = re.search(r"_(\d+)s$", case)
+    return int(m.group(1)) if m else None
 
 
 def _n_sat_from_case(case: str) -> int:
@@ -116,6 +133,7 @@ def phase_rows(df: pd.DataFrame, phase: str) -> list[dict]:
         best_mode = min(statics, key=statics.get) if statics else None
         rec = {
             "case": case,
+            "mission_s": _mission_s_from_case(case),
             "axis": axis,
             "order": order,
             "serial_s": serial,
@@ -127,6 +145,18 @@ def phase_rows(df: pd.DataFrame, phase: str) -> list[dict]:
         out.append(rec)
     out.sort(key=lambda r: (r["case"], r["order"]))
     return out
+
+
+def _case_groups(phase: str, rows: list[dict]) -> list[tuple[str, list[dict]]]:
+    if GROUP_BY_CASE.get(phase, True):
+        return [(case, [r for r in rows if r["case"] == case])
+                for case in sorted({r["case"] for r in rows})]
+    return [("", sorted(rows, key=lambda r: r["order"]))]
+
+
+def _floor_mark(rec: dict) -> str:
+    s = rec.get("serial_s")
+    return "*" if s is not None and s < NOISE_FLOOR_S else ""
 
 
 def _ratio(num, den):
@@ -142,23 +172,37 @@ def _fmt(x, digits=3):
 def markdown_table(phase: str, rows: list[dict]) -> str:
     _, axis_label = PHASE_AXIS[phase]
     lines = []
-    for case in sorted({r["case"] for r in rows}):
-        crows = [r for r in rows if r["case"] == case]
-        lines.append(f"\n**{case}**\n")
+    marked = False
+    for case, crows in _case_groups(phase, rows):
+        if case:
+            lines.append(f"\n**{case}**\n")
+        show_mission = any(r.get("mission_s") for r in crows)
+        mission_head = " mission (h) |" if show_mission else ""
+        mission_rule = "---:|" if show_mission else ""
         lines.append(
-            f"| {axis_label} | serial (s) | best static (s) | route | {ADAPTIVE_LABEL} (s) "
+            f"| {axis_label} |{mission_head} serial (s) | best static (s) | route | {ADAPTIVE_LABEL} (s) "
             f"| serial/best static | serial/{ADAPTIVE_LABEL} | {ADAPTIVE_LABEL}/best static |"
         )
-        lines.append("|---|---:|---:|---|---:|---:|---:|---:|")
+        lines.append(f"|---|{mission_rule}---:|---:|---|---:|---:|---:|---:|")
         for r in crows:
+            marked = marked or bool(_floor_mark(r))
             sp_static = _ratio(r["serial_s"], r["best_static_s"])
             sp_adapt = _ratio(r["serial_s"], r["adaptive_s"])
             vs_static = _ratio(r["adaptive_s"], r["best_static_s"])
+            mission_cell = (
+                f" {r['mission_s'] / 3600:.2f} |" if show_mission and r.get("mission_s") else
+                (" — |" if show_mission else "")
+            )
             lines.append(
-                f"| {r['axis']} | {_fmt(r['serial_s'])} | {_fmt(r['best_static_s'])} "
+                f"| {r['axis']}{_floor_mark(r)} |{mission_cell} {_fmt(r['serial_s'])} | {_fmt(r['best_static_s'])} "
                 f"| {r['best_static_mode'] or '—'} | {_fmt(r['adaptive_s'])} "
                 f"| {_fmt(sp_static, 2)}x | {_fmt(sp_adapt, 2)}x | {_fmt(vs_static, 2)} |"
             )
+    if marked:
+        lines.append(
+            f"\n`*` serial baseline under {NOISE_FLOOR_S:.0f} s — at this size the "
+            "point measures dispatch overhead and machine noise, not routing."
+        )
     return "\n".join(lines)
 
 
@@ -167,8 +211,7 @@ def full_markdown_table(phase: str, rows: list[dict]) -> str:
     _, axis_label = PHASE_AXIS[phase]
     modes = ["serial"] + STATIC_PARALLEL + [ADAPTIVE]
     lines = []
-    for case in sorted({r["case"] for r in rows}):
-        crows = [r for r in rows if r["case"] == case]
+    for case, crows in _case_groups(phase, rows):
         present = [
             m
             for m in modes
@@ -179,7 +222,8 @@ def full_markdown_table(phase: str, rows: list[dict]) -> str:
                 for r in crows
             )
         ]
-        lines.append(f"\n**{case}** — median wall time in seconds (speedup vs serial)\n")
+        heading = f"**{case}** — " if case else ""
+        lines.append(f"\n{heading}median wall time in seconds (speedup vs serial)\n")
         lines.append("| " + axis_label + " | " + " | ".join(present) + " |")
         lines.append("|---" * (len(present) + 1) + "|")
         for r in crows:
@@ -214,9 +258,8 @@ def latex_table(phase: str, rows: list[dict], machine: str) -> str:
         f"$T_\\text{{{ADAPTIVE_LABEL}}}/T_\\text{{static}}$ \\\\\n\\midrule\n"
     )
     body = []
-    for case in sorted({r["case"] for r in rows}):
-        crows = [r for r in rows if r["case"] == case]
-        if len({r["case"] for r in rows}) > 1:
+    for case, crows in _case_groups(phase, rows):
+        if case and len({r["case"] for r in rows}) > 1:
             body.append(
                 f"\\multicolumn{{8}}{{l}}{{\\textit{{{case.replace('_', '\\_')}}}}} \\\\\n"
             )

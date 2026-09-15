@@ -384,9 +384,9 @@ route** at the same point, with raw medians and the ratio to serial:
 
 | Phase | Axis | Cases | Modes |
 |---|---|---|---|
-| P1 | constellation size at a fixed budget | `gravity_{1,16,64,256,1024,4096}sat_l50_vacuum_1hr` | serial, outer_threads, inner_only, outer_inner_static, policy_v2 |
-| P2 | thread budget at a fixed size | `gravity_4096sat_l50_vacuum_1hr` | same as P1 |
-| P3 | Monte Carlo resource ladder, 1 spacecraft/sample | `independent_1sat_1hr`, 64 samples | serial, outer_threads, outer_process, policy_v2 |
+| P1 | constellation size at a fixed budget | the iso-work `gravity_{N}sat_l50_vacuum_{S}s` ladder, N = 1…4096 | serial, outer_threads, inner_only, outer_inner_static, policy_v2 |
+| P2 | thread budget at a fixed size | that ladder's 4096 rung | same as P1 |
+| P3 | Monte Carlo resource ladder, 1 spacecraft/sample | `independent_1sat_1hr`, 256 samples | serial, outer_threads, outer_process, policy_v2 |
 | P4 | the same ladder, compute-bound samples | `montecarlo_heavy_aerobraking`, 32 samples | same as P3 |
 | P5 | worker/thread split of one fixed budget | `mcgrid_16sat_8mc`, `mcgrid_8sat_16mc` | serial, outer_threads, outer_process, outer_inner_static, policy_v2 |
 
@@ -395,6 +395,37 @@ Every ladder and grid is derived from the host's physical core count (capped at
 because the same five phases run on each paper machine: 12 cores gives a
 `[1, 2, 4, 8, 12]` budget ladder and the six splits of 12, while 64 cores gives
 `[1, 2, 4, 8, 16, 32]` and the six splits of 32.
+
+**Every point is above the measurability floor, and P1 pays for that with an
+iso-work ladder.** A constellation-size ladder at one fixed mission length is
+unmeasurable at its small end: one spacecraft over an hour of L50 vacuum is
+~10 ms of solve, five of the six rungs sit under the harness's 3 s floor, and
+what those points measure is dispatch overhead and scheduler noise. So the
+mission length moves with N instead — `PPC_L50_ISO_MISSION_S` in `cases.jl`
+carries one duration per rung, calibrated by measurement on the 12-core
+reference box, and the case name carries the duration:
+
+| N | mission | serial baseline |
+|---:|---:|---:|
+| 1 | 4 150 000 s (1153 h) | 8.95 s |
+| 16 | 514 000 s (143 h) | 11.18 s |
+| 64 | 415 000 s (115 h) | 11.85 s |
+| 256 | 124 000 s (34 h) | 12.77 s |
+| 1024 | 24 600 s (6.8 h) | 12.27 s |
+| 4096 | 5 800 s (1.6 h) | 12.53 s |
+
+A row is therefore "the same quantity of propagation spread over N spacecraft",
+and the speedup column isolates how much of a fixed workload each route
+parallelises at that width, rather than mixing that in with the workload growing
+by a factor of 4096 down the column. The mission length is a table column
+because the rows are no longer the same mission. Recalibrate the table on a new
+machine the same way: run each rung once in `serial` mode and scale the
+duration; the marginal cost per simulated hour is close to linear, but at a 1 h
+mission most of the small-N solve is fixed per-solve cost, so scaling *those*
+numbers lands short.
+
+P3 clears the floor by campaign size rather than duration: 256 samples, matching
+B12, where 64 leaves the serial baseline at ~2.4 s.
 
 **P3/P4 sweep the budget; P5 sweeps the split.** A P3 grid entry is `(b, b)`:
 `b` worker processes *and* `b` threads, so each route gets `b` units of the

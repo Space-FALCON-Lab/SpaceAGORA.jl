@@ -101,6 +101,17 @@ function ppc_gram_atmosphere_model(planet_name::String)
 end
 
 const PPC_SPICE_PATH = joinpath(PPC_REPO_ROOT, "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
+# Spacecraft count => simulated mission seconds for the iso-work L50 ladder.
+# See the gravity_<N>sat_l50_vacuum_<S>s branch in ppc_single_config.
+const PPC_L50_ISO_MISSION_S = [
+    (1, 4150000),
+    (16, 514000),
+    (64, 415000),
+    (256, 124000),
+    (1024, 24600),
+    (4096, 5800),
+]
+
 const PPC_EARTH_HARMONICS_FILE = joinpath(PPC_REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 
 # Internal (non-exported) home of `_lvlh_cascade_torque`, reached the same way
@@ -333,6 +344,36 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             planet=planet,
             spacecraft=ppc_constellation(planet, n),
             mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 50),),
+            density_model=NoAtmosphereModel(),
+            dt_max_orbit=20.0
+        )
+    elseif occursin(r"^gravity_[0-9]+sat_l50_vacuum_[0-9]+s$", case_name)
+        # Same physics as the _1hr ladder above, with the simulated mission
+        # length carried in the case name instead of fixed at an hour.
+        #
+        # A constellation-size ladder at one fixed duration cannot be measured at
+        # its small end: one spacecraft over an hour of L50 vacuum is ~10 ms of
+        # solve, which is dispatch overhead and scheduler noise, not routing. The
+        # harness's own 3 s measurability floor flags exactly those points. So
+        # the duration moves with N instead, chosen per rung (see
+        # PPC_L50_ISO_MISSION_S) to put every rung's serial baseline at roughly
+        # the same wall time, well clear of the floor.
+        #
+        # What this trades: the ladder is now iso-work rather than iso-duration,
+        # so a row is "the same amount of propagation spread over N spacecraft",
+        # and the speedup column isolates how much of a fixed workload each route
+        # can actually parallelise at that width. The mission length belongs in
+        # the table alongside N, because the rows are no longer the same mission.
+        n = parse(Int, match(r"^gravity_([0-9]+)sat", case_name).captures[1])
+        mission_s = parse(Float64, match(r"_([0-9]+)s$", case_name).captures[1])
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, n),
+            mission_time_s=ppc_mission_time(
+                cfg.profile; test=10.0, smoke=min(300.0, mission_s), full=mission_s
+            ),
             orientation_sim=false,
             dynamic_effectors=(ppc_harmonics_model(planet, 50),),
             density_model=NoAtmosphereModel(),
@@ -1212,6 +1253,16 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
     for n in (4, 16, 64, 256, 1024, 2048)
         add!("gravity_$(n)sat_inverse_square_vacuum", "gravity_only", "$(n) spacecraft, inverse-square gravity, no atmosphere")
         add!("gravity_$(n)sat_l20_vacuum", "gravity_only", "$(n) spacecraft, L20 harmonics, no atmosphere")
+    end
+    # Iso-work spacecraft-count ladder: one L50 vacuum rung per spacecraft count,
+    # each given the mission length that puts its serial baseline near 10 s on
+    # the 12-core reference box. Calibrated by measurement, not by scaling the
+    # 1 hr numbers: at the small end most of a 1 hr solve is fixed per-solve
+    # cost, so the marginal seconds-per-simulated-hour is well below the average
+    # and a linear extrapolation lands short.
+    for (n, mission_s) in PPC_L50_ISO_MISSION_S
+        add!("gravity_$(n)sat_l50_vacuum_$(mission_s)s", "gravity_only",
+             "$(n) spacecraft, L50 harmonics, no atmosphere, $(mission_s) s mission (iso-work ladder)")
     end
     # Ad hoc spacecraft-count x thread-count sweep, L50 harmonics, 1hr mission.
     for n in (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096)

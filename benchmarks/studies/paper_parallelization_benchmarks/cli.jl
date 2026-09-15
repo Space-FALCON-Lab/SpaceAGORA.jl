@@ -282,7 +282,15 @@ _ppb_paper_resource_grid(budget::Int=PPB_PAPER_BUDGET) =
 _ppb_paper_split_grid(budget::Int=PPB_PAPER_BUDGET) =
     [(w, budget ÷ w) for w in 1:budget if budget % w == 0]
 
-const PPB_PAPER_SIZES = [1, 16, 64, 256, 1024, 4096]
+# The iso-work L50 ladder from the case catalog: one (spacecraft, mission
+# seconds) pair per rung, each sized so its serial baseline clears the 3 s
+# measurability floor. Generating the case names from that table keeps the phase
+# and the catalog from drifting apart when a duration is recalibrated.
+const PPB_PAPER_SIZE_CASES =
+    ["gravity_$(n)sat_l50_vacuum_$(mission_s)s" for (n, mission_s) in PPC_L50_ISO_MISSION_S]
+
+_ppb_paper_size_case(n::Int) =
+    PPB_PAPER_SIZE_CASES[something(findfirst(p -> p[1] == n, PPC_L50_ISO_MISSION_S), 1)]
 
 # ── Phase catalog ─────────────────────────────────────────────────────────────
 
@@ -1057,11 +1065,11 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
     PPBPhase(
         id    = "P1",
         label = "Paper — Constellation Size Scaling at a Fixed Budget",
-        cases = ["gravity_$(n)sat_l50_vacuum_1hr" for n in PPB_PAPER_SIZES],
+        cases = PPB_PAPER_SIZE_CASES,
         # One parity case for the whole P-series: the routes have to produce the
         # same trajectory for a timing comparison between them to mean anything,
         # and 256 spacecraft is the largest rung where checking that is cheap.
-        parity_cases = ["gravity_256sat_l50_vacuum_1hr"],
+        parity_cases = [_ppb_paper_size_case(256)],
         modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
         mc_samples   = [1],
         repeats      = 3,
@@ -1071,10 +1079,10 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
     PPBPhase(
         id    = "P2",
         label = "Paper — Thread Scaling at 4096 Spacecraft",
-        # The largest constellation in the catalog, so the serial baseline is
-        # well clear of the 3 s measurability floor at every rung of the ladder
-        # and the curve is a scaling result rather than a startup measurement.
-        cases        = ["gravity_4096sat_l50_vacuum_1hr"],
+        # P1's top rung, so the two phases cross-check each other at the point
+        # they share (4096 spacecraft at the full thread budget) and the serial
+        # baseline is the same number in both tables.
+        cases        = [_ppb_paper_size_case(4096)],
         parity_cases = String[],
         modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
         mc_samples   = [1],
@@ -1088,7 +1096,11 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         cases        = ["independent_1sat_1hr"],
         parity_cases = String[],
         modes        = ["serial", "outer_threads", "outer_process", "policy_v2"],
-        mc_samples   = [64],
+        # 256 samples, matching B12's campaign size: at 64 the serial baseline is
+        # ~2.4 s, under the 3 s measurability floor, so the point would be
+        # reported as unmeasurable routing rather than as a scaling result. The
+        # samples are independent solves, so the baseline scales with the count.
+        mc_samples   = [256],
         # Five repeats on every Monte Carlo phase, as in L8-L15: an adaptive
         # point's repeats are cold, then exploratory, then exploiting, so three
         # repeats put the median on an exploration campaign by construction.

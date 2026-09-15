@@ -39,6 +39,16 @@ Base.@kwdef struct PPBPhase
     thread_mode::Symbol        = :full_ladder
     worker_ladder::Vector{Int} = Int[]
     budget_grid::Vector{Tuple{Int, Int}} = Tuple{Int, Int}[]
+    # A budget grid the phase sized against the host itself (see the P-series
+    # helpers below), rather than one declared against a 32-core reference box.
+    # `_ppb_budget_grid`'s rescale and `_ppb_cap_worker_counts`'s
+    # product filter both exist to fit a *declared* grid onto a smaller
+    # machine; applied to a grid that was already derived from this machine's
+    # core count they would replace it with divisor pairs of the worker cap and
+    # silently discard the axis the phase is sweeping. Only the per-entry
+    # worker cap still applies, because that one is a memory limit, not a
+    # portability rescale.
+    budget_grid_fixed::Bool    = false
 end
 
 Base.@kwdef struct PPBConfig
@@ -140,6 +150,7 @@ function _ppb_lean_phase(phase::PPBPhase)::PPBPhase
         thread_mode   = phase.thread_mode,
         worker_ladder = phase.worker_ladder,
         budget_grid   = phase.budget_grid,
+        budget_grid_fixed = phase.budget_grid_fixed,
     )
 end
 
@@ -213,8 +224,65 @@ function _ppb_preview_phase(phase::PPBPhase)::PPBPhase
         thread_mode   = phase.thread_mode,
         worker_ladder = workers,
         budget_grid   = filter(p -> p[1] * p[2] <= PPB_PREVIEW_MAX_WORKERS, phase.budget_grid),
+        budget_grid_fixed = phase.budget_grid_fixed,
     )
 end
+
+
+# ── Paper routing figures (P1-P5) ─────────────────────────────────────────────
+#
+# The four comparisons the paper reports, each as "R6 against serial and against
+# the best static route", with raw medians and the ratio to that point's serial
+# baseline:
+#
+#   P1  constellation size scaling at one fixed budget   (1 -> 4096 spacecraft)
+#   P2  thread scaling at one fixed spacecraft count     (4096, budget ladder)
+#   P3  Monte Carlo, one spacecraft per sample, resource ladder (cheap samples)
+#   P4  the same ladder on compute-bound aerobraking samples
+#   P5  Monte Carlo over constellations, one fixed budget, every worker/thread split
+#
+# Sized from the host rather than declared against a reference box, because the
+# same five phases run on both paper machines: every ladder and grid below is
+# derived from PPB_PAPER_BUDGET, and the phases carrying a grid set
+# budget_grid_fixed so the portability rescale leaves them alone.
+#
+# P3/P4 sweep the *budget*, not the split: an entry (b, b) gives every route b
+# units of the resource it actually uses -- b worker processes to the process
+# route, b threads to the thread route -- so at each rung the routes are
+# comparable and R6 is choosing between them at equal cost. That is the axis a
+# Monte Carlo scaling figure needs, and it is the one thing B13's fixed-total
+# split grid cannot express. P5 is the fixed-total split grid, which is the
+# right axis once the samples themselves carry constellations and both levels
+# of parallelism are live at once.
+const PPB_PAPER_BUDGET = let
+    override = tryparse(Int, strip(get(ENV, "SPACEAGORA_PPB_PAPER_BUDGET", "")))
+    cores = _ppc_physical_core_count()
+    budget = override === nothing ? min(cores, PPB_ROUTER_LADDER_MAX_THREADS) : override
+    max(1, budget)
+end
+
+# Geometric rungs from 1 to the budget, the budget itself always included.
+function _ppb_paper_budget_ladder(budget::Int=PPB_PAPER_BUDGET)::Vector{Int}
+    rungs = Int[]
+    b = 1
+    while b < budget
+        push!(rungs, b)
+        b *= 2
+    end
+    push!(rungs, budget)
+    return unique(rungs)
+end
+
+# One (workers, threads) entry per budget rung, each route getting the same
+# number of units of whichever resource it spends.
+_ppb_paper_resource_grid(budget::Int=PPB_PAPER_BUDGET) =
+    [(b, b) for b in _ppb_paper_budget_ladder(budget)]
+
+# Every split of one fixed budget, process-only through thread-only.
+_ppb_paper_split_grid(budget::Int=PPB_PAPER_BUDGET) =
+    [(w, budget ÷ w) for w in 1:budget if budget % w == 0]
+
+const PPB_PAPER_SIZES = [1, 16, 64, 256, 1024, 4096]
 
 # ── Phase catalog ─────────────────────────────────────────────────────────────
 
@@ -981,6 +1049,84 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         repeats      = 5,
         warmup       = 1,
         budget_grid  = [(1, 12), (2, 6), (12, 1)],
+    ),
+
+    # ── Paper routing figures ────────────────────────────────────────────────
+    # See the P-series block above the phase catalog for what these four
+    # comparisons are and why their grids are host-sized.
+    PPBPhase(
+        id    = "P1",
+        label = "Paper — Constellation Size Scaling at a Fixed Budget",
+        cases = ["gravity_$(n)sat_l50_vacuum_1hr" for n in PPB_PAPER_SIZES],
+        # One parity case for the whole P-series: the routes have to produce the
+        # same trajectory for a timing comparison between them to mean anything,
+        # and 256 spacecraft is the largest rung where checking that is cheap.
+        parity_cases = ["gravity_256sat_l50_vacuum_1hr"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :max_only,
+    ),
+    PPBPhase(
+        id    = "P2",
+        label = "Paper — Thread Scaling at 4096 Spacecraft",
+        # The largest constellation in the catalog, so the serial baseline is
+        # well clear of the 3 s measurability floor at every rung of the ladder
+        # and the curve is a scaling result rather than a startup measurement.
+        cases        = ["gravity_4096sat_l50_vacuum_1hr"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :full_ladder,
+    ),
+    PPBPhase(
+        id    = "P3",
+        label = "Paper — Monte Carlo Resource Ladder, One Spacecraft per Sample",
+        cases        = ["independent_1sat_1hr"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "policy_v2"],
+        mc_samples   = [64],
+        # Five repeats on every Monte Carlo phase, as in L8-L15: an adaptive
+        # point's repeats are cold, then exploratory, then exploiting, so three
+        # repeats put the median on an exploration campaign by construction.
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_resource_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P4",
+        label = "Paper — Monte Carlo Resource Ladder, Compute-Bound Samples",
+        # Same ladder as P3 on samples that are ~1 s of integration each rather
+        # than ~40 ms, so the pair separates routing overhead from routing
+        # throughput. 32 samples keeps the serial baseline above the floor at
+        # every rung without paying 64 aerobraking arcs per repeat.
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "policy_v2"],
+        mc_samples   = [32],
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_resource_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P5",
+        label = "Paper — Monte Carlo over Constellations, Worker/Thread Split at a Fixed Budget",
+        # Two aspect ratios of the same 128 spacecraft-hour total, so the rungs
+        # are the same work reshaped: wide constellations with few samples, and
+        # many samples of narrow ones.
+        cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "policy_v2"],
+        mc_samples   = [1],
+        repeats      = 5,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
     ),
 ]
 

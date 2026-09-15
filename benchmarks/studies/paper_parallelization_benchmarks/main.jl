@@ -46,7 +46,9 @@ function _ppb_cap_worker_counts(phase::PPBPhase, max_workers::Int)::PPBPhase
     max_workers >= 1 || return phase
     ladder = filter(w -> w <= max_workers, phase.worker_ladder)
     isempty(ladder) && !isempty(phase.worker_ladder) && (ladder = [max_workers])
-    grid = filter(p -> p[1] <= max_workers && p[1] * p[2] <= max_workers, phase.budget_grid)
+    grid = phase.budget_grid_fixed ?
+        filter(p -> p[1] <= max_workers, phase.budget_grid) :
+        filter(p -> p[1] <= max_workers && p[1] * p[2] <= max_workers, phase.budget_grid)
     isempty(grid) && !isempty(phase.budget_grid) && (grid = [(1, max_workers)])
     (ladder == phase.worker_ladder && grid == phase.budget_grid) && return phase
     if ladder != phase.worker_ladder
@@ -61,6 +63,7 @@ function _ppb_cap_worker_counts(phase::PPBPhase, max_workers::Int)::PPBPhase
         mc_samples = phase.mc_samples, repeats = phase.repeats,
         warmup = phase.warmup, thread_mode = phase.thread_mode,
         worker_ladder = ladder, budget_grid = grid,
+        budget_grid_fixed = phase.budget_grid_fixed,
     )
 end
 
@@ -74,6 +77,7 @@ end
 # shape of sweep at the size the machine can actually deliver.
 function _ppb_budget_grid(phase::PPBPhase, ppb::PPBConfig)::Vector{Tuple{Int, Int}}
     isempty(phase.budget_grid) && return phase.budget_grid
+    phase.budget_grid_fixed && return phase.budget_grid
     declared = maximum(w * t for (w, t) in phase.budget_grid)
     available = min(declared, _ppc_physical_core_count())
     available >= declared && return phase.budget_grid
@@ -210,7 +214,8 @@ function _ppb_run_phase(
         for (w, t) in grid
             sub_dir = joinpath(phase_dir, "split_w$(lpad(w, 2, '0'))_t$(lpad(t, 2, '0'))")
             if ppb.dry_run
-                println("[dry-run] phase=$(phase.id) — workers=$(w) x threads=$(t) (budget $(w * t))")
+                budget_note = phase.budget_grid_fixed ? "per-route budget $(w)" : "budget $(w * t)"
+                println("[dry-run] phase=$(phase.id) — workers=$(w) x threads=$(t) ($(budget_note))")
                 _ppb_dry_print(phase, ppb, sub_dir; process_workers=w, threads=[t])
             else
                 try

@@ -256,30 +256,48 @@ def full_markdown_table(phase: str, rows: list[dict]) -> str:
 
 def latex_table(phase: str, rows: list[dict], machine: str) -> str:
     _, axis_label = PHASE_AXIS[phase]
+    show_mission = any(r.get("mission_s") for r in rows)
+    cols = "lrrrlrrrr" if show_mission else "lrrlrrrr"
+    ncols = 9 if show_mission else 8
+    mission_head = "mission [h] & " if show_mission else ""
+    caption = (
+        f"{PHASE_TITLE.get(phase, phase)} on {machine}. Median wall time over the "
+        "timed repeats; ratios are against the serial baseline at the same point. "
+        "The best static route is the fastest pinned parallel route measured at "
+        "that point, named in the route column."
+    )
+    if show_mission:
+        caption += (
+            " The ladder holds the total work fixed rather than the mission "
+            "length, so that every rung's serial baseline is measurable; the "
+            "simulated mission length of each rung is given alongside it."
+        )
     head = (
         "\\begin{table}[htbp]\n\\centering\n"
-        f"\\caption{{{PHASE_TITLE.get(phase, phase)} on {machine}. "
-        "Median wall time over the timed repeats; ratios are against the serial "
-        "baseline at the same point.}}\n"
+        f"\\caption{{{caption}}}\n"
         f"\\label{{tab:routing_{phase.lower()}_{re.sub(r'[^a-zA-Z0-9]', '', machine)}}}\n"
-        "\\begin{tabular}{lrrlrrrr}\n\\toprule\n"
-        f"{axis_label} & serial [s] & best static [s] & route & {ADAPTIVE_LABEL} [s] & "
+        f"\\begin{{tabular}}{{{cols}}}\n\\toprule\n"
+        f"{axis_label} & {mission_head}serial [s] & best static [s] & route & {ADAPTIVE_LABEL} [s] & "
         f"$T_1/T_\\text{{static}}$ & $T_1/T_\\text{{{ADAPTIVE_LABEL}}}$ & "
         f"$T_\\text{{{ADAPTIVE_LABEL}}}/T_\\text{{static}}$ \\\\\n\\midrule\n"
     )
     body = []
     for case, crows in _case_groups(phase, rows):
         if case and len({r["case"] for r in rows}) > 1:
-            body.append(
-                f"\\multicolumn{{8}}{{l}}{{\\textit{{{case.replace('_', '\\_')}}}}} \\\\\n"
-            )
+            label = case.replace("_", "\\_")
+            body.append(f"\\multicolumn{{{ncols}}}{{l}}{{\\textit{{{label}}}}} \\\\\n")
         for r in crows:
             sp_static = _ratio(r["serial_s"], r["best_static_s"])
             sp_adapt = _ratio(r["serial_s"], r["adaptive_s"])
             vs_static = _ratio(r["adaptive_s"], r["best_static_s"])
             route = (r["best_static_mode"] or "--").replace("_", "\\_")
+            mission_cell = ""
+            if show_mission:
+                mission_cell = (
+                    f"{r['mission_s'] / 3600:.2f} & " if r.get("mission_s") else "-- & "
+                )
             body.append(
-                f"{r['axis']} & {_fmt(r['serial_s'])} & {_fmt(r['best_static_s'])} & {route} & "
+                f"{r['axis']} & {mission_cell}{_fmt(r['serial_s'])} & {_fmt(r['best_static_s'])} & {route} & "
                 f"{_fmt(r['adaptive_s'])} & {_fmt(sp_static, 2)} & {_fmt(sp_adapt, 2)} & "
                 f"{_fmt(vs_static, 2)} \\\\\n"
             )

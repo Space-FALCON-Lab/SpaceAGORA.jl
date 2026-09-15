@@ -861,6 +861,7 @@ const EXPORT_IMPORT_SANDBOX = ExportImportSandbox
 const GUIDANCE_SANDBOX_LOADED = Ref(false)
 module GuidanceSandbox
 using ..SimulationModel
+using ..SimulationModel.Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
 using ComponentArrays
 using LinearAlgebra

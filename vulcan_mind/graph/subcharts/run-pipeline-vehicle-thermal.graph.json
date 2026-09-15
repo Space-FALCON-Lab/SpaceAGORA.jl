@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-vehicle-thermal",
+  "chart_kind": "sub",
+  "title": "vehicle/thermal/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_vehicle_thermal",
+    "layout_of": "dff0abd809eaa326"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_vehicle_thermal",
+  "ui": {
+    "pos_overrides": {
+      "vehx.thermal_models_getheatrate": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "vehx.thermal_models_getheatrate"
+  ]
+}

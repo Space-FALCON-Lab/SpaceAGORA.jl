@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-pso-helpers-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/pso_helpers.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr/pso_helpers.jl",
+    "layout_of": "9d52c4e0644a30e3"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-hypr",
+  "group": "grp.src_gnc_guidance_rpo_hypr_pso_helpers_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.pso_helpers_rpo_position_to_path": [
+        80.0,
+        80.0
+      ],
+      "gnc.pso_helpers_rpo_pso_warmstart_bounds": [
+        80.0,
+        230.0
+      ],
+      "gncy.pso_helpers_rpo_pso_bounds": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.pso_helpers_rpo_position_to_path",
+    "gnc.pso_helpers_rpo_pso_warmstart_bounds",
+    "gncy.pso_helpers_rpo_pso_bounds"
+  ]
+}

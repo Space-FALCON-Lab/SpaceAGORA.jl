@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-robotics-robot-arm-hypr-planner-core-jl",
+  "chart_kind": "sub",
+  "title": "gnc/robotics/robot_arm_hypr/planner_core.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/robotics/robot_arm_hypr/planner_core.jl",
+    "layout_of": "b2f6287845defb32"
+  },
+  "derives_from": "gnc-gnc-robotics-robot-arm-hypr",
+  "group": "grp.src_gnc_robotics_robot_arm_hypr_planner_core_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.planner_core__robot_arm_hypr_post_refine_points": [
+        720.0,
+        80.0
+      ],
+      "gnc.planner_core__robot_arm_hypr_refinement_better": [
+        1040.0,
+        80.0
+      ],
+      "gnc.planner_core__robot_arm_plan_from_q_reference": [
+        720.0,
+        230.0
+      ],
+      "gnc.planner_core_evaluate_position": [
+        400.0,
+        80.0
+      ],
+      "gnc.planner_core_robot_arm_hypr_path_cost_components": [
+        1040.0,
+        230.0
+      ],
+      "gncz.planner_core_plan_robot_arm_motion_hypr": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.planner_core__robot_arm_hypr_post_refine_points",
+    "gnc.planner_core__robot_arm_hypr_refinement_better",
+    "gnc.planner_core__robot_arm_plan_from_q_reference",
+    "gnc.planner_core_evaluate_position",
+    "gnc.planner_core_robot_arm_hypr_path_cost_components",
+    "gncz.planner_core_plan_robot_arm_motion_hypr"
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-ephemerides",
+  "chart_kind": "sub",
+  "title": "environment/ephemerides/ (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment/ephemerides",
+    "layout_of": "3b205eab33555ac0"
+  },
+  "derives_from": "environment",
+  "group": "grp.src_environment_ephemerides",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_environment_ephemerides_ephemerides_models_jl": [
+        80.0,
+        80.0
+      ],
+      "grp.src_environment_ephemerides_planet_shapes_jl": [
+        80.0,
+        230.0
+      ],
+      "grp.src_environment_ephemerides_planets_jl": [
+        400.0,
+        80.0
+      ],
+      "grp.src_environment_ephemerides_simple_ephemerides_jl": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "envana.env_ephemerides_models_ephemeridesmodels",
+    "envana.env_planet_shapes_calculate_topography_harmonics_bang",
+    "envana.env_planets_topographyharmonicsworkspace_bang",
+    "envana.env_simple_ephemerides_simpleephemeridesmodel",
+    "environment.planet_shapes_earth_elevation_bang",
+    "environment.planet_shapes_fnalf_idr_bang",
+    "environment.planet_shapes_mars_elevation_bang",
+    "environment.planet_shapes_venus_elevation_bang",
+    "environment.planets__furnsh_first_existing",
+    "environment.planets__furnsh_first_existing_if_available",
+    "environment.planets__furnsh_mars_pck",
+    "environment.planets__furnsh_mars_system_kernel",
+    "environment.planets__furnsh_once",
+    "environment.planets__furnsh_planetary_kernel",
+    "environment.planets__furnsh_required",
+    "environment.planets__gravity_constants_kernel_if_available",
+    "environment.planets__planetary_kernel_override_relpath",
+    "environment.planets__reset_furnished_kernels_bang",
+    "environment.planets__spice_backed_planet_kwargs",
+    "environment.planets__spice_body_fixed_frame",
+    "environment.planets__spice_body_gm_m3s2",
+    "environment.planets__spice_body_pool_name",
+    "environment.planets__spice_body_radii_m",
+    "environment.planets_earth",
+    "environment.planets_mars",
+    "environment.planets_moon",
+    "environment.planets_planets",
+    "environment.planets_titan",
+    "environment.planets_topographyharmonicsworkspace",
+    "environment.planets_venus",
+    "environment.simple_ephemerides__earth_gmst_iau82_rad",
+    "environment.simple_ephemerides__initial_time_datetime",
+    "environment.simple_ephemerides__rotation_about_spin_axis",
+    "environment.simple_ephemerides__spice_body_fixed_frame",
+    "environment.simple_ephemerides__spice_planet_frame_lpi",
+    "environment.simple_ephemerides__spice_position_j2000_m_unlocked",
+    "environment.simple_ephemerides_ephemerides_cache_key",
+    "environment.simple_ephemerides_ephemerides_time_seconds",
+    "environment.simple_ephemerides_planet_frame_lpi",
+    "environment.simple_ephemerides_spice_position_j2000_m",
+    "environment.simple_ephemerides_spiceephemeridesmodel"
+  ]
+}

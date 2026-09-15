@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-routing-outer-route-selection-jl",
+  "chart_kind": "sub",
+  "title": "parallel/routing/outer_route_selection.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/routing/outer_route_selection.jl",
+    "layout_of": "10485b8bf132a79a"
+  },
+  "derives_from": "parallel-parallel-routing",
+  "group": "grp.src_parallel_routing_outer_route_selection_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.default_outer_route": [
+        400.0,
+        230.0
+      ],
+      "parallel.outer_route_selection__best_candidate": [
+        80.0,
+        80.0
+      ],
+      "parallel.outer_route_selection__best_candidate_confidence": [
+        80.0,
+        230.0
+      ],
+      "parallel.outer_route_selection__candidate_confidence_width": [
+        400.0,
+        80.0
+      ],
+      "parallel.outer_route_selection__compat_outer_route_signature": [
+        720.0,
+        80.0
+      ],
+      "parallel.outer_route_selection__feature_heavy_for_process": [
+        720.0,
+        830.0
+      ],
+      "parallel.outer_route_selection__feature_is_lightweight": [
+        1040.0,
+        380.0
+      ],
+      "parallel.outer_route_selection__is_native_gram_point_density": [
+        1040.0,
+        530.0
+      ],
+      "parallel.outer_route_selection__outer_route_signature_hierarchy": [
+        400.0,
+        380.0
+      ],
+      "parallel.outer_route_selection__outer_route_stats_snapshot_internal": [
+        400.0,
+        530.0
+      ],
+      "parallel.outer_route_selection__priority_outer_route_montecarlo": [
+        720.0,
+        230.0
+      ],
+      "parallel.outer_route_selection__route_count_bucket": [
+        1360.0,
+        80.0
+      ],
+      "parallel.outer_route_selection__route_density_bucket": [
+        1360.0,
+        1430.0
+      ],
+      "parallel.outer_route_selection__route_effector_cost_bucket": [
+        1360.0,
+        230.0
+      ],
+      "parallel.outer_route_selection__route_elapsed_stats": [
+        720.0,
+        380.0
+      ],
+      "parallel.outer_route_selection__route_harmonics_bucket": [
+        1360.0,
+        380.0
+      ],
+      "parallel.outer_route_selection__route_interval_bucket": [
+        1360.0,
+        530.0
+      ],
+      "parallel.outer_route_selection__route_link_bucket": [
+        1360.0,
+        680.0
+      ],
+      "parallel.outer_route_selection__route_max_link_bucket": [
+        1360.0,
+        830.0
+      ],
+      "parallel.outer_route_selection__route_mission_bucket": [
+        1360.0,
+        980.0
+      ],
+      "parallel.outer_route_selection__route_ranked_candidates": [
+        720.0,
+        680.0
+      ],
+      "parallel.outer_route_selection__route_sat_bucket": [
+        1360.0,
+        1130.0
+      ],
+      "parallel.outer_route_selection__route_solver_bucket": [
+        1360.0,
+        1280.0
+      ],
+      "parallel.outer_route_selection__threads_or_none": [
+        1040.0,
+        230.0
+      ],
+      "parallel.outer_route_selection__under_sampled_candidate": [
+        400.0,
+        680.0
+      ],
+      "parallel.outer_route_selection_outer_route_candidates": [
+        400.0,
+        830.0
+      ],
+      "parallel.outer_route_selection_outer_route_signature": [
+        1040.0,
+        80.0
+      ],
+      "parallel.outer_route_selection_outer_route_stats_snapshot": [
+        720.0,
+        530.0
+      ],
+      "parallel.select_outer_route_select_outer_route_bang": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.default_outer_route",
+    "parallel.outer_route_selection__best_candidate",
+    "parallel.outer_route_selection__best_candidate_confidence",
+    "parallel.outer_route_selection__candidate_confidence_width",
+    "parallel.outer_route_selection__compat_outer_route_signature",
+    "parallel.outer_route_selection__feature_heavy_for_process",
+    "parallel.outer_route_selection__feature_is_lightweight",
+    "parallel.outer_route_selection__is_native_gram_point_density",
+    "parallel.outer_route_selection__outer_route_signature_hierarchy",
+    "parallel.outer_route_selection__outer_route_stats_snapshot_internal",
+    "parallel.outer_route_selection__priority_outer_route_montecarlo",
+    "parallel.outer_route_selection__route_count_bucket",
+    "parallel.outer_route_selection__route_density_bucket",
+    "parallel.outer_route_selection__route_effector_cost_bucket",
+    "parallel.outer_route_selection__route_elapsed_stats",
+    "parallel.outer_route_selection__route_harmonics_bucket",
+    "parallel.outer_route_selection__route_interval_bucket",
+    "parallel.outer_route_selection__route_link_bucket",
+    "parallel.outer_route_selection__route_max_link_bucket",
+    "parallel.outer_route_selection__route_mission_bucket",
+    "parallel.outer_route_selection__route_ranked_candidates",
+    "parallel.outer_route_selection__route_sat_bucket",
+    "parallel.outer_route_selection__route_solver_bucket",
+    "parallel.outer_route_selection__threads_or_none",
+    "parallel.outer_route_selection__under_sampled_candidate",
+    "parallel.outer_route_selection_outer_route_candidates",
+    "parallel.outer_route_selection_outer_route_signature",
+    "parallel.outer_route_selection_outer_route_stats_snapshot",
+    "parallel.select_outer_route_select_outer_route_bang"
+  ]
+}

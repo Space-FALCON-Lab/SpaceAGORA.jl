@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "core-core-types-compat-model-codes-jl",
+  "chart_kind": "sub",
+  "title": "core/types/compat_model_codes.jl (core)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/core/types/compat_model_codes.jl",
+    "layout_of": "89e40902ed39920e"
+  },
+  "derives_from": "core-core-types",
+  "group": "grp.src_core_types_compat_model_codes_jl",
+  "ui": {
+    "pos_overrides": {
+      "core.compat_model_codes__compat_enum_parse": [
+        80.0,
+        80.0
+      ],
+      "core.compat_model_codes_legacymodelcodes": [
+        80.0,
+        230.0
+      ],
+      "parcore.compat_model_codes_legacydensitymodelcode": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.compat_model_codes__compat_enum_parse",
+    "core.compat_model_codes_legacymodelcodes",
+    "parcore.compat_model_codes_legacydensitymodelcode"
+  ]
+}

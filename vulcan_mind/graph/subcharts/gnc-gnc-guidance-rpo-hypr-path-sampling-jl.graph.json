@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-path-sampling-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/path_sampling.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr/path_sampling.jl",
+    "layout_of": "0fc92d82fa1b876c"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-hypr",
+  "group": "grp.src_gnc_guidance_rpo_hypr_path_sampling_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.path_sampling_rpo_adaptive_sampling_min_ds_m": [
+        720.0,
+        530.0
+      ],
+      "gnc.path_sampling_rpo_adaptive_sampling_step_m": [
+        1040.0,
+        230.0
+      ],
+      "gnc.path_sampling_rpo_adaptive_segment_samples": [
+        720.0,
+        680.0
+      ],
+      "gnc.path_sampling_rpo_bezier_point": [
+        80.0,
+        80.0
+      ],
+      "gnc.path_sampling_rpo_bezier_point_bang": [
+        720.0,
+        380.0
+      ],
+      "gnc.path_sampling_rpo_bezier_speed_estimate": [
+        400.0,
+        530.0
+      ],
+      "gnc.path_sampling_rpo_inflated_obstacle_radius_m": [
+        1040.0,
+        80.0
+      ],
+      "gnc.path_sampling_rpo_path_length": [
+        720.0,
+        80.0
+      ],
+      "gnc.path_sampling_rpo_resample_polyline_points": [
+        720.0,
+        230.0
+      ],
+      "gnc.path_sampling_rpo_sample_path": [
+        80.0,
+        230.0
+      ],
+      "gnc.path_sampling_rpo_sample_path_bezier": [
+        400.0,
+        80.0
+      ],
+      "gnc.path_sampling_rpo_sample_path_polyline": [
+        400.0,
+        230.0
+      ],
+      "gnc.path_sampling_rpo_sample_path_polyline_adaptive": [
+        400.0,
+        380.0
+      ],
+      "gncy.path_sampling_rpo_sample_path_bezier_adaptive": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.path_sampling_rpo_adaptive_sampling_min_ds_m",
+    "gnc.path_sampling_rpo_adaptive_sampling_step_m",
+    "gnc.path_sampling_rpo_adaptive_segment_samples",
+    "gnc.path_sampling_rpo_bezier_point",
+    "gnc.path_sampling_rpo_bezier_point_bang",
+    "gnc.path_sampling_rpo_bezier_speed_estimate",
+    "gnc.path_sampling_rpo_inflated_obstacle_radius_m",
+    "gnc.path_sampling_rpo_path_length",
+    "gnc.path_sampling_rpo_resample_polyline_points",
+    "gnc.path_sampling_rpo_sample_path",
+    "gnc.path_sampling_rpo_sample_path_bezier",
+    "gnc.path_sampling_rpo_sample_path_polyline",
+    "gnc.path_sampling_rpo_sample_path_polyline_adaptive",
+    "gncy.path_sampling_rpo_sample_path_bezier_adaptive"
+  ]
+}

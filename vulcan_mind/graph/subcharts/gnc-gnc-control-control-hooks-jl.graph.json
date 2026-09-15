@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-control-control-hooks-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/control_hooks.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/control/control_hooks.jl",
+    "layout_of": "aa19574f3262c4df"
+  },
+  "derives_from": "gnc-gnc-control",
+  "group": "grp.src_gnc_control_control_hooks_jl",
+  "ui": {
+    "pos_overrides": {
+      "gncx.control_hooks_controlhooks": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gncx.control_hooks_controlhooks"
+  ]
+}

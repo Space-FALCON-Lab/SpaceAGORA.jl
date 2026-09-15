@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-cli",
+  "chart_kind": "sub",
+  "title": "SpaceAGORACLI — internals (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.cli",
+    "layout_of": "92146864887fb725"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.cli",
+  "ui": {
+    "pos_overrides": {
+      "cli.assets_load_asset_manifest": [
+        400.0,
+        80.0
+      ],
+      "cli.spaceagora_cli__run_benchmark": [
+        80.0,
+        80.0
+      ],
+      "cli.spaceagora_cli__run_example": [
+        80.0,
+        230.0
+      ],
+      "cli.spaceagora_cli_println": [
+        80.0,
+        380.0
+      ],
+      "misc.assets_check_assets": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "cli.assets_load_asset_manifest",
+    "cli.spaceagora_cli__run_benchmark",
+    "cli.spaceagora_cli__run_example",
+    "cli.spaceagora_cli_println",
+    "misc.assets_check_assets"
+  ]
+}

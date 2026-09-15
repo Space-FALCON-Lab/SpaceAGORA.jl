@@ -1,0 +1,139 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-pso-path-planning-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/pso_path_planning.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr/pso_path_planning.jl",
+    "layout_of": "e8123788f0f54cc5"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-hypr",
+  "group": "grp.src_gnc_guidance_rpo_hypr_pso_path_planning_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.pso_path_planning_apply_stagnation_learning_bang": [
+        400.0,
+        80.0
+      ],
+      "gnc.pso_path_planning_cfg_for_current": [
+        1040.0,
+        530.0
+      ],
+      "gnc.pso_path_planning_evaluate_position": [
+        1040.0,
+        80.0
+      ],
+      "gnc.pso_path_planning_evaluate_swarm_bang": [
+        720.0,
+        80.0
+      ],
+      "gnc.pso_path_planning_iteration_elapsed_s": [
+        1360.0,
+        80.0
+      ],
+      "gnc.pso_path_planning_iteration_timed_out": [
+        1040.0,
+        230.0
+      ],
+      "gnc.pso_path_planning_record_iteration_bang": [
+        720.0,
+        230.0
+      ],
+      "gnc.pso_path_planning_record_iteration_timeout_bang": [
+        720.0,
+        380.0
+      ],
+      "gnc.pso_path_planning_reexplore_waypoint_count": [
+        720.0,
+        530.0
+      ],
+      "gnc.pso_path_planning_reset_swarm_bang": [
+        720.0,
+        680.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_cull_swarm_bang": [
+        720.0,
+        830.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_early_stopping_feasible": [
+        720.0,
+        980.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_effective_safe_distance": [
+        400.0,
+        230.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_empty_warmstart_diagnostics": [
+        720.0,
+        1730.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_iteration_weights": [
+        720.0,
+        1130.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_material_improvement": [
+        720.0,
+        1280.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_project_to_segment": [
+        1040.0,
+        830.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_protected_particle_mask": [
+        720.0,
+        1430.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_rrt_warmstart_path": [
+        400.0,
+        380.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_stagnation_count_after_learning": [
+        720.0,
+        1580.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_tapered_noise_scale": [
+        1040.0,
+        980.0
+      ],
+      "gnc.pso_path_planning_seed_control_points": [
+        1040.0,
+        680.0
+      ],
+      "gnc.pso_path_planning_update_swarm_best_from_components_bang": [
+        1040.0,
+        380.0
+      ],
+      "gncy.pso_path_planning_rpo_pso_plan_path": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.pso_path_planning_apply_stagnation_learning_bang",
+    "gnc.pso_path_planning_cfg_for_current",
+    "gnc.pso_path_planning_evaluate_position",
+    "gnc.pso_path_planning_evaluate_swarm_bang",
+    "gnc.pso_path_planning_iteration_elapsed_s",
+    "gnc.pso_path_planning_iteration_timed_out",
+    "gnc.pso_path_planning_record_iteration_bang",
+    "gnc.pso_path_planning_record_iteration_timeout_bang",
+    "gnc.pso_path_planning_reexplore_waypoint_count",
+    "gnc.pso_path_planning_reset_swarm_bang",
+    "gnc.pso_path_planning_rpo_pso_cull_swarm_bang",
+    "gnc.pso_path_planning_rpo_pso_early_stopping_feasible",
+    "gnc.pso_path_planning_rpo_pso_effective_safe_distance",
+    "gnc.pso_path_planning_rpo_pso_empty_warmstart_diagnostics",
+    "gnc.pso_path_planning_rpo_pso_iteration_weights",
+    "gnc.pso_path_planning_rpo_pso_material_improvement",
+    "gnc.pso_path_planning_rpo_pso_project_to_segment",
+    "gnc.pso_path_planning_rpo_pso_protected_particle_mask",
+    "gnc.pso_path_planning_rpo_pso_rrt_warmstart_path",
+    "gnc.pso_path_planning_rpo_pso_stagnation_count_after_learning",
+    "gnc.pso_path_planning_rpo_pso_tapered_noise_scale",
+    "gnc.pso_path_planning_seed_control_points",
+    "gnc.pso_path_planning_update_swarm_best_from_components_bang",
+    "gncy.pso_path_planning_rpo_pso_plan_path"
+  ]
+}

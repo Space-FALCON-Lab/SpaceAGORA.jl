@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-robotics",
+  "chart_kind": "sub",
+  "title": "gnc/robotics/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_robotics",
+    "layout_of": "36ce716367ef1911"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_gnc_robotics",
+  "ui": {
+    "pos_overrides": {
+      "gnc.config_robotarmsphereobstacle": [
+        80.0,
+        80.0
+      ],
+      "gnc.planner_core_evaluate_position": [
+        400.0,
+        80.0
+      ],
+      "gnc.planner_core_robot_arm_hypr_path_cost_components": [
+        720.0,
+        80.0
+      ],
+      "gnc.robot_arm_planning__reference_times": [
+        720.0,
+        230.0
+      ],
+      "gnc.robot_arm_planning_robot_arm_plan_sample": [
+        80.0,
+        230.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_extend_bang": [
+        720.0,
+        380.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_segment_samples": [
+        80.0,
+        380.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_reaction_scale": [
+        80.0,
+        530.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_reference_times_from_scales": [
+        80.0,
+        680.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_rigid_base_wrench_ratios": [
+        80.0,
+        830.0
+      ],
+      "gncz.clearance_robot_arm_clearance_stats_from_samples": [
+        80.0,
+        980.0
+      ],
+      "gncz.planner_core_plan_robot_arm_motion_hypr": [
+        80.0,
+        1130.0
+      ],
+      "gncz.rrt_warmstart__robot_arm_rrt_connect_warmstart_path": [
+        400.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.config_robotarmsphereobstacle",
+    "gnc.planner_core_evaluate_position",
+    "gnc.planner_core_robot_arm_hypr_path_cost_components",
+    "gnc.robot_arm_planning__reference_times",
+    "gnc.robot_arm_planning_robot_arm_plan_sample",
+    "gnc.rrt_warmstart__robot_arm_rrt_extend_bang",
+    "gnc.rrt_warmstart__robot_arm_rrt_segment_samples",
+    "gnc.swarm_and_retiming__robot_arm_hypr_reaction_scale",
+    "gnc.swarm_and_retiming__robot_arm_hypr_reference_times_from_scales",
+    "gnc.swarm_and_retiming__robot_arm_hypr_rigid_base_wrench_ratios",
+    "gncz.clearance_robot_arm_clearance_stats_from_samples",
+    "gncz.planner_core_plan_robot_arm_motion_hypr",
+    "gncz.rrt_warmstart__robot_arm_rrt_connect_warmstart_path"
+  ]
+}

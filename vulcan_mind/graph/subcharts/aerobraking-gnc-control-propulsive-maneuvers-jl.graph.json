@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-control-propulsive-maneuvers-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/propulsive_maneuvers.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_control_propulsive_maneuvers_jl",
+    "layout_of": "e7f3c2d4b8405449"
+  },
+  "derives_from": "aerobraking-gnc-control",
+  "group": "grp.src_gnc_control_propulsive_maneuvers_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.propulsive_maneuvers__commanded_maneuver": [
+        400.0,
+        80.0
+      ],
+      "gnc.propulsive_maneuvers__effective_direction_rad": [
+        80.0,
+        80.0
+      ],
+      "gnc.propulsive_maneuvers__effective_thrust_isp": [
+        720.0,
+        80.0
+      ],
+      "gnc.propulsive_maneuvers__trace_maneuver_event_bang": [
+        400.0,
+        230.0
+      ],
+      "gnc.propulsive_maneuvers__validated_burn_plan": [
+        400.0,
+        380.0
+      ],
+      "gncx.propulsive_maneuvers_calccontroleffect_bang": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.propulsive_maneuvers__commanded_maneuver",
+    "gnc.propulsive_maneuvers__effective_direction_rad",
+    "gnc.propulsive_maneuvers__effective_thrust_isp",
+    "gnc.propulsive_maneuvers__trace_maneuver_event_bang",
+    "gnc.propulsive_maneuvers__validated_burn_plan",
+    "gncx.propulsive_maneuvers_calccontroleffect_bang"
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-policy-persistent-hints-jl",
+  "chart_kind": "sub",
+  "title": "parallel/policy/persistent_hints.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/policy/persistent_hints.jl",
+    "layout_of": "ceaaee661c353658"
+  },
+  "derives_from": "parallel-parallel-policy",
+  "group": "grp.src_parallel_policy_persistent_hints_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.persistent_hints__ensure_persistent_hint_state_loaded_bang": [
+        400.0,
+        230.0
+      ],
+      "parallel.persistent_hints__hint_bucket": [
+        400.0,
+        80.0
+      ],
+      "parallel.persistent_hints__hint_candidate_allotments": [
+        80.0,
+        80.0
+      ],
+      "parallel.persistent_hints__hint_entry_count": [
+        80.0,
+        230.0
+      ],
+      "parallel.persistent_hints__hint_mean_and_width": [
+        400.0,
+        530.0
+      ],
+      "parallel.persistent_hints__hint_payload_stats": [
+        1040.0,
+        80.0
+      ],
+      "parallel.persistent_hints__hint_record_observation_bang": [
+        80.0,
+        380.0
+      ],
+      "parallel.persistent_hints__hint_samples": [
+        400.0,
+        680.0
+      ],
+      "parallel.persistent_hints__hint_signature_value": [
+        400.0,
+        380.0
+      ],
+      "parallel.persistent_hints__hint_stats_payload": [
+        1040.0,
+        230.0
+      ],
+      "parallel.persistent_hints__hint_workload_signature": [
+        80.0,
+        530.0
+      ],
+      "parallel.persistent_hints__load_persistent_hint_state_locked_bang": [
+        720.0,
+        80.0
+      ],
+      "parallel.persistent_hints__save_persistent_hint_state_locked_bang": [
+        720.0,
+        230.0
+      ],
+      "parallel.persistent_hints_hint_layer_stats_snapshot": [
+        80.0,
+        680.0
+      ],
+      "parallel.persistent_hints_reset_persistent_hint_state_bang": [
+        80.0,
+        830.0
+      ],
+      "parcore.persistent_hints__hint_choose_allotment": [
+        80.0,
+        980.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.persistent_hints__ensure_persistent_hint_state_loaded_bang",
+    "parallel.persistent_hints__hint_bucket",
+    "parallel.persistent_hints__hint_candidate_allotments",
+    "parallel.persistent_hints__hint_entry_count",
+    "parallel.persistent_hints__hint_mean_and_width",
+    "parallel.persistent_hints__hint_payload_stats",
+    "parallel.persistent_hints__hint_record_observation_bang",
+    "parallel.persistent_hints__hint_samples",
+    "parallel.persistent_hints__hint_signature_value",
+    "parallel.persistent_hints__hint_stats_payload",
+    "parallel.persistent_hints__hint_workload_signature",
+    "parallel.persistent_hints__load_persistent_hint_state_locked_bang",
+    "parallel.persistent_hints__save_persistent_hint_state_locked_bang",
+    "parallel.persistent_hints_hint_layer_stats_snapshot",
+    "parallel.persistent_hints_reset_persistent_hint_state_bang",
+    "parcore.persistent_hints__hint_choose_allotment"
+  ]
+}

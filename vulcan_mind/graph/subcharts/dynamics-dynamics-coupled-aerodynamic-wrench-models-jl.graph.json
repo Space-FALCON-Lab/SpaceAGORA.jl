@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-coupled-aerodynamic-wrench-models-jl",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/aerodynamic_wrench_models.jl (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/coupled/aerodynamic_wrench_models.jl",
+    "layout_of": "a8ec78e03db1f970"
+  },
+  "derives_from": "dynamics-dynamics-coupled",
+  "group": "grp.src_dynamics_coupled_aerodynamic_wrench_models_jl",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.aerodynamic_wrench_models__aero_link_angles": [
+        400.0,
+        830.0
+      ],
+      "dynamics.aerodynamic_wrench_models__aero_link_area": [
+        400.0,
+        380.0
+      ],
+      "dynamics.aerodynamic_wrench_models__aero_link_atmosphere_query": [
+        400.0,
+        680.0
+      ],
+      "dynamics.aerodynamic_wrench_models__aero_workspace_for_sat_bang": [
+        400.0,
+        80.0
+      ],
+      "dynamics.aerodynamic_wrench_models__attitude_link_alpha": [
+        720.0,
+        980.0
+      ],
+      "dynamics.aerodynamic_wrench_models__constant_drag_coefficient": [
+        400.0,
+        980.0
+      ],
+      "dynamics.aerodynamic_wrench_models__ensure_aero_workspace_capacity_bang": [
+        720.0,
+        80.0
+      ],
+      "dynamics.aerodynamic_wrench_models__fold_constant_incidence": [
+        400.0,
+        1130.0
+      ],
+      "dynamics.aerodynamic_wrench_models__make_aero_scratch_workspace": [
+        720.0,
+        230.0
+      ],
+      "dynamics.aerodynamic_wrench_models__multibody_max_threads": [
+        1040.0,
+        80.0
+      ],
+      "dynamics.aerodynamic_wrench_models__multibody_outer_parallel_hint": [
+        1040.0,
+        230.0
+      ],
+      "dynamics.aerodynamic_wrench_models__multibody_parallel_mode": [
+        1040.0,
+        380.0
+      ],
+      "dynamics.aerodynamic_wrench_models__multibody_thread_decision": [
+        720.0,
+        380.0
+      ],
+      "dynamics.aerodynamic_wrench_models__multibody_thread_threshold": [
+        1040.0,
+        530.0
+      ],
+      "dynamics.aerodynamic_wrench_models__multibody_use_threads": [
+        80.0,
+        80.0
+      ],
+      "dynamics.aerodynamic_wrench_models__quaternion_link_alpha": [
+        720.0,
+        1130.0
+      ],
+      "dynamics.aerodynamic_wrench_models__simulation_model_module_for_aero": [
+        80.0,
+        230.0
+      ],
+      "dynamics.aerodynamic_wrench_models__store_aero_caches_bang": [
+        720.0,
+        530.0
+      ],
+      "dynamics.aerodynamic_wrench_models__store_vector_cache_bang": [
+        1040.0,
+        680.0
+      ],
+      "dynamics.aerodynamic_wrench_models__threadid_capacity": [
+        80.0,
+        380.0
+      ],
+      "dynamics.aerodynamic_wrench_models__validate_fm_incidence": [
+        720.0,
+        680.0
+      ],
+      "dynamics.aerodynamic_wrench_models_aerodynamic_coefficient_constant": [
+        80.0,
+        530.0
+      ],
+      "dynamics.aerodynamic_wrench_models_aerodynamic_coefficient_fm": [
+        400.0,
+        530.0
+      ],
+      "dynamics.aerodynamic_wrench_models_aerodynamic_coefficient_no_ballistic_flight": [
+        80.0,
+        680.0
+      ],
+      "dynamics.aerodynamic_wrench_models_aerodynamiccoefficientconstant": [
+        80.0,
+        830.0
+      ],
+      "dynamics.aerodynamic_wrench_models_aerodynamiccoefficientfm": [
+        80.0,
+        980.0
+      ],
+      "dynamics.aerodynamic_wrench_models_aerodynamiccoefficientnoballisticflight": [
+        80.0,
+        1130.0
+      ],
+      "dynamics.aerodynamic_wrench_models_calcforcetorque": [
+        400.0,
+        230.0
+      ],
+      "dynamics.aerodynamic_wrench_models_collect_and_reset_link_wrenches_bang": [
+        720.0,
+        830.0
+      ],
+      "dynamics.aerodynamic_wrench_models_compute_link_wrench_bang": [
+        80.0,
+        1280.0
+      ],
+      "dynamics.aerodynamic_wrench_models_environment_requirements": [
+        80.0,
+        1430.0
+      ],
+      "dynamics.aerodynamic_wrench_models_set_per_link_atmosphere_bang": [
+        80.0,
+        1580.0
+      ],
+      "dynamics.aerodynamic_wrench_models_solver_partition": [
+        80.0,
+        1730.0
+      ],
+      "dynamics.aerodynamic_wrench_models_wrench": [
+        80.0,
+        1880.0
+      ],
+      "dynamics.aerodynamic_wrench_models_wrench_caching_bang": [
+        80.0,
+        2030.0
+      ],
+      "dynx.coupled_aerodynamic_wrench_models_aero_pure_wrench": [
+        80.0,
+        2180.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.aerodynamic_wrench_models__aero_link_angles",
+    "dynamics.aerodynamic_wrench_models__aero_link_area",
+    "dynamics.aerodynamic_wrench_models__aero_link_atmosphere_query",
+    "dynamics.aerodynamic_wrench_models__aero_workspace_for_sat_bang",
+    "dynamics.aerodynamic_wrench_models__attitude_link_alpha",
+    "dynamics.aerodynamic_wrench_models__constant_drag_coefficient",
+    "dynamics.aerodynamic_wrench_models__ensure_aero_workspace_capacity_bang",
+    "dynamics.aerodynamic_wrench_models__fold_constant_incidence",
+    "dynamics.aerodynamic_wrench_models__make_aero_scratch_workspace",
+    "dynamics.aerodynamic_wrench_models__multibody_max_threads",
+    "dynamics.aerodynamic_wrench_models__multibody_outer_parallel_hint",
+    "dynamics.aerodynamic_wrench_models__multibody_parallel_mode",
+    "dynamics.aerodynamic_wrench_models__multibody_thread_decision",
+    "dynamics.aerodynamic_wrench_models__multibody_thread_threshold",
+    "dynamics.aerodynamic_wrench_models__multibody_use_threads",
+    "dynamics.aerodynamic_wrench_models__quaternion_link_alpha",
+    "dynamics.aerodynamic_wrench_models__simulation_model_module_for_aero",
+    "dynamics.aerodynamic_wrench_models__store_aero_caches_bang",
+    "dynamics.aerodynamic_wrench_models__store_vector_cache_bang",
+    "dynamics.aerodynamic_wrench_models__threadid_capacity",
+    "dynamics.aerodynamic_wrench_models__validate_fm_incidence",
+    "dynamics.aerodynamic_wrench_models_aerodynamic_coefficient_constant",
+    "dynamics.aerodynamic_wrench_models_aerodynamic_coefficient_fm",
+    "dynamics.aerodynamic_wrench_models_aerodynamic_coefficient_no_ballistic_flight",
+    "dynamics.aerodynamic_wrench_models_aerodynamiccoefficientconstant",
+    "dynamics.aerodynamic_wrench_models_aerodynamiccoefficientfm",
+    "dynamics.aerodynamic_wrench_models_aerodynamiccoefficientnoballisticflight",
+    "dynamics.aerodynamic_wrench_models_calcforcetorque",
+    "dynamics.aerodynamic_wrench_models_collect_and_reset_link_wrenches_bang",
+    "dynamics.aerodynamic_wrench_models_compute_link_wrench_bang",
+    "dynamics.aerodynamic_wrench_models_environment_requirements",
+    "dynamics.aerodynamic_wrench_models_set_per_link_atmosphere_bang",
+    "dynamics.aerodynamic_wrench_models_solver_partition",
+    "dynamics.aerodynamic_wrench_models_wrench",
+    "dynamics.aerodynamic_wrench_models_wrench_caching_bang",
+    "dynx.coupled_aerodynamic_wrench_models_aero_pure_wrench"
+  ]
+}

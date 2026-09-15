@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-execution-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/execution.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/execution.jl",
+    "layout_of": "651a0d41ce0f8885"
+  },
+  "derives_from": "simulation-simulation-engine",
+  "group": "grp.src_simulation_engine_execution_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.execution__append_backbone_saved_segment_bang": [
+        400.0,
+        80.0
+      ],
+      "simulation.execution__append_checkpoint_saved_segment_bang": [
+        400.0,
+        230.0
+      ],
+      "simulation.execution__build_block_diagonal_jac_prototype": [
+        400.0,
+        380.0
+      ],
+      "simulation.execution__build_typed_solver_problem": [
+        400.0,
+        530.0
+      ],
+      "simulation.execution__save_simulation_results_if_enabled_bang": [
+        720.0,
+        80.0
+      ],
+      "simulation.execution__try_save_simulation_results_if_enabled_bang": [
+        400.0,
+        680.0
+      ],
+      "simx.engine_execution_run_simulation": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.execution__append_backbone_saved_segment_bang",
+    "simulation.execution__append_checkpoint_saved_segment_bang",
+    "simulation.execution__build_block_diagonal_jac_prototype",
+    "simulation.execution__build_typed_solver_problem",
+    "simulation.execution__save_simulation_results_if_enabled_bang",
+    "simulation.execution__try_save_simulation_results_if_enabled_bang",
+    "simx.engine_execution_run_simulation"
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-control-rpo-mpc",
+  "chart_kind": "sub",
+  "title": "gnc/control/rpo_mpc/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/control/rpo_mpc",
+    "layout_of": "0bd9e13e6b9be56d"
+  },
+  "derives_from": "gnc-gnc-control",
+  "group": "grp.src_gnc_control_rpo_mpc",
+  "ui": {
+    "pos_overrides": {
+      "gnc.lqmpc_init_rpo_lqmpc": [
+        80.0,
+        80.0
+      ],
+      "gnc.lqmpc_rpo_block_diag": [
+        400.0,
+        80.0
+      ],
+      "gnc.lqmpc_rpo_discretize_zoh": [
+        400.0,
+        230.0
+      ],
+      "gnc.lqmpc_rpo_hcw_continuous_mats": [
+        400.0,
+        380.0
+      ],
+      "gnc.lqmpc_rpo_prediction_mats": [
+        400.0,
+        530.0
+      ],
+      "gnc.lqmpc_rpo_ref_preview": [
+        400.0,
+        980.0
+      ],
+      "gnc.lqmpc_rpolqmpccontroller": [
+        400.0,
+        680.0
+      ],
+      "gnc.rpo_control_types_rpoheldactuation": [
+        400.0,
+        830.0
+      ],
+      "gnc.rpo_mpc_control_model__rpo_control_state_pos_vel": [
+        400.0,
+        1130.0
+      ],
+      "gnc.rpo_mpc_control_model_calccontrolforcetorque": [
+        80.0,
+        230.0
+      ],
+      "gnc.rpo_mpc_control_model_calccontrolmassflowrate": [
+        80.0,
+        380.0
+      ],
+      "gnc.rpo_mpc_control_model_calcreactionwheeltorque": [
+        80.0,
+        530.0
+      ],
+      "gnc.thruster_allocator_rpo_thruster_wrench_body": [
+        400.0,
+        1280.0
+      ],
+      "gncx.lqmpc_rpo_lqmpc_control": [
+        400.0,
+        1430.0
+      ],
+      "gncx.reaction_wheel_allocator_rpo_reaction_wheel_torque_command": [
+        400.0,
+        1580.0
+      ],
+      "gncx.rpo_control_types_rpompccontrolmodel": [
+        80.0,
+        680.0
+      ],
+      "gncx.rpo_mpc_control_model_calccontroleffect_bang": [
+        80.0,
+        830.0
+      ],
+      "gncx.thruster_allocator_rpo_allocate_six_axis_thrusters": [
+        400.0,
+        1730.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.lqmpc_init_rpo_lqmpc",
+    "gnc.lqmpc_rpo_block_diag",
+    "gnc.lqmpc_rpo_discretize_zoh",
+    "gnc.lqmpc_rpo_hcw_continuous_mats",
+    "gnc.lqmpc_rpo_prediction_mats",
+    "gnc.lqmpc_rpo_ref_preview",
+    "gnc.lqmpc_rpolqmpccontroller",
+    "gnc.rpo_control_types_rpoheldactuation",
+    "gnc.rpo_mpc_control_model__rpo_control_state_pos_vel",
+    "gnc.rpo_mpc_control_model_calccontrolforcetorque",
+    "gnc.rpo_mpc_control_model_calccontrolmassflowrate",
+    "gnc.rpo_mpc_control_model_calcreactionwheeltorque",
+    "gnc.thruster_allocator_rpo_thruster_wrench_body",
+    "gncx.lqmpc_rpo_lqmpc_control",
+    "gncx.reaction_wheel_allocator_rpo_reaction_wheel_torque_command",
+    "gncx.rpo_control_types_rpompccontrolmodel",
+    "gncx.rpo_mpc_control_model_calccontroleffect_bang",
+    "gncx.thruster_allocator_rpo_allocate_six_axis_thrusters"
+  ]
+}

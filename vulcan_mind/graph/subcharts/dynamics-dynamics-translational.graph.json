@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-translational",
+  "chart_kind": "sub",
+  "title": "dynamics/translational/ (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/translational",
+    "layout_of": "bf1f7433a98ef114"
+  },
+  "derives_from": "dynamics",
+  "group": "grp.src_dynamics_translational",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.point_mass_dynamics_assign_control_only_translational_rhs_bang": [
+        80.0,
+        80.0
+      ],
+      "dynamics.point_mass_dynamics_assign_force_only_translational_rhs_bang": [
+        80.0,
+        230.0
+      ],
+      "dynamics.point_mass_dynamics_assign_full_translational_rhs_bang": [
+        80.0,
+        380.0
+      ],
+      "dynamics.point_mass_dynamics_assign_slow_translational_rhs_bang": [
+        80.0,
+        530.0
+      ],
+      "dynamics.point_mass_dynamics_mass_derivative": [
+        400.0,
+        230.0
+      ],
+      "dynamics.position_kinematics_zero_position_derivative": [
+        400.0,
+        80.0
+      ],
+      "dynx.translational_models_dynamicstranslational": [
+        80.0,
+        680.0
+      ],
+      "dynx.translational_point_mass_dynamics_acceleration_from_force": [
+        80.0,
+        830.0
+      ],
+      "dynx.translational_position_kinematics_position_derivative": [
+        80.0,
+        980.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.point_mass_dynamics_assign_control_only_translational_rhs_bang",
+    "dynamics.point_mass_dynamics_assign_force_only_translational_rhs_bang",
+    "dynamics.point_mass_dynamics_assign_full_translational_rhs_bang",
+    "dynamics.point_mass_dynamics_assign_slow_translational_rhs_bang",
+    "dynamics.point_mass_dynamics_mass_derivative",
+    "dynamics.position_kinematics_zero_position_derivative",
+    "dynx.translational_models_dynamicstranslational",
+    "dynx.translational_point_mass_dynamics_acceleration_from_force",
+    "dynx.translational_position_kinematics_position_derivative"
+  ]
+}

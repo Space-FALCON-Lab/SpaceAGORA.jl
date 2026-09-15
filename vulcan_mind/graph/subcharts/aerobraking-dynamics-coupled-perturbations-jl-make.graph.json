@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-dynamics-coupled-perturbations-jl-make",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl · _make* (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_dynamics_coupled_perturbations_jl_make",
+    "layout_of": "c89c4c8d820f2ca8"
+  },
+  "derives_from": "aerobraking-dynamics-coupled-perturbations-jl",
+  "group": "grp.src_dynamics_coupled_perturbations_jl_make",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.perturbations__make_harmonics_scratch_workspace": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations__make_harmonics_scratch_workspace"
+  ]
+}

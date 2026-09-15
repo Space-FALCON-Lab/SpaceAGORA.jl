@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-core-interfaces",
+  "chart_kind": "sub",
+  "title": "core/interfaces/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_core_interfaces",
+    "layout_of": "25527e63fd534f19"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_core_interfaces",
+  "ui": {
+    "pos_overrides": {
+      "core.reference_system_orbitalelemtorv": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.reference_system_orbitalelemtorv"
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-robotics-robot-arm-hypr-rrt-warmstart-jl",
+  "chart_kind": "sub",
+  "title": "gnc/robotics/robot_arm_hypr/rrt_warmstart.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_robotics_robot_arm_hypr_rrt_warmstart_jl",
+    "layout_of": "6711386ab0532628"
+  },
+  "derives_from": "aerobraking-gnc-robotics-robot-arm-hypr",
+  "group": "grp.src_gnc_robotics_robot_arm_hypr_rrt_warmstart_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.rrt_warmstart__robot_arm_empty_rrt_warmstart_diagnostics": [
+        400.0,
+        80.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_resample_polyline_points": [
+        80.0,
+        80.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_connect_bang": [
+        400.0,
+        230.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_extend_bang": [
+        720.0,
+        80.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_join_paths": [
+        400.0,
+        380.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_nearest_index": [
+        1040.0,
+        80.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_path_score": [
+        400.0,
+        530.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_random_state": [
+        400.0,
+        680.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_segment_is_safe": [
+        1040.0,
+        230.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_segment_samples": [
+        1360.0,
+        80.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_shortcut_path": [
+        400.0,
+        830.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_steer": [
+        1040.0,
+        380.0
+      ],
+      "gnc.rrt_warmstart__robot_arm_rrt_warmstart_fields": [
+        80.0,
+        230.0
+      ],
+      "gnc.rrt_warmstart_robotarmrrtconnecttree": [
+        400.0,
+        980.0
+      ],
+      "gncz.rrt_warmstart__robot_arm_rrt_connect_warmstart_path": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.rrt_warmstart__robot_arm_empty_rrt_warmstart_diagnostics",
+    "gnc.rrt_warmstart__robot_arm_resample_polyline_points",
+    "gnc.rrt_warmstart__robot_arm_rrt_connect_bang",
+    "gnc.rrt_warmstart__robot_arm_rrt_extend_bang",
+    "gnc.rrt_warmstart__robot_arm_rrt_join_paths",
+    "gnc.rrt_warmstart__robot_arm_rrt_nearest_index",
+    "gnc.rrt_warmstart__robot_arm_rrt_path_score",
+    "gnc.rrt_warmstart__robot_arm_rrt_random_state",
+    "gnc.rrt_warmstart__robot_arm_rrt_segment_is_safe",
+    "gnc.rrt_warmstart__robot_arm_rrt_segment_samples",
+    "gnc.rrt_warmstart__robot_arm_rrt_shortcut_path",
+    "gnc.rrt_warmstart__robot_arm_rrt_steer",
+    "gnc.rrt_warmstart__robot_arm_rrt_warmstart_fields",
+    "gnc.rrt_warmstart_robotarmrrtconnecttree",
+    "gncz.rrt_warmstart__robot_arm_rrt_connect_warmstart_path"
+  ]
+}

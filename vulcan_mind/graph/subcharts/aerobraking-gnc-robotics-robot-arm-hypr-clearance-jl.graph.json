@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-robotics-robot-arm-hypr-clearance-jl",
+  "chart_kind": "sub",
+  "title": "gnc/robotics/robot_arm_hypr/clearance.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_robotics_robot_arm_hypr_clearance_jl",
+    "layout_of": "476de1c89ca0bb59"
+  },
+  "derives_from": "aerobraking-gnc-robotics-robot-arm-hypr",
+  "group": "grp.src_gnc_robotics_robot_arm_hypr_clearance_jl",
+  "ui": {
+    "pos_overrides": {
+      "gncz.clearance_robot_arm_clearance_stats_from_samples": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gncz.clearance_robot_arm_clearance_stats_from_samples"
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/manifest_parsing.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/manifest_parsing.jl",
+    "layout_of": "523635ec24340281"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_optional": [
+        1040.0,
+        80.0
+      ],
+      "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_parse": [
+        400.0,
+        80.0
+      ],
+      "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_require": [
+        1040.0,
+        230.0
+      ],
+      "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_small": [
+        720.0,
+        80.0
+      ],
+      "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_telemetry": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.manifest_parsing__load_scenarios_from_manifest",
+    "analysis.manifest_parsing__optional_bool",
+    "analysis.manifest_parsing__optional_float",
+    "analysis.manifest_parsing__optional_float64_vector",
+    "analysis.manifest_parsing__optional_float_tuple",
+    "analysis.manifest_parsing__optional_int",
+    "analysis.manifest_parsing__optional_int64_vector",
+    "analysis.manifest_parsing__optional_str",
+    "analysis.manifest_parsing__optional_str_vector",
+    "analysis.manifest_parsing__optional_symbol_vector",
+    "analysis.manifest_parsing__parse_atmosphere_truth_config",
+    "analysis.manifest_parsing__parse_attitude_q",
+    "analysis.manifest_parsing__parse_calibration_config",
+    "analysis.manifest_parsing__parse_element_frame",
+    "analysis.manifest_parsing__parse_event_tolerance",
+    "analysis.manifest_parsing__parse_gravity_model",
+    "analysis.manifest_parsing__parse_ic_offset",
+    "analysis.manifest_parsing__parse_initial_time",
+    "analysis.manifest_parsing__parse_maneuver_config",
+    "analysis.manifest_parsing__parse_orbit_altitude_mode",
+    "analysis.manifest_parsing__parse_positive_float_env",
+    "analysis.manifest_parsing__parse_positive_int_env",
+    "analysis.manifest_parsing__parse_reference_frame",
+    "analysis.manifest_parsing__parse_spacecraft_config",
+    "analysis.manifest_parsing__parse_time_aligned_comparison_mode",
+    "analysis.manifest_parsing__parse_tolerances",
+    "analysis.manifest_parsing__parse_truth_mask",
+    "analysis.manifest_parsing__parse_units",
+    "analysis.manifest_parsing__parse_vec3",
+    "analysis.manifest_parsing__request_from_study_config",
+    "analysis.manifest_parsing__require_float",
+    "analysis.manifest_parsing__require_int",
+    "analysis.manifest_parsing__require_key",
+    "analysis.manifest_parsing__require_str",
+    "analysis.manifest_parsing__require_str_vector",
+    "analysis.manifest_parsing__require_table",
+    "analysis.manifest_parsing__resolve_repo_path",
+    "analysis.manifest_parsing__safe_parse_bool",
+    "analysis.manifest_parsing__study_config",
+    "analysis.manifest_parsing__telemetry_solver_maxiters",
+    "analysis.manifest_parsing__telemetry_solver_mode",
+    "analysis.manifest_parsing__telemetry_solver_retry_maxiters",
+    "envana.ana_manifest_parsing_parse_cli"
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-coupled-perturbations-jl-harmonics",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl · _harmonics* (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/coupled/perturbations.jl#_harmonics",
+    "layout_of": "6c2c0e577e502cfd"
+  },
+  "derives_from": "dynamics-dynamics-coupled-perturbations-jl",
+  "group": "grp.src_dynamics_coupled_perturbations_jl_harmonics",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.perturbations__harmonics_calcforcetorque_with_lpi": [
+        80.0,
+        80.0
+      ],
+      "dynamics.perturbations__harmonics_flat_batch_kernel_bang": [
+        80.0,
+        230.0
+      ],
+      "dynamics.perturbations__harmonics_lpi_at_bang": [
+        400.0,
+        80.0
+      ],
+      "dynamics.perturbations__harmonics_lpi_cache_key": [
+        720.0,
+        80.0
+      ],
+      "dynamics.perturbations__harmonics_model_cache_key": [
+        80.0,
+        380.0
+      ],
+      "dynamics.perturbations__harmonics_workspace_for_sat_bang": [
+        400.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations__harmonics_calcforcetorque_with_lpi",
+    "dynamics.perturbations__harmonics_flat_batch_kernel_bang",
+    "dynamics.perturbations__harmonics_lpi_at_bang",
+    "dynamics.perturbations__harmonics_lpi_cache_key",
+    "dynamics.perturbations__harmonics_model_cache_key",
+    "dynamics.perturbations__harmonics_workspace_for_sat_bang"
+  ]
+}

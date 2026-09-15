@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-simulation-engine",
+  "chart_kind": "sub",
+  "title": "simulation/engine/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine",
+    "layout_of": "f041291f93a43d0e"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_simulation_engine",
+  "ui": {
+    "pos_overrides": {
+      "simulation.dynamics_rhs__accumulate_dynamic_effectors_partitioned_bang": [
+        80.0,
+        80.0
+      ],
+      "simulation.dynamics_rhs__rhs_effector_static_cost_ns": [
+        80.0,
+        230.0
+      ],
+      "simulation.dynamics_rhs__robot_arm_effector_matches": [
+        80.0,
+        380.0
+      ],
+      "simulation.dynamics_rhs__update_rhs_flat_packet_cost_model_bang": [
+        80.0,
+        530.0
+      ],
+      "simulation.dynamics_rhs__update_rhs_flat_packet_overhead_model_bang": [
+        80.0,
+        680.0
+      ],
+      "simulation.dynamics_rhs_build_initial_conditions": [
+        400.0,
+        680.0
+      ],
+      "simulation.effector_sampling__extract_sample_mass_kg": [
+        80.0,
+        830.0
+      ],
+      "simulation.effector_sampling_sample_planet_frame": [
+        80.0,
+        980.0
+      ],
+      "simulation.effector_sampling_sample_planet_frame_with_lpi": [
+        80.0,
+        1130.0
+      ],
+      "simulation.execution__append_backbone_saved_segment_bang": [
+        400.0,
+        830.0
+      ],
+      "simulation.execution__append_checkpoint_saved_segment_bang": [
+        400.0,
+        980.0
+      ],
+      "simulation.execution__build_block_diagonal_jac_prototype": [
+        400.0,
+        1130.0
+      ],
+      "simulation.rhs_calibration__rhs_calib_load_bang": [
+        80.0,
+        1280.0
+      ],
+      "simulation.rhs_calibration__rhs_calib_save_bang": [
+        80.0,
+        1430.0
+      ],
+      "simulation.rhs_calibration__rhs_plan_candidates": [
+        400.0,
+        80.0
+      ],
+      "simulation.rhs_calibration__run_rhs_sweep_bang": [
+        80.0,
+        1580.0
+      ],
+      "simulation.setup__cache_from_nbody_ephemeris_payload": [
+        80.0,
+        1730.0
+      ],
+      "simulation.setup__collect_nbody_query_names": [
+        400.0,
+        230.0
+      ],
+      "simulation.setup__effector_observed_cost_ns_per_item": [
+        80.0,
+        1880.0
+      ],
+      "simulation.setup__ephemerides_time_seconds_flexible": [
+        400.0,
+        380.0
+      ],
+      "simulation.setup__initialize_density_model_instances_bang": [
+        400.0,
+        1280.0
+      ],
+      "simulation.setup__nbody_ephemeris_cache_payload": [
+        80.0,
+        2030.0
+      ],
+      "simulation.setup__prewarm_nbody_ephemeris_cache": [
+        80.0,
+        2180.0
+      ],
+      "simulation.setup__rhs_effector_observed_cost_ns": [
+        80.0,
+        2330.0
+      ],
+      "simulation.setup__update_effector_cost_model_bang": [
+        80.0,
+        2480.0
+      ],
+      "simulation.solver_policy__solve_with_explicit_solver": [
+        400.0,
+        530.0
+      ],
+      "simulation.solver_policy__solve_with_gravity_backbone_solver": [
+        80.0,
+        2630.0
+      ],
+      "simulation.solver_policy__solve_with_multirate_solver": [
+        80.0,
+        2780.0
+      ],
+      "simulation.state_access__state_mass_kg": [
+        80.0,
+        2930.0
+      ],
+      "simx.engine_execution_run_simulation": [
+        80.0,
+        3080.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.dynamics_rhs__accumulate_dynamic_effectors_partitioned_bang",
+    "simulation.dynamics_rhs__rhs_effector_static_cost_ns",
+    "simulation.dynamics_rhs__robot_arm_effector_matches",
+    "simulation.dynamics_rhs__update_rhs_flat_packet_cost_model_bang",
+    "simulation.dynamics_rhs__update_rhs_flat_packet_overhead_model_bang",
+    "simulation.dynamics_rhs_build_initial_conditions",
+    "simulation.effector_sampling__extract_sample_mass_kg",
+    "simulation.effector_sampling_sample_planet_frame",
+    "simulation.effector_sampling_sample_planet_frame_with_lpi",
+    "simulation.execution__append_backbone_saved_segment_bang",
+    "simulation.execution__append_checkpoint_saved_segment_bang",
+    "simulation.execution__build_block_diagonal_jac_prototype",
+    "simulation.rhs_calibration__rhs_calib_load_bang",
+    "simulation.rhs_calibration__rhs_calib_save_bang",
+    "simulation.rhs_calibration__rhs_plan_candidates",
+    "simulation.rhs_calibration__run_rhs_sweep_bang",
+    "simulation.setup__cache_from_nbody_ephemeris_payload",
+    "simulation.setup__collect_nbody_query_names",
+    "simulation.setup__effector_observed_cost_ns_per_item",
+    "simulation.setup__ephemerides_time_seconds_flexible",
+    "simulation.setup__initialize_density_model_instances_bang",
+    "simulation.setup__nbody_ephemeris_cache_payload",
+    "simulation.setup__prewarm_nbody_ephemeris_cache",
+    "simulation.setup__rhs_effector_observed_cost_ns",
+    "simulation.setup__update_effector_cost_model_bang",
+    "simulation.solver_policy__solve_with_explicit_solver",
+    "simulation.solver_policy__solve_with_gravity_backbone_solver",
+    "simulation.solver_policy__solve_with_multirate_solver",
+    "simulation.state_access__state_mass_kg",
+    "simx.engine_execution_run_simulation"
+  ]
+}

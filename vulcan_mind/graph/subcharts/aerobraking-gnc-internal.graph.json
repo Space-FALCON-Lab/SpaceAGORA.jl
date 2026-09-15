@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-internal",
+  "chart_kind": "sub",
+  "title": "gnc/internal/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_internal",
+    "layout_of": "12960c562c24f7fd"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_gnc_internal",
+  "ui": {
+    "pos_overrides": {
+      "gnc.bridge_helpers__bridge_aerobraking_dry_mass": [
+        720.0,
+        80.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_entry_interface_m": [
+        1040.0,
+        80.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_exit_interface_m": [
+        720.0,
+        230.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_max_heat_rate": [
+        720.0,
+        380.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_thrust_phi": [
+        720.0,
+        530.0
+      ],
+      "gnc.bridge_helpers__bridge_get_cnf": [
+        80.0,
+        80.0
+      ],
+      "gnc.bridge_helpers__bridge_get_solution": [
+        80.0,
+        230.0
+      ],
+      "gnc.bridge_helpers__bridge_required_field": [
+        1360.0,
+        80.0
+      ],
+      "gnc.bridge_helpers__bridge_verbose_enabled": [
+        80.0,
+        380.0
+      ],
+      "gnc.bridge_helpers__make_aerobraking_runtime_context": [
+        80.0,
+        530.0
+      ],
+      "gnc.bridge_helpers__with_control_gain": [
+        80.0,
+        680.0
+      ],
+      "gncz.bridge_helpers__make_aerobraking_runtime_settings": [
+        400.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.bridge_helpers__bridge_aerobraking_dry_mass",
+    "gnc.bridge_helpers__bridge_aerobraking_entry_interface_m",
+    "gnc.bridge_helpers__bridge_aerobraking_exit_interface_m",
+    "gnc.bridge_helpers__bridge_aerobraking_max_heat_rate",
+    "gnc.bridge_helpers__bridge_aerobraking_thrust_phi",
+    "gnc.bridge_helpers__bridge_get_cnf",
+    "gnc.bridge_helpers__bridge_get_solution",
+    "gnc.bridge_helpers__bridge_required_field",
+    "gnc.bridge_helpers__bridge_verbose_enabled",
+    "gnc.bridge_helpers__make_aerobraking_runtime_context",
+    "gnc.bridge_helpers__with_control_gain",
+    "gncz.bridge_helpers__make_aerobraking_runtime_settings"
+  ]
+}

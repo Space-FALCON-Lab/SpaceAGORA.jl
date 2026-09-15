@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "core-core-simulation-model-jl",
+  "chart_kind": "sub",
+  "title": "core/simulation_model.jl (core)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/core/simulation_model.jl",
+    "layout_of": "a702c46b1fa7db77"
+  },
+  "derives_from": "core",
+  "group": "grp.src_core_simulation_model_jl",
+  "ui": {
+    "pos_overrides": {
+      "parcore.simulation_model_simulationmodel": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parcore.simulation_model_simulationmodel"
+  ]
+}

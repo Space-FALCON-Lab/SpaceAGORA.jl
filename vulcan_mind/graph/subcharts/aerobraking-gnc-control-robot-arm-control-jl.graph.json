@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-control-robot-arm-control-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/robot_arm_control.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_control_robot_arm_control_jl",
+    "layout_of": "4393e0043ce20562"
+  },
+  "derives_from": "aerobraking-gnc-control",
+  "group": "grp.src_gnc_control_robot_arm_control_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.robot_arm_control_init_robot_arm_joint_mpc": [
+        80.0,
+        80.0
+      ],
+      "gnc.robot_arm_control_robot_arm_joint_mpc_reference_preview": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.robot_arm_control_init_robot_arm_joint_mpc",
+    "gnc.robot_arm_control_robot_arm_joint_mpc_reference_preview"
+  ]
+}

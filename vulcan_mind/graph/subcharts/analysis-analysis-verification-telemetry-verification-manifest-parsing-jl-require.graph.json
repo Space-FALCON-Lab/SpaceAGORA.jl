@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl-require",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/manifest_parsing.jl · _require* (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/manifest_parsing.jl#_require",
+    "layout_of": "97d79754ce6efb85"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl",
+  "group": "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_require",
+  "ui": {
+    "pos_overrides": {
+      "analysis.manifest_parsing__require_float": [
+        80.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__require_int": [
+        80.0,
+        230.0
+      ],
+      "analysis.manifest_parsing__require_key": [
+        400.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__require_str": [
+        80.0,
+        380.0
+      ],
+      "analysis.manifest_parsing__require_str_vector": [
+        80.0,
+        530.0
+      ],
+      "analysis.manifest_parsing__require_table": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.manifest_parsing__require_float",
+    "analysis.manifest_parsing__require_int",
+    "analysis.manifest_parsing__require_key",
+    "analysis.manifest_parsing__require_str",
+    "analysis.manifest_parsing__require_str_vector",
+    "analysis.manifest_parsing__require_table"
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-callbacks",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_callbacks",
+    "layout_of": "79cffe0f80095b01"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_simulation_callbacks",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_simulation_callbacks_control_callbacks_jl": [
+        400.0,
+        80.0
+      ],
+      "grp.src_simulation_callbacks_density_callbacks": [
+        80.0,
+        80.0
+      ],
+      "grp.src_simulation_callbacks_event_callbacks_jl": [
+        400.0,
+        230.0
+      ],
+      "grp.src_simulation_callbacks_registry_jl": [
+        720.0,
+        80.0
+      ],
+      "grp.src_simulation_callbacks_save_fields_jl": [
+        400.0,
+        380.0
+      ],
+      "grp.src_simulation_callbacks_small": [
+        400.0,
+        530.0
+      ],
+      "grp.src_simulation_callbacks_thermal_callbacks_jl": [
+        400.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.assembly__append_callback",
+    "simulation.assembly__append_callbacks",
+    "simulation.assembly__requires_drag_state_callback",
+    "simulation.assembly__requires_entry_end_callback",
+    "simulation.assembly__requires_orbit_end_callback",
+    "simulation.assembly__requires_quaternion_projection_callback",
+    "simulation.assembly__requires_staged_density_callback",
+    "simulation.assembly__requires_thermal_callback",
+    "simulation.event_callbacks_get_data_saving_callback",
+    "simulation.event_callbacks_get_drag_state_callback",
+    "simulation.event_callbacks_get_entry_end_callback",
+    "simulation.event_callbacks_get_orbit_end_callback",
+    "simulation.event_callbacks_get_quaternion_projection_callback",
+    "simulation.navigation_guidance_callbacks_get_guidance_callbacks",
+    "simulation.registry__simulation_engine_module",
+    "simulation.save_fields__resolve_save_fields",
+    "simulation.save_fields__save_altitude",
+    "simulation.save_fields__save_cross",
+    "simulation.save_fields__save_drag",
+    "simulation.save_fields__save_heat_load",
+    "simulation.save_fields__save_heat_rate",
+    "simulation.save_fields__save_latitude_deg",
+    "simulation.save_fields__save_lift",
+    "simulation.save_fields__save_longitude_deg",
+    "simulation.save_fields__save_mass",
+    "simulation.save_fields__save_periapsis_altitude",
+    "simulation.save_fields__save_positions",
+    "simulation.save_fields__save_quaternion",
+    "simulation.save_fields__save_snapshot",
+    "simulation.save_fields__save_velocities",
+    "simulation.save_fields__save_wind",
+    "simulation.save_fields_savefield",
+    "simulation_a.assembly_get_callbacks",
+    "simulation_a.control_callbacks_get_control_callbacks",
+    "simulation_a.density_config_snapshot_callback_env_config",
+    "simulation_a.event_callbacks_get_impact_callback",
+    "simulation_a.navigation_guidance_callbacks_get_navigation_callbacks",
+    "simulation_a.planet_frame_update_planet_frame_callback",
+    "simulation_a.runtime_get_density_callback",
+    "simulation_a.save_fields_default_save_fields",
+    "simulation_a.thermal_callbacks_get_thermal_callback"
+  ]
+}

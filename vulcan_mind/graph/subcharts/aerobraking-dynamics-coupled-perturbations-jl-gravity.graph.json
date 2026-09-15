@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-dynamics-coupled-perturbations-jl-gravity",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl · gravity* (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_dynamics_coupled_perturbations_jl_gravity",
+    "layout_of": "36971a5606388460"
+  },
+  "derives_from": "aerobraking-dynamics-coupled-perturbations-jl",
+  "group": "grp.src_dynamics_coupled_perturbations_jl_gravity",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.perturbations_gravity_backbone_structure": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations_gravity_backbone_structure"
+  ]
+}

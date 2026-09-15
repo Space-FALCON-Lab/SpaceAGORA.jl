@@ -1,0 +1,159 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "vehicle-vehicle-spacecraft",
+  "chart_kind": "sub",
+  "title": "vehicle/spacecraft/ (vehicle)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/vehicle/spacecraft",
+    "layout_of": "28955a168cce1ee9"
+  },
+  "derives_from": "vehicle",
+  "group": "grp.src_vehicle_spacecraft",
+  "ui": {
+    "pos_overrides": {
+      "vehicle.assembly_add_facet_bang": [
+        80.0,
+        80.0
+      ],
+      "vehicle.assembly_add_joint_bang": [
+        80.0,
+        230.0
+      ],
+      "vehicle.assembly_add_magnet_bang": [
+        80.0,
+        380.0
+      ],
+      "vehicle.assembly_add_thruster_bang": [
+        80.0,
+        530.0
+      ],
+      "vehicle.assembly_assembly": [
+        80.0,
+        680.0
+      ],
+      "vehicle.components_components": [
+        80.0,
+        830.0
+      ],
+      "vehicle.components_create_facet_list": [
+        80.0,
+        980.0
+      ],
+      "vehicle.components_facet": [
+        400.0,
+        80.0
+      ],
+      "vehicle.components_magnet": [
+        80.0,
+        1130.0
+      ],
+      "vehicle.components_reactionwheelassembly": [
+        80.0,
+        1280.0
+      ],
+      "vehicle.model__initial_condition_apsis_direction_ii": [
+        400.0,
+        230.0
+      ],
+      "vehicle.model__initial_condition_lpi": [
+        400.0,
+        380.0
+      ],
+      "vehicle.model__initial_condition_oblate_altitude": [
+        400.0,
+        530.0
+      ],
+      "vehicle.model__initial_condition_oblate_surface_radius": [
+        400.0,
+        680.0
+      ],
+      "vehicle.model__initial_condition_radius_for_oblate_altitude": [
+        80.0,
+        1430.0
+      ],
+      "vehicle.model_abstractinitialcondition": [
+        80.0,
+        1580.0
+      ],
+      "vehicle.model_cartesianinitialcondition": [
+        80.0,
+        1730.0
+      ],
+      "vehicle.model_controlmodel": [
+        80.0,
+        1880.0
+      ],
+      "vehicle.model_dynamicsmodel": [
+        80.0,
+        2030.0
+      ],
+      "vehicle.model_guidancemodel": [
+        80.0,
+        2180.0
+      ],
+      "vehicle.model_initialcondition": [
+        400.0,
+        830.0
+      ],
+      "vehicle.model_joint": [
+        80.0,
+        2330.0
+      ],
+      "vehicle.model_link": [
+        80.0,
+        2480.0
+      ],
+      "vehicle.model_navigationmodel": [
+        80.0,
+        2630.0
+      ],
+      "vehicle.model_spacecraftmodels": [
+        80.0,
+        2780.0
+      ],
+      "vehx.spacecraft_assembly_add_body_bang": [
+        80.0,
+        2930.0
+      ],
+      "vehx.spacecraft_components_thruster": [
+        80.0,
+        3080.0
+      ],
+      "vehx.spacecraft_model_spacecraftmodel": [
+        80.0,
+        3230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "vehicle.assembly_add_facet_bang",
+    "vehicle.assembly_add_joint_bang",
+    "vehicle.assembly_add_magnet_bang",
+    "vehicle.assembly_add_thruster_bang",
+    "vehicle.assembly_assembly",
+    "vehicle.components_components",
+    "vehicle.components_create_facet_list",
+    "vehicle.components_facet",
+    "vehicle.components_magnet",
+    "vehicle.components_reactionwheelassembly",
+    "vehicle.model__initial_condition_apsis_direction_ii",
+    "vehicle.model__initial_condition_lpi",
+    "vehicle.model__initial_condition_oblate_altitude",
+    "vehicle.model__initial_condition_oblate_surface_radius",
+    "vehicle.model__initial_condition_radius_for_oblate_altitude",
+    "vehicle.model_abstractinitialcondition",
+    "vehicle.model_cartesianinitialcondition",
+    "vehicle.model_controlmodel",
+    "vehicle.model_dynamicsmodel",
+    "vehicle.model_guidancemodel",
+    "vehicle.model_initialcondition",
+    "vehicle.model_joint",
+    "vehicle.model_link",
+    "vehicle.model_navigationmodel",
+    "vehicle.model_spacecraftmodels",
+    "vehx.spacecraft_assembly_add_body_bang",
+    "vehx.spacecraft_components_thruster",
+    "vehx.spacecraft_model_spacecraftmodel"
+  ]
+}

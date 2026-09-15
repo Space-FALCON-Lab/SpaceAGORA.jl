@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-path-retiming-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/path_retiming.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr/path_retiming.jl",
+    "layout_of": "5f2db2b157a68483"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-hypr",
+  "group": "grp.src_gnc_guidance_rpo_hypr_path_retiming_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.path_retiming_rpo_arc_length_params": [
+        400.0,
+        80.0
+      ],
+      "gnc.path_retiming_rpo_curvature_from_samples": [
+        400.0,
+        230.0
+      ],
+      "gnc.path_retiming_rpo_interpolate_along_path": [
+        400.0,
+        380.0
+      ],
+      "gnc.path_retiming_rpo_remove_near_duplicate_samples": [
+        400.0,
+        530.0
+      ],
+      "gncy.path_retiming_rpo_retime_path": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.path_retiming_rpo_arc_length_params",
+    "gnc.path_retiming_rpo_curvature_from_samples",
+    "gnc.path_retiming_rpo_interpolate_along_path",
+    "gnc.path_retiming_rpo_remove_near_duplicate_samples",
+    "gncy.path_retiming_rpo_retime_path"
+  ]
+}

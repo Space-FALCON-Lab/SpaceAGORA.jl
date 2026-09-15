@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-density-callbacks-vacuum-predicted-gram-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl",
+    "layout_of": "a9d96cb77ec58938"
+  },
+  "derives_from": "simulation-simulation-callbacks-density-callbacks",
+  "group": "grp.src_simulation_callbacks_density_callbacks_vacuum_predicted_gram_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.vacuum_predicted_gram__eval_natural_cubic_spline": [
+        400.0,
+        80.0
+      ],
+      "simulation.vacuum_predicted_gram__interp_vacuum_alt": [
+        80.0,
+        80.0
+      ],
+      "simulation.vacuum_predicted_gram__interp_vacuum_position": [
+        400.0,
+        230.0
+      ],
+      "simulation.vacuum_predicted_gram__interp_vacuum_wind": [
+        400.0,
+        380.0
+      ],
+      "simulation.vacuum_predicted_gram__natural_cubic_spline_build_bang": [
+        400.0,
+        680.0
+      ],
+      "simulation.vacuum_predicted_gram__query_vacuum_gram_cache__query_vacuum_gram_cache_bang": [
+        80.0,
+        230.0
+      ],
+      "simulation.vacuum_predicted_gram__vacuum_gram_cache_enabled": [
+        80.0,
+        380.0
+      ],
+      "simulation.vacuum_predicted_gram__vacuum_gram_cache_for_sat_bang": [
+        80.0,
+        530.0
+      ],
+      "simulation.vacuum_predicted_gram__vacuum_gram_cache_npoints": [
+        80.0,
+        680.0
+      ],
+      "simulation.vacuum_predicted_gram__vacuum_j2_accel": [
+        720.0,
+        80.0
+      ],
+      "simulation.vacuum_predicted_gram__vacuum_rk4_step": [
+        400.0,
+        830.0
+      ],
+      "simulation.vacuum_predicted_gram_vacuumpredictedgramcache": [
+        400.0,
+        530.0
+      ],
+      "simulation_a.vacuum_predicted_gram_build_vacuum_gram_cache__build_vacuum_gram_cache_bang": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.vacuum_predicted_gram__eval_natural_cubic_spline",
+    "simulation.vacuum_predicted_gram__interp_vacuum_alt",
+    "simulation.vacuum_predicted_gram__interp_vacuum_position",
+    "simulation.vacuum_predicted_gram__interp_vacuum_wind",
+    "simulation.vacuum_predicted_gram__natural_cubic_spline_build_bang",
+    "simulation.vacuum_predicted_gram__query_vacuum_gram_cache__query_vacuum_gram_cache_bang",
+    "simulation.vacuum_predicted_gram__vacuum_gram_cache_enabled",
+    "simulation.vacuum_predicted_gram__vacuum_gram_cache_for_sat_bang",
+    "simulation.vacuum_predicted_gram__vacuum_gram_cache_npoints",
+    "simulation.vacuum_predicted_gram__vacuum_j2_accel",
+    "simulation.vacuum_predicted_gram__vacuum_rk4_step",
+    "simulation.vacuum_predicted_gram_vacuumpredictedgramcache",
+    "simulation_a.vacuum_predicted_gram_build_vacuum_gram_cache__build_vacuum_gram_cache_bang"
+  ]
+}

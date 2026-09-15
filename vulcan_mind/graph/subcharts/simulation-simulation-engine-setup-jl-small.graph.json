@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-setup-jl-small",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl/ (small files) (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/setup.jl#_small",
+    "layout_of": "9281f75c371d8f14"
+  },
+  "derives_from": "simulation-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_small",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__any_effector_consumes_atmosphere": [
+        400.0,
+        1580.0
+      ],
+      "simulation.setup__body_query_names_reuse_key": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__cache_from_nbody_ephemeris_payload": [
+        400.0,
+        80.0
+      ],
+      "simulation.setup__cache_time_key": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__clear_ephemeris_reuse_cache_bang": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__collect_nbody_query_names": [
+        400.0,
+        380.0
+      ],
+      "simulation.setup__density_without_aero_warning_enabled": [
+        400.0,
+        1730.0
+      ],
+      "simulation.setup__ensure_rhs_effector_cost_model_bang": [
+        400.0,
+        1430.0
+      ],
+      "simulation.setup__ephemerides_model_reuse_key": [
+        80.0,
+        530.0
+      ],
+      "simulation.setup__ephemerides_time_seconds_flexible": [
+        400.0,
+        530.0
+      ],
+      "simulation.setup__gram_per_sat_instances_enabled": [
+        80.0,
+        680.0
+      ],
+      "simulation.setup__harmonics_batch_allow_with_outer": [
+        400.0,
+        1130.0
+      ],
+      "simulation.setup__has_active_nbody_effector": [
+        400.0,
+        680.0
+      ],
+      "simulation.setup__has_active_srp_effector": [
+        80.0,
+        830.0
+      ],
+      "simulation.setup__increment_atomic_counter_bang": [
+        400.0,
+        1880.0
+      ],
+      "simulation.setup__is_nbody_effector_like": [
+        720.0,
+        230.0
+      ],
+      "simulation.setup__load_nbody_ephemeris_cache_bang": [
+        80.0,
+        980.0
+      ],
+      "simulation.setup__mission_is_long_for_effector_threads": [
+        80.0,
+        1130.0
+      ],
+      "simulation.setup__payload_field": [
+        720.0,
+        80.0
+      ],
+      "simulation.setup__policy_env_config": [
+        80.0,
+        1280.0
+      ],
+      "simulation.setup__prewarm_nbody_ephemeris_cache": [
+        80.0,
+        1430.0
+      ],
+      "simulation.setup__prewarmed_nbody_ephemeris_lookup": [
+        400.0,
+        830.0
+      ],
+      "simulation.setup__profile_forces_serial_rhs": [
+        400.0,
+        1280.0
+      ],
+      "simulation.setup__register_prewarmed_nbody_ephemeris_cache_bang": [
+        400.0,
+        230.0
+      ],
+      "simulation.setup__reset_spice_rhs_memo_bang": [
+        80.0,
+        1580.0
+      ],
+      "simulation.setup__reset_spice_runtime_counters_bang": [
+        80.0,
+        1730.0
+      ],
+      "simulation.setup__satellite_batch_saturates_pool": [
+        80.0,
+        1880.0
+      ],
+      "simulation.setup__snapshot_rhs_plan_env_config": [
+        80.0,
+        2030.0
+      ],
+      "simulation.setup__spice_rhs_memo_enabled": [
+        80.0,
+        2180.0
+      ],
+      "simulation.setup__spice_runtime_counters_snapshot": [
+        80.0,
+        2330.0
+      ],
+      "simulation.setup__update_effector_cost_model_bang": [
+        80.0,
+        2480.0
+      ],
+      "simulation.setup__update_rhs_effector_cost_model_bang": [
+        80.0,
+        2630.0
+      ],
+      "simulation.setup__warn_density_without_atmospheric_effector": [
+        80.0,
+        2780.0
+      ],
+      "simulation.setup__with_serial_effector_decision": [
+        80.0,
+        2930.0
+      ],
+      "simulation.setup__write_nbody_ephemeris_cache_file_bang": [
+        400.0,
+        980.0
+      ],
+      "simx.engine_setup_build_nbody_ephemeris_cache": [
+        80.0,
+        3080.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__any_effector_consumes_atmosphere",
+    "simulation.setup__body_query_names_reuse_key",
+    "simulation.setup__cache_from_nbody_ephemeris_payload",
+    "simulation.setup__cache_time_key",
+    "simulation.setup__clear_ephemeris_reuse_cache_bang",
+    "simulation.setup__collect_nbody_query_names",
+    "simulation.setup__density_without_aero_warning_enabled",
+    "simulation.setup__ensure_rhs_effector_cost_model_bang",
+    "simulation.setup__ephemerides_model_reuse_key",
+    "simulation.setup__ephemerides_time_seconds_flexible",
+    "simulation.setup__gram_per_sat_instances_enabled",
+    "simulation.setup__harmonics_batch_allow_with_outer",
+    "simulation.setup__has_active_nbody_effector",
+    "simulation.setup__has_active_srp_effector",
+    "simulation.setup__increment_atomic_counter_bang",
+    "simulation.setup__is_nbody_effector_like",
+    "simulation.setup__load_nbody_ephemeris_cache_bang",
+    "simulation.setup__mission_is_long_for_effector_threads",
+    "simulation.setup__payload_field",
+    "simulation.setup__policy_env_config",
+    "simulation.setup__prewarm_nbody_ephemeris_cache",
+    "simulation.setup__prewarmed_nbody_ephemeris_lookup",
+    "simulation.setup__profile_forces_serial_rhs",
+    "simulation.setup__register_prewarmed_nbody_ephemeris_cache_bang",
+    "simulation.setup__reset_spice_rhs_memo_bang",
+    "simulation.setup__reset_spice_runtime_counters_bang",
+    "simulation.setup__satellite_batch_saturates_pool",
+    "simulation.setup__snapshot_rhs_plan_env_config",
+    "simulation.setup__spice_rhs_memo_enabled",
+    "simulation.setup__spice_runtime_counters_snapshot",
+    "simulation.setup__update_effector_cost_model_bang",
+    "simulation.setup__update_rhs_effector_cost_model_bang",
+    "simulation.setup__warn_density_without_atmospheric_effector",
+    "simulation.setup__with_serial_effector_decision",
+    "simulation.setup__write_nbody_ephemeris_cache_file_bang",
+    "simx.engine_setup_build_nbody_ephemeris_cache"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-runtime-services-jl",
+  "chart_kind": "sub",
+  "title": "simulation/runtime_services.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/runtime_services.jl",
+    "layout_of": "675e3e23b6dab07b"
+  },
+  "derives_from": "simulation",
+  "group": "grp.src_simulation_runtime_services_jl",
+  "ui": {
+    "pos_overrides": {
+      "simx.runtime_services_runtimeservices": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simx.runtime_services_runtimeservices"
+  ]
+}

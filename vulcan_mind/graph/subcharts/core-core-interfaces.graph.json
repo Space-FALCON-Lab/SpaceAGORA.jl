@@ -1,0 +1,154 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "core-core-interfaces",
+  "chart_kind": "sub",
+  "title": "core/interfaces/ (core)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/core/interfaces",
+    "layout_of": "31f4200258c71f3b"
+  },
+  "derives_from": "core",
+  "group": "grp.src_core_interfaces",
+  "ui": {
+    "pos_overrides": {
+      "core.reference_system__body_fixed_state_xform": [
+        1040.0,
+        530.0
+      ],
+      "core.reference_system__body_fixed_to_j2000_state": [
+        720.0,
+        680.0
+      ],
+      "core.reference_system__j2000_to_body_fixed_state": [
+        720.0,
+        830.0
+      ],
+      "core.reference_system__planet_flattening": [
+        400.0,
+        530.0
+      ],
+      "core.reference_system__rtn_rate_rad_s": [
+        720.0,
+        80.0
+      ],
+      "core.reference_system__rvtoorbitalelement_core": [
+        720.0,
+        530.0
+      ],
+      "core.reference_system__safe_acos": [
+        1040.0,
+        230.0
+      ],
+      "core.reference_system__spice_body_fixed_frame": [
+        1040.0,
+        680.0
+      ],
+      "core.reference_system__spice_lock": [
+        1360.0,
+        80.0
+      ],
+      "core.reference_system__wrap_2pi": [
+        1040.0,
+        380.0
+      ],
+      "core.reference_system_alfadeltartor": [
+        80.0,
+        80.0
+      ],
+      "core.reference_system_inertial_to_rtn_relative_state": [
+        80.0,
+        230.0
+      ],
+      "core.reference_system_latlongtoned": [
+        80.0,
+        380.0
+      ],
+      "core.reference_system_latlongtooe": [
+        80.0,
+        530.0
+      ],
+      "core.reference_system_latlongtor": [
+        80.0,
+        680.0
+      ],
+      "core.reference_system_orbital_elements_to_lvlh_quaternion": [
+        400.0,
+        230.0
+      ],
+      "core.reference_system_orbitalelemtorv": [
+        80.0,
+        830.0
+      ],
+      "core.reference_system_r_intor_p_bang": [
+        720.0,
+        980.0
+      ],
+      "core.reference_system_r_pintor_i": [
+        720.0,
+        1130.0
+      ],
+      "core.reference_system_rotate_vector_by_quaternion": [
+        720.0,
+        380.0
+      ],
+      "core.reference_system_rtn_accel_to_inertial": [
+        720.0,
+        230.0
+      ],
+      "core.reference_system_rtn_dcm_from_inertial": [
+        1040.0,
+        80.0
+      ],
+      "core.reference_system_rtn_to_inertial_relative_state": [
+        400.0,
+        80.0
+      ],
+      "core.reference_system_rtoalfadeltar": [
+        80.0,
+        980.0
+      ],
+      "core.reference_system_rtolatlong": [
+        80.0,
+        1130.0
+      ],
+      "core.reference_system_rtolatlongrad": [
+        80.0,
+        1280.0
+      ],
+      "parcore.reference_system_rvtoorbitalelement": [
+        400.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.reference_system__body_fixed_state_xform",
+    "core.reference_system__body_fixed_to_j2000_state",
+    "core.reference_system__j2000_to_body_fixed_state",
+    "core.reference_system__planet_flattening",
+    "core.reference_system__rtn_rate_rad_s",
+    "core.reference_system__rvtoorbitalelement_core",
+    "core.reference_system__safe_acos",
+    "core.reference_system__spice_body_fixed_frame",
+    "core.reference_system__spice_lock",
+    "core.reference_system__wrap_2pi",
+    "core.reference_system_alfadeltartor",
+    "core.reference_system_inertial_to_rtn_relative_state",
+    "core.reference_system_latlongtoned",
+    "core.reference_system_latlongtooe",
+    "core.reference_system_latlongtor",
+    "core.reference_system_orbital_elements_to_lvlh_quaternion",
+    "core.reference_system_orbitalelemtorv",
+    "core.reference_system_r_intor_p_bang",
+    "core.reference_system_r_pintor_i",
+    "core.reference_system_rotate_vector_by_quaternion",
+    "core.reference_system_rtn_accel_to_inertial",
+    "core.reference_system_rtn_dcm_from_inertial",
+    "core.reference_system_rtn_to_inertial_relative_state",
+    "core.reference_system_rtoalfadeltar",
+    "core.reference_system_rtolatlong",
+    "core.reference_system_rtolatlongrad",
+    "parcore.reference_system_rvtoorbitalelement"
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-dynamics-rhs-jl-rhs",
+  "chart_kind": "sub",
+  "title": "simulation/engine/dynamics_rhs.jl · _rhs* (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/dynamics_rhs.jl#_rhs",
+    "layout_of": "3c360e248b3bfaee"
+  },
+  "derives_from": "simulation-simulation-engine-dynamics-rhs-jl",
+  "group": "grp.src_simulation_engine_dynamics_rhs_jl_rhs",
+  "ui": {
+    "pos_overrides": {
+      "simulation.dynamics_rhs__rhs_effector_cost_rank": [
+        1680.0,
+        80.0
+      ],
+      "simulation.dynamics_rhs__rhs_effector_estimated_cost_ns": [
+        1040.0,
+        80.0
+      ],
+      "simulation.dynamics_rhs__rhs_effector_static_cost_ns": [
+        1360.0,
+        80.0
+      ],
+      "simulation.dynamics_rhs__rhs_flat_item_eff_idx": [
+        1040.0,
+        230.0
+      ],
+      "simulation.dynamics_rhs__rhs_flat_item_estimated_cost_ns": [
+        720.0,
+        80.0
+      ],
+      "simulation.dynamics_rhs__rhs_flat_packet_work_stats": [
+        400.0,
+        80.0
+      ],
+      "simulation.dynamics_rhs__rhs_flat_state_sample_from_buffers": [
+        80.0,
+        80.0
+      ],
+      "simulation.dynamics_rhs__rhs_flat_use_packet_scheduler": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.dynamics_rhs__rhs_effector_cost_rank",
+    "simulation.dynamics_rhs__rhs_effector_estimated_cost_ns",
+    "simulation.dynamics_rhs__rhs_effector_static_cost_ns",
+    "simulation.dynamics_rhs__rhs_flat_item_eff_idx",
+    "simulation.dynamics_rhs__rhs_flat_item_estimated_cost_ns",
+    "simulation.dynamics_rhs__rhs_flat_packet_work_stats",
+    "simulation.dynamics_rhs__rhs_flat_state_sample_from_buffers",
+    "simulation.dynamics_rhs__rhs_flat_use_packet_scheduler"
+  ]
+}

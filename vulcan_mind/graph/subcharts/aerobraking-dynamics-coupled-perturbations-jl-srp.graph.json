@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-dynamics-coupled-perturbations-jl-srp",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl · _srp* (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_dynamics_coupled_perturbations_jl_srp",
+    "layout_of": "909fa315c89613b5"
+  },
+  "derives_from": "aerobraking-dynamics-coupled-perturbations-jl",
+  "group": "grp.src_dynamics_coupled_perturbations_jl_srp",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.perturbations__srp_sun_position_from_spice_direct_j2000_m": [
+        80.0,
+        80.0
+      ],
+      "dynamics.perturbations__srp_sun_position_from_spice_memoized_j2000_m": [
+        80.0,
+        230.0
+      ],
+      "dynamics.perturbations__srp_total_acceleration_ii": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations__srp_sun_position_from_spice_direct_j2000_m",
+    "dynamics.perturbations__srp_sun_position_from_spice_memoized_j2000_m",
+    "dynamics.perturbations__srp_total_acceleration_ii"
+  ]
+}

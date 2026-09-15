@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-setup-jl-typed",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _typed* (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/setup.jl#_typed",
+    "layout_of": "d41d51686f536cc8"
+  },
+  "derives_from": "simulation-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_typed",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__typed_allow_transition_normalize": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__typed_checkpoint_enabled": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__typed_normalize_warning_enabled": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__typed_save_bundle_enabled": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__typed_allow_transition_normalize",
+    "simulation.setup__typed_checkpoint_enabled",
+    "simulation.setup__typed_normalize_warning_enabled",
+    "simulation.setup__typed_save_bundle_enabled"
+  ]
+}

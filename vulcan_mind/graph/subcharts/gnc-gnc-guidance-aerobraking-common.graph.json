@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-aerobraking-common",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/aerobraking/common/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/aerobraking/common",
+    "layout_of": "d1fa54ad5c0019cf"
+  },
+  "derives_from": "gnc-gnc-guidance-aerobraking",
+  "group": "grp.src_gnc_guidance_aerobraking_common",
+  "ui": {
+    "pos_overrides": {
+      "gnc.closed_form_solution_closed_form_calculation": [
+        720.0,
+        80.0
+      ],
+      "gnc.closed_form_solution_results": [
+        720.0,
+        230.0
+      ],
+      "gnc.heat_rate_models_aoa": [
+        400.0,
+        80.0
+      ],
+      "gnc.heat_rate_models_func": [
+        80.0,
+        80.0
+      ],
+      "gncx.closed_form_solution_closed_form": [
+        400.0,
+        230.0
+      ],
+      "gncx.heat_rate_models_lambdas": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.closed_form_solution_closed_form_calculation",
+    "gnc.closed_form_solution_results",
+    "gnc.heat_rate_models_aoa",
+    "gnc.heat_rate_models_func",
+    "gncx.closed_form_solution_closed_form",
+    "gncx.heat_rate_models_lambdas"
+  ]
+}

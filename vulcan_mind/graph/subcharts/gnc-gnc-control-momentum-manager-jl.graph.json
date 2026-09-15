@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-control-momentum-manager-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/momentum_manager.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/control/momentum_manager.jl",
+    "layout_of": "ce6af797bd0618e7"
+  },
+  "derives_from": "gnc-gnc-control",
+  "group": "grp.src_gnc_control_momentum_manager_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.momentum_manager_calccontroleffect_bang": [
+        80.0,
+        80.0
+      ],
+      "gnc.momentum_manager_calccontrolforcetorque": [
+        80.0,
+        230.0
+      ],
+      "gncx.momentum_manager_magneticmomentummanagermodel": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.momentum_manager_calccontroleffect_bang",
+    "gnc.momentum_manager_calccontrolforcetorque",
+    "gncx.momentum_manager_magneticmomentummanagermodel"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-analysis-verification",
+  "chart_kind": "sub",
+  "title": "analysis/verification/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_analysis_verification",
+    "layout_of": "fa01abab83ab83cb"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_analysis_verification",
+  "ui": {
+    "pos_overrides": {
+      "analysis.ic_fit_float64": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.ic_fit_float64"
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-rrt-connect-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/rrt_connect.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr/rrt_connect.jl",
+    "layout_of": "d921a9a000b47bc3"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-hypr",
+  "group": "grp.src_gnc_guidance_rpo_hypr_rrt_connect_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.rrt_connect_rpo_rrt_collision_min_ds_m": [
+        1360.0,
+        80.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_connect_bang": [
+        400.0,
+        1130.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_connect_bezier_plan_path": [
+        80.0,
+        80.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_connect_join_paths": [
+        400.0,
+        1280.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_extend_bang": [
+        720.0,
+        380.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_near_indices": [
+        720.0,
+        80.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_nearest_index": [
+        1040.0,
+        80.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_random_state": [
+        400.0,
+        680.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_refresh_subtree_costs_bang": [
+        720.0,
+        230.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_segment_is_safe": [
+        1040.0,
+        230.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_shortcut_path": [
+        400.0,
+        830.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_star_add_node_bang": [
+        400.0,
+        80.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_star_plan_path": [
+        80.0,
+        230.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_steer": [
+        1040.0,
+        380.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_tree_path": [
+        400.0,
+        230.0
+      ],
+      "gnc.rrt_connect_rporrtconnectsettings": [
+        400.0,
+        380.0
+      ],
+      "gnc.rrt_connect_rporrtconnecttree": [
+        400.0,
+        980.0
+      ],
+      "gnc.rrt_connect_rporrtstarsettings": [
+        400.0,
+        530.0
+      ],
+      "gncy.rrt_connect_rpo_rrt_connect_plan_path": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.rrt_connect_rpo_rrt_collision_min_ds_m",
+    "gnc.rrt_connect_rpo_rrt_connect_bang",
+    "gnc.rrt_connect_rpo_rrt_connect_bezier_plan_path",
+    "gnc.rrt_connect_rpo_rrt_connect_join_paths",
+    "gnc.rrt_connect_rpo_rrt_extend_bang",
+    "gnc.rrt_connect_rpo_rrt_near_indices",
+    "gnc.rrt_connect_rpo_rrt_nearest_index",
+    "gnc.rrt_connect_rpo_rrt_random_state",
+    "gnc.rrt_connect_rpo_rrt_refresh_subtree_costs_bang",
+    "gnc.rrt_connect_rpo_rrt_segment_is_safe",
+    "gnc.rrt_connect_rpo_rrt_shortcut_path",
+    "gnc.rrt_connect_rpo_rrt_star_add_node_bang",
+    "gnc.rrt_connect_rpo_rrt_star_plan_path",
+    "gnc.rrt_connect_rpo_rrt_steer",
+    "gnc.rrt_connect_rpo_rrt_tree_path",
+    "gnc.rrt_connect_rporrtconnectsettings",
+    "gnc.rrt_connect_rporrtconnecttree",
+    "gnc.rrt_connect_rporrtstarsettings",
+    "gncy.rrt_connect_rpo_rrt_connect_plan_path"
+  ]
+}

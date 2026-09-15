@@ -1,0 +1,1247 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "assets",
+  "chart_kind": "sub",
+  "title": "RPOStationAssets — internals",
+  "derives_from": "master",
+  "local_nodes": [
+    {
+      "id": "assets.load_rpo_station_pointcloud",
+      "label": "load_rpo_station_pointcloud",
+      "kind": "function",
+      "doc": "nodes/assets/load_rpo_station_pointcloud.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "load_rpo_station_pointcloud",
+        "lines": [
+          27,
+          41
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "RPOStationAssets namespace supplying station path resolution and geometry conventions."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "pointcloud",
+            "type": "Matrix{Float64}",
+            "units": "m",
+            "description": "Three-by-N station point matrix loaded from the selected repository geometry asset."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          80.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets__center_triangles_bang",
+      "label": "_center_triangles!",
+      "kind": "function",
+      "doc": "nodes/assets/rpo_station_assets__center_triangles_bang.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "_center_triangles!",
+        "lines": [
+          99,
+          99
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "triangles",
+            "type": "Matrix{Float64}",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `triangles`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_center_triangles!`; mutates `triangles` in place. Returns `triangles`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          1040.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets__load_stl_triangles",
+      "label": "_load_stl_triangles",
+      "kind": "function",
+      "doc": "nodes/assets/rpo_station_assets__load_stl_triangles.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "_load_stl_triangles",
+        "lines": [
+          54,
+          54
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "path",
+            "type": "AbstractString",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `path`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_load_stl_triangles`. Returns `open(path, \"r\") do io` or `triangles`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          1040.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets__sample_triangle_point",
+      "label": "_sample_triangle_point",
+      "kind": "function",
+      "doc": "nodes/assets/rpo_station_assets__sample_triangle_point.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "_sample_triangle_point",
+        "lines": [
+          106,
+          106
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "v1",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `v1`."
+          },
+          {
+            "id": "v2",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `v2`."
+          },
+          {
+            "id": "v3",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `v3`."
+          },
+          {
+            "id": "rng",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `rng`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_sample_triangle_point`. Returns `v1 .+ u .* (v2 .- v1) .+ v .* (v3 .- v1)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          1040.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets__stl_is_binary",
+      "label": "_stl_is_binary",
+      "kind": "function",
+      "doc": "nodes/assets/rpo_station_assets__stl_is_binary.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "_stl_is_binary",
+        "lines": [
+          44,
+          44
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "path",
+            "type": "AbstractString",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `path`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_stl_is_binary`. Returns `stat(path).size == 84 + 50 * Int(ntri)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          1360.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets__stl_pointcloud",
+      "label": "_stl_pointcloud",
+      "kind": "function",
+      "doc": "nodes/assets/rpo_station_assets__stl_pointcloud.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "_stl_pointcloud",
+        "lines": [
+          116,
+          116
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "path",
+            "type": "AbstractString",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `path`."
+          },
+          {
+            "id": "n_points",
+            "type": "Integer",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `n_points` (default `10000`)."
+          },
+          {
+            "id": "rng",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `rng` (default `Random.default_rng()`)."
+          },
+          {
+            "id": "center",
+            "type": "Bool",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `center` (default `true`)."
+          },
+          {
+            "id": "scale",
+            "type": "Real",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `scale` (default `1.0`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_stl_pointcloud`. Returns `points`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          720.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets_load_rpo_station_cad_pointcloud",
+      "label": "load_rpo_station_cad_pointcloud",
+      "kind": "function",
+      "doc": "nodes/assets/rpo_station_assets_load_rpo_station_cad_pointcloud.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "load_rpo_station_cad_pointcloud",
+        "lines": [
+          160,
+          160
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "kind",
+            "type": "Symbol",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `kind` (default `:gateway`)."
+          },
+          {
+            "id": "n_points",
+            "type": "Integer",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `n_points` (default `10000`)."
+          },
+          {
+            "id": "rng",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `rng` (default `MersenneTwister(42)`)."
+          },
+          {
+            "id": "center",
+            "type": "Bool",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `center` (default `true`)."
+          },
+          {
+            "id": "scale",
+            "type": "Real",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `scale` (default `1.0`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `load_rpo_station_cad_pointcloud`. Returns `_stl_pointcloud(path; n_points=n_points, rng=rng, center=center, scale=scale)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          400.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets_load_rpo_station_cad_triangles",
+      "label": "load_rpo_station_cad_triangles",
+      "kind": "function",
+      "doc": "nodes/assets/rpo_station_assets_load_rpo_station_cad_triangles.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "load_rpo_station_cad_triangles",
+        "lines": [
+          151,
+          151
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "kind",
+            "type": "Symbol",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `kind` (default `:gateway`)."
+          },
+          {
+            "id": "center",
+            "type": "Bool",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `center` (default `true`)."
+          },
+          {
+            "id": "scale",
+            "type": "Real",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `scale` (default `1.0`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `load_rpo_station_cad_triangles`. Returns `triangles`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          400.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets_rpostationassets",
+      "label": "RPOStationAssets",
+      "kind": "module",
+      "doc": "nodes/assets/rpo_station_assets_rpostationassets.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "RPOStationAssets",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Value produced by this symbol."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          400.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets_station_cad_path",
+      "label": "station_cad_path",
+      "kind": "function",
+      "doc": "nodes/assets/rpo_station_assets_station_cad_path.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "station_cad_path",
+        "lines": [
+          20,
+          20
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "kind",
+            "type": "Symbol",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `kind` (default `:gateway`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `station_cad_path`. Returns `joinpath(_STATION_GEOMETRY_ROOT, \"gateway\", \"Gateway_Core.stl\")`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          720.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "assets.rpo_station_assets_station_geometry_path",
+      "label": "station_geometry_path",
+      "kind": "function",
+      "doc": "nodes/assets/rpo_station_assets_station_geometry_path.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "station_geometry_path",
+        "lines": [
+          11,
+          11
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "kind",
+            "type": "Symbol",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `kind` (default `:demo`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `station_geometry_path`. Returns `joinpath(_STATION_GEOMETRY_ROOT, \"demo\", \"station_pointcloud.csv\")` or `station_cad_path(kind)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "ui": {
+        "pos": [
+          400.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "grp.assets",
+      "label": "RPOStationAssets — internals",
+      "kind": "group",
+      "doc": "nodes/assets/assets.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "members_in",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Calls into any member of this block from outside it."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "members_out",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls from any member of this block to nodes outside it."
+          }
+        ]
+      },
+      "expands": "module.assets",
+      "tags": [
+        "cluster"
+      ],
+      "origin": "agent"
+    }
+  ],
+  "local_edges": [
+    {
+      "id": "e:assets.load_rpo_station_pointcloud:callees->assets.rpo_station_assets_station_geometry_path:callers",
+      "from": {
+        "node": "assets.load_rpo_station_pointcloud",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets_station_geometry_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "station_geometry_path",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          29,
+          29
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets__load_stl_triangles:callees->assets.rpo_station_assets__stl_is_binary:callers",
+      "from": {
+        "node": "assets.rpo_station_assets__load_stl_triangles",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__stl_is_binary",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_stl_is_binary",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          55,
+          55
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets__load_stl_triangles:callees->gnc.pso_parameters_push_bang:callers",
+      "from": {
+        "node": "assets.rpo_station_assets__load_stl_triangles",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.pso_parameters_push_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "push!",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          88,
+          88
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets__stl_pointcloud:callees->analysis.ic_fit_float64:callers",
+      "from": {
+        "node": "assets.rpo_station_assets__stl_pointcloud",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "analysis.ic_fit_float64",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "Float64",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          119,
+          119
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets__stl_pointcloud:callees->assets.rpo_station_assets__center_triangles_bang:callers",
+      "from": {
+        "node": "assets.rpo_station_assets__stl_pointcloud",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__center_triangles_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_center_triangles!",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          120,
+          120
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets__stl_pointcloud:callees->assets.rpo_station_assets__load_stl_triangles:callers",
+      "from": {
+        "node": "assets.rpo_station_assets__stl_pointcloud",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__load_stl_triangles",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_load_stl_triangles",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          118,
+          118
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets__stl_pointcloud:callees->assets.rpo_station_assets__sample_triangle_point:callers",
+      "from": {
+        "node": "assets.rpo_station_assets__stl_pointcloud",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__sample_triangle_point",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_sample_triangle_point",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          141,
+          141
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets_load_rpo_station_cad_pointcloud:callees->assets.rpo_station_assets__stl_pointcloud:callers",
+      "from": {
+        "node": "assets.rpo_station_assets_load_rpo_station_cad_pointcloud",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__stl_pointcloud",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_stl_pointcloud",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          163,
+          163
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets_load_rpo_station_cad_pointcloud:callees->assets.rpo_station_assets_station_cad_path:callers",
+      "from": {
+        "node": "assets.rpo_station_assets_load_rpo_station_cad_pointcloud",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets_station_cad_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "station_cad_path",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          161,
+          161
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets_load_rpo_station_cad_triangles:callees->analysis.ic_fit_float64:callers",
+      "from": {
+        "node": "assets.rpo_station_assets_load_rpo_station_cad_triangles",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "analysis.ic_fit_float64",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "Float64",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          155,
+          155
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets_load_rpo_station_cad_triangles:callees->assets.rpo_station_assets__center_triangles_bang:callers",
+      "from": {
+        "node": "assets.rpo_station_assets_load_rpo_station_cad_triangles",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__center_triangles_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_center_triangles!",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          156,
+          156
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets_load_rpo_station_cad_triangles:callees->assets.rpo_station_assets__load_stl_triangles:callers",
+      "from": {
+        "node": "assets.rpo_station_assets_load_rpo_station_cad_triangles",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__load_stl_triangles",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_load_stl_triangles",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          154,
+          154
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets_load_rpo_station_cad_triangles:callees->assets.rpo_station_assets_station_cad_path:callers",
+      "from": {
+        "node": "assets.rpo_station_assets_load_rpo_station_cad_triangles",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets_station_cad_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "station_cad_path",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          152,
+          152
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:assets.rpo_station_assets_station_geometry_path:callees->assets.rpo_station_assets_station_cad_path:callers",
+      "from": {
+        "node": "assets.rpo_station_assets_station_geometry_path",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets_station_cad_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "station_cad_path",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "lines": [
+          15,
+          15
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->assets.rpo_station_assets__center_triangles_bang:module_api",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__center_triangles_bang",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->assets.rpo_station_assets__load_stl_triangles:module_api",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__load_stl_triangles",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->assets.rpo_station_assets__sample_triangle_point:module_api",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__sample_triangle_point",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->assets.rpo_station_assets__stl_is_binary:module_api",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__stl_is_binary",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->assets.rpo_station_assets__stl_pointcloud:module_api",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets__stl_pointcloud",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->assets.rpo_station_assets_load_rpo_station_cad_pointcloud:module_api",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets_load_rpo_station_cad_pointcloud",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->assets.rpo_station_assets_load_rpo_station_cad_triangles:module_api",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets_load_rpo_station_cad_triangles",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->assets.rpo_station_assets_rpostationassets:module_api",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets_rpostationassets",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->assets.rpo_station_assets_station_cad_path:module_api",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "assets.rpo_station_assets_station_cad_path",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    }
+  ],
+  "ui": {
+    "pos_overrides": {
+      "module.assets": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "module.assets"
+  ]
+}

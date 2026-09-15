@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-runner-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/runner.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/runner.jl",
+    "layout_of": "49b002c5d05c0a60"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_runner_jl",
+  "ui": {
+    "pos_overrides": {
+      "analysis.run_verification": [
+        80.0,
+        80.0
+      ],
+      "analysis.runner__final_run_or_reused_eval": [
+        1040.0,
+        80.0
+      ],
+      "analysis.runner__initial_condition_from_time_aligned_telemetry": [
+        1040.0,
+        230.0
+      ],
+      "analysis.runner__run_once": [
+        80.0,
+        230.0
+      ],
+      "analysis.runner__run_simulation_dataframe": [
+        1040.0,
+        380.0
+      ],
+      "analysis.runner__run_single_scenario": [
+        720.0,
+        80.0
+      ],
+      "analysis.runner__run_verification": [
+        400.0,
+        80.0
+      ],
+      "analysis.runner__select_scenarios": [
+        1360.0,
+        80.0
+      ],
+      "analysis.runner_run_study": [
+        80.0,
+        380.0
+      ],
+      "analysis.runner_run_verification_cli": [
+        400.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.run_verification",
+    "analysis.runner__final_run_or_reused_eval",
+    "analysis.runner__initial_condition_from_time_aligned_telemetry",
+    "analysis.runner__run_once",
+    "analysis.runner__run_simulation_dataframe",
+    "analysis.runner__run_single_scenario",
+    "analysis.runner__run_verification",
+    "analysis.runner__select_scenarios",
+    "analysis.runner_run_study",
+    "analysis.runner_run_verification_cli"
+  ]
+}

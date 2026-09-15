@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-environment-atmosphere",
+  "chart_kind": "sub",
+  "title": "environment/atmosphere/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_environment_atmosphere",
+    "layout_of": "f23ebdbd6770ca14"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_environment_atmosphere",
+  "ui": {
+    "pos_overrides": {
+      "environment.density_models__batch_elapsed_time": [
+        400.0,
+        530.0
+      ],
+      "environment.density_models__nrlmsise_ap_bins": [
+        80.0,
+        80.0
+      ],
+      "environment.density_models__nrlmsise_ap_value": [
+        400.0,
+        80.0
+      ],
+      "environment.density_models__nrlmsise_eval_datetime": [
+        80.0,
+        230.0
+      ],
+      "environment.density_models__nrlmsise_flux_value": [
+        80.0,
+        380.0
+      ],
+      "environment.density_models__planet_polyfit_valid_max_altitude_m": [
+        80.0,
+        530.0
+      ],
+      "environment.density_models__planet_polyfit_valid_min_altitude_m": [
+        400.0,
+        230.0
+      ],
+      "environment.density_models_exponentialatmospheremodel": [
+        80.0,
+        680.0
+      ],
+      "environment.density_models_getdensitybatch_bang": [
+        80.0,
+        830.0
+      ],
+      "environment.density_models_piecewiseexponentialatmospheremodel": [
+        80.0,
+        980.0
+      ],
+      "environment.density_models_polynomialfitatmospheremodel": [
+        400.0,
+        380.0
+      ],
+      "environment.density_models_timetabulatedatmospheremodel": [
+        720.0,
+        80.0
+      ],
+      "environment.get_density": [
+        400.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "environment.density_models__batch_elapsed_time",
+    "environment.density_models__nrlmsise_ap_bins",
+    "environment.density_models__nrlmsise_ap_value",
+    "environment.density_models__nrlmsise_eval_datetime",
+    "environment.density_models__nrlmsise_flux_value",
+    "environment.density_models__planet_polyfit_valid_max_altitude_m",
+    "environment.density_models__planet_polyfit_valid_min_altitude_m",
+    "environment.density_models_exponentialatmospheremodel",
+    "environment.density_models_getdensitybatch_bang",
+    "environment.density_models_piecewiseexponentialatmospheremodel",
+    "environment.density_models_polynomialfitatmospheremodel",
+    "environment.density_models_timetabulatedatmospheremodel",
+    "environment.get_density"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-simulation-engine-setup-jl-dynamic",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _dynamic* (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_setup_jl_dynamic",
+    "layout_of": "87727d9f1dca5cdd"
+  },
+  "derives_from": "aerobraking-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_dynamic",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__dynamic_effector_thread_decision": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__dynamic_effector_thread_decision"
+  ]
+}

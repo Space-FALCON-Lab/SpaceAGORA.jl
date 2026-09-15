@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-mission",
+  "chart_kind": "sub",
+  "title": "AerobrakingPolicy — internals (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.mission",
+    "layout_of": "332f1d910024142e"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.mission",
+  "ui": {
+    "pos_overrides": {
+      "misc.maneuver_plans_odyssey_campaign_maneuvers": [
+        80.0,
+        80.0
+      ],
+      "misc.policy_types_aerobrakingpolicyconfig": [
+        80.0,
+        230.0
+      ],
+      "mission.maneuver_plans__phi_to_signed_maneuver_delta_v": [
+        400.0,
+        80.0
+      ],
+      "mission.selector_stub_defaultaerobrakingpolicyselector": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "misc.maneuver_plans_odyssey_campaign_maneuvers",
+    "misc.policy_types_aerobrakingpolicyconfig",
+    "mission.maneuver_plans__phi_to_signed_maneuver_delta_v",
+    "mission.selector_stub_defaultaerobrakingpolicyselector"
+  ]
+}

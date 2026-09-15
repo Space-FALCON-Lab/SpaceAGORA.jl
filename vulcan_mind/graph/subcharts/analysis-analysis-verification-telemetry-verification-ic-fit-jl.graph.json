@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-ic-fit-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/ic_fit.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/ic_fit.jl",
+    "layout_of": "c4be03e60c78362f"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_ic_fit_jl",
+  "ui": {
+    "pos_overrides": {
+      "analysis.ic_fit__ic_fit_mean_axis_rmse": [
+        80.0,
+        80.0
+      ],
+      "analysis.ic_fit__ic_fit_run": [
+        400.0,
+        80.0
+      ],
+      "analysis.ic_fit__ic_fit_series": [
+        720.0,
+        80.0
+      ],
+      "analysis.ic_fit_float64": [
+        80.0,
+        230.0
+      ],
+      "envana.ana_ic_fit_fit_initial_state": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.ic_fit__ic_fit_mean_axis_rmse",
+    "analysis.ic_fit__ic_fit_run",
+    "analysis.ic_fit__ic_fit_series",
+    "analysis.ic_fit_float64",
+    "envana.ana_ic_fit_fit_initial_state"
+  ]
+}

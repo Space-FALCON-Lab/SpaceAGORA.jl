@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-engine-adapters",
+  "chart_kind": "sub",
+  "title": "simulation/engine/adapters/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_adapters",
+    "layout_of": "7420aa7959953cd6"
+  },
+  "derives_from": "run-pipeline-simulation-engine",
+  "group": "grp.src_simulation_engine_adapters",
+  "ui": {
+    "pos_overrides": {
+      "simulation.from_env__engine_env_get": [
+        80.0,
+        80.0
+      ],
+      "simulation.from_env__engine_env_overrides": [
+        400.0,
+        980.0
+      ],
+      "simulation.from_env__parse_float_opt": [
+        400.0,
+        80.0
+      ],
+      "simulation.from_env__parse_multirate_solver_sym": [
+        400.0,
+        230.0
+      ],
+      "simulation.from_env__parse_or_default": [
+        400.0,
+        380.0
+      ],
+      "simulation.from_env__parse_solver_mode_sym": [
+        400.0,
+        530.0
+      ],
+      "simulation.from_env__parse_split_imex_solver_sym": [
+        400.0,
+        680.0
+      ],
+      "simulation.from_env__solver_config_from_env": [
+        80.0,
+        230.0
+      ],
+      "simulation.from_env__with_engine_env_overrides": [
+        80.0,
+        380.0
+      ],
+      "simx.engine_adapters_from_env_simulation_engine_config_from_env": [
+        400.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.from_env__engine_env_get",
+    "simulation.from_env__engine_env_overrides",
+    "simulation.from_env__parse_float_opt",
+    "simulation.from_env__parse_multirate_solver_sym",
+    "simulation.from_env__parse_or_default",
+    "simulation.from_env__parse_solver_mode_sym",
+    "simulation.from_env__parse_split_imex_solver_sym",
+    "simulation.from_env__solver_config_from_env",
+    "simulation.from_env__with_engine_env_overrides",
+    "simx.engine_adapters_from_env_simulation_engine_config_from_env"
+  ]
+}

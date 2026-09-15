@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-simulation-engine-setup-jl-ephemeris",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _ephemeris* (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_setup_jl_ephemeris",
+    "layout_of": "b0287296ca01c3f9"
+  },
+  "derives_from": "aerobraking-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_ephemeris",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__ephemeris_reuse_lookup": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__ephemeris_reuse_lookup"
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-dynamics-multibody-cloth",
+  "chart_kind": "sub",
+  "title": "dynamics/multibody_cloth/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_dynamics_multibody_cloth",
+    "layout_of": "4af560d53688f274"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_dynamics_multibody_cloth",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.cloth_multibody__body_offset_velocity": [
+        80.0,
+        80.0
+      ],
+      "dynamics.cloth_multibody_build_compliant_topology": [
+        400.0,
+        230.0
+      ],
+      "dynamics.cloth_multibody_build_rectangular_compliant_grid": [
+        80.0,
+        230.0
+      ],
+      "dynamics.cloth_multibody_compliant_joint_loads": [
+        400.0,
+        380.0
+      ],
+      "dynamics.cloth_multibody_rectangular_prism_inertia": [
+        80.0,
+        380.0
+      ],
+      "dynamics.cloth_multibody_simulate_compliant_multibody": [
+        80.0,
+        530.0
+      ],
+      "dynamics.cloth_multibody_step_compliant_multibody_implicit_midpoint": [
+        80.0,
+        680.0
+      ],
+      "dynamics.cloth_multibody_step_compliant_multibody_rk4": [
+        80.0,
+        830.0
+      ],
+      "dynamics.cloth_robot_arm_dynamics__diag3": [
+        400.0,
+        80.0
+      ],
+      "dynamics.cloth_robot_arm_dynamics_cloth_reference_state": [
+        80.0,
+        980.0
+      ],
+      "dynamics.cloth_robot_arm_dynamics_cloth_robot_arm_multibody": [
+        400.0,
+        530.0
+      ],
+      "dynamics.cloth_robot_arm_dynamics_simulate_cloth_robot_arm_plan": [
+        80.0,
+        1130.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.cloth_multibody__body_offset_velocity",
+    "dynamics.cloth_multibody_build_compliant_topology",
+    "dynamics.cloth_multibody_build_rectangular_compliant_grid",
+    "dynamics.cloth_multibody_compliant_joint_loads",
+    "dynamics.cloth_multibody_rectangular_prism_inertia",
+    "dynamics.cloth_multibody_simulate_compliant_multibody",
+    "dynamics.cloth_multibody_step_compliant_multibody_implicit_midpoint",
+    "dynamics.cloth_multibody_step_compliant_multibody_rk4",
+    "dynamics.cloth_robot_arm_dynamics__diag3",
+    "dynamics.cloth_robot_arm_dynamics_cloth_reference_state",
+    "dynamics.cloth_robot_arm_dynamics_cloth_robot_arm_multibody",
+    "dynamics.cloth_robot_arm_dynamics_simulate_cloth_robot_arm_plan"
+  ]
+}

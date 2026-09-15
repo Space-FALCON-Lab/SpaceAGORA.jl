@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-density-callbacks-planet-frame-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/density_callbacks/planet_frame.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks/density_callbacks/planet_frame.jl",
+    "layout_of": "cfa1de7a86a2ce00"
+  },
+  "derives_from": "simulation-simulation-callbacks-density-callbacks",
+  "group": "grp.src_simulation_callbacks_density_callbacks_planet_frame_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.planet_frame__planet_lpi_at": [
+        1040.0,
+        80.0
+      ],
+      "simulation.planet_frame__planet_lpi_from_backend": [
+        1360.0,
+        80.0
+      ],
+      "simulation.planet_frame__planet_lpi_from_cache": [
+        1360.0,
+        230.0
+      ],
+      "simulation.planet_frame__planet_relative_state": [
+        80.0,
+        80.0
+      ],
+      "simulation.planet_frame_affect_bang": [
+        720.0,
+        80.0
+      ],
+      "simulation.planet_frame_condition": [
+        400.0,
+        80.0
+      ],
+      "simulation.planet_frame_init_affect_bang": [
+        400.0,
+        230.0
+      ],
+      "simulation_a.planet_frame_update_planet_frame_callback": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.planet_frame__planet_lpi_at",
+    "simulation.planet_frame__planet_lpi_from_backend",
+    "simulation.planet_frame__planet_lpi_from_cache",
+    "simulation.planet_frame__planet_relative_state",
+    "simulation.planet_frame_affect_bang",
+    "simulation.planet_frame_condition",
+    "simulation.planet_frame_init_affect_bang",
+    "simulation_a.planet_frame_update_planet_frame_callback"
+  ]
+}

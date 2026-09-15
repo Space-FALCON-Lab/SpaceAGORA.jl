@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-routing",
+  "chart_kind": "sub",
+  "title": "parallel/routing/ (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/routing",
+    "layout_of": "c09d20e5cace9e20"
+  },
+  "derives_from": "parallel",
+  "group": "grp.src_parallel_routing",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_parallel_routing_env_mapping_jl": [
+        80.0,
+        80.0
+      ],
+      "grp.src_parallel_routing_outer_route_selection_jl": [
+        400.0,
+        230.0
+      ],
+      "grp.src_parallel_routing_outer_route_state_jl": [
+        720.0,
+        80.0
+      ],
+      "grp.src_parallel_routing_profile_definitions_jl": [
+        400.0,
+        80.0
+      ],
+      "grp.src_parallel_routing_small": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.default_outer_route",
+    "parallel.env_mapping__coerce_env_bool",
+    "parallel.env_mapping__env_or_default",
+    "parallel.env_mapping__inner_hint_defaults",
+    "parallel.env_mapping__machine_parallel_class",
+    "parallel.env_mapping__profile_outer_backend_token",
+    "parallel.env_mapping_with_parallel_profile",
+    "parallel.outer_route_selection__best_candidate",
+    "parallel.outer_route_selection__best_candidate_confidence",
+    "parallel.outer_route_selection__candidate_confidence_width",
+    "parallel.outer_route_selection__compat_outer_route_signature",
+    "parallel.outer_route_selection__feature_heavy_for_process",
+    "parallel.outer_route_selection__feature_is_lightweight",
+    "parallel.outer_route_selection__is_native_gram_point_density",
+    "parallel.outer_route_selection__outer_route_signature_hierarchy",
+    "parallel.outer_route_selection__outer_route_stats_snapshot_internal",
+    "parallel.outer_route_selection__priority_outer_route_montecarlo",
+    "parallel.outer_route_selection__route_count_bucket",
+    "parallel.outer_route_selection__route_density_bucket",
+    "parallel.outer_route_selection__route_effector_cost_bucket",
+    "parallel.outer_route_selection__route_elapsed_stats",
+    "parallel.outer_route_selection__route_harmonics_bucket",
+    "parallel.outer_route_selection__route_interval_bucket",
+    "parallel.outer_route_selection__route_link_bucket",
+    "parallel.outer_route_selection__route_max_link_bucket",
+    "parallel.outer_route_selection__route_mission_bucket",
+    "parallel.outer_route_selection__route_ranked_candidates",
+    "parallel.outer_route_selection__route_sat_bucket",
+    "parallel.outer_route_selection__route_solver_bucket",
+    "parallel.outer_route_selection__threads_or_none",
+    "parallel.outer_route_selection__under_sampled_candidate",
+    "parallel.outer_route_selection_outer_route_candidates",
+    "parallel.outer_route_selection_outer_route_signature",
+    "parallel.outer_route_selection_outer_route_stats_snapshot",
+    "parallel.outer_route_state__route_payload_stats",
+    "parallel.outer_route_state__route_stats_payload",
+    "parallel.outer_route_state_load_outer_route_state_bang",
+    "parallel.outer_route_state_outerroutefeatures",
+    "parallel.outer_route_state_outerroutestats",
+    "parallel.outer_route_state_outerroutetuning",
+    "parallel.outer_route_state_reset_outer_route_state_bang",
+    "parallel.outer_route_state_save_outer_route_state",
+    "parallel.parallel_profile",
+    "parallel.profile_config",
+    "parallel.profile_definitions__normalize_profile_token",
+    "parallel.profile_definitions_parallel_profile_name",
+    "parallel.profile_definitions_parallelprofileconfig",
+    "parallel.profile_definitions_parse_parallel_profile",
+    "parallel.select_outer_route_select_outer_route_bang",
+    "parcore.env_mapping_profile_env_pairs",
+    "parcore.outer_route_metrics_record_outer_route_feedback_bang",
+    "parcore.outer_route_state_outerroutestate",
+    "parcore.parallel_profiles_parallelprofiles"
+  ]
+}

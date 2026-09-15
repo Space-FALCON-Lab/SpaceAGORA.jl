@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-public-api-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/public_api.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/public_api.jl",
+    "layout_of": "1f93746bf655c73e"
+  },
+  "derives_from": "simulation-simulation-engine",
+  "group": "grp.src_simulation_engine_public_api_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.public_api__depwarn_untyped_run_simulation": [
+        400.0,
+        80.0
+      ],
+      "simulation.public_api__require_simulation_configuration": [
+        400.0,
+        230.0
+      ],
+      "simulation.public_api_load_nbody_ephemeris_cache_bang": [
+        80.0,
+        80.0
+      ],
+      "simulation.public_api_prewarm_nbody_ephemeris_cache": [
+        80.0,
+        230.0
+      ],
+      "simulation.run_simulation": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.public_api__depwarn_untyped_run_simulation",
+    "simulation.public_api__require_simulation_configuration",
+    "simulation.public_api_load_nbody_ephemeris_cache_bang",
+    "simulation.public_api_prewarm_nbody_ephemeris_cache",
+    "simulation.run_simulation"
+  ]
+}

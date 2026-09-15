@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-engine-dynamics-rhs-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/dynamics_rhs.jl (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_dynamics_rhs_jl",
+    "layout_of": "aa1680ff08f01a71"
+  },
+  "derives_from": "run-pipeline-simulation-engine",
+  "group": "grp.src_simulation_engine_dynamics_rhs_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.dynamics_rhs__robot_arm_coupling": [
+        400.0,
+        80.0
+      ],
+      "simulation.dynamics_rhs_build_initial_conditions": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.dynamics_rhs__robot_arm_coupling",
+    "simulation.dynamics_rhs_build_initial_conditions"
+  ]
+}

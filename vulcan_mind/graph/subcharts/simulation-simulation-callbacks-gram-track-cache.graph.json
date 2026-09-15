@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-gram-track-cache",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/gram_track_cache/ (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks/gram_track_cache",
+    "layout_of": "6e8b33a71db6ae69"
+  },
+  "derives_from": "simulation-simulation-callbacks",
+  "group": "grp.src_simulation_callbacks_gram_track_cache",
+  "ui": {
+    "pos_overrides": {
+      "simulation.config__gram_track_cache_mode": [
+        400.0,
+        230.0
+      ],
+      "simulation.config__parse_float_env": [
+        400.0,
+        380.0
+      ],
+      "simulation.config__parse_float_env_optional": [
+        400.0,
+        530.0
+      ],
+      "simulation.config__parse_int_env_optional": [
+        400.0,
+        680.0
+      ],
+      "simulation.config_gramtrackcache": [
+        80.0,
+        80.0
+      ],
+      "simulation.interpolation__angdiff_rad": [
+        400.0,
+        830.0
+      ],
+      "simulation.interpolation__gram_track_cache_enabled": [
+        80.0,
+        230.0
+      ],
+      "simulation.interpolation__gram_track_cache_eval": [
+        80.0,
+        380.0
+      ],
+      "simulation.interpolation__gram_track_cache_profile": [
+        80.0,
+        530.0
+      ],
+      "simulation.interpolation__gram_track_cache_segment": [
+        400.0,
+        980.0
+      ],
+      "simulation.interpolation__lerp": [
+        400.0,
+        80.0
+      ],
+      "simulation.interpolation__lerp_angle_rad": [
+        400.0,
+        1130.0
+      ],
+      "simulation.refresh__gram_kepler_or_linear_target": [
+        400.0,
+        1280.0
+      ],
+      "simulation.refresh__gram_track_cache_fill_from_trajectory_bang": [
+        400.0,
+        1430.0
+      ],
+      "simulation.targeting__angle_delta_rad": [
+        720.0,
+        380.0
+      ],
+      "simulation.targeting__eccentric_to_true_anomaly": [
+        1040.0,
+        80.0
+      ],
+      "simulation.targeting__gram_entry_mass_kg": [
+        400.0,
+        1580.0
+      ],
+      "simulation.targeting__gram_entry_reference_area_m2": [
+        400.0,
+        1730.0
+      ],
+      "simulation.targeting__gram_entry_reference_density": [
+        720.0,
+        530.0
+      ],
+      "simulation.targeting__gram_expected_track_length_m": [
+        400.0,
+        1880.0
+      ],
+      "simulation.targeting__gram_kepler_target": [
+        720.0,
+        230.0
+      ],
+      "simulation.targeting__gram_linear_target": [
+        720.0,
+        80.0
+      ],
+      "simulation.targeting__gram_orbit_period_target": [
+        400.0,
+        2030.0
+      ],
+      "simulation.targeting__gram_periapsis_target": [
+        400.0,
+        2180.0
+      ],
+      "simulation.targeting__gram_track_cache_max_npos": [
+        400.0,
+        2330.0
+      ],
+      "simulation.targeting__gram_track_cache_periapsis_split_enabled": [
+        400.0,
+        2480.0
+      ],
+      "simulation.targeting__gram_track_cache_target_spacing_m": [
+        400.0,
+        2630.0
+      ],
+      "simulation.targeting__solve_kepler_elliptic": [
+        1040.0,
+        230.0
+      ],
+      "simulation.targeting__true_to_eccentric_anomaly": [
+        1040.0,
+        380.0
+      ],
+      "simulation_a.gram_cache_config_gram_track_cache_config": [
+        80.0,
+        680.0
+      ],
+      "simulation_a.interpolation_gram_track_cache_ready": [
+        80.0,
+        830.0
+      ],
+      "simulation_a.refresh_gram_track_cache_refresh__gram_track_cache_refresh_bang": [
+        80.0,
+        980.0
+      ],
+      "simulation_a.targeting_gram_entry_target_allen_eggers": [
+        400.0,
+        2780.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.config__gram_track_cache_mode",
+    "simulation.config__parse_float_env",
+    "simulation.config__parse_float_env_optional",
+    "simulation.config__parse_int_env_optional",
+    "simulation.config_gramtrackcache",
+    "simulation.interpolation__angdiff_rad",
+    "simulation.interpolation__gram_track_cache_enabled",
+    "simulation.interpolation__gram_track_cache_eval",
+    "simulation.interpolation__gram_track_cache_profile",
+    "simulation.interpolation__gram_track_cache_segment",
+    "simulation.interpolation__lerp",
+    "simulation.interpolation__lerp_angle_rad",
+    "simulation.refresh__gram_kepler_or_linear_target",
+    "simulation.refresh__gram_track_cache_fill_from_trajectory_bang",
+    "simulation.targeting__angle_delta_rad",
+    "simulation.targeting__eccentric_to_true_anomaly",
+    "simulation.targeting__gram_entry_mass_kg",
+    "simulation.targeting__gram_entry_reference_area_m2",
+    "simulation.targeting__gram_entry_reference_density",
+    "simulation.targeting__gram_expected_track_length_m",
+    "simulation.targeting__gram_kepler_target",
+    "simulation.targeting__gram_linear_target",
+    "simulation.targeting__gram_orbit_period_target",
+    "simulation.targeting__gram_periapsis_target",
+    "simulation.targeting__gram_track_cache_max_npos",
+    "simulation.targeting__gram_track_cache_periapsis_split_enabled",
+    "simulation.targeting__gram_track_cache_target_spacing_m",
+    "simulation.targeting__solve_kepler_elliptic",
+    "simulation.targeting__true_to_eccentric_anomaly",
+    "simulation_a.gram_cache_config_gram_track_cache_config",
+    "simulation_a.interpolation_gram_track_cache_ready",
+    "simulation_a.refresh_gram_track_cache_refresh__gram_track_cache_refresh_bang",
+    "simulation_a.targeting_gram_entry_target_allen_eggers"
+  ]
+}

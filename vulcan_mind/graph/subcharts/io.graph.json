@@ -1,0 +1,2264 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "io",
+  "chart_kind": "sub",
+  "title": "IOConfig — internals",
+  "derives_from": "master",
+  "local_nodes": [
+    {
+      "id": "grp.io",
+      "label": "IOConfig — internals",
+      "kind": "group",
+      "doc": "nodes/io/io.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "members_in",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Calls into any member of this block from outside it."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "members_out",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls from any member of this block to nodes outside it."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "tags": [
+        "cluster"
+      ],
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_config__checkpoint_directory",
+      "label": "_checkpoint_directory",
+      "kind": "function",
+      "doc": "nodes/io/io_config__checkpoint_directory.md",
+      "source": {
+        "file": "src/io/config/io_config.jl",
+        "symbol": "_checkpoint_directory",
+        "lines": [
+          20,
+          20
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "String",
+            "units": "n/a",
+            "description": "Return value of `_checkpoint_directory`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          1040.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_config__checkpoint_paths",
+      "label": "_checkpoint_paths",
+      "kind": "function",
+      "doc": "nodes/io/io_config__checkpoint_paths.md",
+      "source": {
+        "file": "src/io/config/io_config.jl",
+        "symbol": "_checkpoint_paths",
+        "lines": [
+          27,
+          27
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_checkpoint_paths`. Returns `(`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          720.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_config__collision_results_csv_path",
+      "label": "_collision_results_csv_path",
+      "kind": "function",
+      "doc": "nodes/io/io_config__collision_results_csv_path.md",
+      "source": {
+        "file": "src/io/config/io_config.jl",
+        "symbol": "_collision_results_csv_path",
+        "lines": [
+          14,
+          14
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "String",
+            "units": "n/a",
+            "description": "Return value of `_collision_results_csv_path`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          720.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_config__results_csv_path",
+      "label": "_results_csv_path",
+      "kind": "function",
+      "doc": "nodes/io/io_config__results_csv_path.md",
+      "source": {
+        "file": "src/io/config/io_config.jl",
+        "symbol": "_results_csv_path",
+        "lines": [
+          10,
+          10
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "String",
+            "units": "n/a",
+            "description": "Return value of `_results_csv_path`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          720.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_config_ioconfig",
+      "label": "IOConfig",
+      "kind": "module",
+      "doc": "nodes/io/io_config_ioconfig.md",
+      "source": {
+        "file": "src/io/config/io_config.jl",
+        "symbol": "IOConfig",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Value produced by this symbol."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_outputs__append_save_field_columns_bang",
+      "label": "_append_save_field_columns!",
+      "kind": "function",
+      "doc": "nodes/io/io_outputs__append_save_field_columns_bang.md",
+      "source": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "symbol": "_append_save_field_columns!",
+        "lines": [
+          74,
+          74
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "results_df",
+            "type": "DataFrame",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `results_df`."
+          },
+          {
+            "id": "field",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `field`."
+          },
+          {
+            "id": "saved_data",
+            "type": "Vector",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `saved_data`."
+          },
+          {
+            "id": "num_sats",
+            "type": "Int",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `num_sats`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Nothing",
+            "units": "n/a",
+            "description": "Return value of `_append_save_field_columns!`; mutates `results_df` in place. Returns `nothing`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          720.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_outputs__append_saved_segment_bang",
+      "label": "_append_saved_segment!",
+      "kind": "function",
+      "doc": "nodes/io/io_outputs__append_saved_segment_bang.md",
+      "source": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "symbol": "_append_saved_segment!",
+        "lines": [
+          12,
+          12
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "times_acc",
+            "type": "Vector{Float64}",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `times_acc`."
+          },
+          {
+            "id": "data_acc",
+            "type": "Vector",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `data_acc`."
+          },
+          {
+            "id": "saved_values",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `saved_values`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Nothing",
+            "units": "n/a",
+            "description": "Return value of `_append_saved_segment!`; mutates `times_acc` in place. Returns `nothing`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_outputs__append_series_columns_bang",
+      "label": "_append_series_columns!",
+      "kind": "function",
+      "doc": "nodes/io/io_outputs__append_series_columns_bang.md",
+      "source": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "symbol": "_append_series_columns!",
+        "lines": [
+          39,
+          39
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "results_df",
+            "type": "DataFrame",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `results_df`."
+          },
+          {
+            "id": "prefix",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `prefix`."
+          },
+          {
+            "id": "series",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `series`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Nothing",
+            "units": "n/a",
+            "description": "Return value of `_append_series_columns!`; mutates `results_df` in place. Returns `nothing`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          1040.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_outputs__build_results_dataframe",
+      "label": "_build_results_dataframe",
+      "kind": "function",
+      "doc": "nodes/io/io_outputs__build_results_dataframe.md",
+      "source": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "symbol": "_build_results_dataframe",
+        "lines": [
+          87,
+          87
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "times",
+            "type": "Vector{Float64}",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `times`."
+          },
+          {
+            "id": "saved_data",
+            "type": "Vector",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `saved_data`."
+          },
+          {
+            "id": "save_fields",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `save_fields`."
+          },
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "DataFrame",
+            "units": "n/a",
+            "description": "Return value of `_build_results_dataframe`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_outputs__find_sample_value",
+      "label": "_find_sample_value",
+      "kind": "function",
+      "doc": "nodes/io/io_outputs__find_sample_value.md",
+      "source": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "symbol": "_find_sample_value",
+        "lines": [
+          30,
+          30
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "series",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `series`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Nothing",
+            "units": "n/a",
+            "description": "Return value of `_find_sample_value`. Returns `value` or `nothing`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          1360.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_outputs__is_flat_scalar",
+      "label": "_is_flat_scalar",
+      "kind": "function",
+      "doc": "nodes/io/io_outputs__is_flat_scalar.md",
+      "source": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "symbol": "_is_flat_scalar",
+        "lines": [
+          26,
+          26
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "value",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `value`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Bool",
+            "units": "n/a",
+            "description": "Return value of `_is_flat_scalar`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          1360.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_outputs__write_results_csv_bang",
+      "label": "_write_results_csv!",
+      "kind": "function",
+      "doc": "nodes/io/io_outputs__write_results_csv_bang.md",
+      "source": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "symbol": "_write_results_csv!",
+        "lines": [
+          96,
+          96
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "results_df",
+            "type": "DataFrame",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `results_df`."
+          },
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "String",
+            "units": "n/a",
+            "description": "Return value of `_write_results_csv!`; mutates `results_df` in place."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          830.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_outputs_iooutputs",
+      "label": "IOOutputs",
+      "kind": "module",
+      "doc": "nodes/io/io_outputs_iooutputs.md",
+      "source": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "symbol": "IOOutputs",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Value produced by this symbol."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          980.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_serialization__atomic_write_file",
+      "label": "_atomic_write_file",
+      "kind": "function",
+      "doc": "nodes/io/io_serialization__atomic_write_file.md",
+      "source": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "symbol": "_atomic_write_file",
+        "lines": [
+          10,
+          10
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "path",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `path`."
+          },
+          {
+            "id": "writer",
+            "type": "Function",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `writer`."
+          },
+          {
+            "id": "force",
+            "type": "Bool",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `force` (default `true`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_atomic_write_file`. Returns `path`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          720.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_serialization__clear_checkpoint_bang",
+      "label": "_clear_checkpoint!",
+      "kind": "function",
+      "doc": "nodes/io/io_serialization__clear_checkpoint_bang.md",
+      "source": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "symbol": "_clear_checkpoint!",
+        "lines": [
+          83,
+          83
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Nothing",
+            "units": "n/a",
+            "description": "Return value of `_clear_checkpoint!`; mutates `args` in place. Returns `nothing`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          1130.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_serialization__load_checkpoint",
+      "label": "_load_checkpoint",
+      "kind": "function",
+      "doc": "nodes/io/io_serialization__load_checkpoint.md",
+      "source": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "symbol": "_load_checkpoint",
+        "lines": [
+          62,
+          62
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Nothing",
+            "units": "n/a",
+            "description": "Return value of `_load_checkpoint`. Returns `nothing` or `(`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          80.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_serialization__sha256_hex",
+      "label": "_sha256_hex",
+      "kind": "function",
+      "doc": "nodes/io/io_serialization__sha256_hex.md",
+      "source": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "symbol": "_sha256_hex",
+        "lines": [
+          28,
+          28
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "path",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `path`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "String",
+            "units": "n/a",
+            "description": "Return value of `_sha256_hex`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.io_serialization_ioserialization",
+      "label": "IOSerialization",
+      "kind": "module",
+      "doc": "nodes/io/io_serialization_ioserialization.md",
+      "source": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "symbol": "IOSerialization",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Value produced by this symbol."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          1280.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "io.results_bundle_prefix",
+      "label": "_results_bundle_prefix",
+      "kind": "function",
+      "doc": "nodes/io/results_bundle_prefix.md",
+      "source": {
+        "file": "src/io/config/io_config.jl",
+        "symbol": "_results_bundle_prefix",
+        "lines": [
+          6,
+          8
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "IOConfig namespace supplying result-directory configuration and path conventions."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "prefix",
+            "type": "String",
+            "units": "n/a",
+            "description": "Path prefix used by simulation output writers for the current results directory."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          1430.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "misc.io_outputs_write_results_bundle__write_results_bundle_bang",
+      "label": "_write_results_bundle!",
+      "kind": "function",
+      "doc": "nodes/misc/io_outputs_write_results_bundle__write_results_bundle_bang.md",
+      "source": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "symbol": "_write_results_bundle!",
+        "lines": [
+          120,
+          169
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "IOConfig path helpers (_results_bundle_prefix) and IOSerialization atomic-write and hashing helpers used to emit the bundle."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "bundle_files",
+            "type": "Feather+TOML",
+            "units": "n/a",
+            "description": "Arrow feather table, optional CSV twin, and a TOML manifest recording schema version, sizes and SHA-256 digests."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          400.0,
+          1580.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "misc.io_serialization_write_checkpoint__write_checkpoint_bang",
+      "label": "_write_checkpoint!",
+      "kind": "function",
+      "doc": "nodes/misc/io_serialization_write_checkpoint__write_checkpoint_bang.md",
+      "source": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "symbol": "_write_checkpoint!",
+        "lines": [
+          34,
+          60
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "IOConfig._checkpoint_paths supplying the data and manifest destinations for the active results directory."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "checkpoint",
+            "type": "Serialized+TOML",
+            "units": "n/a",
+            "description": "Julia-serialized state payload plus a TOML manifest carrying schema version, simulation time, solver mode, byte size and SHA-256."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.io",
+      "ui": {
+        "pos": [
+          80.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    }
+  ],
+  "local_edges": [
+    {
+      "id": "e:io.io_config__checkpoint_paths:callees->io.io_config__checkpoint_directory:callers",
+      "from": {
+        "node": "io.io_config__checkpoint_paths",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_config__checkpoint_directory",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_checkpoint_directory",
+      "evidence": {
+        "file": "src/io/config/io_config.jl",
+        "lines": [
+          28,
+          28
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_config__checkpoint_paths:callees->simulation.resume_checkpoint__checkpoint_directory:callers",
+      "from": {
+        "node": "io.io_config__checkpoint_paths",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.resume_checkpoint__checkpoint_directory",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_checkpoint_directory",
+      "evidence": {
+        "file": "src/io/config/io_config.jl",
+        "lines": [
+          28,
+          28
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__append_save_field_columns_bang:callees->io.io_outputs__append_series_columns_bang:callers",
+      "from": {
+        "node": "io.io_outputs__append_save_field_columns_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_outputs__append_series_columns_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_append_series_columns!",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          79,
+          79
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__append_save_field_columns_bang:callees->simulation.persistence__append_series_columns_bang:callers",
+      "from": {
+        "node": "io.io_outputs__append_save_field_columns_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.persistence__append_series_columns_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_append_series_columns!",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          79,
+          79
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__append_series_columns_bang:callees->io.io_outputs__find_sample_value:callers",
+      "from": {
+        "node": "io.io_outputs__append_series_columns_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_outputs__find_sample_value",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_find_sample_value",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          40,
+          40
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__append_series_columns_bang:callees->io.io_outputs__is_flat_scalar:callers",
+      "from": {
+        "node": "io.io_outputs__append_series_columns_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_outputs__is_flat_scalar",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_is_flat_scalar",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          41,
+          41
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__append_series_columns_bang:callees->simulation.persistence__find_sample_value:callers",
+      "from": {
+        "node": "io.io_outputs__append_series_columns_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.persistence__find_sample_value",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_find_sample_value",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          40,
+          40
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__build_results_dataframe:callees->io.io_outputs__append_save_field_columns_bang:callers",
+      "from": {
+        "node": "io.io_outputs__build_results_dataframe",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_outputs__append_save_field_columns_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_append_save_field_columns!",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          91,
+          91
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__write_results_csv_bang:callees->io.io_config__collision_results_csv_path:callers",
+      "from": {
+        "node": "io.io_outputs__write_results_csv_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_config__collision_results_csv_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_collision_results_csv_path",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          111,
+          111
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__write_results_csv_bang:callees->io.io_config__results_csv_path:callers",
+      "from": {
+        "node": "io.io_outputs__write_results_csv_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_config__results_csv_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_results_csv_path",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          97,
+          97
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__write_results_csv_bang:callees->io.io_serialization__atomic_write_file:callers",
+      "from": {
+        "node": "io.io_outputs__write_results_csv_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_serialization__atomic_write_file",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_atomic_write_file",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          101,
+          101
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__write_results_csv_bang:callees->simulation.persistence__collision_results_csv_path:callers",
+      "from": {
+        "node": "io.io_outputs__write_results_csv_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.persistence__collision_results_csv_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_collision_results_csv_path",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          111,
+          111
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_outputs__write_results_csv_bang:callees->simulation.persistence__results_csv_path:callers",
+      "from": {
+        "node": "io.io_outputs__write_results_csv_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.persistence__results_csv_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_results_csv_path",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          97,
+          97
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_serialization__clear_checkpoint_bang:callees->io.io_config__checkpoint_paths:callers",
+      "from": {
+        "node": "io.io_serialization__clear_checkpoint_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_config__checkpoint_paths",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_checkpoint_paths",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          84,
+          84
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_serialization__clear_checkpoint_bang:callees->simulation.resume_checkpoint__checkpoint_paths:callers",
+      "from": {
+        "node": "io.io_serialization__clear_checkpoint_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.resume_checkpoint__checkpoint_paths",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_checkpoint_paths",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          84,
+          84
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_serialization__load_checkpoint:callees->analysis.ic_fit_float64:callers",
+      "from": {
+        "node": "io.io_serialization__load_checkpoint",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "analysis.ic_fit_float64",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "Float64",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          75,
+          75
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_serialization__load_checkpoint:callees->io.io_config__checkpoint_paths:callers",
+      "from": {
+        "node": "io.io_serialization__load_checkpoint",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_config__checkpoint_paths",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_checkpoint_paths",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          63,
+          63
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:io.io_serialization__load_checkpoint:callees->simulation.resume_checkpoint__checkpoint_paths:callers",
+      "from": {
+        "node": "io.io_serialization__load_checkpoint",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.resume_checkpoint__checkpoint_paths",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_checkpoint_paths",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          63,
+          63
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_outputs_write_results_bundle__write_results_bundle_bang:callees->io.io_serialization__atomic_write_file:callers",
+      "from": {
+        "node": "misc.io_outputs_write_results_bundle__write_results_bundle_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_serialization__atomic_write_file",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_atomic_write_file",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          131,
+          131
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_outputs_write_results_bundle__write_results_bundle_bang:callees->io.io_serialization__sha256_hex:callers",
+      "from": {
+        "node": "misc.io_outputs_write_results_bundle__write_results_bundle_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_serialization__sha256_hex",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_sha256_hex",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          137,
+          137
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_outputs_write_results_bundle__write_results_bundle_bang:callees->io.results_bundle_prefix:callers",
+      "from": {
+        "node": "misc.io_outputs_write_results_bundle__write_results_bundle_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.results_bundle_prefix",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_results_bundle_prefix",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          127,
+          127
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_outputs_write_results_bundle__write_results_bundle_bang:callees->simulation.persistence__results_bundle_prefix:callers",
+      "from": {
+        "node": "misc.io_outputs_write_results_bundle__write_results_bundle_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.persistence__results_bundle_prefix",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_results_bundle_prefix",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          127,
+          127
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_outputs_write_results_bundle__write_results_bundle_bang:callees->simulation.persistence__sha256_hex:callers",
+      "from": {
+        "node": "misc.io_outputs_write_results_bundle__write_results_bundle_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.persistence__sha256_hex",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_sha256_hex",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl",
+        "lines": [
+          137,
+          137
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_serialization_write_checkpoint__write_checkpoint_bang:callees->io.io_config__checkpoint_paths:callers",
+      "from": {
+        "node": "misc.io_serialization_write_checkpoint__write_checkpoint_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_config__checkpoint_paths",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_checkpoint_paths",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          35,
+          35
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_serialization_write_checkpoint__write_checkpoint_bang:callees->io.io_serialization__atomic_write_file:callers",
+      "from": {
+        "node": "misc.io_serialization_write_checkpoint__write_checkpoint_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_serialization__atomic_write_file",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_atomic_write_file",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          43,
+          43
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_serialization_write_checkpoint__write_checkpoint_bang:callees->io.io_serialization__sha256_hex:callers",
+      "from": {
+        "node": "misc.io_serialization_write_checkpoint__write_checkpoint_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "io.io_serialization__sha256_hex",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_sha256_hex",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          54,
+          54
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_serialization_write_checkpoint__write_checkpoint_bang:callees->simulation.persistence__sha256_hex:callers",
+      "from": {
+        "node": "misc.io_serialization_write_checkpoint__write_checkpoint_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.persistence__sha256_hex",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_sha256_hex",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          54,
+          54
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.io_serialization_write_checkpoint__write_checkpoint_bang:callees->simulation.resume_checkpoint__checkpoint_paths:callers",
+      "from": {
+        "node": "misc.io_serialization_write_checkpoint__write_checkpoint_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.resume_checkpoint__checkpoint_paths",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_checkpoint_paths",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl",
+        "lines": [
+          35,
+          35
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_config__checkpoint_directory:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_config__checkpoint_directory",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/config/io_config.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_config__checkpoint_paths:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_config__checkpoint_paths",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/config/io_config.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_config__collision_results_csv_path:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_config__collision_results_csv_path",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/config/io_config.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_config__results_csv_path:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_config__results_csv_path",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/config/io_config.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_config_ioconfig:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_config_ioconfig",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/config/io_config.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_outputs__append_save_field_columns_bang:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_outputs__append_save_field_columns_bang",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_outputs__append_saved_segment_bang:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_outputs__append_saved_segment_bang",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_outputs__append_series_columns_bang:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_outputs__append_series_columns_bang",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_outputs__build_results_dataframe:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_outputs__build_results_dataframe",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_outputs__find_sample_value:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_outputs__find_sample_value",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_outputs__is_flat_scalar:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_outputs__is_flat_scalar",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_outputs__write_results_csv_bang:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_outputs__write_results_csv_bang",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_outputs_iooutputs:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_outputs_iooutputs",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_serialization__clear_checkpoint_bang:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_serialization__clear_checkpoint_bang",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.io_serialization_ioserialization:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.io_serialization_ioserialization",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->io.results_bundle_prefix:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "io.results_bundle_prefix",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/config/io_config.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->misc.io_outputs_write_results_bundle__write_results_bundle_bang:module_api",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "misc.io_outputs_write_results_bundle__write_results_bundle_bang",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    }
+  ],
+  "ui": {
+    "pos_overrides": {
+      "module.io": [
+        80.0,
+        380.0
+      ],
+      "simulation.persistence__sha256_hex": [
+        400.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "module.io",
+    "simulation.persistence__sha256_hex"
+  ]
+}

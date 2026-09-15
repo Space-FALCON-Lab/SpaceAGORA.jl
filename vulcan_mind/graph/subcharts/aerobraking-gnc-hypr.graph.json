@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-hypr",
+  "chart_kind": "sub",
+  "title": "gnc/hypr/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_hypr",
+    "layout_of": "15a770747d3119a5"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_gnc_hypr",
+  "ui": {
+    "pos_overrides": {
+      "gnc.hypr_utils_hypr_bezier_point": [
+        80.0,
+        80.0
+      ],
+      "gnc.hypr_utils_hypr_iteration_weights": [
+        80.0,
+        230.0
+      ],
+      "gnc.hypr_utils_hypr_material_improvement": [
+        80.0,
+        380.0
+      ],
+      "gnc.hypr_utils_hypr_protected_particle_mask": [
+        80.0,
+        530.0
+      ],
+      "gnc.hypr_utils_hypr_rrt_near_indices": [
+        80.0,
+        680.0
+      ],
+      "gnc.hypr_utils_hypr_rrt_refresh_subtree_costs_bang": [
+        80.0,
+        830.0
+      ],
+      "gnc.hypr_utils_hypr_rrt_steer": [
+        80.0,
+        980.0
+      ],
+      "gnc.hypr_utils_hypr_rrt_tree_path": [
+        80.0,
+        1130.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.hypr_utils_hypr_bezier_point",
+    "gnc.hypr_utils_hypr_iteration_weights",
+    "gnc.hypr_utils_hypr_material_improvement",
+    "gnc.hypr_utils_hypr_protected_particle_mask",
+    "gnc.hypr_utils_hypr_rrt_near_indices",
+    "gnc.hypr_utils_hypr_rrt_refresh_subtree_costs_bang",
+    "gnc.hypr_utils_hypr_rrt_steer",
+    "gnc.hypr_utils_hypr_rrt_tree_path"
+  ]
+}

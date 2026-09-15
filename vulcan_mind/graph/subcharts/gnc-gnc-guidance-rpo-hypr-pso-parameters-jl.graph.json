@@ -1,0 +1,134 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-pso-parameters-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/pso_parameters.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr/pso_parameters.jl",
+    "layout_of": "031af2b04b9a6010"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-hypr",
+  "group": "grp.src_gnc_guidance_rpo_hypr_pso_parameters_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.pso_parameters__rpo_pso_config_tuple": [
+        720.0,
+        80.0
+      ],
+      "gnc.pso_parameters__rpo_pso_normalize_kwargs": [
+        720.0,
+        230.0
+      ],
+      "gnc.pso_parameters__rpo_pso_sync_sample_ds_with_safe_distance": [
+        720.0,
+        380.0
+      ],
+      "gnc.pso_parameters_push_bang": [
+        80.0,
+        80.0
+      ],
+      "gnc.pso_parameters_rpo_hypr_refinement_sampling_density_m": [
+        80.0,
+        230.0
+      ],
+      "gnc.pso_parameters_rpo_hypr_sampling_density_m": [
+        80.0,
+        380.0
+      ],
+      "gnc.pso_parameters_rpo_pso_config": [
+        400.0,
+        80.0
+      ],
+      "gnc.pso_parameters_rpoadaptivesamplingsettings": [
+        400.0,
+        230.0
+      ],
+      "gnc.pso_parameters_rpopsoadaptivesettings": [
+        400.0,
+        380.0
+      ],
+      "gnc.pso_parameters_rpopsoconfigurator": [
+        80.0,
+        530.0
+      ],
+      "gnc.pso_parameters_rpopsocullsettings": [
+        400.0,
+        530.0
+      ],
+      "gnc.pso_parameters_rpopsoearlystoppingsettings": [
+        400.0,
+        680.0
+      ],
+      "gnc.pso_parameters_rpopsoobjectivesettings": [
+        400.0,
+        830.0
+      ],
+      "gnc.pso_parameters_rpopsoprobesettings": [
+        400.0,
+        980.0
+      ],
+      "gnc.pso_parameters_rpopsoreexploresettings": [
+        400.0,
+        1130.0
+      ],
+      "gnc.pso_parameters_rpopsorefinementsettings": [
+        400.0,
+        1280.0
+      ],
+      "gnc.pso_parameters_rpopsoretimingsettings": [
+        400.0,
+        1430.0
+      ],
+      "gnc.pso_parameters_rpopsorrtconnectwarmstartsettings": [
+        400.0,
+        1580.0
+      ],
+      "gnc.pso_parameters_rpopsoschedulesettings": [
+        400.0,
+        1730.0
+      ],
+      "gnc.pso_parameters_rpopsostagnationsettings": [
+        400.0,
+        1880.0
+      ],
+      "gnc.pso_parameters_rpopsoswarmsettings": [
+        400.0,
+        2030.0
+      ],
+      "gnc.pso_parameters_validate_rpo_pso_config": [
+        720.0,
+        530.0
+      ],
+      "gncy.pso_parameters_rpopsoconfig": [
+        720.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.pso_parameters__rpo_pso_config_tuple",
+    "gnc.pso_parameters__rpo_pso_normalize_kwargs",
+    "gnc.pso_parameters__rpo_pso_sync_sample_ds_with_safe_distance",
+    "gnc.pso_parameters_push_bang",
+    "gnc.pso_parameters_rpo_hypr_refinement_sampling_density_m",
+    "gnc.pso_parameters_rpo_hypr_sampling_density_m",
+    "gnc.pso_parameters_rpo_pso_config",
+    "gnc.pso_parameters_rpoadaptivesamplingsettings",
+    "gnc.pso_parameters_rpopsoadaptivesettings",
+    "gnc.pso_parameters_rpopsoconfigurator",
+    "gnc.pso_parameters_rpopsocullsettings",
+    "gnc.pso_parameters_rpopsoearlystoppingsettings",
+    "gnc.pso_parameters_rpopsoobjectivesettings",
+    "gnc.pso_parameters_rpopsoprobesettings",
+    "gnc.pso_parameters_rpopsoreexploresettings",
+    "gnc.pso_parameters_rpopsorefinementsettings",
+    "gnc.pso_parameters_rpopsoretimingsettings",
+    "gnc.pso_parameters_rpopsorrtconnectwarmstartsettings",
+    "gnc.pso_parameters_rpopsoschedulesettings",
+    "gnc.pso_parameters_rpopsostagnationsettings",
+    "gnc.pso_parameters_rpopsoswarmsettings",
+    "gnc.pso_parameters_validate_rpo_pso_config",
+    "gncy.pso_parameters_rpopsoconfig"
+  ]
+}

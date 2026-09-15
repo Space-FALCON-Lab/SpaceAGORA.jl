@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-thermal-callbacks-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/thermal_callbacks.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks/thermal_callbacks.jl",
+    "layout_of": "19fd35e2b88e529c"
+  },
+  "derives_from": "simulation-simulation-callbacks",
+  "group": "grp.src_simulation_callbacks_thermal_callbacks_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.thermal_callbacks__compute_stage_heat_rates_bang": [
+        1040.0,
+        80.0
+      ],
+      "simulation.thermal_callbacks__heat_rate_buffer_for_sat_bang": [
+        1360.0,
+        80.0
+      ],
+      "simulation.thermal_callbacks_affect_bang": [
+        400.0,
+        80.0
+      ],
+      "simulation.thermal_callbacks_condition": [
+        400.0,
+        230.0
+      ],
+      "simulation.thermal_callbacks_update_thermal_sat_bang": [
+        720.0,
+        80.0
+      ],
+      "simulation_a.thermal_callbacks_get_thermal_callback": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.thermal_callbacks__compute_stage_heat_rates_bang",
+    "simulation.thermal_callbacks__heat_rate_buffer_for_sat_bang",
+    "simulation.thermal_callbacks_affect_bang",
+    "simulation.thermal_callbacks_condition",
+    "simulation.thermal_callbacks_update_thermal_sat_bang",
+    "simulation_a.thermal_callbacks_get_thermal_callback"
+  ]
+}

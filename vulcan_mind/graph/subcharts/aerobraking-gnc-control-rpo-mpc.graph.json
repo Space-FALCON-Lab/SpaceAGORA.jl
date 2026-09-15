@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-control-rpo-mpc",
+  "chart_kind": "sub",
+  "title": "gnc/control/rpo_mpc/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_control_rpo_mpc",
+    "layout_of": "6d8287a105b3a477"
+  },
+  "derives_from": "aerobraking-gnc-control",
+  "group": "grp.src_gnc_control_rpo_mpc",
+  "ui": {
+    "pos_overrides": {
+      "gnc.lqmpc_rpo_discretize_zoh": [
+        80.0,
+        80.0
+      ],
+      "gnc.lqmpc_rpo_hcw_continuous_mats": [
+        80.0,
+        230.0
+      ],
+      "gnc.lqmpc_rpo_prediction_mats": [
+        80.0,
+        380.0
+      ],
+      "gnc.lqmpc_rpo_ref_preview": [
+        400.0,
+        80.0
+      ],
+      "gnc.thruster_allocator_rpo_thruster_wrench_body": [
+        400.0,
+        230.0
+      ],
+      "gncx.rpo_mpc_control_model_calccontroleffect_bang": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.lqmpc_rpo_discretize_zoh",
+    "gnc.lqmpc_rpo_hcw_continuous_mats",
+    "gnc.lqmpc_rpo_prediction_mats",
+    "gnc.lqmpc_rpo_ref_preview",
+    "gnc.thruster_allocator_rpo_thruster_wrench_body",
+    "gncx.rpo_mpc_control_model_calccontroleffect_bang"
+  ]
+}

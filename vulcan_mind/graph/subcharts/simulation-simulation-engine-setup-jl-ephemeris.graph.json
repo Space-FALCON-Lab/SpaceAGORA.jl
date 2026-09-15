@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-setup-jl-ephemeris",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _ephemeris* (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/setup.jl#_ephemeris",
+    "layout_of": "f3bf241765c24dbe"
+  },
+  "derives_from": "simulation-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_ephemeris",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__ephemeris_explicit_cache_store_bang": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__ephemeris_reuse_enabled": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__ephemeris_reuse_lookup": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__ephemeris_reuse_max_entries": [
+        80.0,
+        530.0
+      ],
+      "simulation.setup__ephemeris_reuse_store_bang": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__ephemeris_explicit_cache_store_bang",
+    "simulation.setup__ephemeris_reuse_enabled",
+    "simulation.setup__ephemeris_reuse_lookup",
+    "simulation.setup__ephemeris_reuse_max_entries",
+    "simulation.setup__ephemeris_reuse_store_bang"
+  ]
+}

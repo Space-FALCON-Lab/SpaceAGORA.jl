@@ -1,0 +1,1708 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "master",
+  "chart_kind": "master",
+  "title": "SpaceAGORA.jl — how a run flows",
+  "region": "all",
+  "provenance": {
+    "generator": "vulcan-map/0.1.0",
+    "repo_commit": "e8dd610d"
+  },
+  "nodes": [
+    {
+      "id": "input.cli_args",
+      "label": "CLI arguments",
+      "kind": "external",
+      "doc": "nodes/flow/input_cli_args.md",
+      "sockets": {
+        "outputs": [
+          {
+            "id": "argv",
+            "type": "Vector{String}",
+            "units": "n/a",
+            "description": "Subcommand and --key=value options as typed at the shell."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          80.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "input.scenario_manifest",
+      "label": "Scenario manifest (TOML)",
+      "kind": "external",
+      "doc": "nodes/flow/input_scenario_manifest.md",
+      "sockets": {
+        "outputs": [
+          {
+            "id": "manifest_toml",
+            "type": "TOML file",
+            "units": "n/a",
+            "description": "Scenario table listing planet, spacecraft, events, tolerances, atmosphere truth and telemetry paths."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          80.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "input.simulation_configuration",
+      "label": "SimulationConfiguration (script / API)",
+      "kind": "external",
+      "doc": "nodes/flow/input_simulation_configuration.md",
+      "sockets": {
+        "outputs": [
+          {
+            "id": "args",
+            "type": "SimulationConfiguration",
+            "units": "n/a",
+            "description": "Fully specified run: settings, mission, environment, dynamics, GNC models, epoch, tolerances."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          80.0,
+          830.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "input.spice_kernels",
+      "label": "SPICE kernels",
+      "kind": "external",
+      "doc": "nodes/flow/input_spice_kernels.md",
+      "sockets": {
+        "outputs": [
+          {
+            "id": "kernels",
+            "type": "SPICE kernel files",
+            "units": "n/a",
+            "description": "Leapseconds, DE44x planetary ephemerides and body orientation kernels under data/kernels."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          80.0,
+          980.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "input.gram_data",
+      "label": "GRAM atmosphere data",
+      "kind": "external",
+      "doc": "nodes/flow/input_gram_data.md",
+      "sockets": {
+        "outputs": [
+          {
+            "id": "gram_assets",
+            "type": "GRAM datasets / surrogate grids",
+            "units": "n/a",
+            "description": "Native GRAM model data or precomputed offline surrogate grids per planet."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          80.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "input.gravity_coefficients",
+      "label": "Gravity harmonics coefficients",
+      "kind": "external",
+      "doc": "nodes/flow/input_gravity_coefficients.md",
+      "sockets": {
+        "outputs": [
+          {
+            "id": "coefficient_file",
+            "type": "CSV",
+            "units": "n/a",
+            "description": "Spherical-harmonics C and S coefficients, normalisation convention, reference radius."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          80.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "input.telemetry_truth",
+      "label": "Flight telemetry (truth)",
+      "kind": "external",
+      "doc": "nodes/flow/input_telemetry_truth.md",
+      "sockets": {
+        "outputs": [
+          {
+            "id": "telemetry_tables",
+            "type": "Arrow / CSV",
+            "units": "n/a",
+            "description": "Periapsis and apoapsis event histories, or time-aligned state, from a real mission."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          80.0,
+          1280.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "input.station_cad",
+      "label": "Station geometry (STL / point cloud)",
+      "kind": "external",
+      "doc": "nodes/flow/input_station_cad.md",
+      "sockets": {
+        "outputs": [
+          {
+            "id": "geometry_file",
+            "type": "STL / CSV",
+            "units": "n/a",
+            "description": "Target station mesh or sampled point cloud for RPO clearance checks."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          80.0,
+          1130.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.configure",
+      "label": "Configure a run",
+      "kind": "group",
+      "doc": "nodes/flow/flow_configure.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "argv",
+            "type": "Vector{String}",
+            "units": "n/a",
+            "required": false,
+            "description": "Command-line tokens."
+          },
+          {
+            "id": "manifest",
+            "type": "TOML",
+            "units": "n/a",
+            "required": false,
+            "description": "Scenario manifest."
+          },
+          {
+            "id": "api_args",
+            "type": "SimulationConfiguration",
+            "units": "n/a",
+            "required": false,
+            "description": "Programmatic configuration."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "run_config",
+            "type": "SimulationConfiguration",
+            "units": "n/a",
+            "description": "A validated configuration ready for setup."
+          },
+          {
+            "id": "scenarios",
+            "type": "Vector{AbstractScenarioConfig}",
+            "units": "n/a",
+            "description": "Typed verification scenarios."
+          },
+          {
+            "id": "campaign_spec",
+            "type": "MonteCarloSpec / closure",
+            "units": "n/a",
+            "description": "Seeds and a per-seed configuration builder."
+          },
+          {
+            "id": "asset_report",
+            "type": "AssetCheckReport",
+            "units": "n/a",
+            "description": "Presence and integrity of data assets."
+          }
+        ]
+      },
+      "opens": "cli",
+      "ui": {
+        "pos": [
+          400.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.setup_run",
+      "label": "Set up the run",
+      "kind": "group",
+      "doc": "nodes/flow/flow_setup_run.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "run_config",
+            "type": "SimulationConfiguration",
+            "units": "n/a",
+            "description": "The configuration to prepare."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "initial_state",
+            "type": "ComponentVector",
+            "units": "n/a",
+            "description": "Packed per-satellite initial conditions."
+          },
+          {
+            "id": "ode_params",
+            "type": "ODEParams",
+            "units": "n/a",
+            "description": "Shared buffers, caches and environment snapshots."
+          },
+          {
+            "id": "cache_file",
+            "type": "serialized NBodyEphemerisCache",
+            "units": "n/a",
+            "description": "Optional prewarmed ephemeris table written to disk."
+          }
+        ]
+      },
+      "opens": "simulation-simulation-engine-setup-jl",
+      "ui": {
+        "pos": [
+          720.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.solve_loop",
+      "label": "Solve loop",
+      "kind": "group",
+      "doc": "nodes/flow/flow_solve_loop.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "initial_state",
+            "type": "ComponentVector",
+            "units": "n/a",
+            "description": "Initial conditions."
+          },
+          {
+            "id": "ode_params",
+            "type": "ODEParams",
+            "units": "n/a",
+            "description": "Prepared parameters."
+          },
+          {
+            "id": "sample_config",
+            "type": "SimulationConfiguration",
+            "units": "n/a",
+            "required": false,
+            "description": "One campaign sample's configuration."
+          },
+          {
+            "id": "scenario_config",
+            "type": "SimulationConfiguration",
+            "units": "n/a",
+            "required": false,
+            "description": "One verification scenario's configuration."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "callback_hooks",
+            "type": "CallbackSet",
+            "units": "n/a",
+            "description": "Per-step and event callbacks the integrator fires."
+          },
+          {
+            "id": "rhs_calls",
+            "type": "ODEFunction",
+            "units": "n/a",
+            "description": "The derivative the integrator evaluates."
+          },
+          {
+            "id": "saved_values",
+            "type": "SavedValues / DataFrame",
+            "units": "n/a",
+            "description": "Time series collected by the save callback."
+          },
+          {
+            "id": "solution",
+            "type": "ODESolution + solver metadata",
+            "units": "n/a",
+            "description": "The in-memory result when requested."
+          }
+        ]
+      },
+      "opens": "run-pipeline",
+      "ui": {
+        "pos": [
+          1040.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.callbacks",
+      "label": "Integration callbacks",
+      "kind": "group",
+      "doc": "nodes/flow/flow_callbacks.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "callback_hooks",
+            "type": "CallbackSet",
+            "units": "n/a",
+            "description": "Registered by the solve loop."
+          },
+          {
+            "id": "thread_policy",
+            "type": "PolicyDecision",
+            "units": "n/a",
+            "required": false,
+            "description": "Whether and how to parallelise this callback."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "staged_environment",
+            "type": "SharedBuffers",
+            "units": "n/a",
+            "description": "Density, temperature, wind and planet frame per satellite for this step."
+          },
+          {
+            "id": "gnc_commands",
+            "type": "effector state",
+            "units": "n/a",
+            "description": "Guidance, navigation and control effects applied to the models."
+          },
+          {
+            "id": "saved_rows",
+            "type": "SaveData",
+            "units": "n/a",
+            "description": "Columns captured at each save instant."
+          }
+        ]
+      },
+      "opens": "simulation-simulation-callbacks",
+      "ui": {
+        "pos": [
+          1360.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.rhs",
+      "label": "Dynamics right-hand side",
+      "kind": "group",
+      "doc": "nodes/flow/flow_rhs.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "rhs_calls",
+            "type": "ODEFunction",
+            "units": "n/a",
+            "description": "Derivative requests from the integrator."
+          },
+          {
+            "id": "staged_environment",
+            "type": "SharedBuffers",
+            "units": "n/a",
+            "description": "Atmosphere and planet frame staged by the callbacks."
+          },
+          {
+            "id": "thread_policy",
+            "type": "PolicyDecision",
+            "units": "n/a",
+            "required": false,
+            "description": "Execution plan for this evaluation."
+          },
+          {
+            "id": "control_wrench",
+            "type": "(force, torque, mass rate)",
+            "units": "n/a",
+            "required": false,
+            "description": "Direct actuation returned by control effectors."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "force_requests",
+            "type": "StateSample + EnvironmentSample",
+            "units": "n/a",
+            "description": "State and environment handed to each force model."
+          },
+          {
+            "id": "environment_queries",
+            "type": "sample_* calls",
+            "units": "n/a",
+            "description": "Planet-frame, atmosphere and ephemeris samples requested for effectors."
+          }
+        ]
+      },
+      "opens": "simulation-simulation-engine-dynamics-rhs-jl",
+      "ui": {
+        "pos": [
+          2000.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.forces",
+      "label": "Force & torque models",
+      "kind": "group",
+      "doc": "nodes/flow/flow_forces.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "force_requests",
+            "type": "StateSample + EnvironmentSample",
+            "units": "n/a",
+            "description": "From the RHS."
+          },
+          {
+            "id": "spacecraft_geometry",
+            "type": "SpacecraftModel",
+            "units": "n/a",
+            "description": "Links, facets, areas and attitudes."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "wrench",
+            "type": "(force_ii, torque_body)",
+            "units": "n/a",
+            "description": "Inertial force and body torque per effector."
+          }
+        ]
+      },
+      "opens": "dynamics",
+      "ui": {
+        "pos": [
+          2320.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.environment",
+      "label": "Environment sampling",
+      "kind": "group",
+      "doc": "nodes/flow/flow_environment.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "kernels",
+            "type": "SPICE kernels",
+            "units": "n/a",
+            "description": "Furnished kernel set."
+          },
+          {
+            "id": "gram_assets",
+            "type": "GRAM datasets",
+            "units": "n/a",
+            "description": "Atmosphere data."
+          },
+          {
+            "id": "coefficient_file",
+            "type": "CSV",
+            "units": "n/a",
+            "description": "Harmonics coefficients."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "atmosphere",
+            "type": "(rho, T, wind)",
+            "units": "n/a",
+            "description": "Density, temperature and wind at a point and time."
+          },
+          {
+            "id": "frames_and_bodies",
+            "type": "l_pi, body positions",
+            "units": "n/a",
+            "description": "Planet orientation and third-body positions."
+          }
+        ]
+      },
+      "opens": "environment",
+      "ui": {
+        "pos": [
+          400.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.vehicle",
+      "label": "Spacecraft model",
+      "kind": "group",
+      "doc": "nodes/flow/flow_vehicle.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "run_config",
+            "type": "SimulationConfiguration",
+            "units": "n/a",
+            "description": "Vehicle definitions in the dynamics model."
+          },
+          {
+            "id": "actuation",
+            "type": "panel angles / wheel torques",
+            "units": "n/a",
+            "required": false,
+            "description": "Commands from GNC that change geometry or momentum."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "spacecraft_geometry",
+            "type": "SpacecraftModel",
+            "units": "n/a",
+            "description": "Links, joints, facets, thrusters, wheels, magnets and their attitudes."
+          }
+        ]
+      },
+      "opens": "vehicle",
+      "ui": {
+        "pos": [
+          2000.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.gnc",
+      "label": "Guidance, navigation & control",
+      "kind": "group",
+      "doc": "nodes/flow/flow_gnc.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "gnc_commands",
+            "type": "callback invocations",
+            "units": "n/a",
+            "description": "Guidance, navigation and control callbacks at their rates."
+          },
+          {
+            "id": "geometry_file",
+            "type": "STL / CSV",
+            "units": "n/a",
+            "required": false,
+            "description": "Station geometry for RPO planning."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "actuation",
+            "type": "panel angles / wheel torques / thruster commands",
+            "units": "n/a",
+            "description": "Physical commands applied to the vehicle."
+          },
+          {
+            "id": "control_wrench",
+            "type": "(force, torque, mass rate)",
+            "units": "n/a",
+            "description": "Direct actuation reported back to the RHS."
+          },
+          {
+            "id": "planner_plots",
+            "type": "PNG / HTML",
+            "units": "n/a",
+            "required": false,
+            "description": "RPO planner comparison figures."
+          }
+        ]
+      },
+      "opens": "gnc",
+      "ui": {
+        "pos": [
+          1680.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.parallel",
+      "label": "Parallel routing & thread policy",
+      "kind": "group",
+      "doc": "nodes/flow/flow_parallel.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "policy_queries",
+            "type": "decision requests",
+            "units": "n/a",
+            "description": "Should this loop run threaded, and with what allotment."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "thread_policy",
+            "type": "PolicyDecision",
+            "units": "n/a",
+            "description": "Use-threads verdict, allotment and mode, plus telemetry."
+          }
+        ]
+      },
+      "opens": "parallel",
+      "ui": {
+        "pos": [
+          80.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.campaigns",
+      "label": "Campaigns",
+      "kind": "group",
+      "doc": "nodes/flow/flow_campaigns.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "campaign_spec",
+            "type": "MonteCarloSpec / closure",
+            "units": "n/a",
+            "description": "Seeds and the per-seed configuration builder."
+          },
+          {
+            "id": "thread_policy",
+            "type": "PolicyDecision",
+            "units": "n/a",
+            "required": false,
+            "description": "Outer route choice."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "sample_config",
+            "type": "SimulationConfiguration",
+            "units": "n/a",
+            "description": "Each sample's run handed to the solve loop."
+          },
+          {
+            "id": "policy_queries",
+            "type": "decision requests",
+            "units": "n/a",
+            "description": "Route selection and feedback."
+          },
+          {
+            "id": "campaign_results",
+            "type": "MonteCarloResult",
+            "units": "n/a",
+            "description": "Ordered per-sample results with failures recorded."
+          }
+        ]
+      },
+      "opens": "simulation-simulation-campaigns",
+      "ui": {
+        "pos": [
+          720.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.verification",
+      "label": "Telemetry verification study",
+      "kind": "group",
+      "doc": "nodes/flow/flow_verification.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "scenarios",
+            "type": "Vector{AbstractScenarioConfig}",
+            "units": "n/a",
+            "description": "Parsed manifest scenarios."
+          },
+          {
+            "id": "telemetry_tables",
+            "type": "Arrow / CSV",
+            "units": "n/a",
+            "description": "Flight truth."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "scenario_config",
+            "type": "SimulationConfiguration",
+            "units": "n/a",
+            "description": "Each scenario's run for the solve loop."
+          },
+          {
+            "id": "reports",
+            "type": "CSV + plots",
+            "units": "n/a",
+            "description": "Summary and error tables and figures."
+          }
+        ]
+      },
+      "opens": "analysis",
+      "ui": {
+        "pos": [
+          720.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "flow.write_results",
+      "label": "Write results & checkpoints",
+      "kind": "group",
+      "doc": "nodes/flow/flow_write_results.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "saved_values",
+            "type": "SavedValues / DataFrame",
+            "units": "n/a",
+            "description": "Collected time series."
+          },
+          {
+            "id": "checkpoint_state",
+            "type": "(t, u, solver_mode)",
+            "units": "n/a",
+            "required": false,
+            "description": "Integrator state at a segment boundary."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "csv",
+            "type": "simulation_results.csv",
+            "units": "n/a",
+            "description": "Row-per-save-instant table."
+          },
+          {
+            "id": "bundle",
+            "type": "feather + manifest",
+            "units": "n/a",
+            "description": "Arrow table with a TOML manifest."
+          },
+          {
+            "id": "checkpoint",
+            "type": ".jls + manifest",
+            "units": "n/a",
+            "description": "Resumable state."
+          }
+        ]
+      },
+      "opens": "io",
+      "ui": {
+        "pos": [
+          1680.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "output.results_csv",
+      "label": "simulation_results.csv",
+      "kind": "external",
+      "doc": "nodes/flow/output_results_csv.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "csv",
+            "type": "CSV file",
+            "units": "n/a",
+            "description": "Written by the results writer."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          2000.0,
+          830.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "output.results_bundle",
+      "label": "Results bundle (feather + manifest)",
+      "kind": "external",
+      "doc": "nodes/flow/output_results_bundle.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "bundle",
+            "type": "Arrow + TOML",
+            "units": "n/a",
+            "description": "Written by the results writer."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          2000.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "output.checkpoint",
+      "label": "Checkpoint (.jls + manifest)",
+      "kind": "external",
+      "doc": "nodes/flow/output_checkpoint.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "checkpoint",
+            "type": "serialized state + TOML",
+            "units": "n/a",
+            "description": "Written at each segment boundary."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          2000.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "output.solution_object",
+      "label": "Solution / solver metadata (in memory)",
+      "kind": "external",
+      "doc": "nodes/flow/output_solution_object.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "solution",
+            "type": "ODESolution + trace",
+            "units": "n/a",
+            "description": "Returned to the caller."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          1360.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "output.verification_reports",
+      "label": "Verification summary, errors & plots",
+      "kind": "external",
+      "doc": "nodes/flow/output_verification_reports.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "reports",
+            "type": "CSV + PNG",
+            "units": "n/a",
+            "description": "Written by the verification study."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          1040.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "output.ephemeris_cache_file",
+      "label": "Prewarmed N-body ephemeris cache",
+      "kind": "external",
+      "doc": "nodes/flow/output_ephemeris_cache_file.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "cache_file",
+            "type": "serialized payload",
+            "units": "n/a",
+            "description": "Written by the prewarm step."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          1040.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "output.asset_report",
+      "label": "Asset check report",
+      "kind": "external",
+      "doc": "nodes/flow/output_asset_report.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "asset_report",
+            "type": "AssetCheckReport",
+            "units": "n/a",
+            "description": "Rendered by the CLI."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          720.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "output.planner_comparison_plots",
+      "label": "RPO planner comparison figures",
+      "kind": "external",
+      "doc": "nodes/flow/output_planner_comparison_plots.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "planner_plots",
+            "type": "PNG / HTML",
+            "units": "n/a",
+            "description": "Saved by the planner comparison batch."
+          }
+        ]
+      },
+      "ui": {
+        "pos": [
+          2000.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e:input.cli_args:argv->flow.configure:argv",
+      "from": {
+        "node": "input.cli_args",
+        "socket": "argv"
+      },
+      "to": {
+        "node": "flow.configure",
+        "socket": "argv"
+      },
+      "kind": "dataflow",
+      "label": "argv",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:input.scenario_manifest:manifest_toml->flow.configure:manifest",
+      "from": {
+        "node": "input.scenario_manifest",
+        "socket": "manifest_toml"
+      },
+      "to": {
+        "node": "flow.configure",
+        "socket": "manifest"
+      },
+      "kind": "dataflow",
+      "label": "TOML scenarios",
+      "evidence": {
+        "file": "src/analysis/verification/telemetry_verification/manifest_parsing.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:input.simulation_configuration:args->flow.configure:api_args",
+      "from": {
+        "node": "input.simulation_configuration",
+        "socket": "args"
+      },
+      "to": {
+        "node": "flow.configure",
+        "socket": "api_args"
+      },
+      "kind": "dataflow",
+      "label": "SimulationConfiguration",
+      "evidence": {
+        "file": "src/core/state/simulation_configuration.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.configure:run_config->flow.setup_run:run_config",
+      "from": {
+        "node": "flow.configure",
+        "socket": "run_config"
+      },
+      "to": {
+        "node": "flow.setup_run",
+        "socket": "run_config"
+      },
+      "kind": "dataflow",
+      "label": "validated configuration",
+      "evidence": {
+        "file": "src/simulation/engine/execution.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.configure:run_config->flow.vehicle:run_config",
+      "from": {
+        "node": "flow.configure",
+        "socket": "run_config"
+      },
+      "to": {
+        "node": "flow.vehicle",
+        "socket": "run_config"
+      },
+      "kind": "dataflow",
+      "label": "spacecraft definitions",
+      "evidence": {
+        "file": "src/vehicle/spacecraft/model.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.configure:scenarios->flow.verification:scenarios",
+      "from": {
+        "node": "flow.configure",
+        "socket": "scenarios"
+      },
+      "to": {
+        "node": "flow.verification",
+        "socket": "scenarios"
+      },
+      "kind": "dataflow",
+      "label": "scenario configs",
+      "evidence": {
+        "file": "src/analysis/verification/telemetry_verification/runner.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.configure:campaign_spec->flow.campaigns:campaign_spec",
+      "from": {
+        "node": "flow.configure",
+        "socket": "campaign_spec"
+      },
+      "to": {
+        "node": "flow.campaigns",
+        "socket": "campaign_spec"
+      },
+      "kind": "dataflow",
+      "label": "seeds + builder",
+      "evidence": {
+        "file": "src/simulation/campaigns/monte_carlo.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.configure:asset_report->output.asset_report:asset_report",
+      "from": {
+        "node": "flow.configure",
+        "socket": "asset_report"
+      },
+      "to": {
+        "node": "output.asset_report",
+        "socket": "asset_report"
+      },
+      "kind": "dataflow",
+      "label": "asset check",
+      "evidence": {
+        "file": "src/cli/assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:input.spice_kernels:kernels->flow.environment:kernels",
+      "from": {
+        "node": "input.spice_kernels",
+        "socket": "kernels"
+      },
+      "to": {
+        "node": "flow.environment",
+        "socket": "kernels"
+      },
+      "kind": "dataflow",
+      "label": "furnished kernels",
+      "evidence": {
+        "file": "src/environment/ephemerides/planets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:input.gram_data:gram_assets->flow.environment:gram_assets",
+      "from": {
+        "node": "input.gram_data",
+        "socket": "gram_assets"
+      },
+      "to": {
+        "node": "flow.environment",
+        "socket": "gram_assets"
+      },
+      "kind": "dataflow",
+      "label": "GRAM datasets",
+      "evidence": {
+        "file": "src/environment/atmosphere/density_models.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:input.gravity_coefficients:coefficient_file->flow.environment:coefficient_file",
+      "from": {
+        "node": "input.gravity_coefficients",
+        "socket": "coefficient_file"
+      },
+      "to": {
+        "node": "flow.environment",
+        "socket": "coefficient_file"
+      },
+      "kind": "dataflow",
+      "label": "harmonics coefficients",
+      "evidence": {
+        "file": "src/dynamics/coupled/perturbations.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:input.telemetry_truth:telemetry_tables->flow.verification:telemetry_tables",
+      "from": {
+        "node": "input.telemetry_truth",
+        "socket": "telemetry_tables"
+      },
+      "to": {
+        "node": "flow.verification",
+        "socket": "telemetry_tables"
+      },
+      "kind": "dataflow",
+      "label": "flight truth",
+      "evidence": {
+        "file": "src/analysis/verification/telemetry_verification/telemetry_loading.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:input.station_cad:geometry_file->flow.gnc:geometry_file",
+      "from": {
+        "node": "input.station_cad",
+        "socket": "geometry_file"
+      },
+      "to": {
+        "node": "flow.gnc",
+        "socket": "geometry_file"
+      },
+      "kind": "dataflow",
+      "label": "station geometry",
+      "evidence": {
+        "file": "src/assets/rpo_station_assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.setup_run:initial_state->flow.solve_loop:initial_state",
+      "from": {
+        "node": "flow.setup_run",
+        "socket": "initial_state"
+      },
+      "to": {
+        "node": "flow.solve_loop",
+        "socket": "initial_state"
+      },
+      "kind": "dataflow",
+      "label": "u0",
+      "evidence": {
+        "file": "src/simulation/engine/execution.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.setup_run:ode_params->flow.solve_loop:ode_params",
+      "from": {
+        "node": "flow.setup_run",
+        "socket": "ode_params"
+      },
+      "to": {
+        "node": "flow.solve_loop",
+        "socket": "ode_params"
+      },
+      "kind": "dataflow",
+      "label": "ODEParams",
+      "evidence": {
+        "file": "src/simulation/engine/execution.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.setup_run:cache_file->output.ephemeris_cache_file:cache_file",
+      "from": {
+        "node": "flow.setup_run",
+        "socket": "cache_file"
+      },
+      "to": {
+        "node": "output.ephemeris_cache_file",
+        "socket": "cache_file"
+      },
+      "kind": "dataflow",
+      "label": "prewarmed table",
+      "evidence": {
+        "file": "src/simulation/engine/setup.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.campaigns:sample_config->flow.solve_loop:sample_config",
+      "from": {
+        "node": "flow.campaigns",
+        "socket": "sample_config"
+      },
+      "to": {
+        "node": "flow.solve_loop",
+        "socket": "sample_config"
+      },
+      "kind": "dataflow",
+      "label": "run_simulation per sample",
+      "evidence": {
+        "file": "src/simulation/campaigns/monte_carlo.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.campaigns:policy_queries->flow.parallel:policy_queries",
+      "from": {
+        "node": "flow.campaigns",
+        "socket": "policy_queries"
+      },
+      "to": {
+        "node": "flow.parallel",
+        "socket": "policy_queries"
+      },
+      "kind": "feedback",
+      "label": "route feedback (timings)",
+      "evidence": {
+        "file": "src/simulation/campaigns/adaptive_routing.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.verification:scenario_config->flow.solve_loop:scenario_config",
+      "from": {
+        "node": "flow.verification",
+        "socket": "scenario_config"
+      },
+      "to": {
+        "node": "flow.solve_loop",
+        "socket": "scenario_config"
+      },
+      "kind": "dataflow",
+      "label": "run_simulation per scenario",
+      "evidence": {
+        "file": "src/analysis/verification/telemetry_verification/runner.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.verification:reports->output.verification_reports:reports",
+      "from": {
+        "node": "flow.verification",
+        "socket": "reports"
+      },
+      "to": {
+        "node": "output.verification_reports",
+        "socket": "reports"
+      },
+      "kind": "dataflow",
+      "label": "summary / errors / plots",
+      "evidence": {
+        "file": "src/analysis/verification/telemetry_verification/runner.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.solve_loop:callback_hooks->flow.callbacks:callback_hooks",
+      "from": {
+        "node": "flow.solve_loop",
+        "socket": "callback_hooks"
+      },
+      "to": {
+        "node": "flow.callbacks",
+        "socket": "callback_hooks"
+      },
+      "kind": "dataflow",
+      "label": "CallbackSet",
+      "evidence": {
+        "file": "src/simulation/callbacks/density_callbacks/assembly.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.solve_loop:rhs_calls->flow.rhs:rhs_calls",
+      "from": {
+        "node": "flow.solve_loop",
+        "socket": "rhs_calls"
+      },
+      "to": {
+        "node": "flow.rhs",
+        "socket": "rhs_calls"
+      },
+      "kind": "dataflow",
+      "label": "spacecraft_dynamics!",
+      "evidence": {
+        "file": "src/simulation/engine/dynamics_rhs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.solve_loop:saved_values->flow.write_results:saved_values",
+      "from": {
+        "node": "flow.solve_loop",
+        "socket": "saved_values"
+      },
+      "to": {
+        "node": "flow.write_results",
+        "socket": "saved_values"
+      },
+      "kind": "dataflow",
+      "label": "results DataFrame",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.solve_loop:solution->output.solution_object:solution",
+      "from": {
+        "node": "flow.solve_loop",
+        "socket": "solution"
+      },
+      "to": {
+        "node": "output.solution_object",
+        "socket": "solution"
+      },
+      "kind": "dataflow",
+      "label": "return_solution",
+      "evidence": {
+        "file": "src/simulation/engine/execution.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.callbacks:staged_environment->flow.rhs:staged_environment",
+      "from": {
+        "node": "flow.callbacks",
+        "socket": "staged_environment"
+      },
+      "to": {
+        "node": "flow.rhs",
+        "socket": "staged_environment"
+      },
+      "kind": "dataflow",
+      "label": "shared buffers",
+      "evidence": {
+        "file": "src/simulation/engine/effector_sampling.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.callbacks:gnc_commands->flow.gnc:gnc_commands",
+      "from": {
+        "node": "flow.callbacks",
+        "socket": "gnc_commands"
+      },
+      "to": {
+        "node": "flow.gnc",
+        "socket": "gnc_commands"
+      },
+      "kind": "dataflow",
+      "label": "calc*Effect! at rate",
+      "evidence": {
+        "file": "src/simulation/callbacks/control_callbacks.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.callbacks:saved_rows->flow.write_results:checkpoint_state",
+      "from": {
+        "node": "flow.callbacks",
+        "socket": "saved_rows"
+      },
+      "to": {
+        "node": "flow.write_results",
+        "socket": "checkpoint_state"
+      },
+      "kind": "dataflow",
+      "label": "checkpoint segments",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.rhs:force_requests->flow.forces:force_requests",
+      "from": {
+        "node": "flow.rhs",
+        "socket": "force_requests"
+      },
+      "to": {
+        "node": "flow.forces",
+        "socket": "force_requests"
+      },
+      "kind": "dataflow",
+      "label": "wrench / calcForceTorque",
+      "evidence": {
+        "file": "src/simulation/engine/dynamics_rhs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.vehicle:spacecraft_geometry->flow.forces:spacecraft_geometry",
+      "from": {
+        "node": "flow.vehicle",
+        "socket": "spacecraft_geometry"
+      },
+      "to": {
+        "node": "flow.forces",
+        "socket": "spacecraft_geometry"
+      },
+      "kind": "dataflow",
+      "label": "links & facets",
+      "evidence": {
+        "file": "src/dynamics/coupled/aerodynamic_wrench_models.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.gnc:actuation->flow.vehicle:actuation",
+      "from": {
+        "node": "flow.gnc",
+        "socket": "actuation"
+      },
+      "to": {
+        "node": "flow.vehicle",
+        "socket": "actuation"
+      },
+      "kind": "dataflow",
+      "label": "panel angles / wheel torque",
+      "evidence": {
+        "file": "src/gnc/control/targeting_control.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.gnc:control_wrench->flow.rhs:control_wrench",
+      "from": {
+        "node": "flow.gnc",
+        "socket": "control_wrench"
+      },
+      "to": {
+        "node": "flow.rhs",
+        "socket": "control_wrench"
+      },
+      "kind": "dataflow",
+      "label": "control wrench",
+      "evidence": {
+        "file": "src/gnc/control/momentum_manager.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.gnc:planner_plots->output.planner_comparison_plots:planner_plots",
+      "from": {
+        "node": "flow.gnc",
+        "socket": "planner_plots"
+      },
+      "to": {
+        "node": "output.planner_comparison_plots",
+        "socket": "planner_plots"
+      },
+      "kind": "dataflow",
+      "label": "savefig",
+      "evidence": {
+        "file": "src/gnc/guidance/rpo/comparison_methods/planner_comparison.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.environment:atmosphere->flow.callbacks:callback_hooks",
+      "from": {
+        "node": "flow.environment",
+        "socket": "atmosphere"
+      },
+      "to": {
+        "node": "flow.callbacks",
+        "socket": "callback_hooks"
+      },
+      "kind": "dataflow",
+      "label": "density per step",
+      "evidence": {
+        "file": "src/simulation/callbacks/density_callbacks/runtime.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.environment:frames_and_bodies->flow.forces:force_requests",
+      "from": {
+        "node": "flow.environment",
+        "socket": "frames_and_bodies"
+      },
+      "to": {
+        "node": "flow.forces",
+        "socket": "force_requests"
+      },
+      "kind": "dataflow",
+      "label": "ephemerides & frames",
+      "evidence": {
+        "file": "src/simulation/engine/effector_sampling.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.parallel:thread_policy->flow.rhs:thread_policy",
+      "from": {
+        "node": "flow.parallel",
+        "socket": "thread_policy"
+      },
+      "to": {
+        "node": "flow.rhs",
+        "socket": "thread_policy"
+      },
+      "kind": "dataflow",
+      "label": "execution plan",
+      "evidence": {
+        "file": "src/simulation/engine/setup.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.parallel:thread_policy->flow.callbacks:thread_policy",
+      "from": {
+        "node": "flow.parallel",
+        "socket": "thread_policy"
+      },
+      "to": {
+        "node": "flow.callbacks",
+        "socket": "thread_policy"
+      },
+      "kind": "dataflow",
+      "label": "callback thread decision",
+      "evidence": {
+        "file": "src/simulation/callbacks/density_callbacks/config.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.parallel:thread_policy->flow.campaigns:thread_policy",
+      "from": {
+        "node": "flow.parallel",
+        "socket": "thread_policy"
+      },
+      "to": {
+        "node": "flow.campaigns",
+        "socket": "thread_policy"
+      },
+      "kind": "dataflow",
+      "label": "outer route",
+      "evidence": {
+        "file": "src/simulation/campaigns/adaptive_routing.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.write_results:csv->output.results_csv:csv",
+      "from": {
+        "node": "flow.write_results",
+        "socket": "csv"
+      },
+      "to": {
+        "node": "output.results_csv",
+        "socket": "csv"
+      },
+      "kind": "dataflow",
+      "label": "CSV.write",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.write_results:bundle->output.results_bundle:bundle",
+      "from": {
+        "node": "flow.write_results",
+        "socket": "bundle"
+      },
+      "to": {
+        "node": "output.results_bundle",
+        "socket": "bundle"
+      },
+      "kind": "dataflow",
+      "label": "Arrow.write + manifest",
+      "evidence": {
+        "file": "src/io/outputs/io_outputs.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:flow.write_results:checkpoint->output.checkpoint:checkpoint",
+      "from": {
+        "node": "flow.write_results",
+        "socket": "checkpoint"
+      },
+      "to": {
+        "node": "output.checkpoint",
+        "socket": "checkpoint"
+      },
+      "kind": "dataflow",
+      "label": "serialize + manifest",
+      "evidence": {
+        "file": "src/io/serialization/io_serialization.jl"
+      },
+      "origin": "agent"
+    }
+  ]
+}

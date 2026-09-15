@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-core-state",
+  "chart_kind": "sub",
+  "title": "core/state/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_core_state",
+    "layout_of": "3ef75238be9ecaeb"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_core_state",
+  "ui": {
+    "pos_overrides": {
+      "core.reference_system_config_clock": [
+        80.0,
+        80.0
+      ],
+      "core.simulation_configuration_environmentmodel": [
+        400.0,
+        80.0
+      ],
+      "core.simulation_configuration_missionconfiguration": [
+        80.0,
+        230.0
+      ],
+      "parcore.no_gram_presets_make_no_gram_environment": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.reference_system_config_clock",
+    "core.simulation_configuration_environmentmodel",
+    "core.simulation_configuration_missionconfiguration",
+    "parcore.no_gram_presets_make_no_gram_environment"
+  ]
+}

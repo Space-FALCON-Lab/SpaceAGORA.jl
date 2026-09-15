@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-core-numerics",
+  "chart_kind": "sub",
+  "title": "core/numerics/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_core_numerics",
+    "layout_of": "8e54ad65814e132e"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_core_numerics",
+  "ui": {
+    "pos_overrides": {
+      "core.project_unit_quaternion": [
+        80.0,
+        80.0
+      ],
+      "core.quaternion_utils_dcm_to_quaternion": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.project_unit_quaternion",
+    "core.quaternion_utils_dcm_to_quaternion"
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl-optional",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/manifest_parsing.jl · _optional* (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/manifest_parsing.jl#_optional",
+    "layout_of": "e0e1647491b5ee34"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl",
+  "group": "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_optional",
+  "ui": {
+    "pos_overrides": {
+      "analysis.manifest_parsing__optional_bool": [
+        80.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__optional_float": [
+        80.0,
+        230.0
+      ],
+      "analysis.manifest_parsing__optional_float64_vector": [
+        80.0,
+        380.0
+      ],
+      "analysis.manifest_parsing__optional_float_tuple": [
+        80.0,
+        530.0
+      ],
+      "analysis.manifest_parsing__optional_int": [
+        80.0,
+        680.0
+      ],
+      "analysis.manifest_parsing__optional_int64_vector": [
+        80.0,
+        830.0
+      ],
+      "analysis.manifest_parsing__optional_str": [
+        80.0,
+        980.0
+      ],
+      "analysis.manifest_parsing__optional_str_vector": [
+        80.0,
+        1130.0
+      ],
+      "analysis.manifest_parsing__optional_symbol_vector": [
+        80.0,
+        1280.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.manifest_parsing__optional_bool",
+    "analysis.manifest_parsing__optional_float",
+    "analysis.manifest_parsing__optional_float64_vector",
+    "analysis.manifest_parsing__optional_float_tuple",
+    "analysis.manifest_parsing__optional_int",
+    "analysis.manifest_parsing__optional_int64_vector",
+    "analysis.manifest_parsing__optional_str",
+    "analysis.manifest_parsing__optional_str_vector",
+    "analysis.manifest_parsing__optional_symbol_vector"
+  ]
+}

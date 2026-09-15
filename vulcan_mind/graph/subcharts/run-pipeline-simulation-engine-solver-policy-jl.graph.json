@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-engine-solver-policy-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/solver_policy.jl (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_solver_policy_jl",
+    "layout_of": "067b5c0a69630ebb"
+  },
+  "derives_from": "run-pipeline-simulation-engine",
+  "group": "grp.src_simulation_engine_solver_policy_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.solver_policy__auto_stiff_switched": [
+        1040.0,
+        80.0
+      ],
+      "simulation.solver_policy__build_solver_tolerances": [
+        80.0,
+        80.0
+      ],
+      "simulation.solver_policy__gravity_backbone_reject_reason": [
+        400.0,
+        380.0
+      ],
+      "simulation.solver_policy__gravity_backbone_time_reached": [
+        720.0,
+        380.0
+      ],
+      "simulation.solver_policy__is_partitioned_second_order_problem": [
+        400.0,
+        530.0
+      ],
+      "simulation.solver_policy__requires_componentwise_tolerances": [
+        400.0,
+        80.0
+      ],
+      "simulation.solver_policy__resolve_component_tolerance": [
+        400.0,
+        230.0
+      ],
+      "simulation.solver_policy__rodas5p_alg": [
+        400.0,
+        680.0
+      ],
+      "simulation.solver_policy__solve_with_explicit_solver": [
+        1040.0,
+        230.0
+      ],
+      "simulation.solver_policy__solve_with_fixed_step_solver": [
+        720.0,
+        530.0
+      ],
+      "simulation.solver_policy__solve_with_gravity_backbone_solver": [
+        400.0,
+        830.0
+      ],
+      "simulation.solver_policy__solve_with_multirate_solver": [
+        720.0,
+        80.0
+      ],
+      "simulation.solver_policy__split_imex_solver_spec": [
+        720.0,
+        230.0
+      ],
+      "simulation.solver_policy__symplectic_conservative_eligible": [
+        400.0,
+        980.0
+      ],
+      "simulation.solver_policy__symplectic_fixed_dt_s": [
+        400.0,
+        1130.0
+      ],
+      "simx.engine_solver_policy_solve_with_solver_policy": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.solver_policy__auto_stiff_switched",
+    "simulation.solver_policy__build_solver_tolerances",
+    "simulation.solver_policy__gravity_backbone_reject_reason",
+    "simulation.solver_policy__gravity_backbone_time_reached",
+    "simulation.solver_policy__is_partitioned_second_order_problem",
+    "simulation.solver_policy__requires_componentwise_tolerances",
+    "simulation.solver_policy__resolve_component_tolerance",
+    "simulation.solver_policy__rodas5p_alg",
+    "simulation.solver_policy__solve_with_explicit_solver",
+    "simulation.solver_policy__solve_with_fixed_step_solver",
+    "simulation.solver_policy__solve_with_gravity_backbone_solver",
+    "simulation.solver_policy__solve_with_multirate_solver",
+    "simulation.solver_policy__split_imex_solver_spec",
+    "simulation.solver_policy__symplectic_conservative_eligible",
+    "simulation.solver_policy__symplectic_fixed_dt_s",
+    "simx.engine_solver_policy_solve_with_solver_policy"
+  ]
+}

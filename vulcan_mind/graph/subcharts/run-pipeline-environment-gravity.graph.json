@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-environment-gravity",
+  "chart_kind": "sub",
+  "title": "environment/gravity/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_environment_gravity",
+    "layout_of": "f50dcc88ec85108f"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_environment_gravity",
+  "ui": {
+    "pos_overrides": {
+      "environment.gravity_models_environment_requirements": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "environment.gravity_models_environment_requirements"
+  ]
+}

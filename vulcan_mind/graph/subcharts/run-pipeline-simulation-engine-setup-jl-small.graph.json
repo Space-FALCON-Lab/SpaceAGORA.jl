@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-engine-setup-jl-small",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl/ (small files) (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_setup_jl_small",
+    "layout_of": "279104923b2d7454"
+  },
+  "derives_from": "run-pipeline-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_small",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__any_effector_consumes_atmosphere": [
+        400.0,
+        80.0
+      ],
+      "simulation.setup__collect_nbody_query_names": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__density_without_aero_warning_enabled": [
+        400.0,
+        230.0
+      ],
+      "simulation.setup__gram_per_sat_instances_enabled": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__has_active_nbody_effector": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__has_active_srp_effector": [
+        80.0,
+        530.0
+      ],
+      "simulation.setup__prewarmed_nbody_ephemeris_lookup": [
+        80.0,
+        680.0
+      ],
+      "simulation.setup__reset_spice_rhs_memo_bang": [
+        80.0,
+        830.0
+      ],
+      "simulation.setup__reset_spice_runtime_counters_bang": [
+        80.0,
+        980.0
+      ],
+      "simulation.setup__snapshot_rhs_plan_env_config": [
+        80.0,
+        1130.0
+      ],
+      "simulation.setup__spice_rhs_memo_enabled": [
+        80.0,
+        1280.0
+      ],
+      "simulation.setup__spice_runtime_counters_snapshot": [
+        80.0,
+        1430.0
+      ],
+      "simulation.setup__warn_density_without_atmospheric_effector": [
+        80.0,
+        1580.0
+      ],
+      "simx.engine_setup_build_nbody_ephemeris_cache": [
+        80.0,
+        1730.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__any_effector_consumes_atmosphere",
+    "simulation.setup__collect_nbody_query_names",
+    "simulation.setup__density_without_aero_warning_enabled",
+    "simulation.setup__gram_per_sat_instances_enabled",
+    "simulation.setup__has_active_nbody_effector",
+    "simulation.setup__has_active_srp_effector",
+    "simulation.setup__prewarmed_nbody_ephemeris_lookup",
+    "simulation.setup__reset_spice_rhs_memo_bang",
+    "simulation.setup__reset_spice_runtime_counters_bang",
+    "simulation.setup__snapshot_rhs_plan_env_config",
+    "simulation.setup__spice_rhs_memo_enabled",
+    "simulation.setup__spice_runtime_counters_snapshot",
+    "simulation.setup__warn_density_without_atmospheric_effector",
+    "simx.engine_setup_build_nbody_ephemeris_cache"
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-example-support-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/example_support.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/example_support.jl",
+    "layout_of": "785c9302ab7c04d1"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_example_support_jl",
+  "ui": {
+    "pos_overrides": {
+      "analysis.example_support__example_default_results_directory": [
+        400.0,
+        230.0
+      ],
+      "analysis.example_support__example_smoke_args": [
+        400.0,
+        80.0
+      ],
+      "analysis.example_support__example_smoke_enabled": [
+        720.0,
+        80.0
+      ],
+      "analysis.example_support__example_smoke_mission_time": [
+        720.0,
+        230.0
+      ],
+      "analysis.example_support__example_smoke_results_enabled": [
+        720.0,
+        380.0
+      ],
+      "analysis.example_support__link_q": [
+        80.0,
+        80.0
+      ],
+      "analysis.example_support_make_three_body_spacecraft": [
+        80.0,
+        230.0
+      ],
+      "analysis.example_support_run_and_report": [
+        80.0,
+        380.0
+      ],
+      "envana.ana_example_support_make_example_config": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.example_support__example_default_results_directory",
+    "analysis.example_support__example_smoke_args",
+    "analysis.example_support__example_smoke_enabled",
+    "analysis.example_support__example_smoke_mission_time",
+    "analysis.example_support__example_smoke_results_enabled",
+    "analysis.example_support__link_q",
+    "analysis.example_support_make_three_body_spacecraft",
+    "analysis.example_support_run_and_report",
+    "envana.ana_example_support_make_example_config"
+  ]
+}

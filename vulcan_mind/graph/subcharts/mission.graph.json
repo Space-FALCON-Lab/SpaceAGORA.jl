@@ -1,0 +1,1453 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "mission",
+  "chart_kind": "sub",
+  "title": "AerobrakingPolicy — internals",
+  "derives_from": "master",
+  "local_nodes": [
+    {
+      "id": "grp.mission",
+      "label": "AerobrakingPolicy — internals",
+      "kind": "group",
+      "doc": "nodes/mission/mission.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "members_in",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Calls into any member of this block from outside it."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "members_out",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls from any member of this block to nodes outside it."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "tags": [
+        "cluster"
+      ],
+      "origin": "agent"
+    },
+    {
+      "id": "misc.maneuver_plans_odyssey_campaign_maneuvers",
+      "label": "odyssey_campaign_maneuvers",
+      "kind": "function",
+      "doc": "nodes/misc/maneuver_plans_odyssey_campaign_maneuvers.md",
+      "source": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "symbol": "odyssey_campaign_maneuvers",
+        "lines": [
+          19,
+          47
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "Mission operations scope providing the firing-plan callables and the phi-to-signed-delta-v conversion used to build the campaign."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "campaign",
+            "type": "NamedTuple",
+            "units": "m/s",
+            "description": "maneuver_orbit_number (orbit indices) and maneuver_Δv (signed delta-v magnitudes) for every non-zero burn in the requested orbit range."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          80.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "misc.pass_schedule_strategy_for_pass",
+      "label": "strategy_for_pass",
+      "kind": "function",
+      "doc": "nodes/misc/pass_schedule_strategy_for_pass.md",
+      "source": {
+        "file": "src/mission/operations/aerobraking_policy/pass_schedule.jl",
+        "symbol": "strategy_for_pass",
+        "lines": [
+          5,
+          7
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "AerobrakingPolicy namespace supplying AerobrakingStrategyKind and the AerobrakingPassSchedule container."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "strategy",
+            "type": "AerobrakingStrategyKind",
+            "units": "n/a",
+            "description": "Strategy enum (E_EDG or T_EDG) selected for the requested pass number, or the caller-supplied fallback."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "misc.policy_types_aerobrakingpolicyconfig",
+      "label": "AerobrakingPolicyConfig",
+      "kind": "struct",
+      "doc": "nodes/misc/policy_types_aerobrakingpolicyconfig.md",
+      "source": {
+        "file": "src/mission/operations/aerobraking_policy/policy_types.jl",
+        "symbol": "AerobrakingPolicyConfig",
+        "lines": [
+          7,
+          9
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "AerobrakingPolicy module scope defining the AerobrakingStrategyKind enum used as the field type."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "config",
+            "type": "AerobrakingPolicyConfig",
+            "units": "n/a",
+            "description": "Keyword-constructed policy configuration carrying the default strategy used when no per-pass override exists."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.maneuver_plans__phi_to_signed_maneuver_delta_v",
+      "label": "_phi_to_signed_maneuver_delta_v",
+      "kind": "function",
+      "doc": "nodes/mission/maneuver_plans__phi_to_signed_maneuver_delta_v.md",
+      "source": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "symbol": "_phi_to_signed_maneuver_delta_v",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "delta_v",
+            "type": "Real",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `delta_v`."
+          },
+          {
+            "id": "phi",
+            "type": "Real",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `phi`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Float64",
+            "units": "n/a",
+            "description": "Return value of `_phi_to_signed_maneuver_delta_v`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.maneuver_plans_earth_firing_plan",
+      "label": "Earth_firing_plan",
+      "kind": "function",
+      "doc": "nodes/mission/maneuver_plans_earth_firing_plan.md",
+      "source": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "symbol": "Earth_firing_plan",
+        "lines": [
+          234,
+          234
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "planet",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `planet` (default `nothing`)."
+          },
+          {
+            "id": "ra",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `ra` (default `0.0`)."
+          },
+          {
+            "id": "rp",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `rp` (default `0.0`)."
+          },
+          {
+            "id": "numberofpassage",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `numberofpassage` (default `0.0`)."
+          },
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (default `nothing`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `Earth_firing_plan`. Returns `args`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.maneuver_plans_magellan_firing_plan",
+      "label": "Magellan_firing_plan",
+      "kind": "function",
+      "doc": "nodes/mission/maneuver_plans_magellan_firing_plan.md",
+      "source": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "symbol": "Magellan_firing_plan",
+        "lines": [
+          250,
+          250
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "planet",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `planet` (default `nothing`)."
+          },
+          {
+            "id": "ra",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `ra` (default `0.0`)."
+          },
+          {
+            "id": "rp",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `rp` (default `0.0`)."
+          },
+          {
+            "id": "numberofpassage",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `numberofpassage` (default `0.0`)."
+          },
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (default `nothing`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `Magellan_firing_plan`. Returns `args`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          830.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.maneuver_plans_odyssey_firing_plan",
+      "label": "Odyssey_firing_plan",
+      "kind": "function",
+      "doc": "nodes/mission/maneuver_plans_odyssey_firing_plan.md",
+      "source": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "symbol": "Odyssey_firing_plan",
+        "lines": [
+          50,
+          50
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "planet",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `planet` (default `nothing`)."
+          },
+          {
+            "id": "ra",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `ra` (default `0.0`)."
+          },
+          {
+            "id": "rp",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `rp` (default `0.0`)."
+          },
+          {
+            "id": "numberofpassage",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `numberofpassage` (default `0.0`)."
+          },
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (default `nothing`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `Odyssey_firing_plan`. Returns `args`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          980.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.maneuver_plans_odyssey_firing_plan_true_beginning",
+      "label": "Odyssey_firing_plan_true_beginning",
+      "kind": "function",
+      "doc": "nodes/mission/maneuver_plans_odyssey_firing_plan_true_beginning.md",
+      "source": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "symbol": "Odyssey_firing_plan_true_beginning",
+        "lines": [
+          135,
+          135
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "planet",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `planet` (default `nothing`)."
+          },
+          {
+            "id": "ra",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `ra` (default `0.0`)."
+          },
+          {
+            "id": "rp",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `rp` (default `0.0`)."
+          },
+          {
+            "id": "numberofpassage",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `numberofpassage` (default `0.0`)."
+          },
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (default `nothing`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `Odyssey_firing_plan_true_beginning`. Returns `args`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          1130.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.maneuver_plans_titan_firing_plan",
+      "label": "titan_firing_plan",
+      "kind": "function",
+      "doc": "nodes/mission/maneuver_plans_titan_firing_plan.md",
+      "source": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "symbol": "titan_firing_plan",
+        "lines": [
+          290,
+          290
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "planet",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `planet` (default `nothing`)."
+          },
+          {
+            "id": "ra",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `ra` (default `0.0`)."
+          },
+          {
+            "id": "rp",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `rp` (default `0.0`)."
+          },
+          {
+            "id": "numberofpassage",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `numberofpassage` (default `0.0`)."
+          },
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (default `nothing`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `titan_firing_plan`. Returns `args`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          1280.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.maneuver_plans_venus_express_firing_plan",
+      "label": "Venus_Express_firing_plan",
+      "kind": "function",
+      "doc": "nodes/mission/maneuver_plans_venus_express_firing_plan.md",
+      "source": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "symbol": "Venus_Express_firing_plan",
+        "lines": [
+          314,
+          314
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "planet",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `planet` (default `nothing`)."
+          },
+          {
+            "id": "ra",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `ra` (default `0.0`)."
+          },
+          {
+            "id": "rp",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `rp` (default `0.0`)."
+          },
+          {
+            "id": "numberofpassage",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `numberofpassage` (default `0.0`)."
+          },
+          {
+            "id": "args",
+            "type": "Any",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (default `nothing`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `Venus_Express_firing_plan`. Returns `args`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          1430.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.pass_schedule_aerobrakingpassschedule",
+      "label": "AerobrakingPassSchedule",
+      "kind": "struct",
+      "doc": "nodes/mission/pass_schedule_aerobrakingpassschedule.md",
+      "source": {
+        "file": "src/mission/operations/aerobraking_policy/pass_schedule.jl",
+        "symbol": "AerobrakingPassSchedule",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "strategy_by_pass",
+            "type": "Dict{Int, AerobrakingStrategyKind}",
+            "units": "n/a",
+            "required": false,
+            "description": "Field `strategy_by_pass` (default `Dict{Int, AerobrakingStrategyKind}()`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "AerobrakingPassSchedule",
+            "units": "n/a",
+            "description": "Constructed `AerobrakingPassSchedule` (keyword constructor via @kwdef)."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          1580.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.policy_types_abstractaerobrakingpolicyselector",
+      "label": "AbstractAerobrakingPolicySelector",
+      "kind": "struct",
+      "doc": "nodes/mission/policy_types_abstractaerobrakingpolicyselector.md",
+      "source": {
+        "file": "src/mission/operations/aerobraking_policy/policy_types.jl",
+        "symbol": "AbstractAerobrakingPolicySelector",
+        "lines": [
+          5,
+          5
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "AbstractAerobrakingPolicySelector",
+            "units": "n/a",
+            "description": "Abstract supertype `AbstractAerobrakingPolicySelector`; no fields."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          1730.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.policy_types_aerobrakingpolicy",
+      "label": "AerobrakingPolicy",
+      "kind": "module",
+      "doc": "nodes/mission/policy_types_aerobrakingpolicy.md",
+      "source": {
+        "file": "src/mission/operations/aerobraking_policy/policy_types.jl",
+        "symbol": "AerobrakingPolicy",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Value produced by this symbol."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          1880.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.select_strategy",
+      "label": "select_strategy",
+      "kind": "function",
+      "doc": "nodes/mission/select_strategy.md",
+      "source": {
+        "file": "src/mission/operations/aerobraking_policy/selector_stub.jl",
+        "symbol": "select_strategy",
+        "lines": [
+          7,
+          14
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "AerobrakingPolicy namespace supplying selectors, configuration, and strategy enum values."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "strategy",
+            "type": "AerobrakingStrategyKind",
+            "units": "n/a",
+            "description": "Discrete E_EDG or T_EDG strategy selected from policy configuration and mission input."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          2030.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.selector_stub_defaultaerobrakingpolicyselector",
+      "label": "DefaultAerobrakingPolicySelector",
+      "kind": "struct",
+      "doc": "nodes/mission/selector_stub_defaultaerobrakingpolicyselector.md",
+      "source": {
+        "file": "src/mission/operations/aerobraking_policy/selector_stub.jl",
+        "symbol": "DefaultAerobrakingPolicySelector",
+        "lines": [
+          4,
+          4
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "DefaultAerobrakingPolicySelector",
+            "units": "n/a",
+            "description": "Constructed `DefaultAerobrakingPolicySelector`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          2180.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "mission.selector_stub_drlpolicyadapterstub",
+      "label": "DRLPolicyAdapterStub",
+      "kind": "struct",
+      "doc": "nodes/mission/selector_stub_drlpolicyadapterstub.md",
+      "source": {
+        "file": "src/mission/operations/aerobraking_policy/selector_stub.jl",
+        "symbol": "DRLPolicyAdapterStub",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "DRLPolicyAdapterStub",
+            "units": "n/a",
+            "description": "Constructed `DRLPolicyAdapterStub`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.mission",
+      "ui": {
+        "pos": [
+          400.0,
+          2330.0
+        ]
+      },
+      "origin": "agent"
+    }
+  ],
+  "local_edges": [
+    {
+      "id": "e:misc.maneuver_plans_odyssey_campaign_maneuvers:callees->gnc.pso_parameters_push_bang:callers",
+      "from": {
+        "node": "misc.maneuver_plans_odyssey_campaign_maneuvers",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.pso_parameters_push_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "push!",
+      "evidence": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "lines": [
+          40,
+          40
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.maneuver_plans_odyssey_campaign_maneuvers:callees->mission.maneuver_plans__phi_to_signed_maneuver_delta_v:callers",
+      "from": {
+        "node": "misc.maneuver_plans_odyssey_campaign_maneuvers",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "mission.maneuver_plans__phi_to_signed_maneuver_delta_v",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_phi_to_signed_maneuver_delta_v",
+      "evidence": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "lines": [
+          39,
+          39
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:mission.maneuver_plans__phi_to_signed_maneuver_delta_v:callees->analysis.ic_fit_float64:callers",
+      "from": {
+        "node": "mission.maneuver_plans__phi_to_signed_maneuver_delta_v",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "analysis.ic_fit_float64",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "Float64",
+      "evidence": {
+        "file": "src/mission/operations/maneuver_plans.jl",
+        "lines": [
+          2,
+          2
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->misc.pass_schedule_strategy_for_pass:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "misc.pass_schedule_strategy_for_pass",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/aerobraking_policy/pass_schedule.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->misc.policy_types_aerobrakingpolicyconfig:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "misc.policy_types_aerobrakingpolicyconfig",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/aerobraking_policy/policy_types.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.maneuver_plans_earth_firing_plan:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.maneuver_plans_earth_firing_plan",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/maneuver_plans.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.maneuver_plans_magellan_firing_plan:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.maneuver_plans_magellan_firing_plan",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/maneuver_plans.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.maneuver_plans_odyssey_firing_plan:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.maneuver_plans_odyssey_firing_plan",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/maneuver_plans.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.maneuver_plans_odyssey_firing_plan_true_beginning:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.maneuver_plans_odyssey_firing_plan_true_beginning",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/maneuver_plans.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.maneuver_plans_titan_firing_plan:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.maneuver_plans_titan_firing_plan",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/maneuver_plans.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.maneuver_plans_venus_express_firing_plan:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.maneuver_plans_venus_express_firing_plan",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/maneuver_plans.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.pass_schedule_aerobrakingpassschedule:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.pass_schedule_aerobrakingpassschedule",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/aerobraking_policy/pass_schedule.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.policy_types_abstractaerobrakingpolicyselector:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.policy_types_abstractaerobrakingpolicyselector",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/aerobraking_policy/policy_types.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.policy_types_aerobrakingpolicy:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.policy_types_aerobrakingpolicy",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/aerobraking_policy/policy_types.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.select_strategy:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.select_strategy",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/aerobraking_policy/selector_stub.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.selector_stub_defaultaerobrakingpolicyselector:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.selector_stub_defaultaerobrakingpolicyselector",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/aerobraking_policy/selector_stub.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->mission.selector_stub_drlpolicyadapterstub:module_api",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "mission.selector_stub_drlpolicyadapterstub",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/mission/operations/aerobraking_policy/selector_stub.jl"
+      },
+      "origin": "agent"
+    }
+  ],
+  "ui": {
+    "pos_overrides": {
+      "gnc.pso_parameters_push_bang": [
+        400.0,
+        80.0
+      ],
+      "module.mission": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "module.mission",
+    "gnc.pso_parameters_push_bang"
+  ]
+}

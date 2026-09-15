@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-rhs-calibration-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/rhs_calibration.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/rhs_calibration.jl",
+    "layout_of": "42e6aaa5d2d2d703"
+  },
+  "derives_from": "simulation-simulation-engine",
+  "group": "grp.src_simulation_engine_rhs_calibration_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.rhs_calibration__calib_machine_label": [
+        1360.0,
+        80.0
+      ],
+      "simulation.rhs_calibration__calib_sat_bucket": [
+        720.0,
+        230.0
+      ],
+      "simulation.rhs_calibration__make_calib_flat_plan": [
+        1040.0,
+        230.0
+      ],
+      "simulation.rhs_calibration__make_calib_satellite_batch_plan": [
+        1040.0,
+        380.0
+      ],
+      "simulation.rhs_calibration__rhs_calib_load_bang": [
+        720.0,
+        80.0
+      ],
+      "simulation.rhs_calibration__rhs_calib_lookup": [
+        400.0,
+        80.0
+      ],
+      "simulation.rhs_calibration__rhs_calib_path": [
+        1040.0,
+        80.0
+      ],
+      "simulation.rhs_calibration__rhs_calib_save_bang": [
+        400.0,
+        230.0
+      ],
+      "simulation.rhs_calibration__rhs_calib_signature": [
+        400.0,
+        380.0
+      ],
+      "simulation.rhs_calibration__rhs_calib_store_bang": [
+        400.0,
+        530.0
+      ],
+      "simulation.rhs_calibration__rhs_calibrate_n_timed": [
+        720.0,
+        380.0
+      ],
+      "simulation.rhs_calibration__rhs_calibrate_n_warmup": [
+        720.0,
+        530.0
+      ],
+      "simulation.rhs_calibration__rhs_calibration_mode": [
+        400.0,
+        680.0
+      ],
+      "simulation.rhs_calibration__rhs_plan_candidates": [
+        720.0,
+        680.0
+      ],
+      "simulation.rhs_calibration__run_rhs_sweep_bang": [
+        400.0,
+        830.0
+      ],
+      "simx.engine_rhs_calibration_calibrate_rhs_plan_if_needed__calibrate_rhs_plan_if_needed_bang": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.rhs_calibration__calib_machine_label",
+    "simulation.rhs_calibration__calib_sat_bucket",
+    "simulation.rhs_calibration__make_calib_flat_plan",
+    "simulation.rhs_calibration__make_calib_satellite_batch_plan",
+    "simulation.rhs_calibration__rhs_calib_load_bang",
+    "simulation.rhs_calibration__rhs_calib_lookup",
+    "simulation.rhs_calibration__rhs_calib_path",
+    "simulation.rhs_calibration__rhs_calib_save_bang",
+    "simulation.rhs_calibration__rhs_calib_signature",
+    "simulation.rhs_calibration__rhs_calib_store_bang",
+    "simulation.rhs_calibration__rhs_calibrate_n_timed",
+    "simulation.rhs_calibration__rhs_calibrate_n_warmup",
+    "simulation.rhs_calibration__rhs_calibration_mode",
+    "simulation.rhs_calibration__rhs_plan_candidates",
+    "simulation.rhs_calibration__run_rhs_sweep_bang",
+    "simx.engine_rhs_calibration_calibrate_rhs_plan_if_needed__calibrate_rhs_plan_if_needed_bang"
+  ]
+}

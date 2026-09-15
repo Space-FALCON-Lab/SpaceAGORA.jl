@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-pso-refinement-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/pso_refinement.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr/pso_refinement.jl",
+    "layout_of": "b4cba7e9a62ec2c7"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-hypr",
+  "group": "grp.src_gnc_guidance_rpo_hypr_pso_refinement_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.pso_refinement_rpo_fit_bezier_fixed_endpoints": [
+        720.0,
+        80.0
+      ],
+      "gnc.pso_refinement_rpo_refine_lower_degree": [
+        400.0,
+        80.0
+      ],
+      "gnc.pso_refinement_rpo_refine_shortcut_refit": [
+        400.0,
+        230.0
+      ],
+      "gnc.pso_refinement_rpo_refine_tighten_handles": [
+        400.0,
+        380.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_bernstein": [
+        1040.0,
+        80.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_better": [
+        1040.0,
+        680.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_clamp_path": [
+        1040.0,
+        380.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_config": [
+        400.0,
+        530.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_project_to_segment": [
+        720.0,
+        530.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_sample_params": [
+        1040.0,
+        230.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_segment_is_safe": [
+        1040.0,
+        530.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_segment_samples": [
+        1360.0,
+        80.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_shortcut_samples": [
+        720.0,
+        230.0
+      ],
+      "gnc.pso_refinement_rpo_try_accept_refinement": [
+        720.0,
+        380.0
+      ],
+      "gncy.pso_refinement_rpo_post_refine_path": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.pso_refinement_rpo_fit_bezier_fixed_endpoints",
+    "gnc.pso_refinement_rpo_refine_lower_degree",
+    "gnc.pso_refinement_rpo_refine_shortcut_refit",
+    "gnc.pso_refinement_rpo_refine_tighten_handles",
+    "gnc.pso_refinement_rpo_refinement_bernstein",
+    "gnc.pso_refinement_rpo_refinement_better",
+    "gnc.pso_refinement_rpo_refinement_clamp_path",
+    "gnc.pso_refinement_rpo_refinement_config",
+    "gnc.pso_refinement_rpo_refinement_project_to_segment",
+    "gnc.pso_refinement_rpo_refinement_sample_params",
+    "gnc.pso_refinement_rpo_refinement_segment_is_safe",
+    "gnc.pso_refinement_rpo_refinement_segment_samples",
+    "gnc.pso_refinement_rpo_refinement_shortcut_samples",
+    "gnc.pso_refinement_rpo_try_accept_refinement",
+    "gncy.pso_refinement_rpo_post_refine_path"
+  ]
+}

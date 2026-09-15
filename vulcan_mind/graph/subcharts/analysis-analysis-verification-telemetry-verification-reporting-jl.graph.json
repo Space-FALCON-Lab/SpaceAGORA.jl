@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-reporting-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/reporting.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/reporting.jl",
+    "layout_of": "53e50ee8b4f47cac"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_reporting_jl",
+  "ui": {
+    "pos_overrides": {
+      "analysis.reporting__add_scaled_column_bang": [
+        400.0,
+        80.0
+      ],
+      "analysis.reporting__append_display_error_columns_bang": [
+        80.0,
+        80.0
+      ],
+      "analysis.reporting__append_display_metric_columns_bang": [
+        80.0,
+        230.0
+      ],
+      "analysis.reporting__axis_units": [
+        80.0,
+        380.0
+      ],
+      "analysis.reporting__default_plots_outdir": [
+        400.0,
+        530.0
+      ],
+      "analysis.reporting__display_value_scale": [
+        400.0,
+        230.0
+      ],
+      "analysis.reporting__display_value_units": [
+        400.0,
+        380.0
+      ],
+      "analysis.reporting__generate_plots": [
+        80.0,
+        530.0
+      ],
+      "analysis.reporting__maneuver_count": [
+        80.0,
+        680.0
+      ],
+      "analysis.reporting__maneuver_replay_scale_mode": [
+        80.0,
+        830.0
+      ],
+      "analysis.reporting__min_eval_points": [
+        400.0,
+        680.0
+      ],
+      "analysis.reporting__orbit_altitude_mode": [
+        80.0,
+        980.0
+      ],
+      "analysis.reporting__scenario_status_extra": [
+        80.0,
+        1130.0
+      ],
+      "analysis.reporting__source_file": [
+        80.0,
+        1280.0
+      ],
+      "analysis.reporting__tolerances_for": [
+        400.0,
+        830.0
+      ],
+      "analysis.reporting__value_units": [
+        80.0,
+        1430.0
+      ],
+      "envana.ana_reporting_evaluate_thresholds": [
+        80.0,
+        1580.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.reporting__add_scaled_column_bang",
+    "analysis.reporting__append_display_error_columns_bang",
+    "analysis.reporting__append_display_metric_columns_bang",
+    "analysis.reporting__axis_units",
+    "analysis.reporting__default_plots_outdir",
+    "analysis.reporting__display_value_scale",
+    "analysis.reporting__display_value_units",
+    "analysis.reporting__generate_plots",
+    "analysis.reporting__maneuver_count",
+    "analysis.reporting__maneuver_replay_scale_mode",
+    "analysis.reporting__min_eval_points",
+    "analysis.reporting__orbit_altitude_mode",
+    "analysis.reporting__scenario_status_extra",
+    "analysis.reporting__source_file",
+    "analysis.reporting__tolerances_for",
+    "analysis.reporting__value_units",
+    "envana.ana_reporting_evaluate_thresholds"
+  ]
+}

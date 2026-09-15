@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-core-types",
+  "chart_kind": "sub",
+  "title": "core/types/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_core_types",
+    "layout_of": "ad6dedf3d0e8b250"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_core_types",
+  "ui": {
+    "pos_overrides": {
+      "core.effector_sampling_statesample": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.effector_sampling_statesample"
+  ]
+}

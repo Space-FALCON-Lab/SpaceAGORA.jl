@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-path-costs-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/path_costs.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr/path_costs.jl",
+    "layout_of": "8a101894dece5e1b"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-hypr",
+  "group": "grp.src_gnc_guidance_rpo_hypr_path_costs_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.path_costs_rpo_clearance_stats_from_samples": [
+        720.0,
+        80.0
+      ],
+      "gnc.path_costs_rpo_fuel_proxy_from_samples": [
+        720.0,
+        230.0
+      ],
+      "gnc.path_costs_rpo_normalized_path_cost_components": [
+        400.0,
+        80.0
+      ],
+      "gnc.path_costs_rpo_obstacle_sigmoid_penalty": [
+        1040.0,
+        80.0
+      ],
+      "gnc.path_costs_rpo_path_cost_normalization_refs": [
+        720.0,
+        380.0
+      ],
+      "gncy.path_costs_rpo_path_cost": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.path_costs_rpo_clearance_stats_from_samples",
+    "gnc.path_costs_rpo_fuel_proxy_from_samples",
+    "gnc.path_costs_rpo_normalized_path_cost_components",
+    "gnc.path_costs_rpo_obstacle_sigmoid_penalty",
+    "gnc.path_costs_rpo_path_cost_normalization_refs",
+    "gncy.path_costs_rpo_path_cost"
+  ]
+}

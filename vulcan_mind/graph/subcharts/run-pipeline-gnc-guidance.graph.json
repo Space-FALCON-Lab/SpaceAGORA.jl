@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-gnc-guidance",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_guidance",
+    "layout_of": "f64f22454fe230bc"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_gnc_guidance",
+  "ui": {
+    "pos_overrides": {
+      "gnc.pso_parameters_push_bang": [
+        80.0,
+        80.0
+      ],
+      "gnc.pso_parameters_rpo_pso_config": [
+        400.0,
+        80.0
+      ],
+      "gncy.pso_parameters_rpopsoconfig": [
+        720.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.pso_parameters_push_bang",
+    "gnc.pso_parameters_rpo_pso_config",
+    "gncy.pso_parameters_rpopsoconfig"
+  ]
+}

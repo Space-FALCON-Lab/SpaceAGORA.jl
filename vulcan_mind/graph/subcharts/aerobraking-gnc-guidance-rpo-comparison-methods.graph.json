@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-guidance-rpo-comparison-methods",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/comparison_methods/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_guidance_rpo_comparison_methods",
+    "layout_of": "6c13c5cf951517b7"
+  },
+  "derives_from": "aerobraking-gnc-guidance-rpo",
+  "group": "grp.src_gnc_guidance_rpo_comparison_methods",
+  "ui": {
+    "pos_overrides": {
+      "gnc.planner_comparison__rpo_comparison_progress_bar": [
+        80.0,
+        80.0
+      ],
+      "gnc.planner_comparison_rpo_740_mpc_final_pso_config": [
+        80.0,
+        230.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_cost_iteration_plot": [
+        80.0,
+        380.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_failed_paths_plot": [
+        80.0,
+        530.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_metric_summary_plot": [
+        80.0,
+        680.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_metric_value": [
+        400.0,
+        80.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_path_family_plot": [
+        80.0,
+        830.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_single_path_plot": [
+        80.0,
+        980.0
+      ],
+      "gnc.planner_comparison_rpo_group_metric_mean": [
+        80.0,
+        1130.0
+      ],
+      "gnc.planner_comparison_rpo_lqmpc_tracking_fuel_used_pct": [
+        80.0,
+        1280.0
+      ],
+      "gnc.planner_comparison_rpo_write_namedtuple_csv": [
+        80.0,
+        1430.0
+      ],
+      "gnc.planner_comparison_runtime_limited_iters": [
+        80.0,
+        1580.0
+      ],
+      "gnc.trajectory_optimizers_rpo_chomp_numeric_gradient": [
+        400.0,
+        380.0
+      ],
+      "gnc.trajectory_optimizers_rpo_chomp_obstacle_potential": [
+        80.0,
+        1730.0
+      ],
+      "gnc.trajectory_optimizers_rpo_stomp_plan_path": [
+        400.0,
+        230.0
+      ],
+      "gnc.trajectory_optimizers_rpo_trajectory_search_bounds": [
+        720.0,
+        80.0
+      ],
+      "gnc.trajectory_optimizers_rpo_trajectory_soft_objective": [
+        720.0,
+        230.0
+      ],
+      "gncy.planner_comparison_rpo_run_planner_comparison_batch": [
+        80.0,
+        1880.0
+      ],
+      "gncy.trajectory_optimizers_rpo_chomp_plan_path": [
+        80.0,
+        2030.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.planner_comparison__rpo_comparison_progress_bar",
+    "gnc.planner_comparison_rpo_740_mpc_final_pso_config",
+    "gnc.planner_comparison_rpo_comparison_cost_iteration_plot",
+    "gnc.planner_comparison_rpo_comparison_failed_paths_plot",
+    "gnc.planner_comparison_rpo_comparison_metric_summary_plot",
+    "gnc.planner_comparison_rpo_comparison_metric_value",
+    "gnc.planner_comparison_rpo_comparison_path_family_plot",
+    "gnc.planner_comparison_rpo_comparison_single_path_plot",
+    "gnc.planner_comparison_rpo_group_metric_mean",
+    "gnc.planner_comparison_rpo_lqmpc_tracking_fuel_used_pct",
+    "gnc.planner_comparison_rpo_write_namedtuple_csv",
+    "gnc.planner_comparison_runtime_limited_iters",
+    "gnc.trajectory_optimizers_rpo_chomp_numeric_gradient",
+    "gnc.trajectory_optimizers_rpo_chomp_obstacle_potential",
+    "gnc.trajectory_optimizers_rpo_stomp_plan_path",
+    "gnc.trajectory_optimizers_rpo_trajectory_search_bounds",
+    "gnc.trajectory_optimizers_rpo_trajectory_soft_objective",
+    "gncy.planner_comparison_rpo_run_planner_comparison_batch",
+    "gncy.trajectory_optimizers_rpo_chomp_plan_path"
+  ]
+}

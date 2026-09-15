@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-setup-jl-rhs",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _rhs* (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/setup.jl#_rhs",
+    "layout_of": "fcc1dc7157e039b9"
+  },
+  "derives_from": "simulation-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_rhs",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__rhs_batch_parallel_enabled": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__rhs_batch_parallel_mode": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__rhs_batch_thread_threshold": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__rhs_effector_cost_min_samples": [
+        80.0,
+        530.0
+      ],
+      "simulation.setup__rhs_effector_observed_cost_ns": [
+        80.0,
+        680.0
+      ],
+      "simulation.setup__rhs_effectors_have_heavy_or_heterogeneous_cost": [
+        720.0,
+        80.0
+      ],
+      "simulation.setup__rhs_env_config_from_buffers": [
+        400.0,
+        80.0
+      ],
+      "simulation.setup__rhs_execution_mode_env": [
+        80.0,
+        830.0
+      ],
+      "simulation.setup__rhs_execution_plan": [
+        80.0,
+        980.0
+      ],
+      "simulation.setup__rhs_execution_plan_uncached": [
+        400.0,
+        230.0
+      ],
+      "simulation.setup__rhs_flat_batch_privileged_effector": [
+        1040.0,
+        80.0
+      ],
+      "simulation.setup__rhs_flat_cost_heterogeneity_threshold": [
+        80.0,
+        1130.0
+      ],
+      "simulation.setup__rhs_flat_has_batch_privileged_effector": [
+        720.0,
+        230.0
+      ],
+      "simulation.setup__rhs_flat_min_effectors": [
+        80.0,
+        1280.0
+      ],
+      "simulation.setup__rhs_flat_min_sats": [
+        80.0,
+        1430.0
+      ],
+      "simulation.setup__rhs_flat_min_thread_budget": [
+        80.0,
+        1580.0
+      ],
+      "simulation.setup__rhs_flat_packet_heterogeneity_threshold": [
+        80.0,
+        1730.0
+      ],
+      "simulation.setup__rhs_flat_packet_min_items": [
+        80.0,
+        1880.0
+      ],
+      "simulation.setup__rhs_flat_packet_overhead_disable_ratio": [
+        80.0,
+        2030.0
+      ],
+      "simulation.setup__rhs_flat_packet_overhead_min_samples": [
+        80.0,
+        2180.0
+      ],
+      "simulation.setup__rhs_flat_packet_scheduler_mode": [
+        80.0,
+        2330.0
+      ],
+      "simulation.setup__rhs_flat_packet_target_min_ns": [
+        80.0,
+        2480.0
+      ],
+      "simulation.setup__rhs_flat_packet_work_ns_threshold": [
+        80.0,
+        2630.0
+      ],
+      "simulation.setup__rhs_flat_supported": [
+        720.0,
+        380.0
+      ],
+      "simulation.setup__rhs_flat_work_ns_threshold": [
+        80.0,
+        2780.0
+      ],
+      "simulation.setup__rhs_flat_work_per_worker_ns_threshold": [
+        80.0,
+        2930.0
+      ],
+      "simulation.setup__rhs_harmonics_batch_enabled": [
+        1040.0,
+        230.0
+      ],
+      "simulation.setup__rhs_harmonics_batch_min_sats_per_worker": [
+        80.0,
+        3080.0
+      ],
+      "simulation.setup__rhs_harmonics_flat_experimental_enabled": [
+        1360.0,
+        80.0
+      ],
+      "simulation.setup__rhs_invsq_flat_min_sats": [
+        720.0,
+        530.0
+      ],
+      "simulation.setup__rhs_plan_step_cache_enabled": [
+        400.0,
+        380.0
+      ],
+      "simulation.setup__rhs_single_harmonics_flat_supported": [
+        720.0,
+        680.0
+      ],
+      "simulation.setup__rhs_single_invsq_flat_supported": [
+        1040.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__rhs_batch_parallel_enabled",
+    "simulation.setup__rhs_batch_parallel_mode",
+    "simulation.setup__rhs_batch_thread_threshold",
+    "simulation.setup__rhs_effector_cost_min_samples",
+    "simulation.setup__rhs_effector_observed_cost_ns",
+    "simulation.setup__rhs_effectors_have_heavy_or_heterogeneous_cost",
+    "simulation.setup__rhs_env_config_from_buffers",
+    "simulation.setup__rhs_execution_mode_env",
+    "simulation.setup__rhs_execution_plan",
+    "simulation.setup__rhs_execution_plan_uncached",
+    "simulation.setup__rhs_flat_batch_privileged_effector",
+    "simulation.setup__rhs_flat_cost_heterogeneity_threshold",
+    "simulation.setup__rhs_flat_has_batch_privileged_effector",
+    "simulation.setup__rhs_flat_min_effectors",
+    "simulation.setup__rhs_flat_min_sats",
+    "simulation.setup__rhs_flat_min_thread_budget",
+    "simulation.setup__rhs_flat_packet_heterogeneity_threshold",
+    "simulation.setup__rhs_flat_packet_min_items",
+    "simulation.setup__rhs_flat_packet_overhead_disable_ratio",
+    "simulation.setup__rhs_flat_packet_overhead_min_samples",
+    "simulation.setup__rhs_flat_packet_scheduler_mode",
+    "simulation.setup__rhs_flat_packet_target_min_ns",
+    "simulation.setup__rhs_flat_packet_work_ns_threshold",
+    "simulation.setup__rhs_flat_supported",
+    "simulation.setup__rhs_flat_work_ns_threshold",
+    "simulation.setup__rhs_flat_work_per_worker_ns_threshold",
+    "simulation.setup__rhs_harmonics_batch_enabled",
+    "simulation.setup__rhs_harmonics_batch_min_sats_per_worker",
+    "simulation.setup__rhs_harmonics_flat_experimental_enabled",
+    "simulation.setup__rhs_invsq_flat_min_sats",
+    "simulation.setup__rhs_plan_step_cache_enabled",
+    "simulation.setup__rhs_single_harmonics_flat_supported",
+    "simulation.setup__rhs_single_invsq_flat_supported"
+  ]
+}

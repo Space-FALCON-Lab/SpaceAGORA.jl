@@ -1,0 +1,109 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-simulation-engine-setup-jl-small",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl/ (small files) (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_setup_jl_small",
+    "layout_of": "019bcbd75a27033f"
+  },
+  "derives_from": "aerobraking-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_small",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__cache_from_nbody_ephemeris_payload": [
+        400.0,
+        80.0
+      ],
+      "simulation.setup__collect_nbody_query_names": [
+        400.0,
+        380.0
+      ],
+      "simulation.setup__ephemerides_time_seconds_flexible": [
+        400.0,
+        530.0
+      ],
+      "simulation.setup__gram_per_sat_instances_enabled": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__has_active_nbody_effector": [
+        400.0,
+        680.0
+      ],
+      "simulation.setup__is_nbody_effector_like": [
+        720.0,
+        230.0
+      ],
+      "simulation.setup__load_nbody_ephemeris_cache_bang": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__payload_field": [
+        720.0,
+        80.0
+      ],
+      "simulation.setup__prewarm_nbody_ephemeris_cache": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__prewarmed_nbody_ephemeris_lookup": [
+        400.0,
+        830.0
+      ],
+      "simulation.setup__register_prewarmed_nbody_ephemeris_cache_bang": [
+        400.0,
+        230.0
+      ],
+      "simulation.setup__reset_spice_rhs_memo_bang": [
+        80.0,
+        530.0
+      ],
+      "simulation.setup__reset_spice_runtime_counters_bang": [
+        80.0,
+        680.0
+      ],
+      "simulation.setup__spice_runtime_counters_snapshot": [
+        80.0,
+        830.0
+      ],
+      "simulation.setup__update_effector_cost_model_bang": [
+        80.0,
+        980.0
+      ],
+      "simulation.setup__update_rhs_effector_cost_model_bang": [
+        80.0,
+        1130.0
+      ],
+      "simulation.setup__warn_density_without_atmospheric_effector": [
+        80.0,
+        1280.0
+      ],
+      "simulation.setup__write_nbody_ephemeris_cache_file_bang": [
+        400.0,
+        980.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__cache_from_nbody_ephemeris_payload",
+    "simulation.setup__collect_nbody_query_names",
+    "simulation.setup__ephemerides_time_seconds_flexible",
+    "simulation.setup__gram_per_sat_instances_enabled",
+    "simulation.setup__has_active_nbody_effector",
+    "simulation.setup__is_nbody_effector_like",
+    "simulation.setup__load_nbody_ephemeris_cache_bang",
+    "simulation.setup__payload_field",
+    "simulation.setup__prewarm_nbody_ephemeris_cache",
+    "simulation.setup__prewarmed_nbody_ephemeris_lookup",
+    "simulation.setup__register_prewarmed_nbody_ephemeris_cache_bang",
+    "simulation.setup__reset_spice_rhs_memo_bang",
+    "simulation.setup__reset_spice_runtime_counters_bang",
+    "simulation.setup__spice_runtime_counters_snapshot",
+    "simulation.setup__update_effector_cost_model_bang",
+    "simulation.setup__update_rhs_effector_cost_model_bang",
+    "simulation.setup__warn_density_without_atmospheric_effector",
+    "simulation.setup__write_nbody_ephemeris_cache_file_bang"
+  ]
+}

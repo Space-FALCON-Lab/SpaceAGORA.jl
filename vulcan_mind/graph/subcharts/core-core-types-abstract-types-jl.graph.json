@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "core-core-types-abstract-types-jl",
+  "chart_kind": "sub",
+  "title": "core/types/abstract_types.jl (core)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/core/types/abstract_types.jl",
+    "layout_of": "16b3fb2ba20a9e03"
+  },
+  "derives_from": "core-core-types",
+  "group": "grp.src_core_types_abstract_types_jl",
+  "ui": {
+    "pos_overrides": {
+      "core.abstract_types_abstractcontroleffectormodel": [
+        80.0,
+        80.0
+      ],
+      "core.abstract_types_abstractdensitymodel": [
+        80.0,
+        230.0
+      ],
+      "core.abstract_types_abstractephemeridesmodel": [
+        80.0,
+        380.0
+      ],
+      "core.abstract_types_abstractforcetorquemodel": [
+        80.0,
+        530.0
+      ],
+      "core.abstract_types_abstractguidancemodel": [
+        80.0,
+        680.0
+      ],
+      "core.abstract_types_abstractplanet": [
+        80.0,
+        830.0
+      ],
+      "core.abstract_types_abstractthermalmodel": [
+        80.0,
+        980.0
+      ],
+      "core.abstract_types_abstractthrustermodel": [
+        80.0,
+        1130.0
+      ],
+      "parcore.abstract_types_abstracttypes": [
+        80.0,
+        1280.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.abstract_types_abstractcontroleffectormodel",
+    "core.abstract_types_abstractdensitymodel",
+    "core.abstract_types_abstractephemeridesmodel",
+    "core.abstract_types_abstractforcetorquemodel",
+    "core.abstract_types_abstractguidancemodel",
+    "core.abstract_types_abstractplanet",
+    "core.abstract_types_abstractthermalmodel",
+    "core.abstract_types_abstractthrustermodel",
+    "parcore.abstract_types_abstracttypes"
+  ]
+}

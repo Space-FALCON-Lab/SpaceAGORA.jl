@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-routing-small",
+  "chart_kind": "sub",
+  "title": "parallel/routing/ (small files) (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/routing#_small",
+    "layout_of": "47fb5d09258385fb"
+  },
+  "derives_from": "parallel-parallel-routing",
+  "group": "grp.src_parallel_routing_small",
+  "ui": {
+    "pos_overrides": {
+      "parcore.outer_route_metrics_record_outer_route_feedback_bang": [
+        80.0,
+        80.0
+      ],
+      "parcore.parallel_profiles_parallelprofiles": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parcore.outer_route_metrics_record_outer_route_feedback_bang",
+    "parcore.parallel_profiles_parallelprofiles"
+  ]
+}

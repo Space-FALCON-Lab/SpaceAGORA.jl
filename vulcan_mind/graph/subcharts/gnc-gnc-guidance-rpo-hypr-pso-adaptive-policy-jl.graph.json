@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-pso-adaptive-policy-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/pso_adaptive_policy.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr/pso_adaptive_policy.jl",
+    "layout_of": "43cddebcc33f3387"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-hypr",
+  "group": "grp.src_gnc_guidance_rpo_hypr_pso_adaptive_policy_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.pso_adaptive_policy_rpo_estimate_geometry_complexity": [
+        400.0,
+        80.0
+      ],
+      "gnc.pso_adaptive_policy_rpo_probe_geometry_metrics": [
+        80.0,
+        80.0
+      ],
+      "gncy.pso_adaptive_policy_rpo_adaptive_pso_config": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.pso_adaptive_policy_rpo_estimate_geometry_complexity",
+    "gnc.pso_adaptive_policy_rpo_probe_geometry_metrics",
+    "gncy.pso_adaptive_policy_rpo_adaptive_pso_config"
+  ]
+}

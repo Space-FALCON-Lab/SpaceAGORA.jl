@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-robotics-robot-arm-hypr-config-jl",
+  "chart_kind": "sub",
+  "title": "gnc/robotics/robot_arm_hypr/config.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/robotics/robot_arm_hypr/config.jl",
+    "layout_of": "45bdcbf5b4a58708"
+  },
+  "derives_from": "gnc-gnc-robotics-robot-arm-hypr",
+  "group": "grp.src_gnc_robotics_robot_arm_hypr_config_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.config__validate_robot_arm_hypr_config": [
+        80.0,
+        80.0
+      ],
+      "gnc.config_robotarmhyprresult": [
+        80.0,
+        230.0
+      ],
+      "gnc.config_robotarmsphereobstacle": [
+        80.0,
+        380.0
+      ],
+      "gncz.config_robotarmhyprconfig": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.config__validate_robot_arm_hypr_config",
+    "gnc.config_robotarmhyprresult",
+    "gnc.config_robotarmsphereobstacle",
+    "gncz.config_robotarmhyprconfig"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-guidance-guidance-hooks-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/guidance_hooks.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_guidance_guidance_hooks_jl",
+    "layout_of": "ae991789a63a64a2"
+  },
+  "derives_from": "aerobraking-gnc-guidance",
+  "group": "grp.src_gnc_guidance_guidance_hooks_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.guidance_hooks__control_solarpanels_heatrate": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.guidance_hooks__control_solarpanels_heatrate"
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-comparison-methods",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/comparison_methods/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/comparison_methods",
+    "layout_of": "412c959743f5b8e6"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo",
+  "group": "grp.src_gnc_guidance_rpo_comparison_methods",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_gnc_guidance_rpo_comparison_methods_planner_comparison_jl": [
+        80.0,
+        80.0
+      ],
+      "grp.src_gnc_guidance_rpo_comparison_methods_trajectory_optimizers_jl": [
+        400.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.planner_comparison__rpo_comparison_config_with_fixed_safe_distance",
+    "gnc.planner_comparison__rpo_comparison_progress_bar",
+    "gnc.planner_comparison__rpo_comparison_progress_line_bang",
+    "gnc.planner_comparison__rpo_comparison_rrt_connect_seed_path",
+    "gnc.planner_comparison__rpo_comparison_rrt_connect_settings",
+    "gnc.planner_comparison__rpo_comparison_rrt_star_settings",
+    "gnc.planner_comparison_rpo_740_mpc_final_pso_config",
+    "gnc.planner_comparison_rpo_comparison_artifact_slug",
+    "gnc.planner_comparison_rpo_comparison_axis_name",
+    "gnc.planner_comparison_rpo_comparison_cost_iteration_plot",
+    "gnc.planner_comparison_rpo_comparison_cost_iteration_xvalues",
+    "gnc.planner_comparison_rpo_comparison_failed_paths_plot",
+    "gnc.planner_comparison_rpo_comparison_metric_includes_result",
+    "gnc.planner_comparison_rpo_comparison_metric_specs",
+    "gnc.planner_comparison_rpo_comparison_metric_summary_plot",
+    "gnc.planner_comparison_rpo_comparison_metric_value",
+    "gnc.planner_comparison_rpo_comparison_path_family_plot",
+    "gnc.planner_comparison_rpo_comparison_single_path_plot",
+    "gnc.planner_comparison_rpo_comparison_station_mesh_trace",
+    "gnc.planner_comparison_rpo_comparison_station_trace",
+    "gnc.planner_comparison_rpo_comparison_trace_axis_name",
+    "gnc.planner_comparison_rpo_flatten_planner_results",
+    "gnc.planner_comparison_rpo_group_metric_mean",
+    "gnc.planner_comparison_rpo_lqmpc_reference_preview",
+    "gnc.planner_comparison_rpo_lqmpc_tracking_fuel_used_pct",
+    "gnc.planner_comparison_rpo_plan_comparison_path",
+    "gnc.planner_comparison_rpo_track_retimed_path_lqmpc",
+    "gnc.planner_comparison_rpo_write_failed_path_outputs",
+    "gnc.planner_comparison_rpo_write_namedtuple_csv",
+    "gnc.planner_comparison_rpo_write_planner_comparison_outputs",
+    "gnc.planner_comparison_rpolqmpctrackingsettings",
+    "gnc.planner_comparison_rpoplannercomparisoncase",
+    "gnc.planner_comparison_rpoplannercomparisonconfig",
+    "gnc.planner_comparison_runtime_limited_iters",
+    "gnc.trajectory_optimizers_normalize_rpo_comparison_planner_type",
+    "gnc.trajectory_optimizers_rpo_chomp_numeric_gradient",
+    "gnc.trajectory_optimizers_rpo_chomp_obstacle_potential",
+    "gnc.trajectory_optimizers_rpo_clamp_internal_waypoints",
+    "gnc.trajectory_optimizers_rpo_comparison_planner_label",
+    "gnc.trajectory_optimizers_rpo_second_difference_metric",
+    "gnc.trajectory_optimizers_rpo_soft_obstacle_cost_from_samples",
+    "gnc.trajectory_optimizers_rpo_stomp_plan_path",
+    "gnc.trajectory_optimizers_rpo_stomp_waypoint_state_cost",
+    "gnc.trajectory_optimizers_rpo_trajectory_internal_points",
+    "gnc.trajectory_optimizers_rpo_trajectory_internal_points_from_seed",
+    "gnc.trajectory_optimizers_rpo_trajectory_points_from_internal",
+    "gnc.trajectory_optimizers_rpo_trajectory_search_bounds",
+    "gnc.trajectory_optimizers_rpo_trajectory_smoothness_cost",
+    "gnc.trajectory_optimizers_rpo_trajectory_soft_objective",
+    "gnc.trajectory_optimizers_rpochompsettings",
+    "gnc.trajectory_optimizers_rpostompsettings",
+    "gnc.trajectory_optimizers_rpotrajectoryoptimizersettings",
+    "gncy.planner_comparison_rpo_run_planner_comparison_batch",
+    "gncy.trajectory_optimizers_rpo_chomp_plan_path"
+  ]
+}

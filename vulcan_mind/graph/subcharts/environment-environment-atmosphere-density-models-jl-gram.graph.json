@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-atmosphere-density-models-jl-gram",
+  "chart_kind": "sub",
+  "title": "environment/atmosphere/density_models.jl · _gram* (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment/atmosphere/density_models.jl#_gram",
+    "layout_of": "73b41d6edfece799"
+  },
+  "derives_from": "environment-environment-atmosphere",
+  "group": "grp.src_environment_atmosphere_density_models_jl_gram",
+  "ui": {
+    "pos_overrides": {
+      "environment.density_models__gram_core_density_state": [
+        80.0,
+        80.0
+      ],
+      "environment.density_models__gram_default_surrogate_file": [
+        80.0,
+        230.0
+      ],
+      "environment.density_models__gram_lock_scope": [
+        80.0,
+        380.0
+      ],
+      "environment.density_models__gram_not_loaded_error": [
+        400.0,
+        80.0
+      ],
+      "environment.density_models__gram_point_density": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "environment.density_models__gram_core_density_state",
+    "environment.density_models__gram_default_surrogate_file",
+    "environment.density_models__gram_lock_scope",
+    "environment.density_models__gram_not_loaded_error",
+    "environment.density_models__gram_point_density"
+  ]
+}

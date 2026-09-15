@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-coupled-perturbations-jl-srp",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl · _srp* (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/coupled/perturbations.jl#_srp",
+    "layout_of": "a6f61635acf98a97"
+  },
+  "derives_from": "dynamics-dynamics-coupled-perturbations-jl",
+  "group": "grp.src_dynamics_coupled_perturbations_jl_srp",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.perturbations__srp_sun_position_from_cache_j2000_m": [
+        80.0,
+        80.0
+      ],
+      "dynamics.perturbations__srp_sun_position_from_spice_direct_j2000_m": [
+        400.0,
+        80.0
+      ],
+      "dynamics.perturbations__srp_sun_position_from_spice_j2000_m": [
+        80.0,
+        230.0
+      ],
+      "dynamics.perturbations__srp_sun_position_from_spice_memoized_j2000_m": [
+        400.0,
+        230.0
+      ],
+      "dynamics.perturbations__srp_total_acceleration_ii": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations__srp_sun_position_from_cache_j2000_m",
+    "dynamics.perturbations__srp_sun_position_from_spice_direct_j2000_m",
+    "dynamics.perturbations__srp_sun_position_from_spice_j2000_m",
+    "dynamics.perturbations__srp_sun_position_from_spice_memoized_j2000_m",
+    "dynamics.perturbations__srp_total_acceleration_ii"
+  ]
+}

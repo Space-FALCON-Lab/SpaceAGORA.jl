@@ -1,0 +1,119 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-aerobraking-t-edg",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/aerobraking/t_edg/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/aerobraking/t_edg",
+    "layout_of": "7670257bc0f5a76a"
+  },
+  "derives_from": "gnc-gnc-guidance-aerobraking",
+  "group": "grp.src_gnc_guidance_aerobraking_t_edg",
+  "ui": {
+    "pos_overrides": {
+      "gnc.eom_predictor_f_ctrl_bang": [
+        400.0,
+        230.0
+      ],
+      "gnc.eom_predictor_out_drag_pass_affect_bang": [
+        400.0,
+        380.0
+      ],
+      "gnc.eom_predictor_out_drag_pass_condition": [
+        400.0,
+        530.0
+      ],
+      "gnc.eom_predictor_shooting_residual_bang": [
+        400.0,
+        680.0
+      ],
+      "gnc.t_edg_strategy_compute_aerobraking_guidance": [
+        80.0,
+        80.0
+      ],
+      "gnc.targeting_solver__target_planning_impl": [
+        400.0,
+        830.0
+      ],
+      "gnc.targeting_solver_control_solarpanels_targeting_closed_form": [
+        80.0,
+        230.0
+      ],
+      "gnc.targeting_solver_control_solarpanels_targeting_heatload": [
+        80.0,
+        380.0
+      ],
+      "gnc.targeting_solver_control_solarpanels_targeting_num_int": [
+        80.0,
+        530.0
+      ],
+      "gnc.targeting_solver_func_e": [
+        400.0,
+        80.0
+      ],
+      "gnc.targeting_solver_func_targeting_heatload": [
+        80.0,
+        680.0
+      ],
+      "gnc.targeting_solver_func_targeting_num_int": [
+        80.0,
+        830.0
+      ],
+      "gnc.trajectory_predictor_closed_form_targeting": [
+        80.0,
+        980.0
+      ],
+      "gnc.trajectory_predictor_f_ctrl_rf_bang": [
+        400.0,
+        980.0
+      ],
+      "gnc.trajectory_predictor_out_drag_passage_affect_bang": [
+        400.0,
+        1130.0
+      ],
+      "gnc.trajectory_predictor_out_drag_passage_condition": [
+        400.0,
+        1280.0
+      ],
+      "gncy.eom_predictor_asim_ctrl_targeting_plot": [
+        80.0,
+        1130.0
+      ],
+      "gncy.t_edg_strategy_compute_t_edg_guidance_window_bang": [
+        80.0,
+        1280.0
+      ],
+      "gncy.targeting_solver_target_planning": [
+        80.0,
+        1430.0
+      ],
+      "gncy.trajectory_predictor_asim_ctrl_targeting": [
+        80.0,
+        1580.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.eom_predictor_f_ctrl_bang",
+    "gnc.eom_predictor_out_drag_pass_affect_bang",
+    "gnc.eom_predictor_out_drag_pass_condition",
+    "gnc.eom_predictor_shooting_residual_bang",
+    "gnc.t_edg_strategy_compute_aerobraking_guidance",
+    "gnc.targeting_solver__target_planning_impl",
+    "gnc.targeting_solver_control_solarpanels_targeting_closed_form",
+    "gnc.targeting_solver_control_solarpanels_targeting_heatload",
+    "gnc.targeting_solver_control_solarpanels_targeting_num_int",
+    "gnc.targeting_solver_func_e",
+    "gnc.targeting_solver_func_targeting_heatload",
+    "gnc.targeting_solver_func_targeting_num_int",
+    "gnc.trajectory_predictor_closed_form_targeting",
+    "gnc.trajectory_predictor_f_ctrl_rf_bang",
+    "gnc.trajectory_predictor_out_drag_passage_affect_bang",
+    "gnc.trajectory_predictor_out_drag_passage_condition",
+    "gncy.eom_predictor_asim_ctrl_targeting_plot",
+    "gncy.t_edg_strategy_compute_t_edg_guidance_window_bang",
+    "gncy.targeting_solver_target_planning",
+    "gncy.trajectory_predictor_asim_ctrl_targeting"
+  ]
+}

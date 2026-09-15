@@ -1,0 +1,32 @@
+version: 1
+project: SpaceAGORA.jl
+languages: [julia, javascript, python]
+
+default_region: all
+
+regions:
+  all:
+    description: "Entire source tree."
+    include: ["src/**", "lib/**", "ext/**"]
+    exclude: ["**/test/**", "**/tests/**", "**/*_test.*", "**/*_tests.*", "deps/**"]
+    granularity: module
+
+grounding:
+  require_symbol_match: true
+  symbol_search: auto
+
+lint:
+  banned_phrases:
+    - "a helper function"
+    - "various"
+    - "and so on"
+    - "etc."
+    - "some kind of"
+    - "handles the logic"
+    - "TODO"
+    - "TBD"
+  min_doc_words: 120
+
+coverage:
+  require_every_in_scope_file_mapped: true
+  require_subchart_per_module: true

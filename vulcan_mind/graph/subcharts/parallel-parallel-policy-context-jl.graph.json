@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-policy-context-jl",
+  "chart_kind": "sub",
+  "title": "parallel/policy/context.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/policy/context.jl",
+    "layout_of": "1a6fa698023ced9d"
+  },
+  "derives_from": "parallel-parallel-policy",
+  "group": "grp.src_parallel_policy_context_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.context__active_policy_context": [
+        400.0,
+        80.0
+      ],
+      "parallel.context__active_policy_scope_id": [
+        80.0,
+        80.0
+      ],
+      "parallel.context__create_persistent_foreach_pool": [
+        80.0,
+        230.0
+      ],
+      "parallel.context__create_persistent_foreach_worker_pool": [
+        80.0,
+        380.0
+      ],
+      "parallel.context__create_spin_barrier_pool": [
+        400.0,
+        680.0
+      ],
+      "parallel.context__destroy_persistent_foreach_scope_bang": [
+        400.0,
+        830.0
+      ],
+      "parallel.context__persistent_foreach_worker_loop": [
+        400.0,
+        230.0
+      ],
+      "parallel.context__persistent_foreach_worker_loop_w": [
+        400.0,
+        380.0
+      ],
+      "parallel.context__policy_scope_id": [
+        400.0,
+        530.0
+      ],
+      "parallel.context__shutdown_persistent_foreach_pool_bang": [
+        720.0,
+        230.0
+      ],
+      "parallel.context__shutdown_spin_barrier_pool_bang": [
+        720.0,
+        380.0
+      ],
+      "parallel.context__spin_barrier_dispatch_bang": [
+        80.0,
+        530.0
+      ],
+      "parallel.context__spin_barrier_pool_for": [
+        80.0,
+        680.0
+      ],
+      "parallel.context__spin_barrier_worker_loop_w": [
+        720.0,
+        80.0
+      ],
+      "parcore.context_with_policy_context": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.context__active_policy_context",
+    "parallel.context__active_policy_scope_id",
+    "parallel.context__create_persistent_foreach_pool",
+    "parallel.context__create_persistent_foreach_worker_pool",
+    "parallel.context__create_spin_barrier_pool",
+    "parallel.context__destroy_persistent_foreach_scope_bang",
+    "parallel.context__persistent_foreach_worker_loop",
+    "parallel.context__persistent_foreach_worker_loop_w",
+    "parallel.context__policy_scope_id",
+    "parallel.context__shutdown_persistent_foreach_pool_bang",
+    "parallel.context__shutdown_spin_barrier_pool_bang",
+    "parallel.context__spin_barrier_dispatch_bang",
+    "parallel.context__spin_barrier_pool_for",
+    "parallel.context__spin_barrier_worker_loop_w",
+    "parcore.context_with_policy_context"
+  ]
+}

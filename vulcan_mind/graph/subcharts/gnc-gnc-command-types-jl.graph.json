@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-command-types-jl",
+  "chart_kind": "sub",
+  "title": "gnc/command_types.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/command_types.jl",
+    "layout_of": "8300cf5e99d41e5f"
+  },
+  "derives_from": "gnc",
+  "group": "grp.src_gnc_command_types_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.command_types_aerobrakingcontrolcommand": [
+        80.0,
+        80.0
+      ],
+      "gnc.command_types_commandtypes": [
+        80.0,
+        230.0
+      ],
+      "gnc.command_types_propulsiveburnplan": [
+        80.0,
+        380.0
+      ],
+      "gnc.propulsive_maneuver_command": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.command_types_aerobrakingcontrolcommand",
+    "gnc.command_types_commandtypes",
+    "gnc.command_types_propulsiveburnplan",
+    "gnc.propulsive_maneuver_command"
+  ]
+}

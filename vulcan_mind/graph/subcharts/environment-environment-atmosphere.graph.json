@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-atmosphere",
+  "chart_kind": "sub",
+  "title": "environment/atmosphere/ (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment/atmosphere",
+    "layout_of": "c43fc069341b3b7b"
+  },
+  "derives_from": "environment",
+  "group": "grp.src_environment_atmosphere",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_environment_atmosphere_density_models_jl_gram": [
+        80.0,
+        80.0
+      ],
+      "grp.src_environment_atmosphere_density_models_jl_nrlmsise": [
+        400.0,
+        80.0
+      ],
+      "grp.src_environment_atmosphere_density_models_jl_polyfit": [
+        1040.0,
+        80.0
+      ],
+      "grp.src_environment_atmosphere_density_models_jl_small": [
+        720.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "environment.density_models__batch_elapsed_time",
+    "environment.density_models__density_scalar_for_batch",
+    "environment.density_models__exponential_density",
+    "environment.density_models__gram_core_density_state",
+    "environment.density_models__gram_default_surrogate_file",
+    "environment.density_models__gram_lock_scope",
+    "environment.density_models__gram_not_loaded_error",
+    "environment.density_models__gram_point_density",
+    "environment.density_models__nrlmsise_ap_bins",
+    "environment.density_models__nrlmsise_ap_slot_index",
+    "environment.density_models__nrlmsise_ap_value",
+    "environment.density_models__nrlmsise_density_state",
+    "environment.density_models__nrlmsise_eval_datetime",
+    "environment.density_models__nrlmsise_flux_value",
+    "environment.density_models__nrlmsise_provider_indices",
+    "environment.density_models__nrlmsise_resolved_indices",
+    "environment.density_models__nrlmsise_space_indices_ap_bin",
+    "environment.density_models__nrlmsise_space_indices_ap_vector",
+    "environment.density_models__nrlmsise_space_indices_f107",
+    "environment.density_models__nrlmsise_space_indices_f107a",
+    "environment.density_models__nrlmsise_space_indices_indices",
+    "environment.density_models__nrlmsise_space_indices_lookup",
+    "environment.density_models__piecewise_layer_index",
+    "environment.density_models__planet_polyfit_valid_max_altitude_m",
+    "environment.density_models__planet_polyfit_valid_min_altitude_m",
+    "environment.density_models__polyfit_density",
+    "environment.density_models__polyfit_eval_altitude_km",
+    "environment.density_models__polyfit_log_density",
+    "environment.density_models__tab_flight_interp",
+    "environment.density_models__validate_density_batch_lengths",
+    "environment.density_models_clear_gram_offline_surrogate_cache_bang",
+    "environment.density_models_clear_gram_static_grid_cache_bang",
+    "environment.density_models_constantdensitymodel",
+    "environment.density_models_density_polyfit",
+    "environment.density_models_exponentialatmospheremodel",
+    "environment.density_models_getdensitybatch_bang",
+    "environment.density_models_gramatmospheremodel",
+    "environment.density_models_gramatmospheremodelsurrogate",
+    "environment.density_models_init_nrlmsise_space_indices_bang",
+    "environment.density_models_noatmospheremodel",
+    "environment.density_models_nrlmsise00atmospheremodel",
+    "environment.density_models_nrlmsise00spaceindicesprovider",
+    "environment.density_models_piecewiseexponentialatmospheremodel",
+    "environment.density_models_polynomialfitatmospheremodel",
+    "environment.density_models_precompute_gram_static_grids_bang",
+    "environment.density_models_tabulatedflightatmospheremodel",
+    "environment.density_models_timetabulatedatmospheremodel",
+    "environment.get_density"
+  ]
+}

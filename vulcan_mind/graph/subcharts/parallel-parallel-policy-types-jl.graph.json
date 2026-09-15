@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-policy-types-jl",
+  "chart_kind": "sub",
+  "title": "parallel/policy/types.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/policy/types.jl",
+    "layout_of": "a16ad5eae492ab7a"
+  },
+  "derives_from": "parallel-parallel-policy",
+  "group": "grp.src_parallel_policy_types_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.types__hintlayerstatsaccumulator": [
+        80.0,
+        80.0
+      ],
+      "parallel.types__persistentforeachpool": [
+        80.0,
+        230.0
+      ],
+      "parallel.types__persistenthintstate": [
+        80.0,
+        380.0
+      ],
+      "parallel.types__spinbarrierpool": [
+        80.0,
+        530.0
+      ],
+      "parallel.types_adaptivechoicestats": [
+        80.0,
+        680.0
+      ],
+      "parallel.types_adaptivecontrollerstate": [
+        80.0,
+        830.0
+      ],
+      "parallel.types_policycontext": [
+        80.0,
+        980.0
+      ],
+      "parcore.types_policytelemetry": [
+        80.0,
+        1130.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.types__hintlayerstatsaccumulator",
+    "parallel.types__persistentforeachpool",
+    "parallel.types__persistenthintstate",
+    "parallel.types__spinbarrierpool",
+    "parallel.types_adaptivechoicestats",
+    "parallel.types_adaptivecontrollerstate",
+    "parallel.types_policycontext",
+    "parcore.types_policytelemetry"
+  ]
+}

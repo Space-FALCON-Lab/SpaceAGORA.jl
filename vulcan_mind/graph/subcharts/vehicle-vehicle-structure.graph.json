@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "vehicle-vehicle-structure",
+  "chart_kind": "sub",
+  "title": "vehicle/structure/ (vehicle)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/vehicle/structure",
+    "layout_of": "13644a708c541243"
+  },
+  "derives_from": "vehicle",
+  "group": "grp.src_vehicle_structure",
+  "ui": {
+    "pos_overrides": {
+      "vehicle.geometry_properties_get_normal_vector": [
+        1040.0,
+        80.0
+      ],
+      "vehicle.geometry_properties_get_sa_area": [
+        400.0,
+        80.0
+      ],
+      "vehicle.geometry_properties_get_sc_area": [
+        720.0,
+        80.0
+      ],
+      "vehicle.geometry_properties_get_spacecraft_length": [
+        80.0,
+        80.0
+      ],
+      "vehicle.geometry_properties_get_tangent_vector": [
+        1360.0,
+        80.0
+      ],
+      "vehicle.mass_properties_get_com": [
+        80.0,
+        230.0
+      ],
+      "vehicle.mass_properties_get_inertia_tensor": [
+        720.0,
+        230.0
+      ],
+      "vehicle.mass_properties_get_spacecraft_mass": [
+        1360.0,
+        230.0
+      ],
+      "vehicle.mass_properties_set_inertia_tensor_bang": [
+        1040.0,
+        230.0
+      ],
+      "vehicle.mass_properties_update_inertia_tensor": [
+        400.0,
+        230.0
+      ],
+      "vehx.structure_assembly_graph_traverse_bodies": [
+        1680.0,
+        80.0
+      ],
+      "vehx.structure_geometry_properties_get_spacecraft_reference_area": [
+        80.0,
+        380.0
+      ],
+      "vehx.structure_mass_properties_update_inertia_tensor_bang": [
+        80.0,
+        530.0
+      ],
+      "vehx.structure_models_structure": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "vehicle.geometry_properties_get_normal_vector",
+    "vehicle.geometry_properties_get_sa_area",
+    "vehicle.geometry_properties_get_sc_area",
+    "vehicle.geometry_properties_get_spacecraft_length",
+    "vehicle.geometry_properties_get_tangent_vector",
+    "vehicle.mass_properties_get_com",
+    "vehicle.mass_properties_get_inertia_tensor",
+    "vehicle.mass_properties_get_spacecraft_mass",
+    "vehicle.mass_properties_set_inertia_tensor_bang",
+    "vehicle.mass_properties_update_inertia_tensor",
+    "vehx.structure_assembly_graph_traverse_bodies",
+    "vehx.structure_geometry_properties_get_spacecraft_reference_area",
+    "vehx.structure_mass_properties_update_inertia_tensor_bang",
+    "vehx.structure_models_structure"
+  ]
+}

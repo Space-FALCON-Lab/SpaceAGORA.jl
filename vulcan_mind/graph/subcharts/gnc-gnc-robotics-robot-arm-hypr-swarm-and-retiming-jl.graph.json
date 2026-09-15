@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-robotics-robot-arm-hypr-swarm-and-retiming-jl",
+  "chart_kind": "sub",
+  "title": "gnc/robotics/robot_arm_hypr/swarm_and_retiming.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/robotics/robot_arm_hypr/swarm_and_retiming.jl",
+    "layout_of": "569981f8fb918351"
+  },
+  "derives_from": "gnc-gnc-robotics-robot-arm-hypr",
+  "group": "grp.src_gnc_robotics_robot_arm_hypr_swarm_and_retiming_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.swarm_and_retiming__robot_arm_control_points": [
+        80.0,
+        80.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_flatten_internal_points": [
+        80.0,
+        230.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_base_wrench_ratios": [
+        400.0,
+        80.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_cloth_base_wrench_ratios": [
+        720.0,
+        80.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_cloth_state_for_reaction": [
+        1040.0,
+        80.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_cull_swarm_bang": [
+        80.0,
+        380.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_early_stopping_feasible": [
+        80.0,
+        530.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_iteration_weights": [
+        80.0,
+        680.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_link_com_history": [
+        1360.0,
+        80.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_material_improvement": [
+        80.0,
+        830.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_reaction_scale": [
+        400.0,
+        230.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_reference_times_from_scales": [
+        400.0,
+        380.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_hypr_rigid_base_wrench_ratios": [
+        1040.0,
+        230.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_path_length": [
+        80.0,
+        980.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_path_smoothness": [
+        80.0,
+        1130.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_seed_control_points": [
+        80.0,
+        1280.0
+      ],
+      "gnc.swarm_and_retiming__robot_arm_segment_distance": [
+        80.0,
+        1430.0
+      ],
+      "gnc.swarm_and_retiming_robot_arm_sample_hypr_path": [
+        80.0,
+        1580.0
+      ],
+      "gncz.swarm_and_retiming__robot_arm_hypr_retime_reference": [
+        80.0,
+        1730.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.swarm_and_retiming__robot_arm_control_points",
+    "gnc.swarm_and_retiming__robot_arm_flatten_internal_points",
+    "gnc.swarm_and_retiming__robot_arm_hypr_base_wrench_ratios",
+    "gnc.swarm_and_retiming__robot_arm_hypr_cloth_base_wrench_ratios",
+    "gnc.swarm_and_retiming__robot_arm_hypr_cloth_state_for_reaction",
+    "gnc.swarm_and_retiming__robot_arm_hypr_cull_swarm_bang",
+    "gnc.swarm_and_retiming__robot_arm_hypr_early_stopping_feasible",
+    "gnc.swarm_and_retiming__robot_arm_hypr_iteration_weights",
+    "gnc.swarm_and_retiming__robot_arm_hypr_link_com_history",
+    "gnc.swarm_and_retiming__robot_arm_hypr_material_improvement",
+    "gnc.swarm_and_retiming__robot_arm_hypr_reaction_scale",
+    "gnc.swarm_and_retiming__robot_arm_hypr_reference_times_from_scales",
+    "gnc.swarm_and_retiming__robot_arm_hypr_rigid_base_wrench_ratios",
+    "gnc.swarm_and_retiming__robot_arm_path_length",
+    "gnc.swarm_and_retiming__robot_arm_path_smoothness",
+    "gnc.swarm_and_retiming__robot_arm_seed_control_points",
+    "gnc.swarm_and_retiming__robot_arm_segment_distance",
+    "gnc.swarm_and_retiming_robot_arm_sample_hypr_path",
+    "gncz.swarm_and_retiming__robot_arm_hypr_retime_reference"
+  ]
+}

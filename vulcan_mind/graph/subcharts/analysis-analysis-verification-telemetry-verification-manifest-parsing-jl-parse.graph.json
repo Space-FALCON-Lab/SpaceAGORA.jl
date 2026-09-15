@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl-parse",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/manifest_parsing.jl · _parse* (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/manifest_parsing.jl#_parse",
+    "layout_of": "e5381ee93dc80375"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl",
+  "group": "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_parse",
+  "ui": {
+    "pos_overrides": {
+      "analysis.manifest_parsing__parse_atmosphere_truth_config": [
+        80.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__parse_attitude_q": [
+        400.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__parse_calibration_config": [
+        80.0,
+        230.0
+      ],
+      "analysis.manifest_parsing__parse_element_frame": [
+        80.0,
+        380.0
+      ],
+      "analysis.manifest_parsing__parse_event_tolerance": [
+        400.0,
+        380.0
+      ],
+      "analysis.manifest_parsing__parse_gravity_model": [
+        80.0,
+        530.0
+      ],
+      "analysis.manifest_parsing__parse_ic_offset": [
+        80.0,
+        680.0
+      ],
+      "analysis.manifest_parsing__parse_initial_time": [
+        80.0,
+        830.0
+      ],
+      "analysis.manifest_parsing__parse_maneuver_config": [
+        80.0,
+        980.0
+      ],
+      "analysis.manifest_parsing__parse_orbit_altitude_mode": [
+        80.0,
+        1130.0
+      ],
+      "analysis.manifest_parsing__parse_positive_float_env": [
+        80.0,
+        1280.0
+      ],
+      "analysis.manifest_parsing__parse_positive_int_env": [
+        80.0,
+        1430.0
+      ],
+      "analysis.manifest_parsing__parse_reference_frame": [
+        80.0,
+        1580.0
+      ],
+      "analysis.manifest_parsing__parse_spacecraft_config": [
+        80.0,
+        1730.0
+      ],
+      "analysis.manifest_parsing__parse_time_aligned_comparison_mode": [
+        80.0,
+        1880.0
+      ],
+      "analysis.manifest_parsing__parse_tolerances": [
+        80.0,
+        2030.0
+      ],
+      "analysis.manifest_parsing__parse_truth_mask": [
+        80.0,
+        2180.0
+      ],
+      "analysis.manifest_parsing__parse_units": [
+        80.0,
+        2330.0
+      ],
+      "analysis.manifest_parsing__parse_vec3": [
+        400.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.manifest_parsing__parse_atmosphere_truth_config",
+    "analysis.manifest_parsing__parse_attitude_q",
+    "analysis.manifest_parsing__parse_calibration_config",
+    "analysis.manifest_parsing__parse_element_frame",
+    "analysis.manifest_parsing__parse_event_tolerance",
+    "analysis.manifest_parsing__parse_gravity_model",
+    "analysis.manifest_parsing__parse_ic_offset",
+    "analysis.manifest_parsing__parse_initial_time",
+    "analysis.manifest_parsing__parse_maneuver_config",
+    "analysis.manifest_parsing__parse_orbit_altitude_mode",
+    "analysis.manifest_parsing__parse_positive_float_env",
+    "analysis.manifest_parsing__parse_positive_int_env",
+    "analysis.manifest_parsing__parse_reference_frame",
+    "analysis.manifest_parsing__parse_spacecraft_config",
+    "analysis.manifest_parsing__parse_time_aligned_comparison_mode",
+    "analysis.manifest_parsing__parse_tolerances",
+    "analysis.manifest_parsing__parse_truth_mask",
+    "analysis.manifest_parsing__parse_units",
+    "analysis.manifest_parsing__parse_vec3"
+  ]
+}

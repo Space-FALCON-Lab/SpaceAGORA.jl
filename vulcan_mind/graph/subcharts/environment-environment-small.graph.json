@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-small",
+  "chart_kind": "sub",
+  "title": "environment/ (small files) (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment#_small",
+    "layout_of": "df9926e98e8f45f8"
+  },
+  "derives_from": "environment",
+  "group": "grp.src_environment_small",
+  "ui": {
+    "pos_overrides": {
+      "envana.env_aerodynamic_effectors_aerodynamiceffectors": [
+        80.0,
+        80.0
+      ],
+      "envana.env_physical_models_environmentmodels": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "envana.env_aerodynamic_effectors_aerodynamiceffectors",
+    "envana.env_physical_models_environmentmodels"
+  ]
+}

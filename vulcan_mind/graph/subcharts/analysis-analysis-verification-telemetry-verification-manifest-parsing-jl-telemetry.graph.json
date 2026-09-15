@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl-telemetry",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/manifest_parsing.jl · _telemetry* (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/manifest_parsing.jl#_telemetry",
+    "layout_of": "1719be93f497d0b3"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl",
+  "group": "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_telemetry",
+  "ui": {
+    "pos_overrides": {
+      "analysis.manifest_parsing__telemetry_solver_maxiters": [
+        80.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__telemetry_solver_mode": [
+        80.0,
+        230.0
+      ],
+      "analysis.manifest_parsing__telemetry_solver_retry_maxiters": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.manifest_parsing__telemetry_solver_maxiters",
+    "analysis.manifest_parsing__telemetry_solver_mode",
+    "analysis.manifest_parsing__telemetry_solver_retry_maxiters"
+  ]
+}

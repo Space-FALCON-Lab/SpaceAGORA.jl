@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-rotational",
+  "chart_kind": "sub",
+  "title": "dynamics/rotational/ (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/rotational",
+    "layout_of": "727959ab9bed4689"
+  },
+  "derives_from": "dynamics",
+  "group": "grp.src_dynamics_rotational",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.torque_models_body_angular_velocity": [
+        80.0,
+        80.0
+      ],
+      "dynamics.torque_models_body_torque": [
+        80.0,
+        230.0
+      ],
+      "dynx.rotational_attitude_kinematics_quaternion_derivative": [
+        80.0,
+        380.0
+      ],
+      "dynx.rotational_models_dynamicsrotational": [
+        80.0,
+        530.0
+      ],
+      "dynx.rotational_rigid_body_dynamics_angular_acceleration": [
+        80.0,
+        680.0
+      ],
+      "dynx.rotational_torque_models_combine_torques": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.torque_models_body_angular_velocity",
+    "dynamics.torque_models_body_torque",
+    "dynx.rotational_attitude_kinematics_quaternion_derivative",
+    "dynx.rotational_models_dynamicsrotational",
+    "dynx.rotational_rigid_body_dynamics_angular_acceleration",
+    "dynx.rotational_torque_models_combine_torques"
+  ]
+}

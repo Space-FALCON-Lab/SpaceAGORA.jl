@@ -1,0 +1,132 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-policy",
+  "chart_kind": "sub",
+  "title": "parallel/policy/ (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/policy",
+    "layout_of": "7834b642b2c79f9c"
+  },
+  "derives_from": "parallel",
+  "group": "grp.src_parallel_policy",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_parallel_policy_context_jl": [
+        720.0,
+        80.0
+      ],
+      "grp.src_parallel_policy_env_config_jl": [
+        1360.0,
+        80.0
+      ],
+      "grp.src_parallel_policy_persistent_hints_jl": [
+        400.0,
+        80.0
+      ],
+      "grp.src_parallel_policy_policy_telemetry_jl": [
+        400.0,
+        230.0
+      ],
+      "grp.src_parallel_policy_small": [
+        80.0,
+        80.0
+      ],
+      "grp.src_parallel_policy_thread_execution_jl": [
+        1040.0,
+        80.0
+      ],
+      "grp.src_parallel_policy_types_jl": [
+        1040.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.adaptive_decision_use_threads_policy",
+    "parallel.context__active_policy_context",
+    "parallel.context__active_policy_scope_id",
+    "parallel.context__create_persistent_foreach_pool",
+    "parallel.context__create_persistent_foreach_worker_pool",
+    "parallel.context__create_spin_barrier_pool",
+    "parallel.context__destroy_persistent_foreach_scope_bang",
+    "parallel.context__persistent_foreach_worker_loop",
+    "parallel.context__persistent_foreach_worker_loop_w",
+    "parallel.context__policy_scope_id",
+    "parallel.context__shutdown_persistent_foreach_pool_bang",
+    "parallel.context__shutdown_spin_barrier_pool_bang",
+    "parallel.context__spin_barrier_dispatch_bang",
+    "parallel.context__spin_barrier_pool_for",
+    "parallel.context__spin_barrier_worker_loop_w",
+    "parallel.env_config__adaptive_desire_cap",
+    "parallel.env_config__default_thread_pool_size",
+    "parallel.env_config__persistent_hint_default_path",
+    "parallel.env_config__persistent_hint_path",
+    "parallel.env_config__safe_token",
+    "parallel.env_config__snapshot_auto_min_budget",
+    "parallel.env_config__telemetry_bucket",
+    "parallel.env_config_adaptive_delta",
+    "parallel.env_config_adaptive_rho",
+    "parallel.env_config_auto_thread_min_budget",
+    "parallel.env_config_effective_inner_thread_budget",
+    "parallel.env_config_inner_dynamic_chunk_size",
+    "parallel.env_config_inner_scheduler_mode",
+    "parallel.env_config_parse_bool_env",
+    "parallel.env_config_parse_float_env",
+    "parallel.env_config_parse_nonnegative_int_env",
+    "parallel.env_config_parse_parallel_mode_env",
+    "parallel.env_config_parse_thread_threshold_env",
+    "parallel.env_config_persistent_hints_exploration",
+    "parallel.env_config_persistent_hints_min_samples",
+    "parallel.env_config_persistent_hints_persist_enabled",
+    "parallel.env_config_persistent_hints_state_reset_requested",
+    "parallel.observation_tracking_record_route_discard_bang",
+    "parallel.persistent_hints__ensure_persistent_hint_state_loaded_bang",
+    "parallel.persistent_hints__hint_bucket",
+    "parallel.persistent_hints__hint_candidate_allotments",
+    "parallel.persistent_hints__hint_entry_count",
+    "parallel.persistent_hints__hint_mean_and_width",
+    "parallel.persistent_hints__hint_payload_stats",
+    "parallel.persistent_hints__hint_record_observation_bang",
+    "parallel.persistent_hints__hint_samples",
+    "parallel.persistent_hints__hint_signature_value",
+    "parallel.persistent_hints__hint_stats_payload",
+    "parallel.persistent_hints__hint_workload_signature",
+    "parallel.persistent_hints__load_persistent_hint_state_locked_bang",
+    "parallel.persistent_hints__save_persistent_hint_state_locked_bang",
+    "parallel.persistent_hints_hint_layer_stats_snapshot",
+    "parallel.persistent_hints_reset_persistent_hint_state_bang",
+    "parallel.policy_telemetry__adaptive_state_for",
+    "parallel.policy_telemetry__record_policy_decision_bang",
+    "parallel.policy_telemetry_reset_policy_telemetry_bang",
+    "parallel.thread_execution__persistent_pool_for",
+    "parallel.thread_execution__persistent_pool_key",
+    "parallel.thread_execution__persistent_worker_pool_for",
+    "parallel.thread_execution__thread_worker_count",
+    "parallel.thread_execution__threaded_foreach_persistent_bang",
+    "parallel.thread_execution_thread_worker_count",
+    "parallel.thread_execution_threaded_collect_bang",
+    "parallel.thread_execution_threaded_collect_persistent_bang",
+    "parallel.thread_execution_threaded_foreach_persistent",
+    "parallel.thread_execution_threaded_foreach_worker",
+    "parallel.thread_execution_threaded_foreach_worker_persistent",
+    "parallel.thread_execution_threaded_foreach_worker_spin",
+    "parallel.thread_execution_threaded_reduce",
+    "parallel.types__hintlayerstatsaccumulator",
+    "parallel.types__persistentforeachpool",
+    "parallel.types__persistenthintstate",
+    "parallel.types__spinbarrierpool",
+    "parallel.types_adaptivechoicestats",
+    "parallel.types_adaptivecontrollerstate",
+    "parallel.types_policycontext",
+    "parcore.adaptive_decision_thread_policy_decision",
+    "parcore.context_with_policy_context",
+    "parcore.env_config_snapshot_policy_decision_env",
+    "parcore.observation_tracking_record_policy_observation_bang",
+    "parcore.parallel_policy_parallelpolicy",
+    "parcore.persistent_hints__hint_choose_allotment",
+    "parcore.policy_telemetry_policy_telemetry_snapshot",
+    "parcore.thread_execution_threaded_foreach",
+    "parcore.types_policytelemetry"
+  ]
+}

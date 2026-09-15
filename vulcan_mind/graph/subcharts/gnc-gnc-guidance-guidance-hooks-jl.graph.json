@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-guidance-hooks-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/guidance_hooks.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/guidance_hooks.jl",
+    "layout_of": "4fc282ae73d3d947"
+  },
+  "derives_from": "gnc-gnc-guidance",
+  "group": "grp.src_gnc_guidance_guidance_hooks_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.guidance_hooks__control_asim_ctrl": [
+        400.0,
+        80.0
+      ],
+      "gnc.guidance_hooks__control_asim_ctrl_rf": [
+        400.0,
+        230.0
+      ],
+      "gnc.guidance_hooks__control_module": [
+        720.0,
+        80.0
+      ],
+      "gnc.guidance_hooks__control_solarpanels_heatrate": [
+        400.0,
+        380.0
+      ],
+      "gncy.guidance_hooks_guidancehooks": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.guidance_hooks__control_asim_ctrl",
+    "gnc.guidance_hooks__control_asim_ctrl_rf",
+    "gnc.guidance_hooks__control_module",
+    "gnc.guidance_hooks__control_solarpanels_heatrate",
+    "gncy.guidance_hooks_guidancehooks"
+  ]
+}

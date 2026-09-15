@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-control",
+  "chart_kind": "sub",
+  "title": "gnc/control/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_control",
+    "layout_of": "7bbec196a2a94a09"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_gnc_control",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_gnc_control_aerobraking": [
+        80.0,
+        80.0
+      ],
+      "grp.src_gnc_control_heat_load_control_jl": [
+        400.0,
+        530.0
+      ],
+      "grp.src_gnc_control_heat_rate_control_jl": [
+        400.0,
+        80.0
+      ],
+      "grp.src_gnc_control_propulsive_maneuvers_jl": [
+        80.0,
+        230.0
+      ],
+      "grp.src_gnc_control_robot_arm_control_jl": [
+        80.0,
+        380.0
+      ],
+      "grp.src_gnc_control_rpo_mpc": [
+        400.0,
+        380.0
+      ],
+      "grp.src_gnc_control_struct_load_control_jl": [
+        400.0,
+        230.0
+      ],
+      "grp.src_gnc_control_targeting_control_jl": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.constraint_tracking_f_ctrl_bang",
+    "gnc.constraint_tracking_out_drag_pass_affect_bang",
+    "gnc.constraint_tracking_out_drag_pass_condition",
+    "gnc.constraint_tracking_time_switch_func_affect_bang",
+    "gnc.constraint_tracking_time_switch_func_condition",
+    "gnc.control_commands_asim_ctrl_rf",
+    "gnc.control_commands_f_ctrl_bang",
+    "gnc.control_commands_out_drag_pass_affect_bang",
+    "gnc.control_commands_out_drag_pass_condition",
+    "gnc.control_commands_time_switch_func_affect_bang",
+    "gnc.control_commands_time_switch_func_condition",
+    "gnc.heat_load_control__edg_closed_form_heat_load_trajectory",
+    "gnc.heat_load_control__edg_constrained_heat_load_alpha_profile",
+    "gnc.heat_load_control__edg_drag_passage_duration",
+    "gnc.heat_load_control__edg_heat_load_scale_height",
+    "gnc.heat_load_control__edg_max_heat_load_for_links",
+    "gnc.heat_load_control__edg_predict_mass",
+    "gnc.heat_load_control__edg_profile_heat_rates",
+    "gnc.heat_load_control__edg_total_ref_area",
+    "gnc.heat_load_control__edg_weighted_aero_coefficients",
+    "gnc.heat_rate_control__edg_maxwellian_heat_rate",
+    "gnc.heat_rate_control_df",
+    "gnc.heat_rate_control_f",
+    "gnc.lqmpc_rpo_discretize_zoh",
+    "gnc.lqmpc_rpo_hcw_continuous_mats",
+    "gnc.lqmpc_rpo_prediction_mats",
+    "gnc.lqmpc_rpo_ref_preview",
+    "gnc.propulsive_maneuvers__commanded_maneuver",
+    "gnc.propulsive_maneuvers__effective_direction_rad",
+    "gnc.propulsive_maneuvers__effective_thrust_isp",
+    "gnc.propulsive_maneuvers__trace_maneuver_event_bang",
+    "gnc.propulsive_maneuvers__validated_burn_plan",
+    "gnc.robot_arm_control_init_robot_arm_joint_mpc",
+    "gnc.robot_arm_control_robot_arm_joint_mpc_reference_preview",
+    "gnc.struct_load_control__energy_depletion_struct_drag_area",
+    "gnc.struct_load_control_f",
+    "gnc.targeting_control__edg_certify_targeting_candidates",
+    "gnc.targeting_control__edg_control_pos_vel_mass",
+    "gnc.targeting_control__edg_environment_state",
+    "gnc.targeting_control__edg_in_drag_passage",
+    "gnc.targeting_control__edg_orbit_metrics_from_rv",
+    "gnc.targeting_control__edg_targeting_aero_acceleration",
+    "gnc.targeting_control__edg_targeting_constrained_alpha",
+    "gnc.targeting_control__edg_targeting_prediction_environment",
+    "gnc.targeting_control_calccontroleffect_bang",
+    "gnc.thruster_allocator_rpo_thruster_wrench_body",
+    "gnc.tracking_executor__control_exception_fallback",
+    "gnc.tracking_executor__control_solarpanels_heatload_impl",
+    "gnc.tracking_executor__control_solarpanels_openloop_impl",
+    "gnc.tracking_executor_control_solarpanels_heatload",
+    "gnc.tracking_executor_control_struct_load",
+    "gnc.tracking_executor_df",
+    "gnc.tracking_executor_f",
+    "gnc.tracking_executor_heat_rate_calc",
+    "gncx.constraint_tracking_asim_ctrl_plot",
+    "gncx.control_commands_asim_ctrl",
+    "gncx.heat_rate_control__edg_heat_rate_alpha",
+    "gncx.propulsive_maneuvers_calccontroleffect_bang",
+    "gncx.rpo_mpc_control_model_calccontroleffect_bang",
+    "gncx.tracking_executor_control_solarpanels_heatrate"
+  ]
+}

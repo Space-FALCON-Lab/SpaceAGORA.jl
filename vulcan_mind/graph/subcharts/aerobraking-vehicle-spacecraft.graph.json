@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-vehicle-spacecraft",
+  "chart_kind": "sub",
+  "title": "vehicle/spacecraft/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_vehicle_spacecraft",
+    "layout_of": "2fb552ea26bb2e22"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_vehicle_spacecraft",
+  "ui": {
+    "pos_overrides": {
+      "vehicle.assembly_add_facet_bang": [
+        80.0,
+        80.0
+      ],
+      "vehicle.assembly_add_joint_bang": [
+        80.0,
+        230.0
+      ],
+      "vehicle.assembly_add_magnet_bang": [
+        80.0,
+        380.0
+      ],
+      "vehicle.assembly_add_thruster_bang": [
+        80.0,
+        530.0
+      ],
+      "vehicle.model__initial_condition_radius_for_oblate_altitude": [
+        80.0,
+        680.0
+      ],
+      "vehicle.model_initialcondition": [
+        400.0,
+        80.0
+      ],
+      "vehx.spacecraft_assembly_add_body_bang": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "vehicle.assembly_add_facet_bang",
+    "vehicle.assembly_add_joint_bang",
+    "vehicle.assembly_add_magnet_bang",
+    "vehicle.assembly_add_thruster_bang",
+    "vehicle.model__initial_condition_radius_for_oblate_altitude",
+    "vehicle.model_initialcondition",
+    "vehx.spacecraft_assembly_add_body_bang"
+  ]
+}

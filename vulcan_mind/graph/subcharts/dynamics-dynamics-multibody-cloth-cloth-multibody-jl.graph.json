@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-multibody-cloth-cloth-multibody-jl",
+  "chart_kind": "sub",
+  "title": "dynamics/multibody_cloth/cloth_multibody.jl (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/multibody_cloth/cloth_multibody.jl",
+    "layout_of": "76060e7433ecd334"
+  },
+  "derives_from": "dynamics-dynamics-multibody-cloth",
+  "group": "grp.src_dynamics_multibody_cloth_cloth_multibody_jl",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.cloth_multibody__actuator_torque_child_world": [
+        720.0,
+        980.0
+      ],
+      "dynamics.cloth_multibody__axis_angle_error": [
+        720.0,
+        1130.0
+      ],
+      "dynamics.cloth_multibody__body_offset_velocity": [
+        1040.0,
+        380.0
+      ],
+      "dynamics.cloth_multibody__grid_value": [
+        400.0,
+        80.0
+      ],
+      "dynamics.cloth_multibody__joint_rest": [
+        720.0,
+        1280.0
+      ],
+      "dynamics.cloth_multibody__normalize_state_quaternions__normalize_state_quaternions_bang": [
+        400.0,
+        980.0
+      ],
+      "dynamics.cloth_multibody__parent_kinematics": [
+        720.0,
+        1430.0
+      ],
+      "dynamics.cloth_multibody__quat_conj": [
+        1040.0,
+        80.0
+      ],
+      "dynamics.cloth_multibody__quat_mul": [
+        1040.0,
+        230.0
+      ],
+      "dynamics.cloth_multibody__quat_raw_mul": [
+        400.0,
+        1130.0
+      ],
+      "dynamics.cloth_multibody__rest_child_parent_quat": [
+        720.0,
+        80.0
+      ],
+      "dynamics.cloth_multibody__rot": [
+        1360.0,
+        80.0
+      ],
+      "dynamics.cloth_multibody__unit_quat": [
+        1680.0,
+        80.0
+      ],
+      "dynamics.cloth_multibody_build_compliant_topology": [
+        400.0,
+        230.0
+      ],
+      "dynamics.cloth_multibody_build_rectangular_compliant_grid": [
+        80.0,
+        80.0
+      ],
+      "dynamics.cloth_multibody_clothmultibody": [
+        80.0,
+        230.0
+      ],
+      "dynamics.cloth_multibody_compliant_joint_loads": [
+        400.0,
+        1280.0
+      ],
+      "dynamics.cloth_multibody_compliant_state_parts": [
+        1040.0,
+        530.0
+      ],
+      "dynamics.cloth_multibody_compliant_state_vector": [
+        720.0,
+        230.0
+      ],
+      "dynamics.cloth_multibody_compliantbody": [
+        720.0,
+        380.0
+      ],
+      "dynamics.cloth_multibody_compliantjoint": [
+        720.0,
+        530.0
+      ],
+      "dynamics.cloth_multibody_compliantjointactuator": [
+        400.0,
+        680.0
+      ],
+      "dynamics.cloth_multibody_compliantjointload": [
+        720.0,
+        1580.0
+      ],
+      "dynamics.cloth_multibody_compliantmultibodymodel": [
+        720.0,
+        680.0
+      ],
+      "dynamics.cloth_multibody_compliantmultibodytrajectory": [
+        400.0,
+        830.0
+      ],
+      "dynamics.cloth_multibody_complianttopologybuild": [
+        720.0,
+        830.0
+      ],
+      "dynamics.cloth_multibody_complianttopologyedge": [
+        400.0,
+        380.0
+      ],
+      "dynamics.cloth_multibody_complianttopologynode": [
+        400.0,
+        530.0
+      ],
+      "dynamics.cloth_multibody_rectangular_prism_inertia": [
+        80.0,
+        380.0
+      ],
+      "dynamics.cloth_multibody_residual": [
+        80.0,
+        530.0
+      ],
+      "dynamics.cloth_multibody_simulate_compliant_multibody": [
+        80.0,
+        680.0
+      ],
+      "dynamics.cloth_multibody_step_compliant_multibody_implicit_midpoint": [
+        80.0,
+        830.0
+      ],
+      "dynamics.cloth_multibody_step_compliant_multibody_rk4": [
+        80.0,
+        980.0
+      ],
+      "dynx.multibody_cloth_compliant_multibody_dynamics": [
+        80.0,
+        1130.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.cloth_multibody__actuator_torque_child_world",
+    "dynamics.cloth_multibody__axis_angle_error",
+    "dynamics.cloth_multibody__body_offset_velocity",
+    "dynamics.cloth_multibody__grid_value",
+    "dynamics.cloth_multibody__joint_rest",
+    "dynamics.cloth_multibody__normalize_state_quaternions__normalize_state_quaternions_bang",
+    "dynamics.cloth_multibody__parent_kinematics",
+    "dynamics.cloth_multibody__quat_conj",
+    "dynamics.cloth_multibody__quat_mul",
+    "dynamics.cloth_multibody__quat_raw_mul",
+    "dynamics.cloth_multibody__rest_child_parent_quat",
+    "dynamics.cloth_multibody__rot",
+    "dynamics.cloth_multibody__unit_quat",
+    "dynamics.cloth_multibody_build_compliant_topology",
+    "dynamics.cloth_multibody_build_rectangular_compliant_grid",
+    "dynamics.cloth_multibody_clothmultibody",
+    "dynamics.cloth_multibody_compliant_joint_loads",
+    "dynamics.cloth_multibody_compliant_state_parts",
+    "dynamics.cloth_multibody_compliant_state_vector",
+    "dynamics.cloth_multibody_compliantbody",
+    "dynamics.cloth_multibody_compliantjoint",
+    "dynamics.cloth_multibody_compliantjointactuator",
+    "dynamics.cloth_multibody_compliantjointload",
+    "dynamics.cloth_multibody_compliantmultibodymodel",
+    "dynamics.cloth_multibody_compliantmultibodytrajectory",
+    "dynamics.cloth_multibody_complianttopologybuild",
+    "dynamics.cloth_multibody_complianttopologyedge",
+    "dynamics.cloth_multibody_complianttopologynode",
+    "dynamics.cloth_multibody_rectangular_prism_inertia",
+    "dynamics.cloth_multibody_residual",
+    "dynamics.cloth_multibody_simulate_compliant_multibody",
+    "dynamics.cloth_multibody_step_compliant_multibody_implicit_midpoint",
+    "dynamics.cloth_multibody_step_compliant_multibody_rk4",
+    "dynx.multibody_cloth_compliant_multibody_dynamics"
+  ]
+}

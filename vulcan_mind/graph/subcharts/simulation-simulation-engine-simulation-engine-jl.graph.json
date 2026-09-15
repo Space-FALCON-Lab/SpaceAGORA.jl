@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-simulation-engine-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/simulation_engine.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/simulation_engine.jl",
+    "layout_of": "5cfa99380adc250e"
+  },
+  "derives_from": "simulation-simulation-engine",
+  "group": "grp.src_simulation_engine_simulation_engine_jl",
+  "ui": {
+    "pos_overrides": {
+      "simx.engine_simulation_engine_simulationengine": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simx.engine_simulation_engine_simulationengine"
+  ]
+}

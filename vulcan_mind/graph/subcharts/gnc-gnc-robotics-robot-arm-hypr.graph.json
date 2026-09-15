@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-robotics-robot-arm-hypr",
+  "chart_kind": "sub",
+  "title": "gnc/robotics/robot_arm_hypr/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/robotics/robot_arm_hypr",
+    "layout_of": "bc492d4618013994"
+  },
+  "derives_from": "gnc-gnc-robotics",
+  "group": "grp.src_gnc_robotics_robot_arm_hypr",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_gnc_robotics_robot_arm_hypr_clearance_jl": [
+        80.0,
+        80.0
+      ],
+      "grp.src_gnc_robotics_robot_arm_hypr_config_jl": [
+        1040.0,
+        80.0
+      ],
+      "grp.src_gnc_robotics_robot_arm_hypr_planner_core_jl": [
+        720.0,
+        80.0
+      ],
+      "grp.src_gnc_robotics_robot_arm_hypr_rrt_warmstart_jl": [
+        1040.0,
+        230.0
+      ],
+      "grp.src_gnc_robotics_robot_arm_hypr_swarm_and_retiming_jl": [
+        400.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.config__validate_robot_arm_hypr_config",
+    "gnc.config_robotarmhyprresult",
+    "gnc.config_robotarmsphereobstacle",
+    "gnc.planner_core__robot_arm_hypr_post_refine_points",
+    "gnc.planner_core__robot_arm_hypr_refinement_better",
+    "gnc.planner_core__robot_arm_plan_from_q_reference",
+    "gnc.planner_core_evaluate_position",
+    "gnc.planner_core_robot_arm_hypr_path_cost_components",
+    "gnc.rrt_warmstart__robot_arm_empty_rrt_warmstart_diagnostics",
+    "gnc.rrt_warmstart__robot_arm_resample_polyline_points",
+    "gnc.rrt_warmstart__robot_arm_rrt_connect_bang",
+    "gnc.rrt_warmstart__robot_arm_rrt_extend_bang",
+    "gnc.rrt_warmstart__robot_arm_rrt_join_paths",
+    "gnc.rrt_warmstart__robot_arm_rrt_nearest_index",
+    "gnc.rrt_warmstart__robot_arm_rrt_path_score",
+    "gnc.rrt_warmstart__robot_arm_rrt_random_state",
+    "gnc.rrt_warmstart__robot_arm_rrt_segment_is_safe",
+    "gnc.rrt_warmstart__robot_arm_rrt_segment_samples",
+    "gnc.rrt_warmstart__robot_arm_rrt_shortcut_path",
+    "gnc.rrt_warmstart__robot_arm_rrt_steer",
+    "gnc.rrt_warmstart__robot_arm_rrt_warmstart_fields",
+    "gnc.rrt_warmstart_robotarmrrtconnecttree",
+    "gnc.swarm_and_retiming__robot_arm_control_points",
+    "gnc.swarm_and_retiming__robot_arm_flatten_internal_points",
+    "gnc.swarm_and_retiming__robot_arm_hypr_base_wrench_ratios",
+    "gnc.swarm_and_retiming__robot_arm_hypr_cloth_base_wrench_ratios",
+    "gnc.swarm_and_retiming__robot_arm_hypr_cloth_state_for_reaction",
+    "gnc.swarm_and_retiming__robot_arm_hypr_cull_swarm_bang",
+    "gnc.swarm_and_retiming__robot_arm_hypr_early_stopping_feasible",
+    "gnc.swarm_and_retiming__robot_arm_hypr_iteration_weights",
+    "gnc.swarm_and_retiming__robot_arm_hypr_link_com_history",
+    "gnc.swarm_and_retiming__robot_arm_hypr_material_improvement",
+    "gnc.swarm_and_retiming__robot_arm_hypr_reaction_scale",
+    "gnc.swarm_and_retiming__robot_arm_hypr_reference_times_from_scales",
+    "gnc.swarm_and_retiming__robot_arm_hypr_rigid_base_wrench_ratios",
+    "gnc.swarm_and_retiming__robot_arm_path_length",
+    "gnc.swarm_and_retiming__robot_arm_path_smoothness",
+    "gnc.swarm_and_retiming__robot_arm_seed_control_points",
+    "gnc.swarm_and_retiming__robot_arm_segment_distance",
+    "gnc.swarm_and_retiming_robot_arm_sample_hypr_path",
+    "gncz.clearance_robot_arm_clearance_stats_from_samples",
+    "gncz.config_robotarmhyprconfig",
+    "gncz.planner_core_plan_robot_arm_motion_hypr",
+    "gncz.rrt_warmstart__robot_arm_rrt_connect_warmstart_path",
+    "gncz.swarm_and_retiming__robot_arm_hypr_retime_reference"
+  ]
+}

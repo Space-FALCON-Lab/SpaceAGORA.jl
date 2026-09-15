@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-setup-jl-srp",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _srp* (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/setup.jl#_srp",
+    "layout_of": "3d84720dac50ed03"
+  },
+  "derives_from": "simulation-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_srp",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__srp_ephemeris_cache_dt_s": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__srp_ephemeris_cache_enabled": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__srp_ephemeris_cache_max_samples": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__srp_ephemeris_reuse_key": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__srp_ephemeris_cache_dt_s",
+    "simulation.setup__srp_ephemeris_cache_enabled",
+    "simulation.setup__srp_ephemeris_cache_max_samples",
+    "simulation.setup__srp_ephemeris_reuse_key"
+  ]
+}

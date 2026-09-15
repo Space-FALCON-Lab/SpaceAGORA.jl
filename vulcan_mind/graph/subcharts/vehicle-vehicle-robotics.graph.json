@@ -1,0 +1,124 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "vehicle-vehicle-robotics",
+  "chart_kind": "sub",
+  "title": "vehicle/robotics/ (vehicle)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/vehicle/robotics",
+    "layout_of": "71e19156ca2ec785"
+  },
+  "derives_from": "vehicle",
+  "group": "grp.src_vehicle_robotics",
+  "ui": {
+    "pos_overrides": {
+      "vehicle.cloth_fk": [
+        720.0,
+        80.0
+      ],
+      "vehicle.robotics__ee_position_jacobian": [
+        400.0,
+        230.0
+      ],
+      "vehicle.robotics__normalize_axis": [
+        400.0,
+        380.0
+      ],
+      "vehicle.robotics__quat_from_axis_angle": [
+        1040.0,
+        80.0
+      ],
+      "vehicle.robotics__quat_mul": [
+        1040.0,
+        230.0
+      ],
+      "vehicle.robotics__rot": [
+        1040.0,
+        380.0
+      ],
+      "vehicle.robotics__unit_quat": [
+        1360.0,
+        80.0
+      ],
+      "vehicle.robotics__validate_joint_vector": [
+        1040.0,
+        530.0
+      ],
+      "vehicle.robotics_closest_surface_target": [
+        80.0,
+        80.0
+      ],
+      "vehicle.robotics_cloth_end_effector_pose": [
+        80.0,
+        230.0
+      ],
+      "vehicle.robotics_cloth_fk_state": [
+        80.0,
+        380.0
+      ],
+      "vehicle.robotics_cloth_ik": [
+        80.0,
+        530.0
+      ],
+      "vehicle.robotics_cloth_total_reach": [
+        80.0,
+        680.0
+      ],
+      "vehicle.robotics_clotharmbasepose": [
+        80.0,
+        830.0
+      ],
+      "vehicle.robotics_clotharmjoint": [
+        400.0,
+        530.0
+      ],
+      "vehicle.robotics_clotharmlink": [
+        400.0,
+        680.0
+      ],
+      "vehicle.robotics_clotharmmodel": [
+        400.0,
+        830.0
+      ],
+      "vehicle.robotics_clotharmpose": [
+        1040.0,
+        680.0
+      ],
+      "vehicle.robotics_clotharmstate": [
+        400.0,
+        80.0
+      ],
+      "vehicle.robotics_default_cloth_arm_model": [
+        80.0,
+        980.0
+      ],
+      "vehicle.robotics_robotics": [
+        80.0,
+        1130.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "vehicle.cloth_fk",
+    "vehicle.robotics__ee_position_jacobian",
+    "vehicle.robotics__normalize_axis",
+    "vehicle.robotics__quat_from_axis_angle",
+    "vehicle.robotics__quat_mul",
+    "vehicle.robotics__rot",
+    "vehicle.robotics__unit_quat",
+    "vehicle.robotics__validate_joint_vector",
+    "vehicle.robotics_closest_surface_target",
+    "vehicle.robotics_cloth_end_effector_pose",
+    "vehicle.robotics_cloth_fk_state",
+    "vehicle.robotics_cloth_ik",
+    "vehicle.robotics_cloth_total_reach",
+    "vehicle.robotics_clotharmbasepose",
+    "vehicle.robotics_clotharmjoint",
+    "vehicle.robotics_clotharmlink",
+    "vehicle.robotics_clotharmmodel",
+    "vehicle.robotics_clotharmpose",
+    "vehicle.robotics_clotharmstate",
+    "vehicle.robotics_default_cloth_arm_model",
+    "vehicle.robotics_robotics"
+  ]
+}

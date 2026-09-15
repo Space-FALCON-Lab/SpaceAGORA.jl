@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-target-energy-bracketing-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/target_energy_bracketing.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/target_energy_bracketing.jl",
+    "layout_of": "7900fc6d23d4d3e8"
+  },
+  "derives_from": "gnc-gnc-guidance",
+  "group": "grp.src_gnc_guidance_target_energy_bracketing_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.target_energy_bracketing__edg_interpolate_bracket_value": [
+        400.0,
+        530.0
+      ],
+      "gnc.target_energy_bracketing__edg_pos_vel_mass": [
+        400.0,
+        680.0
+      ],
+      "gnc.target_energy_bracketing__edg_sat_state": [
+        400.0,
+        830.0
+      ],
+      "gnc.target_energy_bracketing__edg_set_targeting_fallback_bang": [
+        400.0,
+        980.0
+      ],
+      "gnc.target_energy_bracketing__edg_state_index_ok": [
+        400.0,
+        380.0
+      ],
+      "gnc.target_energy_bracketing__edg_symbol_tuple": [
+        400.0,
+        80.0
+      ],
+      "gnc.target_energy_bracketing__edg_target_energy_from_reachable_bracket": [
+        400.0,
+        1130.0
+      ],
+      "gnc.target_energy_bracketing__edg_validate_symbol_set": [
+        400.0,
+        230.0
+      ],
+      "gnc.target_energy_bracketing_aerobrakingenergydepletionconfig": [
+        80.0,
+        80.0
+      ],
+      "gnc.target_energy_bracketing_aerobrakingenergydepletionguidancemodel": [
+        80.0,
+        230.0
+      ],
+      "gnc.target_energy_bracketing_aerobrakingenergydepletionstate": [
+        80.0,
+        380.0
+      ],
+      "gnc.target_energy_bracketing_calcguidanceeffect_bang": [
+        80.0,
+        530.0
+      ],
+      "gnc.target_energy_bracketing_residual": [
+        80.0,
+        680.0
+      ],
+      "gncz.target_energy_bracketing__edg_run_target_energy_bracketing_bang": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.target_energy_bracketing__edg_interpolate_bracket_value",
+    "gnc.target_energy_bracketing__edg_pos_vel_mass",
+    "gnc.target_energy_bracketing__edg_sat_state",
+    "gnc.target_energy_bracketing__edg_set_targeting_fallback_bang",
+    "gnc.target_energy_bracketing__edg_state_index_ok",
+    "gnc.target_energy_bracketing__edg_symbol_tuple",
+    "gnc.target_energy_bracketing__edg_target_energy_from_reachable_bracket",
+    "gnc.target_energy_bracketing__edg_validate_symbol_set",
+    "gnc.target_energy_bracketing_aerobrakingenergydepletionconfig",
+    "gnc.target_energy_bracketing_aerobrakingenergydepletionguidancemodel",
+    "gnc.target_energy_bracketing_aerobrakingenergydepletionstate",
+    "gnc.target_energy_bracketing_calcguidanceeffect_bang",
+    "gnc.target_energy_bracketing_residual",
+    "gncz.target_energy_bracketing__edg_run_target_energy_bracketing_bang"
+  ]
+}

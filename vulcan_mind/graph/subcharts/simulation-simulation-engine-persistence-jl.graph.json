@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-persistence-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/persistence.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/persistence.jl",
+    "layout_of": "f41c1f5203717596"
+  },
+  "derives_from": "simulation-simulation-engine",
+  "group": "grp.src_simulation_engine_persistence_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.persistence__append_saved_segment_bang": [
+        80.0,
+        80.0
+      ],
+      "simulation.persistence__append_series_columns_bang": [
+        80.0,
+        230.0
+      ],
+      "simulation.persistence__collision_results_csv_path": [
+        80.0,
+        380.0
+      ],
+      "simulation.persistence__find_sample_value": [
+        80.0,
+        530.0
+      ],
+      "simulation.persistence__results_bundle_prefix": [
+        80.0,
+        680.0
+      ],
+      "simulation.persistence__results_csv_path": [
+        80.0,
+        830.0
+      ],
+      "simulation.persistence__sha256_hex": [
+        80.0,
+        980.0
+      ],
+      "simx.engine_persistence_write_results_bundle__write_results_bundle_bang": [
+        80.0,
+        1130.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.persistence__append_saved_segment_bang",
+    "simulation.persistence__append_series_columns_bang",
+    "simulation.persistence__collision_results_csv_path",
+    "simulation.persistence__find_sample_value",
+    "simulation.persistence__results_bundle_prefix",
+    "simulation.persistence__results_csv_path",
+    "simulation.persistence__sha256_hex",
+    "simx.engine_persistence_write_results_bundle__write_results_bundle_bang"
+  ]
+}

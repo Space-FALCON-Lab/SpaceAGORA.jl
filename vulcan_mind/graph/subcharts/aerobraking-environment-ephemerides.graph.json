@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-environment-ephemerides",
+  "chart_kind": "sub",
+  "title": "environment/ephemerides/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_environment_ephemerides",
+    "layout_of": "13ae1eae03ec47e6"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_environment_ephemerides",
+  "ui": {
+    "pos_overrides": {
+      "environment.planets__furnsh_once": [
+        80.0,
+        80.0
+      ],
+      "environment.simple_ephemerides__initial_time_datetime": [
+        80.0,
+        230.0
+      ],
+      "environment.simple_ephemerides_spice_position_j2000_m": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "environment.planets__furnsh_once",
+    "environment.simple_ephemerides__initial_time_datetime",
+    "environment.simple_ephemerides_spice_position_j2000_m"
+  ]
+}

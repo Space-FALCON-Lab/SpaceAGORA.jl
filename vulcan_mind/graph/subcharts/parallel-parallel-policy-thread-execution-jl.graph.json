@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-policy-thread-execution-jl",
+  "chart_kind": "sub",
+  "title": "parallel/policy/thread_execution.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/policy/thread_execution.jl",
+    "layout_of": "482e2b28e6dc07b3"
+  },
+  "derives_from": "parallel-parallel-policy",
+  "group": "grp.src_parallel_policy_thread_execution_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.thread_execution__persistent_pool_for": [
+        400.0,
+        380.0
+      ],
+      "parallel.thread_execution__persistent_pool_key": [
+        1040.0,
+        230.0
+      ],
+      "parallel.thread_execution__persistent_worker_pool_for": [
+        720.0,
+        230.0
+      ],
+      "parallel.thread_execution__thread_worker_count": [
+        1040.0,
+        80.0
+      ],
+      "parallel.thread_execution__threaded_foreach_persistent_bang": [
+        720.0,
+        380.0
+      ],
+      "parallel.thread_execution_thread_worker_count": [
+        80.0,
+        80.0
+      ],
+      "parallel.thread_execution_threaded_collect_bang": [
+        400.0,
+        80.0
+      ],
+      "parallel.thread_execution_threaded_collect_persistent_bang": [
+        80.0,
+        230.0
+      ],
+      "parallel.thread_execution_threaded_foreach_persistent": [
+        80.0,
+        380.0
+      ],
+      "parallel.thread_execution_threaded_foreach_worker": [
+        720.0,
+        80.0
+      ],
+      "parallel.thread_execution_threaded_foreach_worker_persistent": [
+        400.0,
+        230.0
+      ],
+      "parallel.thread_execution_threaded_foreach_worker_spin": [
+        80.0,
+        530.0
+      ],
+      "parallel.thread_execution_threaded_reduce": [
+        80.0,
+        680.0
+      ],
+      "parcore.thread_execution_threaded_foreach": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.thread_execution__persistent_pool_for",
+    "parallel.thread_execution__persistent_pool_key",
+    "parallel.thread_execution__persistent_worker_pool_for",
+    "parallel.thread_execution__thread_worker_count",
+    "parallel.thread_execution__threaded_foreach_persistent_bang",
+    "parallel.thread_execution_thread_worker_count",
+    "parallel.thread_execution_threaded_collect_bang",
+    "parallel.thread_execution_threaded_collect_persistent_bang",
+    "parallel.thread_execution_threaded_foreach_persistent",
+    "parallel.thread_execution_threaded_foreach_worker",
+    "parallel.thread_execution_threaded_foreach_worker_persistent",
+    "parallel.thread_execution_threaded_foreach_worker_spin",
+    "parallel.thread_execution_threaded_reduce",
+    "parcore.thread_execution_threaded_foreach"
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-control-targeting-control-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/targeting_control.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_control_targeting_control_jl",
+    "layout_of": "38bd8db4d7f7b620"
+  },
+  "derives_from": "aerobraking-gnc-control",
+  "group": "grp.src_gnc_control_targeting_control_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.targeting_control__edg_certify_targeting_candidates": [
+        80.0,
+        80.0
+      ],
+      "gnc.targeting_control__edg_control_pos_vel_mass": [
+        720.0,
+        80.0
+      ],
+      "gnc.targeting_control__edg_environment_state": [
+        400.0,
+        230.0
+      ],
+      "gnc.targeting_control__edg_in_drag_passage": [
+        80.0,
+        230.0
+      ],
+      "gnc.targeting_control__edg_orbit_metrics_from_rv": [
+        80.0,
+        380.0
+      ],
+      "gnc.targeting_control__edg_targeting_aero_acceleration": [
+        80.0,
+        530.0
+      ],
+      "gnc.targeting_control__edg_targeting_constrained_alpha": [
+        80.0,
+        680.0
+      ],
+      "gnc.targeting_control__edg_targeting_prediction_environment": [
+        400.0,
+        80.0
+      ],
+      "gnc.targeting_control_calccontroleffect_bang": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.targeting_control__edg_certify_targeting_candidates",
+    "gnc.targeting_control__edg_control_pos_vel_mass",
+    "gnc.targeting_control__edg_environment_state",
+    "gnc.targeting_control__edg_in_drag_passage",
+    "gnc.targeting_control__edg_orbit_metrics_from_rv",
+    "gnc.targeting_control__edg_targeting_aero_acceleration",
+    "gnc.targeting_control__edg_targeting_constrained_alpha",
+    "gnc.targeting_control__edg_targeting_prediction_environment",
+    "gnc.targeting_control_calccontroleffect_bang"
+  ]
+}

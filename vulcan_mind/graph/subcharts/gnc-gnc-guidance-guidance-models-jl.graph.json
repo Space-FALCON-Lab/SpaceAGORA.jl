@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-guidance-models-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/guidance_models.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/guidance_models.jl",
+    "layout_of": "9ae9bdc89108ddd7"
+  },
+  "derives_from": "gnc-gnc-guidance",
+  "group": "grp.src_gnc_guidance_guidance_models_jl",
+  "ui": {
+    "pos_overrides": {
+      "gncy.guidance_models_guidancemodels": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gncy.guidance_models_guidancemodels"
+  ]
+}

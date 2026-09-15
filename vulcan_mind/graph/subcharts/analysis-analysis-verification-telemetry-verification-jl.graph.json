@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification.jl",
+    "layout_of": "62a45e23ee3c3b77"
+  },
+  "derives_from": "analysis-analysis-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_jl",
+  "ui": {
+    "pos_overrides": {
+      "envana.ana_telemetry_verification_telemetryverification": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "envana.ana_telemetry_verification_telemetryverification"
+  ]
+}

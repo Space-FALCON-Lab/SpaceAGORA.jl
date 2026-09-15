@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-engine-setup-jl-initialize",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _initialize* (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_setup_jl_initialize",
+    "layout_of": "d52316b44d315ee6"
+  },
+  "derives_from": "run-pipeline-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_initialize",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__initialize_aero_workspace_buffers_bang": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__initialize_density_cache_buffers_bang": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__initialize_density_model_instances_bang": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__initialize_gram_isolated_pool_buffers_bang": [
+        80.0,
+        530.0
+      ],
+      "simulation.setup__initialize_harmonics_workspace_buffers_bang": [
+        80.0,
+        680.0
+      ],
+      "simulation.setup__initialize_heat_rate_buffers_bang": [
+        80.0,
+        830.0
+      ],
+      "simulation.setup__initialize_in_atmosphere_flags_bang": [
+        80.0,
+        980.0
+      ],
+      "simulation.setup__initialize_nbody_ephemeris_cache_bang": [
+        80.0,
+        1130.0
+      ],
+      "simulation.setup__initialize_nbody_ephemeris_cache_buffer_bang": [
+        80.0,
+        1280.0
+      ],
+      "simulation.setup__initialize_nbody_workspace_buffers_bang": [
+        80.0,
+        1430.0
+      ],
+      "simulation.setup__initialize_planet_frame_cache_buffer_bang": [
+        80.0,
+        1580.0
+      ],
+      "simulation.setup__initialize_planet_frame_ephemeris_cache_bang": [
+        80.0,
+        1730.0
+      ],
+      "simulation.setup__initialize_runtime_env_config_bang": [
+        80.0,
+        1880.0
+      ],
+      "simulation.setup__initialize_save_cache_buffers_bang": [
+        80.0,
+        2030.0
+      ],
+      "simulation.setup__initialize_spice_rhs_memo_mode_bang": [
+        80.0,
+        2180.0
+      ],
+      "simulation.setup__initialize_srp_sun_cache_buffer_bang": [
+        80.0,
+        2330.0
+      ],
+      "simulation.setup__initialize_srp_sun_ephemeris_cache_bang": [
+        80.0,
+        2480.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__initialize_aero_workspace_buffers_bang",
+    "simulation.setup__initialize_density_cache_buffers_bang",
+    "simulation.setup__initialize_density_model_instances_bang",
+    "simulation.setup__initialize_gram_isolated_pool_buffers_bang",
+    "simulation.setup__initialize_harmonics_workspace_buffers_bang",
+    "simulation.setup__initialize_heat_rate_buffers_bang",
+    "simulation.setup__initialize_in_atmosphere_flags_bang",
+    "simulation.setup__initialize_nbody_ephemeris_cache_bang",
+    "simulation.setup__initialize_nbody_ephemeris_cache_buffer_bang",
+    "simulation.setup__initialize_nbody_workspace_buffers_bang",
+    "simulation.setup__initialize_planet_frame_cache_buffer_bang",
+    "simulation.setup__initialize_planet_frame_ephemeris_cache_bang",
+    "simulation.setup__initialize_runtime_env_config_bang",
+    "simulation.setup__initialize_save_cache_buffers_bang",
+    "simulation.setup__initialize_spice_rhs_memo_mode_bang",
+    "simulation.setup__initialize_srp_sun_cache_buffer_bang",
+    "simulation.setup__initialize_srp_sun_ephemeris_cache_bang"
+  ]
+}

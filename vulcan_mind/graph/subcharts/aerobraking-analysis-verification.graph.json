@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-analysis-verification",
+  "chart_kind": "sub",
+  "title": "analysis/verification/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_analysis_verification",
+    "layout_of": "8b545b057df0a349"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_analysis_verification",
+  "ui": {
+    "pos_overrides": {
+      "analysis.calibration__annotate_calibration_rows": [
+        80.0,
+        80.0
+      ],
+      "analysis.calibration__calibration_score": [
+        80.0,
+        230.0
+      ],
+      "analysis.comparison_metrics__rates": [
+        80.0,
+        380.0
+      ],
+      "analysis.decay_diagnostics_flight_density_table": [
+        80.0,
+        530.0
+      ],
+      "analysis.error_tables__telemetry_altitude_km": [
+        80.0,
+        680.0
+      ],
+      "analysis.ic_fit_float64": [
+        1040.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__load_scenarios_from_manifest": [
+        400.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__optional_float": [
+        720.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__optional_float64_vector": [
+        80.0,
+        830.0
+      ],
+      "analysis.manifest_parsing__optional_float_tuple": [
+        720.0,
+        230.0
+      ],
+      "analysis.manifest_parsing__optional_symbol_vector": [
+        80.0,
+        980.0
+      ],
+      "analysis.manifest_parsing__parse_attitude_q": [
+        80.0,
+        1130.0
+      ],
+      "analysis.manifest_parsing__parse_vec3": [
+        80.0,
+        1280.0
+      ],
+      "analysis.manifest_parsing__require_float": [
+        720.0,
+        380.0
+      ],
+      "analysis.reporting__add_scaled_column_bang": [
+        720.0,
+        530.0
+      ],
+      "analysis.reporting__append_display_error_columns_bang": [
+        400.0,
+        230.0
+      ],
+      "analysis.runner__run_verification": [
+        80.0,
+        1430.0
+      ],
+      "analysis.scenario_builders__initial_condition_in_j2000": [
+        80.0,
+        1580.0
+      ],
+      "analysis.scenario_builders__make_tabulated_flight_density_model": [
+        80.0,
+        1730.0
+      ],
+      "analysis.scenario_builders__scenario_dynamic_effectors": [
+        80.0,
+        1880.0
+      ],
+      "analysis.scenario_builders__telemetry_coefficients_normalized_for_scenario": [
+        400.0,
+        380.0
+      ],
+      "analysis.scenario_builders__telemetry_j2_source_for_scenario": [
+        400.0,
+        530.0
+      ],
+      "analysis.telemetry_loading__extract_extrema_from_time_aligned_telemetry": [
+        80.0,
+        2030.0
+      ],
+      "analysis.telemetry_loading__extract_extrema_series": [
+        80.0,
+        2180.0
+      ],
+      "analysis.telemetry_loading__initial_time_et": [
+        80.0,
+        2330.0
+      ],
+      "analysis.telemetry_loading__load_time_aligned_telemetry": [
+        80.0,
+        2480.0
+      ],
+      "analysis.telemetry_loading__sun_unit_vector_j2000": [
+        400.0,
+        830.0
+      ],
+      "analysis.telemetry_loading__to_float_vector": [
+        400.0,
+        680.0
+      ],
+      "envana.ana_decay_diagnostics_secular_sma_slope": [
+        80.0,
+        2630.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.calibration__annotate_calibration_rows",
+    "analysis.calibration__calibration_score",
+    "analysis.comparison_metrics__rates",
+    "analysis.decay_diagnostics_flight_density_table",
+    "analysis.error_tables__telemetry_altitude_km",
+    "analysis.ic_fit_float64",
+    "analysis.manifest_parsing__load_scenarios_from_manifest",
+    "analysis.manifest_parsing__optional_float",
+    "analysis.manifest_parsing__optional_float64_vector",
+    "analysis.manifest_parsing__optional_float_tuple",
+    "analysis.manifest_parsing__optional_symbol_vector",
+    "analysis.manifest_parsing__parse_attitude_q",
+    "analysis.manifest_parsing__parse_vec3",
+    "analysis.manifest_parsing__require_float",
+    "analysis.reporting__add_scaled_column_bang",
+    "analysis.reporting__append_display_error_columns_bang",
+    "analysis.runner__run_verification",
+    "analysis.scenario_builders__initial_condition_in_j2000",
+    "analysis.scenario_builders__make_tabulated_flight_density_model",
+    "analysis.scenario_builders__scenario_dynamic_effectors",
+    "analysis.scenario_builders__telemetry_coefficients_normalized_for_scenario",
+    "analysis.scenario_builders__telemetry_j2_source_for_scenario",
+    "analysis.telemetry_loading__extract_extrema_from_time_aligned_telemetry",
+    "analysis.telemetry_loading__extract_extrema_series",
+    "analysis.telemetry_loading__initial_time_et",
+    "analysis.telemetry_loading__load_time_aligned_telemetry",
+    "analysis.telemetry_loading__sun_unit_vector_j2000",
+    "analysis.telemetry_loading__to_float_vector",
+    "envana.ana_decay_diagnostics_secular_sma_slope"
+  ]
+}

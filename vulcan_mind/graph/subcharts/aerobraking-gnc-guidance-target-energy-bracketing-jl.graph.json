@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-guidance-target-energy-bracketing-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/target_energy_bracketing.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_guidance_target_energy_bracketing_jl",
+    "layout_of": "be392b4fc5ae938b"
+  },
+  "derives_from": "aerobraking-gnc-guidance",
+  "group": "grp.src_gnc_guidance_target_energy_bracketing_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.target_energy_bracketing__edg_pos_vel_mass": [
+        80.0,
+        80.0
+      ],
+      "gnc.target_energy_bracketing_aerobrakingenergydepletionconfig": [
+        80.0,
+        230.0
+      ],
+      "gnc.target_energy_bracketing_calcguidanceeffect_bang": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.target_energy_bracketing__edg_pos_vel_mass",
+    "gnc.target_energy_bracketing_aerobrakingenergydepletionconfig",
+    "gnc.target_energy_bracketing_calcguidanceeffect_bang"
+  ]
+}

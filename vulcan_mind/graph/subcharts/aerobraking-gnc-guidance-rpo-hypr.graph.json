@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-guidance-rpo-hypr",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_guidance_rpo_hypr",
+    "layout_of": "ca311b72c3b5ba91"
+  },
+  "derives_from": "aerobraking-gnc-guidance-rpo",
+  "group": "grp.src_gnc_guidance_rpo_hypr",
+  "ui": {
+    "pos_overrides": {
+      "gnc.path_costs_rpo_clearance_stats_from_samples": [
+        720.0,
+        230.0
+      ],
+      "gnc.path_costs_rpo_normalized_path_cost_components": [
+        400.0,
+        980.0
+      ],
+      "gnc.path_costs_rpo_obstacle_sigmoid_penalty": [
+        1040.0,
+        80.0
+      ],
+      "gnc.path_retiming_rpo_interpolate_along_path": [
+        400.0,
+        680.0
+      ],
+      "gnc.path_retiming_rpo_remove_near_duplicate_samples": [
+        400.0,
+        830.0
+      ],
+      "gnc.path_sampling_rpo_adaptive_sampling_min_ds_m": [
+        400.0,
+        80.0
+      ],
+      "gnc.path_sampling_rpo_adaptive_sampling_step_m": [
+        1360.0,
+        80.0
+      ],
+      "gnc.path_sampling_rpo_adaptive_segment_samples": [
+        1040.0,
+        230.0
+      ],
+      "gnc.path_sampling_rpo_inflated_obstacle_radius_m": [
+        1360.0,
+        380.0
+      ],
+      "gnc.path_sampling_rpo_sample_path_bezier": [
+        80.0,
+        80.0
+      ],
+      "gnc.path_sampling_rpo_sample_path_polyline": [
+        400.0,
+        230.0
+      ],
+      "gnc.path_sampling_rpo_sample_path_polyline_adaptive": [
+        80.0,
+        230.0
+      ],
+      "gnc.pso_adaptive_policy_rpo_estimate_geometry_complexity": [
+        80.0,
+        380.0
+      ],
+      "gnc.pso_adaptive_policy_rpo_probe_geometry_metrics": [
+        80.0,
+        530.0
+      ],
+      "gnc.pso_parameters__rpo_pso_sync_sample_ds_with_safe_distance": [
+        2000.0,
+        80.0
+      ],
+      "gnc.pso_parameters_push_bang": [
+        1360.0,
+        230.0
+      ],
+      "gnc.pso_parameters_rpo_hypr_refinement_sampling_density_m": [
+        80.0,
+        680.0
+      ],
+      "gnc.pso_parameters_rpo_hypr_sampling_density_m": [
+        720.0,
+        380.0
+      ],
+      "gnc.pso_parameters_rpo_pso_config": [
+        1680.0,
+        80.0
+      ],
+      "gnc.pso_path_planning_record_iteration_bang": [
+        400.0,
+        1130.0
+      ],
+      "gnc.pso_path_planning_record_iteration_timeout_bang": [
+        400.0,
+        1280.0
+      ],
+      "gnc.pso_path_planning_reset_swarm_bang": [
+        400.0,
+        1430.0
+      ],
+      "gnc.pso_path_planning_rpo_pso_effective_safe_distance": [
+        400.0,
+        1580.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_segment_is_safe": [
+        80.0,
+        830.0
+      ],
+      "gnc.pso_refinement_rpo_refinement_segment_samples": [
+        400.0,
+        380.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_collision_min_ds_m": [
+        1040.0,
+        380.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_extend_bang": [
+        400.0,
+        1730.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_near_indices": [
+        720.0,
+        80.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_segment_is_safe": [
+        720.0,
+        530.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_star_add_node_bang": [
+        400.0,
+        530.0
+      ],
+      "gnc.rrt_connect_rpo_rrt_star_plan_path": [
+        80.0,
+        980.0
+      ],
+      "gncy.path_retiming_rpo_retime_path": [
+        80.0,
+        1130.0
+      ],
+      "gncy.path_sampling_rpo_sample_path_bezier_adaptive": [
+        80.0,
+        1280.0
+      ],
+      "gncy.pso_parameters_rpopsoconfig": [
+        2000.0,
+        230.0
+      ],
+      "gncy.pso_path_planning_rpo_pso_plan_path": [
+        80.0,
+        1430.0
+      ],
+      "gncy.rrt_connect_rpo_rrt_connect_plan_path": [
+        80.0,
+        1580.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.path_costs_rpo_clearance_stats_from_samples",
+    "gnc.path_costs_rpo_normalized_path_cost_components",
+    "gnc.path_costs_rpo_obstacle_sigmoid_penalty",
+    "gnc.path_retiming_rpo_interpolate_along_path",
+    "gnc.path_retiming_rpo_remove_near_duplicate_samples",
+    "gnc.path_sampling_rpo_adaptive_sampling_min_ds_m",
+    "gnc.path_sampling_rpo_adaptive_sampling_step_m",
+    "gnc.path_sampling_rpo_adaptive_segment_samples",
+    "gnc.path_sampling_rpo_inflated_obstacle_radius_m",
+    "gnc.path_sampling_rpo_sample_path_bezier",
+    "gnc.path_sampling_rpo_sample_path_polyline",
+    "gnc.path_sampling_rpo_sample_path_polyline_adaptive",
+    "gnc.pso_adaptive_policy_rpo_estimate_geometry_complexity",
+    "gnc.pso_adaptive_policy_rpo_probe_geometry_metrics",
+    "gnc.pso_parameters__rpo_pso_sync_sample_ds_with_safe_distance",
+    "gnc.pso_parameters_push_bang",
+    "gnc.pso_parameters_rpo_hypr_refinement_sampling_density_m",
+    "gnc.pso_parameters_rpo_hypr_sampling_density_m",
+    "gnc.pso_parameters_rpo_pso_config",
+    "gnc.pso_path_planning_record_iteration_bang",
+    "gnc.pso_path_planning_record_iteration_timeout_bang",
+    "gnc.pso_path_planning_reset_swarm_bang",
+    "gnc.pso_path_planning_rpo_pso_effective_safe_distance",
+    "gnc.pso_refinement_rpo_refinement_segment_is_safe",
+    "gnc.pso_refinement_rpo_refinement_segment_samples",
+    "gnc.rrt_connect_rpo_rrt_collision_min_ds_m",
+    "gnc.rrt_connect_rpo_rrt_extend_bang",
+    "gnc.rrt_connect_rpo_rrt_near_indices",
+    "gnc.rrt_connect_rpo_rrt_segment_is_safe",
+    "gnc.rrt_connect_rpo_rrt_star_add_node_bang",
+    "gnc.rrt_connect_rpo_rrt_star_plan_path",
+    "gncy.path_retiming_rpo_retime_path",
+    "gncy.path_sampling_rpo_sample_path_bezier_adaptive",
+    "gncy.pso_parameters_rpopsoconfig",
+    "gncy.pso_path_planning_rpo_pso_plan_path",
+    "gncy.rrt_connect_rpo_rrt_connect_plan_path"
+  ]
+}

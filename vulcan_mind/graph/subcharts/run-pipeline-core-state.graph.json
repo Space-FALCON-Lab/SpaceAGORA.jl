@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-core-state",
+  "chart_kind": "sub",
+  "title": "core/state/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_core_state",
+    "layout_of": "ad00bda34db97021"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_core_state",
+  "ui": {
+    "pos_overrides": {
+      "core.simulation_configuration_solverconfig": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.simulation_configuration_solverconfig"
+  ]
+}

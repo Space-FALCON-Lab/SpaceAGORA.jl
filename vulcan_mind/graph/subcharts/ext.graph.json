@@ -1,0 +1,820 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "ext",
+  "chart_kind": "sub",
+  "title": "SpaceAGORAGRAMSuiteExt — internals",
+  "derives_from": "master",
+  "local_nodes": [
+    {
+      "id": "ext.gram_core_density_state",
+      "label": "_gram_core_density_state",
+      "kind": "function",
+      "doc": "nodes/ext/gram_core_density_state.md",
+      "source": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "symbol": "_gram_core_density_state",
+        "lines": [
+          234,
+          270
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "SpaceAGORAGRAMSuiteExt namespace supplying native GRAM and SPICE preparation."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "state",
+            "type": "NamedTuple",
+            "units": "n/a",
+            "description": "Prepared native-GRAM state used by the extension density methods."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.ext",
+      "ui": {
+        "pos": [
+          80.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "ext.spaceagoragramsuiteext___init__",
+      "label": "__init__",
+      "kind": "function",
+      "doc": "nodes/ext/spaceagoragramsuiteext___init__.md",
+      "source": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "symbol": "__init__",
+        "lines": [
+          21,
+          21
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `__init__`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.ext",
+      "ui": {
+        "pos": [
+          400.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "ext.spaceagoragramsuiteext__gram_call_lock",
+      "label": "_gram_call_lock",
+      "kind": "function",
+      "doc": "nodes/ext/spaceagoragramsuiteext__gram_call_lock.md",
+      "source": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "symbol": "_gram_call_lock",
+        "lines": [
+          17,
+          17
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "model",
+            "type": "EM.GRAMAtmosphereModel",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `model`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "ReentrantLock",
+            "units": "n/a",
+            "description": "Return value of `_gram_call_lock`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.ext",
+      "ui": {
+        "pos": [
+          720.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+      "label": "_gram_spice_ephemeris_state",
+      "kind": "function",
+      "doc": "nodes/ext/spaceagoragramsuiteext__gram_spice_ephemeris_state.md",
+      "source": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "symbol": "_gram_spice_ephemeris_state",
+        "lines": [
+          73,
+          73
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "planet_name",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `planet_name`."
+          },
+          {
+            "id": "initial_time",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `initial_time`."
+          },
+          {
+            "id": "el_time",
+            "type": "Float64",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `el_time`."
+          },
+          {
+            "id": "lat_deg",
+            "type": "Float64",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `lat_deg`."
+          },
+          {
+            "id": "lon_deg",
+            "type": "Float64",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `lon_deg`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_gram_spice_ephemeris_state`. Returns `(`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.ext",
+      "ui": {
+        "pos": [
+          400.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "ext.spaceagoragramsuiteext__gram_utc_string",
+      "label": "_gram_utc_string",
+      "kind": "function",
+      "doc": "nodes/ext/spaceagoragramsuiteext__gram_utc_string.md",
+      "source": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "symbol": "_gram_utc_string",
+        "lines": [
+          65,
+          65
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "initial_time",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `initial_time`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "String",
+            "units": "n/a",
+            "description": "Return value of `_gram_utc_string`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.ext",
+      "ui": {
+        "pos": [
+          720.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "ext.spaceagoragramsuiteext_spaceagoragramsuiteext",
+      "label": "SpaceAGORAGRAMSuiteExt",
+      "kind": "module",
+      "doc": "nodes/ext/spaceagoragramsuiteext_spaceagoragramsuiteext.md",
+      "source": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "symbol": "SpaceAGORAGRAMSuiteExt",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Value produced by this symbol."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.ext",
+      "ui": {
+        "pos": [
+          400.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    }
+  ],
+  "local_edges": [
+    {
+      "id": "e:ext.gram_core_density_state:callees->environment.density_models__gram_point_density:callers",
+      "from": {
+        "node": "ext.gram_core_density_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models__gram_point_density",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_gram_point_density",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          255,
+          255
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.gram_core_density_state:callees->ext.spaceagoragramsuiteext__gram_call_lock:callers",
+      "from": {
+        "node": "ext.gram_core_density_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "ext.spaceagoragramsuiteext__gram_call_lock",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_gram_call_lock",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          264,
+          264
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext___init__:callees->environment.density_models_clear_gram_offline_surrogate_cache_bang:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext___init__",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_clear_gram_offline_surrogate_cache_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "clear_gram_offline_surrogate_cache!",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          25,
+          25
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext___init__:callees->environment.density_models_clear_gram_static_grid_cache_bang:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext___init__",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_clear_gram_static_grid_cache_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "clear_gram_static_grid_cache!",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          24,
+          24
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_call_lock:callees->environment.density_models__gram_lock_scope:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_call_lock",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models__gram_lock_scope",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_gram_lock_scope",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          18,
+          18
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->analysis.ic_fit_float64:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "analysis.ic_fit_float64",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "Float64",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          138,
+          138
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->environment.density_models__gram_core_density_state:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models__gram_core_density_state",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_gram_core_density_state",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          234,
+          234
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->environment.density_models__gram_point_density:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models__gram_point_density",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_gram_point_density",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          255,
+          255
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->environment.density_models_density_polyfit:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_density_polyfit",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "density_polyfit",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          288,
+          288
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->environment.density_models_gramatmospheremodel:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_gramatmospheremodel",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "GRAMAtmosphereModel",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          122,
+          122
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->environment.density_models_gramatmospheremodelsurrogate:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_gramatmospheremodelsurrogate",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "GRAMAtmosphereModelSurrogate",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          126,
+          126
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->environment.density_models_precompute_gram_static_grids_bang:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_precompute_gram_static_grids_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "precompute_gram_static_grids!",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          149,
+          149
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->environment.get_density:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.get_density",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "getDensity",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          271,
+          271
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->ext.gram_core_density_state:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "ext.gram_core_density_state",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_gram_core_density_state",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          234,
+          234
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->ext.spaceagoragramsuiteext__gram_call_lock:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "ext.spaceagoragramsuiteext__gram_call_lock",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_gram_call_lock",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          264,
+          264
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:callees->ext.spaceagoragramsuiteext__gram_utc_string:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "ext.spaceagoragramsuiteext__gram_utc_string",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_gram_utc_string",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          83,
+          83
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:ext.spaceagoragramsuiteext__gram_utc_string:callees->analysis.ic_fit_float64:callers",
+      "from": {
+        "node": "ext.spaceagoragramsuiteext__gram_utc_string",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "analysis.ic_fit_float64",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "Float64",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "lines": [
+          68,
+          68
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.ext:api->ext.spaceagoragramsuiteext___init__:module_api",
+      "from": {
+        "node": "module.ext",
+        "socket": "api"
+      },
+      "to": {
+        "node": "ext.spaceagoragramsuiteext___init__",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.ext:api->ext.spaceagoragramsuiteext__gram_spice_ephemeris_state:module_api",
+      "from": {
+        "node": "module.ext",
+        "socket": "api"
+      },
+      "to": {
+        "node": "ext.spaceagoragramsuiteext__gram_spice_ephemeris_state",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.ext:api->ext.spaceagoragramsuiteext__gram_utc_string:module_api",
+      "from": {
+        "node": "module.ext",
+        "socket": "api"
+      },
+      "to": {
+        "node": "ext.spaceagoragramsuiteext__gram_utc_string",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.ext:api->ext.spaceagoragramsuiteext_spaceagoragramsuiteext:module_api",
+      "from": {
+        "node": "module.ext",
+        "socket": "api"
+      },
+      "to": {
+        "node": "ext.spaceagoragramsuiteext_spaceagoragramsuiteext",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl"
+      },
+      "origin": "agent"
+    }
+  ],
+  "ui": {
+    "pos_overrides": {
+      "module.ext": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "module.ext"
+  ]
+}

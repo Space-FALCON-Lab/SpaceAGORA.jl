@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-aerobraking-interfaces-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/aerobraking/interfaces.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/aerobraking/interfaces.jl",
+    "layout_of": "956de73745a7f9e4"
+  },
+  "derives_from": "gnc-gnc-guidance-aerobraking",
+  "group": "grp.src_gnc_guidance_aerobraking_interfaces_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.interfaces_abstractaerobrakingstrategy": [
+        80.0,
+        80.0
+      ],
+      "gnc.interfaces_aerobrakingguidanceinput": [
+        80.0,
+        230.0
+      ],
+      "gnc.interfaces_aerobrakingguidanceoutput": [
+        80.0,
+        380.0
+      ],
+      "gnc.interfaces_compute_aerobraking_guidance": [
+        80.0,
+        530.0
+      ],
+      "gnc.interfaces_tedgstrategy": [
+        80.0,
+        680.0
+      ],
+      "gncy.interfaces_eedgstrategy": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.interfaces_abstractaerobrakingstrategy",
+    "gnc.interfaces_aerobrakingguidanceinput",
+    "gnc.interfaces_aerobrakingguidanceoutput",
+    "gnc.interfaces_compute_aerobraking_guidance",
+    "gnc.interfaces_tedgstrategy",
+    "gncy.interfaces_eedgstrategy"
+  ]
+}

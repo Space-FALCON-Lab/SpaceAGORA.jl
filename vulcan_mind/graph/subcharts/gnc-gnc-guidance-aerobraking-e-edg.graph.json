@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-aerobraking-e-edg",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/aerobraking/e_edg/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/aerobraking/e_edg",
+    "layout_of": "748af60bca72eeed"
+  },
+  "derives_from": "gnc-gnc-guidance-aerobraking",
+  "group": "grp.src_gnc_guidance_aerobraking_e_edg",
+  "ui": {
+    "pos_overrides": {
+      "gnc.e_edg_strategy_compute_aerobraking_guidance": [
+        80.0,
+        80.0
+      ],
+      "gnc.second_switch_solver_func": [
+        720.0,
+        80.0
+      ],
+      "gnc.second_switch_solver_second_time_switch_recalc_with_integration": [
+        400.0,
+        80.0
+      ],
+      "gnc.switch_window_solver_func": [
+        720.0,
+        230.0
+      ],
+      "gnc.switch_window_solver_switch_calculation": [
+        400.0,
+        230.0
+      ],
+      "gncx.e_edg_strategy_compute_e_edg_guidance_window_bang": [
+        80.0,
+        230.0
+      ],
+      "gncx.energy_profile_solver_security_mode": [
+        400.0,
+        380.0
+      ],
+      "gncx.second_switch_solver_second_time_switch_recalc": [
+        400.0,
+        530.0
+      ],
+      "gncy.switch_window_solver_switch_calculation_with_integration": [
+        400.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.e_edg_strategy_compute_aerobraking_guidance",
+    "gnc.second_switch_solver_func",
+    "gnc.second_switch_solver_second_time_switch_recalc_with_integration",
+    "gnc.switch_window_solver_func",
+    "gnc.switch_window_solver_switch_calculation",
+    "gncx.e_edg_strategy_compute_e_edg_guidance_window_bang",
+    "gncx.energy_profile_solver_security_mode",
+    "gncx.second_switch_solver_second_time_switch_recalc",
+    "gncy.switch_window_solver_switch_calculation_with_integration"
+  ]
+}

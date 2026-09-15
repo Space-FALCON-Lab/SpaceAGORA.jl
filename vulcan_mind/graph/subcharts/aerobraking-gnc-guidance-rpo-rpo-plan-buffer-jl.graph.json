@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-guidance-rpo-rpo-plan-buffer-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/rpo_plan_buffer.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_guidance_rpo_rpo_plan_buffer_jl",
+    "layout_of": "49195d9806d47a8c"
+  },
+  "derives_from": "aerobraking-gnc-guidance-rpo",
+  "group": "grp.src_gnc_guidance_rpo_rpo_plan_buffer_jl",
+  "ui": {
+    "pos_overrides": {
+      "gncz.rpo_plan_buffer_update_rpo_plan_buffer_bang": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gncz.rpo_plan_buffer_update_rpo_plan_buffer_bang"
+  ]
+}

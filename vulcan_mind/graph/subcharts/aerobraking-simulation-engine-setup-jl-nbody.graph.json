@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-simulation-engine-setup-jl-nbody",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _nbody* (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_setup_jl_nbody",
+    "layout_of": "6c20a2c46cf17048"
+  },
+  "derives_from": "aerobraking-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_nbody",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__nbody_ephemeris_cache_dt_s": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__nbody_ephemeris_cache_from_samples": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__nbody_ephemeris_cache_max_samples": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__nbody_ephemeris_cache_payload": [
+        80.0,
+        530.0
+      ],
+      "simulation.setup__nbody_ephemeris_cache_sample_count": [
+        80.0,
+        680.0
+      ],
+      "simulation.setup__nbody_ephemeris_reuse_key": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__nbody_ephemeris_cache_dt_s",
+    "simulation.setup__nbody_ephemeris_cache_from_samples",
+    "simulation.setup__nbody_ephemeris_cache_max_samples",
+    "simulation.setup__nbody_ephemeris_cache_payload",
+    "simulation.setup__nbody_ephemeris_cache_sample_count",
+    "simulation.setup__nbody_ephemeris_reuse_key"
+  ]
+}

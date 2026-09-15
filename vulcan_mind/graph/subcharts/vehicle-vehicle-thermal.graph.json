@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "vehicle-vehicle-thermal",
+  "chart_kind": "sub",
+  "title": "vehicle/thermal/ (vehicle)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/vehicle/thermal",
+    "layout_of": "bd179ca593cf9667"
+  },
+  "derives_from": "vehicle",
+  "group": "grp.src_vehicle_thermal",
+  "ui": {
+    "pos_overrides": {
+      "vehicle.thermal_models_heatrate_convective": [
+        400.0,
+        80.0
+      ],
+      "vehicle.thermal_models_heatrate_convective_radiative": [
+        80.0,
+        80.0
+      ],
+      "vehicle.thermal_models_heatrate_radiative": [
+        80.0,
+        230.0
+      ],
+      "vehicle.thermal_models_maxwellianheat": [
+        80.0,
+        380.0
+      ],
+      "vehx.thermal_models_getheatrate": [
+        80.0,
+        530.0
+      ],
+      "vehx.thermal_models_module_vehiclethermalmodels": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "vehicle.thermal_models_heatrate_convective",
+    "vehicle.thermal_models_heatrate_convective_radiative",
+    "vehicle.thermal_models_heatrate_radiative",
+    "vehicle.thermal_models_maxwellianheat",
+    "vehx.thermal_models_getheatrate",
+    "vehx.thermal_models_module_vehiclethermalmodels"
+  ]
+}

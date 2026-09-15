@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-setup-jl-planet",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _planet* (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/setup.jl#_planet",
+    "layout_of": "f3d8c6dbc2ae1b4a"
+  },
+  "derives_from": "simulation-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_planet",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__planet_frame_cache_dt_s": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__planet_frame_cache_enabled": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__planet_frame_cache_max_samples": [
+        80.0,
+        380.0
+      ],
+      "simulation.setup__planet_frame_ephemeris_reuse_key": [
+        80.0,
+        530.0
+      ],
+      "simulation.setup__planet_transform_key": [
+        400.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__planet_frame_cache_dt_s",
+    "simulation.setup__planet_frame_cache_enabled",
+    "simulation.setup__planet_frame_cache_max_samples",
+    "simulation.setup__planet_frame_ephemeris_reuse_key",
+    "simulation.setup__planet_transform_key"
+  ]
+}

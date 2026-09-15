@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-simulation-callbacks-density-callbacks-runtime-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/density_callbacks/runtime.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_callbacks_density_callbacks_runtime_jl",
+    "layout_of": "467cc69426039cd6"
+  },
+  "derives_from": "aerobraking-simulation-callbacks-density-callbacks",
+  "group": "grp.src_simulation_callbacks_density_callbacks_runtime_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.runtime__density_segment_end_t": [
+        1360.0,
+        80.0
+      ],
+      "simulation.runtime__density_state_from_kinematics_bang": [
+        1040.0,
+        80.0
+      ],
+      "simulation.runtime__extract_mass_kg": [
+        1040.0,
+        230.0
+      ],
+      "simulation.runtime__stage_environment_kinematics": [
+        1040.0,
+        380.0
+      ],
+      "simulation.runtime__stage_environment_state": [
+        80.0,
+        80.0
+      ],
+      "simulation.runtime__write_density_buffers_bang": [
+        1040.0,
+        530.0
+      ],
+      "simulation.runtime__write_density_time_buffers_bang": [
+        720.0,
+        80.0
+      ],
+      "simulation.runtime_affect_bang": [
+        400.0,
+        80.0
+      ],
+      "simulation.runtime_condition": [
+        400.0,
+        230.0
+      ],
+      "simulation.runtime_update_density_sat_bang": [
+        720.0,
+        230.0
+      ],
+      "simulation_a.runtime_get_density_callback": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.runtime__density_segment_end_t",
+    "simulation.runtime__density_state_from_kinematics_bang",
+    "simulation.runtime__extract_mass_kg",
+    "simulation.runtime__stage_environment_kinematics",
+    "simulation.runtime__stage_environment_state",
+    "simulation.runtime__write_density_buffers_bang",
+    "simulation.runtime__write_density_time_buffers_bang",
+    "simulation.runtime_affect_bang",
+    "simulation.runtime_condition",
+    "simulation.runtime_update_density_sat_bang",
+    "simulation_a.runtime_get_density_callback"
+  ]
+}

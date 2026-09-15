@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-engine-state-access-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/state_access.jl (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_state_access_jl",
+    "layout_of": "c555e2251285258d"
+  },
+  "derives_from": "run-pipeline-simulation-engine",
+  "group": "grp.src_simulation_engine_state_access_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.state_access__gravity_backbone_initial_states": [
+        80.0,
+        80.0
+      ],
+      "simx.engine_state_access_state_position_ii": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.state_access__gravity_backbone_initial_states",
+    "simx.engine_state_access_state_position_ii"
+  ]
+}

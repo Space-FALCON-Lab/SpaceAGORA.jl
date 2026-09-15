@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-small",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/ (small files) (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo#_small",
+    "layout_of": "4b93b1923a29ae8d"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo",
+  "group": "grp.src_gnc_guidance_rpo_small",
+  "ui": {
+    "pos_overrides": {
+      "gncy.rpo_guidance_models_rpoguidancemodel": [
+        80.0,
+        80.0
+      ],
+      "gncz.rpo_reference_trajectory_rpo_reference_from_path": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gncy.rpo_guidance_models_rpoguidancemodel",
+    "gncz.rpo_reference_trajectory_rpo_reference_from_path"
+  ]
+}

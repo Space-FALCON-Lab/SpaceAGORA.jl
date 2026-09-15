@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-routing-outer-route-state-jl",
+  "chart_kind": "sub",
+  "title": "parallel/routing/outer_route_state.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/routing/outer_route_state.jl",
+    "layout_of": "8e3dbea0709eede3"
+  },
+  "derives_from": "parallel-parallel-routing",
+  "group": "grp.src_parallel_routing_outer_route_state_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.outer_route_state__route_payload_stats": [
+        400.0,
+        80.0
+      ],
+      "parallel.outer_route_state__route_stats_payload": [
+        400.0,
+        230.0
+      ],
+      "parallel.outer_route_state_load_outer_route_state_bang": [
+        80.0,
+        80.0
+      ],
+      "parallel.outer_route_state_outerroutefeatures": [
+        80.0,
+        230.0
+      ],
+      "parallel.outer_route_state_outerroutestats": [
+        720.0,
+        80.0
+      ],
+      "parallel.outer_route_state_outerroutetuning": [
+        80.0,
+        380.0
+      ],
+      "parallel.outer_route_state_reset_outer_route_state_bang": [
+        400.0,
+        380.0
+      ],
+      "parallel.outer_route_state_save_outer_route_state": [
+        80.0,
+        530.0
+      ],
+      "parcore.outer_route_state_outerroutestate": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.outer_route_state__route_payload_stats",
+    "parallel.outer_route_state__route_stats_payload",
+    "parallel.outer_route_state_load_outer_route_state_bang",
+    "parallel.outer_route_state_outerroutefeatures",
+    "parallel.outer_route_state_outerroutestats",
+    "parallel.outer_route_state_outerroutetuning",
+    "parallel.outer_route_state_reset_outer_route_state_bang",
+    "parallel.outer_route_state_save_outer_route_state",
+    "parcore.outer_route_state_outerroutestate"
+  ]
+}

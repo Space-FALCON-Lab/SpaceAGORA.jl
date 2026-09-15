@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-callbacks-event-callbacks-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/event_callbacks.jl (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_callbacks_event_callbacks_jl",
+    "layout_of": "1dc8d7551c44acb6"
+  },
+  "derives_from": "run-pipeline-simulation-callbacks",
+  "group": "grp.src_simulation_callbacks_event_callbacks_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.event_callbacks_get_data_saving_callback": [
+        80.0,
+        80.0
+      ],
+      "simulation.event_callbacks_get_drag_state_callback": [
+        80.0,
+        230.0
+      ],
+      "simulation.event_callbacks_get_entry_end_callback": [
+        80.0,
+        380.0
+      ],
+      "simulation.event_callbacks_get_orbit_end_callback": [
+        80.0,
+        530.0
+      ],
+      "simulation.event_callbacks_get_quaternion_projection_callback": [
+        80.0,
+        680.0
+      ],
+      "simulation_a.event_callbacks_get_impact_callback": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.event_callbacks_get_data_saving_callback",
+    "simulation.event_callbacks_get_drag_state_callback",
+    "simulation.event_callbacks_get_entry_end_callback",
+    "simulation.event_callbacks_get_orbit_end_callback",
+    "simulation.event_callbacks_get_quaternion_projection_callback",
+    "simulation_a.event_callbacks_get_impact_callback"
+  ]
+}

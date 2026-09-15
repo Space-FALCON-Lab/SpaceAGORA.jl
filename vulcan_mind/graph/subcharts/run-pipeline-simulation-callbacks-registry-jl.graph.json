@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-callbacks-registry-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/registry.jl (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_callbacks_registry_jl",
+    "layout_of": "17fa72ab2879d451"
+  },
+  "derives_from": "run-pipeline-simulation-callbacks",
+  "group": "grp.src_simulation_callbacks_registry_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.registry__simulation_engine_module": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.registry__simulation_engine_module"
+  ]
+}

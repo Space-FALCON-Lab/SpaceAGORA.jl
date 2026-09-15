@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-navigation",
+  "chart_kind": "sub",
+  "title": "gnc/navigation/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_navigation",
+    "layout_of": "d1ffbf8d8a551e00"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_gnc_navigation",
+  "ui": {
+    "pos_overrides": {
+      "gnc.clearance_rpo_path_clearance_stats": [
+        80.0,
+        80.0
+      ],
+      "gnc.station_geometry__rpo_build_station_kdtree": [
+        80.0,
+        230.0
+      ],
+      "gncz.rpo_distance_queries_rpo_goal_standoff_point": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.clearance_rpo_path_clearance_stats",
+    "gnc.station_geometry__rpo_build_station_kdtree",
+    "gncz.rpo_distance_queries_rpo_goal_standoff_point"
+  ]
+}

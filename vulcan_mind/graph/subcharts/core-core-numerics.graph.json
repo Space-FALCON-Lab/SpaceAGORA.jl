@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "core-core-numerics",
+  "chart_kind": "sub",
+  "title": "core/numerics/ (core)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/core/numerics",
+    "layout_of": "b7a90a7dd93156e5"
+  },
+  "derives_from": "core",
+  "group": "grp.src_core_numerics",
+  "ui": {
+    "pos_overrides": {
+      "core.project_unit_quaternion": [
+        80.0,
+        80.0
+      ],
+      "core.quaternion_utils_dcm_to_quaternion": [
+        80.0,
+        230.0
+      ],
+      "core.quaternion_utils_error_quaternion": [
+        80.0,
+        380.0
+      ],
+      "core.quaternion_utils_hat": [
+        80.0,
+        530.0
+      ],
+      "core.quaternion_utils_qtoeulerangles": [
+        80.0,
+        680.0
+      ],
+      "core.quaternion_utils_quat_mult": [
+        80.0,
+        830.0
+      ],
+      "core.quaternion_utils_rot": [
+        80.0,
+        980.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.project_unit_quaternion",
+    "core.quaternion_utils_dcm_to_quaternion",
+    "core.quaternion_utils_error_quaternion",
+    "core.quaternion_utils_hat",
+    "core.quaternion_utils_qtoeulerangles",
+    "core.quaternion_utils_quat_mult",
+    "core.quaternion_utils_rot"
+  ]
+}

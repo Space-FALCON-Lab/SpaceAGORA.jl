@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-io",
+  "chart_kind": "sub",
+  "title": "IOConfig — internals (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.io",
+    "layout_of": "75d87c80681fc293"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.io",
+  "ui": {
+    "pos_overrides": {
+      "io.io_config__checkpoint_paths": [
+        400.0,
+        230.0
+      ],
+      "io.io_outputs__append_saved_segment_bang": [
+        80.0,
+        80.0
+      ],
+      "io.io_outputs__build_results_dataframe": [
+        80.0,
+        230.0
+      ],
+      "io.io_outputs__write_results_csv_bang": [
+        80.0,
+        380.0
+      ],
+      "io.io_serialization__atomic_write_file": [
+        400.0,
+        80.0
+      ],
+      "io.io_serialization__load_checkpoint": [
+        80.0,
+        530.0
+      ],
+      "io.io_serialization__sha256_hex": [
+        400.0,
+        380.0
+      ],
+      "misc.io_outputs_write_results_bundle__write_results_bundle_bang": [
+        80.0,
+        680.0
+      ],
+      "misc.io_serialization_write_checkpoint__write_checkpoint_bang": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "io.io_config__checkpoint_paths",
+    "io.io_outputs__append_saved_segment_bang",
+    "io.io_outputs__build_results_dataframe",
+    "io.io_outputs__write_results_csv_bang",
+    "io.io_serialization__atomic_write_file",
+    "io.io_serialization__load_checkpoint",
+    "io.io_serialization__sha256_hex",
+    "misc.io_outputs_write_results_bundle__write_results_bundle_bang",
+    "misc.io_serialization_write_checkpoint__write_checkpoint_bang"
+  ]
+}

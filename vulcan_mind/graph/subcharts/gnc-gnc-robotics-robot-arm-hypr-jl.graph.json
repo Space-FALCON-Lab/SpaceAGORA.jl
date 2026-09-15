@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-robotics-robot-arm-hypr-jl",
+  "chart_kind": "sub",
+  "title": "gnc/robotics/robot_arm_hypr.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/robotics/robot_arm_hypr.jl",
+    "layout_of": "ba5915c23049eb51"
+  },
+  "derives_from": "gnc-gnc-robotics",
+  "group": "grp.src_gnc_robotics_robot_arm_hypr_jl",
+  "ui": {
+    "pos_overrides": {
+      "gncz.robot_arm_hypr_robot_arm_hypr": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gncz.robot_arm_hypr_robot_arm_hypr"
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-guidance-rpo-hypr-planning",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr_planning/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_guidance_rpo_hypr_planning",
+    "layout_of": "02f25c880efa7700"
+  },
+  "derives_from": "aerobraking-gnc-guidance-rpo",
+  "group": "grp.src_gnc_guidance_rpo_hypr_planning",
+  "ui": {
+    "pos_overrides": {
+      "gnc.replanning__rpo_replanning_sphere": [
+        80.0,
+        80.0
+      ],
+      "gnc.replanning_rpo_active_replanning_spheres": [
+        80.0,
+        230.0
+      ],
+      "gnc.replanning_rpo_plan_from_path": [
+        80.0,
+        380.0
+      ],
+      "gnc.replanning_rpo_replanning_sphere_center": [
+        400.0,
+        230.0
+      ],
+      "gnc.replanning_rporeplanningsphere": [
+        400.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.replanning__rpo_replanning_sphere",
+    "gnc.replanning_rpo_active_replanning_spheres",
+    "gnc.replanning_rpo_plan_from_path",
+    "gnc.replanning_rpo_replanning_sphere_center",
+    "gnc.replanning_rporeplanningsphere"
+  ]
+}

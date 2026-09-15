@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-comparison-metrics-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/comparison_metrics.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/comparison_metrics.jl",
+    "layout_of": "ab51d5d02ae7268a"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_comparison_metrics_jl",
+  "ui": {
+    "pos_overrides": {
+      "analysis.comparison_metrics__apo_decay_diagnostic": [
+        80.0,
+        80.0
+      ],
+      "analysis.comparison_metrics__compare_time_series": [
+        80.0,
+        230.0
+      ],
+      "analysis.comparison_metrics__interp_linear": [
+        400.0,
+        80.0
+      ],
+      "analysis.comparison_metrics__normalized_axis": [
+        400.0,
+        230.0
+      ],
+      "analysis.comparison_metrics__rates": [
+        80.0,
+        380.0
+      ],
+      "envana.ana_comparison_metrics_compare_orbit_curve": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.comparison_metrics__apo_decay_diagnostic",
+    "analysis.comparison_metrics__compare_time_series",
+    "analysis.comparison_metrics__interp_linear",
+    "analysis.comparison_metrics__normalized_axis",
+    "analysis.comparison_metrics__rates",
+    "envana.ana_comparison_metrics_compare_orbit_curve"
+  ]
+}

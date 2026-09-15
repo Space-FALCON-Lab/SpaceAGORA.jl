@@ -1,0 +1,109 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-save-fields-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/save_fields.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks/save_fields.jl",
+    "layout_of": "270c9d7b714ce2b5"
+  },
+  "derives_from": "simulation-simulation-callbacks",
+  "group": "grp.src_simulation_callbacks_save_fields_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.save_fields__resolve_save_fields": [
+        80.0,
+        80.0
+      ],
+      "simulation.save_fields__save_altitude": [
+        400.0,
+        80.0
+      ],
+      "simulation.save_fields__save_cross": [
+        400.0,
+        230.0
+      ],
+      "simulation.save_fields__save_drag": [
+        400.0,
+        380.0
+      ],
+      "simulation.save_fields__save_heat_load": [
+        400.0,
+        530.0
+      ],
+      "simulation.save_fields__save_heat_rate": [
+        400.0,
+        680.0
+      ],
+      "simulation.save_fields__save_latitude_deg": [
+        400.0,
+        830.0
+      ],
+      "simulation.save_fields__save_lift": [
+        400.0,
+        980.0
+      ],
+      "simulation.save_fields__save_longitude_deg": [
+        400.0,
+        1130.0
+      ],
+      "simulation.save_fields__save_mass": [
+        400.0,
+        1280.0
+      ],
+      "simulation.save_fields__save_periapsis_altitude": [
+        400.0,
+        1430.0
+      ],
+      "simulation.save_fields__save_positions": [
+        400.0,
+        1580.0
+      ],
+      "simulation.save_fields__save_quaternion": [
+        400.0,
+        1730.0
+      ],
+      "simulation.save_fields__save_snapshot": [
+        80.0,
+        230.0
+      ],
+      "simulation.save_fields__save_velocities": [
+        400.0,
+        1880.0
+      ],
+      "simulation.save_fields__save_wind": [
+        400.0,
+        2030.0
+      ],
+      "simulation.save_fields_savefield": [
+        400.0,
+        2180.0
+      ],
+      "simulation_a.save_fields_default_save_fields": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.save_fields__resolve_save_fields",
+    "simulation.save_fields__save_altitude",
+    "simulation.save_fields__save_cross",
+    "simulation.save_fields__save_drag",
+    "simulation.save_fields__save_heat_load",
+    "simulation.save_fields__save_heat_rate",
+    "simulation.save_fields__save_latitude_deg",
+    "simulation.save_fields__save_lift",
+    "simulation.save_fields__save_longitude_deg",
+    "simulation.save_fields__save_mass",
+    "simulation.save_fields__save_periapsis_altitude",
+    "simulation.save_fields__save_positions",
+    "simulation.save_fields__save_quaternion",
+    "simulation.save_fields__save_snapshot",
+    "simulation.save_fields__save_velocities",
+    "simulation.save_fields__save_wind",
+    "simulation.save_fields_savefield",
+    "simulation_a.save_fields_default_save_fields"
+  ]
+}

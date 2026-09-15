@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-engine-config",
+  "chart_kind": "sub",
+  "title": "simulation/engine/config/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine_config",
+    "layout_of": "f5cb8588ef5e4c29"
+  },
+  "derives_from": "run-pipeline-simulation-engine",
+  "group": "grp.src_simulation_engine_config",
+  "ui": {
+    "pos_overrides": {
+      "simx.engine_config_solver_config_solverconfig": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simx.engine_config_solver_config_solverconfig"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-routing-env-mapping-jl",
+  "chart_kind": "sub",
+  "title": "parallel/routing/env_mapping.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/routing/env_mapping.jl",
+    "layout_of": "f4c91192f732b560"
+  },
+  "derives_from": "parallel-parallel-routing",
+  "group": "grp.src_parallel_routing_env_mapping_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.env_mapping__coerce_env_bool": [
+        400.0,
+        80.0
+      ],
+      "parallel.env_mapping__env_or_default": [
+        80.0,
+        80.0
+      ],
+      "parallel.env_mapping__inner_hint_defaults": [
+        400.0,
+        230.0
+      ],
+      "parallel.env_mapping__machine_parallel_class": [
+        720.0,
+        80.0
+      ],
+      "parallel.env_mapping__profile_outer_backend_token": [
+        400.0,
+        380.0
+      ],
+      "parallel.env_mapping_with_parallel_profile": [
+        400.0,
+        530.0
+      ],
+      "parcore.env_mapping_profile_env_pairs": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.env_mapping__coerce_env_bool",
+    "parallel.env_mapping__env_or_default",
+    "parallel.env_mapping__inner_hint_defaults",
+    "parallel.env_mapping__machine_parallel_class",
+    "parallel.env_mapping__profile_outer_backend_token",
+    "parallel.env_mapping_with_parallel_profile",
+    "parcore.env_mapping_profile_env_pairs"
+  ]
+}

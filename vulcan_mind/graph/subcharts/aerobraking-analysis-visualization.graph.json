@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-analysis-visualization",
+  "chart_kind": "sub",
+  "title": "analysis/visualization/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_analysis_visualization",
+    "layout_of": "7ebd6e6e25fba271"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_analysis_visualization",
+  "ui": {
+    "pos_overrides": {
+      "envana.ana_rpo_visualization_rpo_path_plot": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "envana.ana_rpo_visualization_rpo_path_plot"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-reporting-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/reporting.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/reporting.jl",
+    "layout_of": "e8ef3dbb95ff79a0"
+  },
+  "derives_from": "simulation-simulation-engine",
+  "group": "grp.src_simulation_engine_reporting_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.reporting__debug_print_nan_parameter_paths_bang": [
+        80.0,
+        80.0
+      ],
+      "simulation.reporting__warn_typed_normalize_transition_flag_bang": [
+        400.0,
+        80.0
+      ],
+      "simx.engine_reporting_enforce_typed_normalize_policy__enforce_typed_normalize_policy_bang": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.reporting__debug_print_nan_parameter_paths_bang",
+    "simulation.reporting__warn_typed_normalize_transition_flag_bang",
+    "simx.engine_reporting_enforce_typed_normalize_policy__enforce_typed_normalize_policy_bang"
+  ]
+}

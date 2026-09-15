@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-control-callbacks-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/control_callbacks.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks/control_callbacks.jl",
+    "layout_of": "d451f1182fdc0427"
+  },
+  "derives_from": "simulation-simulation-callbacks",
+  "group": "grp.src_simulation_callbacks_control_callbacks_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.control_callbacks__maybe_add_control_tstop_bang": [
+        1040.0,
+        80.0
+      ],
+      "simulation.control_callbacks__register_control_tstops_bang": [
+        720.0,
+        80.0
+      ],
+      "simulation.control_callbacks__run_guidance_for_thruster_schedule_bang": [
+        720.0,
+        230.0
+      ],
+      "simulation.control_callbacks__schedule_thruster_control_bang": [
+        400.0,
+        80.0
+      ],
+      "simulation.control_callbacks__thruster_schedule_callbacks": [
+        400.0,
+        230.0
+      ],
+      "simulation.control_callbacks_control_requires_periodic_callback": [
+        400.0,
+        380.0
+      ],
+      "simulation.control_callbacks_schedule_all_bang": [
+        80.0,
+        80.0
+      ],
+      "simulation.control_callbacks_schedule_event_driven_thruster_controls_bang": [
+        80.0,
+        230.0
+      ],
+      "simulation_a.control_callbacks_get_control_callbacks": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.control_callbacks__maybe_add_control_tstop_bang",
+    "simulation.control_callbacks__register_control_tstops_bang",
+    "simulation.control_callbacks__run_guidance_for_thruster_schedule_bang",
+    "simulation.control_callbacks__schedule_thruster_control_bang",
+    "simulation.control_callbacks__thruster_schedule_callbacks",
+    "simulation.control_callbacks_control_requires_periodic_callback",
+    "simulation.control_callbacks_schedule_all_bang",
+    "simulation.control_callbacks_schedule_event_driven_thruster_controls_bang",
+    "simulation_a.control_callbacks_get_control_callbacks"
+  ]
+}

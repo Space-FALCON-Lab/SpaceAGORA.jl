@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-simulation-callbacks",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_callbacks",
+    "layout_of": "e7b89440fad07070"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_simulation_callbacks",
+  "ui": {
+    "pos_overrides": {
+      "simulation.event_callbacks_affect_upcrossing_bang": [
+        80.0,
+        80.0
+      ],
+      "simulation.model_selection__ensure_gram_isolated_pool_bang": [
+        1040.0,
+        230.0
+      ],
+      "simulation.model_selection__gram_batch_elapsed_time": [
+        1040.0,
+        380.0
+      ],
+      "simulation.refresh__gram_track_cache_fill_from_trajectory_bang": [
+        400.0,
+        80.0
+      ],
+      "simulation.runtime__density_segment_end_t": [
+        80.0,
+        230.0
+      ],
+      "simulation.runtime__extract_mass_kg": [
+        1040.0,
+        80.0
+      ],
+      "simulation.runtime_affect_bang": [
+        400.0,
+        980.0
+      ],
+      "simulation.runtime_update_density_sat_bang": [
+        720.0,
+        230.0
+      ],
+      "simulation.save_fields__save_altitude": [
+        400.0,
+        1130.0
+      ],
+      "simulation.save_fields__save_heat_rate": [
+        400.0,
+        1280.0
+      ],
+      "simulation.save_fields__save_latitude_deg": [
+        400.0,
+        1430.0
+      ],
+      "simulation.save_fields__save_longitude_deg": [
+        400.0,
+        1580.0
+      ],
+      "simulation.save_fields__save_periapsis_altitude": [
+        400.0,
+        1730.0
+      ],
+      "simulation.targeting__gram_entry_mass_kg": [
+        400.0,
+        230.0
+      ],
+      "simulation.targeting__gram_entry_reference_area_m2": [
+        400.0,
+        380.0
+      ],
+      "simulation.targeting__gram_kepler_target": [
+        720.0,
+        80.0
+      ],
+      "simulation.targeting__gram_linear_target": [
+        80.0,
+        380.0
+      ],
+      "simulation.targeting__gram_orbit_period_target": [
+        400.0,
+        530.0
+      ],
+      "simulation.targeting__gram_periapsis_target": [
+        400.0,
+        680.0
+      ],
+      "simulation.thermal_callbacks__compute_stage_heat_rates_bang": [
+        720.0,
+        530.0
+      ],
+      "simulation.thermal_callbacks_affect_bang": [
+        400.0,
+        1880.0
+      ],
+      "simulation.vacuum_predicted_gram__query_vacuum_gram_cache__query_vacuum_gram_cache_bang": [
+        80.0,
+        530.0
+      ],
+      "simulation.vacuum_predicted_gram__vacuum_j2_accel": [
+        80.0,
+        680.0
+      ],
+      "simulation_a.control_callbacks_get_control_callbacks": [
+        80.0,
+        830.0
+      ],
+      "simulation_a.model_selection_gram_isolated_pool_batch_eval__gram_isolated_pool_batch_eval_bang": [
+        720.0,
+        380.0
+      ],
+      "simulation_a.refresh_gram_track_cache_refresh__gram_track_cache_refresh_bang": [
+        80.0,
+        980.0
+      ],
+      "simulation_a.runtime_get_density_callback": [
+        80.0,
+        1130.0
+      ],
+      "simulation_a.save_fields_default_save_fields": [
+        80.0,
+        1280.0
+      ],
+      "simulation_a.targeting_gram_entry_target_allen_eggers": [
+        400.0,
+        830.0
+      ],
+      "simulation_a.thermal_callbacks_get_thermal_callback": [
+        80.0,
+        1430.0
+      ],
+      "simulation_a.vacuum_predicted_gram_build_vacuum_gram_cache__build_vacuum_gram_cache_bang": [
+        80.0,
+        1580.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.event_callbacks_affect_upcrossing_bang",
+    "simulation.model_selection__ensure_gram_isolated_pool_bang",
+    "simulation.model_selection__gram_batch_elapsed_time",
+    "simulation.refresh__gram_track_cache_fill_from_trajectory_bang",
+    "simulation.runtime__density_segment_end_t",
+    "simulation.runtime__extract_mass_kg",
+    "simulation.runtime_affect_bang",
+    "simulation.runtime_update_density_sat_bang",
+    "simulation.save_fields__save_altitude",
+    "simulation.save_fields__save_heat_rate",
+    "simulation.save_fields__save_latitude_deg",
+    "simulation.save_fields__save_longitude_deg",
+    "simulation.save_fields__save_periapsis_altitude",
+    "simulation.targeting__gram_entry_mass_kg",
+    "simulation.targeting__gram_entry_reference_area_m2",
+    "simulation.targeting__gram_kepler_target",
+    "simulation.targeting__gram_linear_target",
+    "simulation.targeting__gram_orbit_period_target",
+    "simulation.targeting__gram_periapsis_target",
+    "simulation.thermal_callbacks__compute_stage_heat_rates_bang",
+    "simulation.thermal_callbacks_affect_bang",
+    "simulation.vacuum_predicted_gram__query_vacuum_gram_cache__query_vacuum_gram_cache_bang",
+    "simulation.vacuum_predicted_gram__vacuum_j2_accel",
+    "simulation_a.control_callbacks_get_control_callbacks",
+    "simulation_a.model_selection_gram_isolated_pool_batch_eval__gram_isolated_pool_batch_eval_bang",
+    "simulation_a.refresh_gram_track_cache_refresh__gram_track_cache_refresh_bang",
+    "simulation_a.runtime_get_density_callback",
+    "simulation_a.save_fields_default_save_fields",
+    "simulation_a.targeting_gram_entry_target_allen_eggers",
+    "simulation_a.thermal_callbacks_get_thermal_callback",
+    "simulation_a.vacuum_predicted_gram_build_vacuum_gram_cache__build_vacuum_gram_cache_bang"
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-control-heat-rate-control-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/heat_rate_control.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_control_heat_rate_control_jl",
+    "layout_of": "3e7f12d39583a9bb"
+  },
+  "derives_from": "aerobraking-gnc-control",
+  "group": "grp.src_gnc_control_heat_rate_control_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.heat_rate_control__edg_maxwellian_heat_rate": [
+        80.0,
+        80.0
+      ],
+      "gnc.heat_rate_control_df": [
+        80.0,
+        230.0
+      ],
+      "gnc.heat_rate_control_f": [
+        80.0,
+        380.0
+      ],
+      "gncx.heat_rate_control__edg_heat_rate_alpha": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.heat_rate_control__edg_maxwellian_heat_rate",
+    "gnc.heat_rate_control_df",
+    "gnc.heat_rate_control_f",
+    "gncx.heat_rate_control__edg_heat_rate_alpha"
+  ]
+}

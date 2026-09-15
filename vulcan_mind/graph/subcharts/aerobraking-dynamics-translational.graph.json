@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-dynamics-translational",
+  "chart_kind": "sub",
+  "title": "dynamics/translational/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_dynamics_translational",
+    "layout_of": "ae5af531b323d696"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_dynamics_translational",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.point_mass_dynamics_mass_derivative": [
+        80.0,
+        80.0
+      ],
+      "dynx.translational_point_mass_dynamics_acceleration_from_force": [
+        80.0,
+        230.0
+      ],
+      "dynx.translational_position_kinematics_position_derivative": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.point_mass_dynamics_mass_derivative",
+    "dynx.translational_point_mass_dynamics_acceleration_from_force",
+    "dynx.translational_position_kinematics_position_derivative"
+  ]
+}

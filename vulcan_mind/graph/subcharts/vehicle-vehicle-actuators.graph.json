@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "vehicle-vehicle-actuators",
+  "chart_kind": "sub",
+  "title": "vehicle/actuators/ (vehicle)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/vehicle/actuators",
+    "layout_of": "364d3f030ca3e31b"
+  },
+  "derives_from": "vehicle",
+  "group": "grp.src_vehicle_actuators",
+  "ui": {
+    "pos_overrides": {
+      "vehicle.thruster_hooks_integrate_impulse_bang": [
+        720.0,
+        80.0
+      ],
+      "vehicle.thruster_hooks_schmitt_trigger": [
+        720.0,
+        230.0
+      ],
+      "vehicle.thruster_hooks_thrust_calculation_schmitt_trigger_bang": [
+        400.0,
+        80.0
+      ],
+      "vehicle.thruster_hooks_thruster_debug_enabled": [
+        720.0,
+        380.0
+      ],
+      "vehicle.thruster_hooks_thrusterhooks": [
+        80.0,
+        80.0
+      ],
+      "vehicle.thruster_models_sixaxisthrustermodel": [
+        80.0,
+        230.0
+      ],
+      "vehx.actuators_thruster_hooks_update_thrusters_bang": [
+        80.0,
+        380.0
+      ],
+      "vehx.actuators_thruster_models_basethrustermodel": [
+        80.0,
+        530.0
+      ],
+      "vehx.actuators_thruster_models_module_thrustermodels": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "vehicle.thruster_hooks_integrate_impulse_bang",
+    "vehicle.thruster_hooks_schmitt_trigger",
+    "vehicle.thruster_hooks_thrust_calculation_schmitt_trigger_bang",
+    "vehicle.thruster_hooks_thruster_debug_enabled",
+    "vehicle.thruster_hooks_thrusterhooks",
+    "vehicle.thruster_models_sixaxisthrustermodel",
+    "vehx.actuators_thruster_hooks_update_thrusters_bang",
+    "vehx.actuators_thruster_models_basethrustermodel",
+    "vehx.actuators_thruster_models_module_thrustermodels"
+  ]
+}

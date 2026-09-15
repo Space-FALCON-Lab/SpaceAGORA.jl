@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-parallel-policy",
+  "chart_kind": "sub",
+  "title": "parallel/policy/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_parallel_policy",
+    "layout_of": "906582c89cdb3ef7"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_parallel_policy",
+  "ui": {
+    "pos_overrides": {
+      "parallel.context__active_policy_context": [
+        400.0,
+        680.0
+      ],
+      "parallel.context__destroy_persistent_foreach_scope_bang": [
+        400.0,
+        230.0
+      ],
+      "parallel.context__policy_scope_id": [
+        400.0,
+        380.0
+      ],
+      "parallel.env_config_effective_inner_thread_budget": [
+        400.0,
+        830.0
+      ],
+      "parallel.env_config_parse_bool_env": [
+        400.0,
+        80.0
+      ],
+      "parallel.env_config_parse_thread_threshold_env": [
+        400.0,
+        980.0
+      ],
+      "parallel.env_config_persistent_hints_state_reset_requested": [
+        80.0,
+        80.0
+      ],
+      "parallel.persistent_hints_reset_persistent_hint_state_bang": [
+        80.0,
+        230.0
+      ],
+      "parallel.policy_telemetry_reset_policy_telemetry_bang": [
+        80.0,
+        380.0
+      ],
+      "parallel.types_policycontext": [
+        400.0,
+        530.0
+      ],
+      "parcore.context_with_policy_context": [
+        80.0,
+        530.0
+      ],
+      "parcore.env_config_snapshot_policy_decision_env": [
+        80.0,
+        680.0
+      ],
+      "parcore.policy_telemetry_policy_telemetry_snapshot": [
+        80.0,
+        830.0
+      ],
+      "parcore.types_policytelemetry": [
+        720.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.context__active_policy_context",
+    "parallel.context__destroy_persistent_foreach_scope_bang",
+    "parallel.context__policy_scope_id",
+    "parallel.env_config_effective_inner_thread_budget",
+    "parallel.env_config_parse_bool_env",
+    "parallel.env_config_parse_thread_threshold_env",
+    "parallel.env_config_persistent_hints_state_reset_requested",
+    "parallel.persistent_hints_reset_persistent_hint_state_bang",
+    "parallel.policy_telemetry_reset_policy_telemetry_bang",
+    "parallel.types_policycontext",
+    "parcore.context_with_policy_context",
+    "parcore.env_config_snapshot_policy_decision_env",
+    "parcore.policy_telemetry_policy_telemetry_snapshot",
+    "parcore.types_policytelemetry"
+  ]
+}

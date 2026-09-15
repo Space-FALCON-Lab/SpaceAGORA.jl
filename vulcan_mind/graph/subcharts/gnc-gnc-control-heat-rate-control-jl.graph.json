@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-control-heat-rate-control-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/heat_rate_control.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/control/heat_rate_control.jl",
+    "layout_of": "c0236c126a2a389f"
+  },
+  "derives_from": "gnc-gnc-control",
+  "group": "grp.src_gnc_control_heat_rate_control_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.heat_rate_control__edg_maxwellian_heat_rate": [
+        80.0,
+        80.0
+      ],
+      "gnc.heat_rate_control__energy_depletion_heat_rate_calc": [
+        720.0,
+        80.0
+      ],
+      "gnc.heat_rate_control__energy_depletion_heatrate_root_alpha": [
+        400.0,
+        80.0
+      ],
+      "gnc.heat_rate_control_df": [
+        80.0,
+        230.0
+      ],
+      "gnc.heat_rate_control_f": [
+        80.0,
+        380.0
+      ],
+      "gncx.heat_rate_control__edg_heat_rate_alpha": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.heat_rate_control__edg_maxwellian_heat_rate",
+    "gnc.heat_rate_control__energy_depletion_heat_rate_calc",
+    "gnc.heat_rate_control__energy_depletion_heatrate_root_alpha",
+    "gnc.heat_rate_control_df",
+    "gnc.heat_rate_control_f",
+    "gncx.heat_rate_control__edg_heat_rate_alpha"
+  ]
+}

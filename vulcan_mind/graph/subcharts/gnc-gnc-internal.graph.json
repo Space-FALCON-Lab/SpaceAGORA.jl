@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-internal",
+  "chart_kind": "sub",
+  "title": "gnc/internal/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/internal",
+    "layout_of": "eee5c8f5947befa9"
+  },
+  "derives_from": "gnc",
+  "group": "grp.src_gnc_internal",
+  "ui": {
+    "pos_overrides": {
+      "gnc.bridge_helpers__bridge_aerobraking_body_shape": [
+        400.0,
+        80.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_dry_mass": [
+        400.0,
+        230.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_entry_interface_m": [
+        720.0,
+        80.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_exit_interface_m": [
+        400.0,
+        380.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_integrator_name": [
+        400.0,
+        530.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_max_heat_rate": [
+        400.0,
+        680.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_thrust_phi": [
+        400.0,
+        830.0
+      ],
+      "gnc.bridge_helpers__bridge_aerobraking_topography_enabled": [
+        400.0,
+        980.0
+      ],
+      "gnc.bridge_helpers__bridge_get_cnf": [
+        80.0,
+        80.0
+      ],
+      "gnc.bridge_helpers__bridge_get_solution": [
+        80.0,
+        230.0
+      ],
+      "gnc.bridge_helpers__bridge_optional_field": [
+        720.0,
+        230.0
+      ],
+      "gnc.bridge_helpers__bridge_required_field": [
+        1040.0,
+        80.0
+      ],
+      "gnc.bridge_helpers__bridge_verbose_enabled": [
+        80.0,
+        380.0
+      ],
+      "gnc.bridge_helpers__make_aerobraking_runtime_context": [
+        80.0,
+        530.0
+      ],
+      "gnc.bridge_helpers__with_control_gain": [
+        80.0,
+        680.0
+      ],
+      "gnc.bridge_helpers__with_time_switch": [
+        80.0,
+        830.0
+      ],
+      "gncz.bridge_helpers__make_aerobraking_runtime_settings": [
+        80.0,
+        980.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.bridge_helpers__bridge_aerobraking_body_shape",
+    "gnc.bridge_helpers__bridge_aerobraking_dry_mass",
+    "gnc.bridge_helpers__bridge_aerobraking_entry_interface_m",
+    "gnc.bridge_helpers__bridge_aerobraking_exit_interface_m",
+    "gnc.bridge_helpers__bridge_aerobraking_integrator_name",
+    "gnc.bridge_helpers__bridge_aerobraking_max_heat_rate",
+    "gnc.bridge_helpers__bridge_aerobraking_thrust_phi",
+    "gnc.bridge_helpers__bridge_aerobraking_topography_enabled",
+    "gnc.bridge_helpers__bridge_get_cnf",
+    "gnc.bridge_helpers__bridge_get_solution",
+    "gnc.bridge_helpers__bridge_optional_field",
+    "gnc.bridge_helpers__bridge_required_field",
+    "gnc.bridge_helpers__bridge_verbose_enabled",
+    "gnc.bridge_helpers__make_aerobraking_runtime_context",
+    "gnc.bridge_helpers__with_control_gain",
+    "gnc.bridge_helpers__with_time_switch",
+    "gncz.bridge_helpers__make_aerobraking_runtime_settings"
+  ]
+}

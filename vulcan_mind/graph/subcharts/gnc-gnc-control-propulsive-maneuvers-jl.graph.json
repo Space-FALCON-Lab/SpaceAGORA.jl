@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-control-propulsive-maneuvers-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/propulsive_maneuvers.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/control/propulsive_maneuvers.jl",
+    "layout_of": "15b630f7a5981841"
+  },
+  "derives_from": "gnc-gnc-control",
+  "group": "grp.src_gnc_control_propulsive_maneuvers_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.propulsive_maneuvers__active_burn_plan": [
+        1360.0,
+        230.0
+      ],
+      "gnc.propulsive_maneuvers__available_propellant_kg": [
+        1040.0,
+        980.0
+      ],
+      "gnc.propulsive_maneuvers__burn_plan_buffer": [
+        1680.0,
+        80.0
+      ],
+      "gnc.propulsive_maneuvers__clear_burn_plan_bang": [
+        720.0,
+        380.0
+      ],
+      "gnc.propulsive_maneuvers__commanded_maneuver": [
+        720.0,
+        530.0
+      ],
+      "gnc.propulsive_maneuvers__constant_thrust_burn_duration_s": [
+        720.0,
+        680.0
+      ],
+      "gnc.propulsive_maneuvers__control_effector_exception_fallback": [
+        720.0,
+        830.0
+      ],
+      "gnc.propulsive_maneuvers__control_effector_log_enabled": [
+        1040.0,
+        230.0
+      ],
+      "gnc.propulsive_maneuvers__control_effector_strict_exceptions": [
+        1040.0,
+        380.0
+      ],
+      "gnc.propulsive_maneuvers__effective_burn_window": [
+        400.0,
+        80.0
+      ],
+      "gnc.propulsive_maneuvers__effective_direction_rad": [
+        400.0,
+        230.0
+      ],
+      "gnc.propulsive_maneuvers__effective_thrust_isp": [
+        1040.0,
+        1130.0
+      ],
+      "gnc.propulsive_maneuvers__guidance_maneuver_command": [
+        1040.0,
+        80.0
+      ],
+      "gnc.propulsive_maneuvers__maneuver_trace_enabled": [
+        1040.0,
+        530.0
+      ],
+      "gnc.propulsive_maneuvers__maneuver_trace_key": [
+        720.0,
+        980.0
+      ],
+      "gnc.propulsive_maneuvers__maneuver_trace_path": [
+        1040.0,
+        680.0
+      ],
+      "gnc.propulsive_maneuvers__model_burn_window": [
+        720.0,
+        80.0
+      ],
+      "gnc.propulsive_maneuvers__safe_orbit_counter": [
+        1040.0,
+        830.0
+      ],
+      "gnc.propulsive_maneuvers__set_burn_plan_bang": [
+        720.0,
+        1130.0
+      ],
+      "gnc.propulsive_maneuvers__trace_bool_enabled": [
+        1360.0,
+        80.0
+      ],
+      "gnc.propulsive_maneuvers__trace_maneuver_event_bang": [
+        720.0,
+        1280.0
+      ],
+      "gnc.propulsive_maneuvers__validated_burn_plan": [
+        720.0,
+        1430.0
+      ],
+      "gnc.propulsive_maneuvers_calccontrolforcetorque": [
+        80.0,
+        80.0
+      ],
+      "gnc.propulsive_maneuvers_calccontrolmassflowrate": [
+        400.0,
+        380.0
+      ],
+      "gnc.propulsive_maneuvers_calcreactionwheeltorque": [
+        720.0,
+        230.0
+      ],
+      "gncx.propulsive_maneuvers_calccontroleffect_bang": [
+        400.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.propulsive_maneuvers__active_burn_plan",
+    "gnc.propulsive_maneuvers__available_propellant_kg",
+    "gnc.propulsive_maneuvers__burn_plan_buffer",
+    "gnc.propulsive_maneuvers__clear_burn_plan_bang",
+    "gnc.propulsive_maneuvers__commanded_maneuver",
+    "gnc.propulsive_maneuvers__constant_thrust_burn_duration_s",
+    "gnc.propulsive_maneuvers__control_effector_exception_fallback",
+    "gnc.propulsive_maneuvers__control_effector_log_enabled",
+    "gnc.propulsive_maneuvers__control_effector_strict_exceptions",
+    "gnc.propulsive_maneuvers__effective_burn_window",
+    "gnc.propulsive_maneuvers__effective_direction_rad",
+    "gnc.propulsive_maneuvers__effective_thrust_isp",
+    "gnc.propulsive_maneuvers__guidance_maneuver_command",
+    "gnc.propulsive_maneuvers__maneuver_trace_enabled",
+    "gnc.propulsive_maneuvers__maneuver_trace_key",
+    "gnc.propulsive_maneuvers__maneuver_trace_path",
+    "gnc.propulsive_maneuvers__model_burn_window",
+    "gnc.propulsive_maneuvers__safe_orbit_counter",
+    "gnc.propulsive_maneuvers__set_burn_plan_bang",
+    "gnc.propulsive_maneuvers__trace_bool_enabled",
+    "gnc.propulsive_maneuvers__trace_maneuver_event_bang",
+    "gnc.propulsive_maneuvers__validated_burn_plan",
+    "gnc.propulsive_maneuvers_calccontrolforcetorque",
+    "gnc.propulsive_maneuvers_calccontrolmassflowrate",
+    "gnc.propulsive_maneuvers_calcreactionwheeltorque",
+    "gncx.propulsive_maneuvers_calccontroleffect_bang"
+  ]
+}

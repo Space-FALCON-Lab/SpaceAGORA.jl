@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-policy-policy-telemetry-jl",
+  "chart_kind": "sub",
+  "title": "parallel/policy/policy_telemetry.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/policy/policy_telemetry.jl",
+    "layout_of": "e8cf6225e67fa1d7"
+  },
+  "derives_from": "parallel-parallel-policy",
+  "group": "grp.src_parallel_policy_policy_telemetry_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.policy_telemetry__adaptive_state_for": [
+        80.0,
+        80.0
+      ],
+      "parallel.policy_telemetry__record_policy_decision_bang": [
+        80.0,
+        230.0
+      ],
+      "parallel.policy_telemetry_reset_policy_telemetry_bang": [
+        80.0,
+        380.0
+      ],
+      "parcore.policy_telemetry_policy_telemetry_snapshot": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.policy_telemetry__adaptive_state_for",
+    "parallel.policy_telemetry__record_policy_decision_bang",
+    "parallel.policy_telemetry_reset_policy_telemetry_bang",
+    "parcore.policy_telemetry_policy_telemetry_snapshot"
+  ]
+}

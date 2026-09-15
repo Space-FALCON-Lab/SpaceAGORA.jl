@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-core-interfaces",
+  "chart_kind": "sub",
+  "title": "core/interfaces/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_core_interfaces",
+    "layout_of": "ec475a9921765f01"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_core_interfaces",
+  "ui": {
+    "pos_overrides": {
+      "core.reference_system__planet_flattening": [
+        400.0,
+        380.0
+      ],
+      "core.reference_system__rvtoorbitalelement_core": [
+        720.0,
+        80.0
+      ],
+      "core.reference_system_latlongtoned": [
+        80.0,
+        80.0
+      ],
+      "core.reference_system_latlongtooe": [
+        80.0,
+        230.0
+      ],
+      "core.reference_system_orbital_elements_to_lvlh_quaternion": [
+        400.0,
+        80.0
+      ],
+      "core.reference_system_orbitalelemtorv": [
+        80.0,
+        380.0
+      ],
+      "core.reference_system_r_intor_p_bang": [
+        720.0,
+        230.0
+      ],
+      "core.reference_system_rtolatlong": [
+        80.0,
+        530.0
+      ],
+      "parcore.reference_system_rvtoorbitalelement": [
+        400.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.reference_system__planet_flattening",
+    "core.reference_system__rvtoorbitalelement_core",
+    "core.reference_system_latlongtoned",
+    "core.reference_system_latlongtooe",
+    "core.reference_system_orbital_elements_to_lvlh_quaternion",
+    "core.reference_system_orbitalelemtorv",
+    "core.reference_system_r_intor_p_bang",
+    "core.reference_system_rtolatlong",
+    "parcore.reference_system_rvtoorbitalelement"
+  ]
+}

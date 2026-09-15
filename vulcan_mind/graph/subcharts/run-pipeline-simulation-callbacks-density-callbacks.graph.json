@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-callbacks-density-callbacks",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/density_callbacks/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_callbacks_density_callbacks",
+    "layout_of": "410ab564d597d79c"
+  },
+  "derives_from": "run-pipeline-simulation-callbacks",
+  "group": "grp.src_simulation_callbacks_density_callbacks",
+  "ui": {
+    "pos_overrides": {
+      "simulation.assembly__append_callback": [
+        400.0,
+        80.0
+      ],
+      "simulation.assembly__append_callbacks": [
+        400.0,
+        230.0
+      ],
+      "simulation.assembly__requires_drag_state_callback": [
+        720.0,
+        80.0
+      ],
+      "simulation.assembly__requires_entry_end_callback": [
+        720.0,
+        230.0
+      ],
+      "simulation.assembly__requires_orbit_end_callback": [
+        400.0,
+        380.0
+      ],
+      "simulation.assembly__requires_quaternion_projection_callback": [
+        400.0,
+        530.0
+      ],
+      "simulation.assembly__requires_staged_density_callback": [
+        400.0,
+        680.0
+      ],
+      "simulation.assembly__requires_thermal_callback": [
+        720.0,
+        380.0
+      ],
+      "simulation_a.assembly_get_callbacks": [
+        80.0,
+        80.0
+      ],
+      "simulation_a.density_config_snapshot_callback_env_config": [
+        80.0,
+        230.0
+      ],
+      "simulation_a.planet_frame_update_planet_frame_callback": [
+        400.0,
+        830.0
+      ],
+      "simulation_a.runtime_get_density_callback": [
+        400.0,
+        980.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.assembly__append_callback",
+    "simulation.assembly__append_callbacks",
+    "simulation.assembly__requires_drag_state_callback",
+    "simulation.assembly__requires_entry_end_callback",
+    "simulation.assembly__requires_orbit_end_callback",
+    "simulation.assembly__requires_quaternion_projection_callback",
+    "simulation.assembly__requires_staged_density_callback",
+    "simulation.assembly__requires_thermal_callback",
+    "simulation_a.assembly_get_callbacks",
+    "simulation_a.density_config_snapshot_callback_env_config",
+    "simulation_a.planet_frame_update_planet_frame_callback",
+    "simulation_a.runtime_get_density_callback"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-coupled-force-torque-models-jl",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/force_torque_models.jl (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/coupled/force_torque_models.jl",
+    "layout_of": "9112f577cbb23c3d"
+  },
+  "derives_from": "dynamics-dynamics-coupled",
+  "group": "grp.src_dynamics_coupled_force_torque_models_jl",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.calc_force_torque": [
+        80.0,
+        80.0
+      ],
+      "dynamics.force_torque_models_dynamiceffectors": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.calc_force_torque",
+    "dynamics.force_torque_models_dynamiceffectors"
+  ]
+}

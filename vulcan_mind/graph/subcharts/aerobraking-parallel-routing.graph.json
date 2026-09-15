@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-parallel-routing",
+  "chart_kind": "sub",
+  "title": "parallel/routing/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_parallel_routing",
+    "layout_of": "58be65a43ccc6a81"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_parallel_routing",
+  "ui": {
+    "pos_overrides": {
+      "parallel.outer_route_selection__candidate_confidence_width": [
+        80.0,
+        80.0
+      ],
+      "parallel.outer_route_selection__route_ranked_candidates": [
+        80.0,
+        230.0
+      ],
+      "parallel.outer_route_selection_outer_route_candidates": [
+        80.0,
+        380.0
+      ],
+      "parallel.outer_route_state__route_payload_stats": [
+        400.0,
+        80.0
+      ],
+      "parallel.outer_route_state__route_stats_payload": [
+        400.0,
+        230.0
+      ],
+      "parallel.outer_route_state_load_outer_route_state_bang": [
+        80.0,
+        530.0
+      ],
+      "parallel.outer_route_state_save_outer_route_state": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.outer_route_selection__candidate_confidence_width",
+    "parallel.outer_route_selection__route_ranked_candidates",
+    "parallel.outer_route_selection_outer_route_candidates",
+    "parallel.outer_route_state__route_payload_stats",
+    "parallel.outer_route_state__route_stats_payload",
+    "parallel.outer_route_state_load_outer_route_state_bang",
+    "parallel.outer_route_state_save_outer_route_state"
+  ]
+}

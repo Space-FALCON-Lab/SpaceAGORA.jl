@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-small",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/ (small files) (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks#_small",
+    "layout_of": "96b56181f3080bba"
+  },
+  "derives_from": "simulation-simulation-callbacks",
+  "group": "grp.src_simulation_callbacks_small",
+  "ui": {
+    "pos_overrides": {
+      "simulation.navigation_guidance_callbacks_get_guidance_callbacks": [
+        80.0,
+        80.0
+      ],
+      "simulation_a.callbacks_simulationcallbacks": [
+        80.0,
+        230.0
+      ],
+      "simulation_a.density_callbacks_density_callbacks": [
+        80.0,
+        380.0
+      ],
+      "simulation_a.gram_track_cache_gram_track_cache": [
+        80.0,
+        530.0
+      ],
+      "simulation_a.navigation_guidance_callbacks_get_navigation_callbacks": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.navigation_guidance_callbacks_get_guidance_callbacks",
+    "simulation_a.callbacks_simulationcallbacks",
+    "simulation_a.density_callbacks_density_callbacks",
+    "simulation_a.gram_track_cache_gram_track_cache",
+    "simulation_a.navigation_guidance_callbacks_get_navigation_callbacks"
+  ]
+}

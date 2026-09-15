@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-gnc-control",
+  "chart_kind": "sub",
+  "title": "gnc/control/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_control",
+    "layout_of": "19cc96bb1c8f90a3"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_gnc_control",
+  "ui": {
+    "pos_overrides": {
+      "gnc.heat_rate_control_f": [
+        80.0,
+        80.0
+      ],
+      "gnc.struct_load_control_f": [
+        80.0,
+        230.0
+      ],
+      "gnc.tracking_executor_f": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.heat_rate_control_f",
+    "gnc.struct_load_control_f",
+    "gnc.tracking_executor_f"
+  ]
+}

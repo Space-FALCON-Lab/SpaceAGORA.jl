@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-guidance-rpo-rpo-guidance-hooks-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/rpo_guidance_hooks.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_guidance_rpo_rpo_guidance_hooks_jl",
+    "layout_of": "50ee6b899b0a8ce9"
+  },
+  "derives_from": "aerobraking-gnc-guidance-rpo",
+  "group": "grp.src_gnc_guidance_rpo_rpo_guidance_hooks_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.rpo_guidance_hooks__rpo_record_replanning_event_bang": [
+        80.0,
+        80.0
+      ],
+      "gnc.rpo_guidance_hooks_build_rpo_plan_from_start": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.rpo_guidance_hooks__rpo_record_replanning_event_bang",
+    "gnc.rpo_guidance_hooks_build_rpo_plan_from_start"
+  ]
+}

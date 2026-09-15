@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-ephemerides-planet-shapes-jl",
+  "chart_kind": "sub",
+  "title": "environment/ephemerides/planet_shapes.jl (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment/ephemerides/planet_shapes.jl",
+    "layout_of": "3e23613a6040b733"
+  },
+  "derives_from": "environment-environment-ephemerides",
+  "group": "grp.src_environment_ephemerides_planet_shapes_jl",
+  "ui": {
+    "pos_overrides": {
+      "envana.env_planet_shapes_calculate_topography_harmonics_bang": [
+        80.0,
+        80.0
+      ],
+      "environment.planet_shapes_earth_elevation_bang": [
+        80.0,
+        230.0
+      ],
+      "environment.planet_shapes_fnalf_idr_bang": [
+        400.0,
+        80.0
+      ],
+      "environment.planet_shapes_mars_elevation_bang": [
+        80.0,
+        380.0
+      ],
+      "environment.planet_shapes_venus_elevation_bang": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "envana.env_planet_shapes_calculate_topography_harmonics_bang",
+    "environment.planet_shapes_earth_elevation_bang",
+    "environment.planet_shapes_fnalf_idr_bang",
+    "environment.planet_shapes_mars_elevation_bang",
+    "environment.planet_shapes_venus_elevation_bang"
+  ]
+}

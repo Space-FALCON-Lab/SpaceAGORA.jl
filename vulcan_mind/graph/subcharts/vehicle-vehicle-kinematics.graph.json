@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "vehicle-vehicle-kinematics",
+  "chart_kind": "sub",
+  "title": "vehicle/kinematics/ (vehicle)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/vehicle/kinematics",
+    "layout_of": "2ebfaec948e829b5"
+  },
+  "derives_from": "vehicle",
+  "group": "grp.src_vehicle_kinematics",
+  "ui": {
+    "pos_overrides": {
+      "vehicle.kinematics_kinematics": [
+        80.0,
+        80.0
+      ],
+      "vehicle.kinematics_rotate_link": [
+        80.0,
+        230.0
+      ],
+      "vehicle.kinematics_rotate_to_body": [
+        80.0,
+        380.0
+      ],
+      "vehx.kinematics_rotate_to_inertial": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "vehicle.kinematics_kinematics",
+    "vehicle.kinematics_rotate_link",
+    "vehicle.kinematics_rotate_to_body",
+    "vehx.kinematics_rotate_to_inertial"
+  ]
+}

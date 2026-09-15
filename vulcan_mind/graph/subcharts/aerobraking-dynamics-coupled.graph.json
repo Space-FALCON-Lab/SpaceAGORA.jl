@@ -1,0 +1,109 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-dynamics-coupled",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_dynamics_coupled",
+    "layout_of": "bc42adbe451900af"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_dynamics_coupled",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.aerodynamic_wrench_models__aero_link_atmosphere_query": [
+        80.0,
+        80.0
+      ],
+      "dynamics.aerodynamic_wrench_models_aerodynamic_coefficient_fm": [
+        400.0,
+        80.0
+      ],
+      "dynamics.aerodynamic_wrench_models_calcforcetorque": [
+        720.0,
+        80.0
+      ],
+      "dynamics.aerodynamic_wrench_models_compute_link_wrench_bang": [
+        80.0,
+        230.0
+      ],
+      "dynamics.perturbations__harmonics_calcforcetorque_with_lpi": [
+        80.0,
+        380.0
+      ],
+      "dynamics.perturbations__harmonics_flat_batch_kernel_bang": [
+        80.0,
+        530.0
+      ],
+      "dynamics.perturbations__harmonics_model_cache_key": [
+        80.0,
+        680.0
+      ],
+      "dynamics.perturbations__spice_query_name": [
+        1040.0,
+        80.0
+      ],
+      "dynamics.perturbations__total_dipole_moment_body": [
+        80.0,
+        830.0
+      ],
+      "dynamics.perturbations_calcforcetorque": [
+        720.0,
+        230.0
+      ],
+      "dynamics.perturbations_eddy_damping_torque": [
+        400.0,
+        230.0
+      ],
+      "dynamics.perturbations_eddycurrentdampingmodel": [
+        80.0,
+        980.0
+      ],
+      "dynamics.perturbations_lvlhcascadeattitudecontrolmodel": [
+        80.0,
+        1130.0
+      ],
+      "dynamics.perturbations_magnetictorquerodmodel": [
+        80.0,
+        1280.0
+      ],
+      "dynamics.perturbations_solarradiationpressuremodel": [
+        80.0,
+        1430.0
+      ],
+      "dynamics.perturbations_srp_cannonball_accel": [
+        400.0,
+        380.0
+      ],
+      "dynx.coupled_aerodynamic_wrench_models_aero_pure_wrench": [
+        80.0,
+        1580.0
+      ],
+      "dynx.coupled_perturbations_srp": [
+        80.0,
+        1730.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.aerodynamic_wrench_models__aero_link_atmosphere_query",
+    "dynamics.aerodynamic_wrench_models_aerodynamic_coefficient_fm",
+    "dynamics.aerodynamic_wrench_models_calcforcetorque",
+    "dynamics.aerodynamic_wrench_models_compute_link_wrench_bang",
+    "dynamics.perturbations__harmonics_calcforcetorque_with_lpi",
+    "dynamics.perturbations__harmonics_flat_batch_kernel_bang",
+    "dynamics.perturbations__harmonics_model_cache_key",
+    "dynamics.perturbations__spice_query_name",
+    "dynamics.perturbations__total_dipole_moment_body",
+    "dynamics.perturbations_calcforcetorque",
+    "dynamics.perturbations_eddy_damping_torque",
+    "dynamics.perturbations_eddycurrentdampingmodel",
+    "dynamics.perturbations_lvlhcascadeattitudecontrolmodel",
+    "dynamics.perturbations_magnetictorquerodmodel",
+    "dynamics.perturbations_solarradiationpressuremodel",
+    "dynamics.perturbations_srp_cannonball_accel",
+    "dynx.coupled_aerodynamic_wrench_models_aero_pure_wrench",
+    "dynx.coupled_perturbations_srp"
+  ]
+}

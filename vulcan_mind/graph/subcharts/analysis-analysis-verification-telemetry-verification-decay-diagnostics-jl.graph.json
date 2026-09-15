@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-decay-diagnostics-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/decay_diagnostics.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/decay_diagnostics.jl",
+    "layout_of": "b11fbfcf50cbc9c9"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_decay_diagnostics_jl",
+  "ui": {
+    "pos_overrides": {
+      "analysis.decay_diagnostics_flight_density_table": [
+        80.0,
+        80.0
+      ],
+      "analysis.decay_diagnostics_visviva_sma": [
+        80.0,
+        230.0
+      ],
+      "analysis.decay_diagnostics_zero_referenced_decay": [
+        400.0,
+        80.0
+      ],
+      "envana.ana_decay_diagnostics_secular_sma_slope": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.decay_diagnostics_flight_density_table",
+    "analysis.decay_diagnostics_visviva_sma",
+    "analysis.decay_diagnostics_zero_referenced_decay",
+    "envana.ana_decay_diagnostics_secular_sma_slope"
+  ]
+}

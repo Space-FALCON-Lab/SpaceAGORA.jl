@@ -1,0 +1,134 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-policy-env-config-jl",
+  "chart_kind": "sub",
+  "title": "parallel/policy/env_config.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/policy/env_config.jl",
+    "layout_of": "8789dbdde3b1a24e"
+  },
+  "derives_from": "parallel-parallel-policy",
+  "group": "grp.src_parallel_policy_env_config_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.env_config__adaptive_desire_cap": [
+        400.0,
+        230.0
+      ],
+      "parallel.env_config__default_thread_pool_size": [
+        720.0,
+        680.0
+      ],
+      "parallel.env_config__persistent_hint_default_path": [
+        400.0,
+        80.0
+      ],
+      "parallel.env_config__persistent_hint_path": [
+        80.0,
+        80.0
+      ],
+      "parallel.env_config__safe_token": [
+        720.0,
+        80.0
+      ],
+      "parallel.env_config__snapshot_auto_min_budget": [
+        400.0,
+        380.0
+      ],
+      "parallel.env_config__telemetry_bucket": [
+        80.0,
+        230.0
+      ],
+      "parallel.env_config_adaptive_delta": [
+        400.0,
+        530.0
+      ],
+      "parallel.env_config_adaptive_rho": [
+        400.0,
+        680.0
+      ],
+      "parallel.env_config_auto_thread_min_budget": [
+        400.0,
+        830.0
+      ],
+      "parallel.env_config_effective_inner_thread_budget": [
+        400.0,
+        980.0
+      ],
+      "parallel.env_config_inner_dynamic_chunk_size": [
+        80.0,
+        380.0
+      ],
+      "parallel.env_config_inner_scheduler_mode": [
+        80.0,
+        530.0
+      ],
+      "parallel.env_config_parse_bool_env": [
+        1040.0,
+        80.0
+      ],
+      "parallel.env_config_parse_float_env": [
+        720.0,
+        380.0
+      ],
+      "parallel.env_config_parse_nonnegative_int_env": [
+        720.0,
+        230.0
+      ],
+      "parallel.env_config_parse_parallel_mode_env": [
+        80.0,
+        680.0
+      ],
+      "parallel.env_config_parse_thread_threshold_env": [
+        720.0,
+        530.0
+      ],
+      "parallel.env_config_persistent_hints_exploration": [
+        80.0,
+        830.0
+      ],
+      "parallel.env_config_persistent_hints_min_samples": [
+        80.0,
+        980.0
+      ],
+      "parallel.env_config_persistent_hints_persist_enabled": [
+        80.0,
+        1130.0
+      ],
+      "parallel.env_config_persistent_hints_state_reset_requested": [
+        80.0,
+        1280.0
+      ],
+      "parcore.env_config_snapshot_policy_decision_env": [
+        80.0,
+        1430.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.env_config__adaptive_desire_cap",
+    "parallel.env_config__default_thread_pool_size",
+    "parallel.env_config__persistent_hint_default_path",
+    "parallel.env_config__persistent_hint_path",
+    "parallel.env_config__safe_token",
+    "parallel.env_config__snapshot_auto_min_budget",
+    "parallel.env_config__telemetry_bucket",
+    "parallel.env_config_adaptive_delta",
+    "parallel.env_config_adaptive_rho",
+    "parallel.env_config_auto_thread_min_budget",
+    "parallel.env_config_effective_inner_thread_budget",
+    "parallel.env_config_inner_dynamic_chunk_size",
+    "parallel.env_config_inner_scheduler_mode",
+    "parallel.env_config_parse_bool_env",
+    "parallel.env_config_parse_float_env",
+    "parallel.env_config_parse_nonnegative_int_env",
+    "parallel.env_config_parse_parallel_mode_env",
+    "parallel.env_config_parse_thread_threshold_env",
+    "parallel.env_config_persistent_hints_exploration",
+    "parallel.env_config_persistent_hints_min_samples",
+    "parallel.env_config_persistent_hints_persist_enabled",
+    "parallel.env_config_persistent_hints_state_reset_requested",
+    "parcore.env_config_snapshot_policy_decision_env"
+  ]
+}

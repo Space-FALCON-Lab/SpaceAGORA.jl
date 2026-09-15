@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-density-callbacks-config-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/density_callbacks/config.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks/density_callbacks/config.jl",
+    "layout_of": "2a4f2f0df3cc5358"
+  },
+  "derives_from": "simulation-simulation-callbacks-density-callbacks",
+  "group": "grp.src_simulation_callbacks_density_callbacks_config_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.config__callback_env_config": [
+        720.0,
+        80.0
+      ],
+      "simulation.config__callback_outer_parallel_hint": [
+        720.0,
+        230.0
+      ],
+      "simulation.config__control_callback_allow_with_outer": [
+        400.0,
+        380.0
+      ],
+      "simulation.config__control_callback_parallel_mode": [
+        400.0,
+        530.0
+      ],
+      "simulation.config__control_callback_thread_decision": [
+        400.0,
+        80.0
+      ],
+      "simulation.config__control_callback_thread_threshold": [
+        400.0,
+        680.0
+      ],
+      "simulation.config__control_callback_use_threads": [
+        80.0,
+        80.0
+      ],
+      "simulation.config__density_batch_enabled": [
+        1040.0,
+        80.0
+      ],
+      "simulation.config__density_batch_mode": [
+        1360.0,
+        80.0
+      ],
+      "simulation.config__density_batch_threshold": [
+        1360.0,
+        230.0
+      ],
+      "simulation.config__density_callback_allow_with_outer": [
+        720.0,
+        530.0
+      ],
+      "simulation.config__density_callback_parallel_mode": [
+        720.0,
+        680.0
+      ],
+      "simulation.config__density_callback_thread_decision": [
+        400.0,
+        230.0
+      ],
+      "simulation.config__density_callback_thread_threshold": [
+        720.0,
+        830.0
+      ],
+      "simulation.config__density_callback_use_threads": [
+        80.0,
+        230.0
+      ],
+      "simulation.config__density_freeze_per_step_enabled": [
+        400.0,
+        830.0
+      ],
+      "simulation.config__gram_entry_target_cd": [
+        80.0,
+        380.0
+      ],
+      "simulation.config__gram_entry_target_dt": [
+        80.0,
+        530.0
+      ],
+      "simulation.config__gram_entry_target_max_steps": [
+        80.0,
+        680.0
+      ],
+      "simulation.config__gram_entry_target_mode": [
+        80.0,
+        830.0
+      ],
+      "simulation.config__gram_isolated_pool_enabled": [
+        1040.0,
+        230.0
+      ],
+      "simulation.config__gram_isolated_pool_max_workers": [
+        400.0,
+        980.0
+      ],
+      "simulation.config__gram_isolated_pool_mode": [
+        1360.0,
+        380.0
+      ],
+      "simulation.config__gram_isolated_pool_threshold": [
+        1360.0,
+        530.0
+      ],
+      "simulation.config__gram_track_cache_ignore_time_window": [
+        400.0,
+        1130.0
+      ],
+      "simulation.config__gram_track_cache_target_use_j2": [
+        400.0,
+        1280.0
+      ],
+      "simulation.config__gram_track_trajectory_supported": [
+        80.0,
+        980.0
+      ],
+      "simulation.config__parse_bool_env": [
+        1040.0,
+        380.0
+      ],
+      "simulation.config__policy_env_config": [
+        720.0,
+        380.0
+      ],
+      "simulation.config__thermal_callback_allow_with_outer": [
+        400.0,
+        1430.0
+      ],
+      "simulation.config__thermal_callback_parallel_mode": [
+        400.0,
+        1580.0
+      ],
+      "simulation.config__thermal_callback_thread_decision": [
+        80.0,
+        1130.0
+      ],
+      "simulation.config__thermal_callback_thread_threshold": [
+        400.0,
+        1730.0
+      ],
+      "simulation_a.density_config_snapshot_callback_env_config": [
+        80.0,
+        1280.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.config__callback_env_config",
+    "simulation.config__callback_outer_parallel_hint",
+    "simulation.config__control_callback_allow_with_outer",
+    "simulation.config__control_callback_parallel_mode",
+    "simulation.config__control_callback_thread_decision",
+    "simulation.config__control_callback_thread_threshold",
+    "simulation.config__control_callback_use_threads",
+    "simulation.config__density_batch_enabled",
+    "simulation.config__density_batch_mode",
+    "simulation.config__density_batch_threshold",
+    "simulation.config__density_callback_allow_with_outer",
+    "simulation.config__density_callback_parallel_mode",
+    "simulation.config__density_callback_thread_decision",
+    "simulation.config__density_callback_thread_threshold",
+    "simulation.config__density_callback_use_threads",
+    "simulation.config__density_freeze_per_step_enabled",
+    "simulation.config__gram_entry_target_cd",
+    "simulation.config__gram_entry_target_dt",
+    "simulation.config__gram_entry_target_max_steps",
+    "simulation.config__gram_entry_target_mode",
+    "simulation.config__gram_isolated_pool_enabled",
+    "simulation.config__gram_isolated_pool_max_workers",
+    "simulation.config__gram_isolated_pool_mode",
+    "simulation.config__gram_isolated_pool_threshold",
+    "simulation.config__gram_track_cache_ignore_time_window",
+    "simulation.config__gram_track_cache_target_use_j2",
+    "simulation.config__gram_track_trajectory_supported",
+    "simulation.config__parse_bool_env",
+    "simulation.config__policy_env_config",
+    "simulation.config__thermal_callback_allow_with_outer",
+    "simulation.config__thermal_callback_parallel_mode",
+    "simulation.config__thermal_callback_thread_decision",
+    "simulation.config__thermal_callback_thread_threshold",
+    "simulation_a.density_config_snapshot_callback_env_config"
+  ]
+}

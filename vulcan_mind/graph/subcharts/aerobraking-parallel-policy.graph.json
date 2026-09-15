@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-parallel-policy",
+  "chart_kind": "sub",
+  "title": "parallel/policy/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_parallel_policy",
+    "layout_of": "e6870a46626da699"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_parallel_policy",
+  "ui": {
+    "pos_overrides": {
+      "parallel.context__destroy_persistent_foreach_scope_bang": [
+        80.0,
+        80.0
+      ],
+      "parallel.persistent_hints__hint_candidate_allotments": [
+        80.0,
+        230.0
+      ],
+      "parallel.persistent_hints__hint_mean_and_width": [
+        400.0,
+        230.0
+      ],
+      "parallel.persistent_hints__hint_payload_stats": [
+        80.0,
+        380.0
+      ],
+      "parallel.persistent_hints__hint_record_observation_bang": [
+        80.0,
+        530.0
+      ],
+      "parallel.persistent_hints__hint_stats_payload": [
+        400.0,
+        80.0
+      ],
+      "parallel.persistent_hints__save_persistent_hint_state_locked_bang": [
+        80.0,
+        680.0
+      ],
+      "parallel.persistent_hints_hint_layer_stats_snapshot": [
+        80.0,
+        830.0
+      ],
+      "parcore.persistent_hints__hint_choose_allotment": [
+        80.0,
+        980.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.context__destroy_persistent_foreach_scope_bang",
+    "parallel.persistent_hints__hint_candidate_allotments",
+    "parallel.persistent_hints__hint_mean_and_width",
+    "parallel.persistent_hints__hint_payload_stats",
+    "parallel.persistent_hints__hint_record_observation_bang",
+    "parallel.persistent_hints__hint_stats_payload",
+    "parallel.persistent_hints__save_persistent_hint_state_locked_bang",
+    "parallel.persistent_hints_hint_layer_stats_snapshot",
+    "parcore.persistent_hints__hint_choose_allotment"
+  ]
+}

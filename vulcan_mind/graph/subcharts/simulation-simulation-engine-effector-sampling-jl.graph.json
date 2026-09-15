@@ -1,0 +1,119 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-effector-sampling-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/effector_sampling.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/effector_sampling.jl",
+    "layout_of": "80dcb4fc380b20d8"
+  },
+  "derives_from": "simulation-simulation-engine",
+  "group": "grp.src_simulation_engine_effector_sampling_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.effector_sampling__buffered_atmosphere_valid": [
+        1360.0,
+        80.0
+      ],
+      "simulation.effector_sampling__extract_sample_mass_kg": [
+        2000.0,
+        80.0
+      ],
+      "simulation.effector_sampling__extract_sample_pos_vel": [
+        2000.0,
+        230.0
+      ],
+      "simulation.effector_sampling__planet_lpi_at_engine": [
+        2000.0,
+        380.0
+      ],
+      "simulation.effector_sampling__sample_atmosphere_from_planet_frame": [
+        1680.0,
+        80.0
+      ],
+      "simulation.effector_sampling__sample_reusable_atmosphere": [
+        720.0,
+        80.0
+      ],
+      "simulation.effector_sampling__sample_reusable_planet_frame": [
+        720.0,
+        230.0
+      ],
+      "simulation.effector_sampling__sample_reusable_solar": [
+        720.0,
+        380.0
+      ],
+      "simulation.effector_sampling__wrench_method_available": [
+        80.0,
+        80.0
+      ],
+      "simulation.effector_sampling_build_state_sample": [
+        80.0,
+        230.0
+      ],
+      "simulation.effector_sampling_sample_atmosphere": [
+        1360.0,
+        230.0
+      ],
+      "simulation.effector_sampling_sample_buffered_atmosphere": [
+        1040.0,
+        80.0
+      ],
+      "simulation.effector_sampling_sample_buffered_planet_frame": [
+        1040.0,
+        230.0
+      ],
+      "simulation.effector_sampling_sample_environment_with_buffered_atm": [
+        80.0,
+        380.0
+      ],
+      "simulation.effector_sampling_sample_environment_with_reusable_buffers": [
+        400.0,
+        80.0
+      ],
+      "simulation.effector_sampling_sample_planet_frame": [
+        1680.0,
+        230.0
+      ],
+      "simulation.effector_sampling_sample_planet_frame_with_lpi": [
+        80.0,
+        530.0
+      ],
+      "simulation.effector_sampling_sample_solar_ephemeris": [
+        1040.0,
+        380.0
+      ],
+      "simulation.effector_sampling_sample_third_body_ephemerides": [
+        720.0,
+        530.0
+      ],
+      "simx.engine_effector_sampling_sample_environment": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.effector_sampling__buffered_atmosphere_valid",
+    "simulation.effector_sampling__extract_sample_mass_kg",
+    "simulation.effector_sampling__extract_sample_pos_vel",
+    "simulation.effector_sampling__planet_lpi_at_engine",
+    "simulation.effector_sampling__sample_atmosphere_from_planet_frame",
+    "simulation.effector_sampling__sample_reusable_atmosphere",
+    "simulation.effector_sampling__sample_reusable_planet_frame",
+    "simulation.effector_sampling__sample_reusable_solar",
+    "simulation.effector_sampling__wrench_method_available",
+    "simulation.effector_sampling_build_state_sample",
+    "simulation.effector_sampling_sample_atmosphere",
+    "simulation.effector_sampling_sample_buffered_atmosphere",
+    "simulation.effector_sampling_sample_buffered_planet_frame",
+    "simulation.effector_sampling_sample_environment_with_buffered_atm",
+    "simulation.effector_sampling_sample_environment_with_reusable_buffers",
+    "simulation.effector_sampling_sample_planet_frame",
+    "simulation.effector_sampling_sample_planet_frame_with_lpi",
+    "simulation.effector_sampling_sample_solar_ephemeris",
+    "simulation.effector_sampling_sample_third_body_ephemerides",
+    "simx.engine_effector_sampling_sample_environment"
+  ]
+}

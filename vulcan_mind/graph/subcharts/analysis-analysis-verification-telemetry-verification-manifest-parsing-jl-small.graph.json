@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl-small",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/manifest_parsing.jl/ (small files) (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/manifest_parsing.jl#_small",
+    "layout_of": "3d096cd405ed9f8d"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification-manifest-parsing-jl",
+  "group": "grp.src_analysis_verification_telemetry_verification_manifest_parsing_jl_small",
+  "ui": {
+    "pos_overrides": {
+      "analysis.manifest_parsing__load_scenarios_from_manifest": [
+        80.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__request_from_study_config": [
+        80.0,
+        230.0
+      ],
+      "analysis.manifest_parsing__resolve_repo_path": [
+        400.0,
+        80.0
+      ],
+      "analysis.manifest_parsing__safe_parse_bool": [
+        400.0,
+        230.0
+      ],
+      "analysis.manifest_parsing__study_config": [
+        80.0,
+        380.0
+      ],
+      "envana.ana_manifest_parsing_parse_cli": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.manifest_parsing__load_scenarios_from_manifest",
+    "analysis.manifest_parsing__request_from_study_config",
+    "analysis.manifest_parsing__resolve_repo_path",
+    "analysis.manifest_parsing__safe_parse_bool",
+    "analysis.manifest_parsing__study_config",
+    "envana.ana_manifest_parsing_parse_cli"
+  ]
+}

@@ -1,0 +1,2129 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "spaceagora",
+  "chart_kind": "sub",
+  "title": "SpaceAGORA — internals",
+  "derives_from": "master",
+  "local_nodes": [
+    {
+      "id": "misc.precompile_workload_run_spaceagora_precompile_workload",
+      "label": "_run_spaceagora_precompile_workload",
+      "kind": "function",
+      "doc": "nodes/misc/precompile_workload_run_spaceagora_precompile_workload.md",
+      "source": {
+        "file": "src/precompile_workload.jl",
+        "symbol": "_run_spaceagora_precompile_workload",
+        "lines": [
+          41,
+          50
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "SpaceAGORA package scope supplying parse_parallel_profile, simulation_engine_config_from_env and run_simulation at precompile time."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "compiled_methods",
+            "type": "PrecompileCache",
+            "units": "n/a",
+            "description": "Native code cached into the package image for the orbit-only Mars aerobraking configuration exercised by the workload."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.spaceagora",
+      "ui": {
+        "pos": [
+          80.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "spaceagora.precompile_workload__spaceagora_precompile_args",
+      "label": "_spaceagora_precompile_args",
+      "kind": "function",
+      "doc": "nodes/spaceagora/precompile_workload__spaceagora_precompile_args.md",
+      "source": {
+        "file": "src/precompile_workload.jl",
+        "symbol": "_spaceagora_precompile_args",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "TelemetryVerification.make_example_config",
+            "units": "n/a",
+            "description": "Return value of `_spaceagora_precompile_args`. Returns `TelemetryVerification.make_example_config(`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.spaceagora",
+      "ui": {
+        "pos": [
+          400.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "spaceagora.run_simulation",
+      "label": "run_simulation",
+      "kind": "function",
+      "doc": "nodes/spaceagora/run_simulation.md",
+      "source": {
+        "file": "src/SpaceAGORA.jl",
+        "symbol": "run_simulation",
+        "lines": [
+          516,
+          517
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (variadic)."
+          },
+          {
+            "id": "kwargs",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `kwargs` (variadic)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "SpaceAGORA public namespace forwarding to SimulationEngine.run_simulation."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "SimulationEngine.run_simulation",
+            "units": "n/a",
+            "description": "Return value of `run_simulation`. Returns `SimulationEngine.run_simulation(args...; kwargs...)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.spaceagora",
+      "ui": {
+        "pos": [
+          720.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "spaceagora.spaceagora_check_assets",
+      "label": "check_assets",
+      "kind": "function",
+      "doc": "nodes/spaceagora/spaceagora_check_assets.md",
+      "source": {
+        "file": "src/SpaceAGORA.jl",
+        "symbol": "check_assets",
+        "lines": [
+          552,
+          552
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (variadic)."
+          },
+          {
+            "id": "kwargs",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `kwargs` (variadic)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "SpaceAGORACLI.check_assets",
+            "units": "n/a",
+            "description": "Return value of `check_assets`. Returns `SpaceAGORACLI.check_assets(args...; kwargs...)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.spaceagora",
+      "ui": {
+        "pos": [
+          1040.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "spaceagora.spaceagora_load_nbody_ephemeris_cache_bang",
+      "label": "load_nbody_ephemeris_cache!",
+      "kind": "function",
+      "doc": "nodes/spaceagora/spaceagora_load_nbody_ephemeris_cache_bang.md",
+      "source": {
+        "file": "src/SpaceAGORA.jl",
+        "symbol": "load_nbody_ephemeris_cache!",
+        "lines": [
+          544,
+          544
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (variadic)."
+          },
+          {
+            "id": "kwargs",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `kwargs` (variadic)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `load_nbody_ephemeris_cache!`; mutates `args` in place. Returns `SimulationEngine.load_nbody_ephemeris_cache!(args...; kwargs...)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.spaceagora",
+      "ui": {
+        "pos": [
+          720.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "spaceagora.spaceagora_prewarm_nbody_ephemeris_cache",
+      "label": "prewarm_nbody_ephemeris_cache",
+      "kind": "function",
+      "doc": "nodes/spaceagora/spaceagora_prewarm_nbody_ephemeris_cache.md",
+      "source": {
+        "file": "src/SpaceAGORA.jl",
+        "symbol": "prewarm_nbody_ephemeris_cache",
+        "lines": [
+          533,
+          533
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (variadic)."
+          },
+          {
+            "id": "kwargs",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `kwargs` (variadic)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "SimulationEngine.prewarm_nbody_ephemeris_cache",
+            "units": "n/a",
+            "description": "Return value of `prewarm_nbody_ephemeris_cache`. Returns `SimulationEngine.prewarm_nbody_ephemeris_cache(args...; kwargs...)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.spaceagora",
+      "ui": {
+        "pos": [
+          400.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "spaceagora.spaceagora_render_asset_report",
+      "label": "render_asset_report",
+      "kind": "function",
+      "doc": "nodes/spaceagora/spaceagora_render_asset_report.md",
+      "source": {
+        "file": "src/SpaceAGORA.jl",
+        "symbol": "render_asset_report",
+        "lines": [
+          559,
+          559
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (variadic)."
+          },
+          {
+            "id": "kwargs",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `kwargs` (variadic)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "SpaceAGORACLI.render_asset_report",
+            "units": "n/a",
+            "description": "Return value of `render_asset_report`. Returns `SpaceAGORACLI.render_asset_report(args...; kwargs...)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.spaceagora",
+      "ui": {
+        "pos": [
+          1360.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "spaceagora.spaceagora_run_cli",
+      "label": "run_cli",
+      "kind": "function",
+      "doc": "nodes/spaceagora/spaceagora_run_cli.md",
+      "source": {
+        "file": "src/SpaceAGORA.jl",
+        "symbol": "run_cli",
+        "lines": [
+          573,
+          573
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `args` (variadic)."
+          },
+          {
+            "id": "kwargs",
+            "type": "Vararg{Any}",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `kwargs` (variadic)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "SpaceAGORACLI.run_cli",
+            "units": "n/a",
+            "description": "Return value of `run_cli`. Returns `SpaceAGORACLI.run_cli(args...; kwargs...)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.spaceagora",
+      "ui": {
+        "pos": [
+          1680.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "spaceagora.spaceagora_spaceagora",
+      "label": "SpaceAGORA",
+      "kind": "module",
+      "doc": "nodes/spaceagora/spaceagora_spaceagora.md",
+      "source": {
+        "file": "src/SpaceAGORA.jl",
+        "symbol": "SpaceAGORA",
+        "lines": [
+          3,
+          3
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Value produced by this symbol."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.spaceagora",
+      "ui": {
+        "pos": [
+          400.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    }
+  ],
+  "local_edges": [
+    {
+      "id": "e:misc.precompile_workload_run_spaceagora_precompile_workload:callees->parallel.profile_definitions_parse_parallel_profile:callers",
+      "from": {
+        "node": "misc.precompile_workload_run_spaceagora_precompile_workload",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "parallel.profile_definitions_parse_parallel_profile",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "parse_parallel_profile",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          42,
+          42
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.precompile_workload_run_spaceagora_precompile_workload:callees->simulation.run_simulation:callers",
+      "from": {
+        "node": "misc.precompile_workload_run_spaceagora_precompile_workload",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.run_simulation",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "run_simulation",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          47,
+          47
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.precompile_workload_run_spaceagora_precompile_workload:callees->simx.engine_adapters_from_env_simulation_engine_config_from_env:callers",
+      "from": {
+        "node": "misc.precompile_workload_run_spaceagora_precompile_workload",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simx.engine_adapters_from_env_simulation_engine_config_from_env",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "simulation_engine_config_from_env",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          43,
+          43
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.precompile_workload_run_spaceagora_precompile_workload:callees->simx.engine_execution_run_simulation:callers",
+      "from": {
+        "node": "misc.precompile_workload_run_spaceagora_precompile_workload",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simx.engine_execution_run_simulation",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "run_simulation",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          47,
+          47
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.precompile_workload_run_spaceagora_precompile_workload:callees->spaceagora.precompile_workload__spaceagora_precompile_args:callers",
+      "from": {
+        "node": "misc.precompile_workload_run_spaceagora_precompile_workload",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.precompile_workload__spaceagora_precompile_args",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_spaceagora_precompile_args",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          44,
+          44
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.precompile_workload_run_spaceagora_precompile_workload:callees->spaceagora.run_simulation:callers",
+      "from": {
+        "node": "misc.precompile_workload_run_spaceagora_precompile_workload",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.run_simulation",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "run_simulation",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          47,
+          47
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.spaceagora:api->spaceagora.spaceagora_load_nbody_ephemeris_cache_bang:module_api",
+      "from": {
+        "node": "module.spaceagora",
+        "socket": "api"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_load_nbody_ephemeris_cache_bang",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.spaceagora:api->spaceagora.spaceagora_prewarm_nbody_ephemeris_cache:module_api",
+      "from": {
+        "node": "module.spaceagora",
+        "socket": "api"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_prewarm_nbody_ephemeris_cache",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.spaceagora:api->spaceagora.spaceagora_run_cli:module_api",
+      "from": {
+        "node": "module.spaceagora",
+        "socket": "api"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_run_cli",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.spaceagora:api->spaceagora.spaceagora_spaceagora:module_api",
+      "from": {
+        "node": "module.spaceagora",
+        "socket": "api"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.precompile_workload__spaceagora_precompile_args:callees->analysis.example_support_make_three_body_spacecraft:callers",
+      "from": {
+        "node": "spaceagora.precompile_workload__spaceagora_precompile_args",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "analysis.example_support_make_three_body_spacecraft",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "make_three_body_spacecraft",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          4,
+          4
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.precompile_workload__spaceagora_precompile_args:callees->core.simulation_configuration_initialtime:callers",
+      "from": {
+        "node": "spaceagora.precompile_workload__spaceagora_precompile_args",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "core.simulation_configuration_initialtime",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "InitialTime",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          26,
+          26
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.precompile_workload__spaceagora_precompile_args:callees->envana.ana_example_support_make_example_config:callers",
+      "from": {
+        "node": "spaceagora.precompile_workload__spaceagora_precompile_args",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "envana.ana_example_support_make_example_config",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "make_example_config",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          22,
+          22
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.precompile_workload__spaceagora_precompile_args:callees->envana.env_simple_ephemerides_simpleephemeridesmodel:callers",
+      "from": {
+        "node": "spaceagora.precompile_workload__spaceagora_precompile_args",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "envana.env_simple_ephemerides_simpleephemeridesmodel",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "SimpleEphemeridesModel",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          29,
+          29
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.precompile_workload__spaceagora_precompile_args:callees->environment.density_models_exponentialatmospheremodel:callers",
+      "from": {
+        "node": "spaceagora.precompile_workload__spaceagora_precompile_args",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_exponentialatmospheremodel",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "ExponentialAtmosphereModel",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          28,
+          28
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.precompile_workload__spaceagora_precompile_args:callees->environment.gravity_models_inversesquaredgravitymodel:callers",
+      "from": {
+        "node": "spaceagora.precompile_workload__spaceagora_precompile_args",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.gravity_models_inversesquaredgravitymodel",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "InverseSquaredGravityModel",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          27,
+          27
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.precompile_workload__spaceagora_precompile_args:callees->environment.planets_mars:callers",
+      "from": {
+        "node": "spaceagora.precompile_workload__spaceagora_precompile_args",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.planets_mars",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "Mars",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          3,
+          3
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.precompile_workload__spaceagora_precompile_args:callees->vehicle.model_initialcondition:callers",
+      "from": {
+        "node": "spaceagora.precompile_workload__spaceagora_precompile_args",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "vehicle.model_initialcondition",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "InitialCondition",
+      "evidence": {
+        "file": "src/precompile_workload.jl",
+        "lines": [
+          10,
+          10
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_check_assets:callees->cli.assets_render_asset_report:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_check_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_render_asset_report",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "render_asset_report",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          555,
+          555
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_check_assets:callees->spaceagora.spaceagora_render_asset_report:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_check_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_render_asset_report",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "render_asset_report",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          555,
+          555
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_load_nbody_ephemeris_cache_bang:callees->misc.assets_check_assets:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_load_nbody_ephemeris_cache_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "misc.assets_check_assets",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          547,
+          547
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_load_nbody_ephemeris_cache_bang:callees->spaceagora.spaceagora_check_assets:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_load_nbody_ephemeris_cache_bang",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_check_assets",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          547,
+          547
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_prewarm_nbody_ephemeris_cache:callees->simulation.public_api_load_nbody_ephemeris_cache_bang:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_prewarm_nbody_ephemeris_cache",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.public_api_load_nbody_ephemeris_cache_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "load_nbody_ephemeris_cache!",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          536,
+          536
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_prewarm_nbody_ephemeris_cache:callees->spaceagora.spaceagora_load_nbody_ephemeris_cache_bang:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_prewarm_nbody_ephemeris_cache",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_load_nbody_ephemeris_cache_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "load_nbody_ephemeris_cache!",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          536,
+          536
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_render_asset_report:callees->cli.run_cli:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_render_asset_report",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.run_cli",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "run_cli",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          562,
+          562
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_render_asset_report:callees->misc.main_run_cli:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_render_asset_report",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "misc.main_run_cli",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "run_cli",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          562,
+          562
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_render_asset_report:callees->spaceagora.spaceagora_run_cli:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_render_asset_report",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_run_cli",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "run_cli",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          562,
+          562
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->core.effector_sampling_environment_requirements:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "core.effector_sampling_environment_requirements",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "environment_requirements",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          286,
+          286
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->core.effector_sampling_gravity_backbone_kick_structure:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "core.effector_sampling_gravity_backbone_kick_structure",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "gravity_backbone_kick_structure",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          330,
+          330
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->core.effector_sampling_gravity_backbone_structure:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "core.effector_sampling_gravity_backbone_structure",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "gravity_backbone_structure",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          307,
+          307
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->core.effector_sampling_solver_partition:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "core.effector_sampling_solver_partition",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "solver_partition",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          295,
+          295
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.aerodynamic_wrench_models_calcforcetorque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.aerodynamic_wrench_models_calcforcetorque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          265,
+          265
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.aerodynamic_wrench_models_environment_requirements:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.aerodynamic_wrench_models_environment_requirements",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "environment_requirements",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          286,
+          286
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.aerodynamic_wrench_models_solver_partition:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.aerodynamic_wrench_models_solver_partition",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "solver_partition",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          295,
+          295
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.aerodynamic_wrench_models_wrench:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.aerodynamic_wrench_models_wrench",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "wrench",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          274,
+          274
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.calc_force_torque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.calc_force_torque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          265,
+          265
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.perturbations_calcforcetorque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.perturbations_calcforcetorque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          265,
+          265
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.perturbations_environment_requirements:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.perturbations_environment_requirements",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "environment_requirements",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          286,
+          286
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.perturbations_gravity_backbone_acceleration_ii:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.perturbations_gravity_backbone_acceleration_ii",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "gravity_backbone_acceleration_ii",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          319,
+          319
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.perturbations_gravity_backbone_kick_acceleration_ii:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.perturbations_gravity_backbone_kick_acceleration_ii",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "gravity_backbone_kick_acceleration_ii",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          342,
+          342
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.perturbations_gravity_backbone_kick_structure:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.perturbations_gravity_backbone_kick_structure",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "gravity_backbone_kick_structure",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          330,
+          330
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.perturbations_gravity_backbone_structure:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.perturbations_gravity_backbone_structure",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "gravity_backbone_structure",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          307,
+          307
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.perturbations_wrench:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.perturbations_wrench",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "wrench",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          274,
+          274
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->dynamics.robot_arm_reaction_effector_calcforcetorque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "dynamics.robot_arm_reaction_effector_calcforcetorque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          265,
+          265
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->envana.env_simple_ephemerides_simpleephemeridesmodel:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "envana.env_simple_ephemerides_simpleephemeridesmodel",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "SimpleEphemeridesModel",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          243,
+          243
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.density_models_exponentialatmospheremodel:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_exponentialatmospheremodel",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "ExponentialAtmosphereModel",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          195,
+          195
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.density_models_getdensitybatch_bang:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_getdensitybatch_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "getDensityBatch!",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          368,
+          368
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.density_models_init_nrlmsise_space_indices_bang:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_init_nrlmsise_space_indices_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "init_nrlmsise_space_indices!",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          232,
+          232
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.density_models_noatmospheremodel:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_noatmospheremodel",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "NoAtmosphereModel",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          187,
+          187
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.density_models_nrlmsise00atmospheremodel:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_nrlmsise00atmospheremodel",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "NRLMSISE00AtmosphereModel",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          218,
+          218
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.density_models_piecewiseexponentialatmospheremodel:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.density_models_piecewiseexponentialatmospheremodel",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "PiecewiseExponentialAtmosphereModel",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          208,
+          208
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.get_density:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.get_density",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "getDensity",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          354,
+          354
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.gravity_models_calcforcetorque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.gravity_models_calcforcetorque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          265,
+          265
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.gravity_models_environment_requirements:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.gravity_models_environment_requirements",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "environment_requirements",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          286,
+          286
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.gravity_models_gravity_backbone_acceleration_ii:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.gravity_models_gravity_backbone_acceleration_ii",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "gravity_backbone_acceleration_ii",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          319,
+          319
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.gravity_models_gravity_backbone_structure:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.gravity_models_gravity_backbone_structure",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "gravity_backbone_structure",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          307,
+          307
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->environment.gravity_models_wrench:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "environment.gravity_models_wrench",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "wrench",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          274,
+          274
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.momentum_manager_calccontroleffect_bang:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.momentum_manager_calccontroleffect_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlEffect!",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          377,
+          377
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.momentum_manager_calccontrolforcetorque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.momentum_manager_calccontrolforcetorque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          386,
+          386
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.propulsive_maneuvers_calccontrolforcetorque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.propulsive_maneuvers_calccontrolforcetorque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          386,
+          386
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.propulsive_maneuvers_calccontrolmassflowrate:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.propulsive_maneuvers_calccontrolmassflowrate",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlMassFlowRate",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          395,
+          395
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.robot_arm_control_calccontroleffect_bang:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.robot_arm_control_calccontroleffect_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlEffect!",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          377,
+          377
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.robot_arm_control_calccontrolforcetorque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.robot_arm_control_calccontrolforcetorque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          386,
+          386
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.robot_arm_control_calccontrolmassflowrate:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.robot_arm_control_calccontrolmassflowrate",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlMassFlowRate",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          395,
+          395
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.rpo_mpc_control_model_calccontrolforcetorque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.rpo_mpc_control_model_calccontrolforcetorque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          386,
+          386
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.rpo_mpc_control_model_calccontrolmassflowrate:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.rpo_mpc_control_model_calccontrolmassflowrate",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlMassFlowRate",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          395,
+          395
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.targeting_control_calccontroleffect_bang:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.targeting_control_calccontroleffect_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlEffect!",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          377,
+          377
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gnc.targeting_control_calccontrolforcetorque:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.targeting_control_calccontrolforcetorque",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlForceTorque",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          386,
+          386
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gncx.propulsive_maneuvers_calccontroleffect_bang:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gncx.propulsive_maneuvers_calccontroleffect_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlEffect!",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          377,
+          377
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->gncx.rpo_mpc_control_model_calccontroleffect_bang:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gncx.rpo_mpc_control_model_calccontroleffect_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "calcControlEffect!",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          377,
+          377
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->simulation.run_simulation:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simulation.run_simulation",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "run_simulation",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          492,
+          492
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->simx.engine_execution_run_simulation:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "simx.engine_execution_run_simulation",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "run_simulation",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          492,
+          492
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:spaceagora.spaceagora_spaceagora:callees->spaceagora.run_simulation:callers",
+      "from": {
+        "node": "spaceagora.spaceagora_spaceagora",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.run_simulation",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "run_simulation",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          492,
+          492
+        ]
+      },
+      "origin": "agent"
+    }
+  ],
+  "ui": {
+    "pos_overrides": {
+      "module.spaceagora": [
+        80.0,
+        230.0
+      ],
+      "parallel.profile_definitions_parse_parallel_profile": [
+        400.0,
+        80.0
+      ],
+      "simulation.run_simulation": [
+        720.0,
+        230.0
+      ],
+      "simx.engine_adapters_from_env_simulation_engine_config_from_env": [
+        400.0,
+        230.0
+      ],
+      "simx.engine_execution_run_simulation": [
+        720.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "module.spaceagora",
+    "parallel.profile_definitions_parse_parallel_profile",
+    "simulation.run_simulation",
+    "simx.engine_adapters_from_env_simulation_engine_config_from_env",
+    "simx.engine_execution_run_simulation"
+  ]
+}

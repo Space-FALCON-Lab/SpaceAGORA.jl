@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-coupled-perturbations-jl-gravity",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl · gravity* (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/coupled/perturbations.jl#gravity",
+    "layout_of": "95cf56b24e9d6f78"
+  },
+  "derives_from": "dynamics-dynamics-coupled-perturbations-jl",
+  "group": "grp.src_dynamics_coupled_perturbations_jl_gravity",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.perturbations_gravity_backbone_acceleration_ii": [
+        80.0,
+        80.0
+      ],
+      "dynamics.perturbations_gravity_backbone_kick_acceleration_ii": [
+        80.0,
+        230.0
+      ],
+      "dynamics.perturbations_gravity_backbone_kick_structure": [
+        80.0,
+        380.0
+      ],
+      "dynamics.perturbations_gravity_backbone_structure": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations_gravity_backbone_acceleration_ii",
+    "dynamics.perturbations_gravity_backbone_kick_acceleration_ii",
+    "dynamics.perturbations_gravity_backbone_kick_structure",
+    "dynamics.perturbations_gravity_backbone_structure"
+  ]
+}

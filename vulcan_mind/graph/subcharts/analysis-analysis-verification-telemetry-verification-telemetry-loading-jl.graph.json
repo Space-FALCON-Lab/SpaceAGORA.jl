@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-telemetry-loading-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/telemetry_loading.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/telemetry_loading.jl",
+    "layout_of": "8be09404e868b9f3"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_telemetry_loading_jl",
+  "ui": {
+    "pos_overrides": {
+      "analysis.telemetry_loading__differentiate_series": [
+        400.0,
+        530.0
+      ],
+      "analysis.telemetry_loading__extract_extrema_from_time_aligned_telemetry": [
+        80.0,
+        80.0
+      ],
+      "analysis.telemetry_loading__extract_extrema_series": [
+        80.0,
+        230.0
+      ],
+      "analysis.telemetry_loading__initial_time_et": [
+        80.0,
+        380.0
+      ],
+      "analysis.telemetry_loading__j2000_to_planet_fixed_state": [
+        80.0,
+        530.0
+      ],
+      "analysis.telemetry_loading__load_telemetry_curve": [
+        80.0,
+        680.0
+      ],
+      "analysis.telemetry_loading__load_time_aligned_telemetry": [
+        80.0,
+        830.0
+      ],
+      "analysis.telemetry_loading__planet_fixed_frame_fallback_name": [
+        400.0,
+        230.0
+      ],
+      "analysis.telemetry_loading__planet_fixed_frame_name": [
+        400.0,
+        380.0
+      ],
+      "analysis.telemetry_loading__planet_fixed_to_j2000_state": [
+        80.0,
+        980.0
+      ],
+      "analysis.telemetry_loading__require_column": [
+        400.0,
+        80.0
+      ],
+      "analysis.telemetry_loading__sun_unit_vector_j2000": [
+        400.0,
+        680.0
+      ],
+      "analysis.telemetry_loading__to_float_vector": [
+        720.0,
+        80.0
+      ],
+      "envana.ana_telemetry_loading_transform_state": [
+        80.0,
+        1130.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.telemetry_loading__differentiate_series",
+    "analysis.telemetry_loading__extract_extrema_from_time_aligned_telemetry",
+    "analysis.telemetry_loading__extract_extrema_series",
+    "analysis.telemetry_loading__initial_time_et",
+    "analysis.telemetry_loading__j2000_to_planet_fixed_state",
+    "analysis.telemetry_loading__load_telemetry_curve",
+    "analysis.telemetry_loading__load_time_aligned_telemetry",
+    "analysis.telemetry_loading__planet_fixed_frame_fallback_name",
+    "analysis.telemetry_loading__planet_fixed_frame_name",
+    "analysis.telemetry_loading__planet_fixed_to_j2000_state",
+    "analysis.telemetry_loading__require_column",
+    "analysis.telemetry_loading__sun_unit_vector_j2000",
+    "analysis.telemetry_loading__to_float_vector",
+    "envana.ana_telemetry_loading_transform_state"
+  ]
+}

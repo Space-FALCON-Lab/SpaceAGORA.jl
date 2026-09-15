@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-core-numerics",
+  "chart_kind": "sub",
+  "title": "core/numerics/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_core_numerics",
+    "layout_of": "bd90436c847fd5ea"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_core_numerics",
+  "ui": {
+    "pos_overrides": {
+      "core.project_unit_quaternion": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.project_unit_quaternion"
+  ]
+}

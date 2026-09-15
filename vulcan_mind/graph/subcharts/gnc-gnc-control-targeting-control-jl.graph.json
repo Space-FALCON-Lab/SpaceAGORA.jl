@@ -1,0 +1,214 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-control-targeting-control-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/targeting_control.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/control/targeting_control.jl",
+    "layout_of": "f4642cda8bf57d58"
+  },
+  "derives_from": "gnc-gnc-control",
+  "group": "grp.src_gnc_control_targeting_control_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.targeting_control__apply_solar_panel_aoa_bang": [
+        400.0,
+        530.0
+      ],
+      "gnc.targeting_control__edg_base_alpha": [
+        400.0,
+        680.0
+      ],
+      "gnc.targeting_control__edg_certify_targeting_candidates": [
+        80.0,
+        80.0
+      ],
+      "gnc.targeting_control__edg_command_alpha_bang": [
+        400.0,
+        830.0
+      ],
+      "gnc.targeting_control__edg_control_pos_vel_mass": [
+        720.0,
+        530.0
+      ],
+      "gnc.targeting_control__edg_control_sat_state": [
+        720.0,
+        680.0
+      ],
+      "gnc.targeting_control__edg_control_state_index_ok": [
+        400.0,
+        980.0
+      ],
+      "gnc.targeting_control__edg_disable_uncertified_targeting_bang": [
+        720.0,
+        230.0
+      ],
+      "gnc.targeting_control__edg_environment_state": [
+        400.0,
+        1130.0
+      ],
+      "gnc.targeting_control__edg_ephemeris_time": [
+        2320.0,
+        80.0
+      ],
+      "gnc.targeting_control__edg_in_drag_passage": [
+        720.0,
+        830.0
+      ],
+      "gnc.targeting_control__edg_integrated_max_energy_depletion_trajectory": [
+        720.0,
+        80.0
+      ],
+      "gnc.targeting_control__edg_integrated_targeting_trajectory": [
+        1360.0,
+        380.0
+      ],
+      "gnc.targeting_control__edg_orbit_metrics_from_rv": [
+        1360.0,
+        530.0
+      ],
+      "gnc.targeting_control__edg_panel_link_tuple": [
+        80.0,
+        230.0
+      ],
+      "gnc.targeting_control__edg_planet_frame_lpi": [
+        2000.0,
+        80.0
+      ],
+      "gnc.targeting_control__edg_predict_max_energy_depletion_outcome": [
+        400.0,
+        230.0
+      ],
+      "gnc.targeting_control__edg_predict_targeting_outcome": [
+        1040.0,
+        230.0
+      ],
+      "gnc.targeting_control__edg_recompute_switches_bang": [
+        400.0,
+        1280.0
+      ],
+      "gnc.targeting_control__edg_solve_targeting_switch": [
+        720.0,
+        980.0
+      ],
+      "gnc.targeting_control__edg_target_energy_from_apoapsis": [
+        80.0,
+        380.0
+      ],
+      "gnc.targeting_control__edg_targeting_aero_acceleration": [
+        1360.0,
+        80.0
+      ],
+      "gnc.targeting_control__edg_targeting_bracket_outcomes": [
+        80.0,
+        530.0
+      ],
+      "gnc.targeting_control__edg_targeting_constrained_alpha": [
+        1360.0,
+        230.0
+      ],
+      "gnc.targeting_control__edg_targeting_outcome_with_heat_load": [
+        720.0,
+        380.0
+      ],
+      "gnc.targeting_control__edg_targeting_prediction_environment": [
+        1680.0,
+        80.0
+      ],
+      "gnc.targeting_control__edg_targeting_prediction_time_grid": [
+        1360.0,
+        680.0
+      ],
+      "gnc.targeting_control__edg_targeting_switch_outcomes": [
+        80.0,
+        680.0
+      ],
+      "gnc.targeting_control_acceleration": [
+        1040.0,
+        80.0
+      ],
+      "gnc.targeting_control_apoapsis_residual": [
+        80.0,
+        830.0
+      ],
+      "gnc.targeting_control_calccontroleffect_bang": [
+        80.0,
+        980.0
+      ],
+      "gnc.targeting_control_calccontrolforcetorque": [
+        80.0,
+        1130.0
+      ],
+      "gnc.targeting_control_energy_residual": [
+        80.0,
+        1280.0
+      ],
+      "gnc.targeting_control_evaluate_candidate": [
+        400.0,
+        380.0
+      ],
+      "gnc.targeting_control_max_energy_alpha": [
+        80.0,
+        1430.0
+      ],
+      "gnc.targeting_control_solarpanelangleofattackcontrolmodel": [
+        400.0,
+        80.0
+      ],
+      "gnc.targeting_control_solve_apoapsis_switch": [
+        80.0,
+        1580.0
+      ],
+      "gnc.targeting_control_solve_energy_switch": [
+        400.0,
+        1430.0
+      ],
+      "gncx.targeting_control_aerobrakingenergydepletioncontrolmodel": [
+        80.0,
+        1730.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.targeting_control__apply_solar_panel_aoa_bang",
+    "gnc.targeting_control__edg_base_alpha",
+    "gnc.targeting_control__edg_certify_targeting_candidates",
+    "gnc.targeting_control__edg_command_alpha_bang",
+    "gnc.targeting_control__edg_control_pos_vel_mass",
+    "gnc.targeting_control__edg_control_sat_state",
+    "gnc.targeting_control__edg_control_state_index_ok",
+    "gnc.targeting_control__edg_disable_uncertified_targeting_bang",
+    "gnc.targeting_control__edg_environment_state",
+    "gnc.targeting_control__edg_ephemeris_time",
+    "gnc.targeting_control__edg_in_drag_passage",
+    "gnc.targeting_control__edg_integrated_max_energy_depletion_trajectory",
+    "gnc.targeting_control__edg_integrated_targeting_trajectory",
+    "gnc.targeting_control__edg_orbit_metrics_from_rv",
+    "gnc.targeting_control__edg_panel_link_tuple",
+    "gnc.targeting_control__edg_planet_frame_lpi",
+    "gnc.targeting_control__edg_predict_max_energy_depletion_outcome",
+    "gnc.targeting_control__edg_predict_targeting_outcome",
+    "gnc.targeting_control__edg_recompute_switches_bang",
+    "gnc.targeting_control__edg_solve_targeting_switch",
+    "gnc.targeting_control__edg_target_energy_from_apoapsis",
+    "gnc.targeting_control__edg_targeting_aero_acceleration",
+    "gnc.targeting_control__edg_targeting_bracket_outcomes",
+    "gnc.targeting_control__edg_targeting_constrained_alpha",
+    "gnc.targeting_control__edg_targeting_outcome_with_heat_load",
+    "gnc.targeting_control__edg_targeting_prediction_environment",
+    "gnc.targeting_control__edg_targeting_prediction_time_grid",
+    "gnc.targeting_control__edg_targeting_switch_outcomes",
+    "gnc.targeting_control_acceleration",
+    "gnc.targeting_control_apoapsis_residual",
+    "gnc.targeting_control_calccontroleffect_bang",
+    "gnc.targeting_control_calccontrolforcetorque",
+    "gnc.targeting_control_energy_residual",
+    "gnc.targeting_control_evaluate_candidate",
+    "gnc.targeting_control_max_energy_alpha",
+    "gnc.targeting_control_solarpanelangleofattackcontrolmodel",
+    "gnc.targeting_control_solve_apoapsis_switch",
+    "gnc.targeting_control_solve_energy_switch",
+    "gncx.targeting_control_aerobrakingenergydepletioncontrolmodel"
+  ]
+}

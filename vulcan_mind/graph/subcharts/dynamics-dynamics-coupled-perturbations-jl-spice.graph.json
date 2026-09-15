@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-coupled-perturbations-jl-spice",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl · _spice* (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/coupled/perturbations.jl#_spice",
+    "layout_of": "2d3dbeb506980c37"
+  },
+  "derives_from": "dynamics-dynamics-coupled-perturbations-jl",
+  "group": "grp.src_dynamics_coupled_perturbations_jl_spice",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.perturbations__spice_lock": [
+        80.0,
+        80.0
+      ],
+      "dynamics.perturbations__spice_query_name": [
+        80.0,
+        230.0
+      ],
+      "dynamics.perturbations__spice_rhs_memo_reset_if_stale_bang": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations__spice_lock",
+    "dynamics.perturbations__spice_query_name",
+    "dynamics.perturbations__spice_rhs_memo_reset_if_stale_bang"
+  ]
+}

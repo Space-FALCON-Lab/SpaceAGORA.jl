@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-environment-gravity",
+  "chart_kind": "sub",
+  "title": "environment/gravity/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_environment_gravity",
+    "layout_of": "96e7ce3dd012bf97"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_environment_gravity",
+  "ui": {
+    "pos_overrides": {
+      "environment.gravity_models__gravity_gradient_torque_body": [
+        720.0,
+        80.0
+      ],
+      "environment.gravity_models__gravity_runtime_field": [
+        400.0,
+        80.0
+      ],
+      "environment.gravity_models__inverse_squared_gravity_accel": [
+        720.0,
+        230.0
+      ],
+      "environment.gravity_models__inverse_squared_j2_gravity_accel": [
+        400.0,
+        230.0
+      ],
+      "environment.gravity_models_aerobraking_gravity_force_ii": [
+        80.0,
+        80.0
+      ],
+      "environment.gravity_models_calcforcetorque": [
+        400.0,
+        380.0
+      ],
+      "environment.gravity_models_gravity_backbone_acceleration_ii": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "environment.gravity_models__gravity_gradient_torque_body",
+    "environment.gravity_models__gravity_runtime_field",
+    "environment.gravity_models__inverse_squared_gravity_accel",
+    "environment.gravity_models__inverse_squared_j2_gravity_accel",
+    "environment.gravity_models_aerobraking_gravity_force_ii",
+    "environment.gravity_models_calcforcetorque",
+    "environment.gravity_models_gravity_backbone_acceleration_ii"
+  ]
+}

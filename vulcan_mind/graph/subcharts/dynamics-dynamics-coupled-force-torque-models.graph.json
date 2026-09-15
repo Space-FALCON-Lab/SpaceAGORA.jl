@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-coupled-force-torque-models",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/force_torque_models/ (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/coupled/force_torque_models",
+    "layout_of": "3eed61609610246b"
+  },
+  "derives_from": "dynamics-dynamics-coupled",
+  "group": "grp.src_dynamics_coupled_force_torque_models",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.robot_arm_reaction_effector_calcforcetorque": [
+        80.0,
+        80.0
+      ],
+      "dynamics.robot_arm_reaction_effector_robotarmreactioneffectors": [
+        80.0,
+        230.0
+      ],
+      "dynx.ftm_aerodynamic_effectors_aerodynamiceffectors": [
+        80.0,
+        380.0
+      ],
+      "dynx.ftm_gravity_effectors_gravityeffectors": [
+        80.0,
+        530.0
+      ],
+      "dynx.ftm_guidance_models_guidancemodels": [
+        80.0,
+        680.0
+      ],
+      "dynx.ftm_perturbation_effectors_perturbationeffectors": [
+        80.0,
+        830.0
+      ],
+      "dynx.ftm_robot_arm_reaction_effector_robotarmreactioneffector": [
+        80.0,
+        980.0
+      ],
+      "dynx.ftm_thruster_models_thrustermodels": [
+        80.0,
+        1130.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.robot_arm_reaction_effector_calcforcetorque",
+    "dynamics.robot_arm_reaction_effector_robotarmreactioneffectors",
+    "dynx.ftm_aerodynamic_effectors_aerodynamiceffectors",
+    "dynx.ftm_gravity_effectors_gravityeffectors",
+    "dynx.ftm_guidance_models_guidancemodels",
+    "dynx.ftm_perturbation_effectors_perturbationeffectors",
+    "dynx.ftm_robot_arm_reaction_effector_robotarmreactioneffector",
+    "dynx.ftm_thruster_models_thrustermodels"
+  ]
+}

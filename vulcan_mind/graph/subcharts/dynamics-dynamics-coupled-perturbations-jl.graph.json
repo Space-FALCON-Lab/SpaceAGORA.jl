@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-coupled-perturbations-jl",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/coupled/perturbations.jl",
+    "layout_of": "1c6408e80bd71691"
+  },
+  "derives_from": "dynamics-dynamics-coupled",
+  "group": "grp.src_dynamics_coupled_perturbations_jl",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_dynamics_coupled_perturbations_jl_gravity": [
+        400.0,
+        80.0
+      ],
+      "grp.src_dynamics_coupled_perturbations_jl_harmonics": [
+        80.0,
+        80.0
+      ],
+      "grp.src_dynamics_coupled_perturbations_jl_make": [
+        1040.0,
+        80.0
+      ],
+      "grp.src_dynamics_coupled_perturbations_jl_nbody": [
+        720.0,
+        80.0
+      ],
+      "grp.src_dynamics_coupled_perturbations_jl_small": [
+        1360.0,
+        80.0
+      ],
+      "grp.src_dynamics_coupled_perturbations_jl_spice": [
+        1680.0,
+        80.0
+      ],
+      "grp.src_dynamics_coupled_perturbations_jl_srp": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations__cannonball_radiation_accel",
+    "dynamics.perturbations__canonical_harmonics_normalization",
+    "dynamics.perturbations__canonical_spice_name",
+    "dynamics.perturbations__clamp_unit",
+    "dynamics.perturbations__convert_harmonics_coefficients_to_full_bang",
+    "dynamics.perturbations__ensure_nbody_workspace_capacity_bang",
+    "dynamics.perturbations__fully_normalized_legendre_scale",
+    "dynamics.perturbations__get_harmonics_batch_pool",
+    "dynamics.perturbations__get_harmonics_batch_pool_cached_bang",
+    "dynamics.perturbations__harmonics_calcforcetorque_with_lpi",
+    "dynamics.perturbations__harmonics_flat_batch_kernel_bang",
+    "dynamics.perturbations__harmonics_lpi_at_bang",
+    "dynamics.perturbations__harmonics_lpi_cache_key",
+    "dynamics.perturbations__harmonics_model_cache_key",
+    "dynamics.perturbations__harmonics_workspace_for_sat_bang",
+    "dynamics.perturbations__infer_harmonics_reference_radius_m",
+    "dynamics.perturbations__interp_vec3_catmull_rom",
+    "dynamics.perturbations__interp_vec3_linear",
+    "dynamics.perturbations__lambert_phase_function",
+    "dynamics.perturbations__lvlh_cascade_torque",
+    "dynamics.perturbations__magnetic_field_inertial",
+    "dynamics.perturbations__make_harmonics_batch_workspace",
+    "dynamics.perturbations__make_harmonics_scratch_workspace",
+    "dynamics.perturbations__make_nbody_scratch_workspace",
+    "dynamics.perturbations__mu_lookup_name",
+    "dynamics.perturbations__nbody_acceleration_ii",
+    "dynamics.perturbations__nbody_body_force_ii",
+    "dynamics.perturbations__nbody_body_position_from_cache_j2000_m",
+    "dynamics.perturbations__nbody_body_position_from_spice_direct_j2000_m",
+    "dynamics.perturbations__nbody_body_position_from_spice_j2000_m",
+    "dynamics.perturbations__nbody_body_position_from_spice_memoized_j2000_m",
+    "dynamics.perturbations__nbody_workspace_for_sat_bang",
+    "dynamics.perturbations__resolve_third_body_mu",
+    "dynamics.perturbations__spice_lock",
+    "dynamics.perturbations__spice_query_name",
+    "dynamics.perturbations__spice_rhs_memo_reset_if_stale_bang",
+    "dynamics.perturbations__srp_sun_position_from_cache_j2000_m",
+    "dynamics.perturbations__srp_sun_position_from_spice_direct_j2000_m",
+    "dynamics.perturbations__srp_sun_position_from_spice_j2000_m",
+    "dynamics.perturbations__srp_sun_position_from_spice_memoized_j2000_m",
+    "dynamics.perturbations__srp_total_acceleration_ii",
+    "dynamics.perturbations__total_dipole_moment_body",
+    "dynamics.perturbations_calcforcetorque",
+    "dynamics.perturbations_eclipse_area_calc",
+    "dynamics.perturbations_eddy_damping_torque",
+    "dynamics.perturbations_eddycurrentdampingmodel",
+    "dynamics.perturbations_environment_requirements",
+    "dynamics.perturbations_get_magnetic_field_dipole",
+    "dynamics.perturbations_gravitationalharmonicsmodel",
+    "dynamics.perturbations_gravity_backbone_acceleration_ii",
+    "dynamics.perturbations_gravity_backbone_kick_acceleration_ii",
+    "dynamics.perturbations_gravity_backbone_kick_structure",
+    "dynamics.perturbations_gravity_backbone_structure",
+    "dynamics.perturbations_harmonicsbatchworkspace",
+    "dynamics.perturbations_lvlhcascadeattitudecontrolmodel",
+    "dynamics.perturbations_magnetictorquerodmodel",
+    "dynamics.perturbations_nbodygravitymodel",
+    "dynamics.perturbations_planetary_albedo_accel",
+    "dynamics.perturbations_planetary_ir_accel",
+    "dynamics.perturbations_solarradiationpressuremodel",
+    "dynamics.perturbations_srp_cannonball_accel",
+    "dynamics.perturbations_wrench",
+    "dynx.coupled_perturbations_calculate_magnetic_torque",
+    "dynx.coupled_perturbations_srp"
+  ]
+}

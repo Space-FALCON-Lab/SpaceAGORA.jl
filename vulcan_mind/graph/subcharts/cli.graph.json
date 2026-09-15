@@ -1,0 +1,2916 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "cli",
+  "chart_kind": "sub",
+  "title": "SpaceAGORACLI — internals",
+  "derives_from": "master",
+  "local_nodes": [
+    {
+      "id": "cli.assets__asset_item",
+      "label": "_asset_item",
+      "kind": "function",
+      "doc": "nodes/cli/assets__asset_item.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "_asset_item",
+        "lines": [
+          37,
+          37
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "name",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `name`."
+          },
+          {
+            "id": "scope",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `scope`."
+          },
+          {
+            "id": "path",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `path`."
+          },
+          {
+            "id": "available",
+            "type": "Bool",
+            "units": "n/a",
+            "required": true,
+            "description": "Keyword argument `available`."
+          },
+          {
+            "id": "required",
+            "type": "Bool",
+            "units": "n/a",
+            "required": true,
+            "description": "Keyword argument `required`."
+          },
+          {
+            "id": "detail",
+            "type": "String",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `detail` (default `\"\"`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "AssetCheckItem",
+            "units": "n/a",
+            "description": "Return value of `_asset_item`. Returns `AssetCheckItem(`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          80.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.assets__manifest_entry_available",
+      "label": "_manifest_entry_available",
+      "kind": "function",
+      "doc": "nodes/cli/assets__manifest_entry_available.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "_manifest_entry_available",
+        "lines": [
+          70,
+          70
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "repo_root",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `repo_root`."
+          },
+          {
+            "id": "entry",
+            "type": "AssetManifestEntry",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `entry`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_manifest_entry_available`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          1040.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.assets__manifest_entry_path",
+      "label": "_manifest_entry_path",
+      "kind": "function",
+      "doc": "nodes/cli/assets__manifest_entry_path.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "_manifest_entry_path",
+        "lines": [
+          65,
+          65
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "repo_root",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `repo_root`."
+          },
+          {
+            "id": "entry",
+            "type": "AssetManifestEntry",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `entry`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_manifest_entry_path`. Returns `joinpath(repo_root, splitpath(entry.relative_path)...)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          1360.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.assets_assetcheckitem",
+      "label": "AssetCheckItem",
+      "kind": "struct",
+      "doc": "nodes/cli/assets_assetcheckitem.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "AssetCheckItem",
+        "lines": [
+          8,
+          8
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "name",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `name`."
+          },
+          {
+            "id": "scope",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `scope`."
+          },
+          {
+            "id": "path",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `path`."
+          },
+          {
+            "id": "available",
+            "type": "Bool",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `available`."
+          },
+          {
+            "id": "required",
+            "type": "Bool",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `required`."
+          },
+          {
+            "id": "detail",
+            "type": "String",
+            "units": "n/a",
+            "required": false,
+            "description": "Field `detail` (default `\"\"`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "AssetCheckItem",
+            "units": "n/a",
+            "description": "Constructed `AssetCheckItem` (keyword constructor via @kwdef)."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          400.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.assets_assetcheckreport",
+      "label": "AssetCheckReport",
+      "kind": "struct",
+      "doc": "nodes/cli/assets_assetcheckreport.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "AssetCheckReport",
+        "lines": [
+          22,
+          22
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "repo_root",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `repo_root`."
+          },
+          {
+            "id": "items",
+            "type": "Vector{AssetCheckItem}",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `items`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "AssetCheckReport",
+            "units": "n/a",
+            "description": "Constructed `AssetCheckReport` (keyword constructor via @kwdef)."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          1040.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.assets_assetmanifestentry",
+      "label": "AssetManifestEntry",
+      "kind": "struct",
+      "doc": "nodes/cli/assets_assetmanifestentry.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "AssetManifestEntry",
+        "lines": [
+          27,
+          27
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "name",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `name`."
+          },
+          {
+            "id": "scope",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `scope`."
+          },
+          {
+            "id": "relative_path",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `relative_path`."
+          },
+          {
+            "id": "kind",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `kind`."
+          },
+          {
+            "id": "required",
+            "type": "Bool",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `required`."
+          },
+          {
+            "id": "licensing",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Field `licensing`."
+          },
+          {
+            "id": "detail",
+            "type": "String",
+            "units": "n/a",
+            "required": false,
+            "description": "Field `detail` (default `\"\"`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "AssetManifestEntry",
+            "units": "n/a",
+            "description": "Constructed `AssetManifestEntry` (keyword constructor via @kwdef)."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          1360.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.assets_load_asset_manifest",
+      "label": "load_asset_manifest",
+      "kind": "function",
+      "doc": "nodes/cli/assets_load_asset_manifest.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "load_asset_manifest",
+        "lines": [
+          48,
+          48
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "repo_root",
+            "type": "String",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `repo_root` (default `REPO_ROOT`)."
+          },
+          {
+            "id": "manifest_path",
+            "type": "String",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `manifest_path` (default `joinpath(repo_root, \"data\", \"assets_manifest.toml\")`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `load_asset_manifest`. Returns `entries`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          1040.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.assets_render_asset_manifest",
+      "label": "render_asset_manifest",
+      "kind": "function",
+      "doc": "nodes/cli/assets_render_asset_manifest.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "render_asset_manifest",
+        "lines": [
+          119,
+          119
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "entries",
+            "type": "Vector{AssetManifestEntry}",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `entries`."
+          },
+          {
+            "id": "io",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `io` (default `stdout`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Nothing",
+            "units": "n/a",
+            "description": "Return value of `render_asset_manifest`. Returns `nothing`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          400.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.assets_render_asset_report",
+      "label": "render_asset_report",
+      "kind": "function",
+      "doc": "nodes/cli/assets_render_asset_report.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "render_asset_report",
+        "lines": [
+          106,
+          106
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "report",
+            "type": "AssetCheckReport",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `report`."
+          },
+          {
+            "id": "io",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `io` (default `stdout`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Nothing",
+            "units": "n/a",
+            "description": "Return value of `render_asset_report`. Returns `nothing`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          720.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.assets_setup_open_assets",
+      "label": "setup_open_assets",
+      "kind": "function",
+      "doc": "nodes/cli/assets_setup_open_assets.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "setup_open_assets",
+        "lines": [
+          134,
+          134
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "repo_root",
+            "type": "String",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `repo_root` (default `REPO_ROOT`)."
+          },
+          {
+            "id": "io",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `io` (default `stdout`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `setup_open_assets`. Returns `report`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          400.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.run_cli",
+      "label": "run_cli",
+      "kind": "function",
+      "doc": "nodes/cli/run_cli.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "run_cli",
+        "lines": [
+          184,
+          214
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "SpaceAGORACLI namespace containing command dispatch and reporting helpers."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "status",
+            "type": "Int",
+            "units": "n/a",
+            "description": "Process-style status code returned after command dispatch and child execution."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          80.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli__normalize_example_name",
+      "label": "_normalize_example_name",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli__normalize_example_name.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "_normalize_example_name",
+        "lines": [
+          22,
+          22
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "name",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `name`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "String",
+            "units": "n/a",
+            "description": "Return value of `_normalize_example_name`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          1040.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli__print_usage",
+      "label": "_print_usage",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli__print_usage.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "_print_usage",
+        "lines": [
+          40,
+          40
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "io",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Positional argument `io` (default `stdout`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Int",
+            "units": "n/a",
+            "description": "Return value of `_print_usage`. Returns `0`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          400.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli__resolve_example_path",
+      "label": "_resolve_example_path",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli__resolve_example_path.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "_resolve_example_path",
+        "lines": [
+          29,
+          29
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "name",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `name`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "String",
+            "units": "n/a",
+            "description": "Return value of `_resolve_example_path`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          720.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli__run_benchmark",
+      "label": "_run_benchmark",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli__run_benchmark.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "_run_benchmark",
+        "lines": [
+          142,
+          142
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Vector{String}",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "io",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `io` (default `stdout`)."
+          },
+          {
+            "id": "errio",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `errio` (default `stderr`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Int",
+            "units": "n/a",
+            "description": "Return value of `_run_benchmark`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          400.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli__run_example",
+      "label": "_run_example",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli__run_example.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "_run_example",
+        "lines": [
+          73,
+          73
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Vector{String}",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "io",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `io` (default `stdout`)."
+          },
+          {
+            "id": "errio",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `errio` (default `stderr`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Int",
+            "units": "n/a",
+            "description": "Return value of `_run_example`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          400.0,
+          830.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli__run_subprocess",
+      "label": "_run_subprocess",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli__run_subprocess.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "_run_subprocess",
+        "lines": [
+          52,
+          52
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "script",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `script`."
+          },
+          {
+            "id": "script_args",
+            "type": "Vector{String}",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `script_args`."
+          },
+          {
+            "id": "env_pairs",
+            "type": "Vector{Pair{String,String}}",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `env_pairs` (default `Pair{String,String}[]`)."
+          },
+          {
+            "id": "print_only",
+            "type": "Bool",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `print_only` (default `false`)."
+          },
+          {
+            "id": "io",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `io` (default `stdout`)."
+          },
+          {
+            "id": "errio",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `errio` (default `stderr`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Int",
+            "units": "n/a",
+            "description": "Return value of `_run_subprocess`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          720.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli__run_telemetry",
+      "label": "_run_telemetry",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli__run_telemetry.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "_run_telemetry",
+        "lines": [
+          102,
+          102
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "args",
+            "type": "Vector{String}",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `args`."
+          },
+          {
+            "id": "io",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `io` (default `stdout`)."
+          },
+          {
+            "id": "errio",
+            "type": "IO",
+            "units": "n/a",
+            "required": false,
+            "description": "Keyword argument `errio` (default `stderr`)."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Int",
+            "units": "n/a",
+            "description": "Return value of `_run_telemetry`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          400.0,
+          980.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli__starts_with",
+      "label": "_starts_with",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli__starts_with.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "_starts_with",
+        "lines": [
+          14,
+          14
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "arg",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `arg`."
+          },
+          {
+            "id": "prefix",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `prefix`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_starts_with`. Returns `startswith(arg, prefix)`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          720.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli__value_after_equals",
+      "label": "_value_after_equals",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli__value_after_equals.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "_value_after_equals",
+        "lines": [
+          18,
+          18
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "arg",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `arg`."
+          },
+          {
+            "id": "prefix",
+            "type": "String",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `prefix`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `_value_after_equals`. Returns `split(arg, \"=\", limit=2)[2]`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          720.0,
+          830.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli_println",
+      "label": "println",
+      "kind": "function",
+      "doc": "nodes/cli/spaceagora_cli_println.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "println",
+        "lines": [
+          61,
+          61
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "io",
+            "type": "Any",
+            "units": "n/a",
+            "required": true,
+            "description": "Positional argument `io`."
+          },
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Return value of `println`. Returns `$(v)\")`."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          1040.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "cli.spaceagora_cli_spaceagoracli",
+      "label": "SpaceAGORACLI",
+      "kind": "module",
+      "doc": "nodes/cli/spaceagora_cli_spaceagoracli.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "SpaceAGORACLI",
+        "lines": [
+          1,
+          1
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": false,
+            "description": "Re-exported through the owning module's public surface."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "type": "Any",
+            "units": "n/a",
+            "description": "Value produced by this symbol."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          400.0,
+          1130.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "grp.cli",
+      "label": "SpaceAGORACLI — internals",
+      "kind": "group",
+      "doc": "nodes/cli/cli.md",
+      "sockets": {
+        "inputs": [
+          {
+            "id": "members_in",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Calls into any member of this block from outside it."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "members_out",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls from any member of this block to nodes outside it."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "tags": [
+        "cluster"
+      ],
+      "origin": "agent"
+    },
+    {
+      "id": "misc.assets_check_assets",
+      "label": "check_assets",
+      "kind": "function",
+      "doc": "nodes/misc/assets_check_assets.md",
+      "source": {
+        "file": "src/cli/assets.jl",
+        "symbol": "check_assets",
+        "lines": [
+          83,
+          99
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "SpaceAGORACLI namespace supplying REPO_ROOT, the asset item constructor and the manifest loader."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "report",
+            "type": "AssetCheckReport",
+            "units": "n/a",
+            "description": "Repository root plus one AssetCheckItem per manifest entry, each flagged available/required with a licensing detail string."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          720.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "misc.main_run_cli",
+      "label": "run_cli",
+      "kind": "function",
+      "doc": "nodes/misc/main_run_cli.md",
+      "source": {
+        "file": "src/cli/main.jl",
+        "symbol": "run_cli",
+        "lines": [
+          4,
+          4
+        ]
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "module_api",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "SpaceAGORACLI command dispatcher reached through the SpaceAGORA package namespace as SpaceAGORA.run_cli."
+          },
+          {
+            "id": "callers",
+            "type": "call",
+            "units": "n/a",
+            "required": false,
+            "description": "Invocations of this symbol observed in mapped callers."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "exit_code",
+            "type": "Int",
+            "units": "n/a",
+            "description": "Process exit status passed to exit(); zero on success, non-zero when the dispatched subcommand reports failure."
+          },
+          {
+            "id": "callees",
+            "type": "call",
+            "units": "n/a",
+            "description": "Calls this symbol makes to other mapped symbols."
+          }
+        ]
+      },
+      "expands": "module.cli",
+      "ui": {
+        "pos": [
+          400.0,
+          1280.0
+        ]
+      },
+      "origin": "agent"
+    }
+  ],
+  "local_edges": [
+    {
+      "id": "e:cli.assets__asset_item:callees->cli.assets_assetcheckitem:callers",
+      "from": {
+        "node": "cli.assets__asset_item",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_assetcheckitem",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "AssetCheckItem",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          38,
+          38
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets__manifest_entry_available:callees->cli.assets__manifest_entry_path:callers",
+      "from": {
+        "node": "cli.assets__manifest_entry_available",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets__manifest_entry_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_manifest_entry_path",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          71,
+          71
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets__manifest_entry_available:callees->misc.assets_check_assets:callers",
+      "from": {
+        "node": "cli.assets__manifest_entry_available",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "misc.assets_check_assets",
+        "socket": "callers"
+      },
+      "kind": "feedback",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          79,
+          79
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets__manifest_entry_available:callees->spaceagora.spaceagora_check_assets:callers",
+      "from": {
+        "node": "cli.assets__manifest_entry_available",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_check_assets",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          79,
+          79
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_assetcheckitem:callees->misc.assets_check_assets:callers",
+      "from": {
+        "node": "cli.assets_assetcheckitem",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "misc.assets_check_assets",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          20,
+          20
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_assetcheckitem:callees->spaceagora.spaceagora_check_assets:callers",
+      "from": {
+        "node": "cli.assets_assetcheckitem",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_check_assets",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          20,
+          20
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_load_asset_manifest:callees->cli.assets_assetmanifestentry:callers",
+      "from": {
+        "node": "cli.assets_load_asset_manifest",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_assetmanifestentry",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "AssetManifestEntry",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          52,
+          52
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_load_asset_manifest:callees->gnc.pso_parameters_push_bang:callers",
+      "from": {
+        "node": "cli.assets_load_asset_manifest",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.pso_parameters_push_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "push!",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          52,
+          52
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_render_asset_manifest:callees->cli.spaceagora_cli_println:callers",
+      "from": {
+        "node": "cli.assets_render_asset_manifest",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli_println",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "println",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          120,
+          120
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_render_asset_report:callees->cli.spaceagora_cli_println:callers",
+      "from": {
+        "node": "cli.assets_render_asset_report",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli_println",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "println",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          107,
+          107
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_setup_open_assets:callees->cli.assets_load_asset_manifest:callers",
+      "from": {
+        "node": "cli.assets_setup_open_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_load_asset_manifest",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "load_asset_manifest",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          135,
+          135
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_setup_open_assets:callees->cli.assets_render_asset_report:callers",
+      "from": {
+        "node": "cli.assets_setup_open_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_render_asset_report",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "render_asset_report",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          154,
+          154
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_setup_open_assets:callees->cli.spaceagora_cli_println:callers",
+      "from": {
+        "node": "cli.assets_setup_open_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli_println",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "println",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          138,
+          138
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_setup_open_assets:callees->misc.assets_check_assets:callers",
+      "from": {
+        "node": "cli.assets_setup_open_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "misc.assets_check_assets",
+        "socket": "callers"
+      },
+      "kind": "feedback",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          136,
+          136
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_setup_open_assets:callees->spaceagora.spaceagora_check_assets:callers",
+      "from": {
+        "node": "cli.assets_setup_open_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_check_assets",
+        "socket": "callers"
+      },
+      "kind": "feedback",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          136,
+          136
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.assets_setup_open_assets:callees->spaceagora.spaceagora_render_asset_report:callers",
+      "from": {
+        "node": "cli.assets_setup_open_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_render_asset_report",
+        "socket": "callers"
+      },
+      "kind": "feedback",
+      "label": "render_asset_report",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          154,
+          154
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->cli.assets_load_asset_manifest:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_load_asset_manifest",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "load_asset_manifest",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          197,
+          197
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->cli.assets_render_asset_manifest:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_render_asset_manifest",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "render_asset_manifest",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          197,
+          197
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->cli.assets_render_asset_report:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_render_asset_report",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "render_asset_report",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          194,
+          194
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->cli.assets_setup_open_assets:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_setup_open_assets",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "setup_open_assets",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          200,
+          200
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->cli.spaceagora_cli__print_usage:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__print_usage",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_print_usage",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          185,
+          185
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->cli.spaceagora_cli__run_benchmark:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__run_benchmark",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_run_benchmark",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          209,
+          209
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->cli.spaceagora_cli__run_example:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__run_example",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_run_example",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          205,
+          205
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->cli.spaceagora_cli__run_telemetry:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__run_telemetry",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_run_telemetry",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          207,
+          207
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->misc.assets_check_assets:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "misc.assets_check_assets",
+        "socket": "callers"
+      },
+      "kind": "feedback",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          194,
+          194
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->spaceagora.spaceagora_check_assets:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_check_assets",
+        "socket": "callers"
+      },
+      "kind": "feedback",
+      "label": "check_assets",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          194,
+          194
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.run_cli:callees->spaceagora.spaceagora_render_asset_report:callers",
+      "from": {
+        "node": "cli.run_cli",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "spaceagora.spaceagora_render_asset_report",
+        "socket": "callers"
+      },
+      "kind": "feedback",
+      "label": "render_asset_report",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          194,
+          194
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__print_usage:callees->cli.spaceagora_cli_println:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__print_usage",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli_println",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "println",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          41,
+          41
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__resolve_example_path:callees->cli.spaceagora_cli__normalize_example_name:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__resolve_example_path",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__normalize_example_name",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_normalize_example_name",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          34,
+          34
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_benchmark:callees->cli.spaceagora_cli__run_subprocess:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_benchmark",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__run_subprocess",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_run_subprocess",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          181,
+          181
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_benchmark:callees->cli.spaceagora_cli__starts_with:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_benchmark",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__starts_with",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_starts_with",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          155,
+          155
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_benchmark:callees->cli.spaceagora_cli__value_after_equals:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_benchmark",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__value_after_equals",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_value_after_equals",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          156,
+          156
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_benchmark:callees->gnc.pso_parameters_push_bang:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_benchmark",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.pso_parameters_push_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "push!",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          160,
+          160
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_example:callees->cli.spaceagora_cli__resolve_example_path:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_example",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__resolve_example_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_resolve_example_path",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          92,
+          92
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_example:callees->cli.spaceagora_cli__run_subprocess:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_example",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__run_subprocess",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_run_subprocess",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          99,
+          99
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_example:callees->cli.spaceagora_cli__starts_with:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_example",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__starts_with",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_starts_with",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          79,
+          79
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_example:callees->cli.spaceagora_cli__value_after_equals:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_example",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__value_after_equals",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_value_after_equals",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          80,
+          80
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_example:callees->gnc.pso_parameters_push_bang:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_example",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.pso_parameters_push_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "push!",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          94,
+          94
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_subprocess:callees->cli.spaceagora_cli_println:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_subprocess",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli_println",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "println",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          56,
+          56
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_telemetry:callees->cli.spaceagora_cli__run_subprocess:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_telemetry",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__run_subprocess",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_run_subprocess",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          139,
+          139
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_telemetry:callees->cli.spaceagora_cli__starts_with:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_telemetry",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__starts_with",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_starts_with",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          114,
+          114
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:cli.spaceagora_cli__run_telemetry:callees->cli.spaceagora_cli__value_after_equals:callers",
+      "from": {
+        "node": "cli.spaceagora_cli__run_telemetry",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__value_after_equals",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_value_after_equals",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "lines": [
+          115,
+          115
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.assets_check_assets:callees->cli.assets__asset_item:callers",
+      "from": {
+        "node": "misc.assets_check_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets__asset_item",
+        "socket": "callers"
+      },
+      "kind": "feedback",
+      "label": "_asset_item",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          88,
+          88
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.assets_check_assets:callees->cli.assets__manifest_entry_available:callers",
+      "from": {
+        "node": "misc.assets_check_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets__manifest_entry_available",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_manifest_entry_available",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          92,
+          92
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.assets_check_assets:callees->cli.assets__manifest_entry_path:callers",
+      "from": {
+        "node": "misc.assets_check_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets__manifest_entry_path",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "_manifest_entry_path",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          91,
+          91
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.assets_check_assets:callees->cli.assets_assetcheckreport:callers",
+      "from": {
+        "node": "misc.assets_check_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_assetcheckreport",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "AssetCheckReport",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          98,
+          98
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.assets_check_assets:callees->cli.assets_load_asset_manifest:callers",
+      "from": {
+        "node": "misc.assets_check_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "cli.assets_load_asset_manifest",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "load_asset_manifest",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          84,
+          84
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:misc.assets_check_assets:callees->gnc.pso_parameters_push_bang:callers",
+      "from": {
+        "node": "misc.assets_check_assets",
+        "socket": "callees"
+      },
+      "to": {
+        "node": "gnc.pso_parameters_push_bang",
+        "socket": "callers"
+      },
+      "kind": "call",
+      "label": "push!",
+      "evidence": {
+        "file": "src/cli/assets.jl",
+        "lines": [
+          88,
+          88
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->cli.assets_assetcheckitem:module_api",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "cli.assets_assetcheckitem",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/cli/assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->cli.assets_assetmanifestentry:module_api",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "cli.assets_assetmanifestentry",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/cli/assets.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->cli.spaceagora_cli__normalize_example_name:module_api",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__normalize_example_name",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->cli.spaceagora_cli__resolve_example_path:module_api",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__resolve_example_path",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->cli.spaceagora_cli__run_subprocess:module_api",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__run_subprocess",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->cli.spaceagora_cli__starts_with:module_api",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__starts_with",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->cli.spaceagora_cli__value_after_equals:module_api",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli__value_after_equals",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->cli.spaceagora_cli_spaceagoracli:module_api",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "cli.spaceagora_cli_spaceagoracli",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/cli/spaceagora_cli.jl"
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->misc.main_run_cli:module_api",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "misc.main_run_cli",
+        "socket": "module_api"
+      },
+      "kind": "call",
+      "label": "member",
+      "evidence": {
+        "file": "src/cli/main.jl"
+      },
+      "origin": "agent"
+    }
+  ],
+  "ui": {
+    "pos_overrides": {
+      "gnc.pso_parameters_push_bang": [
+        1360.0,
+        530.0
+      ],
+      "module.cli": [
+        80.0,
+        380.0
+      ],
+      "spaceagora.spaceagora_check_assets": [
+        1360.0,
+        230.0
+      ],
+      "spaceagora.spaceagora_render_asset_report": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "module.cli",
+    "gnc.pso_parameters_push_bang",
+    "spaceagora.spaceagora_check_assets",
+    "spaceagora.spaceagora_render_asset_report"
+  ]
+}

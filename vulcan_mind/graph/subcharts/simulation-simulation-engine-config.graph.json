@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-config",
+  "chart_kind": "sub",
+  "title": "simulation/engine/config/ (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/config",
+    "layout_of": "63a2c661b7a2c0c4"
+  },
+  "derives_from": "simulation-simulation-engine",
+  "group": "grp.src_simulation_engine_config",
+  "ui": {
+    "pos_overrides": {
+      "simulation.simulation_engine_config": [
+        80.0,
+        80.0
+      ],
+      "simx.engine_config_artifact_config_artifactconfig": [
+        400.0,
+        80.0
+      ],
+      "simx.engine_config_parallel_config_parallelconfig": [
+        400.0,
+        230.0
+      ],
+      "simx.engine_config_runtime_policy_config_runtimepolicyconfig": [
+        400.0,
+        380.0
+      ],
+      "simx.engine_config_solver_config_solverconfig": [
+        400.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.simulation_engine_config",
+    "simx.engine_config_artifact_config_artifactconfig",
+    "simx.engine_config_parallel_config_parallelconfig",
+    "simx.engine_config_runtime_policy_config_runtimepolicyconfig",
+    "simx.engine_config_solver_config_solverconfig"
+  ]
+}

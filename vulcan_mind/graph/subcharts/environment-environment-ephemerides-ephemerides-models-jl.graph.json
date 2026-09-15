@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-ephemerides-ephemerides-models-jl",
+  "chart_kind": "sub",
+  "title": "environment/ephemerides/ephemerides_models.jl (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment/ephemerides/ephemerides_models.jl",
+    "layout_of": "dbe52e87c3a933ab"
+  },
+  "derives_from": "environment-environment-ephemerides",
+  "group": "grp.src_environment_ephemerides_ephemerides_models_jl",
+  "ui": {
+    "pos_overrides": {
+      "envana.env_ephemerides_models_ephemeridesmodels": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "envana.env_ephemerides_models_ephemeridesmodels"
+  ]
+}

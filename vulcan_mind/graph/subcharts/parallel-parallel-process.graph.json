@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-process",
+  "chart_kind": "sub",
+  "title": "parallel/process/ (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/process",
+    "layout_of": "17b2ae88e3dccd64"
+  },
+  "derives_from": "parallel",
+  "group": "grp.src_parallel_process",
+  "ui": {
+    "pos_overrides": {
+      "parallel.ensure_process_workers_ensure_process_workers_bang": [
+        80.0,
+        80.0
+      ],
+      "parallel.process_pool": [
+        80.0,
+        230.0
+      ],
+      "parallel.worker_pool__bootstrap_process_worker_bang": [
+        400.0,
+        80.0
+      ],
+      "parallel.worker_pool__furnish_default_spice_kernels_bang": [
+        720.0,
+        80.0
+      ],
+      "parallel.worker_pool__process_worker_exeflags": [
+        400.0,
+        230.0
+      ],
+      "parallel.worker_pool__warm_gram_wrapper_bang": [
+        1040.0,
+        80.0
+      ],
+      "parallel.worker_pool_shutdown_process_pool_bang": [
+        80.0,
+        380.0
+      ],
+      "parcore.parallel_process_parallelprocess": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.ensure_process_workers_ensure_process_workers_bang",
+    "parallel.process_pool",
+    "parallel.worker_pool__bootstrap_process_worker_bang",
+    "parallel.worker_pool__furnish_default_spice_kernels_bang",
+    "parallel.worker_pool__process_worker_exeflags",
+    "parallel.worker_pool__warm_gram_wrapper_bang",
+    "parallel.worker_pool_shutdown_process_pool_bang",
+    "parcore.parallel_process_parallelprocess"
+  ]
+}

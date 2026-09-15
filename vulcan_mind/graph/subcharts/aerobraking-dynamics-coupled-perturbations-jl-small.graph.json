@@ -1,0 +1,139 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-dynamics-coupled-perturbations-jl-small",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl/ (small files) (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_dynamics_coupled_perturbations_jl_small",
+    "layout_of": "4bbe1b7b968dbb18"
+  },
+  "derives_from": "aerobraking-dynamics-coupled-perturbations-jl",
+  "group": "grp.src_dynamics_coupled_perturbations_jl_small",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.perturbations__cannonball_radiation_accel": [
+        720.0,
+        680.0
+      ],
+      "dynamics.perturbations__canonical_harmonics_normalization": [
+        400.0,
+        80.0
+      ],
+      "dynamics.perturbations__canonical_spice_name": [
+        80.0,
+        80.0
+      ],
+      "dynamics.perturbations__convert_harmonics_coefficients_to_full_bang": [
+        80.0,
+        230.0
+      ],
+      "dynamics.perturbations__infer_harmonics_reference_radius_m": [
+        80.0,
+        380.0
+      ],
+      "dynamics.perturbations__interp_vec3_catmull_rom": [
+        80.0,
+        530.0
+      ],
+      "dynamics.perturbations__lvlh_cascade_torque": [
+        400.0,
+        380.0
+      ],
+      "dynamics.perturbations__magnetic_field_inertial": [
+        720.0,
+        80.0
+      ],
+      "dynamics.perturbations__resolve_third_body_mu": [
+        400.0,
+        530.0
+      ],
+      "dynamics.perturbations__total_dipole_moment_body": [
+        80.0,
+        680.0
+      ],
+      "dynamics.perturbations_calcforcetorque": [
+        720.0,
+        230.0
+      ],
+      "dynamics.perturbations_eclipse_area_calc": [
+        720.0,
+        830.0
+      ],
+      "dynamics.perturbations_eddy_damping_torque": [
+        400.0,
+        230.0
+      ],
+      "dynamics.perturbations_eddycurrentdampingmodel": [
+        80.0,
+        830.0
+      ],
+      "dynamics.perturbations_environment_requirements": [
+        720.0,
+        380.0
+      ],
+      "dynamics.perturbations_get_magnetic_field_dipole": [
+        1040.0,
+        80.0
+      ],
+      "dynamics.perturbations_gravitationalharmonicsmodel": [
+        80.0,
+        980.0
+      ],
+      "dynamics.perturbations_lvlhcascadeattitudecontrolmodel": [
+        80.0,
+        1130.0
+      ],
+      "dynamics.perturbations_magnetictorquerodmodel": [
+        80.0,
+        1280.0
+      ],
+      "dynamics.perturbations_nbodygravitymodel": [
+        400.0,
+        680.0
+      ],
+      "dynamics.perturbations_solarradiationpressuremodel": [
+        80.0,
+        1430.0
+      ],
+      "dynamics.perturbations_srp_cannonball_accel": [
+        400.0,
+        830.0
+      ],
+      "dynamics.perturbations_wrench": [
+        720.0,
+        530.0
+      ],
+      "dynx.coupled_perturbations_srp": [
+        80.0,
+        1580.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations__cannonball_radiation_accel",
+    "dynamics.perturbations__canonical_harmonics_normalization",
+    "dynamics.perturbations__canonical_spice_name",
+    "dynamics.perturbations__convert_harmonics_coefficients_to_full_bang",
+    "dynamics.perturbations__infer_harmonics_reference_radius_m",
+    "dynamics.perturbations__interp_vec3_catmull_rom",
+    "dynamics.perturbations__lvlh_cascade_torque",
+    "dynamics.perturbations__magnetic_field_inertial",
+    "dynamics.perturbations__resolve_third_body_mu",
+    "dynamics.perturbations__total_dipole_moment_body",
+    "dynamics.perturbations_calcforcetorque",
+    "dynamics.perturbations_eclipse_area_calc",
+    "dynamics.perturbations_eddy_damping_torque",
+    "dynamics.perturbations_eddycurrentdampingmodel",
+    "dynamics.perturbations_environment_requirements",
+    "dynamics.perturbations_get_magnetic_field_dipole",
+    "dynamics.perturbations_gravitationalharmonicsmodel",
+    "dynamics.perturbations_lvlhcascadeattitudecontrolmodel",
+    "dynamics.perturbations_magnetictorquerodmodel",
+    "dynamics.perturbations_nbodygravitymodel",
+    "dynamics.perturbations_solarradiationpressuremodel",
+    "dynamics.perturbations_srp_cannonball_accel",
+    "dynamics.perturbations_wrench",
+    "dynx.coupled_perturbations_srp"
+  ]
+}

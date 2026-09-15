@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "core-core-types-effector-sampling-jl",
+  "chart_kind": "sub",
+  "title": "core/types/effector_sampling.jl (core)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/core/types/effector_sampling.jl",
+    "layout_of": "401ad27e92d6c106"
+  },
+  "derives_from": "core-core-types",
+  "group": "grp.src_core_types_effector_sampling_jl",
+  "ui": {
+    "pos_overrides": {
+      "core.effector_sampling_atmospheresample": [
+        80.0,
+        80.0
+      ],
+      "core.effector_sampling_effectorenvironmentrequirements": [
+        400.0,
+        80.0
+      ],
+      "core.effector_sampling_effectorsampling": [
+        80.0,
+        230.0
+      ],
+      "core.effector_sampling_environment_requirements": [
+        80.0,
+        380.0
+      ],
+      "core.effector_sampling_gravity_backbone_kick_structure": [
+        1360.0,
+        80.0
+      ],
+      "core.effector_sampling_gravity_backbone_structure": [
+        1040.0,
+        80.0
+      ],
+      "core.effector_sampling_planetframesample": [
+        80.0,
+        530.0
+      ],
+      "core.effector_sampling_solarephemerissample": [
+        80.0,
+        680.0
+      ],
+      "core.effector_sampling_solver_partition": [
+        720.0,
+        80.0
+      ],
+      "core.effector_sampling_statesample": [
+        80.0,
+        830.0
+      ],
+      "core.effector_sampling_thirdbodyephemerissample": [
+        80.0,
+        980.0
+      ],
+      "core.effector_sampling_wrench_caching_bang": [
+        400.0,
+        230.0
+      ],
+      "parcore.effector_sampling_environmentsample": [
+        80.0,
+        1130.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.effector_sampling_atmospheresample",
+    "core.effector_sampling_effectorenvironmentrequirements",
+    "core.effector_sampling_effectorsampling",
+    "core.effector_sampling_environment_requirements",
+    "core.effector_sampling_gravity_backbone_kick_structure",
+    "core.effector_sampling_gravity_backbone_structure",
+    "core.effector_sampling_planetframesample",
+    "core.effector_sampling_solarephemerissample",
+    "core.effector_sampling_solver_partition",
+    "core.effector_sampling_statesample",
+    "core.effector_sampling_thirdbodyephemerissample",
+    "core.effector_sampling_wrench_caching_bang",
+    "parcore.effector_sampling_environmentsample"
+  ]
+}

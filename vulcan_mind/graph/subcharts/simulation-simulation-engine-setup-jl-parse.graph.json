@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-setup-jl-parse",
+  "chart_kind": "sub",
+  "title": "simulation/engine/setup.jl · _parse* (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/setup.jl#_parse",
+    "layout_of": "d10ecd139e33c0bc"
+  },
+  "derives_from": "simulation-simulation-engine-setup-jl",
+  "group": "grp.src_simulation_engine_setup_jl_parse",
+  "ui": {
+    "pos_overrides": {
+      "simulation.setup__parse_nonnegative_int_env": [
+        80.0,
+        80.0
+      ],
+      "simulation.setup__parse_positive_float_env": [
+        80.0,
+        230.0
+      ],
+      "simulation.setup__parse_unit_float_env": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.setup__parse_nonnegative_int_env",
+    "simulation.setup__parse_positive_float_env",
+    "simulation.setup__parse_unit_float_env"
+  ]
+}

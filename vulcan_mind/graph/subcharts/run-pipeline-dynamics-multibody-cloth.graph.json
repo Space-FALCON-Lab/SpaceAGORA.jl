@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-dynamics-multibody-cloth",
+  "chart_kind": "sub",
+  "title": "dynamics/multibody_cloth/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_dynamics_multibody_cloth",
+    "layout_of": "74d067c0527a8abd"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_dynamics_multibody_cloth",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.cloth_robot_arm_dynamics_coupled_cloth_robot_arm_state_shape": [
+        80.0,
+        80.0
+      ],
+      "dynamics.cloth_robot_arm_dynamics_initialize_coupled_cloth_robot_arm_state_bang": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.cloth_robot_arm_dynamics_coupled_cloth_robot_arm_state_shape",
+    "dynamics.cloth_robot_arm_dynamics_initialize_coupled_cloth_robot_arm_state_bang"
+  ]
+}

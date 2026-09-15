@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-simulation-engine",
+  "chart_kind": "sub",
+  "title": "simulation/engine/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_engine",
+    "layout_of": "506813d0a9b50d5e"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_simulation_engine",
+  "ui": {
+    "pos_overrides": {
+      "grp.src_simulation_engine_adapters": [
+        1040.0,
+        80.0
+      ],
+      "grp.src_simulation_engine_config": [
+        1360.0,
+        80.0
+      ],
+      "grp.src_simulation_engine_dynamics_rhs_jl": [
+        400.0,
+        80.0
+      ],
+      "grp.src_simulation_engine_execution_jl": [
+        80.0,
+        80.0
+      ],
+      "grp.src_simulation_engine_persistence_jl": [
+        400.0,
+        230.0
+      ],
+      "grp.src_simulation_engine_public_api_jl": [
+        80.0,
+        230.0
+      ],
+      "grp.src_simulation_engine_reporting_jl": [
+        400.0,
+        380.0
+      ],
+      "grp.src_simulation_engine_resume_checkpoint_jl": [
+        400.0,
+        530.0
+      ],
+      "grp.src_simulation_engine_rhs_calibration_jl": [
+        400.0,
+        680.0
+      ],
+      "grp.src_simulation_engine_setup_jl": [
+        720.0,
+        80.0
+      ],
+      "grp.src_simulation_engine_solver_policy_jl": [
+        400.0,
+        830.0
+      ],
+      "grp.src_simulation_engine_state_access_jl": [
+        1040.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.dynamics_rhs__robot_arm_coupling",
+    "simulation.dynamics_rhs_build_initial_conditions",
+    "simulation.execution__append_backbone_saved_segment_bang",
+    "simulation.execution__append_checkpoint_saved_segment_bang",
+    "simulation.execution__build_block_diagonal_jac_prototype",
+    "simulation.execution__build_typed_solver_problem",
+    "simulation.execution__save_simulation_results_if_enabled_bang",
+    "simulation.execution__try_save_simulation_results_if_enabled_bang",
+    "simulation.from_env__engine_env_get",
+    "simulation.from_env__engine_env_overrides",
+    "simulation.from_env__parse_float_opt",
+    "simulation.from_env__parse_multirate_solver_sym",
+    "simulation.from_env__parse_or_default",
+    "simulation.from_env__parse_solver_mode_sym",
+    "simulation.from_env__parse_split_imex_solver_sym",
+    "simulation.from_env__solver_config_from_env",
+    "simulation.from_env__with_engine_env_overrides",
+    "simulation.persistence__append_saved_segment_bang",
+    "simulation.persistence__sha256_hex",
+    "simulation.public_api__depwarn_untyped_run_simulation",
+    "simulation.public_api__require_simulation_configuration",
+    "simulation.reporting__debug_print_nan_parameter_paths_bang",
+    "simulation.reporting__warn_typed_normalize_transition_flag_bang",
+    "simulation.resume_checkpoint__checkpoint_paths",
+    "simulation.resume_checkpoint__load_checkpoint",
+    "simulation.rhs_calibration__rhs_calib_lookup",
+    "simulation.rhs_calibration__rhs_calib_save_bang",
+    "simulation.rhs_calibration__rhs_calib_signature",
+    "simulation.rhs_calibration__rhs_calib_store_bang",
+    "simulation.rhs_calibration__rhs_calibration_mode",
+    "simulation.rhs_calibration__run_rhs_sweep_bang",
+    "simulation.run_simulation",
+    "simulation.setup__any_effector_consumes_atmosphere",
+    "simulation.setup__collect_nbody_query_names",
+    "simulation.setup__density_without_aero_warning_enabled",
+    "simulation.setup__ephemeris_reuse_enabled",
+    "simulation.setup__ephemeris_reuse_lookup",
+    "simulation.setup__ephemeris_reuse_max_entries",
+    "simulation.setup__ephemeris_reuse_store_bang",
+    "simulation.setup__gram_per_sat_instances_enabled",
+    "simulation.setup__has_active_nbody_effector",
+    "simulation.setup__has_active_srp_effector",
+    "simulation.setup__initialize_aero_workspace_buffers_bang",
+    "simulation.setup__initialize_density_cache_buffers_bang",
+    "simulation.setup__initialize_density_model_instances_bang",
+    "simulation.setup__initialize_gram_isolated_pool_buffers_bang",
+    "simulation.setup__initialize_harmonics_workspace_buffers_bang",
+    "simulation.setup__initialize_heat_rate_buffers_bang",
+    "simulation.setup__initialize_in_atmosphere_flags_bang",
+    "simulation.setup__initialize_nbody_ephemeris_cache_bang",
+    "simulation.setup__initialize_nbody_ephemeris_cache_buffer_bang",
+    "simulation.setup__initialize_nbody_workspace_buffers_bang",
+    "simulation.setup__initialize_planet_frame_cache_buffer_bang",
+    "simulation.setup__initialize_planet_frame_ephemeris_cache_bang",
+    "simulation.setup__initialize_runtime_env_config_bang",
+    "simulation.setup__initialize_save_cache_buffers_bang",
+    "simulation.setup__initialize_spice_rhs_memo_mode_bang",
+    "simulation.setup__initialize_srp_sun_cache_buffer_bang",
+    "simulation.setup__initialize_srp_sun_ephemeris_cache_bang",
+    "simulation.setup__nbody_ephemeris_cache_dt_s",
+    "simulation.setup__nbody_ephemeris_cache_enabled",
+    "simulation.setup__nbody_ephemeris_cache_max_samples",
+    "simulation.setup__nbody_ephemeris_cache_sample_count",
+    "simulation.setup__nbody_ephemeris_reuse_key",
+    "simulation.setup__planet_frame_cache_dt_s",
+    "simulation.setup__planet_frame_cache_enabled",
+    "simulation.setup__planet_frame_cache_max_samples",
+    "simulation.setup__planet_frame_ephemeris_reuse_key",
+    "simulation.setup__prewarmed_nbody_ephemeris_lookup",
+    "simulation.setup__reset_spice_rhs_memo_bang",
+    "simulation.setup__reset_spice_runtime_counters_bang",
+    "simulation.setup__snapshot_rhs_plan_env_config",
+    "simulation.setup__spice_rhs_memo_enabled",
+    "simulation.setup__spice_runtime_counters_snapshot",
+    "simulation.setup__srp_ephemeris_cache_dt_s",
+    "simulation.setup__srp_ephemeris_cache_enabled",
+    "simulation.setup__srp_ephemeris_cache_max_samples",
+    "simulation.setup__srp_ephemeris_reuse_key",
+    "simulation.setup__typed_allow_transition_normalize",
+    "simulation.setup__typed_checkpoint_enabled",
+    "simulation.setup__typed_save_bundle_enabled",
+    "simulation.setup__validate_ephemerides_support_bang",
+    "simulation.setup__validate_orientation_inertia_bang",
+    "simulation.setup__validate_thermal_model_support_bang",
+    "simulation.setup__warn_density_without_atmospheric_effector",
+    "simulation.solver_policy__auto_stiff_switched",
+    "simulation.solver_policy__build_solver_tolerances",
+    "simulation.solver_policy__gravity_backbone_reject_reason",
+    "simulation.solver_policy__gravity_backbone_time_reached",
+    "simulation.solver_policy__is_partitioned_second_order_problem",
+    "simulation.solver_policy__requires_componentwise_tolerances",
+    "simulation.solver_policy__resolve_component_tolerance",
+    "simulation.solver_policy__rodas5p_alg",
+    "simulation.solver_policy__solve_with_explicit_solver",
+    "simulation.solver_policy__solve_with_fixed_step_solver",
+    "simulation.solver_policy__solve_with_gravity_backbone_solver",
+    "simulation.solver_policy__solve_with_multirate_solver",
+    "simulation.solver_policy__split_imex_solver_spec",
+    "simulation.solver_policy__symplectic_conservative_eligible",
+    "simulation.solver_policy__symplectic_fixed_dt_s",
+    "simulation.state_access__gravity_backbone_initial_states",
+    "simx.engine_adapters_from_env_simulation_engine_config_from_env",
+    "simx.engine_config_solver_config_solverconfig",
+    "simx.engine_execution_run_simulation",
+    "simx.engine_persistence_write_results_bundle__write_results_bundle_bang",
+    "simx.engine_reporting_enforce_typed_normalize_policy__enforce_typed_normalize_policy_bang",
+    "simx.engine_resume_checkpoint_write_checkpoint__write_checkpoint_bang",
+    "simx.engine_rhs_calibration_calibrate_rhs_plan_if_needed__calibrate_rhs_plan_if_needed_bang",
+    "simx.engine_setup_build_nbody_ephemeris_cache",
+    "simx.engine_solver_policy_solve_with_solver_policy",
+    "simx.engine_state_access_state_position_ii"
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-robotics-robot-arm-planning-jl",
+  "chart_kind": "sub",
+  "title": "gnc/robotics/robot_arm_planning.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/robotics/robot_arm_planning.jl",
+    "layout_of": "868354b02fbca4f1"
+  },
+  "derives_from": "gnc-gnc-robotics",
+  "group": "grp.src_gnc_robotics_robot_arm_planning_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.robot_arm_planning__quintic_scalar": [
+        400.0,
+        80.0
+      ],
+      "gnc.robot_arm_planning__quintic_scalar_ddot": [
+        400.0,
+        230.0
+      ],
+      "gnc.robot_arm_planning__quintic_scalar_dot": [
+        400.0,
+        380.0
+      ],
+      "gnc.robot_arm_planning__reference_times": [
+        400.0,
+        530.0
+      ],
+      "gnc.robot_arm_planning_robot_arm_plan_sample": [
+        80.0,
+        80.0
+      ],
+      "gnc.robot_arm_planning_robotarmplan": [
+        400.0,
+        680.0
+      ],
+      "gnc.robot_arm_planning_robotarmplannerconfig": [
+        400.0,
+        830.0
+      ],
+      "gnc.robot_arm_planning_robotarmplanning": [
+        80.0,
+        230.0
+      ],
+      "gncz.robot_arm_planning_plan_robot_arm_motion": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.robot_arm_planning__quintic_scalar",
+    "gnc.robot_arm_planning__quintic_scalar_ddot",
+    "gnc.robot_arm_planning__quintic_scalar_dot",
+    "gnc.robot_arm_planning__reference_times",
+    "gnc.robot_arm_planning_robot_arm_plan_sample",
+    "gnc.robot_arm_planning_robotarmplan",
+    "gnc.robot_arm_planning_robotarmplannerconfig",
+    "gnc.robot_arm_planning_robotarmplanning",
+    "gncz.robot_arm_planning_plan_robot_arm_motion"
+  ]
+}

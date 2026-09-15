@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-core-types",
+  "chart_kind": "sub",
+  "title": "core/types/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_core_types",
+    "layout_of": "2a39d0c2ff7a481f"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_core_types",
+  "ui": {
+    "pos_overrides": {
+      "core.effector_sampling_environment_requirements": [
+        80.0,
+        80.0
+      ],
+      "core.runtime_types_planetframeephemeriscache": [
+        80.0,
+        230.0
+      ],
+      "core.runtime_types_srpsunephemeriscache": [
+        80.0,
+        380.0
+      ],
+      "parcore.runtime_types_odeparams": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.effector_sampling_environment_requirements",
+    "core.runtime_types_planetframeephemeriscache",
+    "core.runtime_types_srpsunephemeriscache",
+    "parcore.runtime_types_odeparams"
+  ]
+}

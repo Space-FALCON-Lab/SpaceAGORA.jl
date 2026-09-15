@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-ephemerides-simple-ephemerides-jl",
+  "chart_kind": "sub",
+  "title": "environment/ephemerides/simple_ephemerides.jl (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment/ephemerides/simple_ephemerides.jl",
+    "layout_of": "1a19f0707cc9b481"
+  },
+  "derives_from": "environment-environment-ephemerides",
+  "group": "grp.src_environment_ephemerides_simple_ephemerides_jl",
+  "ui": {
+    "pos_overrides": {
+      "envana.env_simple_ephemerides_simpleephemeridesmodel": [
+        80.0,
+        80.0
+      ],
+      "environment.simple_ephemerides__earth_gmst_iau82_rad": [
+        80.0,
+        230.0
+      ],
+      "environment.simple_ephemerides__initial_time_datetime": [
+        400.0,
+        380.0
+      ],
+      "environment.simple_ephemerides__rotation_about_spin_axis": [
+        400.0,
+        80.0
+      ],
+      "environment.simple_ephemerides__spice_body_fixed_frame": [
+        1040.0,
+        80.0
+      ],
+      "environment.simple_ephemerides__spice_planet_frame_lpi": [
+        720.0,
+        80.0
+      ],
+      "environment.simple_ephemerides__spice_position_j2000_m_unlocked": [
+        400.0,
+        530.0
+      ],
+      "environment.simple_ephemerides_ephemerides_cache_key": [
+        80.0,
+        380.0
+      ],
+      "environment.simple_ephemerides_ephemerides_time_seconds": [
+        80.0,
+        530.0
+      ],
+      "environment.simple_ephemerides_planet_frame_lpi": [
+        400.0,
+        230.0
+      ],
+      "environment.simple_ephemerides_spice_position_j2000_m": [
+        80.0,
+        680.0
+      ],
+      "environment.simple_ephemerides_spiceephemeridesmodel": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "envana.env_simple_ephemerides_simpleephemeridesmodel",
+    "environment.simple_ephemerides__earth_gmst_iau82_rad",
+    "environment.simple_ephemerides__initial_time_datetime",
+    "environment.simple_ephemerides__rotation_about_spin_axis",
+    "environment.simple_ephemerides__spice_body_fixed_frame",
+    "environment.simple_ephemerides__spice_planet_frame_lpi",
+    "environment.simple_ephemerides__spice_position_j2000_m_unlocked",
+    "environment.simple_ephemerides_ephemerides_cache_key",
+    "environment.simple_ephemerides_ephemerides_time_seconds",
+    "environment.simple_ephemerides_planet_frame_lpi",
+    "environment.simple_ephemerides_spice_position_j2000_m",
+    "environment.simple_ephemerides_spiceephemeridesmodel"
+  ]
+}

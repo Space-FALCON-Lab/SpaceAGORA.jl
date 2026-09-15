@@ -1,0 +1,134 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-ephemerides-planets-jl",
+  "chart_kind": "sub",
+  "title": "environment/ephemerides/planets.jl (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment/ephemerides/planets.jl",
+    "layout_of": "9824e8bd5841bdcc"
+  },
+  "derives_from": "environment-environment-ephemerides",
+  "group": "grp.src_environment_ephemerides_planets_jl",
+  "ui": {
+    "pos_overrides": {
+      "envana.env_planets_topographyharmonicsworkspace_bang": [
+        80.0,
+        80.0
+      ],
+      "environment.planets__furnsh_first_existing": [
+        720.0,
+        230.0
+      ],
+      "environment.planets__furnsh_first_existing_if_available": [
+        400.0,
+        80.0
+      ],
+      "environment.planets__furnsh_mars_pck": [
+        400.0,
+        230.0
+      ],
+      "environment.planets__furnsh_mars_system_kernel": [
+        400.0,
+        380.0
+      ],
+      "environment.planets__furnsh_once": [
+        1040.0,
+        80.0
+      ],
+      "environment.planets__furnsh_planetary_kernel": [
+        400.0,
+        530.0
+      ],
+      "environment.planets__furnsh_required": [
+        720.0,
+        80.0
+      ],
+      "environment.planets__gravity_constants_kernel_if_available": [
+        400.0,
+        680.0
+      ],
+      "environment.planets__planetary_kernel_override_relpath": [
+        720.0,
+        380.0
+      ],
+      "environment.planets__reset_furnished_kernels_bang": [
+        80.0,
+        230.0
+      ],
+      "environment.planets__spice_backed_planet_kwargs": [
+        400.0,
+        830.0
+      ],
+      "environment.planets__spice_body_fixed_frame": [
+        80.0,
+        380.0
+      ],
+      "environment.planets__spice_body_gm_m3s2": [
+        720.0,
+        530.0
+      ],
+      "environment.planets__spice_body_pool_name": [
+        1040.0,
+        230.0
+      ],
+      "environment.planets__spice_body_radii_m": [
+        720.0,
+        680.0
+      ],
+      "environment.planets_earth": [
+        400.0,
+        980.0
+      ],
+      "environment.planets_mars": [
+        400.0,
+        1130.0
+      ],
+      "environment.planets_moon": [
+        400.0,
+        1280.0
+      ],
+      "environment.planets_planets": [
+        80.0,
+        530.0
+      ],
+      "environment.planets_titan": [
+        400.0,
+        1430.0
+      ],
+      "environment.planets_topographyharmonicsworkspace": [
+        720.0,
+        830.0
+      ],
+      "environment.planets_venus": [
+        400.0,
+        1580.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "envana.env_planets_topographyharmonicsworkspace_bang",
+    "environment.planets__furnsh_first_existing",
+    "environment.planets__furnsh_first_existing_if_available",
+    "environment.planets__furnsh_mars_pck",
+    "environment.planets__furnsh_mars_system_kernel",
+    "environment.planets__furnsh_once",
+    "environment.planets__furnsh_planetary_kernel",
+    "environment.planets__furnsh_required",
+    "environment.planets__gravity_constants_kernel_if_available",
+    "environment.planets__planetary_kernel_override_relpath",
+    "environment.planets__reset_furnished_kernels_bang",
+    "environment.planets__spice_backed_planet_kwargs",
+    "environment.planets__spice_body_fixed_frame",
+    "environment.planets__spice_body_gm_m3s2",
+    "environment.planets__spice_body_pool_name",
+    "environment.planets__spice_body_radii_m",
+    "environment.planets_earth",
+    "environment.planets_mars",
+    "environment.planets_moon",
+    "environment.planets_planets",
+    "environment.planets_titan",
+    "environment.planets_topographyharmonicsworkspace",
+    "environment.planets_venus"
+  ]
+}

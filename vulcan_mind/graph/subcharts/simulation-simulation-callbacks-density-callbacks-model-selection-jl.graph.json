@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-density-callbacks-model-selection-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/density_callbacks/model_selection.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks/density_callbacks/model_selection.jl",
+    "layout_of": "009ac932818a7e2a"
+  },
+  "derives_from": "simulation-simulation-callbacks-density-callbacks",
+  "group": "grp.src_simulation_callbacks_density_callbacks_model_selection_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.model_selection__density_batch_model_for_callback": [
+        80.0,
+        80.0
+      ],
+      "simulation.model_selection__density_model_for_sat": [
+        80.0,
+        230.0
+      ],
+      "simulation.model_selection__ensure_gram_isolated_pool_bang": [
+        400.0,
+        80.0
+      ],
+      "simulation.model_selection__gram_batch_elapsed_time": [
+        400.0,
+        230.0
+      ],
+      "simulation.model_selection__gram_density_cache_for_sat_bang": [
+        80.0,
+        380.0
+      ],
+      "simulation.model_selection__gram_isolated_pool_batch_model_for_callback": [
+        80.0,
+        530.0
+      ],
+      "simulation.model_selection__gram_isolated_pool_density_state": [
+        400.0,
+        380.0
+      ],
+      "simulation_a.model_selection_gram_isolated_pool_batch_eval__gram_isolated_pool_batch_eval_bang": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.model_selection__density_batch_model_for_callback",
+    "simulation.model_selection__density_model_for_sat",
+    "simulation.model_selection__ensure_gram_isolated_pool_bang",
+    "simulation.model_selection__gram_batch_elapsed_time",
+    "simulation.model_selection__gram_density_cache_for_sat_bang",
+    "simulation.model_selection__gram_isolated_pool_batch_model_for_callback",
+    "simulation.model_selection__gram_isolated_pool_density_state",
+    "simulation_a.model_selection_gram_isolated_pool_batch_eval__gram_isolated_pool_batch_eval_bang"
+  ]
+}

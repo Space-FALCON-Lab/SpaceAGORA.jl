@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-engine-resume-checkpoint-jl",
+  "chart_kind": "sub",
+  "title": "simulation/engine/resume_checkpoint.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/engine/resume_checkpoint.jl",
+    "layout_of": "6d592b71d4b3ec9d"
+  },
+  "derives_from": "simulation-simulation-engine",
+  "group": "grp.src_simulation_engine_resume_checkpoint_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.resume_checkpoint__checkpoint_directory": [
+        80.0,
+        80.0
+      ],
+      "simulation.resume_checkpoint__checkpoint_paths": [
+        80.0,
+        230.0
+      ],
+      "simulation.resume_checkpoint__clear_checkpoint_bang": [
+        80.0,
+        380.0
+      ],
+      "simulation.resume_checkpoint__load_checkpoint": [
+        80.0,
+        530.0
+      ],
+      "simx.engine_resume_checkpoint_write_checkpoint__write_checkpoint_bang": [
+        80.0,
+        680.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.resume_checkpoint__checkpoint_directory",
+    "simulation.resume_checkpoint__checkpoint_paths",
+    "simulation.resume_checkpoint__clear_checkpoint_bang",
+    "simulation.resume_checkpoint__load_checkpoint",
+    "simx.engine_resume_checkpoint_write_checkpoint__write_checkpoint_bang"
+  ]
+}

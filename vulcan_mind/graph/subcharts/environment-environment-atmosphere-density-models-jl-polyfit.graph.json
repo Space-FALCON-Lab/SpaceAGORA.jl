@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-atmosphere-density-models-jl-polyfit",
+  "chart_kind": "sub",
+  "title": "environment/atmosphere/density_models.jl · _polyfit* (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment/atmosphere/density_models.jl#_polyfit",
+    "layout_of": "7ff11783ac549fef"
+  },
+  "derives_from": "environment-environment-atmosphere",
+  "group": "grp.src_environment_atmosphere_density_models_jl_polyfit",
+  "ui": {
+    "pos_overrides": {
+      "environment.density_models__polyfit_density": [
+        80.0,
+        80.0
+      ],
+      "environment.density_models__polyfit_eval_altitude_km": [
+        720.0,
+        80.0
+      ],
+      "environment.density_models__polyfit_log_density": [
+        400.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "environment.density_models__polyfit_density",
+    "environment.density_models__polyfit_eval_altitude_km",
+    "environment.density_models__polyfit_log_density"
+  ]
+}

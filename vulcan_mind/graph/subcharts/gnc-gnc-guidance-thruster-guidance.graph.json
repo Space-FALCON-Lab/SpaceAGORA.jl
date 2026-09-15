@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-thruster-guidance",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/thruster_guidance/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/thruster_guidance",
+    "layout_of": "d012150764b8aa6f"
+  },
+  "derives_from": "gnc-gnc-guidance",
+  "group": "grp.src_gnc_guidance_thruster_guidance",
+  "ui": {
+    "pos_overrides": {
+      "gnc.thruster_guidance_functions__ensure_apo_target_state_bang": [
+        400.0,
+        80.0
+      ],
+      "gnc.thruster_guidance_functions__flight_apoapsis_ratio_scale": [
+        400.0,
+        230.0
+      ],
+      "gnc.thruster_guidance_functions__oblate_altitude_from_radius": [
+        720.0,
+        80.0
+      ],
+      "gnc.thruster_guidance_functions__oblate_surface_radius": [
+        720.0,
+        230.0
+      ],
+      "gnc.thruster_guidance_functions__radius_for_oblate_altitude": [
+        400.0,
+        380.0
+      ],
+      "gnc.thruster_guidance_functions__wrap_2pi_guidance": [
+        400.0,
+        530.0
+      ],
+      "gnc.thruster_guidance_functions_calcguidanceeffect_bang": [
+        80.0,
+        80.0
+      ],
+      "gnc.thruster_guidance_models_apoapsistargetperiapsisraiseguidancemodel": [
+        80.0,
+        230.0
+      ],
+      "gncz.thruster_guidance_functions__osculating_elements_and_periapsis_direction": [
+        80.0,
+        380.0
+      ],
+      "gncz.thruster_guidance_models_aerobrakingcampaignpropulsivemaneuverguidancemodel": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.thruster_guidance_functions__ensure_apo_target_state_bang",
+    "gnc.thruster_guidance_functions__flight_apoapsis_ratio_scale",
+    "gnc.thruster_guidance_functions__oblate_altitude_from_radius",
+    "gnc.thruster_guidance_functions__oblate_surface_radius",
+    "gnc.thruster_guidance_functions__radius_for_oblate_altitude",
+    "gnc.thruster_guidance_functions__wrap_2pi_guidance",
+    "gnc.thruster_guidance_functions_calcguidanceeffect_bang",
+    "gnc.thruster_guidance_models_apoapsistargetperiapsisraiseguidancemodel",
+    "gncz.thruster_guidance_functions__osculating_elements_and_periapsis_direction",
+    "gncz.thruster_guidance_models_aerobrakingcampaignpropulsivemaneuverguidancemodel"
+  ]
+}

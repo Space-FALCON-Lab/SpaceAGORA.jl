@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-assets",
+  "chart_kind": "sub",
+  "title": "RPOStationAssets — internals (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.assets",
+    "layout_of": "a41b6bb957d5c1e0"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.assets",
+  "ui": {
+    "pos_overrides": {
+      "assets.rpo_station_assets__load_stl_triangles": [
+        400.0,
+        80.0
+      ],
+      "assets.rpo_station_assets__stl_pointcloud": [
+        80.0,
+        80.0
+      ],
+      "assets.rpo_station_assets_load_rpo_station_cad_triangles": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "assets.rpo_station_assets__load_stl_triangles",
+    "assets.rpo_station_assets__stl_pointcloud",
+    "assets.rpo_station_assets_load_rpo_station_cad_triangles"
+  ]
+}

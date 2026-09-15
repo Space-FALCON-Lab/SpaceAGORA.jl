@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "analysis-analysis-verification-telemetry-verification-error-tables-jl",
+  "chart_kind": "sub",
+  "title": "analysis/verification/telemetry_verification/error_tables.jl (analysis)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/analysis/verification/telemetry_verification/error_tables.jl",
+    "layout_of": "c1110f91e09c0740"
+  },
+  "derives_from": "analysis-analysis-verification-telemetry-verification",
+  "group": "grp.src_analysis_verification_telemetry_verification_error_tables_jl",
+  "ui": {
+    "pos_overrides": {
+      "analysis.error_tables__telemetry_altitude_km": [
+        400.0,
+        80.0
+      ],
+      "analysis.error_tables__time_aligned_rows_errors": [
+        80.0,
+        80.0
+      ],
+      "analysis.error_tables__tolerances_for": [
+        80.0,
+        230.0
+      ],
+      "envana.ana_error_tables_orbit_rows_errors": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "analysis.error_tables__telemetry_altitude_km",
+    "analysis.error_tables__time_aligned_rows_errors",
+    "analysis.error_tables__tolerances_for",
+    "envana.ana_error_tables_orbit_rows_errors"
+  ]
+}

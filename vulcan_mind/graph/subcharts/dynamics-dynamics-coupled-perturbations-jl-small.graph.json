@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "dynamics-dynamics-coupled-perturbations-jl-small",
+  "chart_kind": "sub",
+  "title": "dynamics/coupled/perturbations.jl/ (small files) (dynamics)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/dynamics/coupled/perturbations.jl#_small",
+    "layout_of": "4149ba41a495cbe2"
+  },
+  "derives_from": "dynamics-dynamics-coupled-perturbations-jl",
+  "group": "grp.src_dynamics_coupled_perturbations_jl_small",
+  "ui": {
+    "pos_overrides": {
+      "dynamics.perturbations__cannonball_radiation_accel": [
+        720.0,
+        830.0
+      ],
+      "dynamics.perturbations__canonical_harmonics_normalization": [
+        400.0,
+        80.0
+      ],
+      "dynamics.perturbations__canonical_spice_name": [
+        1040.0,
+        230.0
+      ],
+      "dynamics.perturbations__clamp_unit": [
+        80.0,
+        80.0
+      ],
+      "dynamics.perturbations__convert_harmonics_coefficients_to_full_bang": [
+        80.0,
+        230.0
+      ],
+      "dynamics.perturbations__ensure_nbody_workspace_capacity_bang": [
+        80.0,
+        380.0
+      ],
+      "dynamics.perturbations__fully_normalized_legendre_scale": [
+        400.0,
+        230.0
+      ],
+      "dynamics.perturbations__get_harmonics_batch_pool": [
+        400.0,
+        380.0
+      ],
+      "dynamics.perturbations__get_harmonics_batch_pool_cached_bang": [
+        80.0,
+        530.0
+      ],
+      "dynamics.perturbations__infer_harmonics_reference_radius_m": [
+        80.0,
+        680.0
+      ],
+      "dynamics.perturbations__interp_vec3_catmull_rom": [
+        80.0,
+        830.0
+      ],
+      "dynamics.perturbations__interp_vec3_linear": [
+        80.0,
+        980.0
+      ],
+      "dynamics.perturbations__lambert_phase_function": [
+        400.0,
+        830.0
+      ],
+      "dynamics.perturbations__lvlh_cascade_torque": [
+        400.0,
+        680.0
+      ],
+      "dynamics.perturbations__magnetic_field_inertial": [
+        720.0,
+        80.0
+      ],
+      "dynamics.perturbations__mu_lookup_name": [
+        720.0,
+        680.0
+      ],
+      "dynamics.perturbations__resolve_third_body_mu": [
+        400.0,
+        980.0
+      ],
+      "dynamics.perturbations__total_dipole_moment_body": [
+        80.0,
+        1130.0
+      ],
+      "dynamics.perturbations_calcforcetorque": [
+        720.0,
+        230.0
+      ],
+      "dynamics.perturbations_eclipse_area_calc": [
+        720.0,
+        980.0
+      ],
+      "dynamics.perturbations_eddy_damping_torque": [
+        400.0,
+        530.0
+      ],
+      "dynamics.perturbations_eddycurrentdampingmodel": [
+        80.0,
+        1280.0
+      ],
+      "dynamics.perturbations_environment_requirements": [
+        720.0,
+        380.0
+      ],
+      "dynamics.perturbations_get_magnetic_field_dipole": [
+        1040.0,
+        80.0
+      ],
+      "dynamics.perturbations_gravitationalharmonicsmodel": [
+        80.0,
+        1430.0
+      ],
+      "dynamics.perturbations_harmonicsbatchworkspace": [
+        80.0,
+        1580.0
+      ],
+      "dynamics.perturbations_lvlhcascadeattitudecontrolmodel": [
+        80.0,
+        1730.0
+      ],
+      "dynamics.perturbations_magnetictorquerodmodel": [
+        80.0,
+        1880.0
+      ],
+      "dynamics.perturbations_nbodygravitymodel": [
+        400.0,
+        1130.0
+      ],
+      "dynamics.perturbations_planetary_albedo_accel": [
+        80.0,
+        2030.0
+      ],
+      "dynamics.perturbations_planetary_ir_accel": [
+        80.0,
+        2180.0
+      ],
+      "dynamics.perturbations_solarradiationpressuremodel": [
+        80.0,
+        2330.0
+      ],
+      "dynamics.perturbations_srp_cannonball_accel": [
+        400.0,
+        1280.0
+      ],
+      "dynamics.perturbations_wrench": [
+        720.0,
+        530.0
+      ],
+      "dynx.coupled_perturbations_calculate_magnetic_torque": [
+        80.0,
+        2480.0
+      ],
+      "dynx.coupled_perturbations_srp": [
+        80.0,
+        2630.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "dynamics.perturbations__cannonball_radiation_accel",
+    "dynamics.perturbations__canonical_harmonics_normalization",
+    "dynamics.perturbations__canonical_spice_name",
+    "dynamics.perturbations__clamp_unit",
+    "dynamics.perturbations__convert_harmonics_coefficients_to_full_bang",
+    "dynamics.perturbations__ensure_nbody_workspace_capacity_bang",
+    "dynamics.perturbations__fully_normalized_legendre_scale",
+    "dynamics.perturbations__get_harmonics_batch_pool",
+    "dynamics.perturbations__get_harmonics_batch_pool_cached_bang",
+    "dynamics.perturbations__infer_harmonics_reference_radius_m",
+    "dynamics.perturbations__interp_vec3_catmull_rom",
+    "dynamics.perturbations__interp_vec3_linear",
+    "dynamics.perturbations__lambert_phase_function",
+    "dynamics.perturbations__lvlh_cascade_torque",
+    "dynamics.perturbations__magnetic_field_inertial",
+    "dynamics.perturbations__mu_lookup_name",
+    "dynamics.perturbations__resolve_third_body_mu",
+    "dynamics.perturbations__total_dipole_moment_body",
+    "dynamics.perturbations_calcforcetorque",
+    "dynamics.perturbations_eclipse_area_calc",
+    "dynamics.perturbations_eddy_damping_torque",
+    "dynamics.perturbations_eddycurrentdampingmodel",
+    "dynamics.perturbations_environment_requirements",
+    "dynamics.perturbations_get_magnetic_field_dipole",
+    "dynamics.perturbations_gravitationalharmonicsmodel",
+    "dynamics.perturbations_harmonicsbatchworkspace",
+    "dynamics.perturbations_lvlhcascadeattitudecontrolmodel",
+    "dynamics.perturbations_magnetictorquerodmodel",
+    "dynamics.perturbations_nbodygravitymodel",
+    "dynamics.perturbations_planetary_albedo_accel",
+    "dynamics.perturbations_planetary_ir_accel",
+    "dynamics.perturbations_solarradiationpressuremodel",
+    "dynamics.perturbations_srp_cannonball_accel",
+    "dynamics.perturbations_wrench",
+    "dynx.coupled_perturbations_calculate_magnetic_torque",
+    "dynx.coupled_perturbations_srp"
+  ]
+}

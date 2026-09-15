@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "run-pipeline-environment-ephemerides",
+  "chart_kind": "sub",
+  "title": "environment/ephemerides/ (run-pipeline)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_environment_ephemerides",
+    "layout_of": "e7ac3d6c553d1918"
+  },
+  "derives_from": "run-pipeline",
+  "group": "grp.src_environment_ephemerides",
+  "ui": {
+    "pos_overrides": {
+      "environment.simple_ephemerides__initial_time_datetime": [
+        400.0,
+        80.0
+      ],
+      "environment.simple_ephemerides__spice_planet_frame_lpi": [
+        400.0,
+        230.0
+      ],
+      "environment.simple_ephemerides__spice_position_j2000_m_unlocked": [
+        80.0,
+        80.0
+      ],
+      "environment.simple_ephemerides_ephemerides_time_seconds": [
+        80.0,
+        230.0
+      ],
+      "environment.simple_ephemerides_planet_frame_lpi": [
+        80.0,
+        380.0
+      ],
+      "environment.simple_ephemerides_spiceephemeridesmodel": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "environment.simple_ephemerides__initial_time_datetime",
+    "environment.simple_ephemerides__spice_planet_frame_lpi",
+    "environment.simple_ephemerides__spice_position_j2000_m_unlocked",
+    "environment.simple_ephemerides_ephemerides_time_seconds",
+    "environment.simple_ephemerides_planet_frame_lpi",
+    "environment.simple_ephemerides_spiceephemeridesmodel"
+  ]
+}

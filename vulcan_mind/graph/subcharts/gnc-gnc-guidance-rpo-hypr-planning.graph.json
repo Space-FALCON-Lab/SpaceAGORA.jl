@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-hypr-planning",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/hypr_planning/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/hypr_planning",
+    "layout_of": "7ab021e07aff7b65"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo",
+  "group": "grp.src_gnc_guidance_rpo_hypr_planning",
+  "ui": {
+    "pos_overrides": {
+      "gnc.replanning__rpo_replanning_property": [
+        400.0,
+        80.0
+      ],
+      "gnc.replanning__rpo_replanning_sphere": [
+        80.0,
+        80.0
+      ],
+      "gnc.replanning_rpo_active_replanning_spheres": [
+        400.0,
+        680.0
+      ],
+      "gnc.replanning_rpo_geometry_with_replanning_spheres": [
+        400.0,
+        830.0
+      ],
+      "gnc.replanning_rpo_plan_from_path": [
+        400.0,
+        380.0
+      ],
+      "gnc.replanning_rpo_reference_tracking_error": [
+        400.0,
+        980.0
+      ],
+      "gnc.replanning_rpo_remaining_reference_path": [
+        400.0,
+        530.0
+      ],
+      "gnc.replanning_rpo_replanning_signature": [
+        80.0,
+        230.0
+      ],
+      "gnc.replanning_rpo_replanning_sphere_center": [
+        720.0,
+        80.0
+      ],
+      "gnc.replanning_rpo_retime_existing_plan": [
+        80.0,
+        380.0
+      ],
+      "gnc.replanning_rpo_sphere_surface_points": [
+        720.0,
+        380.0
+      ],
+      "gnc.replanning_rporeplanningconfig": [
+        400.0,
+        230.0
+      ],
+      "gnc.replanning_rporeplanningsphere": [
+        720.0,
+        230.0
+      ],
+      "gncy.replanning_rpo_replanning_decision": [
+        80.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.replanning__rpo_replanning_property",
+    "gnc.replanning__rpo_replanning_sphere",
+    "gnc.replanning_rpo_active_replanning_spheres",
+    "gnc.replanning_rpo_geometry_with_replanning_spheres",
+    "gnc.replanning_rpo_plan_from_path",
+    "gnc.replanning_rpo_reference_tracking_error",
+    "gnc.replanning_rpo_remaining_reference_path",
+    "gnc.replanning_rpo_replanning_signature",
+    "gnc.replanning_rpo_replanning_sphere_center",
+    "gnc.replanning_rpo_retime_existing_plan",
+    "gnc.replanning_rpo_sphere_surface_points",
+    "gnc.replanning_rporeplanningconfig",
+    "gnc.replanning_rporeplanningsphere",
+    "gncy.replanning_rpo_replanning_decision"
+  ]
+}

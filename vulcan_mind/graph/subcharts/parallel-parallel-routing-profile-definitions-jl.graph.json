@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "parallel-parallel-routing-profile-definitions-jl",
+  "chart_kind": "sub",
+  "title": "parallel/routing/profile_definitions.jl (parallel)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/parallel/routing/profile_definitions.jl",
+    "layout_of": "425c77b936866b3d"
+  },
+  "derives_from": "parallel-parallel-routing",
+  "group": "grp.src_parallel_routing_profile_definitions_jl",
+  "ui": {
+    "pos_overrides": {
+      "parallel.parallel_profile": [
+        80.0,
+        80.0
+      ],
+      "parallel.profile_config": [
+        400.0,
+        80.0
+      ],
+      "parallel.profile_definitions__normalize_profile_token": [
+        400.0,
+        230.0
+      ],
+      "parallel.profile_definitions_parallel_profile_name": [
+        1040.0,
+        80.0
+      ],
+      "parallel.profile_definitions_parallelprofileconfig": [
+        720.0,
+        80.0
+      ],
+      "parallel.profile_definitions_parse_parallel_profile": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "parallel.parallel_profile",
+    "parallel.profile_config",
+    "parallel.profile_definitions__normalize_profile_token",
+    "parallel.profile_definitions_parallel_profile_name",
+    "parallel.profile_definitions_parallelprofileconfig",
+    "parallel.profile_definitions_parse_parallel_profile"
+  ]
+}

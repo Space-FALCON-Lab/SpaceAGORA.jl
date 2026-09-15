@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-navigation",
+  "chart_kind": "sub",
+  "title": "gnc/navigation/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/navigation",
+    "layout_of": "a7157e5014a5b0b0"
+  },
+  "derives_from": "gnc",
+  "group": "grp.src_gnc_navigation",
+  "ui": {
+    "pos_overrides": {
+      "gnc.clearance_rpo_clearance_distance_to_station": [
+        400.0,
+        80.0
+      ],
+      "gnc.clearance_rpo_path_clearance_stats": [
+        80.0,
+        80.0
+      ],
+      "gnc.mesh_distance__nearest_station_distance_sq_kdtree": [
+        1040.0,
+        80.0
+      ],
+      "gnc.mesh_distance__rpo_station_point": [
+        720.0,
+        230.0
+      ],
+      "gnc.mesh_distance_nearest_station_distance_sq": [
+        720.0,
+        80.0
+      ],
+      "gnc.mesh_distance_nearest_station_point": [
+        400.0,
+        530.0
+      ],
+      "gnc.navigation_hooks_navigationhooks": [
+        80.0,
+        230.0
+      ],
+      "gnc.station_geometry__rpo_build_station_kdtree": [
+        80.0,
+        380.0
+      ],
+      "gnc.station_geometry_rpostationkdnode": [
+        400.0,
+        380.0
+      ],
+      "gncz.clearance_rpo_clearance_to_station": [
+        80.0,
+        530.0
+      ],
+      "gncz.cubesat_geometry_rpocubesatgeometry": [
+        80.0,
+        680.0
+      ],
+      "gncz.mesh_distance__nearest_station_point_kdtree": [
+        80.0,
+        830.0
+      ],
+      "gncz.navigation_hooks_calcnavigationeffect_bang": [
+        400.0,
+        230.0
+      ],
+      "gncz.rpo_distance_queries_rpo_goal_standoff_point": [
+        80.0,
+        980.0
+      ],
+      "gncz.rpo_reference_geometry_rporeferencegeometry": [
+        80.0,
+        1130.0
+      ],
+      "gncz.station_geometry_rpostationgeometry": [
+        80.0,
+        1280.0
+      ],
+      "gncz.surface_frames_rpo_surface_normal_from_pointcloud": [
+        80.0,
+        1430.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.clearance_rpo_clearance_distance_to_station",
+    "gnc.clearance_rpo_path_clearance_stats",
+    "gnc.mesh_distance__nearest_station_distance_sq_kdtree",
+    "gnc.mesh_distance__rpo_station_point",
+    "gnc.mesh_distance_nearest_station_distance_sq",
+    "gnc.mesh_distance_nearest_station_point",
+    "gnc.navigation_hooks_navigationhooks",
+    "gnc.station_geometry__rpo_build_station_kdtree",
+    "gnc.station_geometry_rpostationkdnode",
+    "gncz.clearance_rpo_clearance_to_station",
+    "gncz.cubesat_geometry_rpocubesatgeometry",
+    "gncz.mesh_distance__nearest_station_point_kdtree",
+    "gncz.navigation_hooks_calcnavigationeffect_bang",
+    "gncz.rpo_distance_queries_rpo_goal_standoff_point",
+    "gncz.rpo_reference_geometry_rporeferencegeometry",
+    "gncz.station_geometry_rpostationgeometry",
+    "gncz.surface_frames_rpo_surface_normal_from_pointcloud"
+  ]
+}

@@ -1,0 +1,134 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "core-core-state",
+  "chart_kind": "sub",
+  "title": "core/state/ (core)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/core/state",
+    "layout_of": "2ab93c01c2f358c8"
+  },
+  "derives_from": "core",
+  "group": "grp.src_core_state",
+  "ui": {
+    "pos_overrides": {
+      "core.no_gram_presets_make_no_gram_density_model": [
+        80.0,
+        80.0
+      ],
+      "core.no_gram_presets_make_no_gram_planet": [
+        400.0,
+        80.0
+      ],
+      "core.no_gram_presets_nogrampresets": [
+        80.0,
+        230.0
+      ],
+      "core.reference_system_config_cartesian": [
+        80.0,
+        380.0
+      ],
+      "core.reference_system_config_clock": [
+        80.0,
+        530.0
+      ],
+      "core.reference_system_config_h_lan_lon": [
+        80.0,
+        680.0
+      ],
+      "core.reference_system_config_r_ra_dec": [
+        80.0,
+        830.0
+      ],
+      "core.reference_system_config_referencesystems": [
+        80.0,
+        980.0
+      ],
+      "core.reference_system_config_udunue": [
+        80.0,
+        1130.0
+      ],
+      "core.simulation_configuration__parse_mission_type": [
+        720.0,
+        80.0
+      ],
+      "core.simulation_configuration__warn_deprecated_config_enabled": [
+        1360.0,
+        80.0
+      ],
+      "core.simulation_configuration__warn_deprecated_mission_type_input_bang": [
+        1040.0,
+        80.0
+      ],
+      "core.simulation_configuration_environmentmodel": [
+        400.0,
+        230.0
+      ],
+      "core.simulation_configuration_filepaths": [
+        400.0,
+        380.0
+      ],
+      "core.simulation_configuration_initialtime": [
+        80.0,
+        1280.0
+      ],
+      "core.simulation_configuration_integrationtolerances": [
+        400.0,
+        530.0
+      ],
+      "core.simulation_configuration_missionconfiguration": [
+        400.0,
+        680.0
+      ],
+      "core.simulation_configuration_simconfig": [
+        80.0,
+        1430.0
+      ],
+      "core.simulation_configuration_simulationsettings": [
+        400.0,
+        830.0
+      ],
+      "core.simulation_configuration_solverconfig": [
+        80.0,
+        1580.0
+      ],
+      "parcore.no_gram_presets_make_no_gram_environment": [
+        80.0,
+        1730.0
+      ],
+      "parcore.reference_system_config_oe": [
+        80.0,
+        1880.0
+      ],
+      "parcore.simulation_configuration_simulationconfiguration": [
+        80.0,
+        2030.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "core.no_gram_presets_make_no_gram_density_model",
+    "core.no_gram_presets_make_no_gram_planet",
+    "core.no_gram_presets_nogrampresets",
+    "core.reference_system_config_cartesian",
+    "core.reference_system_config_clock",
+    "core.reference_system_config_h_lan_lon",
+    "core.reference_system_config_r_ra_dec",
+    "core.reference_system_config_referencesystems",
+    "core.reference_system_config_udunue",
+    "core.simulation_configuration__parse_mission_type",
+    "core.simulation_configuration__warn_deprecated_config_enabled",
+    "core.simulation_configuration__warn_deprecated_mission_type_input_bang",
+    "core.simulation_configuration_environmentmodel",
+    "core.simulation_configuration_filepaths",
+    "core.simulation_configuration_initialtime",
+    "core.simulation_configuration_integrationtolerances",
+    "core.simulation_configuration_missionconfiguration",
+    "core.simulation_configuration_simconfig",
+    "core.simulation_configuration_simulationsettings",
+    "core.simulation_configuration_solverconfig",
+    "parcore.no_gram_presets_make_no_gram_environment",
+    "parcore.reference_system_config_oe",
+    "parcore.simulation_configuration_simulationconfiguration"
+  ]
+}

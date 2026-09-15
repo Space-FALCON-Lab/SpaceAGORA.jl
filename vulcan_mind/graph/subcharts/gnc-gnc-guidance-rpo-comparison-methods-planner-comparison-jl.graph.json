@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-comparison-methods-planner-comparison-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/comparison_methods/planner_comparison.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/comparison_methods/planner_comparison.jl",
+    "layout_of": "cb283c3ed022d7b8"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-comparison-methods",
+  "group": "grp.src_gnc_guidance_rpo_comparison_methods_planner_comparison_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.planner_comparison__rpo_comparison_config_with_fixed_safe_distance": [
+        720.0,
+        1430.0
+      ],
+      "gnc.planner_comparison__rpo_comparison_progress_bar": [
+        720.0,
+        1280.0
+      ],
+      "gnc.planner_comparison__rpo_comparison_progress_line_bang": [
+        400.0,
+        1280.0
+      ],
+      "gnc.planner_comparison__rpo_comparison_rrt_connect_seed_path": [
+        400.0,
+        980.0
+      ],
+      "gnc.planner_comparison__rpo_comparison_rrt_connect_settings": [
+        720.0,
+        1130.0
+      ],
+      "gnc.planner_comparison__rpo_comparison_rrt_star_settings": [
+        400.0,
+        1130.0
+      ],
+      "gnc.planner_comparison_rpo_740_mpc_final_pso_config": [
+        1360.0,
+        230.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_artifact_slug": [
+        80.0,
+        80.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_axis_name": [
+        720.0,
+        230.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_cost_iteration_plot": [
+        400.0,
+        80.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_cost_iteration_xvalues": [
+        720.0,
+        80.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_failed_paths_plot": [
+        720.0,
+        980.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_metric_includes_result": [
+        720.0,
+        380.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_metric_specs": [
+        720.0,
+        530.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_metric_summary_plot": [
+        400.0,
+        230.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_metric_value": [
+        720.0,
+        680.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_path_family_plot": [
+        400.0,
+        380.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_single_path_plot": [
+        80.0,
+        230.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_station_mesh_trace": [
+        1360.0,
+        80.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_station_trace": [
+        1040.0,
+        80.0
+      ],
+      "gnc.planner_comparison_rpo_comparison_trace_axis_name": [
+        720.0,
+        830.0
+      ],
+      "gnc.planner_comparison_rpo_flatten_planner_results": [
+        400.0,
+        530.0
+      ],
+      "gnc.planner_comparison_rpo_group_metric_mean": [
+        80.0,
+        380.0
+      ],
+      "gnc.planner_comparison_rpo_lqmpc_reference_preview": [
+        720.0,
+        1580.0
+      ],
+      "gnc.planner_comparison_rpo_lqmpc_tracking_fuel_used_pct": [
+        720.0,
+        1730.0
+      ],
+      "gnc.planner_comparison_rpo_plan_comparison_path": [
+        400.0,
+        1430.0
+      ],
+      "gnc.planner_comparison_rpo_track_retimed_path_lqmpc": [
+        400.0,
+        1580.0
+      ],
+      "gnc.planner_comparison_rpo_write_failed_path_outputs": [
+        400.0,
+        680.0
+      ],
+      "gnc.planner_comparison_rpo_write_namedtuple_csv": [
+        400.0,
+        830.0
+      ],
+      "gnc.planner_comparison_rpo_write_planner_comparison_outputs": [
+        80.0,
+        530.0
+      ],
+      "gnc.planner_comparison_rpolqmpctrackingsettings": [
+        1360.0,
+        380.0
+      ],
+      "gnc.planner_comparison_rpoplannercomparisoncase": [
+        80.0,
+        680.0
+      ],
+      "gnc.planner_comparison_rpoplannercomparisonconfig": [
+        1040.0,
+        230.0
+      ],
+      "gnc.planner_comparison_runtime_limited_iters": [
+        80.0,
+        830.0
+      ],
+      "gncy.planner_comparison_rpo_run_planner_comparison_batch": [
+        80.0,
+        980.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.planner_comparison__rpo_comparison_config_with_fixed_safe_distance",
+    "gnc.planner_comparison__rpo_comparison_progress_bar",
+    "gnc.planner_comparison__rpo_comparison_progress_line_bang",
+    "gnc.planner_comparison__rpo_comparison_rrt_connect_seed_path",
+    "gnc.planner_comparison__rpo_comparison_rrt_connect_settings",
+    "gnc.planner_comparison__rpo_comparison_rrt_star_settings",
+    "gnc.planner_comparison_rpo_740_mpc_final_pso_config",
+    "gnc.planner_comparison_rpo_comparison_artifact_slug",
+    "gnc.planner_comparison_rpo_comparison_axis_name",
+    "gnc.planner_comparison_rpo_comparison_cost_iteration_plot",
+    "gnc.planner_comparison_rpo_comparison_cost_iteration_xvalues",
+    "gnc.planner_comparison_rpo_comparison_failed_paths_plot",
+    "gnc.planner_comparison_rpo_comparison_metric_includes_result",
+    "gnc.planner_comparison_rpo_comparison_metric_specs",
+    "gnc.planner_comparison_rpo_comparison_metric_summary_plot",
+    "gnc.planner_comparison_rpo_comparison_metric_value",
+    "gnc.planner_comparison_rpo_comparison_path_family_plot",
+    "gnc.planner_comparison_rpo_comparison_single_path_plot",
+    "gnc.planner_comparison_rpo_comparison_station_mesh_trace",
+    "gnc.planner_comparison_rpo_comparison_station_trace",
+    "gnc.planner_comparison_rpo_comparison_trace_axis_name",
+    "gnc.planner_comparison_rpo_flatten_planner_results",
+    "gnc.planner_comparison_rpo_group_metric_mean",
+    "gnc.planner_comparison_rpo_lqmpc_reference_preview",
+    "gnc.planner_comparison_rpo_lqmpc_tracking_fuel_used_pct",
+    "gnc.planner_comparison_rpo_plan_comparison_path",
+    "gnc.planner_comparison_rpo_track_retimed_path_lqmpc",
+    "gnc.planner_comparison_rpo_write_failed_path_outputs",
+    "gnc.planner_comparison_rpo_write_namedtuple_csv",
+    "gnc.planner_comparison_rpo_write_planner_comparison_outputs",
+    "gnc.planner_comparison_rpolqmpctrackingsettings",
+    "gnc.planner_comparison_rpoplannercomparisoncase",
+    "gnc.planner_comparison_rpoplannercomparisonconfig",
+    "gnc.planner_comparison_runtime_limited_iters",
+    "gncy.planner_comparison_rpo_run_planner_comparison_batch"
+  ]
+}

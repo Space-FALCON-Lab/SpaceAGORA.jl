@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-control-struct-load-control-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/struct_load_control.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/control/struct_load_control.jl",
+    "layout_of": "843fceae458c6364"
+  },
+  "derives_from": "gnc-gnc-control",
+  "group": "grp.src_gnc_control_struct_load_control_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.struct_load_control__energy_depletion_struct_drag_area": [
+        720.0,
+        80.0
+      ],
+      "gnc.struct_load_control__energy_depletion_struct_load_root_alpha": [
+        400.0,
+        80.0
+      ],
+      "gnc.struct_load_control_f": [
+        80.0,
+        80.0
+      ],
+      "gncx.struct_load_control__edg_structural_alpha": [
+        80.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.struct_load_control__energy_depletion_struct_drag_area",
+    "gnc.struct_load_control__energy_depletion_struct_load_root_alpha",
+    "gnc.struct_load_control_f",
+    "gncx.struct_load_control__edg_structural_alpha"
+  ]
+}

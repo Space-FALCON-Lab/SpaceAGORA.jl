@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-simulation-campaigns",
+  "chart_kind": "sub",
+  "title": "simulation/campaigns/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_simulation_campaigns",
+    "layout_of": "41d2daeac72c65cf"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_simulation_campaigns",
+  "ui": {
+    "pos_overrides": {
+      "simulation.adaptive_routing__run_campaign_with_route_env": [
+        80.0,
+        80.0
+      ],
+      "simulation.campaign_route_features": [
+        80.0,
+        230.0
+      ],
+      "simulation.constellation_ensemble__validate_ensemble_uncoupled": [
+        80.0,
+        380.0
+      ],
+      "simulation.monte_carlo__run_monte_carlo_serial": [
+        80.0,
+        530.0
+      ],
+      "simulation.monte_carlo_result": [
+        400.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.adaptive_routing__run_campaign_with_route_env",
+    "simulation.campaign_route_features",
+    "simulation.constellation_ensemble__validate_ensemble_uncoupled",
+    "simulation.monte_carlo__run_monte_carlo_serial",
+    "simulation.monte_carlo_result"
+  ]
+}

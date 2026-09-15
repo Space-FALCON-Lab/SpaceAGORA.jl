@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "simulation-simulation-callbacks-event-callbacks-jl",
+  "chart_kind": "sub",
+  "title": "simulation/callbacks/event_callbacks.jl (simulation)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/simulation/callbacks/event_callbacks.jl",
+    "layout_of": "2e2a51fc78d8130a"
+  },
+  "derives_from": "simulation-simulation-callbacks",
+  "group": "grp.src_simulation_callbacks_event_callbacks_jl",
+  "ui": {
+    "pos_overrides": {
+      "simulation.event_callbacks_affect_bang": [
+        400.0,
+        80.0
+      ],
+      "simulation.event_callbacks_affect_downcrossing_bang": [
+        400.0,
+        230.0
+      ],
+      "simulation.event_callbacks_affect_upcrossing_bang": [
+        80.0,
+        80.0
+      ],
+      "simulation.event_callbacks_condition": [
+        80.0,
+        230.0
+      ],
+      "simulation.event_callbacks_condition_bang": [
+        400.0,
+        380.0
+      ],
+      "simulation.event_callbacks_get_data_saving_callback": [
+        80.0,
+        380.0
+      ],
+      "simulation.event_callbacks_get_drag_state_callback": [
+        80.0,
+        530.0
+      ],
+      "simulation.event_callbacks_get_entry_end_callback": [
+        80.0,
+        680.0
+      ],
+      "simulation.event_callbacks_get_orbit_end_callback": [
+        80.0,
+        830.0
+      ],
+      "simulation.event_callbacks_get_quaternion_projection_callback": [
+        80.0,
+        980.0
+      ],
+      "simulation.event_callbacks_save_func": [
+        80.0,
+        1130.0
+      ],
+      "simulation_a.event_callbacks_get_impact_callback": [
+        80.0,
+        1280.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "simulation.event_callbacks_affect_bang",
+    "simulation.event_callbacks_affect_downcrossing_bang",
+    "simulation.event_callbacks_affect_upcrossing_bang",
+    "simulation.event_callbacks_condition",
+    "simulation.event_callbacks_condition_bang",
+    "simulation.event_callbacks_get_data_saving_callback",
+    "simulation.event_callbacks_get_drag_state_callback",
+    "simulation.event_callbacks_get_entry_end_callback",
+    "simulation.event_callbacks_get_orbit_end_callback",
+    "simulation.event_callbacks_get_quaternion_projection_callback",
+    "simulation.event_callbacks_save_func",
+    "simulation_a.event_callbacks_get_impact_callback"
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-control-heat-load-control-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/heat_load_control.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_control_heat_load_control_jl",
+    "layout_of": "1ea98f79b0aeb22e"
+  },
+  "derives_from": "aerobraking-gnc-control",
+  "group": "grp.src_gnc_control_heat_load_control_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.heat_load_control__edg_closed_form_heat_load_trajectory": [
+        80.0,
+        80.0
+      ],
+      "gnc.heat_load_control__edg_constrained_heat_load_alpha_profile": [
+        80.0,
+        230.0
+      ],
+      "gnc.heat_load_control__edg_drag_passage_duration": [
+        400.0,
+        80.0
+      ],
+      "gnc.heat_load_control__edg_heat_load_scale_height": [
+        80.0,
+        380.0
+      ],
+      "gnc.heat_load_control__edg_max_heat_load_for_links": [
+        80.0,
+        530.0
+      ],
+      "gnc.heat_load_control__edg_predict_mass": [
+        80.0,
+        680.0
+      ],
+      "gnc.heat_load_control__edg_profile_heat_rates": [
+        80.0,
+        830.0
+      ],
+      "gnc.heat_load_control__edg_total_ref_area": [
+        400.0,
+        230.0
+      ],
+      "gnc.heat_load_control__edg_weighted_aero_coefficients": [
+        80.0,
+        980.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.heat_load_control__edg_closed_form_heat_load_trajectory",
+    "gnc.heat_load_control__edg_constrained_heat_load_alpha_profile",
+    "gnc.heat_load_control__edg_drag_passage_duration",
+    "gnc.heat_load_control__edg_heat_load_scale_height",
+    "gnc.heat_load_control__edg_max_heat_load_for_links",
+    "gnc.heat_load_control__edg_predict_mass",
+    "gnc.heat_load_control__edg_profile_heat_rates",
+    "gnc.heat_load_control__edg_total_ref_area",
+    "gnc.heat_load_control__edg_weighted_aero_coefficients"
+  ]
+}

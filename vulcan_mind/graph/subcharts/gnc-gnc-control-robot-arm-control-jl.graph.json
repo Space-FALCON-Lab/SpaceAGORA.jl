@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-control-robot-arm-control-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/robot_arm_control.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/control/robot_arm_control.jl",
+    "layout_of": "c014dd2295b0bd3d"
+  },
+  "derives_from": "gnc-gnc-control",
+  "group": "grp.src_gnc_control_robot_arm_control_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.robot_arm_control__robot_arm_control_axis_angle_about": [
+        720.0,
+        80.0
+      ],
+      "gnc.robot_arm_control__robot_arm_control_quat_conj": [
+        720.0,
+        230.0
+      ],
+      "gnc.robot_arm_control__robot_arm_control_reference_state": [
+        400.0,
+        80.0
+      ],
+      "gnc.robot_arm_control__robot_arm_control_spacecraft_state": [
+        400.0,
+        230.0
+      ],
+      "gnc.robot_arm_control__robot_arm_default_joint_inertia": [
+        400.0,
+        830.0
+      ],
+      "gnc.robot_arm_control_calccontroleffect_bang": [
+        80.0,
+        80.0
+      ],
+      "gnc.robot_arm_control_calccontrolforcetorque": [
+        80.0,
+        230.0
+      ],
+      "gnc.robot_arm_control_calccontrolmassflowrate": [
+        80.0,
+        380.0
+      ],
+      "gnc.robot_arm_control_init_robot_arm_joint_mpc": [
+        80.0,
+        530.0
+      ],
+      "gnc.robot_arm_control_robot_arm_joint_mpc_reference_preview": [
+        400.0,
+        380.0
+      ],
+      "gnc.robot_arm_control_robot_arm_measured_joint_state": [
+        400.0,
+        530.0
+      ],
+      "gnc.robot_arm_control_robotarmcontroleffector": [
+        80.0,
+        680.0
+      ],
+      "gnc.robot_arm_control_robotarmheldactuation": [
+        400.0,
+        680.0
+      ],
+      "gnc.robot_arm_control_robotarmjointmpccontroller": [
+        400.0,
+        980.0
+      ],
+      "gncx.robot_arm_control_robot_arm_joint_mpc_control": [
+        80.0,
+        830.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.robot_arm_control__robot_arm_control_axis_angle_about",
+    "gnc.robot_arm_control__robot_arm_control_quat_conj",
+    "gnc.robot_arm_control__robot_arm_control_reference_state",
+    "gnc.robot_arm_control__robot_arm_control_spacecraft_state",
+    "gnc.robot_arm_control__robot_arm_default_joint_inertia",
+    "gnc.robot_arm_control_calccontroleffect_bang",
+    "gnc.robot_arm_control_calccontrolforcetorque",
+    "gnc.robot_arm_control_calccontrolmassflowrate",
+    "gnc.robot_arm_control_init_robot_arm_joint_mpc",
+    "gnc.robot_arm_control_robot_arm_joint_mpc_reference_preview",
+    "gnc.robot_arm_control_robot_arm_measured_joint_state",
+    "gnc.robot_arm_control_robotarmcontroleffector",
+    "gnc.robot_arm_control_robotarmheldactuation",
+    "gnc.robot_arm_control_robotarmjointmpccontroller",
+    "gncx.robot_arm_control_robot_arm_joint_mpc_control"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-vehicle-robotics",
+  "chart_kind": "sub",
+  "title": "vehicle/robotics/ (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_vehicle_robotics",
+    "layout_of": "625b807d0bbd1dd7"
+  },
+  "derives_from": "aerobraking",
+  "group": "grp.src_vehicle_robotics",
+  "ui": {
+    "pos_overrides": {
+      "vehicle.cloth_fk": [
+        80.0,
+        80.0
+      ],
+      "vehicle.robotics_closest_surface_target": [
+        80.0,
+        230.0
+      ],
+      "vehicle.robotics_default_cloth_arm_model": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "vehicle.cloth_fk",
+    "vehicle.robotics_closest_surface_target",
+    "vehicle.robotics_default_cloth_arm_model"
+  ]
+}

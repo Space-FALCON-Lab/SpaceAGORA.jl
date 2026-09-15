@@ -1,0 +1,801 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "structure",
+  "chart_kind": "sub",
+  "title": "Package structure (module containment)",
+  "derives_from": "master",
+  "local_nodes": [
+    {
+      "id": "module.spaceagora",
+      "label": "SpaceAGORA",
+      "kind": "module",
+      "doc": "nodes/modules/spaceagora.md",
+      "source": {
+        "file": "src/SpaceAGORA.jl",
+        "symbol": "SpaceAGORA"
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "analysis",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "TelemetryVerification and RPOVisualization, included at lines 13 and 15, supplying VerificationRequest, run_verification, run_study, rpo_path_plot and rpo_tracking_plot."
+          },
+          {
+            "id": "assets",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "RPOStationAssets, included at line 14, supplying station_geometry_path, station_cad_path and the load_rpo_station_pointcloud family of loaders."
+          },
+          {
+            "id": "cli",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "SpaceAGORACLI, included at line 16, supplying AssetCheckItem, AssetCheckReport, check_assets, render_asset_report and run_cli."
+          },
+          {
+            "id": "core",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "SimulationModel, included at line 10, the aggregator that owns spacecraft, environment, dynamics, guidance and control types re-exported by this package."
+          },
+          {
+            "id": "ext",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "SpaceAGORAGRAMSuiteExt, a Julia package extension loaded by the runtime when GRAMSuite is present, weakly extending the density-model surface."
+          },
+          {
+            "id": "parallel",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "ParallelProfiles and ParallelProcess, included at lines 7 and 8, supplying ParallelProfile, with_parallel_profile, ProcessPool and campaign_process_pool."
+          },
+          {
+            "id": "simulation",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "RuntimeServices, SimulationEngine and SimulationCampaigns, included at lines 9, 11 and 12, supplying SimulationEngineConfig, run_simulation and run_monte_carlo."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "The flat public namespace declared by the export list at lines 435 to 489, plus the forwarding entrypoints run_simulation, run_cli, check_assets, render_asset_report, prewarm_nbody_ephemeris_cache and load_nbody_ephemeris_cache!."
+          }
+        ]
+      },
+      "covers": [
+        "src/SpaceAGORA.jl",
+        "src/precompile_workload.jl"
+      ],
+      "ui": {
+        "pos": [
+          720.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.core",
+      "label": "SimulationModel",
+      "kind": "module",
+      "doc": "nodes/modules/core.md",
+      "source": {
+        "file": "src/core/simulation_model.jl",
+        "symbol": "SimulationModel"
+      },
+      "sockets": {
+        "inputs": [
+          {
+            "id": "dynamics",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "ClothMultibody, ClothRobotArmDynamics, DynamicsRotational, DynamicsTranslational and DynamicEffectors, included at lines 38, 40, 95, 99 and 103."
+          },
+          {
+            "id": "environment",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "Planets, EphemeridesModels and EnvironmentModels plus the gravity and aerodynamic effector files, included at lines 17, 48, 50, 82, 105 and 106."
+          },
+          {
+            "id": "gnc",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "CommandTypes, RobotArmPlanning, GuidanceModels, NavigationHooks, GuidanceHooks and ControlHooks, included at lines 29, 36, 45, 121, 124 and 127."
+          },
+          {
+            "id": "io",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "IOConfig, IOSerialization and IOOutputs, included at lines 109, 111 and 113, owning configuration parsing, state serialization and result writing."
+          },
+          {
+            "id": "mission",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "AerobrakingPolicy, included at line 117, owning the mission-operations policy types consumed by guidance and control hooks."
+          },
+          {
+            "id": "vehicle",
+            "type": "Module",
+            "units": "n/a",
+            "required": true,
+            "description": "Robotics, ThrusterModels, Components, SpacecraftModels, Assembly, Kinematics, ThrusterHooks, Structure and VehicleThermalModels, included at lines 34 to 131."
+          }
+        ],
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "The union namespace produced by the twenty-eight @reexport using statements, exposing spacecraft, environment, effector, sampling and configuration symbols under one module."
+          }
+        ]
+      },
+      "covers": [
+        "src/core/**"
+      ],
+      "ui": {
+        "pos": [
+          400.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.dynamics",
+      "label": "DynamicEffectors",
+      "kind": "module",
+      "doc": "nodes/modules/dynamics.md",
+      "source": {
+        "file": "src/dynamics/coupled/force_torque_models.jl",
+        "symbol": "DynamicEffectors"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "The exported effector surface — `calcForceTorque`, `wrench`, `wrench_caching!`, `environment_requirements`, `solver_partition`, and the model structs `ConstantGravityModel`, `InverseSquaredGravityModel`, `InverseSquaredJ2GravityModel`, `NBodyGravityModel`, `GravitationalHarmonicsModel`, `SolarRadiationPressureModel`, `MagneticTorqueRodModel`, `EddyCurrentDampingModel`, `AerodynamicCoefficientConstant`, `AerodynamicCoefficientfM`, `AerodynamicCoefficientNoBallisticFlight`, `BaseThrusterModel`, `RobotArmReactionEffector`."
+          }
+        ]
+      },
+      "covers": [
+        "src/dynamics/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          530.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.environment",
+      "label": "EnvironmentModels",
+      "kind": "module",
+      "doc": "nodes/modules/environment.md",
+      "source": {
+        "file": "src/environment/physical_models.jl",
+        "symbol": "EnvironmentModels"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "The exported environment surface — the density-model structs `NoAtmosphereModel`, `ExponentialAtmosphereModel`, `PiecewiseExponentialAtmosphereModel`, `TabulatedFlightAtmosphereModel`, `TimeTabulatedAtmosphereModel`, `NRLMSISE00AtmosphereModel`, `GRAMAtmosphereModel`, `GRAMAtmosphereModelSurrogate`, `ConstantDensityModel`, together with `getDensity`, `getDensityBatch!`, `init_nrlmsise_space_indices!`, `precompute_gram_static_grids!` and `clear_gram_static_grid_cache!`."
+          }
+        ]
+      },
+      "covers": [
+        "src/environment/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          680.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.gnc",
+      "label": "CommandTypes",
+      "kind": "module",
+      "doc": "nodes/modules/gnc.md",
+      "source": {
+        "file": "src/gnc/command_types.jl",
+        "symbol": "CommandTypes"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "Exported guidance, navigation and control surface — command records `PropulsiveManeuverCommand`, `PropulsiveBurnPlan` and `AerobrakingControlCommand`, the RPO controller entry points `init_rpo_lqmpc` and `rpo_lqmpc_control`, and the arm planners `plan_robot_arm_motion_hypr` and `cloth_ik` consumers."
+          }
+        ]
+      },
+      "covers": [
+        "src/gnc/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          980.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.io",
+      "label": "IOConfig",
+      "kind": "module",
+      "doc": "nodes/modules/io.md",
+      "source": {
+        "file": "src/io/config/io_config.jl",
+        "symbol": "IOConfig"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "Result-directory, collision-safe CSV, and checkpoint path helpers exported by IOConfig."
+          }
+        ]
+      },
+      "covers": [
+        "src/io/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          1130.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.mission",
+      "label": "AerobrakingPolicy",
+      "kind": "module",
+      "doc": "nodes/modules/mission.md",
+      "source": {
+        "file": "src/mission/operations/aerobraking_policy/policy_types.jl",
+        "symbol": "AerobrakingPolicy"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "AerobrakingStrategyKind, policy configuration and selector types, pass schedules, strategy_for_pass, and select_strategy."
+          }
+        ]
+      },
+      "covers": [
+        "src/mission/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          1280.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.vehicle",
+      "label": "Robotics",
+      "kind": "module",
+      "doc": "nodes/modules/vehicle.md",
+      "source": {
+        "file": "src/vehicle/robotics/robotics.jl",
+        "symbol": "Robotics"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "Robotics model records, forward/inverse kinematics, surface targeting, and the vehicle spacecraft, actuator, structure, thermal, and kinematics APIs aggregated by SimulationModel."
+          }
+        ]
+      },
+      "covers": [
+        "src/vehicle/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          1730.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.parallel",
+      "label": "ParallelProfiles",
+      "kind": "module",
+      "doc": "nodes/modules/parallel.md",
+      "source": {
+        "file": "src/parallel/routing/parallel_profiles.jl",
+        "symbol": "ParallelProfiles"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "Parallel profile configuration, environment mapping, outer-route state and metrics, route selection, and process-pool APIs."
+          }
+        ]
+      },
+      "covers": [
+        "src/parallel/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          1430.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.simulation",
+      "label": "RuntimeServices",
+      "kind": "module",
+      "doc": "nodes/modules/simulation.md",
+      "source": {
+        "file": "src/simulation/runtime_services.jl",
+        "symbol": "RuntimeServices"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "Shared SPICE/GRAM lock plus SimulationEngine, SimulationCampaigns, callback, checkpoint, and runtime service entrypoints included by the package."
+          }
+        ]
+      },
+      "covers": [
+        "src/simulation/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          1580.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.analysis",
+      "label": "TelemetryVerification",
+      "kind": "module",
+      "doc": "nodes/modules/analysis.md",
+      "source": {
+        "file": "src/analysis/verification/telemetry_verification.jl",
+        "symbol": "TelemetryVerification"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "VerificationRequest, VerificationResult, run_verification, run_verification_cli, and run_study exported by the telemetry verification package."
+          }
+        ]
+      },
+      "covers": [
+        "src/analysis/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          80.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.assets",
+      "label": "RPOStationAssets",
+      "kind": "module",
+      "doc": "nodes/modules/assets.md",
+      "source": {
+        "file": "src/assets/rpo_station_assets.jl",
+        "symbol": "RPOStationAssets"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "Station path helpers, point-cloud loaders, STL triangle loaders, and centered/scaled sampling functions exported by RPOStationAssets."
+          }
+        ]
+      },
+      "covers": [
+        "src/assets/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          230.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.cli",
+      "label": "SpaceAGORACLI",
+      "kind": "module",
+      "doc": "nodes/modules/cli.md",
+      "source": {
+        "file": "src/cli/spaceagora_cli.jl",
+        "symbol": "SpaceAGORACLI"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli, and command dispatch helpers exported by SpaceAGORACLI."
+          }
+        ]
+      },
+      "covers": [
+        "src/cli/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          380.0
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "module.ext",
+      "label": "SpaceAGORAGRAMSuiteExt",
+      "kind": "module",
+      "doc": "nodes/modules/ext.md",
+      "source": {
+        "file": "ext/SpaceAGORAGRAMSuiteExt.jl",
+        "symbol": "SpaceAGORAGRAMSuiteExt"
+      },
+      "sockets": {
+        "outputs": [
+          {
+            "id": "api",
+            "type": "Module",
+            "units": "n/a",
+            "description": "GRAMSuite-backed atmosphere constructors, density evaluation, static-grid preparation, serialization methods, and extension initialization hooks."
+          }
+        ]
+      },
+      "covers": [
+        "ext/**"
+      ],
+      "ui": {
+        "pos": [
+          80.0,
+          830.0
+        ]
+      },
+      "origin": "agent"
+    }
+  ],
+  "local_edges": [
+    {
+      "id": "e:module.dynamics:api->module.core:dynamics",
+      "from": {
+        "node": "module.dynamics",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.core",
+        "socket": "dynamics"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/core/simulation_model.jl",
+        "lines": [
+          38,
+          40
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.environment:api->module.core:environment",
+      "from": {
+        "node": "module.environment",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.core",
+        "socket": "environment"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/core/simulation_model.jl",
+        "lines": [
+          17,
+          50
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.gnc:api->module.core:gnc",
+      "from": {
+        "node": "module.gnc",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.core",
+        "socket": "gnc"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/core/simulation_model.jl",
+        "lines": [
+          29,
+          36
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.io:api->module.core:io",
+      "from": {
+        "node": "module.io",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.core",
+        "socket": "io"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/core/simulation_model.jl",
+        "lines": [
+          109,
+          113
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.mission:api->module.core:mission",
+      "from": {
+        "node": "module.mission",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.core",
+        "socket": "mission"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/core/simulation_model.jl",
+        "lines": [
+          117,
+          117
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.vehicle:api->module.core:vehicle",
+      "from": {
+        "node": "module.vehicle",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.core",
+        "socket": "vehicle"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/core/simulation_model.jl",
+        "lines": [
+          34,
+          54
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.core:api->module.spaceagora:core",
+      "from": {
+        "node": "module.core",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.spaceagora",
+        "socket": "core"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          9,
+          9
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.parallel:api->module.spaceagora:parallel",
+      "from": {
+        "node": "module.parallel",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.spaceagora",
+        "socket": "parallel"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          6,
+          7
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.simulation:api->module.spaceagora:simulation",
+      "from": {
+        "node": "module.simulation",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.spaceagora",
+        "socket": "simulation"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          8,
+          11
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.analysis:api->module.spaceagora:analysis",
+      "from": {
+        "node": "module.analysis",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.spaceagora",
+        "socket": "analysis"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          12,
+          14
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.assets:api->module.spaceagora:assets",
+      "from": {
+        "node": "module.assets",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.spaceagora",
+        "socket": "assets"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          13,
+          13
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.cli:api->module.spaceagora:cli",
+      "from": {
+        "node": "module.cli",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.spaceagora",
+        "socket": "cli"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "src/SpaceAGORA.jl",
+        "lines": [
+          15,
+          15
+        ]
+      },
+      "origin": "agent"
+    },
+    {
+      "id": "e:module.ext:api->module.spaceagora:ext",
+      "from": {
+        "node": "module.ext",
+        "socket": "api"
+      },
+      "to": {
+        "node": "module.spaceagora",
+        "socket": "ext"
+      },
+      "kind": "call",
+      "label": "include / using",
+      "evidence": {
+        "file": "Project.toml",
+        "lines": [
+          54,
+          54
+        ]
+      },
+      "origin": "agent"
+    }
+  ],
+  "member_nodes": []
+}

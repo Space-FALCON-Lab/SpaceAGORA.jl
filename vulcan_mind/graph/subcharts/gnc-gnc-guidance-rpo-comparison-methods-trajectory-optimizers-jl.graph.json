@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-guidance-rpo-comparison-methods-trajectory-optimizers-jl",
+  "chart_kind": "sub",
+  "title": "gnc/guidance/rpo/comparison_methods/trajectory_optimizers.jl (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/guidance/rpo/comparison_methods/trajectory_optimizers.jl",
+    "layout_of": "a64dcfe271241a41"
+  },
+  "derives_from": "gnc-gnc-guidance-rpo-comparison-methods",
+  "group": "grp.src_gnc_guidance_rpo_comparison_methods_trajectory_optimizers_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.trajectory_optimizers_normalize_rpo_comparison_planner_type": [
+        400.0,
+        80.0
+      ],
+      "gnc.trajectory_optimizers_rpo_chomp_numeric_gradient": [
+        400.0,
+        1430.0
+      ],
+      "gnc.trajectory_optimizers_rpo_chomp_obstacle_potential": [
+        1040.0,
+        80.0
+      ],
+      "gnc.trajectory_optimizers_rpo_clamp_internal_waypoints": [
+        400.0,
+        530.0
+      ],
+      "gnc.trajectory_optimizers_rpo_comparison_planner_label": [
+        80.0,
+        80.0
+      ],
+      "gnc.trajectory_optimizers_rpo_second_difference_metric": [
+        400.0,
+        680.0
+      ],
+      "gnc.trajectory_optimizers_rpo_soft_obstacle_cost_from_samples": [
+        720.0,
+        230.0
+      ],
+      "gnc.trajectory_optimizers_rpo_stomp_plan_path": [
+        80.0,
+        230.0
+      ],
+      "gnc.trajectory_optimizers_rpo_stomp_waypoint_state_cost": [
+        400.0,
+        230.0
+      ],
+      "gnc.trajectory_optimizers_rpo_trajectory_internal_points": [
+        720.0,
+        80.0
+      ],
+      "gnc.trajectory_optimizers_rpo_trajectory_internal_points_from_seed": [
+        400.0,
+        830.0
+      ],
+      "gnc.trajectory_optimizers_rpo_trajectory_points_from_internal": [
+        720.0,
+        530.0
+      ],
+      "gnc.trajectory_optimizers_rpo_trajectory_search_bounds": [
+        400.0,
+        980.0
+      ],
+      "gnc.trajectory_optimizers_rpo_trajectory_smoothness_cost": [
+        720.0,
+        380.0
+      ],
+      "gnc.trajectory_optimizers_rpo_trajectory_soft_objective": [
+        400.0,
+        1130.0
+      ],
+      "gnc.trajectory_optimizers_rpochompsettings": [
+        400.0,
+        1580.0
+      ],
+      "gnc.trajectory_optimizers_rpostompsettings": [
+        400.0,
+        380.0
+      ],
+      "gnc.trajectory_optimizers_rpotrajectoryoptimizersettings": [
+        400.0,
+        1280.0
+      ],
+      "gncy.trajectory_optimizers_rpo_chomp_plan_path": [
+        80.0,
+        380.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.trajectory_optimizers_normalize_rpo_comparison_planner_type",
+    "gnc.trajectory_optimizers_rpo_chomp_numeric_gradient",
+    "gnc.trajectory_optimizers_rpo_chomp_obstacle_potential",
+    "gnc.trajectory_optimizers_rpo_clamp_internal_waypoints",
+    "gnc.trajectory_optimizers_rpo_comparison_planner_label",
+    "gnc.trajectory_optimizers_rpo_second_difference_metric",
+    "gnc.trajectory_optimizers_rpo_soft_obstacle_cost_from_samples",
+    "gnc.trajectory_optimizers_rpo_stomp_plan_path",
+    "gnc.trajectory_optimizers_rpo_stomp_waypoint_state_cost",
+    "gnc.trajectory_optimizers_rpo_trajectory_internal_points",
+    "gnc.trajectory_optimizers_rpo_trajectory_internal_points_from_seed",
+    "gnc.trajectory_optimizers_rpo_trajectory_points_from_internal",
+    "gnc.trajectory_optimizers_rpo_trajectory_search_bounds",
+    "gnc.trajectory_optimizers_rpo_trajectory_smoothness_cost",
+    "gnc.trajectory_optimizers_rpo_trajectory_soft_objective",
+    "gnc.trajectory_optimizers_rpochompsettings",
+    "gnc.trajectory_optimizers_rpostompsettings",
+    "gnc.trajectory_optimizers_rpotrajectoryoptimizersettings",
+    "gncy.trajectory_optimizers_rpo_chomp_plan_path"
+  ]
+}

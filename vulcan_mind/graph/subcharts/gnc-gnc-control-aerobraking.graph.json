@@ -1,0 +1,144 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "gnc-gnc-control-aerobraking",
+  "chart_kind": "sub",
+  "title": "gnc/control/aerobraking/ (gnc)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/gnc/control/aerobraking",
+    "layout_of": "772d6c8e9684971d"
+  },
+  "derives_from": "gnc-gnc-control",
+  "group": "grp.src_gnc_control_aerobraking",
+  "ui": {
+    "pos_overrides": {
+      "gnc.constraint_tracking_f_ctrl_bang": [
+        400.0,
+        230.0
+      ],
+      "gnc.constraint_tracking_out_drag_pass_affect_bang": [
+        400.0,
+        380.0
+      ],
+      "gnc.constraint_tracking_out_drag_pass_condition": [
+        400.0,
+        530.0
+      ],
+      "gnc.constraint_tracking_time_switch_func_affect_bang": [
+        400.0,
+        680.0
+      ],
+      "gnc.constraint_tracking_time_switch_func_condition": [
+        400.0,
+        830.0
+      ],
+      "gnc.control_commands_asim_ctrl_rf": [
+        80.0,
+        80.0
+      ],
+      "gnc.control_commands_f_ctrl_bang": [
+        400.0,
+        980.0
+      ],
+      "gnc.control_commands_out_drag_pass_affect_bang": [
+        400.0,
+        1130.0
+      ],
+      "gnc.control_commands_out_drag_pass_condition": [
+        400.0,
+        1280.0
+      ],
+      "gnc.control_commands_time_switch_func_affect_bang": [
+        400.0,
+        1430.0
+      ],
+      "gnc.control_commands_time_switch_func_condition": [
+        400.0,
+        1580.0
+      ],
+      "gnc.tracking_executor__control_exception_fallback": [
+        1360.0,
+        80.0
+      ],
+      "gnc.tracking_executor__control_solarpanels_heatload_impl": [
+        1040.0,
+        80.0
+      ],
+      "gnc.tracking_executor__control_solarpanels_openloop_impl": [
+        400.0,
+        80.0
+      ],
+      "gnc.tracking_executor__control_strict_exceptions": [
+        1680.0,
+        80.0
+      ],
+      "gnc.tracking_executor_control_solarpanels_heatload": [
+        720.0,
+        80.0
+      ],
+      "gnc.tracking_executor_control_solarpanels_openloop": [
+        80.0,
+        230.0
+      ],
+      "gnc.tracking_executor_control_struct_load": [
+        80.0,
+        380.0
+      ],
+      "gnc.tracking_executor_df": [
+        1040.0,
+        230.0
+      ],
+      "gnc.tracking_executor_f": [
+        1040.0,
+        380.0
+      ],
+      "gnc.tracking_executor_heat_rate_calc": [
+        1040.0,
+        530.0
+      ],
+      "gnc.tracking_executor_no_control": [
+        80.0,
+        530.0
+      ],
+      "gncx.constraint_tracking_asim_ctrl_plot": [
+        80.0,
+        680.0
+      ],
+      "gncx.control_commands_asim_ctrl": [
+        80.0,
+        830.0
+      ],
+      "gncx.tracking_executor_control_solarpanels_heatrate": [
+        720.0,
+        230.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.constraint_tracking_f_ctrl_bang",
+    "gnc.constraint_tracking_out_drag_pass_affect_bang",
+    "gnc.constraint_tracking_out_drag_pass_condition",
+    "gnc.constraint_tracking_time_switch_func_affect_bang",
+    "gnc.constraint_tracking_time_switch_func_condition",
+    "gnc.control_commands_asim_ctrl_rf",
+    "gnc.control_commands_f_ctrl_bang",
+    "gnc.control_commands_out_drag_pass_affect_bang",
+    "gnc.control_commands_out_drag_pass_condition",
+    "gnc.control_commands_time_switch_func_affect_bang",
+    "gnc.control_commands_time_switch_func_condition",
+    "gnc.tracking_executor__control_exception_fallback",
+    "gnc.tracking_executor__control_solarpanels_heatload_impl",
+    "gnc.tracking_executor__control_solarpanels_openloop_impl",
+    "gnc.tracking_executor__control_strict_exceptions",
+    "gnc.tracking_executor_control_solarpanels_heatload",
+    "gnc.tracking_executor_control_solarpanels_openloop",
+    "gnc.tracking_executor_control_struct_load",
+    "gnc.tracking_executor_df",
+    "gnc.tracking_executor_f",
+    "gnc.tracking_executor_heat_rate_calc",
+    "gnc.tracking_executor_no_control",
+    "gncx.constraint_tracking_asim_ctrl_plot",
+    "gncx.control_commands_asim_ctrl",
+    "gncx.tracking_executor_control_solarpanels_heatrate"
+  ]
+}

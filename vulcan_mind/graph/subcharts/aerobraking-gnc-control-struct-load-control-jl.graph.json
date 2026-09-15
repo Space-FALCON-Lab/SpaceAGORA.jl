@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "aerobraking-gnc-control-struct-load-control-jl",
+  "chart_kind": "sub",
+  "title": "gnc/control/struct_load_control.jl (aerobraking)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "grp.src_gnc_control_struct_load_control_jl",
+    "layout_of": "210bf3c944a4fd0e"
+  },
+  "derives_from": "aerobraking-gnc-control",
+  "group": "grp.src_gnc_control_struct_load_control_jl",
+  "ui": {
+    "pos_overrides": {
+      "gnc.struct_load_control__energy_depletion_struct_drag_area": [
+        400.0,
+        80.0
+      ],
+      "gnc.struct_load_control_f": [
+        80.0,
+        80.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "gnc.struct_load_control__energy_depletion_struct_drag_area",
+    "gnc.struct_load_control_f"
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0.0",
+  "chart_id": "environment-environment-gravity",
+  "chart_kind": "sub",
+  "title": "environment/gravity/ (environment)",
+  "provenance": {
+    "generated_by": "cluster",
+    "cluster_key": "src/environment/gravity",
+    "layout_of": "e278e255adb8dde1"
+  },
+  "derives_from": "environment",
+  "group": "grp.src_environment_gravity",
+  "ui": {
+    "pos_overrides": {
+      "envana.env_gravity_effectors_gravityeffectors": [
+        80.0,
+        80.0
+      ],
+      "envana.env_gravity_models_inversesquaredj2gravitymodel": [
+        80.0,
+        230.0
+      ],
+      "environment.gravity_models__gravity_gradient_torque_body": [
+        1040.0,
+        80.0
+      ],
+      "environment.gravity_models__gravity_runtime_field": [
+        400.0,
+        80.0
+      ],
+      "environment.gravity_models__inverse_squared_gravity_accel": [
+        1040.0,
+        230.0
+      ],
+      "environment.gravity_models__inverse_squared_j2_gravity_accel": [
+        720.0,
+        80.0
+      ],
+      "environment.gravity_models_aerobraking_gravity_force_ii": [
+        80.0,
+        380.0
+      ],
+      "environment.gravity_models_calcforcetorque": [
+        720.0,
+        230.0
+      ],
+      "environment.gravity_models_constantgravitymodel": [
+        80.0,
+        530.0
+      ],
+      "environment.gravity_models_environment_requirements": [
+        80.0,
+        680.0
+      ],
+      "environment.gravity_models_gravity_backbone_acceleration_ii": [
+        400.0,
+        230.0
+      ],
+      "environment.gravity_models_gravity_backbone_structure": [
+        720.0,
+        380.0
+      ],
+      "environment.gravity_models_gravity_gradient": [
+        1360.0,
+        80.0
+      ],
+      "environment.gravity_models_inversesquaredgravitymodel": [
+        80.0,
+        830.0
+      ],
+      "environment.gravity_models_j2_secular_rates": [
+        1360.0,
+        230.0
+      ],
+      "environment.gravity_models_wrench": [
+        720.0,
+        530.0
+      ]
+    }
+  },
+  "member_nodes": [
+    "envana.env_gravity_effectors_gravityeffectors",
+    "envana.env_gravity_models_inversesquaredj2gravitymodel",
+    "environment.gravity_models__gravity_gradient_torque_body",
+    "environment.gravity_models__gravity_runtime_field",
+    "environment.gravity_models__inverse_squared_gravity_accel",
+    "environment.gravity_models__inverse_squared_j2_gravity_accel",
+    "environment.gravity_models_aerobraking_gravity_force_ii",
+    "environment.gravity_models_calcforcetorque",
+    "environment.gravity_models_constantgravitymodel",
+    "environment.gravity_models_environment_requirements",
+    "environment.gravity_models_gravity_backbone_acceleration_ii",
+    "environment.gravity_models_gravity_backbone_structure",
+    "environment.gravity_models_gravity_gradient",
+    "environment.gravity_models_inversesquaredgravitymodel",
+    "environment.gravity_models_j2_secular_rates",
+    "environment.gravity_models_wrench"
+  ]
+}

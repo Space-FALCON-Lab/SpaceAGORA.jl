@@ -88,7 +88,7 @@ using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_stati
 using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
 using .SimulationModel: VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec
 using .SimulationModel: ArmGeometry, arm_geometry
-using .SimulationModel: load_model_triangles, model_bounding_box, sample_model_pointcloud
+using .SimulationModel: load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload
 using .SimulationModel: MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate
 using .SimulationModel: mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
 using .SimulationModel: fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
@@ -208,6 +208,8 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationModel.Structure.load_model_triangles) load_model_triangles
 @doc (@doc SimulationModel.Structure.model_bounding_box) model_bounding_box
 @doc (@doc SimulationModel.Structure.sample_model_pointcloud) sample_model_pointcloud
+@doc (@doc SimulationModel.Structure.articulate_triangles) articulate_triangles
+@doc (@doc SimulationModel.Structure.articulation_payload) articulation_payload
 @doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.MeshAeroPanels) MeshAeroPanels
 @doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.MeshAeroSurrogate) MeshAeroSurrogate
 @doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientMeshSurrogate) AerodynamicCoefficientMeshSurrogate
@@ -545,7 +547,7 @@ export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
-export load_model_triangles, model_bounding_box, sample_model_pointcloud
+export load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload
 export MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate
 export mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
 export fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate

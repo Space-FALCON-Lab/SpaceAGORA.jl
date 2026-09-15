@@ -34,6 +34,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/ensemble.js` | ensemble colouring, spaghetti histories, sample selector |
 | `src/paths.js` | reference polylines in inertial, RTN or body frames |
 | `src/references.js` | reference ghosts: translucent copies of a spacecraft driven by an external state table |
+| `src/video.js` | MP4 export through WebCodecs and mp4-muxer (`vendor/mp4-muxer.mjs`, MIT), WebM fallback |
 | `src/atmosphere.js` | limb glow, density shells, density map |
 | `src/colormaps.js` | inferno and viridis |
 | `src/timeline.js` | playback clock and time formatting |
@@ -123,6 +124,13 @@ a frame (`inertial`, `rtn` of a target spacecraft, or that spacecraft's
 `body` frame), colour and dash style. RTN and body paths are rebuilt every
 frame from the target's position, velocity or attitude, and the group sits
 at the floating origin like the markers.
+
+## Video export
+
+`src/video.js` drives `viewer.renderAt(t)` (main.js exposes it along with
+`setRecording` and `resizeTo`) frame by frame, encodes with `VideoEncoder`
+(H.264) and muxes with mp4-muxer in memory, then triggers a download. The
+render loop stands still while recording. Import map key `mp4-muxer`.
 
 ## Standalone page
 

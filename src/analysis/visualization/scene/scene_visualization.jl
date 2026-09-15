@@ -27,6 +27,7 @@ using ..SimConfig: SimulationConfiguration, SimulationSettings
 using ..IOConfig
 using ..IOSerialization
 using ..Structure: load_model_triangles, model_bounding_box, model_bounding_box_center, sample_model_pointcloud
+using ..Structure: articulate_triangles, articulation_payload
 using ..Structure: model_format, gltf_required_extensions, GLTF_UNSUPPORTED_REQUIRED
 import ..SimulationModel: rot, dcm_to_quaternion
 

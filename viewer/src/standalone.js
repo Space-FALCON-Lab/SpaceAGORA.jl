@@ -271,10 +271,10 @@ export function modelCenter(dataUrl, format) {
 }
 
 // { url, format, scale, rotation_deg, center, source } for payload.models[id].
-export async function buildModel({ dataUrl, filename, scale = 1, rotation_deg = [0, 0, 0], center = true }) {
+export async function buildModel({ dataUrl, filename, scale = 1, rotation_deg = [0, 0, 0], center = true, articulations = [] }) {
   const { format } = modelFormat(filename);
   const c = center ? await modelCenter(dataUrl, format) : [0, 0, 0];
-  return { url: dataUrl, format, scale, rotation_deg, center: c, source: filename };
+  return { url: dataUrl, format, scale, rotation_deg, center: c, articulations, source: filename };
 }
 
 export function fileToDataUrl(file, mime) {

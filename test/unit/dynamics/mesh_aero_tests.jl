@@ -120,6 +120,39 @@ _flow_from_angles(alpha, beta) = SVector{3, Float64}(cos(beta) * sin(alpha), sin
         end
     end
 
+    @testset "articulations pose parts of a mesh" begin
+        # two plates with normal +x; the far one (x = 5) turns 90 deg about z through its own centre,
+        # so it ends up spanning x (1 m) and z with its normal along y
+        front = _plate_triangles(1.0, 0.0)
+        far = _plate_triangles(1.0, 5.0)
+        tris = hcat(front, far)
+        posed = articulate_triangles(tris, [(region=(x_min=4.0,), axis=(0.0, 0.0, 1.0), angle_deg=90.0)])
+        @test posed[:, 1:6] == tris[:, 1:6]                                  # untouched part
+        moved = posed[:, 7:12]
+        @test maximum(moved[1, :]) - minimum(moved[1, :]) ≈ 1.0 atol = 1e-9   # now spans x
+        @test maximum(abs.(moved[2, :])) < 1e-9                                 # thin in y (rotated about its own centre)
+        @test maximum(moved[3, :]) - minimum(moved[3, :]) ≈ 1.0 atol = 1e-9
+        @test_throws ArgumentError articulate_triangles(tris, [(region=(x_min=100.0,), axis=(0.0, 0.0, 1.0), angle_deg=90.0)])
+        @test_throws ArgumentError articulate_triangles(tris, [(axis=(0.0, 0.0, 1.0), angle_deg=90.0)])
+        payload = articulation_payload([(region=(x_min=4.0,), axis=(0.0, 0.0, 2.0), angle_deg=90.0)], tris)
+        @test payload[1]["axis"] ≈ [0.0, 0.0, 1.0] && payload[1]["pivot"] ≈ [5.0, 0.0, 0.0] && payload[1]["region"]["min"] == [4.0, nothing, nothing]
+        # the panel method sees the posed geometry: the far plate now lies edge-on to +x flow
+        p_open = mesh_aero_panels(tris; reference_area_m2=1.0)
+        p_posed = mesh_aero_panels(posed; reference_area_m2=1.0)
+        cf_open, _ = panel_aero_coefficients(p_open, SVector(1.0, 0.0, 0.0), 8.0; shadowing=false)
+        cf_posed, _ = panel_aero_coefficients(p_posed, SVector(1.0, 0.0, 0.0), 8.0; shadowing=false)
+        @test -cf_posed[1] < 0.6 * -cf_open[1]
+        magellan = joinpath(@__DIR__, "..", "..", "..", "data", "models", "magellan_nasa_3d_resources.glb")
+        if isfile(magellan)
+            wings = ((region=(x_min=1.9, y_max=1.0), axis=(1.0, 0.0, 0.0), angle_deg=-43.5), (region=(x_max=-1.9, y_max=1.0), axis=(1.0, 0.0, 0.0), angle_deg=-43.5))
+            raw = load_model_triangles(magellan)
+            posed = load_model_triangles(magellan; articulations=wings)
+            sel = raw[1, :] .> 1.9 .&& raw[2, :] .< 1.0
+            @test maximum(posed[2, sel]) - minimum(posed[2, sel]) < 0.2        # wing now thin along the flow axis
+            @test maximum(posed[3, sel]) - minimum(posed[3, sel]) > 2.5        # and spans model z
+        end
+    end
+
     @testset "shadowing hides a plate behind another" begin
         front = _plate_triangles(1.0, 1.0)
         back = _plate_triangles(1.0, 0.0)

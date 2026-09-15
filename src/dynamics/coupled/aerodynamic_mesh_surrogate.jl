@@ -61,10 +61,12 @@ Base.length(p::MeshAeroPanels) = length(p.areas)
     mesh_aero_panels(triangles::AbstractMatrix; kwargs...)
 
 Prepare a model file (STL, OBJ, glTF/GLB) or a 3 x 3N triangle matrix for the
-panel method. `scale`, `rotation_deg` and `center` are the viewer's model
-transform (metres per model unit, XYZ Euler angles in degrees, bounding-box
-centre to the origin), so the panels sit exactly where the page draws the
-model and the link frame is the model frame after that transform.
+panel method. `scale`, `rotation_deg`, `center` and `articulations` are the
+viewer's model transform (metres per model unit, XYZ Euler angles in
+degrees, bounding-box centre to the origin, and parts rotated about an axis
+in model units, see `articulate_triangles`), so the panels sit exactly where
+the page draws the model and the link frame is the model frame after that
+transform.
 
 Normals come from the vertex winding (counter-clockwise seen from outside,
 as glTF and STL require); `outward_normals=true` instead flips every normal
@@ -82,9 +84,10 @@ function mesh_aero_panels(
     scale::Real=1.0,
     rotation_deg=(0.0, 0.0, 0.0),
     center::Bool=true,
+    articulations=(),
     kwargs...
 )::MeshAeroPanels
-    tris = Structure.load_model_triangles(path; scale=scale, rotation_deg=rotation_deg)
+    tris = Structure.load_model_triangles(path; scale=scale, rotation_deg=rotation_deg, articulations=articulations)
     if center
         c = SVector{3, Float64}(
             0.5 * (minimum(tris[1, :]) + maximum(tris[1, :])),

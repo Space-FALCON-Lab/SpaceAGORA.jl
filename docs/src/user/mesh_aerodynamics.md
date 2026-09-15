@@ -28,7 +28,8 @@ the vertex winding, or `outward_normals=true` to flip normals toward the
 outside for convex meshes with mixed winding) and areas. Coefficients are
 normalised by the dynamic pressure of the wind-relative airspeed,
 `reference_area_m2` (default: total surface area over four, the mean projected
-area of a convex body) and `reference_length_m` for moments (default: the
+area of a convex body); `articulations` pose parts of the model first (the
+Magellan wings turned broadside, see `articulate_triangles`) and `reference_length_m` for moments (default: the
 bounding-box diagonal), about `moment_reference_m` (default: the origin,
 which is the link centre of mass once the model is centred).
 

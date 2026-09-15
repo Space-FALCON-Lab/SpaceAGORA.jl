@@ -8,7 +8,7 @@
 
 const VIEWER_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "viewer"))
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data", "textures"))
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "timeline.js", "ui.js", "main.js")
+const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "timeline.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
@@ -16,6 +16,7 @@ const VIEWER_VENDOR = (
     "three/addons/loaders/OBJLoader.js" => joinpath("vendor", "OBJLoader.js"),
     "three/addons/loaders/GLTFLoader.js" => joinpath("vendor", "GLTFLoader.js"),
     "three/addons/utils/BufferGeometryUtils.js" => joinpath("vendor", "BufferGeometryUtils.js"),
+    "mp4-muxer" => joinpath("vendor", "mp4-muxer.mjs"),
 )
 # Runs up to this many spacecraft embed Float64 positions so a 3 m assembly
 # does not jitter at planetary distances; larger runs keep Float32.
@@ -360,6 +361,7 @@ function model_payloads(
     model_scale=nothing,
     model_rotation_deg::AbstractDict=Dict{Int, Any}(),
     model_center=true,
+    model_articulations::AbstractDict=Dict{Int, Any}(),
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0
 )::Dict{String, Any}
@@ -374,12 +376,18 @@ function model_payloads(
         rot = get(model_rotation_deg, sc.id, (0.0, 0.0, 0.0))
         length(rot) == 3 || throw(ArgumentError("model_rotation_deg entries must be three angles (rx, ry, rz) in degrees."))
         centred = model_center isa AbstractDict ? Bool(get(model_center, sc.id, true)) : Bool(model_center)
+        articulations = get(model_articulations, sc.id, ())
         center = [0.0, 0.0, 0.0]
-        if centred
+        articulation_dicts = Dict{String, Any}[]
+        if centred || !isempty(articulations)
             try
-                center = collect(Float64, model_bounding_box_center(path))
+                raw = load_model_triangles(path)
+                articulation_dicts = articulation_payload(articulations, raw)
+                posed = isempty(articulations) ? raw : articulate_triangles(raw, articulations)
+                centred && (center = [0.5 * (minimum(posed[c, :]) + maximum(posed[c, :])) for c in 1:3])
             catch err
-                @warn "Could not read $(basename(path)) to centre it; the viewer will use the file's own origin." exception=(err, catch_backtrace())
+                isempty(articulations) && @warn "Could not read $(basename(path)) to centre it; the viewer will use the file's own origin." exception=(err, catch_backtrace())
+                isempty(articulations) || rethrow()
             end
         end
         out[string(sc.id)] = Dict{String, Any}(
@@ -388,6 +396,7 @@ function model_payloads(
             "scale" => scale,
             "rotation_deg" => Float64[Float64(r) for r in rot],
             "center" => center,
+            "articulations" => articulation_dicts,
             "source" => basename(path),
         )
     end
@@ -413,6 +422,7 @@ function viewer_payload(
     model_scale=nothing,
     model_rotation_deg::AbstractDict=Dict{Int, Any}(),
     model_center=true,
+    model_articulations::AbstractDict=Dict{Int, Any}(),
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0,
     paths=(),
@@ -427,7 +437,7 @@ function viewer_payload(
         "scene" => scene_dict(scene),
         "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb),
         "textures" => textures,
-        "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, stl=stl, stl_scale=stl_scale),
+        "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale),
         "paths" => path_payloads(paths),
         "references" => reference_payloads(references, scene),
         "options" => Dict{String, Any}(options),
@@ -570,8 +580,9 @@ tier (`:best`, the default, takes the largest registered, e.g. 8k for Earth;
 `"4k"` keeps the page small); `models` maps spacecraft ids to STL, OBJ, glTF
 or GLB files drawn instead of the link boxes, at `model_scale` metres per
 model unit (a number or a per-id `Dict`) and rotated by `model_rotation_deg`
-(per-id XYZ Euler angles) and centred on the spacecraft unless
-`model_center=false`; `stl`/`stl_scale` are the older spelling for STL only; `references` draws
+(per-id XYZ Euler angles), posed by `model_articulations` (per-id list of
+parts rotated about an axis, see `articulate_triangles`) and centred on the
+spacecraft unless `model_center=false`; `stl`/`stl_scale` are the older spelling for STL only; `references` draws
 reference trajectories as translucent ghosts of a spacecraft (see
 `reference_payloads`); `paths` overlays
 reference polylines (see `path_payloads`), e.g. a planned RPO path in the
@@ -593,6 +604,7 @@ function export_visualization(
     model_scale=nothing,
     model_rotation_deg::AbstractDict=Dict{Int, Any}(),
     model_center=true,
+    model_articulations::AbstractDict=Dict{Int, Any}(),
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0,
     paths=(),
@@ -612,7 +624,7 @@ function export_visualization(
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
-        models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, stl=stl, stl_scale=stl_scale,
+        models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
         paths=paths, references=references
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)

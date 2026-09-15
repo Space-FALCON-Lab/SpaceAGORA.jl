@@ -14,6 +14,7 @@ import { createReferences } from 'viewer/references.js';
 import { TRAIL_COLOR_MODES } from 'viewer/spacecraft.js';
 import { Timeline } from 'viewer/timeline.js';
 import { createUI } from 'viewer/ui.js';
+import { createVideoDialog } from 'viewer/video.js';
 
 const DEFAULT_TRAIL_ORBITS = 3;
 
@@ -133,7 +134,9 @@ export function start(payload, container = document.body) {
     setFacets(v) { lod.setFacetsVisible(v); },
     setAxes(v) { lod.setAxesVisible(v); },
     resetView() { state.setFollow(false); placeCamera(); },
+    openVideoDialog() { videoDialog && videoDialog.open(); },
   };
+  let videoDialog = null;
 
   // An explicit trail_s option wins until the user picks an orbit count.
   let trailTouched = false;
@@ -263,11 +266,16 @@ export function start(payload, container = document.body) {
   }
 
   function resize() {
+    if (recording) return;
     const w = container.clientWidth || window.innerWidth, h = container.clientHeight || window.innerHeight;
+    resizeTo(w, h);
+  }
+  function resizeTo(w, h) {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
+    renderer.setSize(w, h, !recording);
   }
+  let recording = false;
   window.addEventListener('resize', resize);
   resize();
   placeCamera();
@@ -284,8 +292,13 @@ export function start(payload, container = document.body) {
     requestAnimationFrame(animate);
     const dt = Math.min(0.25, (now - last) / 1000);
     last = now;
+    if (recording) return; // the recorder drives frame(t) itself
     timeline.tick(dt);
-    const t = timeline.t;
+    frame(timeline.t);
+    if (now - lastInfo > 100) { ui.setSelection(selectionInfo(timeline.t)); lastInfo = now; }
+  }
+  // One rendered frame at elapsed time t: every scene update and the draw.
+  function frame(t) {
     globe.update(t);
     if (state.frame === 'planet_fixed') {
       globe.rotationAt(t, qWorld);
@@ -315,11 +328,18 @@ export function start(payload, container = document.body) {
     craft.update(t, camera, lod.markerHidden, state.selected, craft.group.matrixWorld, anchor, ensemble ? ensemble.dimMask : null);
     controls.update();
     renderer.render(scene, camera);
-    if (now - lastInfo > 100) { ui.setSelection(selectionInfo(t)); lastInfo = now; }
   }
   requestAnimationFrame(animate);
 
-  return { renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, ensemble, references: refs, paths: refPaths, timeline, frames, state, period };
+  const viewer = {
+    renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, ensemble, references: refs, paths: refPaths, timeline, frames, state, period,
+    // Deterministic rendering for exports: seek and draw one frame at t.
+    renderAt(t) { timeline.seek(t); frame(t); },
+    setRecording(v) { recording = v; if (!v) resize(); },
+    resizeTo,
+  };
+  videoDialog = createVideoDialog(viewer, container);
+  return viewer;
 }
 
 function defaultSpeed(frames) {

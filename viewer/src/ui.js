@@ -89,6 +89,7 @@ export function createUI(container, timeline, state, info) {
       <label data-role="atmo-layers-label"><input type="checkbox" data-role="atmo-layers" checked> density shells</label>
       <label data-role="atmo-map-label"><input type="checkbox" data-role="atmo-map" checked> density map</label>
       <button data-role="reset">Reset view</button>
+      <button data-role="video" title="Render the animation to an MP4 file">Save video…</button>
     </div>`;
   container.appendChild(ui);
 
@@ -155,6 +156,7 @@ export function createUI(container, timeline, state, info) {
   q('facets').addEventListener('change', (e) => state.setFacets(e.target.checked));
   q('axes').addEventListener('change', (e) => state.setAxes(e.target.checked));
   q('reset').addEventListener('click', () => state.resetView());
+  q('video').addEventListener('click', () => state.openVideoDialog && state.openVideoDialog());
 
   window.addEventListener('keydown', (e) => {
     if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;

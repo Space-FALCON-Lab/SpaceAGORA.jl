@@ -59,8 +59,49 @@ function buildArm(spec) {
 // status)` runs synchronously for STL/OBJ and after the parse for glTF;
 // `onFail(message)` when the bytes cannot be decoded. Shared by the
 // assemblies and the reference ghosts so both draw the same geometry.
+// Pose parts of a parsed model: every vertex inside an articulation's region
+// (an axis-aligned box in model units, null bounds unbounded) is rotated by
+// angle_deg about the axis through the pivot, in the model's own frame, and
+// its normal with it. The bundler applies the same rotation to the aero mesh.
+function articulateObject(object, articulations) {
+  if (!articulations || articulations.length === 0) return;
+  object.updateMatrixWorld(true);
+  const p = new THREE.Vector3(), n = new THREE.Vector3(), pivot = new THREE.Vector3(), axis = new THREE.Vector3();
+  const q = new THREE.Quaternion(), toLocal = new THREE.Matrix4(), normalToWorld = new THREE.Matrix3(), normalToLocal = new THREE.Matrix3();
+  for (const art of articulations) {
+    const lo = art.region.min.map((v) => (v == null ? -Infinity : v)), hi = art.region.max.map((v) => (v == null ? Infinity : v));
+    axis.set(art.axis[0], art.axis[1], art.axis[2]).normalize();
+    q.setFromAxisAngle(axis, THREE.MathUtils.degToRad(art.angle_deg));
+    pivot.set(art.pivot[0], art.pivot[1], art.pivot[2]);
+    object.traverse((child) => {
+      if (!child.isMesh) return;
+      const geometry = child.geometry;
+      const pos = geometry.getAttribute('position');
+      const nrm = geometry.getAttribute('normal');
+      const toWorld = child.matrixWorld;
+      toLocal.copy(toWorld).invert();
+      normalToWorld.getNormalMatrix(toWorld);
+      normalToLocal.copy(normalToWorld).invert();
+      let touched = false;
+      for (let i = 0; i < pos.count; i++) {
+        p.fromBufferAttribute(pos, i).applyMatrix4(toWorld);
+        if (p.x < lo[0] || p.x > hi[0] || p.y < lo[1] || p.y > hi[1] || p.z < lo[2] || p.z > hi[2]) continue;
+        p.sub(pivot).applyQuaternion(q).add(pivot).applyMatrix4(toLocal);
+        pos.setXYZ(i, p.x, p.y, p.z);
+        if (nrm) {
+          n.fromBufferAttribute(nrm, i).applyMatrix3(normalToWorld).applyQuaternion(q).applyMatrix3(normalToLocal).normalize();
+          nrm.setXYZ(i, n.x, n.y, n.z);
+        }
+        touched = true;
+      }
+      if (touched) { pos.needsUpdate = true; if (nrm) nrm.needsUpdate = true; geometry.computeBoundingSphere(); geometry.computeBoundingBox(); }
+    });
+  }
+}
+
 export function loadModelObject(model, label, onReady, onFail) {
   const install = (object) => {
+    articulateObject(object, model.articulations);
     let meshes = 0;
     object.traverse((child) => { if (child.isMesh) meshes++; });
     const s = model.scale || 1;

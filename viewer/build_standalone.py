@@ -25,7 +25,7 @@ import tomllib
 VIEWER = pathlib.Path(__file__).resolve().parent
 REPO = VIEWER.parent
 TEXTURES = REPO / "data" / "textures"
-MODULES = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "ui.js", "main.js", "standalone.js"]
+MODULES = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "ui.js", "main.js", "standalone.js"]
 VENDOR = {
     "three": "three.module.js",
     "three/addons/controls/OrbitControls.js": "OrbitControls.js",
@@ -33,6 +33,7 @@ VENDOR = {
     "three/addons/loaders/OBJLoader.js": "OBJLoader.js",
     "three/addons/loaders/GLTFLoader.js": "GLTFLoader.js",
     "three/addons/utils/BufferGeometryUtils.js": "BufferGeometryUtils.js",
+    "mp4-muxer": "mp4-muxer.mjs",
 }
 CDN = {
     "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
@@ -41,6 +42,7 @@ CDN = {
     "three/addons/loaders/OBJLoader.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/loaders/OBJLoader.js",
     "three/addons/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/loaders/GLTFLoader.js",
     "three/addons/utils/BufferGeometryUtils.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/utils/BufferGeometryUtils.js",
+    "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.5/build/mp4-muxer.mjs",
 }
 MODEL_MIME = {".stl": "model/stl", ".obj": "model/obj", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json"}
 
@@ -86,6 +88,7 @@ def concatenated_modules():
         s = re.sub(r"^import [^\n]*from 'viewer/[^\n]*;\n", "", s, flags=re.M)
         s = re.sub(r"^import \* as THREE from 'three';\n", "", s, flags=re.M)
         s = re.sub(r"^import \{ [A-Za-z]+ \} from 'three/addons/[^\n]*;\n", "", s, flags=re.M)
+        s = re.sub(r"^import \{ Muxer, ArrayBufferTarget \} from 'mp4-muxer';\n", "", s, flags=re.M)
         s = re.sub(r"^export (function|class|const|let)\b", r"\1", s, flags=re.M)
         if name == "ensemble.js":
             s = s.replace("function viridis(t) { const c = viridisRgb(t);", "function viridisColor(t) { const c = viridis(t);").replace("viridis(hi > lo ?", "viridisColor(hi > lo ?")
@@ -113,7 +116,8 @@ def build_preset(args):
         if ext not in MODEL_MIME:
             sys.exit(f"unsupported model format {ext}")
         preset["models"].append({"id": 1, "filename": pathlib.Path(args.model).name, "dataUrl": data_url(args.model, MODEL_MIME[ext]),
-                                 "scale": args.model_scale, "rotation_deg": [float(x) for x in args.model_rotation.split(",")]})
+                                 "scale": args.model_scale, "rotation_deg": [float(x) for x in args.model_rotation.split(",")],
+                                 "articulations": json.loads(args.model_articulations) if args.model_articulations else []})
     if args.reference:
         preset["references"].append(dict(name=args.reference_name, lengthUnit=args.units, target=1, **table(args.reference)))
     return preset
@@ -134,6 +138,7 @@ def main():
     ap.add_argument("--model")
     ap.add_argument("--model-scale", type=float, default=1.0)
     ap.add_argument("--model-rotation", default="0,0,0")
+    ap.add_argument("--model-articulations", help="JSON list of {region:{min:[..],max:[..]}, axis:[..], angle_deg, pivot:[..]} in model units (as articulation_payload writes)")
     ap.add_argument("--reference")
     ap.add_argument("--reference-name", default="reference")
     ap.add_argument("--textures", default="4k", choices=["4k", "8k", "none"])
@@ -151,7 +156,7 @@ def main():
         # the module script imports 'viewer/...' specifiers; replace it with the concatenated modules
         head_imports = ("import * as THREE from 'three';\nimport { OrbitControls } from 'three/addons/controls/OrbitControls.js';\n"
                         "import { STLLoader } from 'three/addons/loaders/STLLoader.js';\nimport { OBJLoader } from 'three/addons/loaders/OBJLoader.js';\n"
-                        "import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';\n")
+                        "import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';\nimport { Muxer, ArrayBufferTarget } from 'mp4-muxer';\n")
         html = html.replace("import { start } from 'viewer/main.js';\nimport { buildPayload, buildEnsemblePayload, parseCsv, fileToDataUrl, modelFormat } from 'viewer/standalone.js';\n",
                             head_imports + concatenated_modules() + "\n")
     else:

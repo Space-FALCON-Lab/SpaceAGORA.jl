@@ -103,6 +103,30 @@ radial/transverse/normal frame (`frame=:rtn`, re-expressed from the target's
 state every frame), in a spacecraft's body frame (`:body`) or in inertial
 axes, with a colour and dashed or solid style, toggled on the page.
 
+### Posing parts of a model
+
+`model_articulations=Dict(id => [(region=..., axis=..., angle_deg=...), ...])`
+rotates parts of a model before the scale and rotation: every vertex inside
+`region` (an axis-aligned box in model units, `x_min`/`x_max`/... , missing
+bounds unbounded) turns by `angle_deg` about `axis` through `pivot`
+(default the region's bounding-box centre). The same articulations go to
+`mesh_aero_panels` for the aerodynamics, so the picture and the drag agree.
+The Magellan demo turns the NASA model's cruise-canted wings broadside this
+way.
+
+## Saving a video
+
+The toolbar's "Save video…" renders the animation frame by frame between two
+elapsed times at a chosen simulated-seconds-per-video-second rate, frames per
+second and size (canvas, 720p, 1080p, 1440p), encodes it with the browser's
+H.264 encoder and saves an MP4 (mp4-muxer, vendored). The render is driven
+deterministically, so the file does not depend on the machine's frame rate;
+a 1080p minute takes a few seconds on a laptop. Browsers without WebCodecs
+H.264 (some Firefox builds) get a "Record WebM" fallback that captures ten
+seconds of live playback. Note that the claude.ai artifact host blocks
+downloads started by the page, so record from the offline page or the
+standalone page.
+
 ## Reference ghosts
 
 `references` draws a second, translucent copy of a spacecraft that follows a

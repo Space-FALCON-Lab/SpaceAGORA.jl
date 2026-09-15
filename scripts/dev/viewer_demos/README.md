@@ -33,7 +33,8 @@ the same NASA model the page draws (`AerodynamicCoefficientMeshSurrogate`, see
 the fitted surrogate cached as `mesh_aero_surrogate.json`, and the separation
 report against the SPICE ghost compares the two models directly.
 
-Magellan flies with its bus and antenna end into the flow by default;
+Magellan flies with its bus and antenna end into the flow by default and its
+wings articulated broadside (the NASA model holds them canted 43.5°);
 `SPACEAGORA_DEMO_MAGELLAN_ANTENNA=aft` flies it antenna-trailing into
 `magellan_aerobraking_antenna_aft/` (only the mesh surrogate and the picture
 change, the box model has no fore/aft distinction).

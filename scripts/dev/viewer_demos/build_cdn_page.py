@@ -13,7 +13,7 @@ payload = json.loads(payload_json.replace("<\\/", "</"))
 scene, frames = payload["scene"], payload["frames"]
 planet = scene["planet"]
 # Concatenate the viewer modules into one module scope: strip intra-viewer imports and export keywords.
-order = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "ui.js", "main.js"]
+order = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "ui.js", "main.js"]
 parts = []
 for name in order:
     s = (REPO / "viewer" / "src" / name).read_text()
@@ -23,6 +23,7 @@ for name in order:
     s = re.sub(r"^import \{ STLLoader \} from 'three/addons/loaders/STLLoader.js';\n", "", s, flags=re.M)
     s = re.sub(r"^import \{ OBJLoader \} from 'three/addons/loaders/OBJLoader.js';\n", "", s, flags=re.M)
     s = re.sub(r"^import \{ GLTFLoader \} from 'three/addons/loaders/GLTFLoader.js';\n", "", s, flags=re.M)
+    s = re.sub(r"^import \{ Muxer, ArrayBufferTarget \} from 'mp4-muxer';\n", "", s, flags=re.M)
     s = re.sub(r"^export (function|class|const|let)\b", r"\1", s, flags=re.M)
     if name == "ensemble.js":
         s = s.replace("function viridis(t) { const c = viridisRgb(t);", "function viridisColor(t) { const c = viridis(t);").replace("viridis(hi > lo ?", "viridisColor(hi > lo ?")
@@ -40,6 +41,7 @@ importmap = json.dumps({"imports": {
     "three/addons/loaders/OBJLoader.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/loaders/OBJLoader.js",
     "three/addons/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/loaders/GLTFLoader.js",
     "three/addons/utils/BufferGeometryUtils.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/utils/BufferGeometryUtils.js",
+    "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.5/build/mp4-muxer.mjs",
 }})
 payload_js = payload_json  # already "</"-safe from the Julia bundler
 html = f"""<meta charset="utf-8">

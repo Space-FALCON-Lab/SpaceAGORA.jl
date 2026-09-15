@@ -471,6 +471,19 @@ end
         @test occursin("\"references\":[{", ghost_html)
         @test occursin("\"name\":\"ghost\"", ghost_html)
         @test occursin("viewer/references.js", ghost_html)
+        @test occursin("viewer/video.js", ghost_html) && occursin("mp4-muxer", ghost_html)
+        magellan = joinpath(REPO, "data", "models", "magellan_nasa_3d_resources.glb")
+        if isfile(magellan)
+            wings = [(region=(x_min=1.9, y_max=1.0), axis=(1.0, 0.0, 0.0), angle_deg=-43.5)]
+            posed_page = export_visualization(args; out=joinpath(dir, "posed.html"), textures=false, models=Dict(1 => magellan), model_articulations=Dict(1 => wings))
+            posed_html = read(posed_page, String)
+            p_start = findfirst("window.SPACEAGORA_VIEWER = ", posed_html)
+            p_stop = findnext(";\n</script>", posed_html, last(p_start))
+            posed_payload = JSON.parse(posed_html[last(p_start)+1:first(p_stop)-1])
+            art = posed_payload["models"]["1"]["articulations"]
+            @test length(art) == 1 && art[1]["angle_deg"] == -43.5 && art[1]["region"]["min"][1] == 1.9 && art[1]["region"]["max"][2] == 1.0
+            @test length(art[1]["pivot"]) == 3 && art[1]["pivot"][1] > 1.9
+        end
         @test_throws ArgumentError run_cli(["visualize", "--run=$(dir)", "--model=1"]; io=devnull)
 
         stl = _write_tiny_stl(joinpath(dir, "bus.stl"))

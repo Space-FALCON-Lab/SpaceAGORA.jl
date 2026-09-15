@@ -192,6 +192,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :load_model_triangles, rendered = "SpaceAGORA.load_model_triangles"),
             (owner = :SpaceAGORA, symbol = :model_bounding_box, rendered = "SpaceAGORA.model_bounding_box"),
             (owner = :SpaceAGORA, symbol = :sample_model_pointcloud, rendered = "SpaceAGORA.sample_model_pointcloud"),
+            (owner = :SpaceAGORA, symbol = :articulate_triangles, rendered = "SpaceAGORA.articulate_triangles"),
+            (owner = :SpaceAGORA, symbol = :articulation_payload, rendered = "SpaceAGORA.articulation_payload"),
             (owner = :SpaceAGORA, symbol = :spacecraft_geometry, rendered = "SpaceAGORA.spacecraft_geometry"),
             (owner = :SpaceAGORA, symbol = :planet_spec, rendered = "SpaceAGORA.planet_spec"),
             (owner = :SpaceAGORA, symbol = :planet_rotation_table, rendered = "SpaceAGORA.planet_rotation_table"),

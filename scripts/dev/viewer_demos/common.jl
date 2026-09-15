@@ -257,14 +257,14 @@ on the root link. With the surrogate the wing links must carry no separate
 aerodynamic load, so callers pass the same model the viewer draws.
 """
 function demo_aero_effector(model_path::AbstractString, outdir::AbstractString; scale::Real=1.0, rotation_deg=(0.0, 0.0, 0.0),
-                            reference_area_m2=nothing, wall_temperature_k::Real=300.0, degree::Int=10)
+                            reference_area_m2=nothing, wall_temperature_k::Real=300.0, degree::Int=10, articulations=())
     get(ENV, "SPACEAGORA_DEMO_MESH_AERO", "0") == "1" || return AerodynamicCoefficientfM()
     cache = joinpath(outdir, "mesh_aero_surrogate.json")
     sur = if isfile(cache) && get(ENV, "SPACEAGORA_DEMO_FORCE", "0") != "1"
         println("mesh aero: reusing ", cache)
         read_mesh_aero_surrogate(cache)
     else
-        panels = mesh_aero_panels(model_path; scale=scale, rotation_deg=rotation_deg, reference_area_m2=reference_area_m2)
+        panels = mesh_aero_panels(model_path; scale=scale, rotation_deg=rotation_deg, reference_area_m2=reference_area_m2, articulations=articulations)
         println("mesh aero: ", length(panels), " facets from ", basename(model_path), ", reference area ", round(panels.reference_area_m2; digits=2), " m²")
         t = @elapsed s = fit_mesh_aero_surrogate(panels; degree=degree, n_directions=1200, verbose=true)
         println("mesh aero: fitted in ", round(t; digits=1), " s")

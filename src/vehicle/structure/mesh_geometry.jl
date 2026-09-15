@@ -239,17 +239,114 @@ function _load_gltf_triangles(path::AbstractString)::Matrix{Float64}
     return reshape(tris, 3, length(tris) ÷ 3)
 end
 
+# Rodrigues rotation matrix about a unit axis.
+@inline function _axis_angle_matrix(axis, angle_deg::Real)::SMatrix{3, 3, Float64}
+    a = SVector{3, Float64}(axis)
+    n = norm(a)
+    n > 0 || throw(ArgumentError("articulation axis must be non-zero."))
+    a = a / n
+    θ = deg2rad(Float64(angle_deg))
+    c, s = cos(θ), sin(θ)
+    K = @SMatrix [0.0 -a[3] a[2]; a[3] 0.0 -a[1]; -a[2] a[1] 0.0]
+    return SMatrix{3, 3, Float64}(I) + s * K + (1 - c) * (K * K)
+end
+
+@inline _articulation_get(spec, key, default) = spec isa AbstractDict ? get(spec, key, get(spec, String(key), default)) : (hasproperty(spec, key) ? getproperty(spec, key) : default)
+
+# The region test of an articulation: an axis-aligned box in model units, any
+# bound left out being unbounded.
+@inline function _articulation_bounds(spec)
+    region = _articulation_get(spec, :region, nothing)
+    region === nothing && throw(ArgumentError("an articulation needs a region (x_min/x_max/y_min/y_max/z_min/z_max in model units)."))
+    g = (k) -> Float64(_articulation_get(region, k, k in (:x_min, :y_min, :z_min) ? -Inf : Inf))
+    return SVector{3, Float64}(g(:x_min), g(:y_min), g(:z_min)), SVector{3, Float64}(g(:x_max), g(:y_max), g(:z_max))
+end
+
 """
-    load_model_triangles(path; scale=1.0, rotation_deg=(0, 0, 0)) -> Matrix{Float64}
+    articulate_triangles(tris, articulations) -> Matrix{Float64}
+
+Rotate parts of a triangle soup (3 x 3N, model units) about an axis: each
+articulation is a NamedTuple or Dict with `region` (an axis-aligned box in
+model units, `x_min`/`x_max`/`y_min`/`y_max`/`z_min`/`z_max`, missing bounds
+unbounded), `axis` (rotation axis in model axes), `angle_deg`, and `pivot`
+(a point on the axis in model units, or `:centroid` (default) for the centre
+of the selected vertices' bounding box). Vertices inside the region move;
+used to pose parts of a CAD model the file holds in another position, such
+as solar wings turned broadside for aerobraking. The viewer applies the same
+articulations to the drawn model (`model_articulations`), so the picture and
+the aerodynamic mesh agree.
+"""
+function articulate_triangles(tris::AbstractMatrix{<:Real}, articulations)::Matrix{Float64}
+    out = Matrix{Float64}(tris)
+    for (k, spec) in enumerate(articulations)
+        lo, hi = _articulation_bounds(spec)
+        R = _axis_angle_matrix(_articulation_get(spec, :axis, (1.0, 0.0, 0.0)), _articulation_get(spec, :angle_deg, 0.0))
+        selected = Int[]
+        @inbounds for i in 1:size(out, 2)
+            p = SVector{3, Float64}(out[1, i], out[2, i], out[3, i])
+            all(lo .<= p .<= hi) && push!(selected, i)
+        end
+        isempty(selected) && throw(ArgumentError("articulation $(k): no vertices inside its region."))
+        pivot_spec = _articulation_get(spec, :pivot, :centroid)
+        pivot = if pivot_spec === :centroid || pivot_spec == "centroid"
+            mn = SVector{3, Float64}(minimum(out[1, selected]), minimum(out[2, selected]), minimum(out[3, selected]))
+            mx = SVector{3, Float64}(maximum(out[1, selected]), maximum(out[2, selected]), maximum(out[3, selected]))
+            0.5 * (mn + mx)
+        else
+            SVector{3, Float64}(pivot_spec)
+        end
+        @inbounds for i in selected
+            p = SVector{3, Float64}(out[1, i], out[2, i], out[3, i])
+            q = R * (p - pivot) + pivot
+            out[1, i] = q[1]; out[2, i] = q[2]; out[3, i] = q[3]
+        end
+    end
+    return out
+end
+
+"""
+    articulation_payload(articulations) -> Vector{Dict{String, Any}}
+
+The articulations in the form the viewer's model loader reads: explicit
+bounds (infinite bounds as `nothing`), unit axis, angle and pivot (the
+centroid resolved against `tris` when given as `:centroid`; pass `tris` to
+resolve it).
+"""
+function articulation_payload(articulations, tris::Union{Nothing, AbstractMatrix{<:Real}}=nothing)::Vector{Dict{String, Any}}
+    out = Dict{String, Any}[]
+    for spec in articulations
+        lo, hi = _articulation_bounds(spec)
+        axis = normalize(SVector{3, Float64}(_articulation_get(spec, :axis, (1.0, 0.0, 0.0))))
+        pivot_spec = _articulation_get(spec, :pivot, :centroid)
+        pivot = if pivot_spec === :centroid || pivot_spec == "centroid"
+            tris === nothing && throw(ArgumentError("articulation_payload needs the triangles to resolve a :centroid pivot."))
+            sel = [i for i in 1:size(tris, 2) if all(lo .<= SVector{3, Float64}(tris[1, i], tris[2, i], tris[3, i]) .<= hi)]
+            isempty(sel) && throw(ArgumentError("articulation: no vertices inside its region."))
+            0.5 * (SVector{3, Float64}(minimum(tris[1, sel]), minimum(tris[2, sel]), minimum(tris[3, sel])) + SVector{3, Float64}(maximum(tris[1, sel]), maximum(tris[2, sel]), maximum(tris[3, sel])))
+        else
+            SVector{3, Float64}(pivot_spec)
+        end
+        push!(out, Dict{String, Any}(
+            "region" => Dict{String, Any}("min" => [isfinite(v) ? v : nothing for v in lo], "max" => [isfinite(v) ? v : nothing for v in hi]),
+            "axis" => collect(axis), "angle_deg" => Float64(_articulation_get(spec, :angle_deg, 0.0)), "pivot" => collect(pivot),
+        ))
+    end
+    return out
+end
+
+"""
+    load_model_triangles(path; scale=1.0, rotation_deg=(0, 0, 0), articulations=()) -> Matrix{Float64}
 
 Triangle vertices (3 x 3N, metres) of an STL, OBJ, glTF or GLB file in model
-axes, scaled by `scale` (metres per model unit) and rotated by XYZ Euler
-angles in degrees, the same transform the viewer applies through
-`model_scale` and `model_rotation_deg`.
+axes, with `articulations` (see [`articulate_triangles`](@ref)) applied in
+model units first, then scaled by `scale` (metres per model unit) and
+rotated by XYZ Euler angles in degrees, the same transform the viewer
+applies through `model_scale`, `model_rotation_deg` and `model_articulations`.
 """
-function load_model_triangles(path::AbstractString; scale::Real=1.0, rotation_deg=(0.0, 0.0, 0.0))::Matrix{Float64}
+function load_model_triangles(path::AbstractString; scale::Real=1.0, rotation_deg=(0.0, 0.0, 0.0), articulations=())::Matrix{Float64}
     format, _ = model_format(path)
     tris = format == "stl" ? _load_stl_triangles(path) : format == "obj" ? _load_obj_triangles(path) : _load_gltf_triangles(path)
+    isempty(articulations) || (tris = articulate_triangles(tris, articulations))
     R = _rotation_xyz_deg(rotation_deg)
     out = Matrix{Float64}(undef, 3, size(tris, 2))
     @inbounds for i in 1:size(tris, 2)

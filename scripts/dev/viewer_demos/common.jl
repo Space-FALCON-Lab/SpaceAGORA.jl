@@ -246,3 +246,35 @@ function build_cdn_page(html::AbstractString, out::AbstractString, title::Abstra
     run(`python3 $script $html $out $title $heading $orbit $span $foot`)
     return String(out)
 end
+
+"""
+    demo_aero_effector(model_path, outdir; scale, rotation_deg, reference_area_m2, wall_temperature_k) -> effector
+
+`AerodynamicCoefficientfM()` unless `SPACEAGORA_DEMO_MESH_AERO=1`, in which
+case the mission's NASA model is fitted (once, cached as
+`<outdir>/mesh_aero_surrogate.json`) and the whole-vehicle surrogate is put
+on the root link. With the surrogate the wing links must carry no separate
+aerodynamic load, so callers pass the same model the viewer draws.
+"""
+function demo_aero_effector(model_path::AbstractString, outdir::AbstractString; scale::Real=1.0, rotation_deg=(0.0, 0.0, 0.0),
+                            reference_area_m2=nothing, wall_temperature_k::Real=300.0, degree::Int=10)
+    get(ENV, "SPACEAGORA_DEMO_MESH_AERO", "0") == "1" || return AerodynamicCoefficientfM()
+    cache = joinpath(outdir, "mesh_aero_surrogate.json")
+    sur = if isfile(cache) && get(ENV, "SPACEAGORA_DEMO_FORCE", "0") != "1"
+        println("mesh aero: reusing ", cache)
+        read_mesh_aero_surrogate(cache)
+    else
+        panels = mesh_aero_panels(model_path; scale=scale, rotation_deg=rotation_deg, reference_area_m2=reference_area_m2)
+        println("mesh aero: ", length(panels), " facets from ", basename(model_path), ", reference area ", round(panels.reference_area_m2; digits=2), " m²")
+        t = @elapsed s = fit_mesh_aero_surrogate(panels; degree=degree, n_directions=1200, verbose=true)
+        println("mesh aero: fitted in ", round(t; digits=1), " s")
+        write_mesh_aero_surrogate(cache, s)
+        s
+    end
+    hold = sur.metadata["fit"]["holdout"]
+    println("mesh aero: holdout CFx error ", round(hold["CFx"]["max_error"]; sigdigits=3), " of ", round(hold["CFx"]["scale"]; sigdigits=3))
+    return AerodynamicCoefficientMeshSurrogate(sur; wall_temperature_k=wall_temperature_k)
+end
+
+"Results directory suffix so the mesh-aero variant of a case lands beside the box-model run."
+demo_case_name(name::AbstractString) = get(ENV, "SPACEAGORA_DEMO_MESH_AERO", "0") == "1" ? String(name) * "_mesh_aero" : String(name)

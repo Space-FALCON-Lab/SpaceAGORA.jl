@@ -7,14 +7,18 @@
 # to degree and order 70, Sun third body, solar radiation pressure, Venus-GRAM
 # density through the free-molecular coefficient model. The spacecraft is the
 # usual bus-plus-two-wings composition sized to Magellan (3.7 m HGA, two
-# 2.5 m square wings, about 1000 kg at this point of the mission); the page
-# draws NASA's Magellan model over it.
+# 2.5 m square wings, about 1000 kg at this point of the mission) with its
+# long (bus + antenna) axis along the flow, antenna trailing, and the wings
+# broadside; the page draws NASA's Magellan model over it in that attitude
+# (model +Y, the antenna axis, to body -x; the wing span along body y).
 #
 #   julia --project=. scripts/dev/viewer_demos/magellan_aerobraking.jl
 include(joinpath(@__DIR__, "common.jl"))
 setup_gram_example!()
 
-const OUTDIR = demo_outdir("magellan_aerobraking")
+const OUTDIR = demo_outdir(demo_case_name("magellan_aerobraking"))
+const MODEL = joinpath(MODELS_DIR, "magellan_nasa_3d_resources.glb")
+const MAGELLAN_ROTATION_DEG = (0, 0, 90)   # antenna axis (model +Y) to body -x: long axis along the flow, antenna aft
 kernel = ensure_mission_kernel("mgn_aerobrak.bsp", "https://naif.jpl.nasa.gov/pub/naif/MGN/kernels/spk/nav/AEROBRAK.BSP")
 planet = Venus("", SPICE_PATH)
 mgn = furnish!(MissionSpice("Magellan (SPICE)", "-18", "VENUS", [kernel]))
@@ -28,13 +32,13 @@ initial_time = initial_time_of(et_apo)
 mission_time = 2.0 * period
 
 sc = make_three_body_spacecraft(
-    bus_dims=(3.0, 3.0, 3.6), panel_dims=(0.01, 2.5, 2.5), bus_mass=960.0, panel_mass_each=35.0, panel_offset_y=3.2,
+    bus_dims=(3.6, 3.0, 3.0), panel_dims=(0.01, 2.5, 2.5), bus_mass=960.0, panel_mass_each=35.0, panel_offset_y=3.2,
     ic=cartesian_ic_at(mgn, et_apo), reflection_coefficient=0.9, prop_mass=30.0, id=1)
 effectors = (
     GravitationalHarmonicsModel(70, 70, joinpath(HARMONICS_DIR, "MGNP180U.csv"), planet),
     NBodyGravityModel(body_names=("Sun",), primary_body_name="Venus", planet=planet),
     SolarRadiationPressureModel(1.3, 23.0),
-    AerodynamicCoefficientfM(),
+    demo_aero_effector(MODEL, OUTDIR; scale=1.0, rotation_deg=MAGELLAN_ROTATION_DEG, wall_temperature_k=300.0),
 )
 base = make_example_config(planet=planet, spacecraft=sc, mission_time=mission_time, initial_time=initial_time,
     dynamic_effectors=effectors, density_model=GRAMAtmosphereModel(planet_name="venus"), orientation_sim=false,
@@ -52,13 +56,13 @@ summarize_run(prefix, planet; alt_m=250e3)
 ghost = spice_reference(mgn, prefix; name="Magellan (SPICE)", color="#ff8c69")
 reference_separation(prefix, ghost)
 
-model = joinpath(MODELS_DIR, "magellan_nasa_3d_resources.glb")
+model = MODEL
 html = export_visualization(prefix; max_frames=5000, trail_orbits=1, texture_resolution="4k",
-    title="AGORA Magellan · aerobraking at Venus, two orbits with the SPICE ghost",
-    models=Dict(1 => model), model_scale=1.0, model_rotation_deg=Dict(1 => (-180, 90, 90)), references=[ghost])
+    title="AGORA Magellan · aerobraking at Venus, two orbits with the SPICE ghost" * (get(ENV, "SPACEAGORA_DEMO_MESH_AERO", "0") == "1" ? " (mesh aerodynamics)" : ""),
+    models=Dict(1 => model), model_scale=1.0, model_rotation_deg=Dict(1 => MAGELLAN_ROTATION_DEG), references=[ghost])
 println("html: ", html, " ", filesize(html))
 cdn = build_cdn_page(html, joinpath(OUTDIR, "artifact.html"), "AGORA Magellan Aerobraking",
     "AGORA Magellan · aerobraking at Venus, two orbits from 1993-05-26",
-    "SPICE state at apoapsis; MGNP180U 70x70, Sun, SRP, Venus-GRAM drag", "2 orbits (≈$(round(mission_time / 3600; digits=1)) h)",
+    "SPICE state at apoapsis; MGNP180U 70x70, Sun, SRP, Venus-GRAM drag" * (get(ENV, "SPACEAGORA_DEMO_MESH_AERO", "0") == "1" ? " on the CAD mesh" : " on the box model"), "2 orbits (≈$(round(mission_time / 3600; digits=1)) h)",
     "The solid spacecraft is the simulation; the translucent copy follows the Magellan navigation SPK (AEROBRAK.BSP). Click the solid one to read the separation. Drag to orbit, wheel to zoom, Space to pause, F to follow.")
 println("cdn: ", cdn, " ", filesize(cdn))

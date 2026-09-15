@@ -26,6 +26,13 @@ between the run and the kernel over the saved times. Rerun a case with
 `SPACEAGORA_DEMO_FORCE=1` to redo the simulation instead of reusing the
 results on disk.
 
+`SPACEAGORA_DEMO_MESH_AERO=1` switches the Magellan and Cassini cases from the
+box aerodynamics (`AerodynamicCoefficientfM`) to the mesh surrogate fitted from
+the same NASA model the page draws (`AerodynamicCoefficientMeshSurrogate`, see
+`docs/src/user/mesh_aerodynamics.md`); results land in `<case>_mesh_aero/` with
+the fitted surrogate cached as `mesh_aero_surrogate.json`, and the separation
+report against the SPICE ghost compares the two models directly.
+
 `build_cdn_page.py <viewer.html> <out.html> [title heading orbit span foot]`
 turns an exported page into the variant the claude.ai artifact host can
 show: three.js from jsdelivr and the viewer modules concatenated into one

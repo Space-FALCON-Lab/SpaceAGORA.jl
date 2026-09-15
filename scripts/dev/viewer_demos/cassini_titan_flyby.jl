@@ -7,14 +7,17 @@
 # (J2000, Titan-centred) and runs 5 h. Force model: Titan gravity to degree
 # and order 5 (Goossens et al. 2024 field), Saturn and Sun third bodies,
 # solar radiation pressure, Titan-GRAM density through the free-molecular
-# coefficient model. Cassini is one 4 x 4 x 6.8 m bus (the wing links are
-# vestigial); the page draws NASA's Cassini-Huygens model over it, with or
-# without the probe depending on the flyby.
+# coefficient model. Cassini is one 6.8 x 4 x 4 m bus with its long axis
+# along the flow, high-gain antenna forward (the wing links are vestigial);
+# the page draws NASA's Cassini-Huygens model over it in that attitude
+# (model +Y, the antenna axis, to body +x; the magnetometer boom along +y),
+# with or without the probe depending on the flyby.
 #
 #   julia --project=. scripts/dev/viewer_demos/cassini_titan_flyby.jl [TA|T5|all]
 include(joinpath(@__DIR__, "common.jl"))
 setup_gram_example!()
 
+const CASSINI_ROTATION_DEG = (-90, -180, 90)   # antenna axis (model +Y) to body +x: long axis along the flow, antenna forward
 const CASSINI_SPK = "https://naif.jpl.nasa.gov/pub/naif/CASSINI/kernels/spk/"
 const FLYBYS = Dict(
     "TA" => (kernel="050105R_SCPSE_04247_04336.bsp", ca_guess="2004-10-26T15:30:00", model="cassini_huygens_nasa_3d_resources_a.glb",
@@ -25,7 +28,8 @@ const FLYBYS = Dict(
 
 function run_flyby(key::String; half_span_s::Float64=2.5 * 3600.0)
     fb = FLYBYS[key]
-    outdir = demo_outdir("cassini_$(lowercase(key))")
+    outdir = demo_outdir(demo_case_name("cassini_$(lowercase(key))"))
+    model = joinpath(MODELS_DIR, fb.model)
     kernel = ensure_mission_kernel(fb.kernel, CASSINI_SPK * fb.kernel)
     planet = Titan("", SPICE_PATH)
     cas = furnish!(MissionSpice("Cassini (SPICE)", "CASSINI", "TITAN", [kernel]))
@@ -38,13 +42,13 @@ function run_flyby(key::String; half_span_s::Float64=2.5 * 3600.0)
     mission_time = 2.0 * half_span_s
 
     sc = make_three_body_spacecraft(
-        bus_dims=(4.0, 4.0, 6.8), panel_dims=(0.01, 0.02, 0.02), bus_mass=fb.mass - 200.0, panel_mass_each=0.5, panel_offset_y=2.1,
+        bus_dims=(6.8, 4.0, 4.0), panel_dims=(0.01, 0.02, 0.02), bus_mass=fb.mass - 200.0, panel_mass_each=0.5, panel_offset_y=2.1,
         ic=cartesian_ic_at(cas, et0), reflection_coefficient=0.8, prop_mass=200.0, id=1)
     effectors = (
         GravitationalHarmonicsModel(5, 5, joinpath(HARMONICS_DIR, "titan5.csv"), planet),
         NBodyGravityModel(body_names=("Saturn", "Sun"), primary_body_name="Titan", planet=planet),
         SolarRadiationPressureModel(1.2, 20.0),
-        AerodynamicCoefficientfM(),
+        demo_aero_effector(model, outdir; scale=1.0, rotation_deg=CASSINI_ROTATION_DEG, wall_temperature_k=300.0),
     )
     base = make_example_config(planet=planet, spacecraft=sc, mission_time=mission_time, initial_time=initial_time,
         dynamic_effectors=effectors, density_model=GRAMAtmosphereModel(planet_name="titan"), orientation_sim=false,
@@ -62,10 +66,9 @@ function run_flyby(key::String; half_span_s::Float64=2.5 * 3600.0)
     ghost = spice_reference(cas, prefix; name="Cassini (SPICE)", color="#7fe0ff")
     reference_separation(prefix, ghost)
 
-    model = joinpath(MODELS_DIR, fb.model)
     html = export_visualization(prefix; max_frames=4000, trail_orbits=1, texture_resolution="4k",
-        title="AGORA Cassini · Titan flyby $(key) with the SPICE ghost",
-        models=Dict(1 => model), model_scale=1.0, model_rotation_deg=Dict(1 => (-90, -180, 0)), references=[ghost])
+        title="AGORA Cassini · Titan flyby $(key) with the SPICE ghost" * (get(ENV, "SPACEAGORA_DEMO_MESH_AERO", "0") == "1" ? " (mesh aerodynamics)" : ""),
+        models=Dict(1 => model), model_scale=1.0, model_rotation_deg=Dict(1 => CASSINI_ROTATION_DEG), references=[ghost])
     println("html: ", html, " ", filesize(html))
     cdn = build_cdn_page(html, joinpath(outdir, "artifact.html"), "AGORA Cassini $(key) Flyby",
         "AGORA Cassini · Titan flyby $(key), $(fb.note)",

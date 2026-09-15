@@ -24,6 +24,15 @@ function build_rpo_cubesat_mpc_demo(;
     pso_configurator=nothing,
     n_station_points::Integer=10000,
     station_geometry_seed::Integer=seed,
+    station_points=nothing,
+    station_keepout_radius_m::Real=0.25,
+    station_name::AbstractString="gateway_core",
+    station_dims_m=(4.0, 2.0, 2.0),
+    station_mass_kg::Real=500.0,
+    safe_distance_m::Real=0.1,
+    cost_ref_distance_m::Real=20.0,
+    search_margin_m=nothing,
+    sample_ds_m::Real=0.05,
     data_rate_s::Real=10.0,
     pso_iteration_runtime_limit_s=nothing,
     pso_iteration_callback=nothing,
@@ -46,17 +55,21 @@ function build_rpo_cubesat_mpc_demo(;
         v_station_ii,
     )
 
-    station_points = SpaceAGORA.load_rpo_station_cad_pointcloud(:gateway; n_points=n_station_points, rng=MersenneTwister(station_geometry_seed))
-    station_geometry = RPOStationGeometry(station_points; keepout_radius_m=0.25, name="gateway_core")
+    # Any 3 x N body-frame point cloud can stand in for the Gateway core, e.g.
+    # sample_model_pointcloud("data/models/iss_nasa_3d_resources_b.glb"; scale=2.4, ...).
+    if station_points === nothing
+        station_points = SpaceAGORA.load_rpo_station_cad_pointcloud(:gateway; n_points=n_station_points, rng=MersenneTwister(station_geometry_seed))
+    end
+    station_geometry = RPOStationGeometry(station_points; keepout_radius_m=station_keepout_radius_m, name=station_name)
     chaser_geometry = RPOCubeSatGeometry(dims_m=(0.1, 0.1, 0.3))
     geometry = RPOReferenceGeometry(station_geometry; chaser=chaser_geometry)
 
     q_identity = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
     station_root = Link(
         root=true,
-        m=500.0,
-        dims=MVector{3, Float64}(4.0, 2.0, 2.0),
-        ref_area=8.0,
+        m=Float64(station_mass_kg),
+        dims=MVector{3, Float64}(station_dims_m...),
+        ref_area=Float64(station_dims_m[2] * station_dims_m[3]),
     )
     station = SpacecraftModel(
         joints=Joint[],
@@ -101,7 +114,7 @@ function build_rpo_cubesat_mpc_demo(;
             n_particles=Int(pso_n_particles),
             n_iters=Int(pso_n_iters),
             curve_type=:bezier,
-            sample_ds_m=0.05,
+            sample_ds_m=Float64(sample_ds_m),
         ),
         adaptive=RPOPSOAdaptiveSettings(
             allow_downscale=true,
@@ -117,7 +130,7 @@ function build_rpo_cubesat_mpc_demo(;
             min_rel_improvement=1.0e-4,
         ),
         objective=RPOPSOObjectiveSettings(
-            cost_ref_distance_m=20.0,
+            cost_ref_distance_m=Float64(cost_ref_distance_m),
             mass_kg=chaser_initial_mass_kg,
             tf_s=Float64(mission_time),
         ),
@@ -141,6 +154,9 @@ function build_rpo_cubesat_mpc_demo(;
     if pso_iteration_runtime_limit_s !== nothing
         pso_cfg = rpo_pso_config(pso_cfg; iteration_runtime_limit_s=Float64(pso_iteration_runtime_limit_s))
     end
+    if search_margin_m !== nothing
+        pso_cfg = rpo_pso_config(pso_cfg; search_margin_m=Float64(search_margin_m))
+    end
 
     plan_buffer = RPOPlanBuffer()
     plan_result = rpo_pso_plan_path(
@@ -148,7 +164,7 @@ function build_rpo_cubesat_mpc_demo(;
         goal_rtn,
         geometry,
         pso_cfg;
-        safe_distance_m=0.1,
+        safe_distance_m=Float64(safe_distance_m),
         rng=MersenneTwister(seed),
         iteration_callback=pso_iteration_callback,
     )
@@ -156,7 +172,7 @@ function build_rpo_cubesat_mpc_demo(;
         plan_result.path,
         geometry,
         plan_result.config;
-        safe_distance_m=0.1,
+        safe_distance_m=Float64(safe_distance_m),
     )
     simulation_time_s = max(Float64(mission_time), t_ref[end] + 20.0)
     initial_plan = RPOPlan(
@@ -186,7 +202,7 @@ function build_rpo_cubesat_mpc_demo(;
         geometry=geometry,
         plan_buffer=plan_buffer,
         pso_config=pso_cfg,
-        safe_distance_m=0.1,
+        safe_distance_m=Float64(safe_distance_m),
     )
 
     Q = Diagonal([20.0, 20.0, 20.0, 2.0, 2.0, 2.0])

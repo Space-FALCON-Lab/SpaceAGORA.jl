@@ -2,7 +2,7 @@
 
 julia_version = "1.12.1"
 manifest_format = "2.0"
-project_hash = "e8e81675670cc037ccdf02d7344c7230c0914dba"
+project_hash = "87871da7ab3d67d180428b15e7ca430563ffe92a"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -2469,7 +2469,7 @@ uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
 version = "1.2.2"
 
 [[deps.SpaceAGORA]]
-deps = ["ADTypes", "Aqua", "Arrow", "AstroTime", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Documenter", "Interpolations", "LinearAlgebra", "LinearSolve", "Logging", "LoopVectorization", "NLsolve", "OSQP", "OrdinaryDiffEq", "PlotlyJS", "Plots", "Polyester", "PrecompileTools", "Printf", "Random", "RecursiveArrayTools", "Reexport", "Roots", "SHA", "SPICE", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "SatelliteToolboxTransformations", "Serialization", "SpaceIndices", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML", "Tables"]
+deps = ["ADTypes", "Aqua", "Arrow", "AstroTime", "Base64", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Documenter", "Interpolations", "JSON", "LinearAlgebra", "LinearSolve", "Logging", "LoopVectorization", "NLsolve", "OSQP", "OrdinaryDiffEq", "PlotlyJS", "Plots", "Polyester", "PrecompileTools", "Printf", "Random", "RecursiveArrayTools", "Reexport", "Roots", "SHA", "SPICE", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "SatelliteToolboxTransformations", "Serialization", "SpaceIndices", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML", "Tables"]
 path = "."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
 version = "0.1.0"

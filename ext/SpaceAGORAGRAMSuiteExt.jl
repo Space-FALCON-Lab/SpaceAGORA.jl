@@ -251,7 +251,31 @@ end
 # ---------------------------------------------------------------------------
 
 function EM.GRAMAtmosphereModel(; kwargs...)
-    return EM.GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
+    return EM.GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...), ReentrantLock(), Dict{Symbol, Any}(kwargs))
+end
+
+@inline function _same_epoch(a, b)::Bool
+    return Int(a.year) == Int(b.year) && Int(a.month) == Int(b.month) && Int(a.day) == Int(b.day) &&
+        Int(a.hour) == Int(b.hour) && Int(a.minute) == Int(b.minute) && abs(Float64(a.second) - Float64(b.second)) < 1e-3
+end
+
+# GRAM's ephemeris hook (`_gram_spice_ephemeris_state`) and the native date
+# both come from the core's `initial_time`, so a model built without one
+# samples local solar time and season at 2000-01-01 whatever the run's date.
+# Rebuild it with the run's epoch and the same construction keywords.
+function EM.with_density_model_epoch(model::EM.GRAMAtmosphereModel, initial_time)
+    core = model.core
+    _same_epoch(core.initial_time, initial_time) && return model
+    kwargs = Dict{Symbol, Any}(model.constructor_kwargs)
+    haskey(kwargs, :planet_name) || (kwargs[:planet_name] = String(core.planet_name))
+    kwargs[:initial_time] = initial_time
+    return EM.GRAMAtmosphereModel(; kwargs...)
+end
+
+function EM.with_density_model_epoch(model::EM.GRAMAtmosphereModelSurrogate, initial_time)
+    base = EM.with_density_model_epoch(model.base_model, initial_time)
+    base === model.base_model && return model
+    return EM.GRAMAtmosphereModelSurrogate(base, model.surrogate_file, model.point_fallback_below_m)
 end
 
 function EM.GRAMAtmosphereModelSurrogate(;
@@ -298,7 +322,7 @@ end
 function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
     haskey(stackdict, model) && return stackdict[model]
     copied = lock(_tl(:gram_setup)) do
-        EM.GRAMAtmosphereModel(deepcopy(model.core))
+        EM.GRAMAtmosphereModel(deepcopy(model.core), ReentrantLock(), copy(model.constructor_kwargs))
     end
     stackdict[model] = copied
     return copied

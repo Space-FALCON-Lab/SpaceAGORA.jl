@@ -167,6 +167,58 @@ end
     return quaternions
 end
 
+# Non-root link poses for the visualization sidecar. These are not integrated
+# state on the standard path; control code rotates the `Link` objects in place,
+# so the snapshot has to read them at save time. Ragged across spacecraft
+# (7 floats per non-root link), so the output layer falls back to its generic
+# per-satellite column expansion: `sc{i}_link_pose_{1..7n}`.
+@inline function _save_link_poses(num_sats::Int, u, t, integrator)
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    poses = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        poses[i] = link_pose_vector(spacecraft[i])
+    end
+    return poses
+end
+
+# Atmospheric density the RHS last evaluated for each satellite (kg/m^3), for
+# the viewer's pass colouring; zero outside the atmosphere or without one.
+@inline function _save_density(num_sats::Int, u, t, integrator)
+    densities = integrator.p.shared_buffers.densities
+    out = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        out[i] = i <= length(densities) ? Float64(densities[i]) : 0.0
+    end
+    return out
+end
+
+# Cloth robot-arm chain: the integrated arm state (`arm_r`, `arm_q` per arm
+# link) relative to the spacecraft position, 7 floats per link.
+@inline function _save_arm_poses(num_sats::Int, u, t, integrator)
+    poses = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        sc_view = hasproperty(u, :sc) ? u.sc[i] : nothing
+        r_ii = _simulation_engine_module()._state_position_ii(u, i)
+        poses[i] = sc_view === nothing ? Float64[] : arm_pose_vector(sc_view, r_ii)
+    end
+    return poses
+end
+
+@inline function _arm_pose_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return any(i -> robot_arm_plan_for(args, i) !== nothing, eachindex(args.dynamics_model.spacecraft))
+end
+
+@inline function _density_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return !(args.environment_model.density_model isa NoAtmosphereModel)
+end
+
+@inline function _link_pose_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return any(model -> !isempty(link_pose_link_indices(model)), args.dynamics_model.spacecraft)
+end
+
 function default_save_fields(args::SimulationConfiguration)
     num_sats = length(args.dynamics_model.spacecraft)
     fields = SaveField[
@@ -187,7 +239,60 @@ function default_save_fields(args::SimulationConfiguration)
     if args.mission_configuration.orientation_sim
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
     end
+    for field in visualization_save_fields(args)
+        push!(fields, field)
+    end
     return fields
+end
+
+"""
+    density_save_field(args) -> SaveField
+
+The `density` field (kg/m^3 per satellite) the viewer colours passes by.
+"""
+function density_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:density, (u, t, integrator) -> _save_density(num_sats, u, t, integrator); per_satellite=true, column_prefix="density")
+end
+
+"""
+    visualization_save_fields(args) -> Vector{SaveField}
+
+The extra fields the viewer wants when `save_visualization_scene` is on:
+`link_pose` for articulated spacecraft and `density` when the run has an
+atmosphere. Empty when the flag is off. The engine appends any of these that
+an explicit `save_fields` list lacks.
+"""
+function visualization_save_fields(args::SimulationConfiguration)
+    fields = SaveField[]
+    _link_pose_field_enabled(args) && push!(fields, link_pose_save_field(args))
+    _arm_pose_field_enabled(args) && push!(fields, arm_pose_save_field(args))
+    _density_field_enabled(args) && push!(fields, density_save_field(args))
+    return fields
+end
+
+"""
+    arm_pose_save_field(args) -> SaveField
+
+The `arm_pose` field: per spacecraft, every cloth robot-arm link's COM
+position relative to the spacecraft (inertial, metres) and inertial
+quaternion.
+"""
+function arm_pose_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:arm_pose, (u, t, integrator) -> _save_arm_poses(num_sats, u, t, integrator); per_satellite=true, column_prefix="arm_pose")
+end
+
+"""
+    link_pose_save_field(args) -> SaveField
+
+The `link_pose` field on its own, so a caller that passes explicit
+`save_fields` to `run_simulation` still gets it when the visualization flag
+is on (the engine appends it if absent).
+"""
+function link_pose_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:link_pose, (u, t, integrator) -> _save_link_poses(num_sats, u, t, integrator); per_satellite=true, column_prefix="link_pose")
 end
 
 @inline function _resolve_save_fields(save_fields, args::SimulationConfiguration)

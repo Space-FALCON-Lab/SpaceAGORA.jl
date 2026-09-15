@@ -163,9 +163,28 @@ each construction (including `deepcopy`) gets a fresh lock.
 struct GRAMAtmosphereModel <: AbstractDensityModel
     core
     instance_lock::ReentrantLock
+    # Keyword arguments the model was built with, so the engine can rebuild it
+    # at the run's epoch (see `with_density_model_epoch`); empty for a core
+    # wrapped directly.
+    constructor_kwargs::Dict{Symbol, Any}
 end
 
-GRAMAtmosphereModel(core) = GRAMAtmosphereModel(core, ReentrantLock())
+GRAMAtmosphereModel(core) = GRAMAtmosphereModel(core, ReentrantLock(), Dict{Symbol, Any}())
+GRAMAtmosphereModel(core, lock::ReentrantLock) = GRAMAtmosphereModel(core, lock, Dict{Symbol, Any}())
+
+"""
+    with_density_model_epoch(model, initial_time) -> model
+
+The density model evaluated at the run epoch `initial_time`. Models without
+an epoch of their own (exponential, constant, tabulated, ...) are returned
+as they are. A GRAM model carries the epoch it was built with, and GRAM
+samples its ephemeris (local solar time, season, solar distance) from that
+epoch plus the elapsed time, so the GRAM extension rebuilds the model at the
+run's `initial_time` when the two differ; `run_simulation` calls this before
+a solve so a model built as `GRAMAtmosphereModel(planet_name="venus")` sees
+the atmosphere of the run's date rather than of 2000-01-01.
+"""
+with_density_model_epoch(model::AbstractDensityModel, initial_time) = model
 
 @kwdef struct ConstantDensityModel <: AbstractDensityModel
     density_kg_m3::Float64
@@ -377,7 +396,7 @@ function NRLMSISE00AtmosphereModel(;
 end
 
 @inline function Base.getproperty(model::GRAMAtmosphereModel, name::Symbol)
-    if name === :core || name === :instance_lock
+    if name === :core || name === :instance_lock || name === :constructor_kwargs
         return getfield(model, name)
     end
     return getproperty(getfield(model, :core), name)
@@ -385,7 +404,7 @@ end
 
 @inline function Base.propertynames(model::GRAMAtmosphereModel, private::Bool=false)
     wrapped = propertynames(getfield(model, :core), private)
-    return (:core, :instance_lock, wrapped...)
+    return (:core, :instance_lock, :constructor_kwargs, wrapped...)
 end
 
 @inline function Base.getproperty(model::GRAMAtmosphereModelSurrogate, name::Symbol)

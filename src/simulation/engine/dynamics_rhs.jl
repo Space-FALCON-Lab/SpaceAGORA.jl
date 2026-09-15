@@ -401,7 +401,7 @@ end
         return 4
     elseif effector isa SimulationModel.SolarRadiationPressureModel
         return 3
-    elseif effector isa SimulationModel.AerodynamicCoefficientfM
+    elseif effector isa SimulationModel.AerodynamicCoefficientfM || effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
         return 2
     elseif effector isa SimulationModel.InverseSquaredJ2GravityModel
         return 2

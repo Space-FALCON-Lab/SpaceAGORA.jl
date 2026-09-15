@@ -11,6 +11,9 @@ module ControlHooks
     using ..AerodynamicEffectors: aerodynamic_coefficient_fM
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
+    using ..GuidanceHooks: ApolloDescentConfig, ApolloDescentState
+    using ..AbstractTypes: AbstractTerrainModel
+    using ..TerrainModels: NoTerrainModel, DEMTerrainModel, terrain_height
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
     using ..EnvironmentModels: getDensity
     using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
@@ -25,6 +28,7 @@ module ControlHooks
 
     export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate, calcReactionWheelTorque
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
+    export ApolloDescentControlConfig, ApolloDescentControlModel, ApolloDescentControlState, attitude_error_vector, touchdown_spec
     export RpoLQMPCController, init_rpo_lqmpc, rpo_lqmpc_control
     export RPOHeldActuation, RPOMPCControlModel
     export MagneticMomentumManagerModel
@@ -50,4 +54,5 @@ module ControlHooks
     include(joinpath(@__DIR__, "aerobraking", "control_commands.jl"))
     include(joinpath(@__DIR__, "aerobraking", "constraint_tracking.jl"))
     include(joinpath(@__DIR__, "aerobraking", "tracking_executor.jl"))
+    include(joinpath(@__DIR__, "landing", "apollo_descent_control.jl"))
 end

@@ -2,14 +2,15 @@ module GuidanceHooks
     using ..Structure
 
     using ..ConfigTypes: ODEParams, Solution
-    using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractGuidanceModel
+    using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractGuidanceModel, AbstractTerrainModel
+    using ..TerrainModels: NoTerrainModel, DEMTerrainModel, terrain_height
     using ..GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using ..GuidanceModels: ApoapsisTargetPeriapsisRaiseGuidanceModel
     using ..GuidanceModels: RPOGuidanceModel, RPOPlan, RPOPlanBuffer, update_rpo_plan_buffer!
     using ..NavigationHooks: RPOReferenceGeometry, RPOStationGeometry
     using ..NavigationHooks: rpo_clearance_distance_to_station, rpo_clearance_to_station, rpo_path_clearance_stats
     using ..CommandTypes: PropulsiveManeuverCommand, AerobrakingControlCommand
-    using ..EphemeridesModels: planet_frame_lpi
+    using ..EphemeridesModels: planet_frame_lpi, ephemerides_requires_spice
     using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..AerobrakingPolicy: AbstractAerobrakingPolicySelector, AerobrakingPolicyConfig, E_EDG, T_EDG, select_strategy
     using ..ReferenceSystems
@@ -59,6 +60,8 @@ module GuidanceHooks
     export compute_aerobraking_guidance, dispatch_aerobraking_guidance
     export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
     export AerobrakingEnergyDepletionGuidanceModel
+    export DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
+    export apollo11_descent_targets, descent_site_frame, descent_accel_command, descent_time_to_go, descent_attitude_command, descent_throttle, descent_environment, quaternion_from_passive_dcm
 
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
@@ -91,4 +94,5 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "aerobraking", "dispatcher.jl"))
 
     include(joinpath(@__DIR__, "thruster_guidance", "thruster_guidance_functions.jl"))
+    include(joinpath(@__DIR__, "landing", "apollo_descent_guidance.jl"))
 end

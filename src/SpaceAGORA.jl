@@ -71,6 +71,9 @@ using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlM
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
+using .SimulationModel: NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height, terrain_radius, load_dem_grid, load_site_terrain
+using .SimulationModel: DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
+using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
@@ -79,6 +82,10 @@ using .SimulationModel: SolarPanelAngleOfAttackControlModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionGuidanceModel) AerobrakingEnergyDepletionGuidanceModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionControlModel) AerobrakingEnergyDepletionControlModel
 @doc (@doc SimulationModel.SolarPanelAngleOfAttackControlModel) SolarPanelAngleOfAttackControlModel
+@doc (@doc SimulationModel.ApolloDescentConfig) ApolloDescentConfig
+@doc (@doc SimulationModel.ApolloDescentGuidanceModel) ApolloDescentGuidanceModel
+@doc (@doc SimulationModel.ApolloDescentControlModel) ApolloDescentControlModel
+@doc (@doc SimulationModel.DEMTerrainModel) DEMTerrainModel
 @doc (@doc SimulationModel.StateAnchor) StateAnchor
 @doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
@@ -86,6 +93,18 @@ using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
 using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
+using .SimulationModel: VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec
+using .SimulationModel: ArmGeometry, arm_geometry
+using .SimulationModel: load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload
+using .SimulationModel: MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate
+using .SimulationModel: mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
+using .SimulationModel: fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
+using .SimulationModel: spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
+using .SimulationModel: visualization_scene_path, write_visualization_scene, read_visualization_scene
+using .SimulationModel: velocity_aligned_quaternion, visualization_frame_budget
+using .SimulationModel: export_visualization, with_visualization_scene, write_viewer_dev_payload
+using .SimulationModel: EnsembleSample, sample_results_directory, with_results_directory, write_ensemble_manifest, export_ensemble_visualization
+using .SimulationCampaigns: run_monte_carlo_visualization
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 
 @doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
@@ -185,6 +204,49 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
 @doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
 @doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
+@doc (@doc SimulationModel.SceneVisualization.VisualizationScene) VisualizationScene
+@doc (@doc SimulationModel.SceneVisualization.PlanetSpec) PlanetSpec
+@doc (@doc SimulationModel.SceneVisualization.SpacecraftGeometry) SpacecraftGeometry
+@doc (@doc SimulationModel.SceneVisualization.LinkBox) LinkBox
+@doc (@doc SimulationModel.SceneVisualization.AtmosphereSpec) AtmosphereSpec
+@doc (@doc SimulationModel.SceneVisualization.atmosphere_spec) atmosphere_spec
+@doc (@doc SimulationModel.SceneVisualization.ArmGeometry) ArmGeometry
+@doc (@doc SimulationModel.SceneVisualization.arm_geometry) arm_geometry
+@doc (@doc SimulationModel.Structure.load_model_triangles) load_model_triangles
+@doc (@doc SimulationModel.Structure.model_bounding_box) model_bounding_box
+@doc (@doc SimulationModel.Structure.sample_model_pointcloud) sample_model_pointcloud
+@doc (@doc SimulationModel.Structure.articulate_triangles) articulate_triangles
+@doc (@doc SimulationModel.Structure.articulation_payload) articulation_payload
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.MeshAeroPanels) MeshAeroPanels
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.MeshAeroSurrogate) MeshAeroSurrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientMeshSurrogate) AerodynamicCoefficientMeshSurrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.mesh_aero_panels) mesh_aero_panels
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_aero_coefficients) panel_aero_coefficients
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_aero_coefficients_split) panel_aero_coefficients_split
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_shadow_mask) panel_shadow_mask
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_projected_area) panel_projected_area
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.fit_mesh_aero_surrogate) fit_mesh_aero_surrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.mesh_aero_coefficients) mesh_aero_coefficients
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.write_mesh_aero_surrogate) write_mesh_aero_surrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.read_mesh_aero_surrogate) read_mesh_aero_surrogate
+@doc (@doc SimulationModel.SceneVisualization.spacecraft_geometry) spacecraft_geometry
+@doc (@doc SimulationModel.SceneVisualization.planet_spec) planet_spec
+@doc (@doc SimulationModel.SceneVisualization.planet_rotation_table) planet_rotation_table
+@doc (@doc SimulationModel.SceneVisualization.build_visualization_scene) build_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.visualization_scene_path) visualization_scene_path
+@doc (@doc SimulationModel.SceneVisualization.write_visualization_scene) write_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.read_visualization_scene) read_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.velocity_aligned_quaternion) velocity_aligned_quaternion
+@doc (@doc SimulationModel.SceneVisualization.visualization_frame_budget) visualization_frame_budget
+@doc (@doc SimulationModel.SceneVisualization.export_visualization) export_visualization
+@doc (@doc SimulationModel.SceneVisualization.with_visualization_scene) with_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.write_viewer_dev_payload) write_viewer_dev_payload
+@doc (@doc SimulationModel.SceneVisualization.EnsembleSample) EnsembleSample
+@doc (@doc SimulationModel.SceneVisualization.sample_results_directory) sample_results_directory
+@doc (@doc SimulationModel.SceneVisualization.with_results_directory) with_results_directory
+@doc (@doc SimulationModel.SceneVisualization.write_ensemble_manifest) write_ensemble_manifest
+@doc (@doc SimulationModel.SceneVisualization.export_ensemble_visualization) export_ensemble_visualization
+@doc (@doc SimulationCampaigns.run_monte_carlo_visualization) run_monte_carlo_visualization
 
 """
     NoAtmosphereModel()
@@ -487,10 +549,24 @@ export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
+export NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height, terrain_radius, load_dem_grid, load_site_terrain
+export DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
+export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
+export load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload
+export MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate
+export mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
+export fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
+export spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
+export visualization_scene_path, write_visualization_scene, read_visualization_scene
+export velocity_aligned_quaternion, visualization_frame_budget
+export export_visualization, with_visualization_scene, write_viewer_dev_payload
+export EnsembleSample, sample_results_directory, with_results_directory, write_ensemble_manifest
+export export_ensemble_visualization, run_monte_carlo_visualization
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 """
@@ -568,7 +644,8 @@ render_asset_report(args...; kwargs...) = SpaceAGORACLI.render_asset_report(args
 
 Stable CLI entrypoint for SpaceAGORA operational commands:
 
-- `run`
+- `run` (add `--visualize` for the 3D viewer page)
+- `visualize`
 - `telemetry`
 - `benchmark`
 - `assets check`

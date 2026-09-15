@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- Development harness: serve the repository root over HTTP
+     (python3 -m http.server from viewer/) and open dev.html. Expects
+     ./dev_data.js to define window.SPACEAGORA_VIEWER; produce one with
+     SpaceAGORA.write_viewer_dev_payload(prefix, "viewer/dev_data.js"). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SpaceAGORA viewer (dev)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070c; overflow: hidden; }
+  #viewer { position: relative; width: 100%; height: 100%; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js",
+    "three/addons/loaders/STLLoader.js": "./vendor/STLLoader.js",
+    "three/addons/loaders/OBJLoader.js": "./vendor/OBJLoader.js",
+    "three/addons/loaders/GLTFLoader.js": "./vendor/GLTFLoader.js",
+    "three/addons/utils/BufferGeometryUtils.js": "./vendor/BufferGeometryUtils.js",
+    "mp4-muxer": "./vendor/mp4-muxer.mjs",
+    "viewer/data.js": "./src/data.js",
+    "viewer/colormaps.js": "./src/colormaps.js",
+    "viewer/atmosphere.js": "./src/atmosphere.js",
+    "viewer/globe.js": "./src/globe.js",
+    "viewer/spacecraft.js": "./src/spacecraft.js",
+    "viewer/lod.js": "./src/lod.js",
+    "viewer/ensemble.js": "./src/ensemble.js",
+    "viewer/paths.js": "./src/paths.js",
+    "viewer/references.js": "./src/references.js",
+    "viewer/video.js": "./src/video.js",
+    "viewer/plots.js": "./src/plots.js",
+    "viewer/terrain.js": "./src/terrain.js",
+    "viewer/timeline.js": "./src/timeline.js",
+    "viewer/ui.js": "./src/ui.js",
+    "viewer/main.js": "./src/main.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="viewer"></div>
+<script src="./dev_data.js"></script>
+<script type="module">
+import { start } from 'viewer/main.js';
+window.SPACEAGORA_VIEWER.manualStart = true;
+window.spaceagoraViewer = start(window.SPACEAGORA_VIEWER, document.getElementById('viewer'));
+</script>
+</body>
+</html>

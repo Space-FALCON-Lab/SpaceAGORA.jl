@@ -522,6 +522,7 @@ end
 @inline _dynamic_effector_threadsafe(::SimulationModel.GravitationalHarmonicsModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.SolarRadiationPressureModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientfM)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientMeshSurrogate)::Bool = true
 
 @inline function _dynamic_effectors_parallel_supported(dynamic_effectors::Tuple)::Bool
     aero_fm_count = 0
@@ -1116,7 +1117,7 @@ end
         max_cost = max(max_cost, cost)
         if effector isa SimulationModel.NBodyGravityModel
             has_nbody = true
-        elseif effector isa SimulationModel.AerodynamicCoefficientfM
+        elseif effector isa SimulationModel.AerodynamicCoefficientfM || effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
             has_aero = true
         elseif effector isa SimulationModel.GravitationalHarmonicsModel
             has_harmonics = true

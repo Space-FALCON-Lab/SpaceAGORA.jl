@@ -295,6 +295,30 @@ function _try_save_simulation_results_if_enabled!(args...)
     end
 end
 
+# See `SimulationModel.with_density_model_epoch`: returns `args` untouched when
+# the density model has no epoch or already carries the run's.
+function _with_density_model_epoch(args::SimulationConfiguration)
+    env = args.environment_model
+    aligned = SimulationModel.with_density_model_epoch(env.density_model, args.initial_time)
+    aligned === env.density_model && return args
+    it = args.initial_time
+    @info "Density model rebuilt at the run's initial_time (it was built with a different epoch)" model=nameof(typeof(aligned)) initial_time="$(it.year)-$(lpad(it.month, 2, '0'))-$(lpad(it.day, 2, '0'))T$(lpad(it.hour, 2, '0')):$(lpad(it.minute, 2, '0'))"
+    new_env = SimulationModel.EnvironmentModel(env.planet, env.EI, aligned, env.ephemerides_model, env.topography, env.topo_degree, env.topo_order, env.wind, env.thermal_model)
+    return SimulationConfiguration(
+        file_paths=args.file_paths,
+        simulation_settings=args.simulation_settings,
+        mission_configuration=args.mission_configuration,
+        environment_model=new_env,
+        dynamics_model=args.dynamics_model,
+        guidance_model=args.guidance_model,
+        navigation_model=args.navigation_model,
+        control_model=args.control_model,
+        initial_time=args.initial_time,
+        integration_tolerances=args.integration_tolerances,
+        solver_config=args.solver_config
+    )
+end
+
 function run_simulation(
     args::SimulationConfiguration;
     isolate_state::Bool=true,
@@ -310,6 +334,9 @@ function run_simulation(
     # example script can opt in) turns the scene sidecar on for this run and
     # builds the viewer page once the results are written (see SceneVisualization).
     args = visualization ? SimulationModel.SceneVisualization.with_visualization_scene(args, true) : args
+    # A density model with an epoch of its own (GRAM) is rebuilt at the run's
+    # initial_time, so local solar time and season are those of the run.
+    args = _with_density_model_epoch(args)
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args

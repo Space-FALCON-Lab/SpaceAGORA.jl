@@ -92,6 +92,14 @@ scene on the followed spacecraft for the same reason.
 
 ## Ensembles
 
+`payload.ensemble.nominal` (0-based sample index) marks the unperturbed
+sample: white line, own label, never dimmed; `src/ensemble.js` computes the
+per-time mean and RTN dispersion of the samples and draws a translucent
+3σ tube (radial by cross-track) around the nominal, with outline rings and
+a readout of the three 3σ values in the panel.
+
+### Samples
+
 A page built by `export_ensemble_visualization` (or
 `run_monte_carlo_visualization`) carries `payload.ensemble`: the samples
 become pseudo-spacecraft on one time axis, with `NaN` positions where a
@@ -115,6 +123,14 @@ a frame (`inertial`, `rtn` of a target spacecraft, or that spacecraft's
 `body` frame), colour and dash style. RTN and body paths are rebuilt every
 frame from the target's position, velocity or attitude, and the group sits
 at the floating origin like the markers.
+
+## Standalone page
+
+`standalone.html` plus `src/standalone.js` and `build_standalone.py` make a
+page that builds the payload in the browser from a CSV or JSON table, a body
+name and an epoch: IAU rotation table, box spacecraft, model override,
+reference ghost, and ensembles from several files. `data.js` accepts typed
+arrays as well as base64 blocks for that reason. See the user guide.
 
 ## Reference ghosts
 

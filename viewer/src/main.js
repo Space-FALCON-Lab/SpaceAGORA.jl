@@ -305,12 +305,13 @@ export function start(payload, container = document.body) {
     craft.group.position.set(anchor[0], anchor[1], anchor[2]);
     lod.group.position.set(anchor[0], anchor[1], anchor[2]);
     refs.group.position.set(anchor[0], anchor[1], anchor[2]);
+    if (ensemble) ensemble.group.position.set(anchor[0], anchor[1], anchor[2]);
     world.updateMatrixWorld();
     const viewportHeight = renderer.domElement.clientHeight || window.innerHeight;
     lod.update(t, camera, viewportHeight, lod.group.matrixWorld, anchor);
     if (refPaths.items.length) refPaths.update(t, anchor);
     if (refs.items.length) refs.update(t, camera, viewportHeight, refs.group.matrixWorld, anchor);
-    if (ensemble) ensemble.update(state.follow);
+    if (ensemble) ensemble.update(state.follow, t, anchor, camera, ensemble.group.matrixWorld);
     craft.update(t, camera, lod.markerHidden, state.selected, craft.group.matrixWorld, anchor, ensemble ? ensemble.dimMask : null);
     controls.update();
     renderer.render(scene, camera);

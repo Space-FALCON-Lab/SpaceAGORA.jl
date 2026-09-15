@@ -157,6 +157,35 @@ The page is self-contained (three.js, texture and data are embedded) and
 opens from disk. An 8k Earth adds about 5 MB; pass `texture_resolution="4k"`
 or `textures=false` to shrink it.
 
+## Standalone viewer, no simulation needed
+
+The viewer also runs on its own from a data file, with no Julia and no
+SpaceAGORA run behind it. `viewer/build_standalone.py` assembles a single
+HTML page that opens from disk:
+
+```bash
+python3 viewer/build_standalone.py --out output/spaceagora_viewer.html          # a form: pick the file, body and epoch in the page
+python3 viewer/build_standalone.py --out page.html --data run.csv --planet venus --epoch 1993-05-26T00:00:07Z \
+    --model data/models/magellan_nasa_3d_resources.glb --model-rotation 0,0,90    # opens straight into the run
+python3 viewer/build_standalone.py --out page.html --data nominal.csv s1.csv s2.csv s3.csv --planet mars  # an ensemble
+```
+
+The data is a CSV with a `time` column (seconds) and either SpaceAGORA's own
+result columns (`sc1_pos_1..3`, `sc1_vel_1..3`, `sc1_q_1..4`, drag, density,
+link poses; the `simulation_results.csv` a run writes opens as is, several
+spacecraft included) or plain `x,y,z[,vx,vy,vz][,qx,qy,qz,qw]`, in metres or
+kilometres, positions inertial (J2000) about the body's centre; a JSON form
+with `time` and `spacecraft: [{pos, vel, q}]` is accepted too. The page
+builds everything the Julia bundler would: the body's rotation from the IAU
+2009 pole and prime meridian at the given epoch (so ground tracks agree with
+the SPICE-driven pages to a fraction of a degree), a box spacecraft of the
+given size, the model override (centred from the parsed geometry), and an
+optional reference ghost from a second table. Several files open as an
+ensemble with the first as the nominal. `--cdn` builds the variant the
+claude.ai artifact host can show (three.js from a CDN); the default page is
+fully offline. The page keeps a "Load other data" button, so one built page
+serves any number of files.
+
 ## Ensembles
 
 Monte Carlo samples and constellation members merge into one page:
@@ -174,6 +203,21 @@ does the same for any directory of `sample_NNNN` or `sat_<i>_id_<id>`
 subdirectories, including the per-member output of
 `run_constellation_ensemble`. From the CLI:
 `spaceagora visualize --run=output/campaign --ensemble`.
+
+### Nominal sample and the 3σ tube
+
+`run_monte_carlo_visualization(...; nominal=seed)` runs one more sample with
+that seed (the unperturbed configuration) labelled "nominal", records it in
+the manifest, and the page draws it as a bright white line with its own
+label while the Monte Carlo traces stay faint and coloured by the sample
+scalar. Around the nominal (or the sample mean when there is none) a
+translucent tube shows the 3σ dispersion of the samples at every time, its
+cross-section the radial and cross-track standard deviations in the
+nominal's RTN frame, and the ensemble panel reports the 3σ radial,
+along-track and cross-track values at the current time together with how
+many samples are present. The tube and the traces can be switched off and
+the σ multiple set to 1, 2 or 3 in the panel. The standalone page does the
+same for several files.
 
 ## Atmosphere
 

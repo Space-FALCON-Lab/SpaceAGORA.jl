@@ -19,12 +19,19 @@ export function decodeBytes(b64) {
   return bytes;
 }
 
+// Blocks arrive as base64 strings from the Julia bundler, or as typed arrays
+// (or plain arrays) when a page builds its payload in the browser
+// (viewer/src/standalone.js); both forms are accepted everywhere.
 export function decodeFloat32(b64) {
+  if (b64 instanceof Float32Array) return b64;
+  if (ArrayBuffer.isView(b64) || Array.isArray(b64)) return Float32Array.from(b64);
   const bytes = decodeBytes(b64);
   return new Float32Array(bytes.buffer, 0, bytes.length >> 2);
 }
 
 export function decodeFloat64(b64) {
+  if (b64 instanceof Float64Array) return b64;
+  if (ArrayBuffer.isView(b64) || Array.isArray(b64)) return Float64Array.from(b64);
   const bytes = decodeBytes(b64);
   return new Float64Array(bytes.buffer, 0, bytes.length >> 3);
 }

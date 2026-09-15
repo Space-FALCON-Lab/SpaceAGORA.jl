@@ -61,7 +61,7 @@ const POINT_VERTEX = `
     vState = state;
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = size * pixelRatio * (state > 1.5 && state < 2.5 ? 1.9 : 1.0);
+    gl_PointSize = size * pixelRatio * (state > 1.5 && state < 2.5 ? 1.9 : (state > 3.5 ? 1.7 : 1.0));
     #include <logdepthbuf_vertex>
   }`;
 
@@ -80,6 +80,9 @@ const POINT_FRAGMENT = `
     if (vState > 1.5 && vState < 2.5) {
       // selected: white ring around the coloured core
       if (d > 0.14) color = vec3(1.0);
+    } else if (vState > 3.5) {
+      // nominal (ensemble): white core with a coloured rim
+      if (d < 0.11) color = vec3(1.0);
     } else if (vState > 2.5) {
       // dimmed (ensemble: not the selected sample)
       color *= 0.3;
@@ -244,6 +247,7 @@ export function createSpacecraft(frames, sidecar, options = {}) {
   const scratch = new Float64Array(S * 3);
   const absent = new Uint8Array(S);
   let labelsWanted = true;
+  let labelMask = null; // per-spacecraft 1 = keep this label hidden (ensemble traces)
 
   return {
     group,
@@ -284,14 +288,14 @@ export function createSpacecraft(frames, sidecar, options = {}) {
       }
       markerGeometry.getAttribute('position').needsUpdate = true;
       for (let s = 0; s < S; s++) {
-        state[s] = absent[s] || (markerHidden && markerHidden[s]) ? 1 : (s === selected ? 2 : (dimMask && dimMask[s] ? 3 : 0));
+        state[s] = absent[s] || (markerHidden && markerHidden[s]) ? 1 : (s === selected ? 2 : (dimMask && dimMask[s] === 2 ? 4 : (dimMask && dimMask[s] ? 3 : 0)));
       }
       markerGeometry.getAttribute('state').needsUpdate = true;
       if (trailsEnabled) updateTrails(t);
       if (labelsEnabled && labelsWanted) {
         for (let s = 0; s < S; s++) {
           const sprite = labels[s];
-          sprite.visible = !absent[s];
+          sprite.visible = !absent[s] && !(labelMask && labelMask[s]);
           sprite.position.set(positions[3 * s], positions[3 * s + 1], positions[3 * s + 2]);
           labelWorld.copy(sprite.position).applyMatrix4(groupMatrix);
           const dist = camera.position.distanceTo(labelWorld);
@@ -313,5 +317,6 @@ export function createSpacecraft(frames, sidecar, options = {}) {
     setPixelRatio(r) { markerMaterial.uniforms.pixelRatio.value = r; },
     setTrailsVisible(v) { for (const l of trails) l.visible = v; },
     setLabelsVisible(v) { labelsWanted = v; for (const l of labels) l.visible = v; },
+    setLabelMask(mask) { labelMask = mask; },
   };
 }

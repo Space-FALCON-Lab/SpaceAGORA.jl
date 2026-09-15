@@ -10,7 +10,7 @@ using Arrow: Arrow
 using DataFrames: DataFrame
 
 """
-    run_monte_carlo_visualization(build_args, seeds, campaign_dir; scalar=default_sample_scalar, scalar_name="final periapsis altitude (km)", threads=1, fail_fast=false, export_page=true, labels=nothing, page_kwargs...) -> (result, page)
+    run_monte_carlo_visualization(build_args, seeds, campaign_dir; scalar=default_sample_scalar, scalar_name="final periapsis altitude (km)", threads=1, fail_fast=false, export_page=true, labels=nothing, nominal=nothing, page_kwargs...) -> (result, page)
 
 Run one simulation per seed with `build_args(seed)::SimulationConfiguration`,
 each writing its bundle and scene sidecar to `sample_results_directory(campaign_dir, index)`,
@@ -19,6 +19,9 @@ ensemble viewer page. `scalar(df)` reads one number per finished sample from
 its results table for the page's colour scale. Returns the
 `MonteCarloResult` (each successful sample's `value` is its scalar) and the
 page path or `nothing`. `page_kwargs` go to `export_ensemble_visualization`.
+`nominal`, when given, is passed to `build_args` like a seed and run as one
+more sample labelled "nominal"; the manifest records it and the page draws it
+distinctly with the 3-sigma tube of the other samples around it.
 """
 function run_monte_carlo_visualization(
     build_args,
@@ -30,12 +33,15 @@ function run_monte_carlo_visualization(
     fail_fast::Bool=false,
     export_page::Bool=true,
     labels::Union{Nothing, AbstractVector}=nothing,
+    nominal=nothing,
     page_kwargs...
 )
     campaign_dir = String(campaign_dir)
     mkpath(campaign_dir)
     seed_list = collect(seeds)
     labels === nothing || length(labels) == length(seed_list) || throw(ArgumentError("labels must have one entry per seed."))
+    nominal_index = nominal === nothing ? nothing : length(seed_list) + 1
+    nominal === nothing || push!(seed_list, nominal)
     indexed = collect(enumerate(seed_list))
     function sample((index, seed))
         args = with_results_directory(build_args(seed), sample_results_directory(campaign_dir, index); visualization=true)
@@ -48,11 +54,11 @@ function run_monte_carlo_visualization(
     for s in result.samples
         index, seed = s.seed
         value = s.success && s.value isa Real ? Float64(s.value) : NaN
-        label = labels === nothing ? "sample $(index) (seed $(seed))" : String(labels[index])
+        label = index == nominal_index ? "nominal" : (labels === nothing ? "sample $(index) (seed $(seed))" : String(labels[index]))
         push!(samples, EnsembleSample(Int(index), string(seed), s.success, value, label, sample_results_directory(campaign_dir, index)))
     end
     sort!(samples; by=s -> s.index)
-    write_ensemble_manifest(campaign_dir, samples; scalar_name=scalar_name)
+    write_ensemble_manifest(campaign_dir, samples; scalar_name=scalar_name, nominal=nominal_index)
     page = export_page ? export_ensemble_visualization(campaign_dir; page_kwargs...) : nothing
     return result, page
 end

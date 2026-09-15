@@ -95,19 +95,22 @@ function _sample_from(d, campaign_dir::AbstractString)::EnsembleSample
 end
 
 """
-    write_ensemble_manifest(campaign_dir, samples; scalar_name="") -> String
+    write_ensemble_manifest(campaign_dir, samples; scalar_name="", nominal=nothing) -> String
 
 Write `ensemble_manifest.json` listing the samples and the name of the scalar
 they carry. Directories are stored relative to `campaign_dir` when possible.
+`nominal` is the `index` of the unperturbed sample, which the viewer draws
+distinctly and centres the 3-sigma tube on.
 """
-function write_ensemble_manifest(campaign_dir::AbstractString, samples::AbstractVector{EnsembleSample}; scalar_name::AbstractString="")::String
+function write_ensemble_manifest(campaign_dir::AbstractString, samples::AbstractVector{EnsembleSample}; scalar_name::AbstractString="", nominal::Union{Nothing, Integer}=nothing)::String
+    nominal === nothing || any(s -> s.index == nominal, samples) || throw(ArgumentError("nominal sample index $(nominal) is not among the samples."))
     entries = Any[]
     for s in samples
         d = _sample_dict(s)
         d["directory"] = startswith(s.directory, String(campaign_dir)) ? relpath(s.directory, String(campaign_dir)) : s.directory
         push!(entries, d)
     end
-    payload = Dict{String, Any}("schema" => 1, "scalar_name" => String(scalar_name), "samples" => entries)
+    payload = Dict{String, Any}("schema" => 1, "scalar_name" => String(scalar_name), "samples" => entries, "nominal" => nominal)
     path = joinpath(String(campaign_dir), ENSEMBLE_MANIFEST)
     return IOSerialization._atomic_write_file(path, tmp -> open(io -> JSON.print(io, payload), tmp, "w"))
 end
@@ -120,6 +123,18 @@ function read_ensemble_manifest(campaign_dir::AbstractString)
     d = JSON.parsefile(path)
     samples = EnsembleSample[_sample_from(x, String(campaign_dir)) for x in d["samples"]]
     return samples, String(get(d, "scalar_name", ""))
+end
+
+"""
+    read_ensemble_nominal(campaign_dir) -> Union{Nothing, Int}
+
+The `index` of the nominal sample recorded in the manifest, or `nothing`.
+"""
+function read_ensemble_nominal(campaign_dir::AbstractString)::Union{Nothing, Int}
+    path = joinpath(String(campaign_dir), ENSEMBLE_MANIFEST)
+    isfile(path) || return nothing
+    v = get(JSON.parsefile(path), "nominal", nothing)
+    return v === nothing ? nothing : Int(v)
 end
 
 """
@@ -419,6 +434,8 @@ function export_ensemble_visualization(
         entry === nothing || (textures_payload[scene.planet.texture] = entry)
     end
     name = scalar_name === nothing ? manifest_scalar : String(scalar_name)
+    nominal_index = read_ensemble_nominal(campaign_dir)
+    nominal_position = nominal_index === nothing ? nothing : findfirst(s -> s.index == nominal_index, finished)
     payload = Dict{String, Any}(
         "scene" => scene_dict(scene),
         "frames" => frames,
@@ -430,6 +447,7 @@ function export_ensemble_visualization(
             "spacecraft_per_sample" => per_sample,
             "scalar_name" => name,
             "samples" => Any[_sample_dict(s) for s in finished],
+            "nominal" => nominal_position === nothing ? nothing : nominal_position - 1,
         ),
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · ensemble of $(length(finished))" : String(title)

@@ -43,7 +43,7 @@ export texture_manifest, texture_entry, texture_payload, build_viewer_frames, vi
 export render_viewer_html, viewer_import_map, kept_row_indices
 export load_model_triangles, model_bounding_box, model_bounding_box_center, sample_model_pointcloud
 export EnsembleSample, sample_results_directory, with_results_directory, default_sample_scalar
-export write_ensemble_manifest, read_ensemble_manifest, discover_ensemble_samples
+export write_ensemble_manifest, read_ensemble_manifest, read_ensemble_nominal, discover_ensemble_samples
 export build_ensemble_frames, ensemble_time_axis, export_ensemble_visualization
 
 const SCENE_SCHEMA_VERSION = 1

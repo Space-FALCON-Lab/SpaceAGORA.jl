@@ -6,7 +6,7 @@
 #         [--ref-area=<m2>] [--ref-length=<m>] [--no-shadowing] [--outward-normals]
 #
 # Prints the fit residuals and a few reference coefficients (drag along each
-# body axis at the middle speed ratio) so the normalisation can be sanity
+# body axis at the middle speed ratio) so the normalization can be sanity
 # checked against the box model's numbers.
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 if something(Base.active_project(), "") != joinpath(REPO_ROOT, "Project.toml")

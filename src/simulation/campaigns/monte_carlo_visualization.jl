@@ -16,11 +16,11 @@ Run one simulation per seed with `build_args(seed)::SimulationConfiguration`,
 each writing its bundle and scene sidecar to `sample_results_directory(campaign_dir, index)`,
 then write the ensemble manifest and (unless `export_page=false`) build the
 ensemble viewer page. `scalar(df)` reads one number per finished sample from
-its results table for the page's colour scale. Returns the
+its results table for the page's color scale. Returns the
 `MonteCarloResult` (each successful sample's `value` is its scalar) and the
 page path or `nothing`. `page_kwargs` go to `export_ensemble_visualization`.
 `nominal`, when given, is passed to `build_args` like a seed and run as one
-more sample labelled "nominal"; the manifest records it and the page draws it
+more sample labeled "nominal"; the manifest records it and the page draws it
 distinctly with the 3-sigma tube of the other samples around it.
 """
 function run_monte_carlo_visualization(

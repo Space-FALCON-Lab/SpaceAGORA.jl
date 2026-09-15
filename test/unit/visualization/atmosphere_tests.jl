@@ -107,7 +107,7 @@ SM.EnvironmentModels.getDensity(::_LonVaryingModel, h::Float64, lat::Float64, lo
         # Row-major by latitude; density peaks near longitude 0 on every row.
         row = spec.map_density_kg_m3[1:12]
         @test argmax(row) in (6, 7)
-        # grid centres sit at ±15° and ±165°, so the extremes are 1.5 ± cos(15°)
+        # grid centers sit at ±15° and ±165°, so the extremes are 1.5 ± cos(15°)
         @test maximum(row) / minimum(row) ≈ (1.5 + cosd(15)) / (1.5 - cosd(15)) rtol=1e-6
         d = SV.scene_dict(build_visualization_scene(args; rotation_max_samples=4, density_params=(dummy=true,)))
         @test d["atmosphere"]["map"]["altitude_m"] == 60e3

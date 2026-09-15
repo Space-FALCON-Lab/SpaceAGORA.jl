@@ -31,7 +31,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/globe.js` | textured oblate sphere, graticule, rotation with the body |
 | `src/spacecraft.js` | marker cloud, fading trails, labels, orbit period estimate |
 | `src/lod.js` | close-up box assemblies, thruster/facet glyphs, STL override, visibility by projected size |
-| `src/ensemble.js` | ensemble colouring, spaghetti histories, sample selector |
+| `src/ensemble.js` | ensemble coloring, spaghetti histories, sample selector |
 | `src/paths.js` | reference polylines in inertial, RTN or body frames |
 | `src/references.js` | reference ghosts: translucent copies of a spacecraft driven by an external state table |
 | `src/video.js` | MP4 export through WebCodecs and mp4-muxer (`vendor/mp4-muxer.mjs`, MIT), WebM fallback |
@@ -66,7 +66,7 @@ counter-rotates the scene so the body stands still and orbits precess past it.
 Click a marker to select a spacecraft: the panel at the top right shows its
 altitude, geodetic latitude and longitude, radius, speed, mass (when the run
 saved it) and whether it is currently drawn as a marker or a 3D model.
-"Follow" (or F) keeps the selected spacecraft at the centre and moves the
+"Follow" (or F) keeps the selected spacecraft at the center and moves the
 camera close enough to see the assembly; Esc deselects. The trail selector
 sets the history drawn behind each spacecraft in orbits (the period is
 estimated from periapsis passages in the saved trajectory, so a run shorter
@@ -87,9 +87,17 @@ and blue for x, y, z. Each of these has a toggle. A 3D model passed through
 (STL, OBJ, glTF or GLB, parsed in the browser) replaces the boxes for that
 spacecraft; the glyphs stay.
 
-Runs with at most 64 spacecraft embed positions as Float64 so the metre-scale
-models do not jitter at planetary distances; follow mode also re-centres the
+Runs with at most 64 spacecraft embed positions as Float64 so the meter-scale
+models do not jitter at planetary distances; follow mode also re-centers the
 scene on the followed spacecraft for the same reason.
+
+## Heating overlay
+
+With density and velocity in the frames, `src/lod.js` can swap every heatable
+mesh (link boxes, model meshes) to a shader that colors faces by
+½ρV³ cos θ (inferno, log scale, three decades below the run's peak), θ from
+the face normal and the airspeed (inertial velocity minus ω × r). Toggle
+"heating"; the legend reads W/cm².
 
 ## Ensembles
 
@@ -104,7 +112,7 @@ a readout of the three 3σ values in the panel.
 A page built by `export_ensemble_visualization` (or
 `run_monte_carlo_visualization`) carries `payload.ensemble`: the samples
 become pseudo-spacecraft on one time axis, with `NaN` positions where a
-sample has not started or has already ended. `src/ensemble.js` colours them
+sample has not started or has already ended. `src/ensemble.js` colors them
 by the manifest scalar (viridis), draws every sample's full history as a
 faint line, and adds a sample selector; the selected sample's marker is
 ringed and the others dimmed. Assemblies are built for at most 256
@@ -121,7 +129,7 @@ image, and the info panel shows the tier and the GPU limit.
 
 `payload.paths` carries reference polylines (`src/paths.js`): points in km,
 a frame (`inertial`, `rtn` of a target spacecraft, or that spacecraft's
-`body` frame), colour and dash style. RTN and body paths are rebuilt every
+`body` frame), color and dash style. RTN and body paths are rebuilt every
 frame from the target's position, velocity or attitude, and the group sits
 at the floating origin like the markers.
 
@@ -145,7 +153,7 @@ arrays as well as base64 blocks for that reason. See the user guide.
 `payload.references` carries state tables (`src/references.js`): Float64
 times and positions on their own grid, optional velocities and attitude
 quaternions, the index of the spacecraft whose geometry the ghost copies,
-colour and opacity. Each ghost is a translucent copy of that spacecraft's
+color and opacity. Each ghost is a translucent copy of that spacecraft's
 model override (through `loadModelObject`, shared with `lod.js`) or of its
 link boxes, with a ring marker and label, a line over the whole reference
 span, and the same pixel-size switch as the assemblies. The selection panel
@@ -158,9 +166,9 @@ When `payload.scene.spacecraft[i].arm` is present and the frames carry an
 `arm_pose` block, `src/lod.js` builds one cylinder per arm link (along the
 link's own vector, joint sphere at its origin, a red tip at the end
 effector) in a sibling group of the box assembly. Arm poses are inertial and
-relative to the spacecraft in metres, so the group sits at the spacecraft
+relative to the spacecraft in meters, so the group sits at the spacecraft
 without the body rotation; each frame the joint origin is recovered from the
-saved centre of mass and quaternion.
+saved center of mass and quaternion.
 
 ## Atmosphere
 
@@ -168,13 +176,13 @@ saved centre of mass and quaternion.
 shell at the entry interface (a Fresnel shader, additive, double-sided so it
 reads from inside during a pass), translucent density shells whose opacity
 follows the sampled profile, and a density map draped at one altitude when
-the model varies horizontally. Trails can be coloured by heat rate, dynamic
+the model varies horizontally. Trails can be colored by heat rate, dynamic
 pressure, density, altitude or speed through inferno (`src/colormaps.js`);
 the physical ones use a log scale over the run's range.
 
 ## Conventions
 
-- Scene units are kilometres, J2000 axes.
+- Scene units are kilometers, J2000 axes.
 - Quaternions are scalar-last. A sidecar or state quaternion `q` is the
   active body-to-inertial rotation, so it is applied to a three.js object
   directly. (In Julia `rot(q)` is the passive inertial-to-body matrix.)

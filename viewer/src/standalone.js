@@ -8,7 +8,7 @@
 // What it reproduces from the Julia bundler: the scene sidecar (planet spec
 // with an IAU rotation table, one box link per spacecraft), the frame blocks
 // (as typed arrays; data.js accepts those directly), model overrides
-// (centred from the parsed geometry), reference ghosts and paths. Planet
+// (centerd from the parsed geometry), reference ghosts and paths. Planet
 // rotation uses the IAU 2009 pole and prime-meridian polynomials, evaluated
 // at the epoch plus elapsed time, so a ground track lands within a fraction
 // of a degree of the SPICE-driven one.
@@ -19,7 +19,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { decodeBytes } from 'viewer/data.js';
 
 // IAU 2009 (Archinal et al. 2011) pole (RA, Dec at J2000, degrees) and prime
-// meridian W = w0 + w1 * d (degrees, d = days past J2000 TDB); radii in metres.
+// meridian W = w0 + w1 * d (degrees, d = days past J2000 TDB); radii in meters.
 // The Moon's periodic pole terms and Earth's nutation are omitted (< 0.1 deg).
 export const PLANETS = {
   earth: { name: 'Earth', re: 6378137.0, rp: 6356752.3, ra: 0.0, dec: 90.0, w0: 190.147, w1: 360.9856235 },
@@ -253,7 +253,7 @@ export function modelFormat(filename) {
   throw new Error(`unsupported model format .${ext} (use .stl, .obj, .glb or .gltf)`);
 }
 
-// Bounding-box centre of a model (model units), parsed with the same loaders the viewer uses.
+// Bounding-box center of a model (model units), parsed with the same loaders the viewer uses.
 export function modelCenter(dataUrl, format) {
   return new Promise((resolve, reject) => {
     const bytes = decodeBytes(dataUrl.split(',')[1] || '');

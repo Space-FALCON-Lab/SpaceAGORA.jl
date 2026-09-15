@@ -14,7 +14,7 @@ variant `artifact.html` built by `build_cdn_page.py`.
 | `arm_demo.jl` | robot-arm cloth dynamics | none |
 | `odyssey_two_orbits.jl` | two Odyssey aerobraking orbits with the energy-depletion guidance | none |
 | `magellan_aerobraking.jl` | Magellan aerobraking at Venus, two orbits from 1993-05-26, SPICE ghost | GRAM (Venus), Magellan `AEROBRAK.BSP` (auto-downloaded) |
-| `cassini_titan_flyby.jl [TA\|T5\|all]` | Cassini's TA and T5 Titan flybys, Titan-centred, SPICE ghost | GRAM (Titan), Cassini SCPSE kernels (auto-downloaded) |
+| `cassini_titan_flyby.jl [TA\|T5\|all]` | Cassini's TA and T5 Titan flybys, Titan-centerd, SPICE ghost | GRAM (Titan), Cassini SCPSE kernels (auto-downloaded) |
 | `apollo11_lunar_orbit.jl` | Apollo 11 lunar module in the parking orbit, two orbits | SPICE (Moon frames) |
 
 The mission cases share `common.jl`: kernel download into

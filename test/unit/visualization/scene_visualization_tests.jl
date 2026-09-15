@@ -317,7 +317,7 @@ end
         open(io -> JSON.print(io, bad), bad_path, "w")
         @test_throws ArgumentError read_visualization_scene(bad_path)
 
-        # The engine-facing writer honours the flag.
+        # The engine-facing writer honors the flag.
         off = _short_config(results_directory=dir, flag=false)
         @test SV.write_visualization_scene!(off) === nothing
         @test !isfile(visualization_scene_path(off))

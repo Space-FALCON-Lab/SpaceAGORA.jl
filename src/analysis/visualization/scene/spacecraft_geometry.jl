@@ -99,7 +99,7 @@ end
     arm_pose_vector(sc_view, r_ii_m) -> Vector{Float64}
 
 `[rx, ry, rz, qx, qy, qz, qw]` per arm link from a spacecraft state view
-carrying `arm_r`/`arm_q` (inertial COM position in metres, inertial
+carrying `arm_r`/`arm_q` (inertial COM position in meters, inertial
 quaternion), with positions relative to the spacecraft position `r_ii_m`.
 Empty when the view has no arm state.
 """

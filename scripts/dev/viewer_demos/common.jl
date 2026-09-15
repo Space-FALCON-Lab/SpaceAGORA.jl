@@ -44,7 +44,7 @@ end
 
 """
 A mission trajectory in SPICE: the spacecraft `target`, the body `center`
-whose centre the states are taken relative to (the simulation's primary),
+whose center the states are taken relative to (the simulation's primary),
 and the kernels that carry them.
 """
 struct MissionSpice
@@ -90,7 +90,7 @@ utc_of(et::Float64)::String = lock(RuntimeServices.SPICE_LOCK) do
     et2utc(et, "ISOC", 3)
 end
 
-"Spacecraft position (m) and velocity (m/s) relative to the centre in J2000 at `et`."
+"Spacecraft position (m) and velocity (m/s) relative to the center in J2000 at `et`."
 function spice_state_m(m::MissionSpice, et::Float64)
     st = lock(RuntimeServices.SPICE_LOCK) do
         spkezr(m.target, et, "J2000", "NONE", m.center)[1]
@@ -140,7 +140,7 @@ end
 """
     closest_approach_et(m, et_guess; window_s=6h, step_s=60) -> et
 
-ET of the minimum distance to the centre within `et_guess ± window_s`.
+ET of the minimum distance to the center within `et_guess ± window_s`.
 """
 function closest_approach_et(m::MissionSpice, et_guess::Float64; window_s::Float64=6 * 3600.0, step_s::Float64=60.0)::Float64
     grid = collect((et_guess - window_s):step_s:(et_guess + window_s))
@@ -177,7 +177,7 @@ end
 
 The ghost table for `export_visualization(prefix; references=[...])`: the
 mission SPK sampled at the run's saved times (from `<prefix>.feather`),
-relative to the centre in J2000, positions and velocities in SI units.
+relative to the center in J2000, positions and velocities in SI units.
 Times outside the kernel's coverage are dropped.
 """
 function spice_reference(m::MissionSpice, prefix::AbstractString; name::AbstractString=m.name, target::Int=1,

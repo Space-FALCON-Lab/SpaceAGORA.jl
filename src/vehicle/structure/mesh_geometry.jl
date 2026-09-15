@@ -2,7 +2,7 @@
 # buffers) and the geometry helpers built on them: bounding boxes, area-weighted
 # surface point clouds, and the model-axes transform (`scale`, XYZ Euler
 # rotation in degrees) shared with the interactive viewer. Owned by the
-# structure layer so both the visualization scene (centring, RPO station
+# structure layer so both the visualization scene (centeing, RPO station
 # point clouds) and the aerodynamic panel method (`aerodynamic_mesh_surrogate.jl`)
 # read the same geometry from the same file.
 
@@ -269,7 +269,7 @@ Rotate parts of a triangle soup (3 x 3N, model units) about an axis: each
 articulation is a NamedTuple or Dict with `region` (an axis-aligned box in
 model units, `x_min`/`x_max`/`y_min`/`y_max`/`z_min`/`z_max`, missing bounds
 unbounded), `axis` (rotation axis in model axes), `angle_deg`, and `pivot`
-(a point on the axis in model units, or `:centroid` (default) for the centre
+(a point on the axis in model units, or `:centroid` (default) for the center
 of the selected vertices' bounding box). Vertices inside the region move;
 used to pose parts of a CAD model the file holds in another position, such
 as solar wings turned broadside for aerobraking. The viewer applies the same
@@ -337,9 +337,9 @@ end
 """
     load_model_triangles(path; scale=1.0, rotation_deg=(0, 0, 0), articulations=()) -> Matrix{Float64}
 
-Triangle vertices (3 x 3N, metres) of an STL, OBJ, glTF or GLB file in model
+Triangle vertices (3 x 3N, meters) of an STL, OBJ, glTF or GLB file in model
 axes, with `articulations` (see [`articulate_triangles`](@ref)) applied in
-model units first, then scaled by `scale` (metres per model unit) and
+model units first, then scaled by `scale` (meters per model unit) and
 rotated by XYZ Euler angles in degrees, the same transform the viewer
 applies through `model_scale`, `model_rotation_deg` and `model_articulations`.
 """
@@ -377,9 +377,9 @@ model_bounding_box_center(path::AbstractString) = (b = model_bounding_box(path);
 """
     sample_model_pointcloud(path; n_points=10000, rng=Random.default_rng(), scale=1.0, rotation_deg=(0,0,0), center=true) -> Matrix{Float64}
 
-Area-weighted random surface samples (3 x n_points, metres) of a model after
+Area-weighted random surface samples (3 x n_points, meters) of a model after
 the viewer's scale and rotation, optionally translated so its bounding-box
-centre is at the origin, which is where the viewer puts a centred model.
+center is at the origin, which is where the viewer puts a centerd model.
 """
 function sample_model_pointcloud(path::AbstractString; n_points::Integer=10000, rng=Random.default_rng(), scale::Real=1.0, rotation_deg=(0.0, 0.0, 0.0), center::Bool=true)::Matrix{Float64}
     tris = load_model_triangles(path; scale=scale, rotation_deg=rotation_deg)

@@ -190,7 +190,7 @@ export class FrameData {
   linkCount(sat) { return this.linkPose ? this.linkPose.counts[sat] : 0; }
   armLinkCount(sat) { return this.armPose ? this.armPose.counts[sat] : 0; }
 
-  // Arm link poses (COM relative to the spacecraft, metres, inertial; quaternion inertial).
+  // Arm link poses (COM relative to the spacecraft, meters, inertial; quaternion inertial).
   armPosesAt(time, sat, out) { return this._posesAt(this.armPose, time, sat, out); }
 
   // Link poses of one spacecraft at `time`: [7 * n_links] floats into `out`, or null.

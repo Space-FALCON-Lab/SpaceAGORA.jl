@@ -2,7 +2,7 @@
 # and its analytic surrogate.
 #
 # Offline: `mesh_aero_panels` reads a model (through the structure layer's
-# mesh readers, with the same scale/rotation/centring the viewer applies),
+# mesh readers, with the same scale/rotation/centeing the viewer applies),
 # `panel_aero_coefficients` integrates the Schaaf-Chambre pressure and shear
 # over the facets for one flow direction and speed ratio with depth-buffer
 # self-shadowing, and `fit_mesh_aero_surrogate` tabulates those over the
@@ -18,7 +18,7 @@
 # ratio and the wall temperature, so a fitted surrogate costs a few hundred
 # multiply-adds per link per RHS call, no mesh in the loop.
 #
-# Conventions: coefficients are normalised by the dynamic pressure
+# Conventions: coefficients are normalized by the dynamic pressure
 # 0.5 rho V^2 of the wind-relative airspeed, `reference_area_m2` and (for
 # moments) `reference_length_m`; the force coefficient is in the mesh's
 # (link) frame, the moment about `moment_reference_m` in that frame. `vhat`
@@ -35,9 +35,9 @@ using JSON
 """
     MeshAeroPanels
 
-A triangle mesh prepared for the panel method: vertices (3 x 3N, metres),
+A triangle mesh prepared for the panel method: vertices (3 x 3N, meters),
 per-facet centroids, unit normals (from the vertex winding) and areas, plus
-the normalisation the coefficients use. Build with [`mesh_aero_panels`](@ref).
+the normalization the coefficients use. Build with [`mesh_aero_panels`](@ref).
 """
 struct MeshAeroPanels
     vertices::Matrix{Float64}
@@ -62,8 +62,8 @@ Base.length(p::MeshAeroPanels) = length(p.areas)
 
 Prepare a model file (STL, OBJ, glTF/GLB) or a 3 x 3N triangle matrix for the
 panel method. `scale`, `rotation_deg`, `center` and `articulations` are the
-viewer's model transform (metres per model unit, XYZ Euler angles in
-degrees, bounding-box centre to the origin, and parts rotated about an axis
+viewer's model transform (meters per model unit, XYZ Euler angles in
+degrees, bounding-box center to the origin, and parts rotated about an axis
 in model units, see `articulate_triangles`), so the panels sit exactly where
 the page draws the model and the link frame is the model frame after that
 transform.
@@ -77,7 +77,7 @@ the inside of a dish. Facets below `min_area_m2` are dropped.
 `reference_area_m2` defaults to the mean projected area, total surface area
 over four (exact for convex bodies, Cauchy's theorem); `reference_length_m`
 to the bounding-box diagonal; `moment_reference_m` to the origin (the link's
-centre of mass once the model is centred).
+center of mass once the model is centerd).
 """
 function mesh_aero_panels(
     path::AbstractString;
@@ -201,7 +201,7 @@ function panel_shadow_mask(panels::MeshAeroPanels, vhat::SVector{3, Float64}; gr
     end
     span = max(umax - umin, wmax - wmin, eps(Float64))
     pixel = span / (g - 2)
-    # centre the footprint in the buffer with a one-pixel margin
+    # center the footprint in the buffer with a one-pixel margin
     u0 = umin - 0.5 * (pixel * (g - 2) - (umax - umin)) - pixel
     w0 = wmin - 0.5 * (pixel * (g - 2) - (wmax - wmin)) - pixel
     depth = fill(-Inf, g, g)
@@ -222,7 +222,7 @@ function panel_shadow_mask(panels::MeshAeroPanels, vhat::SVector{3, Float64}; gr
             wp = w0 + (py - 0.5) * pixel
             for px in px_lo:px_hi
                 up = u0 + (px - 0.5) * pixel
-                # barycentric coordinates of the pixel centre
+                # barycentric coordinates of the pixel center
                 l2 = ((up - ua) * (wc - wa) - (uc - ua) * (wp - wa)) * inv_det
                 l3 = ((ub - ua) * (wp - wa) - (up - ua) * (wb - wa)) * inv_det
                 l1 = 1.0 - l2 - l3
@@ -282,7 +282,7 @@ Body-frame force and moment coefficients of the mesh for the airspeed
 direction `vhat` (unit, link frame) and speed ratio `s`, split into the part
 independent of the wall temperature and the part multiplying
 sqrt(Tw / T_inf): `CF = CF_A + sqrt(Tw/T) CF_B`, likewise for `CM`. The force
-is normalised by `reference_area_m2`, the moment (about
+is normalized by `reference_area_m2`, the moment (about
 `moment_reference_m`) by `reference_area_m2 * reference_length_m`.
 `sigma_n`, `sigma_t` are the normal and tangential momentum accommodation
 coefficients (1 = fully diffuse). With `shadowing` on, facets behind others
@@ -358,14 +358,14 @@ function panel_projected_area(panels::MeshAeroPanels, vhat::SVector{3, Float64};
 end
 
 # ---------------------------------------------------------------------------
-# Real spherical harmonics (fully normalised, no Condon-Shortley phase)
+# Real spherical harmonics (fully normalized, no Condon-Shortley phase)
 # ---------------------------------------------------------------------------
 
 @inline _sh_count(degree::Int)::Int = (degree + 1)^2
 @inline _sh_index(l::Int, m::Int)::Int = l * l + l + m + 1
 
 # Fills `Y[1:(L+1)^2]` with Y_lm(v) for l = 0..L, m = -l..l, indexed by
-# `_sh_index`. Standard three-term recursion on the normalised associated
+# `_sh_index`. Standard three-term recursion on the normalized associated
 # Legendre functions; exact for any unit vector, including the poles.
 function real_sh_basis!(Y::AbstractVector{Float64}, degree::Int, v::SVector{3, Float64})
     L = degree
@@ -373,7 +373,7 @@ function real_sh_basis!(Y::AbstractVector{Float64}, degree::Int, v::SVector{3, F
     ct = clamp(z, -1.0, 1.0)
     st = sqrt(max(0.0, 1.0 - ct * ct))
     phi = atan(y, x)
-    # P[m+1, l+1] holds the normalised P_l^m
+    # P[m+1, l+1] holds the normalized P_l^m
     P = zeros(Float64, L + 1, L + 1)
     P[1, 1] = 1.0 / sqrt(4pi)
     @inbounds for m in 1:L
@@ -619,7 +619,7 @@ end
 """
     write_mesh_aero_surrogate(path, surrogate) -> path
 
-Save a surrogate as JSON (coefficients, normalisation, fit range, metadata).
+Save a surrogate as JSON (coefficients, normalization, fit range, metadata).
 """
 function write_mesh_aero_surrogate(path::AbstractString, sur::MeshAeroSurrogate)::String
     doc = Dict{String, Any}(
@@ -680,7 +680,7 @@ child attitudes place every link; without it the root is held in the
 velocity-aligned frame (body x along the airspeed, body z toward nadir, the
 attitude the viewer draws), child links relative to it, so a link's
 configured quaternion selects its incidence as the fM model's `:attitude`
-mode does. Torque about the root centre of mass is returned only when the
+mode does. Torque about the root center of mass is returned only when the
 attitude is propagated, like the other aerodynamic effectors.
 """
 struct AerodynamicCoefficientMeshSurrogate <: AbstractForceTorqueModel

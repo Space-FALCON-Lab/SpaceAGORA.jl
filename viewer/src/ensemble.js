@@ -1,7 +1,7 @@
 // Ensemble mode: many samples of the same configuration shown together.
 // The nominal sample (payload.ensemble.nominal, else the first) is drawn as a
-// bright white line with a labelled marker; the other samples are the
-// Monte Carlo traces, coloured by a per-sample scalar (viridis) or by index
+// bright white line with a labeled marker; the other samples are the
+// Monte Carlo traces, colored by a per-sample scalar (viridis) or by index
 // and kept faint so the nominal reads first; and a translucent 3-sigma tube
 // follows the nominal (or the sample mean when there is no nominal), its
 // cross-section the 3-sigma dispersion of the samples in the radial and
@@ -117,7 +117,7 @@ export function createEnsemble(spec, frames, craft, container, state, options = 
   const traces = [];
   for (let i = 0; i < n; i++) if (i !== nominal) traces.push(i);
 
-  // Colours: scalar-mapped when the manifest carries finite scalars, else by index; the nominal is white.
+  // Colors: scalar-mapped when the manifest carries finite scalars, else by index; the nominal is white.
   const scalars = samples.map((s) => (Number.isFinite(s.scalar) ? s.scalar : NaN));
   const finite = scalars.filter(Number.isFinite);
   const hasScalar = finite.length > 0;
@@ -183,7 +183,7 @@ export function createEnsemble(spec, frames, craft, container, state, options = 
   panel.innerHTML = `
     <h1>Ensemble · ${n} samples${nominal >= 0 ? ' + nominal' : ''}</h1>
     ${hasScalar ? `<div class="sa-legend"><span>${fmt(lo)}</span><span class="sa-bar"></span><span>${fmt(hi)}</span></div>
-    <div class="sa-hint" style="margin:0 0 6px">${spec.scalar_name || 'scalar'}</div>` : '<div class="sa-hint" style="margin:0 0 6px">traces coloured by sample index</div>'}
+    <div class="sa-hint" style="margin:0 0 6px">${spec.scalar_name || 'scalar'}</div>` : '<div class="sa-hint" style="margin:0 0 6px">traces colored by sample index</div>'}
     <div class="sa-key"><span class="sa-swatch" style="background:#fff"></span> nominal <span class="sa-swatch" style="background:#ffb347;opacity:.6;margin-left:8px"></span> <span data-role="tube-label">3σ tube</span></div>
     <dl class="sa-disp"><dt>3σ radial</dt><dd data-role="sr">–</dd><dt>3σ along-track</dt><dd data-role="st">–</dd><dt>3σ cross-track</dt><dd data-role="sn">–</dd><dt>samples present</dt><dd data-role="members">–</dd></dl>
     <div class="sa-row" style="gap:6px">
@@ -256,7 +256,7 @@ export function createEnsemble(spec, frames, craft, container, state, options = 
     if (!tube) return;
     const seg = TUBE_SEGMENTS, pos = tube.positions, out = tube.outlinePos;
     let o = 0;
-    const minKm = 0.0005; // half a metre so a converged ensemble still shows a thread
+    const minKm = 0.0005; // half a meter so a converged ensemble still shows a thread
     rings.forEach((ring, i) => {
       const a = Math.max(tubeScale * ring.sigmaR, minKm), b = Math.max(tubeScale * ring.sigmaN, minKm);
       for (let j = 0; j < seg; j++) {

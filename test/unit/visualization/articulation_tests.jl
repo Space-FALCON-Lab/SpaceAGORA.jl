@@ -103,7 +103,7 @@ _decode_f32(b64) = collect(reinterpret(Float32, base64decode(b64)))
         @test "sc1_link_pose_$(k)" in names(df)
     end
 
-    # Layout: [rx ry rz qx qy qz qw] for link 2 then link 3, in metres and scalar-last.
+    # Layout: [rx ry rz qx qy qz qw] for link 2 then link 3, in meters and scalar-last.
     scene = read_visualization_scene(joinpath(dir, "simulation_results_scene.json"))
     @test length(scene.spacecraft[1].links) == 3
     @test df[1, "sc1_link_pose_2"] ≈ scene.spacecraft[1].links[2].r_m[2]

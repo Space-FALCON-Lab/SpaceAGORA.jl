@@ -23,15 +23,15 @@ effector = AerodynamicCoefficientMeshSurrogate(surrogate; wall_temperature_k=300
 
 `mesh_aero_panels` reads STL, OBJ or glTF/GLB (embedded buffers, no Draco)
 through the same readers the viewer uses, applies the same scale, XYZ Euler
-rotation and centring, and keeps per-facet centroids, outward normals (from
+rotation and centeing, and keeps per-facet centroids, outward normals (from
 the vertex winding, or `outward_normals=true` to flip normals toward the
 outside for convex meshes with mixed winding) and areas. Coefficients are
-normalised by the dynamic pressure of the wind-relative airspeed,
+normalized by the dynamic pressure of the wind-relative airspeed,
 `reference_area_m2` (default: total surface area over four, the mean projected
 area of a convex body); `articulations` pose parts of the model first (the
 Magellan wings turned broadside, see `articulate_triangles`) and `reference_length_m` for moments (default: the
 bounding-box diagonal), about `moment_reference_m` (default: the origin,
-which is the link centre of mass once the model is centred).
+which is the link center of mass once the model is centerd).
 
 `panel_aero_coefficients(panels, vhat, s; sigma_n, sigma_t, tw_ratio)` sums
 the Schaaf and Chambré pressure and shear over the facets for one airspeed
@@ -53,7 +53,7 @@ splits exactly as `A(vhat, s) + sqrt(Tw/T) B(vhat, s)`.
 Fibonacci-spread directions and the listed speed ratios and fits real
 spherical harmonics of degree `degree` in the direction times a polynomial of
 degree `poly_degree` in `1/s` by least squares. The result is a
-`MeshAeroSurrogate`: two `6 x n` coefficient matrices, the normalisation, the
+`MeshAeroSurrogate`: two `6 x n` coefficient matrices, the normalization, the
 accommodation coefficients, the fitted speed-ratio range (evaluation clamps
 to it) and metadata with the residuals, both over the training samples and
 over fresh holdout directions. Read the holdout error against the coefficient
@@ -85,7 +85,7 @@ with `orientation_sim` the propagated root attitude and the stored child
 attitudes place the links; without it the root is held in the
 velocity-aligned frame (x along the airspeed, z toward nadir, the attitude
 the viewer draws) and each link's configured quaternion selects its
-incidence. Torque about the root centre of mass is returned only when the
+incidence. Torque about the root center of mass is returned only when the
 attitude is propagated. The drag, lift and cross save fields are filled from
 the total force as for the box model.
 

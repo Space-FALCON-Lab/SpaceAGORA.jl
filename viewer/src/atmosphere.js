@@ -2,7 +2,7 @@
 // density shells from the run's sampled profile, and, for models that vary
 // horizontally, a density map draped at one altitude. Everything is built in
 // the body-fixed frame and parented to the globe group so it rotates with the
-// body. Units are kilometres like the rest of the scene.
+// body. Units are kilometers like the rest of the scene.
 import * as THREE from 'three';
 import { GEOMETRY_TO_BODY } from 'viewer/globe.js';
 import { inferno } from 'viewer/colormaps.js';
@@ -42,7 +42,7 @@ function oblateSphere(Re, Rp, altitudeKm, segments = 96) {
   return { geometry, scale: new THREE.Vector3(Re + altitudeKm, Rp + altitudeKm, Re + altitudeKm) };
 }
 
-// Interpolate log-density from the sampled profile at an altitude in metres.
+// Interpolate log-density from the sampled profile at an altitude in meters.
 function profileDensity(profile, hM) {
   const h = profile.altitude_m, d = profile.density_kg_m3;
   if (!h || h.length < 2) return NaN;

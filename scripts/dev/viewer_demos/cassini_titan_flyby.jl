@@ -1,10 +1,10 @@
 # Cassini's Titan flybys TA (2004-10-26, first targeted flyby, Huygens still
 # attached, closest approach ~1174 km) and T5 (2005-04-16, ~1027 km, the low
-# pass with measurable drag), Titan-centred, with the reconstructed
+# pass with measurable drag), Titan-centerd, with the reconstructed
 # trajectory from the Cassini SCPSE kernels drawn as a ghost.
 #
 # The simulation starts 2.5 h before closest approach from the SPICE state
-# (J2000, Titan-centred) and runs 5 h. Force model: Titan gravity to degree
+# (J2000, Titan-centerd) and runs 5 h. Force model: Titan gravity to degree
 # and order 5 (Goossens et al. 2024 field), Saturn and Sun third bodies,
 # solar radiation pressure, Titan-GRAM density through the free-molecular
 # coefficient model. Cassini is one 6.8 x 4 x 4 m bus with its long axis

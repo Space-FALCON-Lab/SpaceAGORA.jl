@@ -11,7 +11,7 @@ selector and full-history view (4); `spaceagora visualize`, `run --visualize`,
 the docs page, `assets check` reporting the textures, and 8k texture tiers
 for Earth, Mars and the Moon (5). The hillshade fallback from topography
 harmonics was not built: every launch body has a texture, and an
-unregistered body draws a flat colour with a graticule.
+unregistered body draws a flat color with a graticule.
 
 ## Goal
 
@@ -167,7 +167,7 @@ cloth nodes is out of scope for the first release.
 `window.SPACEAGORA_VIEWER = {scene, frames, textures, models, options}`.
 `frames` holds `t_s`, `pos_km` (row-major frame, spacecraft, xyz; Float64
 when `pos_dtype` is `"f64"`, which the bundler chooses for runs of at most
-64 spacecraft so metre-scale models do not jitter, Float32 otherwise),
+64 spacecraft so meter-scale models do not jitter, Float32 otherwise),
 optional `vel_kms`, `q` and `mass_kg`, and optional `link_pose` (`stride`,
 per-spacecraft `counts` and `offsets`, `data`), each a base64 little-endian
 block, plus `count`, `sats`, `source_rows`, `stride_rows`. `models` maps a
@@ -192,7 +192,7 @@ periapsis altitude in km) and builds `ensemble_viewer.html`.
 `run_constellation_ensemble` writes), resampling every sample onto one time
 axis with `NaN` outside its own span; sample `i`, spacecraft `k` becomes
 pseudo-spacecraft `(i-1)*per_sample + k` and the page gains
-`payload.ensemble`. The viewer colours samples by the scalar (viridis),
+`payload.ensemble`. The viewer colors samples by the scalar (viridis),
 draws every history as a faint line, ringing the selected sample and
 dimming the rest, and the markers at the scrubbed time are the dispersion
 cloud.
@@ -309,7 +309,7 @@ on a 5 degree grid. A `density` save field joins `link_pose` under the flag;
 the bundler embeds `density_kg_m3`, `heat_rate_w_m2`, `drag_n` (magnitude)
 and `wind_ms` blocks. The viewer draws a Fresnel limb glow at the EI,
 density shells with opacity from the profile, and the draped map; trails
-colour by heat rate (default when saved), dynamic pressure, density,
+color by heat rate (default when saved), dynamic pressure, density,
 altitude or speed on an inferno scale, and the selection panel reads the
 same quantities. A wind arrow was left out because the saved wind vector's
 frame is not recorded; the panel shows wind speed only.
@@ -318,7 +318,7 @@ frame is not recorded; the panel shows wind speed only.
 
 The STL override became a general model override: `models=Dict(id => path)`
 accepts STL, OBJ and glTF/GLB, embedded as data URIs with a `format`, a
-`scale` (metres per unit, per id or global) and `rotation_deg` (XYZ Euler in
+`scale` (meters per unit, per id or global) and `rotation_deg` (XYZ Euler in
 the body frame); the viewer parses them with three's STL, OBJ and glTF
 loaders (vendored; GLTFLoader's relative import rewritten to a bare
 specifier). `data/models/` ships NASA's public-domain ISS (B) glTF, checked
@@ -327,7 +327,7 @@ in the tests and used for an ISS page.
 ## Model geometry, point clouds and planned paths (added 2026-09-14)
 
 `model_geometry.jl` reads STL, OBJ and embedded glTF/GLB triangle soups,
-which gives the bundler bounding boxes (models are centred on the spacecraft
+which gives the bundler bounding boxes (models are centerd on the spacecraft
 by default, `model_center`) and gives planners `sample_model_pointcloud`,
 area-weighted surface samples after the viewer's scale and rotation. The
 RPO CubeSat MPC demo builder accepts `station_points` and the related
@@ -340,12 +340,12 @@ body frame) that `paths.js` re-expresses every frame.
 
 `references` embeds state tables that did not come from the integrator
 (`reference_payloads`: Float64 times and positions, optional velocities and
-scalar-last quaternions, a target spacecraft index, colour, opacity) and
+scalar-last quaternions, a target spacecraft index, color, opacity) and
 `references.js` draws each as a translucent copy of the target's model or
 link boxes with its own line and marker. The first use is a "ghost" flown
 from a mission SPK next to the simulated spacecraft: Magellan's aerobraking
 kernel at Venus and Cassini's reconstructed Titan flybys, sampled in the
-demo drivers with `spkezr` relative to the planet centre on the run's saved
+demo drivers with `spkezr` relative to the planet center on the run's saved
 times. The floating origin and the pixel-size switch are shared with the
 assemblies; the selection panel reports the separation.
 
@@ -357,7 +357,7 @@ radius, mass; mount offset; reach) from the `RobotArmPlan` a
 `RobotArmControlEffector` carries for that spacecraft, found with the same
 lookup the engine uses to couple the state. Poses: the `arm_pose` save field
 writes `sc{i}_arm_pose_{1..7n}`, each arm link's COM relative to the
-spacecraft (inertial, metres) and inertial quaternion from `arm_r`/`arm_q`,
+spacecraft (inertial, meters) and inertial quaternion from `arm_r`/`arm_q`,
 and the bundler embeds it as an `arm_pose` block beside `link_pose`. The
 viewer draws cylinders per link in an unrotated sibling of the assembly.
 Cloth nodes remain out of scope.

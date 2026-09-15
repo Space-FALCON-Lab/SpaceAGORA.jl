@@ -13,7 +13,7 @@ const ENSEMBLE_SAMPLE_DIR_RE = r"^(sample_\d+|sat_\d+_id_\d+)$"
 
 One member of an ensemble: `index` (1-based), the `seed` it was run with (kept
 as a string for the manifest), whether the run finished, a scalar the viewer
-colours it by (`NaN` when none), a display label and its results directory.
+colors it by (`NaN` when none), a display label and its results directory.
 """
 struct EnsembleSample
     index::Int
@@ -72,7 +72,7 @@ end
 """
     default_sample_scalar(df) -> Float64
 
-The last `sc1_periapsis_altitude` value in kilometres, or `NaN` when the
+The last `sc1_periapsis_altitude` value in kilometers, or `NaN` when the
 column is absent; the viewer's default colouring for an ensemble.
 """
 function default_sample_scalar(df::DataFrame)::Float64
@@ -100,7 +100,7 @@ end
 Write `ensemble_manifest.json` listing the samples and the name of the scalar
 they carry. Directories are stored relative to `campaign_dir` when possible.
 `nominal` is the `index` of the unperturbed sample, which the viewer draws
-distinctly and centres the 3-sigma tube on.
+distinctly and centers the 3-sigma tube on.
 """
 function write_ensemble_manifest(campaign_dir::AbstractString, samples::AbstractVector{EnsembleSample}; scalar_name::AbstractString="", nominal::Union{Nothing, Integer}=nothing)::String
     nominal === nothing || any(s -> s.index == nominal, samples) || throw(ArgumentError("nominal sample index $(nominal) is not among the samples."))

@@ -3,7 +3,7 @@
 # navigation SPK (NAIF MGN archive, AEROBRAK.BSP) drawn as a ghost.
 #
 # Initial state: the first apoapsis in the kernel after 1993-05-26 00:00 UTC,
-# straight from SPICE (J2000, Venus-centred). Force model: MGNP180U gravity
+# straight from SPICE (J2000, Venus-centerd). Force model: MGNP180U gravity
 # to degree and order 70, Sun third body, solar radiation pressure, Venus-GRAM
 # density through the free-molecular coefficient model. The spacecraft is the
 # usual bus-plus-two-wings composition sized to Magellan (3.7 m HGA, two

@@ -90,7 +90,7 @@ end
 
 `{"url" => data URI, "lon_left_deg" => ..., "resolution" => ..., "width" => ...}`
 for the body at the chosen tier (see `texture_entry`), or `nothing` when no
-texture is registered (the viewer then draws a flat colour).
+texture is registered (the viewer then draws a flat color).
 """
 function texture_payload(planet_key::AbstractString; resolution=:best, dir::AbstractString=TEXTURES_DIR)
     entry = texture_entry(planet_key; resolution=resolution, dir=dir)
@@ -346,11 +346,11 @@ end
 
 3D model overrides keyed by spacecraft id. `models` maps an id to an STL,
 OBJ, glTF or GLB file and wins over the `stl_path` recorded in the scene
-(`stl` is an older spelling of the same mapping). `model_scale` is metres per
+(`stl` is an older spelling of the same mapping). `model_scale` is meters per
 model unit, a number for all or a `Dict` per id (`stl_scale` applies when the
 id is absent). `model_rotation_deg` maps an id to XYZ Euler angles in degrees
 applied to the model in the body frame. `model_center` (a Bool or a per-id
-`Dict`, default true) shifts the model so its bounding-box centre sits on
+`Dict`, default true) shifts the model so its bounding-box center sits on
 the spacecraft. Each entry is
 `{"url" => data URI, "format" => ..., "scale" => ..., "rotation_deg" => [rx, ry, rz], "center" => [cx, cy, cz] (model units), "source" => file name}`.
 A `.gltf` file must embed its buffers; external files are not carried along.
@@ -375,18 +375,18 @@ function model_payloads(
         scale = model_scale === nothing ? Float64(stl_scale) : _per_id(model_scale, sc.id, stl_scale)
         rot = get(model_rotation_deg, sc.id, (0.0, 0.0, 0.0))
         length(rot) == 3 || throw(ArgumentError("model_rotation_deg entries must be three angles (rx, ry, rz) in degrees."))
-        centred = model_center isa AbstractDict ? Bool(get(model_center, sc.id, true)) : Bool(model_center)
+        centerd = model_center isa AbstractDict ? Bool(get(model_center, sc.id, true)) : Bool(model_center)
         articulations = get(model_articulations, sc.id, ())
         center = [0.0, 0.0, 0.0]
         articulation_dicts = Dict{String, Any}[]
-        if centred || !isempty(articulations)
+        if centerd || !isempty(articulations)
             try
                 raw = load_model_triangles(path)
                 articulation_dicts = articulation_payload(articulations, raw)
                 posed = isempty(articulations) ? raw : articulate_triangles(raw, articulations)
-                centred && (center = [0.5 * (minimum(posed[c, :]) + maximum(posed[c, :])) for c in 1:3])
+                centerd && (center = [0.5 * (minimum(posed[c, :]) + maximum(posed[c, :])) for c in 1:3])
             catch err
-                isempty(articulations) && @warn "Could not read $(basename(path)) to centre it; the viewer will use the file's own origin." exception=(err, catch_backtrace())
+                isempty(articulations) && @warn "Could not read $(basename(path)) to center it; the viewer will use the file's own origin." exception=(err, catch_backtrace())
                 isempty(articulations) || rethrow()
             end
         end
@@ -448,7 +448,7 @@ end
     path_payloads(paths) -> Vector{Dict{String, Any}}
 
 Reference polylines drawn beside the flown trajectories. Each entry of
-`paths` is a NamedTuple or Dict with `name`, `points_m` (3 x N, metres),
+`paths` is a NamedTuple or Dict with `name`, `points_m` (3 x N, meters),
 `frame` (`:inertial`, or `:rtn` for the radial/transverse/normal frame of
 spacecraft `target`, 1-based index into the run's spacecraft list, or
 `:body` for that spacecraft's body frame) and optionally `color` (hex
@@ -459,7 +459,7 @@ function path_payloads(paths)::Vector{Dict{String, Any}}
     for (k, path) in enumerate(paths)
         get_ = (key, default) -> path isa AbstractDict ? get(path, key, get(path, String(key), default)) : (hasproperty(path, key) ? getproperty(path, key) : default)
         pts = get_(:points_m, nothing)
-        pts === nothing && throw(ArgumentError("path $(k) needs points_m (3 x N, metres)."))
+        pts === nothing && throw(ArgumentError("path $(k) needs points_m (3 x N, meters)."))
         M = Matrix{Float64}(pts)
         size(M, 1) == 3 || throw(ArgumentError("path $(k): points_m must be 3 x N."))
         frame = Symbol(get_(:frame, :inertial))
@@ -484,12 +484,12 @@ Reference trajectories drawn as translucent ghosts of a spacecraft on the
 run's own timeline: a SPICE reconstruction, a telemetry record or a plan.
 Each entry of `references` is a NamedTuple or Dict with `name`, `t_s`
 (elapsed seconds from the run epoch, length N, non-decreasing), `pos_m`
-(3 x N, inertial metres) and optionally `vel_mps` (3 x N), `q` (4 x N,
+(3 x N, inertial meters) and optionally `vel_mps` (3 x N), `q` (4 x N,
 scalar-last body-to-inertial attitude; velocity-aligned when absent),
 `target` (1-based index of the spacecraft whose geometry and 3D model the
 ghost copies, default 1), `color` (hex string), `opacity` (0..1, default
 0.45) and `trail` (draw the whole reference line, default true). Times and
-positions are embedded as Float64 so a ghost sits within metres of the flown
+positions are embedded as Float64 so a ghost sits within meters of the flown
 spacecraft when the two agree.
 """
 function reference_payloads(references, scene::VisualizationScene)::Vector{Dict{String, Any}}
@@ -504,7 +504,7 @@ function reference_payloads(references, scene::VisualizationScene)::Vector{Dict{
         N >= 1 || throw(ArgumentError("reference $(k): t_s is empty."))
         all(isfinite, times) && issorted(times) || throw(ArgumentError("reference $(k): t_s must be finite and non-decreasing."))
         pts = get_(:pos_m, nothing)
-        pts === nothing && throw(ArgumentError("reference $(k) needs pos_m (3 x N, metres)."))
+        pts === nothing && throw(ArgumentError("reference $(k) needs pos_m (3 x N, meters)."))
         P = Matrix{Float64}(pts)
         size(P) == (3, N) || throw(ArgumentError("reference $(k): pos_m must be 3 x $(N) to match t_s, got $(size(P))."))
         all(isfinite, P) || throw(ArgumentError("reference $(k): pos_m has non-finite entries."))
@@ -578,10 +578,10 @@ rate in simulated seconds per wall second; `title` names the page;
 `textures=false` skips the surface texture and `texture_resolution` picks a
 tier (`:best`, the default, takes the largest registered, e.g. 8k for Earth;
 `"4k"` keeps the page small); `models` maps spacecraft ids to STL, OBJ, glTF
-or GLB files drawn instead of the link boxes, at `model_scale` metres per
+or GLB files drawn instead of the link boxes, at `model_scale` meters per
 model unit (a number or a per-id `Dict`) and rotated by `model_rotation_deg`
 (per-id XYZ Euler angles), posed by `model_articulations` (per-id list of
-parts rotated about an axis, see `articulate_triangles`) and centred on the
+parts rotated about an axis, see `articulate_triangles`) and centerd on the
 spacecraft unless `model_center=false`; `stl`/`stl_scale` are the older spelling for STL only; `references` draws
 reference trajectories as translucent ghosts of a spacecraft (see
 `reference_payloads`); `paths` overlays

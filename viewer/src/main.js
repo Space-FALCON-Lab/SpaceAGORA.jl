@@ -24,7 +24,7 @@ export function start(payload, container = document.body) {
   const planet = sidecar.planet;
   const Re = planet.equatorial_radius_m / 1000, Rp = planet.polar_radius_m / 1000;
 
-  // Renderer. Scene units are kilometres; the logarithmic depth buffer keeps a
+  // Renderer. Scene units are kilometers; the logarithmic depth buffer keeps a
   // 6000 km globe and a 3 m spacecraft box in one view.
   const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -50,7 +50,7 @@ export function start(payload, container = document.body) {
   // `world` holds everything expressed in the inertial frame. In planet-fixed
   // mode it is counter-rotated by the globe's rotation so the body stands
   // still; in follow mode it is translated so the followed spacecraft sits at
-  // the origin (a floating origin keeps metre-scale geometry steady at
+  // the origin (a floating origin keeps meter-scale geometry steady at
   // planetary distances).
   const world = new THREE.Group();
   scene.add(world);
@@ -133,6 +133,8 @@ export function start(payload, container = document.body) {
     setThrusters(v) { lod.setThrustersVisible(v); },
     setFacets(v) { lod.setFacetsVisible(v); },
     setAxes(v) { lod.setAxesVisible(v); },
+    hasHeating: lod.heatingAvailable,
+    setHeating(v) { lod.setHeatingVisible(v); ui.setHeatLegend(v && lod.heatingAvailable ? lod.heatRange() : null); },
     resetView() { state.setFollow(false); placeCamera(); },
     openVideoDialog() { videoDialog && videoDialog.open(); },
   };
@@ -167,9 +169,10 @@ export function start(payload, container = document.body) {
       ...(atmosphere.info.map ? { 'density map': `${atmosphere.info.map.altitude_km.toFixed(0)} km, ${atmosphere.info.map.min.toExponential(1)}–${atmosphere.info.map.max.toExponential(1)} kg/m³` } : {}),
     } : {}),
   });
-  // Default trail colouring: heat rate when the run has it, else age.
+  // Default trail coloring: heat rate when the run has it, else age.
   const initialColor = options.trail_color && TRAIL_COLOR_MODES[options.trail_color] ? options.trail_color : (frames.hasScalar('heat_rate') ? 'heat_rate' : 'age');
   ui.setTrailLegend(craft.setTrailColorMode(initialColor));
+  if (lod.heatingAvailable && (options.heating ?? true)) { lod.setHeatingVisible(true); ui.setHeatLegend(lod.heatRange()); }
   const trailColorSelect = container.querySelector('[data-role="trailcolor"]');
   if (trailColorSelect) trailColorSelect.value = craft.trailColorMode;
 
@@ -199,7 +202,7 @@ export function start(payload, container = document.body) {
     controls.update();
   }
 
-  // Picking: nearest marker (or visible assembly centre) within a few pixels.
+  // Picking: nearest marker (or visible assembly center) within a few pixels.
   let downX = 0, downY = 0, downT = 0;
   renderer.domElement.addEventListener('pointerdown', (e) => { downX = e.clientX; downY = e.clientY; downT = performance.now(); });
   renderer.domElement.addEventListener('pointerup', (e) => {

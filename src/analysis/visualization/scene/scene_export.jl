@@ -132,7 +132,7 @@ function scene_dict(scene::VisualizationScene)::Dict{String, Any}
                 "field" => String(ARM_POSE_FIELD),
                 "stride" => LINK_POSE_STRIDE,
                 "layout" => collect(String, LINK_POSE_LAYOUT),
-                "frame" => "inertial, position relative to the spacecraft in metres",
+                "frame" => "inertial, position relative to the spacecraft in meters",
                 "columns" => "sc{i}_$(ARM_POSE_FIELD)_{1..$(LINK_POSE_STRIDE)n}"
             )
         )
@@ -281,7 +281,7 @@ end
 How many result rows the exporter keeps for playback: the smaller of
 `max_frames` and what `data_budget_mb` allows at `bytes_per_sat_frame` per
 spacecraft per frame, never fewer than two when two rows exist. `stride` is
-the row step that realises it and `bytes` the resulting payload size.
+the row step that realizes it and `bytes` the resulting payload size.
 """
 function visualization_frame_budget(
     n_rows::Integer,

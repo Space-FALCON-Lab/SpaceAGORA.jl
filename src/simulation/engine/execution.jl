@@ -4,7 +4,7 @@ Block-diagonal Jacobian sparsity for a constellation state, one block per satell
 `is_active` (when given) drops an inactive satellite's block to just its
 diagonal. The RHS already zeroes those derivatives, so their off-diagonal
 entries are structurally zero, and carrying them costs nnz in every W and one
-colour in every finite-difference Jacobian for the rest of the run. This is only
+color in every finite-difference Jacobian for the rest of the run. This is only
 sound because deactivation is permanent -- `p.is_active[idx] = false` in
 event_callbacks.jl is the sole write and nothing sets it back -- so a pattern
 built from a later snapshot can only be denser than the truth, never sparser.

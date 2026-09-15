@@ -43,9 +43,9 @@
         <legend>Trajectory</legend>
         <div class="row">
           <label>Data file(s) <input type="file" id="sa-file" accept=".csv,.txt,.tsv,.json" multiple required></label>
-          <label>Units <select id="sa-units"><option value="m">metres, m/s</option><option value="km">kilometres, km/s</option></select></label>
+          <label>Units <select id="sa-units"><option value="m">meters, m/s</option><option value="km">kilometers, km/s</option></select></label>
         </div>
-        <p class="hint">CSV with a <code>time</code> column (seconds) and either SpaceAGORA's <code>sc1_pos_1..3</code> / <code>sc1_vel_1..3</code> / <code>sc1_q_1..4</code> columns (its own results CSV opens as is, several spacecraft included) or plain <code>x,y,z[,vx,vy,vz][,qx,qy,qz,qw]</code>; positions inertial (J2000) about the body's centre. Several files open as an ensemble with a 3σ tube around the first (the nominal).</p>
+        <p class="hint">CSV with a <code>time</code> column (seconds) and either SpaceAGORA's <code>sc1_pos_1..3</code> / <code>sc1_vel_1..3</code> / <code>sc1_q_1..4</code> columns (its own results CSV opens as is, several spacecraft included) or plain <code>x,y,z[,vx,vy,vz][,qx,qy,qz,qw]</code>; positions inertial (J2000) about the body's center. Several files open as an ensemble with a 3σ tube around the first (the nominal).</p>
       </fieldset>
       <fieldset>
         <legend>Body and epoch</legend>
@@ -63,7 +63,7 @@
         </div>
         <div class="row">
           <label>3D model (optional, .glb/.gltf/.obj/.stl) <input type="file" id="sa-model" accept=".glb,.gltf,.obj,.stl"></label>
-          <label>metres per model unit <input type="number" id="sa-model-scale" value="1" step="any"></label>
+          <label>meters per model unit <input type="number" id="sa-model-scale" value="1" step="any"></label>
           <label>rotation X, Y, Z (deg) <input type="text" id="sa-model-rot" value="0, 0, 0" size="12"></label>
         </div>
       </fieldset>

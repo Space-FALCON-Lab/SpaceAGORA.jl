@@ -70,10 +70,10 @@ export function createUI(container, timeline, state, info) {
       <span>Frame:</span>
       <button data-role="frame-inertial">Inertial</button>
       <button data-role="frame-fixed">Planet-fixed</button>
-      <button data-role="follow" title="Keep the selected spacecraft centred (F)">Follow</button>
+      <button data-role="follow" title="Keep the selected spacecraft centerd (F)">Follow</button>
       <span class="sa-sep"></span>
       <select data-role="trail" title="Trail length"></select>
-      <select data-role="trailcolor" title="Trail colour"></select>
+      <select data-role="trailcolor" title="Trail color"></select>
       <span class="sa-trail-legend" data-role="trail-legend" hidden><span data-role="legend-lo"></span><span class="sa-bar-inferno"></span><span data-role="legend-hi"></span></span>
       <label><input type="checkbox" data-role="labels" checked> labels</label>
       <label data-role="paths-label"><input type="checkbox" data-role="paths" checked> planned paths</label>
@@ -84,6 +84,8 @@ export function createUI(container, timeline, state, info) {
       <label><input type="checkbox" data-role="thrusters" checked> thrusters</label>
       <label><input type="checkbox" data-role="facets" checked> facets</label>
       <label><input type="checkbox" data-role="axes" checked> body axes</label>
+      <label data-role="heating-label"><input type="checkbox" data-role="heating" checked> heating</label>
+      <span class="sa-trail-legend" data-role="heat-legend" hidden><span data-role="heat-lo"></span><span class="sa-bar-inferno"></span><span data-role="heat-hi"></span></span>
       <span class="sa-sep" data-role="atmo-sep"></span>
       <label data-role="atmo-limb-label"><input type="checkbox" data-role="atmo-limb" checked> atmosphere</label>
       <label data-role="atmo-layers-label"><input type="checkbox" data-role="atmo-layers" checked> density shells</label>
@@ -116,7 +118,7 @@ export function createUI(container, timeline, state, info) {
   for (const mode of state.trailColorModes || ['age']) {
     const opt = document.createElement('option');
     opt.value = mode;
-    opt.textContent = mode === 'age' ? 'colour: age' : `colour: ${state.trailColorLabels?.[mode] ?? mode}`;
+    opt.textContent = mode === 'age' ? 'color: age' : `color: ${state.trailColorLabels?.[mode] ?? mode}`;
     trailColor.appendChild(opt);
   }
   trailColor.addEventListener('change', () => state.setTrailColor(trailColor.value));
@@ -155,6 +157,15 @@ export function createUI(container, timeline, state, info) {
   q('thrusters').addEventListener('change', (e) => state.setThrusters(e.target.checked));
   q('facets').addEventListener('change', (e) => state.setFacets(e.target.checked));
   q('axes').addEventListener('change', (e) => state.setAxes(e.target.checked));
+  q('heating-label').hidden = !state.hasHeating;
+  q('heating').addEventListener('change', (e) => state.setHeating(e.target.checked));
+  const heatLegend = q('heat-legend');
+  function setHeatLegend(info) {
+    heatLegend.hidden = !info;
+    if (!info) return;
+    q('heat-lo').textContent = `${fmtLegend(info.lo / 1e4)}`;
+    q('heat-hi').textContent = `${fmtLegend(info.hi / 1e4)} W/cm² ½ρV³cosθ (log)`;
+  }
   q('reset').addEventListener('click', () => state.resetView());
   q('video').addEventListener('click', () => state.openVideoDialog && state.openVideoDialog());
 
@@ -187,5 +198,5 @@ export function createUI(container, timeline, state, info) {
 
   timeline.onChange(render);
   render();
-  return { render, setSelection, setTrailLegend, infoBox, selectBox, root: ui };
+  return { render, setSelection, setTrailLegend, setHeatLegend, infoBox, selectBox, root: ui };
 }

@@ -12,7 +12,7 @@ import SpaceAGORA.TelemetryVerification: make_example_config
 const SM = SpaceAGORA.SimulationModel
 const AE = SM.DynamicEffectors.AerodynamicEffectors
 
-# Twelve counter-clockwise (outward) triangles of an axis-aligned box centred on the origin.
+# Twelve counter-clockwise (outward) triangles of an axis-aligned box centerd on the origin.
 function _box_triangles(lx, ly, lz)
     hx, hy, hz = lx / 2, ly / 2, lz / 2
     quads = (
@@ -57,7 +57,7 @@ _sphere_cd(s) = (2s^2 + 1) / (sqrt(pi) * s^3) * exp(-s^2) + (4s^4 + 4s^2 - 1) / 
 _flow_from_angles(alpha, beta) = SVector{3, Float64}(cos(beta) * sin(alpha), sin(beta), cos(beta) * cos(alpha))
 
 @testset "MeshAero" begin
-    @testset "panels: normals, areas, normalisation defaults" begin
+    @testset "panels: normals, areas, normalization defaults" begin
         tris = _box_triangles(2.0, 3.0, 4.0)
         panels = mesh_aero_panels(tris)
         @test length(panels) == 12
@@ -121,7 +121,7 @@ _flow_from_angles(alpha, beta) = SVector{3, Float64}(cos(beta) * sin(alpha), sin
     end
 
     @testset "articulations pose parts of a mesh" begin
-        # two plates with normal +x; the far one (x = 5) turns 90 deg about z through its own centre,
+        # two plates with normal +x; the far one (x = 5) turns 90 deg about z through its own center,
         # so it ends up spanning x (1 m) and z with its normal along y
         front = _plate_triangles(1.0, 0.0)
         far = _plate_triangles(1.0, 5.0)
@@ -130,7 +130,7 @@ _flow_from_angles(alpha, beta) = SVector{3, Float64}(cos(beta) * sin(alpha), sin
         @test posed[:, 1:6] == tris[:, 1:6]                                  # untouched part
         moved = posed[:, 7:12]
         @test maximum(moved[1, :]) - minimum(moved[1, :]) ≈ 1.0 atol = 1e-9   # now spans x
-        @test maximum(abs.(moved[2, :])) < 1e-9                                 # thin in y (rotated about its own centre)
+        @test maximum(abs.(moved[2, :])) < 1e-9                                 # thin in y (rotated about its own center)
         @test maximum(moved[3, :]) - minimum(moved[3, :]) ≈ 1.0 atol = 1e-9
         @test_throws ArgumentError articulate_triangles(tris, [(region=(x_min=100.0,), axis=(0.0, 0.0, 1.0), angle_deg=90.0)])
         @test_throws ArgumentError articulate_triangles(tris, [(axis=(0.0, 0.0, 1.0), angle_deg=90.0)])

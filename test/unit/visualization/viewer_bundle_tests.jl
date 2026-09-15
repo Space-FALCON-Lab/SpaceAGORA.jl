@@ -172,7 +172,7 @@ end
         @test frames["t_dtype"] == "f64"
         t = _decode_f64(frames["t_s"])
         @test length(t) == 25 && t[end] == 240.0
-        # A single spacecraft gets Float64 positions (exact to the metre at 7000 km).
+        # A single spacecraft gets Float64 positions (exact to the meter at 7000 km).
         @test frames["pos_dtype"] == "f64"
         pos = _decode_f64(frames["pos_km"])
         @test length(pos) == 25 * 3
@@ -243,7 +243,7 @@ end
         @test startswith(models["1"]["url"], "data:model/obj;base64,")
         @test models["1"]["scale"] == 0.5
         @test models["1"]["rotation_deg"] == [-90.0, 0.0, -90.0]
-        glb = SV.model_payloads(scene; models=Dict(1 => fake_glb), model_scale=3.0, model_center=false)   # not a real glTF: no centring
+        glb = SV.model_payloads(scene; models=Dict(1 => fake_glb), model_scale=3.0, model_center=false)   # not a real glTF: no centeing
         @test glb["1"]["format"] == "glb" && glb["1"]["scale"] == 3.0 && glb["1"]["rotation_deg"] == [0.0, 0.0, 0.0]
         @test startswith(glb["1"]["url"], "data:model/gltf-binary;base64,")
         @test_throws ArgumentError SV.model_payloads(scene; models=Dict(1 => obj), model_rotation_deg=Dict(1 => (1.0, 2.0)))
@@ -300,7 +300,7 @@ end
         @test hi ≈ SVector(3.29, 41.26, 22.68) atol=0.01
         cloud = sample_model_pointcloud(iss; n_points=2000, rng=MersenneTwister(3), scale=2.4, rotation_deg=(-90, 0, -90))
         @test size(cloud) == (3, 2000)
-        # centred and rotated: the ~46-unit truss now spans about 109 m along body y, centred on zero
+        # centerd and rotated: the ~46-unit truss now spans about 109 m along body y, centerd on zero
         @test maximum(cloud[2, :]) - minimum(cloud[2, :]) > 100.0
         @test abs(maximum(cloud[2, :]) + minimum(cloud[2, :])) < 6.0
         @test maximum(abs.(cloud[3, :])) < 20.0
@@ -311,7 +311,7 @@ end
         write(joinpath(dir, "ext.gltf"), "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"data.bin\",\"byteLength\":4}]}")
         @test_throws ArgumentError load_model_triangles(joinpath(dir, "ext.gltf"))
 
-        # The payload carries the centre the viewer subtracts, unless centring is off.
+        # The payload carries the center the viewer subtracts, unless centeing is off.
         args = _viewer_config(results_directory=dir)
         scene = build_visualization_scene(args; rotation_max_samples=4)
         m = SV.model_payloads(scene; models=Dict(1 => iss), model_scale=2.4)

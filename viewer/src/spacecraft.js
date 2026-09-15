@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { inferno } from 'viewer/colormaps.js';
 
 export const TRAIL_MAX_SPACECRAFT = 64;
-// Trail colour modes: 'age' fades with time; the others map a diagnostic
+// Trail color modes: 'age' fades with time; the others map a diagnostic
 // through inferno over the run's range (log scale for the physical ones).
 export const TRAIL_COLOR_MODES = {
   age: { label: 'age', log: false },
@@ -78,10 +78,10 @@ const POINT_FRAGMENT = `
     #include <logdepthbuf_fragment>
     vec3 color = vColor;
     if (vState > 1.5 && vState < 2.5) {
-      // selected: white ring around the coloured core
+      // selected: white ring around the colored core
       if (d > 0.14) color = vec3(1.0);
     } else if (vState > 3.5) {
-      // nominal (ensemble): white core with a coloured rim
+      // nominal (ensemble): white core with a colored rim
       if (d < 0.11) color = vec3(1.0);
     } else if (vState > 2.5) {
       // dimmed (ensemble: not the selected sample)
@@ -187,7 +187,7 @@ export function createSpacecraft(frames, sidecar, options = {}) {
       }
     }
     if (!(lo < hi)) { lo = 0; hi = 1; }
-    if (log && hi - lo > 8) lo = hi - 8; // eight decades is plenty for a colour scale
+    if (log && hi - lo > 8) lo = hi - 8; // eight decades is plenty for a color scale
     return { lo, hi, log };
   }
 
@@ -200,7 +200,7 @@ export function createSpacecraft(frames, sidecar, options = {}) {
   // Positions are uploaded relative to `anchor` (km, Float64), and `group` is
   // placed at the anchor. Near the followed spacecraft the buffers then hold
   // small numbers, so Float32 quantisation stays at the millimetre level
-  // instead of the half-metre it would be at planetary distances.
+  // instead of the half-meter it would be at planetary distances.
   const anchor = new Float64Array(3);
 
   function updateTrails(t) {
@@ -222,7 +222,7 @@ export function createSpacecraft(frames, sidecar, options = {}) {
         if (!Number.isFinite(frames.pos[base])) continue;
         arr[3 * n] = frames.pos[base] - anchor[0]; arr[3 * n + 1] = frames.pos[base + 1] - anchor[1]; arr[3 * n + 2] = frames.pos[base + 2] - anchor[2];
         if (colorMode === 'age') {
-          // fade: oldest samples sink toward the background colour
+          // fade: oldest samples sink toward the background color
           const age = (t - frames.t[k]) / trailSeconds;
           mixed.copy(c).lerp(dark, Math.min(1, Math.max(0, 0.15 + 0.8 * age)));
         } else {
@@ -304,7 +304,7 @@ export function createSpacecraft(frames, sidecar, options = {}) {
         }
       }
     },
-    // Replace every spacecraft colour (ensemble mode); trails follow, labels keep their text.
+    // Replace every spacecraft color (ensemble mode); trails follow, labels keep their text.
     setColors(list) {
       for (let s = 0; s < S; s++) {
         const c = list[s] || colorObjects[s];

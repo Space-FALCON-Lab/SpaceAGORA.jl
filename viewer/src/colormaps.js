@@ -1,4 +1,4 @@
-// Small perceptual colour maps as [r, g, b] in 0..1. Inferno for physical
+// Small perceptual color maps as [r, g, b] in 0..1. Inferno for physical
 // scalars (heat rate, dynamic pressure, density), viridis for ensembles.
 const INFERNO = [
   [0.001, 0.000, 0.014], [0.088, 0.036, 0.220], [0.258, 0.039, 0.406], [0.416, 0.090, 0.433],
@@ -22,3 +22,16 @@ export function inferno(t) { return sample(INFERNO, t); }
 export function viridis(t) { return sample(VIRIDIS, t); }
 export const INFERNO_CSS = 'linear-gradient(to right, rgb(0,0,4), rgb(66,10,104), rgb(147,38,103), rgb(221,81,58), rgb(252,165,10), rgb(252,255,164))';
 export const VIRIDIS_CSS = 'linear-gradient(to right, rgb(68,1,84), rgb(59,82,139), rgb(33,145,140), rgb(94,201,98), rgb(253,231,37))';
+
+// Inferno as a GLSL polynomial fit (Matt Zucker's six-term approximation, error < 0.01 per channel).
+export const INFERNO_GLSL = `
+vec3 inferno(float t) {
+  const vec3 c0 = vec3(0.0002189403691192265, 0.001651004631001012, -0.01948089843709184);
+  const vec3 c1 = vec3(0.1065134194856116, 0.5639564367884091, 3.932712388889277);
+  const vec3 c2 = vec3(11.60249308247187, -3.972853965665698, -15.9423941062914);
+  const vec3 c3 = vec3(-41.70399613139459, 17.43639888205313, 44.35414519872813);
+  const vec3 c4 = vec3(77.162935699427, -33.40235894210092, -81.80730925738993);
+  const vec3 c5 = vec3(-71.31942824499214, 32.62606426397723, 73.20951985803202);
+  const vec3 c6 = vec3(25.13112622477341, -12.24266895238567, -23.07032500287172);
+  return clamp(c0 + t * (c1 + t * (c2 + t * (c3 + t * (c4 + t * (c5 + t * c6))))), 0.0, 1.0);
+}`;

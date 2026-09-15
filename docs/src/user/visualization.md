@@ -63,7 +63,7 @@ Any spacecraft can be drawn from a 3D model instead of its link boxes:
 ```julia
 export_visualization("output/simulation_results";
     models=Dict(1 => "data/models/iss_nasa_3d_resources_b.glb"),
-    model_scale=2.4,                            # metres per model unit (or a Dict per id)
+    model_scale=2.4,                            # meters per model unit (or a Dict per id)
     model_rotation_deg=Dict(1 => (-90, 0, -90))) # XYZ Euler angles in the body frame
 ```
 
@@ -74,7 +74,7 @@ spaceagora visualize --run=output --model=1=data/models/iss_nasa_3d_resources_b.
 STL, OBJ and glTF/GLB are supported and embedded in the page; a `.gltf` must
 carry its buffers inline, and glTF files must not require Draco, meshopt or
 KTX2 (the exporter refuses them and names the conversion command). By
-default the model's bounding-box centre is placed on the spacecraft
+default the model's bounding-box center is placed on the spacecraft
 (`model_center=false` keeps the file's own origin). The model sits in the
 body frame at the root link, so attitude, link poses and glyphs still
 apply, and the selection panel's "3D model" row reports the parsed mesh
@@ -83,7 +83,7 @@ shipped models; the NASA ISS model there is public domain.
 
 The same file can feed a planner. `sample_model_pointcloud(path; n_points,
 scale, rotation_deg)` returns surface samples after the viewer's scale and
-rotation, centred the same way, so an RPO station built from it (for
+rotation, centerd the same way, so an RPO station built from it (for
 example through the `station_points` keyword of the CubeSat MPC demo
 builder) is exactly the geometry the page draws:
 
@@ -101,7 +101,7 @@ export_visualization(prefix; models=Dict(201 => iss), model_scale=2.4, model_rot
 `paths` overlays reference polylines: a planned path in a target's
 radial/transverse/normal frame (`frame=:rtn`, re-expressed from the target's
 state every frame), in a spacecraft's body frame (`:body`) or in inertial
-axes, with a colour and dashed or solid style, toggled on the page.
+axes, with a color and dashed or solid style, toggled on the page.
 
 ### Posing parts of a model
 
@@ -109,10 +109,24 @@ axes, with a colour and dashed or solid style, toggled on the page.
 rotates parts of a model before the scale and rotation: every vertex inside
 `region` (an axis-aligned box in model units, `x_min`/`x_max`/... , missing
 bounds unbounded) turns by `angle_deg` about `axis` through `pivot`
-(default the region's bounding-box centre). The same articulations go to
+(default the region's bounding-box center). The same articulations go to
 `mesh_aero_panels` for the aerodynamics, so the picture and the drag agree.
 The Magellan demo turns the NASA model's cruise-canted wings broadside this
 way.
+
+## Heating on the spacecraft
+
+When the run saved density (`save_visualization_scene` records it) the
+close-up shades every face of the links and of the 3D model by the
+free-molecular incident energy flux, ½ρV³ cos θ with θ the angle between the
+face's outward normal and the airspeed (inertial velocity minus the
+co-rotating atmosphere), on an inferno log scale spanning three decades
+below the run's peak, with the legend in W/cm². Faces turned away from the
+flow stay cold, so a Magellan pass shows the leading dish and the wings
+lighting up while the lee side stays dark. It is a geometric incidence
+map with full accommodation, not the thermal model's heat rate (which is a
+spacecraft-level number in the selection panel); the "heating" toggle turns
+it off and restores the plain materials.
 
 ## Saving a video
 
@@ -136,10 +150,10 @@ real mission, a telemetry record, or a plan. The ghost copies the geometry
 the whole reference span and a ring marker, and the selection panel of the
 flown spacecraft reports the separation between the two at the current time.
 Times are seconds from the run epoch; positions are inertial (J2000,
-planet-centred) metres, embedded as Float64.
+planet-centerd) meters, embedded as Float64.
 
 ```julia
-# Sample the mission SPK on the run's saved times, relative to the planet centre.
+# Sample the mission SPK on the run's saved times, relative to the planet center.
 et0 = str2et(scene_epoch_utc)
 states = [spkezr("MAGELLAN", et0 + t, "J2000", "NONE", "VENUS")[1] for t in times_s]
 pos_m = 1e3 .* reduce(hcat, [s[1:3] for s in states])
@@ -158,7 +172,7 @@ A spacecraft whose control model carries a `RobotArmControlEffector` with a
 `RobotArmPlan` runs the coupled cloth-arm dynamics, and the viewer draws that
 arm: the sidecar records the arm links (vector, radius, mass, mount offset)
 from the plan's `ClothArmModel`, and the `arm_pose` save field records every
-arm link's centre of mass relative to the spacecraft and its inertial
+arm link's center of mass relative to the spacecraft and its inertial
 quaternion at each step, straight from the integrated `arm_r`/`arm_q` state.
 Up close the arm appears as cylinders with joint spheres and a marked tip,
 moving through the planned motion while the bus reacts. The bounding radius
@@ -197,13 +211,13 @@ python3 viewer/build_standalone.py --out page.html --data nominal.csv s1.csv s2.
 The data is a CSV with a `time` column (seconds) and either SpaceAGORA's own
 result columns (`sc1_pos_1..3`, `sc1_vel_1..3`, `sc1_q_1..4`, drag, density,
 link poses; the `simulation_results.csv` a run writes opens as is, several
-spacecraft included) or plain `x,y,z[,vx,vy,vz][,qx,qy,qz,qw]`, in metres or
-kilometres, positions inertial (J2000) about the body's centre; a JSON form
+spacecraft included) or plain `x,y,z[,vx,vy,vz][,qx,qy,qz,qw]`, in meters or
+kilometers, positions inertial (J2000) about the body's center; a JSON form
 with `time` and `spacecraft: [{pos, vel, q}]` is accepted too. The page
 builds everything the Julia bundler would: the body's rotation from the IAU
 2009 pole and prime meridian at the given epoch (so ground tracks agree with
 the SPICE-driven pages to a fraction of a degree), a box spacecraft of the
-given size, the model override (centred from the parsed geometry), and an
+given size, the model override (centerd from the parsed geometry), and an
 optional reference ghost from a second table. Several files open as an
 ensemble with the first as the nominal. `--cdn` builds the variant the
 claude.ai artifact host can show (three.js from a CDN); the default page is
@@ -221,7 +235,7 @@ result, page = run_monte_carlo_visualization(seed -> build_args(seed), 1:50, "ou
 
 Each sample writes its bundle to `output/campaign/sample_0001` and so on,
 the campaign writes `ensemble_manifest.json`, and `ensemble_viewer.html`
-overlays every sample coloured by the scalar, with a sample selector and a
+overlays every sample colored by the scalar, with a sample selector and a
 faint full-history view of all of them. `export_ensemble_visualization(dir)`
 does the same for any directory of `sample_NNNN` or `sat_<i>_id_<id>`
 subdirectories, including the per-member output of
@@ -231,9 +245,9 @@ subdirectories, including the per-member output of
 ### Nominal sample and the 3σ tube
 
 `run_monte_carlo_visualization(...; nominal=seed)` runs one more sample with
-that seed (the unperturbed configuration) labelled "nominal", records it in
+that seed (the unperturbed configuration) labeled "nominal", records it in
 the manifest, and the page draws it as a bright white line with its own
-label while the Monte Carlo traces stay faint and coloured by the sample
+label while the Monte Carlo traces stay faint and colored by the sample
 scalar. Around the nominal (or the sample mean when there is none) a
 translucent tube shows the 3σ dispersion of the samples at every time, its
 cross-section the radial and cross-track standard deviations in the
@@ -254,9 +268,9 @@ Runs with an atmosphere model get three more layers, each with a toggle:
   samples GRAM and NRLMSISE-00 too, using its integrator state).
 - **Density map** at 0.6 of the EI for models that vary with latitude and
   longitude (GRAM, NRLMSISE-00, tabulated), draped on the body as an inferno
-  colour scale with its range in the info panel. Altitude-only models skip it.
+  color scale with its range in the info panel. Altitude-only models skip it.
 
-The pass itself is coloured by heat rate by default; the trail colour
+The pass itself is colored by heat rate by default; the trail color
 selector also offers dynamic pressure (from the saved density and speed),
 density, altitude and speed, with a legend. The selection panel reads out
 density, dynamic pressure, heat rate, drag and wind speed at the scrubbed
@@ -266,7 +280,7 @@ when the flag is on, and the existing heat-rate, drag and wind columns.
 ## Textures
 
 Textures live in `data/textures/` with `manifest.toml` recording body,
-resolution tier, source, licence and the longitude of the image's left
+resolution tier, source, license and the longitude of the image's left
 edge. `scripts/dev/build_viewer_textures.py --tier 8k --body earth` rebuilds a
 tier from its public-domain source; the 16k Earth tier is possible but not
 committed. `assets check` reports the directory. Adding a body is one JPEG

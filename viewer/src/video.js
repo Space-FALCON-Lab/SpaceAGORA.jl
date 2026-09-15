@@ -75,7 +75,7 @@ export async function recordMp4(viewer, options) {
   try {
     for (let k = 0; k < nFrames; k++) {
       if (failure) throw failure;
-      if (options.cancelled && options.cancelled()) throw new Error('cancelled');
+      if (options.canceled && options.canceled()) throw new Error('canceled');
       const t = Math.min(t1, t0 + k * dt);
       viewer.renderAt(t);
       const frame = new VideoFrame(canvas, { timestamp: Math.round(k * 1e6 / fps), duration: Math.round(1e6 / fps) });
@@ -159,7 +159,7 @@ export function createVideoDialog(viewer, container) {
   container.appendChild(box);
   const q = (r) => box.querySelector(`[data-role="${r}"]`);
   const status = q('status'), estimate = q('estimate');
-  let cancelled = false, running = false;
+  let canceled = false, running = false;
   function refreshEstimate() {
     const t0 = Number(q('t0').value), t1 = Number(q('t1').value), speed = Number(q('speed').value), fps = Number(q('fps').value);
     if (!(t1 > t0) || !(speed > 0)) { estimate.textContent = 'end after start, speed positive'; return; }
@@ -168,10 +168,10 @@ export function createVideoDialog(viewer, container) {
   }
   for (const r of ['t0', 't1', 'speed', 'fps']) q(r).addEventListener('input', refreshEstimate);
   refreshEstimate();
-  q('cancel').addEventListener('click', () => { if (running) cancelled = true; else box.hidden = true; });
+  q('cancel').addEventListener('click', () => { if (running) canceled = true; else box.hidden = true; });
   q('go').addEventListener('click', async () => {
     if (running) return;
-    running = true; cancelled = false;
+    running = true; canceled = false;
     const preset = PRESETS[Number(q('size').value)];
     const name = q('name').value.trim() || 'spaceagora.mp4';
     status.textContent = 'starting…';
@@ -179,12 +179,12 @@ export function createVideoDialog(viewer, container) {
       const result = await recordMp4(viewer, {
         tStart: Number(q('t0').value), tEnd: Number(q('t1').value), speed: Number(q('speed').value), fps: Number(q('fps').value),
         width: preset.width, height: preset.height, filename: name.endsWith('.mp4') ? name : `${name}.mp4`,
-        cancelled: () => cancelled,
+        canceled: () => canceled,
         onProgress: (k, n) => { status.textContent = `frame ${k} of ${n}`; },
       });
       status.textContent = `saved ${result.frames} frames, ${(result.bytes / 1e6).toFixed(1)} MB (${result.width}×${result.height}, ${result.codec}). If nothing downloaded, this host blocks page-started downloads; use the offline page.`;
     } catch (err) {
-      status.textContent = err && err.message === 'cancelled' ? 'cancelled' : `could not save: ${err && err.message ? err.message : err}`;
+      status.textContent = err && err.message === 'canceled' ? 'canceled' : `could not save: ${err && err.message ? err.message : err}`;
     } finally { running = false; }
   });
   q('webm').addEventListener('click', async () => {

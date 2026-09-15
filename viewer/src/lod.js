@@ -3,14 +3,15 @@
 // one) and, when the run recorded them, by the per-step link poses.
 //
 // Units: the assembly group is scaled by 1e-3 so its children are authored
-// in metres while the scene is in kilometres. Visibility is decided by how
+// in meters while the scene is in kilometers. Visibility is decided by how
 // many pixels the spacecraft's bounding radius covers on screen, with
 // hysteresis so the switch does not flicker.
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { decodeBytes, velocityAlignedQuaternion } from 'viewer/data.js';
+import { decodeBytes, velocityAlignedQuaternion, RotationTable } from 'viewer/data.js';
+import { INFERNO_GLSL } from 'viewer/colormaps.js';
 
 const M_TO_KM = 1e-3;
 const ROOT_COLOR = 0xb9c4d2;
@@ -21,6 +22,45 @@ const FACET_COLOR = 0x5fd4ff;
 const STL_COLOR = 0xc8cfd8;
 const ARM_COLOR = 0xe8b04a;
 const ARM_JOINT_COLOR = 0x3a4658;
+
+// Heating overlay: every heatable face is shaded by the free-molecular
+// incident energy flux 0.5 rho V^3 cos(theta) (W/m^2, full accommodation),
+// theta the angle between the outward normal and the airspeed, through
+// inferno on a log scale. Faces turned away from the flow stay cold.
+const HEAT_VERTEX = `
+  #include <common>
+  varying vec3 vWorldNormal;
+  #include <logdepthbuf_pars_vertex>
+  void main() {
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    #include <logdepthbuf_vertex>
+  }`;
+const HEAT_FRAGMENT = `
+  #include <common>
+  uniform vec3 flowDir;
+  uniform float q0;
+  uniform float logLo;
+  uniform float logHi;
+  varying vec3 vWorldNormal;
+  #include <logdepthbuf_pars_fragment>
+  ${INFERNO_GLSL}
+  void main() {
+    #include <logdepthbuf_fragment>
+    float c = max(dot(normalize(vWorldNormal), flowDir), 0.0);
+    float q = q0 * c;
+    float t = q > 0.0 ? clamp((log(q) / 2.302585 - logLo) / max(logHi - logLo, 1e-6), 0.0, 1.0) : 0.0;
+    vec3 col = q > 0.0 ? inferno(t) : vec3(0.10, 0.11, 0.14);
+    gl_FragColor = vec4(col, 1.0);
+  }`;
+
+function makeHeatMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { flowDir: { value: new THREE.Vector3(1, 0, 0) }, q0: { value: 0 }, logLo: { value: 0 }, logHi: { value: 1 } },
+    vertexShader: HEAT_VERTEX, fragmentShader: HEAT_FRAGMENT, side: THREE.DoubleSide,
+  });
+}
 
 // Robot arm: one cylinder per link along its own vector, placed each frame
 // from the integrated arm state (inertial, relative to the spacecraft), so it
@@ -38,7 +78,7 @@ function buildArm(spec) {
       new THREE.CylinderGeometry(link.radius_m, link.radius_m, length, 16),
       new THREE.MeshStandardMaterial({ color: ARM_COLOR, roughness: 0.5, metalness: 0.3 }),
     );
-    // CylinderGeometry runs along +y centred on the origin; move it to span 0..length along the link vector.
+    // CylinderGeometry runs along +y centerd on the origin; move it to span 0..length along the link vector.
     cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.clone().normalize());
     cyl.position.copy(v).multiplyScalar(0.5);
     holder.add(cyl);
@@ -55,7 +95,7 @@ function buildArm(spec) {
 
 // Parse a model override (an entry of payload.models: data URL, format,
 // scale, rotation_deg, center) and hand back an object with the scale,
-// rotation and centring applied, authored in metres. `onReady(object,
+// rotation and centeing applied, authored in meters. `onReady(object,
 // status)` runs synchronously for STL/OBJ and after the parse for glTF;
 // `onFail(message)` when the bytes cannot be decoded. Shared by the
 // assemblies and the reference ghosts so both draw the same geometry.
@@ -108,7 +148,7 @@ export function loadModelObject(model, label, onReady, onFail) {
     object.scale.setScalar(s);
     const r = model.rotation_deg || [0, 0, 0];
     object.rotation.set(THREE.MathUtils.degToRad(r[0]), THREE.MathUtils.degToRad(r[1]), THREE.MathUtils.degToRad(r[2]), 'XYZ');
-    // body = R * S * (v - c): translate by -R*S*c so the bounding-box centre sits on the spacecraft.
+    // body = R * S * (v - c): translate by -R*S*c so the bounding-box center sits on the spacecraft.
     const c = model.center || [0, 0, 0];
     object.position.set(-c[0] * s, -c[1] * s, -c[2] * s).applyEuler(object.rotation);
     object.traverse((child) => {
@@ -116,6 +156,7 @@ export function loadModelObject(model, label, onReady, onFail) {
         if (!child.material || model.format === 'obj' || model.format === 'stl') {
           child.material = new THREE.MeshStandardMaterial({ color: STL_COLOR, roughness: 0.55, metalness: 0.2 });
         }
+        child.userData.heatable = true;
         child.castShadow = false;
       }
     });
@@ -148,6 +189,7 @@ export function loadModelObject(model, label, onReady, onFail) {
 function boxMesh(dims, color) {
   const geometry = new THREE.BoxGeometry(Math.max(dims[0], 1e-3), Math.max(dims[1], 1e-3), Math.max(dims[2], 1e-3));
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.15 }));
+  mesh.userData.heatable = true;
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
   mesh.add(edges);
   return mesh;
@@ -260,7 +302,53 @@ export function createAssemblies(sidecar, frames, options = {}) {
       arm.group.visible = false;
       root.add(arm.group);
     }
-    items.push({ spec, ...built, arm, radiusKm });
+    items.push({ spec, ...built, arm, radiusKm, heatMaterial: makeHeatMaterial(), heated: false });
+  }
+
+  // Heating overlay: needs density and velocity in the frames and the planet's spin for the airspeed.
+  const planet = sidecar.planet;
+  const heatingAvailable = frames.hasScalar('density') && !!frames.vel;
+  const rotation = planet && planet.rotation ? new RotationTable(planet.rotation, planet.spin_rad_s || [0, 0, 0]) : null;
+  const spinRate = planet && planet.spin_rad_s ? planet.spin_rad_s[2] : 0;
+  let heating = false;
+  // Range of 0.5 rho V^3 over the run (W/m^2), three decades below the peak.
+  let heatLogHi = 1, heatLogLo = 0;
+  if (heatingAvailable) {
+    let peak = 0;
+    for (let k = 0; k < frames.count; k++) {
+      for (let s = 0; s < S; s++) {
+        const rho = frames.scalarAtIndex('density', k, s), v = frames.scalarAtIndex('speed', k, s) * 1000;
+        if (Number.isFinite(rho) && rho > 0 && Number.isFinite(v)) peak = Math.max(peak, 0.5 * rho * v * v * v);
+      }
+    }
+    if (peak > 0) { heatLogHi = Math.log10(peak); heatLogLo = heatLogHi - 3; }
+  }
+  const qPlanet = new Float32Array(4), omega = new THREE.Vector3(), rVec = new THREE.Vector3(), vRel = new THREE.Vector3(), qTmp = new THREE.Quaternion();
+  function applyHeat(item, on) {
+    if (item.heated === on || !item.group) return;
+    item.heated = on;
+    item.group.traverse((child) => {
+      if (!child.isMesh || !child.userData.heatable) return;
+      if (on) { child.userData.baseMaterial = child.material; child.material = item.heatMaterial; }
+      else if (child.userData.baseMaterial) { child.material = child.userData.baseMaterial; }
+    });
+  }
+  function updateHeat(item, s, t, groupMatrix) {
+    frames.velocityAt(t, s, vel);
+    vRel.set(vel[0], vel[1], vel[2]);
+    if (rotation && spinRate !== 0) {
+      rotation.at(t, qPlanet);
+      qTmp.set(qPlanet[0], qPlanet[1], qPlanet[2], qPlanet[3]);
+      omega.set(0, 0, spinRate).applyQuaternion(qTmp);
+      rVec.set(pos[0], pos[1], pos[2]);
+      vRel.sub(omega.cross(rVec)); // airspeed (km/s): inertial velocity minus the co-rotating atmosphere
+    }
+    const speed = vRel.length() * 1000;
+    const rho = frames.scalarAt('density', t, s);
+    const u = item.heatMaterial.uniforms;
+    u.q0.value = Number.isFinite(rho) && rho > 0 ? 0.5 * rho * speed * speed * speed : 0;
+    u.logLo.value = heatLogLo; u.logHi.value = heatLogHi;
+    if (speed > 0) u.flowDir.value.copy(vRel).normalize().transformDirection(groupMatrix);
   }
 
   const visible = new Uint8Array(S);      // assembly drawn
@@ -313,6 +401,7 @@ export function createAssemblies(sidecar, frames, options = {}) {
           velocityAlignedQuaternion(pos, vel, q);
         }
         item.group.quaternion.set(q[0], q[1], q[2], q[3]);
+        if (heating && heatingAvailable) { applyHeat(item, true); updateHeat(item, s, t, groupMatrix); } else applyHeat(item, false);
         if (item.arm) {
           // Same origin as the assembly, no body rotation: arm poses are inertial.
           item.arm.group.position.copy(item.group.position);
@@ -349,6 +438,10 @@ export function createAssemblies(sidecar, frames, options = {}) {
     setThrustersVisible(v) { thrustersVisible = v; for (const it of items) for (const c of it.glyphs.thrusters) c.visible = v; },
     setFacetsVisible(v) { facetsVisible = v; for (const it of items) for (const f of it.glyphs.facets) f.visible = v; },
     setAxesVisible(v) { axesVisible = v; for (const it of items) if (it.group) it.group.userData.axes.visible = v; },
+    // Heating overlay: on/off, and its legend range in W/m^2 (log scale, three decades below the run's peak).
+    heatingAvailable,
+    setHeatingVisible(v) { heating = v && heatingAvailable; if (!heating) for (const it of items) applyHeat(it, false); },
+    heatRange() { return { lo: Math.pow(10, heatLogLo), hi: Math.pow(10, heatLogHi), log: true }; },
     get enabled() { return enabled; },
     modelStatus(s) { const it = items[s]; return it && it.group ? it.group.userData.modelStatus : null; },
   };

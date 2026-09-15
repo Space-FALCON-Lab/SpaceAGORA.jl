@@ -466,6 +466,8 @@ export function start(payload, container = document.body) {
     resizeTo(w, h);
     // The plot panel sits just above the toolbar, whose height depends on how its rows wrap.
     plots.panel.style.bottom = `${(ui.root.offsetHeight || 90) + 10}px`;
+    // The selection panel scrolls instead of running into the toolbar (a lander lists every thruster).
+    container.style.setProperty('--sa-toolbar', `${ui.root.offsetHeight || 90}px`);
   }
   function resizeTo(w, h) {
     camera.aspect = w / h;

@@ -31,7 +31,7 @@ export function createUI(container, timeline, state, info) {
       font: 12px/1.45 system-ui, sans-serif; color: #dbe2ea; background: rgba(8,12,20,0.72);
       border: 1px solid #2a3442; border-radius: 6px; pointer-events: auto; }
     .sa-info { left: 14px; top: 12px; }
-    .sa-select { right: 14px; top: 12px; min-width: 26ch; }
+    .sa-select { right: 14px; top: 12px; min-width: 26ch; max-height: calc(100% - var(--sa-toolbar, 100px) - 30px); overflow-y: auto; overscroll-behavior: contain; }
     .sa-select[hidden] { display: none; }
     .sa-panel h1 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: #fff; }
     .sa-panel dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 1px 8px; }

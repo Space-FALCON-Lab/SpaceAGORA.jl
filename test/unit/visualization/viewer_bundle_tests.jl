@@ -369,6 +369,7 @@ end
         payload = SV.viewer_payload(scene, df; include_textures=false, references=[(t_s=t, pos_m=pos)])
         @test length(payload["references"]) == 1
         @test haskey(SV.viewer_import_map()["imports"], "viewer/references.js")
+        @test haskey(SV.viewer_import_map()["imports"], "viewer/plots.js")
     end
 
     @testset "STL overrides" begin
@@ -472,6 +473,7 @@ end
         @test occursin("\"name\":\"ghost\"", ghost_html)
         @test occursin("viewer/references.js", ghost_html)
         @test occursin("viewer/video.js", ghost_html) && occursin("mp4-muxer", ghost_html)
+        @test occursin("viewer/plots.js", ghost_html)
         magellan = joinpath(REPO, "data", "models", "magellan_nasa_3d_resources.glb")
         if isfile(magellan)
             wings = [(region=(x_min=1.9, y_max=1.0), axis=(1.0, 0.0, 0.0), angle_deg=-43.5)]

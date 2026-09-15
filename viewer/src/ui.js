@@ -38,6 +38,20 @@ export function createUI(container, timeline, state, info) {
     .sa-panel dt { color: #8fa1b8; }
     .sa-panel dd { margin: 0; font-variant-numeric: tabular-nums; }
     .sa-panel .sa-hint { margin: 6px 0 0; color: #8fa1b8; }
+    .sa-panel h2 { margin: 6px 0 2px; font-size: 12px; font-weight: 600; color: #c9d4e0; }
+    .sa-panel dt[data-key], .sa-panel dd[data-key] { cursor: pointer; }
+    .sa-panel dt[data-key] { text-decoration: underline dotted #4f86d6; text-underline-offset: 2px; }
+    .sa-panel dt[data-key]:hover, .sa-panel dd[data-key]:hover, .sa-panel dt.plotted { color: #f2b950; }
+    .sa-face { right: 14px; top: 300px; min-width: 26ch; max-width: 40ch; }
+    .sa-face[hidden] { display: none; }
+    .sa-plot { left: 14px; bottom: 96px; width: 460px; max-width: calc(100% - 28px); }
+    .sa-plot[hidden] { display: none; }
+    .sa-plot-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+    .sa-plot-head h1 { flex: 1 1 auto; margin: 0; }
+    .sa-plot-head label { color: #8fa1b8; cursor: pointer; user-select: none; }
+    .sa-plot-head button { font: inherit; color: #e8ecf1; background: #1d2633; border: 1px solid #3a4658; border-radius: 4px; padding: 0 7px; cursor: pointer; line-height: 1.4; }
+    .sa-plot-value { font-variant-numeric: tabular-nums; color: #f2b950; }
+    .sa-plot canvas { display: block; width: 100%; height: 220px; margin-top: 4px; }
     .sa-toggle label { margin-right: 6px; cursor: pointer; user-select: none; white-space: nowrap; }
     .sa-sep { width: 1px; height: 18px; background: #3a4658; }
     .sa-trail-legend { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
@@ -56,6 +70,19 @@ export function createUI(container, timeline, state, info) {
   selectBox.className = 'sa-panel sa-select';
   selectBox.hidden = true;
   container.appendChild(selectBox);
+
+  // Picked-face panel, placed under the selection panel.
+  const faceBox = document.createElement('div');
+  faceBox.className = 'sa-panel sa-face';
+  faceBox.hidden = true;
+  container.appendChild(faceBox);
+  // A click on a quantity (a row carrying data-key) opens its time history.
+  for (const box of [selectBox, faceBox]) {
+    box.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-key]');
+      if (el && state.plot) state.plot(el.dataset.key);
+    });
+  }
 
   const ui = document.createElement('div');
   ui.className = 'sa-ui';
@@ -175,7 +202,7 @@ export function createUI(container, timeline, state, info) {
     if (e.code === 'ArrowRight') timeline.seek(timeline.t + timeline.speed);
     if (e.code === 'ArrowLeft') timeline.seek(timeline.t - timeline.speed);
     if (e.code === 'KeyF') state.setFollow(!state.follow);
-    if (e.code === 'Escape') state.select(-1);
+    if (e.code === 'Escape') { if (state.face) state.setFace(null); else state.select(-1); }
   });
 
   function render() {
@@ -188,15 +215,47 @@ export function createUI(container, timeline, state, info) {
     follow.disabled = state.selected < 0 && !state.singleSpacecraft;
   }
 
-  // Selected-spacecraft panel; `sel` is null or an object of label -> value strings.
+  // Panel body from rows [{ label, text, key }]: rows with a key are clickable
+  // quantities. The DOM is rebuilt only when the set of rows changes; between
+  // rebuilds only the values are written, so a click lands on a stable element.
+  const escapeHtml = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  function renderRows(box, model, hint) {
+    const sig = `${model.title}|${model.rows.map((r) => `${r.label}:${r.key || ''}`).join(';')}|${hint}`;
+    if (box.dataset.sig !== sig) {
+      box.dataset.sig = sig;
+      const body = model.rows.map((r) => {
+        const attr = r.key ? ` data-key="${escapeHtml(r.key)}" title="Click for the time history"` : '';
+        return `<dt${attr}>${escapeHtml(r.label)}</dt><dd${attr}></dd>`;
+      }).join('');
+      box.innerHTML = `<h1>${escapeHtml(model.title)}</h1><dl>${body}</dl>${hint ? `<p class="sa-hint">${hint}</p>` : ''}`;
+      box._dds = Array.from(box.querySelectorAll('dd'));
+      box._dts = Array.from(box.querySelectorAll('dt'));
+    }
+    model.rows.forEach((r, i) => {
+      const dd = box._dds[i];
+      if (dd && dd.textContent !== r.text) dd.textContent = r.text;
+      const dt = box._dts[i];
+      if (dt) dt.classList.toggle('plotted', !!r.key && r.key === plottedKey);
+    });
+  }
+  let plottedKey = null;
+  function setPlotted(key) { plottedKey = key; }
+
+  // Selected-spacecraft panel; `sel` is null or { title, rows: [{ label, text, key }] }.
   function setSelection(sel) {
     if (!sel) { selectBox.hidden = true; return; }
     selectBox.hidden = false;
-    const body = Object.entries(sel).filter(([k]) => k !== 'title').map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
-    selectBox.innerHTML = `<h1>${sel.title}</h1><dl>${body}</dl><p class="sa-hint">F follows · Esc deselects</p>`;
+    renderRows(selectBox, sel, 'Click a value for its history · click the spacecraft body for a face · F follows · Esc deselects');
+  }
+  // Picked-face panel; `face` is null or { title, rows }.
+  function setFace(face) {
+    if (!face) { faceBox.hidden = true; return; }
+    faceBox.hidden = false;
+    renderRows(faceBox, face, 'Esc clears the face');
+    faceBox.style.top = `${selectBox.hidden ? 12 : selectBox.offsetTop + selectBox.offsetHeight + 8}px`;
   }
 
   timeline.onChange(render);
   render();
-  return { render, setSelection, setTrailLegend, setHeatLegend, infoBox, selectBox, root: ui };
+  return { render, setSelection, setFace, setPlotted, setTrailLegend, setHeatLegend, infoBox, selectBox, faceBox, root: ui };
 }

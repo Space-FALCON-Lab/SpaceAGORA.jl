@@ -15,6 +15,7 @@ import { TRAIL_COLOR_MODES } from 'viewer/spacecraft.js';
 import { Timeline } from 'viewer/timeline.js';
 import { createUI } from 'viewer/ui.js';
 import { createVideoDialog } from 'viewer/video.js';
+import { createPlotPanel } from 'viewer/plots.js';
 
 const DEFAULT_TRAIL_ORBITS = 3;
 
@@ -81,7 +82,7 @@ export function start(payload, container = document.body) {
 
   // The ensemble panel needs `state.select` before `state` is built; it reads
   // through this reference, which is filled in below.
-  const stateRef = { selected: -1, select: (i) => state.select(i) };
+  const stateRef = { selected: -1, select: (i) => state.select(i), plotSeries: (spec) => state.plotSeries(spec) };
 
   const ensemble = ensembleSpec ? createEnsemble(ensembleSpec, frames, craft, container, stateRef, {}) : null;
   if (ensemble) world.add(ensemble.group);
@@ -121,11 +122,32 @@ export function start(payload, container = document.body) {
       ui.render();
     },
     select(i) {
+      if (i !== state.selected) {
+        state.setFace(null);
+        if (plots.key && plots.key.startsWith('sc')) { plots.hide(); ui.setPlotted(null); }
+      }
       state.selected = i;
       stateRef.selected = i;
       if (i < 0 && state.follow) state.setFollow(false);
       ui.render();
     },
+    // Picked face: { s, link, normal, point, source } from lod.pickFace, or null.
+    face: null,
+    setFace(pick) {
+      state.face = pick;
+      faceQuantities = pick ? buildFaceQuantities(pick) : [];
+      lod.setFaceMarker(pick);
+      if (!pick && plots.key && plots.key.includes(':face:')) { plots.hide(); ui.setPlotted(null); }
+      ui.setFace(faceInfo(timeline.t));
+    },
+    // Open (or close) the time history of a panel quantity by its row key.
+    plot(key) {
+      const q = spacecraftQuantities.find((x) => x.key === key) || faceQuantities.find((x) => x.key === key);
+      if (!q) return;
+      plots.toggle(seriesOf(q));
+      ui.setPlotted(plots.key);
+    },
+    plotSeries(spec) { plots.toggle(spec); ui.setPlotted(plots.key); },
     setTrailOrbits(n) { state.trailOrbits = n; applyTrail(); },
     setLabels(v) { craft.setLabelsVisible(v); refs.setLabelsVisible(v); },
     setGraticule(v) { globe.grid.visible = v; globe.axis.visible = v; },
@@ -178,6 +200,107 @@ export function start(payload, container = document.body) {
 
   const tmpPos = new Float64Array(3), tmpVel = new Float64Array(3), qPi = new Float32Array(4), rBody = new Float64Array(3);
   const v3 = new THREE.Vector3();
+  const plots = createPlotPanel(container, timeline, frames);
+
+  // ---- Quantities. Every number in the selection and face panels is a
+  // quantity: a sampler at(t, out) filling `dims` values, a row formatter,
+  // and a unit, so the same definition feeds the panel text and the time
+  // history the plot panel draws when the row is clicked.
+  const fmt = (v, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : '–');
+  const vecText = (o, d, n) => { const parts = []; for (let i = 0; i < n; i++) parts.push(fmt(o[i], d)); return parts.join(', '); };
+  const geo3 = new Float64Array(3), qAtt = new Float32Array(4), qLnk = new Float32Array(4), pLnk = new Float64Array(3), air = new Float64Array(3);
+  const QA = new THREE.Quaternion(), QI = new THREE.Quaternion(), QL = new THREE.Quaternion(), NV = new THREE.Vector3(), FV = new THREE.Vector3();
+  let spacecraftQuantities = [], spacecraftQuantitiesFor = -1, faceQuantities = [];
+
+  function geodeticAt(t, s, o) {
+    frames.positionAt(t, s, tmpPos);
+    globe.rotationAt(t, qPi);
+    rotateByConjugate(qPi, tmpPos, rBody);
+    const g = geodetic(rBody, Re, Rp);
+    o[0] = g.alt; o[1] = g.latDeg; o[2] = g.lonDeg;
+    return o;
+  }
+
+  function buildSpacecraftQuantities(s) {
+    const list = [];
+    const add = (key, label, unit, dims, at, text, opts = {}) => list.push({ key: `sc${s}:${key}`, label, unit, dims, at, text, names: opts.names || null, log: opts.log ?? false });
+    add('altitude', 'altitude', 'km', 1, (t, o) => { geodeticAt(t, s, geo3); o[0] = geo3[0]; }, (o) => `${fmt(o[0], 1)} km`);
+    add('latitude', 'latitude', '°', 1, (t, o) => { geodeticAt(t, s, geo3); o[0] = geo3[1]; }, (o) => `${fmt(o[0], 3)}°`);
+    add('longitude', 'longitude', '°', 1, (t, o) => { geodeticAt(t, s, geo3); o[0] = geo3[2]; }, (o) => `${fmt(o[0], 3)}°`);
+    add('radius', 'radius', 'km', 1, (t, o) => { frames.positionAt(t, s, tmpPos); o[0] = Math.hypot(tmpPos[0], tmpPos[1], tmpPos[2]); }, (o) => `${fmt(o[0], 1)} km`);
+    add('speed', 'speed', 'km/s', 1, (t, o) => { frames.velocityAt(t, s, tmpVel); o[0] = Math.hypot(tmpVel[0], tmpVel[1], tmpVel[2]); }, (o) => `${fmt(o[0], 3)} km/s`);
+    add('airspeed', 'airspeed', 'km/s', 1, (t, o) => { lod.airspeedAt(t, s, air); o[0] = Math.hypot(air[0], air[1], air[2]); }, (o) => `${fmt(o[0], 3)} km/s`);
+    if (frames.mass) add('mass', 'mass', 'kg', 1, (t, o) => { o[0] = frames.massAt(t, s); }, (o) => `${fmt(o[0], 1)} kg`);
+    if (frames.hasScalar('density')) {
+      add('density', 'density', 'kg/m³', 1, (t, o) => { o[0] = frames.scalarAt('density', t, s, Re); }, (o) => (o[0] > 0 ? `${o[0].toExponential(2)} kg/m³` : '0 (above atmosphere)'), { log: 'auto' });
+      if (frames.hasScalar('dynamic_pressure')) add('dynamic_pressure', 'dyn. pressure', 'Pa', 1, (t, o) => { o[0] = frames.scalarAt('dynamic_pressure', t, s, Re); }, (o) => `${fmt(o[0], 3)} Pa`, { log: 'auto' });
+    }
+    if (frames.hasScalar('heat_rate')) add('heat_rate', 'heat rate', 'W/cm²', 1, (t, o) => { o[0] = frames.scalarAt('heat_rate', t, s, Re) / 1e4; }, (o) => `${fmt(o[0], 4)} W/cm²`, { log: 'auto' });
+    if (frames.hasScalar('drag')) add('drag', 'drag', 'N', 1, (t, o) => { o[0] = frames.scalarAt('drag', t, s, Re); }, (o) => `${fmt(o[0], 3)} N`, { log: 'auto' });
+    if (frames.hasScalar('wind')) add('wind', 'wind', 'm/s', 1, (t, o) => { o[0] = frames.scalarAt('wind', t, s, Re); }, (o) => `${fmt(o[0], 1)} m/s`);
+    refs.items.forEach((it, k) => {
+      if (it.target !== s) return;
+      add(`ref${k}`, `vs ${it.spec.name}`, 'km', 1, (t, o) => { o[0] = refs.separationKm(t, k); },
+        (o) => (Number.isFinite(o[0]) ? (o[0] >= 10 ? `${o[0].toFixed(1)} km` : `${(1000 * o[0]).toFixed(1)} m`) : 'not covered'), { log: 'auto' });
+    });
+    return list;
+  }
+
+  // Face quantities: the picked face's normal follows its link's pose, the
+  // flow is the airspeed in body axes, and the local heating is the same
+  // ½ρV³cosθ the overlay shades (full accommodation, no shadowing).
+  function buildFaceQuantities(face) {
+    const s = face.s, k = face.link;
+    const nLink = new THREE.Vector3(face.normal[0], face.normal[1], face.normal[2]);
+    const list = [];
+    const add = (key, label, unit, dims, at, text, opts = {}) => list.push({ key: `sc${s}:face:${key}`, label, unit, dims, at, text, names: opts.names || null, log: opts.log ?? false });
+    const normalBody = (t) => { lod.linkPoseAt(t, s, k, pLnk, qLnk); QL.set(qLnk[0], qLnk[1], qLnk[2], qLnk[3]); return NV.copy(nLink).applyQuaternion(QL); };
+    const flowBody = (t) => {
+      lod.airspeedAt(t, s, air); lod.attitudeAt(t, s, qAtt);
+      QI.set(qAtt[0], qAtt[1], qAtt[2], qAtt[3]).invert();
+      return FV.set(air[0], air[1], air[2]).normalize().applyQuaternion(QI);
+    };
+    const cosTheta = (t) => { const f = flowBody(t); return normalBody(t).dot(f); };
+    add('incidence', 'incidence θ', '°', 1, (t, o) => { o[0] = THREE.MathUtils.radToDeg(Math.acos(Math.min(1, Math.max(-1, cosTheta(t))))); }, (o) => `${fmt(o[0], 1)}° ${o[0] < 90 ? '(windward)' : '(lee)'}`);
+    if (frames.hasScalar('density')) {
+      add('flux', 'local heat flux ½ρV³cosθ', 'W/cm²', 1, (t, o) => {
+        const rho = frames.scalarAt('density', t, s, Re); const c = Math.max(0, cosTheta(t)); const v = Math.hypot(air[0], air[1], air[2]) * 1000;
+        o[0] = rho > 0 ? 0.5 * rho * v * v * v * c / 1e4 : 0;
+      }, (o) => `${o[0] > 0 ? o[0].toExponential(3) : '0'} W/cm²`, { log: 'auto' });
+      add('ram', 'ram pressure ρV²cos²θ', 'Pa', 1, (t, o) => {
+        const rho = frames.scalarAt('density', t, s, Re); const c = Math.max(0, cosTheta(t)); const v = Math.hypot(air[0], air[1], air[2]) * 1000;
+        o[0] = rho > 0 ? rho * v * v * c * c : 0;
+      }, (o) => `${o[0] > 0 ? o[0].toExponential(3) : '0'} Pa`, { log: 'auto' });
+    }
+    add('airspeed', 'airspeed', 'km/s', 1, (t, o) => { lod.airspeedAt(t, s, air); o[0] = Math.hypot(air[0], air[1], air[2]); }, (o) => `${fmt(o[0], 3)} km/s`);
+    add('flow', 'flow in body axes', '', 3, (t, o) => { const f = flowBody(t); o[0] = f.x; o[1] = f.y; o[2] = f.z; }, (o) => vecText(o, 3, 3), { names: ['x', 'y', 'z'] });
+    add('normal', 'face normal (body)', '', 3, (t, o) => { const n = normalBody(t); o[0] = n.x; o[1] = n.y; o[2] = n.z; }, (o) => vecText(o, 3, 3), { names: ['x', 'y', 'z'] });
+    add('position', 'position (inertial)', 'km', 3, (t, o) => { frames.positionAt(t, s, tmpPos); o[0] = tmpPos[0]; o[1] = tmpPos[1]; o[2] = tmpPos[2]; }, (o) => vecText(o, 1, 3), { names: ['x', 'y', 'z'] });
+    add('velocity', 'velocity (inertial)', 'km/s', 3, (t, o) => { frames.velocityAt(t, s, tmpVel); o[0] = tmpVel[0]; o[1] = tmpVel[1]; o[2] = tmpVel[2]; }, (o) => vecText(o, 3, 3), { names: ['x', 'y', 'z'] });
+    add('attitude', `attitude q${frames.q ? '' : ' (velocity-aligned)'}`, '', 4, (t, o) => { lod.attitudeAt(t, s, qAtt); o[0] = qAtt[0]; o[1] = qAtt[1]; o[2] = qAtt[2]; o[3] = qAtt[3]; }, (o) => vecText(o, 3, 4), { names: ['x', 'y', 'z', 'w'] });
+    if (k > 0) {
+      add('linkpos', `link ${k + 1} position (body)`, 'm', 3, (t, o) => { lod.linkPoseAt(t, s, k, pLnk, qLnk); o[0] = pLnk[0]; o[1] = pLnk[1]; o[2] = pLnk[2]; }, (o) => vecText(o, 2, 3), { names: ['x', 'y', 'z'] });
+      add('linkq', `link ${k + 1} q`, '', 4, (t, o) => { lod.linkPoseAt(t, s, k, pLnk, qLnk); o[0] = qLnk[0]; o[1] = qLnk[1]; o[2] = qLnk[2]; o[3] = qLnk[3]; }, (o) => vecText(o, 3, 4), { names: ['x', 'y', 'z', 'w'] });
+    }
+    return list;
+  }
+
+  // Full history of a quantity over the kept frames, as the plot panel wants it.
+  function seriesOf(q) {
+    const n = frames.count;
+    const t = new Float64Array(n);
+    for (let k = 0; k < n; k++) t[k] = frames.t[k];
+    const ys = []; for (let d = 0; d < q.dims; d++) ys.push(new Float64Array(n));
+    const o = new Float64Array(q.dims);
+    for (let k = 0; k < n; k++) { o.fill(NaN); q.at(t[k], o); for (let d = 0; d < q.dims; d++) ys[d][k] = o[d]; }
+    const s = state.selected;
+    const owner = s >= 0 ? ((sidecar.spacecraft[s] || sidecar.spacecraft[0]).name || `sc${s + 1}`) : '';
+    return { key: q.key, title: `${q.label}${owner ? ' · ' + owner : ''}`, unit: q.unit, t, series: ys.map((y, d) => ({ name: q.names ? q.names[d] : '', y })), log: q.log };
+  }
+  const qOut = new Float64Array(4);
+  function quantityRows(list, t) {
+    return list.map((q) => { qOut.fill(NaN); q.at(t, qOut); return { label: q.label, text: q.text(qOut), key: q.key }; });
+  }
 
   function placeCamera() {
     let far = Re;
@@ -209,6 +332,7 @@ export function start(payload, container = document.body) {
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5 || performance.now() - downT > 400) return;
     const rect = renderer.domElement.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    if (pickFaceAt(px, py)) return;
     let best = -1, bestScore = Infinity;
     world.updateMatrixWorld();
     for (let s = 0; s < frames.sats; s++) {
@@ -223,55 +347,64 @@ export function start(payload, container = document.body) {
     state.select(best);
   });
 
+  // Face pick at canvas pixel (px, py): selects that spacecraft and its face. Returns the pick or null.
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  function pickFaceAt(px, py) {
+    if (!lod.enabled) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    ndc.set((px / rect.width) * 2 - 1, -(py / rect.height) * 2 + 1);
+    world.updateMatrixWorld();
+    raycaster.setFromCamera(ndc, camera);
+    const pick = lod.pickFace(raycaster);
+    if (!pick) return null;
+    state.select(pick.s);
+    state.setFace(pick);
+    return pick;
+  }
+
   function selectionInfo(t) {
     const s = state.selected;
     if (s < 0) return null;
     const spec = sidecar.spacecraft[s] || sidecar.spacecraft[0];
+    const title = spec.name || `sc${s + 1}`;
     frames.positionAt(t, s, tmpPos);
     if (!Number.isFinite(tmpPos[0])) {
-      return { title: spec.name || `sc${s + 1}`, id: String(spec.id), state: 'not present at this time' };
+      return { title, rows: [{ label: 'id', text: String(spec.id) }, { label: 'state', text: 'not present at this time' }] };
     }
-    frames.velocityAt(t, s, tmpVel);
-    globe.rotationAt(t, qPi);
-    rotateByConjugate(qPi, tmpPos, rBody);
-    const g = geodetic(rBody, Re, Rp);
-    const mass = frames.massAt(t, s);
-    const out = {
-      title: spec.name || `sc${s + 1}`,
-      id: String(spec.id),
-      altitude: `${g.alt.toFixed(1)} km`,
-      latitude: `${g.latDeg.toFixed(3)}°`,
-      longitude: `${g.lonDeg.toFixed(3)}°`,
-      radius: `${Math.hypot(tmpPos[0], tmpPos[1], tmpPos[2]).toFixed(1)} km`,
-      speed: `${Math.hypot(tmpVel[0], tmpVel[1], tmpVel[2]).toFixed(3)} km/s`,
-    };
-    if (mass != null) out.mass = `${mass.toFixed(1)} kg`;
-    if (frames.hasScalar('density')) {
-      const rho = frames.scalarAt('density', t, s, Re);
-      out.density = rho > 0 ? `${rho.toExponential(2)} kg/m³` : '0 (above atmosphere)';
-      if (frames.hasScalar('dynamic_pressure')) out['dyn. pressure'] = `${frames.scalarAt('dynamic_pressure', t, s, Re).toFixed(3)} Pa`;
-    }
-    if (frames.hasScalar('heat_rate')) out['heat rate'] = `${(frames.scalarAt('heat_rate', t, s, Re) / 1e4).toFixed(4)} W/cm²`;
-    if (frames.hasScalar('drag')) out.drag = `${frames.scalarAt('drag', t, s, Re).toFixed(3)} N`;
-    if (frames.hasScalar('wind')) out.wind = `${frames.scalarAt('wind', t, s, Re).toFixed(1)} m/s`;
-    out.links = String(spec.links.length);
-    out.model = lod.visible[s] ? `3D (${lod.pxSize[s].toFixed(0)} px)` : `marker (${lod.pxSize[s].toFixed(1)} px)`;
+    if (spacecraftQuantitiesFor !== s) { spacecraftQuantities = buildSpacecraftQuantities(s); spacecraftQuantitiesFor = s; }
+    const rows = [{ label: 'id', text: String(spec.id) }, ...quantityRows(spacecraftQuantities, t)];
+    rows.push({ label: 'links', text: String(spec.links.length) });
+    rows.push({ label: 'model', text: lod.visible[s] ? `3D (${lod.pxSize[s].toFixed(0)} px)` : `marker (${lod.pxSize[s].toFixed(1)} px)` });
     const status = lod.modelStatus(s);
-    if (status) out['3D model'] = status;
+    if (status) rows.push({ label: '3D model', text: status });
     refs.items.forEach((it, k) => {
       if (it.target !== s) return;
-      const sep = refs.separationKm(t, k);
-      out[`vs ${it.spec.name}`] = Number.isFinite(sep) ? (sep >= 10 ? `${sep.toFixed(1)} km` : `${(1000 * sep).toFixed(1)} m`) : 'not covered';
       const ghost = refs.modelStatus(k);
-      if (ghost && ghost !== 'boxes') out[`${it.spec.name} model`] = ghost;
+      if (ghost && ghost !== 'boxes') rows.push({ label: `${it.spec.name} model`, text: ghost });
     });
-    return out;
+    return { title, rows };
+  }
+
+  function faceInfo(t) {
+    const face = state.face;
+    if (!face || face.s !== state.selected) return null;
+    const spec = sidecar.spacecraft[face.s] || sidecar.spacecraft[0];
+    const link = spec.links[face.link] || {};
+    const rows = [
+      { label: 'face', text: `${face.source === 'model' ? 'model surface' : 'box face'} on link ${face.link + 1}${link.name ? ` (${link.name})` : ''}` },
+      { label: 'point (link frame)', text: `${vecText(face.point, 2, 3)} m` },
+      ...quantityRows(faceQuantities, t),
+    ];
+    return { title: `face · ${spec.name || `sc${face.s + 1}`}`, rows };
   }
 
   function resize() {
     if (recording) return;
     const w = container.clientWidth || window.innerWidth, h = container.clientHeight || window.innerHeight;
     resizeTo(w, h);
+    // The plot panel sits just above the toolbar, whose height depends on how its rows wrap.
+    plots.panel.style.bottom = `${(ui.root.offsetHeight || 90) + 10}px`;
   }
   function resizeTo(w, h) {
     camera.aspect = w / h;
@@ -298,7 +431,8 @@ export function start(payload, container = document.body) {
     if (recording) return; // the recorder drives frame(t) itself
     timeline.tick(dt);
     frame(timeline.t);
-    if (now - lastInfo > 100) { ui.setSelection(selectionInfo(timeline.t)); lastInfo = now; }
+    if (now - lastInfo > 100) { ui.setSelection(selectionInfo(timeline.t)); ui.setFace(faceInfo(timeline.t)); lastInfo = now; }
+    plots.update(timeline.t);
   }
   // One rendered frame at elapsed time t: every scene update and the draw.
   function frame(t) {
@@ -340,6 +474,9 @@ export function start(payload, container = document.body) {
     renderAt(t) { timeline.seek(t); frame(t); },
     setRecording(v) { recording = v; if (!v) resize(); },
     resizeTo,
+    plots,
+    pickFaceAt,
+    quantities() { return { spacecraft: spacecraftQuantities.map((q) => q.key), face: faceQuantities.map((q) => q.key) }; },
   };
   videoDialog = createVideoDialog(viewer, container);
   return viewer;

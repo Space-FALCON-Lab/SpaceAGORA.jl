@@ -25,7 +25,7 @@ import tomllib
 VIEWER = pathlib.Path(__file__).resolve().parent
 REPO = VIEWER.parent
 TEXTURES = REPO / "data" / "textures"
-MODULES = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "ui.js", "main.js", "standalone.js"]
+MODULES = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "ui.js", "main.js", "standalone.js"]
 VENDOR = {
     "three": "three.module.js",
     "three/addons/controls/OrbitControls.js": "OrbitControls.js",

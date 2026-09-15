@@ -185,7 +185,7 @@ export function createEnsemble(spec, frames, craft, container, state, options = 
     ${hasScalar ? `<div class="sa-legend"><span>${fmt(lo)}</span><span class="sa-bar"></span><span>${fmt(hi)}</span></div>
     <div class="sa-hint" style="margin:0 0 6px">${spec.scalar_name || 'scalar'}</div>` : '<div class="sa-hint" style="margin:0 0 6px">traces colored by sample index</div>'}
     <div class="sa-key"><span class="sa-swatch" style="background:#fff"></span> nominal <span class="sa-swatch" style="background:#ffb347;opacity:.6;margin-left:8px"></span> <span data-role="tube-label">3σ tube</span></div>
-    <dl class="sa-disp"><dt>3σ radial</dt><dd data-role="sr">–</dd><dt>3σ along-track</dt><dd data-role="st">–</dd><dt>3σ cross-track</dt><dd data-role="sn">–</dd><dt>samples present</dt><dd data-role="members">–</dd></dl>
+    <dl class="sa-disp"><dt data-key="sr" title="Click for the time history">3σ radial</dt><dd data-key="sr" data-role="sr">–</dd><dt data-key="st" title="Click for the time history">3σ along-track</dt><dd data-key="st" data-role="st">–</dd><dt data-key="sn" title="Click for the time history">3σ cross-track</dt><dd data-key="sn" data-role="sn">–</dd><dt data-key="members" title="Click for the time history">samples present</dt><dd data-key="members" data-role="members">–</dd></dl>
     <div class="sa-row" style="gap:6px">
       <button data-role="prev" title="previous sample">◀</button>
       <select data-role="sample" style="max-width: 24ch"></select>
@@ -229,6 +229,19 @@ export function createEnsemble(spec, frames, craft, container, state, options = 
   panel.querySelector('[data-role="tube"]').addEventListener('change', (e) => { tubeVisible = e.target.checked; });
   panel.querySelector('[data-role="sigma"]').addEventListener('change', (e) => { tubeScale = Number(e.target.value); panel.querySelector('[data-role="tube-label"]').textContent = `${tubeScale}σ tube`; tubeDirty = true; });
   const readout = { sr: panel.querySelector('[data-role="sr"]'), st: panel.querySelector('[data-role="st"]'), sn: panel.querySelector('[data-role="sn"]'), members: panel.querySelector('[data-role="members"]') };
+  // Dispersion readouts open their history over the run (state.plotSeries is wired by main.js).
+  panel.querySelector('.sa-disp').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-key]');
+    if (!el || !state.plotSeries || rings.length === 0) return;
+    const key = el.dataset.key;
+    const t = Float64Array.from(rings, (r) => r.t);
+    const pick = { sr: ['sigmaR', 'radial'], st: ['sigmaT', 'along-track'], sn: ['sigmaN', 'cross-track'] }[key];
+    if (pick) {
+      state.plotSeries({ key: `ensemble:${key}`, title: `${tubeScale}σ ${pick[1]}`, unit: 'km', t, series: [{ name: '', y: Float64Array.from(rings, (r) => tubeScale * r[pick[0]]) }], log: 'auto' });
+    } else {
+      state.plotSeries({ key: 'ensemble:members', title: 'samples present', unit: '', t, series: [{ name: '', y: Float64Array.from(rings, (r) => r.members) }], log: false });
+    }
+  });
 
   function currentSample() { return state.selected < 0 ? -1 : Math.floor(state.selected / perSample); }
   function stepSample(d) {

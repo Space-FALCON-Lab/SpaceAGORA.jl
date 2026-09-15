@@ -128,6 +128,32 @@ map with full accommodation, not the thermal model's heat rate (which is a
 spacecraft-level number in the selection panel); the "heating" toggle turns
 it off and restores the plain materials.
 
+## Time histories and face inspection
+
+Every number in the selection panel is a quantity with a history: altitude,
+latitude, longitude, radius, speed, airspeed (the inertial velocity minus the
+co-rotating atmosphere), mass, density, dynamic pressure, heat rate, drag,
+wind and the separation from each reference ghost. Click one and a plot panel
+opens with that quantity over the whole run, the playback cursor on it and
+the current value in the header; click or drag in the plot to seek, tick
+"log" for a logarithmic axis (chosen automatically for densities and heating
+that span decades), and click the quantity again to close. The Monte Carlo
+panel's 3σ readouts open their histories the same way.
+
+The spacecraft body is interactive in the close-up: click a face of a link
+box or of the 3D model and a face panel opens under the selection panel, with
+a marker and outward-normal arrow on the picked face. It reports the face
+(which link, box or model surface, the hit point in the link frame), the
+incidence angle between the face's outward normal and the airspeed, the local
+heating ½ρV³cosθ the overlay shades and the Newtonian ram pressure ρV²cos²θ,
+the airspeed and its direction in body axes, the face normal in body axes
+(which follows the link's recorded pose), the inertial position and velocity,
+the attitude quaternion (the saved one, or the velocity-aligned attitude the
+assembly is drawn with), and the picked link's pose when the run recorded
+link poses. Each of those is clickable for its history too; vector
+quantities plot one line per component. Esc clears the face first, then the
+selection.
+
 ## Saving a video
 
 The toolbar's "Save video…" renders the animation frame by frame between two

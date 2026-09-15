@@ -8,7 +8,7 @@
 
 const VIEWER_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "viewer"))
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data", "textures"))
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "timeline.js", "ui.js", "main.js")
+const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "timeline.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),

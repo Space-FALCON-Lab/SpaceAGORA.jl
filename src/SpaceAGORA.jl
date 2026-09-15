@@ -29,8 +29,8 @@ using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_worke
 ## 2.3. Simulation Engine
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
-using .SimulationEngine: run_simulation
 using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
+run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 
 ## 2.4. Simulation Campaigns
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo

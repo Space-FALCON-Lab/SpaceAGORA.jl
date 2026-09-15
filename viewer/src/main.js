@@ -17,6 +17,7 @@ import { createUI } from 'viewer/ui.js';
 import { createVideoDialog } from 'viewer/video.js';
 import { createPlotPanel } from 'viewer/plots.js';
 import { createTerrain } from 'viewer/terrain.js';
+import { createDust } from 'viewer/dust.js';
 
 const DEFAULT_TRAIL_ORBITS = 3;
 
@@ -77,6 +78,10 @@ export function start(payload, container = document.body) {
 
   const lod = createAssemblies(sidecar, frames, { models, enabled: options.assemblies ?? true, assemblyLimit: options.assembly_limit ?? 256 });
   world.add(lod.group);
+
+  // Regolith blown off the surface by a landing vehicle's descent engine; it
+  // adds its own group to `world`, so it rides the inertial frame like the rest.
+  const dust = createDust(world, frames, terrain, lod, { rotationAt: (t, out) => globe.rotationAt(t, out) });
 
   const refPaths = createPaths(pathSpecs, frames, {});
   if (refPaths.items.length) world.add(refPaths.group);
@@ -160,6 +165,8 @@ export function start(payload, container = document.body) {
     setThrusters(v) { lod.setThrustersVisible(v); },
     setFacets(v) { lod.setFacetsVisible(v); },
     setAxes(v) { lod.setAxesVisible(v); },
+    hasDust: frames.hasPlume(),
+    setDust(v) { dust.setVisible(v); },
     hasHeating: lod.heatingAvailable,
     setHeating(v) { lod.setHeatingVisible(v); ui.setHeatLegend(v && lod.heatingAvailable ? lod.heatRange() : null); },
     resetView() { state.setFollow(false); placeCamera(); },
@@ -254,6 +261,18 @@ export function start(payload, container = document.body) {
     if (frames.hasScalar('heat_rate')) add('heat_rate', 'heat rate', 'W/cm²', 1, (t, o) => { o[0] = frames.scalarAt('heat_rate', t, s, Re) / 1e4; }, (o) => `${fmt(o[0], 4)} W/cm²`, { log: 'auto' });
     if (frames.hasScalar('drag')) add('drag', 'drag', 'N', 1, (t, o) => { o[0] = frames.scalarAt('drag', t, s, Re); }, (o) => `${fmt(o[0], 3)} N`, { log: 'auto' });
     if (frames.hasScalar('wind')) add('wind', 'wind', 'm/s', 1, (t, o) => { o[0] = frames.scalarAt('wind', t, s, Re); }, (o) => `${fmt(o[0], 1)} m/s`);
+    if (frames.hasPlume()) {
+      // Plume-surface interaction of the descent engine with the regolith.
+      const plume = (key, label, unit, name, digits, opts = {}) =>
+        add(key, label, unit, 1, (t, o) => { o[0] = frames.plumeAt(name, t, s); }, (o) => `${fmt(o[0], digits)} ${unit}`, opts);
+      plume('plume_height', 'engine height', 'm', 'height_m', 1, { log: 'auto' });
+      plume('plume_shear', 'plume shear', 'Pa', 'shear_pa', 3, { log: 'auto' });
+      plume('plume_pressure', 'plume pressure', 'Pa', 'pressure_pa', 1, { log: 'auto' });
+      plume('plume_erosion', 'erosion rate', 'kg/s', 'erosion_kg_s', 2);
+      plume('plume_eroded', 'eroded mass', 'kg', 'eroded_kg', 1);
+      plume('plume_ejecta', 'ejecta speed', 'm/s', 'ejecta_mps', 1);
+      plume('plume_ground_effect', 'ground effect', 'N', 'ground_effect_n', 1);
+    }
     refs.items.forEach((it, k) => {
       if (it.target !== s) return;
       add(`ref${k}`, `vs ${it.spec.name}`, 'km', 1, (t, o) => { o[0] = refs.separationKm(t, k); },
@@ -486,6 +505,7 @@ export function start(payload, container = document.body) {
     world.updateMatrixWorld();
     const viewportHeight = renderer.domElement.clientHeight || window.innerHeight;
     lod.update(t, camera, viewportHeight, lod.group.matrixWorld, anchor);
+    dust.update(t);
     if (refPaths.items.length) refPaths.update(t, anchor);
     if (refs.items.length) refs.update(t, camera, viewportHeight, refs.group.matrixWorld, anchor);
     if (ensemble) ensemble.update(state.follow, t, anchor, camera, ensemble.group.matrixWorld);
@@ -496,7 +516,7 @@ export function start(payload, container = document.body) {
   requestAnimationFrame(animate);
 
   const viewer = {
-    renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, ensemble, references: refs, paths: refPaths, timeline, frames, state, period,
+    renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, dust, ensemble, references: refs, paths: refPaths, timeline, frames, state, period,
     // Deterministic rendering for exports: seek and draw one frame at t.
     renderAt(t) { timeline.seek(t); frame(t); },
     setRecording(v) { recording = v; if (!v) resize(); },

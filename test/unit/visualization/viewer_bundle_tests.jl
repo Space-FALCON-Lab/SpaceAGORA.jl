@@ -224,6 +224,38 @@ end
         @test many_frames["vel_kms"] === nothing
     end
 
+    @testset "plume payload" begin
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        scene = build_visualization_scene(args; rotation_max_samples=8)
+        df = _synthetic_results(scene; n_rows=25)
+
+        # Without the sc{i}_plume_* columns the block is absent and the rest of
+        # the payload is unchanged.
+        @test SV.build_viewer_frames(df, scene)["plume"] === nothing
+
+        for (k, f) in enumerate(SV.PLUME_FRAME_FIELDS)
+            df[!, "sc1_plume_$(f)"] = [10.0 * k + r for r in 1:25]
+        end
+        frames = SV.build_viewer_frames(df, scene)
+        plume = frames["plume"]
+        @test plume !== nothing
+        @test sort(collect(keys(plume))) == sort(collect(String.(SV.PLUME_FRAME_FIELDS)))
+        for (k, f) in enumerate(SV.PLUME_FRAME_FIELDS)
+            values = _decode_f32(plume[f])
+            @test length(values) == 25                      # one spacecraft, frame-major
+            @test values[1] ≈ Float32(10.0 * k + 1)
+            @test values[end] ≈ Float32(10.0 * k + 25)
+        end
+        # Decimation applies to the block like every other frame array.
+        small = SV.build_viewer_frames(df, scene; max_frames=6)
+        @test length(_decode_f32(small["plume"]["height_m"])) == small["count"]
+
+        # One spacecraft short of the columns drops the whole block.
+        partial = select(df, Not("sc1_plume_eroded_kg"))
+        @test SV.build_viewer_frames(partial, scene)["plume"] === nothing
+    end
+
     @testset "model formats" begin
         @test SV.model_format("bus.stl") == ("stl", "model/stl")
         @test SV.model_format("BUS.OBJ") == ("obj", "model/obj")

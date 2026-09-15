@@ -74,6 +74,8 @@ using .SimulationModel: SolarPanelAngleOfAttackControlModel
 using .SimulationModel: NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height, terrain_radius, load_dem_grid, load_site_terrain
 using .SimulationModel: DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
+using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
+using .SimulationModel: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
@@ -86,6 +88,9 @@ using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, d
 @doc (@doc SimulationModel.ApolloDescentGuidanceModel) ApolloDescentGuidanceModel
 @doc (@doc SimulationModel.ApolloDescentControlModel) ApolloDescentControlModel
 @doc (@doc SimulationModel.DEMTerrainModel) DEMTerrainModel
+@doc (@doc SimulationModel.PlumeSurfaceConfig) PlumeSurfaceConfig
+@doc (@doc SimulationModel.PlumeSurfaceInteractionModel) PlumeSurfaceInteractionModel
+@doc (@doc SimulationModel.PlumeSurfaceState) PlumeSurfaceState
 @doc (@doc SimulationModel.StateAnchor) StateAnchor
 @doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
@@ -552,6 +557,8 @@ export SolarPanelAngleOfAttackControlModel
 export NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height, terrain_radius, load_dem_grid, load_site_terrain
 export DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
+export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
+export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

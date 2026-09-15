@@ -83,6 +83,13 @@ export class FrameData {
     this.heatRate = frames.heat_rate_w_m2 ? decodeFloat32(frames.heat_rate_w_m2) : null;
     this.drag = frames.drag_n ? decodeFloat32(frames.drag_n) : null;
     this.wind = frames.wind_ms ? decodeFloat32(frames.wind_ms) : null;
+    // Plume-surface interaction (viewer/dust.js): one Float32 array per quantity,
+    // frame-major then spacecraft. Absent unless the run carried a plume effector.
+    this.plume = null;
+    if (frames.plume) {
+      this.plume = {};
+      for (const key of Object.keys(frames.plume)) this.plume[key] = decodeFloat32(frames.plume[key]);
+    }
     this.armPose = null;
     if (frames.arm_pose && frames.arm_pose.total > 0) {
       this.armPose = {
@@ -206,6 +213,21 @@ export class FrameData {
       case 'altitude': return true;
       default: return false;
     }
+  }
+
+  hasPlume() { return !!this.plume; }
+
+  // One plume quantity ('height_m', 'shear_pa', 'pressure_pa', 'erosion_kg_s',
+  // 'eroded_kg', 'ejecta_mps', 'ground_effect_n') for spacecraft `sat`, linearly
+  // interpolated at `time`; NaN when the block is absent.
+  plumeAt(name, time, sat) {
+    const a = this.plume ? this.plume[name] : null;
+    if (!a) return NaN;
+    const { i, f } = this.locate(time);
+    const S = this.sats;
+    if (this.count < 2) return a[sat];
+    const p = a[i * S + sat], q = a[(i + 1) * S + sat];
+    return p + f * (q - p);
   }
 
   // Attitude quaternion [x, y, z, w] via slerp; null when the run had no orientation state.

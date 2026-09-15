@@ -113,6 +113,7 @@ export function createUI(container, timeline, state, info) {
       <label><input type="checkbox" data-role="axes" checked> body axes</label>
       <label data-role="heating-label"><input type="checkbox" data-role="heating" checked> heating</label>
       <span class="sa-trail-legend" data-role="heat-legend" hidden><span data-role="heat-lo"></span><span class="sa-bar-inferno"></span><span data-role="heat-hi"></span></span>
+      <label data-role="dust-label"><input type="checkbox" data-role="dust" checked> dust</label>
       <span class="sa-sep" data-role="atmo-sep"></span>
       <label data-role="atmo-limb-label"><input type="checkbox" data-role="atmo-limb" checked> atmosphere</label>
       <label data-role="atmo-layers-label"><input type="checkbox" data-role="atmo-layers" checked> density shells</label>
@@ -193,6 +194,8 @@ export function createUI(container, timeline, state, info) {
     q('heat-lo').textContent = `${fmtLegend(info.lo / 1e4)}`;
     q('heat-hi').textContent = `${fmtLegend(info.hi / 1e4)} W/cm² ½ρV³cosθ (log)`;
   }
+  q('dust-label').hidden = !state.hasDust;
+  q('dust').addEventListener('change', (e) => state.setDust(e.target.checked));
   q('reset').addEventListener('click', () => state.resetView());
   q('video').addEventListener('click', () => state.openVideoDialog && state.openVideoDialog());
 

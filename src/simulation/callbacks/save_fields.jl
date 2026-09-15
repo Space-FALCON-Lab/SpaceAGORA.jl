@@ -219,6 +219,48 @@ end
     return any(model -> !isempty(link_pose_link_indices(model)), args.dynamics_model.spacecraft)
 end
 
+# Plume-surface interaction: the descent engine's footprint on the regolith,
+# read straight out of the effector's per-spacecraft state. Present only when a
+# `PlumeSurfaceInteractionModel` is among the run's dynamic effectors.
+@inline function _plume_effector(args::SimulationConfiguration)
+    for effector in args.dynamics_model.dynamic_effectors
+        effector isa PlumeSurfaceInteractionModel && return effector
+    end
+    return nothing
+end
+
+@inline function _save_plume(model, field::Symbol, num_sats::Int)
+    values = getfield(model.state, field)
+    out = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        out[i] = i <= length(values) ? Float64(values[i]) : 0.0
+    end
+    return out
+end
+
+"""
+    plume_save_fields(args) -> Vector{SaveField}
+
+The seven `sc{i}_plume_*` columns (height above the ground along the engine
+axis, peak surface pressure and wall shear stress, mass erosion rate, eroded
+mass, ejecta speed and ground-effect force) when the run carries a
+`PlumeSurfaceInteractionModel`, and no columns otherwise.
+"""
+function plume_save_fields(args::SimulationConfiguration)
+    model = _plume_effector(args)
+    model === nothing && return SaveField[]
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField[
+        SaveField(:plume_height_m, (u, t, integrator) -> _save_plume(model, :height_m, num_sats); per_satellite=true, column_prefix="plume_height_m"),
+        SaveField(:plume_shear_pa, (u, t, integrator) -> _save_plume(model, :shear_pa, num_sats); per_satellite=true, column_prefix="plume_shear_pa"),
+        SaveField(:plume_pressure_pa, (u, t, integrator) -> _save_plume(model, :pressure_pa, num_sats); per_satellite=true, column_prefix="plume_pressure_pa"),
+        SaveField(:plume_erosion_kg_s, (u, t, integrator) -> _save_plume(model, :erosion_kg_s, num_sats); per_satellite=true, column_prefix="plume_erosion_kg_s"),
+        SaveField(:plume_eroded_kg, (u, t, integrator) -> _save_plume(model, :eroded_kg, num_sats); per_satellite=true, column_prefix="plume_eroded_kg"),
+        SaveField(:plume_ejecta_mps, (u, t, integrator) -> _save_plume(model, :ejecta_mps, num_sats); per_satellite=true, column_prefix="plume_ejecta_mps"),
+        SaveField(:plume_ground_effect_n, (u, t, integrator) -> _save_plume(model, :ground_effect_n, num_sats); per_satellite=true, column_prefix="plume_ground_effect_n"),
+    ]
+end
+
 function default_save_fields(args::SimulationConfiguration)
     num_sats = length(args.dynamics_model.spacecraft)
     fields = SaveField[
@@ -238,6 +280,9 @@ function default_save_fields(args::SimulationConfiguration)
     ]
     if args.mission_configuration.orientation_sim
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
+    end
+    for field in plume_save_fields(args)
+        push!(fields, field)
     end
     for field in visualization_save_fields(args)
         push!(fields, field)

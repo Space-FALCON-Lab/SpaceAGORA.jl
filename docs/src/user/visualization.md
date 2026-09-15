@@ -125,6 +125,27 @@ the ground sharpens by itself as the camera closes in; the globe is cut open
 under the outermost patch, a ring marks the site, and the selection panel
 reports the height above the terrain.
 
+## Dust
+
+When the run carried a `PlumeSurfaceInteractionModel` (see
+[Lunar Landing](lunar_landing.md)) the results table gains the seven
+`sc{i}_plume_*` columns, the bundler adds a `frames.plume` block, and the page
+draws the regolith the descent engine blows off the surface: a sheet of a few
+thousand particles leaving the point where the engine axis meets the terrain at
+one to three degrees above the local ground, at the ejecta speed the effector
+computed, settling back under the body's gravity; a haze disk over the
+impingement point whose brightness follows the erosion rate; and a scour mark
+that grows with the mass already moved. Positions are derived in the vertex
+shader from per-particle seeds and the clock, so the whole sheet costs a
+handful of uniform writes a frame. Nothing is drawn where the erosion rate is
+zero, which is everywhere above the erosion onset height, so the sheet appears
+by itself in the last tens of meters of a descent.
+
+The "dust" toggle in the toolbar turns it off, and the selection panel gains
+the seven plume quantities — engine height (m), plume shear and pressure (Pa),
+erosion rate (kg/s), eroded mass (kg), ejecta speed (m/s) and ground effect (N)
+— each with a time history like every other row.
+
 ## Heating on the spacecraft
 
 When the run saved density (`save_visualization_scene` records it) the

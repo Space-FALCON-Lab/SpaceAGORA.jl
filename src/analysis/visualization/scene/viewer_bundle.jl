@@ -8,7 +8,11 @@
 
 const VIEWER_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "viewer"))
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data", "textures"))
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "timeline.js", "ui.js", "main.js")
+# Plume-surface interaction block of the frames payload: one Float32 array per
+# quantity, frame-major then spacecraft, from the `sc{i}_plume_*` result columns.
+const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s", "eroded_kg", "ejecta_mps", "ground_effect_n")
+
+const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "timeline.js", "dust.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
@@ -171,6 +175,7 @@ function build_viewer_frames(
     has_heat = all(i -> "sc$(i)_heat_rate" in names(df), 1:S)
     has_drag = all(i -> _has_columns(df, ("sc$(i)_drag_1", "sc$(i)_drag_2", "sc$(i)_drag_3")), 1:S)
     has_wind = all(i -> _has_columns(df, ("sc$(i)_wind_1", "sc$(i)_wind_2", "sc$(i)_wind_3")), 1:S)
+    has_plume = all(i -> _has_columns(df, ["sc$(i)_plume_$(f)" for f in PLUME_FRAME_FIELDS]), 1:S)
     pos_f64 = S <= FLOAT64_POSITION_MAX_SPACECRAFT
     stride_lp = scene.link_pose_stride
     counts = Int[max(0, length(sc.links) - 1) for sc in scene.spacecraft]
@@ -195,7 +200,8 @@ function build_viewer_frames(
     end
 
     bytes_per_frame = S * ((pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
-                           (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0)) + 4 * lp_total + 4 * arm_total + 8
+                           (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
+                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 8
     budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
                                         bytes_per_sat_frame=cld(bytes_per_frame, S))
     rows = kept_row_indices(n_rows, budget.stride)
@@ -212,6 +218,7 @@ function build_viewer_frames(
     wind = has_wind ? Vector{Float64}(undef, N * S * 3) : Float64[]
     lp = has_lp ? Vector{Float64}(undef, N * lp_total) : Float64[]
     ap = has_arm ? Vector{Float64}(undef, N * arm_total) : Float64[]
+    plume = has_plume ? [Vector{Float64}(undef, N * S) for _ in PLUME_FRAME_FIELDS] : Vector{Float64}[]
     for i in 1:S
         pcols = [df[!, "sc$(i)_pos_$(c)"] for c in 1:3]
         acols = (has_arm && arm_counts[i] > 0) ? [df[!, "sc$(i)_arm_pose_$(k)"] for k in 1:(stride_lp * arm_counts[i])] : nothing
@@ -222,6 +229,7 @@ function build_viewer_frames(
         hcol = has_heat ? df[!, "sc$(i)_heat_rate"] : nothing
         fcols = has_drag ? [df[!, "sc$(i)_drag_$(c)"] for c in 1:3] : nothing
         wcols = has_wind ? [df[!, "sc$(i)_wind_$(c)"] for c in 1:3] : nothing
+        plcols = has_plume ? [df[!, "sc$(i)_plume_$(f)"] for f in PLUME_FRAME_FIELDS] : nothing
         lcols = (has_lp && counts[i] > 0) ? [df[!, "sc$(i)_$(scene.link_pose_field)_$(k)"] for k in 1:(stride_lp * counts[i])] : nothing
         @inbounds for (f, r) in enumerate(rows)
             base3 = ((f - 1) * S + (i - 1)) * 3
@@ -254,6 +262,11 @@ function build_viewer_frames(
             if wcols !== nothing
                 for c in 1:3
                     wind[base3 + c] = Float64(wcols[c][r])
+                end
+            end
+            if plcols !== nothing
+                for k in eachindex(plcols)
+                    plume[k][(f - 1) * S + i] = Float64(plcols[k][r])
                 end
             end
             if lcols !== nothing
@@ -290,6 +303,9 @@ function build_viewer_frames(
         "link_pose" => has_lp ? Dict{String, Any}(
             "stride" => stride_lp, "counts" => counts, "offsets" => lp_offsets, "total" => lp_total,
             "data" => _float32_base64(lp)
+        ) : nothing,
+        "plume" => has_plume ? Dict{String, Any}(
+            String(PLUME_FRAME_FIELDS[k]) => _float32_base64(plume[k]) for k in eachindex(PLUME_FRAME_FIELDS)
         ) : nothing,
         "arm_pose" => has_arm ? Dict{String, Any}(
             "stride" => stride_lp, "counts" => arm_counts, "offsets" => arm_offsets, "total" => arm_total,

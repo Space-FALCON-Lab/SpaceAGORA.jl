@@ -79,10 +79,14 @@ state = ApolloDescentState(1)
 guidance = ApolloDescentGuidanceModel(gcfg, state, terrain)
 # the state point is the model's center, 3.7 m above the footpads in NASA's model at this scale
 control = ApolloDescentControlModel(ApolloDescentControlConfig(touchdown_height_m=3.7), gcfg, state, terrain)
+# The descent engine's plume on the regolith: erosion, ejecta and the small
+# ground-effect thrust augmentation in the last couple of nozzle diameters.
+plume = PlumeSurfaceInteractionModel(control, terrain)
 
 effectors = (
     GravitationalHarmonicsModel(50, 50, joinpath(HARMONICS_DIR, "LP165P.csv"), planet),
     NBodyGravityModel(body_names=("Earth", "Sun"), primary_body_name="Moon", planet=planet),
+    plume,
 )
 mission_time = 1_000.0   # the touchdown event ends the run earlier
 base = make_example_config(planet=planet, spacecraft=sc, mission_time=mission_time, initial_time=initial_time,
@@ -124,6 +128,16 @@ if isfinite(state.touchdown_s[1])
     end
 else
     println("final: radar altitude ", round(last.sc1_radar_altitude_m; digits=1), " m, phase ", last.sc1_guidance_phase, " (results reused or no touchdown)")
+end
+let onset = plume_erosion_onset_height(plume.config, 11_500.0)
+    erosion = df.sc1_plume_erosion_kg_s
+    below = findfirst(>(0.0), erosion)
+    println("plume: erosion onset height ", round(onset; digits=1), " m (Apollo 11 approach thrust); first erosion at t=",
+        below === nothing ? "never" : string(round(df.time[below]; digits=1), " s, ", round(df.sc1_plume_height_m[below]; digits=1), " m above the ground"))
+    println("  peak erosion ", round(maximum(erosion); digits=2), " kg/s, peak ejecta ", round(maximum(df.sc1_plume_ejecta_mps); digits=1),
+        " m/s, peak surface pressure ", round(maximum(df.sc1_plume_pressure_pa); digits=1), " Pa, peak shear ", round(maximum(df.sc1_plume_shear_pa); digits=2), " Pa")
+    println("  regolith eroded ", round(last.sc1_plume_eroded_kg; digits=0), " kg; peak ground-effect thrust ",
+        round(maximum(df.sc1_plume_ground_effect_n); digits=1), " N")
 end
 
 html = export_visualization(prefix; max_frames=4000, trail_orbits=1, texture_resolution="4k",

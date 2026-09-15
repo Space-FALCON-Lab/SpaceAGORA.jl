@@ -231,7 +231,14 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :apollo11_descent_targets, rendered = "SpaceAGORA.apollo11_descent_targets"),
             (owner = :SpaceAGORA, symbol = :ApolloDescentControlConfig, rendered = "SpaceAGORA.ApolloDescentControlConfig"),
             (owner = :SpaceAGORA, symbol = :ApolloDescentControlModel, rendered = "SpaceAGORA.ApolloDescentControlModel"),
-            (owner = :SpaceAGORA, symbol = :descent_attitude_command, rendered = "SpaceAGORA.descent_attitude_command")
+            (owner = :SpaceAGORA, symbol = :descent_attitude_command, rendered = "SpaceAGORA.descent_attitude_command"),
+            (owner = :SpaceAGORA, symbol = :PlumeSurfaceConfig, rendered = "SpaceAGORA.PlumeSurfaceConfig"),
+            (owner = :SpaceAGORA, symbol = :PlumeSurfaceInteractionModel, rendered = "SpaceAGORA.PlumeSurfaceInteractionModel"),
+            (owner = :SpaceAGORA, symbol = :PlumeSurfaceState, rendered = "SpaceAGORA.PlumeSurfaceState"),
+            (owner = :SpaceAGORA, symbol = :plume_surface_footprint, rendered = "SpaceAGORA.plume_surface_footprint"),
+            (owner = :SpaceAGORA, symbol = :plume_erosion_onset_height, rendered = "SpaceAGORA.plume_erosion_onset_height"),
+            (owner = :SpaceAGORA, symbol = :plume_ground_effect_force, rendered = "SpaceAGORA.plume_ground_effect_force"),
+            (owner = :SpaceAGORA, symbol = :plume_quantities, rendered = "SpaceAGORA.plume_quantities")
         ]
     ),
     (

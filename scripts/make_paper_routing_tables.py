@@ -128,7 +128,17 @@ def phase_rows(df: pd.DataFrame, phase: str) -> list[dict]:
             t = mgrp.wall_time_median_s.dropna()
             if len(t):
                 times[mode] = float(t.min())
+        # The harness runs serial ONCE per phase where it is thread-independent
+        # (a single-simulation phase's thread ladder), and propagates that median
+        # into every row's serial_median_s. Reading the column rather than
+        # looking for a serial row at this axis point is what gives a thread
+        # ladder a ratio at every rung instead of only at the rung serial ran on.
         serial = times.get("serial")
+        if serial is None and "serial_median_s" in grp.columns:
+            baseline = grp.serial_median_s.dropna()
+            baseline = baseline[baseline > 0.0]
+            if len(baseline):
+                serial = float(baseline.median())
         statics = {m: t for m, t in times.items() if m in STATIC_PARALLEL}
         best_mode = min(statics, key=statics.get) if statics else None
         rec = {

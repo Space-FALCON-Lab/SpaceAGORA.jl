@@ -36,6 +36,20 @@ function prewarm_nbody_ephemeris_cache(config::SimulationEngineConfig, args; kwa
     return _with_engine_env_overrides(config, () -> prewarm_nbody_ephemeris_cache(args; kwargs...))
 end
 
+"""
+    prewarm_nbody_ephemeris_cache(args; dt_s=nothing, mission_end_s=nothing, save_path=nothing) -> cache
+    prewarm_nbody_ephemeris_cache(config, args; dt_s=nothing, mission_end_s=nothing, save_path=nothing) -> cache
+
+Precompute and register a process-local N-body SPICE ephemeris cache for later
+[`run_simulation`](@ref) calls. This is intended for Monte Carlo campaigns that
+reuse the same third-body set, start epoch, mission span, and cache sample
+spacing across many runs. The returned cache is keyed by the same deterministic
+boundary that the runtime setup already uses.
+
+If `save_path` is provided, the cache is also serialized to disk so other Julia
+worker processes can call [`load_nbody_ephemeris_cache!`](@ref) and reuse the
+same precomputed ephemeris without rebuilding it from SPICE.
+"""
 function prewarm_nbody_ephemeris_cache(
     args;
     dt_s::Union{Nothing, Real}=nothing,
@@ -50,6 +64,15 @@ function prewarm_nbody_ephemeris_cache(
     )
 end
 
+"""
+    load_nbody_ephemeris_cache!(path; replace=true) -> cache
+
+Load a serialized N-body ephemeris cache created by
+[`prewarm_nbody_ephemeris_cache`](@ref) and register it in the current Julia
+process so later [`run_simulation`](@ref) calls can reuse it. This is intended
+for multi-process Monte Carlo campaigns where each worker should load the same
+precomputed SPICE cache once before running many trajectories.
+"""
 function load_nbody_ephemeris_cache!(path::AbstractString; replace::Bool=true)
     return _load_nbody_ephemeris_cache!(String(path); replace=replace)
 end

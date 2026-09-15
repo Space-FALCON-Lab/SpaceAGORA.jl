@@ -76,9 +76,11 @@ end
 end
 
 """
-    check_assets(; repo_root=REPO_ROOT) -> AssetCheckReport
+    check_assets(; repo_root=REPO_ROOT, manifest_path=joinpath(repo_root, "data", "assets_manifest.toml")) -> AssetCheckReport
 
-Inspect the standard SpaceAGORA asset roots and return a typed availability report.
+Inspect the standard SpaceAGORA asset roots and return a typed availability
+report for baseline, optional, and high-fidelity assets. By default, inspect
+the package repository root, not the current working directory.
 """
 function check_assets(; repo_root::String=REPO_ROOT, manifest_path::String=joinpath(repo_root, "data", "assets_manifest.toml"))::AssetCheckReport
     entries = load_asset_manifest(; repo_root=repo_root, manifest_path=manifest_path)
@@ -101,7 +103,7 @@ end
 """
     render_asset_report(report; io=stdout)
 
-Render a human-readable summary of an `AssetCheckReport`.
+Render a human-readable asset status report.
 """
 function render_asset_report(report::AssetCheckReport; io::IO=stdout)
     println(io, "SpaceAGORA asset check")

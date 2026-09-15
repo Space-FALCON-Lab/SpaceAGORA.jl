@@ -11,6 +11,11 @@ concurrency:
   group: julia-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  # The Pkg server has intermittently timed out while bootstrapping registries
+  # on cold runners; direct-host registry fetches are slower but more reliable.
+  JULIA_PKG_SERVER: ""
+
 jobs:
   tests-matrix:
     runs-on: ubuntu-latest

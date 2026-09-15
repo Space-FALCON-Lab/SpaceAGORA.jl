@@ -170,7 +170,7 @@ module SimConfig
 
     # ii) Outer constructor with default values and type parsing
     function MissionConfiguration(;
-        mission_type::Union{MissionType, AbstractString, Symbol}=MissionType,
+        mission_type::Union{MissionType, AbstractString, Symbol}=MissionTime,
         keplerian::Bool=true,
         number_of_orbits::Integer=1,
         mission_time::Real=90.0*60.0*20.0*10.0,

@@ -256,6 +256,50 @@ end
         @test SV.build_viewer_frames(partial, scene)["plume"] === nothing
     end
 
+    @testset "thruster levels" begin
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        model = args.dynamics_model.spacecraft[1]
+        # straight onto the link, the way Link(thrusters=...) carries them
+        push!(model.root.thrusters, SM.Thruster(max_thrust=400.0, location=MVector{3, Float64}(0.0, 0.0, 1.0), direction=MVector{3, Float64}(0.0, 0.0, 1.0)))
+        push!(model.root.thrusters, SM.Thruster(max_thrust=20.0, location=MVector{3, Float64}(1.0, 0.0, 0.0), direction=MVector{3, Float64}(1.0, 0.0, 0.0)))
+        scene = build_visualization_scene(args; rotation_max_samples=4)
+        @test length(scene.spacecraft[1].thrusters) == 2
+        df = _synthetic_results(scene; n_rows=25)
+
+        # No `sc{i}_thruster_level_{k}` columns: the block is absent and the viewer runs without it.
+        bare = SV.build_viewer_frames(df, scene)
+        @test bare["thruster_level"] === nothing
+        @test bare["thruster_counts"] === nothing
+
+        df[!, "sc1_thruster_level_1"] = [r / 25 for r in 1:25]
+        df[!, "sc1_thruster_level_2"] = [1.0 - r / 25 for r in 1:25]
+        frames = SV.build_viewer_frames(df, scene)
+        @test frames["thruster_counts"] == [2]
+        levels = _decode_f32(frames["thruster_level"])
+        # frame-major, then spacecraft, then that spacecraft's thrusters in scene order
+        @test length(levels) == 25 * 2
+        @test levels[1] ≈ Float32(1 / 25)
+        @test levels[2] ≈ Float32(1 - 1 / 25)
+        @test levels[end - 1] ≈ 1.0f0
+        @test levels[end] ≈ 0.0f0
+
+        # Values outside 0..1 are clipped on the way into the payload.
+        df[!, "sc1_thruster_level_1"] = fill(1.7, 25)
+        df[!, "sc1_thruster_level_2"] = fill(-0.3, 25)
+        clipped = _decode_f32(SV.build_viewer_frames(df, scene)["thruster_level"])
+        @test all(==(1.0f0), clipped[1:2:end])
+        @test all(==(0.0f0), clipped[2:2:end])
+
+        # Decimation keeps the block aligned with the kept frames.
+        small = SV.build_viewer_frames(df, scene; max_frames=6)
+        @test length(_decode_f32(small["thruster_level"])) == small["count"] * 2
+
+        # A spacecraft the scene draws thrusters for but the run saved no levels for stays at zero count.
+        partial = select(df, Not(["sc1_thruster_level_2"]))
+        @test SV.build_viewer_frames(partial, scene)["thruster_level"] === nothing
+    end
+
     @testset "model formats" begin
         @test SV.model_format("bus.stl") == ("stl", "model/stl")
         @test SV.model_format("BUS.OBJ") == ("obj", "model/obj")

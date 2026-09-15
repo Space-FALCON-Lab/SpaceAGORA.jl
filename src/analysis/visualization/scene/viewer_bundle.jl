@@ -12,7 +12,7 @@ const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data",
 # quantity, frame-major then spacecraft, from the `sc{i}_plume_*` result columns.
 const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s", "eroded_kg", "ejecta_mps", "ground_effect_n")
 
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "timeline.js", "dust.js", "ui.js", "main.js")
+const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "plumes.js", "timeline.js", "dust.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
@@ -188,6 +188,25 @@ function build_viewer_frames(
         push!(lp_offsets, lp_total)
         lp_total += has_lp ? stride_lp * counts[i] : 0
     end
+    # Thruster firing levels (0 to 1), one value per thruster in
+    # `scene.spacecraft[i].thrusters` order; absent when the run saved none.
+    # A spacecraft whose control effectors report no levels has no columns and
+    # counts zero, so one vehicle without them does not drop the whole block.
+    thruster_counts = zeros(Int, S)
+    for i in 1:S
+        n = length(scene.spacecraft[i].thrusters)
+        n > 0 || continue
+        _has_columns(df, ["sc$(i)_thruster_level_$(k)" for k in 1:n]) || continue
+        thruster_counts[i] = n
+    end
+    thr_total = sum(thruster_counts)
+    thr_offsets = Int[]
+    let acc = 0
+        for n in thruster_counts
+            push!(thr_offsets, acc)
+            acc += n
+        end
+    end
     arm_counts = Int[sc.arm === nothing ? 0 : length(sc.arm.links) for sc in scene.spacecraft]
     has_arm = any(>(0), arm_counts) && all(1:S) do i
         arm_counts[i] == 0 || _has_columns(df, ["sc$(i)_arm_pose_$(k)" for k in 1:(stride_lp * arm_counts[i])])
@@ -201,7 +220,7 @@ function build_viewer_frames(
 
     bytes_per_frame = S * ((pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
                            (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
-                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 8
+                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + 8
     budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
                                         bytes_per_sat_frame=cld(bytes_per_frame, S))
     rows = kept_row_indices(n_rows, budget.stride)
@@ -219,6 +238,7 @@ function build_viewer_frames(
     lp = has_lp ? Vector{Float64}(undef, N * lp_total) : Float64[]
     ap = has_arm ? Vector{Float64}(undef, N * arm_total) : Float64[]
     plume = has_plume ? [Vector{Float64}(undef, N * S) for _ in PLUME_FRAME_FIELDS] : Vector{Float64}[]
+    thr = thr_total > 0 ? Vector{Float64}(undef, N * thr_total) : Float64[]
     for i in 1:S
         pcols = [df[!, "sc$(i)_pos_$(c)"] for c in 1:3]
         acols = (has_arm && arm_counts[i] > 0) ? [df[!, "sc$(i)_arm_pose_$(k)"] for k in 1:(stride_lp * arm_counts[i])] : nothing
@@ -231,6 +251,7 @@ function build_viewer_frames(
         wcols = has_wind ? [df[!, "sc$(i)_wind_$(c)"] for c in 1:3] : nothing
         plcols = has_plume ? [df[!, "sc$(i)_plume_$(f)"] for f in PLUME_FRAME_FIELDS] : nothing
         lcols = (has_lp && counts[i] > 0) ? [df[!, "sc$(i)_$(scene.link_pose_field)_$(k)"] for k in 1:(stride_lp * counts[i])] : nothing
+        tcols = thruster_counts[i] > 0 ? [df[!, "sc$(i)_thruster_level_$(k)"] for k in 1:thruster_counts[i]] : nothing
         @inbounds for (f, r) in enumerate(rows)
             base3 = ((f - 1) * S + (i - 1)) * 3
             for c in 1:3
@@ -281,6 +302,12 @@ function build_viewer_frames(
                     ap[basea + k] = Float64(acols[k][r])
                 end
             end
+            if tcols !== nothing
+                baset = (f - 1) * thr_total + thr_offsets[i]
+                for k in eachindex(tcols)
+                    thr[baset + k] = clamp(Float64(tcols[k][r]), 0.0, 1.0)
+                end
+            end
         end
     end
 
@@ -307,6 +334,8 @@ function build_viewer_frames(
         "plume" => has_plume ? Dict{String, Any}(
             String(PLUME_FRAME_FIELDS[k]) => _float32_base64(plume[k]) for k in eachindex(PLUME_FRAME_FIELDS)
         ) : nothing,
+        "thruster_level" => thr_total > 0 ? _float32_base64(thr) : nothing,
+        "thruster_counts" => thr_total > 0 ? thruster_counts : nothing,
         "arm_pose" => has_arm ? Dict{String, Any}(
             "stride" => stride_lp, "counts" => arm_counts, "offsets" => arm_offsets, "total" => arm_total,
             "data" => _float32_base64(ap)

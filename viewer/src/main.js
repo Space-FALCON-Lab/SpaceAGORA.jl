@@ -7,6 +7,7 @@ import { FrameData, geodetic, rotateByConjugate } from 'viewer/data.js';
 import { createGlobe } from 'viewer/globe.js';
 import { createSpacecraft, estimateOrbitPeriod } from 'viewer/spacecraft.js';
 import { createAssemblies } from 'viewer/lod.js';
+import { createPlumes } from 'viewer/plumes.js';
 import { createEnsemble } from 'viewer/ensemble.js';
 import { createAtmosphere } from 'viewer/atmosphere.js';
 import { createPaths } from 'viewer/paths.js';
@@ -82,6 +83,8 @@ export function start(payload, container = document.body) {
   // Regolith blown off the surface by a landing vehicle's descent engine; it
   // adds its own group to `world`, so it rides the inertial frame like the rest.
   const dust = createDust(world, frames, terrain, lod, { rotationAt: (t, out) => globe.rotationAt(t, out) });
+  // Thruster plumes: one per thruster glyph, driven by the recorded firing levels.
+  const plumes = createPlumes(sidecar, frames, lod, { raw: rawFrames, enabled: options.plumes ?? true });
 
   const refPaths = createPaths(pathSpecs, frames, {});
   if (refPaths.items.length) world.add(refPaths.group);
@@ -163,6 +166,8 @@ export function start(payload, container = document.body) {
     setGraticule(v) { globe.grid.visible = v; globe.axis.visible = v; },
     setAssemblies(v) { lod.setEnabled(v); },
     setThrusters(v) { lod.setThrustersVisible(v); },
+    hasPlumes: plumes.available,
+    setPlumes(v) { plumes.setVisible(v); },
     setFacets(v) { lod.setFacetsVisible(v); },
     setAxes(v) { lod.setAxesVisible(v); },
     hasDust: frames.hasPlume(),
@@ -272,6 +277,16 @@ export function start(payload, container = document.body) {
       plume('plume_eroded', 'eroded mass', 'kg', 'eroded_kg', 1);
       plume('plume_ejecta', 'ejecta speed', 'm/s', 'ejecta_mps', 1);
       plume('plume_ground_effect', 'ground effect', 'N', 'ground_effect_n', 1);
+    }
+    // One row per thruster: its firing level over the run, 0 (idle) to 1 (full).
+    const nThrusters = plumes.counts(s);
+    if (nThrusters > 0) {
+      const levelBuf = new Float32Array(nThrusters);
+      for (let k = 0; k < nThrusters; k++) {
+        add(`thruster_${k + 1}`, `thruster ${k + 1} level`, '', 1,
+          (t, o) => { const L = plumes.levelsAt(t, s, levelBuf); o[0] = L ? L[k] : NaN; },
+          (o) => fmt(o[0], 3));
+      }
     }
     refs.items.forEach((it, k) => {
       if (it.target !== s) return;
@@ -506,6 +521,7 @@ export function start(payload, container = document.body) {
     const viewportHeight = renderer.domElement.clientHeight || window.innerHeight;
     lod.update(t, camera, viewportHeight, lod.group.matrixWorld, anchor);
     dust.update(t);
+    plumes.update(t);
     if (refPaths.items.length) refPaths.update(t, anchor);
     if (refs.items.length) refs.update(t, camera, viewportHeight, refs.group.matrixWorld, anchor);
     if (ensemble) ensemble.update(state.follow, t, anchor, camera, ensemble.group.matrixWorld);
@@ -516,7 +532,7 @@ export function start(payload, container = document.body) {
   requestAnimationFrame(animate);
 
   const viewer = {
-    renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, dust, ensemble, references: refs, paths: refPaths, timeline, frames, state, period,
+    renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, plumes, dust, ensemble, references: refs, paths: refPaths, timeline, frames, state, period,
     // Deterministic rendering for exports: seek and draw one frame at t.
     renderAt(t) { timeline.seek(t); frame(t); },
     setRecording(v) { recording = v; if (!v) resize(); },

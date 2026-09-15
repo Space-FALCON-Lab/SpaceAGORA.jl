@@ -37,6 +37,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/video.js` | MP4 export through WebCodecs and mp4-muxer (`vendor/mp4-muxer.mjs`, MIT), WebM fallback |
 | `src/terrain.js` | landing-site terrain: DEM-displaced nested patches draped with imagery that sharpens toward the site, and the hole they cut in the globe |
 | `src/dust.js` | regolith blown off the surface by a descent engine: a GPU particle sheet driven by the `frames.plume` block, a ground haze disk and a scour mark |
+| `src/plumes.js` | thruster plumes: one additive, flickering cone pair per thruster, driven by the recorded firing levels, with the idle cone glyphs dimmed |
 | `src/plots.js` | time-history plot panel: any quantity in the panels opens its history over the run, with the playback cursor and click-to-seek |
 | `src/atmosphere.js` | limb glow, density shells, density map |
 | `src/colormaps.js` | inferno and viridis |
@@ -101,6 +102,18 @@ mesh (link boxes, model meshes) to a shader that colors faces by
 ½ρV³ cos θ (inferno, log scale, three decades below the run's peak), θ from
 the face normal and the airspeed (inertial velocity minus ω × r). Toggle
 "heating"; the legend reads W/cm².
+
+## Thruster plumes
+
+`frames.thruster_level` (Float32, frame-major then spacecraft then that
+spacecraft's thrusters, 0 to 1) with `frames.thruster_counts` drives
+`src/plumes.js`. A plume hangs on the thruster's own link group, runs along the
+thruster's `direction`, and takes its reach and color from the rated thrust:
+long and orange-white for a main engine, short and blue-white for an attitude
+jet. Reach and brightness follow the level through a fractional exponent so a
+jet firing a fraction of a percent of its rating still reads; level 0 draws
+nothing and dims the static cone glyph. Toggle "plumes"; the selection panel
+lists a `thruster k level` row per thruster.
 
 ## Ensembles
 

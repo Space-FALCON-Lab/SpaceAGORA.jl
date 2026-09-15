@@ -27,14 +27,47 @@ Base.@kwdef struct ApolloDescentControlConfig
     touchdown_height_m::Float64 = 2.5
 end
 
+"""
+    DescentThrusterLayout
+
+The vehicle's thrusters as the descent control drives them, in the order the
+visualization scene lists them (links in order, each link's `thrusters` in
+order): the descent engine is the highest-rated one, every other thruster is
+an RCS jet. `torque_to_levels` is the least-norm map from a commanded body
+torque to the jets' firing levels, `pinv(A)` of the 3 x n matrix whose column
+j is the torque a jet produces at full thrust about the spacecraft reference
+point.
+"""
+struct DescentThrusterLayout
+    engine::Int
+    engine_max_thrust_n::Float64
+    jets::Vector{Int}
+    torque_arms_nm::Matrix{Float64}      # 3 x n_jets, column j at full thrust
+    torque_to_levels::Matrix{Float64}    # n_jets x 3
+end
+
 "Per-spacecraft actuator state of the descent control effector."
 mutable struct ApolloDescentControlState
     thrust_n::Vector{Float64}
     torque_nm::Vector{SVector{3, Float64}}
     attitude_error_rad::Vector{Float64}
     last_update_s::Vector{Float64}
+    # Firing level (0 to 1) of every thruster, in scene order, and the layout it
+    # is allocated over (built on the first control cycle from the spacecraft).
+    thruster_level::Vector{Vector{Float64}}
+    thruster_layout::Vector{Union{Nothing, DescentThrusterLayout}}
 end
-ApolloDescentControlState(n::Integer) = ApolloDescentControlState(zeros(Int(n)), fill(SVector{3, Float64}(0.0, 0.0, 0.0), Int(n)), fill(NaN, Int(n)), fill(NaN, Int(n)))
+function ApolloDescentControlState(n::Integer)
+    m = Int(n)
+    return ApolloDescentControlState(
+        zeros(m),
+        fill(SVector{3, Float64}(0.0, 0.0, 0.0), m),
+        fill(NaN, m),
+        fill(NaN, m),
+        [Float64[] for _ in 1:m],
+        Union{Nothing, DescentThrusterLayout}[nothing for _ in 1:m],
+    )
+end
 
 """
     ApolloDescentControlModel(config, guidance_config, state, terrain=NoTerrainModel())
@@ -73,6 +106,86 @@ scalar-last body-to-inertial rotations.
     return n > 1e-12 ? s * (θ / n) : s   # s = -δ sin θ / ... scaled to the angle: the turn toward the command
 end
 
+"""
+    descent_thruster_layout(model) -> Union{Nothing, DescentThrusterLayout}
+
+The vehicle's thrusters in scene order, split into the descent engine (the
+highest-rated one) and the RCS jets, with the least-norm map from a commanded
+body torque to the jets' firing levels. `nothing` when the spacecraft carries
+no thrusters.
+
+A `Thruster`'s `direction` is the exhaust direction (the descent engine's is
+body +z while its thrust pushes along body -z), so a jet at full thrust puts a
+force `-max_thrust * direction` on the vehicle and a torque
+`location x force` about the spacecraft reference point.
+"""
+function descent_thruster_layout(model)::Union{Nothing, DescentThrusterLayout}
+    locations = SVector{3, Float64}[]
+    directions = SVector{3, Float64}[]
+    max_thrust = Float64[]
+    for link in model.links, thruster in link.thrusters
+        push!(locations, SVector{3, Float64}(thruster.location))
+        push!(directions, SVector{3, Float64}(thruster.direction))
+        push!(max_thrust, Float64(thruster.max_thrust))
+    end
+    isempty(max_thrust) && return nothing
+    engine = argmax(max_thrust)
+    jets = [k for k in eachindex(max_thrust) if k != engine]
+    arms = zeros(3, length(jets))
+    for (j, k) in enumerate(jets)
+        d = directions[k]
+        n = norm(d)
+        n > eps(Float64) || continue
+        τ = cross(locations[k], -max_thrust[k] * (d / n))
+        arms[1, j] = τ[1]; arms[2, j] = τ[2]; arms[3, j] = τ[3]
+    end
+    # Least-norm allocation: u = A' (A A')^-1 τ, through `pinv` so a jet set
+    # that cannot reach all three axes still gives the best-fit torque.
+    return DescentThrusterLayout(engine, max_thrust[engine], jets, arms, isempty(jets) ? zeros(0, 3) : pinv(arms))
+end
+
+"""
+    descent_thruster_levels!(levels, layout, thrust_n, torque_nm) -> levels
+
+Firing levels (0 to 1) of every thruster: the descent engine's actual thrust
+over its rating, and the RCS jets from the least-norm allocation of the
+commanded body torque over their torque arms, each clipped into 0 to 1.
+"""
+function descent_thruster_levels!(levels::Vector{Float64}, layout::DescentThrusterLayout, thrust_n::Float64, torque_nm::SVector{3, Float64})
+    fill!(levels, 0.0)
+    if layout.engine_max_thrust_n > 0.0 && isfinite(thrust_n)
+        levels[layout.engine] = clamp(thrust_n / layout.engine_max_thrust_n, 0.0, 1.0)
+    end
+    isempty(layout.jets) && return levels
+    @inbounds for (j, k) in enumerate(layout.jets)
+        u = layout.torque_to_levels[j, 1] * torque_nm[1] +
+            layout.torque_to_levels[j, 2] * torque_nm[2] +
+            layout.torque_to_levels[j, 3] * torque_nm[3]
+        levels[k] = isfinite(u) ? clamp(u, 0.0, 1.0) : 0.0
+    end
+    return levels
+end
+
+# Refresh the firing levels for the viewer's plumes. Called once per control
+# cycle so the hook below only reads stored state.
+@inline function _update_descent_thruster_levels!(model::ApolloDescentControlModel, p::ODEParams, i::Int)
+    act = model.actuators
+    layout = act.thruster_layout[i]
+    if layout === nothing
+        layout = descent_thruster_layout(p.args.dynamics_model.spacecraft[i])
+        layout === nothing && return nothing
+        act.thruster_layout[i] = layout
+        act.thruster_level[i] = zeros(length(layout.jets) + 1)
+    end
+    descent_thruster_levels!(act.thruster_level[i], layout, act.thrust_n[i], act.torque_nm[i])
+    return nothing
+end
+
+function control_thruster_levels(model::ApolloDescentControlModel, i::Int)
+    (1 <= i <= length(model.actuators.thruster_level)) || return nothing
+    return model.actuators.thruster_level[i]
+end
+
 @inline function _descent_state_view(u, i::Int)
     return hasproperty(u, :sc) ? u.sc[i] : u
 end
@@ -88,6 +201,7 @@ function calcControlEffect!(model::ApolloDescentControlModel, u, p::ODEParams, t
     if isnan(model.state.phase_start_s[1, i])
         act.thrust_n[i] = 0.0
         act.torque_nm[i] = SVector{3, Float64}(0.0, 0.0, 0.0)
+        _update_descent_thruster_levels!(model, p, i)
         return nothing
     end
     dt = isnan(act.last_update_s[i]) ? 0.0 : max(0.0, t - act.last_update_s[i])
@@ -115,6 +229,7 @@ function calcControlEffect!(model::ApolloDescentControlModel, u, p::ODEParams, t
     τ = SVector{3, Float64}(inertia * (cfg.rate_bandwidth * (ω_des - ω)))
     lim = cfg.rcs_torque_limit_nm
     act.torque_nm[i] = SVector{3, Float64}(clamp(τ[1], -lim[1], lim[1]), clamp(τ[2], -lim[2], lim[2]), clamp(τ[3], -lim[3], lim[3]))
+    _update_descent_thruster_levels!(model, p, i)
     return nothing
 end
 
@@ -158,6 +273,8 @@ function touchdown_spec(model::ApolloDescentControlModel)
         st.phase_start_s[4, i] = t
         st.thrust_cmd_n[i] = 0.0; st.throttle[i] = 0.0
         model.actuators.thrust_n[i] = 0.0
+        model.actuators.torque_nm[i] = SVector{3, Float64}(0.0, 0.0, 0.0)
+        fill!(model.actuators.thruster_level[i], 0.0)
         f = frame[i]
         if f !== nothing
             d = r_p - f.origin_p

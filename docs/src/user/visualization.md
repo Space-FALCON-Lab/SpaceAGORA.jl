@@ -160,6 +160,36 @@ map with full accommodation, not the thermal model's heat rate (which is a
 spacecraft-level number in the selection panel); the "heating" toggle turns
 it off and restores the plain materials.
 
+## Thruster plumes
+
+A control effector that drives named thrusters reports each one's firing level
+(0 to 1) through the `control_thruster_levels(effector, i)` hook. When any
+effector reports levels for a spacecraft, the run saves them as
+`sc{i}_thruster_level_{k}` columns, one per thruster in the scene's order (the
+spacecraft's links in order, each link's `thrusters` in order), and the page
+draws a plume on every firing thruster.
+
+`ApolloDescentControlModel` computes them inside `calcControlEffect!`: the
+descent engine's level is its actual thrust over the thruster's rating, and the
+attitude jets' come from a least-norm allocation of the commanded body torque
+over the jets' torque arms about the spacecraft reference point, each clipped
+into 0 to 1. A maneuver burn (`BaseThrusterModel`) reports its commanded
+throttle, and the RPO controller reports its six-axis allocation. An effector
+that drives no thruster returns `nothing` and the columns are not written.
+
+Each plume is an additive, depth-write-free cone pair (a bright core inside a
+translucent shroud) attached to the thruster's link, running along the
+thruster's `direction` vector, with a shader that fades it toward the tip and
+flickers it in time. The rated thrust sets the look: a 45 kN descent engine
+burns long and orange-white, a 445 N attitude jet puffs short and blue-white.
+Reach and brightness follow the level through a fractional exponent rather
+than linearly, because a jet holding an attitude asks for well under a percent
+of its rating and a linear mapping would draw nothing at all; a thruster at
+level 0 is not drawn, and its static cone glyph is dimmed while it is idle.
+The "plumes" toggle turns them off, and the selection panel gains a
+`thruster k level` row per thruster whose history plots like any other
+quantity.
+
 ## Time histories and face inspection
 
 Every number in the selection panel is a quantity with a history: altitude,

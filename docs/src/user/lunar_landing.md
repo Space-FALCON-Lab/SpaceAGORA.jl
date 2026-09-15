@@ -88,6 +88,18 @@ control = ApolloDescentControlModel(ApolloDescentControlConfig(touchdown_height_
 #     ControlModel(control_effectors=(control,), control_rates=[0.05]), orientation_sim=true
 ```
 
+The control effector also reports what its thrusters are doing, through
+`control_thruster_levels`: the descent engine's firing level is its actual
+thrust over the thruster's rating, and the sixteen RCS jets' levels come from
+a least-norm allocation of the commanded body torque over their torque arms
+about the spacecraft reference point, clipped into 0 to 1 and refreshed every
+control cycle. The run writes them as `sc1_thruster_level_1..17` and the
+viewer draws a plume on each firing thruster, so the descent engine burns
+throughout the braking phase and the jets puff at the phase handovers. A
+steady phase such as P66 commands a small fraction of the RCS authority, so
+those puffs are small; the levels are in the selection panel and plot like
+any other quantity.
+
 ## Plume-surface interaction
 
 `PlumeSurfaceInteractionModel` is a dynamic effector for what the descent

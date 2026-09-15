@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { decodeFloat32 } from 'viewer/data.js';
 
 const PATCH_SEGMENTS = 96;
-const M_TO_KM = 1e-3;
+const TERRAIN_M_TO_KM = 1e-3;
 
 function gridHeight(g, latDeg, lonDeg) {
   let lon = lonDeg;
@@ -38,7 +38,7 @@ export function createTerrain(spec, planet, options = {}) {
   const group = new THREE.Group();
   group.name = 'terrain';
   if (!spec || !spec.grids || spec.grids.length === 0) return { group, heightAt: () => NaN, levels: [], hole: null, site: null };
-  const R = (spec.reference_radius_m || planet.equatorial_radius_m) * M_TO_KM;
+  const R = (spec.reference_radius_m || planet.equatorial_radius_m) * TERRAIN_M_TO_KM;
   const grids = spec.grids.map((g) => ({ ...g, data: decodeFloat32(g.heights) }));
   const heightAt = (latDeg, lonDeg) => {
     for (const g of grids) { const h = gridHeight(g, latDeg, lonDeg); if (!Number.isNaN(h)) return h; }
@@ -46,7 +46,7 @@ export function createTerrain(spec, planet, options = {}) {
   };
   const bodyPoint = (latDeg, lonDeg, hM) => {
     const φ = THREE.MathUtils.degToRad(latDeg), λ = THREE.MathUtils.degToRad(lonDeg);
-    const r = R + hM * M_TO_KM;
+    const r = R + hM * TERRAIN_M_TO_KM;
     return new THREE.Vector3(r * Math.cos(φ) * Math.cos(λ), r * Math.cos(φ) * Math.sin(λ), r * Math.sin(φ));
   };
   const levels = [];

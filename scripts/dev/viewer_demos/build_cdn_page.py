@@ -30,6 +30,16 @@ for name in order:
     parts.append(f"// ---- viewer/src/{name} ----\n{s}")
 modules = "\n".join(parts)
 assert "import " not in modules.replace("import.meta", ""), "unexpected import left in bundle"
+# The modules share one scope here, so a top-level name declared twice is a SyntaxError that
+# leaves the page stuck on "Loading": refuse to build such a page.
+declared = {}
+for part in parts:
+    name = part.split("\n", 1)[0].removeprefix("// ---- viewer/src/").removesuffix(" ----")
+    for m2 in re.finditer(r"^(?:const|let|var|function|class|async function)\s+([A-Za-z_$][\w$]*)", part, flags=re.M):
+        ident = m2.group(1)
+        if ident in declared:
+            raise SystemExit(f"top-level name {ident!r} is declared in both {declared[ident]} and {name}; rename one (the CDN page concatenates the modules into one scope)")
+        declared[ident] = name
 mission_h = (frames_t := None) or None
 epoch = scene["epoch"]["utc"]
 count, sats, rows, stride = frames["count"], frames["sats"], frames["source_rows"], frames["stride_rows"]
@@ -84,6 +94,10 @@ html = f"""<meta charset="utf-8">
   </dl>
 </div>
 <div id="viewer"><div id="sa-loading">Loading three.js and the scene…</div></div>
+<script>
+window.addEventListener('error', (e) => {{ const el = document.getElementById('sa-loading'); if (el) el.textContent = 'Viewer failed to start: ' + (e.message || e.error || 'script error'); }});
+window.addEventListener('unhandledrejection', (e) => {{ const el = document.getElementById('sa-loading'); if (el) el.textContent = 'Viewer failed to start: ' + (e.reason && e.reason.message ? e.reason.message : e.reason); }});
+</script>
 <p class="foot">{foot or "Drag to orbit, wheel to zoom, Space to pause. The trail selector sets how many orbits of history drag behind the spacecraft. Click the marker (or press F) to follow it and see the bus and panels up close; \"Planet-fixed\" holds the body still so the ground track drifts instead."}</p>
 <script>
 window.SPACEAGORA_VIEWER = {payload_js};

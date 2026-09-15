@@ -213,6 +213,23 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Mesh Aerodynamics",
+        items = [
+            (owner = :SpaceAGORA, symbol = :MeshAeroPanels, rendered = "SpaceAGORA.MeshAeroPanels"),
+            (owner = :SpaceAGORA, symbol = :MeshAeroSurrogate, rendered = "SpaceAGORA.MeshAeroSurrogate"),
+            (owner = :SpaceAGORA, symbol = :AerodynamicCoefficientMeshSurrogate, rendered = "SpaceAGORA.AerodynamicCoefficientMeshSurrogate"),
+            (owner = :SpaceAGORA, symbol = :mesh_aero_panels, rendered = "SpaceAGORA.mesh_aero_panels"),
+            (owner = :SpaceAGORA, symbol = :panel_aero_coefficients, rendered = "SpaceAGORA.panel_aero_coefficients"),
+            (owner = :SpaceAGORA, symbol = :panel_aero_coefficients_split, rendered = "SpaceAGORA.panel_aero_coefficients_split"),
+            (owner = :SpaceAGORA, symbol = :panel_shadow_mask, rendered = "SpaceAGORA.panel_shadow_mask"),
+            (owner = :SpaceAGORA, symbol = :panel_projected_area, rendered = "SpaceAGORA.panel_projected_area"),
+            (owner = :SpaceAGORA, symbol = :fit_mesh_aero_surrogate, rendered = "SpaceAGORA.fit_mesh_aero_surrogate"),
+            (owner = :SpaceAGORA, symbol = :mesh_aero_coefficients, rendered = "SpaceAGORA.mesh_aero_coefficients"),
+            (owner = :SpaceAGORA, symbol = :write_mesh_aero_surrogate, rendered = "SpaceAGORA.write_mesh_aero_surrogate"),
+            (owner = :SpaceAGORA, symbol = :read_mesh_aero_surrogate, rendered = "SpaceAGORA.read_mesh_aero_surrogate")
+        ]
+    ),
+    (
         title = "Parallel Profiles and Routing",
         items = [
             (owner = :ParallelProfiles, symbol = :ParallelProfile, rendered = "SpaceAGORA.ParallelProfile"),

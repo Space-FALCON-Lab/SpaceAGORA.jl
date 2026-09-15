@@ -26,6 +26,8 @@ using ..EphemeridesModels: _initial_time_datetime
 using ..SimConfig: SimulationConfiguration, SimulationSettings
 using ..IOConfig
 using ..IOSerialization
+using ..Structure: load_model_triangles, model_bounding_box, model_bounding_box_center, sample_model_pointcloud
+using ..Structure: model_format, gltf_required_extensions, GLTF_UNSUPPORTED_REQUIRED
 import ..SimulationModel: rot, dcm_to_quaternion
 
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec
@@ -189,7 +191,6 @@ include(joinpath(@__DIR__, "spacecraft_geometry.jl"))
 include(joinpath(@__DIR__, "planet_spec.jl"))
 include(joinpath(@__DIR__, "scene_export.jl"))
 include(joinpath(@__DIR__, "viewer_bundle.jl"))
-include(joinpath(@__DIR__, "model_geometry.jl"))
 include(joinpath(@__DIR__, "ensemble_export.jl"))
 
 end # module SceneVisualization

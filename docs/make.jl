@@ -134,6 +134,7 @@ makedocs(
             "First Simulation" => "user/first_simulation.md",
             "Simulation Configuration" => "user/simulation_configuration.md",
             "Atmosphere Models" => "user/atmosphere_models.md",
+            "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
             "Solver Configuration" => "user/solver_configuration.md",
             "Simulation Outputs" => "user/outputs.md",
             "Interactive Visualization" => "user/visualization.md",

@@ -89,6 +89,9 @@ using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
 using .SimulationModel: VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec
 using .SimulationModel: ArmGeometry, arm_geometry
 using .SimulationModel: load_model_triangles, model_bounding_box, sample_model_pointcloud
+using .SimulationModel: MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate
+using .SimulationModel: mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
+using .SimulationModel: fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
 using .SimulationModel: spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
 using .SimulationModel: visualization_scene_path, write_visualization_scene, read_visualization_scene
 using .SimulationModel: velocity_aligned_quaternion, visualization_frame_budget
@@ -202,9 +205,21 @@ using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 @doc (@doc SimulationModel.SceneVisualization.atmosphere_spec) atmosphere_spec
 @doc (@doc SimulationModel.SceneVisualization.ArmGeometry) ArmGeometry
 @doc (@doc SimulationModel.SceneVisualization.arm_geometry) arm_geometry
-@doc (@doc SimulationModel.SceneVisualization.load_model_triangles) load_model_triangles
-@doc (@doc SimulationModel.SceneVisualization.model_bounding_box) model_bounding_box
-@doc (@doc SimulationModel.SceneVisualization.sample_model_pointcloud) sample_model_pointcloud
+@doc (@doc SimulationModel.Structure.load_model_triangles) load_model_triangles
+@doc (@doc SimulationModel.Structure.model_bounding_box) model_bounding_box
+@doc (@doc SimulationModel.Structure.sample_model_pointcloud) sample_model_pointcloud
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.MeshAeroPanels) MeshAeroPanels
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.MeshAeroSurrogate) MeshAeroSurrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientMeshSurrogate) AerodynamicCoefficientMeshSurrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.mesh_aero_panels) mesh_aero_panels
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_aero_coefficients) panel_aero_coefficients
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_aero_coefficients_split) panel_aero_coefficients_split
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_shadow_mask) panel_shadow_mask
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_projected_area) panel_projected_area
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.fit_mesh_aero_surrogate) fit_mesh_aero_surrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.mesh_aero_coefficients) mesh_aero_coefficients
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.write_mesh_aero_surrogate) write_mesh_aero_surrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.read_mesh_aero_surrogate) read_mesh_aero_surrogate
 @doc (@doc SimulationModel.SceneVisualization.spacecraft_geometry) spacecraft_geometry
 @doc (@doc SimulationModel.SceneVisualization.planet_spec) planet_spec
 @doc (@doc SimulationModel.SceneVisualization.planet_rotation_table) planet_rotation_table
@@ -531,6 +546,9 @@ export run_verification, run_verification_cli, run_study, run_simulation
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
 export load_model_triangles, model_bounding_box, sample_model_pointcloud
+export MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate
+export mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
+export fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
 export spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
 export visualization_scene_path, write_visualization_scene, read_visualization_scene
 export velocity_aligned_quaternion, visualization_frame_budget

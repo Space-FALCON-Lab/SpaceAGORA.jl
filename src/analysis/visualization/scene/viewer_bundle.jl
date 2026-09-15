@@ -17,13 +17,6 @@ const VIEWER_VENDOR = (
     "three/addons/loaders/GLTFLoader.js" => joinpath("vendor", "GLTFLoader.js"),
     "three/addons/utils/BufferGeometryUtils.js" => joinpath("vendor", "BufferGeometryUtils.js"),
 )
-# 3D model overrides the viewer can parse in the browser, by file extension.
-const MODEL_FORMATS = Dict{String, Tuple{String, String}}(
-    ".stl" => ("stl", "model/stl"),
-    ".obj" => ("obj", "model/obj"),
-    ".glb" => ("glb", "model/gltf-binary"),
-    ".gltf" => ("gltf", "model/gltf+json"),
-)
 # Runs up to this many spacecraft embed Float64 positions so a 3 m assembly
 # does not jitter at planetary distances; larger runs keep Float32.
 const FLOAT64_POSITION_MAX_SPACECRAFT = 64
@@ -335,45 +328,7 @@ end
 # close the tag); "<\/" is the same JSON string.
 @inline _script_safe_json(value)::String = replace(JSON.json(value), "</" => "<\\/")
 
-"""
-    model_format(path) -> (format, mime)
-
-Viewer model format from the file extension: `"stl"`, `"obj"`, `"glb"` or
-`"gltf"`. Throws for anything else.
-"""
-function model_format(path::AbstractString)::Tuple{String, String}
-    ext = lowercase(splitext(String(path))[2])
-    haskey(MODEL_FORMATS, ext) || throw(ArgumentError("Unsupported 3D model format $(repr(ext)) for $(path); use .stl, .obj, .glb or .gltf."))
-    return MODEL_FORMATS[ext]
-end
-
 @inline _per_id(value, id::Int, default)::Float64 = value isa AbstractDict ? Float64(get(value, id, default)) : Float64(value)
-
-# Extensions three's GLTFLoader can only handle with an extra decoder the
-# page does not carry (Draco, meshopt, KTX2/Basis textures).
-const GLTF_UNSUPPORTED_REQUIRED = ("KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu")
-
-"""
-    gltf_required_extensions(path) -> Vector{String}
-
-`extensionsRequired` of a `.glb` or `.gltf` file (empty when none).
-"""
-function gltf_required_extensions(path::AbstractString)::Vector{String}
-    bytes = read(path)
-    json_text = if length(bytes) >= 20 && bytes[1:4] == Vector{UInt8}("glTF")
-        chunk_len = Int(reinterpret(UInt32, bytes[13:16])[1])
-        String(bytes[21:min(20 + chunk_len, length(bytes))])
-    else
-        String(bytes)
-    end
-    parsed = try
-        JSON.parse(json_text)
-    catch
-        return String[]
-    end
-    parsed isa AbstractDict || return String[]
-    return String[String(x) for x in get(parsed, "extensionsRequired", Any[])]
-end
 
 function _check_gltf_supported(path::AbstractString)
     required = gltf_required_extensions(path)

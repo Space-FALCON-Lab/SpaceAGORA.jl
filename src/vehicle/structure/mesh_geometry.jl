@@ -1,7 +1,55 @@
-# Triangle soup readers for the 3D model formats the viewer accepts (STL,
-# OBJ, glTF/GLB with embedded buffers), used to centre models in the page and
-# to sample station point clouds for RPO planning from the same file the
-# viewer draws, so the planner's obstacle and the rendered model coincide.
+# Triangle-soup readers for CAD/model files (STL, OBJ, glTF/GLB with embedded
+# buffers) and the geometry helpers built on them: bounding boxes, area-weighted
+# surface point clouds, and the model-axes transform (`scale`, XYZ Euler
+# rotation in degrees) shared with the interactive viewer. Owned by the
+# structure layer so both the visualization scene (centring, RPO station
+# point clouds) and the aerodynamic panel method (`aerodynamic_mesh_surrogate.jl`)
+# read the same geometry from the same file.
+
+# 3D model overrides the viewer can parse in the browser, by file extension.
+const MODEL_FORMATS = Dict{String, Tuple{String, String}}(
+    ".stl" => ("stl", "model/stl"),
+    ".obj" => ("obj", "model/obj"),
+    ".glb" => ("glb", "model/gltf-binary"),
+    ".gltf" => ("gltf", "model/gltf+json"),
+)
+"""
+    model_format(path) -> (format, mime)
+
+Viewer model format from the file extension: `"stl"`, `"obj"`, `"glb"` or
+`"gltf"`. Throws for anything else.
+"""
+function model_format(path::AbstractString)::Tuple{String, String}
+    ext = lowercase(splitext(String(path))[2])
+    haskey(MODEL_FORMATS, ext) || throw(ArgumentError("Unsupported 3D model format $(repr(ext)) for $(path); use .stl, .obj, .glb or .gltf."))
+    return MODEL_FORMATS[ext]
+end
+
+# Extensions three's GLTFLoader can only handle with an extra decoder the
+# page does not carry (Draco, meshopt, KTX2/Basis textures).
+const GLTF_UNSUPPORTED_REQUIRED = ("KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu")
+
+"""
+    gltf_required_extensions(path) -> Vector{String}
+
+`extensionsRequired` of a `.glb` or `.gltf` file (empty when none).
+"""
+function gltf_required_extensions(path::AbstractString)::Vector{String}
+    bytes = read(path)
+    json_text = if length(bytes) >= 20 && bytes[1:4] == Vector{UInt8}("glTF")
+        chunk_len = Int(reinterpret(UInt32, bytes[13:16])[1])
+        String(bytes[21:min(20 + chunk_len, length(bytes))])
+    else
+        String(bytes)
+    end
+    parsed = try
+        JSON.parse(json_text)
+    catch
+        return String[]
+    end
+    parsed isa AbstractDict || return String[]
+    return String[String(x) for x in get(parsed, "extensionsRequired", Any[])]
+end
 
 @inline function _rotation_xyz_deg(rot)::SMatrix{3, 3, Float64}
     rx, ry, rz = deg2rad(Float64(rot[1])), deg2rad(Float64(rot[2])), deg2rad(Float64(rot[3]))
@@ -180,7 +228,7 @@ function _load_gltf_triangles(path::AbstractString)::Matrix{Float64}
     doc, buffers = _gltf_document(path)
     required = String[String(x) for x in get(doc, "extensionsRequired", Any[])]
     bad = [e for e in required if e in GLTF_UNSUPPORTED_REQUIRED]
-    isempty(bad) || throw(ArgumentError("$(basename(path)) requires $(join(bad, ", ")); decompress it first (see model_payloads)."))
+    isempty(bad) || throw(ArgumentError("$(basename(path)) requires $(join(bad, ", ")); decompress it first (see `gltf_required_extensions`)."))
     tris = Float64[]
     scene_index = Int(get(doc, "scene", 0))
     roots = haskey(doc, "scenes") && !isempty(doc["scenes"]) ? Int.(get(doc["scenes"][scene_index + 1], "nodes", Any[])) : collect(0:(length(get(doc, "nodes", Any[])) - 1))

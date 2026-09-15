@@ -20,7 +20,9 @@ This contract defines canonical ownership for the topology cleanup that answers 
    `src/vehicle/actuators/thruster/thruster_hooks.jl`.
 9. Vehicle boundary is:
    - `src/vehicle/spacecraft/*` for composition/integration
-   - `src/vehicle/structure/*` for mass/inertia/geometry/structure analysis
+   - `src/vehicle/structure/*` for mass/inertia/geometry/structure analysis,
+     including the CAD/mesh readers (`mesh_geometry.jl`) shared by the
+     visualization scene and the aerodynamic panel method
 10. Visualization boundary is:
    - `src/analysis/visualization/scene/*` owns the renderer-independent scene
      layer (scene types, spacecraft geometry conversion, planet rotation
@@ -38,6 +40,8 @@ This contract defines canonical ownership for the topology cleanup that answers 
 6. `src/vehicle/structure/structure_models.jl`
 7. `src/vehicle/structure/assembly_graph.jl`
 8. `src/vehicle/structure/mass_properties.jl`
+8a. `src/vehicle/structure/mesh_geometry.jl`
+8b. `src/dynamics/coupled/aerodynamic_mesh_surrogate.jl`
 9. `src/vehicle/structure/geometry_properties.jl`
 
 ## Path Policy

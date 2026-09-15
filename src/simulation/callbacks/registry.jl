@@ -15,6 +15,7 @@ using ..EnvironmentModels: getDensity, getDensityBatch!, NoAtmosphereModel
 using ..VehicleThermalModels: getHeatRate
 using ..ThrusterModels: BaseThrusterModel
 using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
+using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientMeshSurrogate
 using ..GravityEffectors: InverseSquaredJ2GravityModel, j2_secular_rates
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData

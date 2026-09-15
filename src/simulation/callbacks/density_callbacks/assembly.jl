@@ -1,6 +1,7 @@
 @inline function _uses_atmospheric_dynamic_effector(effectors::Tuple)::Bool
     @inbounds for effector in effectors
-        if effector isa AerodynamicCoefficientConstant || effector isa AerodynamicCoefficientfM || effector isa AerodynamicCoefficientNoBallisticFlight
+        if effector isa AerodynamicCoefficientConstant || effector isa AerodynamicCoefficientfM || effector isa AerodynamicCoefficientNoBallisticFlight ||
+           effector isa AerodynamicCoefficientMeshSurrogate
             return true
         end
     end

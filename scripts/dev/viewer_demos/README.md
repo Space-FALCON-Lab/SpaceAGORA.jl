@@ -33,6 +33,11 @@ the same NASA model the page draws (`AerodynamicCoefficientMeshSurrogate`, see
 the fitted surrogate cached as `mesh_aero_surrogate.json`, and the separation
 report against the SPICE ghost compares the two models directly.
 
+Magellan flies with its bus and antenna end into the flow by default;
+`SPACEAGORA_DEMO_MAGELLAN_ANTENNA=aft` flies it antenna-trailing into
+`magellan_aerobraking_antenna_aft/` (only the mesh surrogate and the picture
+change, the box model has no fore/aft distinction).
+
 `build_cdn_page.py <viewer.html> <out.html> [title heading orbit span foot]`
 turns an exported page into the variant the claude.ai artifact host can
 show: three.js from jsdelivr and the viewer modules concatenated into one

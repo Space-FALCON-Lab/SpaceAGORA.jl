@@ -8,17 +8,21 @@
 # density through the free-molecular coefficient model. The spacecraft is the
 # usual bus-plus-two-wings composition sized to Magellan (3.7 m HGA, two
 # 2.5 m square wings, about 1000 kg at this point of the mission) with its
-# long (bus + antenna) axis along the flow, antenna trailing, and the wings
-# broadside; the page draws NASA's Magellan model over it in that attitude
-# (model +Y, the antenna axis, to body -x; the wing span along body y).
+# long (bus + antenna) axis along the flow and the wings broadside. The bus
+# and antenna end leads by default (model +Y, the antenna axis, to body +x);
+# SPACEAGORA_DEMO_MAGELLAN_ANTENNA=aft flies it the other way round, antenna
+# trailing, into `<case>_antenna_aft`. The box model has no fore/aft
+# distinction, so only the mesh surrogate and the picture change.
 #
 #   julia --project=. scripts/dev/viewer_demos/magellan_aerobraking.jl
 include(joinpath(@__DIR__, "common.jl"))
 setup_gram_example!()
 
-const OUTDIR = demo_outdir(demo_case_name("magellan_aerobraking"))
+const ANTENNA_AFT = get(ENV, "SPACEAGORA_DEMO_MAGELLAN_ANTENNA", "forward") == "aft"
+const OUTDIR = demo_outdir(demo_case_name("magellan_aerobraking") * (ANTENNA_AFT ? "_antenna_aft" : ""))
 const MODEL = joinpath(MODELS_DIR, "magellan_nasa_3d_resources.glb")
-const MAGELLAN_ROTATION_DEG = (0, 0, 90)   # antenna axis (model +Y) to body -x: long axis along the flow, antenna aft
+# antenna axis (model +Y) along the flow: to body +x (bus and antenna forward) or -x (antenna aft); wings along body y
+const MAGELLAN_ROTATION_DEG = ANTENNA_AFT ? (0, 0, 90) : (-180, 0, -90)
 kernel = ensure_mission_kernel("mgn_aerobrak.bsp", "https://naif.jpl.nasa.gov/pub/naif/MGN/kernels/spk/nav/AEROBRAK.BSP")
 planet = Venus("", SPICE_PATH)
 mgn = furnish!(MissionSpice("Magellan (SPICE)", "-18", "VENUS", [kernel]))
@@ -63,6 +67,6 @@ html = export_visualization(prefix; max_frames=5000, trail_orbits=1, texture_res
 println("html: ", html, " ", filesize(html))
 cdn = build_cdn_page(html, joinpath(OUTDIR, "artifact.html"), "AGORA Magellan Aerobraking",
     "AGORA Magellan · aerobraking at Venus, two orbits from 1993-05-26",
-    "SPICE state at apoapsis; MGNP180U 70x70, Sun, SRP, Venus-GRAM drag" * (get(ENV, "SPACEAGORA_DEMO_MESH_AERO", "0") == "1" ? " on the CAD mesh" : " on the box model"), "2 orbits (≈$(round(mission_time / 3600; digits=1)) h)",
+    "SPICE state at apoapsis; MGNP180U 70x70, Sun, SRP, Venus-GRAM drag" * (get(ENV, "SPACEAGORA_DEMO_MESH_AERO", "0") == "1" ? " on the CAD mesh" : " on the box model") * (ANTENNA_AFT ? "; antenna aft" : "; bus and antenna forward"), "2 orbits (≈$(round(mission_time / 3600; digits=1)) h)",
     "The solid spacecraft is the simulation; the translucent copy follows the Magellan navigation SPK (AEROBRAK.BSP). Click the solid one to read the separation. Drag to orbit, wheel to zoom, Space to pause, F to follow.")
 println("cdn: ", cdn, " ", filesize(cdn))

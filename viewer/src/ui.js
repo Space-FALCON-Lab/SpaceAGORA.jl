@@ -109,6 +109,7 @@ export function createUI(container, timeline, state, info) {
       <span class="sa-sep"></span>
       <label><input type="checkbox" data-role="assemblies" checked> 3D models</label>
       <label><input type="checkbox" data-role="thrusters" checked> thrusters</label>
+      <label data-role="plumes-label"><input type="checkbox" data-role="plumes" checked> plumes</label>
       <label><input type="checkbox" data-role="facets" checked> facets</label>
       <label><input type="checkbox" data-role="axes" checked> body axes</label>
       <label data-role="heating-label"><input type="checkbox" data-role="heating" checked> heating</label>
@@ -182,6 +183,8 @@ export function createUI(container, timeline, state, info) {
   q('grid').addEventListener('change', (e) => state.setGraticule(e.target.checked));
   q('assemblies').addEventListener('change', (e) => state.setAssemblies(e.target.checked));
   q('thrusters').addEventListener('change', (e) => state.setThrusters(e.target.checked));
+  q('plumes-label').hidden = !state.hasPlumes;
+  q('plumes').addEventListener('change', (e) => state.setPlumes(e.target.checked));
   q('facets').addEventListener('change', (e) => state.setFacets(e.target.checked));
   q('axes').addEventListener('change', (e) => state.setAxes(e.target.checked));
   q('heating-label').hidden = !state.hasHeating;

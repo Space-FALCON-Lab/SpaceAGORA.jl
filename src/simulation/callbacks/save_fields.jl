@@ -204,6 +204,74 @@ end
     return poses
 end
 
+# Thruster firing levels (0 to 1) for the viewer's plumes, in the order the
+# visualization scene lists the thrusters: the spacecraft's links in order,
+# each link's `thrusters` in order. Ragged across spacecraft (one value per
+# thruster), so the output layer expands them as `sc{i}_thruster_level_{k}`.
+@inline function _thruster_count(model)::Int
+    n = 0
+    for link in model.links
+        n += length(link.thrusters)
+    end
+    return n
+end
+
+@inline function _save_thruster_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)
+    effectors = integrator.p.args.control_model.control_effectors
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        levels = zeros(Float64, counts[i])
+        if counts[i] > 0
+            for effector in effectors
+                reported = control_thruster_levels(effector, i)
+                reported === nothing && continue
+                for k in 1:min(counts[i], length(reported))
+                    value = Float64(reported[k])
+                    levels[k] = isfinite(value) ? clamp(value, 0.0, 1.0) : 0.0
+                end
+                break   # the first effector that drives this spacecraft's thrusters owns them
+            end
+        end
+        out[i] = levels
+    end
+    return out
+end
+
+"""
+    thruster_level_counts(args) -> Vector{Int}
+
+Number of thrusters per spacecraft, in the scene's order. Zero for a
+spacecraft whose links carry none or whose control effectors report no firing
+levels, so the `thruster_level` field covers only the vehicles that fly them.
+"""
+function thruster_level_counts(args::SimulationConfiguration)::Vector{Int}
+    spacecraft = args.dynamics_model.spacecraft
+    effectors = hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors) ?
+        args.control_model.control_effectors : ()
+    counts = zeros(Int, length(spacecraft))
+    for i in eachindex(spacecraft)
+        n = _thruster_count(spacecraft[i])
+        n == 0 && continue
+        any(effector -> control_thruster_levels(effector, i) !== nothing, effectors) || continue
+        counts[i] = n
+    end
+    return counts
+end
+
+"""
+    thruster_level_save_field(args) -> SaveField
+
+The `thruster_level` field: every thruster's firing level (0 to 1) per
+spacecraft, written to `sc{i}_thruster_level_{k}`.
+"""
+function thruster_level_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    counts = thruster_level_counts(args)
+    return SaveField(:thruster_level, (u, t, integrator) -> _save_thruster_levels(num_sats, counts, u, t, integrator); per_satellite=true, column_prefix="thruster_level")
+end
+
+@inline _thruster_level_field_enabled(args::SimulationConfiguration)::Bool = any(>(0), thruster_level_counts(args))
+
 @inline function _arm_pose_field_enabled(args::SimulationConfiguration)::Bool
     args.simulation_settings.save_visualization_scene || return false
     return any(i -> robot_arm_plan_for(args, i) !== nothing, eachindex(args.dynamics_model.spacecraft))
@@ -239,6 +307,7 @@ function default_save_fields(args::SimulationConfiguration)
     if args.mission_configuration.orientation_sim
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
     end
+    _thruster_level_field_enabled(args) && push!(fields, thruster_level_save_field(args))
     for field in visualization_save_fields(args)
         push!(fields, field)
     end

@@ -68,6 +68,7 @@ using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleratio
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+using .SimulationModel: control_thruster_levels
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
@@ -465,6 +466,19 @@ consumption should return `0.0`.
 """
 calcControlMassFlowRate
 
+"""
+    control_thruster_levels(effector, i)
+
+Stable extension hook for [`AbstractControlEffectorModel`](@ref)
+implementations that drive named thrusters: the firing level (0 to 1) of every
+thruster of spacecraft `i`, in the order the visualization scene lists them
+(the spacecraft's links in order, each link's `thrusters` in order). Effectors
+that drive no thruster return `nothing`, the default. When any effector reports
+levels for a spacecraft, the run writes them as `sc{i}_thruster_level_{k}`
+columns and the viewer draws a plume on every firing thruster.
+"""
+control_thruster_levels
+
 @doc (@doc ParallelProfiles.ParallelProfile) ParallelProfile
 @doc (@doc ParallelProfiles.ParallelProfileConfig) ParallelProfileConfig
 @doc (@doc ParallelProfiles.parse_parallel_profile) parse_parallel_profile
@@ -546,6 +560,7 @@ export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+export control_thruster_levels
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel

@@ -13,7 +13,7 @@ payload = json.loads(payload_json.replace("<\\/", "</"))
 scene, frames = payload["scene"], payload["frames"]
 planet = scene["planet"]
 # Concatenate the viewer modules into one module scope: strip intra-viewer imports and export keywords.
-order = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "ui.js", "main.js"]
+order = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "lighting.js", "ui.js", "main.js"]
 parts = []
 for name in order:
     s = (REPO / "viewer" / "src" / name).read_text()
@@ -52,6 +52,11 @@ importmap = json.dumps({"imports": {
     "three/addons/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/loaders/GLTFLoader.js",
     "three/addons/utils/BufferGeometryUtils.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/utils/BufferGeometryUtils.js",
     "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.5/build/mp4-muxer.mjs",
+    # Path-traced lighting (viewer/src/lighting.js imports it on demand and
+    # falls back to real-time when the import fails).
+    "three-gpu-pathtracer": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.23/build/index.module.js",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js",
+    "three/examples/jsm/postprocessing/Pass.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/postprocessing/Pass.js",
 }})
 payload_js = payload_json  # already "</"-safe from the Julia bundler
 html = f"""<meta charset="utf-8">

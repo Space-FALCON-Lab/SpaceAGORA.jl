@@ -125,6 +125,47 @@ the ground sharpens by itself as the camera closes in; the globe is cut open
 under the outermost patch, a ring marks the site, and the selection panel
 reports the height above the terrain.
 
+## Sun lighting and path tracing
+
+When the run's ephemerides can resolve the Sun -- SPICE with the body's
+kernels furnished, or `SimpleEphemeridesModel` at Earth -- `default_save_fields`
+adds `sun_dir_1..3`, the unit vector from the planet's center to the Sun in the
+inertial frame of the saved positions, and the page lights the scene from it.
+The directional sun follows that vector over the timeline, rotated into the
+scene the same way positions are, so the terminator stands where it stood and
+a landing at dawn is lit like one. A faint hemisphere term stands in for
+earthshine, and the shadow map is fitted to a few tens of meters around the
+followed vehicle each frame, so the vehicle shadows itself and drops its
+shadow on the ground: Apollo 11 landed with the Sun 10.6 degrees up, and the
+LM's shadow stretches five times its own height across Tranquility Base. A run
+without the columns keeps the fixed light the viewer always had.
+
+Exposure is measured rather than assumed. The LROC mosaic of the landing site
+averages 0.021 in linear light and only a fifth of that reaches the eye at a
+grazing sun, which would leave the ground and its shadows inside a handful of
+display levels; so the page reads the mean albedo of the ground texture, takes
+the Sun's incidence on the site at the end of the run, and picks the filmic
+exposure that puts a lit surface in the middle of the range (it reports the
+factor in the info panel). Scenes bright enough not to need the lift keep the
+linear mapping.
+
+The **lighting** selector offers "path traced when paused". In that mode the
+page draws in real time while the timeline runs or the camera moves; once both
+have been still for about 300 ms it hands the scene to
+[three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer) and
+accumulates progressively refined samples into the same canvas, counting them
+in the info panel, until the next change resets it. The Sun becomes a circular
+light of its true angular diameter (0.5334 degrees), so shadow edges carry the
+penumbra they have in reality, against a black sky with no ambient term --
+which on the Moon is the whole of it. Markers, labels, trails, thruster cones
+and facet glyphs are left out of the traced scene; so is the globe sphere when
+site terrain has cut a hole in it, since the hole is a shader `discard` the
+path tracer does not run. The library is loaded from the CDN on demand: the
+page built by `export_visualization` is self-contained and offers real-time
+lighting only, while the CDN pages
+(`scripts/dev/viewer_demos/build_cdn_page.py`, `build_standalone.py --cdn`)
+carry the import-map entries for it.
+
 ## Heating on the spacecraft
 
 When the run saved density (`save_visualization_scene` records it) the

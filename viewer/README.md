@@ -35,11 +35,13 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/paths.js` | reference polylines in inertial, RTN or body frames |
 | `src/references.js` | reference ghosts: translucent copies of a spacecraft driven by an external state table |
 | `src/video.js` | MP4 export through WebCodecs and mp4-muxer (`vendor/mp4-muxer.mjs`, MIT), WebM fallback |
+| `three-gpu-pathtracer@0.0.23`, `three-mesh-bvh@0.7.8`, `three/examples/jsm/postprocessing/Pass.js` (import-map entries, CDN pages only) | the path-traced lighting mode; absent from the offline bundle, which then offers real-time lighting only |
 | `src/terrain.js` | landing-site terrain: DEM-displaced nested patches draped with imagery that sharpens toward the site, and the hole they cut in the globe |
 | `src/plots.js` | time-history plot panel: any quantity in the panels opens its history over the run, with the playback cursor and click-to-seek |
 | `src/atmosphere.js` | limb glow, density shells, density map |
 | `src/colormaps.js` | inferno and viridis |
 | `src/timeline.js` | playback clock and time formatting |
+| `src/lighting.js` | sun placed from `frames.sun_dir`, shadow map fitted to the followed vehicle, measured exposure, and the optional path-traced mode |
 | `src/ui.js` | overlay controls and info panel |
 | `src/main.js` | scene setup and the render loop |
 | `template.html` | page skeleton the Julia bundler fills |

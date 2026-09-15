@@ -192,6 +192,16 @@ end
     return out
 end
 
+# Unit vector from the planet's center to the Sun in the inertial frame of the
+# saved positions, for the viewer's sun lighting. One direction per row, not
+# per satellite: every spacecraft of a run shares the central body.
+@inline function _save_sun_direction(u, t, integrator)
+    environment = integrator.p.args.environment_model
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    direction = ephemerides_sun_direction_ii(environment.planet, et, environment.ephemerides_model)
+    return direction === nothing ? SVector{3, Float64}(NaN, NaN, NaN) : direction
+end
+
 # Cloth robot-arm chain: the integrated arm state (`arm_r`, `arm_q` per arm
 # link) relative to the spacecraft position, 7 floats per link.
 @inline function _save_arm_poses(num_sats::Int, u, t, integrator)
@@ -207,6 +217,22 @@ end
 @inline function _arm_pose_field_enabled(args::SimulationConfiguration)::Bool
     args.simulation_settings.save_visualization_scene || return false
     return any(i -> robot_arm_plan_for(args, i) !== nothing, eachindex(args.dynamics_model.spacecraft))
+end
+
+# The Sun direction is available when the run's ephemerides backend can
+# actually resolve the Sun for this body at the start epoch: SPICE with the
+# planet's kernels furnished, or the simple model at Earth. The probe is the
+# resolution itself, so a SPICE-backed configuration whose kernels were never
+# loaded omits the columns instead of throwing at the first save.
+function _sun_direction_field_enabled(args::SimulationConfiguration)::Bool
+    return try
+        environment = args.environment_model
+        et = ephemerides_time_seconds(args.initial_time, environment.ephemerides_model)
+        direction = ephemerides_sun_direction_ii(environment.planet, et, environment.ephemerides_model)
+        direction !== nothing && all(isfinite, direction)
+    catch
+        false
+    end
 end
 
 @inline function _density_field_enabled(args::SimulationConfiguration)::Bool
@@ -239,6 +265,9 @@ function default_save_fields(args::SimulationConfiguration)
     if args.mission_configuration.orientation_sim
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
     end
+    if _sun_direction_field_enabled(args)
+        push!(fields, sun_direction_save_field(args))
+    end
     for field in visualization_save_fields(args)
         push!(fields, field)
     end
@@ -253,6 +282,19 @@ The `density` field (kg/m^3 per satellite) the viewer colours passes by.
 function density_save_field(args::SimulationConfiguration)
     num_sats = length(args.dynamics_model.spacecraft)
     return SaveField(:density, (u, t, integrator) -> _save_density(num_sats, u, t, integrator); per_satellite=true, column_prefix="density")
+end
+
+"""
+    sun_direction_save_field(args) -> SaveField
+
+The `sun_dir` field: the unit vector from the planet's center to the Sun in
+the inertial frame of the saved positions, written as `sun_dir_1..3` (one
+direction per row, shared by every spacecraft). The viewer's sun lighting
+reads it; `_sun_direction_field_enabled` decides whether the run's ephemerides
+can supply it.
+"""
+function sun_direction_save_field(::SimulationConfiguration)
+    return SaveField(:sun_dir, _save_sun_direction; per_satellite=false, column_prefix="sun_dir")
 end
 
 """

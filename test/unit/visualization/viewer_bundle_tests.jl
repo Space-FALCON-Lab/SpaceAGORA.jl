@@ -224,6 +224,58 @@ end
         @test many_frames["vel_kms"] === nothing
     end
 
+    @testset "sun direction payload" begin
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        scene = build_visualization_scene(args; rotation_max_samples=8)
+        df = _synthetic_results(scene; n_rows=25)
+
+        # Without the columns the block is simply absent and the viewer falls
+        # back to its fixed light.
+        @test SV.build_viewer_frames(df, scene)["sun_dir"] === nothing
+
+        # `sun_dir_1..3` is one direction per row, shared by the whole scene.
+        for c in 1:3
+            df[!, "sun_dir_$(c)"] = [c == 1 ? 1.0 : 0.0 for _ in 1:25]
+        end
+        df[!, "sun_dir_1"] = [r <= 13 ? 1.0 : 0.0 for r in 1:25]
+        df[!, "sun_dir_2"] = [r <= 13 ? 0.0 : 1.0 for r in 1:25]
+        frames = SV.build_viewer_frames(df, scene)
+        sun = _decode_f32(frames["sun_dir"])
+        @test length(sun) == 25 * 3
+        @test sun[1] == 1.0f0 && sun[2] == 0.0f0 && sun[3] == 0.0f0
+        @test sun[3 * 24 + 1] == 0.0f0 && sun[3 * 24 + 2] == 1.0f0
+
+        # Decimation keeps the block aligned with the rows it kept.
+        small = SV.build_viewer_frames(df, scene; max_frames=6)
+        small_sun = _decode_f32(small["sun_dir"])
+        @test length(small_sun) == 3 * small["count"]
+        @test small_sun[1] == 1.0f0
+        @test small_sun[3 * (small["count"] - 1) + 2] == 1.0f0
+    end
+
+    @testset "sun direction save field" begin
+        # The simple ephemerides model at Earth resolves the Sun, so the run
+        # writes the columns; at Mars it cannot and they are left out.
+        base = _viewer_config(results_directory=mktempdir())
+        env = base.environment_model
+        earth_env = SM.EnvironmentModel(make_no_gram_planet(:earth), env.EI, env.density_model,
+            SM.SimpleEphemeridesModel(), env.topography, env.topo_degree, env.topo_order, env.wind, env.thermal_model)
+        earth_args = SM.SimulationConfiguration(
+            file_paths=base.file_paths, simulation_settings=base.simulation_settings,
+            mission_configuration=base.mission_configuration, environment_model=earth_env,
+            dynamics_model=base.dynamics_model, guidance_model=base.guidance_model,
+            navigation_model=base.navigation_model, control_model=base.control_model,
+            initial_time=base.initial_time, integration_tolerances=base.integration_tolerances,
+            solver_config=base.solver_config)
+        names_of(a) = Symbol[f.name for f in SM.SimulationCallbacks.default_save_fields(a)]
+        @test :sun_dir in names_of(earth_args)
+
+        mars_args = _viewer_config(results_directory=mktempdir())
+        @test mars_args.environment_model.planet.name == "Mars"
+        @test :sun_dir ∉ names_of(mars_args)
+    end
+
     @testset "model formats" begin
         @test SV.model_format("bus.stl") == ("stl", "model/stl")
         @test SV.model_format("BUS.OBJ") == ("obj", "model/obj")

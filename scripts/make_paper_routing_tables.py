@@ -305,11 +305,59 @@ def latex_table(phase: str, rows: list[dict], machine: str) -> str:
     return head + "".join(body) + tail
 
 
+def warmth_table(cold: pd.DataFrame, warm: pd.DataFrame, phase: str) -> str:
+    """Cold-store against warm-store for one phase, mode by mode.
+
+    R6 carries state across campaigns -- the persisted RHS-calibration verdicts
+    and inner-policy hints -- so the same point measured on a machine that has
+    never run the workload and on one that has is not the same measurement. The
+    static routes form no such state and are the control: if they move between
+    the two columns, the difference is machine noise rather than warmth.
+    """
+    _, axis_label = PHASE_AXIS[phase]
+    crows = {(r["case"], r["axis"]): r for r in phase_rows(cold, phase)}
+    wrows = {(r["case"], r["axis"]): r for r in phase_rows(warm, phase)}
+    keys = [k for k in wrows if k in crows]
+    if not keys:
+        return ""
+    keys.sort(key=lambda k: (k[0], wrows[k]["order"]))
+    # A phase present in both runs but measured only once (P1/P2/P5 are not
+    # re-run for the warm pass) would print a column of exact 1.00s, which reads
+    # as a result rather than as the same numbers twice.
+    if all(
+        crows[k]["adaptive_s"] == wrows[k]["adaptive_s"]
+        and crows[k]["serial_s"] == wrows[k]["serial_s"]
+        for k in keys
+    ):
+        return ""
+    lines = [
+        f"\n**{phase}** — {PHASE_TITLE[phase]}\n",
+        f"| {axis_label} | serial cold | serial warm | best static cold | best static warm "
+        f"| {ADAPTIVE_LABEL} cold | {ADAPTIVE_LABEL} warm | {ADAPTIVE_LABEL} warm/cold |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for k in keys:
+        c, w = crows[k], wrows[k]
+        gain = _ratio(w["adaptive_s"], c["adaptive_s"])
+        lines.append(
+            f"| {w['axis']} | {_fmt(c['serial_s'])} | {_fmt(w['serial_s'])} "
+            f"| {_fmt(c['best_static_s'])} | {_fmt(w['best_static_s'])} "
+            f"| {_fmt(c['adaptive_s'])} | {_fmt(w['adaptive_s'])} | {_fmt(gain, 2)} |"
+        )
+    return "\n".join(lines)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("sources", nargs="+")
     ap.add_argument("--out", default=None, help="directory for the generated files")
     ap.add_argument("--label", action="append", default=[], help="machine label per source")
+    ap.add_argument(
+        "--cold",
+        default=None,
+        help="a run of the same phases taken from an empty calibration store; adds a "
+             "cold-vs-warm section for every phase both runs contain",
+    )
     args = ap.parse_args()
 
     md_parts = ["# Routing comparison tables (R6 vs serial vs best static route)\n"]
@@ -333,6 +381,21 @@ def main() -> int:
             md_parts.append(full_markdown_table(phase, rows))
             md_parts.append("\n")
             tex_parts.append(latex_table(phase, rows, machine))
+
+    if args.cold:
+        cold_df = load(args.cold)
+        warm_df = load(args.sources[0])
+        md_parts.append("\n## Calibration-store warmth\n")
+        md_parts.append(
+            "\nR6 persists what it learns: RHS-calibration verdicts and inner-policy "
+            "hints outlive the campaign that produced them. A point measured on a "
+            "machine that has never run the workload is therefore not the same "
+            "measurement as one taken after the store has converged. The static "
+            "routes hold no such state and act as the control.\n"
+        )
+        for phase in ["P1", "P2", "P3", "P4", "P5"]:
+            section = warmth_table(cold_df, warm_df, phase)
+            section and md_parts.append(section + "\n")
 
     md = "\n".join(md_parts)
     tex = "\n".join(tex_parts)

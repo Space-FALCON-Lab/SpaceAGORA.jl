@@ -164,7 +164,7 @@ export_visualization(prefix; models=Dict(1 => "data/models/magellan_nasa_3d_reso
 
 Attitude comes from a `q` column (4 x N, scalar-last) when given and is
 velocity-aligned otherwise. `scripts/dev/viewer_demos/` has drivers that
-build such ghosts for Magellan at Venus and Cassini at Titan.
+build such ghosts for Magellan at Venus, Odyssey at Mars and Cassini at Titan.
 
 ## Robot arms
 

@@ -97,6 +97,6 @@ model uses, a plate behind another plate, the harmonic basis, the fit and
 its JSON round trip, and a short simulation of a cube with the surrogate
 against the same cube under `AerodynamicCoefficientfM`.
 `scripts/dev/aero/fit_mesh_aero_surrogate.jl` fits a model file from the
-command line, and the Magellan and Cassini viewer demos switch to the mesh
+command line, and the Magellan, Odyssey and Cassini viewer demos switch to the mesh
 surrogate with `SPACEAGORA_DEMO_MESH_AERO=1`, where the SPICE ghost gives a
 direct comparison of the two aerodynamic models against the flown trajectory.

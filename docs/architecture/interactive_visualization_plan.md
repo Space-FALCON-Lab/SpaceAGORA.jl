@@ -174,7 +174,7 @@ block, plus `count`, `sats`, `source_rows`, `stride_rows`. `models` maps a
 spacecraft id to an embedded STL (`url`, `scale`). Positions in km relative
 to planet center. The exporter decimates to
 `max_frames` (default 2000) and then to `data_budget_mb` (default 150 MB),
-whichever is smaller, with linear position interpolation and quaternion slerp
+whichever is smaller, with cubic Hermite position interpolation through the saved velocities (the chord when a run saved none) and quaternion slerp
 in the viewer. At 32768 members a 150 MB budget yields roughly 380 frames,
 enough for playback of a constellation but not for close-up attitude work;
 the viewer shows the effective cadence in its info panel.

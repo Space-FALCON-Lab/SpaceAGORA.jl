@@ -7,7 +7,7 @@
 // label. Positions and times are Float64 with their own time grid; the
 // group sits at the floating origin like the assemblies.
 import * as THREE from 'three';
-import { decodeFloat64, decodeFloat32, slerp, velocityAlignedQuaternion } from 'viewer/data.js';
+import { decodeFloat64, decodeFloat32, slerp, velocityAlignedQuaternion, hermitePosition } from 'viewer/data.js';
 import { loadModelObject } from 'viewer/lod.js';
 import { makeLabelSprite } from 'viewer/spacecraft.js';
 
@@ -85,12 +85,12 @@ class StateTable {
   // false when `time` lies outside the table (the ghost is then not drawn).
   covers(time) { return this.count > 0 && time >= this.t[0] - 1e-9 && time <= this.t[this.count - 1] + 1e-9; }
 
+  // Cubic Hermite through the table's velocities (the chord without them), as the frames.
   positionAt(time, out) {
     const { i, f } = this.locate(time);
     const a = 3 * i, b = 3 * (i + 1);
     if (this.count < 2) { out[0] = this.pos[a]; out[1] = this.pos[a + 1]; out[2] = this.pos[a + 2]; return out; }
-    for (let k = 0; k < 3; k++) out[k] = this.pos[a + k] + f * (this.pos[b + k] - this.pos[a + k]);
-    return out;
+    return hermitePosition(this.pos, a, b, this.vel, this.t[i + 1] - this.t[i], f, out);
   }
 
   velocityAt(time, out) {

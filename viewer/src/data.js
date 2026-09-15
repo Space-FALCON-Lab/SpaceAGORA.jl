@@ -40,6 +40,35 @@ export function decodeFloatBlock(b64, dtype) {
   return dtype === 'f64' ? decodeFloat64(b64) : decodeFloat32(b64);
 }
 
+// Cubic Hermite position between two samples `a` and `b` (flat xyz offsets
+// into P) using the saved velocities V (same offsets, per second) over the
+// sample spacing dt, at blend f in [0, 1]. Linear interpolation cuts a chord
+// inside the arc: at a 25 s cadence and 4.7 km/s near a periapsis the chord
+// sags a few hundred meters mid-segment and the follow camera, which rides
+// the spacecraft, shows every other object wobbling by that much. The Hermite
+// curve keeps the sag well under a meter at the same cadence. Falls back to
+// the chord when velocities are missing, non-finite, or so long against the
+// chord that the samples cannot resolve them (a gap or an impulsive burn).
+export function hermitePosition(P, a, b, V, dt, f, out, o = 0) {
+  const dx = P[b] - P[a], dy = P[b + 1] - P[a + 1], dz = P[b + 2] - P[a + 2];
+  if (V && dt > 0) {
+    const ux = dt * V[a], uy = dt * V[a + 1], uz = dt * V[a + 2];
+    const wx = dt * V[b], wy = dt * V[b + 1], wz = dt * V[b + 2];
+    const chord2 = dx * dx + dy * dy + dz * dz;
+    const u2 = ux * ux + uy * uy + uz * uz, w2 = wx * wx + wy * wy + wz * wz;
+    if (Number.isFinite(u2 + w2) && Math.max(u2, w2) <= 16 * chord2) {
+      const f2 = f * f, f3 = f2 * f;
+      const h00 = 2 * f3 - 3 * f2 + 1, h10 = f3 - 2 * f2 + f, h01 = -2 * f3 + 3 * f2, h11 = f3 - f2;
+      out[o] = h00 * P[a] + h10 * ux + h01 * P[b] + h11 * wx;
+      out[o + 1] = h00 * P[a + 1] + h10 * uy + h01 * P[b + 1] + h11 * wy;
+      out[o + 2] = h00 * P[a + 2] + h10 * uz + h01 * P[b + 2] + h11 * wz;
+      return out;
+    }
+  }
+  out[o] = P[a] + f * dx; out[o + 1] = P[a + 1] + f * dy; out[o + 2] = P[a + 2] + f * dz;
+  return out;
+}
+
 export class FrameData {
   constructor(frames) {
     this.count = frames.count;
@@ -95,12 +124,14 @@ export class FrameData {
     return { i: lo, f: dt > 0 ? (time - this.t[lo]) / dt : 0 };
   }
 
-  // Linear interpolation of every spacecraft position into `out` (S*3 floats).
+  // Every spacecraft position at `time` into `out` (S*3 floats): cubic Hermite
+  // through the saved velocities, the chord where the run saved none.
   positionsAt(time, out) {
     const { i, f } = this.locate(time);
     const S = this.sats, a = i * S * 3, b = (i + 1) * S * 3;
     if (this.count < 2) { for (let k = 0; k < S * 3; k++) out[k] = this.pos[k]; return out; }
-    for (let k = 0; k < S * 3; k++) out[k] = this.pos[a + k] + f * (this.pos[b + k] - this.pos[a + k]);
+    const dt = this.t[i + 1] - this.t[i];
+    for (let s = 0; s < S; s++) hermitePosition(this.pos, a + 3 * s, b + 3 * s, this.vel, dt, f, out, 3 * s);
     return out;
   }
 
@@ -108,8 +139,7 @@ export class FrameData {
     const { i, f } = this.locate(time);
     const S = this.sats, a = (i * S + sat) * 3, b = ((i + 1) * S + sat) * 3;
     if (this.count < 2) { out[0] = this.pos[a]; out[1] = this.pos[a + 1]; out[2] = this.pos[a + 2]; return out; }
-    for (let k = 0; k < 3; k++) out[k] = this.pos[a + k] + f * (this.pos[b + k] - this.pos[a + k]);
-    return out;
+    return hermitePosition(this.pos, a, b, this.vel, this.t[i + 1] - this.t[i], f, out);
   }
 
   // Velocity from the saved block, or a finite difference of positions when the run had none.

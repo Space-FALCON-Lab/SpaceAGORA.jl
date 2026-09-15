@@ -17,6 +17,7 @@ variant `artifact.html` built by `build_cdn_page.py`.
 | `odyssey_aerobraking.jl` | Mars Odyssey aerobraking, two orbits from 2001-11-06 with NASA's Odyssey model, SPICE ghost | GRAM (Mars), Odyssey `m01_ab_v2.bsp` (auto-downloaded) |
 | `cassini_titan_flyby.jl [TA\|T5\|all]` | Cassini's TA and T5 Titan flybys, Titan-centerd, SPICE ghost | GRAM (Titan), Cassini SCPSE kernels (auto-downloaded) |
 | `apollo11_lunar_orbit.jl` | Apollo 11 lunar module in the parking orbit, two orbits | SPICE (Moon frames) |
+| `apollo11_landing.jl` | Apollo 11 powered descent from PDI to touchdown, 6-DOF with the quadratic guidance and RCS attitude control, LROC terrain and imagery | SPICE (Moon frames), site data from `scripts/dev/terrain/fetch_moon_site.py` |
 
 The mission cases share `common.jl`: kernel download into
 `SPICE/spk/missions/`, `spkezr` sampling relative to the central body in

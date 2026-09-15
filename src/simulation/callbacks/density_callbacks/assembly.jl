@@ -149,11 +149,19 @@ function get_callbacks(
 )::CallbackSet
     save_fields_resolved = _resolve_save_fields(save_fields, args)
     backbone_mode = _simulation_engine_module()._solver_policy_mode() == :gravity_backbone_split
+    # A landing effector reports a touchdown spec: the run then ends on the
+    # terrain instead of at the impact altitude.
+    landing = nothing
+    for effector in args.control_model.control_effectors
+        spec = touchdown_spec(effector)
+        spec === nothing || (landing = spec; break)
+    end
+    ground_callback = landing === nothing ? get_impact_callback(num_sats) : get_touchdown_callback(num_sats, landing)
     callbacks = if backbone_mode
-        (get_impact_callback(num_sats),)
+        (ground_callback,)
     else
         (
-            get_impact_callback(num_sats),
+            ground_callback,
             update_planet_frame_callback(),
         )
     end

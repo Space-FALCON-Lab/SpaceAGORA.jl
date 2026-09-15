@@ -76,6 +76,29 @@ export function createGlobe(planet, textureEntry, options = {}) {
   } else {
     material.color.setHex(FALLBACK_COLORS[key] ?? 0x888888);
   }
+  // A terrain patch replaces the sphere inside `options.hole` (a lat/lon box,
+  // degrees): the fragment shader discards the sphere there. Geometry (x, y, z)
+  // maps to body (x, -z, y).
+  if (options.hole) {
+    const h = options.hole;
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uHole = { value: new THREE.Vector4(h.lat_min, h.lat_max, h.lon_min, h.lon_max) };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vBodyDir;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBodyDir = normalize(vec3(position.x, -position.z, position.y));');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec4 uHole;\nvarying vec3 vBodyDir;')
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+  {
+    float latDeg = degrees(asin(clamp(vBodyDir.z, -1.0, 1.0)));
+    float lonDeg = degrees(atan(vBodyDir.y, vBodyDir.x));
+    float lonMin = uHole.z, lonMax = uHole.w;
+    if (lonDeg < lonMin - 180.0) lonDeg += 360.0;
+    if (lonDeg > lonMax + 180.0) lonDeg -= 360.0;
+    if (latDeg >= uHole.x && latDeg <= uHole.y && lonDeg >= lonMin && lonDeg <= lonMax) discard;
+  }`);
+    };
+  }
   const mesh = new THREE.Mesh(geometry, material);
   mesh.scale.set(Re, Rp, Re); // geometry y is the pole
   mesh.quaternion.copy(GEOMETRY_TO_BODY);

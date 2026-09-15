@@ -114,6 +114,17 @@ bounds unbounded) turns by `angle_deg` about `axis` through `pivot`
 The Magellan demo turns the NASA model's cruise-canted wings broadside this
 way.
 
+## Site terrain
+
+`export_visualization(prefix; terrain="data/terrain/moon/apollo11/site.json")`
+embeds a landing site's digital elevation grids and imagery levels (see
+[Lunar Landing](lunar_landing.md) for the fetch script). The page drapes each
+imagery level over a patch displaced by the DEM, nested from a 4° window at
+83 m/px down to a few hundred meters at 0.65 m/px and drawn all the time, so
+the ground sharpens by itself as the camera closes in; the globe is cut open
+under the outermost patch, a ring marks the site, and the selection panel
+reports the height above the terrain.
+
 ## Heating on the spacecraft
 
 When the run saved density (`save_visualization_scene` records it) the

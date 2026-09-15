@@ -8,7 +8,7 @@
 
 const VIEWER_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "viewer"))
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data", "textures"))
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "timeline.js", "ui.js", "main.js")
+const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "timeline.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
@@ -426,7 +426,8 @@ function viewer_payload(
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0,
     paths=(),
-    references=()
+    references=(),
+    terrain=nothing
 )::Dict{String, Any}
     textures = Dict{String, Any}()
     if include_textures
@@ -440,7 +441,63 @@ function viewer_payload(
         "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale),
         "paths" => path_payloads(paths),
         "references" => reference_payloads(references, scene),
+        "terrain" => terrain === nothing ? nothing : terrain_payload(terrain),
         "options" => Dict{String, Any}(options),
+    )
+end
+
+"""
+    terrain_payload(site_json; max_grid=512) -> Dict{String, Any}
+
+Site terrain for the page: the DEM grids of a site directory written by
+`scripts/dev/terrain/fetch_moon_site.py` (finest first, each subsampled to
+at most `max_grid` samples per side, heights as base64 Float32) and its
+imagery levels (JPEG data URLs with their latitude/longitude boxes). The
+viewer drapes the imagery over the displaced grids and cuts the globe open
+under the outermost level.
+"""
+function terrain_payload(site_json::AbstractString; max_grid::Integer=512)::Dict{String, Any}
+    isfile(site_json) || throw(ArgumentError("terrain site file not found: $(site_json)"))
+    meta = JSON.parsefile(String(site_json))
+    dir = dirname(String(site_json))
+    grids = Dict{String, Any}[]
+    radius = 0.0
+    for d in meta["dem"]
+        g = TerrainModels.load_dem_grid(joinpath(dir, String(d["name"]) * ".json"))
+        radius = Float64(get(d, "reference_radius_m", 1737400.0))
+        rows, cols = size(g.heights)
+        stride = max(1, ceil(Int, max(rows, cols) / Int(max_grid)))
+        sub = g.heights[1:stride:end, 1:stride:end]
+        # the subsampled grid keeps the same outer edges only approximately; state the edges it does cover
+        r2, c2 = size(sub)
+        dlat = (g.lat_max - g.lat_min) / rows; dlon = (g.lon_max - g.lon_min) / cols
+        push!(grids, Dict{String, Any}(
+            "name" => String(d["name"]), "rows" => r2, "cols" => c2,
+            "lat_max" => g.lat_max, "lat_min" => g.lat_max - r2 * stride * dlat,
+            "lon_min" => g.lon_min, "lon_max" => g.lon_min + c2 * stride * dlon,
+            "heights" => _float32_base64(vec(permutedims(sub))),
+            "source" => g.source,
+        ))
+    end
+    levels = Dict{String, Any}[]
+    imagery_rel = get(meta, "imagery", nothing)
+    if imagery_rel !== nothing && isfile(joinpath(dir, String(imagery_rel)))
+        im = JSON.parsefile(joinpath(dir, String(imagery_rel)))
+        for lvl in im["levels"]
+            path = joinpath(dir, dirname(String(imagery_rel)), String(lvl["file"]))
+            isfile(path) || continue
+            push!(levels, Dict{String, Any}(
+                "lat_min" => lvl["lat_min"], "lat_max" => lvl["lat_max"], "lon_min" => lvl["lon_min"], "lon_max" => lvl["lon_max"],
+                "width" => lvl["width"], "height" => lvl["height"], "m_per_px" => lvl["m_per_px"],
+                "url" => _data_url(read(path), "image/jpeg"),
+            ))
+        end
+    end
+    site = meta["site"]
+    model, info = TerrainModels.load_site_terrain(String(site_json))
+    return Dict{String, Any}(
+        "site" => Dict{String, Any}("lat_deg" => site["lat_deg"], "lon_deg" => site["lon_deg"], "name" => get(site, "name", "site"), "height_m" => info.height_m),
+        "reference_radius_m" => radius, "grids" => grids, "imagery" => levels,
     )
 end
 
@@ -609,6 +666,7 @@ function export_visualization(
     stl_scale::Real=1.0,
     paths=(),
     references=(),
+    terrain=nothing,
     viewer_dir::AbstractString=VIEWER_DIR,
     textures_dir::AbstractString=TEXTURES_DIR
 )::String
@@ -625,7 +683,7 @@ function export_visualization(
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
-        paths=paths, references=references
+        paths=paths, references=references, terrain=terrain
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     html = render_viewer_html(payload; viewer_dir=viewer_dir, title=page_title)

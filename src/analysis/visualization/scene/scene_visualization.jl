@@ -22,6 +22,7 @@ using ..SpacecraftModels: SpacecraftModel, Link
 using ..RobotArmPlanning: RobotArmPlan
 using ..Robotics: ClothArmModel, cloth_total_reach
 using ..EphemeridesModels: planet_frame_lpi, ephemerides_time_seconds
+using ..TerrainModels
 using ..EphemeridesModels: _initial_time_datetime
 using ..SimConfig: SimulationConfiguration, SimulationSettings
 using ..IOConfig

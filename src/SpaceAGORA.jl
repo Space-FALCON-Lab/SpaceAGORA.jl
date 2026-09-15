@@ -71,6 +71,9 @@ using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlM
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
+using .SimulationModel: NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height, terrain_radius, load_dem_grid, load_site_terrain
+using .SimulationModel: DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
+using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
@@ -79,6 +82,10 @@ using .SimulationModel: SolarPanelAngleOfAttackControlModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionGuidanceModel) AerobrakingEnergyDepletionGuidanceModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionControlModel) AerobrakingEnergyDepletionControlModel
 @doc (@doc SimulationModel.SolarPanelAngleOfAttackControlModel) SolarPanelAngleOfAttackControlModel
+@doc (@doc SimulationModel.ApolloDescentConfig) ApolloDescentConfig
+@doc (@doc SimulationModel.ApolloDescentGuidanceModel) ApolloDescentGuidanceModel
+@doc (@doc SimulationModel.ApolloDescentControlModel) ApolloDescentControlModel
+@doc (@doc SimulationModel.DEMTerrainModel) DEMTerrainModel
 @doc (@doc SimulationModel.StateAnchor) StateAnchor
 @doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
@@ -542,6 +549,9 @@ export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
+export NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height, terrain_radius, load_dem_grid, load_site_terrain
+export DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
+export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

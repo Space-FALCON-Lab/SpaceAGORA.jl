@@ -208,12 +208,12 @@ end
 Run the simulation with the visualization sidecar unless `outdir` already
 holds one (set `SPACEAGORA_DEMO_FORCE=1` to rerun).
 """
-function run_or_reuse!(args, outdir::AbstractString)::String
+function run_or_reuse!(args, outdir::AbstractString; kwargs...)::String
     prefix = joinpath(outdir, "simulation_results")
     if isfile(prefix * "_scene.json") && get(ENV, "SPACEAGORA_DEMO_FORCE", "0") != "1"
         println("results present in ", outdir, "; skipping the simulation")
     else
-        t = @elapsed run_simulation(args; visualization=true)
+        t = @elapsed run_simulation(args; visualization=true, kwargs...)
         println("simulation: ", round(t; digits=1), " s")
     end
     return prefix

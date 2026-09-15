@@ -16,11 +16,12 @@ import { Timeline } from 'viewer/timeline.js';
 import { createUI } from 'viewer/ui.js';
 import { createVideoDialog } from 'viewer/video.js';
 import { createPlotPanel } from 'viewer/plots.js';
+import { createTerrain } from 'viewer/terrain.js';
 
 const DEFAULT_TRAIL_ORBITS = 3;
 
 export function start(payload, container = document.body) {
-  const { scene: sidecar, frames: rawFrames, textures = {}, models = {}, options = {}, ensemble: ensembleSpec = null, paths: pathSpecs = [], references: referenceSpecs = [] } = payload;
+  const { scene: sidecar, frames: rawFrames, textures = {}, models = {}, options = {}, ensemble: ensembleSpec = null, paths: pathSpecs = [], references: referenceSpecs = [], terrain: terrainSpec = null } = payload;
   const frames = new FrameData(rawFrames);
   const planet = sidecar.planet;
   const Re = planet.equatorial_radius_m / 1000, Rp = planet.polar_radius_m / 1000;
@@ -57,11 +58,15 @@ export function start(payload, container = document.body) {
   scene.add(world);
 
   const textureKey = (planet.texture || planet.name || '').toLowerCase();
+  // Site terrain (DEM patches with draped imagery) sits in the globe group and cuts a hole in the sphere under it.
+  const terrain = createTerrain(terrainSpec, planet, { anisotropy: renderer.capabilities.getMaxAnisotropy() });
   const globe = createGlobe(planet, textures[textureKey] || null, {
     anisotropy: renderer.capabilities.getMaxAnisotropy(),
     maxTextureSize: renderer.capabilities.maxTextureSize,
+    hole: terrain.hole,
   });
   world.add(globe.group);
+  if (terrain.levels.length) globe.group.add(terrain.group);
 
   const craft = createSpacecraft(frames, sidecar, { markerPixels: options.marker_pixels ?? 7, pixelRatio, planetRadiusKm: Re });
   world.add(craft.group);
@@ -186,6 +191,7 @@ export function start(payload, container = document.body) {
     ...(ensemble ? { samples: `${ensembleSpec.count} × ${ensemble.perSample} spacecraft` } : {}),
     ...(refPaths.items.length ? { paths: refPaths.items.map((it) => it.spec.name).join(', ') } : {}),
     ...(refs.items.length ? { references: refs.items.map((it) => it.spec.name).join(', ') } : {}),
+    ...(terrain.levels.length ? { terrain: `${terrain.site ? terrain.site.name + ', ' : ''}${terrain.modelStatus}` } : {}),
     ...(atmosphere ? {
       atmosphere: `${atmosphere.info.model.replace('AtmosphereModel', '')}, EI ${atmosphere.info.ei_km.toFixed(0)} km`,
       ...(atmosphere.info.map ? { 'density map': `${atmosphere.info.map.altitude_km.toFixed(0)} km, ${atmosphere.info.map.min.toExponential(1)}–${atmosphere.info.map.max.toExponential(1)} kg/m³` } : {}),
@@ -228,6 +234,16 @@ export function start(payload, container = document.body) {
     add('latitude', 'latitude', '°', 1, (t, o) => { geodeticAt(t, s, geo3); o[0] = geo3[1]; }, (o) => `${fmt(o[0], 3)}°`);
     add('longitude', 'longitude', '°', 1, (t, o) => { geodeticAt(t, s, geo3); o[0] = geo3[2]; }, (o) => `${fmt(o[0], 3)}°`);
     add('radius', 'radius', 'km', 1, (t, o) => { frames.positionAt(t, s, tmpPos); o[0] = Math.hypot(tmpPos[0], tmpPos[1], tmpPos[2]); }, (o) => `${fmt(o[0], 1)} km`);
+    if (terrain.levels.length) {
+      // height above the terrain grids (the radar altitude), from the body-fixed position
+      add('terrain_altitude', 'height above terrain', 'm', 1, (t, o) => {
+        frames.positionAt(t, s, tmpPos); globe.rotationAt(t, qPi); rotateByConjugate(qPi, tmpPos, rBody);
+        const r = Math.hypot(rBody[0], rBody[1], rBody[2]);
+        const lat = THREE.MathUtils.radToDeg(Math.asin(rBody[2] / r)), lon = THREE.MathUtils.radToDeg(Math.atan2(rBody[1], rBody[0]));
+        const h = terrain.heightAt(lat, lon);
+        o[0] = Number.isFinite(h) ? 1000 * (r - terrain.referenceRadiusKm) - h : NaN;
+      }, (o) => (Number.isFinite(o[0]) ? `${fmt(o[0], 1)} m` : 'off the terrain grids'), { log: 'auto' });
+    }
     add('speed', 'speed', 'km/s', 1, (t, o) => { frames.velocityAt(t, s, tmpVel); o[0] = Math.hypot(tmpVel[0], tmpVel[1], tmpVel[2]); }, (o) => `${fmt(o[0], 3)} km/s`);
     add('airspeed', 'airspeed', 'km/s', 1, (t, o) => { lod.airspeedAt(t, s, air); o[0] = Math.hypot(air[0], air[1], air[2]); }, (o) => `${fmt(o[0], 3)} km/s`);
     if (frames.mass) add('mass', 'mass', 'kg', 1, (t, o) => { o[0] = frames.massAt(t, s); }, (o) => `${fmt(o[0], 1)} kg`);
@@ -320,6 +336,17 @@ export function start(payload, container = document.body) {
     const dir = camera.position.clone().sub(controls.target);
     if (dir.lengthSq() === 0) dir.set(-1, -1, 0.6);
     dir.normalize();
+    // Near the ground the camera must start above it: tilt the view down along local up.
+    if (terrain.levels.length && state.selected >= 0) {
+      frames.positionAt(timeline.t, state.selected, tmpPos);
+      const up = new THREE.Vector3(tmpPos[0], tmpPos[1], tmpPos[2]).applyQuaternion(world.quaternion).normalize();
+      const r = Math.hypot(tmpPos[0], tmpPos[1], tmpPos[2]);
+      if (r - terrain.referenceRadiusKm < 20) {
+        const horizontal = dir.clone().sub(up.clone().multiplyScalar(dir.dot(up)));
+        if (horizontal.lengthSq() < 1e-6) horizontal.set(1, 0, 0).sub(up.clone().multiplyScalar(up.x));
+        dir.copy(horizontal.normalize().multiplyScalar(0.8).add(up.multiplyScalar(0.6))).normalize();
+      }
+    }
     controls.target.set(0, 0, 0);
     camera.position.copy(dir.multiplyScalar(dist));
     controls.update();
@@ -475,6 +502,7 @@ export function start(payload, container = document.body) {
     setRecording(v) { recording = v; if (!v) resize(); },
     resizeTo,
     plots,
+    terrain,
     pickFaceAt,
     quantities() { return { spacecraft: spacecraftQuantities.map((q) => q.key), face: faceQuantities.map((q) => q.key) }; },
   };

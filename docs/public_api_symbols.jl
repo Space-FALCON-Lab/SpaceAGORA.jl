@@ -215,6 +215,26 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Terrain and Powered Descent",
+        items = [
+            (owner = :SpaceAGORA, symbol = :NoTerrainModel, rendered = "SpaceAGORA.NoTerrainModel"),
+            (owner = :SpaceAGORA, symbol = :DEMGrid, rendered = "SpaceAGORA.DEMGrid"),
+            (owner = :SpaceAGORA, symbol = :DEMTerrainModel, rendered = "SpaceAGORA.DEMTerrainModel"),
+            (owner = :SpaceAGORA, symbol = :terrain_height, rendered = "SpaceAGORA.terrain_height"),
+            (owner = :SpaceAGORA, symbol = :terrain_radius, rendered = "SpaceAGORA.terrain_radius"),
+            (owner = :SpaceAGORA, symbol = :load_dem_grid, rendered = "SpaceAGORA.load_dem_grid"),
+            (owner = :SpaceAGORA, symbol = :load_site_terrain, rendered = "SpaceAGORA.load_site_terrain"),
+            (owner = :SpaceAGORA, symbol = :DescentPhaseTargets, rendered = "SpaceAGORA.DescentPhaseTargets"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentConfig, rendered = "SpaceAGORA.ApolloDescentConfig"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentState, rendered = "SpaceAGORA.ApolloDescentState"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentGuidanceModel, rendered = "SpaceAGORA.ApolloDescentGuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :apollo11_descent_targets, rendered = "SpaceAGORA.apollo11_descent_targets"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentControlConfig, rendered = "SpaceAGORA.ApolloDescentControlConfig"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentControlModel, rendered = "SpaceAGORA.ApolloDescentControlModel"),
+            (owner = :SpaceAGORA, symbol = :descent_attitude_command, rendered = "SpaceAGORA.descent_attitude_command")
+        ]
+    ),
+    (
         title = "Mesh Aerodynamics",
         items = [
             (owner = :SpaceAGORA, symbol = :MeshAeroPanels, rendered = "SpaceAGORA.MeshAeroPanels"),

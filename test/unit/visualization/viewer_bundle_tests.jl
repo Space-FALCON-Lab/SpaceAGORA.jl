@@ -370,6 +370,40 @@ end
         @test length(payload["references"]) == 1
         @test haskey(SV.viewer_import_map()["imports"], "viewer/references.js")
         @test haskey(SV.viewer_import_map()["imports"], "viewer/plots.js")
+        @test haskey(SV.viewer_import_map()["imports"], "viewer/terrain.js")
+    end
+
+    @testset "terrain payload" begin
+        # a synthetic site directory in the fetch script's layout: one 4 x 6 grid and one imagery level
+        dir = mktempdir()
+        h = Float32[100 + 10 * c + 100 * r for r in 0:3, c in 0:5]
+        open(joinpath(dir, "dem_test.f32"), "w") do io; write(io, vec(permutedims(h))); end
+        open(joinpath(dir, "dem_test.json"), "w") do io
+            write(io, """{"rows": 4, "cols": 6, "lat_min": 0.0, "lat_max": 2.0, "lon_min": 20.0, "lon_max": 23.0, "source": "unit", "reference_radius_m": 1737400.0}""")
+        end
+        mkpath(joinpath(dir, "imagery"))
+        open(joinpath(dir, "imagery", "level_0.jpg"), "w") do io; write(io, UInt8[0xff, 0xd8, 0xff, 0xd9]); end
+        open(joinpath(dir, "imagery", "imagery.json"), "w") do io
+            write(io, """{"levels": [{"file": "level_0.jpg", "lat_min": 0.5, "lat_max": 1.5, "lon_min": 21.0, "lon_max": 22.0, "width": 4, "height": 4, "m_per_px": 100.0}]}""")
+        end
+        open(joinpath(dir, "site.json"), "w") do io
+            write(io, """{"site": {"lat_deg": 1.0, "lon_deg": 21.5, "name": "unit"}, "dem": [{"name": "dem_test", "reference_radius_m": 1737400.0}], "imagery": "imagery/imagery.json"}""")
+        end
+        payload = SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3)
+        @test payload["site"]["name"] == "unit"
+        @test payload["reference_radius_m"] == 1737400.0
+        @test length(payload["grids"]) == 1
+        g = payload["grids"][1]
+        @test g["rows"] == 2 && g["cols"] == 3          # stride 2 subsampling
+        @test g["lat_max"] == 2.0 && g["lon_min"] == 20.0
+        @test g["lat_min"] ≈ 0.0 && g["lon_max"] ≈ 23.0
+        @test length(payload["imagery"]) == 1
+        @test startswith(payload["imagery"][1]["url"], "data:image/jpeg;base64,")
+        @test payload["imagery"][1]["m_per_px"] == 100.0
+        full = SV.terrain_payload(joinpath(dir, "site.json"))
+        @test full["grids"][1]["rows"] == 4 && full["grids"][1]["cols"] == 6
+        @test isapprox(full["site"]["height_m"], 100 + 10 * 2.5 + 100 * 1.5; atol=1e-6)   # bilinear at the site (row 1.5, column 2.5)
+        @test_throws ArgumentError SV.terrain_payload(joinpath(dir, "missing.json"))
     end
 
     @testset "STL overrides" begin

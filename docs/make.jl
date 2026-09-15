@@ -135,6 +135,7 @@ makedocs(
             "Simulation Configuration" => "user/simulation_configuration.md",
             "Atmosphere Models" => "user/atmosphere_models.md",
             "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
+            "Lunar Landing" => "user/lunar_landing.md",
             "Solver Configuration" => "user/solver_configuration.md",
             "Simulation Outputs" => "user/outputs.md",
             "Interactive Visualization" => "user/visualization.md",

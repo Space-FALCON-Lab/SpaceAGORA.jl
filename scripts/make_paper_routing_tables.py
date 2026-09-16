@@ -320,7 +320,9 @@ def warmth_table(cold: pd.DataFrame, warm: pd.DataFrame, phase: str) -> str:
     keys = [k for k in wrows if k in crows]
     if not keys:
         return ""
-    keys.sort(key=lambda k: (k[0], wrows[k]["order"]))
+    # Order by the axis value, not by the case name: a phase whose axis lives in
+    # the case name (P1's spacecraft count) would otherwise sort 1, 1024, 16, 256.
+    keys.sort(key=lambda k: (wrows[k]["order"], k[0]))
     # A phase present in both runs but measured only once (P1/P2/P5 are not
     # re-run for the warm pass) would print a column of exact 1.00s, which reads
     # as a result rather than as the same numbers twice.

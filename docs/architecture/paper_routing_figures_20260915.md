@@ -34,22 +34,22 @@ fastest *parallel* pinned route at that point; serial has its own column.
 
 | N | mission | serial | best static | route | R6 | serial/static | serial/R6 |
 |---:|---:|---:|---:|---|---:|---:|---:|
-| 1 | 1153 h | 8.309 | 8.429 | inner_only | 8.630 | 0.99 | 0.96 |
-| 16 | 143 h | 10.943 | 2.561 | outer_inner_static | 2.672 | 4.27 | 4.10 |
-| 64 | 115 h | 11.630 | 14.081 | outer_inner_static | 5.725 | 0.83 | 2.03 |
-| 256 | 34 h | 11.670 | 7.146 | outer_threads | 7.379 | 1.63 | 1.58 |
-| 1024 | 6.8 h | 11.890 | 3.219 | outer_threads | 3.187 | 3.69 | 3.73 |
-| 4096 | 1.6 h | 11.997 | 2.626 | outer_inner_static | 2.649 | 4.57 | 4.53 |
+| 1 | 1153 h | 8.463 | 8.207 | outer_inner_static | 8.294 | 1.03 | 1.02 |
+| 16 | 143 h | 10.985 | 2.500 | outer_threads | 2.514 | 4.39 | 4.37 |
+| 64 | 115 h | 11.287 | 13.943 | outer_threads | 5.710 | 0.81 | 1.98 |
+| 256 | 34 h | 11.812 | 7.117 | outer_inner_static | 7.082 | 1.66 | 1.67 |
+| 1024 | 6.8 h | 11.773 | 3.149 | inner_only | 3.207 | 3.74 | 3.67 |
+| 4096 | 1.6 h | 11.651 | 2.630 | inner_only | 2.692 | 4.43 | 4.33 |
 
 ### P2 — thread budget at 4096 spacecraft
 
 | threads | serial | best static | route | R6 | serial/static | serial/R6 |
 |---:|---:|---:|---|---:|---:|---:|
-| 1 | 12.117 | 11.778 | outer_threads | 12.052 | 1.03 | 1.01 |
-| 2 | 12.117 | 6.649 | outer_threads | 6.624 | 1.82 | 1.83 |
-| 4 | 12.117 | 3.836 | inner_only | 3.922 | 3.16 | 3.09 |
-| 8 | 12.117 | 2.721 | inner_only | 2.878 | 4.45 | 4.21 |
-| 12 | 12.117 | 2.663 | outer_inner_static | 2.652 | 4.55 | 4.57 |
+| 1 | 11.613 | 11.670 | inner_only | 11.766 | 1.00 | 0.99 |
+| 2 | 11.613 | 6.616 | inner_only | 6.683 | 1.76 | 1.74 |
+| 4 | 11.613 | 3.780 | outer_inner_static | 4.151 | 3.07 | 2.80 |
+| 8 | 11.613 | 2.730 | inner_only | 2.616 | 4.25 | 4.44 |
+| 12 | 11.613 | 2.606 | inner_only | 2.679 | 4.46 | 4.34 |
 
 ### P3 / P4 — Monte Carlo resource ladders
 
@@ -101,16 +101,16 @@ Cold-store versions of the same two tables (superseded):
 
 ### P5 — worker/thread split of a fixed budget of 12
 
-`mcgrid_16sat_8mc` (serial ≈ 10.6 s) and `mcgrid_8sat_16mc` (serial ≈ 9.2 s):
+`mcgrid_16sat_8mc` (serial ≈ 10.4 s) and `mcgrid_8sat_16mc` (serial ≈ 9.2 s):
 
-| split | 16×8 best static | 16×8 R6 | ratio | 8×16 best static | 8×16 R6 | ratio |
+| split | 16x8 best static | 16x8 R6 | ratio | 8x16 best static | 8x16 R6 | ratio |
 |---|---:|---:|---:|---:|---:|---:|
-| 1×12 | 1.594 | 1.546 | 0.97 | 1.491 | 1.360 | 0.91 |
-| 2×6 | 2.758 | 2.730 | 0.99 | 1.906 | 1.920 | 1.01 |
-| 3×4 | 2.795 | 2.760 | 0.99 | 2.464 | 2.012 | 0.82 |
-| 4×3 | 3.047 | 2.792 | 0.92 | 2.650 | 2.010 | 0.76 |
-| 6×2 | 2.760 | 1.835 | 0.66 | 1.924 | 1.988 | 1.03 |
-| 12×1 | 1.492 | 1.395 | 0.94 | 1.370 | 1.289 | 0.94 |
+| 1x12 | 1.608 | 1.563 | 0.97 | 1.472 | 1.372 | 0.93 |
+| 2x6 | 2.734 | 2.697 | 0.99 | 1.928 | 1.929 | 1.00 |
+| 3x4 | 2.781 | 2.756 | 0.99 | 2.480 | 2.065 | 0.83 |
+| 4x3 | 2.981 | 2.787 | 0.93 | 2.788 | 2.003 | 0.72 |
+| 6x2 | 2.831 | 1.740 | 0.61 | 1.976 | 1.979 | 1.00 |
+| 12x1 | 1.465 | 1.411 | 0.96 | 1.357 | 1.254 | 0.92 |
 
 ## Findings
 
@@ -178,6 +178,16 @@ is recorded in the "Calibration-store warmth" section of the generated tables.
 - **Twelve process workers can exhaust this box.** A 12-worker aerobraking rung
   plus a browser and an editor drove a global OOM that killed a desktop process.
   The benchmark survived it; the desktop did not.
+
+**7. Every phase was measured twice, and they agree.** P1, P2 and P5 were
+re-run warm after P3/P4 showed that store warmth matters, so the whole set now
+shares one convention -- and the two runs, a day apart, are a reproducibility
+check the single-run B- and L-series never had. R6 moves 0.94-1.06 across all of
+P1 and P2 and 0.95-1.03 across all twelve P5 points; the static routes move
+1-5%. The N=64 result reproduces at 13.94 s against 5.71 s (first run: 14.08 s
+against 5.73 s), and P5's 6x2 win at 1.740 s against 2.831 s (first run: 1.835 s
+against 2.760 s). Only P3 and P4 moved materially between cold and warm, and
+only at one rung each -- which is the finding, not noise.
 
 ## The S1 speedups rest on a different serial baseline
 

@@ -69,10 +69,20 @@ async def main():
                           ("crater_wide", [0.985, 0, 1.6, 12, True]),
                           ("crater_upsun_wide", [0.985, 180, 1.6, 12, True]),
                           ("lander_shadow", [0.995, 90, 0.05, 14, True]),
-                          ("lander_shadow_wide", [0.995, 90, 0.25, 14, True])):
+                          ("lander_shadow_wide", [0.995, 90, 0.25, 14, True]),
+                          ("ground_level", [0.995, 180, 0.045, 2, True]),
+                          ("ground_level_cross", [0.995, 90, 0.045, 2, True])):
             print(name, json.dumps(await pg.evaluate(PLACE, arg)))
             await pg.wait_for_timeout(1500)
             await pg.screenshot(path=str(outdir / f"{name}.png"))
+        # the page's own follow camera, the view the demo opens on
+        print("page_close", json.dumps(await pg.evaluate("""(() => {
+          const v = window.spaceagoraViewer;
+          v.timeline.playing = false; v.timeline.seekFraction(0.985); v.state.select(0); v.state.setFollow(true);
+          return {terrain: v.terrain.modelStatus};
+        })()""")))
+        await pg.wait_for_timeout(2500)
+        await pg.screenshot(path=str(outdir / "page_close.png"))
         print("globe", json.dumps(await pg.evaluate(GLOBE, [0.0, 9000])))
         await pg.wait_for_timeout(2000)
         await pg.screenshot(path=str(outdir / "globe.png"))

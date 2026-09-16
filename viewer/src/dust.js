@@ -774,7 +774,10 @@ function dustLighting(options) {
 function dustDisplayScale(lighting) {
   if (!lighting) return DUST_FALLBACK_BRIGHTNESS;
   const exposure = Number.isFinite(lighting.exposure) && lighting.exposure > 0 ? lighting.exposure : 1;
-  if (!(exposure > 1.01)) return DUST_FALLBACK_BRIGHTNESS;
+  // A page with the physical camera (an EV) is radiance-referred whatever its exposure;
+  // without one, an exposure of 1 means the old display-referred look.
+  const physical = Number.isFinite(lighting.ev) || exposure > 1.01;
+  if (!physical) return DUST_FALLBACK_BRIGHTNESS;
   const irradiance = Number.isFinite(lighting.sunIrradiance) && lighting.sunIrradiance > 0
     ? lighting.sunIrradiance : DUST_REFERENCE_IRRADIANCE_W_M2;
   const intensity = lighting.sun && Number.isFinite(lighting.sun.intensity) ? lighting.sun.intensity : 1;

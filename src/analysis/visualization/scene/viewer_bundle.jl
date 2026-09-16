@@ -510,9 +510,19 @@ end
 Site terrain for the page: the DEM grids of a site directory written by
 `scripts/dev/terrain/fetch_moon_site.py` (finest first, each subsampled to
 at most `max_grid` samples per side, heights as base64 Float32) and its
-imagery levels (JPEG data URLs with their latitude/longitude boxes). The
-viewer drapes the imagery over the displaced grids and cuts the globe open
-under the outermost level.
+imagery quadtree.
+
+The quadtree is `tiles`: a square `root` region in degrees, an imagery
+`tile_px` edge, the deepest level present as `max_level`, and the `nodes`
+that were built, each `{level, x, y, url, m_per_px}`. A node at
+`(level, x, y)` covers longitude `lon_min + (lon_max - lon_min) * x / 2^level`
+to the same with `x + 1`, and latitude down from `lat_max` the same way, so
+`y = 0` is the northern row (the convention the grids use). Nodes exist only
+where imagery was built, so the coverage is a funnel — the coarse levels span
+the whole descent corridor, the fine ones only the landing site — and the
+viewer textures an absent node from its nearest present ancestor and that
+ancestor's matching UV sub-rectangle. `tiles` is absent when the site has
+none.
 """
 function terrain_payload(site_json::AbstractString; max_grid::Integer=512)::Dict{String, Any}
     isfile(site_json) || throw(ArgumentError("terrain site file not found: $(site_json)"))
@@ -537,25 +547,45 @@ function terrain_payload(site_json::AbstractString; max_grid::Integer=512)::Dict
             "source" => g.source,
         ))
     end
-    levels = Dict{String, Any}[]
-    imagery_rel = get(meta, "imagery", nothing)
-    if imagery_rel !== nothing && isfile(joinpath(dir, String(imagery_rel)))
-        im = JSON.parsefile(joinpath(dir, String(imagery_rel)))
-        for lvl in im["levels"]
-            path = joinpath(dir, dirname(String(imagery_rel)), String(lvl["file"]))
-            isfile(path) || continue
-            push!(levels, Dict{String, Any}(
-                "lat_min" => lvl["lat_min"], "lat_max" => lvl["lat_max"], "lon_min" => lvl["lon_min"], "lon_max" => lvl["lon_max"],
-                "width" => lvl["width"], "height" => lvl["height"], "m_per_px" => lvl["m_per_px"],
-                "url" => _data_url(read(path), "image/jpeg"),
-            ))
-        end
-    end
     site = meta["site"]
     model, info = TerrainModels.load_site_terrain(String(site_json))
     return Dict{String, Any}(
         "site" => Dict{String, Any}("lat_deg" => site["lat_deg"], "lon_deg" => site["lon_deg"], "name" => get(site, "name", "site"), "height_m" => info.height_m),
-        "reference_radius_m" => radius, "grids" => grids, "imagery" => levels,
+        "reference_radius_m" => radius, "grids" => grids, "tiles" => terrain_tiles_payload(dir, get(meta, "tiles", nothing)),
+    )
+end
+
+"""
+    terrain_tiles_payload(dir, tiles_rel) -> Union{Nothing, Dict{String, Any}}
+
+The `tiles` block of `terrain_payload`: the quadtree description written by
+`scripts/dev/terrain/fetch_moon_site.py` with every node's JPEG inlined as a
+`data:` URL. `nothing` when the site lists no quadtree or the file is missing.
+"""
+function terrain_tiles_payload(dir::AbstractString, tiles_rel)::Union{Nothing, Dict{String, Any}}
+    tiles_rel === nothing && return nothing
+    path = joinpath(String(dir), String(tiles_rel))
+    isfile(path) || return nothing
+    meta = JSON.parsefile(path)
+    base = dirname(path)
+    nodes = Dict{String, Any}[]
+    for node in get(meta, "nodes", [])
+        file = joinpath(base, String(node["file"]))
+        isfile(file) || continue
+        push!(nodes, Dict{String, Any}(
+            "level" => Int(node["level"]), "x" => Int(node["x"]), "y" => Int(node["y"]),
+            "m_per_px" => Float64(node["m_per_px"]), "url" => _data_url(read(file), "image/jpeg"),
+        ))
+    end
+    isempty(nodes) && return nothing
+    root = meta["root"]
+    return Dict{String, Any}(
+        "scheme" => String(get(meta, "scheme", "quadtree")),
+        "root" => Dict{String, Any}("lat_min" => root["lat_min"], "lat_max" => root["lat_max"],
+                                    "lon_min" => root["lon_min"], "lon_max" => root["lon_max"]),
+        "tile_px" => Int(get(meta, "tile_px", 256)),
+        "max_level" => maximum(n -> n["level"], nodes),
+        "nodes" => nodes,
     )
 end
 

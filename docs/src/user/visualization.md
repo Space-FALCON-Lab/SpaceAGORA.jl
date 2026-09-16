@@ -117,13 +117,20 @@ way.
 ## Site terrain
 
 `export_visualization(prefix; terrain="data/terrain/moon/apollo11/site.json")`
-embeds a landing site's digital elevation grids and imagery levels (see
-[Lunar Landing](lunar_landing.md) for the fetch script). The page drapes each
-imagery level over a patch displaced by the DEM, nested from a 4° window at
-83 m/px down to a few hundred meters at 0.65 m/px and drawn all the time, so
-the ground sharpens by itself as the camera closes in; the globe is cut open
-under the outermost patch, a ring marks the site, and the selection panel
-reports the height above the terrain.
+embeds a landing site's digital elevation grids and its imagery quadtree (see
+[Lunar Landing](lunar_landing.md) for the fetch script). `terrain.tiles` is the
+quadtree: a square `root` region in degrees, the `tile_px` edge of an imagery
+tile, the deepest level present as `max_level`, and the `nodes` that were
+built, each `{level, x, y, url, m_per_px}` with the JPEG inline. A node at
+`(level, x, y)` covers longitude `lon_min + (lon_max - lon_min) * x / 2^level`
+to the same with `x + 1` and latitude down from `lat_max` the same way, so
+`y = 0` is the northern row. Nodes exist only where imagery was built — wide
+and coarse along the descent corridor, narrow and fine at the site — and a node
+that is absent is textured from its nearest present ancestor and that
+ancestor's matching UV sub-rectangle, so the whole root is covered and the
+resolution falls off gradually with distance rather than at a seam. The page
+walks the tree against the camera, a ring marks the site, and the selection
+panel reports the height above the terrain.
 
 ## Dust
 

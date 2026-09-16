@@ -502,20 +502,30 @@ end
     end
 
     @testset "terrain payload" begin
-        # a synthetic site directory in the fetch script's layout: one 4 x 6 grid and one imagery level
+        # a synthetic site directory in the fetch script's layout: one 4 x 6 grid and an imagery
+        # quadtree over a 2 x 2 degree root with level 1 left out, so the viewer has to inherit
         dir = mktempdir()
         h = Float32[100 + 10 * c + 100 * r for r in 0:3, c in 0:5]
         open(joinpath(dir, "dem_test.f32"), "w") do io; write(io, vec(permutedims(h))); end
         open(joinpath(dir, "dem_test.json"), "w") do io
             write(io, """{"rows": 4, "cols": 6, "lat_min": 0.0, "lat_max": 2.0, "lon_min": 20.0, "lon_max": 23.0, "source": "unit", "reference_radius_m": 1737400.0}""")
         end
-        mkpath(joinpath(dir, "imagery"))
-        open(joinpath(dir, "imagery", "level_0.jpg"), "w") do io; write(io, UInt8[0xff, 0xd8, 0xff, 0xd9]); end
-        open(joinpath(dir, "imagery", "imagery.json"), "w") do io
-            write(io, """{"levels": [{"file": "level_0.jpg", "lat_min": 0.5, "lat_max": 1.5, "lon_min": 21.0, "lon_max": 22.0, "width": 4, "height": 4, "m_per_px": 100.0}]}""")
+        mkpath(joinpath(dir, "imagery", "tiles", "L0"))
+        mkpath(joinpath(dir, "imagery", "tiles", "L2"))
+        jpeg = UInt8[0xff, 0xd8, 0xff, 0xd9]
+        for f in ("tiles/L0/0_0.jpg", "tiles/L2/1_2.jpg", "tiles/L2/2_2.jpg")
+            open(joinpath(dir, "imagery", f), "w") do io; write(io, jpeg); end
+        end
+        open(joinpath(dir, "imagery", "tiles.json"), "w") do io
+            write(io, """{"scheme": "quadtree", "tile_px": 256,
+                "root": {"lat_min": 0.0, "lat_max": 2.0, "lon_min": 20.0, "lon_max": 22.0},
+                "nodes": [{"level": 0, "x": 0, "y": 0, "file": "tiles/L0/0_0.jpg", "m_per_px": 800.0},
+                          {"level": 2, "x": 1, "y": 2, "file": "tiles/L2/1_2.jpg", "m_per_px": 200.0},
+                          {"level": 2, "x": 2, "y": 2, "file": "tiles/L2/2_2.jpg", "m_per_px": 200.0},
+                          {"level": 2, "x": 3, "y": 3, "file": "tiles/L2/3_3.jpg", "m_per_px": 200.0}]}""")
         end
         open(joinpath(dir, "site.json"), "w") do io
-            write(io, """{"site": {"lat_deg": 1.0, "lon_deg": 21.5, "name": "unit"}, "dem": [{"name": "dem_test", "reference_radius_m": 1737400.0}], "imagery": "imagery/imagery.json"}""")
+            write(io, """{"site": {"lat_deg": 1.0, "lon_deg": 21.5, "name": "unit"}, "dem": [{"name": "dem_test", "reference_radius_m": 1737400.0}], "tiles": "imagery/tiles.json"}""")
         end
         payload = SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3)
         @test payload["site"]["name"] == "unit"
@@ -525,12 +535,34 @@ end
         @test g["rows"] == 2 && g["cols"] == 3          # stride 2 subsampling
         @test g["lat_max"] == 2.0 && g["lon_min"] == 20.0
         @test g["lat_min"] ≈ 0.0 && g["lon_max"] ≈ 23.0
-        @test length(payload["imagery"]) == 1
-        @test startswith(payload["imagery"][1]["url"], "data:image/jpeg;base64,")
-        @test payload["imagery"][1]["m_per_px"] == 100.0
+        tiles = payload["tiles"]
+        @test tiles["scheme"] == "quadtree" && tiles["tile_px"] == 256
+        @test tiles["root"] == Dict{String, Any}("lat_min" => 0.0, "lat_max" => 2.0, "lon_min" => 20.0, "lon_max" => 22.0)
+        # the node whose file is missing is dropped; level 1 is absent on purpose (inheritance)
+        @test length(tiles["nodes"]) == 3
+        @test !any(n -> n["level"] == 1, tiles["nodes"])
+        @test tiles["max_level"] == 2                   # the deepest node that is actually there
+        @test all(n -> startswith(n["url"], "data:image/jpeg;base64,"), tiles["nodes"])
+        # a node's indices round-trip to its latitude/longitude box
+        node = only(filter(n -> n["level"] == 2 && n["x"] == 1 && n["y"] == 2, tiles["nodes"]))
+        root = tiles["root"]
+        span_lon = root["lon_max"] - root["lon_min"]; span_lat = root["lat_max"] - root["lat_min"]
+        n = 2^node["level"]
+        @test root["lon_min"] + span_lon * node["x"] / n ≈ 20.5
+        @test root["lon_min"] + span_lon * (node["x"] + 1) / n ≈ 21.0
+        @test root["lat_max"] - span_lat * (node["y"] + 1) / n ≈ 0.5
+        @test root["lat_max"] - span_lat * node["y"] / n ≈ 1.0
+        @test node["m_per_px"] == 200.0
         full = SV.terrain_payload(joinpath(dir, "site.json"))
         @test full["grids"][1]["rows"] == 4 && full["grids"][1]["cols"] == 6
         @test isapprox(full["site"]["height_m"], 100 + 10 * 2.5 + 100 * 1.5; atol=1e-6)   # bilinear at the site (row 1.5, column 2.5)
+        # a site with no quadtree carries no tiles block at all
+        open(joinpath(dir, "site_bare.json"), "w") do io
+            write(io, """{"site": {"lat_deg": 1.0, "lon_deg": 21.5, "name": "unit"}, "dem": [{"name": "dem_test", "reference_radius_m": 1737400.0}], "tiles": null}""")
+        end
+        @test SV.terrain_payload(joinpath(dir, "site_bare.json"))["tiles"] === nothing
+        @test SV.terrain_tiles_payload(dir, nothing) === nothing
+        @test SV.terrain_tiles_payload(dir, "imagery/missing.json") === nothing
         @test_throws ArgumentError SV.terrain_payload(joinpath(dir, "missing.json"))
     end
 

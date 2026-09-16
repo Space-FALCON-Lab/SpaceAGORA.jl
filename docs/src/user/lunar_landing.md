@@ -21,19 +21,50 @@ first grid that covers the point; `NoTerrainModel()` is the flat sphere.
 directory written by `scripts/dev/terrain/fetch_moon_site.py`, which fetches:
 
 - the LOLA 128 pixel-per-degree global grid (237 m/px) in a window around the
-  site, by HTTP range requests straight out of the PDS raster;
+  site, by HTTP range requests straight out of the PDS raster, and a second,
+  box-averaged LOLA window over the whole imagery region so the ground has
+  relief out to the horizon;
 - the LROC NAC digital terrain model of the site (2 m/px, resampled to 4 m)
   where one exists (Apollo 11 does);
-- nested imagery patches from NASA Moon Trek, from the LROC WAC global mosaic
-  (83 m/px over a 4° window) down to the 26 cm NAC mosaic (0.65 m/px over the
-  last 500 m).
+- an imagery quadtree from NASA Moon Trek that follows the descent corridor,
+  from the LROC WAC global mosaic through Kaguya's TC ortho mosaic to the
+  Apollo 11 NAC mosaics (0.65 m/px at the site).
 
 ```
 python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --out data/terrain/moon/apollo11
 ```
 
-The data stay under `data/` (not tracked). Grids are little-endian Float32
-files with a JSON header, so other DEMs can be dropped in the same layout.
+The data stay under `data/` (not tracked); `SPACEAGORA_TERRAIN_SITE` points
+the demo at a `site.json` somewhere else, such as a regenerated site under
+`output/terrain`. Grids are little-endian Float32 files with a JSON header, so
+other DEMs can be dropped in the same layout.
+
+### The imagery quadtree
+
+The root of the quadtree is a square region one Moon Trek tile wide at
+`--root-zoom` (22.5°, 682 km, by default), its corner snapped to that zoom's
+pixel grid and centered on the ground track, so a node at level `L` is exactly
+one Trek tile at zoom `root_zoom + L` and every node is an integer-pixel crop
+of Trek's own tiles rather than a resample. `--approach-azimuth` and
+`--uprange-km` (270° and 480 km, the Apollo 11 descent) place the track, and
+`--profile` gives the height above the site against the distance still to go.
+
+Nodes are built only where they are worth having, so the coverage is a funnel,
+not a full pyramid: a level's half-extent is `--lod-factor` times its own node
+side — the radius within which a view-dependent quadtree still asks for that
+level — intersected with the part of the track from which the camera can see
+that far. The coarse levels therefore span the whole 480 km corridor and each
+finer level narrows toward the site. A node that was not built is not an error:
+the viewer textures it from the nearest present ancestor and that ancestor's
+matching UV sub-rectangle, so every point of the root is textured at the best
+resolution that exists for it and the sharpness falls off gradually with
+distance from the site instead of ending at a seam. `--quality-coarse` and
+`--quality-fine` ramp the JPEG quality from the wide coarse tiles to the ones
+at the site, which is where the page's byte budget is worth spending.
+
+Re-tiling is cheap: Moon Trek tiles are cached under `<out>/trek_cache`, and
+`--reuse DIR` borrows another site directory's DEM files, raw downloads and
+tile cache, so `--retile` with different extents costs no new downloads.
 
 ## Powered descent guidance
 
@@ -230,9 +261,9 @@ percent of the engine's thrust.
 ## Surface in the viewer
 
 `export_visualization(prefix; terrain="data/terrain/moon/apollo11/site.json")`
-embeds the site's grids and imagery. The page drapes each imagery level over a
-patch displaced by the DEM, nested from coarse to fine and drawn all the time,
-so the surface sharpens by itself as the camera closes in on the site; the
-globe is cut open under the outermost patch. The selection panel gains a
-"height above terrain" quantity, and the info panel names the terrain and its
-finest resolution.
+embeds the site's grids and its imagery quadtree. The page walks the quadtree
+against the camera and drapes each node it needs over geometry displaced by the
+DEM, so the surface sharpens by itself as the camera closes in on the site and
+stays covered out to the horizon while the lander is still uprange. The
+selection panel gains a "height above terrain" quantity, and the info panel
+names the terrain and its finest resolution.

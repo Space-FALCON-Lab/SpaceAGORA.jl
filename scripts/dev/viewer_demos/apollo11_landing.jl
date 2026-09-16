@@ -8,16 +8,20 @@
 # actual engine axis. The terrain is the LROC NAC DTM of the site inside the
 # LOLA global grid (fetched by scripts/dev/terrain/fetch_moon_site.py): it
 # is the radar altimeter of the guidance and the ground the touchdown event
-# fires on, and the page drapes the LROC imagery over it, sharpening from
-# the WAC mosaic to the 26 cm NAC mosaic as the lander approaches.
+# fires on, and the page drapes an imagery quadtree over it that follows the
+# descent corridor, sharpening from the WAC mosaic through Kaguya's TC ortho
+# mosaic to the Apollo 11 NAC mosaics as the lander approaches.
 #
 #   python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --out data/terrain/moon/apollo11
 #   julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl
+#
+# SPACEAGORA_TERRAIN_SITE points the demo at another site.json (a regenerated
+# site under output/terrain, say) instead of the one in data/.
 include(joinpath(@__DIR__, "common.jl"))
 using Arrow, DataFrames
 
 const OUTDIR = demo_outdir("apollo11_landing")
-const SITE_JSON = joinpath(REPO_ROOT, "data", "terrain", "moon", "apollo11", "site.json")
+const SITE_JSON = get(ENV, "SPACEAGORA_TERRAIN_SITE", joinpath(REPO_ROOT, "data", "terrain", "moon", "apollo11", "site.json"))
 const MODEL = joinpath(MODELS_DIR, "apollo_lunar_module_nasa_3d_resources.glb")
 const LM_ROTATION_DEG = (-180, 90, 90)   # legs along body +z (down through the engine), hatch and windows along body +x
 isfile(SITE_JSON) || error("Site terrain not found at $(SITE_JSON); run scripts/dev/terrain/fetch_moon_site.py first.")
@@ -148,5 +152,5 @@ cdn = build_cdn_page(html, joinpath(OUTDIR, "artifact.html"), "AGORA Apollo 11 L
     "AGORA Apollo 11 · powered descent to Tranquility Base, 1969-07-20 20:05 UTC",
     "PDI 15.24 km above the site, 480 km uprange; LP165P 50x50, Earth + Sun; quadratic guidance P63/P64/P66, DPS 10-60% + full, RCS attitude control",
     "PDI to touchdown (≈$(round(last.time / 60; digits=1)) min)",
-    "The LM flies 6-DOF; the terrain is the LROC NAC DTM inside the LOLA grid, draped with LROC WAC and NAC imagery down to 0.65 m/px. Click values for their history, click the LM for a face, F follows.")
+    "The LM flies 6-DOF; the terrain is the LROC NAC DTM inside the LOLA grids, draped with an imagery quadtree along the 480 km descent corridor, from the LROC WAC mosaic down to 0.65 m/px at the site. Click values for their history, click the LM for a face, F follows.")
 println("cdn: ", cdn, " ", filesize(cdn))

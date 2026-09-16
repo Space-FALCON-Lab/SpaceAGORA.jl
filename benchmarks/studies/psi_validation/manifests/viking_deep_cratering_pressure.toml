@@ -1,0 +1,87 @@
+# Surface stagnation pressure at which a plume stops merely eroding the soil and
+# starts digging a deep crater.
+version = 1
+
+[case]
+id = "viking_deep_cratering_pressure"
+title = "Deep-cratering stagnation pressure limit (cross-regime, never gates)"
+status = "cross_regime"
+gate_eligible = false
+summary = """
+The only published number that puts a scale on the surface pressure a lander's
+plume may lay down before the soil fails structurally instead of eroding
+grain by grain: an empirical 0.3 kPa limit established in the Viking landing
+tests. The model's peak surface pressure is compared against it at the Apollo
+LM's lowest altitude. The comparison is cross-regime and cannot gate: the limit
+was established under Mars ambient conditions with a different gas-soil flow
+regime, and its own source cautions explicitly against transferring it.
+"""
+
+[source]
+authors = "P. T. Metzger"
+title = "ISRU Implications for Lunar and Martian Plume Effects"
+venue = "AIAA SciTech 2016 (AIAA 2016-0223); preprint arXiv:2104.06248"
+year = 2016
+locator = "Section \"Deep cratering on Mars\": \"the purely empirical limit of 0.3 kPa stagnation pressure on the soil, determined during the Viking tests\""
+doi = ""
+url = "https://arxiv.org/abs/2104.06248"
+access = "open (author preprint)"
+note = """
+The same paragraph is explicit about the limits of the number: "this empirical
+limit does not take into account the details of the physics, and we cannot be
+sure that the gas/soil flow regime present in the Viking tests will be the same
+that occurs with landers having significantly more thrust". It also quantifies
+what exceeding it means for Mars: a 40 t human-class lander computes to 47 kPa,
+"more than 150 times the limit", which the paper says implies deep cratering
+"will undoubtedly occur".
+The lunar counter-evidence is that the Apollo landings did not dig deep craters.
+P. T. Metzger, "Erosion rate of lunar soil under a landing rocket, part 2"
+(Icarus 417, article 116135, 2024, doi:10.1016/j.icarus.2024.116135), Section 6:
+"Bulk cratering did not generally occur in the Apollo landings except possibly in
+the large blast of soil observed in the final moments of some landings". So a
+model whose peak lunar surface pressure sits far above 0.3 kPa at Apollo
+conditions is saying something the Moon did not do - which is a real signal
+about the model's pressure footprint even though the limit itself is Martian.
+"""
+
+[conditions]
+body = "Mars sand in the Viking tests (the reference); the Moon (the model)"
+engine = "Viking descent engines (reference); Apollo LM DPS (model)"
+thrust_n = 12172.0
+thrust_basis = "See apollo12_erosion_rate: 16,564.2 lb landed mass (Orloff, NASA SP-2000-4029) times 1.62 m/s^2."
+height_convention = "nozzle exit plane above the undisturbed surface"
+
+[model]
+quantity = "peak_pressure_pa"
+unit = "Pa"
+
+[tolerance]
+kind = "ratio_band"
+low = 0.0
+high = 1.0
+reason = """
+Recorded for information only; this case never gates. If the Viking limit did
+transfer to the Moon, a model consistent with the Apollo landings having left no
+deep crater would keep its peak surface pressure at or below 300 Pa throughout
+the descent, which is what the band expresses.
+"""
+
+[[reference]]
+height_m = 1.83
+value = 300.0
+derived = false
+note = "0.3 kPa empirical deep-cratering limit from the Viking tests, evaluated at the Apollo 12 touchdown height"
+
+[[reference]]
+height_m = 5.0
+value = 300.0
+derived = false
+note = "same limit, at 5 m (context row)"
+context_only = true
+
+[[reference]]
+height_m = 10.0
+value = 300.0
+derived = false
+note = "same limit, at 10 m (context row)"
+context_only = true

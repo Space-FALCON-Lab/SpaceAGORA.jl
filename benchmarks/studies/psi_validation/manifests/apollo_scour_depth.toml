@@ -1,0 +1,71 @@
+# Depth of the toroidal scour the Apollo plume left in the regolith.
+version = 1
+
+[case]
+id = "apollo_scour_depth"
+title = "Apollo post-landing scour depth (the model has no such output)"
+status = "not_modeled"
+gate_eligible = false
+summary = """
+The only published statement of how deep an Apollo landing actually cut into the
+regolith. The model has no crater geometry at all: it reports a mass erosion
+rate and the annulus the shear threshold is exceeded in, with no bookkeeping of
+where the removed soil came from in depth. Recorded so the gap is explicit.
+"""
+
+[source]
+authors = "P. T. Metzger"
+title = "Erosion rate of lunar soil under a landing rocket, part 2: Benchmarking and predictions"
+venue = "Icarus, vol. 417, article 116135"
+year = 2024
+locator = "Section 5, \"about 6 cm were eroded at the deepest point between 1 and 2 m radius from centerline in a toroidal crater. The extremes of plausibility for this estimate are 3 cm to 12 cm depth\""
+doi = "10.1016/j.icarus.2024.116135"
+url = "https://arxiv.org/abs/2403.18584"
+access = "author preprint is open (arXiv:2403.18584)"
+note = """
+The estimate is attributed in that paper to P. T. Metzger, J. Smith and J. E.
+Lane, "Phenomenology of soil erosion due to rocket exhaust on the Moon and the
+Mauna Kea lunar test site", Journal of Geophysical Research 116, E06005 (2011),
+doi:10.1029/2010JE003745, which interpreted the Apollo erosional features
+(headed and unheaded erosional remnants, micro-scarps) with the help of thruster
+plume tests on volcanic tephra at a field site. The 2024 paper is explicit that
+the crater "was not directly measurable in the Apollo post-landing imagery
+because the crater is shallower and more gradual than the natural terrain
+variations, and because it is spread over an area wider than the images", so
+6 cm (3 to 12 cm) is an interpretation, not a measurement, and the quoted range
+is the stated extremes of plausibility rather than a standard deviation.
+"""
+
+[conditions]
+body = "Moon"
+engine = "Apollo LM descent propulsion system"
+thrust_n = 12172.0
+thrust_basis = "See apollo12_erosion_rate. Nothing in the model consumes it for this case."
+height_convention = "not applicable"
+
+[model]
+quantity = "none"
+unit = "m"
+
+[tolerance]
+kind = "none"
+low = 0.0
+high = 0.0
+reason = "No model output exists, so no tolerance can apply."
+
+[[reference]]
+value = 0.06
+derived = false
+note = "deepest point, between 1 and 2 m radius from centerline"
+
+[[reference]]
+value = 0.03
+derived = false
+note = "shallow extreme of plausibility"
+context_only = true
+
+[[reference]]
+value = 0.12
+derived = false
+note = "deep extreme of plausibility"
+context_only = true

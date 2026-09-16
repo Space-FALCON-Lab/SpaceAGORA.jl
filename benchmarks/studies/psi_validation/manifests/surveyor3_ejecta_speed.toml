@@ -1,0 +1,94 @@
+# Speed of the soil grains the Apollo LM descent engine throws off the surface.
+version = 1
+
+[case]
+id = "surveyor3_ejecta_speed"
+title = "Ejecta speed inferred from the Surveyor III sandblasting"
+status = "sourced"
+gate_eligible = true
+summary = """
+Apollo 12 landed 180 m from Surveyor III and sandblasted it. The returned
+Surveyor hardware is the only direct physical record of how fast a lunar lander
+throws soil, and four independent examinations of it published four different
+estimates. The model's single characteristic ejecta speed is compared against
+that published range.
+"""
+
+[source]
+authors = "C. Immer, J. Lane, P. Metzger and S. Clements"
+title = "Apollo Video Photogrammetry Estimation of Plume Impingement Effects"
+venue = "Earth & Space 2008 (11th ASCE Aerospace Division International Conference), Long Beach, California; preprint arXiv:2104.07669"
+year = 2008
+locator = "Section 1.1, the compiled Surveyor III impact-velocity estimates"
+doi = ""
+url = "https://arxiv.org/abs/2104.07669"
+access = "open (author preprint)"
+note = """
+This paper is used as the compilation; the primary examinations it names are
+Nickle and Carroll (1972), about 40 m/s from shadowing of sandblasted surfaces;
+Jaffe (1972), a lower bound above 70 m/s; Cour-Palais, Flaherty et al. (1972),
+100 m/s; and Brownlee, Bucher et al. (1972), 300 to 2000 m/s from the surface
+structure of the pitting, which the compilation calls "the most reliable
+estimate to date". It also notes that lunar escape speed is about 2373 m/s.
+There is no single measured value with an error bar: there is a 50-fold spread
+of published estimates, and the quantity they bound is the *impact* speed on
+Surveyor at 180 m range, which is a lower bound on the launch speed.
+Two further caveats from the same group's later work. The Surveyor was probably
+not in the main ejecta sheet: Metzger, Lane, Immer and Li ("Scaling of Erosion
+Rate in Subsonic Jet Experiments and Apollo Lunar Module Landings", Earth & Space
+2010, arXiv:2104.10038) state that "far less damage occurred to the Surveyor than
+the direct sheet would have caused". And the ejecta are not monodisperse: the
+speed depends on grain size, so a model that reports one characteristic speed is
+reporting a different kind of quantity than the measurement bounds.
+"""
+
+[conditions]
+body = "Moon"
+engine = "Apollo LM descent propulsion system"
+thrust_n = 12172.0
+thrust_basis = "See apollo12_erosion_rate: 16,564.2 lb landed mass (Orloff, NASA SP-2000-4029) times 1.62 m/s^2."
+height_convention = "nozzle exit plane above the undisturbed surface"
+
+[model]
+quantity = "ejecta_speed_mps"
+unit = "m/s"
+
+[tolerance]
+kind = "ratio_band"
+low = 0.13
+high = 6.7
+reason = """
+The band is the published spread itself, referred to the 300 m/s anchor: 40 m/s
+at the low end (Nickle and Carroll) is 0.13 of it, and 2000 m/s at the high end
+(Brownlee et al.) is 6.7 of it. Passing means only that the model's speed lands
+somewhere inside the range of published estimates; this case cannot discriminate
+better than that, and the run also prints the ratio against the 300 to 2000 m/s
+estimate the compilation calls the most reliable.
+"""
+
+[[reference]]
+height_m = 5.0
+value = 300.0
+derived = false
+note = "Brownlee, Bucher et al. (1972), lower end of the 300-2000 m/s pitting estimate; the primary anchor"
+
+[[reference]]
+height_m = 5.0
+value = 40.0
+derived = false
+note = "Nickle and Carroll (1972), from shadowing of sandblasted surfaces (context row)"
+context_only = true
+
+[[reference]]
+height_m = 5.0
+value = 100.0
+derived = false
+note = "Cour-Palais, Flaherty et al. (1972) (context row)"
+context_only = true
+
+[[reference]]
+height_m = 5.0
+value = 2000.0
+derived = false
+note = "Brownlee, Bucher et al. (1972), upper end of the pitting estimate (context row)"
+context_only = true

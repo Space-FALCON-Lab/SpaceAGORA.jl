@@ -1,0 +1,110 @@
+# Wall shear stress the Apollo LM descent engine lays on the lunar surface.
+version = 1
+
+[case]
+id = "apollo_lm_surface_shear"
+title = "Apollo LM surface shear stress versus engine height"
+status = "sourced"
+gate_eligible = true
+summary = """
+Lane and Metzger computed the surface shear stress of the Apollo LM descent
+engine from RANS CFD at four engine heights, averaged it over the erosion radius
+a0(h), and fitted an exponential in height. That fit is the reference here. The
+model's published output is the peak wall shear, not an area average, so the
+comparison is biased: for any smooth single-humped shear profile the peak
+exceeds the disc average, here by a factor of order two to four. The run also
+prints a supplementary area average of the model's own shear profile over the
+reference's a0, computed the same way the reference defines it, but that number
+never decides a pass.
+"""
+
+[source]
+authors = "J. E. Lane and P. T. Metzger"
+title = "Estimation of Apollo lunar dust transport using optical extinction measurements"
+venue = "Acta Geophysica, vol. 63, no. 2, pp. 568-599"
+year = 2015
+locator = "Section 4, Eq. (13)-(14) and Fig. 11: tau(h) = tau_0 exp(-beta h) with tau_0 = 6.21 N/m^2 and beta = 0.123 1/m"
+doi = "10.1515/acgeo-2015-0005"
+url = "https://arxiv.org/abs/1503.00154"
+access = "author preprint is open (arXiv:1503.00154)"
+note = """
+The reference shear is the radial average 2/a0^2 * integral_0^a0 tau(r,h) r dr of
+a CFD surface shear obtained from Sutherland's law applied to the CFD velocity
+gradient, fitted to four engine heights and shown as open squares in Fig. 11.
+The companion paper by the same group is explicit that this CFD shear is a lower
+bound: P. T. Metzger, J. E. Lane, C. D. Immer and X. Li, "Scaling of Erosion
+Rate in Subsonic Jet Experiments and Apollo Lunar Module Landings" (Earth &
+Space 2010; arXiv:2104.10038), Numerical Results, reports that the CFD "uses an
+unrealistically smooth surface to represent the lunar surface and so the shear
+stress is probably much smaller and more uniform than in a real landing", that
+Roberts' rough-surface approximation puts the shear at the jet's dynamic
+pressure instead, and that the two differ by "many orders of magnitude" with a
+ratio that "varies over two orders of magnitude". The same paper reports the
+radial integral of that CFD shear as 17.4 mN at 20 m and 35.9 mN at 10 m engine
+height, and states the result "is not to be considered a physical erosion law".
+The reference therefore brackets the truth from below; the true rough-surface
+shear lies somewhere between it and the local dynamic pressure.
+"""
+
+[conditions]
+body = "Moon"
+engine = "Apollo LM descent propulsion system"
+thrust_n = 12172.0
+thrust_basis = "See apollo12_erosion_rate: 16,564.2 lb landed mass (Orloff, NASA SP-2000-4029) times 1.62 m/s^2."
+height_convention = "nozzle exit plane above the undisturbed surface"
+
+[model]
+quantity = "peak_shear_pa"
+unit = "Pa"
+# Supplementary only: each reference row carries the reference's own averaging
+# radius a0(h) (Table 2 of the same paper, linearly interpolated in height), so
+# the run can also print the model's shear averaged the way the reference
+# defines it. That column never decides a pass.
+mean_shear_over_reference_radius = true
+
+[tolerance]
+kind = "ratio_band"
+low = 0.1
+high = 10.0
+reason = """
+An order of magnitude either way. The reference is an area average and the model
+reports a peak, worth a factor of two to four on its own; and the reference's own
+authors say the smooth-wall CFD it comes from understates the real shear, with
+the smooth-wall and rough-wall estimates separated by orders of magnitude. A
+tighter band would be asserting an accuracy the source explicitly disclaims.
+"""
+
+[[reference]]
+height_m = 5.0
+value = 3.3574
+mean_radius_m = 6.73
+derived = true
+note = "tau = 6.21 * exp(-0.123 * 5.0) Pa; a0 = 6.73 m interpolated from Table 2"
+
+[[reference]]
+height_m = 10.0
+value = 1.8151
+mean_radius_m = 12.82
+derived = true
+note = "tau = 6.21 * exp(-0.123 * 10.0) Pa; a0 = 12.82 m interpolated from Table 2"
+
+[[reference]]
+height_m = 15.0
+value = 0.9813
+mean_radius_m = 26.67
+derived = true
+note = "tau = 6.21 * exp(-0.123 * 15.0) Pa; a0 = 26.67 m interpolated from Table 2"
+
+[[reference]]
+height_m = 20.0
+value = 0.5306
+mean_radius_m = 32.05
+derived = true
+note = "tau = 6.21 * exp(-0.123 * 20.0) Pa; a0 = 32.05 m interpolated from Table 2"
+
+[[reference]]
+height_m = 30.0
+value = 0.1551
+mean_radius_m = 55.34
+derived = true
+note = "tau = 6.21 * exp(-0.123 * 30.0) Pa; a0 = 55.34 m interpolated from Table 2"

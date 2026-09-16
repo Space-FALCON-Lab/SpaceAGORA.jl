@@ -228,11 +228,26 @@ On the Apollo 11 descent
 (`scripts/dev/viewer_demos/apollo11_landing.jl`) erosion begins 33 s before
 touchdown with the engine 35 m above the ground, peaks at 18 kg/s, and moves
 about 430 kg of regolith in all — the same order as the tonne-scale estimates
-Metzger and co-workers derive from the Apollo landings, and low by roughly a
-factor of two, which is where a model with one lumped cascade multiplier should
-be expected to sit. The peak surface pressure reaches 3.3 kPa and the peak wall
-shear 29 Pa; the ground-effect augmentation peaks at 25 N, well under a
-percent of the engine's thrust.
+Metzger and co-workers derive from the Apollo landings, but low by a factor of
+six against Lane and Metzger's 2.6 t for Apollo 12 and by a factor of twenty-five
+to sixty against Metzger's 2024 estimate of 11 to 26 t, so the lumped cascade
+multiplier is absorbing considerably more than it should. The peak surface pressure reaches
+3.3 kPa and the peak wall shear 29 Pa; the ground-effect augmentation peaks at
+25 N, well under a percent of the engine's thrust.
+
+### Validation against published measurements
+
+`benchmarks/studies/psi_validation/` runs the model against every published
+plume-surface measurement that could be sourced precisely — Apollo descent-film
+erosion rates, the Apollo post-landing scour, the Surveyor III ejecta speeds,
+NASA's subscale vacuum-chamber crater tests — with one frozen manifest per case
+naming its source and its tolerance, and its README records the baseline. In
+short: the model's wall shear stress and its 0.15 Pa erosion threshold both land
+within a factor of two of the published values, the ejecta speed sits inside the
+measured range, and the total eroded mass, the erosion rate's variation with
+height and the width of the eroding region are all wrong, the last two
+structurally. Read that README before trusting any of these quantities
+quantitatively.
 
 ## Surface in the viewer
 

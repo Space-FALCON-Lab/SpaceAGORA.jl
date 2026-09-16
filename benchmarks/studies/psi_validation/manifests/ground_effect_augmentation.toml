@@ -1,0 +1,69 @@
+# Thrust augmentation a descent engine gets from its own reflected plume near
+# the ground.
+version = 1
+
+[case]
+id = "ground_effect_augmentation"
+title = "Ground-effect thrust augmentation (UNSOURCED, never gates)"
+status = "unsourced"
+gate_eligible = false
+summary = """
+The model returns a ground-effect force as its only actual wrench: 3 percent of
+the thrust at contact, decaying exponentially to zero two nozzle exit diameters
+up. No published measurement or computation of that quantity for a lunar-lander
+plume was found, so there is nothing here to validate against. The value is an
+assumption, it is documented as one in the model's own docstring, and it is
+recorded here as an assumption rather than quietly compared to a number that
+does not exist.
+"""
+
+[source]
+authors = "P. T. Metzger"
+title = "ISRU Implications for Lunar and Martian Plume Effects"
+venue = "AIAA SciTech 2016 (AIAA 2016-0223); preprint arXiv:2104.06248"
+year = 2016
+locator = "Section on lander impacts: \"Our CFD simulations modeled the engine nozzle but not the base of the lander just above the nozzle, so we have not characterized the effect of the base pressure that will build up when it is near the ground\""
+doi = ""
+url = "https://arxiv.org/abs/2104.06248"
+access = "open (author preprint)"
+note = """
+This citation is not a reference value. It is the evidence for the negative
+result: the group that has published most of the lunar plume-surface literature
+states that the near-ground base pressure rise has not been characterized. The
+following were searched for a value and none was found: the Apollo descent
+propulsion literature, the NASA plume-surface interaction ground-test campaigns
+at Marshall (Physics Focused Ground Test) and Langley (60-foot vacuum sphere),
+and the Metzger, Lane and Immer body of work. The Langley campaign's
+impingement-plate experiments will instrument a flat plate with pressure, shear
+and heat-flux sensors, so a future entry may become possible, but what is
+published from it so far is flow visualization (shock standoff height and
+curvature), not a thrust augmentation.
+The model's own docstring already says the magnitude is "a modeling choice sized
+to the few-percent effect reported for lunar-lander-class plumes ... not an
+Apollo flight measurement". This case's only function is to keep that admission
+inside the validation record, where it can be counted.
+"""
+
+[conditions]
+body = "Moon"
+engine = "Apollo LM descent propulsion system"
+thrust_n = 11870.0
+thrust_basis = "Apollo 11 near-hover thrust; see pfgt1_erosion_threshold_shear."
+height_convention = "nozzle exit plane above the undisturbed surface"
+
+[model]
+quantity = "ground_effect_fraction"
+unit = "fraction of thrust"
+
+[tolerance]
+kind = "none"
+low = 0.0
+high = 0.0
+reason = "No sourced reference value exists, so no tolerance can apply."
+
+[[reference]]
+height_m = 0.0
+value = 0.0
+derived = false
+note = "placeholder: there is no reference value. The model's output is printed with no ratio."
+unsourced = true

@@ -1,0 +1,90 @@
+# Angle above the horizontal at which the plume throws the dust sheet.
+version = 1
+
+[case]
+id = "apollo_dust_ejection_angle"
+title = "Dust ejection angle above horizontal (the model has no such output)"
+status = "not_modeled"
+gate_eligible = false
+summary = """
+The best-measured single number in the whole Apollo plume-surface record, and
+the model produces nothing to compare it with: `plume_quantities` returns a
+characteristic ejecta speed but no direction. Recorded so the gap is explicit
+and so the ejecta work can be scored against it when it lands.
+"""
+
+[source]
+authors = "C. Immer, J. Lane, P. Metzger and S. Clements"
+title = "Apollo Video Photogrammetry Estimation of Plume Impingement Effects"
+venue = "Earth & Space 2008 (11th ASCE Aerospace Division International Conference), Long Beach, California; preprint arXiv:2104.07669"
+year = 2008
+locator = "Table 1, dust ejection angle for Apollo missions, derived from video photogrammetry"
+doi = ""
+url = "https://arxiv.org/abs/2104.07669"
+access = "open (author preprint)"
+note = """
+Table 1 gives, per mission: Apollo 11 2.6 deg, Apollo 14 2.4 deg, Apollo 15
+8.1 deg, Apollo 16 1.4 deg, Apollo 17 2.0 deg, average 3.3 deg. Apollo 12 could
+not be measured because the sun angle was about 5 deg instead of the other
+missions' 11 deg. The text summarizes the result as 1 to 3 degrees in general and
+explains Apollo 15's outlier as a landing on an 11 deg slope; it also reports a
+pre-touchdown "blow out" on Apollo 15 "likely greater than 22 degrees", from
+landing straddled over a crater rim. No per-mission error bar is published; the
+mission-to-mission spread on flat ground (1.4 to 2.6 deg) is the practical
+uncertainty.
+The angle is measured by the elongation of the footpad's shadow cast through the
+partially transparent dust sheet, so it is the angular thickness of the visible
+sheet, not the launch angle of an individual grain.
+"""
+
+[conditions]
+body = "Moon"
+engine = "Apollo LM descent propulsion system"
+thrust_n = 11870.0
+thrust_basis = "Apollo 11 near-hover thrust; see pfgt1_erosion_threshold_shear. Nothing in the model consumes it for this case."
+height_convention = "not applicable"
+
+[model]
+quantity = "none"
+unit = "deg"
+
+[tolerance]
+kind = "none"
+low = 0.0
+high = 0.0
+reason = "No model output exists, so no tolerance can apply."
+
+[[reference]]
+value = 2.6
+derived = false
+note = "Apollo 11"
+
+[[reference]]
+value = 2.4
+derived = false
+note = "Apollo 14"
+context_only = true
+
+[[reference]]
+value = 8.1
+derived = false
+note = "Apollo 15, landed on an 11 deg slope"
+context_only = true
+
+[[reference]]
+value = 1.4
+derived = false
+note = "Apollo 16"
+context_only = true
+
+[[reference]]
+value = 2.0
+derived = false
+note = "Apollo 17"
+context_only = true
+
+[[reference]]
+value = 3.3
+derived = false
+note = "average of the five measurable missions, as printed in Table 1"
+context_only = true

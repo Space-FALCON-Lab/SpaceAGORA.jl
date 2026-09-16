@@ -246,15 +246,62 @@ end
 end
 
 @testset "The process worker cap honours SPACEAGORA_PERF_PROCS under V2" begin
-    cores = PPr.usable_core_budget()
-    withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => "2") do
-        @test PPr.OuterRouteTuning().process_max_workers == min(2, cores)
-    end
-    withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => "junk") do
-        @test PPr.OuterRouteTuning().process_max_workers == cores
-    end
-    withenv("SPACEAGORA_PARALLEL_POLICY_V2" => nothing, "SPACEAGORA_PERF_PROCS" => "2") do
-        @test PPr.OuterRouteTuning().process_max_workers == cores
+    # Under V2 the default process cap is the usable core budget, cut first by
+    # what memory can pay for (memory_worker_cap, floored at one worker) and
+    # only then by SPACEAGORA_PERF_PROCS, which is an upper limit and never a
+    # floor. Every input the cap reads is pinned here so the expectations do
+    # not depend on the host: cores through SPACEAGORA_CORE_BUDGET, memory
+    # through the same budget and per-worker knobs the testset above uses. A
+    # 1 MB budget can never pay for this process's resident set, so memory
+    # binds at zero workers; a 1 MB per-worker estimate against an unbounded
+    # budget cannot bind on any host with a few megabytes free.
+    try
+        withenv("SPACEAGORA_CORE_BUDGET" => "3",
+                "SPACEAGORA_MEMORY_BUDGET_GB" => "1048576",
+                "SPACEAGORA_PERF_WORKER_MEMORY_GB" => "0.001") do
+            PPr.refresh_machine_topology!()
+            @test PPr.usable_core_budget() == 3
+            @test PPr.memory_worker_cap() >= 3
+            # The request binds when it is below the core budget.
+            withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => "2") do
+                @test PPr.OuterRouteTuning().process_max_workers == 2
+            end
+            # Cores bind when the request exceeds them.
+            withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => "10") do
+                @test PPr.OuterRouteTuning().process_max_workers == 3
+            end
+            # An unusable request leaves the other two bounds in charge.
+            for raw in ("junk", "0", "-1")
+                withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => raw) do
+                    @test PPr.OuterRouteTuning().process_max_workers == 3
+                end
+            end
+            # Without V2 the cap is the core budget alone: neither memory nor
+            # the request applies.
+            withenv("SPACEAGORA_PARALLEL_POLICY_V2" => nothing, "SPACEAGORA_PERF_PROCS" => "2") do
+                @test PPr.OuterRouteTuning().process_max_workers == 3
+            end
+        end
+        withenv("SPACEAGORA_CORE_BUDGET" => "3", "SPACEAGORA_MEMORY_BUDGET_GB" => "0.001") do
+            PPr.refresh_machine_topology!()
+            @test PPr.memory_worker_cap() == 0
+            # Memory is applied before the request: a request of two cannot
+            # raise a cap that memory has already cut to the one-worker floor.
+            withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => "2") do
+                @test PPr.OuterRouteTuning().process_max_workers == 1
+            end
+            withenv("SPACEAGORA_PARALLEL_POLICY_V2" => "1", "SPACEAGORA_PERF_PROCS" => "junk") do
+                @test PPr.OuterRouteTuning().process_max_workers == 1
+            end
+            # And without V2 memory is not consulted at all.
+            withenv("SPACEAGORA_PARALLEL_POLICY_V2" => nothing, "SPACEAGORA_PERF_PROCS" => "2") do
+                @test PPr.OuterRouteTuning().process_max_workers == 3
+            end
+        end
+    finally
+        # Leave the process holding a snapshot of the real machine: later
+        # tests in the same session read this cache.
+        PPr.refresh_machine_topology!()
     end
 end
 

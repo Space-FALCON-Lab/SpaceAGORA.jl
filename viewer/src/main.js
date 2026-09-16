@@ -88,8 +88,6 @@ export function start(payload, container = document.body) {
   const dust = createDust(world, frames, terrain, lod, {
     rotationAt: (t, out) => globe.rotationAt(t, out),
     lighting: lightingHandle,
-    hazeOpacity: options.dust_haze_opacity,
-    hazeDecayS: options.dust_haze_decay_s,
   });
   // Thruster plumes: one per thruster glyph, driven by the recorded firing levels.
   const plumes = createPlumes(sidecar, frames, lod, { raw: rawFrames, enabled: options.plumes ?? true, lighting: lightingHandle });

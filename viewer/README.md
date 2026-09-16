@@ -34,6 +34,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/ensemble.js` | ensemble coloring, spaghetti histories, sample selector |
 | `src/paths.js` | reference polylines in inertial, RTN or body frames |
 | `src/references.js` | reference ghosts: translucent copies of a spacecraft driven by an external state table |
+| `src/groundtrack.js` | ground tracks: the sub-satellite point of every spacecraft drawn on the body's surface, built once in the body-fixed frame and parented to the globe so it is correct in both viewer frames |
 | `src/video.js` | MP4 export through WebCodecs and mp4-muxer (`vendor/mp4-muxer.mjs`, MIT), WebM fallback |
 | `three-gpu-pathtracer@0.0.23`, `three-mesh-bvh@0.7.8`, `three/examples/jsm/postprocessing/Pass.js` (import-map entries, CDN pages only) | the path-traced lighting mode; absent from the offline bundle, which then offers real-time lighting only |
 | `src/terrain.js` | landing-site terrain: a view-dependent quadtree of DEM-displaced patches draped with the imagery tiles (inheriting the nearest present ancestor's tile where none exists), and the hole it cuts in the globe |

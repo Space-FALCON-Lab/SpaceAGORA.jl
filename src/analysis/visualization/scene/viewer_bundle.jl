@@ -12,7 +12,7 @@ const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data",
 # quantity, frame-major then spacecraft, from the `sc{i}_plume_*` result columns.
 const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s", "eroded_kg", "ejecta_mps", "ground_effect_n")
 
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "plumes.js", "timeline.js", "dust.js", "lighting.js", "ui.js", "main.js")
+const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "groundtrack.js", "video.js", "plots.js", "terrain.js", "plumes.js", "timeline.js", "dust.js", "lighting.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
@@ -712,13 +712,14 @@ function render_viewer_html(payload::AbstractDict; viewer_dir::AbstractString=VI
     return replace(html, "__PAYLOAD__" => _script_safe_json(payload))
 end
 
-@inline function _viewer_options(; trail_s, trail_orbits, frame, speed, title)
+@inline function _viewer_options(; trail_s, trail_orbits, frame, speed, title, ground_tracks=false)
     frame in (:inertial, :planet_fixed) || throw(ArgumentError("frame must be :inertial or :planet_fixed, got $(frame)."))
     options = Dict{String, Any}("frame" => String(frame))
     trail_s === nothing || (options["trail_s"] = Float64(trail_s))
     trail_orbits === nothing || (options["trail_orbits"] = Float64(trail_orbits))
     speed === nothing || (options["speed"] = Float64(speed))
     title === nothing || (options["title"] = String(title))
+    options["ground_tracks"] = Bool(ground_tracks)
     return options
 end
 
@@ -737,7 +738,9 @@ is `:inertial` (default) or `:planet_fixed`; `speed` is the initial playback
 rate in simulated seconds per wall second; `title` names the page;
 `textures=false` skips the surface texture and `texture_resolution` picks a
 tier (`:best`, the default, takes the largest registered, e.g. 8k for Earth;
-`"4k"` keeps the page small); `models` maps spacecraft ids to STL, OBJ, glTF
+`"4k"` keeps the page small); `ground_tracks=true` starts the page with the
+sub-satellite tracks drawn on the body's surface (the toolbar toggles them
+either way); `models` maps spacecraft ids to STL, OBJ, glTF
 or GLB files drawn instead of the link boxes, at `model_scale` meters per
 model unit (a number or a per-id `Dict`) and rotated by `model_rotation_deg`
 (per-id XYZ Euler angles), posed by `model_articulations` (per-id list of
@@ -758,6 +761,7 @@ function export_visualization(
     frame::Symbol=:inertial,
     speed::Union{Nothing, Real}=nothing,
     title::Union{Nothing, AbstractString}=nothing,
+    ground_tracks::Bool=false,
     textures::Bool=true,
     texture_resolution=:best,
     models::AbstractDict=Dict{Int, String}(),
@@ -783,7 +787,7 @@ function export_visualization(
     payload = viewer_payload(
         scene, df;
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
-        options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title),
+        options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
         paths=paths, references=references, terrain=terrain

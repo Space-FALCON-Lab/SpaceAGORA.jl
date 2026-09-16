@@ -17,6 +17,7 @@ variant `artifact.html` built by `build_cdn_page.py`.
 | `odyssey_aerobraking.jl` | Mars Odyssey aerobraking, two orbits from 2001-11-06 with NASA's Odyssey model, SPICE ghost | GRAM (Mars), Odyssey `m01_ab_v2.bsp` (auto-downloaded) |
 | `cassini_titan_flyby.jl [TA\|T5\|all]` | Cassini's TA and T5 Titan flybys, Titan-centerd, SPICE ghost | GRAM (Titan), Cassini SCPSE kernels (auto-downloaded) |
 | `apollo11_lunar_orbit.jl` | Apollo 11 lunar module in the parking orbit, two orbits | SPICE (Moon frames) |
+| `cygnss_constellation.jl` | the CYGNSS constellation over the 96 hours its flight telemetry covers (2025-06-06 to 2025-06-09), ground tracks, FM1 and FM4 telemetry ghosts | SPICE (Earth orientation), `data/telemetry/CYGNSS/` (gitignored), CelesTrak space-weather indices (auto-downloaded) |
 | `apollo11_landing.jl` | Apollo 11 powered descent from PDI to touchdown, 6-DOF with the quadratic guidance and RCS attitude control, LROC terrain and imagery | SPICE (Moon frames), site data from `scripts/dev/terrain/fetch_moon_site.py` |
 
 The mission cases share `common.jl`: kernel download into
@@ -52,6 +53,20 @@ gives about half the density the accelerometers measured on these passes;
 `SPACEAGORA_DEMO_ODYSSEY_ATMOSPHERE=accelerometer` flies the accelerometer-derived
 per-pass profiles of the telemetry validation study instead, into
 `odyssey_aerobraking_accelerometer/`.
+
+CYGNSS reads its initial states from
+`data/telemetry/CYGNSS/constellation_ics_20250606.json` and writes each
+spacecraft's provenance — telemetry, catalogue or nominal — into its viewer
+label, so the page never presents a catalogue or design-orbit state as a flown
+one. Absent that file it falls back to a development stub (FM1 and FM4 from
+telemetry, the rest on the published design orbit). The initial orbital energy
+of the telemetry-backed spacecraft is fitted to their own telemetry over the
+window, one scalar each; `SPACEAGORA_DEMO_CYGNSS_FIT_SMA=0` propagates the
+file's states untouched, `SPACEAGORA_DEMO_CYGNSS_HOURS` shortens the window and
+`SPACEAGORA_DEMO_CYGNSS_DRAG_SCALE` scales the free-molecular drag. The drawn
+and simulated vehicle is a generic small-satellite box from published CYGNSS
+figures, not a reconstruction of the flight geometry, and the page carries no
+spacecraft mass properties.
 
 `build_cdn_page.py <viewer.html> <out.html> [title heading orbit span foot]`
 turns an exported page into the variant the claude.ai artifact host can

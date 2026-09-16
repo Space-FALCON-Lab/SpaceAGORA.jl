@@ -1,13 +1,16 @@
 # Paper routing figures — R6 against serial and the best static route
 
 Record of the P1–P5 benchmark phases built for the parallelization paper's four
-routing comparisons, the results measured on `space-falcon-1`, and the findings
-that need stating alongside them.
+routing comparisons, the results measured on `space-falcon-1` (12 cores) and
+`space-falcon-lab-TRX50-AERO-D` (64 cores), and the findings that need stating
+alongside them. Both machines ran the same code at the same commit.
 
 - **Code:** `origin/main` 4b42b544, run from a dedicated worktree so the numbers
   cite one hash; harness changes on `bench/paper-routing-figures`.
-- **Machine:** `space-falcon-1`, Ryzen 9 9900X, 12 physical cores / 24 threads,
-  60 GB. Thread ladder `1,2,4,8,12`, process-worker cap 12.
+- **Machines:** `space-falcon-1`, Ryzen 9 9900X, 12 physical cores / 24 threads,
+  60 GB, thread ladder `1,2,4,8,12`, process-worker cap 12; and
+  `space-falcon-lab-TRX50-AERO-D`, 64 physical cores, thread ladder
+  `1,2,4,8,16,32`, process-worker cap 32.
 - **Run:** `output/performance/paper_benchmarks/20260915_181642` (gitignored).
   Cold-store P3/P4 preserved in the `_cold_store` sibling directory.
 - **Tables:** regenerate with
@@ -112,6 +115,48 @@ Cold-store versions of the same two tables (superseded):
 | 6x2 | 2.831 | 1.740 | 0.61 | 1.976 | 1.979 | 1.00 |
 | 12x1 | 1.465 | 1.411 | 0.96 | 1.357 | 1.254 | 0.92 |
 
+## TRX50 — the same five phases at budget 32
+
+- **Machine:** `space-falcon-lab-TRX50-AERO-D`, 64 physical cores, thread ladder
+  `1,2,4,8,16,32`, process-worker cap 32. Idle and quiet-gated throughout.
+- **Run:** `20260916_143516`, 163 aggregated rows, none below the 3 s floor.
+  Pulled to `output/performance/paper_benchmarks_trx50/` (gitignored).
+- **Same code, same cases, same iso-work mission lengths.** Serial baselines
+  land at 8.6–12.2 s, matching `space-falcon-1`'s 8.5–11.8 s, so the two
+  machines' columns are directly comparable.
+
+P1, constellation size at 32 threads:
+
+| N | serial | best static | route | R6 | serial/static | serial/R6 |
+|---:|---:|---:|---|---:|---:|---:|
+| 1 | 8.607 | 8.567 | inner_only | 8.701 | 1.00 | 0.99 |
+| 16 | 10.635 | 2.199 | outer_threads | 2.221 | 4.84 | 4.79 |
+| 64 | 11.389 | 34.457 | outer_inner_static | 3.740 | 0.33 | 3.05 |
+| 256 | 11.554 | 20.907 | inner_only | 2.833 | 0.55 | 4.08 |
+| 1024 | 12.195 | 4.963 | outer_inner_static | 5.053 | 2.46 | 2.41 |
+| 4096 | 11.532 | 2.213 | outer_threads | 2.457 | 5.21 | 4.69 |
+
+P2, thread budget at 4096 spacecraft, reaches 5.83x at 16 threads and falls
+back to 5.44x at 32 — the ceiling is between 8 and 16 threads on this box, and
+R6 tracks the best static route to within 4% at every rung.
+
+P3/P4 are the clearest scaling result in the set: on the cheap ladder R6 runs
+9.70x at budget 32 against serial and matches the best static route exactly;
+on the heavy ladder the best static route reaches 16.51x while R6 reaches
+12.71x. P5's two workloads peak at 7.48x and 12.58x, both at the 32x1 split,
+with R6 the fastest measured route at that point on both.
+
+Full tables for both machines: `output/paper_routing_tables/routing_tables.md`
+and `.tex`, regenerated with
+
+```
+python3 scripts/make_paper_routing_tables.py \
+    output/performance/paper_benchmarks/20260915_181642 \
+    output/performance/paper_benchmarks_trx50/20260916_143516 \
+    --cold output/performance/paper_benchmarks/20260915_181642_cold_store/cold_store_aggregated.csv \
+    --out output/paper_routing_tables
+```
+
 ## Findings
 
 **1. The best static route changes identity along every axis.** It moves three
@@ -119,12 +164,32 @@ times down P1's column, twice down P2's, and three times across each of P5's.
 No single pinned route is the right answer at every size, budget or split, which
 is the case for routing at all — and it is measured here rather than asserted.
 
-**2. At 64 spacecraft every static route is slower than serial.** 14.08–14.25 s
-against serial's 11.63 s, while R6 reaches 5.73 s. The raw telemetry attributes
-it: the static routes run with `rhs_plan_source=none` and let the auto heuristic
-choose the batched-RHS configuration, which is a net loss at that width, while
-R6 runs `plan=cache/satellite_batch, allotment=1, static`. R6's win here is
-calibration, not route selection, and the paper should say so.
+**2. At mid constellation sizes every static route is slower than serial, on
+both machines, and the cause is the RHS plan rather than the route.** On
+`space-falcon-1` at 64 spacecraft the three static routes take 14.08–14.25 s
+against serial's 11.63 s while R6 reaches 5.73 s. On TRX50 the same dip is
+deeper and spans two rungs: 34.46–34.89 s at N=64 and 20.91–21.31 s at N=256,
+against serial's 11.39 s and 11.55 s, while R6 reaches 3.74 s and 2.83 s. It is
+not noise — all three repeats of all three static routes agree to within 1%, and
+the three routes agree with *each other* to within 1%, which is the first clue:
+the choice of outer route is irrelevant to the cost.
+
+The raw telemetry attributes it. The static routes run
+`rhs_plan_source=none, rhs_plan_mode=none, rhs_batch_parallel=auto` and let the
+auto heuristic pick the batched-RHS configuration; R6's fast repeats run
+`rhs_plan_source=sweep, rhs_plan_mode=satellite_batch, allotment=1,
+scheduler=static`. TRX50 supplies the control the local run could not: R6's
+second repeat at N=64 fell back to `rhs_plan_source=cache,
+rhs_plan_mode=heuristic, allotment=0` and took 34.46 s — the static routes'
+time to within 0.1% — then returned to 3.33 s on the third repeat under the
+swept plan. The same binary, the same route, the same width; only the RHS plan
+differs, and it is worth 10x. Serial escapes because it runs
+`rhs_batch_parallel=off` entirely.
+
+R6's win at these sizes is calibration, not route selection, and the paper
+should say so. It also means the static-route columns at N=64 and N=256 are
+measuring the auto heuristic's failure, not a routing result — quote them as
+such or the comparison flatters R6 for the wrong reason.
 
 **3. R6 beats every pure route at small Monte Carlo budgets by being impure.**
 The dispatch trace at budget 8 reads `workers=8 local_slots=4 pool_size=8`: it
@@ -224,5 +289,22 @@ state it, and do not print numbers from both conventions in the same table.
 
 ## Open
 
-- **TRX50.** The same five phases at budget 32 are still outstanding; the box has
-  been occupied by another user's job throughout.
+- **Which serial baseline the paper adopts.** S1 divides by an
+  `rhs_mode=serial` baseline (53.90–53.93 s) and the P-series divides by
+  `rhs_mode=auto` (11.84–12.13 s) on the same case. Every S1 speedup is
+  therefore ~4.5x larger than the corresponding P-series figure for arithmetic
+  reasons alone; re-based, S1 gives 4.8x against P2's 4.57x. The manuscript has
+  to pick one convention and restate the other set. This is the one decision
+  still needed from the author.
+
+- **The auto heuristic's mid-size failure is a live defect, not just a
+  measurement.** Finding 2 shows the batched-RHS heuristic costing 3x at N=64
+  and 2x at N=256 on a 64-core box, on every static route. R6 routes around it;
+  nothing else does. Worth an issue against the RHS calibration path
+  independently of the paper.
+
+- **Warm P3/P4 on TRX50.** The local methodology re-ran the two Monte Carlo
+  ladders against a converged calibration store; TRX50's ran once from the
+  release's store. The TRX50 P3/P4 columns are therefore cold-ish and may
+  understate R6 at the low budgets, the same way finding 4a's withdrawn
+  regression did locally. Optional — the qualitative result is unchanged.

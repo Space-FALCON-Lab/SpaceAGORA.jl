@@ -148,6 +148,22 @@ ring of the covered region fades into the globe's own map and the globe is cut
 open under the rest of it; a ring marks the site and the selection panel
 reports the height above the terrain.
 
+A node's edges are drawn so that the tree does not show itself. Neighboring
+nodes are separate meshes placed at their own centers, so their shared edge
+lands a hair apart once the vertices are rounded to single precision, and the
+pixels that fall in that sub-pixel gap show the skirt behind the ground: the
+skirt therefore carries the ground's own normals, its vertices are its own
+(hanging it from the surface ring left it with no normal at all), the material
+undoes the normal flip a double-sided material applies to a back face, and the
+wall is sunk under the ground edge by 1e-4 of the node's width, at most a
+fortieth of a pixel since a node is drawn at most `terrain_split_pixels` wide.
+Vertex normals come from the height gradient over a one-vertex halo around the
+node rather than from the node's own faces, so two neighbors agree on the
+normal along the edge they share instead of each leaning inward. A run with
+terrain also starts with the graticule off, because those lines are drawn on
+the reference sphere and a site below that radius wears them as streaks across
+the landscape; the toolbar checkbox turns them back on.
+
 A payload written before the quadtree (an `imagery` list of nested squares
 rather than `tiles`) still draws, with the widest square as the root tile.
 

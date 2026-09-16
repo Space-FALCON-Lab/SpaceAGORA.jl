@@ -49,6 +49,7 @@ const TERRAIN_GRID_TAPER = 0.08;       // band inside a finer grid over which it
 const TERRAIN_SKIRT_RELIEF = 0.6;      // skirt depth as a fraction of a node's own relief
 const TERRAIN_SKIRT_SIZE = 0.02;       // plus this fraction of the node's width
 const TERRAIN_SKIRT_MAX_M = 3000;      // and never deeper than this
+const TERRAIN_SKIRT_SINK = 1e-4;       // the skirt's top, below the node's own edge, as a fraction of its width
 
 // Height at (lat, lon) from one grid, bilinear, NaN outside it.
 function terrainGridHeight(g, latDeg, lonDeg) {
@@ -255,6 +256,13 @@ export function createTerrain(spec, planet, options = {}) {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlobeUv = aGlobeUv;\nvFade = aFade;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform sampler2D uGlobeMap;\nuniform float uGlobeMix;\nvarying vec2 vGlobeUv;\nvarying float vFade;')
+        // A double-sided material flips the normal on a back face. The ground is
+        // only ever seen from above, and the skirt carries the ground's own
+        // normal so that it disappears into the ground where it shows: flipping
+        // it turned the skirt black, which is what drew a dotted line along
+        // every node boundary. Undo the flip (faceDirection is +/-1).
+        .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+  normal *= faceDirection;`)
         .replace('#include <map_fragment>', `#include <map_fragment>
   diffuseColor.rgb = mix(diffuseColor.rgb, texture2D(uGlobeMap, vGlobeUv).rgb, vFade * uGlobeMix);`);
       material.userData.shader = shader;
@@ -275,6 +283,7 @@ export function createTerrain(spec, planet, options = {}) {
   // ---- nodes -------------------------------------------------------------
   const nodes = new Map();
   const tmpPoint = new THREE.Vector3();
+  const tmpNormal = new THREE.Vector3();
   let builtCount = 0;
 
   function makeNode(level, x, y) {
@@ -304,27 +313,56 @@ export function createTerrain(spec, planet, options = {}) {
   function buildNode(node, frameIndex) {
     const n = segments;
     const source = resolveTile(node.level, node.x, node.y, frameIndex);
-    const positions = [], uvs = [], globeUvs = [], fades = [], index = [];
+    const positions = [], normals = [], uvs = [], globeUvs = [], fades = [], index = [];
     const center = node.center;
-    const latOf = (i) => node.latMax - (node.latMax - node.latMin) * i / n;
-    const lonOf = (j) => node.lonMin + (node.lonMax - node.lonMin) * j / n;
+    const dLat = (node.latMax - node.latMin) / n, dLon = (node.lonMax - node.lonMin) / n;
+    const latOf = (i) => node.latMax - dLat * i;
+    const lonOf = (j) => node.lonMin + dLon * j;
     const u0 = source ? source.u0 : 0, v0 = source ? source.v0 : 1, us = source ? source.size : 1;
+    // Heights on a one-vertex halo around the node, so a normal is the central
+    // difference of the same surface on both sides of every edge. Normals
+    // averaged from a node's own faces alone lean inward along its border, and
+    // the neighbor's lean the other way, which draws a shading line along every
+    // boundary of the tree; the halo makes the two agree by construction.
+    const stride = n + 3;
+    const halo = new Float64Array(stride * stride);
+    for (let i = -1; i <= n + 1; i++) {
+      const lat = latOf(i);
+      for (let j = -1; j <= n + 1; j++) {
+        const lon = lonOf(j);
+        halo[(i + 1) * stride + (j + 1)] = surfaceHeight(lat, lon) * (1 - fadeOf(lat, lon));
+      }
+    }
+    const heightOf = (i, j) => halo[(i + 1) * stride + (j + 1)];
+    const latMeters = dLat * DEG_TO_KM * 1000;
+    // The surface normal from the height gradient: up - dh/dNorth * north - dh/dEast * east.
+    const normalAt = (i, j, lat, lon, out) => {
+      const la = THREE.MathUtils.degToRad(lat), lo = THREE.MathUtils.degToRad(lon);
+      const cla = Math.cos(la), sla = Math.sin(la), clo = Math.cos(lo), slo = Math.sin(lo);
+      const lonMeters = Math.max(dLon * DEG_TO_KM * 1000 * cla, 1e-6);
+      const dhdN = (heightOf(i - 1, j) - heightOf(i + 1, j)) / (2 * latMeters);
+      const dhdE = (heightOf(i, j + 1) - heightOf(i, j - 1)) / (2 * lonMeters);
+      return out.set(
+        cla * clo + dhdN * sla * clo + dhdE * slo,
+        cla * slo + dhdN * sla * slo - dhdE * clo,
+        sla - dhdN * cla,
+      ).normalize();
+    };
     let hMin = Infinity, hMax = -Infinity;
-    const heights = new Float64Array((n + 1) * (n + 1));
     for (let i = 0; i <= n; i++) {
       const lat = latOf(i);
       for (let j = 0; j <= n; j++) {
         const lon = lonOf(j);
-        const fade = fadeOf(lat, lon);
-        const h = surfaceHeight(lat, lon) * (1 - fade);
-        heights[i * (n + 1) + j] = h;
+        const h = heightOf(i, j);
         if (h < hMin) hMin = h;
         if (h > hMax) hMax = h;
         bodyPoint(lat, lon, h, tmpPoint).sub(center);
         positions.push(tmpPoint.x, tmpPoint.y, tmpPoint.z);
+        normalAt(i, j, lat, lon, tmpNormal);
+        normals.push(tmpNormal.x, tmpNormal.y, tmpNormal.z);
         uvs.push(u0 + us * j / n, v0 - us * i / n);
         globeUvs.push((lon - globeLonLeft) / 360, (lat + 90) / 180);
-        fades.push(fade);
+        fades.push(fadeOf(lat, lon));
       }
     }
     for (let i = 0; i < n; i++) {
@@ -334,37 +372,59 @@ export function createTerrain(spec, planet, options = {}) {
       }
     }
     // Skirts: deep enough to cover the height a coarser neighbor may sit at.
+    //
+    // Two neighboring nodes are separate meshes placed at their own centers, so
+    // their shared edge lands a hair apart once the positions are rounded to
+    // float32, and the pixels whose centers fall in that sub-pixel gap show
+    // what is behind the ground: the skirt. That is harmless as long as the
+    // skirt looks like the ground, and it did not. The skirt hung from the
+    // surface ring, so `computeVertexNormals` had it cancel against itself (it
+    // is indexed in both windings) and left the wall with no normal at all;
+    // giving it the ground's normal is not enough either, because a
+    // double-sided material flips the normal on a back face and the wall is
+    // seen from both. So the skirt owns its vertices and carries the ground's
+    // own normal, the material undoes the flip (see terrainMaterial), and the
+    // wall is sunk under the ground edge by a fraction of the node's width -
+    // under a pixel, since a node is drawn at most `splitPixels` wide - so that
+    // it cannot win a depth comparison against the neighbor's surface either.
+    // The dotted line along every node boundary was this.
     const skirtM = Math.min(TERRAIN_SKIRT_MAX_M, TERRAIN_SKIRT_RELIEF * Math.max(hMax - hMin, 1) + TERRAIN_SKIRT_SIZE * node.sizeKm * 1000);
+    const sinkM = TERRAIN_SKIRT_SINK * node.sizeKm * 1000;
+    // One edge sample: the top of the wall then its bottom, so the pair is
+    // `k` and `k + 1`. Returns the index of the top.
     const pushSkirt = (i, j) => {
-      const lat = latOf(i), lon = lonOf(j);
-      bodyPoint(lat, lon, heights[i * (n + 1) + j] - skirtM, tmpPoint).sub(center);
-      positions.push(tmpPoint.x, tmpPoint.y, tmpPoint.z);
-      uvs.push(u0 + us * j / n, v0 - us * i / n);
-      globeUvs.push((lon - globeLonLeft) / 360, (lat + 90) / 180);
-      fades.push(fadeOf(lat, lon));
-      return positions.length / 3 - 1;
+      const lat = latOf(i), lon = lonOf(j), h = heightOf(i, j);
+      const fade = fadeOf(lat, lon);
+      normalAt(i, j, lat, lon, tmpNormal);
+      for (let k = 0; k < 2; k++) {
+        bodyPoint(lat, lon, h - (k === 0 ? sinkM : skirtM), tmpPoint).sub(center);
+        positions.push(tmpPoint.x, tmpPoint.y, tmpPoint.z);
+        normals.push(tmpNormal.x, tmpNormal.y, tmpNormal.z);
+        uvs.push(u0 + us * j / n, v0 - us * i / n);
+        globeUvs.push((lon - globeLonLeft) / 360, (lat + 90) / 180);
+        fades.push(fade);
+      }
+      return positions.length / 3 - 2;
     };
     const skirtEdge = (i0, j0, i1, j1) => {
       const steps = Math.max(Math.abs(i1 - i0), Math.abs(j1 - j0));
       const di = Math.sign(i1 - i0), dj = Math.sign(j1 - j0);
-      let prevTop = i0 * (n + 1) + j0, prevBottom = pushSkirt(i0, j0);
+      let prev = pushSkirt(i0, j0);
       for (let m = 1; m <= steps; m++) {
-        const i = i0 + di * m, j = j0 + dj * m;
-        const top = i * (n + 1) + j, bottom = pushSkirt(i, j);
-        index.push(prevTop, top, prevBottom, top, bottom, prevBottom,
-          prevTop, prevBottom, top, top, prevBottom, bottom);   // both windings: a skirt is seen from either side
-        prevTop = top; prevBottom = bottom;
+        const cur = pushSkirt(i0 + di * m, j0 + dj * m);
+        index.push(prev, cur, prev + 1, cur, cur + 1, prev + 1);
+        prev = cur;
       }
     };
     skirtEdge(0, 0, 0, n); skirtEdge(n, 0, n, n); skirtEdge(0, 0, n, 0); skirtEdge(0, n, n, n);
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.setAttribute('aGlobeUv', new THREE.Float32BufferAttribute(globeUvs, 2));
     geometry.setAttribute('aFade', new THREE.Float32BufferAttribute(fades, 1));
     geometry.setIndex(index);
-    geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
 
     const mesh = new THREE.Mesh(geometry, terrainMaterial());
@@ -398,9 +458,13 @@ export function createTerrain(spec, planet, options = {}) {
     for (let i = 0; i <= n; i++) {
       for (let j = 0; j <= n; j++) uv.setXY(i * (n + 1) + j, source.u0 + source.size * j / n, source.v0 - source.size * i / n);
     }
-    // the skirt vertices repeat the edge rows in the order they were pushed
+    // the skirt vertices repeat the edge rows in the order they were pushed,
+    // two of them (the top of the wall and its bottom) per edge sample
     let k = (n + 1) * (n + 1);
-    const setSkirt = (i, j) => { uv.setXY(k++, source.u0 + source.size * j / n, source.v0 - source.size * i / n); };
+    const setSkirt = (i, j) => {
+      const u = source.u0 + source.size * j / n, v = source.v0 - source.size * i / n;
+      uv.setXY(k++, u, v); uv.setXY(k++, u, v);
+    };
     const edge = (i0, j0, i1, j1) => {
       const steps = Math.max(Math.abs(i1 - i0), Math.abs(j1 - j0));
       const di = Math.sign(i1 - i0), dj = Math.sign(j1 - j0);

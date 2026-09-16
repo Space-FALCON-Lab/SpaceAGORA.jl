@@ -233,6 +233,15 @@ export function start(payload, container = document.body) {
   // Default trail coloring: heat rate when the run has it, else age.
   const initialColor = options.trail_color && TRAIL_COLOR_MODES[options.trail_color] ? options.trail_color : (frames.hasScalar('heat_rate') ? 'heat_rate' : 'age');
   ui.setTrailLegend(craft.setTrailColorMode(initialColor));
+  // The graticule is drawn on the reference sphere. A landing site whose ground
+  // lies below that radius (Tranquility Base is 1.5 km under it) would wear the
+  // lines as bright streaks across the landscape, so a run with terrain starts
+  // with the graticule off; the toolbar still turns it back on.
+  if (terrain.levels.length) {
+    const graticuleBox = ui.root.querySelector('[data-role="grid"]');
+    if (graticuleBox) graticuleBox.checked = false;
+    state.setGraticule(false);
+  }
   if (lod.heatingAvailable && (options.heating ?? true)) { lod.setHeatingVisible(true); ui.setHeatLegend(lod.heatRange()); }
   lighting.ready.then(() => ui.setLightingModes(lighting.modes));
   const trailColorSelect = container.querySelector('[data-role="trailcolor"]');

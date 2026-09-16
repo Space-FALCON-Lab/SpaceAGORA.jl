@@ -8,9 +8,11 @@
 #
 # Usage:
 #   julia --project=. benchmarks/studies/psi_validation/run_validation.jl \
-#       [--cases=all|gates|<id,...>] [--enforce=true|false] [--out-root=DIR]
+#       [--cases=all|gates|<id,...>] [--enforce=true|false] [--out-root=DIR] \
+#       [--field=analytic|table|<path to a plume field json>]
 #
-# Defaults: cases=all, enforce=false. `--enforce=true` exits nonzero if any
+# Defaults: cases=all, enforce=false, field=analytic. The results land under
+# `results/<hostname>/<analytic|table>/`, so the two fields can be compared. `--enforce=true` exits nonzero if any
 # gate-eligible case falls outside its manifest's tolerance; cases that are
 # calibration targets, cross-regime, unsourced or not produced by the model are
 # never enforced, whatever the flag says.
@@ -23,7 +25,8 @@ include(joinpath(@__DIR__, "common.jl"))
 const CLI_OPTS = parse_kv_args(copy(ARGS))
 const CASE_SELECTOR = get(CLI_OPTS, "cases", "all")
 const ENFORCE = parse_bool_flag(get(CLI_OPTS, "enforce", "false"))
-const OUT_ROOT = results_root(get(CLI_OPTS, "out-root", ""))
+const FIELD_NAME = get(CLI_OPTS, "field", "analytic")
+const OUT_ROOT = joinpath(results_root(get(CLI_OPTS, "out-root", "")), lowercase(FIELD_NAME) == "analytic" ? "analytic" : "table")
 
 using SpaceAGORA
 
@@ -37,6 +40,21 @@ function evaluate(case, cfg)
     thrust = Float64(case.conditions["thrust_n"])
     want_mean_shear = Bool(get(case.model, "mean_shear_over_reference_radius", false))
     rows = NamedTuple[]
+
+    if quantity == "crater_depth_m"
+        depth, peak_r, edge_r, _ = model_profile_crater(cfg, thrust, case.profile)
+        for (k, ref) in enumerate(case.references)
+            refval = Float64(ref["value"])
+            ratio = refval > 0.0 ? depth / refval : NaN
+            push!(rows, (
+                height_m=nothing, reference=refval, model=depth, ratio=ratio,
+                context_only=Bool(get(ref, "context_only", false)),
+                primary=(k == 1), mean_shear=nothing,
+                note=String(get(ref, "note", "")),
+            ))
+        end
+        return rows, [(t_s=NaN, height_m=peak_r, rate_kg_s=edge_r)]
+    end
 
     if quantity == "eroded_mass_kg"
         total, profile_rows = model_profile_mass(cfg, thrust, case.profile)
@@ -106,6 +124,7 @@ function print_findings(evaluated)
         scored = [r for r in rows if !r.context_only && r.ratio !== nothing && isfinite(r.ratio)]
         if isempty(scored)
             reason = case.status == "not_modeled" ? "the model produces no comparable output" :
+                     case.status == "different_quantity" ? "the model's output is not a definition of the same quantity" :
                      case.status == "unsourced" ? "no published reference value exists" :
                      "no scored row produced a ratio"
             println("  $(case.id): no ratio -- $reason.")
@@ -156,7 +175,7 @@ end
 
 function main()
     cases = select_cases(load_cases(), CASE_SELECTOR)
-    cfg = PlumeSurfaceConfig()
+    cfg, field_label = study_config(FIELD_NAME)
     mkpath(OUT_ROOT)
 
     println("Plume-surface interaction validation study")
@@ -164,6 +183,8 @@ function main()
     println("enforce  = $ENFORCE (only 'sourced' cases can be enforced)")
     println("out root = $OUT_ROOT")
     println("model    = PlumeSurfaceConfig() defaults (Apollo LM DPS over lunar mare regolith)")
+    println("field    = $field_label")
+    println("erosion  = $(cfg.erosion_model), regimes $(map(typeof, cfg.regimes))")
 
     comparison_rows = Vector{String}[]
     case_rows = Vector{String}[]
@@ -209,10 +230,15 @@ function main()
             ])
         end
         if !isempty(profile_rows)
-            println("    descent profile the model was integrated over:")
-            for p in profile_rows
-                @printf("      t %+7.1f s  h %6.2f m  model rate %8.3f kg/s\n",
-                        p.t_s, p.height_m, p.rate_kg_s)
+            if String(case.model["quantity"]) == "crater_depth_m"
+                @printf("    crater shape: deepest point at r = %.2f m, edge (a tenth of the peak) at r = %.2f m\n",
+                        profile_rows[1].height_m, profile_rows[1].rate_kg_s)
+            else
+                println("    descent profile the model was integrated over:")
+                for p in profile_rows
+                    @printf("      t %+7.1f s  h %6.2f m  model rate %8.3f kg/s\n",
+                            p.t_s, p.height_m, p.rate_kg_s)
+                end
             end
         end
         if case.status == GATEABLE_STATUS && v != "pass"

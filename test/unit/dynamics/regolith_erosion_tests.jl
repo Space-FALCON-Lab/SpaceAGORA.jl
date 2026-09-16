@@ -292,7 +292,9 @@ const DEAD_GAS = (pressure_pa=0.0, shear_pa=0.0, density_kg_m3=0.0, speed_mps=0.
         # h ~ 1 / sqrt(tau_t). Metzger (2024b, section 2.4) puts the observed
         # first dust in the Apollo 16 video at 31.5 m, so the derived threshold
         # overshoots the observation by about 60 percent on this shear law.
-        @test h_roberts ≈ plume_erosion_onset_height(cfg, APPROACH_THRUST_N) *
+        # `PlumeSurfaceConfig()` now defaults to the erosion regimes, so the
+        # fitted law this comparison is against has to be asked for by name.
+        @test h_roberts ≈ plume_erosion_onset_height(PlumeSurfaceConfig(erosion_model=:roberts_fitted), APPROACH_THRUST_N) *
                           sqrt(FITTED_THRESHOLD_SHEAR_PA / shields_threshold_shear_pa(soil, MOON_G)) rtol = 5e-3
         @test 45.0 < h_roberts < 55.0
 
@@ -341,8 +343,12 @@ const DEAD_GAS = (pressure_pa=0.0, shear_pa=0.0, density_kg_m3=0.0, speed_mps=0.
             return total
         end
 
-        # today's fitted threshold shuts the model off above 31.0 m
-        @test plume_erosion_onset_height(cfg, APPROACH_THRUST_N) < 31.9
+        # the fitted threshold shuts that law off above 31.0 m; the effector no
+        # longer uses it by default, but it is still reachable for comparison
+        @test plume_erosion_onset_height(PlumeSurfaceConfig(erosion_model=:roberts_fitted), APPROACH_THRUST_N) < 31.9
+        # the effector's own default now carries the derived threshold instead,
+        # and reaches the same 50 m this module predicts
+        @test 45.0 < plume_erosion_onset_height(cfg, APPROACH_THRUST_N) < 55.0
         # the derived threshold does not: erosion is live at 31.9 m and the rate
         # is the same order as the measurement (2 to 3 times high, and it still
         # carries the unsourced saltation multiplier, so the band is wide)
@@ -356,7 +362,8 @@ const DEAD_GAS = (pressure_pa=0.0, shear_pa=0.0, density_kg_m3=0.0, speed_mps=0.
         rates = [footprint_rate(ViscousErosionRoberts(), APPROACH_THRUST_N, h) for h in heights]
         @test all(diff(rates) .> 0.0)
         onset = plume_erosion_onset_height(
-            PlumeSurfaceConfig(threshold_shear_pa=shields_threshold_shear_pa(soil, MOON_G)),
+            PlumeSurfaceConfig(erosion_model=:roberts_fitted,
+                               threshold_shear_pa=shields_threshold_shear_pa(soil, MOON_G)),
             APPROACH_THRUST_N)
         @test 45.0 < onset < 55.0
         @test footprint_rate(ViscousErosionRoberts(), APPROACH_THRUST_N, onset * 1.01) == 0.0
@@ -367,7 +374,8 @@ const DEAD_GAS = (pressure_pa=0.0, shear_pa=0.0, density_kg_m3=0.0, speed_mps=0.
         # measured. The threshold and the shear law are not separable until the
         # plume field computes the wall shear from the nozzle.
         nasa_onset = plume_erosion_onset_height(
-            PlumeSurfaceConfig(threshold_shear_pa=NASA_DATA_DERIVED_THRESHOLD_PA), APPROACH_THRUST_N)
+            PlumeSurfaceConfig(erosion_model=:roberts_fitted,
+                               threshold_shear_pa=NASA_DATA_DERIVED_THRESHOLD_PA), APPROACH_THRUST_N)
         @test nasa_onset < 31.9
     end
 

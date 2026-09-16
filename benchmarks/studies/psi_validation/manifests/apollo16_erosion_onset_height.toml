@@ -3,18 +3,31 @@ version = 1
 
 [case]
 id = "apollo16_erosion_onset_height"
-title = "Erosion onset height (CALIBRATION TARGET, never gates)"
-status = "calibration_target"
+title = "Erosion onset height (DIFFERENT QUANTITY, never gates)"
+status = "different_quantity"
 gate_eligible = false
 summary = """
 Metzger read the onset of dust blowing off the Apollo 16 landing video: the LM
-was at 31.5 m altitude when dust is first seen. This is the observable the
-model's `threshold_shear_pa` was fitted to (the docs state the 0.15 Pa default
-was chosen to put the erosion onset at about 31 m, matching the roughly 30 m at
-which the Apollo 11 crew first reported blowing dust), so agreement here is
-circular and proves nothing about the model. It is carried as a case so the
-circularity is on the record and so a future model that derives its threshold
-from soil properties can be scored against a real measurement instead.
+was at 31.5 m altitude when dust is first seen.
+
+This case used to be a `calibration_target`, because the model's fitted
+`threshold_shear_pa = 0.15 Pa` was chosen to put the erosion onset at about
+31 m. It is no longer circular: the default erosion law derives its threshold
+from the soil through Shao and Lu's expression, and nothing in it is fitted to
+this number. (It is still exactly circular for
+`erosion_model = :roberts_fitted`, which this study can be run with.)
+
+What it is instead is a comparison between two different quantities. The
+reference is the height at which dust becomes VISIBLE in a 16 mm film shot at a
+low sun angle; the model reports the height at which any soil moves at all.
+Those cannot be equal, and the same body of work proves it: Lane and Metzger
+(2015, Table 2) measure 10.7 kg/s of Apollo 12 erosion at 36.6 m, which is the
+top of their usable range and already 1.16 times the visible onset, so the
+physical onset is above 36.6 m and the visible onset is a lower bound on it.
+No published upper bound exists, so no tolerance band can be argued and the case
+cannot gate. It is reported with its ratio so the size of the gap is on the
+record: the derived threshold puts the onset at 54 m on the analytic field, 1.7
+times the visible onset, and at 140 m on the tabulated field, 4.5 times it.
 """
 
 [source]

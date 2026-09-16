@@ -3,14 +3,21 @@ version = 1
 
 [case]
 id = "apollo_scour_depth"
-title = "Apollo post-landing scour depth (the model has no such output)"
-status = "not_modeled"
-gate_eligible = false
+title = "Apollo post-landing scour depth"
+status = "sourced"
+gate_eligible = true
 summary = """
 The only published statement of how deep an Apollo landing actually cut into the
-regolith. The model has no crater geometry at all: it reports a mass erosion
-rate and the annulus the shear threshold is exceeded in, with no bookkeeping of
-where the removed soil came from in depth. Recorded so the gap is explicit.
+regolith. The model now keeps a radial grid of eroded depth under the vehicle
+(`PlumeSurfaceInteractionModel`'s crater state), so the erosion regimes' local
+mass flux is integrated in time at each radius and divided by the soil's in-situ
+bulk density. The case is scored on the deepest point of that profile over the
+same Apollo 12 descent the total-eroded-mass case integrates, which is the only
+descent in this study with published altitude-versus-time samples.
+
+Before the crater state existed this case was recorded as `not_modeled`: the
+model reported a mass erosion rate and the annulus the threshold was exceeded
+in, with no bookkeeping of where in depth the soil came from.
 """
 
 [source]
@@ -40,18 +47,42 @@ is the stated extremes of plausibility rather than a standard deviation.
 body = "Moon"
 engine = "Apollo LM descent propulsion system"
 thrust_n = 12172.0
-thrust_basis = "See apollo12_erosion_rate. Nothing in the model consumes it for this case."
-height_convention = "not applicable"
+thrust_basis = "See apollo12_erosion_rate: 16,564.2 lb landed mass (Orloff, NASA SP-2000-4029) times 1.62 m/s^2."
+height_convention = "nozzle exit plane above the undisturbed surface"
+integration = """
+Trapezoidal in time over the eleven (t, h) samples of Lane and Metzger (2015)
+Table 2, the same nodes the total-eroded-mass case uses, on a 64-node
+logarithmic radial grid from 0.05 m to 40 m. The reference is Apollo 11's
+landing and the profile is Apollo 12's; the two landings are the same vehicle at
+the same near-hover thrust, and no altitude-versus-time profile has been
+published for Apollo 11 at this resolution. That substitution is part of what
+the tolerance below has to cover.
+
+The integration credits every sample to the same patch of ground: neither the
+model's crater grid nor this harness follows the impingement point as the
+vehicle translates. A real descent moves hundreds of meters horizontally while
+it is eroding, so the depth computed here is an UPPER BOUND on the depth at any
+one point, and the model's under-prediction of the reference is therefore larger
+than the ratio shows.
+"""
 
 [model]
-quantity = "none"
+quantity = "crater_depth_m"
 unit = "m"
 
 [tolerance]
-kind = "none"
-low = 0.0
-high = 0.0
-reason = "No model output exists, so no tolerance can apply."
+kind = "ratio_band"
+low = 0.5
+high = 2.0
+reason = """
+The reference's own stated extremes of plausibility, 3 cm to 12 cm about 6 cm,
+which is exactly a factor of two either way. The source is explicit that the
+crater "was not directly measurable in the Apollo post-landing imagery" and that
+6 cm is an interpretation with those extremes rather than a measurement with a
+standard deviation, so the band is the reference's own spread and nothing has
+been widened to make the model pass. Nothing narrower could be justified; a
+wider band would not be a test.
+"""
 
 [[reference]]
 value = 0.06
@@ -69,3 +100,49 @@ value = 0.12
 derived = false
 note = "deep extreme of plausibility"
 context_only = true
+
+# Descent profile, identical to apollo_total_eroded_mass: Lane and Metzger
+# (2015) Table 2, altitude versus time before touchdown.
+[[profile]]
+t_s = -50.7
+height_m = 36.6
+
+[[profile]]
+t_s = -45.5
+height_m = 29.3
+
+[[profile]]
+t_s = -41.7
+height_m = 24.4
+
+[[profile]]
+t_s = -38.6
+height_m = 21.3
+
+[[profile]]
+t_s = -34.9
+height_m = 19.2
+
+[[profile]]
+t_s = -31.9
+height_m = 15.2
+
+[[profile]]
+t_s = -28.5
+height_m = 14.0
+
+[[profile]]
+t_s = -20.3
+height_m = 12.8
+
+[[profile]]
+t_s = -14.1
+height_m = 9.45
+
+[[profile]]
+t_s = -6.5
+height_m = 5.49
+
+[[profile]]
+t_s = 0.0
+height_m = 1.83

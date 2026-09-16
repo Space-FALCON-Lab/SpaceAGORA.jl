@@ -356,19 +356,38 @@ end
     return out
 end
 
+@inline function _save_plume_ejecta(model, field::Symbol, num_sats::Int, t)
+    for i in 1:num_sats
+        plume_refresh_ejecta!(model, t, i)
+    end
+    return _save_plume(model, field, num_sats)
+end
+
 """
     plume_save_fields(args) -> Vector{SaveField}
 
-The seven `sc{i}_plume_*` columns (height above the ground along the engine
-axis, peak surface pressure and wall shear stress, mass erosion rate, eroded
-mass, ejecta speed and ground-effect force) when the run carries a
+The `sc{i}_plume_*` columns when the run carries a
 `PlumeSurfaceInteractionModel`, and no columns otherwise.
+
+Seven come straight out of the effector's per-spacecraft state as the
+right-hand side left it: the height above the ground along the engine axis, the
+peak surface pressure and wall shear stress, the mass erosion rate, its time
+integral, the characteristic ejecta speed and the ground-effect force. Three
+more are the model's own geometry and integrated state: `regime`, the erosion
+regime that moved the most mass (0 none, 1 viscous, 2 diffusion-driven flow, 3
+bearing-capacity failure), `erosion_radius_m`, the outer edge of the region
+moving soil right now, and the crater's deepest point and edge.
+
+The last three are the ejecta transport diagnostic, which is not evaluated on
+the right-hand side: their getters call `plume_refresh_ejecta!`, which computes
+the grain distribution once for the sample however many of the three read it,
+and not at all when `PlumeSurfaceConfig.ejecta_diagnostic` is off.
 """
 function plume_save_fields(args::SimulationConfiguration)
     model = _plume_effector(args)
     model === nothing && return SaveField[]
     num_sats = length(args.dynamics_model.spacecraft)
-    return SaveField[
+    fields = SaveField[
         SaveField(:plume_height_m, (u, t, integrator) -> _save_plume(model, :height_m, num_sats); per_satellite=true, column_prefix="plume_height_m"),
         SaveField(:plume_shear_pa, (u, t, integrator) -> _save_plume(model, :shear_pa, num_sats); per_satellite=true, column_prefix="plume_shear_pa"),
         SaveField(:plume_pressure_pa, (u, t, integrator) -> _save_plume(model, :pressure_pa, num_sats); per_satellite=true, column_prefix="plume_pressure_pa"),
@@ -376,7 +395,15 @@ function plume_save_fields(args::SimulationConfiguration)
         SaveField(:plume_eroded_kg, (u, t, integrator) -> _save_plume(model, :eroded_kg, num_sats); per_satellite=true, column_prefix="plume_eroded_kg"),
         SaveField(:plume_ejecta_mps, (u, t, integrator) -> _save_plume(model, :ejecta_mps, num_sats); per_satellite=true, column_prefix="plume_ejecta_mps"),
         SaveField(:plume_ground_effect_n, (u, t, integrator) -> _save_plume(model, :ground_effect_n, num_sats); per_satellite=true, column_prefix="plume_ground_effect_n"),
+        SaveField(:plume_regime, (u, t, integrator) -> _save_plume(model, :regime, num_sats); per_satellite=true, column_prefix="plume_regime"),
+        SaveField(:plume_erosion_radius_m, (u, t, integrator) -> _save_plume(model, :erosion_radius_m, num_sats); per_satellite=true, column_prefix="plume_erosion_radius_m"),
+        SaveField(:plume_crater_depth_m, (u, t, integrator) -> _save_plume(model, :crater_depth_m, num_sats); per_satellite=true, column_prefix="plume_crater_depth_m"),
+        SaveField(:plume_crater_radius_m, (u, t, integrator) -> _save_plume(model, :crater_radius_m, num_sats); per_satellite=true, column_prefix="plume_crater_radius_m"),
+        SaveField(:plume_ejecta_angle_deg, (u, t, integrator) -> _save_plume_ejecta(model, :ejecta_angle_deg, num_sats, t); per_satellite=true, column_prefix="plume_ejecta_angle_deg"),
+        SaveField(:plume_ejecta_range_m, (u, t, integrator) -> _save_plume_ejecta(model, :ejecta_range_m, num_sats, t); per_satellite=true, column_prefix="plume_ejecta_range_m"),
+        SaveField(:plume_ejecta_escape_frac, (u, t, integrator) -> _save_plume_ejecta(model, :ejecta_escape_frac, num_sats, t); per_satellite=true, column_prefix="plume_ejecta_escape_frac"),
     ]
+    return fields
 end
 
 function default_save_fields(args::SimulationConfiguration)

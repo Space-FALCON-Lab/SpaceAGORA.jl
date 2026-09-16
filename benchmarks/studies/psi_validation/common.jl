@@ -27,6 +27,10 @@ const MANIFEST_DIR = joinpath(STUDY_DIR, "manifests")
 #                        agreement is circular and proves nothing. Never gates.
 #   not_modeled        - the reference is published but the model has no output
 #                        of that kind. Recorded so the gap is visible. Never gates.
+#   different_quantity - the reference is published and the model produces
+#                        something close to it, but the two are not definitions
+#                        of the same thing, so no tolerance can be argued in
+#                        either direction. Reported with its ratio; never gates.
 #   unsourced          - no published value was found for the model's behavior.
 #                        Never gates; the model's value is an assumption.
 const GATEABLE_STATUS = "sourced"
@@ -56,7 +60,8 @@ function load_case(path::AbstractString)
     source = raw["source"]
     model = raw["model"]
     status = String(case["status"])
-    status in ("sourced", "cross_regime", "calibration_target", "not_modeled", "unsourced") ||
+    status in ("sourced", "cross_regime", "calibration_target", "not_modeled", "unsourced",
+               "different_quantity") ||
         error("$(basename(path)): unknown case status '$status'")
     gate = Bool(case["gate_eligible"])
     if gate && status != GATEABLE_STATUS
@@ -139,8 +144,22 @@ function model_quantity(cfg, quantity::AbstractString, thrust_n::Float64, height
     elseif quantity == "ground_effect_fraction"
         thrust_n > 0.0 || return nothing
         return plume_ground_effect_force(cfg, thrust_n, height_m) / thrust_n
+    elseif quantity == "ejection_angle_deg"
+        # The mass-weighted ejection angle of the grain-transport distribution.
+        # It is bounded by the configuration's own `ejection_angle_min_deg` and
+        # `ejection_angle_max_deg`, which come from this very reference, so the
+        # comparison is circular by construction and the case never gates; it is
+        # evaluated so the circularity is visible rather than implied.
+        model = _angle_probe_model(cfg)
+        model === nothing && return nothing
+        summary = plume_ejecta_summary(model, 1)
+        return summary === nothing ? nothing : summary.mean_angle_deg
+    elseif quantity == "erosion_radius_m"
+        return plume_quantities(cfg, thrust_n, height_m).outer_m
     elseif quantity == "eroded_mass_kg"
         return nothing            # handled by `model_profile_mass`, needs the whole descent
+    elseif quantity == "crater_depth_m"
+        return nothing            # handled by `model_profile_crater`, needs the whole descent
     elseif quantity == "none"
         return nothing
     end
@@ -176,27 +195,109 @@ end
 
 Supplementary diagnostic: the model's wall shear stress averaged over a disc of
 `radius_m`, `2/R² ∫₀^R τ(r) r dr`, which is the definition the Apollo CFD
-reference averages with. It reconstructs the model's shear profile from
-`plume_surface_footprint` and the config's documented `friction_coefficient`,
-so it returns `nothing` if a future field model no longer exposes that shape.
+reference averages with. It goes through `plume_mean_shear`, so it averages
+whatever field the configuration carries rather than assuming a shape.
 Reported alongside the peak shear; never used for a pass or fail.
 """
 function model_mean_shear(cfg, thrust_n::Float64, height_m::Float64, radius_m::Float64)
-    hasproperty(cfg, :friction_coefficient) || return nothing
     (isfinite(radius_m) && radius_m > 0.0) || return nothing
-    p0, R = plume_surface_footprint(cfg, thrust_n, height_m)
-    (isfinite(p0) && isfinite(R) && R > 0.0) || return nothing
-    cf = Float64(getproperty(cfg, :friction_coefficient))
-    n = 2048
-    dr = radius_m / n
-    acc = 0.0
-    for k in 1:n
-        r = (k - 0.5) * dr
-        x = r / R
-        tau = cf * p0 * 2.0 * x * exp(-x * x)
-        acc += tau * r * dr
+    return plume_mean_shear(cfg.field, cfg, thrust_n, height_m, radius_m)
+end
+
+"""
+    study_config(field_name) -> (config, label)
+
+The model configuration a run evaluates. `"analytic"` is `PlumeSurfaceConfig()`
+with its default `PlumeAnalyticField`; `"table"` loads
+`data/psi/apollo_lmde.json`; any other value is taken as a path to a plume field
+table. Everything else about the configuration is the shipped default, so a run
+reports the model as it is, not as it could be tuned.
+"""
+function study_config(field_name::AbstractString)
+    name = strip(String(field_name))
+    lowercase(name) == "analytic" && return PlumeSurfaceConfig(), "analytic (PlumeAnalyticField)"
+    path = lowercase(name) == "table" ? joinpath(REPO_ROOT, "data", "psi", "apollo_lmde.json") : abspath(name)
+    isfile(path) || error("No plume field table at $path (use --field=analytic, --field=table or a path).")
+    return PlumeSurfaceConfig(field=load_plume_field(path)), "table ($(basename(path)))"
+end
+
+"""
+    model_profile_crater(cfg, thrust_n, profile; bins=64, min_radius_m=0.05, max_radius_m=40.0)
+        -> (depth_m, peak_radius_m, edge_radius_m, rows)
+
+Depth of the crater the model digs over a descent given as `(t_s, height_m)`
+samples: the erosion regimes' local mass flux at each radius, integrated in time
+by the trapezoidal rule and divided by the soil's in-situ bulk density, on the
+same logarithmic radial grid the effector carries. `depth_m` is the deepest
+point, `peak_radius_m` the radius it sits at, and `edge_radius_m` the outermost
+radius still at a tenth of it and at least `min_depth_m` deep — the effector's
+own edge rule.
+
+This is the same arithmetic `PlumeSurfaceInteractionModel` does at accepted
+steps; it is repeated here so a case can be scored without running a
+simulation, exactly as `model_profile_mass` repeats the mass integral. It goes
+through the model's public API only.
+"""
+function model_profile_crater(cfg, thrust_n::Float64, profile::Vector{Any};
+                              bins::Int=64, min_radius_m::Float64=0.05,
+                              max_radius_m::Float64=40.0, gravity_m_s2::Float64=1.625,
+                              min_depth_m::Float64=1.0e-3)
+    length(profile) >= 2 || error("A crater case needs at least two samples.")
+    ts = [Float64(row["t_s"]) for row in profile]
+    hs = [Float64(row["height_m"]) for row in profile]
+    order = sortperm(ts)
+    ts, hs = ts[order], hs[order]
+    radii = exp.(range(log(min_radius_m), log(max_radius_m); length=bins))
+    local_rate(h) = begin
+        _, R = plume_surface_footprint(cfg, thrust_n, h)
+        env = erosion_environment(footprint_radius_m=max(R, cfg.nozzle_exit_radius_m),
+                                  residence_time_s=cfg.gas_residence_time_s,
+                                  bearing_width_m=2.0 * max(R, cfg.nozzle_exit_radius_m))
+        [regolith_erosion_rate(cfg.regimes, plume_gas_state(cfg.field, cfg, thrust_n, h, r),
+                               cfg.soil, gravity_m_s2, env).rate_kg_m2_s for r in radii]
     end
-    return 2.0 * acc / (radius_m * radius_m)
+    depth = zeros(length(radii))
+    previous = local_rate(hs[1])
+    for k in 1:(length(ts) - 1)
+        now = local_rate(hs[k + 1])
+        depth .+= 0.5 .* (previous .+ now) .* (ts[k + 1] - ts[k]) ./ cfg.bulk_density_kg_m3
+        previous = now
+    end
+    dmax, imax = findmax(depth)
+    # The same edge rule the effector uses: a tenth of the deepest point, but
+    # never shallower than the reporting floor.
+    edge_depth = max(0.1 * dmax, min_depth_m)
+    edge = 0.0
+    for k in eachindex(radii)
+        depth[k] >= edge_depth && (edge = radii[k])
+    end
+    rows = [(radius_m=radii[k], depth_m=depth[k]) for k in eachindex(radii)]
+    return dmax, radii[imax], edge, rows
+end
+
+"""
+    _angle_probe_model(cfg) -> Union{Nothing, PlumeSurfaceInteractionModel}
+
+A bare `PlumeSurfaceInteractionModel` primed at one thrust and height, so the
+ejecta distribution can be evaluated through the effector's own public entry
+point without running a simulation. Returns `nothing` when the state cannot be
+primed, which is how a condition below the erosion onset reports.
+"""
+_ANGLE_PROBE_CONTROL = (actuators = (thrust_n = [0.0],),)
+
+function _angle_probe_model(cfg; thrust_n::Float64=12172.0, height_m::Float64=5.0)
+    model = PlumeSurfaceInteractionModel(_ANGLE_PROBE_CONTROL; config=cfg, num_sats=1)
+    q = plume_quantities(cfg, thrust_n, height_m)
+    q.erosion_kg_s > 0.0 || return nothing
+    st = model.state
+    st.erosion_kg_s[1] = q.erosion_kg_s
+    st.last_thrust_n[1] = thrust_n
+    st.last_query_height_m[1] = height_m
+    st.last_inner_m[1] = q.inner_m
+    st.last_outer_m[1] = q.outer_m
+    st.last_gravity_m_s2[1] = 1.625
+    st.last_body_radius_m[1] = 1.7374e6
+    return model
 end
 
 # ---- scoring -------------------------------------------------------------------------

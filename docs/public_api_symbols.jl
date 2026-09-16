@@ -240,6 +240,11 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :plume_erosion_onset_height, rendered = "SpaceAGORA.plume_erosion_onset_height"),
             (owner = :SpaceAGORA, symbol = :plume_ground_effect_force, rendered = "SpaceAGORA.plume_ground_effect_force"),
             (owner = :SpaceAGORA, symbol = :plume_quantities, rendered = "SpaceAGORA.plume_quantities"),
+            (owner = :SpaceAGORA, symbol = :plume_crater_profile, rendered = "SpaceAGORA.plume_crater_profile"),
+            (owner = :SpaceAGORA, symbol = :plume_ejecta_summary, rendered = "SpaceAGORA.plume_ejecta_summary"),
+            (owner = :SpaceAGORA, symbol = :plume_regime_code, rendered = "SpaceAGORA.plume_regime_code"),
+            (owner = :SpaceAGORA, symbol = :plume_default_regimes, rendered = "SpaceAGORA.plume_default_regimes"),
+            (owner = :SpaceAGORA, symbol = :plume_refresh_ejecta!, rendered = "SpaceAGORA.plume_refresh_ejecta!"),
             (owner = :SpaceAGORA, symbol = :PlumeGasState, rendered = "SpaceAGORA.PlumeGasState"),
             (owner = :SpaceAGORA, symbol = :PlumeNozzle, rendered = "SpaceAGORA.PlumeNozzle"),
             (owner = :SpaceAGORA, symbol = :PlumeAnalyticField, rendered = "SpaceAGORA.PlumeAnalyticField"),
@@ -260,7 +265,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :ejecta_launch_speed, rendered = "SpaceAGORA.ejecta_launch_speed"),
             (owner = :SpaceAGORA, symbol = :ejecta_trajectory, rendered = "SpaceAGORA.ejecta_trajectory"),
             (owner = :SpaceAGORA, symbol = :ejecta_distribution, rendered = "SpaceAGORA.ejecta_distribution"),
-            (owner = :SpaceAGORA, symbol = :ejecta_escape_speed, rendered = "SpaceAGORA.ejecta_escape_speed")
+            (owner = :SpaceAGORA, symbol = :ejecta_escape_speed, rendered = "SpaceAGORA.ejecta_escape_speed"),
+            (owner = :SpaceAGORA, symbol = :ejecta_lognormal_mass_weights, rendered = "SpaceAGORA.ejecta_lognormal_mass_weights")
         ]
     ),
     (

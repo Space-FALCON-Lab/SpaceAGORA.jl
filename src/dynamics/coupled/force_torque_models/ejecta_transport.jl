@@ -135,6 +135,7 @@ export ejecta_gas_state, ejecta_vacuum_gas_state, ejecta_gas_viscosity
 export ejecta_particle_flow_numbers, ejecta_flow_regime, ejecta_regime_name
 export ejecta_drag_coefficient, ejecta_free_molecular_drag_coefficient
 export ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
+export ejecta_lognormal_mass_weights
 
 # SI defining constants (CODATA/SI 2019 exact values).
 const EJECTA_BOLTZMANN_J_PER_K = 1.380649e-23
@@ -849,6 +850,59 @@ lunar dust for toxicological studies I: particle size distribution",
 J. Aerospace Engineering 21(4), 2008, give 0.019 µm as the smallest size).
 """
 const EJECTA_DEFAULT_SIZES_M = (1.0e-6, 5.0e-6, 2.0e-5, 7.0e-5, 2.0e-4, 5.0e-4)
+
+"""
+    ejecta_lognormal_mass_weights(sizes, soil) -> Vector{Float64}
+
+Mass fraction of the soil carried by each grain size in `sizes`, from a
+lognormal mass distribution fitted to the two percentiles the soil description
+carries: the median `D50` and the ratio `D84/D50`.
+
+A lognormal in grain diameter has `ln D84 - ln D50 = sigma`, so the single
+sourced ratio fixes the whole width: `sigma = ln(D84/D50)`, which is
+`ln 2.3 = 0.833` for the lunar baseline soil (`D84 = 2.3 D50`, Metzger 2024a
+section 2, and `D50 = 70 um` from Lunar Sourcebook section 9.1.2). Each size is
+given the mass between the geometric midpoints of its neighbors, from the
+lognormal cumulative distribution, and the weights are normalized to sum to one
+over the sizes supplied. The end bins take everything below and above their
+midpoints, so no mass is lost off the ends of a truncated size list.
+
+DERIVED, not measured: the lognormal *shape* is an assumption. The Lunar
+Sourcebook publishes full grain-size distributions for the returned soils rather
+than a lognormal fit; what is used here is only the two percentiles above, which
+are sourced. The point of the weighting is that it is a *mass* distribution:
+weighting the sizes equally, as `ejecta_distribution` does by default, gives the
+micron fines a sixth of the soil's mass, which they do not have, and that is
+what drives the kilometre-scale deposition radii reported in
+`docs/src/user/lunar_landing.md`.
+
+`soil` is anything carrying `median_diameter_m` and `d84_over_d50`
+(`RegolithProperties` does); a soil with `median_particle_diameter_m` instead
+(`EjectaSoil`) is accepted with the lunar `D84/D50` of 2.3.
+"""
+function ejecta_lognormal_mass_weights(sizes, soil)::Vector{Float64}
+    d = collect(Float64, sizes)
+    n = length(d)
+    n >= 1 || throw(ArgumentError("ejecta_lognormal_mass_weights needs at least one size"))
+    d50 = hasproperty(soil, :median_diameter_m) ? Float64(soil.median_diameter_m) :
+          Float64(getproperty(soil, :median_particle_diameter_m))
+    ratio = hasproperty(soil, :d84_over_d50) ? Float64(soil.d84_over_d50) : 2.3
+    (d50 > 0.0 && ratio > 1.0) || return fill(1.0 / n, n)
+    sigma = log(ratio)
+    order = sortperm(d)
+    ds = d[order]
+    # Normal CDF of ln(d/d50)/sigma, by the error function.
+    cdf(x) = 0.5 * (1.0 + erf((log(max(x, eps())) - log(d50)) / (sigma * sqrt(2.0))))
+    w = zeros(n)
+    for k in 1:n
+        lo = k == 1 ? 0.0 : sqrt(ds[k - 1] * ds[k])
+        hi = k == n ? Inf : sqrt(ds[k] * ds[k + 1])
+        w[order[k]] = (k == n ? 1.0 : cdf(hi)) - (k == 1 ? 0.0 : cdf(lo))
+    end
+    total = sum(w)
+    total > 0.0 || return fill(1.0 / n, n)
+    return w ./ total
+end
 
 """
     ejecta_distribution(field, config, soil, thrust_n, height_m; kwargs...) -> NamedTuple

@@ -111,9 +111,9 @@ any other quantity.
 
 `PlumeSurfaceInteractionModel` is a dynamic effector for what the descent
 engine's exhaust does to the ground: the pressure and shear stress it lays
-down, the regolith it erodes, the speed the grains leave at, and the small
-thrust augmentation the reflected plume gives the vehicle in the last couple
-of nozzle diameters. It is constructed with the descent control effector
+down, the regolith it erodes and by which mechanism, the crater it digs, where
+the grains land, and the small thrust augmentation the reflected plume gives the
+vehicle in the last couple of nozzle diameters. It is constructed with the descent control effector
 (whose actuator state carries the engine's actual thrust) and the terrain,
 so it always sees the throttle the controller flew and the ground the
 altimeter measured:
@@ -126,27 +126,39 @@ plume = PlumeSurfaceInteractionModel(control, terrain)
 
 `PlumeSurfaceConfig` carries the engine (1.5 m exit diameter, area ratio 47.5,
 7.2 bar chamber pressure, 4.5 to 45 kN throttle band — the Apollo LM's descent
-propulsion system by default), the soil (1500 kg/m³ bulk density, 70 µm grains,
-cohesion, threshold shear stress) and the plume field the surface state is read
-from.
+propulsion system by default), the soil (a `RegolithProperties`, lunar mare by
+default), the erosion regimes evaluated on it, the plume field the surface state
+is read from, and the crater and ejecta settings.
+
+**What is computed and what is calibrated.** Everything below comes from a
+sourced model or is derived in the file that owns it, with three exceptions, all
+of them named configuration fields:
+
+| Quantity | Where it comes from |
+|---|---|
+| surface pressure, wall shear, gas density, temperature, Mach | the plume field (a Gaussian closure, or the Simons source flow of the nozzle) |
+| erosion rate and the active regime | `regolith_erosion.jl`, every coefficient sourced — except the soil's `saltation_efficiency` |
+| erosion threshold | Shao and Lu (2000) applied to the Lunar Sourcebook's soil; **derived, not fitted** |
+| crater depth and radius | the regimes' rate integrated in time on a radial grid, over the soil's in-situ bulk density |
+| ejecta speed, angle, deposition radius, escape fraction | `ejecta_transport.jl`; the angle is an **input** from the Apollo films |
+| **`soil.saltation_efficiency` = 10** | ASSUMPTION: the saltation cascade, unsourced. The best fit to Lane and Metzger's eleven Apollo 12 altitudes is 17.5 (analytic field) and 13.7 (table); it is left at 10, see the validation study for why |
+| **`gas_residence_time_s` = 1 s** | ASSUMPTION: sets the pore-pressure diffusion depth of the diffusion-driven-flow regime |
+| **the ground-effect correlation** | ASSUMPTION: 3 percent of thrust at contact over two exit diameters; the literature has not characterized the near-ground base-pressure rise |
+
+The two constants the previous model calibrated — `threshold_shear_pa = 0.15 Pa`
+and `erosion_efficiency = 10` — are still on the configuration but are used only
+by `erosion_model = :roberts_fitted`.
 
 ### The model
 
-Every surface quantity is read from a *plume field* that `PlumeSurfaceConfig`
-carries in its `field`, so the gas dynamics and the erosion closure are
-separable. Two fields exist. `PlumeAnalyticField` is the Gaussian footprint
-described in this section and is the default, so a run that asks for nothing
-else is unchanged. `PlumeFieldTable` is a plume computed from the nozzle and
-tabulated; it is described in "The tabulated plume field" below.
+The model is assembled from four separable pieces, each of which is its own
+file and each of which can be swapped or evaluated on its own.
 
-The erosion closure on top of either field follows Roberts' treatment of a
-hypersonic jet acting on a dust layer (L. Roberts, *The action of a hypersonic jet on a dust layer*, IAS
-Paper 63-50, 1963) in the form used for the Moon by Metzger and co-workers
-(Metzger, Immer, Donahue, Vu, Latta and Deyo-Svendsen, *Jet-induced cratering
-of a granular surface with application to lunar spaceports*, J. Aerosp. Eng.
-22, 2009; Metzger, Smith and Lane, *Phenomenology of soil erosion due to rocket
-exhaust on the Moon and the Mauna Kea lunar test site*, J. Geophys. Res. 116,
-E06005, 2011).
+**The gas on the ground** comes from a *plume field* that `PlumeSurfaceConfig`
+carries in its `field`. `PlumeAnalyticField` is the Gaussian footprint described
+below and is the default, so a run that asks for nothing else keeps the gas
+dynamics this model has always had. `PlumeFieldTable` is a plume computed from
+the nozzle and tabulated; it is described in "The tabulated plume field" below.
 
 The plume's momentum-carrying core spreads over a footprint of radius
 `R_p = h tan(θ_p)` at the nozzle exit's height `h` above the ground, with a
@@ -165,36 +177,150 @@ impinging jet's does:
 \tau(r) = c_f\, p_0\, \frac{2r}{R_p} \exp\!\left(-\left(\tfrac{r}{R_p}\right)^2\right)
 ```
 
-Soil moves where `τ(r)` exceeds the threshold shear stress `τ_t`, which happens
-in an annulus, not a disk. Roberts' viscous erosion is closed as a momentum
-balance over that annulus: the excess shear is the force available to
-accelerate grains, and a mass flux `ṁ` leaving at the ejecta speed `v_ej`
-carries `ṁ v_ej` of momentum, so
+**The soil moved at each radius** comes from the erosion regimes of
+`regolith_erosion.jl`, documented in their own section below. The effector
+evaluates `regolith_erosion_rate` at 128 radii across the footprint on the gas
+state the field reports there, integrates the result over the ground, and
+records which regime moved the most mass as `sc{i}_plume_regime`. Nothing in
+that path is fitted inside this file; every coefficient belongs to
+`RegolithProperties` and is sourced there.
+
+Which regimes are evaluated is `PlumeSurfaceConfig.regimes`, which defaults to
+`plume_default_regimes()` — viscous erosion in Roberts' shear-excess form with
+the *derived* Shields threshold, plus diffusion-driven flow and bearing-capacity
+failure. That differs in one place from `default_erosion_regimes()` in the
+regolith module, whose viscous closure is Metzger's energy-flux law, and the
+reason is a measurement rather than a preference:
+
+!!! warning "Metzger's energy-flux law cannot be driven from these plume fields"
+    `ViscousErosionEnergyFlux` computes `E = 3τ²/(ρ_s v̄)` and compares it with
+    `E_th = 0.123 J/(m² s)`, a threshold fitted to the Apollo 16 landing video
+    **through Metzger's own plume model**. Evaluated on the surface gas state
+    either of this repository's fields reports, that threshold is crossed by
+    three to four orders of magnitude: at the Apollo 12 approach thrust the
+    energy flux at the shear peak is 4.3 W/m² at 31.9 m and 41 W/m² at 10 m, and
+    integrating the resulting local rate over the footprint gives about
+    4 × 10⁴ kg/s on the analytic field and 6 × 10⁶ kg/s on the table, at every
+    height, against the 11 to 99 kg/s Lane and Metzger measured. The rate also
+    comes out nearly independent of height, exactly the degeneracy that law's
+    own docstring predicts for a density that tracks the pressure. `E` needs the
+    density in the laminar sublayer at the wall; what both fields report is the
+    post-shock free-stream density. Until a field computes the sublayer state,
+    the law and the fields do not meet, and bolting them together would report a
+    number wrong by 10⁴. Pass `regimes=default_erosion_regimes()` to run it
+    anyway.
+
+The old single law is still reachable as `erosion_model = :roberts_fitted`, so
+the two can be compared on one gas state:
+
+```julia
+PlumeSurfaceInteractionModel(control, terrain;
+    config=PlumeSurfaceConfig(erosion_model=:roberts_fitted))
+```
+
+It is the shear in excess of a fitted threshold, closed as a momentum balance
+over the annulus where the excess is positive:
 
 ```math
 \dot m = \frac{\eta}{v_{ej}} \int \max(\tau(r) - \tau_t,\, 0)\, \mathrm{d}A
 ```
 
-The ejecta speed comes from a drag balance on a single grain accelerated across
-one footprint radius by the gas dynamic pressure at the shear peak; it runs
-from tens of m/s at the erosion onset to the configured cap near the ground,
-the range Metzger and Immer measured from the Apollo landing films. The
-cumulative eroded mass is the time integral of `ṁ`, advanced only when the
-solver moves past every time already integrated, so rejected steps neither
-double-count nor run it backwards.
+with `τ_t = threshold_shear_pa = 0.15 Pa` chosen to put the onset at 31 m and
+`η = erosion_efficiency = 10` standing in for the saltation cascade. **Both
+constants are used by that law only.** The default law ignores them; its
+threshold is `shields_threshold_shear_pa(soil, g)`, 0.057 Pa on lunar mare at
+1.625 m/s², which is a property of the soil and does not move when the plume
+field changes.
 
-Two parameters are calibrated rather than derived, and both are anchored on
-Apollo 11 observables:
+Both laws report the same `ejecta_mps`: one grain dragged across one footprint
+radius from rest by the gas dynamic pressure at the shear peak. The cumulative
+eroded mass is the time integral of the rate, advanced only when the solver
+moves past every time already integrated, so rejected steps neither double count
+nor run it backwards.
 
-- `threshold_shear_pa` (0.15 Pa) sets the erosion onset height. With the
-  approach thrust near the end of the descent — about 11.5 kN of lunar weight —
-  `plume_erosion_onset_height` returns 31 m, and the Apollo 11 crew first
-  reported blowing dust at about 30 m. The value is three to four orders of
-  magnitude below the bulk cohesion of lunar regolith (0.1 to 1 kPa), as the
-  mobile surface layer must be. Above the onset every plume quantity is zero.
-- `erosion_efficiency` (10) multiplies the momentum-balance rate to cover the
-  saltation cascade, in which each impacting grain splashes several more — a
-  mechanism a pure momentum balance cannot produce.
+### The crater
+
+The effector keeps a radial grid of eroded depth under the vehicle and advances
+it with the same monotone time guard as the cumulative mass: at each accepted
+time it evaluates the regimes' local mass flux at every node, trapezoidally
+integrates it, and divides by the soil's in-situ bulk density, so the depth is
+the depth of the hole rather than the loose volume thrown out of it.
+
+The grid is logarithmic in radius, 64 nodes from 5 cm to 40 m by default,
+because the crater is toroidal: its inner wall sits inside the first meter while
+its outer edge reaches tens of meters, and a uniform grid that covers the second
+cannot resolve the first. `plume_crater_profile(model, i)` returns the radii and
+the live depths; `sc{i}_plume_crater_depth_m` is the deepest point and
+`sc{i}_plume_crater_radius_m` the outermost radius still at
+`crater_edge_fraction` (a tenth) of it.
+
+The depth under the stagnation point feeds back into the height the plume field
+is queried at, so a deepening crater moves the ground away from the nozzle. On
+an Apollo descent that feedback is 1.6 cm against a 50 m onset height and moves
+nothing measurable; it exists because the model would otherwise be inconsistent,
+not because it matters here. Turn it off with `crater_height_feedback=false`.
+
+Where the crater stops is a definition rather than a measurement, and it is two
+configuration fields: the edge is the outermost radius still at
+`crater_edge_fraction` (a tenth) of the deepest point *and* at least
+`crater_min_depth_m` (1 mm, about fourteen median grain diameters) deep. The
+floor matters: a pure ratio test returns a wide radius the instant the plume
+touches the ground, when the surface has lost a few grain layers everywhere and
+nothing that could be called a crater exists, and the viewer would draw a scour
+mark wider than the region the plume is eroding. Below the floor no radius is
+reported at all, and neither field changes any other quantity.
+
+!!! warning "The crater assumes a stationary vehicle, and Apollo 11 was not one"
+    The grid is axisymmetric about the *current* impingement point and does not
+    follow it as the vehicle translates, so every second of erosion is credited
+    to the same patch of ground. On the Apollo 11 demo the vehicle covers 310 m
+    of horizontal distance below the erosion onset height, and 63 percent of the
+    eroded mass is laid down over the last 92 m of it — against a crater whose
+    own edge radius is 4.3 m. The profile the model reports is therefore the
+    crater a **hovering** vehicle would dig over the same erosion history, not
+    the trench a translating one leaves, and the depth is an upper bound for any
+    vehicle that moves. That cuts the same way in the validation study: the
+    3.2 cm it scores against Metzger's 6 cm is an upper bound under-predicting a
+    measurement, so the real gap is wider than the ratio says. Making the crater
+    follow the ground needs a two-dimensional grid in the planet frame, which
+    this model does not have.
+
+### Ejecta as a per-sample diagnostic
+
+The grain-transport model of `ejecta_transport.jl` is evaluated once per **saved
+sample**, never on the right-hand side: no force depends on it, and one
+trajectory integration per grain size and launch radius is far too expensive for
+a solver stage. `plume_refresh_ejecta!` recomputes it at most once per sample
+however many columns read it, and not at all when nothing is eroding or when
+`ejecta_diagnostic=false`.
+
+Two weightings separate this from a sweep of the shear profile, and both were
+the fix the ejecta work identified for its kilometre-scale deposition radii:
+
+- each launch radius contributes the **regimes' own local erosion rate** there
+  times its annulus area, instead of the raw wall shear stress with no
+  threshold;
+- each grain size carries the mass a **lognormal fitted to the soil's own `D50`
+  and `D84/D50`** gives it (`ejecta_lognormal_mass_weights`). A lognormal has
+  `ln D84 − ln D50 = σ`, so the one sourced ratio fixes the whole width; with
+  the lunar values the 70 µm median carries 51 percent of the mass and the 5 µm
+  bin under 1 percent, where equal weights per bin would have given it a fifth.
+  The lognormal *shape* is an assumption; the two percentiles it is fitted to
+  are sourced.
+
+Together they halve the deposition radius and no more: at the Apollo approach
+thrust 10 m up the mass-weighted mean goes from 1553 m to 755 m and the mean
+speed from 143 to 107 m/s. The rest is not an artifact — a 70 µm grain leaving
+at 107 m/s and 2° above the horizontal has a ballistic range of 424 m in lunar
+gravity. See the validation study for why that is not the same quantity as the
+visible blast zone.
+
+`plume_ejecta_summary(model, i)` returns the whole distribution, histograms
+included. Three scalars are saved as columns: the mass-weighted mean ejection
+angle, the mass-weighted mean deposition radius and the mass fraction leaving
+faster than escape speed.
+
+### The ground effect
 
 The force the effector returns is the ground-effect thrust augmentation along
 the engine axis, and no torque. The correlation is an exponential in the height
@@ -210,6 +336,10 @@ decay of the base-pressure rise measured for nozzles near a plate; the
 magnitude is a modeling choice sized to the few-percent effect reported for
 lunar-lander-class plumes, not an Apollo flight measurement. Change it through
 `ground_effect_max_fraction`, `ground_effect_scale` and `ground_effect_cutoff`.
+
+This is the only wrench the model applies to the vehicle, and it is the one
+quantity in the whole model for which the validation study could find no
+published reference at all.
 
 ### The tabulated plume field
 
@@ -253,21 +383,27 @@ What changes when a table is used, at the Apollo 11 approach thrust of 11.5 kN:
 | stagnation pressure at 10 m | 168 Pa | 205 Pa | 1.22 |
 | footprint radius at 10 m | 4.66 m | 4.40 m | 0.94 |
 | peak wall shear at 10 m | 1.44 Pa | 9.18 Pa | 6.4 |
-| erosion onset height | 31 m | 80 m | 2.6 |
+| erosion onset height | 50.3 m | 130 m | 2.6 |
 
 The pressure and the footprint agree to about 20 percent over the whole descent,
 which is the real verdict on the Gaussian footprint: as a *pressure* closure it
 was close. The shear stress does not agree, because Roberts' drag coefficient
 acting on the wall jet is a far stronger coupling than a 0.01 skin-friction
 coefficient acting on the static pressure, and the erosion onset follows it.
-`threshold_shear_pa` and `erosion_efficiency` were calibrated against Apollo 11
-observables with the analytic field and are *not* retuned for the table, so a
-run with a table erodes more soil, earlier: re-evaluating the Apollo 11 descent
-on the tabulated field moves 29 tonnes of regolith against the analytic field's
-429 kg, which is far above the tonne-scale estimates from the landings. The
-calibration does not transfer, and it is not adjusted here to hide that; the
-numbers quoted below are the analytic ones. Recalibrating the erosion closure
-against the literature is separate work.
+
+!!! note "The calibration that did not transfer, and no longer has to"
+    With the old fitted law, swapping the analytic field for the table moved the
+    Apollo 11 descent from 429 kg of eroded soil to 29 tonnes, a factor of 68,
+    because `threshold_shear_pa` and `erosion_efficiency` had been calibrated
+    against the analytic field's much weaker wall shear. **The default law does
+    not use either constant**, and its threshold is a property of the soil rather
+    than of the field, so the same soil erodes under both plumes: over Lane and
+    Metzger's Apollo 12 descent profile the two fields now give 1200 kg and
+    1396 kg, a ratio of 1.16 instead of 27. Nothing was recalibrated to achieve
+    that. The one constant that is still unsourced is the soil's
+    `saltation_efficiency` (10); the validation study's README records the value
+    that best fits Lane and Metzger's eleven Apollo 12 altitudes (17.5 on the
+    analytic field, 13.7 on the table) and why it was left alone.
 
 One published number for this engine at a stated condition is a
 peak laminar smooth-wall shear stress of 92 Pa for the LMDE hovering 5 m above
@@ -298,10 +434,11 @@ times the height at 5, 10 and 15 m, while its momentum-carrying pressure core
 stays at 24 degrees. The two decouple because the wall shear stress is the skin
 friction of the radial wall jet rather than a fraction of the local static
 pressure, and the wall jet keeps accelerating outward while its density thins,
-so the shear reaches far beyond the pressure footprint. A shear proportional to
-the static pressure, which is what the analytic field uses, forces the eroding
-region and the pressure footprint to be the same width, and that single
-geometric error is what the wide measured region exposes.
+so the shear reaches far beyond the pressure footprint.
+
+With the erosion regimes reading that field, `apollo12_scour_radius` passes on
+both fields for the first time: 0.34 to 0.91 of the measured radius on the
+analytic field and 0.57 to 1.76 on the table.
 
 Use `plume_wall_shear`, `plume_mean_shear` and `plume_scour_radius` to compare
 against measurements of a profile rather than of a peak; comparing a model peak
@@ -312,49 +449,83 @@ that is left after both are taken into account.
 
 ### What it records
 
-The effector keeps a `PlumeSurfaceState` per spacecraft, updated at every
-right-hand-side evaluation, and `default_save_fields` publishes it as seven
-result columns whenever the effector is in the run:
+The effector keeps a `PlumeSurfaceState` per spacecraft and
+`default_save_fields` publishes it as fourteen result columns whenever the
+effector is in the run. Ten are updated at every right-hand-side evaluation:
 
 | Column | Meaning |
 |---|---|
 | `sc{i}_plume_height_m` | height above the terrain along the engine axis, from the vehicle's reference point |
 | `sc{i}_plume_shear_pa` | peak wall shear stress under the plume |
 | `sc{i}_plume_pressure_pa` | peak surface pressure under the plume |
-| `sc{i}_plume_erosion_kg_s` | mass erosion rate |
+| `sc{i}_plume_erosion_kg_s` | mass erosion rate, integrated over the ground |
 | `sc{i}_plume_eroded_kg` | its time integral |
+| `sc{i}_plume_regime` | erosion regime moving the most mass: 0 none, 1 viscous, 2 diffusion-driven flow, 3 bearing-capacity failure |
+| `sc{i}_plume_erosion_radius_m` | outer edge of the region moving soil right now |
+| `sc{i}_plume_crater_depth_m` | deepest point of the crater eroded so far |
+| `sc{i}_plume_crater_radius_m` | its edge |
 | `sc{i}_plume_ejecta_mps` | characteristic ejecta speed |
 | `sc{i}_plume_ground_effect_n` | ground-effect thrust augmentation |
 
-Run with `isolate_state=false` to read `plume.state` directly afterwards.
-`plume_quantities`, `plume_surface_footprint`, `plume_erosion_onset_height` and
+and three come from the per-sample ejecta diagnostic:
+
+| Column | Meaning |
+|---|---|
+| `sc{i}_plume_ejecta_angle_deg` | mass-weighted mean ejection angle above the local horizontal |
+| `sc{i}_plume_ejecta_range_m` | mass-weighted mean deposition radius |
+| `sc{i}_plume_ejecta_escape_frac` | mass fraction leaving faster than escape speed |
+
+The viewer's dust module reads all of them: the sheet's radius follows
+`erosion_radius_m`, its elevation follows `ejecta_angle_deg`, the scour mark
+follows `crater_radius_m` and the haze follows `ejecta_range_m`, so the three
+numbers that used to be hard-coded in `viewer/src/dust.js` (a 1 to 3 degree
+sheet, a 45 m sheet radius and a 14 m scour) are now model outputs.
+
+Run with `isolate_state=false` to read `plume.state`, `plume_crater_profile` and
+`plume_ejecta_summary` directly afterwards. `plume_quantities`,
+`plume_surface_footprint`, `plume_erosion_onset_height` and
 `plume_ground_effect_force` are the same model as plain functions, for sizing a
 scenario without running one.
 
-On the Apollo 11 descent
-(`scripts/dev/viewer_demos/apollo11_landing.jl`) erosion begins 33 s before
-touchdown with the engine 35 m above the ground, peaks at 18 kg/s, and moves
-about 430 kg of regolith in all — the same order as the tonne-scale estimates
-Metzger and co-workers derive from the Apollo landings, but low by a factor of
-six against Lane and Metzger's 2.6 t for Apollo 12 and by a factor of twenty-five
-to sixty against Metzger's 2024 estimate of 11 to 26 t, so the lumped cascade
-multiplier is absorbing considerably more than it should. The peak surface pressure reaches
-3.3 kPa and the peak wall shear 29 Pa; the ground-effect augmentation peaks at
-25 N, well under a percent of the engine's thrust.
+On the Apollo 11 descent (`scripts/dev/viewer_demos/apollo11_landing.jl`, the
+analytic field and the shipped defaults) erosion begins 67 s before touchdown
+with the engine 54.5 m above the ground, peaks at 42 kg/s, and moves 905 kg of
+regolith in all — against Lane and Metzger's 2.6 t for Apollo 12 and Metzger's
+2024 estimate of 11 to 26 t. The crater reaches 1.6 cm deep with a 4.3 m edge (read with the caveat above:
+the vehicle is still translating through most of that);
+the peak surface pressure reaches 3.3 kPa and the peak wall shear 28 Pa; the
+ground-effect augmentation peaks at 24 N, well under a percent of the engine's
+thrust. Viscous erosion is the dominant regime throughout, which is what the
+literature reports for the Apollo landings.
+
+The onset moved up from the fitted law's 31 m, and that is the honest cost of
+deriving the threshold instead of fitting it. The 31.5 m the Apollo 16 film
+gives is the height at which dust becomes *visible*; the physical onset must be
+above it, and the same body of work proves it — Lane and Metzger still measure
+10.7 kg/s at 36.6 m, the top of their usable range.
 
 ### Validation against published measurements
 
 `benchmarks/studies/psi_validation/` runs the model against every published
 plume-surface measurement that could be sourced precisely — Apollo descent-film
-erosion rates, the Apollo post-landing scour, the Surveyor III ejecta speeds,
-NASA's subscale vacuum-chamber crater tests — with one frozen manifest per case
-naming its source and its tolerance, and its README records the baseline. In
-short: the model's wall shear stress and its 0.15 Pa erosion threshold both land
-within a factor of two of the published values, the ejecta speed sits inside the
-measured range, and the total eroded mass, the erosion rate's variation with
-height and the width of the eroding region are all wrong, the last two
-structurally. Read that README before trusting any of these quantities
-quantitatively.
+erosion rates and eroding radii, the Apollo post-landing scour depth, the
+Surveyor III ejecta speeds, NASA's subscale vacuum-chamber crater tests, the
+Apollo film ejection angles — with one frozen manifest per case naming its
+source and its tolerance. Run it on either field:
+
+```bash
+julia --project=. benchmarks/studies/psi_validation/run_validation.jl --field=analytic
+julia --project=. benchmarks/studies/psi_validation/run_validation.jl --field=table
+```
+
+In short: six of seven gate-eligible cases pass on the analytic field and five
+of seven on the table, against four of six for the single fitted law. The
+eroding radius and the scour depth are the two that changed, and the erosion
+rate's variation with height is what still fails. Read that README before
+trusting any of these quantities quantitatively; it also records the three
+published laws for how the surface stress varies with height, which disagree
+with each other by a factor of 30 over an Apollo descent and which this model
+agrees with none of.
 
 ## Erosion and cratering regimes
 

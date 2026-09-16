@@ -261,9 +261,22 @@ almost nothing, and sized up a few hundred opaque disks would speckle the
 ground where a dust cloud casts one soft darkening. The decal does that.
 
 The "dust" toggle in the toolbar turns all of it off, and the selection panel
-gains the seven plume quantities — engine height (m), plume shear and pressure
-(Pa), erosion rate (kg/s), eroded mass (kg), ejecta speed (m/s) and ground
+gains the fourteen plume quantities — engine height (m), plume shear and
+pressure (Pa), erosion rate (kg/s) and eroded mass (kg), the eroding radius (m),
+the erosion regime, the crater's depth and radius (m), ejecta speed (m/s),
+ejection angle (°), deposition radius (m) and escaping fraction, and the ground
 effect (N) — each with a time history like every other row.
+
+Four of those drive the drawing rather than only the panel, so the module's
+shape follows the model instead of a constant: the sheet's radius is the
+eroding radius the plume-surface effector reports, its elevation band is the
+mass-weighted ejection angle the ejecta model computes (spread by
+`DUST_ELEVATION_SPREAD` about it, so a 2° mean reproduces the 1 to 3 degrees the
+module used to hard-code), the scour mark's radius is the crater's own edge, and
+the haze reaches out to the deposition radius. A page exported before those
+columns existed still works: every one of them falls back to the constant it
+replaced, and `DUST_SHEET_MAX_RADIUS_M` and `DUST_HAZE_RADIUS_M` stay as
+rendering clamps on how far the drawn geometry may run.
 
 ## Sun lighting and path tracing
 

@@ -304,6 +304,18 @@ export function start(payload, container = document.body) {
       plume('plume_eroded', 'eroded mass', 'kg', 'eroded_kg', 1);
       plume('plume_ejecta', 'ejecta speed', 'm/s', 'ejecta_mps', 1);
       plume('plume_ground_effect', 'ground effect', 'N', 'ground_effect_n', 1);
+      if (frames.plume.erosion_radius_m) plume('plume_erosion_radius', 'eroding radius', 'm', 'erosion_radius_m', 2);
+      if (frames.plume.crater_depth_m) plume('plume_crater_depth', 'crater depth', 'm', 'crater_depth_m', 4);
+      if (frames.plume.crater_radius_m) plume('plume_crater_radius', 'crater radius', 'm', 'crater_radius_m', 2);
+      if (frames.plume.ejecta_angle_deg) plume('plume_ejecta_angle', 'ejection angle', '\u00b0', 'ejecta_angle_deg', 2);
+      if (frames.plume.ejecta_range_m) plume('plume_ejecta_range', 'deposition radius', 'm', 'ejecta_range_m', 1, { log: 'auto' });
+      if (frames.plume.ejecta_escape_frac) plume('plume_ejecta_escape', 'escaping fraction', '', 'ejecta_escape_frac', 4);
+      if (frames.plume.regime) {
+        // 0 none, 1 viscous erosion, 2 diffusion-driven flow, 3 bearing-capacity failure
+        const PLUME_REGIME_LABELS = ['none', 'viscous erosion', 'diffusion-driven flow', 'bearing-capacity failure'];
+        add('plume_regime', 'erosion regime', '', 1, (t, o) => { o[0] = frames.plumeAt('regime', t, s); },
+          (o) => PLUME_REGIME_LABELS[Math.max(0, Math.min(3, Math.round(o[0])))] || 'none');
+      }
     }
     // One row per thruster: its firing level over the run, 0 (idle) to 1 (full).
     const nThrusters = plumes.counts(s);

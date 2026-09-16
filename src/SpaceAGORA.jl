@@ -80,6 +80,7 @@ using .SimulationModel: PlumeGasState, PlumeNozzle, PlumeAnalyticField, PlumeFie
 using .SimulationModel: plume_gas_state, build_plume_field_table, save_plume_field, load_plume_field
 using .SimulationModel: plume_wall_shear, plume_mean_shear, plume_scour_radius
 using .SimulationModel: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+using .SimulationModel: plume_crater_profile, plume_ejecta_summary, plume_regime_code, plume_default_regimes, plume_refresh_ejecta!
 using .SimulationModel: RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
 using .SimulationModel: ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime
 using .SimulationModel: AbstractErosionRegime, ViscousErosionRoberts, ViscousErosionEnergyFlux
@@ -90,7 +91,7 @@ using .SimulationModel: mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_
 using .SimulationModel: pressure_diffusion_depth_m, soil_tensile_strength_pa
 using .SimulationModel: EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
 using .SimulationModel: ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
-using .SimulationModel: ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
+using .SimulationModel: ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed, ejecta_lognormal_mass_weights
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
@@ -606,6 +607,7 @@ export PlumeGasState, PlumeNozzle, PlumeAnalyticField, PlumeFieldTable
 export plume_gas_state, build_plume_field_table, save_plume_field, load_plume_field
 export plume_wall_shear, plume_mean_shear, plume_scour_radius
 export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+export plume_crater_profile, plume_ejecta_summary, plume_regime_code, plume_default_regimes, plume_refresh_ejecta!
 export RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
 export ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime
 export AbstractErosionRegime, ViscousErosionRoberts, ViscousErosionEnergyFlux
@@ -616,7 +618,7 @@ export mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
 export pressure_diffusion_depth_m, soil_tensile_strength_pa
 export EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
 export ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
-export ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
+export ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed, ejecta_lognormal_mass_weights
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

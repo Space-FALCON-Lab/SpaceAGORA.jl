@@ -3,14 +3,26 @@ version = 1
 
 [case]
 id = "apollo_dust_ejection_angle"
-title = "Dust ejection angle above horizontal (the model has no such output)"
-status = "not_modeled"
+title = "Dust ejection angle above horizontal (CALIBRATION TARGET, never gates)"
+status = "calibration_target"
 gate_eligible = false
 summary = """
-The best-measured single number in the whole Apollo plume-surface record, and
-the model produces nothing to compare it with: `plume_quantities` returns a
-characteristic ejecta speed but no direction. Recorded so the gap is explicit
-and so the ejecta work can be scored against it when it lands.
+The best-measured single number in the whole Apollo plume-surface record. The
+model now produces a comparable quantity -- the mass-weighted mean ejection
+angle of its grain-transport distribution -- but it is an INPUT, not a
+prediction: `EjectaTransportConfig.ejection_angle_min_deg` and
+`ejection_angle_max_deg` are set to the 1 to 3 degrees this very table reports,
+and the distribution spreads the launches uniformly over that band. Agreement is
+therefore circular and this case can never gate; it is evaluated so that the
+circularity is on the record instead of being implied by a missing row.
+
+What would make it a prediction is the crater. Immer and co-workers note in
+their section 3 that on Roberts' theory the ejection angle follows the wall
+slope of the scour crater, and the model now carries a crater depth profile, so
+the slope is computable. The profile it produces is far steeper than the
+measured angle (see this study's README), so wiring the angle to it would make
+the model worse, not better, until the crater's shape is right. It is left as an
+input and the gap is reported.
 """
 
 [source]
@@ -41,18 +53,21 @@ sheet, not the launch angle of an individual grain.
 body = "Moon"
 engine = "Apollo LM descent propulsion system"
 thrust_n = 11870.0
-thrust_basis = "Apollo 11 near-hover thrust; see pfgt1_erosion_threshold_shear. Nothing in the model consumes it for this case."
-height_convention = "not applicable"
+thrust_basis = "Apollo 11 near-hover thrust; see pfgt1_erosion_threshold_shear."
+height_convention = "nozzle exit plane above the undisturbed surface; the model is probed at 5 m"
 
 [model]
-quantity = "none"
+quantity = "ejection_angle_deg"
 unit = "deg"
 
 [tolerance]
 kind = "none"
 low = 0.0
 high = 0.0
-reason = "No model output exists, so no tolerance can apply."
+reason = """
+The model's angle is bounded by a configuration field taken from this table, so
+no tolerance can be argued: the case is reported with its ratio and never gates.
+"""
 
 [[reference]]
 value = 2.6

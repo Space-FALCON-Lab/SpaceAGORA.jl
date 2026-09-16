@@ -13,7 +13,30 @@
 //   frames.plume.eroded_kg       its time integral
 //   frames.plume.ejecta_mps      speed the grains leave at
 //   frames.plume.ground_effect_n thrust augmentation in ground effect
+//   frames.plume.regime          erosion regime moving the most mass (0..3)
+//   frames.plume.erosion_radius_m outer edge of the region moving soil now
+//   frames.plume.crater_depth_m  deepest point of the crater eroded so far
+//   frames.plume.crater_radius_m its edge
+//   frames.plume.ejecta_angle_deg  mass-weighted ejection angle above horizontal
+//   frames.plume.ejecta_range_m    mass-weighted deposition radius
+//   frames.plume.ejecta_escape_frac mass fraction leaving faster than escape
 // Each is a Float32 array, frame-major then spacecraft.
+//
+// WHAT DRIVES WHAT. Everything the module used to hold as a constant now comes
+// out of that block, with the constants kept only as the fallbacks a page
+// without the column uses and as the rendering clamps named below:
+//
+//   the sheet's radius        erosion_radius_m, the ground the plume is
+//                             actually moving soil on, grown by the advection
+//                             term; clamped to DUST_SHEET_MAX_RADIUS_M, which
+//                             is a rendering limit and not a physical one
+//   the sheet's elevation     ejecta_angle_deg, the mass-weighted ejection
+//                             angle the model computes, spread by
+//                             DUST_ELEVATION_SPREAD about it (the old fixed
+//                             1 to 3 degrees is what a 2 degree mean gives)
+//   the scour mark's radius   crater_radius_m, the model's own crater edge
+//   the haze's radius         ejecta_range_m, how far the grains actually
+//                             land, clamped to DUST_HAZE_RADIUS_M
 //
 // What it is supposed to look like: NASA Langley's plume-surface interaction
 // tests, where an engine fires into a bin of lunar simulant inside a vacuum
@@ -58,8 +81,11 @@ const DUST_PARTICLE_COUNT = 4096;
 const DUST_EJECTA_FRACTION = 0.12;                     // the points are the fast tail, not the sheet
 const DUST_MAX_EMITTERS = 8;
 const DUST_LIFETIME_S = 2.4;
-const DUST_ELEVATION_MIN_RAD = 1.0 * Math.PI / 180;   // the sheet hugs the ground: a
-const DUST_ELEVATION_MAX_RAD = 3.0 * Math.PI / 180;   // few degrees above the local slope
+const DUST_ELEVATION_DEFAULT_DEG = 2.0;                // used only when the payload
+                                                       // carries no ejection angle
+const DUST_ELEVATION_SPREAD = 0.5;                     // half-width of the sheet's
+                                                       // elevation band, as a fraction of
+                                                       // the mean angle the model reports
 const DUST_GRAVITY_M_S2 = 1.62;                        // lunar, unless the payload says otherwise
 const DUST_SIZE_KM = 4.5e-4;                           // a puff about half a meter across
 const DUST_PROJECTION_SCALE = 820;                     // pixels per unit angle, ~800 px tall view at 45 deg
@@ -73,7 +99,9 @@ const DUST_MAX_OPACITY = 0.11;                         // the points are a spark
 const DUST_SCOUR_RIM_OPACITY = 0.3;
 const DUST_SCOUR_FLOOR_OPACITY = 0.12;                 // added light, scaled by the display gain
 const DUST_SCOUR_RIM_RADIUS = 0.78;                    // of the crater radius
-const DUST_SCOUR_MAX_RADIUS_M = 14.0;
+const DUST_SCOUR_MAX_RADIUS_M = 14.0;                   // fallback only: the scour
+                                                       // radius now comes from the
+                                                       // model's crater_radius_m
 const DUST_SCOUR_RIM_WIDTH = 0.34;                     // as a fraction of the crater radius
 const DUST_SHEET_LIFT_M = 0.7;                         // the saltating layer has thickness, and this
                                                        // keeps the sheet out of the terrain patches' facets
@@ -92,7 +120,7 @@ const DUST_SHEET_LAYERS = [
   { height_m: 1.10, weight: 0.78, seed: 4.7, scroll: 0.86, swirl: -0.65 },
   { height_m: 2.40, weight: 0.52, seed: 9.1, scroll: 0.72, swirl: 0.38 },
 ];
-const DUST_SHEET_MAX_RADIUS_M = 45.0;
+const DUST_SHEET_MAX_RADIUS_M = 45.0;                   // rendering clamp on the sheet
 const DUST_SHEET_FOOTPRINTS = 2.2;                     // radius at the moment erosion starts
 const DUST_SHEET_SPREAD = 0.18;                        // the visible front advances at this fraction of the ejecta speed
 const DUST_SHEET_TAU = 2.8;                           // optical depth of a layer, straight through
@@ -313,8 +341,8 @@ function dustMaterial(gravityKmS2, projScale) {
       uSizeKm: { value: DUST_SIZE_KM },
       uProjScale: { value: projScale },
       uFadeKm: { value: 0.05 },
-      uElevMin: { value: DUST_ELEVATION_MIN_RAD },
-      uElevMax: { value: DUST_ELEVATION_MAX_RAD },
+      uElevMin: { value: DUST_ELEVATION_DEFAULT_DEG * (1 - DUST_ELEVATION_SPREAD) * Math.PI / 180 },
+      uElevMax: { value: DUST_ELEVATION_DEFAULT_DEG * (1 + DUST_ELEVATION_SPREAD) * Math.PI / 180 },
       uLiftKm: { value: DUST_SHEET_LIFT_M * DUST_M_TO_KM },
       uColor: { value: new THREE.Color(DUST_COLOR) },
       uOpacity: { value: 0 },
@@ -856,6 +884,15 @@ export function createDust(parent, frames, terrain, lod, options = {}) {
   const hazeTrack = dustHazeTrack(frames, Math.max(0.5, options.hazeDecayS ?? DUST_HAZE_DECAY_S));
   const onsetTimes = dustOnsetTimes(frames);
   const sheetMaxKm = (options.sheetMaxRadiusM ?? DUST_SHEET_MAX_RADIUS_M) * DUST_M_TO_KM;
+  const hazeMaxKm = (options.hazeRadiusM ?? DUST_HAZE_RADIUS_M) * DUST_M_TO_KM;
+  // A page written before these columns existed still has to work, so every
+  // model-driven quantity falls back to the constant it replaced.
+  const dustHas = (key) => !!frames.plume[key];
+  const dustValue = (key, t, s2, fallback) => {
+    if (!dustHas(key)) return fallback;
+    const v = frames.plumeAt(key, t, s2);
+    return Number.isFinite(v) && v > 0 ? v : fallback;
+  };
 
   const emitters = [];
   for (let s = 0; s < count; s++) {
@@ -977,15 +1014,24 @@ export function createDust(parent, frames, terrain, lod, options = {}) {
     const speedKmS = Math.max(1e-4, (Number.isFinite(ejecta) ? ejecta : 0) * DUST_M_TO_KM);
     const reachKm = speedKmS * DUST_LIFETIME_S;
     const footprintKm = Math.max(1e-5, (Number.isFinite(height) ? height : 0) * DUST_M_TO_KM * DUST_PLUME_TAN_HALF_ANGLE);
+    const u = item.material.uniforms;
     // The visible front of the sheet leaves the impingement point when erosion
     // starts and runs outward at a fraction of the ejecta speed.
     const elapsed = Math.max(0, t - onsetTimes[s]);
-    const sheetRadiusKm = Math.min(sheetMaxKm,
-      DUST_SHEET_FOOTPRINTS * footprintKm + DUST_SHEET_SPREAD * speedKmS * elapsed);
+    // The sheet covers the ground the plume is moving soil on, not the plume's
+    // pressure core: the model reports that radius directly, and the advection
+    // term carries the visible front outward from it.
+    const sheetBaseKm = dustHas('erosion_radius_m')
+      ? Math.max(1.2 * footprintKm, dustValue('erosion_radius_m', t, s, 0) * DUST_M_TO_KM)
+      : DUST_SHEET_FOOTPRINTS * footprintKm;
+    const sheetRadiusKm = Math.min(sheetMaxKm, sheetBaseKm + DUST_SHEET_SPREAD * speedKmS * elapsed);
+    // The grains leave at the angle the ejecta model computes, spread about it.
+    const elevDeg = dustValue('ejecta_angle_deg', t, s, DUST_ELEVATION_DEFAULT_DEG);
+    u.uElevMin.value = Math.max(0, elevDeg * (1 - DUST_ELEVATION_SPREAD)) * Math.PI / 180;
+    u.uElevMax.value = Math.max(1e-4, elevDeg * (1 + DUST_ELEVATION_SPREAD)) * Math.PI / 180;
 
     // Fast grains that outrun the sheet: a thin sparkle over it, not the body
     // of the effect.
-    const u = item.material.uniforms;
     u.uTime.value = t;
     u.uSpeed.value = speedKmS;
     u.uFadeKm.value = 0.22 * reachKm;
@@ -1016,8 +1062,12 @@ export function createDust(parent, frames, terrain, lod, options = {}) {
 
     // Haze: the fines still in the air, over a bank that keeps growing. Its
     // top is what casts the sheet's shadow on the ground.
-    const hazeRadiusKm = Math.min((options.hazeRadiusM ?? DUST_HAZE_RADIUS_M) * DUST_M_TO_KM,
-      sheetRadiusKm * (1.5 + 1.5 * haze));
+    // The haze hangs over the ground the grains reach, which the ejecta model
+    // puts far outside the sheet; the clamp keeps it inside the drawn scene.
+    const depositionKm = dustValue('ejecta_range_m', t, s, 0) * DUST_M_TO_KM;
+    const hazeReachKm = depositionKm > 0 ? Math.max(sheetRadiusKm, depositionKm) :
+      sheetRadiusKm * (1.5 + 1.5 * haze);
+    const hazeRadiusKm = Math.min(hazeMaxKm, hazeReachKm);
     const hazeTopKm = DUST_HAZE_HEIGHT_M * DUST_M_TO_KM * Math.min(1, 2 * haze);
     item.haze.visible = haze > 0.005;
     if (item.haze.visible) {
@@ -1031,7 +1081,11 @@ export function createDust(parent, frames, terrain, lod, options = {}) {
     // Scour crater: grows with the mass already moved and stays once it is
     // there. The rim darkens the ground under it; the floor adds a little
     // light, so it has to carry the display gain like the dust does.
-    const scourM = DUST_SCOUR_MAX_RADIUS_M * Math.min(1, Math.sqrt(Math.max(0, eroded) / erodedMax));
+    // The scour mark is the crater the model dug: its radius is a model output
+    // now, and only a page without the column falls back to the old ramp in
+    // the cumulative eroded mass.
+    const scourM = dustHas('crater_radius_m') ? frames.plumeAt('crater_radius_m', t, s) :
+      DUST_SCOUR_MAX_RADIUS_M * Math.min(1, Math.sqrt(Math.max(0, eroded) / erodedMax));
     for (const part of [item.scourRim, item.scourFloor]) {
       part.visible = scourM > 0.05;
       if (!part.visible) continue;

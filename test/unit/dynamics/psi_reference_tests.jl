@@ -17,6 +17,8 @@ using SpaceAGORA
 #                                  Apollo LM CFD fit
 #   surveyor3_ejecta_speed         the speed it throws grains at, against the
 #                                  Surveyor III sandblasting estimates
+#   apollo_scour_depth             how deep it digs over a descent, against
+#                                  Metzger's interpretation of the Apollo scour
 #
 # The tolerances are the manifests' own, and every one of them is wide and
 # justified in the manifest's `tolerance.reason`: these are order-of-magnitude
@@ -119,13 +121,36 @@ _psi_scored(case) = [r for r in case.references if !Bool(get(r, "context_only", 
         end
     end
 
+    @testset "scour depth against the Apollo post-landing interpretation" begin
+        # Metzger (Icarus 417, 116135, 2024) section 5: about 6 cm at the deepest
+        # point of a toroidal crater, with stated extremes of plausibility of
+        # 3 to 12 cm. The model integrates the regimes' local mass flux in time
+        # over Lane and Metzger's Apollo 12 descent profile.
+        case = _psi_case("apollo_scour_depth")
+        thrust = Float64(case.conditions["thrust_n"])
+        depth, peak_r, edge_r, rows = PSIH.model_profile_crater(cfg, thrust, case.profile)
+        @test depth > 0.0
+        @test length(rows) == 64
+        for ref in _psi_scored(case)
+            ratio = depth / Float64(ref["value"])
+            @test Float64(case.tolerance["low"]) <= ratio <= Float64(case.tolerance["high"])
+        end
+        # The crater is toroidal, not a bowl: the deepest point is off the
+        # centerline and the profile falls away outside it. The radius it sits
+        # at is a known defect (the reference puts it at 1 to 2 m), so this only
+        # asserts the shape, not the place.
+        @test 0.0 < peak_r < edge_r
+        @test rows[1].depth_m < depth
+        @test rows[end].depth_m < 0.05 * depth
+    end
+
     @testset "the Apollo 12 erosion rate gap is recorded, not enforced" begin
-        # This case fails the study's factor-of-three tolerance today: the model
-        # returns 2 to 10 times less soil than Lane and Metzger measured from the
-        # Apollo 12 descent film, and exactly zero above its own onset height
-        # where the reference still measures erosion. The band here is loose
-        # enough that closing the gap passes and only a collapse fails, so the
-        # test guards the shape of the answer without freezing the defect in.
+        # This case still fails the study's factor-of-three tolerance, but on one
+        # row instead of on all of them: with the erosion regimes the model is
+        # 0.30 to 0.97 of Lane and Metzger's measured rate, and only the lowest
+        # altitude (0.300 at 1.83 m) falls outside the band. The band here is
+        # loose enough that closing the gap passes and only a collapse fails, so
+        # the test guards the shape of the answer without freezing the defect in.
         case = _psi_case("apollo12_erosion_rate")
         thrust = Float64(case.conditions["thrust_n"])
         rows = _psi_scored(case)
@@ -135,10 +160,10 @@ _psi_scored(case) = [r for r in case.references if !Bool(get(r, "context_only", 
         for (h, modelval, refval) in rates
             @test modelval !== nothing
             @test modelval >= 0.0
-            h <= 30.0 || continue        # above the model's onset it is identically zero
             @test 0.02 <= modelval / refval <= 3.0
         end
-        # Below the onset the model erodes something everywhere the reference does.
-        @test all(m > 0.0 for (h, m, _) in rates if h <= 30.0)
+        # The model now erodes something at every altitude the reference does,
+        # including the 36.6 m where the fitted law returned exactly zero.
+        @test all(m > 0.0 for (_, m, _) in rates)
     end
 end

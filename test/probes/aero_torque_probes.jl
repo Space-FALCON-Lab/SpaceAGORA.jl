@@ -208,7 +208,7 @@ state_for(sc; q_ib=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
     @testset "end-to-end: CoP torque drives the attitude, not the orbit" begin
         atmo = ExponentialAtmosphereModel(1.0e-11, 300e3, 50e3;
             temperature_k=800.0, valid_max_altitude_m=1000e3)
-        function config(sc)
+        function config(sc; aero=AerodynamicCoefficientfM())
             return SimulationConfiguration(
                 simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
                 mission_configuration=MissionConfiguration(
@@ -220,7 +220,7 @@ state_for(sc; q_ib=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
                     ephemerides_model=SimpleEphemeridesModel(),
                     thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=EARTH),
                     topography=false, wind=false),
-                dynamics_model=DynamicsModel([sc], (InverseSquaredGravityModel(), AerodynamicCoefficientfM())),
+                dynamics_model=DynamicsModel([sc], (InverseSquaredGravityModel(), aero)),
                 guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
                 navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
                 control_model=ControlModel((), Float64[]),
@@ -241,5 +241,252 @@ state_for(sc; q_ib=SVector{4, Float64}(0.0, 0.0, 0.0, 1.0),
         p_cop = SVector{3, Float64}(sol_cop.u[end].sc[1].pos...)
         p_zero = SVector{3, Float64}(sol_zero.u[end].sc[1].pos...)
         @test norm(p_cop - p_zero) < 1.0                 # ...but barely on the orbit (< 1 m over 600 s)
+        # A unit scale must preserve the coupled orbit/attitude trajectory.
+        scaled = SpaceAGORA.TelemetryVerification.ScaledAerodynamicCoefficientfM(
+            AerodynamicCoefficientfM(), 1.0)
+        sol_scaled = run_simulation(config(mk((0.0, 0.0, 0.05)); aero=scaled); return_solution=true)
+        @test string(sol_scaled.retcode) == "Success"
+        @test sol_scaled.t[end] == sol_cop.t[end] == 600.0
+        @test sol_scaled.u[end] ≈ sol_cop.u[end] atol=1e-12 rtol=1e-11
+        @test SVector{3, Float64}(sol_scaled.u[end].sc[1].ω) ≈ ω_cop atol=1e-12 rtol=1e-11
+    end
+end
+
+@testset "scaled fM preserves the engine-dispatched wrench and saved components" begin
+    TV = SpaceAGORA.TelemetryVerification
+    fm = AerodynamicCoefficientfM()
+    q_id = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+    q_integrated = normalize(SVector{4, Float64}(0.2, -0.3, 0.4, 0.7))
+    cop = SVector{3, Float64}(0.03, -0.02, 0.05)
+    zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    atmo = ExponentialAtmosphereModel(1.0e-11, 300e3, 50e3;
+        temperature_k=800.0, valid_max_altitude_m=1000e3)
+
+    cache_components(p) = (
+        p.save_cache.drag_cache[1],
+        p.save_cache.lift_cache[1],
+        p.save_cache.cross_cache[1],
+    )
+
+    function dispatch_aero(model; orientation_sim=true, offset=cop, q=q_integrated,
+                           density_model=atmo,
+                           sc=box_spacecraft((box_link(cop=Tuple(offset)),); q0=q_id))
+        # Static Link.q and the initial-condition quaternion remain identity.
+        # Change the integrated state alone, as happens during propagation.
+        args = TV.make_example_config(
+            planet=EARTH,
+            spacecraft=sc,
+            mission_time=1.0,
+            initial_time=InitialTime(year=2015, month=6, day=1),
+            dynamic_effectors=(model,),
+            density_model=density_model,
+            ephemerides_model=SimpleEphemeridesModel(),
+            orientation_sim=orientation_sim,
+            keplerian=false,
+            EI_km=120.0,
+            results=false,
+            verbose=false,
+        )
+        u = SimulationEngine.build_initial_conditions(args)
+        u.sc[1].pos .= R_SAMPLE
+        u.sc[1].vel .= V_PP
+        if orientation_sim
+            u.sc[1].q .= q
+        end
+        p = ODEParams(n_sats=1, args=args)
+        p.shared_buffers.et_start[] = SimulationModel.ephemerides_time_seconds(
+            args.initial_time, args.environment_model.ephemerides_model)
+        p.shared_buffers.current_time[] = 0.0
+        SimulationEngine._initialize_save_cache_buffers!(p)
+        SimulationEngine._initialize_aero_workspace_buffers!(p)
+        state = SimulationEngine.build_state_sample(u.sc[1], sc, orientation_sim)
+        f, torque = SimulationEngine._evaluate_dynamic_effector(
+            model, u.sc[1], state, p, 1, 0.0)
+        return (; f, torque, components=cache_components(p), u, p, state, sc)
+    end
+
+    @testset "propagated attitude and nonzero CoP survive the wrapper" begin
+        reference = dispatch_aero(fm)
+        @test reference.state.q_ib == q_integrated
+        @test SVector{4, Float64}(reference.sc.root.q) == q_id
+        @test norm(reference.f) > 0.0
+        @test norm(reference.torque) > 1e-12
+        # A single root link supplies an independent physical torque check.
+        @test reference.torque ≈ cross(cop, PE.rot(q_integrated) * reference.f) atol=1e-16 rtol=1e-12
+        @test reference.f ≈ sum(reference.components) atol=1e-16 rtol=1e-12
+        # The generic rotation excites lift and cross force as well as drag,
+        # so multiplying zero-valued caches cannot satisfy these checks.
+        @test all(component -> norm(component) > 1e-12, reference.components)
+
+        identity_reference = dispatch_aero(fm; q=q_id)
+        @test !isapprox(reference.f, identity_reference.f; rtol=1e-3, atol=1e-16)
+
+        for scale in (1.0, 1.7)
+            model = TV.ScaledAerodynamicCoefficientfM(fm, scale)
+            @test SimulationModel.solver_partition(model) === SimulationModel.solver_partition(fm)
+            @test SimulationModel.environment_requirements(model).planet_frame
+            @test SimulationModel.environment_requirements(model).atmosphere
+            wrapped = dispatch_aero(model)
+            # Before the fix, real engine dispatch enters calcForceTorque for
+            # this wrapper and returns exactly zero torque. Calling only the
+            # underlying pure wrench would miss that dispatch defect.
+            @test norm(wrapped.torque) > 1e-12
+            @test wrapped.f ≈ scale * reference.f atol=1e-16 rtol=1e-12
+            @test wrapped.torque ≈ scale * reference.torque atol=1e-16 rtol=1e-12
+            for (actual, expected) in zip(wrapped.components, reference.components)
+                @test actual ≈ scale * expected atol=1e-16 rtol=1e-12
+            end
+            @test wrapped.f ≈ sum(wrapped.components) atol=1e-16 rtol=1e-12
+            @test SVector{4, Float64}(wrapped.sc.root.q) == q_id
+
+            # Cache scaling must not compound on repeated RHS evaluations.
+            f_again, torque_again = SimulationEngine._evaluate_dynamic_effector(
+                model, wrapped.u.sc[1], wrapped.state, wrapped.p, 1, 0.0)
+            @test f_again ≈ wrapped.f atol=1e-16 rtol=1e-12
+            @test torque_again ≈ wrapped.torque atol=1e-16 rtol=1e-12
+            for (actual, expected) in zip(cache_components(wrapped.p), wrapped.components)
+                @test actual ≈ expected atol=1e-16 rtol=1e-12
+            end
+        end
+    end
+
+    @testset "orientation-off force and CoP-blind behavior are preserved" begin
+        reference = dispatch_aero(fm; orientation_sim=false)
+        no_cop = dispatch_aero(fm; orientation_sim=false, offset=zero3)
+        @test reference.state.q_ib === nothing
+        @test reference.torque == no_cop.torque == zero3
+        @test reference.f == no_cop.f
+        # Pin the existing legacy force contract as well as wrapped/unwrapped
+        # agreement, because orientation-off scenarios already use the wrapper.
+        legacy_f, legacy_torque = SimulationModel.calcForceTorque(
+            fm, reference.u.sc[1], reference.p, 1)
+        @test reference.f ≈ legacy_f atol=1e-16 rtol=1e-12
+        @test legacy_torque == zero3
+
+        for scale in (1.0, 1.7)
+            model = TV.ScaledAerodynamicCoefficientfM(fm, scale)
+            wrapped = dispatch_aero(model; orientation_sim=false)
+            wrapped_no_cop = dispatch_aero(model; orientation_sim=false, offset=zero3)
+            @test wrapped.torque == wrapped_no_cop.torque == zero3
+            @test wrapped.f == wrapped_no_cop.f
+            @test wrapped.f ≈ scale * legacy_f atol=1e-16 rtol=1e-12
+            for (actual, expected) in zip(wrapped.components, reference.components)
+                @test actual ≈ scale * expected atol=1e-16 rtol=1e-12
+            end
+            @test wrapped.f ≈ sum(wrapped.components) atol=1e-16 rtol=1e-12
+        end
+    end
+
+    @testset "pure wrench and zero-density cache reset" begin
+        env = sample_env()
+        sc = box_spacecraft((box_link(cop=Tuple(cop)),))
+        state = state_for(sc; q_ib=q_integrated)
+        base_f, base_torque = SimulationModel.wrench(fm, state, env, 0.0)
+        vacuum = SimulationModel.EnvironmentSample(env.planet;
+            planet_frame=env.planet_frame,
+            atmosphere=SimulationModel.AtmosphereSample(0.0, 800.0, zero3))
+        for scale in (1.0, 1.7)
+            model = TV.ScaledAerodynamicCoefficientfM(fm, scale)
+            f, torque = SimulationModel.wrench(model, state, env, 0.0)
+            @test f ≈ scale * base_f atol=1e-16 rtol=1e-12
+            @test torque ≈ scale * base_torque atol=1e-16 rtol=1e-12
+            populated = dispatch_aero(model)
+            @test all(component -> norm(component) > 1e-12, populated.components)
+            f0, torque0 = SimulationModel.wrench_caching!(model, state, vacuum, 0.0, populated.p, 1)
+            @test f0 == torque0 == zero3
+            @test all(iszero, cache_components(populated.p))
+        end
+    end
+
+    @testset "per-link sampling survives cached delegation" begin
+        # A deliberately steep atmosphere and radial child offset make a lost
+        # per-link sample visible, instead of accepting a uniform-density match.
+        steep_atmo = ExponentialAtmosphereModel(1e-10, sample_env().planet_frame.alt_m, 1000.0;
+            temperature_k=800.0, valid_max_altitude_m=1000e3)
+        make_sc() = box_spacecraft((box_link(cop=Tuple(cop)),
+            box_link(root=false, r=(100.0, 0.0, 0.0), cop=Tuple(cop))))
+        per_link = AerodynamicCoefficientfM(per_link_atmosphere=true)
+        reference = dispatch_aero(per_link; q=q_id, density_model=steep_atmo, sc=make_sc())
+        uniform = dispatch_aero(fm; q=q_id, density_model=steep_atmo, sc=make_sc())
+        @test !isapprox(reference.f, uniform.f; rtol=1e-3, atol=1e-16)
+        @test norm(reference.torque) > 1e-12
+        for scale in (1.0, 1.7)
+            wrapped = dispatch_aero(TV.ScaledAerodynamicCoefficientfM(per_link, scale);
+                q=q_id, density_model=steep_atmo, sc=make_sc())
+            @test wrapped.f ≈ scale * reference.f atol=1e-16 rtol=1e-12
+            @test wrapped.torque ≈ scale * reference.torque atol=1e-16 rtol=1e-12
+            for (actual, expected) in zip(wrapped.components, reference.components)
+                @test actual ≈ scale * expected atol=1e-16 rtol=1e-12
+            end
+        end
+    end
+
+    @testset "fixed-attitude incidence policies survive the wrapper" begin
+        make_sc() = box_spacecraft((box_link(cop=Tuple(cop), q=Tuple(q_integrated)),))
+        forces = Dict{Symbol, SVector{3, Float64}}()
+        for incidence in (:max_drag, :attitude, :tumbling_average)
+            base = AerodynamicCoefficientfM(fixed_attitude_incidence=incidence)
+            reference = dispatch_aero(base; orientation_sim=false, sc=make_sc())
+            forces[incidence] = reference.f
+            wrapped = dispatch_aero(TV.ScaledAerodynamicCoefficientfM(base, 1.7);
+                orientation_sim=false, sc=make_sc())
+            @test wrapped.f ≈ 1.7 * reference.f atol=1e-16 rtol=1e-12
+            @test wrapped.torque == reference.torque == zero3
+            @test wrapped.f ≈ sum(wrapped.components) atol=1e-16 rtol=1e-12
+        end
+        @test !isapprox(forces[:attitude], forces[:max_drag]; rtol=1e-3, atol=1e-16)
+    end
+
+    @testset "scaled fM contributes to the actual implicit RHS" begin
+        withenv(
+            "SPACEAGORA_EFFECTOR_PARALLEL" => "off",
+            "SPACEAGORA_RHS_BATCH_PARALLEL" => "off",
+            "SPACEAGORA_RHS_PLAN_STEP_CACHE" => "0",
+        ) do
+            reference = dispatch_aero(fm)
+            @test norm(reference.f) > 1e-12
+            @test norm(reference.torque) > 1e-12
+
+            # One spacecraft, one effector, no controls: acceleration is F/m.
+            # The implicit partition contributes torque only, with quaternion
+            # kinematics and the gyroscopic term assigned to the explicit side.
+            for (model, scale) in (
+                (fm, 1.0),
+                (TV.ScaledAerodynamicCoefficientfM(fm, 1.0), 1.0),
+                (TV.ScaledAerodynamicCoefficientfM(fm, 1.7), 1.7),
+            )
+                sample = dispatch_aero(model)
+                p, u = sample.p, sample.u
+                SimulationEngine._initialize_runtime_env_config!(p)
+                before = copy(u)
+                du = copy(u)
+                du .= NaN
+                # Do not let the earlier dispatch populate diagnostics for the
+                # assertions below; this RHS evaluation must write them itself.
+                for cache in (p.save_cache.drag_cache, p.save_cache.lift_cache,
+                              p.save_cache.cross_cache)
+                    fill!(cache, zero3)
+                end
+
+                SimulationEngine.spacecraft_dynamics_implicit_atmosphere!(du, u, p, 0.0)
+
+                acceleration = SVector{3, Float64}(du.sc[1].vel)
+                angular_acceleration = SVector{3, Float64}(du.sc[1].ω)
+                @test norm(acceleration) > 1e-12
+                @test norm(angular_acceleration) > 1e-12
+                @test acceleration ≈ scale * reference.f / u.sc[1].mass atol=1e-16 rtol=1e-12
+                @test angular_acceleration ≈ sample.sc.inertia_tensor \ (scale * reference.torque) atol=1e-16 rtol=1e-12
+                for (actual, expected) in zip(cache_components(p), reference.components)
+                    @test actual ≈ scale * expected atol=1e-16 rtol=1e-12
+                end
+                @test all(iszero, du.sc[1].pos)
+                @test iszero(du.sc[1].mass)
+                @test all(iszero, du.sc[1].q)
+                @test all(iszero, du.sc[1].heat_loads)
+                @test u == before
+                @test SimulationEngine._partition_selected_count((model,), :implicit) == 1
+                @test SimulationEngine._partition_selected_count((model,), :explicit) == 0
+            end
+        end
     end
 end

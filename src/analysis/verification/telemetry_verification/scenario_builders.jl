@@ -96,12 +96,40 @@ end
 
 @inline _dynamic_effector_threadsafe(::ScaledAerodynamicCoefficientfM)::Bool = true
 
-# The wrapper's force is atmosphere-dependent through the wrapped model even
-# though it evaluates on the calcForceTorque path (where the requirements hook
-# is not consulted by the RHS); declaring it keeps the engine's
-# density-without-aero diagnostic from misfiring on cd-scaled scenarios.
-@inline SimulationModel.environment_requirements(::ScaledAerodynamicCoefficientfM) =
-    SimulationModel.EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+# Scaling changes the full aerodynamic wrench, including lift, cross force and
+# body-frame torque. Preserve the wrapped model's sampling and solver contracts.
+@inline SimulationModel.environment_requirements(model::ScaledAerodynamicCoefficientfM) =
+    SimulationModel.environment_requirements(model.model)
+
+@inline SimulationModel.solver_partition(model::ScaledAerodynamicCoefficientfM) =
+    SimulationModel.solver_partition(model.model)
+
+function SimulationModel.wrench(
+    model::ScaledAerodynamicCoefficientfM,
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64,
+)
+    f, τ = SimulationModel.wrench(model.model, x, env, t)
+    return model.cd_scale .* f, model.cd_scale .* τ
+end
+
+function SimulationModel.wrench_caching!(
+    model::ScaledAerodynamicCoefficientfM,
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64,
+    p::SimulationModel.ODEParams,
+    sat_idx::Int,
+)
+    # Use the cached hook so per-link atmosphere sampling is preserved. It
+    # replaces every component before scaling, including zero-density stages.
+    f, τ = SimulationModel.wrench_caching!(model.model, x, env, t, p, sat_idx)
+    for cache in (p.save_cache.drag_cache, p.save_cache.lift_cache, p.save_cache.cross_cache)
+        cache[sat_idx] = model.cd_scale .* cache[sat_idx]
+    end
+    return model.cd_scale .* f, model.cd_scale .* τ
+end
 
 function SimulationModel.calcForceTorque(
     model::ScaledAerodynamicCoefficientfM,

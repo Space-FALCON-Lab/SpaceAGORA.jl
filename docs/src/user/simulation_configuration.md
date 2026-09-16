@@ -114,6 +114,50 @@ ic = SM.CartesianInitialCondition(
 )
 ```
 
+**Geodetic initial condition**
+
+When the start is more naturally described as "over this latitude and
+longitude, at this altitude, going this fast," pass the planet and the geodetic
+state to the same type:
+
+```julia
+ic = SM.CartesianInitialCondition(
+    planet;
+    lat   = 0.0,                 # geodetic latitude, degrees
+    lon   = 0.0,                 # planet-fixed longitude, degrees
+    alt   = 200e3,               # altitude above the reference ellipsoid, m
+    speed = 7784.0,              # inertial speed, m/s
+    flight_path_angle = 0.0,     # elevation above local horizontal, degrees
+    inclination = 89.876,        # degrees; or pass azimuth instead
+    initial_time = initial_time,
+    ephemerides_model = ephemerides_model
+)
+```
+
+The velocity is inertial, resolved in the local horizontal frame of that point.
+Its heading comes from either `inclination` or `azimuth` (degrees clockwise from
+local north, so 90 is due east) — exactly one of the two is required. With
+`inclination`, the constructor picks the northbound crossing of that point;
+`descending = true` picks the southbound one, and an inclination below the
+declination of the point is an error because such an orbit never reaches it.
+
+The local horizontal is the plane perpendicular to the position vector, so
+`flight_path_angle` is the orbital flight path angle and the inclination you ask
+for comes out exact. That plane is tilted from the geodetic horizon by the
+deflection of the vertical — at most about 0.19° on Earth, at mid-latitudes —
+which matters for a near-surface entry state and not for an orbit.
+
+Longitude is planet-fixed, so the constructor has to know the
+inertial-to-planet-fixed frame. Pass `initial_time` together with the run's
+`ephemerides_model` — and use the epoch the run itself starts at, or the
+longitude is the one from a different moment. `L_PI` supplies the frame
+directly instead; without either, `planet.L_PI` is used if it has been
+initialized.
+
+A planet-relative velocity is not converted here. If what you have is
+planet-relative, add the planet's rotation and pass the resulting inertial
+`pos`/`vel` pair to the two-argument constructor above.
+
 ## MissionConfiguration
 
 Controls the termination condition, time horizon, and output cadence.

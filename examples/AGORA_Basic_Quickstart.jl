@@ -8,7 +8,7 @@ using Plots
 # - no GRAM
 # - no SPICE
 # - no licensed external assets
-# - simple J2 orbital dynamics
+# - 40x40 gravity harmonics from the repo's own coefficient set
 
 function _has_columns(df::DataFrame, cols::Tuple{Vararg{Symbol}})
     names = propertynames(df)
@@ -127,6 +127,37 @@ function save_quickstart_plots(csv_path)
         _save_quickstart_plot!(saved_paths, p, plots_dir, "quickstart_ground_track.png")
     end
 
+    oe_columns = ntuple(k -> Symbol("sc1_orbital_elements_$(k)"), 6)
+    if _has_columns(df, oe_columns)
+        # Column order is the one orbital_elements_save_field writes.
+        oe_panels = (
+            (1, "Semimajor Axis", "a (km)", 1e-3),
+            (2, "Eccentricity", "e", 1.0),
+            (3, "Inclination", "i (deg)", 1.0),
+            (4, "RAAN", "Ω (deg)", 1.0),
+            (5, "Argument of Periapsis", "ω (deg)", 1.0),
+            (6, "True Anomaly", "ν (deg)", 1.0)
+        )
+        panels = [
+            plot(
+                t_hr,
+                df[!, oe_columns[k]] .* scale;
+                label=false,
+                xlabel="Time since start (hr)",
+                ylabel=ylabel,
+                title=title,
+                lw=2
+            )
+            for (k, title, ylabel, scale) in oe_panels
+        ]
+        _save_quickstart_plot!(
+            saved_paths,
+            plot(panels...; layout=(3, 2), size=(1100, 900), left_margin=8 * Plots.mm),
+            plots_dir,
+            "quickstart_orbital_elements.png"
+        )
+    end
+
     if !isempty(saved_paths)
         println("Saved quickstart plots:")
         foreach(path -> println("  ", abspath(path)), saved_paths)
@@ -136,8 +167,15 @@ function save_quickstart_plots(csv_path)
 end
 
 planet = make_no_gram_planet(:earth)
+initial_time = InitialTime(year=2026, month=9, day=8, hour=5, minute=0, second=0.0)
+ephemerides_model = SimpleEphemeridesModel()
+
+# GGM05C, truncated to 40x40 here. The coefficient file ships with the repo, so
+# this stays on the no-GRAM, no-SPICE path.
+earth_harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 
 # Build a simple bus + two-panel spacecraft from the shared example helper.
+# The orbit is the case from examples/DominikTest.jl.
 spacecraft = make_three_body_spacecraft(
     bus_dims=(2.05, 2.05, 2.8),
     panel_dims=(0.01, 5.7 / 2.0, 1.0),
@@ -145,9 +183,9 @@ spacecraft = make_three_body_spacecraft(
     panel_mass_each=10.0,
     panel_offset_y=2.05 / 2.0 + 5.7 / 4.0,
     ic=InitialCondition(
-        ra=56_378.7978559e3,
-        rp=planet.Rp_e + 200_590.0,
-        i=89.876,
+        a=Float64(6378139 + 500000.001),
+        e=0.0025,
+        i=Float64(45),
         ω=75.505,
         Ω=104.115,
         ν=175.0
@@ -156,22 +194,29 @@ spacecraft = make_three_body_spacecraft(
     id=1
 )
 
-# `make_example_config` supplies the standard example boilerplate.
-# We keep the environment intentionally simple here so installation is easy to
-# validate before moving to GRAM-backed workflows.
+# `make_example_config` supplies the standard example boilerplate. The
+# environment stays deliberately thin -- no atmosphere, no third bodies, repo
+# ephemerides -- so an installation is easy to validate before moving to
+# GRAM-backed workflows.
 args = make_example_config(
     planet=planet,
     spacecraft=spacecraft,
-    mission_time=12.0 * 3600.0,
-    initial_time=InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0),
-    dynamic_effectors=(InverseSquaredJ2GravityModel(),),
+    mission_time=864000.0,
+    initial_time=initial_time,
+    dynamic_effectors=(GravitationalHarmonicsModel(40, 40, earth_harmonics_file, planet),),
     density_model=NoAtmosphereModel(),
-    ephemerides_model=SimpleEphemeridesModel(),
+    ephemerides_model=ephemerides_model,
     orientation_sim=false,
     keplerian=true,
     EI_km=120.0,
     verbose=true
 )
 
-csv_path = run_and_report(args)
+# Anything in `available_save_fields()` can be added to the saved set by name.
+# Here the CSV gains `sc1_orbital_elements_1..6` and `sc1_gravity_accel_1..3` on
+# top of the default columns.
+csv_path = run_and_report(
+    args;
+    save_fields=default_save_fields(args; extra=(:orbital_elements, :gravity_accel))
+)
 save_quickstart_plots(csv_path)

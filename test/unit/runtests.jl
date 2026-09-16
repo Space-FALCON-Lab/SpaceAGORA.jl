@@ -5,4 +5,5 @@ using Test
 end
 
 include("rpo_port_tests.jl")
+include(joinpath(@__DIR__, "simulation", "save_field_registry_tests.jl"))
 include(joinpath(@__DIR__, "robotics", "runtests.jl"))

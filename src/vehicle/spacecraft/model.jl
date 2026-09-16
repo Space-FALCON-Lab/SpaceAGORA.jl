@@ -244,6 +244,149 @@ function CartesianInitialCondition(
     )
 end
 
+@inline function _initial_condition_geodetic_position_pp(
+    lat_rad::Float64,
+    lon_rad::Float64,
+    alt_m::Float64,
+    planet
+)::SVector{3, Float64}
+    f = (planet.Rp_e - planet.Rp_p) / planet.Rp_e
+    e2 = 1.0 - (1.0 - f)^2
+    n = planet.Rp_e / sqrt(1.0 - e2 * sin(lat_rad)^2)
+    return SVector{3, Float64}(
+        (n + alt_m) * cos(lat_rad) * cos(lon_rad),
+        (n + alt_m) * cos(lat_rad) * sin(lon_rad),
+        ((1.0 - e2) * n + alt_m) * sin(lat_rad)
+    )
+end
+
+# Heading in the local horizontal plane that puts the orbit at inclination `i`,
+# from the spherical-triangle relation sin(azimuth) = cos(i) / cos(declination).
+# Exact for the frame the geodetic constructor builds below, whose horizontal
+# plane is perpendicular to the position vector. Two headings satisfy it at any
+# declination the orbit actually reaches: the northbound one and its southbound
+# mirror.
+@inline function _initial_condition_azimuth_for_inclination(
+    i_rad::Float64,
+    declination_rad::Float64,
+    descending::Bool
+)::Float64
+    sin_azimuth = cos(i_rad) / cos(declination_rad)
+    abs(sin_azimuth) <= 1.0 || throw(ArgumentError(
+        "An orbit of inclination $(rad2deg(i_rad)) deg never reaches declination " *
+        "$(rad2deg(declination_rad)) deg, so it has no initial condition there. " *
+        "Use an inclination of at least that declination."
+    ))
+    azimuth = asin(sin_azimuth)
+    return descending ? (pi - azimuth) : azimuth
+end
+
+"""
+    CartesianInitialCondition(planet; lat, lon, alt, speed, flight_path_angle=0.0,
+                              azimuth=nothing, inclination=nothing, descending=false,
+                              initial_time=nothing, ephemerides_model=nothing, L_PI=nothing,
+                              q=..., ang_vel=...)
+
+Construct an inertial initial state from a geodetic point and the velocity
+there: geodetic `lat` and `lon` in degrees, `alt` above the planet's reference
+ellipsoid in meters.
+
+The velocity is **inertial**, resolved in the local horizontal frame of that
+point. `speed` is its magnitude in m/s and `flight_path_angle` its elevation
+above the local horizontal in degrees — 0 for a horizontal pass, positive
+climbing. Its heading comes from either `azimuth` (degrees clockwise from local
+north, so 90 is due east) or `inclination` (degrees); exactly one of the two is
+required, and with `inclination`, `descending=true` selects the southbound
+crossing of that point instead of the northbound one. A planet-relative
+velocity is not converted here; pass an inertial `pos`/`vel` pair to the
+two-argument constructor if you have one.
+
+The local horizontal is the plane perpendicular to the position vector, so
+`flight_path_angle` is the orbital flight path angle and `inclination` comes
+out exact. That plane is tilted from the geodetic horizon by the deflection of
+the vertical (at most about 0.19 deg on Earth, at mid-latitudes), which matters
+for a near-surface entry state and not for an orbit.
+
+Longitude is planet-fixed, so the constructor has to know the
+inertial-to-planet-fixed frame. Pass `initial_time` and `ephemerides_model` to
+resolve it at the run's epoch — the usual case, and it must be the epoch the run
+starts at, or the longitude is that of a different moment. Pass `L_PI` to supply
+the frame directly; otherwise the constructor uses `planet.L_PI` when it has
+been initialized.
+
+```julia
+# Circular 200 km orbit crossing lat 0, lon 0 northbound at i = 89.876 deg
+ic = CartesianInitialCondition(
+    planet;
+    lat=0.0,
+    lon=0.0,
+    alt=200e3,
+    speed=sqrt(planet.μ / (planet.Rp_e + 200e3)),
+    inclination=89.876,
+    initial_time=initial_time,
+    ephemerides_model=ephemerides_model
+)
+```
+"""
+function CartesianInitialCondition(
+    planet;
+    lat::Real,
+    lon::Real,
+    alt::Real,
+    speed::Real,
+    flight_path_angle::Real=0.0,
+    azimuth::Union{Nothing, Real}=nothing,
+    inclination::Union{Nothing, Real}=nothing,
+    descending::Bool=false,
+    q::SVector{4, Float64}=DEFAULT_INITIAL_CONDITION_Q,
+    ang_vel::SVector{3, Float64}=DEFAULT_INITIAL_CONDITION_ANG_VEL,
+    initial_time=nothing,
+    ephemerides_model=nothing,
+    L_PI::Union{Nothing, AbstractMatrix}=nothing
+)
+    (azimuth === nothing) != (inclination === nothing) || throw(ArgumentError(
+        "Geodetic CartesianInitialCondition construction requires exactly one of azimuth or inclination."
+    ))
+
+    lat_rad = deg2rad(Float64(lat))
+    lon_rad = deg2rad(Float64(lon))
+    γ_rad = deg2rad(Float64(flight_path_angle))
+
+    l_pi = _initial_condition_lpi(planet, L_PI, initial_time, ephemerides_model)
+    pos_ii = SVector{3, Float64}(
+        l_pi' * _initial_condition_geodetic_position_pp(lat_rad, lon_rad, Float64(alt), planet)
+    )
+
+    # Local horizontal frame at the point, in the inertial axes the state is
+    # expressed in: up along the position vector, east along the parallel of
+    # declination, north completing the right-handed set (up x east = north).
+    up_ii = pos_ii / norm(pos_ii)
+    # Distance from the pole, as a fraction of the radius. The threshold is not
+    # a guard against dividing by exactly zero -- `cos(deg2rad(90.0))` is 6e-17,
+    # not 0, so a caller asking for the pole lands just off it and would get an
+    # east direction made of floating-point dust. Anything this close to the
+    # pole is the pole.
+    horizontal = sqrt(up_ii[1]^2 + up_ii[2]^2)
+    horizontal > 1e-9 || throw(ArgumentError(
+        "A geodetic initial condition at the pole has no local east, so its azimuth is " *
+        "undefined. Build that state through the inertial pos/vel constructor."
+    ))
+    east_ii = SVector{3, Float64}(-up_ii[2] / horizontal, up_ii[1] / horizontal, 0.0)
+    north_ii = cross(up_ii, east_ii)
+
+    azimuth_rad = azimuth === nothing ?
+        _initial_condition_azimuth_for_inclination(deg2rad(Float64(inclination)), asin(up_ii[3]), descending) :
+        deg2rad(Float64(azimuth))
+
+    vel_ii = Float64(speed) * (
+        cos(γ_rad) * cos(azimuth_rad) * north_ii +
+        cos(γ_rad) * sin(azimuth_rad) * east_ii +
+        sin(γ_rad) * up_ii
+    )
+
+    return CartesianInitialCondition(pos_ii, SVector{3, Float64}(vel_ii); q=q, ang_vel=ang_vel)
+end
+
 mutable struct Link{N_RW}
     root::Bool # Whether this link is a root link (i.e., the main bus or core body of the spacecraft).
     r::MVector{3, Float64} # Position of COM (Body frame for non-root, inertial frame for root)

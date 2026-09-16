@@ -1522,6 +1522,51 @@ end
     return SVector{3, Float64}(accel_ii)
 end
 
+# Every dynamic effector whose wrench is gravitational. The `gravity_accel`
+# save field sums these and nothing else, so a run that also carries drag,
+# SRP or thrust still reports gravity alone.
+const _GRAVITY_ACCELERATION_EFFECTORS = Union{
+    SimulationModel.ConstantGravityModel,
+    SimulationModel.InverseSquaredGravityModel,
+    SimulationModel.InverseSquaredJ2GravityModel,
+    SimulationModel.GravitationalHarmonicsModel,
+    SimulationModel.NBodyGravityModel,
+}
+
+"""
+    gravity_acceleration_ii(u, p, sat_idx, t) -> SVector{3, Float64}
+
+Inertial gravitational acceleration on satellite `sat_idx` at solver state `u`
+and time `t`, in m/s^2, summed over the run's gravity effectors (constant,
+inverse-square, J2, spherical harmonics and third-body). Evaluated from the
+same `wrench` hooks the right-hand side calls, so the column matches the
+acceleration the trajectory was integrated with; a run with no gravity
+effector reports zero.
+
+This is a diagnostic read for the save path, not part of the right-hand side:
+it builds its own environment samples rather than reusing the RHS buffers, so
+it is safe to call at a saved sample without disturbing the step.
+"""
+function gravity_acceleration_ii(u, p, sat_idx::Int, t::Float64)::SVector{3, Float64}
+    dynamic_effectors = p.args.dynamics_model.dynamic_effectors
+    mass_kg = _state_mass_kg(u, p.args, sat_idx)
+    state_sample = StateSample(
+        _state_position_ii(u, sat_idx),
+        _state_velocity_ii(u, sat_idx),
+        mass_kg;
+        spacecraft=p.args.dynamics_model.spacecraft[sat_idx],
+    )
+    accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    for effector in dynamic_effectors
+        effector isa _GRAVITY_ACCELERATION_EFFECTORS || continue
+        req = SimulationModel.environment_requirements(effector)
+        env = sample_environment(req, effector, state_sample, p, sat_idx, t; write_buffers=false)
+        force_ii, _ = SimulationModel.wrench(effector, state_sample, env, t)
+        accel_ii .+= force_ii ./ mass_kg
+    end
+    return SVector{3, Float64}(accel_ii)
+end
+
 @inline function _gravity_backbone_kick_acceleration(
     dynamic_effectors::Tuple,
     state_sample::StateSample,

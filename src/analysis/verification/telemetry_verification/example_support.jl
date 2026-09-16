@@ -174,9 +174,9 @@ function make_example_config(;
     )
 end
 
-function run_and_report(args::SM.SimulationConfiguration)
+function run_and_report(args::SM.SimulationConfiguration; save_fields=nothing)
     args_eff = _example_smoke_args(args)
-    t = @elapsed run_simulation(args_eff)
+    t = @elapsed run_simulation(args_eff; save_fields=save_fields)
     csv_path = joinpath(args_eff.simulation_settings.results_directory, "simulation_results.csv")
     saved_csv_path = nothing
     if args_eff.simulation_settings.results && isfile(csv_path)

@@ -123,6 +123,63 @@ These columns are present only when `mission_configuration.orientation_sim = tru
 | `sc1_q_3` | — | Attitude quaternion component 3 |
 | `sc1_q_4` | — | Attitude quaternion component 4 |
 
+## Choosing what gets saved
+
+`default_save_fields(args)` builds the column set above, and `run_simulation`
+uses it whenever `save_fields` is not passed. To add more columns, pass the same
+list with an `extra` argument naming the built-in fields you want:
+
+```julia
+run_simulation(args; save_fields=default_save_fields(args; extra=(:orbital_elements, :gravity_accel)))
+```
+
+`extra` accepts built-in names, `SaveField`s of your own, or any mix of the two,
+and a field the defaults already cover is skipped rather than duplicated. The
+example scripts take the same list through `run_and_report(args; save_fields=...)`.
+
+`available_save_fields()` returns every name that can be requested, and
+`save_field(name, args)` builds a single one if you would rather assemble the
+list yourself. Passing a name that is not built in throws and lists what is.
+
+| Name | Columns | Notes |
+|---|---|---|
+| `:orbital_elements` | `sc{i}_orbital_elements_1..6` | Osculating classical elements |
+| `:gravity_accel` | `sc{i}_gravity_accel_1..3` | Inertial gravitational acceleration |
+| `:quaternion` | `sc{i}_q_1..4` | Attitude; already a default when `orientation_sim = true` |
+
+A name requested from a run that cannot supply it fails at the first saved
+sample rather than writing an empty column: `:quaternion` without
+`orientation_sim` is the usual case.
+
+### Orbital elements
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_orbital_elements_1` | m | Semimajor axis |
+| `sc1_orbital_elements_2` | — | Eccentricity |
+| `sc1_orbital_elements_3` | deg | Inclination |
+| `sc1_orbital_elements_4` | deg | Right ascension of the ascending node |
+| `sc1_orbital_elements_5` | deg | Argument of periapsis |
+| `sc1_orbital_elements_6` | deg | True anomaly |
+
+Osculating, computed from the same inertial position and velocity the run
+integrates. Circular and equatorial states fall back to argument of latitude
+and true longitude in the usual way, so the angles stay defined as
+eccentricity or inclination approaches zero.
+
+### Gravitational acceleration
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_gravity_accel_1` | m/s² | Inertial gravitational acceleration X |
+| `sc1_gravity_accel_2` | m/s² | Inertial gravitational acceleration Y |
+| `sc1_gravity_accel_3` | m/s² | Inertial gravitational acceleration Z |
+
+Summed over the run's gravity effectors only — constant, inverse-square, J2,
+spherical harmonics and third-body — so drag, SRP and thrust are excluded. It
+is re-evaluated at each saved sample rather than read from a right-hand-side
+buffer, which costs one extra gravity evaluation per sample.
+
 ## Multi-spacecraft runs
 
 When multiple spacecraft are passed to `DynamicsModel`, each spacecraft

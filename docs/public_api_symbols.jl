@@ -21,6 +21,15 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Saved Outputs",
+        items = [
+            (owner = :SpaceAGORA, symbol = :SaveField, rendered = "SpaceAGORA.SaveField"),
+            (owner = :SpaceAGORA, symbol = :default_save_fields, rendered = "SpaceAGORA.default_save_fields"),
+            (owner = :SpaceAGORA, symbol = :available_save_fields, rendered = "SpaceAGORA.available_save_fields"),
+            (owner = :SpaceAGORA, symbol = :save_field, rendered = "SpaceAGORA.save_field")
+        ]
+    ),
+    (
         title = "Runtime Configuration",
         items = [
             (owner = :SimulationEngine, symbol = :ParallelConfig, rendered = "SpaceAGORA.ParallelConfig"),

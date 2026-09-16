@@ -33,14 +33,21 @@
 //               with a black sky (vacuum has none) and a regolith-colored
 //               ground. This replaces the fill term that used to be a guess.
 //
-// Exposure is a stated camera setting, not a measurement of the scene. `ev` is
-// the photographic exposure value at ISO 100 (EV = log2(L * S / K) with
-// S = 100, K = 12.5, radiance converted to luminance at 98 lm/W, the luminous
-// efficacy of unattenuated sunlight); the exposure factor is whatever maps the
-// radiance that EV meters onto the tone curve's middle gray. The default EV is
-// the one metered off a 0.12-albedo surface facing the Sun, which comes out at
-// 15.3 at 1 au -- the "sunny 16" exposure, as it should. `[` and `]` step it by
-// a third of a stop.
+// Exposure is a camera setting in the photographic sense: `ev` is the exposure
+// value at ISO 100 (EV = log2(L * S / K) with S = 100, K = 12.5, radiance
+// converted to luminance at 98 lm/W, the luminous efficacy of unattenuated
+// sunlight), and the exposure factor is whatever maps the radiance that EV
+// meters onto the tone curve's middle gray. A 0.12-albedo surface facing the
+// Sun meters EV +15.3 at 1 au -- the "sunny 16" exposure, arrived at from the
+// radiometry rather than assumed -- and that is where the camera starts.
+//
+// It does not stay there, because one EV cannot serve both an overview of a
+// sunlit disc and a close-up of a site under a 10.6 degree sun: four stops
+// separate them. So the camera meters the frame it is about to draw (see the
+// meter below) and adapts over about half a second, between EV +6 and +17.
+// `[` and `]` are then exposure compensation, a third of a stop at a time,
+// which the adaptation carries with it; `setAutoExposure(false)`, the toolbar
+// checkbox, or an explicit `options.ev` pins the camera instead.
 //
 // Two modes:
 //   'realtime'    the directional sun with a PCF-soft shadow map, earthshine,
@@ -108,6 +115,41 @@ const LIGHTING_DISPLAY_TARGET = 0.18;
 const LIGHTING_EV_STEP = 1 / 3;
 const LIGHTING_EV_MIN = -8;
 const LIGHTING_EV_MAX = 24;
+// Automatic exposure. One fixed EV cannot serve both an overview of a sunlit
+// disc and a close-up of a landing site under a grazing sun -- the first blows
+// out where the second is readable -- so the camera meters the frame it is
+// about to draw and adapts, the way an eye does. The scene is rendered into a
+// small render target, which three leaves untone-mapped and linear (it applies
+// the tone curve only on the way to the canvas), and the log-average luminance
+// of the pixels that carry any light at all sets the EV. Black sky is excluded,
+// or an overview of a small disc on a large black frame would meter itself into
+// the clouds; a frame with almost nothing lit in it leaves the EV alone.
+const LIGHTING_METER_WIDTH = 64;            // the metered frame, pixels across
+const LIGHTING_METER_EVERY = 4;             // frames between measurements
+const LIGHTING_METER_MIN_MS = 50;           // and never more often than this
+const LIGHTING_METER_SYNC_MIN_MS = 400;     // ... unless the readback has to block
+// How long a fence may take before its frame is given up on. Generous on
+// purpose: on a software rasterizer with a deep queue the readback can be many
+// seconds behind, and waiting costs nothing -- the exposure simply holds still
+// until the measurement lands. Only a wedged context should ever hit this.
+const LIGHTING_METER_PATIENCE_MS = 20000;
+const LIGHTING_METER_FLOOR = 2e-5;          // below this a pixel is sky, not scene
+const LIGHTING_METER_MIN_COVERAGE = 0.004;  // of the frame, before the meter is believed
+// The average is taken over the middle half of the lit pixels, by a histogram of
+// their log luminance. A plain log-average is what a camera's matrix metering
+// does, but this page puts things in the frame that are bright without being
+// the subject -- a dust sheet drawn additively, a blown white panel, a specular
+// glint -- and any of them pulls a mean far enough to black out the ground. The
+// interquartile band ignores them, and it ignores an equal amount of the dark
+// tail, so a scene that is genuinely uniform meters exactly as the mean would.
+const LIGHTING_METER_BINS = 128;
+const LIGHTING_METER_LOG_MIN = -24;         // log2 luminance, buffer units
+const LIGHTING_METER_LOG_MAX = 8;
+const LIGHTING_METER_LOW_QUANTILE = 0.25;
+const LIGHTING_METER_HIGH_QUANTILE = 0.75;
+const LIGHTING_AUTO_TAU_S = 0.5;            // adaptation time constant
+const LIGHTING_AUTO_EV_MIN = 6.0;           // an earthshine-lit shadow side
+const LIGHTING_AUTO_EV_MAX = 17.0;          // full sun on a bright surface
 
 // Shadow camera: an orthographic box `radius` wide around the followed vehicle,
 // with the light `distance` up-sun of it. Kilometers, the scene's unit.
@@ -183,6 +225,35 @@ function lightingAcesInverse(target) {
     if (lightingAcesNeutral(mid) < target) lo = mid; else hi = mid;
   }
   return 0.5 * (lo + hi);
+}
+
+// What the meter and the environment probe must not see, beyond the interface
+// meshes: the effect layers. Thruster plumes, the dust sheet and the limb glow
+// are additive overlays -- light added to the frame rather than a surface
+// reflecting it -- and a reflected-light meter has no business reading them. It
+// matters practically as well: the dust is drawn to look right rather than to a
+// radiance, and once it is scaled by the exposure (as viewer/src/dust.js does)
+// a meter that counted it would be reading its own output. Any module can opt a
+// object out the same way by setting `userData.meterExclude`.
+function lightingIsOverlay(object) {
+  if (object.userData && object.userData.meterExclude === true) return true;
+  if (object.isPoints || object.isSprite) return true;
+  const material = object.material;
+  if (!material) return false;
+  const list = Array.isArray(material) ? material : [material];
+  return list.some((m) => m && m.blending === THREE.AdditiveBlending);
+}
+
+// IEEE 754 half floats, as `readRenderTargetPixels` hands them back from a
+// HalfFloatType target: the metering buffer holds radiance, which does not fit
+// in eight bits.
+function lightingHalfToFloat(h) {
+  const sign = (h & 0x8000) ? -1 : 1;
+  const exponent = (h & 0x7c00) >> 10;
+  const fraction = h & 0x03ff;
+  if (exponent === 0) return sign * 6.103515625e-5 * (fraction / 1024);
+  if (exponent === 31) return fraction ? NaN : sign * Infinity;
+  return sign * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
 }
 
 // Objects the path tracer must not see. Everything that is not a Mesh is
@@ -280,10 +351,22 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
   const lightingEvOfBuffer = (b) => Math.log2(Math.max(1e-12, b) * radianceScale * LIGHTING_LUMINOUS_EFFICACY * LIGHTING_METER_ISO / LIGHTING_METER_CONSTANT);
   const lightingBufferOfEv = (v) => Math.pow(2, v) * LIGHTING_METER_CONSTANT / (LIGHTING_METER_ISO * LIGHTING_LUMINOUS_EFFICACY * radianceScale);
   const defaultEv = lightingEvOfBuffer(LIGHTING_REFERENCE_ALBEDO);
-  let ev = options.ev != null ? Number(options.ev) : defaultEv;
+  // Three numbers, one of which is showing: `evAuto` is what the meter has
+  // adapted to, `evComp` the compensation `[` and `]` carry across the
+  // adaptation, and `evFixed` the value the camera holds when auto is off.
+  // An explicit `options.ev` is a fixed camera by definition.
+  let autoExposure = hasSunDir && options.ev == null;
+  let evAuto = defaultEv;
+  let evComp = 0;
+  let evFixed = options.ev != null ? Number(options.ev) : defaultEv;
+  let ev = evFixed;
   let exposure = 1;
+  let metered = false;
+
+  const lightingClampEv = (v) => Math.min(LIGHTING_EV_MAX, Math.max(LIGHTING_EV_MIN, v));
 
   function lightingApplyExposure() {
+    ev = autoExposure ? lightingClampEv(evAuto + evComp) : lightingClampEv(evFixed);
     if (!hasSunDir) { exposure = 1; return; }
     exposure = middleGray / lightingBufferOfEv(ev);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -291,7 +374,13 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
   }
   lightingApplyExposure();
 
-  const lightingEvText = () => `EV ${ev >= 0 ? '+' : '−'}${Math.abs(ev).toFixed(1)}`;
+  const lightingSigned = (v, digits = 1) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(digits)}`;
+  function lightingEvText() {
+    const value = `EV ${lightingSigned(ev)}`;
+    if (!hasSunDir) return value;
+    if (!autoExposure) return `${value} (fixed)`;
+    return evComp === 0 ? `${value} (auto)` : `${value} (auto, comp ${lightingSigned(evComp)})`;
+  }
 
   function lightingStatusText() {
     if (!hasSunDir) return 'real-time, fixed light (no sun_dir in this run)';
@@ -440,6 +529,259 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
     return s;
   }
 
+  // ---- off-screen passes --------------------------------------------------
+  // Both the meter and the environment probe draw the scene themselves, and
+  // neither wants the interface meshes in it: markers, labels, glyphs and the
+  // site ring are not part of the world's light. Shadow maps are frozen for the
+  // same reason -- re-rendering a 2048 square map for a 64-pixel measurement is
+  // most of the cost of the frame.
+  const lightingHidden = [];
+  function lightingHideInterface(alsoVehicles) {
+    lightingHidden.length = 0;
+    const hide = (o) => { if (o && o.visible) { lightingHidden.push(o); o.visible = false; } };
+    if (alsoVehicles && lod && lod.group) hide(lod.group);
+    for (const h of helpers) hide(h);
+    scene.traverse((o) => {
+      if (!o.isMesh && !o.isPoints && !o.isSprite) return;
+      if (lightingIsHelper(o) || lightingIsOverlay(o)) hide(o);
+    });
+  }
+  function lightingShowInterface() {
+    for (const o of lightingHidden) o.visible = true;
+    lightingHidden.length = 0;
+  }
+  function lightingFreezeShadows() {
+    const state = [renderer.shadowMap.autoUpdate, renderer.shadowMap.needsUpdate];
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = false;
+    return state;
+  }
+  function lightingThawShadows(state) {
+    renderer.shadowMap.autoUpdate = state[0];
+    renderer.shadowMap.needsUpdate = state[1];
+  }
+
+  // ---- the meter ----------------------------------------------------------
+  // The frame the camera is about to draw, rendered small and linear, reduced to
+  // one log-average luminance. `null` when the view carries too little light to
+  // meter (a black sky, a night side), which leaves the exposure where it is.
+  let meterTarget = null;
+  let meterPixels = null;
+  let meterHeight = 0;
+  let meterFrames = 0;
+  let meterLastMs = 0;
+  let meterFailed = false;
+  let meterCoverage = 0;
+  const meterBins = new Uint32Array(LIGHTING_METER_BINS);
+  let meterLogs = null;
+  // The readback is asynchronous. `gl.readPixels` straight out of a framebuffer
+  // blocks until the GPU has caught up with everything queued behind it, which
+  // on a software rasterizer is most of a frame and on real hardware is still a
+  // pipeline flush every time. Reading into a pixel pack buffer and waiting on
+  // a fence costs nothing: the measurement simply lands a frame or two later,
+  // which against a half-second time constant is nothing either.
+  let meterPbo = null;
+  let meterFence = null;
+  let meterPendingMs = 0;
+  let meterAsync = true;
+  let meterSyncData = false;   // the blocking path left pixels in the buffer
+  let meterDropped = false;    // a fence took too long; that frame is gone
+  const meterStats = { requests: 0, collects: 0, drops: 0, waits: 0, refused: 0 };
+
+  // Render the frame the camera is about to draw into the small target and ask
+  // for its pixels. Returns false when there is nothing to ask with.
+  function lightingMeterRequest() {
+    if (meterFailed || !camera) return false;
+    const canvas = renderer.domElement;
+    const aspect = (canvas.height || 1) / (canvas.width || 1);
+    const height = Math.max(8, Math.round(LIGHTING_METER_WIDTH * aspect));
+    if (!meterTarget || meterHeight !== height) {
+      if (meterFence) { renderer.getContext().deleteSync(meterFence); meterFence = null; }
+      meterPendingMs = 0;
+      if (meterTarget) meterTarget.dispose();
+      meterTarget = new THREE.WebGLRenderTarget(LIGHTING_METER_WIDTH, height, {
+        type: THREE.HalfFloatType, format: THREE.RGBAFormat,
+        minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true,
+      });
+      meterPixels = new Uint16Array(LIGHTING_METER_WIDTH * height * 4);
+      meterHeight = height;
+    }
+    const previous = renderer.getRenderTarget();
+    const shadows = lightingFreezeShadows();
+    // The page clears to a very dark blue, not to black, and at these exposures
+    // 0x05070c is a real 2e-3 of radiance -- a hundred times the floor below.
+    // Left in, it is most of an overview's pixels and it drags the average down
+    // until the disc blows out. The meter clears to true black so empty sky
+    // falls under the floor and is simply not counted.
+    const clearColor = new THREE.Color();
+    renderer.getClearColor(clearColor);
+    const clearAlpha = renderer.getClearAlpha();
+    renderer.setClearColor(0x000000, 1);
+    lightingHideInterface(false);
+    try {
+      renderer.setRenderTarget(meterTarget);
+      renderer.render(scene, camera);
+      const gl = renderer.getContext();
+      if (meterAsync && typeof gl.fenceSync === 'function') {
+        if (!meterPbo) meterPbo = gl.createBuffer();
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, meterPbo);
+        gl.bufferData(gl.PIXEL_PACK_BUFFER, meterPixels.byteLength, gl.STREAM_READ);
+        gl.readPixels(0, 0, LIGHTING_METER_WIDTH, height, gl.RGBA, gl.HALF_FLOAT, 0);
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+        if (gl.getError() !== gl.NO_ERROR) throw new Error('the driver declined an asynchronous readback');
+        meterStats.requests++;
+        meterFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        // A fence is only guaranteed to be reached once the commands before it
+        // have been submitted; without this it can sit unsignalled forever.
+        gl.flush();
+        meterPendingMs = performance.now();
+      } else {
+        renderer.readRenderTargetPixels(meterTarget, 0, 0, LIGHTING_METER_WIDTH, height, meterPixels);
+        meterFence = null;
+        meterPendingMs = 0;
+        meterSyncData = true;
+      }
+    } catch (err) {
+      if (meterAsync) {
+        meterAsync = false;          // fall back to the blocking read, more slowly
+        meterFence = null;
+        meterPendingMs = 0;
+        console.info('asynchronous metering is unavailable; reading the frame the slow way', err);
+      } else {
+        meterFailed = true;
+        console.warn('the exposure meter could not read the frame; the camera stays where it is', err);
+      }
+      return false;
+    } finally {
+      renderer.setRenderTarget(previous);
+      renderer.setClearColor(clearColor, clearAlpha);
+      lightingShowInterface();
+      lightingThawShadows(shadows);
+    }
+    return true;
+  }
+
+  // Has the asynchronous readback landed? Synchronous readbacks are already in
+  // the buffer, so they are always ready.
+  function lightingMeterReady() {
+    if (meterFailed) return false;
+    if (!meterFence) return meterSyncData;
+    const gl = renderer.getContext();
+    const status = gl.clientWaitSync(meterFence, gl.SYNC_FLUSH_COMMANDS_BIT, 0);
+    if (status === gl.TIMEOUT_EXPIRED) {
+      // Waiting costs nothing -- the exposure simply does not move until the
+      // frame lands -- so a slow fence is patiently waited out and only a
+      // ridiculous one is dropped. What must never happen is falling back to a
+      // blocking read: that is the stall this exists to avoid.
+      if (performance.now() - meterPendingMs > LIGHTING_METER_PATIENCE_MS) {
+        gl.deleteSync(meterFence);
+        meterFence = null;
+        meterPendingMs = 0;
+        meterDropped = true;
+        meterStats.drops++;
+      }
+      meterStats.waits++;
+      return false;
+    }
+    gl.deleteSync(meterFence);
+    meterFence = null;
+    meterPendingMs = 0;
+    if (status === gl.WAIT_FAILED) { meterDropped = true; return false; }
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, meterPbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, meterPixels);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return true;
+  }
+
+  // Reduce the pixels that came back to one luminance. `null` when the view
+  // carries too little light to meter, which leaves the exposure where it is.
+  function lightingMeterReduce() {
+    meterStats.collects++;
+    meterSyncData = false;
+    const height = meterHeight;
+    // Rendering into a target means three wrote linear radiance here, not
+    // display values, so this is the quantity the EV is defined against --
+    // metering the tone-mapped canvas would chase its own tail. The lit pixels
+    // go into a histogram of log luminance and the middle half of them is
+    // averaged; see the constants above for why it is not the whole of them.
+    const total = LIGHTING_METER_WIDTH * height;
+    const span = LIGHTING_METER_LOG_MAX - LIGHTING_METER_LOG_MIN;
+    meterBins.fill(0);
+    if (!meterLogs || meterLogs.length < total) meterLogs = new Float32Array(total);
+    let count = 0;
+    for (let i = 0; i < total; i++) {
+      const o = 4 * i;
+      const luminance = 0.2126 * lightingHalfToFloat(meterPixels[o])
+                      + 0.7152 * lightingHalfToFloat(meterPixels[o + 1])
+                      + 0.0722 * lightingHalfToFloat(meterPixels[o + 2]);
+      if (!(luminance > LIGHTING_METER_FLOOR)) continue;
+      const log2 = Math.log2(luminance);
+      meterLogs[count++] = log2;
+      const bin = Math.min(LIGHTING_METER_BINS - 1, Math.max(0,
+        Math.floor((log2 - LIGHTING_METER_LOG_MIN) / span * LIGHTING_METER_BINS)));
+      meterBins[bin]++;
+    }
+    meterCoverage = count / total;
+    if (meterCoverage < LIGHTING_METER_MIN_COVERAGE) return null;
+    const lowTarget = count * LIGHTING_METER_LOW_QUANTILE;
+    const highTarget = count * LIGHTING_METER_HIGH_QUANTILE;
+    let seen = 0, lowBin = 0, highBin = LIGHTING_METER_BINS - 1, haveLow = false;
+    for (let bin = 0; bin < LIGHTING_METER_BINS; bin++) {
+      seen += meterBins[bin];
+      if (!haveLow && seen >= lowTarget) { lowBin = bin; haveLow = true; }
+      if (seen >= highTarget) { highBin = bin; break; }
+    }
+    const binLog = (bin) => LIGHTING_METER_LOG_MIN + bin * span / LIGHTING_METER_BINS;
+    const lo = binLog(lowBin), hi = binLog(highBin + 1);
+    let sum = 0, kept = 0;
+    for (let i = 0; i < count; i++) {
+      const log2 = meterLogs[i];
+      if (log2 < lo || log2 > hi) continue;
+      sum += log2;
+      kept++;
+    }
+    if (kept === 0) return null;
+    return Math.pow(2, sum / kept);
+  }
+
+  // One adaptation step: meter every few frames, aim the EV at whatever puts
+  // the metered luminance on middle gray, and walk toward it with a half-second
+  // time constant so the picture settles rather than flickers. The first
+  // measurement snaps, so the page does not open on a guess and fade.
+  let meterAwaiting = false;
+  function lightingAdaptExposure(nowMs) {
+    if (!autoExposure || !hasSunDir || tracing || meterFailed) return;
+    if (meterAwaiting) {
+      if (!lightingMeterReady()) {
+        if (meterDropped) { meterDropped = false; meterAwaiting = false; meterLastMs = nowMs; }
+        return;
+      }
+      meterAwaiting = false;
+      // The step is the time since the last measurement, not since the last
+      // frame: the meter runs every few frames, and charging the interval to
+      // one frame would make the adaptation that many times slower than its
+      // stated time constant.
+      const elapsed = meterLastMs ? Math.min(1.0, (nowMs - meterLastMs) / 1000) : 0;
+      meterLastMs = nowMs;
+      const luminance = lightingMeterReduce();
+      if (luminance === null) return;
+      const target = Math.min(LIGHTING_AUTO_EV_MAX, Math.max(LIGHTING_AUTO_EV_MIN, lightingEvOfBuffer(luminance)));
+      if (!metered) {
+        evAuto = target;
+        metered = true;
+      } else {
+        evAuto += (target - evAuto) * (1 - Math.exp(-elapsed / LIGHTING_AUTO_TAU_S));
+      }
+      lightingApplyExposure();
+      return;
+    }
+    meterFrames++;
+    const minMs = meterAsync ? LIGHTING_METER_MIN_MS : LIGHTING_METER_SYNC_MIN_MS;
+    if (meterFrames < LIGHTING_METER_EVERY || (meterLastMs && nowMs - meterLastMs < minMs)) return;
+    meterFrames = 0;
+    if (lightingMeterRequest()) meterAwaiting = true; else meterStats.refused++;
+  }
+
   // ---- environment probe --------------------------------------------------
   // What a mirror at the vehicle sees: the lit ground below, black sky above.
   // The foil materials on the 3D model reflect it, which is the whole reason a
@@ -485,13 +827,10 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
       pmrem = new THREE.PMREMGenerator(renderer);
       pmrem.compileCubemapShader();
     }
-    // The vehicles step aside: a probe inside the model would see its own
-    // interior, and the interface meshes are not part of the environment.
-    const hidden = [];
-    const hide = (o) => { if (o && o.visible) { hidden.push(o); o.visible = false; } };
-    if (lod.group) hide(lod.group);
-    for (const h of helpers) hide(h);
-    scene.traverse((o) => { if (o.isMesh && lightingIsHelper(o)) hide(o); });
+    // The vehicles step aside too: a probe inside the model would see its own
+    // interior.
+    lightingHideInterface(true);
+    const shadows = lightingFreezeShadows();
     const background = scene.background;
     scene.background = null;
     const toneMapping = renderer.toneMapping, toneExposure = renderer.toneMappingExposure;
@@ -515,7 +854,8 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
     renderer.toneMapping = toneMapping;
     renderer.toneMappingExposure = toneExposure;
     scene.background = background;
-    for (const o of hidden) o.visible = true;
+    lightingThawShadows(shadows);
+    lightingShowInterface();
   }
 
   // ---- earthshine ---------------------------------------------------------
@@ -573,20 +913,46 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
     get ev() { return ev; },
     get defaultEv() { return defaultEv; },
     get evText() { return lightingEvText(); },
+    get autoExposure() { return autoExposure; },
+    get exposureCompensation() { return evComp; },
+    get meterCoverage() { return meterCoverage; },
+    get meterStats() { return { ...meterStats, async: meterAsync, failed: meterFailed, awaiting: meterAwaiting }; },
     get environmentMap() { return envTexture; },
 
-    // Camera exposure. `setEv` is the absolute photographic value; `stepEv`
-    // moves it by thirds of a stop, which is what `[` and `]` do.
+    // Camera exposure. Nothing here restarts a path-traced accumulation: the
+    // exposure is applied on the way out of the renderer, so an image already
+    // gathered is still the right image.
+    //
+    // `setEv` fixes the camera at an absolute photographic value; `setAutoExposure`
+    // hands it back to the meter, or takes it away at whatever it is reading
+    // now. `stepEv` is the third-of-a-stop control behind `[` and `]`: in auto
+    // it moves the compensation, which the adaptation then carries with it, and
+    // in fixed it moves the EV itself.
     setEv(next) {
       if (!Number.isFinite(next)) return ev;
-      ev = Math.min(LIGHTING_EV_MAX, Math.max(LIGHTING_EV_MIN, next));
+      autoExposure = false;
+      evFixed = next;
       lightingApplyExposure();
-      status = mode === 'realtime' ? lightingStatusText() : status;
-      lastChangeMs = performance.now();
-      if (tracing) lightingStopTracing();
+      if (mode === 'realtime') status = lightingStatusText();
       return ev;
     },
-    stepEv(steps = 1) { return api.setEv(ev + steps * LIGHTING_EV_STEP); },
+    setAutoExposure(on) {
+      const want = !!on && hasSunDir;
+      if (want === autoExposure) return autoExposure;
+      if (!want) evFixed = ev;            // a fixed camera starts where the meter left it
+      autoExposure = want;
+      if (want) { metered = false; meterLastMs = 0; meterFrames = LIGHTING_METER_EVERY; meterAwaiting = false; }
+      lightingApplyExposure();
+      if (mode === 'realtime') status = lightingStatusText();
+      return autoExposure;
+    },
+    stepEv(steps = 1) {
+      if (autoExposure) evComp = Math.max(-8, Math.min(8, evComp + steps * LIGHTING_EV_STEP));
+      else evFixed = lightingClampEv(evFixed + steps * LIGHTING_EV_STEP);
+      lightingApplyExposure();
+      if (mode === 'realtime') status = lightingStatusText();
+      return ev;
+    },
 
     setMode(next) {
       const want = next === 'pathtraced' && tracerLib ? 'pathtraced' : 'realtime';
@@ -632,6 +998,11 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
       }
       const probeAt = lightingProbePoint(t, cameraTarget);
       if (lightingEnvironmentStale(probeAt)) lightingBuildEnvironment(probeAt);
+      // Metered last, so the probe and the lights are already where this frame
+      // wants them. Neither of those depends on the exposure -- the probe is
+      // rendered untone-mapped and earthshine is an absolute irradiance -- so
+      // the meter is reading the scene and not its own output.
+      lightingAdaptExposure(performance.now());
       if (mode !== 'pathtraced') status = lightingStatusText();
     },
 

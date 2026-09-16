@@ -113,7 +113,8 @@ export function createUI(container, timeline, state, info) {
       <label><input type="checkbox" data-role="facets" checked> facets</label>
       <label><input type="checkbox" data-role="axes" checked> body axes</label>
       <label data-role="heating-label"><input type="checkbox" data-role="heating" checked> heating</label>
-      <select data-role="lighting" title="Sun lighting and renderer · [ and ] change the exposure by a third of a stop"></select>
+      <select data-role="lighting" title="Sun lighting and renderer"></select>
+      <label data-role="autoexp-label" title="Meter the frame and adapt the exposure · [ and ] compensate by a third of a stop"><input type="checkbox" data-role="autoexp" checked> auto exposure</label>
       <span class="sa-trail-legend" data-role="heat-legend" hidden><span data-role="heat-lo"></span><span class="sa-bar-inferno"></span><span data-role="heat-hi"></span></span>
       <label data-role="dust-label"><input type="checkbox" data-role="dust" checked> dust</label>
       <span class="sa-sep" data-role="atmo-sep"></span>
@@ -217,6 +218,11 @@ export function createUI(container, timeline, state, info) {
   }
   setLightingModes(state.lightingModes);
   lightingSelect.addEventListener('change', () => state.setLighting && state.setLighting(lightingSelect.value));
+  // Auto exposure: on, the camera meters every few frames; off, it holds the EV
+  // it was reading. A page built with an explicit `ev` starts off.
+  const autoExposure = q('autoexp');
+  autoExposure.checked = state.exposureAuto !== false;
+  autoExposure.addEventListener('change', (e) => state.setExposureAuto && state.setExposureAuto(e.target.checked));
   // The lighting row of the run panel, refreshed with the accumulated samples.
   const lightingStatus = infoBox.querySelector('[data-info="lighting"]');
   function setLightingStatus(text) {

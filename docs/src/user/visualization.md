@@ -283,25 +283,40 @@ sky side of the hemisphere light set to black).
 
 ### The physical camera
 
-Exposure is a stated camera setting rather than a measurement of the scene. The
-sun's irradiance comes from the body's mean distance from the Sun (1361 W/m² at
-1 au, so 1361 at the Moon and 587 at Mars), the render buffer is kept in units
-of "a white Lambertian surface facing the Sun reads 1.0", and one scale factor
-turns a buffer value into an absolute radiance. The display mapping is then a
-photographic exposure value at ISO 100: `EV = log2(L x S / K)` with `K = 12.5`
-and the radiance converted to luminance at 98 lm/W, the luminous efficacy of
-unattenuated sunlight. The default EV is the one metered off a 0.12-albedo
-surface facing the Sun -- EV +15.3 at 1 au, which is the "sunny 16" exposure a
-photographer would have set, and EV +14.1 at Mars. The info panel's lighting
-row reads it back, and `[` and `]` step it by a third of a stop each.
+Exposure is a camera setting in the photographic sense rather than a fudge
+factor. The sun's irradiance comes from the body's mean distance from the Sun
+(1361 W/m² at 1 au, so 1361 at the Moon and 587 at Mars), the render buffer is
+kept in units of "a white Lambertian surface facing the Sun reads 1.0", and one
+scale factor turns a buffer value into an absolute radiance. The display
+mapping is then an exposure value at ISO 100: `EV = log2(L x S / K)` with
+`K = 12.5` and the radiance converted to luminance at 98 lm/W, the luminous
+efficacy of unattenuated sunlight. A 0.12-albedo surface facing the Sun meters
+EV +15.3 at 1 au -- the "sunny 16" exposure a photographer would have set,
+arrived at from the radiometry rather than assumed -- and EV +14.1 at Mars.
 `export_visualization(...; ev=11.0)` fixes the page's EV instead of letting it
 adapt.
 
-A physically exposed frame of Tranquility Base is genuinely dark: the Sun was
-10.6 degrees up, so the ground returns a sixth of what the default EV is set
-for, and the earthshine on the shadow side is thirteen stops below that. Open
-the camera up with `[` to see either the way a long exposure would, exactly as
-one would on the surface.
+One EV cannot serve the whole page, though: four stops separate an overview of
+the sunlit disc from a close-up of a landing site under a 10.6 degree sun, and
+a setting that holds one clips the other. So the camera meters and adapts, the
+way an eye does. Every few frames the scene is drawn into a 64-pixel render
+target, which three leaves linear and untone-mapped, and the log-average
+luminance of the pixels carrying any light at all -- the black sky is excluded,
+or an overview of a small disc on a large dark frame would meter itself white
+-- gives the EV that would put that average on middle gray. The camera walks
+toward it with a half-second time constant, between EV +6 (an earthshine-lit
+shadow side) and EV +17 (full sun on a bright surface); a frame with almost
+nothing lit in it leaves the exposure alone. The cost is one small extra pass
+with the interface meshes hidden and the shadow map frozen.
+
+`[` and `]` are then exposure compensation, a third of a stop at a time, and
+the adaptation carries them: the info panel reads `EV +12.4 (auto, comp +0.7)`.
+The **auto exposure** checkbox pins the camera at whatever it is reading, and
+`export_visualization(...; ev=...)` starts a page fixed at a given value. A
+fixed frame of Tranquility Base at the metered EV +15.3 is genuinely dark --
+the Sun was 10.6 degrees up, so the ground returns a sixth of what that EV is
+set for, and the earthshine on the shadow side is thirteen stops below it --
+which is what the adaptation and the compensation are for.
 
 The **lighting** selector offers "path traced when paused". In that mode the
 page draws in real time while the timeline runs or the camera moves; once both
@@ -319,8 +334,11 @@ page built by `export_visualization` is self-contained and offers real-time
 lighting only, while the CDN pages
 (`scripts/dev/viewer_demos/build_cdn_page.py`, `build_standalone.py --cdn`)
 carry the import-map entries for it. It is handed the same irradiances (the sun
-disc's radiance is calibrated to the directional sun's) and the same exposure,
-so switching modes changes the sampling and not the brightness.
+disc's radiance is calibrated to the directional sun's) and the EV the meter has
+reached at hand-off, so switching modes changes the sampling and not the
+brightness. The meter stands down while an image is accumulating, and changing
+the exposure does not discard one: it is applied on the way out of the renderer,
+so an image already gathered is still the right image.
 
 ### Thermal foils
 

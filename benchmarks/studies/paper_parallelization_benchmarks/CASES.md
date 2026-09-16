@@ -419,10 +419,12 @@ and the speedup column isolates how much of a fixed workload each route
 parallelises at that width, rather than mixing that in with the workload growing
 by a factor of 4096 down the column. The mission length is a table column
 because the rows are no longer the same mission. Recalibrate the table on a new
-machine the same way: run each rung once in `serial` mode and scale the
-duration; the marginal cost per simulated hour is close to linear, but at a 1 h
-mission most of the small-N solve is fixed per-solve cost, so scaling *those*
-numbers lands short.
+machine with `bash calibrate_iso_ladder.sh` in this directory, which runs each
+registered rung once in `serial` mode and prints the duration that would put it
+at the target (~10 min, wants an idle machine). Scaling is linear in mission
+length to within a few percent *above* the floor; a rung measuring well under
+3 s is extrapolating from mostly fixed per-solve cost and will land short, which
+is why the first calibration of this ladder aimed at ~10 s rather than 3.
 
 P3 clears the floor by campaign size rather than duration: 256 samples, matching
 B12, where 64 leaves the serial baseline at ~2.4 s.

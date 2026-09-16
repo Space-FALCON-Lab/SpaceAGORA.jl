@@ -76,6 +76,9 @@ using .SimulationModel: NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height
 using .SimulationModel: DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
+using .SimulationModel: PlumeGasState, PlumeNozzle, PlumeAnalyticField, PlumeFieldTable
+using .SimulationModel: plume_gas_state, build_plume_field_table, save_plume_field, load_plume_field
+using .SimulationModel: plume_wall_shear, plume_mean_shear, plume_scour_radius
 using .SimulationModel: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 using .SimulationModel: RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
 using .SimulationModel: ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime
@@ -114,6 +117,10 @@ using .SimulationModel: ejecta_launch_speed, ejecta_trajectory, ejecta_distribut
 @doc (@doc SimulationModel.EjectaSoil) EjectaSoil
 @doc (@doc SimulationModel.EjectaTransportConfig) EjectaTransportConfig
 @doc (@doc SimulationModel.EjectaReferenceGasField) EjectaReferenceGasField
+@doc (@doc SimulationModel.PlumeGasState) PlumeGasState
+@doc (@doc SimulationModel.PlumeNozzle) PlumeNozzle
+@doc (@doc SimulationModel.PlumeAnalyticField) PlumeAnalyticField
+@doc (@doc SimulationModel.PlumeFieldTable) PlumeFieldTable
 @doc (@doc SimulationModel.StateAnchor) StateAnchor
 @doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
@@ -595,6 +602,9 @@ export NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height, terrain_radius,
 export DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
+export PlumeGasState, PlumeNozzle, PlumeAnalyticField, PlumeFieldTable
+export plume_gas_state, build_plume_field_table, save_plume_field, load_plume_field
+export plume_wall_shear, plume_mean_shear, plume_scour_radius
 export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 export RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
 export ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime

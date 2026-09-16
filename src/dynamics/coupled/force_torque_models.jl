@@ -11,6 +11,7 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "thruster_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "plume_gas_field.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "plume_surface_interaction.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "regolith_erosion.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "ejecta_transport.jl"))
@@ -39,6 +40,11 @@ module DynamicEffectors
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using .RobotArmReactionEffectors: RobotArmReactionEffector
+    using .PlumeGasField: PlumeGasState, PlumeNozzle, PlumeAnalyticField, PlumeFieldTable
+    using .PlumeGasField: plume_gas_state, plume_field_footprint, plume_field_shear_coefficient, plume_field_name
+    using .PlumeGasField: plume_wall_shear, plume_mean_shear, plume_scour_radius
+    using .PlumeGasField: build_plume_field_table, save_plume_field, load_plume_field
+    using .PlumeGasField: plume_limit_speed, plume_limit_angle, plume_angular_mass_flux
     using .PlumeSurfaceInteraction: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
     using .PlumeSurfaceInteraction: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities, plume_engine_axis
     using .RegolithErosion: RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
@@ -66,6 +72,10 @@ module DynamicEffectors
     export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
     export RobotArmReactionEffector
+    export PlumeGasState, PlumeNozzle, PlumeAnalyticField, PlumeFieldTable
+    export plume_gas_state, plume_field_footprint, plume_field_shear_coefficient
+    export plume_wall_shear, plume_mean_shear, plume_scour_radius
+    export build_plume_field_table, save_plume_field, load_plume_field
     export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
     export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
     export RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment

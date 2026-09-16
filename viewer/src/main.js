@@ -79,11 +79,20 @@ export function start(payload, container = document.body) {
   const lod = createAssemblies(sidecar, frames, { models, enabled: options.assemblies ?? true, assemblyLimit: options.assembly_limit ?? 256 });
   world.add(lod.group);
 
+  // The lighting handle is built further down, once the bodies it has to light
+  // exist; the dust and the plumes read it through this accessor every update,
+  // for the sun direction, its irradiance and the camera exposure.
+  const lightingHandle = () => lighting;
   // Regolith blown off the surface by a landing vehicle's descent engine; it
   // adds its own group to `world`, so it rides the inertial frame like the rest.
-  const dust = createDust(world, frames, terrain, lod, { rotationAt: (t, out) => globe.rotationAt(t, out) });
+  const dust = createDust(world, frames, terrain, lod, {
+    rotationAt: (t, out) => globe.rotationAt(t, out),
+    lighting: lightingHandle,
+    hazeOpacity: options.dust_haze_opacity,
+    hazeDecayS: options.dust_haze_decay_s,
+  });
   // Thruster plumes: one per thruster glyph, driven by the recorded firing levels.
-  const plumes = createPlumes(sidecar, frames, lod, { raw: rawFrames, enabled: options.plumes ?? true });
+  const plumes = createPlumes(sidecar, frames, lod, { raw: rawFrames, enabled: options.plumes ?? true, lighting: lightingHandle });
 
   const refPaths = createPaths(pathSpecs, frames, {});
   if (refPaths.items.length) world.add(refPaths.group);

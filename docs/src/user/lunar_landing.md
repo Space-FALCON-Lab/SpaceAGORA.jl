@@ -32,6 +32,13 @@ directory written by `scripts/dev/terrain/fetch_moon_site.py`, which fetches:
 python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --out data/terrain/moon/apollo11
 ```
 
+It also writes an albedo-normalized copy of every imagery level
+(`level_k_albedo.jpg`), which is what the page drapes when it lights the ground
+itself; `--reuse DIR` derives a second copy of a site from an existing one
+without touching the network, and the demo draws the copy that `--site-json
+PATH` or `SPACEAGORA_TERRAIN_SITE` names. See
+[Visualization](visualization.md) for what the page does with them.
+
 The data stay under `data/` (not tracked). Grids are little-endian Float32
 files with a JSON header, so other DEMs can be dropped in the same layout.
 

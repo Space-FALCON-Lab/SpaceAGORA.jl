@@ -125,6 +125,63 @@ the ground sharpens by itself as the camera closes in; the globe is cut open
 under the outermost patch, a ring marks the site, and the selection panel
 reports the height above the terrain.
 
+What is draped is the albedo-normalized copy of each level when the site
+directory carries one -- `fetch_moon_site.py` writes `level_k_albedo.jpg` beside
+every `level_k.jpg`, and `terrain_payload` embeds both as `url` and
+`albedo_url` -- because the page lights the ground itself and a mosaic carries
+the illumination of whenever it was taken. The normalization is a flat field:
+each level is divided by its own Gaussian low-pass (a radius of an eighth of the
+patch) and rescaled to its own mean, which removes every brightness gradient
+broader than the kernel. Shading inside a crater is at the scale of the crater
+and survives, and slow genuine albedo variation is flattened along with the
+illumination; the fetch script's `derive_albedo` documents both limits. A site
+without the albedo images is drawn from `url` as before.
+
+Deriving a second copy of a site (new albedo images, say) needs no network:
+`--reuse DIR` copies the DEMs and the imagery originals of an existing site
+directory, and the landing demo draws whichever copy `--site-json PATH` or
+`SPACEAGORA_TERRAIN_SITE` names.
+
+```
+python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 \
+    --out output/terrain/moon/apollo11 --reuse data/terrain/moon/apollo11
+SPACEAGORA_TERRAIN_SITE=$PWD/output/terrain/moon/apollo11/site.json \
+    julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl
+```
+
+## Lunar reflectance and terrain shadows
+
+Regolith does not scatter like a Lambert surface: the full Moon is almost
+uniformly bright across its disk, and the surface brightens sharply as the phase
+angle closes. When the run carries `frames.sun_dir` the page shades the terrain
+patches and the globe with a lunar reflectance instead -- the lunar-Lambert law,
+Lommel-Seeliger scattering blended with Lambert by the phase-dependent
+coefficient of McEwen (1991), times a Henyey-Greenstein particle phase function
+and Hapke's shadow-hiding opposition surge `B0 / (1 + tan(g/2)/h)`. The phase
+term is normalized to 1 at a phase angle of 45°, so an ordinary view keeps the
+brightness the Lambert page had while a view down-sun is about 2.7 times
+brighter and one at 150° about 4 times darker, which is the phase curve the Moon
+has. The globe keeps its Lambert shading for bodies that are not airless and
+dark (only the Moon, Luna and Mercury take the regolith law), and a run without
+a sun direction never leaves the Lambert branch at all.
+
+The relief is shaded from the DEM, not from the drawn mesh: on load the page
+turns each height grid into a normal map at the grid's own resolution (the NAC
+grid is some 8 m a sample, the mesh 5 m a quad over the finest level and
+hundreds of meters over the coarsest), so slopes the mesh cannot resolve still
+shade correctly under a moving sun.
+
+The ground also shadows itself. The height grids are uploaded as textures and
+the terrain's fragment shader marches 64 samples toward the Sun, from 8 m to
+6 km in a geometric progression, testing the height of the ray above the
+reference sphere against the ground under it; the first solid hit stops the
+march, and the edge is softened over the Sun's own angular radius, which makes a
+penumbra that widens with the distance to the occluder. That horizon test
+multiplies the vehicle's shadow map, so a crater rim throws a shadow hundreds of
+meters long while the lander's legs still throw theirs inside the 100 m box the
+shadow map covers. It costs one texture tap a sample and nothing at all where
+the Sun is below the local horizon.
+
 ## Dust
 
 When the run carried a `PlumeSurfaceInteractionModel` (see

@@ -125,94 +125,6 @@ the ground sharpens by itself as the camera closes in; the globe is cut open
 under the outermost patch, a ring marks the site, and the selection panel
 reports the height above the terrain.
 
-What is draped is the albedo-normalized copy of each level when the site
-directory carries one -- `fetch_moon_site.py` writes `level_k_albedo.jpg` beside
-every `level_k.jpg`, and `terrain_payload` embeds both as `url` and
-`albedo_url` -- because the page lights the ground itself and a mosaic carries
-the illumination of whenever it was taken. The normalization is a flat field:
-each level is divided by its own Gaussian low-pass (a radius of an eighth of the
-patch) and rescaled to its own mean, which removes every brightness gradient
-broader than the kernel. Shading inside a crater is at the scale of the crater
-and survives, and slow genuine albedo variation is flattened along with the
-illumination; the fetch script's `derive_albedo` documents both limits. A site
-without the albedo images is drawn from `url` as before.
-
-Deriving a second copy of a site (new albedo images, say) needs no network:
-`--reuse DIR` copies the DEMs and the imagery originals of an existing site
-directory, and the landing demo draws whichever copy `--site-json PATH` or
-`SPACEAGORA_TERRAIN_SITE` names.
-
-```
-python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 \
-    --out output/terrain/moon/apollo11 --reuse data/terrain/moon/apollo11
-SPACEAGORA_TERRAIN_SITE=$PWD/output/terrain/moon/apollo11/site.json \
-    julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl
-```
-
-## Lunar reflectance and terrain shadows
-
-Regolith does not scatter like a Lambert surface: the full Moon is almost
-uniformly bright across its disk, and the surface brightens sharply as the phase
-angle closes. When the run carries `frames.sun_dir` the page shades the terrain
-patches and the globe with a lunar reflectance instead -- the lunar-Lambert law,
-Lommel-Seeliger scattering blended with Lambert by the phase-dependent
-coefficient of McEwen (1991), times a Henyey-Greenstein particle phase function
-and Hapke's shadow-hiding opposition surge `B0 / (1 + tan(g/2)/h)`. The phase
-term is normalized to 1 at a phase angle of 45°, so an ordinary view keeps the
-brightness the Lambert page had while a view down-sun is about 2.7 times
-brighter and one at 150° about 4 times darker, which is the phase curve the Moon
-has. The globe keeps its Lambert shading for bodies that are not airless and
-dark (only the Moon, Luna and Mercury take the regolith law), and a run without
-a sun direction never leaves the Lambert branch at all.
-
-The relief is shaded from the DEM, not from the drawn mesh: on load the page
-turns each height grid into a normal map at half the grid's cell, so slopes the
-mesh cannot resolve still shade correctly under a moving sun. The finest grid
-travels at its native resolution for this reason -- `terrain_payload` keeps it
-to `finest_max_grid` (2048) samples a side against `max_grid` (512) for the
-rest, because a NAC digital terrain model at its own 4 m carries slope that the
-same grid at 8 m does not: 10.9 degrees RMS against 8.0 at Tranquility Base.
-Heights ride as Int16 steps about a base (`heights_i16`, `height_base_m`,
-`height_scale_m`), which resolves the grid to a centimeter in half the bytes
-Float32 would take; `quantize_heights=false` restores the Float32 `heights`
-block.
-
-Below the DEM's own cell the page adds micro-relief: a tiled detail normal map,
-built once at load from multi-octave value noise and a few hundred small
-craters, scaled to 0.12 RMS slope (about 7 degrees at a meter, which continues
-the site grid's own slope-versus-baseline trend) and sampled by the levels at
-least 2 m/px sharp, one tile every 8 m of ground. It is a texture rather than a
-claim about the site, and under a 10 degree sun it is most of what the eye reads
-as ground; `options.microRelief = false` turns it off.
-
-Mipmaps alone cannot fade that map out as the camera pulls away. Mip filtering
-averages the normals, but the shading term they feed is not linear in the normal
-and it clamps at the terminator, so the average of the shading is not the
-shading of the average: 0.12 RMS slope against a terminator at
-tan(10.6 degrees) = 0.187 tips a large tail of texels past it, and a pixel that
-covers many texels -- which it does a few tens of meters out at the grazing view
-of a landing, where anisotropic filtering under-samples the stretched axis --
-turns the far field into speckle instead of grain. The shader therefore splits
-the detail slope by the pixel's footprint in detail texels, after Toksvig,
-"Mipmapping Normal Maps" (NVIDIA, 2004) and the LEAN/CLEAN mapping family: the
-part the footprint resolves stays a slope, scaled by Toksvig's mean-normal
-factor, and the RMS slope it does not resolve is spent instead as terminator
-width on the direct term, where a Gaussian slope of that RMS turns the clamped
-cosine into `(c + sqrt(c^2 + 2 w^2 / pi)) / 2`. The near field keeps its grain
-at full strength, the far field goes smooth, and the mean brightness is
-continuous across the two because the variance is carried rather than dropped.
-
-The ground also shadows itself. The height grids are uploaded as textures and
-the terrain's fragment shader marches 64 samples toward the Sun, from 8 m to
-6 km in a geometric progression, testing the height of the ray above the
-reference sphere against the ground under it; the first solid hit stops the
-march, and the edge is softened over the Sun's own angular radius, which makes a
-penumbra that widens with the distance to the occluder. That horizon test
-multiplies the vehicle's shadow map, so a crater rim throws a shadow hundreds of
-meters long while the lander's legs still throw theirs inside the 100 m box the
-shadow map covers. It costs one texture tap a sample and nothing at all where
-the Sun is below the local horizon.
-
 ## Dust
 
 When the run carried a `PlumeSurfaceInteractionModel` (see
@@ -241,65 +153,21 @@ adds `sun_dir_1..3`, the unit vector from the planet's center to the Sun in the
 inertial frame of the saved positions, and the page lights the scene from it.
 The directional sun follows that vector over the timeline, rotated into the
 scene the same way positions are, so the terminator stands where it stood and
-a landing at dawn is lit like one. The shadow map is fitted to a few tens of
-meters around the followed vehicle each frame, so the vehicle shadows itself
-and drops its shadow on the ground: Apollo 11 landed with the Sun 10.6 degrees
-up, and the LM's shadow stretches five times its own height across Tranquility
-Base. A run without the columns keeps the fixed light the viewer always had.
+a landing at dawn is lit like one. A faint hemisphere term stands in for
+earthshine, and the shadow map is fitted to a few tens of meters around the
+followed vehicle each frame, so the vehicle shadows itself and drops its
+shadow on the ground: Apollo 11 landed with the Sun 10.6 degrees up, and the
+LM's shadow stretches five times its own height across Tranquility Base. A run
+without the columns keeps the fixed light the viewer always had.
 
-### Earthshine
-
-Away from Earth, and when the ephemerides resolve it, `default_save_fields`
-also writes `earth_dir_1..3`, the unit vector from the planet's center to
-Earth, and the page adds a second directional light along it. Its irradiance is
-the sunlight the Earth reflects back: 0.15 W/m² at the Moon with a full Earth,
-scaled by the Lambert-sphere phase law for the Sun-Earth-body angle and tinted
-toward the blue of ocean and cloud. Apollo 11 landed under a 70 degree Earth
-phase, half lit, so the Earth stood 59 degrees up in the west at 0.076 W/m² --
-one ten-thousandth of sunlight, thirteen stops down, which is exactly why the
-earthshine in the Apollo photographs needed a long exposure and why it takes
-one here too. The hemisphere guess it replaces survives only as the fallback
-for a run without the columns; a run that has them gets, instead, the one fill
-term a vacuum scene really has, the sunlight the ground bounces back up
-(irradiance `albedo x E x cos(theta)` on a downward-facing surface, with the
-sky side of the hemisphere light set to black).
-
-### The physical camera
-
-Exposure is a camera setting in the photographic sense rather than a fudge
-factor. The sun's irradiance comes from the body's mean distance from the Sun
-(1361 W/m² at 1 au, so 1361 at the Moon and 587 at Mars), the render buffer is
-kept in units of "a white Lambertian surface facing the Sun reads 1.0", and one
-scale factor turns a buffer value into an absolute radiance. The display
-mapping is then an exposure value at ISO 100: `EV = log2(L x S / K)` with
-`K = 12.5` and the radiance converted to luminance at 98 lm/W, the luminous
-efficacy of unattenuated sunlight. A 0.12-albedo surface facing the Sun meters
-EV +15.3 at 1 au -- the "sunny 16" exposure a photographer would have set,
-arrived at from the radiometry rather than assumed -- and EV +14.1 at Mars.
-`export_visualization(...; ev=11.0)` fixes the page's EV instead of letting it
-adapt.
-
-One EV cannot serve the whole page, though: four stops separate an overview of
-the sunlit disc from a close-up of a landing site under a 10.6 degree sun, and
-a setting that holds one clips the other. So the camera meters and adapts, the
-way an eye does. Every few frames the scene is drawn into a 64-pixel render
-target, which three leaves linear and untone-mapped, and the log-average
-luminance of the pixels carrying any light at all -- the black sky is excluded,
-or an overview of a small disc on a large dark frame would meter itself white
--- gives the EV that would put that average on middle gray. The camera walks
-toward it with a half-second time constant, between EV +6 (an earthshine-lit
-shadow side) and EV +17 (full sun on a bright surface); a frame with almost
-nothing lit in it leaves the exposure alone. The cost is one small extra pass
-with the interface meshes hidden and the shadow map frozen.
-
-`[` and `]` are then exposure compensation, a third of a stop at a time, and
-the adaptation carries them: the info panel reads `EV +12.4 (auto, comp +0.7)`.
-The **auto exposure** checkbox pins the camera at whatever it is reading, and
-`export_visualization(...; ev=...)` starts a page fixed at a given value. A
-fixed frame of Tranquility Base at the metered EV +15.3 is genuinely dark --
-the Sun was 10.6 degrees up, so the ground returns a sixth of what that EV is
-set for, and the earthshine on the shadow side is thirteen stops below it --
-which is what the adaptation and the compensation are for.
+Exposure is measured rather than assumed. The LROC mosaic of the landing site
+averages 0.021 in linear light and only a fifth of that reaches the eye at a
+grazing sun, which would leave the ground and its shadows inside a handful of
+display levels; so the page reads the mean albedo of the ground texture, takes
+the Sun's incidence on the site at the end of the run, and picks the filmic
+exposure that puts a lit surface in the middle of the range (it reports the
+factor in the info panel). Scenes bright enough not to need the lift keep the
+linear mapping.
 
 The **lighting** selector offers "path traced when paused". In that mode the
 page draws in real time while the timeline runs or the camera moves; once both
@@ -316,35 +184,7 @@ path tracer does not run. The library is loaded from the CDN on demand: the
 page built by `export_visualization` is self-contained and offers real-time
 lighting only, while the CDN pages
 (`scripts/dev/viewer_demos/build_cdn_page.py`, `build_standalone.py --cdn`)
-carry the import-map entries for it. It is handed the same irradiances (the sun
-disc's radiance is calibrated to the directional sun's) and the EV the meter has
-reached at hand-off, so switching modes changes the sampling and not the
-brightness. The meter stands down while an image is accumulating, and changing
-the exposure does not discard one: it is applied on the way out of the renderer,
-so an image already gathered is still the right image.
-
-### Thermal foils
-
-The 3D models NASA publishes carry their thermal foils as plain diffuse colors,
-which renders a spacecraft that looks like painted cardboard. On a glTF the page
-recognizes them -- by material name when the model gives a useful one, otherwise
-by base color: a saturated warm color is gold-coated Kapton, a bright neutral one
-aluminized Mylar or bare aluminum -- and rebuilds them as `MeshPhysicalMaterial`
-with the metal's measured normal-incidence reflectance as its base color (gold
-1.00/0.77/0.34, aluminum 0.91/0.92/0.92), metalness near one, a roughness of
-about 0.4 for crinkled foil, and a clearcoat over the Kapton for the film above
-the metal. Textured, transparent and mid-to-dark gray materials -- the black
-blankets, the painted structure, the decals -- are left exactly as they were, and
-the model status line in the info panel says how many materials were swapped.
-
-A metal has no diffuse color of its own, so it is only as interesting as what it
-reflects. The page renders a 64-pixel cube map of the lit scene around the
-vehicle with the vehicle itself stepped aside, prefilters it into a PMREM, and
-gives it to the foil materials as their environment map; it is rebuilt when the
-Sun has turned by more than three degrees or the vehicle has moved half a
-kilometer, so a descent re-probes a few tens of times and a cruise once. The
-result is a lander whose skirt carries the ground's color underneath and the
-black of space above it.
+carry the import-map entries for it.
 
 ## Heating on the spacecraft
 
@@ -386,7 +226,6 @@ Reach and brightness follow the level through a fractional exponent rather
 than linearly, because a jet holding an attitude asks for well under a percent
 of its rating and a linear mapping would draw nothing at all; a thruster at
 level 0 is not drawn, and its static cone glyph is dimmed while it is idle.
-
 The "plumes" toggle turns them off, and the selection panel gains a
 `thruster k level` row per thruster whose history plots like any other
 quantity.

@@ -182,7 +182,7 @@ end
 end
 
 # Atmospheric density the RHS last evaluated for each satellite (kg/m^3), for
-# the viewer's pass coloring; zero outside the atmosphere or without one.
+# the viewer's pass colouring; zero outside the atmosphere or without one.
 @inline function _save_density(num_sats::Int, u, t, integrator)
     densities = integrator.p.shared_buffers.densities
     out = Vector{Float64}(undef, num_sats)
@@ -199,15 +199,6 @@ end
     environment = integrator.p.args.environment_model
     et = integrator.p.shared_buffers.et_start[] + Float64(t)
     direction = ephemerides_sun_direction_ii(environment.planet, et, environment.ephemerides_model)
-    return direction === nothing ? SVector{3, Float64}(NaN, NaN, NaN) : direction
-end
-
-# Unit vector from the planet's center to Earth, for the viewer's earthshine.
-# One direction per row like the Sun's, and only written away from Earth.
-@inline function _save_earth_direction(u, t, integrator)
-    environment = integrator.p.args.environment_model
-    et = integrator.p.shared_buffers.et_start[] + Float64(t)
-    direction = ephemerides_body_direction_ii(environment.planet, "earth", et, environment.ephemerides_model)
     return direction === nothing ? SVector{3, Float64}(NaN, NaN, NaN) : direction
 end
 
@@ -312,21 +303,6 @@ function _sun_direction_field_enabled(args::SimulationConfiguration)::Bool
     end
 end
 
-# Earth's direction is written only away from Earth (at Earth it is the origin
-# of the frame, not a light source) and only when the ephemerides resolve it,
-# probed the same way the Sun's is.
-function _earth_direction_field_enabled(args::SimulationConfiguration)::Bool
-    return try
-        environment = args.environment_model
-        lowercase(strip(String(environment.planet.name))) == "earth" && return false
-        et = ephemerides_time_seconds(args.initial_time, environment.ephemerides_model)
-        direction = ephemerides_body_direction_ii(environment.planet, "earth", et, environment.ephemerides_model)
-        direction !== nothing && all(isfinite, direction)
-    catch
-        false
-    end
-end
-
 @inline function _density_field_enabled(args::SimulationConfiguration)::Bool
     args.simulation_settings.save_visualization_scene || return false
     return !(args.environment_model.density_model isa NoAtmosphereModel)
@@ -406,9 +382,6 @@ function default_save_fields(args::SimulationConfiguration)
     if _sun_direction_field_enabled(args)
         push!(fields, sun_direction_save_field(args))
     end
-    if _earth_direction_field_enabled(args)
-        push!(fields, earth_direction_save_field(args))
-    end
     for field in visualization_save_fields(args)
         push!(fields, field)
     end
@@ -418,7 +391,7 @@ end
 """
     density_save_field(args) -> SaveField
 
-The `density` field (kg/m^3 per satellite) the viewer colors passes by.
+The `density` field (kg/m^3 per satellite) the viewer colours passes by.
 """
 function density_save_field(args::SimulationConfiguration)
     num_sats = length(args.dynamics_model.spacecraft)
@@ -436,19 +409,6 @@ can supply it.
 """
 function sun_direction_save_field(::SimulationConfiguration)
     return SaveField(:sun_dir, _save_sun_direction; per_satellite=false, column_prefix="sun_dir")
-end
-
-"""
-    earth_direction_save_field(args) -> SaveField
-
-The `earth_dir` field: the unit vector from the planet's center to Earth in the
-inertial frame of the saved positions, written as `earth_dir_1..3` (one
-direction per row, shared by every spacecraft). The viewer's earthshine light
-reads it; `_earth_direction_field_enabled` decides whether the run's planet and
-ephemerides can supply it.
-"""
-function earth_direction_save_field(::SimulationConfiguration)
-    return SaveField(:earth_dir, _save_earth_direction; per_satellite=false, column_prefix="earth_dir")
 end
 
 """
@@ -471,7 +431,7 @@ end
     arm_pose_save_field(args) -> SaveField
 
 The `arm_pose` field: per spacecraft, every cloth robot-arm link's COM
-position relative to the spacecraft (inertial, meters) and inertial
+position relative to the spacecraft (inertial, metres) and inertial
 quaternion.
 """
 function arm_pose_save_field(args::SimulationConfiguration)

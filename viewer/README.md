@@ -28,22 +28,22 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 |---|---|
 | `vendor/three.module.js`, `vendor/OrbitControls.js`, `vendor/STLLoader.js`, `vendor/OBJLoader.js`, `vendor/GLTFLoader.js`, `vendor/BufferGeometryUtils.js` | three.js r160 (MIT, `LICENSE.three`); GLTFLoader's one relative import is rewritten to the bare `three/addons/utils/...` specifier so it resolves from a `data:` URL |
 | `src/data.js` | payload decoding, frame interpolation, rotation table lookup |
-| `src/globe.js` | textured oblate sphere, graticule, rotation with the body, lunar reflectance from `setSun` |
+| `src/globe.js` | textured oblate sphere, graticule, rotation with the body |
 | `src/spacecraft.js` | marker cloud, fading trails, labels, orbit period estimate |
-| `src/lod.js` | close-up box assemblies, thruster/facet glyphs, STL override, thermal-foil metals on glTF models, visibility by projected size |
+| `src/lod.js` | close-up box assemblies, thruster/facet glyphs, STL override, visibility by projected size |
 | `src/ensemble.js` | ensemble coloring, spaghetti histories, sample selector |
 | `src/paths.js` | reference polylines in inertial, RTN or body frames |
 | `src/references.js` | reference ghosts: translucent copies of a spacecraft driven by an external state table |
 | `src/video.js` | MP4 export through WebCodecs and mp4-muxer (`vendor/mp4-muxer.mjs`, MIT), WebM fallback |
 | `three-gpu-pathtracer@0.0.23`, `three-mesh-bvh@0.7.8`, `three/examples/jsm/postprocessing/Pass.js` (import-map entries, CDN pages only) | the path-traced lighting mode; absent from the offline bundle, which then offers real-time lighting only |
-| `src/terrain.js` | landing-site terrain: DEM-displaced nested patches draped with albedo imagery that sharpens toward the site, the hole they cut in the globe, and the lit surface itself -- a lunar (Lommel-Seeliger with an opposition surge) reflectance, normal maps derived from the height grids plus tiled micro-relief below their cell, footprint-filtered in the manner of Toksvig so it does not alias at a grazing view, and shadows ray-marched through those grids |
+| `src/terrain.js` | landing-site terrain: DEM-displaced nested patches draped with imagery that sharpens toward the site, and the hole they cut in the globe |
 | `src/dust.js` | regolith blown off the surface by a descent engine: a GPU particle sheet driven by the `frames.plume` block, a ground haze disk and a scour mark |
 | `src/plumes.js` | thruster plumes: one additive, flickering cone pair per thruster, driven by the recorded firing levels, with the idle cone glyphs dimmed |
 | `src/plots.js` | time-history plot panel: any quantity in the panels opens its history over the run, with the playback cursor and click-to-seek |
 | `src/atmosphere.js` | limb glow, density shells, density map |
 | `src/colormaps.js` | inferno and viridis |
 | `src/timeline.js` | playback clock and time formatting |
-| `src/lighting.js` | sun placed from `frames.sun_dir` and earthshine from `frames.earth_dir`, shadow map fitted to the followed vehicle, a physical camera that meters the frame and adapts its EV (`[` / `]` compensate), the environment probe the foils reflect, and the optional path-traced mode |
+| `src/lighting.js` | sun placed from `frames.sun_dir`, shadow map fitted to the followed vehicle, measured exposure, and the optional path-traced mode |
 | `src/ui.js` | overlay controls and info panel |
 | `src/main.js` | scene setup and the render loop |
 | `template.html` | page skeleton the Julia bundler fills |

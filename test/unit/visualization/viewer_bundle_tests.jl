@@ -330,38 +330,6 @@ end
         @test small_sun[3 * (small["count"] - 1) + 2] == 1.0f0
     end
 
-    @testset "earth direction payload" begin
-        dir = mktempdir()
-        args = _viewer_config(results_directory=dir)
-        scene = build_visualization_scene(args; rotation_max_samples=8)
-        df = _synthetic_results(scene; n_rows=25)
-
-        # No columns, no block: the page keeps its hemisphere fill.
-        @test SV.build_viewer_frames(df, scene)["earth_dir"] === nothing
-
-        # `earth_dir_1..3` has the same layout as the Sun's: one unit vector per
-        # row, shared by the whole scene.
-        df[!, "earth_dir_1"] = [r <= 13 ? 0.0 : 1.0 for r in 1:25]
-        df[!, "earth_dir_2"] = [r <= 13 ? 1.0 : 0.0 for r in 1:25]
-        df[!, "earth_dir_3"] = zeros(25)
-        frames = SV.build_viewer_frames(df, scene)
-        earth = _decode_f32(frames["earth_dir"])
-        @test length(earth) == 25 * 3
-        @test earth[1] == 0.0f0 && earth[2] == 1.0f0
-        @test earth[3 * 24 + 1] == 1.0f0 && earth[3 * 24 + 2] == 0.0f0
-
-        # Decimation keeps it aligned with the rows the bundler kept.
-        small = SV.build_viewer_frames(df, scene; max_frames=6)
-        small_earth = _decode_f32(small["earth_dir"])
-        @test length(small_earth) == 3 * small["count"]
-        @test small_earth[1] == 0.0f0 && small_earth[2] == 1.0f0
-        @test small_earth[3 * (small["count"] - 1) + 1] == 1.0f0
-
-        # A partial block (say the run wrote only two of the three) is no block.
-        partial = select(df, Not("earth_dir_3"))
-        @test SV.build_viewer_frames(partial, scene)["earth_dir"] === nothing
-    end
-
     @testset "sun direction save field" begin
         # The simple ephemerides model at Earth resolves the Sun, so the run
         # writes the columns; at Mars it cannot and they are left out.
@@ -382,13 +350,6 @@ end
         mars_args = _viewer_config(results_directory=mktempdir())
         @test mars_args.environment_model.planet.name == "Mars"
         @test :sun_dir ∉ names_of(mars_args)
-
-        # The Earth direction is written only away from Earth and only when the
-        # ephemerides resolve it, so neither of these runs carries it: the Earth
-        # run because it is the central body, the Mars run because the simple
-        # model has no planetary ephemeris.
-        @test :earth_dir ∉ names_of(earth_args)
-        @test :earth_dir ∉ names_of(mars_args)
     end
 
     @testset "model formats" begin
@@ -550,14 +511,13 @@ end
         end
         mkpath(joinpath(dir, "imagery"))
         open(joinpath(dir, "imagery", "level_0.jpg"), "w") do io; write(io, UInt8[0xff, 0xd8, 0xff, 0xd9]); end
-        open(joinpath(dir, "imagery", "level_0_albedo.jpg"), "w") do io; write(io, UInt8[0xff, 0xd8, 0x00, 0xd9]); end
         open(joinpath(dir, "imagery", "imagery.json"), "w") do io
-            write(io, """{"levels": [{"file": "level_0.jpg", "albedo_file": "level_0_albedo.jpg", "lat_min": 0.5, "lat_max": 1.5, "lon_min": 21.0, "lon_max": 22.0, "width": 4, "height": 4, "m_per_px": 100.0}]}""")
+            write(io, """{"levels": [{"file": "level_0.jpg", "lat_min": 0.5, "lat_max": 1.5, "lon_min": 21.0, "lon_max": 22.0, "width": 4, "height": 4, "m_per_px": 100.0}]}""")
         end
         open(joinpath(dir, "site.json"), "w") do io
             write(io, """{"site": {"lat_deg": 1.0, "lon_deg": 21.5, "name": "unit"}, "dem": [{"name": "dem_test", "reference_radius_m": 1737400.0}], "imagery": "imagery/imagery.json"}""")
         end
-        payload = SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3, finest_max_grid=3)
+        payload = SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3)
         @test payload["site"]["name"] == "unit"
         @test payload["reference_radius_m"] == 1737400.0
         @test length(payload["grids"]) == 1
@@ -565,36 +525,13 @@ end
         @test g["rows"] == 2 && g["cols"] == 3          # stride 2 subsampling
         @test g["lat_max"] == 2.0 && g["lon_min"] == 20.0
         @test g["lat_min"] ≈ 0.0 && g["lon_max"] ≈ 23.0
-        # the finest grid has its own budget, so `max_grid` alone leaves it whole
-        @test SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3)["grids"][1]["rows"] == 4
-        # heights ride as Int16 steps about a base, and come back within a step
-        @test haskey(g, "heights_i16") && !haskey(g, "heights")
-        let q = collect(reinterpret(Int16, base64decode(g["heights_i16"]))),
-            hs = g["height_base_m"] .+ Float64.(q) .* g["height_scale_m"]
-            @test length(hs) == 6
-            @test isapprox(hs[1], 100.0; atol=g["height_scale_m"])          # row 0, column 0
-            @test isapprox(hs[end], 100 + 10 * 4 + 100 * 2; atol=g["height_scale_m"])
-        end
-        plain = SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3, finest_max_grid=3, quantize_heights=false)
-        @test haskey(plain["grids"][1], "heights") && !haskey(plain["grids"][1], "heights_i16")
-        @test _decode_f32(plain["grids"][1]["heights"])[1] == 100.0f0
         @test length(payload["imagery"]) == 1
         @test startswith(payload["imagery"][1]["url"], "data:image/jpeg;base64,")
         @test payload["imagery"][1]["m_per_px"] == 100.0
-        # the albedo-normalized copy travels beside the original, and is a different image
-        @test startswith(payload["imagery"][1]["albedo_url"], "data:image/jpeg;base64,")
-        @test payload["imagery"][1]["albedo_url"] != payload["imagery"][1]["url"]
         full = SV.terrain_payload(joinpath(dir, "site.json"))
         @test full["grids"][1]["rows"] == 4 && full["grids"][1]["cols"] == 6
         @test isapprox(full["site"]["height_m"], 100 + 10 * 2.5 + 100 * 1.5; atol=1e-6)   # bilinear at the site (row 1.5, column 2.5)
         @test_throws ArgumentError SV.terrain_payload(joinpath(dir, "missing.json"))
-        # a site whose imagery.json names no albedo file (or names a missing one) carries none
-        rm(joinpath(dir, "imagery", "level_0_albedo.jpg"))
-        @test !haskey(SV.terrain_payload(joinpath(dir, "site.json"))["imagery"][1], "albedo_url")
-        open(joinpath(dir, "imagery", "imagery.json"), "w") do io
-            write(io, """{"levels": [{"file": "level_0.jpg", "lat_min": 0.5, "lat_max": 1.5, "lon_min": 21.0, "lon_max": 22.0, "width": 4, "height": 4, "m_per_px": 100.0}]}""")
-        end
-        @test !haskey(SV.terrain_payload(joinpath(dir, "site.json"))["imagery"][1], "albedo_url")
     end
 
     @testset "STL overrides" begin

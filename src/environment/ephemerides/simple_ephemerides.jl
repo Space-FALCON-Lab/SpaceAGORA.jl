@@ -155,56 +155,41 @@ end
     )
 end
 
-@inline _ephemerides_body_name(name)::String = replace(lowercase(strip(String(name))), ' ' => '_')
+@inline _sun_observer_name(planet)::String = replace(lowercase(strip(String(planet.name))), ' ' => '_')
 
 """
-    ephemerides_body_direction_ii(planet, body, et, ephemerides_model) -> Union{Nothing, SVector{3, Float64}}
+    ephemerides_sun_direction_ii(planet, et, ephemerides_model) -> Union{Nothing, SVector{3, Float64}}
 
-Unit vector from the planet's center to `body` (a NAIF name such as `"sun"` or
-`"earth"`), in the inertial (J2000) frame the integrated state uses, or
-`nothing` when this ephemeris backend cannot resolve that body for this planet.
+Unit vector from the planet's center to the Sun, in the inertial (J2000) frame
+the integrated state uses, or `nothing` when this ephemeris backend cannot
+resolve the Sun for this body.
 
-`SpiceEphemeridesModel` asks SPICE for the body's position relative to the
-planet, so it works for every pair whose SPKs are furnished; a body or an
-observer whose own SPK is absent falls back to its barycenter, which moves the
-direction by well under an arcsecond for the Sun and by at most a few tenths of
-a degree for a planet seen from its own moon. `SimpleEphemeridesModel` carries
-no planetary ephemeris, so it answers only for the Sun seen from Earth, from
-the low-precision analytic Sun above, and returns `nothing` for anything else
+`SpiceEphemeridesModel` asks SPICE for the Sun's position relative to the
+planet, so it works for every body whose SPK is furnished. `SimpleEphemeridesModel`
+carries no planetary ephemeris, so it answers only for Earth, from the
+low-precision analytic Sun above; it returns `nothing` for any other body
 rather than inventing a direction.
 """
-function ephemerides_body_direction_ii(planet, body::AbstractString, et::Float64, ::SpiceEphemeridesModel)::Union{Nothing, SVector{3, Float64}}
-    observer = _ephemerides_body_name(planet.name)
-    target = _ephemerides_body_name(body)
-    target == observer && return nothing
-    position = nothing
-    for t in (target, target * "_barycenter"), o in (observer, observer * "_barycenter")
-        position = try
-            spice_position_j2000_m(t, et, o)
+function ephemerides_sun_direction_ii(planet, et::Float64, ::SpiceEphemeridesModel)::Union{Nothing, SVector{3, Float64}}
+    observer = _sun_observer_name(planet)
+    position = try
+        spice_position_j2000_m("sun", et, observer)
+    catch
+        # A body whose own SPK is absent (its barycenter is the only target the
+        # generic kernel carries): the direction to the Sun is the same to well
+        # under an arcsecond either way.
+        try
+            spice_position_j2000_m("sun", et, observer * "_barycenter")
         catch
-            nothing
+            return nothing
         end
-        position === nothing || break
     end
-    position === nothing && return nothing
     distance = norm(position)
     isfinite(distance) && distance > 0.0 || return nothing
     return position / distance
 end
 
-function ephemerides_body_direction_ii(planet, body::AbstractString, et::Float64, model::SimpleEphemeridesModel)::Union{Nothing, SVector{3, Float64}}
-    _ephemerides_body_name(body) == "sun" || return nothing
-    _ephemerides_body_name(planet.name) == "earth" || return nothing
+function ephemerides_sun_direction_ii(planet, et::Float64, model::SimpleEphemeridesModel)::Union{Nothing, SVector{3, Float64}}
+    _sun_observer_name(planet) == "earth" || return nothing
     return _low_precision_sun_direction_eme((et - model.reference_epoch_seconds) / 86400.0)
-end
-
-"""
-    ephemerides_sun_direction_ii(planet, et, ephemerides_model) -> Union{Nothing, SVector{3, Float64}}
-
-Unit vector from the planet's center to the Sun in the inertial (J2000) frame,
-or `nothing` when the backend cannot resolve it. A thin wrapper over
-[`ephemerides_body_direction_ii`](@ref) with the Sun as the target.
-"""
-@inline function ephemerides_sun_direction_ii(planet, et::Float64, model::AbstractEphemeridesModel)::Union{Nothing, SVector{3, Float64}}
-    return ephemerides_body_direction_ii(planet, "sun", et, model)
 end

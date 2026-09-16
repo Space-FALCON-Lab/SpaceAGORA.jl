@@ -55,109 +55,6 @@ const HEAT_FRAGMENT = `
     gl_FragColor = vec4(col, 1.0);
   }`;
 
-// Thermal foils on a loaded model. The Apollo LM is wrapped in two of them --
-// amber gold-coated Kapton over the descent stage and aluminized Mylar over
-// the ascent stage -- and the NASA glTF ships them as plain diffuse colors,
-// which renders a spacecraft that looks like painted cardboard. Both are metal
-// leaf: their look is a specular reflection of whatever is around them, so
-// they are swapped for `MeshPhysicalMaterial` with a metalness near one and
-// lit by the environment probe `lighting.js` renders from the scene (see
-// `setEnvironmentMap`). Until the probe exists they simply read dark, which is
-// what a mirror pointed at a black sky does.
-//
-// Classification is by material name first (nothing in the NASA models carries
-// a useful one, but a model that does should win) and then by base color: a
-// saturated warm color is Kapton, a bright neutral one is Mylar or bare
-// aluminum. Textured and mid-to-dark gray materials -- the black thermal
-// blankets, the painted structure, the decals -- are left exactly as they are.
-const LOD_FOIL_KAPTON_NAMES = /kapton|gold|goldfoil/;
-const LOD_FOIL_MYLAR_NAMES = /mylar|alumin|silver|foil/;
-const LOD_FOIL_MIN_SATURATION = 0.30;   // warm enough to be gold, not gray paint
-const LOD_FOIL_MAX_NEUTRAL_SATURATION = 0.10;
-const LOD_FOIL_MIN_NEUTRAL_VALUE = 0.60;   // bright enough to be bare metal
-// Normal-incidence reflectances used as the metals' base color, which for a
-// metal is its specular tint: gold (1.00, 0.77, 0.34) and aluminum
-// (0.91, 0.92, 0.92), both linear (Rakic 1998 optical constants, as tabulated
-// for physically based rendering).
-const LOD_FOIL_GOLD = [1.0, 0.77, 0.34];
-const LOD_FOIL_ALUMINUM = [0.91, 0.92, 0.92];
-const LOD_FOIL_KAPTON_ROUGHNESS = 0.42;    // crinkled foil, not a mirror
-const LOD_FOIL_MYLAR_ROUGHNESS = 0.32;
-const LOD_FOIL_CLEARCOAT = 0.5;            // the Kapton film over the gold
-const LOD_FOIL_CLEARCOAT_ROUGHNESS = 0.2;
-
-// Every foil material built on this page, and the environment map they share.
-// The list is module-wide because models load asynchronously and the ghost
-// references build their own copies of the same geometry.
-const LOD_FOIL_MATERIALS = [];
-let lodEnvironmentMap = null;
-
-function lodFoilKind(material) {
-  const name = (material.name || '').toLowerCase();
-  if (LOD_FOIL_KAPTON_NAMES.test(name)) return 'kapton';
-  if (LOD_FOIL_MYLAR_NAMES.test(name)) return 'mylar';
-  const c = material.color;
-  if (!c || material.map || material.transparent) return null;
-  const max = Math.max(c.r, c.g, c.b), min = Math.min(c.r, c.g, c.b);
-  if (!(max > 0)) return null;
-  const saturation = (max - min) / max;
-  if (saturation >= LOD_FOIL_MIN_SATURATION && c.r >= c.g && c.g >= c.b) return 'kapton';
-  if (saturation < LOD_FOIL_MAX_NEUTRAL_SATURATION && max >= LOD_FOIL_MIN_NEUTRAL_VALUE) return 'mylar';
-  return null;
-}
-
-function lodFoilMaterial(kind, source) {
-  const tint = kind === 'kapton' ? LOD_FOIL_GOLD : LOD_FOIL_ALUMINUM;
-  const material = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color().setRGB(tint[0], tint[1], tint[2], THREE.LinearSRGBColorSpace),
-    metalness: kind === 'kapton' ? 0.9 : 1.0,
-    roughness: kind === 'kapton' ? LOD_FOIL_KAPTON_ROUGHNESS : LOD_FOIL_MYLAR_ROUGHNESS,
-    side: source.side,
-    envMapIntensity: 1,
-  });
-  if (kind === 'kapton') {
-    material.clearcoat = LOD_FOIL_CLEARCOAT;
-    material.clearcoatRoughness = LOD_FOIL_CLEARCOAT_ROUGHNESS;
-  }
-  material.name = source.name ? `${source.name} (${kind})` : kind;
-  material.userData.foil = kind;
-  if (lodEnvironmentMap) material.envMap = lodEnvironmentMap;
-  LOD_FOIL_MATERIALS.push(material);
-  return material;
-}
-
-// Replace the foils of one parsed model in place, one new material per source
-// material however many meshes share it. Returns how many were swapped.
-function lodApplyFoils(object) {
-  const swapped = new Map();
-  let count = 0;
-  object.traverse((child) => {
-    if (!child.isMesh || !child.material) return;
-    const list = Array.isArray(child.material) ? child.material : [child.material];
-    const out = list.map((m) => {
-      if (!m || m.userData.foil) return m;
-      if (!swapped.has(m)) {
-        const kind = lodFoilKind(m);
-        swapped.set(m, kind ? lodFoilMaterial(kind, m) : m);
-        if (kind) count++;
-      }
-      return swapped.get(m);
-    });
-    child.material = Array.isArray(child.material) ? out : out[0];
-  });
-  return count;
-}
-
-// The environment the foils reflect, rendered by `lighting.js` from the lit
-// scene. Applies to every foil material built so far and to any built later.
-export function lodSetFoilEnvironment(texture) {
-  lodEnvironmentMap = texture || null;
-  for (const m of LOD_FOIL_MATERIALS) {
-    m.envMap = lodEnvironmentMap;
-    m.needsUpdate = true;
-  }
-}
-
 function makeHeatMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: { flowDir: { value: new THREE.Vector3(1, 0, 0) }, q0: { value: 0 }, logLo: { value: 0 }, logHi: { value: 1 } },
@@ -264,10 +161,7 @@ export function loadModelObject(model, label, onReady, onFail) {
         child.receiveShadow = true;
       }
     });
-    // A glTF carries authored materials, so it is the one format whose thermal
-    // foils can be recognized and given back their metal.
-    const foils = (model.format === 'glb' || model.format === 'gltf') ? lodApplyFoils(object) : 0;
-    onReady(object, `${model.format} (${meshes} mesh${meshes === 1 ? '' : 'es'}, ×${s}${foils ? `, ${foils} foil material${foils === 1 ? '' : 's'}` : ''})`);
+    onReady(object, `${model.format} (${meshes} mesh${meshes === 1 ? '' : 'es'}, ×${s})`);
   };
   const message = (err) => (err && err.message ? err.message : String(err));
   try {
@@ -656,7 +550,5 @@ export function createAssemblies(sidecar, frames, options = {}) {
     heatRange() { return { lo: Math.pow(10, heatLogLo), hi: Math.pow(10, heatLogHi), log: true }; },
     get enabled() { return enabled; },
     modelStatus(s) { const it = items[s]; return it && it.group ? it.group.userData.modelStatus : null; },
-    // What the metal foils reflect; `lighting.js` hands over its environment probe.
-    setEnvironmentMap(texture) { lodSetFoilEnvironment(texture); },
   };
 }

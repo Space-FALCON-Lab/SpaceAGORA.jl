@@ -60,7 +60,7 @@ export function start(payload, container = document.body) {
 
   const textureKey = (planet.texture || planet.name || '').toLowerCase();
   // Site terrain (DEM patches with draped imagery) sits in the globe group and cuts a hole in the sphere under it.
-  const terrain = createTerrain(terrainSpec, planet, { anisotropy: renderer.capabilities.getMaxAnisotropy(), sun: !!frames.sunDir });
+  const terrain = createTerrain(terrainSpec, planet, { anisotropy: renderer.capabilities.getMaxAnisotropy() });
   const globe = createGlobe(planet, textures[textureKey] || null, {
     anisotropy: renderer.capabilities.getMaxAnisotropy(),
     maxTextureSize: renderer.capabilities.maxTextureSize,
@@ -79,18 +79,11 @@ export function start(payload, container = document.body) {
   const lod = createAssemblies(sidecar, frames, { models, enabled: options.assemblies ?? true, assemblyLimit: options.assembly_limit ?? 256 });
   world.add(lod.group);
 
-  // The lighting handle is built further down, once the bodies it has to light
-  // exist; the dust and the plumes read it through this accessor every update,
-  // for the sun direction, its irradiance and the camera exposure.
-  const lightingHandle = () => lighting;
   // Regolith blown off the surface by a landing vehicle's descent engine; it
   // adds its own group to `world`, so it rides the inertial frame like the rest.
-  const dust = createDust(world, frames, terrain, lod, {
-    rotationAt: (t, out) => globe.rotationAt(t, out),
-    lighting: lightingHandle,
-  });
+  const dust = createDust(world, frames, terrain, lod, { rotationAt: (t, out) => globe.rotationAt(t, out) });
   // Thruster plumes: one per thruster glyph, driven by the recorded firing levels.
-  const plumes = createPlumes(sidecar, frames, lod, { raw: rawFrames, enabled: options.plumes ?? true, lighting: lightingHandle });
+  const plumes = createPlumes(sidecar, frames, lod, { raw: rawFrames, enabled: options.plumes ?? true });
 
   const refPaths = createPaths(pathSpecs, frames, {});
   if (refPaths.items.length) world.add(refPaths.group);
@@ -110,7 +103,7 @@ export function start(payload, container = document.body) {
   // around the followed vehicle, and 'path traced when paused' hands the scene
   // to three-gpu-pathtracer once the timeline and the camera are still.
   const lighting = createLighting(scene, renderer, frames, planet, {
-    camera, world, globe, terrain, lod, ev: options.ev,
+    camera, world, globe, terrain, lod,
     helpers: [craft.group, atmosphere && atmosphere.group, refPaths.group, refs.group, ensemble && ensemble.group],
   });
 
@@ -192,12 +185,6 @@ export function start(payload, container = document.body) {
     lightingModes: lighting.modes,
     lightingMode: lighting.mode,
     setLighting(m) { state.lightingMode = lighting.setMode(m); },
-    // Camera exposure: [ and ] step it (or its compensation) by a third of a
-    // stop, and the checkbox hands it to the meter or pins it where it is. The
-    // info panel's lighting row reads both back.
-    stepExposure(steps) { lighting.stepEv(steps); ui.setLightingStatus(lighting.status); },
-    exposureAuto: lighting.autoExposure,
-    setExposureAuto(v) { state.exposureAuto = lighting.setAutoExposure(v); ui.setLightingStatus(lighting.status); },
     openVideoDialog() { videoDialog && videoDialog.open(); },
   };
   let videoDialog = null;
@@ -506,7 +493,6 @@ export function start(payload, container = document.body) {
 
   const qWorld = new THREE.Quaternion();
   const shadowFocus = new THREE.Vector3();
-  const sunScene = new THREE.Vector3();
   const followPos = new THREE.Vector3();
   // Floating origin: the followed spacecraft's position (km, Float64). Every
   // buffer is uploaded relative to it and the world group is shifted by its
@@ -560,14 +546,6 @@ export function start(payload, container = document.body) {
     // mode), or the scene origin when nothing is selected.
     const selectedItem = state.selected >= 0 ? lod.items[state.selected] : null;
     lighting.update(t, selectedItem && selectedItem.group ? selectedItem.group.getWorldPosition(shadowFocus) : null);
-    // The surfaces shade themselves from the sun the lighting module placed:
-    // a lunar reflectance, and the terrain's own horizon shadows. A run with no
-    // sun direction never calls these, and both keep their Lambert look.
-    if (frames.sunDir) {
-      lighting.direction(sunScene);
-      if (terrain.levels.length) terrain.setSun(sunScene);
-      globe.setSun(sunScene);
-    }
     // A video export draws every frame itself, so it always takes the real-time
     // path: a path-traced frame would take seconds and never accumulate.
     if (recording || !lighting.render(scene, camera)) renderer.render(scene, camera);

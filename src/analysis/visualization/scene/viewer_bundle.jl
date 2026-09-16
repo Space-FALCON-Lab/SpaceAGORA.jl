@@ -115,36 +115,6 @@ end
 # Frame payload
 # ---------------------------------------------------------------------------
 
-# Heights for the viewer's terrain: Int16 steps of `scale` meters about `base`,
-# which is half the bytes of Float32 and still finer than any DEM the page
-# carries (1 cm over a NAC window, 4 cm over a LOLA one).
-@inline function _int16_base64(values::AbstractVector{<:Integer})::String
-    buf = Vector{Int16}(undef, length(values))
-    @inbounds for i in eachindex(values)
-        buf[i] = Int16(values[i])
-    end
-    ENDIAN_BOM == 0x04030201 || (buf .= bswap.(buf))
-    return base64encode(reinterpret(UInt8, buf))
-end
-
-"""
-    _height_block(values; quantize=true) -> Dict
-
-The `heights` entry of a terrain grid: `heights_i16` with its base and scale
-when the values quantize (the usual case), and plain `heights` Float32 when
-they do not (an empty or non-finite grid).
-"""
-function _height_block(values::AbstractVector{<:Real}; quantize::Bool=true)::Dict{String, Any}
-    lo, hi = isempty(values) ? (0.0, 0.0) : (Float64(minimum(values)), Float64(maximum(values)))
-    if !quantize || !isfinite(lo) || !isfinite(hi)
-        return Dict{String, Any}("heights" => _float32_base64(values))
-    end
-    base = 0.5 * (lo + hi)
-    scale = max(0.01, (hi - lo) / 65000)
-    q = [round(Int16, clamp((Float64(v) - base) / scale, -32768, 32767)) for v in values]
-    return Dict{String, Any}("heights_i16" => _int16_base64(q), "height_base_m" => base, "height_scale_m" => scale)
-end
-
 @inline function _float32_base64(values::AbstractVector{<:Real})::String
     buf = Vector{Float32}(undef, length(values))
     @inbounds for i in eachindex(values)
@@ -209,9 +179,6 @@ function build_viewer_frames(
     # Sun direction: one unit vector per row for the whole scene (the viewer's
     # sun lighting), absent when the run's ephemerides could not resolve the Sun.
     has_sun = _has_columns(df, ("sun_dir_1", "sun_dir_2", "sun_dir_3"))
-    # Earth direction: the same layout, written only away from Earth, for the
-    # page's earthshine light; absent when the run did not resolve Earth.
-    has_earth = _has_columns(df, ("earth_dir_1", "earth_dir_2", "earth_dir_3"))
     pos_f64 = S <= FLOAT64_POSITION_MAX_SPACECRAFT
     stride_lp = scene.link_pose_stride
     counts = Int[max(0, length(sc.links) - 1) for sc in scene.spacecraft]
@@ -256,7 +223,7 @@ function build_viewer_frames(
 
     bytes_per_frame = S * ((pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
                            (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
-                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + (has_earth ? 12 : 0) + 8
+                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + 8
     budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
                                         bytes_per_sat_frame=cld(bytes_per_frame, S))
     rows = kept_row_indices(n_rows, budget.stride)
@@ -272,7 +239,6 @@ function build_viewer_frames(
     drag = has_drag ? Vector{Float64}(undef, N * S) : Float64[]
     wind = has_wind ? Vector{Float64}(undef, N * S * 3) : Float64[]
     sun = has_sun ? Vector{Float64}(undef, N * 3) : Float64[]
-    earth = has_earth ? Vector{Float64}(undef, N * 3) : Float64[]
     lp = has_lp ? Vector{Float64}(undef, N * lp_total) : Float64[]
     ap = has_arm ? Vector{Float64}(undef, N * arm_total) : Float64[]
     plume = has_plume ? [Vector{Float64}(undef, N * S) for _ in PLUME_FRAME_FIELDS] : Vector{Float64}[]
@@ -282,14 +248,6 @@ function build_viewer_frames(
         @inbounds for (f, r) in enumerate(rows)
             for c in 1:3
                 sun[(f - 1) * 3 + c] = Float64(scols[c][r])
-            end
-        end
-    end
-    if has_earth
-        ecols = [df[!, "earth_dir_$(c)"] for c in 1:3]
-        @inbounds for (f, r) in enumerate(rows)
-            for c in 1:3
-                earth[(f - 1) * 3 + c] = Float64(ecols[c][r])
             end
         end
     end
@@ -382,7 +340,6 @@ function build_viewer_frames(
         "drag_n" => has_drag ? _float32_base64(drag) : nothing,
         "wind_ms" => has_wind ? _float32_base64(wind) : nothing,
         "sun_dir" => has_sun ? _float32_base64(sun) : nothing,
-        "earth_dir" => has_earth ? _float32_base64(earth) : nothing,
         "link_pose" => has_lp ? Dict{String, Any}(
             "stride" => stride_lp, "counts" => counts, "offsets" => lp_offsets, "total" => lp_total,
             "data" => _float32_base64(lp)
@@ -548,37 +505,26 @@ function viewer_payload(
 end
 
 """
-    terrain_payload(site_json; max_grid=512, finest_max_grid=2048, quantize_heights=true) -> Dict{String, Any}
+    terrain_payload(site_json; max_grid=512) -> Dict{String, Any}
 
 Site terrain for the page: the DEM grids of a site directory written by
-`scripts/dev/terrain/fetch_moon_site.py` (finest first) and its imagery
-levels (JPEG data URLs with their latitude/longitude boxes, plus
-`albedo_url`, the albedo-normalized copy of the same patch, where the fetch
-script wrote one). The viewer drapes the imagery over the displaced grids
-and cuts the globe open under the outermost level.
-
-The finest grid is subsampled to at most `finest_max_grid` samples per side
-and every other grid to `max_grid`: it is the finest grid the relief of the
-last few tens of meters comes from, and a NAC digital terrain model at its
-native 4 m carries real slope that the same grid at 8 m does not (10.9
-degrees RMS against 8.0 at Tranquility Base). Heights ride as Int16 steps
-about a base (`heights_i16`, `height_base_m`, `height_scale_m`) unless
-`quantize_heights=false`, which halves the bytes of the larger grid and
-still resolves it to a centimeter.
+`scripts/dev/terrain/fetch_moon_site.py` (finest first, each subsampled to
+at most `max_grid` samples per side, heights as base64 Float32) and its
+imagery levels (JPEG data URLs with their latitude/longitude boxes). The
+viewer drapes the imagery over the displaced grids and cuts the globe open
+under the outermost level.
 """
-function terrain_payload(site_json::AbstractString; max_grid::Integer=512,
-                         finest_max_grid::Integer=2048, quantize_heights::Bool=true)::Dict{String, Any}
+function terrain_payload(site_json::AbstractString; max_grid::Integer=512)::Dict{String, Any}
     isfile(site_json) || throw(ArgumentError("terrain site file not found: $(site_json)"))
     meta = JSON.parsefile(String(site_json))
     dir = dirname(String(site_json))
     grids = Dict{String, Any}[]
     radius = 0.0
-    for (k, d) in enumerate(meta["dem"])
+    for d in meta["dem"]
         g = TerrainModels.load_dem_grid(joinpath(dir, String(d["name"]) * ".json"))
         radius = Float64(get(d, "reference_radius_m", 1737400.0))
         rows, cols = size(g.heights)
-        limit = Int(k == 1 ? finest_max_grid : max_grid)
-        stride = max(1, ceil(Int, max(rows, cols) / limit))
+        stride = max(1, ceil(Int, max(rows, cols) / Int(max_grid)))
         sub = g.heights[1:stride:end, 1:stride:end]
         # the subsampled grid keeps the same outer edges only approximately; state the edges it does cover
         r2, c2 = size(sub)
@@ -587,7 +533,7 @@ function terrain_payload(site_json::AbstractString; max_grid::Integer=512,
             "name" => String(d["name"]), "rows" => r2, "cols" => c2,
             "lat_max" => g.lat_max, "lat_min" => g.lat_max - r2 * stride * dlat,
             "lon_min" => g.lon_min, "lon_max" => g.lon_min + c2 * stride * dlon,
-            _height_block(vec(permutedims(sub)); quantize=quantize_heights)...,
+            "heights" => _float32_base64(vec(permutedims(sub))),
             "source" => g.source,
         ))
     end
@@ -598,20 +544,11 @@ function terrain_payload(site_json::AbstractString; max_grid::Integer=512,
         for lvl in im["levels"]
             path = joinpath(dir, dirname(String(imagery_rel)), String(lvl["file"]))
             isfile(path) || continue
-            entry = Dict{String, Any}(
+            push!(levels, Dict{String, Any}(
                 "lat_min" => lvl["lat_min"], "lat_max" => lvl["lat_max"], "lon_min" => lvl["lon_min"], "lon_max" => lvl["lon_max"],
                 "width" => lvl["width"], "height" => lvl["height"], "m_per_px" => lvl["m_per_px"],
                 "url" => _data_url(read(path), "image/jpeg"),
-            )
-            # The albedo-normalized copy of the same patch, when the fetch script
-            # derived one: the page lights the surface itself and wants albedo,
-            # not the mosaic's own illumination. Absent, it uses `url`.
-            albedo_file = get(lvl, "albedo_file", nothing)
-            if albedo_file !== nothing
-                albedo_path = joinpath(dir, dirname(String(imagery_rel)), String(albedo_file))
-                isfile(albedo_path) && (entry["albedo_url"] = _data_url(read(albedo_path), "image/jpeg"))
-            end
-            push!(levels, entry)
+            ))
         end
     end
     site = meta["site"]
@@ -730,14 +667,13 @@ function render_viewer_html(payload::AbstractDict; viewer_dir::AbstractString=VI
     return replace(html, "__PAYLOAD__" => _script_safe_json(payload))
 end
 
-@inline function _viewer_options(; trail_s, trail_orbits, frame, speed, title, ev=nothing)
+@inline function _viewer_options(; trail_s, trail_orbits, frame, speed, title)
     frame in (:inertial, :planet_fixed) || throw(ArgumentError("frame must be :inertial or :planet_fixed, got $(frame)."))
     options = Dict{String, Any}("frame" => String(frame))
     trail_s === nothing || (options["trail_s"] = Float64(trail_s))
     trail_orbits === nothing || (options["trail_orbits"] = Float64(trail_orbits))
     speed === nothing || (options["speed"] = Float64(speed))
     title === nothing || (options["title"] = String(title))
-    ev === nothing || (options["ev"] = Float64(ev))
     return options
 end
 
@@ -754,8 +690,6 @@ bound the embedded trajectory; `trail_orbits` (default 3, estimated from the
 trajectory's periapsis passages) or `trail_s` set the trail window; `frame`
 is `:inertial` (default) or `:planet_fixed`; `speed` is the initial playback
 rate in simulated seconds per wall second; `title` names the page;
-`ev=` fixes the page's initial exposure value (the physical camera's EV; the
-viewer picks a metered default when it is omitted, and `[`/`]` step it).
 `textures=false` skips the surface texture and `texture_resolution` picks a
 tier (`:best`, the default, takes the largest registered, e.g. 8k for Earth;
 `"4k"` keeps the page small); `models` maps spacecraft ids to STL, OBJ, glTF
@@ -779,7 +713,6 @@ function export_visualization(
     frame::Symbol=:inertial,
     speed::Union{Nothing, Real}=nothing,
     title::Union{Nothing, AbstractString}=nothing,
-    ev::Union{Nothing, Real}=nothing,
     textures::Bool=true,
     texture_resolution=:best,
     models::AbstractDict=Dict{Int, String}(),
@@ -805,7 +738,7 @@ function export_visualization(
     payload = viewer_payload(
         scene, df;
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
-        options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ev=ev),
+        options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
         paths=paths, references=references, terrain=terrain

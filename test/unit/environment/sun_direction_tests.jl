@@ -75,44 +75,4 @@ _sun_declination_deg(d) = rad2deg(asin(clamp(d[3], -1.0, 1.0)))
             @test elevation_deg ≈ 10.8 atol = 0.6
         end
     end
-
-    # Earth is the second light source a lunar scene has. It hangs almost
-    # motionless over the sub-Earth point (0 N, 0 E), so from Tranquility Base
-    # at 23.5 E it stands high in the west; libration moves it by a few degrees.
-    @testset "Earth direction" begin
-        simple = SM_SUN.SimpleEphemeridesModel()
-        # The generalized entry point answers the Sun exactly as the wrapper does.
-        earth = make_no_gram_planet(:earth)
-        et = _sun_et(DateTime(2020, 6, 20, 21, 44, 0))
-        @test SM_SUN.ephemerides_body_direction_ii(earth, "sun", et, simple) ==
-              SM_SUN.ephemerides_sun_direction_ii(earth, et, simple)
-        # Earth seen from Earth is the origin of the frame, not a direction, and
-        # the simple model has no planetary ephemeris for anything else.
-        @test SM_SUN.ephemerides_body_direction_ii(earth, "earth", et, simple) === nothing
-        @test SM_SUN.ephemerides_body_direction_ii(make_no_gram_planet(:mars), "earth", 0.0, simple) === nothing
-
-        if !isdir(SUN_SPICE_PATH)
-            @info "SPICE kernels absent; skipping the lunar Earth elevation test" SUN_SPICE_PATH
-            @test true
-        else
-            moon = SM_SUN.Moon("", SUN_SPICE_PATH)
-            spice = SM_SUN.SpiceEphemeridesModel()
-            et_landing = utc2et("1969-07-20T20:05:05")
-            direction = SM_SUN.ephemerides_body_direction_ii(moon, "earth", et_landing, spice)
-            @test direction !== nothing
-            @test isapprox(norm(direction), 1.0; atol=1e-12)
-            # Earth is very nearly opposite the Sun's hemisphere here: the Sun was
-            # 10.8 degrees up and the Earth 60-odd, so the two are far apart.
-            sun = SM_SUN.ephemerides_sun_direction_ii(moon, et_landing, spice)
-            @test rad2deg(acos(clamp(dot(sun, direction), -1.0, 1.0))) > 60.0
-
-            lpi = SM_SUN.planet_frame_lpi(moon, et_landing, spice)
-            earth_pcpf = lpi * direction
-            lat, lon = deg2rad(0.67416), deg2rad(23.47314)
-            up = SVector{3, Float64}(cos(lat) * cos(lon), cos(lat) * sin(lon), sin(lat))
-            elevation_deg = rad2deg(asin(clamp(dot(up, earth_pcpf), -1.0, 1.0)))
-            @test 58.0 < elevation_deg < 70.0
-            @test SM_SUN.ephemerides_body_direction_ii(moon, "moon", et_landing, spice) === nothing
-        end
-    end
 end

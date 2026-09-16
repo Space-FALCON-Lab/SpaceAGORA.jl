@@ -13,21 +13,11 @@
 #
 #   python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --out data/terrain/moon/apollo11
 #   julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl
-#
-# The site directory is `data/terrain/moon/apollo11` unless `--site-json PATH`
-# or SPACEAGORA_TERRAIN_SITE names another one, which is how a derived copy of
-# the site (albedo-normalized imagery, say, from `fetch_moon_site.py --reuse`)
-# is drawn instead of the fetched original.
 include(joinpath(@__DIR__, "common.jl"))
 using Arrow, DataFrames
 
 const OUTDIR = demo_outdir("apollo11_landing")
-function apollo11_site_json()::String
-    i = findfirst(==("--site-json"), ARGS)
-    i !== nothing && i < length(ARGS) && return abspath(ARGS[i + 1])
-    return get(ENV, "SPACEAGORA_TERRAIN_SITE", joinpath(REPO_ROOT, "data", "terrain", "moon", "apollo11", "site.json"))
-end
-const SITE_JSON = apollo11_site_json()
+const SITE_JSON = joinpath(REPO_ROOT, "data", "terrain", "moon", "apollo11", "site.json")
 const MODEL = joinpath(MODELS_DIR, "apollo_lunar_module_nasa_3d_resources.glb")
 const LM_ROTATION_DEG = (-180, 90, 90)   # legs along body +z (down through the engine), hatch and windows along body +x
 isfile(SITE_JSON) || error("Site terrain not found at $(SITE_JSON); run scripts/dev/terrain/fetch_moon_site.py first.")

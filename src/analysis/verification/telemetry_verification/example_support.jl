@@ -44,17 +44,9 @@ function _example_smoke_args(args::SM.SimulationConfiguration)
         save_csv=keep_results
     )
 
-    return SM.SimulationConfiguration(
-        file_paths=args.file_paths,
+    return SM.SimConfig._with_configuration(args;
         simulation_settings=ss_smoke,
         mission_configuration=mc_smoke,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances
     )
 end
 

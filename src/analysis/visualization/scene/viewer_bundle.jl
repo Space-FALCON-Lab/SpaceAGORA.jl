@@ -10,7 +10,7 @@ const VIEWER_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "viewer")
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data", "textures"))
 # Plume-surface interaction block of the frames payload: one Float32 array per
 # quantity, frame-major then spacecraft, from the `sc{i}_plume_*` result columns.
-const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s", "eroded_kg", "ejecta_mps", "ground_effect_n", "regime", "erosion_radius_m", "crater_depth_m", "crater_radius_m", "ejecta_angle_deg", "ejecta_range_m", "ejecta_escape_frac")
+const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s", "eroded_kg", "ejecta_mps", "ground_effect_n")
 
 const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "plumes.js", "timeline.js", "dust.js", "lighting.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (

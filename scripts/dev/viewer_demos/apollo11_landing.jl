@@ -148,24 +148,6 @@ let onset = plume_erosion_onset_height(plume.config, 11_500.0)
         " m/s, peak surface pressure ", round(maximum(df.sc1_plume_pressure_pa); digits=1), " Pa, peak shear ", round(maximum(df.sc1_plume_shear_pa); digits=2), " Pa")
     println("  regolith eroded ", round(last.sc1_plume_eroded_kg; digits=0), " kg; peak ground-effect thrust ",
         round(maximum(df.sc1_plume_ground_effect_n); digits=1), " N")
-    regimes = ("none", "viscous erosion", "diffusion-driven flow", "bearing-capacity failure")
-    dominant = maximum(Int, round.(df.sc1_plume_regime))
-    println("  dominant erosion regime ", regimes[dominant + 1], "; widest eroding radius ",
-        round(maximum(df.sc1_plume_erosion_radius_m); digits=1), " m")
-    println("  crater ", round(100 * last.sc1_plume_crater_depth_m; digits=2), " cm deep, ",
-        round(last.sc1_plume_crater_radius_m; digits=1), " m across the edge (a stationary vehicle: see the docs)")
-    println("  ejecta ", round(maximum(df.sc1_plume_ejecta_angle_deg); digits=2), " deg above the horizontal, deposition out to ",
-        round(maximum(df.sc1_plume_ejecta_range_m); digits=0), " m, escaping fraction ",
-        round(maximum(df.sc1_plume_ejecta_escape_frac); sigdigits=2))
-    # The crater grid is fixed to the impingement point, so how far the vehicle
-    # flew while it was eroding says how much of an idealization that is.
-    let i = below === nothing ? nrow(df) : below
-        p(k) = SVector{3, Float64}(df.sc1_pos_1[k], df.sc1_pos_2[k], df.sc1_pos_3[k])
-        up = normalize(p(nrow(df)))
-        d = p(nrow(df)) - p(i)
-        println("  horizontal travel below the erosion onset height: ",
-            round(norm(d - dot(d, up) * up); digits=0), " m (the crater grid does not follow it)")
-    end
 end
 
 html = export_visualization(prefix; max_frames=4000, trail_orbits=1, texture_resolution="4k",

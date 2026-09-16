@@ -10,14 +10,6 @@
 // that fades them toward the tip and flickers them in time, so nothing writes
 // depth and the plumes never occlude the vehicle.
 //
-// How much of that look survives depends on the air around the nozzle. A plume
-// is luminous because the exhaust has ambient gas to shock, mix with and burn
-// against; in vacuum a hypergolic engine shows almost nothing -- the Apollo
-// films of the descent engine record a bare bell against the ground, not a
-// flame -- so the page fades the shroud out and leaves a faint blue-white core
-// as the ambient density falls (`frames.density`, or the scene's lack of an
-// atmosphere model when the run saved none).
-//
 // Every top-level name here is prefixed `plume`/`PLUME_`: the CDN page builder
 // concatenates all viewer modules into one script scope.
 import * as THREE from 'three';
@@ -48,30 +40,6 @@ const PLUME_COLOR_DECADES = 1.5;
 const PLUME_COOL_COLOR = new THREE.Color(0.62, 0.78, 1.0);
 const PLUME_HOT_COLOR = new THREE.Color(1.0, 0.72, 0.38);
 const PLUME_CORE_COLOR = new THREE.Color(1.0, 0.96, 0.9);
-// Ambient density and what a plume looks like in it. A descent engine at sea
-// level draws a bright sooty column; by about 70 km (1e-5 kg/m^3) it is a thin
-// diffuse glow; below roughly 1e-9 kg/m^3 there is nothing left to excite and
-// the exhaust is invisible. The look follows the logarithm of the density
-// between those two, which is where the transition actually happens.
-const PLUME_DENSITY_FULL_KG_M3 = 1e-5;
-const PLUME_DENSITY_VACUUM_KG_M3 = 1e-9;
-// What is left in vacuum: a few percent of the core's brightness, almost none
-// of the shroud's, and the color of the recombining hypergolic gas itself.
-const PLUME_VACUUM_CORE_SCALE = 0.08;
-const PLUME_VACUUM_SHROUD_SCALE = 0.015;
-const PLUME_VACUUM_COLOR = new THREE.Color(0.74, 0.86, 1.0);
-// A plume is emissive, and this shader writes display values rather than the
-// radiance the lit materials write: how bright an exhaust looks is a property
-// of the exhaust, not of how the camera around it is exposed. So the exposure
-// the lighting module sets -- about ten on a page lit by a grazing lunar sun,
-// where it is there to lift a dark ground to a mid tone -- is deliberately not
-// applied on top; it would lift the faint vacuum core back into a flame. It is
-// still read, because an exposure below one means a scene being compressed
-// rather than lifted, and the plume is dimmed with it. The sun's irradiance
-// dims it the same way, so a plume at Saturn keeps its contrast against the
-// darker ground there.
-const PLUME_SCALE_MIN = 0.05;
-const PLUME_REFERENCE_IRRADIANCE_W_M2 = 1361.0;
 const PLUME_IDLE_GLYPH_OPACITY = 0.35;
 const PLUME_IDLE_GLYPH_EMISSIVE = 0.0;
 const PLUME_LIVE_GLYPH_EMISSIVE = 0.9;
@@ -108,7 +76,6 @@ const PLUME_FRAGMENT = `
   uniform float uTime;
   uniform float uSeed;
   uniform float uIntensity;
-  uniform float uVisibility;
   varying float vT;
   varying float vAng;
   #include <logdepthbuf_pars_fragment>
@@ -126,7 +93,7 @@ const PLUME_FRAGMENT = `
     // thruster that sits inside a 3D model only shows from the model's skin out.
     float taper = pow(1.0 - vT, 0.9);
     float throat = smoothstep(0.0, 0.08, vT);
-    float a = uIntensity * uVisibility * uLevel * taper * throat * flicker;
+    float a = uIntensity * uLevel * taper * throat * flicker;
     if (a <= 0.002) discard;
     gl_FragColor = vec4(uColor * (0.7 + 0.6 * uLevel), a);
   }
@@ -140,7 +107,6 @@ function plumeMaterial(color, intensity, seed) {
       uTime: { value: 0 },
       uSeed: { value: seed },
       uIntensity: { value: intensity },
-      uVisibility: { value: 1 },
     },
     vertexShader: PLUME_VERTEX,
     fragmentShader: PLUME_FRAGMENT,
@@ -169,40 +135,6 @@ function plumeLengthFor(maxThrustN) {
   return Math.max(PLUME_MIN_LENGTH_M, PLUME_REFERENCE_LENGTH_M * Math.pow(ratio, PLUME_LENGTH_EXPONENT));
 }
 
-/**
- * How atmospheric a plume should look at an ambient density of `density`
- * kg/m^3: 1 at and above PLUME_DENSITY_FULL_KG_M3, 0 at and below
- * PLUME_DENSITY_VACUUM_KG_M3, logarithmic between them. A non-finite density
- * means the run saved none and the caller decides from the scene instead.
- */
-export function plumeAtmosphereFactor(density) {
-  if (!Number.isFinite(density) || density <= PLUME_DENSITY_VACUUM_KG_M3) return 0;
-  if (density >= PLUME_DENSITY_FULL_KG_M3) return 1;
-  const span = Math.log10(PLUME_DENSITY_FULL_KG_M3 / PLUME_DENSITY_VACUUM_KG_M3);
-  return Math.min(1, Math.max(0, Math.log10(density / PLUME_DENSITY_VACUUM_KG_M3) / span));
-}
-
-// The lighting handle, which main.js passes as a function because the module
-// is built after this one (it has to light the bodies that already exist).
-// Missing or half-built handles are fine: the plumes then keep the brightness
-// they had before there was a lighting module at all.
-function plumeLighting(options) {
-  const l = options.lighting;
-  return typeof l === 'function' ? l() : (l || null);
-}
-
-// Brightness the page draws the plume at, relative to the look it was tuned
-// for: never above it, and dimmed on a page with a weaker sun or a compressed
-// exposure (see the note on PLUME_SCALE_MIN). 1 without a lighting handle.
-function plumeExposureScale(lighting) {
-  if (!lighting) return 1;
-  const exposure = Number.isFinite(lighting.exposure) && lighting.exposure > 0 ? lighting.exposure : 1;
-  const irradiance = Number.isFinite(lighting.sunIrradiance) && lighting.sunIrradiance > 0
-    ? lighting.sunIrradiance : PLUME_REFERENCE_IRRADIANCE_W_M2;
-  const scale = Math.min(1, irradiance / PLUME_REFERENCE_IRRADIANCE_W_M2) * Math.min(1, exposure);
-  return Math.min(1, Math.max(PLUME_SCALE_MIN, scale));
-}
-
 // One plume: a translucent shroud with a brighter core, apex on the thruster
 // and axis along its exhaust direction, in the link group's own (meter) frame.
 function plumeBuild(geometry, spec, index) {
@@ -212,11 +144,9 @@ function plumeBuild(geometry, spec, index) {
   const radius = PLUME_WIDTH_FRACTION * length;
   const color = plumeColorFor(spec.max_thrust_n);
   const seed = 7.3 * index + 1.1;
-  const shroudColor = color.clone();
-  const coreColor = PLUME_CORE_COLOR.clone().lerp(color, 0.35);
-  const shroud = new THREE.Mesh(geometry, plumeMaterial(shroudColor, 0.75, seed));
+  const shroud = new THREE.Mesh(geometry, plumeMaterial(color, 0.75, seed));
   shroud.scale.set(radius, length, radius);
-  const core = new THREE.Mesh(geometry, plumeMaterial(coreColor, 1.0, seed + 3.7));
+  const core = new THREE.Mesh(geometry, plumeMaterial(PLUME_CORE_COLOR.clone().lerp(color, 0.35), 1.0, seed + 3.7));
   core.scale.set(PLUME_CORE_WIDTH * radius, PLUME_CORE_LENGTH * length, PLUME_CORE_WIDTH * radius);
   for (const m of [shroud, core]) {
     m.frustumCulled = false;
@@ -227,18 +157,13 @@ function plumeBuild(geometry, spec, index) {
   const dir = new THREE.Vector3(spec.direction[0], spec.direction[1], spec.direction[2]);
   if (dir.lengthSq() > 0) group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
   group.visible = false;
-  return { group, shroud, core, length, radius, shroudColor, coreColor };
+  return { group, shroud, core, length, radius };
 }
 
 /**
  * createPlumes(sidecar, frames, lod, options)
  *   options.raw      the undecoded frames payload (carries thruster_level / thruster_counts)
  *   options.enabled  start visible (default true)
- *   options.lighting the lighting handle (or a function returning it), read
- *                    each update for `sunIrradiance` and `exposure`; absent
- *                    keeps the brightness the page had before it existed
- *   options.vacuum   force the vacuum look (true) or the atmospheric one
- *                    (false); by default the run's density decides
  * Returns { update(t), setVisible(v), visible, levelsAt(t, s, out), counts(s), available }.
  */
 export function createPlumes(sidecar, frames, lod, options = {}) {
@@ -265,19 +190,6 @@ export function createPlumes(sidecar, frames, lod, options = {}) {
     const a = i * total + o, b = (i + 1) * total + o;
     for (let k = 0; k < n; k++) out[k] = data[a + k] + f * (data[b + k] - data[a + k]);
     return out;
-  }
-
-  // How much air the plume has around it. A run that saved density answers per
-  // frame and per spacecraft; one that did not falls back to the scene, where
-  // a missing atmosphere block means the run flew with `NoAtmosphereModel` --
-  // vacuum -- and any other model keeps the full atmospheric look.
-  const densityAvailable = typeof frames.hasScalar === 'function' && frames.hasScalar('density');
-  const sceneAtmosphere = options.vacuum === true ? 0
-    : options.vacuum === false ? 1
-    : (sidecar && sidecar.atmosphere ? 1 : 0);
-  function plumeAtmosphereAt(t, s) {
-    if (options.vacuum !== undefined || !densityAvailable) return sceneAtmosphere;
-    return plumeAtmosphereFactor(frames.scalarAt('density', t, s));
   }
 
   const geometry = plumeUnitCone();
@@ -343,15 +255,9 @@ export function createPlumes(sidecar, frames, lod, options = {}) {
       if (last !== null) clock += Math.min(0.25, Math.max(0, now - last));
       last = now;
       if (!visible) return;
-      const lighting = plumeLighting(options);
-      const exposureScale = plumeExposureScale(lighting);
       for (let s = 0; s < items.length; s++) {
         const item = items[s];
         if (!item.plumes.length) continue;
-        // Ambient density: full plume in air, a faint core in vacuum.
-        const atmos = plumeAtmosphereAt(t, s);
-        const shroudScale = exposureScale * (PLUME_VACUUM_SHROUD_SCALE + (1 - PLUME_VACUUM_SHROUD_SCALE) * atmos);
-        const coreScale = exposureScale * (PLUME_VACUUM_CORE_SCALE + (1 - PLUME_VACUUM_CORE_SCALE) * atmos);
         const levels = levelsAt(t, s, item.buffer);
         for (let k = 0; k < item.plumes.length; k++) {
           const p = item.plumes[k];
@@ -382,11 +288,6 @@ export function createPlumes(sidecar, frames, lod, options = {}) {
           const glow = 0.3 + 0.7 * shown;
           p.shroud.material.uniforms.uLevel.value = glow;
           p.core.material.uniforms.uLevel.value = glow;
-          // In vacuum only the recombining core is left, and it is blue-white.
-          p.shroud.material.uniforms.uVisibility.value = shroudScale;
-          p.core.material.uniforms.uVisibility.value = coreScale;
-          p.shroud.material.uniforms.uColor.value.copy(p.shroudColor).lerp(PLUME_VACUUM_COLOR, 1 - atmos);
-          p.core.material.uniforms.uColor.value.copy(p.coreColor).lerp(PLUME_VACUUM_COLOR, 1 - atmos);
           p.shroud.material.uniforms.uTime.value = clock;
           p.core.material.uniforms.uTime.value = clock;
         }

@@ -145,11 +145,3 @@ remote_runs/
 data/merra2_native/
 # Viewer development payload written by write_viewer_dev_payload
 viewer/dev_data.js
-
-# Plume-surface interaction field tables. Generated from the nozzle by
-# scripts/dev/psi/build_plume_field.jl and versioned (about 85 kB each) so a run
-# reproduces without rebuilding them; see data/psi/README.md for what each one
-# was built from. Nothing else under data/psi/ is tracked.
-data/psi/*
-!data/psi/README.md
-!data/psi/*.json

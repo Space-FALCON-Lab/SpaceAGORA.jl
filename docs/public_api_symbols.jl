@@ -243,6 +243,38 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Regolith Erosion Regimes",
+        items = [
+            (owner = :SpaceAGORA, symbol = :RegolithProperties, rendered = "SpaceAGORA.RegolithProperties"),
+            (owner = :SpaceAGORA, symbol = :lunar_mare_regolith, rendered = "SpaceAGORA.lunar_mare_regolith"),
+            (owner = :SpaceAGORA, symbol = :ErosionEnvironment, rendered = "SpaceAGORA.ErosionEnvironment"),
+            (owner = :SpaceAGORA, symbol = :erosion_environment, rendered = "SpaceAGORA.erosion_environment"),
+            (owner = :SpaceAGORA, symbol = :ErosionRegimeKind, rendered = "SpaceAGORA.ErosionRegimeKind"),
+            (owner = :SpaceAGORA, symbol = :NoErosion, rendered = "SpaceAGORA.NoErosion"),
+            (owner = :SpaceAGORA, symbol = :ViscousErosion, rendered = "SpaceAGORA.ViscousErosion"),
+            (owner = :SpaceAGORA, symbol = :DiffusionDrivenFlowRegime, rendered = "SpaceAGORA.DiffusionDrivenFlowRegime"),
+            (owner = :SpaceAGORA, symbol = :BearingCapacityFailureRegime, rendered = "SpaceAGORA.BearingCapacityFailureRegime"),
+            (owner = :SpaceAGORA, symbol = :AbstractErosionRegime, rendered = "SpaceAGORA.AbstractErosionRegime"),
+            (owner = :SpaceAGORA, symbol = :ViscousErosionRoberts, rendered = "SpaceAGORA.ViscousErosionRoberts"),
+            (owner = :SpaceAGORA, symbol = :ViscousErosionEnergyFlux, rendered = "SpaceAGORA.ViscousErosionEnergyFlux"),
+            (owner = :SpaceAGORA, symbol = :DiffusionDrivenFlow, rendered = "SpaceAGORA.DiffusionDrivenFlow"),
+            (owner = :SpaceAGORA, symbol = :BearingCapacityFailure, rendered = "SpaceAGORA.BearingCapacityFailure"),
+            (owner = :SpaceAGORA, symbol = :erosion_rate, rendered = "SpaceAGORA.erosion_rate"),
+            (owner = :SpaceAGORA, symbol = :erosion_onset, rendered = "SpaceAGORA.erosion_onset"),
+            (owner = :SpaceAGORA, symbol = :regime_kind, rendered = "SpaceAGORA.regime_kind"),
+            (owner = :SpaceAGORA, symbol = :default_erosion_regimes, rendered = "SpaceAGORA.default_erosion_regimes"),
+            (owner = :SpaceAGORA, symbol = :regolith_erosion_rate, rendered = "SpaceAGORA.regolith_erosion_rate"),
+            (owner = :SpaceAGORA, symbol = :shields_threshold_shear_pa, rendered = "SpaceAGORA.shields_threshold_shear_pa"),
+            (owner = :SpaceAGORA, symbol = :energy_flux_threshold_shear_pa, rendered = "SpaceAGORA.energy_flux_threshold_shear_pa"),
+            (owner = :SpaceAGORA, symbol = :soil_bearing_capacity_pa, rendered = "SpaceAGORA.soil_bearing_capacity_pa"),
+            (owner = :SpaceAGORA, symbol = :mean_thermal_speed_mps, rendered = "SpaceAGORA.mean_thermal_speed_mps"),
+            (owner = :SpaceAGORA, symbol = :mean_lift_height_m, rendered = "SpaceAGORA.mean_lift_height_m"),
+            (owner = :SpaceAGORA, symbol = :gas_dynamic_viscosity_pa_s, rendered = "SpaceAGORA.gas_dynamic_viscosity_pa_s"),
+            (owner = :SpaceAGORA, symbol = :pressure_diffusion_depth_m, rendered = "SpaceAGORA.pressure_diffusion_depth_m"),
+            (owner = :SpaceAGORA, symbol = :soil_tensile_strength_pa, rendered = "SpaceAGORA.soil_tensile_strength_pa")
+        ]
+    ),
+    (
         title = "Mesh Aerodynamics",
         items = [
             (owner = :SpaceAGORA, symbol = :MeshAeroPanels, rendered = "SpaceAGORA.MeshAeroPanels"),

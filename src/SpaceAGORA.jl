@@ -77,6 +77,14 @@ using .SimulationModel: DescentPhaseTargets, ApolloDescentConfig, ApolloDescentS
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
 using .SimulationModel: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+using .SimulationModel: RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
+using .SimulationModel: ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime
+using .SimulationModel: AbstractErosionRegime, ViscousErosionRoberts, ViscousErosionEnergyFlux
+using .SimulationModel: DiffusionDrivenFlow, BearingCapacityFailure
+using .SimulationModel: erosion_rate, erosion_onset, regime_kind, default_erosion_regimes, regolith_erosion_rate
+using .SimulationModel: shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
+using .SimulationModel: mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
+using .SimulationModel: pressure_diffusion_depth_m, soil_tensile_strength_pa
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
@@ -92,6 +100,14 @@ using .SimulationModel: plume_surface_footprint, plume_erosion_onset_height, plu
 @doc (@doc SimulationModel.PlumeSurfaceConfig) PlumeSurfaceConfig
 @doc (@doc SimulationModel.PlumeSurfaceInteractionModel) PlumeSurfaceInteractionModel
 @doc (@doc SimulationModel.PlumeSurfaceState) PlumeSurfaceState
+@doc (@doc SimulationModel.RegolithProperties) RegolithProperties
+@doc (@doc SimulationModel.ErosionEnvironment) ErosionEnvironment
+@doc (@doc SimulationModel.ErosionRegimeKind) ErosionRegimeKind
+@doc (@doc SimulationModel.AbstractErosionRegime) AbstractErosionRegime
+@doc (@doc SimulationModel.ViscousErosionRoberts) ViscousErosionRoberts
+@doc (@doc SimulationModel.ViscousErosionEnergyFlux) ViscousErosionEnergyFlux
+@doc (@doc SimulationModel.DiffusionDrivenFlow) DiffusionDrivenFlow
+@doc (@doc SimulationModel.BearingCapacityFailure) BearingCapacityFailure
 @doc (@doc SimulationModel.StateAnchor) StateAnchor
 @doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
@@ -574,6 +590,14 @@ export DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDesce
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
 export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+export RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
+export ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime
+export AbstractErosionRegime, ViscousErosionRoberts, ViscousErosionEnergyFlux
+export DiffusionDrivenFlow, BearingCapacityFailure
+export erosion_rate, erosion_onset, regime_kind, default_erosion_regimes, regolith_erosion_rate
+export shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
+export mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
+export pressure_diffusion_depth_m, soil_tensile_strength_pa
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

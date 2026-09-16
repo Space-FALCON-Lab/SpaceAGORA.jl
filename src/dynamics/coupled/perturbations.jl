@@ -5,7 +5,7 @@ using SatelliteToolboxGeomagneticField
 using CSV
 using DataFrames
 using SpecialFunctions: loggamma
-include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
+using ...QuaternionMath
 # import .config
 # Define delta function
 δ(x,y) = ==(x,y)

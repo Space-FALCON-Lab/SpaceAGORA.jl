@@ -25,6 +25,7 @@
         "flat_route_parity_probes.jl",
         "kinematics_probes.jl",
         "configuration_copy_probes.jl",
+        "shared_math_ownership_probes.jl",
     ]
     coverage_flags = Base.JLOptions().code_coverage == 0 ? String[] : ["--code-coverage=user"]
     for probe in probe_files

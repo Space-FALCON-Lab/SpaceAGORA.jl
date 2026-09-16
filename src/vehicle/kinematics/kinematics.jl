@@ -3,7 +3,7 @@ module Kinematics
 using StaticArrays
 using LinearAlgebra
 using ..SpacecraftModels
-include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
+using ..QuaternionMath
 
 export rotate_to_inertial, rotate_to_body, rotate_link
 

@@ -31,10 +31,9 @@ end
 using SpaceAGORA
 const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
-# _spice_lock() in the raw-included file walks the module ancestry for a
-# RuntimeServices binding; bind the package's own so it finds the real lock.
+# Exercise the production owner; the isolated error-path sandbox above remains raw.
 const RuntimeServices = SpaceAGORA.RuntimeServices
-include(REFSYS_PATH)
+using .SimulationModel.FrameTransforms
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)

@@ -36,7 +36,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/references.js` | reference ghosts: translucent copies of a spacecraft driven by an external state table |
 | `src/video.js` | MP4 export through WebCodecs and mp4-muxer (`vendor/mp4-muxer.mjs`, MIT), WebM fallback |
 | `three-gpu-pathtracer@0.0.23`, `three-mesh-bvh@0.7.8`, `three/examples/jsm/postprocessing/Pass.js` (import-map entries, CDN pages only) | the path-traced lighting mode; absent from the offline bundle, which then offers real-time lighting only |
-| `src/terrain.js` | landing-site terrain: DEM-displaced nested patches draped with imagery that sharpens toward the site, and the hole they cut in the globe |
+| `src/terrain.js` | landing-site terrain: a view-dependent quadtree of DEM-displaced patches draped with the imagery tiles (inheriting the nearest present ancestor's tile where none exists), and the hole it cuts in the globe |
 | `src/dust.js` | regolith blown off the surface by a descent engine: a GPU particle sheet driven by the `frames.plume` block, a ground haze disk and a scour mark |
 | `src/plumes.js` | thruster plumes: one additive, flickering cone pair per thruster, driven by the recorded firing levels, with the idle cone glyphs dimmed |
 | `src/plots.js` | time-history plot panel: any quantity in the panels opens its history over the run, with the playback cursor and click-to-seek |

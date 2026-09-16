@@ -671,6 +671,9 @@ export function createTerrain(spec, planet, options = {}) {
     update,
     setGlobeTexture,
     setVisible(v) { group.visible = v; },
+    // The imagery's required credit, which the payload carries so a page that ships
+    // archive data says where it came from.
+    get attribution() { return (tiles.attribution || []).join(' \u00b7 '); },
     get modelStatus() {
       // the finest tiles are sampled finer than their source resolves, so the panel reports the
       // feature scale the payload states beside the sampling rather than the sampling alone

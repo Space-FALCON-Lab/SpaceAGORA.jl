@@ -6,10 +6,10 @@ Base.@kwdef struct KSPropagationParams
     Ω::Float64 = 0.0
 end
 
-"""Return the paper-convention KS energy parameter `h_KS = -specific_energy`."""
+"""Return the KS energy parameter `h_KS = -specific_energy`."""
 ks_energy_parameter(specific_energy::Real) = -Float64(specific_energy)
 
-"""Recover specific orbital energy from the paper-convention KS parameter."""
+"""Recover specific orbital energy from the KS parameter."""
 specific_energy_from_ks(h_ks::Real) = -Float64(h_ks)
 
 function _ks_skew_rotation(params)
@@ -118,8 +118,7 @@ function ks_rhs(
     end
     acceleration4 = SVector(acceleration[1], acceleration[2], acceleration[3], 0.0)
     du = u_prime
-    # Paper convention: h_KS = -ε and ω_KS² = h_KS/2. The older
-    # implementation stored -2ε, which required the equivalent -h*u/4 term.
+
     du_prime = -0.5 * h_ks .* u + 0.5 * r .* (transpose(_ks_L(u)) * acceleration4)
     dh_ks = -r * dot(vvec, acceleration)
     dt = r

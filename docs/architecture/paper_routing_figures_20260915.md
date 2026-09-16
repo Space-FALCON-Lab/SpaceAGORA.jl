@@ -51,7 +51,33 @@ fastest *parallel* pinned route at that point; serial has its own column.
 | 8 | 12.117 | 2.721 | inner_only | 2.878 | 4.45 | 4.21 |
 | 12 | 12.117 | 2.663 | outer_inner_static | 2.652 | 4.55 | 4.57 |
 
-### P3 / P4 — Monte Carlo resource ladders (cold store)
+### P3 / P4 — Monte Carlo resource ladders
+
+Both ladders were measured twice: once from the fresh worktree's empty
+calibration store, and once after it had converged. The warm columns are the
+ones to quote; the cold ones are in the `_cold_store` directory and in finding 6.
+
+Warm, `independent_1sat_1hr`, 256 samples:
+
+| budget | serial | best static | route | R6 | serial/R6 | R6/best static |
+|---:|---:|---:|---|---:|---:|---:|
+| 1 | 8.770 | 8.964 | outer_threads | 9.046 | 0.97 | 1.01 |
+| 2 | 9.188 | 4.645 | outer_threads | 3.460 | 2.66 | 0.75 |
+| 4 | 9.006 | 2.589 | outer_threads | 1.760 | 5.12 | 0.68 |
+| 8 | 9.274 | 1.555 | outer_threads | 1.470 | 6.31 | 0.95 |
+| 12 | 9.368 | 1.414 | outer_process | 1.531 | 6.12 | 1.08 |
+
+Warm, `montecarlo_heavy_aerobraking`, 32 samples:
+
+| budget | serial | best static | route | R6 | serial/R6 | R6/best static |
+|---:|---:|---:|---|---:|---:|---:|
+| 1 | 23.581 | 24.255 | outer_process | 22.712 | 1.04 | 0.94 |
+| 2 | 22.206 | 12.085 | outer_threads | 8.211 | 2.70 | 0.68 |
+| 4 | 22.123 | 6.358 | outer_process | 4.138 | 5.35 | 0.65 |
+| 8 | 22.259 | 3.592 | outer_process | 2.959 | 7.52 | 0.82 |
+| 12 | 22.602 | 2.882 | outer_process | 3.486 | 6.48 | 1.21 |
+
+Cold-store versions of the same two tables (superseded):
 
 `independent_1sat_1hr`, 256 samples:
 
@@ -106,7 +132,25 @@ dispatches to eight worker processes *and* runs four samples on the coordinator.
 Neither `outer_threads` nor `outer_process` can express that, which is why R6 is
 ~1.5x faster than both at budgets 2 and 4 on both Monte Carlo workloads.
 
-**4. R6's variance is far higher than the static routes'.** At P4's budget 12 its
+**4a. The cold-store result at budget 8 was an artifact, and is withdrawn.**
+Measured warm, R6 runs budget 8 in 1.470 s against the best static route's
+1.555 s on P3 (cold: 2.453 against 1.628) and 2.959 s against 3.592 s on P4
+(cold: 3.805 against 3.624). The controls move 1-5% between the two runs, which
+is machine noise; R6 moves 40% and 22% at that one rung and is unchanged
+elsewhere. The earlier reading -- that the bandit had discarded a measured-better
+arm -- was a converging calibration store and nothing more.
+
+**4b. At the full budget R6 pays for exploration, and a five-repeat median
+charges it.** The per-repeat routes at budget 12 are identical on both
+workloads: process, process, *threads*, *threads*, process. Its exploiting
+campaigns are the fastest measurements at that point on either workload --
+1.057 s against the best static route's 1.414 s on P3, 2.524 s against 2.832 s
+on P4 -- but repeats 3 and 4 cost 2.5 s and 4.1 s, and the median lands on one
+of them. At budget 8 there is no flapping and R6 wins outright. Quote both: the
+median over a short campaign sequence is what a user with five campaigns to run
+experiences, and the steady state is what the routing itself achieves.
+
+**5. R6's variance is far higher than the static routes'.** At P4's budget 12 its
 repeats span 2.53–3.97 s while `outer_process` holds 2.96–3.07 s. Its median
 over five repeats is correspondingly unstable, and the apparent regressions at
 budgets 8 and 12 did not reproduce when those points were measured in isolation
@@ -114,7 +158,7 @@ budgets 8 and 12 did not reproduce when those points were measured in isolation
 budget 12). Any single-median comparison of an adaptive route against a pinned
 one should be read with that spread in view.
 
-**5. Cold and warm calibration stores are different measurements.** This run
+**6. Cold and warm calibration stores are different measurements.** This run
 started from a fresh worktree, so the RHS-calibration and inner-policy stores
 began empty and were still converging while P3 and P4 ran; every prior B- and
 L-series number used the repository's accumulated store. A warm re-run of P3/P4
@@ -135,13 +179,40 @@ is recorded in the "Calibration-store warmth" section of the generated tables.
   plus a browser and an editor drove a global OOM that killed a desktop process.
   The benchmark survived it; the desktop did not.
 
+## The S1 speedups rest on a different serial baseline
+
+`paper_scenarios`' S1 reports up to 21.6x at L50/4096 on twelve threads where P2
+measures 4.57x. Both are arithmetically correct; they divide by different
+denominators, and the difference is 4.5x of baseline, not of parallel
+performance.
+
+Two differences were measured, and only one of them matters:
+
+- **Integrator step ceiling, which cancels.** S1 builds its workload with
+  `dt_max_orbit=2.0` against the ppb catalog's `20.0` at identical tolerances,
+  so S1 does ten times the RHS evaluations per simulated second. That scales
+  both sides of a ratio equally and drops out of it.
+- **The RHS execution mode of the baseline, which does not.** S1 pins
+  `rhs_mode=serial` for its serial rows and `flat` for its parallel rows; ppb's
+  `serial` mode turns batched RHS off under profile R0 but leaves the execution
+  plan on `auto`, which still takes the batched kernel on one thread. Measured
+  on `gravity_4096sat_l50_vacuum_5800s`, one thread, three repeats: `auto`
+  11.84-12.13 s against `serial` 53.90-53.93 s -- **4.5x**.
+
+The two reconcile completely. S1's 160.77 s serial baseline, divided by ten for
+the step ceiling and scaled to P2's mission, predicts 51.8 s; ppb measures
+53.9 s with the serial RHS pinned. Re-basing S1's 4096 point on the `auto`
+baseline gives 35.7 / 7.45 = 4.8x, against P2's 4.57x.
+
+**Consequence for the paper.** Every S1 speedup -- the 21.6x, and the
+10.23x/11.80x/10.17x of the CPU-only scaling work -- divides by a serial run
+4.5x slower than the fastest single-threaded code the library runs on its own
+defaults. Both definitions are defensible ("all parallelism off" against "best
+serial implementation"), but a headline speedup invites the question of whether
+the baseline was optimised, and only one of the two answers it well. Pick one,
+state it, and do not print numbers from both conventions in the same table.
+
 ## Open
 
-- **P2's 4.57x at 4096 spacecraft against S1's reported 21x on the same 12
-  threads.** Different mechanisms — S1 drives the constellation-ensemble path
-  while these single-`run_simulation` phases parallelise inside the batched RHS
-  — but a reviewer will read them as the same workload. The paper needs one
-  sentence distinguishing them, and the two configurations should be compared
-  directly before that sentence is written.
 - **TRX50.** The same five phases at budget 32 are still outstanding; the box has
   been occupied by another user's job throughout.

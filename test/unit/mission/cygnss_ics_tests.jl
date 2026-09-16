@@ -353,10 +353,11 @@ cygic_drz(θ) = SMatrix{3, 3, Float64}(-sin(θ), -cos(θ), 0.0, cos(θ), -sin(θ
             by_id = Dict(s.norad_id => s for s in ics.spacecraft)
             @test Set(keys(by_id)) == Set([41884, 41885, 41886, 41887, 41888, 41890, 41891])
 
-            # FM01 and FM04 are the two with flight telemetry.
-            @test by_id[41887].provenance == "telemetry"
-            @test by_id[41885].provenance == "telemetry"
-            @test all(by_id[i].provenance == "catalogue" for i in (41884, 41886, 41888, 41890, 41891))
+            # Every one of the seven is a flight state. The file began with only
+            # FM01 and FM04 flown and the other five propagated from element
+            # sets; those five were replaced by their own Level 1 navigation
+            # solutions, so nothing in this file is catalog-derived any more.
+            @test all(s.provenance == "telemetry" for s in ics.spacecraft)
             # Nothing may be unattributed, and nothing may be silently nominal.
             @test all(!isempty(s.source) for s in ics.spacecraft)
 
@@ -374,10 +375,10 @@ cygic_drz(θ) = SMatrix{3, 3, Float64}(-sin(θ), -cos(θ), 0.0, cos(θ), -sin(θ
             end
 
             # A catalog state was propagated across a real gap; a flight state
-            # was not. This is what epoch_offset_s is for.
-            @test abs(by_id[41887].epoch_offset_s) < 2.0
-            @test abs(by_id[41885].epoch_offset_s) < 2.0
-            @test all(abs(by_id[i].epoch_offset_s) > 3600.0 for i in (41884, 41886, 41888, 41890, 41891))
+            # is not. This is what epoch_offset_s is for, and with every state
+            # now flown, and the product carrying a navigation solution at the
+            # epoch itself, nothing is propagated at all.
+            @test all(abs(s.epoch_offset_s) < 2.0 for s in ics.spacecraft)
 
             # One plane, spread around it: that is the picture worth drawing.
             els = [classical_elements(s.r_ii_m, s.v_ii_m_s) for s in ics.spacecraft]

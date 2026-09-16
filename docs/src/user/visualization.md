@@ -153,21 +153,48 @@ adds `sun_dir_1..3`, the unit vector from the planet's center to the Sun in the
 inertial frame of the saved positions, and the page lights the scene from it.
 The directional sun follows that vector over the timeline, rotated into the
 scene the same way positions are, so the terminator stands where it stood and
-a landing at dawn is lit like one. A faint hemisphere term stands in for
-earthshine, and the shadow map is fitted to a few tens of meters around the
-followed vehicle each frame, so the vehicle shadows itself and drops its
-shadow on the ground: Apollo 11 landed with the Sun 10.6 degrees up, and the
-LM's shadow stretches five times its own height across Tranquility Base. A run
-without the columns keeps the fixed light the viewer always had.
+a landing at dawn is lit like one. The shadow map is fitted to a few tens of
+meters around the followed vehicle each frame, so the vehicle shadows itself
+and drops its shadow on the ground: Apollo 11 landed with the Sun 10.6 degrees
+up, and the LM's shadow stretches five times its own height across Tranquility
+Base. A run without the columns keeps the fixed light the viewer always had.
 
-Exposure is measured rather than assumed. The LROC mosaic of the landing site
-averages 0.021 in linear light and only a fifth of that reaches the eye at a
-grazing sun, which would leave the ground and its shadows inside a handful of
-display levels; so the page reads the mean albedo of the ground texture, takes
-the Sun's incidence on the site at the end of the run, and picks the filmic
-exposure that puts a lit surface in the middle of the range (it reports the
-factor in the info panel). Scenes bright enough not to need the lift keep the
-linear mapping.
+### Earthshine
+
+Away from Earth, and when the ephemerides resolve it, `default_save_fields`
+also writes `earth_dir_1..3`, the unit vector from the planet's center to
+Earth, and the page adds a second directional light along it. Its irradiance is
+the sunlight the Earth reflects back: 0.15 W/m² at the Moon with a full Earth,
+scaled by the Lambert-sphere phase law for the Sun-Earth-body angle and tinted
+toward the blue of ocean and cloud. Apollo 11 landed under a 70 degree Earth
+phase, half lit, so the Earth stood 59 degrees up in the west at 0.076 W/m² --
+one ten-thousandth of sunlight, thirteen stops down, which is exactly why the
+earthshine in the Apollo photographs needed a long exposure and why it takes
+one here too. The hemisphere guess it replaces survives only as the fallback
+for a run without the columns; a run that has them gets, instead, the one fill
+term a vacuum scene really has, the sunlight the ground bounces back up
+(irradiance `albedo x E x cos(theta)` on a downward-facing surface, with the
+sky side of the hemisphere light set to black).
+
+### The physical camera
+
+Exposure is a stated camera setting rather than a measurement of the scene. The
+sun's irradiance comes from the body's mean distance from the Sun (1361 W/m² at
+1 au, so 1361 at the Moon and 587 at Mars), the render buffer is kept in units
+of "a white Lambertian surface facing the Sun reads 1.0", and one scale factor
+turns a buffer value into an absolute radiance. The display mapping is then a
+photographic exposure value at ISO 100: `EV = log2(L x S / K)` with `K = 12.5`
+and the radiance converted to luminance at 98 lm/W, the luminous efficacy of
+unattenuated sunlight. The default EV is the one metered off a 0.12-albedo
+surface facing the Sun -- EV +15.3 at 1 au, which is the "sunny 16" exposure a
+photographer would have set, and EV +14.1 at Mars. The info panel's lighting
+row reads it back, and `[` and `]` step it by a third of a stop each.
+
+A physically exposed frame of Tranquility Base is genuinely dark: the Sun was
+10.6 degrees up, so the ground returns a sixth of what the default EV is set
+for, and the earthshine on the shadow side is thirteen stops below that. Open
+the camera up with `[` to see either the way a long exposure would, exactly as
+one would on the surface.
 
 The **lighting** selector offers "path traced when paused". In that mode the
 page draws in real time while the timeline runs or the camera moves; once both
@@ -184,7 +211,32 @@ path tracer does not run. The library is loaded from the CDN on demand: the
 page built by `export_visualization` is self-contained and offers real-time
 lighting only, while the CDN pages
 (`scripts/dev/viewer_demos/build_cdn_page.py`, `build_standalone.py --cdn`)
-carry the import-map entries for it.
+carry the import-map entries for it. It is handed the same irradiances (the sun
+disc's radiance is calibrated to the directional sun's) and the same exposure,
+so switching modes changes the sampling and not the brightness.
+
+### Thermal foils
+
+The 3D models NASA publishes carry their thermal foils as plain diffuse colors,
+which renders a spacecraft that looks like painted cardboard. On a glTF the page
+recognizes them -- by material name when the model gives a useful one, otherwise
+by base color: a saturated warm color is gold-coated Kapton, a bright neutral one
+aluminized Mylar or bare aluminum -- and rebuilds them as `MeshPhysicalMaterial`
+with the metal's measured normal-incidence reflectance as its base color (gold
+1.00/0.77/0.34, aluminum 0.91/0.92/0.92), metalness near one, a roughness of
+about 0.4 for crinkled foil, and a clearcoat over the Kapton for the film above
+the metal. Textured, transparent and mid-to-dark gray materials -- the black
+blankets, the painted structure, the decals -- are left exactly as they were, and
+the model status line in the info panel says how many materials were swapped.
+
+A metal has no diffuse color of its own, so it is only as interesting as what it
+reflects. The page renders a 64-pixel cube map of the lit scene around the
+vehicle with the vehicle itself stepped aside, prefilters it into a PMREM, and
+gives it to the foil materials as their environment map; it is rebuilt when the
+Sun has turned by more than three degrees or the vehicle has moved half a
+kilometer, so a descent re-probes a few tens of times and a cruise once. The
+result is a lander whose skirt carries the ground's color underneath and the
+black of space above it.
 
 ## Heating on the spacecraft
 

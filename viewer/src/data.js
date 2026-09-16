@@ -10,6 +10,7 @@
 //   frames.mass_kg  Float32[N*S]       total mass (optional)
 //   frames.link_pose {stride, counts[S], offsets[S], total, data: Float32[N*total]} (optional)
 //   frames.sun_dir Float32[N*3]       unit vector planet center -> Sun, inertial (optional)
+//   frames.earth_dir Float32[N*3]     unit vector planet center -> Earth, inertial (optional)
 // Every block is base64 of little-endian floats.
 
 export function decodeBytes(b64) {
@@ -94,6 +95,8 @@ export class FrameData {
     // Unit vector from the planet center to the Sun, inertial, one per frame
     // (not per spacecraft); null when the run could not resolve the Sun.
     this.sunDir = frames.sun_dir ? decodeFloat32(frames.sun_dir) : null;
+    // The same for Earth, when the run is at another body: the earthshine source.
+    this.earthDir = frames.earth_dir ? decodeFloat32(frames.earth_dir) : null;
     this.armPose = null;
     if (frames.arm_pose && frames.arm_pose.total > 0) {
       this.armPose = {

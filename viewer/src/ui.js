@@ -113,7 +113,7 @@ export function createUI(container, timeline, state, info) {
       <label><input type="checkbox" data-role="facets" checked> facets</label>
       <label><input type="checkbox" data-role="axes" checked> body axes</label>
       <label data-role="heating-label"><input type="checkbox" data-role="heating" checked> heating</label>
-      <select data-role="lighting" title="Sun lighting and renderer"></select>
+      <select data-role="lighting" title="Sun lighting and renderer · [ and ] change the exposure by a third of a stop"></select>
       <span class="sa-trail-legend" data-role="heat-legend" hidden><span data-role="heat-lo"></span><span class="sa-bar-inferno"></span><span data-role="heat-hi"></span></span>
       <label data-role="dust-label"><input type="checkbox" data-role="dust" checked> dust</label>
       <span class="sa-sep" data-role="atmo-sep"></span>
@@ -233,6 +233,9 @@ export function createUI(container, timeline, state, info) {
     if (e.code === 'ArrowLeft') timeline.seek(timeline.t - timeline.speed);
     if (e.code === 'KeyF') state.setFollow(!state.follow);
     if (e.code === 'Escape') { if (state.face) state.setFace(null); else state.select(-1); }
+    // Exposure, a third of a stop at a time: ] stops the camera down, [ opens it up.
+    if (e.code === 'BracketLeft' && state.stepExposure) state.stepExposure(-1);
+    if (e.code === 'BracketRight' && state.stepExposure) state.stepExposure(1);
   });
 
   function render() {

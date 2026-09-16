@@ -1,4 +1,5 @@
-// Sun lighting and the optional path-traced renderer.
+// Sun and earthshine lighting, the physical camera, and the optional
+// path-traced renderer.
 //
 // The scene is lit from where the Sun actually was: `frames.sun_dir` is the
 // unit vector from the planet's center to the Sun in the same inertial frame
@@ -12,13 +13,44 @@
 // frame, because a directional shadow map has to be a few tens of meters wide
 // to resolve a lander's legs.
 //
+// `frames.earth_dir` is the same vector for Earth, written away from Earth, and
+// it carries the second light source a vacuum scene actually has: earthshine.
+//
+// Radiometry. The render buffer is kept in units of "a white Lambertian surface
+// facing the Sun reads 1.0": the directional sun's intensity is pi, so a
+// diffuse surface of albedo a at incidence theta reads a*cos(theta) (three.js
+// shades diffuse as albedo * dotNL * intensity / pi). One scale factor,
+// `radianceScale = sunIrradiance / pi`, turns a buffer value into an absolute
+// radiance in W/m^2/sr, which is what the exposure is set against. Every other
+// source is placed on the same scale, so their ratios are the physical ones:
+//
+//   sun         1361 / d_au^2 W/m^2, d from the body's mean Sun distance
+//   earthshine  0.15 W/m^2 at full Earth, scaled by the Lambert-sphere phase
+//               law for the Sun-Earth-body angle; about 1e-4 of sunlight, so
+//               it is thirteen stops down and only shows at a long exposure
+//   ground      the lit surface bounced back up: irradiance albedo*E*cos(theta)
+//               on a downward-facing surface, carried by a hemisphere light
+//               with a black sky (vacuum has none) and a regolith-colored
+//               ground. This replaces the fill term that used to be a guess.
+//
+// Exposure is a stated camera setting, not a measurement of the scene. `ev` is
+// the photographic exposure value at ISO 100 (EV = log2(L * S / K) with
+// S = 100, K = 12.5, radiance converted to luminance at 98 lm/W, the luminous
+// efficacy of unattenuated sunlight); the exposure factor is whatever maps the
+// radiance that EV meters onto the tone curve's middle gray. The default EV is
+// the one metered off a 0.12-albedo surface facing the Sun, which comes out at
+// 15.3 at 1 au -- the "sunny 16" exposure, as it should. `[` and `]` step it by
+// a third of a stop.
+//
 // Two modes:
-//   'realtime'    one directional sun with a PCF-soft shadow map, plus a faint
-//                 hemisphere term standing in for earthshine (or sky glow).
+//   'realtime'    the directional sun with a PCF-soft shadow map, earthshine,
+//                 and the ground-bounce term.
 //   'pathtraced'  while the timeline runs or the camera moves the real-time
 //                 renderer draws; once nothing has changed for a moment the
 //                 scene is handed to three-gpu-pathtracer, which accumulates
-//                 samples into the same canvas until the next change. The
+//                 samples into the same canvas until the next change. It gets
+//                 the same irradiances (the sun as a disc of the true angular
+//                 diameter, same total irradiance) and the same exposure. The
 //                 library is loaded from the CDN on demand and the mode is
 //                 simply not offered when it cannot be imported (the offline
 //                 standalone page).
@@ -27,29 +59,56 @@ import * as THREE from 'three';
 const LIGHTING_SUN_COLOR = 0xfff6ec;
 const LIGHTING_FALLBACK_DIRECTION = [1, 0.3, 0.2];
 // Intensities. The fallback (no sun_dir) keeps the flat lighting earlier pages
-// were built with; a physically placed sun is brighter and its fill is faint,
-// because vacuum has no sky to scatter light into the shadows.
+// were built with; a physically placed sun carries the irradiance instead.
 const LIGHTING_FALLBACK_SUN_INTENSITY = 1.6;
 const LIGHTING_FALLBACK_AMBIENT_INTENSITY = 0.55;
-const LIGHTING_SUN_INTENSITY = 2.4;
-const LIGHTING_HEMISPHERE_INTENSITY = 0.08;
-const LIGHTING_AMBIENT_INTENSITY = 0.03;
-// Exposure. A real surface lit at a grazing angle is genuinely dark: the LROC
-// mosaic of Tranquility Base averages 0.021 in linear light, and at the 10.6
-// degrees of the landing only a fifth of that reaches the eye, which leaves the
-// ground -- and the shadows falling on it -- inside a handful of display levels.
-// So the exposure is measured rather than assumed: the mean albedo of the ground
-// texture times the sun's elevation at the site gives what a lit surface will
-// render at, and the exposure is whatever puts that at LIGHTING_EXPOSURE_TARGET.
-// The constant folds in the low-end gain of the ACES curve (0.30 as measured
-// against the untone-mapped render), so the target is the linear value the
-// display sees. A scene bright enough not to need the lift keeps the linear
-// mapping, so pages of Earth and Mars look as they always did.
-const LIGHTING_EXPOSURE_TARGET = 0.15;
-const LIGHTING_EXPOSURE_MAX = 20.0;
-const LIGHTING_EXPOSURE_MIN_USEFUL = 2.0;
-const LIGHTING_SKY_COLOR = 0x2a3a52;
-const LIGHTING_GROUND_COLOR = 0x6b6258;
+const LIGHTING_FALLBACK_HEMISPHERE_INTENSITY = 0.08;
+// The directional intensity that puts the render buffer in "white Lambertian
+// facing the Sun = 1.0" units, since three shades diffuse as a*dotNL*I/pi.
+const LIGHTING_SUN_UNIT_INTENSITY = Math.PI;
+
+// --- radiometry ------------------------------------------------------------
+// Solar irradiance at 1 au (W/m^2), and the mean Sun distance of the bodies the
+// viewer draws. The planet spec carries no Sun distance, so it is a table; an
+// unlisted body is assumed to be at 1 au and `options.sunDistanceAu` overrides.
+const LIGHTING_SOLAR_CONSTANT_W_M2 = 1361.0;
+const LIGHTING_SUN_DISTANCE_AU = {
+  mercury: 0.387, venus: 0.723, earth: 1.0, moon: 1.0, mars: 1.523,
+  jupiter: 5.203, saturn: 9.537, titan: 9.537, uranus: 19.19, neptune: 30.07,
+};
+// Earthshine at the Moon with a full Earth (W/m^2). The Earth is about 3.7
+// times the Moon's diameter and 2.5 times as bright per unit area, so a full
+// Earth is some fifty times a full Moon; 0.15 W/m^2 is the round number that
+// gives. It is calibrated at the Moon's 384,400 km, and the columns carry only
+// a direction, so it is applied only to a body in the Earth's neighborhood --
+// from Mars the Earth returns something like 1e-5 W/m^2, which is nothing.
+const LIGHTING_EARTHSHINE_FULL_W_M2 = 0.15;
+const LIGHTING_EARTHSHINE_MAX_AU_OFFSET = 0.05;
+const LIGHTING_EARTH_COLOR = 0xc6d8ff;      // ocean and cloud, slightly blue
+// The ground bounce: the albedo the surface is assumed to have when its own lit
+// radiance is fed back as fill, and the color that fill carries.
+const LIGHTING_GROUND_ALBEDO = 0.12;
+const LIGHTING_BOUNCE_COLOR = 0xffe9d5;
+const LIGHTING_SKY_COLOR = 0x000000;        // vacuum: no sky term at all
+
+// --- the camera ------------------------------------------------------------
+// Photographic exposure at ISO 100: EV = log2(L * S / K), with the reflected
+// light meter constant K = 12.5 and the radiance converted to luminance at the
+// luminous efficacy of sunlight above the atmosphere (1361 W/m^2 is about
+// 133 klx, so 98 lm/W).
+const LIGHTING_LUMINOUS_EFFICACY = 98.0;
+const LIGHTING_METER_CONSTANT = 12.5;
+const LIGHTING_METER_ISO = 100.0;
+// The reference the default EV is metered off, and where it should land on the
+// display: a 0.12-albedo surface facing the Sun renders at 0.18 after tone
+// mapping. `renderer.toneMappingExposure` is then whatever puts the metered
+// radiance at the tone curve's middle gray.
+const LIGHTING_REFERENCE_ALBEDO = 0.12;
+const LIGHTING_DISPLAY_TARGET = 0.18;
+const LIGHTING_EV_STEP = 1 / 3;
+const LIGHTING_EV_MIN = -8;
+const LIGHTING_EV_MAX = 24;
+
 // Shadow camera: an orthographic box `radius` wide around the followed vehicle,
 // with the light `distance` up-sun of it. Kilometers, the scene's unit.
 const LIGHTING_SHADOW_RADIUS_KM = 0.05;
@@ -73,10 +132,18 @@ const LIGHTING_PATHTRACER_SPECIFIER = 'three-gpu-pathtracer';
 const LIGHTING_SETTLE_MS = 300;
 const LIGHTING_MODE_LABELS = { realtime: 'lighting: real-time', pathtraced: 'lighting: path traced when paused' };
 
+// Environment probe for the metal foils: a small cube render of the lit ground
+// and the black sky around the vehicle, prefiltered into a PMREM. It is rebuilt
+// when the Sun has turned by more than a few degrees or the vehicle has moved
+// far enough for the ground to fill a different part of its sky.
+const LIGHTING_ENV_SIZE = 64;
+const LIGHTING_ENV_SUN_STEP_DEG = 3.0;
+const LIGHTING_ENV_MOVE_KM = 0.5;
+
 // Sun direction at elapsed time t, linearly interpolated between the kept
 // frames and renormalized. Returns false when the run carries none.
-function lightingSunDirAt(frames, t, out) {
-  const d = frames.sunDir;
+function lightingDirAt(table, frames, t, out) {
+  const d = table;
   if (!d) return false;
   const { i, f } = frames.locate(t);
   const a = 3 * i, b = frames.count < 2 ? a : 3 * (i + 1);
@@ -87,6 +154,35 @@ function lightingSunDirAt(frames, t, out) {
   if (!(n > 0)) return false;
   out.set(x / n, y / n, z / n);
   return true;
+}
+
+function lightingSunDirAt(frames, t, out) { return lightingDirAt(frames.sunDir, frames, t, out); }
+function lightingEarthDirAt(frames, t, out) { return lightingDirAt(frames.earthDir, frames, t, out); }
+
+// Phase law of a Lambertian sphere: the fraction of its full-phase brightness
+// at phase angle alpha (0 = fully lit face toward the observer).
+function lightingLambertPhase(alpha) {
+  const a = Math.min(Math.PI, Math.max(0, alpha));
+  return (Math.sin(a) + (Math.PI - a) * Math.cos(a)) / Math.PI;
+}
+
+// three.js's ACES filmic curve on the neutral axis. Its input and output
+// matrices both have unit row sums, so a gray stays gray and the whole curve
+// reduces to the RRT/ODT rational fit; inverting it numerically is how the
+// exposure is turned into "this radiance lands at this display value".
+function lightingAcesNeutral(x) {
+  const v = Math.max(0, x);
+  const y = (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081);
+  return Math.min(1, Math.max(0, y));
+}
+
+function lightingAcesInverse(target) {
+  let lo = 0, hi = 16;
+  for (let k = 0; k < 60; k++) {
+    const mid = 0.5 * (lo + hi);
+    if (lightingAcesNeutral(mid) < target) lo = mid; else hi = mid;
+  }
+  return 0.5 * (lo + hi);
 }
 
 // Objects the path tracer must not see. Everything that is not a Mesh is
@@ -103,20 +199,24 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
   const camera = options.camera || null;
   const globe = options.globe || null;
   const terrain = options.terrain || null;
+  const lod = options.lod || null;
   const helpers = (options.helpers || []).filter(Boolean);
   const hasSunDir = !!frames.sunDir;
+  const hasEarthDir = !!frames.earthDir;
 
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = true;
-  let exposure = 1;
-  if (hasSunDir && options.exposure != null) {
-    exposure = options.exposure;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = exposure;
-  }
 
-  const sun = new THREE.DirectionalLight(LIGHTING_SUN_COLOR, hasSunDir ? LIGHTING_SUN_INTENSITY : LIGHTING_FALLBACK_SUN_INTENSITY);
+  // ---- radiometry --------------------------------------------------------
+  const bodyKeys = [planet.texture, planet.name].filter(Boolean).map((k) => String(k).toLowerCase());
+  const sunDistanceAu = options.sunDistanceAu
+    ?? bodyKeys.map((k) => LIGHTING_SUN_DISTANCE_AU[k]).find((v) => v != null)
+    ?? 1.0;
+  const sunIrradiance = LIGHTING_SOLAR_CONSTANT_W_M2 / (sunDistanceAu * sunDistanceAu);
+  let earthshineIrradiance = 0;
+
+  const sun = new THREE.DirectionalLight(LIGHTING_SUN_COLOR, hasSunDir ? LIGHTING_SUN_UNIT_INTENSITY : LIGHTING_FALLBACK_SUN_INTENSITY);
   sun.castShadow = hasSunDir;
   sun.shadow.mapSize.set(LIGHTING_SHADOW_MAP_SIZE, LIGHTING_SHADOW_MAP_SIZE);
   sun.shadow.bias = options.shadowBias ?? LIGHTING_SHADOW_BIAS;
@@ -134,23 +234,72 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
   scene.add(sun);
   scene.add(sun.target);
 
-  // Fill. Without sun_dir the page keeps the flat ambient it always had; with
-  // it, a hemisphere term oriented along the local vertical stands in for
-  // earthshine and the light the ground bounces back up into the vehicle.
-  const ambient = new THREE.AmbientLight(0xffffff, hasSunDir ? LIGHTING_AMBIENT_INTENSITY : LIGHTING_FALLBACK_AMBIENT_INTENSITY);
-  scene.add(ambient);
-  const hemisphere = new THREE.HemisphereLight(LIGHTING_SKY_COLOR, LIGHTING_GROUND_COLOR, hasSunDir ? LIGHTING_HEMISPHERE_INTENSITY : 0);
-  scene.add(hemisphere);
+  // Earthshine: a second directional light toward Earth, its irradiance the
+  // sunlight the Earth reflects onto this body at the phase it is in. It does
+  // not cast shadows -- at 1e-4 of the Sun there is nothing to see in them.
+  // Earthshine rides on the same radiometric scale as the sun, so it is offered
+  // only when the sun is physically placed as well.
+  const earthshineApplies = hasSunDir && hasEarthDir && Math.abs(sunDistanceAu - 1.0) < LIGHTING_EARTHSHINE_MAX_AU_OFFSET;
+  const earth = new THREE.DirectionalLight(LIGHTING_EARTH_COLOR, 0);
+  earth.castShadow = false;
+  earth.visible = earthshineApplies;
+  scene.add(earth);
+  scene.add(earth.target);
 
-  // Scene-space sun direction, and the focus the shadow box is centered on.
+  // Fill. Without sun_dir the page keeps the flat ambient it always had. With
+  // it there is no ambient term at all: what lights the shadows is the ground
+  // bounce below, and (far below that) earthshine.
+  const ambient = new THREE.AmbientLight(0xffffff, hasSunDir ? 0 : LIGHTING_FALLBACK_AMBIENT_INTENSITY);
+  scene.add(ambient);
+  const hemisphere = new THREE.HemisphereLight(LIGHTING_SKY_COLOR, LIGHTING_BOUNCE_COLOR, hasSunDir ? 0 : LIGHTING_FALLBACK_HEMISPHERE_INTENSITY);
+  scene.add(hemisphere);
+  // The bounce color is a tint, not a brightness: divide it out so the light's
+  // intensity is the irradiance the ground actually returns.
+  const lightingBounceLuminance = (() => {
+    const c = new THREE.Color(LIGHTING_BOUNCE_COLOR);
+    return Math.max(1e-3, 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b);
+  })();
+
+  // Scene-space directions, and the focus the shadow box is centered on.
   const sunInertial = new THREE.Vector3(...LIGHTING_FALLBACK_DIRECTION).normalize();
   const sunScene = new THREE.Vector3().copy(sunInertial);
+  const earthInertial = new THREE.Vector3();
+  const earthScene = new THREE.Vector3();
   const focus = new THREE.Vector3();
   const upScene = new THREE.Vector3(0, 0, 1);
 
   let mode = 'realtime';
-  let status = hasSunDir ? 'real-time, sun from the run' : 'real-time, fixed light (no sun_dir in this run)';
   const modes = [{ value: 'realtime', label: LIGHTING_MODE_LABELS.realtime }];
+
+  // ---- exposure ----------------------------------------------------------
+  // A buffer value of 1 is the radiance of a white Lambertian surface facing
+  // the Sun; this turns buffer values into W/m^2/sr.
+  const radianceScale = sunIrradiance / LIGHTING_SUN_UNIT_INTENSITY;
+  // The pre-tone-map value that lands on LIGHTING_DISPLAY_TARGET.
+  const middleGray = lightingAcesInverse(LIGHTING_DISPLAY_TARGET);
+  const lightingEvOfBuffer = (b) => Math.log2(Math.max(1e-12, b) * radianceScale * LIGHTING_LUMINOUS_EFFICACY * LIGHTING_METER_ISO / LIGHTING_METER_CONSTANT);
+  const lightingBufferOfEv = (v) => Math.pow(2, v) * LIGHTING_METER_CONSTANT / (LIGHTING_METER_ISO * LIGHTING_LUMINOUS_EFFICACY * radianceScale);
+  const defaultEv = lightingEvOfBuffer(LIGHTING_REFERENCE_ALBEDO);
+  let ev = options.ev != null ? Number(options.ev) : defaultEv;
+  let exposure = 1;
+
+  function lightingApplyExposure() {
+    if (!hasSunDir) { exposure = 1; return; }
+    exposure = middleGray / lightingBufferOfEv(ev);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = exposure;
+  }
+  lightingApplyExposure();
+
+  const lightingEvText = () => `EV ${ev >= 0 ? '+' : '−'}${Math.abs(ev).toFixed(1)}`;
+
+  function lightingStatusText() {
+    if (!hasSunDir) return 'real-time, fixed light (no sun_dir in this run)';
+    const parts = [`real-time, sun from the run`, lightingEvText()];
+    if (earthshineApplies) parts.push(`earthshine ${earthshineIrradiance.toExponential(1)} W/m²`);
+    return parts.join(', ');
+  }
+  let status = lightingStatusText();
 
   // ---- path tracer -------------------------------------------------------
   let tracerLib = null;
@@ -179,7 +328,8 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
 
   // A circular light of the Sun's angular diameter, radiance calibrated so its
   // irradiance matches the directional sun it replaces: L = I / omega, with
-  // omega the solid angle of the disc.
+  // omega the solid angle of the disc. The tracer therefore works in the same
+  // buffer units as the raster path, and the same exposure applies to both.
   function lightingMakeSunDisc() {
     const Shaped = tracerLib && tracerLib.ShapedAreaLight;
     const halfAngle = 0.5 * THREE.MathUtils.degToRad(LIGHTING_SUN_ANGULAR_DIAMETER_DEG);
@@ -290,78 +440,123 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
     return s;
   }
 
-  // ---- auto exposure ------------------------------------------------------
-  let exposureMeasured = options.exposure != null || !hasSunDir;
+  // ---- environment probe --------------------------------------------------
+  // What a mirror at the vehicle sees: the lit ground below, black sky above.
+  // The foil materials on the 3D model reflect it, which is the whole reason a
+  // metal reads as metal instead of as a flat gray. One 64-pixel cube render
+  // prefiltered into a PMREM, rebuilt only when the Sun or the vehicle has
+  // moved enough to change what it sees.
+  let envTarget = null;
+  let envCamera = null;
+  let pmrem = null;
+  let envGenerated = null;
+  let envTexture = null;
+  const envSun = new THREE.Vector3();
+  const envAt = new THREE.Vector3();
+  const envPoint = new THREE.Vector3();
+  const envPos = new Float64Array(3);
+  let envBuilt = false;
+  const envCos = Math.cos(THREE.MathUtils.degToRad(LIGHTING_ENV_SUN_STEP_DEG));
 
-  const hasTerrain = !!(terrain && terrain.levels && terrain.levels.length);
-
-  // The surface the exposure is set for: the widest terrain patch when the run
-  // has one (the ground the vehicle is on), else the globe's own map. A texture
-  // that has not finished decoding yet reports nothing and is retried.
-  function lightingGroundTexture() {
-    if (hasTerrain) {
-      const map = terrain.levels[0].mesh.material.map;
-      return map && map.image && map.image.width ? map : null;
-    }
-    if (globe && globe.mesh && globe.mesh.material && globe.mesh.material.map) {
-      const map = globe.mesh.material.map;
-      if (map && map.image && map.image.width) return map;
-    }
-    return null;
+  // Where the probe stands: the followed vehicle when there is one, else the
+  // first spacecraft placed into the scene the way positions are. Never the
+  // scene origin -- that is the planet's center, and a probe rendered from
+  // inside the body sees nothing but its own shell.
+  function lightingProbePoint(t, cameraTarget) {
+    if (cameraTarget) return envPoint.copy(focus);
+    frames.positionAt(t, 0, envPos);
+    if (!Number.isFinite(envPos[0])) return envPoint.copy(focus);
+    envPoint.set(envPos[0], envPos[1], envPos[2]);
+    if (world) envPoint.applyQuaternion(world.quaternion).add(world.position);
+    return envPoint;
   }
 
-  // Cosine of the sun's incidence on the ground the run ends on -- for a landing
-  // that is the site at touchdown, which is the moment the exposure has to serve.
-  // Both vectors are inertial, so the camera and the frame toggle play no part
-  // and the exposure is the same every time the page is opened.
-  const lightingRefPos = new Float64Array(3);
-  const lightingRefSun = new THREE.Vector3();
-  function lightingReferenceCosine() {
-    if (!hasTerrain) return 0.5;
-    frames.positionAt(frames.tEnd, 0, lightingRefPos);
-    if (!lightingSunDirAt(frames, frames.tEnd, lightingRefSun)) return 0.5;
-    const radius = Math.hypot(lightingRefPos[0], lightingRefPos[1], lightingRefPos[2]);
-    if (!(radius > 0)) return 0.5;
-    const cosine = (lightingRefPos[0] * lightingRefSun.x + lightingRefPos[1] * lightingRefSun.y + lightingRefPos[2] * lightingRefSun.z) / radius;
-    return Math.max(0.15, Math.abs(cosine));
+  function lightingEnvironmentStale(at) {
+    if (!hasSunDir || !lod || typeof lod.setEnvironmentMap !== 'function') return false;
+    if (!envBuilt) return true;
+    if (envSun.dot(sunScene) < envCos) return true;
+    return envAt.distanceTo(at) > LIGHTING_ENV_MOVE_KM;
   }
 
-  // Mean linear luminance of a texture, from a 32x32 downsample.
-  function lightingMeanAlbedo(texture) {
+  function lightingBuildEnvironment(at) {
+    if (!envTarget) {
+      envTarget = new THREE.WebGLCubeRenderTarget(LIGHTING_ENV_SIZE, { type: THREE.HalfFloatType });
+      envCamera = new THREE.CubeCamera(1e-5, 1e5, envTarget);
+      pmrem = new THREE.PMREMGenerator(renderer);
+      pmrem.compileCubemapShader();
+    }
+    // The vehicles step aside: a probe inside the model would see its own
+    // interior, and the interface meshes are not part of the environment.
+    const hidden = [];
+    const hide = (o) => { if (o && o.visible) { hidden.push(o); o.visible = false; } };
+    if (lod.group) hide(lod.group);
+    for (const h of helpers) hide(h);
+    scene.traverse((o) => { if (o.isMesh && lightingIsHelper(o)) hide(o); });
+    const background = scene.background;
+    scene.background = null;
+    const toneMapping = renderer.toneMapping, toneExposure = renderer.toneMappingExposure;
+    renderer.toneMapping = THREE.NoToneMapping;          // the probe holds radiance, not display values
+    renderer.toneMappingExposure = 1;
+    envCamera.position.copy(at);
     try {
-      const n = 32;
-      const canvas = document.createElement('canvas');
-      canvas.width = n; canvas.height = n;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(texture.image, 0, 0, n, n);
-      const data = ctx.getImageData(0, 0, n, n).data;
-      let sum = 0;
-      for (let k = 0; k < data.length; k += 4) {
-        const v = (0.2126 * data[k] + 0.7152 * data[k + 1] + 0.0722 * data[k + 2]) / 255;
-        sum += v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-      }
-      return sum / (data.length / 4);
+      envCamera.update(renderer, scene);
+      const generated = pmrem.fromCubemap(envTarget.texture);
+      if (envGenerated) envGenerated.dispose();
+      envGenerated = generated;
+      envTexture = generated.texture;
+      lod.setEnvironmentMap(envTexture);
+      envBuilt = true;
+      envSun.copy(sunScene);
+      envAt.copy(at);
     } catch (err) {
-      return NaN;   // a texture the page cannot read back leaves the exposure alone
+      console.warn('the environment probe could not be rendered; foils keep their flat look', err);
+      envBuilt = true;    // do not retry every frame
     }
+    renderer.toneMapping = toneMapping;
+    renderer.toneMappingExposure = toneExposure;
+    scene.background = background;
+    for (const o of hidden) o.visible = true;
   }
 
-  function lightingAutoExposure() {
-    if (exposureMeasured) return;
-    const texture = lightingGroundTexture();
-    if (!texture) return;               // still loading; try again next frame
-    exposureMeasured = true;
-    const albedo = lightingMeanAlbedo(texture);
-    if (!(albedo > 0)) return;
-    const wanted = LIGHTING_EXPOSURE_TARGET / (albedo * sun.intensity * lightingReferenceCosine());
-    if (!(wanted > LIGHTING_EXPOSURE_MIN_USEFUL)) return;
-    exposure = Math.min(LIGHTING_EXPOSURE_MAX, wanted);
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = exposure;
+  // ---- earthshine ---------------------------------------------------------
+  function lightingUpdateEarthshine(t) {
+    if (!earthshineApplies || !lightingEarthDirAt(frames, t, earthInertial)) {
+      earthshineIrradiance = 0;
+      earth.visible = false;
+      return;
+    }
+    // Phase angle Sun-Earth-body: the body sees a full Earth when Earth lies
+    // opposite the Sun in its sky, so cos(alpha) = -dot(sunDir, earthDir) (the
+    // Sun is far enough that its direction from the Earth and from the body are
+    // the same to a thousandth of a radian).
+    const cosAlpha = Math.min(1, Math.max(-1, -sunInertial.dot(earthInertial)));
+    const phase = lightingLambertPhase(Math.acos(cosAlpha));
+    earthshineIrradiance = LIGHTING_EARTHSHINE_FULL_W_M2 * phase;
+    earth.visible = earthshineIrradiance > 0;
+    // Against the unit intensity rather than the sun light's own, so that
+    // turning the sun off (to look at the earthshine alone) leaves this term
+    // where it was.
+    earth.intensity = LIGHTING_SUN_UNIT_INTENSITY * earthshineIrradiance / sunIrradiance;
+    earthScene.copy(earthInertial);
+    if (world) earthScene.applyQuaternion(world.quaternion);
+    earth.target.position.copy(focus);
+    earth.position.copy(focus).addScaledVector(earthScene, shadowDistanceKm);
+    earth.target.updateMatrixWorld();
+    earth.updateMatrixWorld();
+  }
+
+  // The sunlight the ground returns: a downward-facing surface just above a
+  // Lambertian half-space of albedo a lit at incidence theta receives
+  // a*E*cos(theta), which in buffer units is a*cos(theta)*sun.intensity.
+  function lightingUpdateBounce() {
+    if (!hasSunDir) return;
+    const cosine = Math.max(0, upScene.dot(sunScene));
+    hemisphere.intensity = LIGHTING_SUN_UNIT_INTENSITY * LIGHTING_GROUND_ALBEDO * cosine / lightingBounceLuminance;
   }
 
   const api = {
     sun,
+    earth,
     ambient,
     hemisphere,
     ready,
@@ -371,6 +566,27 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
     get pathTracingAvailable() { return !!tracerLib; },
     get exposure() { return exposure; },
     get samples() { return tracing && tracer ? tracer.samples : 0; },
+    // Physical quantities the other viewer modules light themselves by.
+    get sunIrradiance() { return sunIrradiance; },
+    get sunDistanceAu() { return sunDistanceAu; },
+    get earthshineIrradiance() { return earthshineIrradiance; },
+    get ev() { return ev; },
+    get defaultEv() { return defaultEv; },
+    get evText() { return lightingEvText(); },
+    get environmentMap() { return envTexture; },
+
+    // Camera exposure. `setEv` is the absolute photographic value; `stepEv`
+    // moves it by thirds of a stop, which is what `[` and `]` do.
+    setEv(next) {
+      if (!Number.isFinite(next)) return ev;
+      ev = Math.min(LIGHTING_EV_MAX, Math.max(LIGHTING_EV_MIN, next));
+      lightingApplyExposure();
+      status = mode === 'realtime' ? lightingStatusText() : status;
+      lastChangeMs = performance.now();
+      if (tracing) lightingStopTracing();
+      return ev;
+    },
+    stepEv(steps = 1) { return api.setEv(ev + steps * LIGHTING_EV_STEP); },
 
     setMode(next) {
       const want = next === 'pathtraced' && tracerLib ? 'pathtraced' : 'realtime';
@@ -396,8 +612,8 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
       sun.position.copy(focus).addScaledVector(sunScene, shadowDistanceKm);
       sun.target.updateMatrixWorld();
       sun.updateMatrixWorld();
-      // Local vertical of the focus, for the hemisphere fill: the planet center
-      // sits at the world group's origin.
+      // Local vertical of the focus, for the ground-bounce fill: the planet
+      // center sits at the world group's origin.
       if (world) {
         upScene.copy(focus).sub(world.position);
         if (upScene.lengthSq() < 1e-12) upScene.copy(sunScene);
@@ -405,6 +621,8 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
       }
       hemisphere.position.copy(upScene);
       hemisphere.updateMatrixWorld();
+      lightingUpdateBounce();
+      lightingUpdateEarthshine(t);
 
       const sig = lightingSignature(t);
       if (sig !== signature) {
@@ -412,12 +630,9 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
         lastChangeMs = performance.now();
         if (tracing) lightingStopTracing();
       }
-      lightingAutoExposure();
-      if (mode !== 'pathtraced') {
-        status = hasSunDir
-          ? `real-time, sun from the run${exposure > 1 ? `, exposure x${exposure.toFixed(1)}` : ''}`
-          : 'real-time, fixed light (no sun_dir in this run)';
-      }
+      const probeAt = lightingProbePoint(t, cameraTarget);
+      if (lightingEnvironmentStale(probeAt)) lightingBuildEnvironment(probeAt);
+      if (mode !== 'pathtraced') status = lightingStatusText();
     },
 
     // Draw the frame when this module owns the canvas. Returns false when the
@@ -427,7 +642,7 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
       if (mode !== 'pathtraced' || !tracerLib) return false;
       const waited = performance.now() - lastChangeMs;
       if (waited < LIGHTING_SETTLE_MS) {
-        status = 'path traced, waiting for the view to settle';
+        status = `path traced, waiting for the view to settle, ${lightingEvText()}`;
         return false;
       }
       try {
@@ -436,7 +651,9 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
           tracing = true;
         }
         tracer.renderSample();
-        status = tracer.isCompiling ? 'path traced, compiling the shader' : `path traced, ${tracer.samples.toFixed(0)} samples`;
+        status = tracer.isCompiling
+          ? `path traced, compiling the shader, ${lightingEvText()}`
+          : `path traced, ${tracer.samples.toFixed(0)} samples, ${lightingEvText()}`;
         return true;
       } catch (err) {
         tracerError = err && err.message ? err.message : String(err);
@@ -452,6 +669,8 @@ export function createLighting(scene, renderer, frames, planet, options = {}) {
 
     // Scene-space unit vector toward the Sun, for callers that want it.
     direction(out) { return out.copy(sunScene); },
+    // The same toward Earth, or null when the run carries no Earth direction.
+    earthDirection(out) { return earthshineApplies && earth.visible ? out.copy(earthScene) : null; },
   };
   return api;
 }

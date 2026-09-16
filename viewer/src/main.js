@@ -103,7 +103,7 @@ export function start(payload, container = document.body) {
   // around the followed vehicle, and 'path traced when paused' hands the scene
   // to three-gpu-pathtracer once the timeline and the camera are still.
   const lighting = createLighting(scene, renderer, frames, planet, {
-    camera, world, globe, terrain, lod,
+    camera, world, globe, terrain, lod, ev: options.ev,
     helpers: [craft.group, atmosphere && atmosphere.group, refPaths.group, refs.group, ensemble && ensemble.group],
   });
 
@@ -185,6 +185,8 @@ export function start(payload, container = document.body) {
     lightingModes: lighting.modes,
     lightingMode: lighting.mode,
     setLighting(m) { state.lightingMode = lighting.setMode(m); },
+    // Camera exposure in thirds of a stop ([ and ]); the info panel's lighting row reads it back.
+    stepExposure(steps) { lighting.stepEv(steps); ui.setLightingStatus(lighting.status); },
     openVideoDialog() { videoDialog && videoDialog.open(); },
   };
   let videoDialog = null;

@@ -30,7 +30,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/data.js` | payload decoding, frame interpolation, rotation table lookup |
 | `src/globe.js` | textured oblate sphere, graticule, rotation with the body |
 | `src/spacecraft.js` | marker cloud, fading trails, labels, orbit period estimate |
-| `src/lod.js` | close-up box assemblies, thruster/facet glyphs, STL override, visibility by projected size |
+| `src/lod.js` | close-up box assemblies, thruster/facet glyphs, STL override, thermal-foil metals on glTF models, visibility by projected size |
 | `src/ensemble.js` | ensemble coloring, spaghetti histories, sample selector |
 | `src/paths.js` | reference polylines in inertial, RTN or body frames |
 | `src/references.js` | reference ghosts: translucent copies of a spacecraft driven by an external state table |
@@ -43,7 +43,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/atmosphere.js` | limb glow, density shells, density map |
 | `src/colormaps.js` | inferno and viridis |
 | `src/timeline.js` | playback clock and time formatting |
-| `src/lighting.js` | sun placed from `frames.sun_dir`, shadow map fitted to the followed vehicle, measured exposure, and the optional path-traced mode |
+| `src/lighting.js` | sun placed from `frames.sun_dir` and earthshine from `frames.earth_dir`, shadow map fitted to the followed vehicle, a physical camera with an explicit EV (`[` / `]`), the environment probe the foils reflect, and the optional path-traced mode |
 | `src/ui.js` | overlay controls and info panel |
 | `src/main.js` | scene setup and the render loop |
 | `template.html` | page skeleton the Julia bundler fills |

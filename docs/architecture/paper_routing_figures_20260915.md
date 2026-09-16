@@ -16,6 +16,9 @@ alongside them. Both machines ran the same code at the same commit.
 - **Tables:** regenerate with
   `python3 scripts/make_paper_routing_tables.py <run dir> --out <dir>`;
   markdown for reading, booktabs LaTeX for the manuscript.
+- **Figures:** regenerate with
+  `python3 scripts/make_paper_routing_plots.py <run dir> [<run dir> ...] --out <dir>`;
+  PNG for reading, PDF for the manuscript. See "Figures" below.
 
 ## What the four comparisons are
 
@@ -158,6 +161,48 @@ python3 scripts/make_paper_routing_tables.py \
     --cold output/performance/paper_benchmarks/20260915_181642_cold_store/cold_store_aggregated.csv \
     --out output/paper_routing_tables
 ```
+
+## Figures
+
+`output/paper_routing_plots/` (gitignored), one PDF and one PNG each. Every
+phase figure has machines as rows and, as columns, the two halves of the
+comparison: raw median wall time on the left, ratio to that point's serial
+baseline on the right. Each pinned static route is drawn faintly behind the
+best-static line, because at several points their near-coincidence is itself
+the result.
+
+| File | Shows |
+|---|---|
+| `fig_summary_regret` | R6 against the best pinned route at all 69 measured points, by phase |
+| `fig_p1` | Constellation size, 1 -> 4096 spacecraft, both machines |
+| `fig_p2_gravity_4096sat_l50_vacuum_5800s` | Thread budget at 4096 spacecraft |
+| `fig_p3_independent_1sat_1hr` | Monte Carlo resource ladder, cheap samples |
+| `fig_p4_montecarlo_heavy_aerobraking` | Monte Carlo resource ladder, compute-bound samples |
+| `fig_p5_mcgrid_16sat_8mc`, `fig_p5_mcgrid_8sat_16mc` | Worker/thread split of one budget |
+
+Three things the figures carry that the tables do not. P1's raw panel shows the
+static routes rising *above* the serial line at N=64 and N=256 while R6 stays
+below it -- finding 2 as a picture. P5's faint lines cross: `outer_threads`
+falls and `outer_process` rises across the splits, and the best-static and R6
+lines ride the upper envelope of the two, which is the whole argument for
+routing in one panel. And P2/P3/P4 carry a perfect-scaling reference, so the
+distance between measured and ideal is legible rather than inferred.
+
+The summary figure is the one to lead with, but it needs its caveat: R6's two
+deepest P1 points are the batched-RHS heuristic failing on every pinned route,
+not the router beating them, so the figure annotates them rather than banking
+a 10x win. Read with those two excluded, R6's per-phase median ratio runs
+0.82-1.02 over the ten machine-phase combinations: at or just above parity on
+the constellation and thread axes (1.006-1.017), and below it on all four
+Monte Carlo ladders (0.824-1.001), where the mixed dispatch of finding 3 is
+something no pinned route can express.
+
+Both scripts share one loader, so a figure and the table beside it cannot
+disagree about which route won a point. `make_paper_routing_plots.py` also
+reads each drawn line back off the axes and checks it against the records it
+came from, failing the run rather than writing a figure that disagrees with
+its own source data; `scripts/check_paper_routing_doc.py` does the same for
+every table cell in this document.
 
 ## Findings
 

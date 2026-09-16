@@ -134,3 +134,4 @@ remote_runs/
 # MERRA-2 native model-level granules for the EDL aerocapture GP study.
 # ~2.1 GB per day, fetched with a NASA Earthdata login; never committed.
 data/merra2_native/
+__pycache__/

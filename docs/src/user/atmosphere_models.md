@@ -186,3 +186,14 @@ density_model = GRAMAtmosphereModel(planet_name="earth")
 available after `GRAMSuite` is loaded and is accessed through
 `SpaceAGORA.SimulationModel.GRAMAtmosphereModel` (or via `setup_gram_example!`
 in the examples).
+
+## GRAM epoch
+
+GRAM samples its ephemeris (local solar time, season, distance from the Sun)
+from the epoch the model was built with plus the elapsed time. A model built
+as `GRAMAtmosphereModel(planet_name="venus")` carries the default epoch
+2000-01-01, so `run_simulation` rebuilds it at the run's `initial_time`
+before solving (`with_density_model_epoch`, logged once) and the atmosphere
+is that of the run's date. Pass `initial_time=` at construction to skip the
+rebuild. On Venus this is the difference between the day and the night
+thermosphere at 150 km, a factor of twenty in density.

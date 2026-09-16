@@ -34,6 +34,58 @@ function get_impact_callback(num_sats::Int)
     return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
+"""
+    get_touchdown_callback(num_sats, spec)
+
+Terminate the run when a spacecraft's reference point reaches
+`spec.height_m` above the terrain (`spec.terrain`, heights above the
+reference sphere `spec.reference_radius_m`, the planet's equatorial radius
+when NaN); `spec.on_touchdown(t, r_p, v_p, i)` records the event. Used in
+place of the impact event when a control effector reports a landing
+(`touchdown_spec`).
+"""
+function get_touchdown_callback(num_sats::Int, spec)
+    function condition!(out, u, t, integrator)
+        p = integrator.p
+        planet = p.args.environment_model.planet
+        ephem = p.args.environment_model.ephemerides_model
+        radius = isfinite(spec.reference_radius_m) ? spec.reference_radius_m : planet.Rp_e
+        et = (hasproperty(p, :shared_buffers) && hasproperty(p.shared_buffers, :et_start)) ? p.shared_buffers.et_start[] + t : t
+        @inbounds for i in 1:num_sats
+            r_i = _simulation_engine_module()._state_position_ii(u, i)
+            v_i = _simulation_engine_module()._state_velocity_ii(u, i)
+            r_p, _ = r_intor_p!(r_i, v_i, planet, et, ephem)
+            lla = rtolatlong(r_p, planet)
+            h_ground = terrain_height(spec.terrain, rad2deg(lla[2]), rad2deg(lla[3]))
+            out[i] = norm(r_p) - radius - h_ground - spec.height_m
+        end
+    end
+
+    function affect_downcrossing!(integrator, idx::Int64)
+        p = integrator.p
+        p.is_active[idx] || return nothing
+        planet = p.args.environment_model.planet
+        ephem = p.args.environment_model.ephemerides_model
+        t = integrator.t
+        et = (hasproperty(p, :shared_buffers) && hasproperty(p.shared_buffers, :et_start)) ? p.shared_buffers.et_start[] + t : t
+        r_i = _simulation_engine_module()._state_position_ii(integrator.u, idx)
+        v_i = _simulation_engine_module()._state_velocity_ii(integrator.u, idx)
+        r_p, v_p = r_intor_p!(r_i, v_i, planet, et, ephem)
+        spec.on_touchdown === nothing || spec.on_touchdown(Float64(t), r_p, v_p, idx)
+        if callback_verbose(integrator)
+            println("Touchdown of satellite $idx at t=$(t) s, ground-relative speed $(round(norm(v_p); digits=3)) m/s")
+        end
+        p.is_active[idx] = false
+        if all(p.is_active .== false)
+            println("termination_cause=touchdown sat=$idx t_s=$(t)")
+            terminate!(integrator)
+        end
+        return nothing
+    end
+
+    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
+end
+
 function get_orbit_end_callback(num_sats::Int)
     function condition!(out, u, t, integrator)
         # Use radial-velocity root events for orbit bookkeeping.

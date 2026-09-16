@@ -1,6 +1,6 @@
 module AbstractTypes
 
-export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractThrusterModel, AbstractControlEffectorModel, AbstractEphemeridesModel, AbstractGuidanceModel
+export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractThrusterModel, AbstractControlEffectorModel, AbstractEphemeridesModel, AbstractGuidanceModel, AbstractTerrainModel
 
 """
     AbstractForceTorqueModel
@@ -64,4 +64,13 @@ Stable extension interface for guidance strategy models that produce guidance-si
 commands or trajectory directives.
 """
 abstract type AbstractGuidanceModel end
+
+"""
+    AbstractTerrainModel
+
+Stable extension interface for surface terrain models: the height of the
+ground above a body's reference sphere at a latitude and longitude (digital
+elevation maps, or the flat sphere).
+"""
+abstract type AbstractTerrainModel end
 end # module AbstractTypes

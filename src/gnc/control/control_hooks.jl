@@ -11,6 +11,9 @@ module ControlHooks
     using ..AerodynamicEffectors: aerodynamic_coefficient_fM
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
+    using ..GuidanceHooks: ApolloDescentConfig, ApolloDescentState
+    using ..AbstractTypes: AbstractTerrainModel
+    using ..TerrainModels: NoTerrainModel, DEMTerrainModel, terrain_height
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
     using ..EnvironmentModels: getDensity
     using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
@@ -26,7 +29,9 @@ module ControlHooks
     const config = Structure
 
     export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate, calcReactionWheelTorque
+    export control_thruster_levels
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
+    export ApolloDescentControlConfig, ApolloDescentControlModel, ApolloDescentControlState, attitude_error_vector, touchdown_spec
     export RpoLQMPCController, init_rpo_lqmpc, rpo_lqmpc_control
     export RPOHeldActuation, RPOMPCControlModel
     export MagneticMomentumManagerModel
@@ -34,6 +39,22 @@ module ControlHooks
     export init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview
     export robot_arm_joint_mpc_control, robot_arm_measured_joint_state
     export rpo_allocate_six_axis_thrusters, rpo_thruster_wrench_body
+
+    """
+        control_thruster_levels(effector, i::Int) -> Union{Nothing, AbstractVector{<:Real}}
+
+    Optional hook: the firing level (0 to 1) of every thruster of spacecraft `i`,
+    in the order the visualization scene lists them (the spacecraft's links in
+    order, each link's `thrusters` in order). Effectors that drive no named
+    thruster return `nothing`, the default for any effector type that does not
+    override this method; an effector that drives only some of them may return a
+    shorter vector, and the remaining thrusters are idle.
+
+    The engine reads this at save time, so an effector must compute the levels
+    in `calcControlEffect!` and keep them in its own actuator state rather than
+    recomputing them here.
+    """
+    control_thruster_levels(effector, i::Int) = nothing
 
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     using ..QuaternionMath
@@ -52,4 +73,5 @@ module ControlHooks
     include(joinpath(@__DIR__, "aerobraking", "control_commands.jl"))
     include(joinpath(@__DIR__, "aerobraking", "constraint_tracking.jl"))
     include(joinpath(@__DIR__, "aerobraking", "tracking_executor.jl"))
+    include(joinpath(@__DIR__, "landing", "apollo_descent_control.jl"))
 end

@@ -4,7 +4,7 @@ Block-diagonal Jacobian sparsity for a constellation state, one block per satell
 `is_active` (when given) drops an inactive satellite's block to just its
 diagonal. The RHS already zeroes those derivatives, so their off-diagonal
 entries are structurally zero, and carrying them costs nnz in every W and one
-colour in every finite-difference Jacobian for the rest of the run. This is only
+color in every finite-difference Jacobian for the rest of the run. This is only
 sound because deactivation is permanent -- `p.is_active[idx] = false` in
 event_callbacks.jl is the sole write and nothing sets it back -- so a pattern
 built from a later snapshot can only be denser than the truth, never sparser.
@@ -295,6 +295,30 @@ function _try_save_simulation_results_if_enabled!(args...)
     end
 end
 
+# See `SimulationModel.with_density_model_epoch`: returns `args` untouched when
+# the density model has no epoch or already carries the run's.
+function _with_density_model_epoch(args::SimulationConfiguration)
+    env = args.environment_model
+    aligned = SimulationModel.with_density_model_epoch(env.density_model, args.initial_time)
+    aligned === env.density_model && return args
+    it = args.initial_time
+    @info "Density model rebuilt at the run's initial_time (it was built with a different epoch)" model=nameof(typeof(aligned)) initial_time="$(it.year)-$(lpad(it.month, 2, '0'))-$(lpad(it.day, 2, '0'))T$(lpad(it.hour, 2, '0')):$(lpad(it.minute, 2, '0'))"
+    new_env = SimulationModel.EnvironmentModel(env.planet, env.EI, aligned, env.ephemerides_model, env.topography, env.topo_degree, env.topo_order, env.wind, env.thermal_model)
+    return SimulationConfiguration(
+        file_paths=args.file_paths,
+        simulation_settings=args.simulation_settings,
+        mission_configuration=args.mission_configuration,
+        environment_model=new_env,
+        dynamics_model=args.dynamics_model,
+        guidance_model=args.guidance_model,
+        navigation_model=args.navigation_model,
+        control_model=args.control_model,
+        initial_time=args.initial_time,
+        integration_tolerances=args.integration_tolerances,
+        solver_config=args.solver_config
+    )
+end
+
 function run_simulation(
     args::SimulationConfiguration;
     isolate_state::Bool=true,
@@ -302,9 +326,17 @@ function run_simulation(
     return_solver_metadata::Bool=false,
     save_fields=nothing,
     extra_callbacks=(),
-    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
+    visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
     return SimulationModel.ParallelPolicy.with_policy_context() do
+    # `visualization=true` (or SPACEAGORA_VISUALIZATION=1, so an unmodified
+    # example script can opt in) turns the scene sidecar on for this run and
+    # builds the viewer page once the results are written (see SceneVisualization).
+    args = visualization ? SimulationModel.SceneVisualization.with_visualization_scene(args, true) : args
+    # A density model with an epoch of its own (GRAM) is rebuilt at the run's
+    # initial_time, so local solar time and season are those of the run.
+    args = _with_density_model_epoch(args)
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args
@@ -359,6 +391,13 @@ function run_simulation(
     p.shared_buffers.debug_control[] = _engine_env_get("SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = _engine_env_get("SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
     save_fields_resolved = isnothing(save_fields) ? SimulationModel.default_save_fields(args) : collect(save_fields)
+    # Explicit save_fields built before the visualization flag was applied
+    # (e.g. `vcat(default_save_fields(args), ...)` in an example run under
+    # SPACEAGORA_VISUALIZATION=1) would silently miss the link poses.
+    for extra in SimulationModel.SimulationCallbacks.visualization_save_fields(args)
+        any(field -> field.name === extra.name, save_fields_resolved) && continue
+        save_fields_resolved = vcat(save_fields_resolved, [extra])
+    end
     save_field_names = Symbol[field.name for field in save_fields_resolved]
     length(unique(save_field_names)) == length(save_field_names) || throw(ArgumentError("save_fields names must be unique. Got $(save_field_names)."))
     saved_values = SavedValues(Float64, SimulationModel.SaveData)
@@ -737,6 +776,10 @@ function run_simulation(
         backbone_saved_times,
         backbone_saved_data,
     )
+    _write_visualization_scene_if_enabled!(args; density_params=p)
+    if visualization && args.simulation_settings.results
+        SimulationModel.SceneVisualization.export_visualization(args)
+    end
 
     if return_solution && checkpoint_active && args.simulation_settings.checkpoint_interval_s < mission_end
         @warn "return_solution=true with checkpointed integration returns the final segment ODESolution, not a stitched full-history ODESolution."

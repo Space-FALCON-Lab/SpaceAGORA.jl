@@ -6,7 +6,7 @@ module EnvironmentModels
 
     export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel, TabulatedFlightAtmosphereModel, TimeTabulatedAtmosphereModel
     export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
-    export GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate, ConstantDensityModel
+    export GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate, ConstantDensityModel, with_density_model_epoch
     export getDensity, getDensityBatch!, precompute_gram_static_grids!, clear_gram_static_grid_cache!
 
     include(joinpath(@__DIR__, "..", "environment", "atmosphere", "density_models.jl"))

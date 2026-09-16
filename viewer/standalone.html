@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root { --ground: #05070c; --panel: rgba(8,12,20,0.86); --line: #2a3442; --ink: #e8ecf1; --muted: #8fa1b8; --accent: #f2b950; }
+  html, body { margin: 0; height: 100%; background: var(--ground); color: var(--ink); overflow: hidden; font: 14px/1.45 system-ui, sans-serif; }
+  #viewer { position: relative; width: 100%; height: 100%; }
+  #viewer canvas { display: block; }
+  #sa-setup { position: absolute; inset: 0; overflow: auto; padding: 24px 16px; box-sizing: border-box; }
+  #sa-setup form { max-width: 56ch; margin: 0 auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; }
+  #sa-setup h1 { margin: 0 0 4px; font-size: 18px; }
+  #sa-setup p.lead { margin: 0 0 14px; color: var(--muted); }
+  fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 0 0 12px; padding: 10px 12px; }
+  legend { color: var(--muted); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; padding: 0 4px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 6px 0; }
+  label { display: inline-flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); }
+  label.inline { flex-direction: row; align-items: center; gap: 6px; }
+  input, select, button { font: inherit; color: var(--ink); background: #1d2633; border: 1px solid #3a4658; border-radius: 4px; padding: 4px 8px; }
+  input[type=file] { padding: 3px; max-width: 100%; }
+  input[type=number] { width: 8ch; }
+  button.primary { background: #2f5d9e; border-color: #4f86d6; cursor: pointer; padding: 6px 16px; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #sa-status { color: var(--accent); min-height: 1.4em; margin-top: 8px; white-space: pre-wrap; }
+  #sa-status.error { color: #ff7a7a; }
+  .hint { color: var(--muted); font-size: 12px; }
+  code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  #sa-reload { position: absolute; right: 14px; top: 12px; z-index: 5; cursor: pointer; }
+  #sa-reload[hidden] { display: none; }
+</style>
+<script type="importmap">__IMPORTMAP__</script>
+</head>
+<body>
+<div id="viewer">
+  <button id="sa-reload" hidden title="Back to the data form">Load other data</button>
+  <div id="sa-setup">
+    <form id="sa-form">
+      <h1>SpaceAGORA viewer</h1>
+      <p class="lead">Open a trajectory straight from a data file. No simulation, no Julia: the page builds the scene here in the browser.</p>
+      <fieldset>
+        <legend>Trajectory</legend>
+        <div class="row">
+          <label>Data file(s) <input type="file" id="sa-file" accept=".csv,.txt,.tsv,.json" multiple required></label>
+          <label>Units <select id="sa-units"><option value="m">meters, m/s</option><option value="km">kilometers, km/s</option></select></label>
+        </div>
+        <p class="hint">CSV with a <code>time</code> column (seconds) and either SpaceAGORA's <code>sc1_pos_1..3</code> / <code>sc1_vel_1..3</code> / <code>sc1_q_1..4</code> columns (its own results CSV opens as is, several spacecraft included) or plain <code>x,y,z[,vx,vy,vz][,qx,qy,qz,qw]</code>; positions inertial (J2000) about the body's center. Several files open as an ensemble with a 3σ tube around the first (the nominal).</p>
+      </fieldset>
+      <fieldset>
+        <legend>Body and epoch</legend>
+        <div class="row">
+          <label>Central body <select id="sa-planet"><option value="earth">Earth</option><option value="mars">Mars</option><option value="venus">Venus</option><option value="moon">Moon</option><option value="titan">Titan</option></select></label>
+          <label>Epoch of t = 0 (UTC) <input type="text" id="sa-epoch" value="2000-01-01T12:00:00Z" size="22"></label>
+        </div>
+        <p class="hint">The epoch sets the body's rotation (IAU 2009 pole and prime meridian), so the ground track lands where it should.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Spacecraft</legend>
+        <div class="row">
+          <label>Box size x, y, z (m) <input type="text" id="sa-dims" value="2, 2, 2" size="12"></label>
+          <label>Mass (kg) <input type="number" id="sa-mass" value="500" step="any"></label>
+        </div>
+        <div class="row">
+          <label>3D model (optional, .glb/.gltf/.obj/.stl) <input type="file" id="sa-model" accept=".glb,.gltf,.obj,.stl"></label>
+          <label>meters per model unit <input type="number" id="sa-model-scale" value="1" step="any"></label>
+          <label>rotation X, Y, Z (deg) <input type="text" id="sa-model-rot" value="0, 0, 0" size="12"></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Reference (optional)</legend>
+        <div class="row">
+          <label>Ghost trajectory file <input type="file" id="sa-ref" accept=".csv,.txt,.tsv,.json"></label>
+          <label>Name <input type="text" id="sa-ref-name" value="reference" size="14"></label>
+        </div>
+        <p class="hint">A second table on the same epoch, drawn as a translucent copy of the spacecraft with its separation reported.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Page</legend>
+        <div class="row">
+          <label>Title <input type="text" id="sa-title" value="" size="30" placeholder="from the file name"></label>
+          <label>Frames kept <input type="number" id="sa-frames" value="4000" min="10" step="1"></label>
+          <label>Trail (orbits) <input type="number" id="sa-trail" value="1" min="0" step="0.5"></label>
+        </div>
+      </fieldset>
+      <div class="row">
+        <button type="submit" class="primary">Open viewer</button>
+        <span class="hint">Drag to orbit, wheel to zoom, Space to pause, F to follow.</span>
+      </div>
+      <div id="sa-status"></div>
+    </form>
+  </div>
+</div>
+<script>
+window.SPACEAGORA_TEXTURES = __TEXTURES__;
+window.SPACEAGORA_STANDALONE = __PRESET__;
+</script>
+<script type="module">
+import { start } from 'viewer/main.js';
+import { buildPayload, buildEnsemblePayload, parseCsv, fileToDataUrl, modelFormat } from 'viewer/standalone.js';
+
+const form = document.getElementById('sa-form');
+const status = document.getElementById('sa-status');
+const setup = document.getElementById('sa-setup');
+const reload = document.getElementById('sa-reload');
+const $ = (id) => document.getElementById(id);
+const triple = (text) => text.split(/[,\s]+/).filter((s) => s.length).map(Number);
+
+function say(msg, error = false) { status.textContent = msg; status.classList.toggle('error', error); }
+
+async function open(spec) {
+  say('Building the scene…');
+  const payload = spec.samples && spec.samples.length > 1 ? await buildEnsemblePayload(spec, window.SPACEAGORA_TEXTURES || {}) : await buildPayload(spec, window.SPACEAGORA_TEXTURES || {});
+  payload.manualStart = true;
+  const container = document.getElementById('viewer');
+  window.SPACEAGORA_VIEWER = payload;
+  window.spaceagoraViewer = start(payload, container);
+  setup.hidden = true;
+  reload.hidden = false;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const files = Array.from($('sa-file').files);
+    if (files.length === 0) throw new Error('choose a data file');
+    const texts = await Promise.all(files.map((f) => f.text()));
+    const spec = {
+      planet: $('sa-planet').value,
+      epoch: $('sa-epoch').value.trim(),
+      lengthUnit: $('sa-units').value,
+      maxFrames: Number($('sa-frames').value) || 4000,
+      spacecraft: [{ dims_m: triple($('sa-dims').value), mass_kg: Number($('sa-mass').value) || 100 }],
+      options: { title: $('sa-title').value.trim() || files[0].name.replace(/\.[^.]+$/, ''), trail_orbits: Number($('sa-trail').value) },
+      models: [],
+      references: [],
+    };
+    const loadText = (name, text) => (name.toLowerCase().endsWith('.json') ? { json: JSON.parse(text) } : { csv: text });
+    if (files.length === 1) Object.assign(spec, loadText(files[0].name, texts[0]));
+    else spec.samples = files.map((f, i) => Object.assign({ label: f.name.replace(/\.[^.]+$/, '') }, loadText(f.name, texts[i])));
+    const model = $('sa-model').files[0];
+    if (model) {
+      const { mime } = modelFormat(model.name);
+      spec.models.push({ id: 1, filename: model.name, dataUrl: await fileToDataUrl(model, mime), scale: Number($('sa-model-scale').value) || 1, rotation_deg: triple($('sa-model-rot').value) });
+    }
+    const ref = $('sa-ref').files[0];
+    if (ref) spec.references.push(Object.assign({ name: $('sa-ref-name').value || 'reference', lengthUnit: spec.lengthUnit, target: 1 }, loadText(ref.name, await ref.text())));
+    await open(spec);
+  } catch (err) {
+    console.error(err);
+    say(`Could not open the data: ${err && err.message ? err.message : err}`, true);
+  }
+});
+
+reload.addEventListener('click', () => window.location.reload());
+
+// A page built with embedded data opens straight into the viewer.
+const preset = window.SPACEAGORA_STANDALONE;
+if (preset && (preset.csv || preset.json || preset.samples)) {
+  if (preset.planet) $('sa-planet').value = preset.planet;
+  if (preset.epoch) $('sa-epoch').value = preset.epoch;
+  open(preset).catch((err) => { console.error(err); say(`Could not open the embedded data: ${err && err.message ? err.message : err}`, true); });
+}
+</script>
+</body>
+</html>

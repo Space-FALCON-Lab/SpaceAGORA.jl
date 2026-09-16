@@ -234,6 +234,112 @@ be expected to sit. The peak surface pressure reaches 3.3 kPa and the peak wall
 shear 29 Pa; the ground-effect augmentation peaks at 25 N, well under a
 percent of the engine's thrust.
 
+## Erosion and cratering regimes
+
+`PlumeSurfaceInteractionModel` above carries one erosion law with two fitted
+constants. `src/dynamics/coupled/force_torque_models/regolith_erosion.jl` is a
+standalone, pure module that replaces them with the separate regimes the
+plume-surface literature names, each with its own onset criterion and each
+sourced. It is not wired into the effector yet: it is a set of functions of a
+soil description, a surface gas state and the local gravity, meant to be called
+from a per-step effector loop (nothing in it allocates).
+
+### The soil
+
+`RegolithProperties`, built by `lunar_mare_regolith()`, carries the Lunar
+Sourcebook's recommended lunar values (Carrier, Olhoeft and Mendell, "Physical
+Properties of the Lunar Surface", chapter 9 of Heiken, Vaniman and French, *Lunar
+Sourcebook*, Cambridge University Press, 1991):
+
+| Property | Value | Source |
+|---|---|---|
+| bulk density | 1500 kg/m³ | Table 9.4, top 15 cm (1.50 ± 0.05 g/cm³) |
+| particle density | 3100 kg/m³ | section 9.1.3, recommended specific gravity 3.1 |
+| median grain size `D50` | 70 µm | section 9.1.2, average of a 40-130 µm range |
+| porosity | 0.52 | `1 - 1500/3100`; Table 9.5 gives 49 percent over the top 30 cm |
+| cohesion | 520 Pa | Table 9.12, 0-15 cm (range 440-620 Pa) |
+| friction angle | 42° | Table 9.12, 0-15 cm (range 41-43°) |
+| permeability | 3 × 10⁻¹² m² | section 9.1.8, 1-7 × 10⁻¹² m² from the Surveyor 5 vernier firing (Choate et al., 1968) |
+
+The erosion-law coefficients it also carries come from Metzger's two 2024 *Icarus*
+papers, "Erosion rate of lunar soil under a landing rocket", parts 1 and 2: the
+energy threshold `E_th = 0.123 J/(m² s)`, the erosion efficiency `ε = 0.0029`,
+the cohesive energy density `α = 0.289 J/m³` and the mean lift height
+`⟨D⟩ = 1.5 D84`.
+
+### The threshold that replaces the fitted 0.15 Pa
+
+`threshold_shear_pa = 0.15` in `PlumeSurfaceConfig` was chosen to put the erosion
+onset at 31 m. Two independent derivations now sit beside it:
+
+- `shields_threshold_shear_pa(soil, g)` applies Shao and Lu's threshold
+  expression ("A simple expression for wind erosion threshold friction
+  velocity", *JGR* 105(D17), 2000, equation 22), which for a wall shear stress
+  reads `τ_t = A_N (ρ_p g d + γ/d)` with `A_N = 0.0123` and `γ` fitted to
+  1.65e-4 to 5e-4 kg/s². With the lunar soil above it gives **0.057 Pa**
+  (0.033-0.092 Pa over the `γ` range), a factor of 2.6 below the fitted value.
+  On the Moon the cohesive term beats the weight term by twelve to one, because
+  a sixth of Earth's gravity suppresses the latter and not the former.
+- `energy_flux_threshold_shear_pa(gas, soil)` recasts Metzger's energy
+  threshold, itself read off the 31.5 m altitude at which dust first blows in
+  the Apollo 16 landing video, as a wall shear stress:
+  `τ_t = sqrt(E_th ρ_s v̄ / 3)`. At the surface state an 11.5 kN Apollo plume
+  lays down at 10 m it gives **0.159 Pa**, six percent from the fitted constant
+  and from a completely different observable.
+
+Between them the fitted 0.15 Pa is bracketed within a factor of 2.6, and the
+higher of the two derived values essentially reproduces it. Note that the second
+estimate depends on the surface gas density and temperature, which the analytic
+plume field does not compute; the 0.159 Pa assumes a 500 K, 21.5 g/mol exhaust.
+
+### The three regimes
+
+| Regime | Onset criterion | Source |
+|---|---|---|
+| `ViscousErosionEnergyFlux` | downward energy flux across the lift height above `E_th` | Metzger 2024a equation 16 |
+| `ViscousErosionRoberts` | wall shear above `shields_threshold_shear_pa` | Roberts, IAS Paper 63-50, 1963; kept for comparison only |
+| `DiffusionDrivenFlow` | pore-pressure uplift above the overburden weight plus tensile strength | Scott and Ko 1968, as stated in Lunar Sourcebook section 9.1.8 |
+| `BearingCapacityFailure` | stagnation pressure above the ultimate bearing capacity | Lunar Sourcebook section 9.1.9, after Durgunoglu and Mitchell 1975 |
+
+`erosion_rate(regime, gas, soil, g, env)` returns kg/(m² s) and is identically
+zero below the regime's onset; `erosion_onset(...)` is the predicate alone.
+`regolith_erosion_rate(default_erosion_regimes(), gas, soil, g, env)` evaluates
+all three and reports the total and which one dominates:
+
+```julia
+soil = lunar_mare_regolith()
+gas  = (pressure_pa=168.0, shear_pa=1.44, density_kg_m3=8.7e-4,
+        speed_mps=1000.0, temperature_k=500.0, mach=3.0)
+out  = regolith_erosion_rate(gas, soil, 1.625, erosion_environment(footprint_radius_m=4.66))
+out.dominant === ViscousErosion
+```
+
+With the lunar soil and the Apollo LM the model puts viscous erosion alone in
+play throughout the descent. Diffusion-driven flow needs the plume on the
+ground at better than about 20 kN, which the LM is below by touchdown; bearing
+capacity failure needs about 450 kN through the same nozzle, ten times the
+descent engine at full throttle. That ordering is what Metzger reports for the
+Apollo landings, and it was not tuned in: it follows from the Sourcebook's
+permeability and Table 9.12's strength.
+
+### What is assumed rather than sourced
+
+Three things, all documented configuration fields rather than buried literals:
+`saltation_efficiency` (the existing fitted factor of 10 in the Roberts
+closure, which the module keeps only so the old and new laws can be compared);
+the exhaust viscosity, for which `gas_dynamic_viscosity_pa_s` uses Sutherland's
+law for air as a stand-in; and the `ErosionEnvironment` geometry and timing --
+the footprint radius, the gas residence time that sets the pressure diffusion
+depth, and the width used for the bearing-capacity factors.
+
+One known gap is stated rather than tuned away. `soil_bearing_capacity_pa` uses
+the classical Prandtl/Reissner/Vesic factors and returns about 1.3 MPa for a 1 m
+footing on the Sourcebook's 0-60 cm soil, where the Sourcebook itself quotes
+roughly 6 MPa (3-11 MPa for the Apollo 11 footpad) from Durgunoglu and
+Mitchell's larger wedge-penetration factors. The function is therefore a lower
+bound on the soil's strength, which makes the bearing-capacity onset
+conservative.
+
 ## Surface in the viewer
 
 `export_visualization(prefix; terrain="data/terrain/moon/apollo11/site.json")`

@@ -12,6 +12,7 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "plume_surface_interaction.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "regolith_erosion.jl"))
 
     # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
     @eval GravityEffectors using ..PerturbationEffectors
@@ -39,6 +40,14 @@ module DynamicEffectors
     using .RobotArmReactionEffectors: RobotArmReactionEffector
     using .PlumeSurfaceInteraction: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
     using .PlumeSurfaceInteraction: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities, plume_engine_axis
+    using .RegolithErosion: RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
+    using .RegolithErosion: ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime
+    using .RegolithErosion: AbstractErosionRegime, ViscousErosionRoberts, ViscousErosionEnergyFlux
+    using .RegolithErosion: DiffusionDrivenFlow, BearingCapacityFailure
+    using .RegolithErosion: erosion_rate, erosion_onset, regime_kind, default_erosion_regimes, regolith_erosion_rate
+    using .RegolithErosion: shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
+    using .RegolithErosion: mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
+    using .RegolithErosion: pressure_diffusion_depth_m, soil_tensile_strength_pa
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
@@ -55,4 +64,12 @@ module DynamicEffectors
     export RobotArmReactionEffector
     export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
     export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+    export RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
+    export ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime
+    export AbstractErosionRegime, ViscousErosionRoberts, ViscousErosionEnergyFlux
+    export DiffusionDrivenFlow, BearingCapacityFailure
+    export erosion_rate, erosion_onset, regime_kind, default_erosion_regimes, regolith_erosion_rate
+    export shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
+    export mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
+    export pressure_diffusion_depth_m, soil_tensile_strength_pa
 end

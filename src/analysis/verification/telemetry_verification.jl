@@ -26,6 +26,7 @@ using Arrow
 using TOML
 
 using ..SimulationModel
+using ..SimulationModel.SimConfig: _with_configuration
 using ..SimulationEngine
 include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 

@@ -631,18 +631,8 @@ function _with_study_dtmax(
 )::SM.SimulationConfiguration
     dt_max_orbit_s > 0.0 || throw(ArgumentError("dt_max_orbit_s must be > 0; got $(dt_max_orbit_s)."))
     dt_max_atmosphere_s > 0.0 || throw(ArgumentError("dt_max_atmosphere_s must be > 0; got $(dt_max_atmosphere_s)."))
-    return SM.SimulationConfiguration(
-        file_paths=args.file_paths,
-        simulation_settings=args.simulation_settings,
-        mission_configuration=args.mission_configuration,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
+    return SM.SimConfig._with_configuration(args;
         integration_tolerances=_study_tolerances(args.integration_tolerances, dt_max_orbit_s, dt_max_atmosphere_s, tolerance_scale),
-        solver_config=args.solver_config,
     )
 end
 

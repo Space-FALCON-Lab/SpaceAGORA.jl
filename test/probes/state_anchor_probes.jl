@@ -116,12 +116,8 @@ const SE_ANCHOR = SpaceAGORA.SimulationEngine
     # An anchor can reset the orbit counter to the anchored trajectory's count:
     # a three-orbit mission anchored at 1500 s with orbit_count=3 completes at
     # the first apoapsis after the anchor instead of two orbits later.
-    cfg_orbits = SimulationConfiguration(
-        simulation_settings=cfg.simulation_settings,
+    cfg_orbits = SpaceAGORA.SimulationModel.SimConfig._with_configuration(cfg;
         mission_configuration=MissionConfiguration(mission_type=MissionOrbits, keplerian=true, number_of_orbits=3, mission_time=30000.0, orientation_sim=false, num_steps_to_save=50),
-        environment_model=cfg.environment_model, dynamics_model=cfg.dynamics_model,
-        guidance_model=cfg.guidance_model, navigation_model=cfg.navigation_model, control_model=cfg.control_model,
-        initial_time=cfg.initial_time, integration_tolerances=cfg.integration_tolerances,
     )
     sol_count, text_count = withenv("SPACEAGORA_RHS_CALIBRATE" => "off") do
         mktempdir() do tmp

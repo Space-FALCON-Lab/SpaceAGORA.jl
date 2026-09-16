@@ -19,21 +19,11 @@ include(joinpath(PS_REPO_ROOT, "benchmarks", "studies", "paper_scenarios", "scen
 n = parse(Int, ENV["PS_N_SATS"])
 outdir = ENV["OUTDIR"]; mkpath(outdir)
 base = ps_build_config(n_sats=n)
-args = SimulationConfiguration(
-    file_paths             = base.file_paths,
+args = SimulationModel.SimConfig._with_configuration(base;
     simulation_settings    = SimulationSettings(results=true, verbose=false,
                                                 results_directory=outdir,
                                                 generate_plots=false, normalize=false,
                                                 save_csv=true),
-    mission_configuration  = base.mission_configuration,
-    environment_model      = base.environment_model,
-    dynamics_model         = base.dynamics_model,
-    guidance_model         = base.guidance_model,
-    navigation_model       = base.navigation_model,
-    control_model          = base.control_model,
-    initial_time           = base.initial_time,
-    integration_tolerances = base.integration_tolerances,
-    solver_config          = base.solver_config,
 )
 
 # Two warm-ups, not one. The results-writing path JITs across more than one

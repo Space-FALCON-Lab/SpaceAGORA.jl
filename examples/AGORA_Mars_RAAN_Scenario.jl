@@ -112,18 +112,9 @@ function _make_mars_raan_scenario(raan_deg::Float64, results_directory::String)
         results_directory=results_directory
     )
 
-    return SimulationConfiguration(
-        file_paths=base_args.file_paths,
-        simulation_settings=base_args.simulation_settings,
-        mission_configuration=base_args.mission_configuration,
-        environment_model=base_args.environment_model,
-        dynamics_model=base_args.dynamics_model,
+    return SM.SimConfig._with_configuration(base_args;
         guidance_model=GuidanceModel(guidance_effectors=(guidance_effector,), guidance_rates=[30.0]),
-        navigation_model=base_args.navigation_model,
         control_model=ControlModel(control_effectors=(thruster,), control_rates=[10.0]),
-        initial_time=base_args.initial_time,
-        integration_tolerances=base_args.integration_tolerances,
-        solver_config=base_args.solver_config
     )
 end
 

@@ -246,9 +246,8 @@ unattenuated sunlight. The default EV is the one metered off a 0.12-albedo
 surface facing the Sun -- EV +15.3 at 1 au, which is the "sunny 16" exposure a
 photographer would have set, and EV +14.1 at Mars. The info panel's lighting
 row reads it back, and `[` and `]` step it by a third of a stop each.
-`export_visualization(...; ev=11.0)` fixes the page's initial EV instead; the
-Apollo 11 demo ships at EV +11 because its 10.6 degree sun leaves the regolith
-near black at the metered default.
+`export_visualization(...; ev=11.0)` fixes the page's EV instead of letting it
+adapt.
 
 A physically exposed frame of Tranquility Base is genuinely dark: the Sun was
 10.6 degrees up, so the ground returns a sixth of what the default EV is set

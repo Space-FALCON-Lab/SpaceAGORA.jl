@@ -1,5 +1,6 @@
 module GuidanceHooks
     using ..Structure
+    using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 
     using ..ConfigTypes: ODEParams, Solution
     using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractGuidanceModel

@@ -7,6 +7,7 @@
     # the coverage flag so the coverage gates see their line data.
     probe_files = [
         "reference_system_probes.jl",
+        "initial_condition_altitude_probes.jl",
         "parallel_policy_probes.jl",
         "density_selection_probes.jl",
         "ei_partition_drag_probes.jl",

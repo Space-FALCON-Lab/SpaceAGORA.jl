@@ -20,6 +20,8 @@ module GuidanceHooks
     using ..HYPRUtils
     using Base.Threads: @threads, maxthreadid, threadid
     using Random
+    using AstroTime
+    using SPICE
 
     const config = Structure
     const _PARENT = parentmodule(@__MODULE__)
@@ -62,7 +64,7 @@ module GuidanceHooks
     export AerobrakingEnergyDepletionGuidanceModel
 
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
-    include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
+    using ..FrameTransforms
     include(joinpath(@__DIR__, "rpo", "hypr", "pso_parameters.jl"))
     include(joinpath(@__DIR__, "rpo", "hypr", "path_retiming.jl"))
     include(joinpath(@__DIR__, "rpo", "hypr", "path_sampling.jl"))

@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
+using ..SimulationModel.FrameTransforms
 using LinearAlgebra
 using StaticArrays
 using LoopVectorization

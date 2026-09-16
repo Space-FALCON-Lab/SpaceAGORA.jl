@@ -316,9 +316,7 @@ args = make_example_config(
     results_directory=joinpath(REPO_ROOT, "output", "earth_aerobraking")
 )
 
-args = SimulationConfiguration(
-    file_paths=args.file_paths,
-    simulation_settings=args.simulation_settings,
+args = SM.SimConfig._with_configuration(args;
     mission_configuration=MissionConfiguration(
         mission_type=MissionOrbits,
         keplerian=args.mission_configuration.keplerian,
@@ -328,12 +326,6 @@ args = SimulationConfiguration(
         num_steps_to_save=args.mission_configuration.num_steps_to_save,
         data_rate=args.mission_configuration.data_rate
     ),
-    environment_model=args.environment_model,
-    dynamics_model=args.dynamics_model,
-    guidance_model=args.guidance_model,
-    navigation_model=args.navigation_model,
-    control_model=args.control_model,
-    initial_time=args.initial_time,
     integration_tolerances=IntegrationTolerances(
         reltol_orbit=1e-8,
         abstol_orbit=1e-8,
@@ -344,7 +336,7 @@ args = SimulationConfiguration(
     ),
     solver_config=SolverConfig(
         solver_mode=Symbol(get(ENV, "SPACEAGORA_SOLVER_MODE", "split_imex"))
-    )
+    ),
 )
 
 args_eff = SpaceAGORA.TelemetryVerification._example_smoke_args(args)

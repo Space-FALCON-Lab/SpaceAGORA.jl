@@ -92,9 +92,7 @@ function measure_per_orbit_scenario(
     for orbit_count in orbit_counts
         mission_time = orbit_count * period_s
         args_template = deepcopy(base_case.args_template)
-        args_template = SimulationConfiguration(
-            file_paths=args_template.file_paths,
-            simulation_settings=args_template.simulation_settings,
+        args_template = SimulationModel.SimConfig._with_configuration(args_template;
             mission_configuration=MissionConfiguration(
                 mission_type=args_template.mission_configuration.mission_type,
                 keplerian=args_template.mission_configuration.keplerian,
@@ -103,13 +101,6 @@ function measure_per_orbit_scenario(
                 orientation_sim=args_template.mission_configuration.orientation_sim,
                 num_steps_to_save=args_template.mission_configuration.num_steps_to_save
             ),
-            environment_model=args_template.environment_model,
-            dynamics_model=args_template.dynamics_model,
-            guidance_model=args_template.guidance_model,
-            navigation_model=args_template.navigation_model,
-            control_model=args_template.control_model,
-            initial_time=args_template.initial_time,
-            integration_tolerances=args_template.integration_tolerances
         )
 
         case = BenchmarkCase(

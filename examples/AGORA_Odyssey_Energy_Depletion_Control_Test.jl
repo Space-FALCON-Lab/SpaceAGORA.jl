@@ -71,9 +71,7 @@ base_args = make_example_config(
     EI_km=160.0,
 )
 
-args = SimulationConfiguration(
-    file_paths=base_args.file_paths,
-    simulation_settings=base_args.simulation_settings,
+args = SM.SimConfig._with_configuration(base_args;
     mission_configuration=MissionConfiguration(
         mission_type=base_args.mission_configuration.mission_type,
         keplerian=base_args.mission_configuration.keplerian,
@@ -83,13 +81,8 @@ args = SimulationConfiguration(
         num_steps_to_save=base_args.mission_configuration.num_steps_to_save,
         data_rate=1.0,
     ),
-    environment_model=base_args.environment_model,
-    dynamics_model=base_args.dynamics_model,
     guidance_model=GuidanceModel(guidance_effectors=(guidance,), guidance_rates=[3.0]),
-    navigation_model=base_args.navigation_model,
     control_model=ControlModel(control_effectors=(control,), control_rates=[0.1]),
-    initial_time=base_args.initial_time,
-    integration_tolerances=base_args.integration_tolerances,
 )
 
 panel_alpha_save_field = SaveField(

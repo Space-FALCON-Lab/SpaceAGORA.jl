@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
+using ..FrameTransforms
 using ComponentArrays
 using Logging
 

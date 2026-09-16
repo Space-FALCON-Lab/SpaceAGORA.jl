@@ -336,6 +336,28 @@ Attitude comes from a `q` column (4 x N, scalar-last) when given and is
 velocity-aligned otherwise. `scripts/dev/viewer_demos/` has drivers that
 build such ghosts for Magellan at Venus, Odyssey at Mars and Cassini at Titan.
 
+## Ground tracks
+
+`ground_tracks=true` starts the page with the sub-satellite point of every
+spacecraft drawn on the body's surface; the "ground tracks" checkbox in the
+toolbar turns them on and off either way. Each track is built once, in the
+body-fixed frame, from the geodetic sub-satellite point of every embedded
+frame, and parented to the globe — so it rides the body's rotation and reads
+correctly in both viewer frames: in the inertial view the ground turns under
+the orbit, and in the planet-fixed view the track stands still while the orbit
+precesses over it. The line is drawn up to the current time with a marker at
+its head, and takes the same color as the spacecraft's own marker and trail.
+
+```julia
+export_visualization(prefix; frame=:planet_fixed, ground_tracks=true)
+```
+
+A constellation is where this earns its place: spacecraft in nearly the same
+orbit lay down tracks whose spacing is the thing the picture is about.
+`scripts/dev/viewer_demos/cygnss_constellation.jl` flies the CYGNSS
+constellation over the 96 hours its flight telemetry covers and builds such a
+page, with the FM1 and FM4 position solutions attached as reference ghosts.
+
 ## Robot arms
 
 A spacecraft whose control model carries a `RobotArmControlEffector` with a
@@ -356,6 +378,7 @@ export_visualization(prefix;
     data_budget_mb=150.0,     # hard cap on the embedded trajectory
     trail_orbits=3,           # or trail_s=...
     frame=:inertial,          # or :planet_fixed
+    ground_tracks=false,      # start with the sub-satellite tracks drawn
     texture_resolution=:best, # or "4k" to keep the page small
     stl=Dict(1 => "bus.stl"), stl_scale=1.0,
     title="My run")

@@ -105,6 +105,7 @@ export function createUI(container, timeline, state, info) {
       <label><input type="checkbox" data-role="labels" checked> labels</label>
       <label data-role="paths-label"><input type="checkbox" data-role="paths" checked> planned paths</label>
       <label data-role="references-label"><input type="checkbox" data-role="references" checked> reference ghosts</label>
+      <label><input type="checkbox" data-role="groundtracks"> ground tracks</label>
       <label><input type="checkbox" data-role="grid" checked> graticule</label>
       <span class="sa-sep"></span>
       <label><input type="checkbox" data-role="assemblies" checked> 3D models</label>
@@ -182,6 +183,9 @@ export function createUI(container, timeline, state, info) {
   q('paths').addEventListener('change', (e) => state.setPaths(e.target.checked));
   q('references-label').hidden = !state.hasReferences;
   q('references').addEventListener('change', (e) => state.setReferences(e.target.checked));
+  const groundTracks = q('groundtracks');
+  groundTracks.checked = !!state.groundTracks;
+  groundTracks.addEventListener('change', (e) => state.setGroundTracks(e.target.checked));
   q('grid').addEventListener('change', (e) => state.setGraticule(e.target.checked));
   q('assemblies').addEventListener('change', (e) => state.setAssemblies(e.target.checked));
   q('thrusters').addEventListener('change', (e) => state.setThrusters(e.target.checked));

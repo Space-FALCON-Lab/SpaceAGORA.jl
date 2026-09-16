@@ -13,7 +13,7 @@ payload = json.loads(payload_json.replace("<\\/", "</"))
 scene, frames = payload["scene"], payload["frames"]
 planet = scene["planet"]
 # Concatenate the viewer modules into one module scope: strip intra-viewer imports and export keywords.
-order = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "plumes.js", "dust.js", "lighting.js", "ui.js", "main.js"]
+order = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "groundtrack.js", "video.js", "plots.js", "terrain.js", "plumes.js", "dust.js", "lighting.js", "ui.js", "main.js"]
 parts = []
 for name in order:
     s = (REPO / "viewer" / "src" / name).read_text()

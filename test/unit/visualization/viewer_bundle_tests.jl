@@ -719,3 +719,36 @@ end
         @test isfile(joinpath(dir_kw, "simulation_results_viewer.html"))
     end
 end
+
+@testset "ground tracks" begin
+    # The option reaches the page, and defaults to off so existing pages are
+    # unchanged.
+    @test SV._viewer_options(; trail_s=nothing, trail_orbits=nothing, frame=:inertial,
+        speed=nothing, title=nothing)["ground_tracks"] === false
+    @test SV._viewer_options(; trail_s=nothing, trail_orbits=nothing, frame=:inertial,
+        speed=nothing, title=nothing, ground_tracks=true)["ground_tracks"] === true
+
+    dir = mktempdir()
+    args = with_visualization_scene(_viewer_config(results_directory=dir), true)
+    run_simulation(args)
+    prefix = joinpath(dir, "simulation_results")
+    on = export_visualization(prefix; out=joinpath(dir, "tracks.html"), textures=false,
+        max_frames=20, ground_tracks=true)
+    @test occursin("\"ground_tracks\":true", read(on, String))
+    off = export_visualization(prefix; out=joinpath(dir, "no_tracks.html"), textures=false, max_frames=20)
+    @test occursin("\"ground_tracks\":false", read(off, String))
+
+    # The module is registered in every list that has to carry it, in the same
+    # relative position: the bundler, the development harness, the standalone
+    # builder and the CDN page builder. A module missing from one of the four
+    # is a page that loads everywhere but one.
+    @test "groundtrack.js" in SV.VIEWER_MODULES
+    @test isfile(joinpath(SV.VIEWER_DIR, "src", "groundtrack.js"))
+    for (path, needle) in (
+        (joinpath(REPO, "viewer", "dev.html"), "\"viewer/groundtrack.js\""),
+        (joinpath(REPO, "viewer", "build_standalone.py"), "\"groundtrack.js\""),
+        (joinpath(REPO, "scripts", "dev", "viewer_demos", "build_cdn_page.py"), "\"groundtrack.js\""),
+    )
+        @test occursin(needle, read(path, String))
+    end
+end

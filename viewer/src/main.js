@@ -12,6 +12,7 @@ import { createEnsemble } from 'viewer/ensemble.js';
 import { createAtmosphere } from 'viewer/atmosphere.js';
 import { createPaths } from 'viewer/paths.js';
 import { createReferences } from 'viewer/references.js';
+import { createGroundTracks } from 'viewer/groundtrack.js';
 import { TRAIL_COLOR_MODES } from 'viewer/spacecraft.js';
 import { Timeline } from 'viewer/timeline.js';
 import { createUI } from 'viewer/ui.js';
@@ -102,6 +103,14 @@ export function start(payload, container = document.body) {
   const refs = createReferences(referenceSpecs, sidecar, frames, models, {});
   if (refs.items.length) world.add(refs.group);
 
+  // Sub-satellite tracks on the body's surface. They live in the globe group,
+  // so they ride the body's rotation in both the inertial and planet-fixed views.
+  const groundTracks = createGroundTracks(globe, frames, sidecar, {
+    equatorialRadiusKm: Re, polarRadiusKm: Rp, pixelRatio,
+    enabled: options.ground_tracks ?? false,
+  });
+  globe.group.add(groundTracks.group);
+
   // The ensemble panel needs `state.select` before `state` is built; it reads
   // through this reference, which is filled in below.
   const stateRef = { selected: -1, select: (i) => state.select(i), plotSeries: (spec) => state.plotSeries(spec) };
@@ -135,6 +144,8 @@ export function start(payload, container = document.body) {
     setPaths(v) { refPaths.setVisible(v); },
     hasReferences: refs.items.length > 0,
     setReferences(v) { refs.setVisible(v); },
+    groundTracks: groundTracks.visible,
+    setGroundTracks(v) { groundTracks.setVisible(v); state.groundTracks = groundTracks.visible; },
     hasDensityMap: !!(atmosphere && atmosphere.map),
     setTrailColor(mode) { ui.setTrailLegend(craft.setTrailColorMode(mode)); },
     setAtmosphereLimb(v) { atmosphere && atmosphere.setLimbVisible(v); },
@@ -557,6 +568,7 @@ export function start(payload, container = document.body) {
     lod.update(t, camera, viewportHeight, lod.group.matrixWorld, anchor);
     dust.update(t);
     plumes.update(t);
+    groundTracks.update(t);
     if (refPaths.items.length) refPaths.update(t, anchor);
     if (refs.items.length) refs.update(t, camera, viewportHeight, refs.group.matrixWorld, anchor);
     if (ensemble) ensemble.update(state.follow, t, anchor, camera, ensemble.group.matrixWorld);
@@ -573,7 +585,7 @@ export function start(payload, container = document.body) {
   requestAnimationFrame(animate);
 
   const viewer = {
-    renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, plumes, dust, ensemble, references: refs, paths: refPaths, timeline, frames, state, period, lighting,
+    renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, plumes, dust, ensemble, references: refs, paths: refPaths, groundTracks, timeline, frames, state, period, lighting,
     // Deterministic rendering for exports: seek and draw one frame at t.
     renderAt(t) { timeline.seek(t); frame(t); },
     setRecording(v) { recording = v; if (!v) resize(); },

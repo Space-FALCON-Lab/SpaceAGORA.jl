@@ -29,7 +29,9 @@
 //   terrain.reference_radius_m
 //   terrain.grids[]            { name, rows, cols, lat_min, lat_max, lon_min, lon_max, heights (base64 Float32, row-major north to south) }, finest first
 //   terrain.tiles              { scheme: "quadtree", root: { lat_min, lat_max, lon_min, lon_max }, tile_px, max_level,
-//                                nodes: [ { level, x, y, url (data: JPEG), m_per_px } ] }
+//                                nodes: [ { level, x, y, url (data: JPEG), m_per_px } ],
+//                                and optionally resolution { finest_m_per_px, feature_scale_m, ... },
+//                                attribution [] and source, which the panel reports }
 //     A node at (level, x, y) covers lon_min + (lon_max - lon_min) * x / 2^level
 //     eastward by one node width, and latitude from lat_max downward the same
 //     way, so y = 0 is the northern row (the grids' convention).
@@ -669,8 +671,14 @@ export function createTerrain(spec, planet, options = {}) {
     update,
     setGlobeTexture,
     setVisible(v) { group.visible = v; },
+    // The imagery's required credit, which the payload carries so a page that ships
+    // archive data says where it came from.
+    get attribution() { return (tiles.attribution || []).join(' \u00b7 '); },
     get modelStatus() {
-      return `quadtree to L${maxTileLevel} (+${TERRAIN_EXTRA_LEVELS} relief), ${tiles.nodes.length} tiles, finest ${finestTile ? finestTile.toFixed(2) : '–'} m/px, ${grids.length} grids (${finest.rows}x${finest.cols})`;
+      // the finest tiles are sampled finer than their source resolves, so the panel reports the
+      // feature scale the payload states beside the sampling rather than the sampling alone
+      const resolves = tiles.resolution && tiles.resolution.feature_scale_m;
+      return `quadtree to L${maxTileLevel} (+${TERRAIN_EXTRA_LEVELS} relief), ${tiles.nodes.length} tiles, finest ${finestTile ? finestTile.toFixed(2) : '–'} m/px${resolves ? ` sampling of ~${resolves.toFixed(1)} m detail` : ''}, ${grids.length} grids (${finest.rows}x${finest.cols})`;
     },
   };
 }

@@ -523,6 +523,12 @@ the whole descent corridor, the fine ones only the landing site — and the
 viewer textures an absent node from its nearest present ancestor and that
 ancestor's matching UV sub-rectangle. `tiles` is absent when the site has
 none.
+
+When the tile index carries them, `tiles` also passes through `resolution`
+(what the deepest level is sampled at, what its source grid is, and the
+feature scale the data actually resolves, which is coarser), `attribution`
+and `source`; the page shows the feature scale beside the sampling so it does
+not quote the optimistic number.
 """
 function terrain_payload(site_json::AbstractString; max_grid::Integer=512)::Dict{String, Any}
     isfile(site_json) || throw(ArgumentError("terrain site file not found: $(site_json)"))
@@ -579,7 +585,7 @@ function terrain_tiles_payload(dir::AbstractString, tiles_rel)::Union{Nothing, D
     end
     isempty(nodes) && return nothing
     root = meta["root"]
-    return Dict{String, Any}(
+    out = Dict{String, Any}(
         "scheme" => String(get(meta, "scheme", "quadtree")),
         "root" => Dict{String, Any}("lat_min" => root["lat_min"], "lat_max" => root["lat_max"],
                                     "lon_min" => root["lon_min"], "lon_max" => root["lon_max"]),
@@ -587,6 +593,14 @@ function terrain_tiles_payload(dir::AbstractString, tiles_rel)::Union{Nothing, D
         "max_level" => maximum(n -> n["level"], nodes),
         "nodes" => nodes,
     )
+    # provenance and what the finest level is worth, when the tile index carries them: the
+    # deepest imagery is sampled finer than it resolves, and the page says so rather than
+    # quoting the sampling alone
+    for key in ("resolution", "attribution", "source")
+        value = get(meta, key, nothing)
+        value === nothing || (out[key] = value)
+    end
+    return out
 end
 
 

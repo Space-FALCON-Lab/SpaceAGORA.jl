@@ -11,6 +11,45 @@ with each. Section 8 lists what could not be verified.
 
 ## 1. Summary and recommendation
 
+> **Implemented.** Level 13 was built from `NAC_PHO_E010N0230_M175124932R.PYR.TIF` as recommended
+> below; `fetch_moon_site.py` now reads PDS rasters in place (`ARCHIVE_SOURCES`, `ArchiveRaster`)
+> and `--max-level` defaults to 13. Measured outcome, on the Apollo 11 site: **46 nodes,
+> 253 230 bytes of JPEG (5 505 B a tile at quality 66), 0.338 MB inlined**; the whole quadtree is
+> 837 nodes and 3 618 548 bytes, **4.82 MB of base64** against the 5 MB budget, and the built page
+> is 13 717 620 bytes against 13 375 049 before — both inside the 14 MB ceiling. Level 14 was not
+> built. Three things the study left open are now settled, and one of its numbers was wrong:
+>
+> - **The `.PYR.TIF` geotransform convention is resolved** (section 9 had it as unverified with a
+>   ~50 m residual, which was an arithmetic error). The file is self-describing:
+>   `x = R cos(phi_std) (lon - lon_0)`, `y = R lat`, with `R`, `phi_std` = 1 deg and
+>   `lon_0` = 180 deg read from its GeoTIFF keys, and `ModelTiepointTag` giving the outer corner of
+>   the upper-left pixel (`RasterPixelIsArea`). Against the `.IMG` label's bounding coordinates
+>   that puts the four edges within **0.15, 0.00, 0.08 and 0.17 m** — under a pixel. The reader
+>   uses the file's own geometry and fails loudly if the label disagrees by more than two pixels.
+>   The `.IMG` label's positive `x` is the same magnitude with the opposite sign.
+> - **Registration was measured three ways** (`scripts/dev/terrain/check_site_registration.py`).
+>   The archive raster sits 0.6 m south and 1.9 m west of the corrected Trek NAC mosaics
+>   (imagery against imagery at Trek zoom 15, correlation peak 0.71, the same answer to 0.02 m
+>   over 167, 250 and 333 m boxes); 0.9 m north and 3.2 m west of the NAC DTM's hillshade at the
+>   approach sun azimuth of 90 deg (peak 0.12); and it draws the lunar module 1.8 m south and
+>   0.2 m west of the Wagner coordinate. The three agree to about 2 m, which is the spread of the
+>   hillshade-based routes, so `LAYER_REGISTRATION["a11_pho_r"]` takes the imagery-to-imagery
+>   number, `(-0.6, -1.9)`. With it in force the level 12 to 13 residual is **+0.05 m north,
+>   -0.01 m east**, and in the rendered page a 256 px window either side of the level-13 coverage
+>   edge moves by less than 0.05 screen pixels while its high-frequency energy rises 2.4 times.
+>   The same run re-measures the Trek defect of section 5 independently: uncorrected, Trek's
+>   Apollo 11 mosaic is 23.5 m north of the archive.
+> - **Rate limiting was designed around and not hit.** The tile table costs two range requests;
+>   the 143 tiles (9.4 MB) covering the level-13 node set and the correlation box came down in
+>   **11 requests of about 0.85 MB, in 5.5 s**, one per tile row, each tile written to
+>   `pds_cache/` as it arrives so a re-run or a resumed run costs nothing. An HTTP 429 now raises
+>   instead of being retried.
+>
+> The one number that moved: level 13 costs 0.338 MB inlined rather than the 0.449 MB estimated in
+> section 7.2, because the shipped quality ramp reaches 66 rather than 68 and the pipeline's own
+> detail normalization attenuates this source (gain 0.41).
+
+
 Trek's zoom cap is **not** the resolution limit of the underlying data: Trek serves the Apollo 11
 mosaic 2.5 times coarser than the mosaic itself, and the Planetary Data System serves the same
 frames at up to 0.2 m/px with no cap. The recommendation is to add **one** quadtree level
@@ -482,6 +521,15 @@ should then carry:
    section 8 below that threshold, rather than blurring an unlabelled texture.
 7. **Update the attribution** in `tiles.json`'s `source` field and wherever the viewer surfaces it.
 
+**Status of these steps.** 2, 3, 4, 5, 6 and 7 are done, as described in section 1: `tiles.json`
+carries `archive_sources` (product, URL, credit, citation and the levels it feeds), `attribution`
+and a `resolution` block, and the viewer's info panel now reads "finest 0.33 m/px sampling of
+~0.5 m detail" rather than the sampling alone. Step 1 was done in the preceding round for the
+Trek layers and this round extends the same `LAYER_REGISTRATION` mechanism to the archive raster
+rather than moving levels 11 and 12 onto `NAC_ROI_APOLLO11HIB`: the measurement in section 1
+shows the corrected Trek levels and the archive level agree to 0.05 m, so moving them would buy
+nothing.
+
 ## 8. The honest ceiling, and what the page should do below it
 
 At 4 m altitude a filled viewport asks for roughly **0.02 m/px**. The best map-projected orbital
@@ -555,13 +603,11 @@ scales instead of a texture, but at 2 m it is coarser than the imagery and would
 - **Whether Moon Trek offers any bulk or subset download.** Four endpoint guesses returned 404.
   There may be an authenticated or UI-driven path I did not find; I only established that no
   obvious public REST route exists.
-- **The `.PYR.TIF` geotransform convention.** `ModelTiepoint` is (−4 746 449.8, 33 786.6) m against
-  the `.IMG` label's (+4 746 449.7, +33 786.5) m, and my attempt to reproduce those meters from the
-  bounding longitudes under an equirectangular projection with standard parallel 1.0 deg left a
-  residual of roughly 50 m. The recommendation in section 7.4 (index the TIFF from the `.IMG`
-  label's lon/lat bounds, whose extents match the TIFF's dimensions to better than a pixel) sidesteps
-  this, and the single-tile fetch verified end to end that it works, but the projected-meter
-  convention itself is unresolved.
+- ~~**The `.PYR.TIF` geotransform convention.**~~ **Resolved** while implementing (section 1):
+  `x = R cos(1 deg) (lon - 180 deg)` and `y = R lat` reproduce `ModelTiepoint` from the label's
+  bounding coordinates to 0.15 m and 0.17 m, so the roughly 50 m residual recorded here was an
+  arithmetic error in this study, not a property of the product. The shipped reader takes the
+  geometry from the file rather than from the label.
 - **Apollo-era orbital coverage.** The statement that Apollo 15, 16 and 17 did not overfly
   Tranquility Base, and that an off-nadir Apollo 16 metric camera frame includes the site, comes
   from secondary sources (LPI and ASU outreach pages) rather than from an index of the frames. I did

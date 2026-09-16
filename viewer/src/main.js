@@ -236,6 +236,7 @@ export function start(payload, container = document.body) {
     ...(refPaths.items.length ? { paths: refPaths.items.map((it) => it.spec.name).join(', ') } : {}),
     ...(refs.items.length ? { references: refs.items.map((it) => it.spec.name).join(', ') } : {}),
     ...(terrain.levels.length ? { terrain: `${terrain.site ? terrain.site.name + ', ' : ''}${terrain.modelStatus}` } : {}),
+    ...(terrain.levels.length && terrain.attribution ? { imagery: terrain.attribution } : {}),
     ...(atmosphere ? {
       atmosphere: `${atmosphere.info.model.replace('AtmosphereModel', '')}, EI ${atmosphere.info.ei_km.toFixed(0)} km`,
       ...(atmosphere.info.map ? { 'density map': `${atmosphere.info.map.altitude_km.toFixed(0)} km, ${atmosphere.info.map.min.toExponential(1)}–${atmosphere.info.map.max.toExponential(1)} kg/m³` } : {}),

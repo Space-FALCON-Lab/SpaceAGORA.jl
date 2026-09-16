@@ -239,7 +239,18 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :plume_surface_footprint, rendered = "SpaceAGORA.plume_surface_footprint"),
             (owner = :SpaceAGORA, symbol = :plume_erosion_onset_height, rendered = "SpaceAGORA.plume_erosion_onset_height"),
             (owner = :SpaceAGORA, symbol = :plume_ground_effect_force, rendered = "SpaceAGORA.plume_ground_effect_force"),
-            (owner = :SpaceAGORA, symbol = :plume_quantities, rendered = "SpaceAGORA.plume_quantities")
+            (owner = :SpaceAGORA, symbol = :plume_quantities, rendered = "SpaceAGORA.plume_quantities"),
+            (owner = :SpaceAGORA, symbol = :PlumeGasState, rendered = "SpaceAGORA.PlumeGasState"),
+            (owner = :SpaceAGORA, symbol = :PlumeNozzle, rendered = "SpaceAGORA.PlumeNozzle"),
+            (owner = :SpaceAGORA, symbol = :PlumeAnalyticField, rendered = "SpaceAGORA.PlumeAnalyticField"),
+            (owner = :SpaceAGORA, symbol = :PlumeFieldTable, rendered = "SpaceAGORA.PlumeFieldTable"),
+            (owner = :SpaceAGORA, symbol = :plume_gas_state, rendered = "SpaceAGORA.plume_gas_state"),
+            (owner = :SpaceAGORA, symbol = :build_plume_field_table, rendered = "SpaceAGORA.build_plume_field_table"),
+            (owner = :SpaceAGORA, symbol = :save_plume_field, rendered = "SpaceAGORA.save_plume_field"),
+            (owner = :SpaceAGORA, symbol = :load_plume_field, rendered = "SpaceAGORA.load_plume_field"),
+            (owner = :SpaceAGORA, symbol = :plume_wall_shear, rendered = "SpaceAGORA.plume_wall_shear"),
+            (owner = :SpaceAGORA, symbol = :plume_mean_shear, rendered = "SpaceAGORA.plume_mean_shear"),
+            (owner = :SpaceAGORA, symbol = :plume_scour_radius, rendered = "SpaceAGORA.plume_scour_radius")
         ]
     ),
     (

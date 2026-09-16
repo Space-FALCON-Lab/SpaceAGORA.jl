@@ -3,21 +3,36 @@
 # it erodes, the speed the grains leave at, and the small thrust augmentation
 # the reflected plume gives the vehicle in ground effect.
 #
-# The gas-dynamic part follows Roberts' treatment of a hypersonic jet acting on
-# a dust layer (L. Roberts, "The action of a hypersonic jet on a dust layer",
-# IAS Paper 63-50, 1963) in the form used for the Moon by P. T. Metzger and
-# co-workers (Metzger, Immer, Donahue, Vu, Latta, Deyo-Svendsen, "Jet-induced
-# cratering of a granular surface with application to lunar spaceports",
-# J. Aerosp. Eng. 22, 2009; Metzger, Smith, Lane, "Phenomenology of soil
-# erosion due to rocket exhaust on the Moon and the Mauna Kea lunar test site",
-# J. Geophys. Res. 116, E06005, 2011): a momentum-conserving surface-pressure
-# footprint, a wall shear stress proportional to it, and viscous erosion driven
-# by the shear stress in excess of the soil's threshold.
+# Every surface quantity is read from a plume field
+# (`src/dynamics/coupled/force_torque_models/plume_gas_field.jl`), which the
+# configuration carries and which answers
+# `plume_gas_state(field, config, thrust, height, radius)`. Two fields exist:
 #
-# Two parameters are calibrated, not derived, and both are anchored on Apollo 11
-# observables (see `docs/src/user/lunar_landing.md`):
+#   * `PlumeAnalyticField`, the default, is the momentum-conserving Gaussian
+#     pressure footprint with a skin-friction shear law that this model has
+#     always used, so a run that does not ask for anything else is unchanged.
+#   * `PlumeFieldTable` is the Simons source-flow plume of a named engine,
+#     evaluated on the ground through Newtonian impingement and tabulated by
+#     `scripts/dev/psi/build_plume_field.jl`. Supply one with
+#     `PlumeSurfaceConfig(field=load_plume_field("data/psi/apollo_lmde.json"))`.
+#
+# The erosion closure on top of the field follows Roberts' treatment of a
+# hypersonic jet acting on a dust layer (L. Roberts, "The action of a hypersonic
+# jet on a dust layer", IAS Paper 63-50, 1963) in the form used for the Moon by
+# P. T. Metzger and co-workers (Metzger, Immer, Donahue, Vu, Latta,
+# Deyo-Svendsen, "Jet-induced cratering of a granular surface with application
+# to lunar spaceports", J. Aerosp. Eng. 22, 2009; Metzger, Smith, Lane,
+# "Phenomenology of soil erosion due to rocket exhaust on the Moon and the
+# Mauna Kea lunar test site", J. Geophys. Res. 116, E06005, 2011): viscous
+# erosion driven by the wall shear stress in excess of the soil's threshold.
+#
+# Two parameters of that closure are calibrated, not derived, and both are
+# anchored on Apollo 11 observables with the analytic field (see
+# `docs/src/user/lunar_landing.md`):
 #   * `threshold_shear_pa` fixes the height at which erosion starts;
 #   * `erosion_efficiency` fixes how much soil the descent moves in total.
+# Both absorb a different amount of physics under the two fields, because the
+# fields do not report the same shear stress; the documentation states the shift.
 module PlumeSurfaceInteraction
 
 using StaticArrays
@@ -27,6 +42,9 @@ using ...TerrainModels: NoTerrainModel, DEMTerrainModel, terrain_height
 using ...EffectorSampling: StateSample, EnvironmentSample, EffectorEnvironmentRequirements
 import ...SimulationModel
 using ...SimulationModel: rot
+using ..PlumeGasField: PlumeGasState, PlumeAnalyticField, PlumeFieldTable, plume_gas_state,
+                       plume_field_footprint, plume_field_shear_coefficient, _plume_shear_at,
+                       _plume_quadrature_limit
 import ..DynamicEffectors: wrench, wrench_caching!, environment_requirements
 
 export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
@@ -41,12 +59,24 @@ mare regolith: a 1.5 m exit diameter, an area ratio of 47.5, a chamber pressure
 of 7.2 bar and 45.04 kN at full throttle (throttleable to 10 percent, so about
 4.5 kN to 45 kN), over soil of 1500 kg/m³ bulk density made of 70 µm grains.
 
+Plume field:
+
+- `field` is the object every surface quantity is read from: a
+  `PlumeAnalyticField` (the default, the Gaussian footprint described below) or
+  a `PlumeFieldTable` loaded with `load_plume_field`. Swapping it changes the
+  pressure, shear stress, footprint radius and everything derived from them,
+  and nothing else; the default keeps earlier runs bit for bit.
+
 Gas dynamics:
 
 - `nozzle_exit_radius_m`, `expansion_ratio`, `chamber_pressure_pa` and
   `exit_mach` describe the engine. Only the exit radius enters the force model
   (it sets the ground-effect length scale and floors the plume footprint); the
-  rest are carried so a scenario records the engine it flew.
+  rest are carried so a scenario records the engine it flew. `exit_mach`
+  defaults to 5.03, the isentropic exit Mach number of an area ratio of 47.5 at
+  the exhaust's ratio of specific heats, which is also the value Morris 2012
+  Table 3.1.1 reports for this engine (see `PlumeNozzle`); it replaces an
+  earlier unsourced 4.8, and no computed quantity depends on it.
 - `nozzle_offset_m` is how far the nozzle exit plane sits below the vehicle's
   reference point along the engine axis (1.5 m for the LM, where the state
   point is level with the descent stage deck). The plume geometry is measured
@@ -54,10 +84,12 @@ Gas dynamics:
   reference point, which is the point the trajectory is integrated at and the
   point the viewer draws the plume from.
 - `plume_half_angle_deg` is the half-angle of the momentum-carrying core of the
-  vacuum plume. The surface pressure is spread over a Gaussian footprint of
-  radius `R_p = h tan(θ_p)` normalized so its integral is the engine thrust.
+  vacuum plume, used by `PlumeAnalyticField` only: the surface pressure is
+  spread over a Gaussian footprint of radius `R_p = h tan(θ_p)` normalized so
+  its integral is the engine thrust.
 - `friction_coefficient` is the wall skin-friction coefficient that turns the
-  local surface pressure into wall shear stress.
+  local surface pressure into wall shear stress, again for `PlumeAnalyticField`
+  only. A table carries its own surface drag coefficient.
 
 Regolith:
 
@@ -65,10 +97,12 @@ Regolith:
   the soil properties; `cohesion_pa` is recorded for reference.
 - `threshold_shear_pa` is the wall shear stress below which nothing moves. It
   is the parameter that sets the erosion onset height and defaults to 0.15 Pa,
-  which puts the onset at about 31 m for the Apollo 11 approach thrust — the
-  height at which the crew first reported blowing dust. It is three to four
-  orders of magnitude below the bulk cohesion of lunar regolith (0.1–1 kPa),
-  as the mobile surface layer must be.
+  which puts the onset at about 31 m for the Apollo 11 approach thrust with the
+  analytic field — the height at which the crew first reported blowing dust. It
+  is three to four orders of magnitude below the bulk cohesion of lunar
+  regolith (0.1–1 kPa), as the mobile surface layer must be. The tabulated
+  field reports a larger wall shear stress at the same condition, so the same
+  threshold puts the onset higher; `docs/src/user/lunar_landing.md` gives both.
 - `erosion_efficiency` multiplies the momentum-balance erosion rate to account
   for the saltation cascade (each impacting grain splashes several more), which
   a pure momentum balance cannot produce. It defaults to 10.
@@ -83,12 +117,12 @@ Ground effect (see [`plume_ground_effect_force`](@ref)):
 `max_height_m` short-circuits the whole model: above it every plume quantity
 is zero.
 """
-Base.@kwdef struct PlumeSurfaceConfig
+Base.@kwdef struct PlumeSurfaceConfig{F}
     nozzle_exit_radius_m::Float64 = 0.75
     nozzle_offset_m::Float64 = 1.5
     expansion_ratio::Float64 = 47.5
     chamber_pressure_pa::Float64 = 7.2e5
-    exit_mach::Float64 = 4.8
+    exit_mach::Float64 = 5.03
     plume_half_angle_deg::Float64 = 25.0
     friction_coefficient::Float64 = 0.01
     bulk_density_kg_m3::Float64 = 1_500.0
@@ -104,6 +138,7 @@ Base.@kwdef struct PlumeSurfaceConfig
     ground_effect_scale::Float64 = 0.8
     ground_effect_cutoff::Float64 = 2.0
     max_height_m::Float64 = 250.0
+    field::F = PlumeAnalyticField()
 end
 
 """
@@ -154,10 +189,14 @@ columns `sc{i}_plume_*` when the effector is present.
 control = ApolloDescentControlModel(ApolloDescentControlConfig(), gcfg, state, terrain)
 plume = PlumeSurfaceInteractionModel(control, terrain)
 # ... dynamic_effectors = (gravity..., plume)
+
+# the same descent with the tabulated plume of the LM descent engine
+cfg = PlumeSurfaceConfig(field=load_plume_field("data/psi/apollo_lmde.json"))
+plume = PlumeSurfaceInteractionModel(control, terrain; config=cfg)
 ```
 """
-struct PlumeSurfaceInteractionModel{C, T <: AbstractTerrainModel} <: AbstractForceTorqueModel
-    config::PlumeSurfaceConfig
+struct PlumeSurfaceInteractionModel{F, C, T <: AbstractTerrainModel} <: AbstractForceTorqueModel
+    config::PlumeSurfaceConfig{F}
     control::C
     terrain::T
     state::PlumeSurfaceState
@@ -182,25 +221,44 @@ end
 
 # ---- the plume on the ground ---------------------------------------------------------
 
-const _PLUME_QUADRATURE_POINTS = 128
-const _PLUME_QUADRATURE_LIMIT = 3.0        # footprint radii; exp(-9) is already negligible
+const _PLUME_QUADRATURE_POINTS = 128       # radial nodes of the erosion quadrature
 
-"Peak wall shear stress of the Gaussian footprint, at r = R_p / sqrt(2)."
-@inline _plume_peak_shear(cfg::PlumeSurfaceConfig, p0::Float64)::Float64 = cfg.friction_coefficient * p0 * sqrt(2.0) * exp(-0.5)
+"""
+    _plume_peak_shear(cfg, thrust_n, height_m, p0, radius_m) -> Float64
+
+Peak wall shear stress over the footprint. The analytic field peaks at
+`r = R_p/sqrt(2)` with the closed-form value `sqrt(2) e^(-1/2) c_f p_0`; a
+tabulated field has no closed form, so its profile is scanned on the same grid
+the erosion quadrature uses.
+"""
+@inline function _plume_peak_shear(cfg::PlumeSurfaceConfig{<:PlumeAnalyticField}, thrust_n::Float64,
+                                   height_m::Float64, p0::Float64, R::Float64)::Float64
+    return cfg.friction_coefficient * p0 * sqrt(2.0) * exp(-0.5)
+end
+
+function _plume_peak_shear(cfg::PlumeSurfaceConfig, thrust_n::Float64, height_m::Float64,
+                           p0::Float64, R::Float64)::Float64
+    peak = 0.0
+    dx = _plume_quadrature_limit(cfg.field, height_m, R) / _PLUME_QUADRATURE_POINTS
+    @inbounds for k in 1:_PLUME_QUADRATURE_POINTS
+        peak = max(peak, _plume_shear_at(cfg.field, cfg, thrust_n, height_m, p0, R, (k - 0.5) * dx))
+    end
+    return peak
+end
 
 """
     plume_surface_footprint(config, thrust_n, height_m) -> (p0_pa, radius_m)
 
-Peak (stagnation) surface pressure and the footprint radius `R_p = h tan(θ_p)`
-of the plume of `thrust_n` newtons standing `height_m` above the ground. The
-pressure is `p(r) = p0 exp(-(r/R_p)^2)`, normalized so `∫ p dA` is the thrust:
-all of the engine's axial momentum is turned by the surface. The radius never
-falls below the nozzle exit radius.
+Peak (stagnation) surface pressure and the footprint radius of the plume of
+`thrust_n` newtons standing `height_m` above the ground, read from the
+configuration's field. The radius is the one containing `1 - 1/e` of the
+integral of the surface pressure over the ground, which for the default
+analytic field is exactly `R_p = h tan(θ_p)`: there `p(r) = p0 exp(-(r/R_p)^2)`
+normalized so `∫ p dA` is the thrust, so all of the engine's axial momentum is
+turned by the surface. The radius never falls below the nozzle exit radius.
 """
 @inline function plume_surface_footprint(cfg::PlumeSurfaceConfig, thrust_n::Real, height_m::Real)
-    R = max(Float64(height_m) * tand(cfg.plume_half_angle_deg), cfg.nozzle_exit_radius_m)
-    p0 = Float64(thrust_n) / (pi * R * R)
-    return p0, R
+    return plume_field_footprint(cfg.field, cfg, thrust_n, height_m)
 end
 
 """
@@ -208,16 +266,40 @@ end
 
 Height (m) at which the peak wall shear stress of a `thrust_n` plume falls to
 the soil's threshold: erosion starts below it and is identically zero above it.
-With the defaults and the Apollo 11 approach thrust (about 11.5 kN of lunar
-weight near the end of the descent) this is about 31 m, matching the roughly
-30 m at which the Apollo 11 crew first reported blowing dust.
+With the default analytic field and the Apollo 11 approach thrust (about 11.5 kN
+of lunar weight near the end of the descent) this is about 31 m, matching the
+roughly 30 m at which the Apollo 11 crew first reported blowing dust. A
+tabulated field has no closed-form inverse, so the height is bisected out of
+`_plume_peak_shear` between the nozzle exit radius and `max_height_m`.
 """
-function plume_erosion_onset_height(cfg::PlumeSurfaceConfig, thrust_n::Real)::Float64
+function plume_erosion_onset_height(cfg::PlumeSurfaceConfig{<:PlumeAnalyticField}, thrust_n::Real)::Float64
     F = Float64(thrust_n)
     (F > 0.0 && cfg.threshold_shear_pa > 0.0) || return 0.0
     # τ_peak = 0.8578 c_f F / (π h² tan²θ) = τ_t
     k = sqrt(2.0) * exp(-0.5) * cfg.friction_coefficient * F / (pi * tand(cfg.plume_half_angle_deg)^2 * cfg.threshold_shear_pa)
     return sqrt(k)
+end
+
+function plume_erosion_onset_height(cfg::PlumeSurfaceConfig, thrust_n::Real)::Float64
+    F = Float64(thrust_n)
+    (F > 0.0 && cfg.threshold_shear_pa > 0.0) || return 0.0
+    shear(h) = begin
+        p0, R = plume_surface_footprint(cfg, F, h)
+        _plume_peak_shear(cfg, F, h, p0, R)
+    end
+    lo = cfg.nozzle_exit_radius_m
+    hi = cfg.max_height_m
+    shear(lo) > cfg.threshold_shear_pa || return 0.0
+    shear(hi) > cfg.threshold_shear_pa && return hi
+    for _ in 1:60
+        mid = 0.5 * (lo + hi)
+        if shear(mid) > cfg.threshold_shear_pa
+            lo = mid
+        else
+            hi = mid
+        end
+    end
+    return 0.5 * (lo + hi)
 end
 
 """
@@ -240,9 +322,12 @@ the force available to accelerate grains, and a mass flux `ṁ` leaving at
 \\dot m = \\frac{\\eta}{v_{ej}} \\int \\max(\\tau(r) - \\tau_t,\\, 0)\\, \\mathrm{d}A
 ```
 
-with `η = erosion_efficiency` covering the saltation cascade. The ejecta speed
-comes from a drag balance on one grain accelerated across the footprint by the
-gas dynamic pressure at the shear peak.
+with `η = erosion_efficiency` covering the saltation cascade. The shear profile
+`τ(r)` is the field's, sampled on a fixed grid of `r/R` so the quadrature
+follows the footprint as the vehicle descends. The ejecta speed comes from a
+drag balance on one grain accelerated across the footprint by the gas dynamic
+pressure at the shear peak, recovered from the peak shear stress and the field's
+own shear coefficient.
 """
 function plume_quantities(cfg::PlumeSurfaceConfig, thrust_n::Real, height_m::Real)
     F = Float64(thrust_n)
@@ -251,7 +336,7 @@ function plume_quantities(cfg::PlumeSurfaceConfig, thrust_n::Real, height_m::Rea
                 ground_effect_n=0.0)
     (isfinite(F) && F > 0.0 && isfinite(h) && h >= 0.0 && h <= cfg.max_height_m) || return zero_out
     p0, R = plume_surface_footprint(cfg, F, h)
-    tau_peak = _plume_peak_shear(cfg, p0)
+    tau_peak = _plume_peak_shear(cfg, F, h, p0, R)
     ge = plume_ground_effect_force(cfg, F, h)
     tau_t = cfg.threshold_shear_pa
     if !(tau_peak > tau_t)
@@ -259,19 +344,18 @@ function plume_quantities(cfg::PlumeSurfaceConfig, thrust_n::Real, height_m::Rea
                 ground_effect_n=ge)
     end
     # Ejecta speed: a grain dragged across one footprint radius by the gas
-    # dynamic pressure q = τ_peak / c_f, starting from rest.
-    q_gas = tau_peak / cfg.friction_coefficient
+    # dynamic pressure at the shear peak, starting from rest.
+    q_gas = tau_peak / plume_field_shear_coefficient(cfg.field, cfg)
     accel = 3.0 * cfg.particle_drag_coefficient * q_gas / (4.0 * cfg.particle_density_kg_m3 * cfg.particle_diameter_m)
     v_ej = clamp(sqrt(2.0 * accel * R), cfg.ejecta_speed_min_mps, cfg.ejecta_speed_max_mps)
     # Excess shear force over the annulus, by midpoint quadrature in x = r / R_p.
-    A = cfg.friction_coefficient * p0
-    dx = _PLUME_QUADRATURE_LIMIT / _PLUME_QUADRATURE_POINTS
+    dx = _plume_quadrature_limit(cfg.field, h, R) / _PLUME_QUADRATURE_POINTS
     excess_n = 0.0
     inner = Inf
     outer = 0.0
     @inbounds for k in 1:_PLUME_QUADRATURE_POINTS
         x = (k - 0.5) * dx
-        tau = A * 2.0 * x * exp(-x * x)
+        tau = _plume_shear_at(cfg.field, cfg, F, h, p0, R, x)
         tau > tau_t || continue
         excess_n += (tau - tau_t) * 2.0 * pi * x * dx * R * R
         inner = min(inner, x * R)

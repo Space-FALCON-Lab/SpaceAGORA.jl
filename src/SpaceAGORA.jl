@@ -76,6 +76,9 @@ using .SimulationModel: NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height
 using .SimulationModel: DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
+using .SimulationModel: PlumeGasState, PlumeNozzle, PlumeAnalyticField, PlumeFieldTable
+using .SimulationModel: plume_gas_state, build_plume_field_table, save_plume_field, load_plume_field
+using .SimulationModel: plume_wall_shear, plume_mean_shear, plume_scour_radius
 using .SimulationModel: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
@@ -92,6 +95,10 @@ using .SimulationModel: plume_surface_footprint, plume_erosion_onset_height, plu
 @doc (@doc SimulationModel.PlumeSurfaceConfig) PlumeSurfaceConfig
 @doc (@doc SimulationModel.PlumeSurfaceInteractionModel) PlumeSurfaceInteractionModel
 @doc (@doc SimulationModel.PlumeSurfaceState) PlumeSurfaceState
+@doc (@doc SimulationModel.PlumeGasState) PlumeGasState
+@doc (@doc SimulationModel.PlumeNozzle) PlumeNozzle
+@doc (@doc SimulationModel.PlumeAnalyticField) PlumeAnalyticField
+@doc (@doc SimulationModel.PlumeFieldTable) PlumeFieldTable
 @doc (@doc SimulationModel.StateAnchor) StateAnchor
 @doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
@@ -573,6 +580,9 @@ export NoTerrainModel, DEMGrid, DEMTerrainModel, terrain_height, terrain_radius,
 export DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel, apollo11_descent_targets
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
+export PlumeGasState, PlumeNozzle, PlumeAnalyticField, PlumeFieldTable
+export plume_gas_state, build_plume_field_table, save_plume_field, load_plume_field
+export plume_wall_shear, plume_mean_shear, plume_scour_radius
 export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult

@@ -98,6 +98,20 @@ data/GRAM_surrogate
 This bundle is optional. It accelerates selected GRAM-backed workflows but is
 not required for the no-GRAM baseline mode.
 
+#### Plume field tables
+
+Tracked in the repository under:
+
+```text
+data/psi
+```
+
+Gridded plume fields for `PlumeSurfaceInteractionModel`, about 85 kB each,
+generated from the engine by `scripts/dev/psi/build_plume_field.jl`. They are
+optional: without one the effector keeps its analytic footprint. See
+`data/psi/README.md` for the model, the sources of every engine parameter and
+what the shipped tables differ in.
+
 ### Verification reference data
 
 The simulator-to-simulator reference sets that the parity matrix

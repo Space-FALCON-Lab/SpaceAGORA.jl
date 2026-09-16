@@ -126,13 +126,21 @@ plume = PlumeSurfaceInteractionModel(control, terrain)
 
 `PlumeSurfaceConfig` carries the engine (1.5 m exit diameter, area ratio 47.5,
 7.2 bar chamber pressure, 4.5 to 45 kN throttle band — the Apollo LM's descent
-propulsion system by default) and the soil (1500 kg/m³ bulk density, 70 µm
-grains, cohesion, threshold shear stress).
+propulsion system by default), the soil (1500 kg/m³ bulk density, 70 µm grains,
+cohesion, threshold shear stress) and the plume field the surface state is read
+from.
 
 ### The model
 
-The gas-dynamic part follows Roberts' treatment of a hypersonic jet acting on a
-dust layer (L. Roberts, *The action of a hypersonic jet on a dust layer*, IAS
+Every surface quantity is read from a *plume field* that `PlumeSurfaceConfig`
+carries in its `field`, so the gas dynamics and the erosion closure are
+separable. Two fields exist. `PlumeAnalyticField` is the Gaussian footprint
+described in this section and is the default, so a run that asks for nothing
+else is unchanged. `PlumeFieldTable` is a plume computed from the nozzle and
+tabulated; it is described in "The tabulated plume field" below.
+
+The erosion closure on top of either field follows Roberts' treatment of a
+hypersonic jet acting on a dust layer (L. Roberts, *The action of a hypersonic jet on a dust layer*, IAS
 Paper 63-50, 1963) in the form used for the Moon by Metzger and co-workers
 (Metzger, Immer, Donahue, Vu, Latta and Deyo-Svendsen, *Jet-induced cratering
 of a granular surface with application to lunar spaceports*, J. Aerosp. Eng.
@@ -202,6 +210,105 @@ decay of the base-pressure rise measured for nozzles near a plate; the
 magnitude is a modeling choice sized to the few-percent effect reported for
 lunar-lander-class plumes, not an Apollo flight measurement. Change it through
 `ground_effect_max_fraction`, `ground_effect_scale` and `ground_effect_cutoff`.
+
+### The tabulated plume field
+
+The Gaussian footprint is a closure, not a plume: its width is an assumed
+half-angle and its shear stress an assumed fraction of the static pressure.
+`PlumeFieldTable` replaces both with a plume computed from the engine. Ask for
+one by loading it into the configuration:
+
+```julia
+cfg = PlumeSurfaceConfig(field=load_plume_field("data/psi/apollo_lmde.json"))
+plume = PlumeSurfaceInteractionModel(control, terrain; config=cfg)
+```
+
+The plume itself is the Simons source-flow model of a rocket exhausting into
+vacuum with Boynton's nozzle-boundary-layer correction (G. A. Simons, *Effect of
+nozzle boundary layers on rocket exhaust plumes*, AIAA Journal 10(11), 1972;
+F. P. Boynton, *Exhaust plumes from nozzles with wall boundary layers*,
+J. Spacecraft and Rockets 5(10), 1968), in the explicit form of section 2.1 of
+P. J. Herráiz, J. M. Fernández and J. R. Villa, *Development of a MATLAB plume
+impingement tool for fast system analysis*, EUCASS 2019, DOI
+10.13009/EUCASS2019-661. It meets the ground through classical Newtonian impact
+theory for the wall pressure and the oblique normal-shock relations for the gas
+behind the surface shock, and the wall shear stress is the wall jet's dynamic
+pressure times the rough-surface drag coefficient of 0.2 that Roberts used for
+the meteorite-gardened lunar surface. Classical Newtonian is chosen over
+modified Newtonian because it conserves the plume's axial momentum on the plane
+exactly: the built table's surface pressure integrates to 1.008 times the engine
+thrust at every height.
+
+Every engine parameter is sourced or derived from a sourced number, and the
+three that are neither — the nozzle exit lip half-angle, the divergent length
+and the mean limit-speed ratio of the boundary-layer decay — are named fields of
+`PlumeNozzle` marked as assumptions there. `data/psi/README.md` tabulates all of
+them with their sources, and `scripts/dev/psi/build_plume_field.jl` rebuilds the
+tables.
+
+What changes when a table is used, at the Apollo 11 approach thrust of 11.5 kN:
+
+| | analytic | table | ratio |
+|---|---|---|---|
+| stagnation pressure at 10 m | 168 Pa | 205 Pa | 1.22 |
+| footprint radius at 10 m | 4.66 m | 4.40 m | 0.94 |
+| peak wall shear at 10 m | 1.44 Pa | 9.18 Pa | 6.4 |
+| erosion onset height | 31 m | 80 m | 2.6 |
+
+The pressure and the footprint agree to about 20 percent over the whole descent,
+which is the real verdict on the Gaussian footprint: as a *pressure* closure it
+was close. The shear stress does not agree, because Roberts' drag coefficient
+acting on the wall jet is a far stronger coupling than a 0.01 skin-friction
+coefficient acting on the static pressure, and the erosion onset follows it.
+`threshold_shear_pa` and `erosion_efficiency` were calibrated against Apollo 11
+observables with the analytic field and are *not* retuned for the table, so a
+run with a table erodes more soil, earlier: re-evaluating the Apollo 11 descent
+on the tabulated field moves 29 tonnes of regolith against the analytic field's
+429 kg, which is far above the tonne-scale estimates from the landings. The
+calibration does not transfer, and it is not adjusted here to hide that; the
+numbers quoted below are the analytic ones. Recalibrating the erosion closure
+against the literature is separate work.
+
+One published number for this engine at a stated condition is a
+peak laminar smooth-wall shear stress of 92 Pa for the LMDE hovering 5 m above
+the surface at 13.34 kN, from the DSMC simulations of A. B. Morris, *Simulation
+of rocket plume impingement and dust dispersal on the lunar surface*, PhD
+dissertation, University of Texas at Austin, 2012, section 4.4.2. The shipped
+table gives 41.4 Pa there, 2.2 times low. That is the deficiency the same work
+diagnoses in section 4.6: a point source at the nozzle exit plane under-predicts
+the surface stress below about ten nozzle diameters, because the plume really
+originates about 1.8 m further downstream, where the nozzle's internal
+compression wave meets the axis. `data/psi/apollo_lmde_virtual_source.json` is
+the same table built with that measured offset; it gives 100.0 Pa at the same
+condition, 9 percent above the DSMC value, and has to freeze within about 2.6 m
+of the ground where the source would reach the surface. The conservative one
+ships as the default, and neither was tuned to match the 92 Pa.
+
+### The plume field against the Apollo measurements
+
+Lane and Metzger, *Estimation of Apollo lunar dust transport using optical
+extinction measurements*, Acta Geophysica 63(2), 2015, inverted the Apollo 12
+descent films and put the radius of the eroding region at 1.3 to 2.2 times the
+nozzle height, an effective half-angle of 52 to 66 degrees, against the 25
+degrees `plume_half_angle_deg` assumes (both results are taken from the
+validation study's reading of that paper in `benchmarks/studies/psi_validation/`
+rather than checked against the primary source here). The computed field reproduces that
+without widening the plume: at 11.5 kN its eroding radius is 1.9, 1.5 and 1.3
+times the height at 5, 10 and 15 m, while its momentum-carrying pressure core
+stays at 24 degrees. The two decouple because the wall shear stress is the skin
+friction of the radial wall jet rather than a fraction of the local static
+pressure, and the wall jet keeps accelerating outward while its density thins,
+so the shear reaches far beyond the pressure footprint. A shear proportional to
+the static pressure, which is what the analytic field uses, forces the eroding
+region and the pressure footprint to be the same width, and that single
+geometric error is what the wide measured region exposes.
+
+Use `plume_wall_shear`, `plume_mean_shear` and `plume_scour_radius` to compare
+against measurements of a profile rather than of a peak; comparing a model peak
+against an area-averaged measurement flatters the analytic field considerably.
+`data/psi/README.md` gives the full comparison, the two published references
+that disagree with each other by a factor of 25, and the erosion-onset residual
+that is left after both are taken into account.
 
 ### What it records
 

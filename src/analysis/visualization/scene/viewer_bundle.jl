@@ -587,49 +587,8 @@ function terrain_tiles_payload(dir::AbstractString, tiles_rel)::Union{Nothing, D
         "max_level" => maximum(n -> n["level"], nodes),
         "nodes" => nodes,
     )
-    tiles === nothing || (out["tiles"] = tiles)
-    return out
 end
 
-"""
-    terrain_tiles_payload(dir, tiles_rel) -> Union{Nothing, Dict{String, Any}}
-
-The site's imagery quadtree, when its directory carries one: the index written
-beside the tiles (`scheme`, `root`, `tile_px`, `max_level` and the `nodes` that
-exist, each `{level, x, y, m_per_px}`), with every tile turned into a JPEG data
-URL. A node at `(level, x, y)` covers the fraction `x/2^level` to
-`(x+1)/2^level` of the root's longitude span and, from `lat_max` downward, the
-same fraction of its latitude span, so `y = 0` is the northern row. Nodes exist
-only where imagery was built; the viewer inherits the nearest present ancestor's
-texture everywhere else.
-"""
-function terrain_tiles_payload(dir::AbstractString, tiles_rel)::Union{Nothing, Dict{String, Any}}
-    tiles_rel === nothing && return nothing
-    index_path = joinpath(dir, String(tiles_rel))
-    isfile(index_path) || return nothing
-    index = JSON.parsefile(index_path)
-    tiles_dir = dirname(index_path)
-    nodes = Dict{String, Any}[]
-    for n in get(index, "nodes", Any[])
-        path = joinpath(tiles_dir, String(n["file"]))
-        isfile(path) || continue
-        push!(nodes, Dict{String, Any}(
-            "level" => Int(n["level"]), "x" => Int(n["x"]), "y" => Int(n["y"]),
-            "m_per_px" => Float64(get(n, "m_per_px", 0.0)),
-            "url" => _data_url(read(path), "image/jpeg"),
-        ))
-    end
-    isempty(nodes) && return nothing
-    root = index["root"]
-    return Dict{String, Any}(
-        "scheme" => String(get(index, "scheme", "quadtree")),
-        "root" => Dict{String, Any}("lat_min" => root["lat_min"], "lat_max" => root["lat_max"],
-            "lon_min" => root["lon_min"], "lon_max" => root["lon_max"]),
-        "tile_px" => Int(get(index, "tile_px", 256)),
-        "max_level" => maximum(n["level"] for n in nodes),
-        "nodes" => nodes,
-    )
-end
 
 """
     path_payloads(paths) -> Vector{Dict{String, Any}}

@@ -5,8 +5,16 @@ routing comparisons, the results measured on `space-falcon-1` (12 cores) and
 `space-falcon-lab-TRX50-AERO-D` (64 cores), and the findings that need stating
 alongside them. Both machines ran the same code at the same commit.
 
-- **Code:** `origin/main` 4b42b544, run from a dedicated worktree so the numbers
-  cite one hash; harness changes on `bench/paper-routing-figures`.
+- **Code the numbers were measured against:** `origin/main` 4b42b544, run from a
+  dedicated worktree so every figure in this document cites one hash. Harness
+  changes on `parallelization-paper-results`.
+- **Base the branch now sits on:** `origin/main` 31e04bc8. The branch was
+  rebased after the fact for review, and main had moved 21 `src/` files in
+  between -- `simulation/campaigns/constellation_ensemble.jl` and
+  `simulation/engine/setup.jl` among them, both on the path P1 and P5 exercise.
+  Nothing here was re-measured against that tree, so a re-run from the branch
+  tip is not guaranteed to reproduce these numbers. 4b42b544 is the hash to
+  quote and the one to check out to reproduce them.
 - **Machines:** `space-falcon-1`, Ryzen 9 9900X, 12 physical cores / 24 threads,
   60 GB, thread ladder `1,2,4,8,12`, process-worker cap 12; and
   `space-falcon-lab-TRX50-AERO-D`, 64 physical cores, thread ladder

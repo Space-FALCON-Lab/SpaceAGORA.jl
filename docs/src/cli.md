@@ -52,6 +52,11 @@ Supported options:
 Use `--smoke` for long examples that support
 `SPACEAGORA_EXAMPLE_SMOKE=1`.
 
+The child runs under the repository project (the environment of
+`julia --project=.`), so the example can load `SpaceAGORA` whether or not it
+activates the project itself; `--print-only` shows that project and the exact
+command.
+
 ### Run telemetry verification
 
 ```text

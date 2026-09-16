@@ -845,7 +845,7 @@ Immer et al. (2011) quote when bounding the Surveyor 3 impact speeds.
 Default grain sizes for [`ejecta_distribution`](@ref): 1, 5, 20, 70, 200 and
 500 µm. The 70 µm entry is the Lunar Sourcebook's average median size (chapter
 9, section 9.1.1); the range spans the lunar soil distribution, whose fines
-reach far below a micrometre (Park, Liu, Kihm and Taylor, "Characterization of
+reach far below a micrometer (Park, Liu, Kihm and Taylor, "Characterization of
 lunar dust for toxicological studies I: particle size distribution",
 J. Aerospace Engineering 21(4), 2008, give 0.019 µm as the smallest size).
 """
@@ -873,7 +873,7 @@ than a lognormal fit; what is used here is only the two percentiles above, which
 are sourced. The point of the weighting is that it is a *mass* distribution:
 weighting the sizes equally, as `ejecta_distribution` does by default, gives the
 micron fines a sixth of the soil's mass, which they do not have, and that is
-what drives the kilometre-scale deposition radii reported in
+what drives the kilometer-scale deposition radii reported in
 `docs/src/user/lunar_landing.md`.
 
 `soil` is anything carrying `median_diameter_m` and `d84_over_d50`

@@ -182,7 +182,7 @@ end
 end
 
 # Atmospheric density the RHS last evaluated for each satellite (kg/m^3), for
-# the viewer's pass colouring; zero outside the atmosphere or without one.
+# the viewer's pass coloring; zero outside the atmosphere or without one.
 @inline function _save_density(num_sats::Int, u, t, integrator)
     densities = integrator.p.shared_buffers.densities
     out = Vector{Float64}(undef, num_sats)
@@ -445,7 +445,7 @@ end
 """
     density_save_field(args) -> SaveField
 
-The `density` field (kg/m^3 per satellite) the viewer colours passes by.
+The `density` field (kg/m^3 per satellite) the viewer colors passes by.
 """
 function density_save_field(args::SimulationConfiguration)
     num_sats = length(args.dynamics_model.spacecraft)
@@ -498,7 +498,7 @@ end
     arm_pose_save_field(args) -> SaveField
 
 The `arm_pose` field: per spacecraft, every cloth robot-arm link's COM
-position relative to the spacecraft (inertial, metres) and inertial
+position relative to the spacecraft (inertial, meters) and inertial
 quaternion.
 """
 function arm_pose_save_field(args::SimulationConfiguration)

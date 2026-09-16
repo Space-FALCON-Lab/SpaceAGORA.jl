@@ -295,7 +295,7 @@ however many columns read it, and not at all when nothing is eroding or when
 `ejecta_diagnostic=false`.
 
 Two weightings separate this from a sweep of the shear profile, and both were
-the fix the ejecta work identified for its kilometre-scale deposition radii:
+the fix the ejecta work identified for its kilometer-scale deposition radii:
 
 - each launch radius contributes the **regimes' own local erosion rate** there
   times its annulus area, instead of the raw wall shear stress with no

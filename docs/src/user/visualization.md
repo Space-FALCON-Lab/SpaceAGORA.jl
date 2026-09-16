@@ -130,21 +130,69 @@ reports the height above the terrain.
 When the run carried a `PlumeSurfaceInteractionModel` (see
 [Lunar Landing](lunar_landing.md)) the results table gains the seven
 `sc{i}_plume_*` columns, the bundler adds a `frames.plume` block, and the page
-draws the regolith the descent engine blows off the surface: a sheet of a few
-thousand particles leaving the point where the engine axis meets the terrain at
-one to three degrees above the local ground, at the ejecta speed the effector
-computed, settling back under the body's gravity; a haze disk over the
-impingement point whose brightness follows the erosion rate; and a scour mark
-that grows with the mass already moved. Positions are derived in the vertex
-shader from per-particle seeds and the clock, so the whole sheet costs a
-handful of uniform writes a frame. Nothing is drawn where the erosion rate is
-zero, which is everywhere above the erosion onset height, so the sheet appears
-by itself in the last tens of meters of a descent.
+draws the regolith the descent engine blows off the surface. Nothing is drawn
+where the erosion rate is zero, which is everywhere above the erosion onset
+height, so the sheet appears by itself in the last tens of meters of a descent.
 
-The "dust" toggle in the toolbar turns it off, and the selection panel gains
-the seven plume quantities — engine height (m), plume shear and pressure (Pa),
-erosion rate (kg/s), eroded mass (kg), ejecta speed (m/s) and ground effect (N)
-— each with a time history like every other row.
+What it is drawn to look like is NASA Langley's plume-surface interaction
+tests, where an engine fires into a bin of lunar simulant in a vacuum chamber:
+seen from above, a continuous translucent veil streams out of the impingement
+point in billowing filaments that fade with radius; seen from the side it stays
+flat against the ground, a couple of meters thick, while a fine haze builds up
+over the following seconds until the hardware behind it is barely readable. So
+the page draws five things, all of them driven by the effector's numbers:
+
+- **the sheet**, three very flat disks stacked over the impingement point whose
+  fragment shader is fractional Brownian motion in polar coordinates, scrolling
+  outward at the ejecta speed with about thirty angular cells, which is what
+  makes the filaments radial. Its radius grows from a couple of plume
+  footprints at the moment erosion starts to a few tens of meters, and its
+  optical depth follows the erosion rate. Each disk is treated as a slab: a
+  thin layer seen edge-on is a long way through, so the sheet reads as a low
+  wall from a grazing camera and as a veil from overhead, and the disks have no
+  visible rim at a shallow angle;
+- **the ejecta**, a sparse few hundred points on the fast tail of the speed
+  distribution, leaving at one to three degrees above the local slope and
+  falling back under the body's gravity;
+- **the scour crater**, a floor swept smooth and slightly brighter inside a
+  ring of darker piled-up soil, growing with the mass already moved;
+- **the haze**, a bank of sixteen view-aligned puffs -- flattened ellipsoids of
+  fines, wide and low, each turned to face the camera about the local vertical,
+  so the bank veils the scene from a camera standing in it as well as from one
+  above it. Its opacity is an exponentially decaying integral of the erosion
+  rate, so it builds up over seconds and thins out after the engine stops
+  (`hazeOpacity` and `hazeDecayS` are the knobs; their defaults are the vacuum
+  case, thinner and shorter-lived than a chamber's, which has residual gas to
+  keep the finest grains aloft);
+- **the sheet's shadow**, a soft ellipse on the ground offset and stretched
+  away from the sun by the height of the dust over it -- at the 10.6 degrees
+  Apollo 11 landed under it runs about fifty meters down-sun -- so the lit dust
+  reads as a volume and not as a decal.
+
+Everything the sun touches is scaled by a Henyey-Greenstein phase function with
+g = 0.65: fine dust scatters strongly forward, which is why the sheet is
+blinding looking down-sun through it and almost clear looking the other way,
+the way the Apollo films and the Langley footage show it. The sun direction,
+its irradiance and the camera's exposure come from the lighting handle below;
+the shaders tone map and encode their output exactly as every lit material
+does, so one exposure applies to the whole frame. A page with no lighting
+handle -- or one that never raised its exposure -- keeps the fixed brightness
+the sheet had before that module existed. Positions inside the sheet, the puffs
+and the points are derived in the shaders from the clock, so a frame update
+writes uniforms and nothing else.
+
+`THREE.Points` does render into three r160's shadow map with a custom depth
+material, and the module carries one, but it is off by default
+(`pointShadows`): the particles are sized for the perspective camera, so in the
+shadow camera's orthographic pass each lands on a texel or two and changes
+almost nothing, and sized up a few hundred opaque disks would speckle the
+ground where a dust cloud casts one soft darkening. The decal does that.
+
+The "dust" toggle in the toolbar turns all of it off, and the selection panel
+gains the seven plume quantities — engine height (m), plume shear and pressure
+(Pa), erosion rate (kg/s), eroded mass (kg), ejecta speed (m/s) and ground
+effect (N) — each with a time history like every other row.
+
 ## Sun lighting and path tracing
 
 When the run's ephemerides can resolve the Sun -- SPICE with the body's
@@ -226,6 +274,22 @@ Reach and brightness follow the level through a fractional exponent rather
 than linearly, because a jet holding an attitude asks for well under a percent
 of its rating and a linear mapping would draw nothing at all; a thruster at
 level 0 is not drawn, and its static cone glyph is dimmed while it is idle.
+
+How much of that look survives depends on the air around the nozzle. An exhaust
+is luminous because it has ambient gas to shock, mix with and burn against: a
+descent engine at sea level draws a bright sooty column, by about 70 km
+(1e-5 kg/m³) it is a thin diffuse glow, and in vacuum there is nothing left to
+excite -- the Apollo films of the powered descent record a bare engine bell
+against the ground, not a flame. So the page fades the shroud out and leaves a
+faint blue-white core as the ambient density falls, following the logarithm of
+the density between those two. The density comes from the run (`frames.density`,
+saved whenever the visualization scene is); a run that saved none falls back to
+the scene, where a missing atmosphere block means the run flew with
+`NoAtmosphereModel` and any other model keeps the full atmospheric look.
+`createPlumes` also takes `vacuum: true | false` to force either. The plume's
+brightness is deliberately left out of the camera's exposure: it is emissive,
+and the ten-fold lift a grazing lunar page applies to its ground would lift the
+vacuum core back into a flame.
 The "plumes" toggle turns them off, and the selection panel gains a
 `thruster k level` row per thruster whose history plots like any other
 quantity.

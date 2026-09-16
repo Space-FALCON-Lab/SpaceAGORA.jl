@@ -37,8 +37,8 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/video.js` | MP4 export through WebCodecs and mp4-muxer (`vendor/mp4-muxer.mjs`, MIT), WebM fallback |
 | `three-gpu-pathtracer@0.0.23`, `three-mesh-bvh@0.7.8`, `three/examples/jsm/postprocessing/Pass.js` (import-map entries, CDN pages only) | the path-traced lighting mode; absent from the offline bundle, which then offers real-time lighting only |
 | `src/terrain.js` | landing-site terrain: DEM-displaced nested patches draped with imagery that sharpens toward the site, and the hole they cut in the globe |
-| `src/dust.js` | regolith blown off the surface by a descent engine: a GPU particle sheet driven by the `frames.plume` block, a ground haze disk and a scour mark |
-| `src/plumes.js` | thruster plumes: one additive, flickering cone pair per thruster, driven by the recorded firing levels, with the idle cone glyphs dimmed |
+| `src/dust.js` | regolith blown off the surface by a descent engine, from the `frames.plume` block: a ground-hugging sheet of advected noise, sparse ejecta points, a scour crater, a haze bank that builds up and thins out, and the sheet's shadow; all sunlit through a Henyey-Greenstein phase function |
+| `src/plumes.js` | thruster plumes: one additive, flickering cone pair per thruster, driven by the recorded firing levels, with the idle cone glyphs dimmed and the shroud faded out to a faint blue-white core as the ambient density falls to vacuum |
 | `src/plots.js` | time-history plot panel: any quantity in the panels opens its history over the run, with the playback cursor and click-to-seek |
 | `src/atmosphere.js` | limb glow, density shells, density map |
 | `src/colormaps.js` | inferno and viridis |
@@ -114,7 +114,11 @@ thruster's `direction`, and takes its reach and color from the rated thrust:
 long and orange-white for a main engine, short and blue-white for an attitude
 jet. Reach and brightness follow the level through a fractional exponent so a
 jet firing a fraction of a percent of its rating still reads; level 0 draws
-nothing and dims the static cone glyph. Toggle "plumes"; the selection panel
+nothing and dims the static cone glyph. In vacuum -- `frames.density` below
+about 1e-9 kg/m³, or a scene with no atmosphere block -- the shroud fades out
+and a faint blue-white core is all that is left, since an exhaust only glows
+where it has ambient gas to burn against; the full look returns above about
+1e-5 kg/m³, logarithmically between. Toggle "plumes"; the selection panel
 lists a `thruster k level` row per thruster.
 
 ## Ensembles

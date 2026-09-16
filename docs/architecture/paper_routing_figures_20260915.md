@@ -74,8 +74,8 @@ Warm, `montecarlo_heavy_aerobraking`, 32 samples:
 
 | budget | serial | best static | route | R6 | serial/R6 | R6/best static |
 |---:|---:|---:|---|---:|---:|---:|
-| 1 | 23.581 | 24.255 | outer_process | 22.712 | 1.04 | 0.94 |
-| 2 | 22.206 | 12.085 | outer_threads | 8.211 | 2.70 | 0.68 |
+| 1 | 23.581 | 24.255 | outer_threads | 22.712 | 1.04 | 0.94 |
+| 2 | 22.206 | 12.085 | outer_process | 8.211 | 2.70 | 0.68 |
 | 4 | 22.123 | 6.358 | outer_process | 4.138 | 5.35 | 0.65 |
 | 8 | 22.259 | 3.592 | outer_process | 2.959 | 7.52 | 0.82 |
 | 12 | 22.602 | 2.882 | outer_process | 3.486 | 6.48 | 1.21 |
@@ -104,7 +104,8 @@ Cold-store versions of the same two tables (superseded):
 
 ### P5 — worker/thread split of a fixed budget of 12
 
-`mcgrid_16sat_8mc` (serial ≈ 10.4 s) and `mcgrid_8sat_16mc` (serial ≈ 9.2 s):
+`mcgrid_16sat_8mc` (serial 10.12–10.88 s across the six splits) and
+`mcgrid_8sat_16mc` (serial 9.06–9.59 s):
 
 | split | 16x8 best static | 16x8 R6 | ratio | 8x16 best static | 8x16 R6 | ratio |
 |---|---:|---:|---:|---:|---:|---:|
@@ -121,9 +122,10 @@ Cold-store versions of the same two tables (superseded):
   `1,2,4,8,16,32`, process-worker cap 32. Idle and quiet-gated throughout.
 - **Run:** `20260916_143516`, 163 aggregated rows, none below the 3 s floor.
   Pulled to `output/performance/paper_benchmarks_trx50/` (gitignored).
-- **Same code, same cases, same iso-work mission lengths.** Serial baselines
-  land at 8.6–12.2 s, matching `space-falcon-1`'s 8.5–11.8 s, so the two
-  machines' columns are directly comparable.
+- **Same code, same cases, same iso-work mission lengths.** The constellation
+  phases' serial baselines land at 8.6–12.2 s, matching `space-falcon-1`'s
+  8.5–11.8 s, so the two machines' columns are directly comparable. (The Monte
+  Carlo phases carry their own baselines: 9.2–10.4 s on P3, 23.6–26.6 s on P4.)
 
 P1, constellation size at 32 threads:
 
@@ -160,19 +162,24 @@ python3 scripts/make_paper_routing_tables.py \
 ## Findings
 
 **1. The best static route changes identity along every axis.** It moves three
-times down P1's column, twice down P2's, and three times across each of P5's.
-No single pinned route is the right answer at every size, budget or split, which
-is the case for routing at all — and it is measured here rather than asserted.
+times down P1's column (`outer_inner_static` → `outer_threads` →
+`outer_inner_static` → `inner_only`), twice down P2's, and once across each of
+P5's, where `outer_threads` wins the thread-heavy splits and `outer_process`
+takes over from 4x3 outward. No single pinned route is the right answer at every
+size, budget or split, which is the case for routing at all — and it is measured
+here rather than asserted.
 
 **2. At mid constellation sizes every static route is slower than serial, on
 both machines, and the cause is the RHS plan rather than the route.** On
-`space-falcon-1` at 64 spacecraft the three static routes take 14.08–14.25 s
-against serial's 11.63 s while R6 reaches 5.73 s. On TRX50 the same dip is
+`space-falcon-1` at 64 spacecraft the three static routes take 13.94–13.99 s
+against serial's 11.29 s while R6 reaches 5.71 s. On TRX50 the same dip is
 deeper and spans two rungs: 34.46–34.89 s at N=64 and 20.91–21.31 s at N=256,
-against serial's 11.39 s and 11.55 s, while R6 reaches 3.74 s and 2.83 s. It is
-not noise — all three repeats of all three static routes agree to within 1%, and
-the three routes agree with *each other* to within 1%, which is the first clue:
-the choice of outer route is irrelevant to the cost.
+against serial's 11.39 s and 11.55 s, while R6 reaches 3.74 s and 2.83 s. (All
+figures here are the warm run tabulated above; the first run's N=64 numbers are
+in finding 7.) It is not noise — repeats of a given static route agree to within
+2.5%, and the three routes agree with *each other* to within 1.3% at N=64 and
+1.9% at N=256, which is the first clue: the choice of outer route is irrelevant
+to the cost.
 
 The raw telemetry attributes it. The static routes run
 `rhs_plan_source=none, rhs_plan_mode=none, rhs_batch_parallel=auto` and let the
@@ -195,12 +202,12 @@ such or the comparison flatters R6 for the wrong reason.
 The dispatch trace at budget 8 reads `workers=8 local_slots=4 pool_size=8`: it
 dispatches to eight worker processes *and* runs four samples on the coordinator.
 Neither `outer_threads` nor `outer_process` can express that, which is why R6 is
-~1.5x faster than both at budgets 2 and 4 on both Monte Carlo workloads.
+1.3-1.7x faster than both at budgets 2 and 4 on both Monte Carlo workloads.
 
 **4a. The cold-store result at budget 8 was an artifact, and is withdrawn.**
 Measured warm, R6 runs budget 8 in 1.470 s against the best static route's
 1.555 s on P3 (cold: 2.453 against 1.628) and 2.959 s against 3.592 s on P4
-(cold: 3.805 against 3.624). The controls move 1-5% between the two runs, which
+(cold: 3.805 against 3.624). The controls move 1-6% between the two runs, which
 is machine noise; R6 moves 40% and 22% at that one rung and is unchanged
 elsewhere. The earlier reading -- that the bandit had discarded a measured-better
 arm -- was a converging calibration store and nothing more.
@@ -209,19 +216,23 @@ arm -- was a converging calibration store and nothing more.
 charges it.** The per-repeat routes at budget 12 are identical on both
 workloads: process, process, *threads*, *threads*, process. Its exploiting
 campaigns are the fastest measurements at that point on either workload --
-1.057 s against the best static route's 1.414 s on P3, 2.524 s against 2.832 s
-on P4 -- but repeats 3 and 4 cost 2.5 s and 4.1 s, and the median lands on one
-of them. At budget 8 there is no flapping and R6 wins outright. Quote both: the
-median over a short campaign sequence is what a user with five campaigns to run
-experiences, and the steady state is what the routing itself achieves.
+1.057 s against `outer_process`'s fastest repeat of 1.335 s on P3, and 2.524 s
+against 2.832 s on P4 -- but the two exploring repeats cost 2.52 s and 1.53 s
+on P3 and 4.14 s and 3.49 s on P4, and in both cases the five-repeat median
+lands on the second of them (1.531 s and 3.486 s). At budget 8 there is no
+flapping and R6 wins outright. Quote both: the median over a short campaign
+sequence is what a user with five campaigns to run experiences, and the steady
+state is what the routing itself achieves.
 
-**5. R6's variance is far higher than the static routes'.** At P4's budget 12 its
-repeats span 2.53–3.97 s while `outer_process` holds 2.96–3.07 s. Its median
-over five repeats is correspondingly unstable, and the apparent regressions at
-budgets 8 and 12 did not reproduce when those points were measured in isolation
-(R6 1.48 s vs threads 1.68 s at P3 budget 8; 2.96 s vs process 3.05 s at P4
-budget 12). Any single-median comparison of an adaptive route against a pinned
-one should be read with that spread in view.
+**5. R6's variance is far higher than the static routes'.** Every mode pays a
+warm-up cost on its first repeat; what separates them is what happens after it.
+At P4's budget 12, repeats 2-5 of `outer_process` span 2.832-2.970 s -- a 5%
+spread -- while R6's span 2.524-4.136 s, a 64% one. P3's budget 12 is the same
+shape: `outer_process` 1.335-1.492 s against R6's 1.057-2.521 s. The pinned
+routes converge once warm and the adaptive one keeps exploring, so R6's
+five-repeat median is the least stable number in the set. Any single-median
+comparison of an adaptive route against a pinned one should be read with that
+spread in view, and finding 4b's two readings quoted together.
 
 **6. Cold and warm calibration stores are different measurements.** This run
 started from a fresh worktree, so the RHS-calibration and inner-policy stores
@@ -247,9 +258,9 @@ is recorded in the "Calibration-store warmth" section of the generated tables.
 **7. Every phase was measured twice, and they agree.** P1, P2 and P5 were
 re-run warm after P3/P4 showed that store warmth matters, so the whole set now
 shares one convention -- and the two runs, a day apart, are a reproducibility
-check the single-run B- and L-series never had. R6 moves 0.94-1.06 across all of
-P1 and P2 and 0.95-1.03 across all twelve P5 points; the static routes move
-1-5%. The N=64 result reproduces at 13.94 s against 5.71 s (first run: 14.08 s
+check the single-run B- and L-series never had. R6 moves 0.91-1.06 across all of
+P1 and P2 and 0.95-1.03 across all twelve P5 points; the static routes move by
+a median of 1.6% over the 69 points measured in both runs, worst case 7.8%. The N=64 result reproduces at 13.94 s against 5.71 s (first run: 14.08 s
 against 5.73 s), and P5's 6x2 win at 1.740 s against 2.831 s (first run: 1.835 s
 against 2.760 s). Only P3 and P4 moved materially between cold and warm, and
 only at one rung each -- which is the finding, not noise.
@@ -257,7 +268,7 @@ only at one rung each -- which is the finding, not noise.
 ## The S1 speedups rest on a different serial baseline
 
 `paper_scenarios`' S1 reports up to 21.6x at L50/4096 on twelve threads where P2
-measures 4.57x. Both are arithmetically correct; they divide by different
+measures 4.46x. Both are arithmetically correct; they divide by different
 denominators, and the difference is 4.5x of baseline, not of parallel
 performance.
 
@@ -277,7 +288,7 @@ Two differences were measured, and only one of them matters:
 The two reconcile completely. S1's 160.77 s serial baseline, divided by ten for
 the step ceiling and scaled to P2's mission, predicts 51.8 s; ppb measures
 53.9 s with the serial RHS pinned. Re-basing S1's 4096 point on the `auto`
-baseline gives 35.7 / 7.45 = 4.8x, against P2's 4.57x.
+baseline gives 35.7 / 7.45 = 4.8x, against P2's 4.46x.
 
 **Consequence for the paper.** Every S1 speedup -- the 21.6x, and the
 10.23x/11.80x/10.17x of the CPU-only scaling work -- divides by a serial run
@@ -293,7 +304,7 @@ state it, and do not print numbers from both conventions in the same table.
   `rhs_mode=serial` baseline (53.90–53.93 s) and the P-series divides by
   `rhs_mode=auto` (11.84–12.13 s) on the same case. Every S1 speedup is
   therefore ~4.5x larger than the corresponding P-series figure for arithmetic
-  reasons alone; re-based, S1 gives 4.8x against P2's 4.57x. The manuscript has
+  reasons alone; re-based, S1 gives 4.8x against P2's 4.46x. The manuscript has
   to pick one convention and restate the other set. This is the one decision
   still needed from the author.
 

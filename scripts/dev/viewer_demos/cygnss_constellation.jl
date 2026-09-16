@@ -585,12 +585,14 @@ prefix = run_or_reuse!(args, OUTDIR)
 # the provenance word in the name is what makes it legible in the page without
 # reading the source.
 #
-# Confidentiality. Per-spacecraft mass is a default saved column and the viewer
-# shows it as a panel row. Spacecraft mass properties are not published here
-# (see the header: the run's geometry is a generic box from public figures, and
-# no restricted mission-configuration file is read), so the `sc<i>_mass`
-# columns are dropped from the page's copy. The link box dimensions stay in the
-# scene, because the viewer needs them to draw the generic box at all.
+# Confidentiality. Spacecraft mass properties are not published here (see the
+# header: the run's geometry is a generic box from public figures and no
+# restricted mission-configuration file is read). Per-spacecraft mass is a
+# default saved column that the viewer shows as a panel row, so the
+# `sc<i>_mass` columns are dropped from the page's copy, and each link's
+# `mass_kg` is zeroed in the scene, which nothing in the viewer reads. The link
+# box DIMENSIONS stay, because the viewer needs them to draw the generic box at
+# all; they are the published body envelope, not a reconstruction.
 const PAGE_DIR = joinpath(OUTDIR, "page")
 mkpath(PAGE_DIR)
 page_prefix = joinpath(PAGE_DIR, "simulation_results")
@@ -598,6 +600,9 @@ let doc = JSON.parsefile(prefix * "_scene.json")
     for (k, s) in enumerate(states)
         k <= length(doc["spacecraft"]) || break
         doc["spacecraft"][k]["name"] = "$(s.name) · $(s.provenance)"
+        for link in doc["spacecraft"][k]["links"]
+            link["mass_kg"] = 0.0
+        end
     end
     open(page_prefix * "_scene.json", "w") do io
         JSON.print(io, doc)

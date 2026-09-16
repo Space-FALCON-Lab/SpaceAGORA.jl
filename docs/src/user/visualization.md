@@ -183,8 +183,24 @@ craters, scaled to 0.12 RMS slope (about 7 degrees at a meter, which continues
 the site grid's own slope-versus-baseline trend) and sampled by the levels at
 least 2 m/px sharp, one tile every 8 m of ground. It is a texture rather than a
 claim about the site, and under a 10 degree sun it is most of what the eye reads
-as ground; `options.microRelief = false` turns it off. Its own mipmaps fade it
-out as the camera pulls away.
+as ground; `options.microRelief = false` turns it off.
+
+Mipmaps alone cannot fade that map out as the camera pulls away. Mip filtering
+averages the normals, but the shading term they feed is not linear in the normal
+and it clamps at the terminator, so the average of the shading is not the
+shading of the average: 0.12 RMS slope against a terminator at
+tan(10.6 degrees) = 0.187 tips a large tail of texels past it, and a pixel that
+covers many texels -- which it does a few tens of meters out at the grazing view
+of a landing, where anisotropic filtering under-samples the stretched axis --
+turns the far field into speckle instead of grain. The shader therefore splits
+the detail slope by the pixel's footprint in detail texels, after Toksvig,
+"Mipmapping Normal Maps" (NVIDIA, 2004) and the LEAN/CLEAN mapping family: the
+part the footprint resolves stays a slope, scaled by Toksvig's mean-normal
+factor, and the RMS slope it does not resolve is spent instead as terminator
+width on the direct term, where a Gaussian slope of that RMS turns the clamped
+cosine into `(c + sqrt(c^2 + 2 w^2 / pi)) / 2`. The near field keeps its grain
+at full strength, the far field goes smooth, and the mean brightness is
+continuous across the two because the variance is carried rather than dropped.
 
 The ground also shadows itself. The height grids are uploaded as textures and
 the terrain's fragment shader marches 64 samples toward the Sun, from 8 m to

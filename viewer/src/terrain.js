@@ -110,11 +110,25 @@ const TERRAIN_NORMAL_TEXEL_MIN_M = 1.0;     // never finer than this from the DE
 // false` switches it off. The slope it adds (0.12 RMS, about 7 degrees at a
 // meter) continues the measured slope-versus-baseline trend of the site's own
 // grid (10.9 degrees RMS at 4 m, 8.0 at 8 m, 6.0 at 16 m).
+//
+// A detail normal map cannot simply be minified. Mip filtering averages the
+// normals, but the shading term they feed is not linear in the normal and it
+// clamps at the terminator, so the average of the shading is not the shading of
+// the average: at a 10 degree sun a slope of 0.12 RMS against a terminator at
+// tan(10.6 deg) = 0.187 tips a large tail of texels past it, and once a pixel
+// covers many texels -- which it does a few tens of meters out at the grazing
+// view of a landing, where anisotropic filtering under-samples the stretched
+// axis -- the far field reads as speckle rather than as grain. The shader therefore keeps only
+// the part of the detail slope the pixel footprint resolves and carries the
+// rest into the shading response, the treatment of Toksvig, "Mipmapping Normal
+// Maps" (NVIDIA, 2004) and of the LEAN/CLEAN mapping family after it. See
+// terrainFragment below for the two lines that do it.
 const TERRAIN_DETAIL_SIZE = 256;            // texels across one tile
 const TERRAIN_DETAIL_TILE_M = 8.0;          // meters across one tile
 const TERRAIN_DETAIL_SLOPE = 0.12;          // RMS slope of the detail field
 const TERRAIN_DETAIL_CRATERS = 140;         // craters per tile
 const TERRAIN_DETAIL_MAX_MPP = 2.0;         // levels at least this sharp get it
+const TERRAIN_DETAIL_FOOTPRINT = 2.0;       // pixel footprint, in detail texels, that costs half the slope variance
 
 // Heights as the bundler wrote them: Int16 steps about a base (half the bytes,
 // still a centimeter) or plain Float32.
@@ -342,7 +356,7 @@ function terrainFragment(gridCount) {
 uniform sampler2D uMap;
 uniform sampler2D uNormalMap;
 uniform sampler2D uDetailMap;
-uniform vec2 uDetail;         // tiles across this level, and the strength of their slope
+uniform vec3 uDetail;         // tiles across this level, the strength of their slope, its RMS
 uniform vec3 uSunWorld;
 uniform float uLunar;
 uniform float uRefRadiusKm;
@@ -384,11 +398,26 @@ void main() {
   vec3 up = normalize(vUpWorld), east = normalize(vEastWorld), north = normalize(vNorthWorld);
   vec3 slope = texture2D(uNormalMap, vUv).xyz * 2.0 - 1.0;
   // Micro-relief rides on top as a slope, added to the slope the DEM gives
-  // before the two are turned back into a normal.
+  // before the two are turned back into a normal -- but only the part of it
+  // this pixel resolves. Toksvig, "Mipmapping Normal Maps" (NVIDIA, 2004):
+  // averaging a normal map shortens the mean normal, and what a filtered
+  // normal loses in length has to come back as a wider shading response, or
+  // the non-linear, terminator-clamped term it feeds turns to noise under
+  // minification. fp is the footprint in detail texels along its major axis
+  // -- the axis anisotropic filtering under-samples, and the one the grazing
+  // view of a landing stretches -- and Toksvig's mean-normal factor
+  // 1/sqrt(1 + (fp/f0)^2) is how much slope survives it. The remainder leaves
+  // as detailRms, the RMS slope this fragment could not resolve, which the
+  // direct term below spends as terminator width instead of as geometry.
+  float detailRms = 0.0;
   if (uDetail.y > 0.0) {
-    vec3 grain = texture2D(uDetailMap, vUv * uDetail.x).xyz * 2.0 - 1.0;
-    vec2 ds = -grain.xy / max(grain.z, 0.2) * uDetail.y;
+    vec2 duv = vUv * uDetail.x;
+    float fp = max(length(dFdx(duv)), length(dFdy(duv))) * ${TERRAIN_DETAIL_SIZE}.0 / ${TERRAIN_DETAIL_FOOTPRINT.toFixed(1)};
+    float keep = inversesqrt(1.0 + fp * fp);
+    vec3 grain = texture2D(uDetailMap, duv).xyz * 2.0 - 1.0;
+    vec2 ds = -grain.xy / max(grain.z, 0.2) * (uDetail.y * keep);
     slope += slope.z * vec3(-ds.x, -ds.y, 0.0);
+    detailRms = uDetail.z * sqrt(max(1.0 - keep * keep, 0.0));
   }
   vec3 N = normalize(slope.x * east + slope.y * north + slope.z * up);
   vec3 V = normalize(vViewDir);
@@ -401,6 +430,15 @@ void main() {
   for (int i = 0; i < NUM_DIR_LIGHTS; i++) {
     vec3 L = inverseTransformDirection(directionalLights[i].direction, viewMatrix);
     float mu0 = dot(N, L);
+    // The slope the footprint could not resolve widens the terminator rather
+    // than vanishing. A Gaussian slope of RMS detailRms moves cos(i) by a
+    // Gaussian of width w = detailRms * |L tangential|, and the mean of the
+    // clamped cosine over it is c*Phi(c/w) + w*phi(c/w), which the square root
+    // (c + sqrt(c^2 + 2 w^2 / pi)) / 2 follows to within about five percent --
+    // exact at the terminator, asymptotic to max(c, 0) well away from it, and
+    // an error function cheaper. Shadowing between the facets is not modeled.
+    float w = detailRms * length(L - dot(L, N) * N);
+    mu0 = w > 0.0 ? 0.5 * (mu0 + sqrt(mu0 * mu0 + 0.63662 * w * w)) : max(mu0, 0.0);
     if (mu0 <= 0.0) continue;
     // The Sun is the light the terrain horizon and the shadow map belong to; a
     // fill light from somewhere else (earthshine) is not shadowed by either.
@@ -541,7 +579,8 @@ export function createTerrain(spec, planet, options = {}) {
     // TERRAIN_DETAIL_TILE_M of ground.
     const spanM = THREE.MathUtils.degToRad(lvl.lat_max - lvl.lat_min) * radiusM;
     const detail = detailMap && lvl.m_per_px <= TERRAIN_DETAIL_MAX_MPP
-      ? new THREE.Vector2(spanM / TERRAIN_DETAIL_TILE_M, 1) : new THREE.Vector2(1, 0);
+      ? new THREE.Vector3(spanM / TERRAIN_DETAIL_TILE_M, 1, TERRAIN_DETAIL_SLOPE)
+      : new THREE.Vector3(1, 0, 0);
     const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.lights]);
     uniforms.uMap = { value: texture };
     uniforms.uNormalMap = { value: normalMap };
@@ -561,6 +600,7 @@ export function createTerrain(spec, planet, options = {}) {
     const material = new THREE.ShaderMaterial({
       uniforms, vertexShader: TERRAIN_VERTEX, fragmentShader: gridFragment, lights: true, side: THREE.DoubleSide,
     });
+    material.extensions = { derivatives: true };   // the micro-relief footprint; core on WebGL2, an extension below it
     material.map = texture;   // the exposure metering in lighting.js reads the ground texture off the material
     const mesh = new THREE.Mesh(geometry, material);
     uniforms.uModel.value = mesh.matrixWorld;

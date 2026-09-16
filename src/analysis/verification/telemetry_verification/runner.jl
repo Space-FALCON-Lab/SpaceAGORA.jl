@@ -37,8 +37,7 @@ function _run_simulation_dataframe(
     extra_callbacks=()
 )
     return mktempdir() do tmp
-        cfg_run = SimulationConfiguration(
-            file_paths=args.file_paths,
+        cfg_run = _with_configuration(args;
             simulation_settings=SimulationSettings(
                 results=true,
                 verbose=false,
@@ -48,14 +47,8 @@ function _run_simulation_dataframe(
                 normalize=false,
                 save_csv=true
             ),
-            mission_configuration=args.mission_configuration,
-            environment_model=args.environment_model,
-            dynamics_model=args.dynamics_model,
-            guidance_model=args.guidance_model,
-            navigation_model=args.navigation_model,
-            control_model=args.control_model,
-            initial_time=args.initial_time,
-            integration_tolerances=args.integration_tolerances
+            # The study owns solver selection and the per-attempt MaxIters retry.
+            solver_config=nothing,
         )
 
         save_fields = _save_fields_for_study()

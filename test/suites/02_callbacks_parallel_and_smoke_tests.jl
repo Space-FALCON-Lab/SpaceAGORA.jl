@@ -48,17 +48,9 @@
         orientation_sim=false,
         num_steps_to_save=100
     )
-    args_orbits = SimulationConfiguration(
-        file_paths=args_base.file_paths,
+    args_orbits = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args_base;
         simulation_settings=SimulationSettings(results=false, verbose=true, generate_plots=false, normalize=false),
         mission_configuration=mission_orbits,
-        environment_model=args_base.environment_model,
-        dynamics_model=args_base.dynamics_model,
-        guidance_model=args_base.guidance_model,
-        navigation_model=args_base.navigation_model,
-        control_model=args_base.control_model,
-        initial_time=args_base.initial_time,
-        integration_tolerances=args_base.integration_tolerances
     )
 
     _ = SimulationModel.SimulationCallbacks.get_callbacks(
@@ -227,17 +219,9 @@
     @test quat_proj_cb.condition(u_orient_unit, 0.0, integrator_orient_unit) == true
 
     counting_navigation = CountingNavigationModel([0])
-    args_navigation = SimulationConfiguration(
-        file_paths=args_base.file_paths,
+    args_navigation = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args_base;
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
-        mission_configuration=args_base.mission_configuration,
-        environment_model=args_base.environment_model,
-        dynamics_model=args_base.dynamics_model,
-        guidance_model=args_base.guidance_model,
         navigation_model=NavigationModel(navigation_effectors=(counting_navigation,), navigation_rates=[1.0]),
-        control_model=args_base.control_model,
-        initial_time=args_base.initial_time,
-        integration_tolerances=args_base.integration_tolerances
     )
     navigation_cbs = SimulationModel.SimulationCallbacks.get_navigation_callbacks(1, args_navigation)
     p_navigation = ODEParams(n_sats=1, args=args_navigation)
@@ -269,17 +253,8 @@
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    args_guidance = SimulationConfiguration(
-        file_paths=args_guidance_base.file_paths,
-        simulation_settings=args_guidance_base.simulation_settings,
-        mission_configuration=args_guidance_base.mission_configuration,
-        environment_model=args_guidance_base.environment_model,
-        dynamics_model=args_guidance_base.dynamics_model,
+    args_guidance = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args_guidance_base;
         guidance_model=GuidanceModel(guidance_effectors=(counting_guidance,), guidance_rates=[1.0]),
-        navigation_model=args_guidance_base.navigation_model,
-        control_model=args_guidance_base.control_model,
-        initial_time=args_guidance_base.initial_time,
-        integration_tolerances=args_guidance_base.integration_tolerances
     )
     guidance_cbs = SimulationModel.SimulationCallbacks.get_guidance_callbacks(2, args_guidance)
     p_guidance = ODEParams(n_sats=2, args=args_guidance)
@@ -846,17 +821,9 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    args_orbit_multi = SimulationConfiguration(
-        file_paths=args_orbit_multi_base.file_paths,
+    args_orbit_multi = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args_orbit_multi_base;
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
         mission_configuration=mission_orbits,
-        environment_model=args_orbit_multi_base.environment_model,
-        dynamics_model=args_orbit_multi_base.dynamics_model,
-        guidance_model=args_orbit_multi_base.guidance_model,
-        navigation_model=args_orbit_multi_base.navigation_model,
-        control_model=args_orbit_multi_base.control_model,
-        initial_time=args_orbit_multi_base.initial_time,
-        integration_tolerances=args_orbit_multi_base.integration_tolerances
     )
     p_orbit_multi = ODEParams(n_sats=2, args=args_orbit_multi)
     p_orbit_multi.orbit_counter .= [2, 1]

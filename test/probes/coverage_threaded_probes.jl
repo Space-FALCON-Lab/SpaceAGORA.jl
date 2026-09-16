@@ -1537,16 +1537,8 @@ end
         orientation_sim=false,
         num_steps_to_save=1000
     )
-    args_orbit_refresh = SimulationConfiguration(
-        simulation_settings=args_density_helpers.simulation_settings,
+    args_orbit_refresh = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args_density_helpers;
         mission_configuration=mission_orbits,
-        environment_model=args_density_helpers.environment_model,
-        dynamics_model=args_density_helpers.dynamics_model,
-        guidance_model=args_density_helpers.guidance_model,
-        navigation_model=args_density_helpers.navigation_model,
-        control_model=args_density_helpers.control_model,
-        initial_time=args_density_helpers.initial_time,
-        integration_tolerances=args_density_helpers.integration_tolerances
     )
     p_orbit_refresh = ODEParams(n_sats=1, args=args_orbit_refresh)
     u_orbit_refresh = build_initial_conditions(args_orbit_refresh)

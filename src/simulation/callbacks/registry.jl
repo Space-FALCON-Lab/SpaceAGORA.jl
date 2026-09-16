@@ -1,9 +1,10 @@
-include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl")) # Get the reference system types for the callback
+using ..FrameTransforms
 
 using OrdinaryDiffEq
 using DiffEqBase
 using DiffEqCallbacks
 using LinearAlgebra
+using StaticArrays
 using SPICE
 using Dates
 using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK, tracked_lock

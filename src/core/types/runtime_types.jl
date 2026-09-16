@@ -676,6 +676,7 @@ export RhsEffectorDecision, RhsExecutionPlan
     struct RhsPlanEnvConfig
         execution_mode::Symbol
         profile_forces_serial::Bool
+        final_assembly_direct_layout::Bool
         batch_parallel_mode::Symbol
         batch_thread_threshold::Int
         effector_parallel_mode::Symbol
@@ -799,6 +800,8 @@ export RhsEffectorDecision, RhsExecutionPlan
         rhs_flat_packet_overhead_ema::Base.RefValue{Float64} = Ref(NaN)
         rhs_flat_packet_overhead_samples::Base.RefValue{Int64} = Ref(Int64(0))
         rhs_flat_packet_disabled::Base.RefValue{Bool} = Ref(false)
+        rhs_final_assembly_direct_layout_status::Base.RefValue{Int8} = Ref(Int8(0))
+        rhs_final_assembly_direct_layout_stride::Base.RefValue{Int} = Ref(0)
         rhs_planet_frame_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_atmosphere_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)

@@ -840,6 +840,10 @@ end
     ))
 end
 
+@inline function _rhs_final_assembly_direct_layout_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT", false)
+end
+
 @inline function _rhs_flat_min_sats()::Int
     return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_SATS", 24)
 end
@@ -917,6 +921,7 @@ function _snapshot_rhs_plan_env_config()::SimulationModel.RhsPlanEnvConfig
     return SimulationModel.RhsPlanEnvConfig(
         _rhs_execution_mode_env(),
         _profile_forces_serial_rhs(),
+        _rhs_final_assembly_direct_layout_enabled(),
         _rhs_batch_parallel_mode(),
         _rhs_batch_thread_threshold(),
         _effector_parallel_mode(),

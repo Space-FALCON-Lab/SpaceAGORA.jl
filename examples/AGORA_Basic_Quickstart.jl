@@ -175,7 +175,10 @@ ephemerides_model = SimpleEphemeridesModel()
 earth_harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 
 # Build a simple bus + two-panel spacecraft from the shared example helper.
-# The orbit is the case from examples/DominikTest.jl.
+# The orbit is the case from examples/DominikTest.jl. For a start given as a
+# geodetic point instead of orbital elements, `CartesianInitialCondition` takes
+# lat/lon/alt plus a speed and either an azimuth or an inclination -- see the
+# geodetic initial condition section of docs/src/user/simulation_configuration.md.
 spacecraft = make_three_body_spacecraft(
     bus_dims=(2.05, 2.05, 2.8),
     panel_dims=(0.01, 5.7 / 2.0, 1.0),

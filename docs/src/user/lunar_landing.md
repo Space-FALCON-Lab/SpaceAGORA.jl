@@ -284,13 +284,32 @@ onset at 31 m. Two independent derivations now sit beside it:
   threshold, itself read off the 31.5 m altitude at which dust first blows in
   the Apollo 16 landing video, as a wall shear stress:
   `τ_t = sqrt(E_th ρ_s v̄ / 3)`. At the surface state an 11.5 kN Apollo plume
-  lays down at 10 m it gives **0.159 Pa**, six percent from the fitted constant
-  and from a completely different observable.
+  lays down at 10 m it gives **0.159 Pa**, six percent from the fitted constant.
 
-Between them the fitted 0.15 Pa is bracketed within a factor of 2.6, and the
-higher of the two derived values essentially reproduces it. Note that the second
-estimate depends on the surface gas density and temperature, which the analytic
-plume field does not compute; the 0.159 Pa assumes a 500 K, 21.5 g/mol exhaust.
+That six percent is not independent confirmation, and the module does not claim
+it is. Both numbers are anchored to the same observable -- the onset of visible
+dust at roughly 31 m under an LM-class engine. What the agreement shows is that
+two different plume models put comparable wall shear on the ground there.
+
+The independent target is Stubbs and Mehta's data-derived threshold ("A
+Data-Derived Scaling Approach for Plume-Surface Interaction Crater Formation",
+AIAA SciTech 2026, NTRS 20250011216, section IV, Fig. 14): **0.25 Pa**. The
+Shields estimate is 4.4 times below it; matching it would need a cohesion
+parameter 2.8 times the top of Shao and Lu's terrestrial range, which is
+plausible for airless lunar fines but unmeasured, so the default stays at their
+value and the gap is reported.
+
+The threshold and the shear law cannot be separated on today's plume field.
+Applied to the Gaussian shear law, the three candidate thresholds put the
+erosion onset at 24.0 m (0.25 Pa), 31.0 m (0.15 Pa) and 50.3 m (0.057 Pa) for
+the Apollo approach thrust -- and Lane and Metzger (*Acta Geophysica* 63(2),
+2015, Table 2) still measure 10.7 kg/s of Apollo 12 erosion at 31.9 m. The
+current effector returns exactly zero there; integrating this module's local
+rate over the footprint with the derived threshold gives 28 kg/s, non-zero
+where the measurement is non-zero and 2.7 times high rather than infinitely
+low. Whether the remaining gap belongs to the threshold or to the wall shear
+the Gaussian law puts on the ground at height is a question for the plume
+field, not for the soil.
 
 ### The three regimes
 

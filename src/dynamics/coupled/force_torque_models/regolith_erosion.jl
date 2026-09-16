@@ -85,6 +85,25 @@
 #        alpha_0 = 0.289 J/m^3 at a surface bulk density of 1000 kg/m^3;
 #        section 6, total eroded mass 11-26 t for an Apollo landing.
 #
+# [SM26] D. Stubbs, M. Mehta, "A Data-Derived Scaling Approach for Plume-Surface
+#        Interaction Crater Formation", AIAA SciTech 2026 Forum, Orlando FL,
+#        2026 (NASA NTRS 20250011216); section IV, Fig. 14 gives a
+#        data-derived erosion threshold shear stress of 0.25 Pa. NOTE: the
+#        paper's existence, authors, title and venue are confirmed, but the
+#        0.25 Pa figure reaches this file through the repository's
+#        `benchmarks/studies/psi_validation` study rather than from the full
+#        text, which was not reachable from here. Treat it as a reference
+#        target of that study, not as a number checked against the source.
+#
+# [LM15] R. Lane, P. T. Metzger, "Estimation of Apollo Lunar Dust Transport
+#        using Optical Extinction Measurements", Acta Geophysica 63(2),
+#        568-599, 2015; Table 2 and equation 11 give Apollo 12 erosion rates
+#        and the radius of the eroding region (10.7 kg/s at 31.9 m altitude),
+#        and Table 3 the total eroded mass, centrally 2.6 t. Relayed here
+#        through the same validation study; the published spread across
+#        Lane and Metzger and Metzger (Icarus 417, article 116135, 2024,
+#        Table 1) is 1.2 to 26 t.
+#
 # [R63]  L. Roberts, "The action of a hypersonic jet on a dust layer",
 #        IAS Paper 63-50, 1963 -- the shear-excess erosion closure the
 #        repository's `plume_surface_interaction.jl` currently uses. Metzger
@@ -122,6 +141,30 @@
 # diffusion-driven flow after the plume's own downward pressure on the lifting
 # plug is subtracted; the Mohr-Coulomb tensile cutoff that resists it; the
 # bulk-flow speeds that turn both deep-cratering criteria into mass fluxes.
+#
+# Where the derived thresholds stand against the measurements (see the
+# repository's `benchmarks/studies/psi_validation` study for the cases):
+#
+#   threshold shear stress          value     source
+#   ------------------------------  --------  ----------------------------------
+#   PlumeSurfaceConfig, fitted      0.15 Pa   tuned to put erosion onset at 31 m
+#   Shao-Lu, derived here           0.057 Pa  [SL00] eq. 22 on lunar soil
+#   Metzger E_th recast as shear    0.159 Pa  [M24b] E_th at an Apollo 10 m state
+#   NASA data-derived               0.25 Pa   [SM26] section IV, Fig. 14
+#
+# The derived Shields value is 4.4 times below the NASA data-derived one.
+# Reaching 0.25 Pa from Shao and Lu's expression would need the cohesion
+# parameter gamma = 1.4e-3 kg/s^2, 2.8 times the top of the terrestrial range
+# they fit -- physically not absurd for airless, electrostatically charged
+# lunar fines, where no adsorbed water lubricates the contacts, but not a
+# number anyone has measured, so the default is left at their fitted value.
+#
+# The three thresholds are NOT three independent measurements of the same
+# quantity, and this module does not claim they are. The fitted 0.15 Pa and
+# Metzger's E_th are both anchored to the onset of visible dust at roughly 31 m
+# under an LM-class engine, so their six-percent agreement mostly says the two
+# plume models give similar wall shear there; it is a consistency check between
+# plume models, not an independent confirmation of the threshold.
 #
 # Assumed, and therefore exposed as documented configuration rather than buried
 # literals: `saltation_efficiency` (the repository's existing fitted factor of
@@ -408,9 +451,22 @@ honest readings of that gap: Shao and Lu's `γ` is fitted to terrestrial dust
 under air, where adsorbed water dominates the cohesion, so extrapolating it to
 airless, electrostatically charged lunar fines is an extrapolation; and the
 0.15 Pa constant absorbs whatever error the repository's assumed Gaussian shear
-law makes in the shear stress itself. See
-[`energy_flux_threshold_shear_pa`](@ref) for a second, independent estimate,
-which lands much closer to 0.15 Pa.
+law makes in the shear stress itself.
+
+Against the measurement the gap is wider still. Stubbs and Mehta's data-derived
+threshold (AIAA SciTech 2026, section IV, Fig. 14) is **0.25 Pa**, 4.4 times
+this value. Matching it would need `γ = 1.4e-3 kg/s²`, 2.8 times the top of
+Shao and Lu's terrestrial range -- plausible for airless lunar fines with no
+adsorbed water to lubricate the contacts, but unmeasured, so the default is
+left at their fitted value and the gap is reported rather than closed.
+
+Note also that the threshold and the shear law cannot be separated on today's
+plume field: applied to the repository's Gaussian shear law, 0.15 Pa puts the
+erosion onset at 31.0 m, this derived 0.057 Pa at 50.3 m, and the NASA 0.25 Pa
+at 24.0 m -- below the 31.9 m at which Lane and Metzger still measure
+10.7 kg/s of Apollo 12 erosion. A threshold that high is only compatible with
+the data if the wall shear at height is larger than the Gaussian law gives,
+which is a question for the plume field, not for the soil.
 """
 @inline function shields_threshold_shear_pa(soil::RegolithProperties, g_m_s2::Real)::Float64
     d = soil.median_diameter_m
@@ -440,11 +496,22 @@ stress carried by a denser, slower gas moves more soil.
 Evaluated at the surface state an 11.5 kN Apollo plume lays down at 10 m
 altitude under the repository's Gaussian footprint (p = 168 Pa) with an assumed
 500 K, 21.5 g/mol exhaust (ρ = 8.7 × 10⁻⁴ kg/m³, v̄ = 705 m/s) this returns
-**0.159 Pa** -- six percent from the 0.15 Pa fitted constant in
-`PlumeSurfaceConfig`, and reached from an entirely different observable (Apollo
-16 dust opacity rather than Apollo 11 crew reports).
+**0.159 Pa**, six percent from the 0.15 Pa fitted constant in
+`PlumeSurfaceConfig`.
 
-Read that agreement with the two caveats it deserves. Substituting
+Do not read that as independent confirmation. Both numbers are anchored to the
+same observable -- the onset of visible dust at roughly 31 m under an LM-class
+engine: `PlumeSurfaceConfig`'s constant was tuned to it directly, and Metzger
+fixes `E_th` from the 31.5 m at which dust first blows in the Apollo 16 video.
+What their agreement actually shows is that two different plume models (the
+repository's Gaussian footprint and Roberts' flow equations) put comparable
+wall shear on the ground at that height, which is a useful consistency check
+between the models and nothing more. The repository's validation study
+(`benchmarks/studies/psi_validation`) excludes the 31.5 m figure from its gates
+for the same reason, and its independent target is Stubbs and Mehta's
+data-derived 0.25 Pa, which this estimate is 1.6 times below.
+
+Read the number itself with two further caveats. Substituting
 `v̄ = sqrt(8p/(πρ_s))` makes the threshold `∝ (ρ_s p)^{1/4}`, or `∝ sqrt(p)` for
 an ideal gas at fixed temperature, so it is not a soil constant at all: at
 31.5 m, where the same footprint gives a tenth the pressure, it falls to
@@ -830,6 +897,23 @@ state.
 `pressure_pa`, `shear_pa`, `density_kg_m3`, `speed_mps`, `temperature_k` and
 `mach`. Pure, non-allocating, and safe to call from a right-hand-side
 evaluation.
+
+This is a **local** rate, at one radius on the ground. The vehicle's rate is its
+integral over the footprint, and the hard cutoff below onset therefore belongs
+to a point on the ground, not to the vehicle: the integral falls smoothly to
+zero as the last radius drops below threshold. Every threshold law behaves this
+way, Metzger's equation 16 included ("or `ṁ = 0` if `E < E_th`"), so an
+identically zero rate above some height is not by itself a defect -- but the
+height matters. Lane and Metzger (2015, Table 2) still measure 10.7 kg/s of
+Apollo 12 erosion at 31.9 m, where the current effector's fitted 0.15 Pa
+threshold gives exactly zero. With the derived
+[`shields_threshold_shear_pa`](@ref) instead, integrating this local rate over
+the repository's Gaussian footprint at the Apollo approach thrust gives
+28 kg/s at 31.9 m and reaches zero only at 50 m. That is non-zero where the
+measurement is non-zero, and 2.7 times high rather than infinitely low -- an
+improvement obtained by deriving the threshold rather than by fitting anything.
+It still carries the unsourced `saltation_efficiency` multiplier, so treat the
+magnitude as an order of magnitude.
 """
 function erosion_rate(regime::AbstractErosionRegime, gas, soil::RegolithProperties, g_m_s2::Real,
                       env::ErosionEnvironment=DEFAULT_EROSION_ENVIRONMENT)::Float64

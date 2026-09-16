@@ -22,6 +22,18 @@ const ASSUMED_SURFACE_TEMPERATURE_K = 500.0
 const ASSUMED_EXHAUST_MOLAR_MASS = 0.0215      # kg/mol
 const UNIVERSAL_GAS_CONSTANT = 8.314462618     # J/(mol K)
 
+# Reference targets from the repository's psi_validation study. Both reach this
+# file through that study rather than from the primary text, so they are used
+# only as wide-band sanity targets, never as tight gates.
+#   Stubbs and Mehta, "A Data-Derived Scaling Approach for Plume-Surface
+#   Interaction Crater Formation", AIAA SciTech 2026 (NTRS 20250011216),
+#   section IV, Fig. 14: a data-derived erosion threshold shear stress.
+const NASA_DATA_DERIVED_THRESHOLD_PA = 0.25
+#   Lane and Metzger, "Estimation of Apollo Lunar Dust Transport using Optical
+#   Extinction Measurements", Acta Geophysica 63(2), 568-599, 2015, Table 2:
+#   Apollo 12 erosion rate at 31.9 m altitude.
+const LANE_METZGER_RATE_AT_31_9M_KG_S = 10.7
+
 const APPROACH_THRUST_N = 11_500.0             # Apollo 11 lunar weight near touchdown
 const DPS_FULL_THRUST_N = 45_040.0             # LM descent engine at full throttle
 
@@ -100,6 +112,25 @@ const DEAD_GAS = (pressure_pa=0.0, shear_pa=0.0, density_kg_m3=0.0, speed_mps=0.
         # monotone in the grain size on the cohesive branch
         @test shields_threshold_shear_pa(lunar_mare_regolith(median_diameter_m=40.0e-6), MOON_G) > tau_t
         @test shields_threshold_shear_pa(lunar_mare_regolith(median_diameter_m=130.0e-6), MOON_G) < tau_t
+    end
+
+    @testset "the derived threshold against the NASA data-derived 0.25 Pa" begin
+        tau_t = shields_threshold_shear_pa(soil, MOON_G)
+        # The gap is real and is reported rather than closed: the derived value
+        # is 4.4 times below the data-derived one. The band is wide because the
+        # 0.25 Pa figure reaches this test through the validation study.
+        @test 3.0 < NASA_DATA_DERIVED_THRESHOLD_PA / tau_t < 6.0
+        # Matching 0.25 Pa needs gamma = 1.4e-3 kg/s^2, 2.8 times the top of
+        # Shao and Lu's terrestrial fitted range. Documented, not adopted.
+        implied_gamma = (NASA_DATA_DERIVED_THRESHOLD_PA / soil.shields_coefficient -
+                         soil.particle_density_kg_m3 * MOON_G * soil.median_diameter_m) *
+                        soil.median_diameter_m
+        @test implied_gamma ≈ 1.40e-3 rtol = 2e-2
+        @test implied_gamma > 5.0e-4                           # outside Shao and Lu's range
+        @test shields_threshold_shear_pa(lunar_mare_regolith(cohesion_parameter_kg_s2=implied_gamma),
+                                         MOON_G) ≈ NASA_DATA_DERIVED_THRESHOLD_PA rtol = 1e-9
+        # the module ships Shao and Lu's value, not the back-fitted one
+        @test soil.cohesion_parameter_kg_s2 == 3.0e-4
     end
 
     @testset "the energy-flux threshold is a second, independent estimate" begin
@@ -288,6 +319,56 @@ const DEAD_GAS = (pressure_pa=0.0, shear_pa=0.0, density_kg_m3=0.0, speed_mps=0.
         gas_mid, R_mid = apollo_gas_state(1.0e5, 0.0)
         @test !erosion_onset(BearingCapacityFailure(), gas_mid, soil, MOON_G,
                              erosion_environment(footprint_radius_m=R_mid, bearing_width_m=2 * R_mid))
+    end
+
+    @testset "the viscous rate is non-zero where the measurements are" begin
+        # The failure mode the validation study reports for today's single-regime
+        # model: its erosion rate is identically zero above 31.9 m, while Lane
+        # and Metzger measure 10.7 kg/s of Apollo 12 erosion there. The rate
+        # this module returns is local, so the vehicle's rate is its integral
+        # over the footprint; integrate it the way an effector would.
+        cfg = PlumeSurfaceConfig()
+        function footprint_rate(regime, thrust_n, height_m; samples::Int=800)
+            _, R = plume_surface_footprint(cfg, thrust_n, height_m)
+            env = erosion_environment(footprint_radius_m=R)
+            dx = 3.0 / samples
+            total = 0.0
+            for k in 1:samples
+                x = (k - 0.5) * dx
+                gas, _ = apollo_gas_state(thrust_n, height_m, x * R)
+                total += erosion_rate(regime, gas, soil, MOON_G, env) * 2pi * x * dx * R * R
+            end
+            return total
+        end
+
+        # today's fitted threshold shuts the model off above 31.0 m
+        @test plume_erosion_onset_height(cfg, APPROACH_THRUST_N) < 31.9
+        # the derived threshold does not: erosion is live at 31.9 m and the rate
+        # is the same order as the measurement (2 to 3 times high, and it still
+        # carries the unsourced saltation multiplier, so the band is wide)
+        r319 = footprint_rate(ViscousErosionRoberts(), APPROACH_THRUST_N, 31.9)
+        @test r319 > 0.0
+        @test LANE_METZGER_RATE_AT_31_9M_KG_S < r319 < 10 * LANE_METZGER_RATE_AT_31_9M_KG_S
+
+        # and it rises monotonically as the vehicle descends, then falls
+        # continuously to zero through onset rather than stepping off a cliff
+        heights = (45.0, 40.0, 35.0, 31.9, 25.0, 20.0, 10.0)
+        rates = [footprint_rate(ViscousErosionRoberts(), APPROACH_THRUST_N, h) for h in heights]
+        @test all(diff(rates) .> 0.0)
+        onset = plume_erosion_onset_height(
+            PlumeSurfaceConfig(threshold_shear_pa=shields_threshold_shear_pa(soil, MOON_G)),
+            APPROACH_THRUST_N)
+        @test 45.0 < onset < 55.0
+        @test footprint_rate(ViscousErosionRoberts(), APPROACH_THRUST_N, onset * 1.01) == 0.0
+        @test 0.0 < footprint_rate(ViscousErosionRoberts(), APPROACH_THRUST_N, onset * 0.99) < 1.0
+
+        # The NASA 0.25 Pa threshold cannot be adopted on this shear law: it
+        # would put the onset at 24 m, below the height where erosion is
+        # measured. The threshold and the shear law are not separable until the
+        # plume field computes the wall shear from the nozzle.
+        nasa_onset = plume_erosion_onset_height(
+            PlumeSurfaceConfig(threshold_shear_pa=NASA_DATA_DERIVED_THRESHOLD_PA), APPROACH_THRUST_N)
+        @test nasa_onset < 31.9
     end
 
     @testset "diffusion-driven flow needs a lateral pressure gradient" begin

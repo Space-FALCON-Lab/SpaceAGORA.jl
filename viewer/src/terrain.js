@@ -18,13 +18,13 @@
 // Payload contract (viewer_bundle.jl `terrain_payload`):
 //   terrain.site               { lat_deg, lon_deg, height_m, name }
 //   terrain.reference_radius_m
-//   terrain.grids[]            { name, rows, cols, lat_min, lat_max, lon_min, lon_max, heights (base64 Float32, row-major north to south) }, finest first
+//   terrain.grids[]            { name, rows, cols, lat_min, lat_max, lon_min, lon_max, and the heights, row-major north to south: `heights_i16` (base64 Int16 steps of `height_scale_m` about `height_base_m`) or `heights` (base64 Float32) }, finest first
 //   terrain.imagery[]          { lat_min, lat_max, lon_min, lon_max, width, height, m_per_px, url (data: JPEG), albedo_url (data: JPEG, optional) }, coarse to fine
 // `albedo_url` is `url` with the mosaic's own illumination divided out
 // (scripts/dev/terrain/fetch_moon_site.py `derive_albedo`); it is what the page
 // drapes when it is there, since the page lights the surface itself.
 import * as THREE from 'three';
-import { decodeFloat32 } from 'viewer/data.js';
+import { decodeBytes, decodeFloat32 } from 'viewer/data.js';
 
 const PATCH_SEGMENTS = 96;
 const TERRAIN_M_TO_KM = 1e-3;
@@ -90,11 +90,121 @@ const TERRAIN_SHADOW_FIRST_KM = 0.008;   // first sample, up-sun of the fragment
 const TERRAIN_SHADOW_REACH_KM = 6.0;     // last sample
 const TERRAIN_SHADOW_BIAS_M = 2.0;       // clears the grids' own sampling noise
 const TERRAIN_SUN_ANGULAR_RADIUS = 0.00465;   // radians, the Sun from 1 au
-// Normal map: one texture per imagery level, sampled at the resolution of the
-// finest height grid that covers the level, so the relief the DEM resolves
-// shades correctly however coarse the drawn mesh is.
+// Normal map: one texture per imagery level, sampled at half the cell of the
+// finest height grid that covers it, so the relief the DEM resolves shades
+// correctly however coarse the drawn mesh is. Over the innermost level that is
+// about 1.9 m a texel against the NAC grid's 4 m and the drawn mesh's 5 m.
 const TERRAIN_NORMAL_MIN = 64;
 const TERRAIN_NORMAL_MAX = 512;
+const TERRAIN_NORMAL_OVERSAMPLE = 2;        // texels per DEM cell
+const TERRAIN_NORMAL_TEXEL_MIN_M = 1.0;     // never finer than this from the DEM alone
+
+// Micro-relief. A NAC digital terrain model stops at a few meters -- its own
+// grid is 4 m here -- but the surface does not: regolith keeps roughening down
+// through decimeter craters to the grain, and at the 10 degree sun of a landing
+// that roughness is most of what the eye reads as ground. Below the DEM's cell
+// the page therefore adds a procedural detail normal: a tiled field of
+// multi-octave value noise and small craters, built once, sampled by the finest
+// levels only and faded out by its own mipmaps as the camera pulls away. It is
+// a texture, not a claim about this particular site; `options.microRelief =
+// false` switches it off. The slope it adds (0.12 RMS, about 7 degrees at a
+// meter) continues the measured slope-versus-baseline trend of the site's own
+// grid (10.9 degrees RMS at 4 m, 8.0 at 8 m, 6.0 at 16 m).
+const TERRAIN_DETAIL_SIZE = 256;            // texels across one tile
+const TERRAIN_DETAIL_TILE_M = 8.0;          // meters across one tile
+const TERRAIN_DETAIL_SLOPE = 0.12;          // RMS slope of the detail field
+const TERRAIN_DETAIL_CRATERS = 140;         // craters per tile
+const TERRAIN_DETAIL_MAX_MPP = 2.0;         // levels at least this sharp get it
+
+// Heights as the bundler wrote them: Int16 steps about a base (half the bytes,
+// still a centimeter) or plain Float32.
+function terrainHeights(grid) {
+  if (grid.heights_i16 != null) {
+    const bytes = decodeBytes(grid.heights_i16);
+    const q = new Int16Array(bytes.buffer, 0, bytes.length >> 1);
+    const out = new Float32Array(q.length);
+    const base = grid.height_base_m || 0, scale = grid.height_scale_m || 1;
+    for (let k = 0; k < q.length; k++) out[k] = base + q[k] * scale;
+    return out;
+  }
+  return decodeFloat32(grid.heights);
+}
+
+// A seamless tile of micro-relief, as a tangent-space normal map: a few octaves
+// of value noise (wavelengths from half the tile down to four texels)
+// plus small craters -- a parabolic bowl inside a raised rim, the shape a
+// simple impact leaves -- and the whole field scaled to TERRAIN_DETAIL_SLOPE
+// RMS slope. Everything wraps, so the tile repeats without a seam.
+function terrainDetailTexture(anisotropy) {
+  const n = TERRAIN_DETAIL_SIZE, texelM = TERRAIN_DETAIL_TILE_M / n;
+  const h = new Float32Array(n * n);
+  let seed = 20250916;
+  const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  // value noise: a lattice of random values per octave, bilinear, wrapped
+  for (let octave = 2; octave <= 64; octave *= 2) {
+    const m = octave, amp = TERRAIN_DETAIL_TILE_M / octave;   // 1/f: amplitude follows wavelength
+    const lattice = new Float32Array(m * m);
+    for (let k = 0; k < m * m; k++) lattice[k] = rand() - 0.5;
+    for (let i = 0; i < n; i++) {
+      const fy = i / n * m, y0 = Math.floor(fy), ty = fy - y0;
+      for (let j = 0; j < n; j++) {
+        const fx = j / n * m, x0 = Math.floor(fx), tx = fx - x0;
+        const x1 = (x0 + 1) % m, y1 = (y0 + 1) % m;
+        const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+        const a = lattice[y0 % m * m + x0 % m], b = lattice[y0 % m * m + x1];
+        const c = lattice[y1 * m + x0 % m], d = lattice[y1 * m + x1];
+        h[i * n + j] += amp * ((1 - sy) * ((1 - sx) * a + sx * b) + sy * ((1 - sx) * c + sx * d));
+      }
+    }
+  }
+  // craters: radii power-law distributed between two texels and a tenth of the tile
+  for (let c = 0; c < TERRAIN_DETAIL_CRATERS; c++) {
+    const rM = 2 * texelM * Math.pow(0.1 * TERRAIN_DETAIL_TILE_M / (2 * texelM), Math.pow(rand(), 2.2));
+    const r = rM / texelM, depth = 0.18 * rM, cx = rand() * n, cy = rand() * n;
+    const reach = Math.ceil(1.5 * r);
+    for (let di = -reach; di <= reach; di++) {
+      for (let dj = -reach; dj <= reach; dj++) {
+        const d = Math.hypot(di + (cy - Math.floor(cy)), dj + (cx - Math.floor(cx))) / r;
+        if (d > 1.5) continue;
+        const i = (Math.floor(cy) + di + n) % n, j = (Math.floor(cx) + dj + n) % n;
+        // bowl inside the rim, rim crest at d = 1, skirt out to 1.5
+        h[i * n + j] += d <= 1 ? depth * (d * d - 0.75) : 0.25 * depth * (1.5 - d) / 0.5;
+      }
+    }
+  }
+  // slopes, scaled to the wanted RMS, encoded the usual way
+  const sx = new Float32Array(n * n), sy = new Float32Array(n * n);
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const e = h[i * n + (j + 1) % n], w = h[i * n + (j - 1 + n) % n];
+      const s = h[((i + 1) % n) * n + j], no = h[((i - 1 + n) % n) * n + j];
+      const dE = (e - w) / (2 * texelM), dN = (no - s) / (2 * texelM);   // row i-1 is north
+      sx[i * n + j] = dE; sy[i * n + j] = dN;
+      sum += dE * dE + dN * dN;
+    }
+  }
+  const rms = Math.sqrt(sum / (n * n));
+  const gain = rms > 0 ? TERRAIN_DETAIL_SLOPE * Math.SQRT2 / rms : 0;
+  const bytes = new Uint8Array(4 * n * n);
+  for (let k = 0; k < n * n; k++) {
+    const dE = sx[k] * gain, dN = sy[k] * gain;
+    const inv = 1 / Math.sqrt(dE * dE + dN * dN + 1);
+    bytes[4 * k] = Math.round((-dE * inv * 0.5 + 0.5) * 255);
+    bytes[4 * k + 1] = Math.round((-dN * inv * 0.5 + 0.5) * 255);
+    bytes[4 * k + 2] = Math.round((inv * 0.5 + 0.5) * 255);
+    bytes[4 * k + 3] = 255;
+  }
+  const texture = new THREE.DataTexture(bytes, n, n, THREE.RGBAFormat);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.anisotropy = anisotropy || 4;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
+}
 
 // Height grids as textures. A grid is uploaded as 16-bit fixed point across the
 // red and green bytes of an RGBA8 texture -- 0.05 m over the LOLA window, 2 mm
@@ -124,7 +234,7 @@ function terrainHeightTexture(grid) {
 // local east/north/up frame, the ordinary tangent-space encoding: 8 bits a
 // component is about half a degree of slope, which is finer than the grids
 // themselves resolve.
-function terrainNormalTexture(level, heightAt, radiusM, fallbackM) {
+function terrainNormalTexture(level, heightAt, radiusM, fallbackM, anisotropy) {
   const n = level.size;
   const dlat = (level.lat_max - level.lat_min) / n, dlon = (level.lon_max - level.lon_min) / n;
   const latOf = (i) => level.lat_max - (i + 0.5) * dlat;         // row 0 is north, i.e. v = 0
@@ -155,6 +265,7 @@ function terrainNormalTexture(level, heightAt, radiusM, fallbackM) {
   const texture = new THREE.DataTexture(bytes, n, n, THREE.RGBAFormat);
   texture.magFilter = THREE.LinearFilter;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.anisotropy = anisotropy || 4;
   texture.generateMipmaps = true;
   texture.needsUpdate = true;
   return texture;
@@ -230,6 +341,8 @@ function terrainFragment(gridCount) {
 #include <logdepthbuf_pars_fragment>
 uniform sampler2D uMap;
 uniform sampler2D uNormalMap;
+uniform sampler2D uDetailMap;
+uniform vec2 uDetail;         // tiles across this level, and the strength of their slope
 uniform vec3 uSunWorld;
 uniform float uLunar;
 uniform float uRefRadiusKm;
@@ -270,6 +383,13 @@ void main() {
   #include <logdepthbuf_fragment>
   vec3 up = normalize(vUpWorld), east = normalize(vEastWorld), north = normalize(vNorthWorld);
   vec3 slope = texture2D(uNormalMap, vUv).xyz * 2.0 - 1.0;
+  // Micro-relief rides on top as a slope, added to the slope the DEM gives
+  // before the two are turned back into a normal.
+  if (uDetail.y > 0.0) {
+    vec3 grain = texture2D(uDetailMap, vUv * uDetail.x).xyz * 2.0 - 1.0;
+    vec2 ds = -grain.xy / max(grain.z, 0.2) * uDetail.y;
+    slope += slope.z * vec3(-ds.x, -ds.y, 0.0);
+  }
   vec3 N = normalize(slope.x * east + slope.y * north + slope.z * up);
   vec3 V = normalize(vViewDir);
   float mu = max(dot(N, V), 1.0e-3);
@@ -316,10 +436,11 @@ function gridHeight(g, latDeg, lonDeg) {
   return (1 - tr) * ((1 - tc) * h00 + tc * h01) + tr * ((1 - tc) * h10 + tc * h11);
 }
 
-// Texels across a level: the resolution of the finest grid that covers its
-// center, rounded to a power of two and clamped, so the normal map is as sharp
-// as the DEM under it and no sharper.
-function terrainNormalSize(level, grids) {
+// Texels across a level: half the cell of the finest grid that covers its
+// center (the extra factor is what lets the interpolated field, and the
+// micro-relief on top of it, carry detail between DEM samples), rounded to a
+// power of two and clamped.
+function terrainNormalSize(level, grids, radiusM) {
   const lat = 0.5 * (level.lat_min + level.lat_max), lon = 0.5 * (level.lon_min + level.lon_max);
   let cell = Infinity;
   for (const g of grids) {
@@ -328,7 +449,10 @@ function terrainNormalSize(level, grids) {
     break;    // grids are finest first
   }
   if (!Number.isFinite(cell) || !(cell > 0)) return TERRAIN_NORMAL_MIN;
-  const want = Math.pow(2, Math.round(Math.log2((level.lat_max - level.lat_min) / cell)));
+  const spanM = THREE.MathUtils.degToRad(level.lat_max - level.lat_min) * radiusM;
+  const cellM = THREE.MathUtils.degToRad(cell) * radiusM;
+  const texelM = Math.max(cellM / TERRAIN_NORMAL_OVERSAMPLE, TERRAIN_NORMAL_TEXEL_MIN_M);
+  const want = Math.pow(2, Math.round(Math.log2(spanM / texelM)));
   return Math.max(TERRAIN_NORMAL_MIN, Math.min(TERRAIN_NORMAL_MAX, want));
 }
 
@@ -339,7 +463,7 @@ export function createTerrain(spec, planet, options = {}) {
     return { group, heightAt: () => NaN, levels: [], hole: null, site: null, setSun() {}, setVisible() {} };
   }
   const R = (spec.reference_radius_m || planet.equatorial_radius_m) * TERRAIN_M_TO_KM;
-  const grids = spec.grids.map((g) => ({ ...g, data: decodeFloat32(g.heights) }));
+  const grids = spec.grids.map((g) => ({ ...g, data: terrainHeights(g) }));
   const heightAt = (latDeg, lonDeg) => {
     for (const g of grids) { const h = gridHeight(g, latDeg, lonDeg); if (!Number.isNaN(h)) return h; }
     return NaN;
@@ -349,7 +473,9 @@ export function createTerrain(spec, planet, options = {}) {
     const r = R + hM * TERRAIN_M_TO_KM;
     return new THREE.Vector3(r * Math.cos(φ) * Math.cos(λ), r * Math.cos(φ) * Math.sin(λ), r * Math.sin(φ));
   };
+  const radiusM = spec.reference_radius_m || planet.equatorial_radius_m;
   const heightTextures = grids.map(terrainHeightTexture);
+  const detailMap = options.microRelief === false ? null : terrainDetailTexture(options.anisotropy);
   const marchRatio = Math.pow(TERRAIN_SHADOW_REACH_KM / TERRAIN_SHADOW_FIRST_KM, 1 / (TERRAIN_SHADOW_STEPS - 1));
   const gridFragment = terrainFragment(grids.length);
   const levels = [];
@@ -409,11 +535,18 @@ export function createTerrain(spec, planet, options = {}) {
     texture.anisotropy = options.anisotropy || 4;
     texture.generateMipmaps = true;
     texture.minFilter = THREE.LinearMipmapLinearFilter;
-    const size = terrainNormalSize(lvl, grids);
-    const normalMap = terrainNormalTexture({ ...lvl, size }, heightAt, (spec.reference_radius_m || planet.equatorial_radius_m), spec.site ? spec.site.height_m : 0);
+    const size = terrainNormalSize(lvl, grids, radiusM);
+    const normalMap = terrainNormalTexture({ ...lvl, size }, heightAt, radiusM, spec.site ? spec.site.height_m : 0, options.anisotropy);
+    // Micro-relief on the levels sharp enough to show it, one tile every
+    // TERRAIN_DETAIL_TILE_M of ground.
+    const spanM = THREE.MathUtils.degToRad(lvl.lat_max - lvl.lat_min) * radiusM;
+    const detail = detailMap && lvl.m_per_px <= TERRAIN_DETAIL_MAX_MPP
+      ? new THREE.Vector2(spanM / TERRAIN_DETAIL_TILE_M, 1) : new THREE.Vector2(1, 0);
     const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.lights]);
     uniforms.uMap = { value: texture };
     uniforms.uNormalMap = { value: normalMap };
+    uniforms.uDetailMap = { value: detailMap || normalMap };
+    uniforms.uDetail = { value: detail };
     uniforms.uSunWorld = { value: new THREE.Vector3(1, 0, 0) };
     uniforms.uSunLocal = { value: new THREE.Vector3(1, 0, 0) };
     uniforms.uLunar = { value: 0 };
@@ -439,7 +572,7 @@ export function createTerrain(spec, planet, options = {}) {
     mesh.receiveShadow = true;
     mesh.renderOrder = 1 + k;
     group.add(mesh);
-    levels.push({ mesh, spec: lvl, m_per_px: lvl.m_per_px, normalSize: size, albedo: !!lvl.albedo_url });
+    levels.push({ mesh, spec: lvl, m_per_px: lvl.m_per_px, normalSize: size, normalTexelM: spanM / size, microRelief: detail.y > 0, albedo: !!lvl.albedo_url });
   });
   // the globe is cut under the outermost level
   const outer = imagery[0];
@@ -492,7 +625,9 @@ export function createTerrain(spec, planet, options = {}) {
       // called and both the reflectance and the horizon test stay switched off.
       const lit = sunPlaced || options.sun;
       const shading = lit ? `${lunar ? 'lunar' : 'Lambert'} reflectance, ray-marched shadows` : 'Lambert shading';
-      return `${levels.length} levels, ${grids.length} grids, finest ${levels.length ? levels[levels.length - 1].m_per_px.toFixed(2) : '–'} m/px, ${levels.some((l) => l.albedo) ? 'albedo imagery' : 'mosaic imagery'}, ${shading}`;
+      const finest = levels.length ? levels[levels.length - 1] : null;
+      const relief = finest ? `normals ${finest.normalTexelM.toFixed(1)} m/texel${finest.microRelief ? ' + micro-relief' : ''}` : 'no normals';
+      return `${levels.length} levels, ${grids.length} grids, finest ${finest ? finest.m_per_px.toFixed(2) : '–'} m/px, ${levels.some((l) => l.albedo) ? 'albedo imagery' : 'mosaic imagery'}, ${relief}, ${shading}`;
     },
   };
 }

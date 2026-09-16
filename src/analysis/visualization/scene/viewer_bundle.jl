@@ -115,6 +115,36 @@ end
 # Frame payload
 # ---------------------------------------------------------------------------
 
+# Heights for the viewer's terrain: Int16 steps of `scale` meters about `base`,
+# which is half the bytes of Float32 and still finer than any DEM the page
+# carries (1 cm over a NAC window, 4 cm over a LOLA one).
+@inline function _int16_base64(values::AbstractVector{<:Integer})::String
+    buf = Vector{Int16}(undef, length(values))
+    @inbounds for i in eachindex(values)
+        buf[i] = Int16(values[i])
+    end
+    ENDIAN_BOM == 0x04030201 || (buf .= bswap.(buf))
+    return base64encode(reinterpret(UInt8, buf))
+end
+
+"""
+    _height_block(values; quantize=true) -> Dict
+
+The `heights` entry of a terrain grid: `heights_i16` with its base and scale
+when the values quantize (the usual case), and plain `heights` Float32 when
+they do not (an empty or non-finite grid).
+"""
+function _height_block(values::AbstractVector{<:Real}; quantize::Bool=true)::Dict{String, Any}
+    lo, hi = isempty(values) ? (0.0, 0.0) : (Float64(minimum(values)), Float64(maximum(values)))
+    if !quantize || !isfinite(lo) || !isfinite(hi)
+        return Dict{String, Any}("heights" => _float32_base64(values))
+    end
+    base = 0.5 * (lo + hi)
+    scale = max(0.01, (hi - lo) / 65000)
+    q = [round(Int16, clamp((Float64(v) - base) / scale, -32768, 32767)) for v in values]
+    return Dict{String, Any}("heights_i16" => _int16_base64(q), "height_base_m" => base, "height_scale_m" => scale)
+end
+
 @inline function _float32_base64(values::AbstractVector{<:Real})::String
     buf = Vector{Float32}(undef, length(values))
     @inbounds for i in eachindex(values)
@@ -518,27 +548,37 @@ function viewer_payload(
 end
 
 """
-    terrain_payload(site_json; max_grid=512) -> Dict{String, Any}
+    terrain_payload(site_json; max_grid=512, finest_max_grid=2048, quantize_heights=true) -> Dict{String, Any}
 
 Site terrain for the page: the DEM grids of a site directory written by
-`scripts/dev/terrain/fetch_moon_site.py` (finest first, each subsampled to
-at most `max_grid` samples per side, heights as base64 Float32) and its
-imagery levels (JPEG data URLs with their latitude/longitude boxes, plus
+`scripts/dev/terrain/fetch_moon_site.py` (finest first) and its imagery
+levels (JPEG data URLs with their latitude/longitude boxes, plus
 `albedo_url`, the albedo-normalized copy of the same patch, where the fetch
 script wrote one). The viewer drapes the imagery over the displaced grids
 and cuts the globe open under the outermost level.
+
+The finest grid is subsampled to at most `finest_max_grid` samples per side
+and every other grid to `max_grid`: it is the finest grid the relief of the
+last few tens of meters comes from, and a NAC digital terrain model at its
+native 4 m carries real slope that the same grid at 8 m does not (10.9
+degrees RMS against 8.0 at Tranquility Base). Heights ride as Int16 steps
+about a base (`heights_i16`, `height_base_m`, `height_scale_m`) unless
+`quantize_heights=false`, which halves the bytes of the larger grid and
+still resolves it to a centimeter.
 """
-function terrain_payload(site_json::AbstractString; max_grid::Integer=512)::Dict{String, Any}
+function terrain_payload(site_json::AbstractString; max_grid::Integer=512,
+                         finest_max_grid::Integer=2048, quantize_heights::Bool=true)::Dict{String, Any}
     isfile(site_json) || throw(ArgumentError("terrain site file not found: $(site_json)"))
     meta = JSON.parsefile(String(site_json))
     dir = dirname(String(site_json))
     grids = Dict{String, Any}[]
     radius = 0.0
-    for d in meta["dem"]
+    for (k, d) in enumerate(meta["dem"])
         g = TerrainModels.load_dem_grid(joinpath(dir, String(d["name"]) * ".json"))
         radius = Float64(get(d, "reference_radius_m", 1737400.0))
         rows, cols = size(g.heights)
-        stride = max(1, ceil(Int, max(rows, cols) / Int(max_grid)))
+        limit = Int(k == 1 ? finest_max_grid : max_grid)
+        stride = max(1, ceil(Int, max(rows, cols) / limit))
         sub = g.heights[1:stride:end, 1:stride:end]
         # the subsampled grid keeps the same outer edges only approximately; state the edges it does cover
         r2, c2 = size(sub)
@@ -547,7 +587,7 @@ function terrain_payload(site_json::AbstractString; max_grid::Integer=512)::Dict
             "name" => String(d["name"]), "rows" => r2, "cols" => c2,
             "lat_max" => g.lat_max, "lat_min" => g.lat_max - r2 * stride * dlat,
             "lon_min" => g.lon_min, "lon_max" => g.lon_min + c2 * stride * dlon,
-            "heights" => _float32_base64(vec(permutedims(sub))),
+            _height_block(vec(permutedims(sub)); quantize=quantize_heights)...,
             "source" => g.source,
         ))
     end

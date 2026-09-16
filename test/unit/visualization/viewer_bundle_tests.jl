@@ -557,7 +557,7 @@ end
         open(joinpath(dir, "site.json"), "w") do io
             write(io, """{"site": {"lat_deg": 1.0, "lon_deg": 21.5, "name": "unit"}, "dem": [{"name": "dem_test", "reference_radius_m": 1737400.0}], "imagery": "imagery/imagery.json"}""")
         end
-        payload = SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3)
+        payload = SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3, finest_max_grid=3)
         @test payload["site"]["name"] == "unit"
         @test payload["reference_radius_m"] == 1737400.0
         @test length(payload["grids"]) == 1
@@ -565,6 +565,19 @@ end
         @test g["rows"] == 2 && g["cols"] == 3          # stride 2 subsampling
         @test g["lat_max"] == 2.0 && g["lon_min"] == 20.0
         @test g["lat_min"] ≈ 0.0 && g["lon_max"] ≈ 23.0
+        # the finest grid has its own budget, so `max_grid` alone leaves it whole
+        @test SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3)["grids"][1]["rows"] == 4
+        # heights ride as Int16 steps about a base, and come back within a step
+        @test haskey(g, "heights_i16") && !haskey(g, "heights")
+        let q = collect(reinterpret(Int16, base64decode(g["heights_i16"]))),
+            hs = g["height_base_m"] .+ Float64.(q) .* g["height_scale_m"]
+            @test length(hs) == 6
+            @test isapprox(hs[1], 100.0; atol=g["height_scale_m"])          # row 0, column 0
+            @test isapprox(hs[end], 100 + 10 * 4 + 100 * 2; atol=g["height_scale_m"])
+        end
+        plain = SV.terrain_payload(joinpath(dir, "site.json"); max_grid=3, finest_max_grid=3, quantize_heights=false)
+        @test haskey(plain["grids"][1], "heights") && !haskey(plain["grids"][1], "heights_i16")
+        @test _decode_f32(plain["grids"][1]["heights"])[1] == 100.0f0
         @test length(payload["imagery"]) == 1
         @test startswith(payload["imagery"][1]["url"], "data:image/jpeg;base64,")
         @test payload["imagery"][1]["m_per_px"] == 100.0

@@ -36,7 +36,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/references.js` | reference ghosts: translucent copies of a spacecraft driven by an external state table |
 | `src/video.js` | MP4 export through WebCodecs and mp4-muxer (`vendor/mp4-muxer.mjs`, MIT), WebM fallback |
 | `three-gpu-pathtracer@0.0.23`, `three-mesh-bvh@0.7.8`, `three/examples/jsm/postprocessing/Pass.js` (import-map entries, CDN pages only) | the path-traced lighting mode; absent from the offline bundle, which then offers real-time lighting only |
-| `src/terrain.js` | landing-site terrain: DEM-displaced nested patches draped with albedo imagery that sharpens toward the site, the hole they cut in the globe, and the lit surface itself -- a lunar (Lommel-Seeliger with an opposition surge) reflectance, normal maps derived from the height grids, and shadows ray-marched through those grids |
+| `src/terrain.js` | landing-site terrain: DEM-displaced nested patches draped with albedo imagery that sharpens toward the site, the hole they cut in the globe, and the lit surface itself -- a lunar (Lommel-Seeliger with an opposition surge) reflectance, normal maps derived from the height grids plus tiled micro-relief below their cell, and shadows ray-marched through those grids |
 | `src/dust.js` | regolith blown off the surface by a descent engine: a GPU particle sheet driven by the `frames.plume` block, a ground haze disk and a scour mark |
 | `src/plumes.js` | thruster plumes: one additive, flickering cone pair per thruster, driven by the recorded firing levels, with the idle cone glyphs dimmed |
 | `src/terrain.js` | landing-site terrain: DEM-displaced nested patches draped with imagery that sharpens toward the site, and the hole they cut in the globe |

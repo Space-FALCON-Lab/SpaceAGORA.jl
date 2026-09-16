@@ -166,10 +166,25 @@ dark (only the Moon, Luna and Mercury take the regolith law), and a run without
 a sun direction never leaves the Lambert branch at all.
 
 The relief is shaded from the DEM, not from the drawn mesh: on load the page
-turns each height grid into a normal map at the grid's own resolution (the NAC
-grid is some 8 m a sample, the mesh 5 m a quad over the finest level and
-hundreds of meters over the coarsest), so slopes the mesh cannot resolve still
-shade correctly under a moving sun.
+turns each height grid into a normal map at half the grid's cell, so slopes the
+mesh cannot resolve still shade correctly under a moving sun. The finest grid
+travels at its native resolution for this reason -- `terrain_payload` keeps it
+to `finest_max_grid` (2048) samples a side against `max_grid` (512) for the
+rest, because a NAC digital terrain model at its own 4 m carries slope that the
+same grid at 8 m does not: 10.9 degrees RMS against 8.0 at Tranquility Base.
+Heights ride as Int16 steps about a base (`heights_i16`, `height_base_m`,
+`height_scale_m`), which resolves the grid to a centimeter in half the bytes
+Float32 would take; `quantize_heights=false` restores the Float32 `heights`
+block.
+
+Below the DEM's own cell the page adds micro-relief: a tiled detail normal map,
+built once at load from multi-octave value noise and a few hundred small
+craters, scaled to 0.12 RMS slope (about 7 degrees at a meter, which continues
+the site grid's own slope-versus-baseline trend) and sampled by the levels at
+least 2 m/px sharp, one tile every 8 m of ground. It is a texture rather than a
+claim about the site, and under a 10 degree sun it is most of what the eye reads
+as ground; `options.microRelief = false` turns it off. Its own mipmaps fade it
+out as the camera pulls away.
 
 The ground also shadows itself. The height grids are uploaded as textures and
 the terrain's fragment shader marches 64 samples toward the Sun, from 8 m to

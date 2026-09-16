@@ -64,12 +64,12 @@ const DUST_GRAVITY_M_S2 = 1.62;                        // lunar, unless the payl
 const DUST_SIZE_KM = 4.5e-4;                           // a puff about half a meter across
 const DUST_PROJECTION_SCALE = 820;                     // pixels per unit angle, ~800 px tall view at 45 deg
 const DUST_POINT_MIN_PX = 1.2;
-const DUST_POINT_MAX_PX = 34.0;
+const DUST_POINT_MAX_PX = 16.0;   // a near grain is a speck, not a bubble: the sheet is the body of the effect
 const DUST_COLOR = 0xc9bda6;
 const DUST_SCOUR_FLOOR_COLOR = 0xa79e8d;               // soil swept down to a smoother, brighter floor
 const DUST_SCOUR_RIM_COLOR = 0x574f43;                 // the ridge of piled-up material around it
 const DUST_SHADOW_COLOR = 0x0b0d10;
-const DUST_MAX_OPACITY = 0.22;
+const DUST_MAX_OPACITY = 0.11;                         // the points are a sparkle over the sheet, not a spray
 const DUST_SCOUR_RIM_OPACITY = 0.3;
 const DUST_SCOUR_FLOOR_OPACITY = 0.12;                 // added light, scaled by the display gain
 const DUST_SCOUR_RIM_RADIUS = 0.78;                    // of the crater radius
@@ -121,15 +121,15 @@ const DUST_SHEET_RINGS = 8;
 // -- a chamber has residual gas to keep the finest grains aloft -- so
 // `hazeDecayS` and `hazeOpacity` are knobs, and their defaults are the vacuum
 // case: thinner, and gone within a few tens of seconds.
-const DUST_HAZE_PUFFS = 16;
+const DUST_HAZE_PUFFS = 22;
 const DUST_HAZE_DECAY_S = 9.0;
 const DUST_HAZE_OPACITY = 0.30;
-const DUST_HAZE_TAU = 1.6;                             // per puff, through its middle
+const DUST_HAZE_TAU = 1.3;                             // per puff, through its middle
 const DUST_HAZE_RADIUS_M = 90.0;
 const DUST_HAZE_HEIGHT_M = 16.0;                       // the bank's top, over the impingement point
 const DUST_HAZE_PUFF_HEIGHT_M = 7.0;                   // half-height of one puff: wide and low
-const DUST_HAZE_PUFF_MIN = 0.22;                       // puff radius, as a fraction of the bank's
-const DUST_HAZE_PUFF_MAX = 0.52;
+const DUST_HAZE_PUFF_MIN = 0.18;                       // puff radius, as a fraction of the bank's
+const DUST_HAZE_PUFF_MAX = 0.40;
 const DUST_HAZE_DRIFT_HZ = 0.055;                      // how fast a puff drifts out and is replaced
 const DUST_HAZE_COLOR = 0xbdb3a1;
 const DUST_HAZE_PHASE_G = 0.35;                        // multiply-scattered: much less directional than the sheet
@@ -541,6 +541,10 @@ const DUST_PUFF_VERTEX_SHADER = `
     // from the side it shows its height.
     float tall = mix(uPuffHeight, wide, axial);
     vec3 p = c.xyz + right * (position.x * wide) + up * (position.y * tall);
+    // A puff the camera is nearly inside would read as one soft ball of fog
+    // filling the frame, so it fades out as the camera closes on it and the
+    // ones behind it carry the haze instead.
+    vPuffFade *= smoothstep(0.7, 2.2, length(c.xyz) / max(1e-9, wide));
     vPuffUv = position.xy;
     vPuffSeed = aParam.y;
     gl_Position = projectionMatrix * vec4(p, 1.0);
@@ -566,7 +570,11 @@ const DUST_PUFF_FRAGMENT_SHADER = `
     float r = length(vPuffUv);
     if (r > 1.0) discard;
     float falloff = 1.0 - smoothstep(0.0, 1.0, r);
-    float n = 0.45 + 0.55 * dustFbm(vec3(vPuffUv * 1.7, uTime * 0.05) + vPuffSeed);
+    // Torn edges and lanes inside: a puff close to the camera has to read as
+    // part of a cloud, not as a sphere of fog with a rim.
+    float n = dustFbm(vec3(vPuffUv * 2.6, uTime * 0.05) + vPuffSeed);
+    n *= 0.6 + 0.8 * dustFbm(vec3(vPuffUv * 6.1, uTime * 0.09) + vPuffSeed * 1.7);
+    n = clamp(n * 2.1, 0.0, 1.4);
     float a = 1.0 - exp(-uTau * falloff * n * vPuffFade);
     if (a <= 0.004) discard;
     gl_FragColor = vec4(uColor * (uBrightness * dustPhase(vPuffView)), 1.0);

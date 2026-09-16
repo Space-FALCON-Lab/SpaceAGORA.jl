@@ -354,9 +354,10 @@ export_visualization(prefix; frame=:planet_fixed, ground_tracks=true)
 
 A constellation is where this earns its place: spacecraft in nearly the same
 orbit lay down tracks whose spacing is the thing the picture is about.
-`scripts/dev/viewer_demos/cygnss_constellation.jl` flies the CYGNSS
-constellation over the 96 hours its flight telemetry covers and builds such a
-page, with the FM1 and FM4 position solutions attached as reference ghosts.
+`scripts/dev/viewer_demos/cygnss_constellation.jl` flies the seven CYGNSS
+observatories over the 96 hours their flight telemetry covers and builds such
+a page, with each spacecraft's own flown position solution attached beside it
+as a reference ghost in its own color.
 
 ## Robot arms
 

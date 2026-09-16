@@ -46,8 +46,8 @@ starts, not on the CLI:
 | Command | Needs on top of the instantiated repository |
 |---|---|
 | `assets check`, `assets manifest`, `assets setup-open` | nothing |
-| `run --example=<no-GRAM example>` (`AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`, the RPO examples) | nothing |
-| `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, and the others listed on the [Examples Catalog](user/examples_catalog.md)) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed ones also need the native GRAM library built |
+| `run --example=<no-GRAM example>` (`AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`) | nothing |
+| `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, the RPO examples, and the others listed on the [Examples Catalog](user/examples_catalog.md)) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed ones also need the native GRAM library built |
 | `telemetry ...` | the `data/GRAMSuite.jl` submodule: the study loads the vendored `GRAMSuite` package before it reads any scenario, even for `--scenarios=odyssey`; the truth files it grades are in the repository |
 | `benchmark ...` | the `data/GRAMSuite.jl` submodule, and for the GRAM-backed cases the native GRAM library |
 

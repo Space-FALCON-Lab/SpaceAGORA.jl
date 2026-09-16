@@ -44,9 +44,9 @@ output/
     quickstart_ground_track.png
 ```
 
-`output/` is the repository root's `output/` directory (gitignored). Every
-example writes the same three file names there, so a second run overwrites
-the first; see [Simulation Outputs](outputs.md) for keeping runs apart.
+`output/` is the repository root's `output/` directory (gitignored). Running
+this example again overwrites its previous files; see
+[Simulation Outputs](outputs.md) for keeping runs apart.
 
 On Windows the variable is set in a separate statement. PowerShell:
 

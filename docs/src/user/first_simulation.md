@@ -35,9 +35,9 @@ Use a repository-owned example when you want the smallest amount of setup:
 julia --project=. examples/AGORA_Earth_NoGRAM.jl
 ```
 
-It is the quickstart's planet and ephemerides (`make_no_gram_planet(:earth)`,
-`SimpleEphemeridesModel()`) with a fuller mission configuration, and it writes
-the same three result files under `output/` (no plots).
+It uses the same 12-hour mission configuration as the quickstart, including
+`make_no_gram_planet(:earth)` and `SimpleEphemeridesModel()`. It writes the same
+three result files under `output/`, without generating plots.
 
 ### CLI wrapper
 

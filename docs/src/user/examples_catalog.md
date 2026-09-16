@@ -28,7 +28,7 @@ quickstart:
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
-If the quickstart already works and you want a fuller no-GRAM run, use:
+To run the same no-GRAM scenario without generating plots, use:
 
 ```text
 julia --project=. examples/AGORA_Earth_NoGRAM.jl
@@ -118,7 +118,9 @@ surface rather than a full mission case:
 
 ### RPO and robotics
 
-Start with one RPO case:
+The RPO examples need the SPICE kernels from the `data/GRAMSuite.jl` submodule
+([GRAMSuite Setup](gramsuite_setup.md)); they do not need the native GRAM
+library. Start with one RPO case:
 
 ```text
 julia --project=. examples/Earth_RPO_CubeSat_MPC.jl

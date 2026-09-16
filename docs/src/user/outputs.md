@@ -41,13 +41,14 @@ The Feather file is always written. The CSV is written when
 Most repository examples build their configuration with `make_example_config`,
 whose `results_directory` is `<repository root>/output` unless
 `SPACEAGORA_CLI_OUTPUT_DIR` is set; the CLI's `--output-dir` sets exactly that
-variable. The three file names never change, so:
+variable. With the default result settings, the three file names do not
+change, so:
 
-- two script runs in a row overwrite each other in `output/`;
+- two runs using the same results directory overwrite those files;
 - `julia --project=. src/cli/main.jl run --example=<script> --output-dir=output/<name>`
   gives each run its own directory, for the scripts that take their directory
   from `make_example_config`: the first-run scripts (`AGORA_Basic_Quickstart.jl`,
-  `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`), the controls and torque
+  `AGORA_Earth_NoGRAM.jl`), the controls and torque
   tests, and the mission scripts `AGORA_Basic_GRAMEarth.jl`, `AGORA_Odyssey.jl`,
   `AGORA_Vex.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`,
   `AGORA_Mars_NoGRAM.jl` and `Earth_Thruster_Test.jl`;
@@ -61,7 +62,13 @@ variable. The three file names never change, so:
   set it on `SimulationSettings`.
 
 The quickstart example additionally saves four PNG plots under
-`<results_directory>/plots/`; other examples write only the three files.
+`<results_directory>/plots/`. The RPO examples also generate HTML plots.
+`Solar_Panel_Cloth_Deployment_Demo.jl` writes four HTML files in its demo
+directory instead of the three simulation result files.
+
+`AGORA_Earth_MonteCarlo.jl` prints its successful and failed sample counts and
+elapsed time to the terminal. It disables result saving, so it writes no
+result files, including when `--output-dir` is supplied.
 
 Smoke mode (`--smoke` on the CLI, or `SPACEAGORA_EXAMPLE_SMOKE=1` for a script)
 shortens the mission to at most 120 s and one orbit. It does not honour

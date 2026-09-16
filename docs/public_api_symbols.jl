@@ -239,7 +239,17 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :plume_surface_footprint, rendered = "SpaceAGORA.plume_surface_footprint"),
             (owner = :SpaceAGORA, symbol = :plume_erosion_onset_height, rendered = "SpaceAGORA.plume_erosion_onset_height"),
             (owner = :SpaceAGORA, symbol = :plume_ground_effect_force, rendered = "SpaceAGORA.plume_ground_effect_force"),
-            (owner = :SpaceAGORA, symbol = :plume_quantities, rendered = "SpaceAGORA.plume_quantities")
+            (owner = :SpaceAGORA, symbol = :plume_quantities, rendered = "SpaceAGORA.plume_quantities"),
+            (owner = :SpaceAGORA, symbol = :EjectaSoil, rendered = "SpaceAGORA.EjectaSoil"),
+            (owner = :SpaceAGORA, symbol = :EjectaTransportConfig, rendered = "SpaceAGORA.EjectaTransportConfig"),
+            (owner = :SpaceAGORA, symbol = :EjectaReferenceGasField, rendered = "SpaceAGORA.EjectaReferenceGasField"),
+            (owner = :SpaceAGORA, symbol = :ejecta_gas_state, rendered = "SpaceAGORA.ejecta_gas_state"),
+            (owner = :SpaceAGORA, symbol = :ejecta_drag_coefficient, rendered = "SpaceAGORA.ejecta_drag_coefficient"),
+            (owner = :SpaceAGORA, symbol = :ejecta_flow_regime, rendered = "SpaceAGORA.ejecta_flow_regime"),
+            (owner = :SpaceAGORA, symbol = :ejecta_launch_speed, rendered = "SpaceAGORA.ejecta_launch_speed"),
+            (owner = :SpaceAGORA, symbol = :ejecta_trajectory, rendered = "SpaceAGORA.ejecta_trajectory"),
+            (owner = :SpaceAGORA, symbol = :ejecta_distribution, rendered = "SpaceAGORA.ejecta_distribution"),
+            (owner = :SpaceAGORA, symbol = :ejecta_escape_speed, rendered = "SpaceAGORA.ejecta_escape_speed")
         ]
     ),
     (

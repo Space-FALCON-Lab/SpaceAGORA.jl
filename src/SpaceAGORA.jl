@@ -77,6 +77,9 @@ using .SimulationModel: DescentPhaseTargets, ApolloDescentConfig, ApolloDescentS
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
 using .SimulationModel: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+using .SimulationModel: EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
+using .SimulationModel: ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
+using .SimulationModel: ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
@@ -92,6 +95,9 @@ using .SimulationModel: plume_surface_footprint, plume_erosion_onset_height, plu
 @doc (@doc SimulationModel.PlumeSurfaceConfig) PlumeSurfaceConfig
 @doc (@doc SimulationModel.PlumeSurfaceInteractionModel) PlumeSurfaceInteractionModel
 @doc (@doc SimulationModel.PlumeSurfaceState) PlumeSurfaceState
+@doc (@doc SimulationModel.EjectaSoil) EjectaSoil
+@doc (@doc SimulationModel.EjectaTransportConfig) EjectaTransportConfig
+@doc (@doc SimulationModel.EjectaReferenceGasField) EjectaReferenceGasField
 @doc (@doc SimulationModel.StateAnchor) StateAnchor
 @doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
@@ -574,6 +580,9 @@ export DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDesce
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
 export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+export EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
+export ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
+export ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

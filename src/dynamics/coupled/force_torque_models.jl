@@ -12,6 +12,7 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "plume_surface_interaction.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "ejecta_transport.jl"))
 
     # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
     @eval GravityEffectors using ..PerturbationEffectors
@@ -39,6 +40,9 @@ module DynamicEffectors
     using .RobotArmReactionEffectors: RobotArmReactionEffector
     using .PlumeSurfaceInteraction: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
     using .PlumeSurfaceInteraction: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities, plume_engine_axis
+    using .EjectaTransport: EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
+    using .EjectaTransport: ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
+    using .EjectaTransport: ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
@@ -55,4 +59,7 @@ module DynamicEffectors
     export RobotArmReactionEffector
     export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
     export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+    export EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
+    export ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
+    export ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 end

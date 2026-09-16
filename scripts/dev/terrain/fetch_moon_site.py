@@ -39,6 +39,13 @@ extent is intersected with the part of the ground track from which the camera ca
 (the altitude profile is `--profile`, the Apollo 11 descent by default), which is what turns the
 coarse levels into the whole corridor and the fine levels into a patch around the site.
 
+Registration
+------------
+Trek serves these mosaics on different control, and a level takes its detail from whichever layer
+reaches its zoom, so each layer is sampled at its own measured offset (LAYER_REGISTRATION) and
+the same crater lands in the same place at every level. Tone matching cannot do this: the offset
+is geometric, and across a level change it shears a crater rather than stepping its brightness.
+
 Tone
 ----
 Level 0 is matched to the page's own global texture (`--match-texture`) over the same box, so the
@@ -96,6 +103,26 @@ ZOOM_LAYERS = {
     14: ["a11_26cm", "a11_nac", "a11_60"], 15: ["a11_26cm", "a11_nac", "a11_60"],
 }
 ZOOM_LAYERS_DEFAULT = ["wac"]
+# Where each layer draws the ground, in meters north and east of where it really is. Trek serves
+# these mosaics on different control, and a node takes its detail from whichever layer reaches its
+# zoom, so an uncorrected offset puts the same crater in two places either side of a level change -
+# a seam no gutter, UV inset or tone match can touch. Measured here, over this site's own tiles:
+#   a11_26cm against a11_nac, phase correlation of their common Trek tiles, 0.0 px at zoom 14 and
+#     at zoom 15 (peaks 0.85 and 0.70): the two NAC mosaics share control.
+#   a11_60 against them, the same way: 28 px at zoom 14 and 56 px at zoom 15, both 36.4 m, plus
+#     about 5.9 m east.
+#   The NAC mosaics against the site's own PDS NAC digital terrain model (the imagery resampled
+#     onto the DTM grid and correlated against its hillshade; the peak is at sun azimuth 90 deg,
+#     which is the illumination of the Apollo 11 approach): 24 m south, 4 m east. The PDS raster
+#     carries the LROC control that the landing coordinate itself comes from.
+# The two routes agree: they put A11_60x60km 12 m north of the truth, and 36 m north of the NAC
+# mosaics. Kaguya and the WAC global mosaic are left alone: a 24 m error is a third of a pixel at
+# zoom 10 and a twentieth at zoom 8, so there is nothing to measure and nothing to correct.
+LAYER_REGISTRATION = {
+    "a11_26cm": (-24.0, 4.0),
+    "a11_nac": (-24.0, 4.0),
+    "a11_60": (12.4, -1.9),
+}
 # Apollo 11 powered descent, as flown by scripts/dev/viewer_demos/apollo11_landing.jl: distance
 # still to go along the ground track (km) against height above the landing site (km).
 APOLLO11_PROFILE = [
@@ -413,6 +440,16 @@ def node_pixel_origin(root, root_zoom, level, x, y):
     return z, int(round(px)), int(round(py))
 
 
+def layer_origin(key, z, px, py):
+    """Where to read `key` so that the ground it draws lands where it belongs: its own offset,
+    turned into pixels of this zoom (see LAYER_REGISTRATION)."""
+    north_m, east_m = LAYER_REGISTRATION.get(key, (0.0, 0.0))
+    if not north_m and not east_m:
+        return px, py
+    m_per_px = M_PER_DEG * 360.0 / (2 ** (z + 1) * 256)
+    return px + int(round(east_m / m_per_px)), py - int(round(north_m / m_per_px))
+
+
 def node_image(trek, root, root_zoom, level, x, y, tile_px):
     """One node, composited coarse layer first so the finer mosaics paste over, as an integer
     pixel crop of Trek's own tiles. Returns (image, primary layer key) or (None, None)."""
@@ -426,14 +463,15 @@ def node_image(trek, root, root_zoom, level, x, y, tile_px):
     for key in reversed(keys):                      # coarse first
         layer_img = Image.new("LA", (tile_px, tile_px), (0, 0))
         got = False
-        tx0, ty0 = px // 256, py // 256
-        tx1, ty1 = (px + tile_px - 1) // 256, (py + tile_px - 1) // 256
+        lpx, lpy = layer_origin(key, z, px, py)
+        tx0, ty0 = lpx // 256, lpy // 256
+        tx1, ty1 = (lpx + tile_px - 1) // 256, (lpy + tile_px - 1) // 256
         for ty in range(ty0, ty1 + 1):
             for tx in range(tx0, tx1 + 1):
                 im = trek.image(key, z, tx, ty)
                 if im is None:
                     continue
-                layer_img.paste(im, (tx * 256 - px, ty * 256 - py))
+                layer_img.paste(im, (tx * 256 - lpx, ty * 256 - lpy))
                 got = True
         if not got:
             continue
@@ -537,8 +575,9 @@ def build_tiles(out, track, root, a):
             for key in keys:
                 if not trek.covers(key, zz, lon_min, lat_max - s, lon_min + s, lat_max):
                     continue
-                for ty in range(py // 256, (py + a.tile_px - 1) // 256 + 1):
-                    for tx in range(px // 256, (px + a.tile_px - 1) // 256 + 1):
+                lpx, lpy = layer_origin(key, zz, px, py)
+                for ty in range(lpy // 256, (lpy + a.tile_px - 1) // 256 + 1):
+                    for tx in range(lpx // 256, (lpx + a.tile_px - 1) // 256 + 1):
                         jobs.append((key, zz, tx, ty))
         print(f"level {level} (trek z={z}, {side_m / 256:.3f} m/px, reach {factor * side_m / 1e3:.1f} km): {len(want)} nodes")
         trek.prefetch(sorted(set(jobs)))
@@ -576,6 +615,7 @@ def build_tiles(out, track, root, a):
         if not images and level > 0:
             print("  (no imagery at this level; stopping)"); break
     meta = {"scheme": "quadtree", "root": root, "tile_px": a.tile_px,
+            "layer_registration_m": {k: {"north": v[0], "east": v[1]} for k, v in LAYER_REGISTRATION.items()},
             "max_level": max((n["level"] for n in nodes), default=0), "root_zoom": a.root_zoom,
             "corridor": {"approach_azimuth_deg": a.approach_azimuth, "uprange_m": a.uprange_km * 1.0e3,
                          "lod_factor": a.lod_factor, "fine_lod_factor": a.fine_lod_factor},

@@ -30,6 +30,16 @@ directory written by `scripts/dev/terrain/fetch_moon_site.py`, which fetches:
   from the LROC WAC global mosaic through Kaguya's TC ortho mosaic to the
   Apollo 11 NAC mosaics (0.65 m/px at the site).
 
+Those mosaics are not served on the same control, and since a level of the
+quadtree takes its detail from whichever layer reaches its zoom, an
+uncorrected offset would put the same crater in two places either side of a
+level change. `LAYER_REGISTRATION` in the script holds each layer's measured
+offset in meters and the sampling window is shifted to match: the two Apollo
+11 NAC mosaics agree with each other to within a pixel but sit 24 m south and
+4 m east of the site's PDS NAC digital terrain model, and `A11_60x60km` sits
+36 m north of them. The comment in the script records how each number was
+measured.
+
 ```
 python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --out data/terrain/moon/apollo11
 ```

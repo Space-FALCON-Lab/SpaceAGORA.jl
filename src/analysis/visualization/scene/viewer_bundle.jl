@@ -179,6 +179,9 @@ function build_viewer_frames(
     # Sun direction: one unit vector per row for the whole scene (the viewer's
     # sun lighting), absent when the run's ephemerides could not resolve the Sun.
     has_sun = _has_columns(df, ("sun_dir_1", "sun_dir_2", "sun_dir_3"))
+    # Earth direction: the same layout, written only away from Earth, for the
+    # page's earthshine light; absent when the run did not resolve Earth.
+    has_earth = _has_columns(df, ("earth_dir_1", "earth_dir_2", "earth_dir_3"))
     pos_f64 = S <= FLOAT64_POSITION_MAX_SPACECRAFT
     stride_lp = scene.link_pose_stride
     counts = Int[max(0, length(sc.links) - 1) for sc in scene.spacecraft]
@@ -223,7 +226,7 @@ function build_viewer_frames(
 
     bytes_per_frame = S * ((pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
                            (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
-                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + 8
+                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + (has_earth ? 12 : 0) + 8
     budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
                                         bytes_per_sat_frame=cld(bytes_per_frame, S))
     rows = kept_row_indices(n_rows, budget.stride)
@@ -239,6 +242,7 @@ function build_viewer_frames(
     drag = has_drag ? Vector{Float64}(undef, N * S) : Float64[]
     wind = has_wind ? Vector{Float64}(undef, N * S * 3) : Float64[]
     sun = has_sun ? Vector{Float64}(undef, N * 3) : Float64[]
+    earth = has_earth ? Vector{Float64}(undef, N * 3) : Float64[]
     lp = has_lp ? Vector{Float64}(undef, N * lp_total) : Float64[]
     ap = has_arm ? Vector{Float64}(undef, N * arm_total) : Float64[]
     plume = has_plume ? [Vector{Float64}(undef, N * S) for _ in PLUME_FRAME_FIELDS] : Vector{Float64}[]
@@ -248,6 +252,14 @@ function build_viewer_frames(
         @inbounds for (f, r) in enumerate(rows)
             for c in 1:3
                 sun[(f - 1) * 3 + c] = Float64(scols[c][r])
+            end
+        end
+    end
+    if has_earth
+        ecols = [df[!, "earth_dir_$(c)"] for c in 1:3]
+        @inbounds for (f, r) in enumerate(rows)
+            for c in 1:3
+                earth[(f - 1) * 3 + c] = Float64(ecols[c][r])
             end
         end
     end
@@ -340,6 +352,7 @@ function build_viewer_frames(
         "drag_n" => has_drag ? _float32_base64(drag) : nothing,
         "wind_ms" => has_wind ? _float32_base64(wind) : nothing,
         "sun_dir" => has_sun ? _float32_base64(sun) : nothing,
+        "earth_dir" => has_earth ? _float32_base64(earth) : nothing,
         "link_pose" => has_lp ? Dict{String, Any}(
             "stride" => stride_lp, "counts" => counts, "offsets" => lp_offsets, "total" => lp_total,
             "data" => _float32_base64(lp)

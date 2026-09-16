@@ -330,6 +330,38 @@ end
         @test small_sun[3 * (small["count"] - 1) + 2] == 1.0f0
     end
 
+    @testset "earth direction payload" begin
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        scene = build_visualization_scene(args; rotation_max_samples=8)
+        df = _synthetic_results(scene; n_rows=25)
+
+        # No columns, no block: the page keeps its hemisphere fill.
+        @test SV.build_viewer_frames(df, scene)["earth_dir"] === nothing
+
+        # `earth_dir_1..3` has the same layout as the Sun's: one unit vector per
+        # row, shared by the whole scene.
+        df[!, "earth_dir_1"] = [r <= 13 ? 0.0 : 1.0 for r in 1:25]
+        df[!, "earth_dir_2"] = [r <= 13 ? 1.0 : 0.0 for r in 1:25]
+        df[!, "earth_dir_3"] = zeros(25)
+        frames = SV.build_viewer_frames(df, scene)
+        earth = _decode_f32(frames["earth_dir"])
+        @test length(earth) == 25 * 3
+        @test earth[1] == 0.0f0 && earth[2] == 1.0f0
+        @test earth[3 * 24 + 1] == 1.0f0 && earth[3 * 24 + 2] == 0.0f0
+
+        # Decimation keeps it aligned with the rows the bundler kept.
+        small = SV.build_viewer_frames(df, scene; max_frames=6)
+        small_earth = _decode_f32(small["earth_dir"])
+        @test length(small_earth) == 3 * small["count"]
+        @test small_earth[1] == 0.0f0 && small_earth[2] == 1.0f0
+        @test small_earth[3 * (small["count"] - 1) + 1] == 1.0f0
+
+        # A partial block (say the run wrote only two of the three) is no block.
+        partial = select(df, Not("earth_dir_3"))
+        @test SV.build_viewer_frames(partial, scene)["earth_dir"] === nothing
+    end
+
     @testset "sun direction save field" begin
         # The simple ephemerides model at Earth resolves the Sun, so the run
         # writes the columns; at Mars it cannot and they are left out.
@@ -350,6 +382,13 @@ end
         mars_args = _viewer_config(results_directory=mktempdir())
         @test mars_args.environment_model.planet.name == "Mars"
         @test :sun_dir ∉ names_of(mars_args)
+
+        # The Earth direction is written only away from Earth and only when the
+        # ephemerides resolve it, so neither of these runs carries it: the Earth
+        # run because it is the central body, the Mars run because the simple
+        # model has no planetary ephemeris.
+        @test :earth_dir ∉ names_of(earth_args)
+        @test :earth_dir ∉ names_of(mars_args)
     end
 
     @testset "model formats" begin

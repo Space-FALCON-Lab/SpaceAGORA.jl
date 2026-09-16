@@ -25,7 +25,8 @@ using ..GuidanceHooks: calcGuidanceEffect!
 using ..NavigationHooks: calcNavigationEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits
 export SaveField, default_save_fields, available_save_fields, save_field, get_callbacks
-export gravity_accel_save_field, orbital_elements_save_field, quaternion_save_field
+export gravity_accel_save_field, aero_accel_save_field, total_accel_save_field
+export orbital_elements_save_field, quaternion_save_field
 
 const _simulation_model_module = parentmodule(@__MODULE__)
 

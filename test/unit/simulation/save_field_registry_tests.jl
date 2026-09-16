@@ -1,6 +1,8 @@
 using Test
 using LinearAlgebra
 using SpaceAGORA
+using CSV
+using DataFrames
 
 const SM_SFR = SpaceAGORA.SimulationModel
 const RVTOOE_SFR = SpaceAGORA.SimulationModel.SimulationCallbacks.rvtoorbitalelement
@@ -127,4 +129,74 @@ end
     @test_throws ArgumentError geodetic_ic(lat=0.0, lon=0.0, alt=200e3, speed=7.6e3, azimuth=90.0, inclination=60.0)
     # over a pole there is no local east to measure an azimuth from
     @test_throws ArgumentError geodetic_ic(lat=90.0, lon=0.0, alt=200e3, speed=7.6e3, azimuth=0.0)
+end
+
+# The acceleration fields are only worth anything if they actually agree with
+# the forces the run integrated, so this one flies a short arc and reads the
+# columns back rather than checking that the builders return a SaveField.
+@testset "SavedAccelerationColumns" begin
+    planet = make_no_gram_planet(:earth)
+    initial_time = SM_SFR.InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0)
+    ephemerides_model = SM_SFR.SimpleEphemeridesModel()
+    ic = SM_SFR.CartesianInitialCondition(
+        planet;
+        lat=0.0,
+        lon=0.0,
+        alt=500e3,
+        speed=sqrt(planet.μ / (planet.Rp_e + 500e3)),
+        inclination=45.0,
+        initial_time=initial_time,
+        ephemerides_model=ephemerides_model
+    )
+    spacecraft = SpaceAGORA.TelemetryVerification.make_three_body_spacecraft(
+        bus_dims=(1.0, 1.0, 1.0),
+        panel_dims=(0.01, 1.0, 1.0),
+        bus_mass=100.0,
+        panel_mass_each=5.0,
+        panel_offset_y=1.0,
+        ic=ic,
+        id=1
+    )
+    results_dir = mktempdir()
+    args = SpaceAGORA.TelemetryVerification.make_example_config(
+        planet=planet,
+        spacecraft=spacecraft,
+        mission_time=120.0,
+        initial_time=initial_time,
+        dynamic_effectors=(SM_SFR.InverseSquaredJ2GravityModel(),),
+        density_model=SM_SFR.NoAtmosphereModel(),
+        ephemerides_model=ephemerides_model,
+        verbose=false,
+        results_directory=results_dir
+    )
+    run_simulation(args; save_fields=default_save_fields(
+        args;
+        extra=(:orbital_elements, :gravity_accel, :aero_accel, :total_accel)
+    ))
+
+    df = CSV.read(joinpath(results_dir, "simulation_results.csv"), DataFrame)
+    @test nrow(df) > 1
+    for k in 1:3
+        @test Symbol("sc1_gravity_accel_$(k)") in propertynames(df)
+        @test Symbol("sc1_aero_accel_$(k)") in propertynames(df)
+        @test Symbol("sc1_total_accel_$(k)") in propertynames(df)
+    end
+
+    # gravity is the run's only dynamic effector, so the total is exactly it
+    for k in 1:3
+        @test df[!, Symbol("sc1_total_accel_$(k)")] == df[!, Symbol("sc1_gravity_accel_$(k)")]
+        # and with no atmosphere the aerodynamic share is exactly zero
+        @test all(iszero, df[!, Symbol("sc1_aero_accel_$(k)")])
+    end
+
+    # the gravity column agrees with mu/r^2 to the J2 correction, not by luck
+    g = [norm([df[row, Symbol("sc1_gravity_accel_$(k)")] for k in 1:3]) for row in 1:nrow(df)]
+    r = [norm([df[row, Symbol("sc1_pos_$(k)")] for k in 1:3]) for row in 1:nrow(df)]
+    point_mass = planet.μ ./ r .^ 2
+    @test all(@. abs(g - point_mass) / point_mass < 5e-3)
+    @test all(>(0.0), g)
+
+    # the first row's elements are the ones the initial condition was built with
+    @test isapprox(df[1, :sc1_orbital_elements_3], 45.0; atol=1e-9)
+    @test isapprox(df[1, :sc1_orbital_elements_1], planet.Rp_e + 500e3; rtol=1e-6)
 end

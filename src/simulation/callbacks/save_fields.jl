@@ -106,8 +106,9 @@ end
     return elements
 end
 
-# Inertial gravitational acceleration per satellite (m/s^2), summed over the
-# run's gravity effectors only. Opt-in through `gravity_accel_save_field`.
+# Inertial acceleration per satellite (m/s^2) from one group of the run's
+# dynamic effectors -- `accessor` is the engine entry point that picks the
+# group (gravity, aerodynamic, or every effector).
 #
 # Re-evaluated here rather than cached from the right-hand side. The right-hand
 # side runs every solver stage of every step, accepted or not, so caching would
@@ -115,12 +116,11 @@ end
 # value would be the one from the last stage the solver happened to take, at a
 # different time and state than the row it landed in. One gravity evaluation per
 # sample is both cheaper overall and the value that belongs in the row.
-@inline function _save_gravity_accel(num_sats::Int, u, t, integrator)
-    engine = _simulation_engine_module()
+@inline function _save_accelerations(accessor, num_sats::Int, u, t, integrator)
     p = integrator.p
     accelerations = Vector{SVector{3, Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        accelerations[i] = engine.gravity_acceleration_ii(u, p, i, Float64(t))
+        accelerations[i] = accessor(u, p, i, Float64(t))
     end
     return accelerations
 end
@@ -284,8 +284,41 @@ run's gravity effectors only -- constant, inverse-square, J2, spherical
 harmonics and third-body -- so drag, SRP and thrust are excluded.
 """
 function gravity_accel_save_field(args::SimulationConfiguration)
+    return _acceleration_save_field(args, :gravity_accel, :gravity_acceleration_ii)
+end
+
+"""
+    aero_accel_save_field(args) -> SaveField
+
+The `aero_accel` field: the inertial aerodynamic acceleration on each
+spacecraft (m/s^2), written as `sc{i}_aero_accel_1..3`. Summed over the run's
+aerodynamic effectors only, and zero without an atmosphere. The default
+`drag`, `lift` and `cross` columns carry the same physics as forces in the
+planet frame; this is the inertial acceleration the trajectory actually sees.
+"""
+function aero_accel_save_field(args::SimulationConfiguration)
+    return _acceleration_save_field(args, :aero_accel, :aerodynamic_acceleration_ii)
+end
+
+"""
+    total_accel_save_field(args) -> SaveField
+
+The `total_accel` field: the inertial acceleration from every dynamic effector
+in the run (m/s^2), written as `sc{i}_total_accel_1..3` -- the full right-hand
+side acceleration, less anything the control model contributes. Errors at the
+first saved sample if the run carries a dynamic effector with no `wrench`
+method, rather than quietly leaving it out of the sum.
+"""
+function total_accel_save_field(args::SimulationConfiguration)
+    return _acceleration_save_field(args, :total_accel, :total_acceleration_ii)
+end
+
+# One builder for the three acceleration fields: they differ only in the engine
+# accessor that decides which effectors are summed.
+function _acceleration_save_field(args::SimulationConfiguration, name::Symbol, accessor_name::Symbol)
     num_sats = length(args.dynamics_model.spacecraft)
-    return SaveField(:gravity_accel, (u, t, integrator) -> _save_gravity_accel(num_sats, u, t, integrator); per_satellite=true, column_prefix="gravity_accel")
+    accessor = getproperty(_simulation_engine_module(), accessor_name)
+    return SaveField(name, (u, t, integrator) -> _save_accelerations(accessor, num_sats, u, t, integrator); per_satellite=true, column_prefix=String(name))
 end
 
 """
@@ -309,6 +342,8 @@ end
 const _SAVE_FIELD_BUILDERS = Dict{Symbol, Function}(
     :orbital_elements => orbital_elements_save_field,
     :gravity_accel => gravity_accel_save_field,
+    :aero_accel => aero_accel_save_field,
+    :total_accel => total_accel_save_field,
     :quaternion => quaternion_save_field,
 )
 

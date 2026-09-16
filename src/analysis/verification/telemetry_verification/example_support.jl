@@ -119,6 +119,7 @@ function make_example_config(;
     orientation_sim::Bool=false,
     keplerian::Bool=true,
     EI_km::Float64=300.0,
+    data_rate::Float64=10.0,
     verbose::Bool=true,
     results::Bool=true,
     results_directory::String=_example_default_results_directory(),
@@ -138,7 +139,8 @@ function make_example_config(;
             number_of_orbits=1,
             mission_time=mission_time,
             orientation_sim=orientation_sim,
-            num_steps_to_save=1000
+            num_steps_to_save=1000,
+            data_rate=data_rate
         ),
         environment_model=SM.EnvironmentModel(
             planet=planet,

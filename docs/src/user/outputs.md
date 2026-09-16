@@ -141,15 +141,21 @@ example scripts take the same list through `run_and_report(args; save_fields=...
 `save_field(name, args)` builds a single one if you would rather assemble the
 list yourself. Passing a name that is not built in throws and lists what is.
 
-| Name | Columns | Notes |
-|---|---|---|
-| `:orbital_elements` | `sc{i}_orbital_elements_1..6` | Osculating classical elements |
-| `:gravity_accel` | `sc{i}_gravity_accel_1..3` | Inertial gravitational acceleration |
-| `:quaternion` | `sc{i}_q_1..4` | Attitude; already a default when `orientation_sim = true` |
+### Built-in fields
+
+| Name | Columns | Unit | What it holds |
+|---|---|---|---|
+| `:orbital_elements` | `sc{i}_orbital_elements_1..6` | mixed | Osculating classical elements |
+| `:gravity_accel` | `sc{i}_gravity_accel_1..3` | m/s² | Inertial acceleration from the gravity effectors |
+| `:aero_accel` | `sc{i}_aero_accel_1..3` | m/s² | Inertial acceleration from the aerodynamic effectors |
+| `:total_accel` | `sc{i}_total_accel_1..3` | m/s² | Inertial acceleration from every dynamic effector |
+| `:quaternion` | `sc{i}_q_1..4` | — | Attitude; already a default when `orientation_sim = true` |
 
 A name requested from a run that cannot supply it fails at the first saved
-sample rather than writing an empty column: `:quaternion` without
-`orientation_sim` is the usual case.
+sample rather than writing an empty column. `:quaternion` without
+`orientation_sim` is the usual case; `:total_accel` is the other, when the run
+carries a dynamic effector that defines no `wrench` method and the column would
+otherwise under-report without saying so.
 
 ### Orbital elements
 
@@ -164,21 +170,57 @@ sample rather than writing an empty column: `:quaternion` without
 
 Osculating, computed from the same inertial position and velocity the run
 integrates. Circular and equatorial states fall back to argument of latitude
-and true longitude in the usual way, so the angles stay defined as
-eccentricity or inclination approaches zero.
+and true longitude in the usual way, so the angles stay defined as eccentricity
+or inclination approaches zero. Note that at very small eccentricity the
+periapsis direction is nearly undefined and genuinely does spin fast, so `ω`
+and `ν` sweep several times per orbit while their sum, the argument of latitude,
+advances once — that is the orbit, not a numerical artifact.
 
-### Gravitational acceleration
+### Accelerations
 
-| Column | Unit | Description |
-|---|---|---|
-| `sc1_gravity_accel_1` | m/s² | Inertial gravitational acceleration X |
-| `sc1_gravity_accel_2` | m/s² | Inertial gravitational acceleration Y |
-| `sc1_gravity_accel_3` | m/s² | Inertial gravitational acceleration Z |
+The three acceleration fields share one machine and differ only in which of the
+run's dynamic effectors they sum:
 
-Summed over the run's gravity effectors only — constant, inverse-square, J2,
-spherical harmonics and third-body — so drag, SRP and thrust are excluded. It
-is re-evaluated at each saved sample rather than read from a right-hand-side
-buffer, which costs one extra gravity evaluation per sample.
+| Field | Effectors summed |
+|---|---|
+| `:gravity_accel` | Constant, inverse-square, J2, spherical harmonics, third-body |
+| `:aero_accel` | The aerodynamic coefficient models; zero without an atmosphere |
+| `:total_accel` | Every dynamic effector in the run |
+
+All three are inertial, in m/s², written as `sc{i}_<field>_1..3`, and none
+include the control model's contribution — thrust is not in `:total_accel`.
+
+They are re-evaluated at each saved sample through the same `wrench` hooks the
+right-hand side calls, rather than read from a right-hand-side buffer. This is
+deliberate. The right-hand side runs every solver stage of every step, accepted
+or rejected, so caching would pay on the order of 10⁵ stores to serve 10³
+samples; and the cached value would be the one the last stage happened to
+leave, at a different time and state than the row it landed in. Recomputing
+costs one extra evaluation per sample and puts the value that belongs with the
+row in the row.
+
+### Writing your own
+
+A `SaveField` is a name plus a getter:
+
+```julia
+SaveField(name, getter; per_satellite=false, column_prefix=String(name))
+```
+
+`getter(u, t, integrator)` is called at each saved sample. Return one entry per
+spacecraft when `per_satellite` is true — written as `sc{i}_{column_prefix}`,
+with `_1.._n` appended when the entry is a vector — or a single value for the
+whole run otherwise. Names must be unique within a run's save set.
+
+```julia
+speed = SaveField(
+    :speed,
+    (u, t, integrator) -> [norm(SpaceAGORA.SimulationEngine._state_velocity_ii(u, i))
+                           for i in eachindex(integrator.p.args.dynamics_model.spacecraft)];
+    per_satellite=true
+)
+run_simulation(args; save_fields=default_save_fields(args; extra=(:orbital_elements, speed)))
+```
 
 ## Multi-spacecraft runs
 

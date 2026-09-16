@@ -1768,9 +1768,9 @@ end
     return SVector{3, Float64}(accel_ii)
 end
 
-# Every dynamic effector whose wrench is gravitational. The `gravity_accel`
-# save field sums these and nothing else, so a run that also carries drag,
-# SRP or thrust still reports gravity alone.
+# Effector groups the save path reports accelerations for. A run's other
+# effectors still act on the trajectory; these unions only decide which of them
+# a given column sums.
 const _GRAVITY_ACCELERATION_EFFECTORS = Union{
     SimulationModel.ConstantGravityModel,
     SimulationModel.InverseSquaredGravityModel,
@@ -1779,21 +1779,38 @@ const _GRAVITY_ACCELERATION_EFFECTORS = Union{
     SimulationModel.NBodyGravityModel,
 }
 
-"""
-    gravity_acceleration_ii(u, p, sat_idx, t) -> SVector{3, Float64}
+const _AERODYNAMIC_ACCELERATION_EFFECTORS = Union{
+    SimulationModel.AerodynamicCoefficientConstant,
+    SimulationModel.AerodynamicCoefficientfM,
+    SimulationModel.AerodynamicCoefficientNoBallisticFlight,
+}
 
-Inertial gravitational acceleration on satellite `sat_idx` at solver state `u`
-and time `t`, in m/s^2, summed over the run's gravity effectors (constant,
-inverse-square, J2, spherical harmonics and third-body). Evaluated from the
-same `wrench` hooks the right-hand side calls, so the column matches the
-acceleration the trajectory was integrated with; a run with no gravity
-effector reports zero.
+@inline _gravity_effector_selector(effector)::Bool = effector isa _GRAVITY_ACCELERATION_EFFECTORS
+@inline _aerodynamic_effector_selector(effector)::Bool = effector isa _AERODYNAMIC_ACCELERATION_EFFECTORS
+@inline _every_effector_selector(effector)::Bool = true
 
-This is a diagnostic read for the save path, not part of the right-hand side:
-it builds its own environment samples rather than reusing the RHS buffers, so
-it is safe to call at a saved sample without disturbing the step.
+@inline function _save_path_wrench_available(effector)::Bool
+    return hasmethod(
+        SimulationModel.wrench,
+        Tuple{typeof(effector), SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64},
+    )
+end
+
 """
-function gravity_acceleration_ii(u, p, sat_idx::Int, t::Float64)::SVector{3, Float64}
+    sampled_acceleration_ii(u, p, sat_idx, t, selector) -> SVector{3, Float64}
+
+Inertial acceleration on satellite `sat_idx` at solver state `u` and time `t`,
+in m/s^2, summed over the run's dynamic effectors that `selector` accepts.
+
+Evaluated from the same `wrench` hooks the right-hand side calls, so the value
+matches the acceleration the trajectory was integrated with. It is a diagnostic
+read for the save path, not part of the right-hand side: it builds its own
+environment samples rather than reusing the RHS buffers, so it is safe to call
+at a saved sample without disturbing the step. An effector the selector accepts
+but that has no `wrench` method is an error rather than a silent omission --
+the column would otherwise under-report without saying so.
+"""
+function sampled_acceleration_ii(u, p, sat_idx::Int, t::Float64, selector)::SVector{3, Float64}
     dynamic_effectors = p.args.dynamics_model.dynamic_effectors
     mass_kg = _state_mass_kg(u, p.args, sat_idx)
     state_sample = StateSample(
@@ -1804,7 +1821,12 @@ function gravity_acceleration_ii(u, p, sat_idx::Int, t::Float64)::SVector{3, Flo
     )
     accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
     for effector in dynamic_effectors
-        effector isa _GRAVITY_ACCELERATION_EFFECTORS || continue
+        selector(effector) || continue
+        _save_path_wrench_available(effector) || throw(ArgumentError(
+            "Save-path acceleration cannot sample $(nameof(typeof(effector))): it defines no " *
+            "`wrench(model, ::StateSample, ::EnvironmentSample, ::Float64)` method, so the column " *
+            "would silently omit its contribution. Drop the field, or give the effector a wrench method."
+        ))
         req = SimulationModel.environment_requirements(effector)
         env = sample_environment(req, effector, state_sample, p, sat_idx, t; write_buffers=false)
         force_ii, _ = SimulationModel.wrench(effector, state_sample, env, t)
@@ -1812,6 +1834,37 @@ function gravity_acceleration_ii(u, p, sat_idx::Int, t::Float64)::SVector{3, Flo
     end
     return SVector{3, Float64}(accel_ii)
 end
+
+"""
+    gravity_acceleration_ii(u, p, sat_idx, t) -> SVector{3, Float64}
+
+Inertial gravitational acceleration, summed over the run's gravity effectors
+(constant, inverse-square, J2, spherical harmonics and third-body) and nothing
+else. See [`sampled_acceleration_ii`](@ref).
+"""
+gravity_acceleration_ii(u, p, sat_idx::Int, t::Float64)::SVector{3, Float64} =
+    sampled_acceleration_ii(u, p, sat_idx, t, _gravity_effector_selector)
+
+"""
+    aerodynamic_acceleration_ii(u, p, sat_idx, t) -> SVector{3, Float64}
+
+Inertial aerodynamic acceleration, summed over the run's aerodynamic effectors
+and nothing else. Zero without an atmosphere. See
+[`sampled_acceleration_ii`](@ref).
+"""
+aerodynamic_acceleration_ii(u, p, sat_idx::Int, t::Float64)::SVector{3, Float64} =
+    sampled_acceleration_ii(u, p, sat_idx, t, _aerodynamic_effector_selector)
+
+"""
+    total_acceleration_ii(u, p, sat_idx, t) -> SVector{3, Float64}
+
+Inertial acceleration from every dynamic effector in the run -- the full
+right-hand side acceleration, less anything the control model contributes. See
+[`sampled_acceleration_ii`](@ref).
+"""
+total_acceleration_ii(u, p, sat_idx::Int, t::Float64)::SVector{3, Float64} =
+    sampled_acceleration_ii(u, p, sat_idx, t, _every_effector_selector)
+
 
 @inline function _gravity_backbone_kick_acceleration(
     dynamic_effectors::Tuple,

@@ -510,9 +510,10 @@ end
 Site terrain for the page: the DEM grids of a site directory written by
 `scripts/dev/terrain/fetch_moon_site.py` (finest first, each subsampled to
 at most `max_grid` samples per side, heights as base64 Float32) and its
-imagery levels (JPEG data URLs with their latitude/longitude boxes). The
-viewer drapes the imagery over the displaced grids and cuts the globe open
-under the outermost level.
+imagery levels (JPEG data URLs with their latitude/longitude boxes, plus
+`albedo_url`, the albedo-normalized copy of the same patch, where the fetch
+script wrote one). The viewer drapes the imagery over the displaced grids
+and cuts the globe open under the outermost level.
 """
 function terrain_payload(site_json::AbstractString; max_grid::Integer=512)::Dict{String, Any}
     isfile(site_json) || throw(ArgumentError("terrain site file not found: $(site_json)"))
@@ -544,11 +545,20 @@ function terrain_payload(site_json::AbstractString; max_grid::Integer=512)::Dict
         for lvl in im["levels"]
             path = joinpath(dir, dirname(String(imagery_rel)), String(lvl["file"]))
             isfile(path) || continue
-            push!(levels, Dict{String, Any}(
+            entry = Dict{String, Any}(
                 "lat_min" => lvl["lat_min"], "lat_max" => lvl["lat_max"], "lon_min" => lvl["lon_min"], "lon_max" => lvl["lon_max"],
                 "width" => lvl["width"], "height" => lvl["height"], "m_per_px" => lvl["m_per_px"],
                 "url" => _data_url(read(path), "image/jpeg"),
-            ))
+            )
+            # The albedo-normalized copy of the same patch, when the fetch script
+            # derived one: the page lights the surface itself and wants albedo,
+            # not the mosaic's own illumination. Absent, it uses `url`.
+            albedo_file = get(lvl, "albedo_file", nothing)
+            if albedo_file !== nothing
+                albedo_path = joinpath(dir, dirname(String(imagery_rel)), String(albedo_file))
+                isfile(albedo_path) && (entry["albedo_url"] = _data_url(read(albedo_path), "image/jpeg"))
+            end
+            push!(levels, entry)
         end
     end
     site = meta["site"]

@@ -511,8 +511,9 @@ end
         end
         mkpath(joinpath(dir, "imagery"))
         open(joinpath(dir, "imagery", "level_0.jpg"), "w") do io; write(io, UInt8[0xff, 0xd8, 0xff, 0xd9]); end
+        open(joinpath(dir, "imagery", "level_0_albedo.jpg"), "w") do io; write(io, UInt8[0xff, 0xd8, 0x00, 0xd9]); end
         open(joinpath(dir, "imagery", "imagery.json"), "w") do io
-            write(io, """{"levels": [{"file": "level_0.jpg", "lat_min": 0.5, "lat_max": 1.5, "lon_min": 21.0, "lon_max": 22.0, "width": 4, "height": 4, "m_per_px": 100.0}]}""")
+            write(io, """{"levels": [{"file": "level_0.jpg", "albedo_file": "level_0_albedo.jpg", "lat_min": 0.5, "lat_max": 1.5, "lon_min": 21.0, "lon_max": 22.0, "width": 4, "height": 4, "m_per_px": 100.0}]}""")
         end
         open(joinpath(dir, "site.json"), "w") do io
             write(io, """{"site": {"lat_deg": 1.0, "lon_deg": 21.5, "name": "unit"}, "dem": [{"name": "dem_test", "reference_radius_m": 1737400.0}], "imagery": "imagery/imagery.json"}""")
@@ -528,10 +529,20 @@ end
         @test length(payload["imagery"]) == 1
         @test startswith(payload["imagery"][1]["url"], "data:image/jpeg;base64,")
         @test payload["imagery"][1]["m_per_px"] == 100.0
+        # the albedo-normalized copy travels beside the original, and is a different image
+        @test startswith(payload["imagery"][1]["albedo_url"], "data:image/jpeg;base64,")
+        @test payload["imagery"][1]["albedo_url"] != payload["imagery"][1]["url"]
         full = SV.terrain_payload(joinpath(dir, "site.json"))
         @test full["grids"][1]["rows"] == 4 && full["grids"][1]["cols"] == 6
         @test isapprox(full["site"]["height_m"], 100 + 10 * 2.5 + 100 * 1.5; atol=1e-6)   # bilinear at the site (row 1.5, column 2.5)
         @test_throws ArgumentError SV.terrain_payload(joinpath(dir, "missing.json"))
+        # a site whose imagery.json names no albedo file (or names a missing one) carries none
+        rm(joinpath(dir, "imagery", "level_0_albedo.jpg"))
+        @test !haskey(SV.terrain_payload(joinpath(dir, "site.json"))["imagery"][1], "albedo_url")
+        open(joinpath(dir, "imagery", "imagery.json"), "w") do io
+            write(io, """{"levels": [{"file": "level_0.jpg", "lat_min": 0.5, "lat_max": 1.5, "lon_min": 21.0, "lon_max": 22.0, "width": 4, "height": 4, "m_per_px": 100.0}]}""")
+        end
+        @test !haskey(SV.terrain_payload(joinpath(dir, "site.json"))["imagery"][1], "albedo_url")
     end
 
     @testset "STL overrides" begin

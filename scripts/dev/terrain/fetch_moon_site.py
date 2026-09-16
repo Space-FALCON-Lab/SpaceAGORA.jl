@@ -13,16 +13,20 @@ Writes, under --out:
                                  nested square image patches centered on the site, coarse to fine,
                                  from NASA Moon Trek WMTS (LROC WAC global mosaic down to the
                                  Apollo 11 NAC mosaics), each with its lat/lon box and meters per pixel
+  imagery/level_k_albedo.jpg     the same patch with its baked-in illumination divided out (see
+                                 `derive_albedo`), for a page that lights the surface itself
 
 Every grid file is little-endian Float32, row-major, rows from north to south, columns from
 west to east; its JSON carries rows, cols, lat_min, lat_max, lon_min, lon_max and the source.
 Needs numpy and Pillow, and network access to pds-geosciences.wustl.edu, pds.mcp.nasa.gov and
-trek.nasa.gov. Files already present are reused (delete them to refetch).
+trek.nasa.gov. Files already present are reused (delete them to refetch); `--reuse DIR` copies the
+DEMs and the imagery originals of an existing site directory instead, so a second copy of a site can
+be derived (new albedo images, say) without touching the network.
 """
-import argparse, io, json, math, os, pathlib, struct, sys, time, urllib.request
+import argparse, io, json, math, os, pathlib, shutil, struct, sys, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 MOON_RADIUS_M = 1737400.0
 LOLA_URL = "https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/cylindrical/img/ldem_128.img"
@@ -238,6 +242,98 @@ def fetch_imagery(out, lat, lon):
     return meta
 
 
+ALBEDO_KERNEL_FRAC = 0.12     # Gaussian radius as a fraction of the patch, see derive_albedo
+
+
+def derive_albedo(out, meta, kernel_frac=ALBEDO_KERNEL_FRAC):
+    """Write an albedo-normalized copy of every imagery level.
+
+    A mosaic tile is radiance, not albedo: the Sun stood somewhere while the frames
+    were taken and its shading is baked into the picture. A page that lights the
+    surface itself has to start from albedo, or the fixed illumination fights the
+    moving one. The estimate here is a flat field: blur the level with a Gaussian
+    whose radius is `kernel_frac` of the patch (about 175 px of 1456 by default),
+    divide the level by that low-pass and restore the level's own mean. What
+    survives is the local contrast; what goes is every brightness gradient broader
+    than the kernel.
+
+    Limits, and they are real. (1) Only illumination broader than the kernel is
+    removed: the shading inside a crater, and the hard shadow of its rim, are at
+    the scale of the crater and stay in the image, so under a sun of the page's own
+    the two shadows can disagree. (2) Genuine albedo that varies slowly -- a mare
+    and highland boundary, a ray from a young crater -- is flattened along with the
+    illumination, so the levels lose their large-scale albedo contrast. (3) The
+    division is done on the brightness-matched levels (see `fetch_imagery`), so the
+    levels still agree with each other where they overlap. A physical inversion
+    (dividing by the reflectance modeled from the DEM and the mosaic's own solar
+    geometry) would fix (1) and (2), and needs per-tile illumination metadata Trek
+    does not serve.
+    """
+    idir = out / "imagery"
+    levels = meta["levels"]
+    for k, lvl in enumerate(levels):
+        src = idir / lvl["file"]
+        if not src.exists():
+            continue
+        name = f"{pathlib.Path(lvl['file']).stem}_albedo.jpg"
+        dst = idir / name
+        if not dst.exists():
+            img = Image.open(src).convert("L")
+            radius = max(8.0, kernel_frac * min(img.width, img.height))
+            low = np.asarray(img.filter(ImageFilter.GaussianBlur(radius=radius)), dtype=np.float32)
+            cur = np.asarray(img, dtype=np.float32)
+            floor = max(1.0, 0.05 * float(low.mean()))
+            flat = cur / np.maximum(low, floor) * float(low.mean())
+            Image.fromarray(np.clip(flat, 0, 255).astype(np.uint8), "L").save(dst, quality=88)
+            print(f"albedo: level {k} radius {radius:.0f} px -> {name}"
+                  f" (mean {cur.mean():.1f} -> {np.clip(flat, 0, 255).mean():.1f}, std {cur.std():.1f} -> {np.clip(flat, 0, 255).std():.1f})")
+        else:
+            print("albedo: reusing", dst)
+        lvl["albedo_file"] = name
+    meta["albedo"] = {"method": "flat field: level divided by its own Gaussian low-pass",
+                      "kernel_frac": kernel_frac}
+    json.dump(meta, open(idir / "imagery.json", "w"), indent=1)
+    return meta
+
+
+SITE_COPY_GLOBS = ("dem_*.json", "dem_*.f32", "site.json")
+
+
+def copy_site(src, out):
+    """Copy an existing site directory's DEMs and imagery originals into `out`.
+
+    The fetched originals (the LOLA range reads, the NAC DTM and the Trek mosaics)
+    are what takes the time; everything derived from them is cheap. `--reuse` takes
+    them from a directory that already has them so a second copy of the site can be
+    derived offline.
+    """
+    src = pathlib.Path(src)
+    if not src.is_dir():
+        raise SystemExit(f"--reuse: {src} is not a directory")
+    out.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for pattern in SITE_COPY_GLOBS:
+        for f in sorted(src.glob(pattern)):
+            target = out / f.name
+            if not target.exists():
+                shutil.copy2(f, target)
+                copied += 1
+    isrc = src / "imagery"
+    if isrc.is_dir():
+        idst = out / "imagery"
+        idst.mkdir(parents=True, exist_ok=True)
+        for f in sorted(isrc.glob("level_*.jpg")):
+            if f.name.endswith("_albedo.jpg"):
+                continue            # derived here, not copied
+            if not (idst / f.name).exists():
+                shutil.copy2(f, idst / f.name)
+                copied += 1
+        if (isrc / "imagery.json").exists() and not (idst / "imagery.json").exists():
+            shutil.copy2(isrc / "imagery.json", idst / "imagery.json")
+            copied += 1
+    print(f"reuse: copied {copied} file(s) from {src}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--site", nargs=2, type=float, metavar=("LAT", "LON"), required=True)
@@ -247,13 +343,21 @@ def main():
     ap.add_argument("--nac-half-deg", type=float, default=0.06)
     ap.add_argument("--nac-step", type=float, default=4.0, help="NAC DTM resample step, meters")
     ap.add_argument("--no-imagery", action="store_true")
+    ap.add_argument("--reuse", default=None, help="copy the DEMs and imagery originals of this site directory instead of fetching them")
+    ap.add_argument("--albedo-kernel-frac", type=float, default=ALBEDO_KERNEL_FRAC,
+                    help="Gaussian radius of the flat field, as a fraction of the patch")
+    ap.add_argument("--no-albedo", action="store_true", help="skip the albedo-normalized copies")
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
     lat, lon = a.site
+    if a.reuse:
+        copy_site(a.reuse, out)
     site = {"lat_deg": lat, "lon_deg": lon, "name": a.name}
     lola = fetch_lola(out, lat, lon, a.lola_half_deg)
     nac = fetch_nac(out, a.name, lat, lon, a.nac_half_deg, a.nac_step)
     imagery = None if a.no_imagery else fetch_imagery(out, lat, lon)
+    if imagery is not None and not a.no_albedo:
+        imagery = derive_albedo(out, imagery, a.albedo_kernel_frac)
     dems = [{"name": n, **m} for n, m in (("dem_nac", nac), ("dem_lola", lola)) if m]  # finest first
     json.dump({"site": site, "dem": dems, "imagery": "imagery/imagery.json" if imagery else None}, open(out / "site.json", "w"), indent=1)
     print("done:", out / "site.json")

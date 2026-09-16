@@ -374,6 +374,129 @@ Mitchell's larger wedge-penetration factors. The function is therefore a lower
 bound on the soil's strength, which makes the bearing-capacity onset
 conservative.
 
+## Ejecta transport
+
+`ejecta_transport.jl` replaces the single characteristic ejecta speed above with
+grain trajectories. It is a standalone, pure module -- nothing in the descent
+run calls it yet -- so it can be used to size a landing or to generate ejecta
+result columns without touching the effector.
+
+```julia
+field = EjectaReferenceGasField()            # or the plume field module's table
+cfg = EjectaTransportConfig()
+soil = EjectaSoil()                           # lunar mare, Lunar Sourcebook ch. 9
+
+# one grain: how fast the wall jet gets it going over 3.3 m of surface
+gas = ejecta_gas_state(field, cfg, 45_040.0, 10.0, 3.3)
+launch = ejecta_launch_speed(gas, soil, 70e-6, 3.3; config=cfg)
+
+# the whole population under a 45 kN engine 10 m above the ground
+dist = ejecta_distribution(field, cfg, soil, 45_040.0, 10.0)
+dist.mean_speed_mps, dist.mean_angle_deg, dist.escape_fraction
+```
+
+### The flow the grain is in
+
+A 70 µm grain under a descent engine is **not in continuum flow**. At the radius
+where the wall shear stress peaks, with the engine at full thrust 10 m above the
+ground, the reference field gives a gas density of 1.2e-3 kg/m³ and a wall-jet
+speed of 2.2 km/s, so the particle Reynolds number is about 8, the particle Mach
+number about 3.4 and the particle Knudsen number about 0.6 -- the transitional
+regime on the Schaaf and Chambré classification (continuum below Kn = 0.01, slip
+to 0.1, transitional to 10, free molecular above), as tabulated in Capecelatro's
+review of spacecraft-landing gas-particle flows. Higher on the approach, and at
+throttled thrust, the same grain is in free molecular flow.
+
+The drag law is therefore Henderson's correlation (C. B. Henderson, "Drag
+coefficients of spheres in continuum and rarefied flows", *AIAA Journal* 14(6),
+1976, 707-708), which spans continuum through free-molecular flow and is valid
+over Re < 2e4 and Ma < 6. `ejecta_drag_coefficient` implements it; the tests
+check that as Re → 0 it converges on the closed-form free-molecular drag of a
+sphere with diffuse reflection (Schaaf and Chambré, *Flow of Rarefied Gases*,
+1961) -- to 5 percent at Ma = 2 and better than 1 percent at Ma = 6.
+
+### Launch, flight and the distribution
+
+`ejecta_launch_speed` integrates the drag balance
+`dv/dt = 3 ρ C_D(|u-v|) (u-v)|u-v| / (4 ρ_p d)` from rest over an entrainment
+length. The gas speed is the asymptote, which is why the finest grains approach
+the exhaust velocity itself -- about 3,100 m/s for the Apollo lunar module,
+the figure Metzger uses when estimating ejecta damage to lunar orbiters. Larger
+grains fall behind as 1/d.
+
+`ejecta_trajectory` flies the grain ballistically under the body's gravity
+through gas that decays both with radius (the field's own profile) and with
+height above the surface (an exponential over a wall-jet thickness that grows
+linearly with radius). With no gas it reduces exactly to `v² sin 2θ / g`.
+
+`ejecta_distribution` sweeps launch radii and grain sizes and returns speed,
+angle and deposition histograms plus the summary scalars a results table would
+carry: `mean_speed_mps`, `median_speed_mps`, `max_speed_mps`, `mean_angle_deg`,
+`mean_deposition_radius_m`, `p90_deposition_radius_m`, `escape_fraction` and
+`escape_speed_mps`.
+
+The ejection angle is an **input**, not a computed quantity: Immer, Lane,
+Metzger and Clements ("Apollo video photogrammetry estimation of plume
+impingement effects", *Icarus* 214, 2011) measured 1-3 degrees above the local
+horizontal, measured at launch, from the Apollo landing films (their Table 1:
+2.6°, 2.4°, 8.1°, 1.4° and 2.0° for Apollo 11, 14, 15, 16 and 17, mean 3.3°, the
+outlier attributed to an 11° surface slope; Apollo 12 could not be measured),
+and they note that on Roberts' theory the angle follows the scour crater's wall
+slope, so it is only weakly coupled to thrust.
+
+`ejecta_distribution` publishes the angle in exactly that convention -- degrees
+above the local horizontal at launch -- as the mass-weighted `mean_angle_deg`
+and as the `angle_edges_deg`/`angle_fraction` histogram. Because the range is an
+input, the mean comes out at 1.99°, inside the 1.4-8.1° spread the five measured
+Apollo landings cover and just below their 3.3° mean; the model cannot currently
+be said to *predict* the angle, only to carry it consistently.
+
+### What the model gives on the Apollo descent envelope
+
+Evaluated against the reference gas field, with equal mass weight per size bin
+and the default 1 to 500 µm sizes:
+
+| Engine | Height | Mean speed | Max speed | Mean angle | Escape fraction |
+|---|---|---|---|---|---|
+| 4.5 kN (minimum throttle) | 40 m | 149 m/s | 653 m/s | 1.99° | 0 |
+| 11.5 kN (approach) | 30 m | 253 m/s | 1055 m/s | 1.99° | 0.004 |
+| 45 kN (full) | 10 m | 610 m/s | 2145 m/s | 1.99° | 0.21 |
+| 45 kN (full) | 2 m | 895 m/s | 2710 m/s | 1.98° | 0.53 |
+
+These sit inside the only measured bounds there are: Immer et al. summarize the
+Surveyor 3 pitting analyses as 40 m/s (Nickle and Carroll 1972), > 70 m/s
+(Jaffe 1972), 100 m/s (Cour-Palais et al. 1972) and, from the pit structure and
+called the most reliable, 300 to 2000 m/s (Brownlee, Bucher et al. 1972); lunar
+escape is 2373 m/s. Those bounds are on the fast tail that reached Surveyor 3,
+not on the mean of the population, so agreement here is a sanity check, not a
+validation.
+
+The deposition radii the model gives are kilometers, far outside the tens of
+meters of visible blast zone around an Apollo site. That is not obviously wrong
+-- the visible scour is where the *coarse mass* lands, while the kilometer-scale
+figures are driven by the micron fines that carry almost no mass but travel at
+hundreds of meters per second -- but until the weighting comes from a real
+erosion model and a real size distribution the deposition numbers should be read
+as an upper envelope, not a prediction.
+
+### What is assumed
+
+Every free parameter is a named configuration field, with its reasoning on the
+field in `ejecta_transport.jl`:
+
+| Field | What it absorbs |
+|---|---|
+| `entrainment_length_factor`, `entrainment_length_min_m` | the distance the wall jet accelerates a grain over before it leaves the surface; the most influential free parameter of the launch model |
+| `wall_jet_growth_rate`, `wall_jet_thickness_min_m` | how quickly the drag falls off as the grain climbs out of the jet (linear growth is the measured behavior of a radial wall jet, the rate of 0.1 and the exponential profile are not) |
+| `molecular_collision_diameter_m` | the hard-sphere diameter behind the Chapman-Enskog viscosity, hence the Reynolds number |
+| `grain_temperature_k` | enters only as T_p/T_gas in the drag law |
+| `gas_molar_mass_kg_mol`, `gas_gamma` | exhaust composition; a plume field carrying its own should override them |
+| `EjectaReferenceGasField.exit_static_temperature_k`, `wall_jet_decay_radii` | the reference gas field is a stand-in for testing, not a plume model |
+
+The mass weighting in `ejecta_distribution` defaults to a proxy proportional to
+the local wall shear stress with no threshold. It is not an erosion model; pass
+the regolith erosion rate as the `weight` keyword to replace it.
+
 ## Surface in the viewer
 
 `export_visualization(prefix; terrain="data/terrain/moon/apollo11/site.json")`

@@ -13,6 +13,7 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "plume_surface_interaction.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "regolith_erosion.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "ejecta_transport.jl"))
 
     # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
     @eval GravityEffectors using ..PerturbationEffectors
@@ -48,6 +49,9 @@ module DynamicEffectors
     using .RegolithErosion: shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
     using .RegolithErosion: mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
     using .RegolithErosion: pressure_diffusion_depth_m, soil_tensile_strength_pa
+    using .EjectaTransport: EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
+    using .EjectaTransport: ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
+    using .EjectaTransport: ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
@@ -72,4 +76,7 @@ module DynamicEffectors
     export shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
     export mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
     export pressure_diffusion_depth_m, soil_tensile_strength_pa
+    export EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
+    export ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
+    export ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 end

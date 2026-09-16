@@ -85,6 +85,9 @@ using .SimulationModel: erosion_rate, erosion_onset, regime_kind, default_erosio
 using .SimulationModel: shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
 using .SimulationModel: mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
 using .SimulationModel: pressure_diffusion_depth_m, soil_tensile_strength_pa
+using .SimulationModel: EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
+using .SimulationModel: ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
+using .SimulationModel: ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
@@ -108,6 +111,9 @@ using .SimulationModel: pressure_diffusion_depth_m, soil_tensile_strength_pa
 @doc (@doc SimulationModel.ViscousErosionEnergyFlux) ViscousErosionEnergyFlux
 @doc (@doc SimulationModel.DiffusionDrivenFlow) DiffusionDrivenFlow
 @doc (@doc SimulationModel.BearingCapacityFailure) BearingCapacityFailure
+@doc (@doc SimulationModel.EjectaSoil) EjectaSoil
+@doc (@doc SimulationModel.EjectaTransportConfig) EjectaTransportConfig
+@doc (@doc SimulationModel.EjectaReferenceGasField) EjectaReferenceGasField
 @doc (@doc SimulationModel.StateAnchor) StateAnchor
 @doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
@@ -598,6 +604,9 @@ export erosion_rate, erosion_onset, regime_kind, default_erosion_regimes, regoli
 export shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
 export mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
 export pressure_diffusion_depth_m, soil_tensile_strength_pa
+export EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
+export ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
+export ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation

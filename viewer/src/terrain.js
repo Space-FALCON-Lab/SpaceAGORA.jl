@@ -1,31 +1,70 @@
-// Site terrain: nested square patches of the surface around a landing site,
-// displaced by the digital elevation grids the page carries and draped with
-// imagery that sharpens toward the center (from the global mosaic down to
-// sub-meter mosaics). The patches sit in the globe group, so they rotate
-// with the body; the globe itself is cut open under the outermost patch by
-// the hole the globe material discards. All levels are drawn all the time:
-// the finest level covers a few hundred meters, so the resolution rises by
-// itself as the camera closes in.
+// Site terrain: a view-dependent quadtree over the region the payload's
+// imagery covers, displaced by the digital elevation grids the page carries.
+// The tree sits in the globe group, so it rotates with the body; the globe
+// itself is cut open under the covered region by the hole the globe material
+// discards.
+//
+// Why a quadtree. A lander sees the ground from 230 km away at powered descent
+// initiation and from 4 m away at touchdown. The horizon shrinks faster than
+// the resolution demand rises (at 15 km the horizon is 231 km and 11 m/px
+// fills the frame; at 300 m it is 32 km and 0.22 m/px), and a tile of side s
+// at distance d covers about 1349 s/d pixels of a 1400 px view, so one tree
+// walked per frame from the root, splitting a node whose projected size
+// exceeds `splitPixels`, spends the triangles and the texels where the camera
+// is actually looking. Five fixed squares around the site could not: they left
+// the rest of the horizon on the 2.7 km/px global mosaic with a hard square
+// seam where they ended.
+//
+// Texture inheritance. Nodes exist in the payload only where imagery was
+// built, so coverage may be a funnel (wide and coarse over the descent
+// corridor, narrow and fine at the site) rather than a full pyramid. A node
+// with no tile of its own draws the nearest present ancestor's tile through
+// the sub-rectangle of its UV range that belongs to it. Every point inside the
+// covered region is therefore always textured at the best resolution that
+// exists for it, and the transition between levels is a gradual loss of
+// sharpness with distance rather than an edge.
 //
 // Payload contract (viewer_bundle.jl `terrain_payload`):
 //   terrain.site               { lat_deg, lon_deg, height_m, name }
 //   terrain.reference_radius_m
 //   terrain.grids[]            { name, rows, cols, lat_min, lat_max, lon_min, lon_max, heights (base64 Float32, row-major north to south) }, finest first
-//   terrain.imagery[]          { lat_min, lat_max, lon_min, lon_max, width, height, m_per_px, url (data: JPEG) }, coarse to fine
+//   terrain.tiles              { scheme: "quadtree", root: { lat_min, lat_max, lon_min, lon_max }, tile_px, max_level,
+//                                nodes: [ { level, x, y, url (data: JPEG), m_per_px } ] }
+//     A node at (level, x, y) covers lon_min + (lon_max - lon_min) * x / 2^level
+//     eastward by one node width, and latitude from lat_max downward the same
+//     way, so y = 0 is the northern row (the grids' convention).
+//   terrain.imagery[]          legacy nested squares; only the widest is used, as the root tile.
 import * as THREE from 'three';
 import { decodeFloat32 } from 'viewer/data.js';
 
-const PATCH_SEGMENTS = 96;
 const TERRAIN_M_TO_KM = 1e-3;
+const TERRAIN_NODE_SEGMENTS = 16;      // quads per node edge; a node's DEM sampling
+const TERRAIN_SPLIT_PIXELS = 256;      // split a node projecting wider than this (one tile's texels)
+const TERRAIN_BUILD_BUDGET = 6;        // node builds per frame, so a split never stalls the frame
+const TERRAIN_EXTRA_LEVELS = 3;        // levels below the deepest tile, for relief the DEM still has
+const TERRAIN_NODE_CAP = 1200;         // built nodes kept; the least recently drawn are dropped
+const TERRAIN_TEXTURE_CAP = 512;       // decoded tiles kept on the GPU
+const TERRAIN_FADE_FRAC = 0.07;        // outer band of the root that blends into the globe
+const TERRAIN_GRID_TAPER = 0.08;       // band inside a finer grid over which it blends into the coarser one
+const TERRAIN_SKIRT_RELIEF = 0.6;      // skirt depth as a fraction of a node's own relief
+const TERRAIN_SKIRT_SIZE = 0.02;       // plus this fraction of the node's width
+const TERRAIN_SKIRT_MAX_M = 3000;      // and never deeper than this
 
-function gridHeight(g, latDeg, lonDeg) {
+// Height at (lat, lon) from one grid, bilinear, NaN outside it.
+function terrainGridHeight(g, latDeg, lonDeg) {
   let lon = lonDeg;
   while (lon < g.lon_min - 1e-12 && lon + 360 <= g.lon_max + 1e-9) lon += 360;
   while (lon > g.lon_max + 1e-12 && lon - 360 >= g.lon_min - 1e-9) lon -= 360;
   if (latDeg < g.lat_min || latDeg > g.lat_max || lon < g.lon_min || lon > g.lon_max) return NaN;
+  return terrainGridSample(g, latDeg, lon);
+}
+
+// The same, with the sample point clamped into the grid: the coarsest grid
+// extends its edge values outward instead of stepping down to the sphere.
+function terrainGridSample(g, latDeg, lonDeg) {
   const rows = g.rows, cols = g.cols;
   const dlat = (g.lat_max - g.lat_min) / rows, dlon = (g.lon_max - g.lon_min) / cols;
-  let fr = (g.lat_max - latDeg) / dlat - 0.5, fc = (lon - g.lon_min) / dlon - 0.5;
+  let fr = (g.lat_max - latDeg) / dlat - 0.5, fc = (lonDeg - g.lon_min) / dlon - 0.5;
   fr = Math.min(rows - 1, Math.max(0, fr)); fc = Math.min(cols - 1, Math.max(0, fc));
   const r0 = Math.min(rows - 2, Math.floor(fr)), c0 = Math.min(cols - 2, Math.floor(fc));
   const tr = fr - r0, tc = fc - c0;
@@ -34,87 +73,490 @@ function gridHeight(g, latDeg, lonDeg) {
   return (1 - tr) * ((1 - tc) * h00 + tc * h01) + tr * ((1 - tc) * h10 + tc * h11);
 }
 
+// 1 well inside the grid, falling to 0 at its edges over `TERRAIN_GRID_TAPER`
+// of its span: a fine grid blends into the coarser surface under it instead of
+// ending in a cliff.
+function terrainGridWeight(g, latDeg, lonDeg) {
+  const latSpan = g.lat_max - g.lat_min, lonSpan = g.lon_max - g.lon_min;
+  const a = Math.min(latDeg - g.lat_min, g.lat_max - latDeg) / (latSpan * TERRAIN_GRID_TAPER);
+  const b = Math.min(lonDeg - g.lon_min, g.lon_max - lonDeg) / (lonSpan * TERRAIN_GRID_TAPER);
+  const t = Math.min(1, Math.max(0, Math.min(a, b)));
+  return t * t * (3 - 2 * t);
+}
+
+// A quadtree over the legacy nested squares: only the widest one can be placed,
+// as the root tile. Payloads written since the quadtree landed carry `tiles`.
+function terrainTilesFromImagery(imagery) {
+  if (!imagery || imagery.length === 0) return null;
+  const widest = imagery.slice().sort((a, b) => (b.lat_max - b.lat_min) - (a.lat_max - a.lat_min))[0];
+  return {
+    scheme: 'quadtree',
+    root: { lat_min: widest.lat_min, lat_max: widest.lat_max, lon_min: widest.lon_min, lon_max: widest.lon_max },
+    tile_px: 256,
+    max_level: 0,
+    nodes: [{ level: 0, x: 0, y: 0, url: widest.url, m_per_px: widest.m_per_px }],
+  };
+}
+
+/**
+ * Build the terrain quadtree. `options`:
+ *   anisotropy     max anisotropic filtering of the tile textures
+ *   splitPixels    projected node width that triggers a split (default 256)
+ *   buildBudget    node builds allowed per frame (default 6)
+ *   segments       quads per node edge (default 16)
+ * The returned object's `update(camera, viewportHeight)` walks the tree for the
+ * current view; `setGlobeTexture(map, lonLeftDeg)` hands it the globe's own map
+ * so the outermost ring of the covered region fades into it.
+ */
 export function createTerrain(spec, planet, options = {}) {
   const group = new THREE.Group();
   group.name = 'terrain';
-  if (!spec || !spec.grids || spec.grids.length === 0) return { group, heightAt: () => NaN, levels: [], hole: null, site: null };
+  const emptyStats = { nodes: 0, drawn: 0, triangles: 0, pending: 0, built: 0, updateMs: 0, maxLevel: 0 };
+  if (!spec || !spec.grids || spec.grids.length === 0) {
+    return {
+      group, levels: [], hole: null, site: null, heightAt: () => NaN, stats: emptyStats,
+      update() {}, setGlobeTexture() {}, setVisible(v) { group.visible = v; }, modelStatus: 'no terrain',
+    };
+  }
+  const tiles = spec.tiles && spec.tiles.nodes && spec.tiles.nodes.length ? spec.tiles : terrainTilesFromImagery(spec.imagery);
+  if (!tiles) {
+    return {
+      group, levels: [], hole: null, site: null, heightAt: () => NaN, stats: emptyStats,
+      update() {}, setGlobeTexture() {}, setVisible(v) { group.visible = v; }, modelStatus: 'no imagery',
+    };
+  }
+
   const R = (spec.reference_radius_m || planet.equatorial_radius_m) * TERRAIN_M_TO_KM;
-  const grids = spec.grids.map((g) => ({ ...g, data: decodeFloat32(g.heights) }));
+  const DEG_TO_KM = R * Math.PI / 180;
+  const splitPixels = options.splitPixels || TERRAIN_SPLIT_PIXELS;
+  const buildBudget = options.buildBudget || TERRAIN_BUILD_BUDGET;
+  const segments = options.segments || TERRAIN_NODE_SEGMENTS;
+  const root = tiles.root;
+  const rootSpan = root.lat_max - root.lat_min;
+  const rootLonSpan = root.lon_max - root.lon_min;
+  const maxTileLevel = Number.isFinite(tiles.max_level) ? tiles.max_level : 0;
+  const maxLevel = maxTileLevel + TERRAIN_EXTRA_LEVELS;
+
+  // Grids, coarsest first: each finer one is blended into the surface below it.
+  const grids = spec.grids.map((g) => ({ ...g, data: decodeFloat32(g.heights) }))
+    .sort((a, b) => (b.lat_max - b.lat_min) - (a.lat_max - a.lat_min));
+  const finest = grids[grids.length - 1];
+
+  // The published height: the finest grid that covers the point, NaN off them
+  // all. This is the radar-altitude lookup the panel and the dust decals use,
+  // so it stays strict.
   const heightAt = (latDeg, lonDeg) => {
-    for (const g of grids) { const h = gridHeight(g, latDeg, lonDeg); if (!Number.isNaN(h)) return h; }
+    for (let k = grids.length - 1; k >= 0; k--) {
+      const h = terrainGridHeight(grids[k], latDeg, lonDeg);
+      if (!Number.isNaN(h)) return h;
+    }
     return NaN;
   };
-  const bodyPoint = (latDeg, lonDeg, hM) => {
-    const φ = THREE.MathUtils.degToRad(latDeg), λ = THREE.MathUtils.degToRad(lonDeg);
-    const r = R + hM * TERRAIN_M_TO_KM;
-    return new THREE.Vector3(r * Math.cos(φ) * Math.cos(λ), r * Math.cos(φ) * Math.sin(λ), r * Math.sin(φ));
+
+  // The surface the tree draws: the coarsest grid extended to its edge values,
+  // every finer grid blended in over its own taper band, and the whole thing
+  // faded to the sphere across the outer ring of the covered region, so the
+  // terrain meets the globe with neither a step nor a seam.
+  const fadeOf = (latDeg, lonDeg) => {
+    const a = Math.min(latDeg - root.lat_min, root.lat_max - latDeg) / (rootSpan * TERRAIN_FADE_FRAC);
+    const b = Math.min(lonDeg - root.lon_min, root.lon_max - lonDeg) / (rootLonSpan * TERRAIN_FADE_FRAC);
+    const t = Math.min(1, Math.max(0, Math.min(a, b)));
+    return 1 - t * t * (3 - 2 * t);
   };
-  const levels = [];
-  const imagery = (spec.imagery || []).slice().sort((a, b) => (b.lat_max - b.lat_min) - (a.lat_max - a.lat_min)); // coarse first
-  // Each level is drawn only where no finer level exists (the finer box is cut
-  // out of it), so a coarse chord never pokes through the fine surface; a
-  // skirt hangs from every level's edges to hide the seams between them.
-  const SKIRT_M = 80;
-  imagery.forEach((lvl, k) => {
-    const n = PATCH_SEGMENTS;
-    const inner = imagery[k + 1] || null;
-    const geometry = new THREE.BufferGeometry();
-    const positions = [], uvs = [], index = [];
-    const heightOf = (lat, lon) => { const h = heightAt(lat, lon); return Number.isNaN(h) ? (spec.site ? spec.site.height_m : 0) : h; };
-    const push = (lat, lon, h, u, vv) => { const p = bodyPoint(lat, lon, h); positions.push(p.x, p.y, p.z); uvs.push(u, vv); return positions.length / 3 - 1; };
-    const latOf = (i) => lvl.lat_max - (lvl.lat_max - lvl.lat_min) * i / n;
-    const lonOf = (j) => lvl.lon_min + (lvl.lon_max - lvl.lon_min) * j / n;
-    for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) push(latOf(i), lonOf(j), heightOf(latOf(i), lonOf(j)), j / n, 1 - i / n);
-    const insideInner = (lat, lon) => inner && lat > inner.lat_min && lat < inner.lat_max && lon > inner.lon_min && lon < inner.lon_max;
-    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-      if (insideInner(0.5 * (latOf(i) + latOf(i + 1)), 0.5 * (lonOf(j) + lonOf(j + 1)))) continue;
-      const a = i * (n + 1) + j, b = a + 1, c = a + (n + 1), d = c + 1;
-      index.push(a, c, b, b, c, d);
+  const surfaceHeight = (latDeg, lonDeg) => {
+    let h = terrainGridSample(grids[0], latDeg, lonDeg);
+    for (let k = 1; k < grids.length; k++) {
+      const v = terrainGridHeight(grids[k], latDeg, lonDeg);
+      if (Number.isNaN(v)) continue;
+      h += terrainGridWeight(grids[k], latDeg, lonDeg) * (v - h);
     }
-    // skirts along the four outer edges and, for a level with a cutout, the four inner edges
-    const skirt = (pts) => {
-      for (let m = 0; m + 1 < pts.length; m++) {
-        const [i0, j0] = pts[m], [i1, j1] = pts[m + 1];
-        const top0 = i0 * (n + 1) + j0, top1 = i1 * (n + 1) + j1;
-        const b0 = push(latOf(i0), lonOf(j0), heightOf(latOf(i0), lonOf(j0)) - SKIRT_M, j0 / n, 1 - i0 / n);
-        const b1 = push(latOf(i1), lonOf(j1), heightOf(latOf(i1), lonOf(j1)) - SKIRT_M, j1 / n, 1 - i1 / n);
-        index.push(top0, top1, b0, top1, b1, b0, top0, b0, top1, top1, b0, b1);   // both windings: skirts are seen from either side
+    return h;
+  };
+
+  const bodyPoint = (latDeg, lonDeg, hM, out) => {
+    const lat = THREE.MathUtils.degToRad(latDeg), lon = THREE.MathUtils.degToRad(lonDeg);
+    const r = R + hM * TERRAIN_M_TO_KM;
+    return out.set(r * Math.cos(lat) * Math.cos(lon), r * Math.cos(lat) * Math.sin(lon), r * Math.sin(lat));
+  };
+
+  // ---- tiles -------------------------------------------------------------
+  // Every tile the payload carries, by "level/x/y", decoded on first use and
+  // dropped again when too many are resident.
+  const tileKey = (level, x, y) => `${level}/${x}/${y}`;
+  const tileIndex = new Map();
+  for (const n of tiles.nodes) tileIndex.set(tileKey(n.level, n.x, n.y), { ...n, texture: null, ready: false, used: 0 });
+  let tilesResident = 0;
+  const anisotropy = options.anisotropy || 4;
+  function tileTexture(entry, frameIndex) {
+    entry.used = frameIndex;
+    if (entry.texture) return entry.ready ? entry.texture : null;
+    const texture = new THREE.TextureLoader().load(entry.url, () => { entry.ready = true; });
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = anisotropy;
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    entry.texture = texture;
+    tilesResident++;
+    if (tilesResident > TERRAIN_TEXTURE_CAP) terrainEvictTiles(frameIndex);
+    return null;
+  }
+  function terrainEvictTiles(frameIndex) {
+    const resident = [];
+    for (const entry of tileIndex.values()) if (entry.texture) resident.push(entry);
+    resident.sort((a, b) => a.used - b.used);
+    for (let k = 0; k < resident.length - TERRAIN_TEXTURE_CAP * 0.75; k++) {
+      const entry = resident[k];
+      if (entry.used >= frameIndex - 1) break;
+      entry.texture.dispose();
+      entry.texture = null; entry.ready = false;
+      tilesResident--;
+    }
+  }
+
+  // The nearest present ancestor (or the node itself) whose tile has decoded,
+  // with the UV rectangle of that tile this node covers. Loading is started for
+  // the deepest present ancestor, so a node sharpens as its own tile arrives.
+  const tileSource = { key: '', texture: null, u0: 0, v0: 0, size: 1 };
+  function resolveTile(level, x, y, frameIndex) {
+    for (let d = 0; level - d >= 0; d++) {
+      const lv = level - d, ax = x >> d, ay = y >> d;
+      const entry = tileIndex.get(tileKey(lv, ax, ay));
+      if (!entry) continue;
+      const texture = tileTexture(entry, frameIndex);
+      if (!texture) continue;                    // present but still decoding: keep climbing
+      const scale = 1 / (1 << d);
+      tileSource.key = tileKey(lv, ax, ay);
+      tileSource.texture = texture;
+      tileSource.u0 = (x - (ax << d)) * scale;
+      tileSource.v0 = 1 - (y - (ay << d)) * scale;   // v = 1 is the tile's northern edge
+      tileSource.size = scale;
+      return tileSource;
+    }
+    return null;
+  }
+
+  // ---- materials ---------------------------------------------------------
+  // Lambert, so the scene's lights and shadows apply as they did to the fixed
+  // patches, plus the globe's own map blended in over the outer ring: at the
+  // boundary of the covered region the terrain is exactly the globe, so the
+  // region has no visible edge. One program serves every node.
+  let globeMap = null;
+  const globeLonLeft = Number.isFinite(options.globeLonLeft) ? options.globeLonLeft : -180;
+  const materials = [];
+  function terrainMaterial() {
+    const material = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uGlobeMap = { value: globeMap };
+      shader.uniforms.uGlobeMix = { value: globeMap ? 1 : 0 };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec2 aGlobeUv;\nattribute float aFade;\nvarying vec2 vGlobeUv;\nvarying float vFade;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlobeUv = aGlobeUv;\nvFade = aFade;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform sampler2D uGlobeMap;\nuniform float uGlobeMix;\nvarying vec2 vGlobeUv;\nvarying float vFade;')
+        .replace('#include <map_fragment>', `#include <map_fragment>
+  diffuseColor.rgb = mix(diffuseColor.rgb, texture2D(uGlobeMap, vGlobeUv).rgb, vFade * uGlobeMix);`);
+      material.userData.shader = shader;
+    };
+    material.customProgramCacheKey = () => 'terrain-quadtree';
+    materials.push(material);
+    return material;
+  }
+  function setGlobeTexture(map) {
+    globeMap = map;
+    for (const material of materials) {
+      if (!material.userData.shader) continue;
+      material.userData.shader.uniforms.uGlobeMap.value = map;
+      material.userData.shader.uniforms.uGlobeMix.value = map ? 1 : 0;
+    }
+  }
+
+  // ---- nodes -------------------------------------------------------------
+  const nodes = new Map();
+  const tmpPoint = new THREE.Vector3();
+  let builtCount = 0;
+
+  function makeNode(level, x, y) {
+    const size = rootSpan / (1 << level);
+    const lonSize = rootLonSpan / (1 << level);
+    const latMax = root.lat_max - size * y, latMin = latMax - size;
+    const lonMin = root.lon_min + lonSize * x, lonMax = lonMin + lonSize;
+    const node = {
+      level, x, y, latMin, latMax, lonMin, lonMax,
+      sizeKm: Math.max(size, lonSize) * DEG_TO_KM,
+      center: bodyPoint(0.5 * (latMin + latMax), 0.5 * (lonMin + lonMax), surfaceHeight(0.5 * (latMin + latMax), 0.5 * (lonMin + lonMax)), new THREE.Vector3()),
+      radiusKm: 0, mesh: null, children: null, parent: null, texKey: '', used: -1,
+    };
+    node.radiusKm = 0.75 * node.sizeKm;   // refined from the real heights when the node is built
+    nodes.set(tileKey(level, x, y), node);
+    return node;
+  }
+
+  function nodeAt(level, x, y) {
+    return nodes.get(tileKey(level, x, y)) || makeNode(level, x, y);
+  }
+
+  // One node's geometry: an n x n patch of the surface sampled at the node's
+  // own resolution, authored relative to the node center (so the GPU never
+  // handles 1737 km numbers at meter detail), with a skirt hanging from all
+  // four edges to hide the crack against a coarser neighbor.
+  function buildNode(node, frameIndex) {
+    const n = segments;
+    const source = resolveTile(node.level, node.x, node.y, frameIndex);
+    const positions = [], uvs = [], globeUvs = [], fades = [], index = [];
+    const center = node.center;
+    const latOf = (i) => node.latMax - (node.latMax - node.latMin) * i / n;
+    const lonOf = (j) => node.lonMin + (node.lonMax - node.lonMin) * j / n;
+    const u0 = source ? source.u0 : 0, v0 = source ? source.v0 : 1, us = source ? source.size : 1;
+    let hMin = Infinity, hMax = -Infinity;
+    const heights = new Float64Array((n + 1) * (n + 1));
+    for (let i = 0; i <= n; i++) {
+      const lat = latOf(i);
+      for (let j = 0; j <= n; j++) {
+        const lon = lonOf(j);
+        const fade = fadeOf(lat, lon);
+        const h = surfaceHeight(lat, lon) * (1 - fade);
+        heights[i * (n + 1) + j] = h;
+        if (h < hMin) hMin = h;
+        if (h > hMax) hMax = h;
+        bodyPoint(lat, lon, h, tmpPoint).sub(center);
+        positions.push(tmpPoint.x, tmpPoint.y, tmpPoint.z);
+        uvs.push(u0 + us * j / n, v0 - us * i / n);
+        globeUvs.push((lon - globeLonLeft) / 360, (lat + 90) / 180);
+        fades.push(fade);
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const a = i * (n + 1) + j, b = a + 1, c = a + (n + 1), d = c + 1;
+        index.push(a, c, b, b, c, d);
+      }
+    }
+    // Skirts: deep enough to cover the height a coarser neighbor may sit at.
+    const skirtM = Math.min(TERRAIN_SKIRT_MAX_M, TERRAIN_SKIRT_RELIEF * Math.max(hMax - hMin, 1) + TERRAIN_SKIRT_SIZE * node.sizeKm * 1000);
+    const pushSkirt = (i, j) => {
+      const lat = latOf(i), lon = lonOf(j);
+      bodyPoint(lat, lon, heights[i * (n + 1) + j] - skirtM, tmpPoint).sub(center);
+      positions.push(tmpPoint.x, tmpPoint.y, tmpPoint.z);
+      uvs.push(u0 + us * j / n, v0 - us * i / n);
+      globeUvs.push((lon - globeLonLeft) / 360, (lat + 90) / 180);
+      fades.push(fadeOf(lat, lon));
+      return positions.length / 3 - 1;
+    };
+    const skirtEdge = (i0, j0, i1, j1) => {
+      const steps = Math.max(Math.abs(i1 - i0), Math.abs(j1 - j0));
+      const di = Math.sign(i1 - i0), dj = Math.sign(j1 - j0);
+      let prevTop = i0 * (n + 1) + j0, prevBottom = pushSkirt(i0, j0);
+      for (let m = 1; m <= steps; m++) {
+        const i = i0 + di * m, j = j0 + dj * m;
+        const top = i * (n + 1) + j, bottom = pushSkirt(i, j);
+        index.push(prevTop, top, prevBottom, top, bottom, prevBottom,
+          prevTop, prevBottom, top, top, prevBottom, bottom);   // both windings: a skirt is seen from either side
+        prevTop = top; prevBottom = bottom;
       }
     };
-    const edge = (i0, j0, i1, j1) => { const pts = []; const steps = Math.max(Math.abs(i1 - i0), Math.abs(j1 - j0)); for (let m = 0; m <= steps; m++) pts.push([i0 + Math.sign(i1 - i0) * m, j0 + Math.sign(j1 - j0) * m]); return pts; };
-    skirt(edge(0, 0, 0, n)); skirt(edge(n, 0, n, n)); skirt(edge(0, 0, n, 0)); skirt(edge(0, n, n, n));
-    if (inner) {
-      const iA = Math.round((lvl.lat_max - inner.lat_max) / (lvl.lat_max - lvl.lat_min) * n), iB = Math.round((lvl.lat_max - inner.lat_min) / (lvl.lat_max - lvl.lat_min) * n);
-      const jA = Math.round((inner.lon_min - lvl.lon_min) / (lvl.lon_max - lvl.lon_min) * n), jB = Math.round((inner.lon_max - lvl.lon_min) / (lvl.lon_max - lvl.lon_min) * n);
-      skirt(edge(iA, jA, iA, jB)); skirt(edge(iB, jA, iB, jB)); skirt(edge(iA, jA, iB, jA)); skirt(edge(iA, jB, iB, jB));
-    }
+    skirtEdge(0, 0, 0, n); skirtEdge(n, 0, n, n); skirtEdge(0, 0, n, 0); skirtEdge(0, n, n, n);
+
+    const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setAttribute('aGlobeUv', new THREE.Float32BufferAttribute(globeUvs, 2));
+    geometry.setAttribute('aFade', new THREE.Float32BufferAttribute(fades, 1));
     geometry.setIndex(index);
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
-    const texture = new THREE.TextureLoader().load(lvl.url);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = options.anisotropy || 4;
-    texture.generateMipmaps = true;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    const material = new THREE.MeshLambertMaterial({ map: texture, side: THREE.DoubleSide });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = `terrain-level-${k}`;
-    mesh.castShadow = true;
+
+    const mesh = new THREE.Mesh(geometry, terrainMaterial());
+    mesh.material.map = source ? source.texture : null;
+    mesh.position.copy(center);
+    mesh.name = `terrain-${node.level}-${node.x}-${node.y}`;
+    // The tree spans the whole visible horizon while the sun's shadow camera is
+    // sized to the vehicle: terrain casting into that camera puts its own
+    // clamped shadow edge across the ground for kilometers, so the nodes only
+    // receive. The lander still casts its shadow onto them.
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
-    mesh.renderOrder = 1 + k;
+    mesh.visible = false;
+    mesh.frustumCulled = false;   // the tree culls; three's own test would use the node-local bounds
+    node.mesh = mesh;
+    node.texKey = source ? source.key : '';
+    node.radiusKm = geometry.boundingSphere ? geometry.boundingSphere.radius : node.radiusKm;
+    node.heightSpanM = hMax - hMin;
     group.add(mesh);
-    levels.push({ mesh, spec: lvl, m_per_px: lvl.m_per_px });
-  });
-  // the globe is cut under the outermost level
-  const outer = imagery[0];
-  const hole = outer ? { lat_min: outer.lat_min, lat_max: outer.lat_max, lon_min: outer.lon_min, lon_max: outer.lon_max } : null;
-  // site marker: a thin ring on the ground
+    builtCount++;
+    return node;
+  }
+
+  // A drawn node follows its tile as it decodes: when a sharper ancestor (or
+  // its own tile) has arrived, the UV rectangle is rewritten in place.
+  function refreshTile(node, frameIndex) {
+    const source = resolveTile(node.level, node.x, node.y, frameIndex);
+    if (!source || source.key === node.texKey) return;
+    const n = segments;
+    const uv = node.mesh.geometry.getAttribute('uv');
+    for (let i = 0; i <= n; i++) {
+      for (let j = 0; j <= n; j++) uv.setXY(i * (n + 1) + j, source.u0 + source.size * j / n, source.v0 - source.size * i / n);
+    }
+    // the skirt vertices repeat the edge rows in the order they were pushed
+    let k = (n + 1) * (n + 1);
+    const setSkirt = (i, j) => { uv.setXY(k++, source.u0 + source.size * j / n, source.v0 - source.size * i / n); };
+    const edge = (i0, j0, i1, j1) => {
+      const steps = Math.max(Math.abs(i1 - i0), Math.abs(j1 - j0));
+      const di = Math.sign(i1 - i0), dj = Math.sign(j1 - j0);
+      for (let m = 0; m <= steps; m++) setSkirt(i0 + di * m, j0 + dj * m);
+    };
+    edge(0, 0, 0, n); edge(n, 0, n, n); edge(0, 0, n, 0); edge(0, n, n, n);
+    uv.needsUpdate = true;
+    node.mesh.material.map = source.texture;
+    node.mesh.material.needsUpdate = true;
+    node.texKey = source.key;
+  }
+
+  function childrenOf(node) {
+    if (!node.children) {
+      node.children = [
+        nodeAt(node.level + 1, 2 * node.x, 2 * node.y),
+        nodeAt(node.level + 1, 2 * node.x + 1, 2 * node.y),
+        nodeAt(node.level + 1, 2 * node.x, 2 * node.y + 1),
+        nodeAt(node.level + 1, 2 * node.x + 1, 2 * node.y + 1),
+      ];
+      for (const child of node.children) child.parent = node;
+    }
+    return node.children;
+  }
+
+  // ---- the per-frame walk -------------------------------------------------
+  const rootNode = makeNode(0, 0, 0);
+  buildNode(rootNode, 0);
+
+  const terrainFrustum = new THREE.Frustum();
+  const terrainMatrix = new THREE.Matrix4();
+  const terrainInverse = new THREE.Matrix4();
+  const terrainSphere = new THREE.Sphere();
+  const camLocal = new THREE.Vector3();
+  const camDir = new THREE.Vector3();
+  const drawn = [];
+  const queue = [];
+  let frameIndex = 0;
+  let horizonPlane = -Infinity, camRadius = 0, pixelScale = 1000;
+  const stats = { nodes: 0, drawn: 0, triangles: 0, pending: 0, built: 1, updateMs: 0, maxLevel: 0 };
+
+  function visible(node) {
+    terrainSphere.center.copy(node.center);
+    terrainSphere.radius = node.radiusKm * 1.05;
+    if (!terrainFrustum.intersectsSphere(terrainSphere)) return false;
+    // Below the horizon: the sphere of the covered region hides it from the camera.
+    if (horizonPlane > -Infinity && node.center.dot(camDir) + node.radiusKm < horizonPlane) return false;
+    return true;
+  }
+
+  function projectedPixels(node) {
+    const d = Math.max(camLocal.distanceTo(node.center) - node.radiusKm, 1e-6);
+    return node.sizeKm / d * pixelScale;
+  }
+
+  function show(node) {
+    node.used = frameIndex;
+    node.mesh.visible = true;
+    drawn.push(node);
+    stats.triangles += node.mesh.geometry.index.count / 3;
+    if (node.level > stats.maxLevel) stats.maxLevel = node.level;
+    refreshTile(node, frameIndex);
+  }
+
+  function walk(node) {
+    node.used = frameIndex;
+    if (!visible(node)) return;
+    if (node.level < maxLevel && projectedPixels(node) > splitPixels) {
+      const kids = childrenOf(node);
+      let ready = true;
+      for (const child of kids) {
+        if (child.mesh) continue;
+        ready = false;
+        queue.push(child);
+      }
+      if (ready) {
+        for (const child of kids) walk(child);
+        return;
+      }
+    }
+    show(node);
+  }
+
+  // Built nodes are kept for reuse; the least recently drawn go when there are
+  // too many, so a long descent does not accumulate every node it passed.
+  function evictNodes() {
+    if (nodes.size <= TERRAIN_NODE_CAP) return;
+    const built = [];
+    for (const node of nodes.values()) if (node.mesh) built.push(node);
+    if (built.length <= TERRAIN_NODE_CAP) return;
+    built.sort((a, b) => a.used - b.used);
+    for (let k = 0; k < built.length - TERRAIN_NODE_CAP * 0.8; k++) {
+      const node = built[k];
+      if (node === rootNode || node.used >= frameIndex - 1) break;
+      group.remove(node.mesh);
+      node.mesh.geometry.dispose();
+      const at = materials.indexOf(node.mesh.material);
+      if (at >= 0) materials.splice(at, 1);
+      node.mesh.material.dispose();
+      node.mesh = null;
+      node.texKey = '';
+      if (node.parent) node.parent.children = null;
+      nodes.delete(tileKey(node.level, node.x, node.y));
+    }
+  }
+
+  function update(camera, viewportHeight) {
+    if (!group.visible) return;
+    const t0 = (typeof performance !== 'undefined' ? performance.now() : 0);
+    frameIndex++;
+    terrainMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(group.matrixWorld);
+    terrainFrustum.setFromProjectionMatrix(terrainMatrix);
+    terrainInverse.copy(group.matrixWorld).invert();
+    camera.getWorldPosition(camLocal).applyMatrix4(terrainInverse);
+    camRadius = camLocal.length();
+    camDir.copy(camLocal).divideScalar(camRadius || 1);
+    // The horizon plane of a sphere just under the lowest ground: points behind
+    // it cannot be seen. Skip it when the camera is at or below that sphere.
+    const rFloor = R - 5;
+    horizonPlane = camRadius > rFloor * 1.0000001 ? (rFloor * rFloor) / camRadius : -Infinity;
+    const fov = THREE.MathUtils.degToRad(camera.fov);
+    pixelScale = (viewportHeight || 900) / (2 * Math.tan(0.5 * fov));
+
+    for (const node of drawn) if (node.mesh) node.mesh.visible = false;
+    drawn.length = 0;
+    queue.length = 0;
+    stats.triangles = 0;
+    stats.maxLevel = 0;
+    walk(rootNode);
+    // A few node builds per frame: the camera moves smoothly, so the tree
+    // catches up within a few frames and the frame itself never stalls.
+    if (queue.length) {
+      queue.sort((a, b) => projectedPixels(b) - projectedPixels(a));
+      for (let k = 0; k < Math.min(buildBudget, queue.length); k++) buildNode(queue[k], frameIndex);
+    }
+    evictNodes();
+    stats.nodes = nodes.size;
+    stats.drawn = drawn.length;
+    stats.pending = queue.length;
+    stats.built = builtCount;
+    stats.updateMs = (typeof performance !== 'undefined' ? performance.now() : 0) - t0;
+  }
+
+  // The globe is cut open under the covered region, a hair inside it so the
+  // sphere and the terrain's faded outer ring overlap rather than leave a gap.
+  const inset = 0.0025 * rootSpan;
+  const hole = {
+    lat_min: root.lat_min + inset, lat_max: root.lat_max - inset,
+    lon_min: root.lon_min + inset, lon_max: root.lon_max - inset,
+  };
+
+  // Site marker: a thin ring on the ground.
   let siteMarker = null;
   if (spec.site) {
     const h = Number.isFinite(spec.site.height_m) ? spec.site.height_m : heightAt(spec.site.lat_deg, spec.site.lon_deg) || 0;
-    const center = bodyPoint(spec.site.lat_deg, spec.site.lon_deg, h + 0.5);
+    const center = bodyPoint(spec.site.lat_deg, spec.site.lon_deg, h + 0.5, new THREE.Vector3());
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.004, 0.005, 48), new THREE.MeshBasicMaterial({ color: 0xf2b950, side: THREE.DoubleSide, transparent: true, opacity: 0.8, depthWrite: false }));
     ring.position.copy(center);
     ring.lookAt(center.clone().multiplyScalar(2));
@@ -124,14 +566,47 @@ export function createTerrain(spec, planet, options = {}) {
     group.add(ring);
     siteMarker = ring;
   }
+
+  // The ground the vehicle lands on: the deepest tile that covers the site.
+  // The lighting module sets the exposure from it (it reads the texture off
+  // `levels[0].mesh.material.map`), and with a corridor-wide root the widest
+  // tile is no longer that ground, so the site's own tile is reported instead.
+  const siteTileEntry = (() => {
+    if (!spec.site) return tileIndex.get(tileKey(0, 0, 0)) || null;
+    let found = null;
+    for (let level = 0; level <= maxTileLevel; level++) {
+      const n = 1 << level;
+      const x = Math.floor((spec.site.lon_deg - root.lon_min) / rootLonSpan * n);
+      const y = Math.floor((root.lat_max - spec.site.lat_deg) / rootSpan * n);
+      const entry = tileIndex.get(tileKey(level, x, y));
+      if (entry) found = entry;
+    }
+    return found || tileIndex.get(tileKey(0, 0, 0)) || null;
+  })();
+  const siteGround = { material: { get map() { return siteTileEntry ? tileTexture(siteTileEntry, frameIndex) : null; } } };
+
+  const finestTile = tiles.nodes.reduce((best, n) => (n.m_per_px > 0 && (!best || n.m_per_px < best) ? n.m_per_px : best), 0);
   return {
     group,
-    levels,
+    // A quadtree has no fixed levels; this reports the ground under the site
+    // for the lighting module's exposure and tells the rest of the page that
+    // the run has terrain at all.
+    levels: [{ mesh: siteGround, m_per_px: siteTileEntry ? siteTileEntry.m_per_px : 0 }],
+    rootMesh: rootNode.mesh,
     hole,
     site: spec.site || null,
     referenceRadiusKm: R,
     heightAt,
+    surfaceHeight,
+    stats,
+    root,
+    maxLevel,
+    siteMarker,
+    update,
+    setGlobeTexture,
     setVisible(v) { group.visible = v; },
-    get modelStatus() { return `${levels.length} levels, ${grids.length} grids, finest ${levels.length ? levels[levels.length - 1].m_per_px.toFixed(2) : '–'} m/px`; },
+    get modelStatus() {
+      return `quadtree to L${maxTileLevel} (+${TERRAIN_EXTRA_LEVELS} relief), ${tiles.nodes.length} tiles, finest ${finestTile ? finestTile.toFixed(2) : '–'} m/px, ${grids.length} grids (${finest.rows}x${finest.cols})`;
+    },
   };
 }

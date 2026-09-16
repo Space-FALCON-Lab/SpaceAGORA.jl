@@ -117,13 +117,25 @@ way.
 ## Site terrain
 
 `export_visualization(prefix; terrain="data/terrain/moon/apollo11/site.json")`
-embeds a landing site's digital elevation grids and imagery levels (see
-[Lunar Landing](lunar_landing.md) for the fetch script). The page drapes each
-imagery level over a patch displaced by the DEM, nested from a 4° window at
-83 m/px down to a few hundred meters at 0.65 m/px and drawn all the time, so
-the ground sharpens by itself as the camera closes in; the globe is cut open
-under the outermost patch, a ring marks the site, and the selection panel
+embeds a landing site's digital elevation grids and its imagery quadtree (see
+[Lunar Landing](lunar_landing.md) for the fetch script). The page walks that
+quadtree once per frame from the covered region's root and splits a node when
+its projected width passes `terrain_split_pixels` (256 by default), so the
+surface fills the whole visible horizon at every altitude: at powered descent
+initiation the horizon is 231 km away and the ground 11 m/px, at 300 m it is
+32 km away and 0.22 m/px, and the tree spends its triangles and texels where
+the camera is looking. Each node samples the DEM grids at its own resolution
+and draws its own tile when the payload has one, and otherwise the nearest
+present ancestor's tile through the sub-rectangle of its UV range that belongs
+to it, so imagery coverage may narrow with depth (wide and coarse over the
+descent corridor, narrow and fine at the site) and the picture still loses
+sharpness gradually with distance instead of ending at an edge. The outermost
+ring of the covered region fades into the globe's own map and the globe is cut
+open under the rest of it; a ring marks the site and the selection panel
 reports the height above the terrain.
+
+A payload written before the quadtree (an `imagery` list of nested squares
+rather than `tiles`) still draws, with the widest square as the root tile.
 
 ## Dust
 

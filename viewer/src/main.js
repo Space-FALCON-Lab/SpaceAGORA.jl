@@ -59,15 +59,25 @@ export function start(payload, container = document.body) {
   scene.add(world);
 
   const textureKey = (planet.texture || planet.name || '').toLowerCase();
-  // Site terrain (DEM patches with draped imagery) sits in the globe group and cuts a hole in the sphere under it.
-  const terrain = createTerrain(terrainSpec, planet, { anisotropy: renderer.capabilities.getMaxAnisotropy() });
+  // Site terrain (a view-dependent quadtree of DEM patches with draped imagery)
+  // sits in the globe group and cuts a hole in the sphere under the region it covers.
+  const terrain = createTerrain(terrainSpec, planet, {
+    anisotropy: renderer.capabilities.getMaxAnisotropy(),
+    globeLonLeft: textures[textureKey] ? textures[textureKey].lon_left_deg : -180,
+    splitPixels: options.terrain_split_pixels,
+  });
   const globe = createGlobe(planet, textures[textureKey] || null, {
     anisotropy: renderer.capabilities.getMaxAnisotropy(),
     maxTextureSize: renderer.capabilities.maxTextureSize,
     hole: terrain.hole,
   });
   world.add(globe.group);
-  if (terrain.levels.length) globe.group.add(terrain.group);
+  if (terrain.levels.length) {
+    globe.group.add(terrain.group);
+    // The outer ring of the covered region blends into the globe's own map, so
+    // the boundary of the terrain is not an edge.
+    terrain.setGlobeTexture(globe.mesh.material.map || null);
+  }
 
   const craft = createSpacecraft(frames, sidecar, { markerPixels: options.marker_pixels ?? 7, pixelRatio, planetRadiusKm: Re });
   world.add(craft.group);
@@ -534,6 +544,7 @@ export function start(payload, container = document.body) {
     if (ensemble) ensemble.group.position.set(anchor[0], anchor[1], anchor[2]);
     world.updateMatrixWorld();
     const viewportHeight = renderer.domElement.clientHeight || window.innerHeight;
+    if (terrain.levels.length) terrain.update(camera, viewportHeight);
     lod.update(t, camera, viewportHeight, lod.group.matrixWorld, anchor);
     dust.update(t);
     plumes.update(t);

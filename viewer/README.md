@@ -43,7 +43,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `src/atmosphere.js` | limb glow, density shells, density map |
 | `src/colormaps.js` | inferno and viridis |
 | `src/timeline.js` | playback clock and time formatting |
-| `src/lighting.js` | sun placed from `frames.sun_dir` and earthshine from `frames.earth_dir`, shadow map fitted to the followed vehicle, a physical camera with an explicit EV (`[` / `]`), the environment probe the foils reflect, and the optional path-traced mode |
+| `src/lighting.js` | sun placed from `frames.sun_dir` and earthshine from `frames.earth_dir`, shadow map fitted to the followed vehicle, a physical camera that meters the frame and adapts its EV (`[` / `]` compensate), the environment probe the foils reflect, and the optional path-traced mode |
 | `src/ui.js` | overlay controls and info panel |
 | `src/main.js` | scene setup and the render loop |
 | `template.html` | page skeleton the Julia bundler fills |

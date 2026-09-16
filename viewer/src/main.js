@@ -185,8 +185,12 @@ export function start(payload, container = document.body) {
     lightingModes: lighting.modes,
     lightingMode: lighting.mode,
     setLighting(m) { state.lightingMode = lighting.setMode(m); },
-    // Camera exposure in thirds of a stop ([ and ]); the info panel's lighting row reads it back.
+    // Camera exposure: [ and ] step it (or its compensation) by a third of a
+    // stop, and the checkbox hands it to the meter or pins it where it is. The
+    // info panel's lighting row reads both back.
     stepExposure(steps) { lighting.stepEv(steps); ui.setLightingStatus(lighting.status); },
+    exposureAuto: lighting.autoExposure,
+    setExposureAuto(v) { state.exposureAuto = lighting.setAutoExposure(v); ui.setLightingStatus(lighting.status); },
     openVideoDialog() { videoDialog && videoDialog.open(); },
   };
   let videoDialog = null;

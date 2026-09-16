@@ -120,5 +120,11 @@ Run [GRAMSuite Setup](gramsuite_setup.md) before using GRAM-backed studies.
 | Parallelization paper benchmarks | `paper_parallelization_benchmarks.jl`, `parallelization_performance.jl` — each has a same-named subdirectory with its own `protocol.sh`, `cli.jl`, and `CASES.md` case catalog |
 | Tuning and validation | `telemetry_hybrid_tuner.jl`, `telemetry_odyssey_tuner.jl` |
 
+The former `SpaceAGORACalibration.jl/` campaign package and its `bin/` drivers
+have been retired. Use the tuning scripts listed above for telemetry parameter
+fitting, or [Verification Study](verification_study.md) to compare simulations
+with observations. Automatic performance tuning for parallel execution remains
+available.
+
 For long studies, set an explicit output directory and keep the terminal log with
 the artifacts.

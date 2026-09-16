@@ -42,22 +42,18 @@ module DynamicEffectors
     using .RobotArmReactionEffectors: RobotArmReactionEffector
     using .PlumeGasField: PlumeGasState, PlumeNozzle, PlumeAnalyticField, PlumeFieldTable
     using .PlumeGasField: plume_gas_state, plume_field_footprint, plume_field_shear_coefficient, plume_field_name
-    using .PlumeGasField: plume_wall_shear, plume_mean_shear, plume_scour_radius
-    using .PlumeGasField: build_plume_field_table, save_plume_field, load_plume_field
+    using .PlumeGasField: plume_wall_shear, plume_mean_shear, plume_scour_radius, build_plume_field_table
+    using .PlumeGasField: save_plume_field, load_plume_field
     using .PlumeGasField: plume_limit_speed, plume_limit_angle, plume_angular_mass_flux
-    using .PlumeSurfaceInteraction: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
-    using .PlumeSurfaceInteraction: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities, plume_engine_axis
-    using .RegolithErosion: RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
-    using .RegolithErosion: ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime
-    using .RegolithErosion: AbstractErosionRegime, ViscousErosionRoberts, ViscousErosionEnergyFlux
-    using .RegolithErosion: DiffusionDrivenFlow, BearingCapacityFailure
-    using .RegolithErosion: erosion_rate, erosion_onset, regime_kind, default_erosion_regimes, regolith_erosion_rate
-    using .RegolithErosion: shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
-    using .RegolithErosion: mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
-    using .RegolithErosion: pressure_diffusion_depth_m, soil_tensile_strength_pa
-    using .EjectaTransport: EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
-    using .EjectaTransport: ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
-    using .EjectaTransport: ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
+    using .PlumeSurfaceInteraction: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_engine_axis, plume_quantities, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force
+    using .RegolithErosion: RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment, ErosionRegimeKind
+    using .RegolithErosion: NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime, AbstractErosionRegime
+    using .RegolithErosion: ViscousErosionRoberts, ViscousErosionEnergyFlux, DiffusionDrivenFlow, BearingCapacityFailure, regime_kind
+    using .RegolithErosion: erosion_rate, erosion_onset, default_erosion_regimes, regolith_erosion_rate, shields_threshold_shear_pa
+    using .RegolithErosion: energy_flux_threshold_shear_pa, soil_bearing_capacity_pa, mean_thermal_speed_mps, mean_lift_height_m
+    using .RegolithErosion: gas_dynamic_viscosity_pa_s, pressure_diffusion_depth_m, soil_tensile_strength_pa
+    using .EjectaTransport: EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField, ejecta_gas_state, ejecta_flow_regime
+    using .EjectaTransport: ejecta_drag_coefficient, ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
@@ -78,15 +74,12 @@ module DynamicEffectors
     export build_plume_field_table, save_plume_field, load_plume_field
     export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
     export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
-    export RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment
-    export ErosionRegimeKind, NoErosion, ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime
-    export AbstractErosionRegime, ViscousErosionRoberts, ViscousErosionEnergyFlux
-    export DiffusionDrivenFlow, BearingCapacityFailure
-    export erosion_rate, erosion_onset, regime_kind, default_erosion_regimes, regolith_erosion_rate
-    export shields_threshold_shear_pa, energy_flux_threshold_shear_pa, soil_bearing_capacity_pa
-    export mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
+    export RegolithProperties, lunar_mare_regolith, ErosionEnvironment, erosion_environment, ErosionRegimeKind, NoErosion
+    export ViscousErosion, DiffusionDrivenFlowRegime, BearingCapacityFailureRegime, AbstractErosionRegime, ViscousErosionRoberts
+    export ViscousErosionEnergyFlux, DiffusionDrivenFlow, BearingCapacityFailure, regime_kind, erosion_rate, erosion_onset
+    export default_erosion_regimes, regolith_erosion_rate, shields_threshold_shear_pa, energy_flux_threshold_shear_pa
+    export soil_bearing_capacity_pa, mean_thermal_speed_mps, mean_lift_height_m, gas_dynamic_viscosity_pa_s
     export pressure_diffusion_depth_m, soil_tensile_strength_pa
-    export EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField
-    export ejecta_gas_state, ejecta_drag_coefficient, ejecta_flow_regime
-    export ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
+    export EjectaSoil, EjectaTransportConfig, EjectaReferenceGasField, ejecta_gas_state, ejecta_flow_regime
+    export ejecta_drag_coefficient, ejecta_launch_speed, ejecta_trajectory, ejecta_distribution, ejecta_escape_speed
 end

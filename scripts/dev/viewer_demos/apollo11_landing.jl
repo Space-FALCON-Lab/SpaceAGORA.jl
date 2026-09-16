@@ -142,7 +142,8 @@ end
 
 html = export_visualization(prefix; max_frames=4000, trail_orbits=1, texture_resolution="4k",
     title="AGORA Apollo 11 · powered descent to Tranquility Base",
-    models=Dict(1 => MODEL), model_scale=1.45, model_rotation_deg=Dict(1 => LM_ROTATION_DEG), terrain=SITE_JSON)
+    models=Dict(1 => MODEL), model_scale=1.45, model_rotation_deg=Dict(1 => LM_ROTATION_DEG), terrain=SITE_JSON,
+    ev=11.0)   # a grazing 10.6 deg sun: the physical default (EV +15.3) leaves the regolith near black
 println("html: ", html, " ", filesize(html))
 cdn = build_cdn_page(html, joinpath(OUTDIR, "artifact.html"), "AGORA Apollo 11 Landing",
     "AGORA Apollo 11 · powered descent to Tranquility Base, 1969-07-20 20:05 UTC",

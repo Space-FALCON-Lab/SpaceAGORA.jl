@@ -680,13 +680,14 @@ function render_viewer_html(payload::AbstractDict; viewer_dir::AbstractString=VI
     return replace(html, "__PAYLOAD__" => _script_safe_json(payload))
 end
 
-@inline function _viewer_options(; trail_s, trail_orbits, frame, speed, title)
+@inline function _viewer_options(; trail_s, trail_orbits, frame, speed, title, ev=nothing)
     frame in (:inertial, :planet_fixed) || throw(ArgumentError("frame must be :inertial or :planet_fixed, got $(frame)."))
     options = Dict{String, Any}("frame" => String(frame))
     trail_s === nothing || (options["trail_s"] = Float64(trail_s))
     trail_orbits === nothing || (options["trail_orbits"] = Float64(trail_orbits))
     speed === nothing || (options["speed"] = Float64(speed))
     title === nothing || (options["title"] = String(title))
+    ev === nothing || (options["ev"] = Float64(ev))
     return options
 end
 
@@ -703,6 +704,8 @@ bound the embedded trajectory; `trail_orbits` (default 3, estimated from the
 trajectory's periapsis passages) or `trail_s` set the trail window; `frame`
 is `:inertial` (default) or `:planet_fixed`; `speed` is the initial playback
 rate in simulated seconds per wall second; `title` names the page;
+`ev=` fixes the page's initial exposure value (the physical camera's EV; the
+viewer picks a metered default when it is omitted, and `[`/`]` step it).
 `textures=false` skips the surface texture and `texture_resolution` picks a
 tier (`:best`, the default, takes the largest registered, e.g. 8k for Earth;
 `"4k"` keeps the page small); `models` maps spacecraft ids to STL, OBJ, glTF
@@ -726,6 +729,7 @@ function export_visualization(
     frame::Symbol=:inertial,
     speed::Union{Nothing, Real}=nothing,
     title::Union{Nothing, AbstractString}=nothing,
+    ev::Union{Nothing, Real}=nothing,
     textures::Bool=true,
     texture_resolution=:best,
     models::AbstractDict=Dict{Int, String}(),
@@ -751,7 +755,7 @@ function export_visualization(
     payload = viewer_payload(
         scene, df;
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
-        options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title),
+        options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ev=ev),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
         paths=paths, references=references, terrain=terrain

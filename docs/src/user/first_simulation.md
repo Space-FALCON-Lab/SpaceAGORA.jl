@@ -1,7 +1,7 @@
 # First Simulation
 
-Use this page when you are ready to run a fuller packaged scenario after the
-initial no-GRAM smoke path.
+Use this page to run the quickstart's Earth scenario without generating plots,
+or to choose between a script and the command-line launcher.
 
 This page is for users who already have the repository environment instantiated
 and want a concrete next command.
@@ -41,7 +41,7 @@ three result files under `output/`, without generating plots.
 
 ### CLI wrapper
 
-Use the CLI when you want a stable packaged command surface:
+Use the CLI to keep this run's files in their own directory:
 
 ```text
 julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run

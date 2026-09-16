@@ -26,11 +26,10 @@ What to read next:
 
 ## What to expect
 
-Measured on a fresh clone (September 2026, packages already in the local
-depot): the clone takes a few minutes, `Pkg.instantiate()` about a minute, and
-the first run about a minute, most of it compilation. The run prints the
-initial state, the number of saved samples and the computational time, and
-writes:
+Installation time depends on your connection and which Julia packages are
+already installed. The first run also compiles code, so allow more time for
+it than for later runs. The run prints the initial state, the number of
+saved samples and the computational time, and writes:
 
 ```text
 output/

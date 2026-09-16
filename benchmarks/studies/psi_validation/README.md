@@ -381,9 +381,14 @@ Written from the two runs above, not from expectation.
   0.18–0.22 m from the centerline; Metzger puts it at 1–2 m. The depth is right
   to a factor of two and the shape is toroidal as reported, but the torus is
   five to ten times too tight. This is the same "the plume is concentrated into
-  too small a patch" defect the baseline had, seen in a new quantity, and it is
-  why the ejection angle is *not* wired to the crater's wall slope: the slope
-  this profile gives is far steeper than the 1–3° measured.
+  too small a patch" defect the baseline had, seen in a new quantity. It is also
+  why the ejection angle is *not* wired to the crater's wall slope, which is what
+  Roberts' theory says sets it: measured off this profile the slope is 0.80° on
+  the inner wall and 0.44° on the outer, with a steepest local outer slope of
+  1.38° (1.01°, 0.47° and 1.60° on the table), against the 1.4–8.1° the Apollo
+  films give. That is the right order of magnitude and at or below the bottom of
+  the measured range, so the crater could supply the angle — but only once its
+  radial scale is right, and today it is not.
 - **The deposition radius is hundreds of meters to kilometers,** against tens of
   meters of visible blast zone at the Apollo sites. The fix the ejecta work
   identified — weight the launch radii by the regimes' own local erosion rate
@@ -408,10 +413,12 @@ Written from the two runs above, not from expectation.
 
 The baseline's diagnosis was that one geometric error — a plume spread over
 `h·tan 25°` where the soil moves out to `1.3 h` to `2.2 h` — was hiding inside a
-calibrated constant. That is fixed: the width now passes on both fields and the
-calibrated constants are out of the default path. What is left is a different
-error, and it is in the *height dependence*. Three published laws disagree about
-it and this model agrees with none of them:
+calibrated constant. That is fixed: the width now passes on both fields, and the
+fitted threshold is replaced by one derived from the soil. (One calibrated
+constant is still in the default path — the soil's `saltation_efficiency` — but
+it is a single multiplier on the rate and it cannot produce a shape error.) What
+is left *is* a shape error, and it is in the height dependence. Three published
+laws disagree about it and this model agrees with none of them:
 
 | Source | Dependence of the surface stress on height |
 |---|---|
@@ -419,9 +426,22 @@ it and this model agrees with none of them:
 | Morris 2012, DSMC of the LMDE | `h^-2.825` |
 | Lane and Metzger 2015, Apollo 12 film fit, Eq. (14) | `exp(-0.123 h)` |
 
-Over 1.83 m to 36.6 m those three span a factor of 30 in how much the stress
-grows as the vehicle descends, and the erosion rate follows the stress. Nothing
-in this study can choose between them: the Apollo film fit is an exponential
-with no physical derivation, the DSMC is a single engine at a single condition,
-and `h^-2` is what a point source must give. It is recorded as the open question
-it is.
+Over the 1.83 m to 36.6 m of Lane and Metzger's profile — a factor of 20 in
+height — those three grow the surface stress by 400, 4736 and 72 respectively as
+the vehicle descends, a spread of 66 between the outer two, and the erosion rate
+follows the stress. This model's `h^-2` sits between the other two, which is not
+an argument for it: it is what a point source on a plane must give, and both of
+the others are attempts to measure what the real plume does.
+
+Nothing in this study can choose between them. The Apollo film fit is an
+exponential with no physical derivation, fitted over the range it was measured
+in; the DSMC is one engine at one condition. What the comparison does say is
+where the model's remaining error lives. The measured erosion rate rises 9.3-fold
+over that range and the model's rises 3.35-fold, and the erosion rate is a
+threshold functional of the surface stress, so the difference between three
+stress laws that span a factor of 66 in their growth is more than enough to
+account for it — and more than enough to overshoot it. Picking one of them to
+close the gap would be fitting, not deriving. Closing it properly needs either a
+plume field whose height dependence follows from the nozzle rather than from a
+point-source assumption, or a second independent measurement of the surface
+stress at more than one height. It is recorded as the open question it is.

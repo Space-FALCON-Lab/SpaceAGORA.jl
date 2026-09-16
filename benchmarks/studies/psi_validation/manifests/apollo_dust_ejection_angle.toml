@@ -19,10 +19,14 @@ circularity is on the record instead of being implied by a missing row.
 What would make it a prediction is the crater. Immer and co-workers note in
 their section 3 that on Roberts' theory the ejection angle follows the wall
 slope of the scour crater, and the model now carries a crater depth profile, so
-the slope is computable. The profile it produces is far steeper than the
-measured angle (see this study's README), so wiring the angle to it would make
-the model worse, not better, until the crater's shape is right. It is left as an
-input and the gap is reported.
+the slope is computable. Measured off that profile over the Apollo 12 descent
+(see this study's README) it is 0.80 degrees on the inner wall and 0.44 degrees
+on the outer, with a steepest local outer slope of 1.38 degrees; on the
+tabulated field, 1.01, 0.47 and 1.60 degrees. Against a measured 1.4 to 8.1
+degrees that is the right order of magnitude and at or below the bottom of the
+range, so the crater could supply the angle only after its radial scale is
+fixed -- its deepest point sits at 0.18 m where the reference puts it at 1 to
+2 m. The angle is left as an input and the gap is reported.
 """
 
 [source]

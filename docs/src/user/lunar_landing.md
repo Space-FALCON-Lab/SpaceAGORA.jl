@@ -131,8 +131,9 @@ default), the erosion regimes evaluated on it, the plume field the surface state
 is read from, and the crater and ejecta settings.
 
 **What is computed and what is calibrated.** Everything below comes from a
-sourced model or is derived in the file that owns it, with three exceptions, all
-of them named configuration fields:
+sourced model or is derived in the file that owns it, except for the rows marked
+ASSUMPTION, every one of which is a named configuration field with its reasoning
+on the field rather than a buried literal:
 
 | Quantity | Where it comes from |
 |---|---|
@@ -143,7 +144,9 @@ of them named configuration fields:
 | ejecta speed, angle, deposition radius, escape fraction | `ejecta_transport.jl`; the angle is an **input** from the Apollo films |
 | **`soil.saltation_efficiency` = 10** | ASSUMPTION: the saltation cascade, unsourced. The best fit to Lane and Metzger's eleven Apollo 12 altitudes is 17.5 (analytic field) and 13.7 (table); it is left at 10, see the validation study for why |
 | **`gas_residence_time_s` = 1 s** | ASSUMPTION: sets the pore-pressure diffusion depth of the diffusion-driven-flow regime |
-| **the ground-effect correlation** | ASSUMPTION: 3 percent of thrust at contact over two exit diameters; the literature has not characterized the near-ground base-pressure rise |
+| **the ground-effect correlation** | ASSUMPTION: 3 percent of thrust at contact over two exit diameters; the literature has not characterized the near-ground base-pressure rise, and this is the only force the model applies to the vehicle |
+| **`crater_edge_fraction`, `crater_min_depth_m`** | DEFINITIONS, not measurements: where the crater's edge is taken to be. They affect the reported radius and nothing else |
+| **the ejecta transport free parameters** | ASSUMPTIONS: the entrainment length, the wall-jet thickness, the collision diameter and the lognormal shape of the grain-mass distribution; tabulated in "What is assumed" under Ejecta transport below |
 
 The two constants the previous model calibrated — `threshold_shear_pa = 0.15 Pa`
 and `erosion_efficiency = 10` — are still on the configuration but are used only
@@ -529,13 +532,14 @@ agrees with none of.
 
 ## Erosion and cratering regimes
 
-`PlumeSurfaceInteractionModel` above carries one erosion law with two fitted
-constants. `src/dynamics/coupled/force_torque_models/regolith_erosion.jl` is a
-standalone, pure module that replaces them with the separate regimes the
+`src/dynamics/coupled/force_torque_models/regolith_erosion.jl` is the module the
+effector's default erosion law comes from: the separate regimes the
 plume-surface literature names, each with its own onset criterion and each
-sourced. It is not wired into the effector yet: it is a set of functions of a
-soil description, a surface gas state and the local gravity, meant to be called
-from a per-step effector loop (nothing in it allocates).
+sourced, replacing the single law with two fitted constants the model used to
+carry. It is also usable on its own — every entry point is a pure function of a
+soil description, a surface gas state, the local gravity and an
+`ErosionEnvironment`, and nothing in it allocates, which is what lets the
+effector call it at 128 radii inside a right-hand-side evaluation.
 
 ### The soil
 
@@ -560,10 +564,11 @@ energy threshold `E_th = 0.123 J/(m² s)`, the erosion efficiency `ε = 0.0029`,
 the cohesive energy density `α = 0.289 J/m³` and the mean lift height
 `⟨D⟩ = 1.5 D84`.
 
-### The threshold that replaces the fitted 0.15 Pa
+### The threshold that replaced the fitted 0.15 Pa
 
 `threshold_shear_pa = 0.15` in `PlumeSurfaceConfig` was chosen to put the erosion
-onset at 31 m. Two independent derivations now sit beside it:
+onset at 31 m, and is now used only by `erosion_model = :roberts_fitted`. Two
+derivations sit beside it, and the first is what the default law uses:
 
 - `shields_threshold_shear_pa(soil, g)` applies Shao and Lu's threshold
   expression ("A simple expression for wind erosion threshold friction
@@ -637,12 +642,17 @@ permeability and Table 9.12's strength.
 ### What is assumed rather than sourced
 
 Three things, all documented configuration fields rather than buried literals:
-`saltation_efficiency` (the existing fitted factor of 10 in the Roberts
-closure, which the module keeps only so the old and new laws can be compared);
-the exhaust viscosity, for which `gas_dynamic_viscosity_pa_s` uses Sutherland's
-law for air as a stand-in; and the `ErosionEnvironment` geometry and timing --
-the footprint radius, the gas residence time that sets the pressure diffusion
-depth, and the width used for the bearing-capacity factors.
+`saltation_efficiency` (the fitted factor of 10 in the Roberts closure — which
+the effector's default law *does* use, and which is therefore the model's one
+remaining fitted constant; the validation study records the value that best fits
+Lane and Metzger's Apollo 12 profile, 17.5 on the analytic field and 13.7 on the
+table, and why it was left at 10); the exhaust viscosity, for which
+`gas_dynamic_viscosity_pa_s` uses Sutherland's law for air as a stand-in; and
+the `ErosionEnvironment` geometry and timing -- the footprint radius, the gas
+residence time that sets the pressure diffusion depth, and the width used for
+the bearing-capacity factors. The effector fills the first and third of those
+from the plume's own footprint at every evaluation and carries the residence
+time as `gas_residence_time_s`.
 
 One known gap is stated rather than tuned away. `soil_bearing_capacity_pa` uses
 the classical Prandtl/Reissner/Vesic factors and returns about 1.3 MPa for a 1 m
@@ -650,14 +660,18 @@ footing on the Sourcebook's 0-60 cm soil, where the Sourcebook itself quotes
 roughly 6 MPa (3-11 MPa for the Apollo 11 footpad) from Durgunoglu and
 Mitchell's larger wedge-penetration factors. The function is therefore a lower
 bound on the soil's strength, which makes the bearing-capacity onset
-conservative.
+conservative: the model fires that regime earlier than the Sourcebook's own
+numbers would. It changes nothing for an Apollo-class lander, which reaches
+about 25 kPa of stagnation pressure at contact against 1.3 MPa even on the
+conservative factors, but a lander an order of magnitude larger would cross the
+model's threshold before it crossed the Sourcebook's, and this is the reason.
 
 ## Ejecta transport
 
 `ejecta_transport.jl` replaces the single characteristic ejecta speed above with
-grain trajectories. It is a standalone, pure module -- nothing in the descent
-run calls it yet -- so it can be used to size a landing or to generate ejecta
-result columns without touching the effector.
+grain trajectories. The effector calls it once per saved sample (see "Ejecta as
+a per-sample diagnostic" above), and it is also a standalone, pure module, so it
+can be used to size a landing without running one.
 
 ```julia
 field = EjectaReferenceGasField()            # or the plume field module's table
@@ -722,6 +736,16 @@ outlier attributed to an 11° surface slope; Apollo 12 could not be measured),
 and they note that on Roberts' theory the angle follows the scour crater's wall
 slope, so it is only weakly coupled to thrust.
 
+The model now has a crater, so that slope is computable, and it does not yet
+supply the angle. Measured off the crater profile the model digs over Lane and
+Metzger's Apollo 12 descent, the inner wall stands at 0.80° and the outer at
+0.44°, with a steepest local outer slope of 1.38° (1.01°, 0.47° and 1.60° with
+the tabulated field). Against a measured 1.4 to 8.1° that is the right order of
+magnitude and at or below the bottom of the range — but the crater's deepest
+point sits at 0.18 m where the reference puts it at 1 to 2 m, so its radial
+scale has to be right before its slope can be trusted to set anything. The angle
+stays an input, and the validation study records the residual.
+
 `ejecta_distribution` publishes the angle in exactly that convention -- degrees
 above the local horizontal at launch -- as the mass-weighted `mean_angle_deg`
 and as the `angle_edges_deg`/`angle_fraction` histogram. Because the range is an
@@ -749,13 +773,27 @@ escape is 2373 m/s. Those bounds are on the fast tail that reached Surveyor 3,
 not on the mean of the population, so agreement here is a sanity check, not a
 validation.
 
-The deposition radii the model gives are kilometers, far outside the tens of
-meters of visible blast zone around an Apollo site. That is not obviously wrong
--- the visible scour is where the *coarse mass* lands, while the kilometer-scale
-figures are driven by the micron fines that carry almost no mass but travel at
-hundreds of meters per second -- but until the weighting comes from a real
-erosion model and a real size distribution the deposition numbers should be read
-as an upper envelope, not a prediction.
+Those rows are the module on its own: the reference gas field, equal mass per
+size bin, no erosion threshold. The effector runs it differently — the plume
+field's gas state, the regimes' local erosion rate as the radial weight and the
+lognormal grain-mass distribution as the size weight — and that is what the
+saved columns carry. The difference, at the Apollo approach thrust with the
+analytic field 10 m above the ground:
+
+| Weighting | Mean speed | Mean deposition radius |
+|---|---|---|
+| wall shear, equal mass per size bin | 143 m/s | 1553 m |
+| erosion rate, lognormal grain mass | 107 m/s | 755 m |
+
+The deposition radii are still hundreds of meters to kilometers, far outside the
+tens of meters of visible blast zone around an Apollo site, and the weighting is
+no longer the reason. A 70 µm grain leaving at 107 m/s and 2° above the
+horizontal has a ballistic range of 424 m in lunar gravity; that follows from
+the measured ejection angle and the measured speeds and nothing else. The
+visible scour is where the *coarse mass* lands, not where the population lands,
+and the model has no separate output for it — so the deposition radius should be
+read as what it is, the mass-weighted mean range of the whole population, and
+not compared with a blast-zone radius.
 
 ### What is assumed
 
@@ -771,9 +809,12 @@ field in `ejecta_transport.jl`:
 | `gas_molar_mass_kg_mol`, `gas_gamma` | exhaust composition; a plume field carrying its own should override them |
 | `EjectaReferenceGasField.exit_static_temperature_k`, `wall_jet_decay_radii` | the reference gas field is a stand-in for testing, not a plume model |
 
-The mass weighting in `ejecta_distribution` defaults to a proxy proportional to
-the local wall shear stress with no threshold. It is not an erosion model; pass
-the regolith erosion rate as the `weight` keyword to replace it.
+| the lognormal *shape* of `ejecta_lognormal_mass_weights` | the two percentiles it is fitted to (`D50` and `D84/D50`) are sourced; that the distribution between them is lognormal is not |
+
+The mass weighting in `ejecta_distribution` still *defaults* to a proxy
+proportional to the local wall shear stress with no threshold, for callers using
+the module on its own. It is not an erosion model; pass the regolith erosion
+rate as the `weight` keyword to replace it, which is what the effector does.
 
 ## Surface in the viewer
 

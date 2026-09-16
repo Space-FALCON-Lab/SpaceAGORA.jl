@@ -60,7 +60,7 @@ export function start(payload, container = document.body) {
 
   const textureKey = (planet.texture || planet.name || '').toLowerCase();
   // Site terrain (DEM patches with draped imagery) sits in the globe group and cuts a hole in the sphere under it.
-  const terrain = createTerrain(terrainSpec, planet, { anisotropy: renderer.capabilities.getMaxAnisotropy() });
+  const terrain = createTerrain(terrainSpec, planet, { anisotropy: renderer.capabilities.getMaxAnisotropy(), sun: !!frames.sunDir });
   const globe = createGlobe(planet, textures[textureKey] || null, {
     anisotropy: renderer.capabilities.getMaxAnisotropy(),
     maxTextureSize: renderer.capabilities.maxTextureSize,
@@ -493,6 +493,7 @@ export function start(payload, container = document.body) {
 
   const qWorld = new THREE.Quaternion();
   const shadowFocus = new THREE.Vector3();
+  const sunScene = new THREE.Vector3();
   const followPos = new THREE.Vector3();
   // Floating origin: the followed spacecraft's position (km, Float64). Every
   // buffer is uploaded relative to it and the world group is shifted by its
@@ -546,6 +547,14 @@ export function start(payload, container = document.body) {
     // mode), or the scene origin when nothing is selected.
     const selectedItem = state.selected >= 0 ? lod.items[state.selected] : null;
     lighting.update(t, selectedItem && selectedItem.group ? selectedItem.group.getWorldPosition(shadowFocus) : null);
+    // The surfaces shade themselves from the sun the lighting module placed:
+    // a lunar reflectance, and the terrain's own horizon shadows. A run with no
+    // sun direction never calls these, and both keep their Lambert look.
+    if (frames.sunDir) {
+      lighting.direction(sunScene);
+      if (terrain.levels.length) terrain.setSun(sunScene);
+      globe.setSun(sunScene);
+    }
     // A video export draws every frame itself, so it always takes the real-time
     // path: a path-traced frame would take seconds and never accumulate.
     if (recording || !lighting.render(scene, camera)) renderer.render(scene, camera);

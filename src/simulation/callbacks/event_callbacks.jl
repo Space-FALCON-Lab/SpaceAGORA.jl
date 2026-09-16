@@ -270,6 +270,7 @@ mutable struct TrajectoryRecorder
     storage::Dict{Symbol, Any}
     fallback::Dict{Symbol, Vector{Any}}
     direct_fields::Set{Symbol}
+    fused_default_fields::Bool
     count::Int
     num_sats::Int
     data_rate::Float64
@@ -314,6 +315,7 @@ function TrajectoryRecorder(
         storage,
         fallback,
         direct_fields,
+        use_builtin_fillers,
         0,
         n_sats,
         rate,
@@ -392,33 +394,8 @@ end
     return nothing
 end
 
-@inline function _record_cached_vector3_field!(
-    storage::Array{Float64, 3},
-    sample_idx::Int,
-    values,
-    num_sats::Int,
-)::Nothing
-    zero_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-    @inbounds for sat_idx in 1:num_sats
-        _record_vector3!(storage, sat_idx, sample_idx, sat_idx <= length(values) ? values[sat_idx] : zero_vec)
-    end
-    return nothing
-end
-
-@inline function _trajectory_latlong(u, p, t, sat_idx::Int)
-    engine = _simulation_engine_module()
-    planet = p.args.environment_model.planet
-    et = p.shared_buffers.et_start[] + Float64(t)
-    ephemerides_model = p.args.environment_model.ephemerides_model
-    pos = engine._state_position_ii(u, sat_idx)
-    vel = engine._state_velocity_ii(u, sat_idx)
-    rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
-    return rtolatlong(rp, planet, ephemerides_model)
-end
-
-function _record_builtin_save_field!(
+function _record_default_save_fields_fused!(
     rec::TrajectoryRecorder,
-    name::Symbol,
     u,
     t,
     integrator,
@@ -427,85 +404,80 @@ function _record_builtin_save_field!(
     engine = _simulation_engine_module()
     p = integrator.p
     args = p.args
-    if name === :position
-        storage = _trajectory_vector_storage(rec, name)
-        @inbounds for sat_idx in 1:rec.num_sats
-            _record_vector3!(storage, sat_idx, sample_idx, engine._state_position_ii(u, sat_idx))
+    planet = args.environment_model.planet
+    ephemerides_model = args.environment_model.ephemerides_model
+    t_float = Float64(t)
+    et = p.shared_buffers.et_start[] + t_float
+
+    position_storage = _trajectory_vector_storage(rec, :position)
+    velocity_storage = _trajectory_vector_storage(rec, :velocity)
+    wind_storage = _trajectory_vector_storage(rec, :wind)
+    drag_storage = _trajectory_vector_storage(rec, :drag)
+    lift_storage = _trajectory_vector_storage(rec, :lift)
+    cross_storage = _trajectory_vector_storage(rec, :cross)
+
+    altitude_storage = _trajectory_scalar_storage(rec, :altitude)
+    latitude_storage = _trajectory_scalar_storage(rec, :latitude_deg)
+    longitude_storage = _trajectory_scalar_storage(rec, :longitude_deg)
+    mass_storage = _trajectory_scalar_storage(rec, :mass)
+    periapsis_storage = _trajectory_scalar_storage(rec, :periapsis_altitude)
+    heat_rate_storage = _trajectory_scalar_storage(rec, :heat_rate)
+    heat_load_storage = _trajectory_scalar_storage(rec, :heat_load)
+
+    quaternion_storage = :quaternion in rec.direct_fields ?
+        _trajectory_vector_storage(rec, :quaternion) : nothing
+
+    winds = p.shared_buffers.winds
+    drag_cache = p.save_cache.drag_cache
+    lift_cache = p.save_cache.lift_cache
+    cross_cache = p.save_cache.cross_cache
+    shared_heat_rates = p.shared_buffers.heat_rates
+    zero_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    @inbounds for sat_idx in 1:rec.num_sats
+        pos = engine._state_position_ii(u, sat_idx)
+        vel = engine._state_velocity_ii(u, sat_idx)
+        _record_vector3!(position_storage, sat_idx, sample_idx, pos)
+        _record_vector3!(velocity_storage, sat_idx, sample_idx, vel)
+
+        rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
+        latlong = rtolatlong(rp, planet, ephemerides_model)
+        altitude_storage[sat_idx, sample_idx] = latlong[1]
+        latitude_storage[sat_idx, sample_idx] = rad2deg(latlong[2])
+        longitude_storage[sat_idx, sample_idx] = rad2deg(latlong[3])
+
+        mass_storage[sat_idx, sample_idx] = engine._state_mass_kg(u, args, sat_idx)
+        _record_vector3!(wind_storage, sat_idx, sample_idx, sat_idx <= length(winds) ? winds[sat_idx] : zero_vec)
+        _record_vector3!(drag_storage, sat_idx, sample_idx, sat_idx <= length(drag_cache) ? drag_cache[sat_idx] : zero_vec)
+        _record_vector3!(lift_storage, sat_idx, sample_idx, sat_idx <= length(lift_cache) ? lift_cache[sat_idx] : zero_vec)
+        _record_vector3!(cross_storage, sat_idx, sample_idx, sat_idx <= length(cross_cache) ? cross_cache[sat_idx] : zero_vec)
+
+        oe = rvtoorbitalelement(pos, vel, planet)
+        periapsis_storage[sat_idx, sample_idx] = oe[1] * (1.0 - oe[2]) - planet.Rp_e
+
+        rates = if hasproperty(u, :sc)
+            _compute_stage_heat_rates!(p, u.sc[sat_idx], sat_idx, t_float; use_buffered_density=false)
+        elseif sat_idx <= length(shared_heat_rates)
+            shared_heat_rates[sat_idx]
+        else
+            nothing
         end
-    elseif name === :velocity
-        storage = _trajectory_vector_storage(rec, name)
-        @inbounds for sat_idx in 1:rec.num_sats
-            _record_vector3!(storage, sat_idx, sample_idx, engine._state_velocity_ii(u, sat_idx))
-        end
-    elseif name === :wind
-        _record_cached_vector3_field!(_trajectory_vector_storage(rec, name), sample_idx, p.shared_buffers.winds, rec.num_sats)
-    elseif name === :drag
-        _record_cached_vector3_field!(_trajectory_vector_storage(rec, name), sample_idx, p.save_cache.drag_cache, rec.num_sats)
-    elseif name === :lift
-        _record_cached_vector3_field!(_trajectory_vector_storage(rec, name), sample_idx, p.save_cache.lift_cache, rec.num_sats)
-    elseif name === :cross
-        _record_cached_vector3_field!(_trajectory_vector_storage(rec, name), sample_idx, p.save_cache.cross_cache, rec.num_sats)
-    elseif name === :altitude
-        storage = _trajectory_scalar_storage(rec, name)
-        @inbounds for sat_idx in 1:rec.num_sats
-            storage[sat_idx, sample_idx] = _trajectory_latlong(u, p, t, sat_idx)[1]
-        end
-    elseif name === :latitude_deg
-        storage = _trajectory_scalar_storage(rec, name)
-        @inbounds for sat_idx in 1:rec.num_sats
-            storage[sat_idx, sample_idx] = rad2deg(_trajectory_latlong(u, p, t, sat_idx)[2])
-        end
-    elseif name === :longitude_deg
-        storage = _trajectory_scalar_storage(rec, name)
-        @inbounds for sat_idx in 1:rec.num_sats
-            storage[sat_idx, sample_idx] = rad2deg(_trajectory_latlong(u, p, t, sat_idx)[3])
-        end
-    elseif name === :mass
-        storage = _trajectory_scalar_storage(rec, name)
-        @inbounds for sat_idx in 1:rec.num_sats
-            storage[sat_idx, sample_idx] = engine._state_mass_kg(u, args, sat_idx)
-        end
-    elseif name === :periapsis_altitude
-        storage = _trajectory_scalar_storage(rec, name)
-        planet = args.environment_model.planet
-        @inbounds for sat_idx in 1:rec.num_sats
-            pos = engine._state_position_ii(u, sat_idx)
-            vel = engine._state_velocity_ii(u, sat_idx)
-            oe = rvtoorbitalelement(pos, vel, planet)
-            storage[sat_idx, sample_idx] = oe[1] * (1.0 - oe[2]) - planet.Rp_e
-        end
-    elseif name === :heat_rate
-        storage = _trajectory_scalar_storage(rec, name)
-        shared_heat_rates = p.shared_buffers.heat_rates
-        @inbounds for sat_idx in 1:rec.num_sats
-            rates = if hasproperty(u, :sc)
-                _compute_stage_heat_rates!(p, u.sc[sat_idx], sat_idx, Float64(t); use_buffered_density=false)
-            elseif sat_idx <= length(shared_heat_rates)
-                shared_heat_rates[sat_idx]
-            else
-                Float64[]
-            end
-            storage[sat_idx, sample_idx] = !isempty(rates) ? maximum(rates) : 0.0
-        end
-    elseif name === :heat_load
-        storage = _trajectory_scalar_storage(rec, name)
-        @inbounds for sat_idx in 1:rec.num_sats
-            loads = engine._state_heat_loads(u, args, sat_idx)
-            storage[sat_idx, sample_idx] = isempty(loads) ? 0.0 : maximum(loads)
-        end
-    elseif name === :quaternion
-        storage = _trajectory_vector_storage(rec, name)
-        @inbounds for sat_idx in 1:rec.num_sats
+        heat_rate_storage[sat_idx, sample_idx] =
+            rates !== nothing && !isempty(rates) ? maximum(rates) : 0.0
+
+        loads = engine._state_heat_loads(u, args, sat_idx)
+        heat_load_storage[sat_idx, sample_idx] = isempty(loads) ? 0.0 : maximum(loads)
+
+        if quaternion_storage !== nothing
             q = engine._state_quaternion(u, sat_idx)
             q === nothing && throw(ArgumentError("Quaternion save field requires orientation state."))
-            storage[1, sat_idx, sample_idx] = q[1]
-            storage[2, sat_idx, sample_idx] = q[2]
-            storage[3, sat_idx, sample_idx] = q[3]
-            storage[4, sat_idx, sample_idx] = q[4]
+            quaternion_storage[1, sat_idx, sample_idx] = q[1]
+            quaternion_storage[2, sat_idx, sample_idx] = q[2]
+            quaternion_storage[3, sat_idx, sample_idx] = q[3]
+            quaternion_storage[4, sat_idx, sample_idx] = q[4]
         end
-    else
-        throw(KeyError(name))
     end
+
     return nothing
 end
 
@@ -518,10 +490,10 @@ function record_trajectory_sample!(rec::TrajectoryRecorder, u, t, integrator)::N
     rec.count == length(rec.t) && _grow_trajectory_recorder!(rec)
     sample_idx = rec.count + 1
     rec.t[sample_idx] = Float64(t)
-    for field in rec.save_fields
-        if field.name in rec.direct_fields
-            _record_builtin_save_field!(rec, field.name, u, t, integrator, sample_idx)
-        else
+    if rec.fused_default_fields
+        _record_default_save_fields_fused!(rec, u, t, integrator, sample_idx)
+    else
+        for field in rec.save_fields
             rec.fallback[field.name][sample_idx] = field.getter(u, t, integrator)
         end
     end

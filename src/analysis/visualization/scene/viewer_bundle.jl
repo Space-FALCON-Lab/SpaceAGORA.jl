@@ -12,7 +12,7 @@ const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "data",
 # quantity, frame-major then spacecraft, from the `sc{i}_plume_*` result columns.
 const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s", "eroded_kg", "ejecta_mps", "ground_effect_n")
 
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "plumes.js", "timeline.js", "dust.js", "ui.js", "main.js")
+const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "plumes.js", "timeline.js", "dust.js", "lighting.js", "ui.js", "main.js")
 const VIEWER_VENDOR = (
     "three" => joinpath("vendor", "three.module.js"),
     "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
@@ -176,6 +176,9 @@ function build_viewer_frames(
     has_drag = all(i -> _has_columns(df, ("sc$(i)_drag_1", "sc$(i)_drag_2", "sc$(i)_drag_3")), 1:S)
     has_wind = all(i -> _has_columns(df, ("sc$(i)_wind_1", "sc$(i)_wind_2", "sc$(i)_wind_3")), 1:S)
     has_plume = all(i -> _has_columns(df, ["sc$(i)_plume_$(f)" for f in PLUME_FRAME_FIELDS]), 1:S)
+    # Sun direction: one unit vector per row for the whole scene (the viewer's
+    # sun lighting), absent when the run's ephemerides could not resolve the Sun.
+    has_sun = _has_columns(df, ("sun_dir_1", "sun_dir_2", "sun_dir_3"))
     pos_f64 = S <= FLOAT64_POSITION_MAX_SPACECRAFT
     stride_lp = scene.link_pose_stride
     counts = Int[max(0, length(sc.links) - 1) for sc in scene.spacecraft]
@@ -220,7 +223,7 @@ function build_viewer_frames(
 
     bytes_per_frame = S * ((pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
                            (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
-                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + 8
+                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + 8
     budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
                                         bytes_per_sat_frame=cld(bytes_per_frame, S))
     rows = kept_row_indices(n_rows, budget.stride)
@@ -235,10 +238,19 @@ function build_viewer_frames(
     heat = has_heat ? Vector{Float64}(undef, N * S) : Float64[]
     drag = has_drag ? Vector{Float64}(undef, N * S) : Float64[]
     wind = has_wind ? Vector{Float64}(undef, N * S * 3) : Float64[]
+    sun = has_sun ? Vector{Float64}(undef, N * 3) : Float64[]
     lp = has_lp ? Vector{Float64}(undef, N * lp_total) : Float64[]
     ap = has_arm ? Vector{Float64}(undef, N * arm_total) : Float64[]
     plume = has_plume ? [Vector{Float64}(undef, N * S) for _ in PLUME_FRAME_FIELDS] : Vector{Float64}[]
     thr = thr_total > 0 ? Vector{Float64}(undef, N * thr_total) : Float64[]
+    if has_sun
+        scols = [df[!, "sun_dir_$(c)"] for c in 1:3]
+        @inbounds for (f, r) in enumerate(rows)
+            for c in 1:3
+                sun[(f - 1) * 3 + c] = Float64(scols[c][r])
+            end
+        end
+    end
     for i in 1:S
         pcols = [df[!, "sc$(i)_pos_$(c)"] for c in 1:3]
         acols = (has_arm && arm_counts[i] > 0) ? [df[!, "sc$(i)_arm_pose_$(k)"] for k in 1:(stride_lp * arm_counts[i])] : nothing
@@ -327,6 +339,7 @@ function build_viewer_frames(
         "heat_rate_w_m2" => has_heat ? _float32_base64(heat) : nothing,
         "drag_n" => has_drag ? _float32_base64(drag) : nothing,
         "wind_ms" => has_wind ? _float32_base64(wind) : nothing,
+        "sun_dir" => has_sun ? _float32_base64(sun) : nothing,
         "link_pose" => has_lp ? Dict{String, Any}(
             "stride" => stride_lp, "counts" => counts, "offsets" => lp_offsets, "total" => lp_total,
             "data" => _float32_base64(lp)

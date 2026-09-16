@@ -25,7 +25,7 @@ import tomllib
 VIEWER = pathlib.Path(__file__).resolve().parent
 REPO = VIEWER.parent
 TEXTURES = REPO / "data" / "textures"
-MODULES = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "plumes.js", "dust.js", "ui.js", "main.js", "standalone.js"]
+MODULES = ["data.js", "colormaps.js", "timeline.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "video.js", "plots.js", "terrain.js", "plumes.js", "dust.js", "lighting.js", "ui.js", "main.js", "standalone.js"]
 VENDOR = {
     "three": "three.module.js",
     "three/addons/controls/OrbitControls.js": "OrbitControls.js",
@@ -43,6 +43,12 @@ CDN = {
     "three/addons/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/loaders/GLTFLoader.js",
     "three/addons/utils/BufferGeometryUtils.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/utils/BufferGeometryUtils.js",
     "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.5/build/mp4-muxer.mjs",
+    # Optional: the path-traced lighting mode. The offline page has no vendored
+    # copy of these, so viewer/src/lighting.js finds the specifier unresolvable
+    # and offers real-time lighting only.
+    "three-gpu-pathtracer": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.23/build/index.module.js",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js",
+    "three/examples/jsm/postprocessing/Pass.js": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/postprocessing/Pass.js",
 }
 MODEL_MIME = {".stl": "model/stl", ".obj": "model/obj", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json"}
 

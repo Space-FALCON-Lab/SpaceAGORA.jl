@@ -101,6 +101,8 @@ export function createTerrain(spec, planet, options = {}) {
     const material = new THREE.MeshLambertMaterial({ map: texture, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = `terrain-level-${k}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     mesh.renderOrder = 1 + k;
     group.add(mesh);
     levels.push({ mesh, spec: lvl, m_per_px: lvl.m_per_px });
@@ -118,6 +120,7 @@ export function createTerrain(spec, planet, options = {}) {
     ring.lookAt(center.clone().multiplyScalar(2));
     ring.renderOrder = 20;
     ring.name = 'site-marker';
+    ring.userData.uiOnly = true;
     group.add(ring);
     siteMarker = ring;
   }

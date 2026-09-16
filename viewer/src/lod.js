@@ -157,7 +157,8 @@ export function loadModelObject(model, label, onReady, onFail) {
           child.material = new THREE.MeshStandardMaterial({ color: STL_COLOR, roughness: 0.55, metalness: 0.2 });
         }
         child.userData.heatable = true;
-        child.castShadow = false;
+        child.castShadow = true;
+        child.receiveShadow = true;
       }
     });
     onReady(object, `${model.format} (${meshes} mesh${meshes === 1 ? '' : 'es'}, ×${s})`);
@@ -190,6 +191,8 @@ function boxMesh(dims, color) {
   const geometry = new THREE.BoxGeometry(Math.max(dims[0], 1e-3), Math.max(dims[1], 1e-3), Math.max(dims[2], 1e-3));
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.15 }));
   mesh.userData.heatable = true;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
   mesh.add(edges);
   return mesh;
@@ -248,6 +251,7 @@ function buildAssembly(spec, models, scLength) {
     cone.geometry.translate(0, -coneH / 2, 0);
     cone.position.set(th.location_m[0], th.location_m[1], th.location_m[2]);
     orientToDirection(cone, th.direction);
+    cone.userData.uiOnly = true;
     g.add(cone);
     glyphs.thrusters.push(cone);
   }
@@ -264,6 +268,7 @@ function buildAssembly(spec, models, scLength) {
     orientToDirection(plane, f.normal);
     const normalLine = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), 0.6 * side, FACET_COLOR, 0.15 * side, 0.08 * side);
     plane.add(normalLine);
+    plane.userData.uiOnly = true;
     g.add(plane);
     glyphs.facets.push(plane);
   }
@@ -456,6 +461,7 @@ export function createAssemblies(sidecar, frames, options = {}) {
     const p = new THREE.Vector3(pick.point[0], pick.point[1], pick.point[2]);
     const marker = new THREE.Group();
     marker.name = 'face-marker';
+    marker.userData.uiOnly = true;
     const arrow = new THREE.ArrowHelper(n, p, 0.45 * r, 0xf2b950, 0.12 * r, 0.06 * r);
     marker.add(arrow);
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.025 * r, 12, 8), new THREE.MeshBasicMaterial({ color: 0xf2b950, depthTest: false }));

@@ -100,6 +100,10 @@ export function createGlobe(planet, textureEntry, options = {}) {
     };
   }
   const mesh = new THREE.Mesh(geometry, material);
+  // The terrain hole is a fragment `discard`, which the shadow pass does not
+  // run: a casting globe would drop its own sphere over the terrain patches.
+  mesh.receiveShadow = true;
+  mesh.castShadow = false;
   mesh.scale.set(Re, Rp, Re); // geometry y is the pole
   mesh.quaternion.copy(GEOMETRY_TO_BODY);
   group.add(mesh);

@@ -19,6 +19,7 @@ import { createVideoDialog } from 'viewer/video.js';
 import { createPlotPanel } from 'viewer/plots.js';
 import { createTerrain } from 'viewer/terrain.js';
 import { createDust } from 'viewer/dust.js';
+import { createLighting } from 'viewer/lighting.js';
 
 const DEFAULT_TRAIL_ORBITS = 3;
 
@@ -46,10 +47,8 @@ export function start(payload, container = document.body) {
   controls.minDistance = 0;
   controls.maxDistance = 5e6;
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-  sun.position.set(1, 0.3, 0.2).multiplyScalar(1e6);
-  scene.add(sun);
+  // Lighting (viewer/lighting.js) is created below, once the bodies it has to
+  // light and shadow exist.
 
   // `world` holds everything expressed in the inertial frame. In planet-fixed
   // mode it is counter-rotated by the globe's rotation so the body stands
@@ -99,6 +98,14 @@ export function start(payload, container = document.body) {
 
   const ensemble = ensembleSpec ? createEnsemble(ensembleSpec, frames, craft, container, stateRef, {}) : null;
   if (ensemble) world.add(ensemble.group);
+
+  // Sun lighting: the directional sun follows frames.sun_dir, shadows are cast
+  // around the followed vehicle, and 'path traced when paused' hands the scene
+  // to three-gpu-pathtracer once the timeline and the camera are still.
+  const lighting = createLighting(scene, renderer, frames, planet, {
+    camera, world, globe, terrain, lod,
+    helpers: [craft.group, atmosphere && atmosphere.group, refPaths.group, refs.group, ensemble && ensemble.group],
+  });
 
   const period = estimateOrbitPeriod(frames, 0);
   const span = frames.tEnd - frames.tStart;
@@ -175,6 +182,9 @@ export function start(payload, container = document.body) {
     hasHeating: lod.heatingAvailable,
     setHeating(v) { lod.setHeatingVisible(v); ui.setHeatLegend(v && lod.heatingAvailable ? lod.heatRange() : null); },
     resetView() { state.setFollow(false); placeCamera(); },
+    lightingModes: lighting.modes,
+    lightingMode: lighting.mode,
+    setLighting(m) { state.lightingMode = lighting.setMode(m); },
     openVideoDialog() { videoDialog && videoDialog.open(); },
   };
   let videoDialog = null;
@@ -199,6 +209,7 @@ export function start(payload, container = document.body) {
     cadence: cadence > 0 ? `${cadence.toFixed(1)} s` : 'n/a',
     'orbit period': period > 0 && period < span ? `${(period / 60).toFixed(1)} min` : 'longer than run',
     attitude: frames.q ? 'saved quaternion' : 'velocity-aligned',
+    lighting: lighting.status,
     'link poses': frames.linkPose ? 'recorded' : 'configured',
     ...(ensemble ? { samples: `${ensembleSpec.count} × ${ensemble.perSample} spacecraft` } : {}),
     ...(refPaths.items.length ? { paths: refPaths.items.map((it) => it.spec.name).join(', ') } : {}),
@@ -213,6 +224,7 @@ export function start(payload, container = document.body) {
   const initialColor = options.trail_color && TRAIL_COLOR_MODES[options.trail_color] ? options.trail_color : (frames.hasScalar('heat_rate') ? 'heat_rate' : 'age');
   ui.setTrailLegend(craft.setTrailColorMode(initialColor));
   if (lod.heatingAvailable && (options.heating ?? true)) { lod.setHeatingVisible(true); ui.setHeatLegend(lod.heatRange()); }
+  lighting.ready.then(() => ui.setLightingModes(lighting.modes));
   const trailColorSelect = container.querySelector('[data-role="trailcolor"]');
   if (trailColorSelect) trailColorSelect.value = craft.trailColorMode;
 
@@ -480,6 +492,7 @@ export function start(payload, container = document.body) {
   placeCamera();
 
   const qWorld = new THREE.Quaternion();
+  const shadowFocus = new THREE.Vector3();
   const followPos = new THREE.Vector3();
   // Floating origin: the followed spacecraft's position (km, Float64). Every
   // buffer is uploaded relative to it and the world group is shifted by its
@@ -494,7 +507,7 @@ export function start(payload, container = document.body) {
     if (recording) return; // the recorder drives frame(t) itself
     timeline.tick(dt);
     frame(timeline.t);
-    if (now - lastInfo > 100) { ui.setSelection(selectionInfo(timeline.t)); ui.setFace(faceInfo(timeline.t)); lastInfo = now; }
+    if (now - lastInfo > 100) { ui.setSelection(selectionInfo(timeline.t)); ui.setFace(faceInfo(timeline.t)); ui.setLightingStatus(lighting.status); lastInfo = now; }
     plots.update(timeline.t);
   }
   // One rendered frame at elapsed time t: every scene update and the draw.
@@ -529,12 +542,18 @@ export function start(payload, container = document.body) {
     if (ensemble) ensemble.update(state.follow, t, anchor, camera, ensemble.group.matrixWorld);
     craft.update(t, camera, lod.markerHidden, state.selected, craft.group.matrixWorld, anchor, ensemble ? ensemble.dimMask : null);
     controls.update();
-    renderer.render(scene, camera);
+    // Shadow focus: the selected assembly in scene space (the origin in follow
+    // mode), or the scene origin when nothing is selected.
+    const selectedItem = state.selected >= 0 ? lod.items[state.selected] : null;
+    lighting.update(t, selectedItem && selectedItem.group ? selectedItem.group.getWorldPosition(shadowFocus) : null);
+    // A video export draws every frame itself, so it always takes the real-time
+    // path: a path-traced frame would take seconds and never accumulate.
+    if (recording || !lighting.render(scene, camera)) renderer.render(scene, camera);
   }
   requestAnimationFrame(animate);
 
   const viewer = {
-    renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, plumes, dust, ensemble, references: refs, paths: refPaths, timeline, frames, state, period,
+    renderer, scene, camera, controls, world, globe, atmosphere, craft, lod, plumes, dust, ensemble, references: refs, paths: refPaths, timeline, frames, state, period, lighting,
     // Deterministic rendering for exports: seek and draw one frame at t.
     renderAt(t) { timeline.seek(t); frame(t); },
     setRecording(v) { recording = v; if (!v) resize(); },

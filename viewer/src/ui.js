@@ -62,7 +62,7 @@ export function createUI(container, timeline, state, info) {
 
   const infoBox = document.createElement('div');
   infoBox.className = 'sa-panel sa-info';
-  const rows = Object.entries(info).filter(([k]) => k !== 'title').map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  const rows = Object.entries(info).filter(([k]) => k !== 'title').map(([k, v]) => `<dt>${k}</dt><dd data-info="${k}">${v}</dd>`).join('');
   infoBox.innerHTML = `<h1>${info.title ?? 'SpaceAGORA run'}</h1><dl>${rows}</dl><p class="sa-hint">Click a spacecraft to inspect it.</p>`;
   container.appendChild(infoBox);
 
@@ -113,6 +113,7 @@ export function createUI(container, timeline, state, info) {
       <label><input type="checkbox" data-role="facets" checked> facets</label>
       <label><input type="checkbox" data-role="axes" checked> body axes</label>
       <label data-role="heating-label"><input type="checkbox" data-role="heating" checked> heating</label>
+      <select data-role="lighting" title="Sun lighting and renderer"></select>
       <span class="sa-trail-legend" data-role="heat-legend" hidden><span data-role="heat-lo"></span><span class="sa-bar-inferno"></span><span data-role="heat-hi"></span></span>
       <label data-role="dust-label"><input type="checkbox" data-role="dust" checked> dust</label>
       <span class="sa-sep" data-role="atmo-sep"></span>
@@ -199,6 +200,29 @@ export function createUI(container, timeline, state, info) {
   }
   q('dust-label').hidden = !state.hasDust;
   q('dust').addEventListener('change', (e) => state.setDust(e.target.checked));
+  // Lighting: real-time, plus "path traced when paused" once the path tracer
+  // has been imported (main.js refreshes the list when it knows).
+  const lightingSelect = q('lighting');
+  function setLightingModes(modes) {
+    const list = modes && modes.length ? modes : [{ value: 'realtime', label: 'lighting: real-time' }];
+    const current = state.lightingMode || list[0].value;
+    lightingSelect.innerHTML = '';
+    for (const m of list) {
+      const opt = document.createElement('option');
+      opt.value = m.value;
+      opt.textContent = m.label;
+      if (m.value === current) opt.selected = true;
+      lightingSelect.appendChild(opt);
+    }
+  }
+  setLightingModes(state.lightingModes);
+  lightingSelect.addEventListener('change', () => state.setLighting && state.setLighting(lightingSelect.value));
+  // The lighting row of the run panel, refreshed with the accumulated samples.
+  const lightingStatus = infoBox.querySelector('[data-info="lighting"]');
+  function setLightingStatus(text) {
+    if (lightingStatus && text != null && lightingStatus.textContent !== text) lightingStatus.textContent = text;
+  }
+
   q('reset').addEventListener('click', () => state.resetView());
   q('video').addEventListener('click', () => state.openVideoDialog && state.openVideoDialog());
 
@@ -263,5 +287,5 @@ export function createUI(container, timeline, state, info) {
 
   timeline.onChange(render);
   render();
-  return { render, setSelection, setFace, setPlotted, setTrailLegend, setHeatLegend, infoBox, selectBox, faceBox, root: ui };
+  return { render, setSelection, setFace, setPlotted, setTrailLegend, setHeatLegend, setLightingModes, setLightingStatus, infoBox, selectBox, faceBox, root: ui };
 }

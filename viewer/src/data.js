@@ -9,6 +9,7 @@
 //   frames.q        Float32[N*S*4]     attitude, scalar-last, inertial->body passive (optional)
 //   frames.mass_kg  Float32[N*S]       total mass (optional)
 //   frames.link_pose {stride, counts[S], offsets[S], total, data: Float32[N*total]} (optional)
+//   frames.sun_dir Float32[N*3]       unit vector planet center -> Sun, inertial (optional)
 // Every block is base64 of little-endian floats.
 
 export function decodeBytes(b64) {
@@ -90,6 +91,9 @@ export class FrameData {
       this.plume = {};
       for (const key of Object.keys(frames.plume)) this.plume[key] = decodeFloat32(frames.plume[key]);
     }
+    // Unit vector from the planet center to the Sun, inertial, one per frame
+    // (not per spacecraft); null when the run could not resolve the Sun.
+    this.sunDir = frames.sun_dir ? decodeFloat32(frames.sun_dir) : null;
     this.armPose = null;
     if (frames.arm_pose && frames.arm_pose.total > 0) {
       this.armPose = {

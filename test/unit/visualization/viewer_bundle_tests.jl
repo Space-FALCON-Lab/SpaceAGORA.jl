@@ -553,6 +553,20 @@ end
         @test root["lat_max"] - span_lat * (node["y"] + 1) / n ≈ 0.5
         @test root["lat_max"] - span_lat * node["y"] / n ≈ 1.0
         @test node["m_per_px"] == 200.0
+        # provenance and the honest resolution note ride along only when the index carries them
+        @test !haskey(tiles, "resolution") && !haskey(tiles, "attribution") && !haskey(tiles, "source")
+        open(joinpath(dir, "imagery", "tiles_noted.json"), "w") do io
+            write(io, """{"scheme": "quadtree", "tile_px": 256,
+                "root": {"lat_min": 0.0, "lat_max": 2.0, "lon_min": 20.0, "lon_max": 22.0},
+                "resolution": {"finest_m_per_px": 0.3253, "feature_scale_m": 0.5},
+                "attribution": ["NASA/GSFC/Arizona State University"],
+                "source": "unit test",
+                "nodes": [{"level": 0, "x": 0, "y": 0, "file": "tiles/L0/0_0.jpg", "m_per_px": 800.0}]}""")
+        end
+        noted = SV.terrain_tiles_payload(joinpath(dir, "imagery"), "tiles_noted.json")
+        @test noted["resolution"]["feature_scale_m"] == 0.5
+        @test noted["attribution"] == ["NASA/GSFC/Arizona State University"]
+        @test noted["source"] == "unit test"
         full = SV.terrain_payload(joinpath(dir, "site.json"))
         @test full["grids"][1]["rows"] == 4 && full["grids"][1]["cols"] == 6
         @test isapprox(full["site"]["height_m"], 100 + 10 * 2.5 + 100 * 1.5; atol=1e-6)   # bilinear at the site (row 1.5, column 2.5)

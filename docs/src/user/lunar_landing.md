@@ -26,19 +26,35 @@ directory written by `scripts/dev/terrain/fetch_moon_site.py`, which fetches:
   relief out to the horizon;
 - the LROC NAC digital terrain model of the site (2 m/px, resampled to 4 m)
   where one exists (Apollo 11 does);
-- an imagery quadtree from NASA Moon Trek that follows the descent corridor,
-  from the LROC WAC global mosaic through Kaguya's TC ortho mosaic to the
-  Apollo 11 NAC mosaics (0.65 m/px at the site).
+- an imagery quadtree that follows the descent corridor, from the LROC WAC
+  global mosaic through Kaguya's TC ortho mosaic to the Apollo 11 NAC mosaics
+  on NASA Moon Trek, and below Moon Trek's own cap from the Planetary Data
+  System (0.33 m/px at the site).
 
 Those mosaics are not served on the same control, and since a level of the
-quadtree takes its detail from whichever layer reaches its zoom, an
+quadtree takes its detail from whichever source reaches its zoom, an
 uncorrected offset would put the same crater in two places either side of a
-level change. `LAYER_REGISTRATION` in the script holds each layer's measured
+level change. `LAYER_REGISTRATION` in the script holds each source's measured
 offset in meters and the sampling window is shifted to match: the two Apollo
 11 NAC mosaics agree with each other to within a pixel but sit 24 m south and
-4 m east of the site's PDS NAC digital terrain model, and `A11_60x60km` sits
-36 m north of them. The comment in the script records how each number was
-measured.
+4 m east of the site's PDS NAC digital terrain model, `A11_60x60km` sits 36 m
+north of them, and the PDS browse raster that feeds the deepest level is 0.6 m
+south and 1.9 m west of the corrected NAC mosaics. The comment in the script
+records how each number was measured, and
+`scripts/dev/terrain/check_site_registration.py` re-measures them:
+
+```
+python3 scripts/dev/terrain/check_site_registration.py --site 0.67416 23.47314 \
+    --dem data/terrain/moon/apollo11/dem_nac.json \
+    --cache data/terrain/moon/apollo11/pds_cache \
+    --trek-cache data/terrain/moon/apollo11/trek_cache --sun-azimuth 90
+```
+
+It reports three independent readings of where a source draws the ground: a
+phase correlation against a hillshade of the site's NAC digital terrain model
+(the approach illumination is a sun azimuth of 90°), a correlation against the
+Moon Trek layer feeding the level above, and the position of the lunar module
+itself against the Wagner et al. (2017) coordinate the simulation targets.
 
 ```
 python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --out data/terrain/moon/apollo11
@@ -72,9 +88,50 @@ distance from the site instead of ending at a seam. `--quality-coarse` and
 `--quality-fine` ramp the JPEG quality from the wide coarse tiles to the ones
 at the site, which is where the page's byte budget is worth spending.
 
-Re-tiling is cheap: Moon Trek tiles are cached under `<out>/trek_cache`, and
-`--reuse DIR` borrows another site directory's DEM files, raw downloads and
-tile cache, so `--retile` with different extents costs no new downloads.
+Re-tiling is cheap: Moon Trek tiles are cached under `<out>/trek_cache` and
+archive tiles under `<out>/pds_cache`, and `--reuse DIR` borrows another site
+directory's DEM files, raw downloads and both caches, so `--retile` with
+different extents costs no new downloads.
+
+### Below Moon Trek: the archive level
+
+Moon Trek declares a deepest tile matrix per layer, and for the Apollo 11 NAC
+mosaics it is zoom 15, 0.651 m/px — about 2.5 times coarser than the mosaic
+Trek is serving. Level 13 of the quadtree (0.325 m/px) therefore comes from
+the Planetary Data System instead, through `ARCHIVE_SOURCES` in the fetch
+script: the map-projected browse raster
+`NAC_PHO_E010N0230_M175124932R.PYR.TIF` of LROC NAC frame **M175124932R**,
+imaged 2011-11-05 from a 24 km low-altitude pass, which is the finest frame
+over this site and the frame Trek's own mosaic was made from. The 915 MB
+raster is read in place: it is uncompressed and internally tiled 256 × 256, so
+the reader takes the tile table out of its TIFF directory and fetches a whole
+tile row per HTTP range request, caching every 64 kB tile so a re-run or a
+resumed run costs nothing. Its georeferencing is read from the file
+(`ModelTiepointTag`, `ModelPixelScaleTag` and the GeoTIFF keys: equirectangular
+about 180° with a standard parallel of 1° on a 1737.4 km sphere) and checked
+against the PDS4 label's bounding coordinates, which agree to 0.17 m. The
+source grid is 0.2302 m/px, not a power-of-two relative of Trek's, so the
+archive level is the one place the pipeline area-averages rather than cropping.
+
+The archive rasters in the PDS are public domain; images served through the
+LROC project's own non-PDS interfaces are not, so only the PDS product ships.
+`imagery/tiles.json` carries the product, its URL and the credit, and the
+attribution is **NASA/GSFC/Arizona State University**, with the instrument
+reference Robinson, M. S., et al. (2010), "Lunar Reconnaissance Orbiter Camera
+(LROC) Instrument Overview", *Space Science Reviews* **150**, 81–124.
+
+**What that resolution is worth.** 0.325 m/px is the grid the tiles are drawn
+on, not the size of the smallest thing in them. The frame samples the ground
+0.24 m across the detector line but 0.56 m along track (`SCALED_PIXEL_WIDTH`
+and `SCALED_PIXEL_HEIGHT` of M175124932R in the PDS volume index), and power
+spectra of the archive raster lose their signal at about 0.5 m of feature
+size, so the imagery resolves about half a meter and the popular "26 cm"
+figure is the cross-track sampling alone. `tiles.json` records this in its
+`resolution` block and the viewer's info panel reports it beside the sampling.
+Level 14 is not built: it would cost another 0.25 MB of the page's budget to
+interpolate detail the data does not contain.
+`docs/reference/lunar_imagery_sources.md` has the survey and the measurements
+behind all of this.
 
 ## Powered descent guidance
 

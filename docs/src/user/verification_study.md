@@ -18,6 +18,15 @@ What to read next:
 - [CLI](../cli.md)
 - [Recipes](recipes.md)
 
+## Prerequisites
+
+The study loads the vendored `GRAMSuite` package (the VEx scenario runs on
+VenusGRAM) before it reads any scenario, so it needs the `data/GRAMSuite.jl`
+submodule initialised and instantiated even for `--scenarios=odyssey`; on a
+fresh clone it stops with "Package GRAMSuite not found in current path". Follow
+[GRAMSuite Setup](gramsuite_setup.md) first. The truth files it grades (Odyssey,
+VEx, GMAT Earth) are in the repository.
+
 ## Script entrypoint
 
 The direct study launcher is:
@@ -40,6 +49,11 @@ julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_
 Plot generation is off by default in the CLI path so the command remains usable
 even when plotting dependencies or scripts are unavailable. Enable it explicitly
 with `--plots=1` when needed.
+
+The CLI form runs the same study script under the repository project, so it
+has the same prerequisite as the script entrypoint: the `data/GRAMSuite.jl`
+submodule (see Prerequisites above). Without it the command stops with
+"Package GRAMSuite not found in current path".
 
 ## What this workflow is good for
 

@@ -34,6 +34,9 @@ julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --outp
 
 ## Run an aerobraking example in smoke mode
 
+Needs the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](gramsuite_setup.md)):
+the script loads GRAM even in smoke mode.
+
 ```text
 julia --project=. src/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```

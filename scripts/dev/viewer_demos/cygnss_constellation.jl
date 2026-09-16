@@ -6,35 +6,30 @@
 # 2022 and the satellite catalogue gives its decay date as 2024-06-13. The
 # initial-conditions file's notes carry the citations.
 #
+# All seven are flown states. Every initial condition and every reference ghost
+# on this page comes from the NASA CYGNSS Level 1 navigation solution for that
+# spacecraft over this window; nothing is a catalogue propagation and nothing is
+# a design orbit. There is therefore nothing to distinguish between and no
+# provenance to colour-code: the page says once that the whole constellation is
+# flown.
+#
 # The constellation has no propulsion, so by June 2025 drag had taken it well
-# below its design orbit: 438 to 446 km, inclination 34.88 to 34.97 degrees,
+# below its design orbit: 438 to 448 km, inclination 34.88 to 34.97 degrees,
 # periods of 93.4 to 93.5 minutes, against the 510 km and 95 minutes of the
 # design. Nothing here sanity-checks a flown state against the design values.
 #
 # Initial states come from `data/telemetry/CYGNSS/constellation_ics_20250606.json`
-# (gitignored; built by the constellation initial-conditions script). Every
-# spacecraft in that file carries a `provenance` field — `telemetry`,
-# `catalogue` or `nominal` — and this demo puts that word in the spacecraft's
-# own viewer label, because only the telemetry-backed ones are flown states
-# and a reader must not have to open the source to find out which.
-#
-# When the file is absent the demo falls back to a development stub: FM1 and
-# FM4 from their own telemetry and the rest of the launched eight on the
-# published CYGNSS design orbit (510 km, 35 degrees, one plane, 45 degrees
-# apart in argument of latitude — Spaceflight101 CYGNSS orbit design;
-# NASA/eoPortal CYGNSS mission page), marked `nominal`. A stub run is not a
-# reconstruction of the flown constellation and the page says so. The stub is
-# a development convenience only: it does not know that FM06 is gone, and its
-# design-orbit spacecraft sit about 70 km above where the real ones fly.
+# and the reference ghosts from
+# `data/telemetry/CYGNSS/cygnss_constellation_tracks_20250606_96hr.feather`
+# (both gitignored; both built by `build_cygnss_ics.jl`). Samples the track
+# table marks `arc_consistent = false` are skipped: about two in a thousand, the
+# product's own bad navigation fixes, which a ghost would otherwise draw as a
+# spike.
 #
 # Force model, following `docs/spaceagora_cygnss_reconstruction_record.md`
 # section 3: EarthGGM05C gravity to degree and order 50, Sun and Moon third
 # body, solar radiation pressure, and NRLMSISE-00 drag with real CelesTrak
 # space-weather indices.
-#
-# Flight telemetry of FM1 and FM4 (`cyg01/cyg04_nasa_pvt_96hr.feather`) is
-# attached as reference ghosts, so the simulated orbit can be read against
-# the flight solution directly in the page.
 #
 # Spacecraft geometry. The drawn and simulated vehicle is a GENERIC small
 # satellite box built only from publicly published CYGNSS figures (body
@@ -49,7 +44,9 @@ include(joinpath(@__DIR__, "common.jl"))
 # `build_cygnss_ics.jl` alongside it: it raises rather than handing back a
 # state with no provenance, which is exactly what this page must never draw.
 include(joinpath(@__DIR__, "cygnss_ics.jl"))
+include(joinpath(@__DIR__, "cygnss_tracks.jl"))
 using .CygnssICs: load_constellation_ics
+using .CygnssTracks: load_constellation_tracks, track_names
 using Dates
 using Printf
 using Statistics
@@ -63,18 +60,10 @@ const EPOCH_UTC = "2025-06-06T00:00:00"
 # SPACEAGORA_DEMO_CYGNSS_HOURS shortens the window for a smoke run; the page of
 # record is the full 96 h.
 const WINDOW_S = parse(Float64, get(ENV, "SPACEAGORA_DEMO_CYGNSS_HOURS", "96.0")) * 3600.0
-# Unix seconds of EPOCH_UTC (2025-06-06T00:00:00Z), the time base the telemetry
-# files' own `time` column and the run's elapsed time both count from.
-const EPOCH_UNIX_S = 1_749_168_000.0
-
-# Telemetry files, by the NORAD id of the spacecraft they belong to. Both span
-# the window at about 1 Hz; FM4 carries precomputed J2000 columns, FM1 only the
-# WGS84 Earth-fixed PVT solution (converted below through the same SPICE
-# ITRF93 -> J2000 path the repository's own 96 h loader uses).
-const TELEMETRY_FILES = Dict(
-    41887 => (file="cyg01_nasa_pvt_96hr.feather", label="CYGNSS FM01"),
-    41885 => (file="cyg04_nasa_pvt_96hr.feather", label="CYGNSS FM04"),
-)
+# The flown position solution of every spacecraft over the window, at 1 Hz in
+# J2000, written by `build_cygnss_ics.jl` from the NASA Level 1 product.
+const TRACKS_PATH = get(ENV, "SPACEAGORA_DEMO_CYGNSS_TRACKS",
+    joinpath(TELEMETRY_DIR, "cygnss_constellation_tracks_20250606_96hr.feather"))
 
 # --- spacecraft, from published figures only -------------------------------
 # Body 51 x 64 x 28 cm and a 1.67 m deployed array span are NASA/eoPortal
@@ -101,22 +90,12 @@ const CYGNSS_SRP_CR = 1.3                  # ASSUMPTION: a generic small-satelli
 # end-of-window separations the script prints are what they are.
 const CYGNSS_DRAG_SCALE = parse(Float64, get(ENV, "SPACEAGORA_DEMO_CYGNSS_DRAG_SCALE", "1.0"))
 
-# Fit the initial orbital energy and the effective drag scale of the
-# telemetry-backed spacecraft to their own telemetry (see `fit_states!`).
+# Fit the initial orbital energy and the effective drag scale of each spacecraft
+# to that spacecraft's own flown track (see `fit_states!`).
 # SPACEAGORA_DEMO_CYGNSS_FIT_SMA=0 propagates the initial-conditions file's
 # states untouched, at the uncalibrated drag scale, instead.
 const FIT_SMA = get(ENV, "SPACEAGORA_DEMO_CYGNSS_FIT_SMA", "1") != "0"
 
-# Published CYGNSS design orbit, used only by the nominal stub below.
-const DESIGN_ALTITUDE_M = 510.0e3          # NASA/eoPortal, Spaceflight101
-const DESIGN_INCLINATION_DEG = 35.0        # NASA/eoPortal, Spaceflight101
-const DESIGN_SPACING_DEG = 45.0            # Spaceflight101 CYGNSS orbit design: eight spacecraft, one plane, 45 deg apart
-
-const FM_NAMES = ["CYGNSS FM01", "CYGNSS FM02", "CYGNSS FM03", "CYGNSS FM04",
-                  "CYGNSS FM05", "CYGNSS FM06", "CYGNSS FM07", "CYGNSS FM08"]
-# Catalogue identities verified against the public catalogue by the
-# initial-conditions agent; 41889 (FM06) returns no current element set.
-const FM_NORAD = [41887, 41886, 41891, 41885, 41884, 41889, 41890, 41888]
 
 """
     ScaledAero(model, scales)
@@ -144,156 +123,100 @@ end
 
 # --- telemetry -------------------------------------------------------------
 
-"""
-    drop_invalid_fixes(t, pos, vel; tolerance_m=50e3) -> (t, pos, vel, dropped)
+const _TRACKS = Ref{Any}(nothing)
 
-Drop navigation fixes whose radius is more than `tolerance_m` from the record's
-median radius. Not every PVT row is a valid fix: the reconstruction record
-counts 2,479 flagged samples in the FM4 arc, 1.4 percent of it, including
-zero-satellite solutions. A near-circular 440 km orbit varies by about five
-kilometers in radius over a revolution, so a 50 km band keeps every real sample
-and removes fixes that place the spacecraft hundreds of kilometers off the
-orbit (the FM1 file carries a burst of these, the worst 490 km out).
-"""
-function drop_invalid_fixes(t::Vector{Float64}, pos::Matrix{Float64}, vel::Matrix{Float64};
-                            tolerance_m::Float64=50.0e3)
-    r = [norm(SVector{3, Float64}(pos[:, k])) for k in axes(pos, 2)]
-    r_med = median(r)
-    keep = findall(k -> abs(r[k] - r_med) <= tolerance_m, eachindex(r))
-    return t[keep], pos[:, keep], vel[:, keep], length(r) - length(keep)
+"The track table, loaded and validated once per process."
+function tracks()
+    _TRACKS[] === nothing || return _TRACKS[]
+    isfile(TRACKS_PATH) || throw(ArgumentError(
+        "no flown-track table at $(TRACKS_PATH); build it with scripts/dev/viewer_demos/build_cygnss_ics.jl."))
+    t = load_constellation_tracks(TRACKS_PATH; epoch_utc=EPOCH_UTC * "Z")
+    _TRACKS[] = t
+    return t
 end
 
+const _TRACK_CACHE = Dict{String, Any}()
+
 """
-    telemetry_series(file, et0) -> (t_s, pos_m, vel_mps)
+    track_series(name) -> (t_s, pos_m, vel_mps, note)
 
-The flight PVT record as J2000 Earth-centered state, on elapsed seconds from
-the run epoch. `pos_ii_*`/`vel_ii_*` are used when the file carries them
-(FM4); otherwise the WGS84 Earth-fixed PVT columns are rotated through SPICE,
-exactly as `test/gmat_scenario_matrix.jl` does for the same product.
+One spacecraft's flown arc out of the track table: elapsed seconds from the run
+epoch, J2000 position and velocity, with the samples the table marks
+`arc_consistent = false` removed.
+
+That flag is the table's own check that a sample agrees with its immediate
+neighbors to better than 40 m, several times the 9 m a one-second second
+difference should show at this altitude. It is false on about two samples in a
+thousand — the product's bad navigation fixes — and a ghost that connected them
+would draw a visible spike.
+
+A neighbor test cannot catch a RUN of bad fixes, because they agree with each
+other. One such run survives it: five samples in the FM01 arc that place the
+spacecraft up to 486 km off the orbit. So a second filter follows — drop samples
+whose radius is more than 50 km from the arc's own median. A near-circular
+440 km orbit varies by about five kilometers in radius over a revolution, so
+that band keeps every real sample; across all seven arcs it removes those five
+and nothing else.
 """
-function telemetry_series(file::AbstractString, et0::Float64; stride::Int=1)
-    df = DataFrame(Arrow.Table(joinpath(TELEMETRY_DIR, String(file))))
-    t_unix = Float64.(df[!, "pvt_unix_seconds"])
-    perm = sortperm(t_unix)
-    t_unix = t_unix[perm]
-    # Elapsed seconds from the RUN epoch, not from the file's own first sample:
-    # the first PVT row sits 1 s after 2025-06-06T00:00:00Z, and a 1 s error in
-    # the Earth-fixed to J2000 rotation is about 500 m of position and 0.55 m/s
-    # of velocity at this orbit. (Checked against the FM4 file's own pos_ii
-    # columns: with this time base the two agree to a few centimeters.)
-    t_rel = t_unix .- EPOCH_UNIX_S
-    keep = 1:stride:length(t_rel)
-    t_rel = t_rel[keep]
-
-    if "pos_ii_1" in names(df)
-        pos = permutedims(hcat(Float64.(df[!, "pos_ii_1"])[perm][keep],
-                               Float64.(df[!, "pos_ii_2"])[perm][keep],
-                               Float64.(df[!, "pos_ii_3"])[perm][keep]))
-        vel = permutedims(hcat(Float64.(df[!, "vel_ii_1"])[perm][keep],
-                               Float64.(df[!, "vel_ii_2"])[perm][keep],
-                               Float64.(df[!, "vel_ii_3"])[perm][keep]))
-        t_rel, pos, vel, dropped = drop_invalid_fixes(t_rel, pos, vel)
-        return t_rel, pos, vel, "pos_ii/vel_ii (J2000 columns in the file), $(dropped) invalid fixes dropped"
+function track_series(name::AbstractString)
+    get!(_TRACK_CACHE, String(name)) do
+        df = tracks().table
+        rows = findall(==(String(name)), df.name)
+        isempty(rows) && throw(ArgumentError("no flown track for \"$(name)\" in $(TRACKS_PATH)"))
+        flagged = [i for i in rows if df.arc_consistent[i]]
+        radii = [hypot(df.pos_ii_1[i], df.pos_ii_2[i], df.pos_ii_3[i]) for i in flagged]
+        r_med = median(radii)
+        good = [flagged[k] for k in eachindex(flagged) if abs(radii[k] - r_med) <= 50.0e3]
+        t = Float64.(df.time[good])
+        pos = permutedims(hcat(Float64.(df.pos_ii_1[good]), Float64.(df.pos_ii_2[good]), Float64.(df.pos_ii_3[good])))
+        vel = permutedims(hcat(Float64.(df.vel_ii_1[good]), Float64.(df.vel_ii_2[good]), Float64.(df.vel_ii_3[good])))
+        (t_s=t, pos_m=pos, vel_mps=vel, label=String(name),
+         note="NASA Level 1 navigation solution, $(length(good)) of $(length(rows)) samples " *
+              "($(length(rows) - length(flagged)) flagged inconsistent, $(length(flagged) - length(good)) off the orbit)")
     end
-
-    TV._planet_from_name("earth")   # furnish the leap-second and orientation kernels
-    xe = Float64.(df[!, "sc_pos_x_pvt_m"])[perm][keep]
-    ye = Float64.(df[!, "sc_pos_y_pvt_m"])[perm][keep]
-    ze = Float64.(df[!, "sc_pos_z_pvt_m"])[perm][keep]
-    vxe = Float64.(df[!, "sc_vel_x_pvt_mps"])[perm][keep]
-    vye = Float64.(df[!, "sc_vel_y_pvt_mps"])[perm][keep]
-    vze = Float64.(df[!, "sc_vel_z_pvt_mps"])[perm][keep]
-    n = length(t_rel)
-    pos = zeros(3, n); vel = zeros(3, n)
-    for k in 1:n
-        r, v = TV._planet_fixed_to_j2000_state("earth", et0 + t_rel[k],
-            SVector{3, Float64}(xe[k], ye[k], ze[k]), SVector{3, Float64}(vxe[k], vye[k], vze[k]))
-        pos[:, k] .= r; vel[:, k] .= v
-    end
-    t_rel, pos, vel, dropped = drop_invalid_fixes(t_rel, pos, vel)
-    return t_rel, pos, vel, "sc_pos/sc_vel_pvt rotated ITRF93 -> J2000 through SPICE, $(dropped) invalid fixes dropped"
 end
 
-const _TELEMETRY_CACHE = Dict{Int, Any}()
-
-"Full-rate `telemetry_series` for a spacecraft, computed once per process."
-function telemetry_for(norad::Int, et0::Float64)
-    get!(_TELEMETRY_CACHE, norad) do
-        entry = TELEMETRY_FILES[norad]
-        t, pos, vel, note = telemetry_series(entry.file, et0; stride=1)
-        (t_s=t, pos_m=pos, vel_mps=vel, note=note, label=entry.label)
-    end
-end
+"Whether the track table carries a flown arc for this spacecraft."
+has_track(name::AbstractString) = String(name) in track_names(tracks())
 
 # --- initial conditions ----------------------------------------------------
 
 """
-    nominal_stub_states(planet, et0) -> Vector
+    track_stub_states() -> Vector
 
-The development stub used until `constellation_ics_20250606.json` exists, in
-that file's schema. FM1 and FM4 are taken from their own flight telemetry at
-the common epoch (`provenance = "telemetry"`); the other six are placed on the
-published CYGNSS design orbit — 510 km circular, 35 degrees, one plane, 45
-degrees apart in argument of latitude (NASA/eoPortal CYGNSS mission page;
-Spaceflight101 CYGNSS orbit design) — and marked `provenance = "nominal"`.
-The nominal six are NOT flown states and the page labels them as such. The
-plane of the nominal six is FM4's plane at the epoch, which is itself only one
-of the constellation's planes: FM1 and FM4 are about 24 degrees apart in right
-ascension of the ascending node in this window.
+The development stub used when `constellation_ics_20250606.json` is absent but
+the flown track table is not, in that file's schema: every spacecraft's own
+state at the common epoch, straight out of its track, all `telemetry`.
+
+The track table carries a fix at exactly t = 0 for every spacecraft, so nothing
+is propagated or extrapolated to reach the epoch. This is a convenience for
+running the demo without the initial-conditions file; the file remains the
+interface, since it is the thing that carries the provenance and the citations.
 """
-function nominal_stub_states(planet, et0::Float64)
-    telemetry = Dict{Int, Any}()
-    for norad in keys(TELEMETRY_FILES)
-        series = telemetry_for(norad, et0)
-        t_rel, pos, vel, note = series.t_s, series.pos_m, series.vel_mps, series.note
-        # The first PVT row is one second after the common epoch. Step it back
-        # to the epoch with a two-body Taylor step; over one second the terms
-        # this drops (J2 and below) are under a centimeter.
-        dt = t_rel[1]
-        r1 = SVector{3, Float64}(pos[:, 1]); v1 = SVector{3, Float64}(vel[:, 1])
-        acc = -planet.μ * r1 / norm(r1)^3
-        r0 = r1 - v1 * dt + 0.5 * acc * dt^2
-        v0 = v1 - acc * dt
-        telemetry[norad] = (r=r0, v=v0, dt=dt, note=note)
-    end
-
-    fm4 = telemetry[41885]
-    oe = TV.rvtoorbitalelement(fm4.r, fm4.v, planet)
-    raan_deg = rad2deg(oe[4])
-    u0_deg = rad2deg(oe[5] + oe[6])          # argument of latitude of FM4 at the epoch
-    a_m = planet.Rp_e + DESIGN_ALTITUDE_M
-
+function track_stub_states()
     out = Any[]
-    for (k, name) in enumerate(FM_NAMES)
-        norad = FM_NORAD[k]
-        if haskey(telemetry, norad)
-            tel = telemetry[norad]
-            push!(out, (name=name, norad_id=norad, r_ii_m=collect(tel.r), v_ii_m_s=collect(tel.v),
-                provenance="telemetry", ic=SM.CartesianInitialCondition(tel.r, tel.v),
-                source="$(TELEMETRY_FILES[norad].file) row 1, $(tel.note), stepped back $(tel.dt) s to the epoch"))
-        else
-            u = mod(u0_deg + (k - 1) * DESIGN_SPACING_DEG, 360.0)
-            ic = SM.InitialCondition(ra=a_m, rp=a_m, i=DESIGN_INCLINATION_DEG, ω=0.0, Ω=raan_deg, ν=u)
-            r, v = TV.orbitalelemtorv(ic, planet)
-            push!(out, (name=name, norad_id=norad, r_ii_m=collect(Float64, r), v_ii_m_s=collect(Float64, v),
-                provenance="nominal", ic=ic,
-                source="published design orbit: $(DESIGN_ALTITUDE_M / 1e3) km circular, $(DESIGN_INCLINATION_DEG) deg, $(DESIGN_SPACING_DEG) deg spacing in argument of latitude (NASA/eoPortal CYGNSS; Spaceflight101 CYGNSS orbit design); plane from the FM4 telemetry at the epoch"))
-        end
+    for name in track_names(tracks())
+        series = track_series(name)
+        j = findfirst(t -> t >= 0.0, series.t_s)
+        j === nothing && throw(ArgumentError("the track for $(name) does not reach the epoch"))
+        r = SVector{3, Float64}(series.pos_m[:, j]); v = SVector{3, Float64}(series.vel_mps[:, j])
+        push!(out, (name=name, norad_id=0, r_ii_m=collect(r), v_ii_m_s=collect(v),
+            provenance="telemetry", ic=SM.CartesianInitialCondition(r, v),
+            source="$(basename(TRACKS_PATH)) at t = $(series.t_s[j]) s"))
     end
     return out
 end
 
 """
-    load_states(planet, et0) -> (states, stubbed::Bool)
+    load_states(planet) -> (states, stubbed::Bool)
 
 The constellation initial conditions, from the JSON file when it exists and
-from the nominal stub when it does not.
+from the track table when it does not.
 """
-function load_states(planet, et0::Float64)
+function load_states(planet)
     if !isfile(IC_PATH)
-        println("!! ", IC_PATH, " is absent: falling back to the DEVELOPMENT STUB.")
-        println("!! FM1 and FM4 come from their telemetry; the rest are the published design orbit, not flown states.")
-        return nominal_stub_states(planet, et0), true
+        println("!! ", IC_PATH, " is absent: taking every initial state from the flown track table instead.")
+        return track_stub_states(), true
     end
     ics = load_constellation_ics(IC_PATH)
     startswith(ics.epoch_utc, EPOCH_UTC) || throw(ArgumentError(
@@ -354,12 +277,13 @@ function build_args(planet, spacecraft::Vector, initial_time, outdir::AbstractSt
 end
 
 """
-    separation_rtn(df, k, series) -> (t_s, total, radial, along, cross)
+    separation_rtn(df, k, series) -> (t_s, total, radial, along, cross, dx, dy, dz)
 
-Separation of simulated spacecraft `k` from a telemetry series, scored on the
-run's own saved times with the 1 Hz telemetry interpolated onto them. Saved
-times that fall inside a telemetry gap longer than two seconds are dropped:
-the record has outages of up to ten minutes, and interpolating across one
+Separation of simulated spacecraft `k` from a flown track, scored on the run's
+own saved times with the 1 Hz track interpolated onto them, resolved both in
+the orbit frame (radial, along-track, cross-track) and in Cartesian components.
+Saved times that fall inside a track gap longer than two seconds are dropped:
+the product has outages of up to ten minutes, and interpolating across one
 would report hundreds of kilometers of "error" that is entirely the gap.
 """
 function separation_rtn(df::DataFrame, k::Int, series)
@@ -368,6 +292,7 @@ function separation_rtn(df::DataFrame, k::Int, series)
     vx = Float64.(df[!, "sc$(k)_vel_1"]); vy = Float64.(df[!, "sc$(k)_vel_2"]); vz = Float64.(df[!, "sc$(k)_vel_3"])
     t_tel = series.t_s; P = series.pos_m
     ts = Float64[]; tot = Float64[]; rad = Float64[]; alo = Float64[]; cro = Float64[]
+    dx = Float64[]; dy = Float64[]; dz = Float64[]
     for i in eachindex(saved_t)
         t = saved_t[i]
         (t < t_tel[1] || t > t_tel[end]) && continue
@@ -381,8 +306,9 @@ function separation_rtn(df::DataFrame, k::Int, series)
         d = r - ref
         R = normalize(r); N = normalize(cross(r, v)); T = cross(N, R)
         push!(ts, t); push!(tot, norm(d)); push!(rad, dot(d, R)); push!(alo, dot(d, T)); push!(cro, dot(d, N))
+        push!(dx, d[1]); push!(dy, d[2]); push!(dz, d[3])
     end
-    return (t_s=ts, total=tot, radial=rad, along=alo, cross=cro)
+    return (t_s=ts, total=tot, radial=rad, along=alo, cross=cro, dx=dx, dy=dy, dz=dz)
 end
 
 "Initial condition with the velocity magnitude rescaled to the vis-viva energy of `a_target`."
@@ -430,15 +356,22 @@ end
 """
     fit_states!(states, planet, initial_time, et0) -> (states, drag_scales)
 
-Fit two scalars per telemetry-backed spacecraft to that spacecraft's own
-telemetry over the window: the magnitude of its initial velocity (equivalently
-its initial orbital energy) and its effective drag scale. Position and velocity
-DIRECTION are left exactly as the initial-conditions file gives them.
+Fit two scalars per spacecraft to that spacecraft's own flown track over the
+window: the magnitude of its initial velocity (equivalently its initial orbital
+energy) and its effective drag scale. Position and velocity DIRECTION are left
+exactly as the initial-conditions file gives them.
 
-Why two. The NASA PVT velocity is a GPS Doppler solution; the repository's own
-CYGNSS loader records that an along-track error of about 0.6 m/s in it shifts
-the semimajor axis by about a kilometer and produces roughly 120 km of
-along-track drift at 48 hours (`test/gmat_scenario_matrix.jl`,
+Every spacecraft on this page is flown, so every one of them is fitted against
+its own telemetry and every separation this demo reports is an in-sample fit.
+That is a change in what the number means, not in how it is produced: when only
+two spacecraft had telemetry, the other five were shown unfitted and their
+agreement meant nothing at all.
+
+Why two. The Level 1 velocity is quantized at 1 m/s and the initial-conditions
+file fits it from the position arc rather than reading it; whatever residual
+error is left, the repository's own CYGNSS loader records that 0.6 m/s along
+track is about a kilometer of semimajor axis and roughly 120 km of along-track
+drift at 48 hours (`test/gmat_scenario_matrix.jl`,
 `_build_cygnss_cyg04_96hr_inertial_reference`). That is the first scalar. The
 second is drag: a free-molecular coefficient on a generic published box is not
 this vehicle's ballistic coefficient, and NRLMSISE-00 is not the atmosphere
@@ -462,7 +395,7 @@ not a prediction, and they are reported as such.
 function fit_states!(states::Vector, planet, initial_time, et0::Float64;
                      iterations::Int=4, tolerance_m::Float64=1_000.0)
     n_sc = length(states)
-    idx = [k for (k, s) in enumerate(states) if haskey(TELEMETRY_FILES, s.norad_id)]
+    idx = [k for (k, s) in enumerate(states) if has_track(s.name)]
     isempty(idx) && return states, fill(CYGNSS_DRAG_SCALE, n_sc)
     fitdir = joinpath(OUTDIR, "fit"); mkpath(fitdir)
     cache_path = joinpath(fitdir, "fitted_parameters.json")
@@ -474,7 +407,7 @@ function fit_states!(states::Vector, planet, initial_time, et0::Float64;
         for k in idx
             states[k] = merge(states[k], (ic=ic_at_sma(r0[k], v0[k], a[k], planet),
                 fitted_sma_m=a[k], fitted_drag_scale=c[k],
-                provenance=states[k].provenance * ", energy and drag fitted"))
+                provenance=states[k].provenance * ", fitted"))
         end
         mean_scale = mean(c[k] for k in idx)
         return [k in idx ? c[k] : mean_scale for k in 1:n_sc]
@@ -508,14 +441,21 @@ function fit_states!(states::Vector, planet, initial_time, et0::Float64;
         fdf = DataFrame(Arrow.Table(joinpath(fitdir, "simulation_results.feather")))
         worst = 0.0
         for (j, k) in enumerate(idx)
-            series = telemetry_for(states[k].norad_id, et0)
+            series = track_series(states[k].name)
             sep = separation_rtn(fdf, j, series)
             period_s = 2pi * sqrt(a[k]^3 / planet.μ)
             t_tel, a_tel = series_sma(series, planet)
             t_sim, a_sim = run_sma(fdf, j, planet; stride=4)
             _, _, rate_tel = mean_sma_decay(t_tel, a_tel, period_s)
             _, _, rate_sim = mean_sma_decay(t_sim, a_sim, period_s)
-            ratio = (isfinite(rate_tel) && isfinite(rate_sim) && rate_sim < 0.0 && rate_tel < 0.0) ?
+            # The decay measurement needs an arc long enough for the secular
+            # trend to stand clear of the short-period variation of the
+            # osculating semimajor axis. Over the 96 h window that is twenty
+            # revolutions either side; over a shortened smoke window it is not,
+            # and measuring anyway returns a decay of the wrong sign and drives
+            # the scale into its clamp. Leave the drag alone in that case.
+            long_enough = sep.t_s[end] >= 40 * period_s
+            ratio = (long_enough && isfinite(rate_tel) && isfinite(rate_sim) && rate_sim < 0.0 && rate_tel < 0.0) ?
                 clamp(rate_tel / rate_sim, 0.2, 5.0) : 1.0
             n_mean = sqrt(planet.μ / a[k]^3)
             # Center the along-track error over the window rather than null it
@@ -551,7 +491,7 @@ planet = Earth("", SPICE_PATH)
 initial_time = SM.InitialTime(year=2025, month=6, day=6, hour=0, minute=0, second=0.0)
 et0 = et_of(EPOCH_UTC)
 
-states, stubbed = load_states(planet, et0)
+states, stubbed = load_states(planet)
 println("initial conditions: ", stubbed ? "NOMINAL STUB" : IC_PATH)
 for s in states
     r = SVector{3, Float64}(s.r_ii_m); v = SVector{3, Float64}(s.v_ii_m_s)
@@ -565,7 +505,7 @@ init_nrlmsise_space_indices!()
 
 drag_scales = fill(CYGNSS_DRAG_SCALE, length(states))
 if FIT_SMA
-    println("fitting the initial energy and the drag scale of the telemetry-backed spacecraft:")
+    println("fitting the initial energy and the drag scale of every spacecraft with a flown track:")
     states, drag_scales = fit_states!(states, planet, initial_time, et0)
     println("drag scales in the run: ", join([@sprintf("%s %.3f", states[k].name, drag_scales[k]) for k in eachindex(states)], ", "))
 end
@@ -581,9 +521,13 @@ prefix = run_or_reuse!(args, OUTDIR)
 # itself, for two reasons.
 #
 # Provenance. The scene sidecar names spacecraft `sc<id>`; the viewer draws
-# that name as the marker label and shows it in the selection panel. Putting
-# the provenance word in the name is what makes it legible in the page without
-# reading the source.
+# that name as the marker label and shows it in the selection panel. When the
+# constellation is a mixture — some flown, some catalogue, some nominal — each
+# spacecraft's own word goes in its name, because a reader must not have to
+# open the source to find out which is which. When they all have the same
+# provenance, as they do now that every state is flown, repeating the word
+# seven times says nothing and only crowds the labels: the page footer says it
+# once instead.
 #
 # Confidentiality. Spacecraft mass properties are not published here (see the
 # header: the run's geometry is a generic box from public figures and no
@@ -593,13 +537,14 @@ prefix = run_or_reuse!(args, OUTDIR)
 # `mass_kg` is zeroed in the scene, which nothing in the viewer reads. The link
 # box DIMENSIONS stay, because the viewer needs them to draw the generic box at
 # all; they are the published body envelope, not a reconstruction.
+const mixed_provenance = length(unique(first(split(s.provenance, ',')) for s in states)) > 1
 const PAGE_DIR = joinpath(OUTDIR, "page")
 mkpath(PAGE_DIR)
 page_prefix = joinpath(PAGE_DIR, "simulation_results")
 let doc = JSON.parsefile(prefix * "_scene.json")
     for (k, s) in enumerate(states)
         k <= length(doc["spacecraft"]) || break
-        doc["spacecraft"][k]["name"] = "$(s.name) · $(s.provenance)"
+        doc["spacecraft"][k]["name"] = mixed_provenance ? "$(s.name) · $(s.provenance)" : s.name
         for link in doc["spacecraft"][k]["links"]
             link["mass_kg"] = 0.0
         end
@@ -618,31 +563,59 @@ df = DataFrame(Arrow.Table(prefix * ".feather"))
 saved_t = Float64.(df.time)
 println("rows=", nrow(df), "  span=", round(saved_t[end] / 3600; digits=2), " h")
 
+"""
+    spacecraft_hex_color(index, count) -> String
+
+The color the viewer gives spacecraft `index` of `count`, as a hex string, so a
+ghost can be drawn in its own twin's color. Mirrors `spacecraftColor` in
+`viewer/src/spacecraft.js`: hue spread evenly around the wheel, HSL saturation
+0.85 and lightness 0.6.
+"""
+function spacecraft_hex_color(index::Int, count::Int)::String
+    h = count <= 1 ? 0.12 : mod((index - 1) / count, 1.0)
+    sat, light = 0.85, 0.6
+    c = (1 - abs(2 * light - 1)) * sat
+    x = c * (1 - abs(mod(h * 6, 2) - 1))
+    m = light - c / 2
+    r, g, b = h < 1/6 ? (c, x, 0.0) : h < 2/6 ? (x, c, 0.0) : h < 3/6 ? (0.0, c, x) :
+              h < 4/6 ? (0.0, x, c) : h < 5/6 ? (x, 0.0, c) : (c, 0.0, x)
+    to255(v) = clamp(round(Int, (v + m) * 255), 0, 255)
+    return "#" * string(to255(r); base=16, pad=2) * string(to255(g); base=16, pad=2) * string(to255(b); base=16, pad=2)
+end
+
 references = Any[]
 separations = Any[]
 for (k, s_) in enumerate(states)
-    haskey(TELEMETRY_FILES, s_.norad_id) || continue
-    series = telemetry_for(s_.norad_id, et0)
-    label = series.label
+    has_track(s_.name) || continue
+    series = track_series(s_.name)
+    label = s_.name
 
-    # Ghost: one sample every `stride` telemetry rows. The 1 Hz record is
-    # 345,600 samples per spacecraft; a few thousand is indistinguishable at
-    # globe scale and keeps the page inside its size budget.
-    stride = max(1, cld(length(series.t_s), 4_000))
+    # Ghost: one sample every `stride` rows of the flown track. The record is
+    # 345,600 samples per spacecraft and there are seven of them; a couple of
+    # thousand each is indistinguishable at globe scale and keeps the page
+    # inside its size budget. Each ghost takes its twin's own color, so the
+    # translucent copy beside a spacecraft is unmistakably that spacecraft's.
+    stride = max(1, cld(length(series.t_s), 2_500))
     idx = [j for j in 1:stride:length(series.t_s) if series.t_s[j] <= saved_t[end] + 1.0]
     println("ghost ", label, ": ", length(idx), " samples, ", series.note)
-    push!(references, (name="$(label) flight PVT", t_s=series.t_s[idx], pos_m=series.pos_m[:, idx],
+    push!(references, (name="$(label) flown track", t_s=series.t_s[idx], pos_m=series.pos_m[:, idx],
         vel_mps=series.vel_mps[:, idx], target=k,
-        color=(s_.norad_id == 41887 ? "#ff8c69" : "#8cd7ff"), opacity=0.45))
+        color=spacecraft_hex_color(k, length(states)), opacity=0.45))
 
     # Separation, scored by `separation_rtn` on the run's own saved times.
     sep = separation_rtn(df, k, series)
     at(hours) = (i = findlast(t -> t <= hours * 3600.0, sep.t_s); i === nothing ? NaN : sep.total[i])
-    @printf("separation %s vs its own telemetry: 0 h %.1f m | 24 h %.3f km | 48 h %.3f km | 72 h %.3f km | end %.3f km (max %.3f km, rms %.3f km)\n",
+    @printf("separation %s vs its own flown track: 0 h %.1f m | 24 h %.3f km | 48 h %.3f km | 72 h %.3f km | end %.3f km (max %.3f km, rms %.3f km)\n",
         label, sep.total[1], at(24) / 1e3, at(48) / 1e3, at(72) / 1e3, sep.total[end] / 1e3,
         maximum(sep.total) / 1e3, sqrt(mean(sep.total .^ 2)) / 1e3)
-    @printf("  end-of-window components: radial %+.3f km  along-track %+.3f km  cross-track %+.3f km\n",
-        sep.radial[end] / 1e3, sep.along[end] / 1e3, sep.cross[end] / 1e3)
+    @printf("  %s end-of-window components: radial %+.3f km  along-track %+.3f km  cross-track %+.3f km; first 48 h mean per-axis rms %.3f km\n",
+        label, sep.radial[end] / 1e3, sep.along[end] / 1e3, sep.cross[end] / 1e3,
+        # Mean per-axis RMSE over the first 48 hours, in Cartesian components:
+        # the form the reconstruction record reports (0.967 km for FM4), so the
+        # two can be read against each other directly.
+        let h = findall(t -> t <= 48 * 3600.0, sep.t_s)
+            isempty(h) ? NaN : mean([sqrt(mean(getproperty(sep, c)[h] .^ 2)) for c in (:dx, :dy, :dz)]) / 1e3
+        end)
     push!(separations, (label=label, sep=sep))
 end
 
@@ -650,7 +623,7 @@ end
 # Frame budget. 96 h of seven spacecraft is 69,121 saved rows; 3000 embedded
 # frames is one sample every 115 s, about 50 per orbit, which the trails and
 # the ground tracks both read well and which keeps the page inside its size
-# budget alongside a 4k texture and two 4000-sample telemetry ghosts. The
+# budget alongside a 4k texture and seven 2500-sample flown-track ghosts. The
 # planet-fixed frame opens on the picture the ground tracks belong to.
 html = export_visualization(page_prefix; max_frames=3000, trail_orbits=1, texture_resolution="4k",
     frame=:planet_fixed, ground_tracks=true,
@@ -660,39 +633,35 @@ println("html: ", html, " ", filesize(html))
 
 # Elements of the flown constellation, for the page header: this is what drag
 # has left of the design orbit, not the design orbit.
-alts = Float64[]; incs = Float64[]; raans = Float64[]; periods = Float64[]
+alts = Float64[]; incs = Float64[]; periods = Float64[]
 for s in states
     oe = TV.rvtoorbitalelement(SVector{3, Float64}(s.r_ii_m), SVector{3, Float64}(s.v_ii_m_s), planet)
     push!(alts, (oe[1] - planet.Rp_e) / 1e3); push!(incs, rad2deg(oe[3]))
-    push!(raans, mod(rad2deg(oe[4]), 360.0)); push!(periods, 2pi * sqrt(oe[1]^3 / planet.μ) / 60)
+    push!(periods, 2pi * sqrt(oe[1]^3 / planet.μ) / 60)
 end
 orbit_note = @sprintf("%.0f-%.0f km, i %.2f-%.2f°, %.1f min", minimum(alts), maximum(alts),
     minimum(incs), maximum(incs), mean(periods)) * (stubbed ? " (development stub)" : "")
 
-provenance_counts = Dict{String, Int}()
-for s in states
-    # The label carries the fit as well; count by the source of the state itself.
-    provenance_counts[first(split(s.provenance, ','))] = get(provenance_counts, first(split(s.provenance, ',')), 0) + 1
-end
-provenance_note = join(["$(v) $(k)" for (k, v) in sort(collect(provenance_counts); by=first)], " and ")
-separation_note = isempty(separations) ? "" :
-    "At the end of the 96 hours the simulated " *
-    join(["$(x.label) is $(round(x.sep.total[end] / 1e3; digits=2)) km from its own telemetry" for x in separations], " and ") *
-    @sprintf(" (root-mean-square over the window %s).",
-        join([@sprintf("%.2f km", sqrt(mean(x.sep.total .^ 2)) / 1e3) for x in separations], " and "))
+all_flown = all(s -> startswith(s.provenance, "telemetry"), states)
+worst = isempty(separations) ? nothing : separations[argmax([x.sep.total[end] for x in separations])]
+best = isempty(separations) ? nothing : separations[argmin([x.sep.total[end] for x in separations])]
+separation_note = isempty(separations) ? "" : @sprintf(
+    "At the end of the 96 hours the simulated spacecraft sit between %.2f km (%s) and %.2f km (%s) from their own flown tracks, and the root-mean-square separation over the whole window runs from %.2f to %.2f km. ",
+    best.sep.total[end] / 1e3, best.label, worst.sep.total[end] / 1e3, worst.label,
+    minimum([sqrt(mean(x.sep.total .^ 2)) for x in separations]) / 1e3,
+    maximum([sqrt(mean(x.sep.total .^ 2)) for x in separations]) / 1e3)
 
 cdn = build_cdn_page(html, joinpath(OUTDIR, "artifact.html"), "AGORA CYGNSS Constellation",
     "AGORA CYGNSS · $(length(states)) observatories, 2025-06-06 to 2025-06-09",
     orbit_note, "96 hours (≈62 orbits)",
-    "$(length(states)) spacecraft, not eight: CYGNSS FM06 (NORAD 41889) is absent because it was no longer in orbit. " *
+    "$(length(states)) spacecraft, not the eight that launched: CYGNSS FM06 (NORAD 41889) is absent because it was no longer in orbit. " *
     "NASA lost contact with it in November 2022 and the satellite catalogue gives its decay date as 2024-06-13. " *
-    "Every remaining spacecraft's label says where its initial state came from — " * provenance_note * ". " *
-    "Only the telemetry-backed ones are flown states. The catalogue ones are historical element sets propagated to the epoch: " *
-    "their orbit planes are good to better than 0.01°, but their position along the orbit carries about 12 km of uncertainty, " *
-    "measured by running the same element sets for the two spacecraft that do have flight states. " *
-    (FIT_SMA ? "The telemetry-backed spacecraft carry \"energy and drag fitted\": two scalars each, the magnitude of the initial velocity and an effective drag scale, were fitted to their own telemetry over this window, so their agreement with the ghosts is an in-sample fit and not a prediction. " : "") *
-    "The two translucent ghosts are the FM1 and FM4 flight position solutions; click a solid spacecraft to read its separation from its own telemetry. " *
-    separation_note * " " *
+    (all_flown ?
+        "All $(length(states)) are flown states. Every initial condition and every translucent ghost here comes from that spacecraft's own NASA Level 1 navigation solution over this window — nothing is a catalogue propagation and nothing is a design orbit. " :
+        "Each spacecraft's label says where its initial state came from; only the telemetry-backed ones are flown states. ") *
+    (FIT_SMA ? "Two scalars per spacecraft, the magnitude of its initial velocity and an effective drag scale, were fitted to that spacecraft's own track over this window, so the agreement between a spacecraft and its ghost is an in-sample fit and not a prediction. " : "") *
+    "Click a solid spacecraft to read its separation from its own flown track. " *
+    separation_note *
     "The spacecraft is drawn as a generic small-satellite box, not as a reconstruction of the flight geometry. " *
     "\"Ground tracks\" draws each sub-satellite point on the surface. Drag to orbit, wheel to zoom, Space to pause, F to follow.")
 println("cdn: ", cdn, " ", filesize(cdn))

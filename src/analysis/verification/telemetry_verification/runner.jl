@@ -1,8 +1,40 @@
+# Scheduled state anchors for a scenario, as the engine callback the runner
+# passes through run_simulation's extra_callbacks. Empty when the scenario
+# declares none or has them disabled.
+function _scenario_state_anchors(cfg::OrbitEventsScenarioConfig)
+    (cfg.state_anchors_enabled && !isempty(cfg.state_anchor_elapsed_s)) || return SimulationModel.StateAnchor[]
+    burns = cfg.state_anchor_burn_orbit_numbers
+    offset = cfg.maneuver_orbit_number_offset
+    # The counter is reset only when the scenario replays burns: that is the
+    # orbit-keyed logic the reset keeps aligned, and the burn numbers share
+    # the maneuver block's numbering. Without a replay the anchors leave the
+    # counter alone.
+    replays_burns = !isempty(cfg.maneuver_orbit_numbers_campaign)
+    return [
+        SimulationModel.StateAnchor(
+            t, 1, collect(state);
+            # The anchor sits between burn B's apoapsis (epoch-relative apoapsis
+            # B - offset, where the counter reads B - offset) and the next, so
+            # the counter there is B - offset + 1.
+            orbit_count=(!replays_burns || isempty(burns) || burns[k] - offset + 1 < 1) ? nothing : burns[k] - offset + 1,
+        )
+        for (k, (t, state)) in enumerate(zip(cfg.state_anchor_elapsed_s, cfg.state_anchor_states_j2000_m))
+    ]
+end
+_scenario_state_anchors(::AbstractScenarioConfig) = SimulationModel.StateAnchor[]
+
+function _scenario_extra_callbacks(cfg::AbstractScenarioConfig)
+    anchors = _scenario_state_anchors(cfg)
+    isempty(anchors) && return ()
+    return (SimulationModel.get_state_anchor_callback(anchors),)
+end
+
 function _run_simulation_dataframe(
     args::SimulationConfiguration,
     scenario_name::String,
     truth::AtmosphereTruthConfig,
-    profile::Symbol
+    profile::Symbol;
+    extra_callbacks=()
 )
     return mktempdir() do tmp
         cfg_run = SimulationConfiguration(
@@ -38,6 +70,8 @@ function _run_simulation_dataframe(
                     "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0",
                     "SPACEAGORA_SOLVER_MODE" => solver_mode,
                     "SPACEAGORA_SOLVER_MAXITERS" => string(maxiters),
+                    "SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => _telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", solver_mode),
+                    "SPACEAGORA_SOLVER_SAVE_ON" => _telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", solver_mode),
                     "SPACEAGORA_GRAM_OFFLINE_SURROGATE" => truth.gram_offline_surrogate,
                     "SPACEAGORA_GRAM_STATIC_GRID" => truth.gram_static_grid ? "on" : "off",
                     "SPACEAGORA_GRAM_TRACK_CACHE" => truth.gram_track_cache ? "on" : "off",
@@ -49,7 +83,8 @@ function _run_simulation_dataframe(
                             isolate_state=false,
                             save_fields=save_fields,
                             return_solution=true,
-                            return_solver_metadata=true
+                            return_solver_metadata=true,
+                            extra_callbacks=extra_callbacks
                         )
                     end
                 end
@@ -154,12 +189,14 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
     best_cd = cd_candidates[1]
     best_cr = cr_candidates[1]
     best_score = Inf
+    reused_eval_run = nothing
 
     if use_calibration
         for cd_scale in cd_candidates, cr_value in cr_candidates
             args_eval = _make_orbit_args(cfg, eval_orbits; cd_scale=cd_scale, cr_override=cr_value)
             args_eval = _with_study_settings(args_eval; quick=eval_is_quick)
-            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile)
+            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile; extra_callbacks=_scenario_extra_callbacks(cfg))
+            reused_eval_run = eval_run
             eval_df = eval_run.results_df
             eval_rows, eval_errors = _orbit_rows_errors(cfg, args_eval, eval_df, eval_points)
             if cal.fit_bias
@@ -179,7 +216,9 @@ function _run_single_scenario(cfg::OrbitEventsScenarioConfig, profile::Symbol)
 
     args_final = _make_orbit_args(cfg, final_orbits; cd_scale=best_cd, cr_override=best_cr)
     args_final = _with_study_settings(args_final; quick=final_is_quick)
-    final_run = _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+    final_run = _final_run_or_reused_eval(reused_eval_run, use_calibration, cd_candidates, cr_candidates, eval_profile, profile, cfg.name, best_cd, best_cr) do
+        _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile; extra_callbacks=_scenario_extra_callbacks(cfg))
+    end
     final_df = final_run.results_df
     selected_runtime_s = final_run.elapsed_s
     solver_info = final_run.solver_info
@@ -235,6 +274,7 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
     best_cd = cd_candidates[1]
     best_cr = cr_candidates[1]
     best_score = Inf
+    reused_eval_run = nothing
 
     if use_calibration
         for cd_scale in cd_candidates, cr_value in cr_candidates
@@ -246,7 +286,8 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
                 cr_override=cr_value
             )
             args_eval = _with_study_settings(args_eval; quick=eval_is_quick)
-            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile)
+            eval_run = _run_simulation_dataframe(args_eval, cfg.name, cfg.atmosphere_truth, eval_profile; extra_callbacks=_scenario_extra_callbacks(cfg))
+            reused_eval_run = eval_run
             eval_df = eval_run.results_df
             eval_rows, eval_errors = _time_aligned_rows_errors(cfg, args_eval, eval_df, eval_telemetry)
             if cal.fit_bias
@@ -272,7 +313,9 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
         cr_override=best_cr
     )
     args_final = _with_study_settings(args_final; quick=final_is_quick)
-    final_run = _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile)
+    final_run = _final_run_or_reused_eval(reused_eval_run, use_calibration, cd_candidates, cr_candidates, eval_profile, profile, cfg.name, best_cd, best_cr) do
+        _run_simulation_dataframe(args_final, cfg.name, cfg.atmosphere_truth, profile; extra_callbacks=_scenario_extra_callbacks(cfg))
+    end
     final_df = final_run.results_df
     selected_runtime_s = final_run.elapsed_s
     solver_info = final_run.solver_info
@@ -298,8 +341,53 @@ function _run_single_scenario(cfg::TimeAlignedScenarioConfig, profile::Symbol)
     return annotated_rows, final_errors, calibration_runtime_s
 end
 
+"""
+    _final_run_or_reused_eval(solve, reused_eval_run, use_calibration, cd_candidates, cr_candidates, eval_profile, profile, name, best_cd, best_cr)
+
+Return the eval solve when the calibration grid had a single point and the
+same profile (its configuration equals the final one), otherwise call `solve`.
+"""
+function _final_run_or_reused_eval(
+    solve::F,
+    reused_eval_run,
+    use_calibration::Bool,
+    cd_candidates::AbstractVector,
+    cr_candidates::AbstractVector,
+    eval_profile::Symbol,
+    profile::Symbol,
+    scenario_name::AbstractString,
+    best_cd::Float64,
+    best_cr::Float64
+) where {F <: Function}
+    if reused_eval_run !== nothing && _single_point_calibration(use_calibration, cd_candidates, cr_candidates, eval_profile, profile)
+        println("calibration grid for $(scenario_name) has a single point (cd_scale=$(best_cd), cr=$(best_cr)); reusing the eval solve as the final solve")
+        return reused_eval_run
+    end
+    return solve()
+end
+
+"""
+    _select_scenarios(scenarios, requested) -> Vector
+
+Keep the manifest scenarios whose names appear in `requested`; an empty
+request keeps all of them. Unknown names are an error so a typo in CI cannot
+silently skip a scenario.
+"""
+function _select_scenarios(scenarios::AbstractVector, requested::Vector{String})
+    # Normalise here as well as in the CLI parser: a typed request can carry
+    # any case and whitespace, and the manifest names are compared lowercased.
+    wanted = unique(String[lowercase(strip(name)) for name in requested if !isempty(strip(name))])
+    isempty(wanted) && return scenarios
+    names = String[lowercase(String(sc.name)) for sc in scenarios]
+    unknown = setdiff(wanted, names)
+    isempty(unknown) || throw(ArgumentError(
+        "Unknown telemetry scenario(s) $(join(unknown, ", ")); the manifest defines: $(join(names, ", "))"
+    ))
+    return [sc for sc in scenarios if lowercase(String(sc.name)) in wanted]
+end
+
 function _run_verification(cfg::StudyConfig)::VerificationResult
-    scenarios = _load_scenarios_from_manifest(cfg.manifest_path)
+    scenarios = _select_scenarios(_load_scenarios_from_manifest(cfg.manifest_path), cfg.scenarios)
 
     summary_rows = NamedTuple[]
     error_tables = DataFrame[]
@@ -308,6 +396,7 @@ function _run_verification(cfg::StudyConfig)::VerificationResult
     println("Telemetry Orbit Accuracy Study")
     println(@sprintf("profile=%s enforce=%s", String(cfg.profile), string(cfg.enforce)))
     println("manifest=$(cfg.manifest_path)")
+    println("scenarios=$(isempty(cfg.scenarios) ? "all" : join(cfg.scenarios, ","))")
     println("deterministic_mode=GRAM(per-scenario atmosphere_truth from manifest)")
 
     for sc in scenarios
@@ -337,6 +426,7 @@ function _run_verification(cfg::StudyConfig)::VerificationResult
                     orbit_altitude_mode=_orbit_altitude_mode(sc),
                     maneuver_count=_maneuver_count(sc),
                     maneuver_replay_scale_mode=_maneuver_replay_scale_mode(sc),
+                    state_anchor_count=_state_anchor_count(sc),
                     simulation_runtime_s=elapsed_s,
                     timestamp_utc=string(now(UTC)),
                     atmosphere_truth_id=sc.atmosphere_truth.assumption_id,
@@ -440,7 +530,8 @@ function run_verification_cli(args::Vector{String}=copy(ARGS))::VerificationResu
         out_errors=request.out_errors,
         manifest_path=request.manifest_path,
         enforce=cfg.enforce,
-        generate_plots=cfg.generate_plots
+        generate_plots=cfg.generate_plots,
+        scenarios=cfg.scenarios
     )
     return run_verification(request)
 end

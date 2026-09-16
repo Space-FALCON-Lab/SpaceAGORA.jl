@@ -3,7 +3,6 @@ using Dates
 using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
-using Quaternions
 using Serialization
 using StaticArrays
 using ComponentArrays
@@ -11,17 +10,17 @@ using TOML
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
-include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 
 const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
-end
+# Frame helpers called unqualified below (src/core/interfaces/reference_system.jl).
+const rtolatlong = SimulationEngine.rtolatlong
+const r_intor_p! = SimulationEngine.r_intor_p!
 if !isdefined(@__MODULE__, :build_initial_conditions)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
 end
@@ -36,6 +35,12 @@ const HAS_GRAMSUITE = let
             pushfirst!(LOAD_PATH, vendored_gramsuite)
         end
         @eval import GRAMSuite
+        # GRAM-backed behaviour now comes from the SpaceAGORAGRAMSuiteExt
+        # package extension; if it failed to load, the vendored GRAMSuite
+        # checkout is older than the extension expects -- skip, do not shim.
+        if Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt) === nothing
+            error("GRAMSuite imported but SpaceAGORAGRAMSuiteExt did not load")
+        end
         # Importing the package is not enough: the GRAM-backed probes construct
         # real models, which needs the native GRAM Suite root (Build/ + Julia/).
         # Dev machines often have the Julia wrapper but no native build; skip
@@ -46,91 +51,6 @@ const HAS_GRAMSUITE = let
     catch err
         @info "Skipping GRAMSuite-backed threaded coverage probes" exception=(err, catch_backtrace())
         false
-    end
-end
-
-if HAS_GRAMSUITE
-    const EM = SimulationModel.EnvironmentModels
-    const TEST_GRAM_LOCK = ReentrantLock()
-
-    function EM.GRAMAtmosphereModel(; kwargs...)
-        return EM.GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
-    end
-
-    function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
-        haskey(stackdict, model) && return stackdict[model]
-        copied = EM.GRAMAtmosphereModel(deepcopy(model.core))
-        stackdict[model] = copied
-        return copied
-    end
-
-    function EM._gram_core_density_state(
-        core::GRAMSuite.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool,
-        lock_obj,
-        vacuum_temperature::Float64
-    )::Tuple{Float64, Float64, SVector{3, Float64}}
-        return GRAMSuite.density_state(
-            core,
-            h,
-            lat,
-            lon,
-            el_time,
-            wind;
-            lock_obj=lock_obj,
-            vacuum_temperature=vacuum_temperature
-        )
-    end
-
-    @inline function EM._gram_point_density(
-        model::EM.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool
-    )::Tuple{Float64, Float64, SVector{3, Float64}}
-        h_gram = max(h, -30.0)
-        return GRAMSuite.point_density_state(model.core, h_gram, lat, lon, el_time, wind; lock_obj=TEST_GRAM_LOCK)
-    end
-
-    function EM.getDensity(
-        model::EM.GRAMAtmosphereModel,
-        h::Float64,
-        lat::Float64,
-        lon::Float64,
-        el_time::Float64,
-        wind::Bool,
-        p::params
-    )::Tuple{Float64, Float64, SVector{3, Float64}} where {params}
-        EI = p.args.environment_model.EI * 1e3
-        drag_state = h - EI <= 0.0
-
-        if h > 2000.0e3
-            rho = 0.0
-            T = p.args.environment_model.planet.T_ref
-            wind_vec = SVector{3, Float64}(0.0, 0.0, 0.0)
-        elseif !drag_state && !p.args.mission_configuration.keplerian
-            rho, T, wind_vec = EM.density_polyfit(h, p)
-        else
-            h_gram = max(h, -30.0)
-            rho, T, wind_vec = GRAMSuite.density_state(
-                model.core,
-                h_gram,
-                lat,
-                lon,
-                el_time,
-                wind;
-                lock_obj=TEST_GRAM_LOCK,
-                vacuum_temperature=p.args.environment_model.planet.T_ref
-            )
-        end
-
-        return rho, T, wind_vec
     end
 end
 
@@ -207,8 +127,8 @@ function make_spacecraft(;
     ν_deg::Float64=175.0,
     orientation_state::Union{Nothing, Tuple{SVector{4, Float64}, SVector{3, Float64}}}=nothing
 )
-    root = Link{0}(root=true, m=500.0, ref_area=12.0)
-    panel = Link{0}(root=false, m=30.0, ref_area=6.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
+    root = Link(root=true, m=500.0, ref_area=12.0)
+    panel = Link(root=false, m=30.0, ref_area=6.0, r=MVector{3, Float64}(0.0, 1.2, 0.0))
 
     if isnothing(orientation_state)
         ic = InitialCondition(
@@ -432,13 +352,13 @@ end
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "0"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == false
+        @test callbacks._control_callback_use_threads(probe_control, 4) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+        @test callbacks._control_callback_use_threads(probe_control, 4) == true
     end
     # Pin the default auto-mode budget floor (4) at the 2-thread CI probe budget.
     withenv(
@@ -447,7 +367,7 @@ end
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1",
         "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "2"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+        @test callbacks._control_callback_use_threads(probe_control, 4) == true
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -456,7 +376,7 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "0"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == false
+        @test callbacks._control_callback_use_threads(probe_control, 4) == false
     end
     withenv(
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "auto",
@@ -466,7 +386,7 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL_ALLOW_WITH_OUTER" => "1"
     ) do
-        @test callbacks._control_callback_use_threads(probe_control, 4, false) == true
+        @test callbacks._control_callback_use_threads(probe_control, 4) == true
     end
 
     # Density callback threaded branch (line with Threads.@threads).
@@ -512,7 +432,7 @@ end
         @test all(isfinite, p_density_models.shared_buffers.densities)
     end
 
-    # Guidance invokelatest branch.
+    # Guidance callback dispatch.
     probe_guidance = ProbeGuidanceModel([0])
     args_guidance = build_config(
         spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=450e3, ν_deg=170.0),
@@ -534,10 +454,8 @@ end
         1,
         Inf
     )
-    withenv("SPACEAGORA_DEV_HOT_RELOAD" => "1") do
-        guidance_cbs = callbacks.get_guidance_callbacks(1, args_guidance)
-        guidance_cbs[1].affect!.affect!(integrator_guidance)
-    end
+    guidance_cbs = callbacks.get_guidance_callbacks(1, args_guidance)
+    guidance_cbs[1].affect!.affect!(integrator_guidance)
     @test probe_guidance.hits == [1]
 
     # Control callback threaded branch (line with Threads.@threads).
@@ -562,7 +480,6 @@ end
         Inf
     )
     withenv(
-        "SPACEAGORA_DEV_HOT_RELOAD" => "0",
         "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on",
         "SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE" => "1"
     ) do
@@ -571,13 +488,16 @@ end
     end
     @test probe_control.hits == ones(Int, 4)
 
-    # Aerodynamic helper branches and threaded accumulation branch.
+    # Aerodynamic helper branches and threaded accumulation branch. The mode
+    # is cached per solve, so each `withenv` refreshes it explicitly.
+    refresh_mode! = dyn.AerodynamicEffectors.refresh_multibody_parallel_mode!
     withenv(
         "SPACEAGORA_MULTIBODY_PARALLEL" => "auto",
         "SPACEAGORA_MULTIBODY_THREAD_THRESHOLD" => "2",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
         "SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER" => "0"
     ) do
+        refresh_mode!()
         @test dyn._multibody_use_threads(8) == false
     end
     withenv(
@@ -586,6 +506,7 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
         "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "1"
     ) do
+        refresh_mode!()
         @test dyn._multibody_use_threads(8; heavy_work=false) == false
     end
     withenv(
@@ -595,8 +516,10 @@ end
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
         "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "0"
     ) do
+        refresh_mode!()
         @test dyn._multibody_use_threads(8; heavy_work=true) == true
     end
+    refresh_mode!()
 
     args_aero = build_config(
         spacecraft=make_spacecraft(
@@ -697,15 +620,6 @@ end
     policy._destroy_persistent_foreach_scope!(scope_id)
     @test !haskey(policy._persistent_foreach_pools, (scope_id, :probe_scope))
 
-    withenv("SPACEAGORA_PARALLEL_POLICY_DELTA" => "oops") do
-        @test_throws ArgumentError policy.adaptive_delta()
-    end
-    withenv("SPACEAGORA_PARALLEL_POLICY_RHO" => "1.0") do
-        @test_throws ArgumentError policy.adaptive_rho()
-    end
-    withenv("SPACEAGORA_PARALLEL_POLICY_TRIM_QUANTA" => "oops") do
-        @test_throws ArgumentError policy.adaptive_trim_quanta_budget()
-    end
     withenv("SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => "guided") do
         @test_throws ArgumentError policy.inner_scheduler_mode()
     end
@@ -808,9 +722,6 @@ end
     policy.reset_policy_telemetry!()
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "3",
-        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "2"
     ) do
         _ = policy.thread_policy_decision(4; mode=:auto, threshold=1, source=:probe_obs)
@@ -1046,8 +957,11 @@ end
                 Int64(2) => policy.AdaptiveChoiceStats(samples=4, successes=3, failures=1, elapsed_sum_ns=120.0, elapsed_sq_sum_ns=3_600.0)
             )
         end
+        # A signature with no history starts at the WIDEST candidate, not the
+        # narrowest: the adaptive profile begins where the fixed policy begins
+        # (see the cold-signature comment in _hint_choose_allotment).
         miss_choice = policy._hint_choose_allotment("sig_missing", Int64[1, 2])
-        @test miss_choice.allotment == 1
+        @test miss_choice.allotment == 2
         zero_choice = policy._hint_choose_allotment("sig_zero", Int64[1])
         @test zero_choice.allotment == 1
         chosen = policy._hint_choose_allotment("sig_choose", Int64[1, 2])
@@ -1107,23 +1021,25 @@ end
     @test filtered_rows isa Vector
     @test isempty(filtered_rows)
 
-    withenv("SPACEAGORA_PARALLEL_POLICY_DELTA" => "1.2") do
-        @test_throws ArgumentError policy.adaptive_delta()
-    end
-
     withenv(
         "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => "2",
-        "SPACEAGORA_PARALLEL_POLICY_DELTA" => "0.8",
-        "SPACEAGORA_PARALLEL_POLICY_RHO" => "1.5",
-        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => "1",
-        "SPACEAGORA_PARALLEL_POLICY_BOOTSTRAP_THREADS" => "1",
         "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "1",
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0",
+        # The hint layer only updates when it pays for itself against the
+        # measured per-call work (_hint_layer_pays); this probe's 10 ns fake
+        # observations never would, so the gate is switched off for it.
+        "SPACEAGORA_PARALLEL_POLICY_HINT_WORK_RATIO" => "0",
+        # The probe driver runs this file at --threads=2, which clamps the
+        # budget to 2 -- below the default auto minimum budget of 4, at which
+        # the decision is forced and the hint store is never consulted. Lower
+        # the minimum to the budget this process actually has.
+        "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => "2",
         "SPACEAGORA_INNER_THREAD_BUDGET" => "4"
     ) do
-        lock(policy._policy_telemetry_lock) do
-            ctx = policy._active_policy_context()
+        # The telemetry lock now lives on the context it guards, not process-wide.
+        ctx_reset = policy._active_policy_context()
+        lock(ctx_reset.lock) do
+            ctx = ctx_reset
             ctx.telemetry = policy.PolicyTelemetry()
             empty!(ctx.adaptive_state)
             empty!(ctx.decision_signature)
@@ -1311,9 +1227,6 @@ end
         p_density_helpers
     )
 
-    @test isfinite(env_models.interp(5.0, 355.0, 0.25))
-    @test isfinite(env_models.interp(355.0, 5.0, 0.25))
-    @test env_models.temperature_linear(10.0, (T_ref=123.0,)) == 123.0
     @test env_models._gram_use_global_lock() isa Bool
     @test_throws MethodError env_models._gram_point_density(:bad_model, 0.0, 0.0, 0.0, 0.0, false)
 

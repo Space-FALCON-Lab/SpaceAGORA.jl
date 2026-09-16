@@ -1,6 +1,7 @@
 # include(joinpath(@__DIR__, "..", "..", "core", "interfaces", "reference_system.jl"))
 
-using SatelliteToolbox
+using SatelliteToolboxAtmosphericModels: AtmosphericModels
+using SpaceIndices
 using StaticArrays
 using LinearAlgebra
 using Dates
@@ -278,8 +279,8 @@ the solver starts.
 function init_nrlmsise_space_indices!(; force_download::Bool=false)
     lock(_NRLMSISE00_SPACE_INDICES_LOCK) do
         if force_download || !_NRLMSISE00_SPACE_INDICES_READY[]
-            SatelliteToolbox.AtmosphericModels.SpaceIndices.init(
-                SatelliteToolbox.AtmosphericModels.SpaceIndices.Celestrak;
+            SpaceIndices.init(
+                SpaceIndices.Celestrak;
                 force_download=force_download
             )
             _NRLMSISE00_SPACE_INDICES_READY[] = true
@@ -470,22 +471,6 @@ function _gram_core_density_state(
     _gram_not_loaded_error("GRAMAtmosphereModel density evaluation")
 end
 
-function interp(a, b, x)
-    if abs(b - a) > 20.0
-        if b <= 360.0 && b >= 350.0
-            b = 360.0 - b
-        elseif a <= 360.0 && a >= 350.0
-            a = 360.0 - a
-        end
-    end
-
-    return x * (b - a) + a
-end
-
-function temperature_linear(h, p)
-    return p.T_ref
-end
-
 @inline function _exponential_density(ρ_ref::Float64, h_ref::Float64, H::Float64, h::Float64)::Float64
     return ρ_ref * exp((h_ref - h) / H)
 end
@@ -527,7 +512,7 @@ end
 end
 
 @inline function _nrlmsise_space_indices_lookup(index::Val, instant::DateTime)
-    return SatelliteToolbox.AtmosphericModels.SpaceIndices.space_index(index, instant)
+    return SpaceIndices.space_index(index, instant)
 end
 
 @inline function _nrlmsise_space_indices_f107(lookup, instant::DateTime)::Float64
@@ -658,7 +643,7 @@ end
     lon::Float64
 )::Tuple{Float64, Float64, SVector{3, Float64}}
     indices = _nrlmsise_resolved_indices(model, instant, h, lat, lon)
-    atmo = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+    atmo = AtmosphericModels.nrlmsise00(
         instant,
         h,
         lat,
@@ -727,6 +712,16 @@ const _TAB_FLIGHT_H_MAX_M = 12000.0
 end
 
 function getDensity(model::TabulatedFlightAtmosphereModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool)::Tuple{Float64, Float64, SVector{3, Float64}}
+    # Adaptive trial steps can probe a non-finite state (deep-impact blowup
+    # before the termination callback fires, seen on +1 sigma envelope runs);
+    # a NaN altitude passes both tail branches of _tab_flight_interp and
+    # indexes past the profile end. The answer is NaN, not vacuum: NaN
+    # propagates into the derivative and the solver rejects the trial step,
+    # whereas a zero density would let a step with a non-finite time or
+    # altitude succeed with no drag -- a silently different trajectory, not
+    # a rejected one. (An empty profile leg below is a different case: a
+    # finite state with no data for that pass, which is a vacuum.)
+    isfinite(h) && isfinite(el_time) || return NaN, NaN, SVector{3, Float64}(0.0, 0.0, 0.0)
     ts = model.pass_peri_el_s
     j = clamp(searchsortedlast(ts, el_time), 1, length(ts))
     if j < length(ts) && abs(ts[j+1] - el_time) < abs(el_time - ts[j])

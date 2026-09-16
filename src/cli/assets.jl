@@ -34,8 +34,6 @@ Base.@kwdef struct AssetManifestEntry
     detail::String = ""
 end
 
-const ASSET_MANIFEST_PATH = joinpath(REPO_ROOT, "data", "assets_manifest.toml")
-
 @inline function _asset_item(name::String, scope::String, path::String; available::Bool, required::Bool, detail::String="")
     return AssetCheckItem(
         name=name,

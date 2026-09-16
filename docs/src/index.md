@@ -13,7 +13,7 @@ Use this path if you want the fastest successful run on a machine that does not
 have GRAM or SPICE configured yet.
 
 ```text
-git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate()"
 julia --project=. examples/AGORA_Basic_Quickstart.jl

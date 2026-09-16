@@ -28,8 +28,12 @@ catch err
     err
 end
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
+# _spice_lock() in the raw-included file walks the module ancestry for a
+# RuntimeServices binding; bind the package's own so it finds the real lock.
+const RuntimeServices = SpaceAGORA.RuntimeServices
 include(REFSYS_PATH)
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")

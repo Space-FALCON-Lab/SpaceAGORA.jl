@@ -20,7 +20,7 @@ module PerturbationEffectors
 
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
     export srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
-    export MagneticTorqueRodModel, get_magnetic_field_dipole, get_magnetic_field, calculate_magnetic_torque
+    export MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque
     export EddyCurrentDampingModel, eddy_damping_torque
     export LVLHCascadeAttitudeControlModel
 

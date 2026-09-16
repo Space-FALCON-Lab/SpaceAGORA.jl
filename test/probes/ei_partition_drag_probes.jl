@@ -4,11 +4,11 @@ using StaticArrays
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 
-include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-const run_simulation = SimulationEngine.run_simulation
+const SimulationEngine = SpaceAGORA.SimulationEngine
 
 const EARTH = make_no_gram_planet(:earth)
 
@@ -32,7 +32,7 @@ end
 # ── Config builders ──────────────────────────────────────────────────────────
 
 function make_probe_spacecraft(alt_km::Float64)
-    root = Link{0}(root=true, m=100.0, ref_area=10.0)
+    root = Link(root=true, m=100.0, ref_area=10.0)
     ic = InitialCondition(
         ra=EARTH.Rp_e + alt_km * 1e3,
         rp=EARTH.Rp_e + alt_km * 1e3,

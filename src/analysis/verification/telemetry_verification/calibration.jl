@@ -2,6 +2,24 @@
     return cal.enabled && (profile in cal.profiles)
 end
 
+"""
+    _single_point_calibration(use_calibration, cd_candidates, cr_candidates, eval_profile, profile)
+
+True when calibration is active but the candidate grid has exactly one point
+and the eval and final solves share a profile. The eval solve then has the
+same configuration as the final solve, so the runner reuses it instead of
+solving twice (the bias fit is applied to the final rows either way).
+"""
+@inline function _single_point_calibration(
+    use_calibration::Bool,
+    cd_candidates::AbstractVector,
+    cr_candidates::AbstractVector,
+    eval_profile::Symbol,
+    profile::Symbol
+)::Bool
+    return use_calibration && length(cd_candidates) == 1 && length(cr_candidates) == 1 && eval_profile == profile
+end
+
 @inline function _grid_values(min_v::Float64, max_v::Float64, steps::Int)::Vector{Float64}
     if steps <= 1 || isapprox(min_v, max_v; rtol=0.0, atol=1e-12)
         return [min_v]

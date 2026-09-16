@@ -4,11 +4,11 @@ using StaticArrays
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 
-include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-const run_simulation = SimulationEngine.run_simulation
+const SimulationEngine = SpaceAGORA.SimulationEngine
 const ODEParams = SimulationModel.ODEParams
 
 const EARTH = make_no_gram_planet(:earth)
@@ -30,7 +30,7 @@ function sample_env()
 end
 
 function box_link(; cop=(0.0, 0.0, 0.0), r=(0.0, 0.0, 0.0), q=(0.0, 0.0, 0.0, 1.0), root=true)
-    return Link{0}(root=root, m=4.0,
+    return Link(root=root, m=4.0,
         dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03,
         r=MVector{3, Float64}(r...),
         q=MVector{4, Float64}(q...),

@@ -10,18 +10,16 @@ using StaticArrays
 # Guarded like SimulationEngine below: when CI scripts share one process
 # (test/stress/runtests.jl), a second include replaces the module and makes
 # its exports (e.g. Earth) ambiguous in Main under Julia 1.12.
+using SpaceAGORA
 if !isdefined(@__MODULE__, :SimulationModel)
-    include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+    const SimulationModel = SpaceAGORA.SimulationModel
 end
 using .SimulationModel
 
 # SimulationEngine uses SimulationModel and provides the canonical run_simulation entrypoint.
 const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SimulationEngine.run_simulation
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
 
 struct StressMetrics
@@ -34,7 +32,7 @@ struct StressMetrics
 end
 
 function make_spacecraft(rng::AbstractRNG, planet::Earth)
-    root = Link{0}(root=true, m=160.0, ref_area=1.5)
+    root = Link(root=true, m=160.0, ref_area=1.5)
 
     ra_alt = 530e3 + randn(rng) * 20e3
     rp_alt = 490e3 + randn(rng) * 20e3

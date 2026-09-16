@@ -8,4 +8,5 @@ include(joinpath(@__DIR__, "thermal_callbacks.jl"))
 include(joinpath(@__DIR__, "event_callbacks.jl"))
 include(joinpath(@__DIR__, "navigation_guidance_callbacks.jl"))
 include(joinpath(@__DIR__, "control_callbacks.jl"))
+include(joinpath(@__DIR__, "state_anchor_callbacks.jl"))
 end # module SimulationCallbacks

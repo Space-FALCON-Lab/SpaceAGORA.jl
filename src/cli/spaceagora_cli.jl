@@ -105,6 +105,7 @@ function _run_telemetry(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::
     enforce = false
     generate_plots = false
     print_only = false
+    scenarios = ""
     for arg in args
         if arg in ("quick", "full")
             profile = arg
@@ -119,6 +120,8 @@ function _run_telemetry(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::
             enforce = lowercase(strip(_value_after_equals(arg, "--enforce="))) in ("1", "true", "yes", "on")
         elseif _starts_with(arg, "--plots=")
             generate_plots = lowercase(strip(_value_after_equals(arg, "--plots="))) in ("1", "true", "yes", "on")
+        elseif _starts_with(arg, "--scenarios=")
+            scenarios = strip(_value_after_equals(arg, "--scenarios="))
         elseif arg == "--print-only"
             print_only = true
         else
@@ -131,6 +134,7 @@ function _run_telemetry(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::
         "SPACEAGORA_TELEMETRY_OUT_ERRORS" => joinpath(output_dir, "telemetry_orbit_accuracy_errors.csv"),
         "SPACEAGORA_TELEMETRY_PLOTS" => (generate_plots ? "1" : "0"),
         "SPACEAGORA_TELEMETRY_ENFORCE" => (enforce ? "1" : "0"),
+        "SPACEAGORA_TELEMETRY_SCENARIOS" => String(scenarios),
     ]
     return _run_subprocess(TELEMETRY_LAUNCHER, [profile]; env_pairs=env_pairs, print_only=print_only, io=io, errio=errio)
 end

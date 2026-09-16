@@ -50,6 +50,8 @@ include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_models.jl"))
 	include(joinpath(@__DIR__, "..", "environment", "ephemerides", "ephemerides_models.jl"))
 	@reexport using .EphemeridesModels
 
+include(joinpath(@__DIR__, "numerics", "geodesy.jl"))
+
 # 2. Simple hardware data structs
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "components.jl"))
 @reexport using .Components
@@ -67,8 +69,6 @@ include(joinpath(@__DIR__, "..", "vehicle", "kinematics", "kinematics.jl"))
 @reexport using .Kinematics
 
 # 6. Generic and actuator-specific hook surfaces
-include(joinpath(@__DIR__, "..", "vehicle", "actuators", "actuator_hooks.jl"))
-@reexport using .ActuatorHooks
 include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster", "thruster_hooks.jl"))
 @reexport using .ThrusterHooks
 
@@ -107,13 +107,15 @@ include(joinpath(@__DIR__, "..", "dynamics", "coupled", "force_torque_models.jl"
 include(joinpath(@__DIR__, "..", "environment", "gravity", "gravity_effectors.jl"))
 include(joinpath(@__DIR__, "..", "environment", "aerodynamics", "aerodynamic_effectors.jl"))
 
+# Analytic cost model for routing decisions. Included after the effector owners
+# because its work-count methods dispatch on their concrete types.
+include(joinpath(@__DIR__, "..", "parallel", "cost", "parallel_cost.jl"))
+
 # --- IO Owners ---
 include(joinpath(@__DIR__, "..", "io", "config", "io_config.jl"))
 @reexport using .IOConfig
 include(joinpath(@__DIR__, "..", "io", "serialization", "io_serialization.jl"))
 @reexport using .IOSerialization
-include(joinpath(@__DIR__, "..", "io", "logging", "io_logging.jl"))
-@reexport using .IOLogging
 include(joinpath(@__DIR__, "..", "io", "outputs", "io_outputs.jl"))
 @reexport using .IOOutputs
 

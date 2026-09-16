@@ -22,10 +22,12 @@ Cross-platform command conventions used below:
 Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs:
 
 ```text
-git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate()"
 ```
+
+The `--filter=blob:none` keeps the clone to the current tree: the repository history carries large data blobs that no longer exist in `main`, and a plain clone downloads all of them.
 
 That gives you the baseline open-data onboarding path immediately. You do not
 need GRAM or SPICE to run the first quickstart example, and there is no bootstrap step beyond instantiating the committed root environment.

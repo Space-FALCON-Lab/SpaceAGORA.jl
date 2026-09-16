@@ -1,3 +1,10 @@
+# gravity_harmonics_source_metadata_v1
+# source_model: LP165P (Moon, degree/order 165x165)
+# reference_radius_m: 1738000.0
+# gm_m3s2: 4.90280105600000e12
+# normalization: fully_normalized
+# citation: Konopliv, A.S., Asmar, S.W., Carranza, E., Sjogren, W.L., Yuan, D.N. (2001), "Recent gravity models as a result of the lunar prospector mission," Icarus, 150, 1-18, doi:10.1006/icar.2000.6573.
+# origin: GMAT R2022a data/gravity/luna/LP165P.cof POTFIELD header line ("POTFIELD165165 0 4.90280105600000e+12 1.73800000000000e+06"); coefficient values below verified byte-for-byte against this file's RECOEF rows.
 degree,order,C,S
 0, 0, 0.0,0.0
 1,0,0.0,0.0

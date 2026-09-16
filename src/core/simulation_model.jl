@@ -51,6 +51,8 @@ include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_models.jl"))
 	include(joinpath(@__DIR__, "..", "environment", "ephemerides", "ephemerides_models.jl"))
 	@reexport using .EphemeridesModels
 
+include(joinpath(@__DIR__, "numerics", "geodesy.jl"))
+
 # 2. Simple hardware data structs
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "components.jl"))
 @reexport using .Components

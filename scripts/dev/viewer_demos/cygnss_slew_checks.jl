@@ -145,6 +145,41 @@ let
         best.name == "seconds from 2000-01-01T12:00:00" && best.draan < 1.0)
 end
 
+# --- 5. the external torque, measured rather than modeled --------------------
+println("\n5. external torque: the drift of the conserved momentum, against gravity gradient alone")
+let
+    mu = 3.986004418e14
+    m = length(tel.pv_t_rel)
+    h = Matrix{Float64}(undef, 3, m)      # total angular momentum, inertial
+    tau = Matrix{Float64}(undef, 3, m)    # gravity-gradient torque, inertial
+    for (j, i) in enumerate(tel.pv_index)
+        q = SVector{4, Float64}(tel.q[:, i])
+        c_bi = SM.rot(q)
+        omega = SVector{3, Float64}(tel.omega[:, i])
+        hw = SVector{3, Float64}(constants.wheel_axes * (constants.wheel_inertia .* SVector{3, Float64}(tel.speeds_rad_s[i, :])))
+        h[:, j] .= c_bi' * (constants.inertia * omega + hw)
+        r_body = c_bi * SVector{3, Float64}(tel.pos_m[:, j])
+        rr = norm(r_body); rhat = r_body / rr
+        tau[:, j] .= c_bi' * (3 * mu / rr^3 * cross(rhat, constants.inertia * rhat))
+    end
+    ok = true
+    for (lo, hi) in ((890.0, 1250.0), (890.0, tel.pv_t_rel[end]))
+        w = findall(x -> lo <= x <= hi, tel.pv_t_rel)
+        tt = tel.pv_t_rel[w]
+        drift = [sum((tt .- mean(tt)) .* (h[k, w] .- mean(h[k, w]))) / sum((tt .- mean(tt)) .^ 2) for k in 1:3]
+        gg = [mean(tau[k, w]) for k in 1:3]
+        @printf("   t_rel %5.0f-%5.0f s: measured dH/dt = [%+.3e %+.3e %+.3e] N m\n", lo, hi, drift...)
+        @printf("                        mean gravity gradient = [%+.3e %+.3e %+.3e] N m  (ratio %+.2f %+.2f %+.2f)\n",
+            gg..., (drift ./ gg)...)
+        # The claim the run of record rests on: over the hour the NET external
+        # torque is a small fraction of gravity gradient alone, so carrying
+        # gravity gradient without the torque that cancels it is worse than
+        # carrying neither.
+        hi > 3000.0 && (ok = maximum(abs.(drift ./ gg)) < 0.2)
+    end
+    report("over the hour the net external torque is under a fifth of gravity gradient alone", ok)
+end
+
 println()
 passed[] || error("cygnss_slew_checks: at least one convention check failed")
 println("cygnss_slew_checks: all conventions confirmed")

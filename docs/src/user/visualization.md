@@ -358,19 +358,41 @@ maneuver through `run_simulation` with SpaceAGORA's own rigid-body attitude
 dynamics: the only thing taken from the flight record is the measured wheel
 speed, which enters as `ReactionWheelMomentumModel`, a force-torque effector
 returning the reaction torque `-dH_w/dt - omega x H_w` of the wheel momentum
-that speed implies. Gravity-gradient torque comes from
-`GravityGradientTorqueModel`. No commanded-torque channel and no controller is
-replayed, and the attitude is calibrated once, eleven seconds before the step.
+that speed implies. No commanded-torque channel and no controller is replayed,
+and the attitude is calibrated once, eleven seconds before the step.
 
 The reference ghost carries both `pos_m` and `q`, so it is simultaneously the
 orbit truth and the attitude truth, and the visible gap between the two
-observatories is the error. **Window and range of validity:** the page covers
-t_rel 890 to 1250 s, the commanded step and its transient, over which the run
-tracks the flown attitude to about 1.8 deg mean and 5.9 deg at worst. Carried
-to the end of the one-hour export it degrades steadily as the disturbance
-torques the model does not carry accumulate, so the demo prints that figure and
-the page states it; the scenario is a reconstruction of the maneuver, not of
-the hour.
+observatories is the error.
+
+**Window and range of validity.** The page covers t_rel 890 to 1100 s: the
+commanded step, the transient, and the flown pointing angle's arrival at the
+9.9 deg it then holds for the remaining forty-two minutes of the export. Over
+that window the run tracks the flown attitude to 0.49 deg mean and 1.47 deg at
+worst. The end time comes from the error curve the demo prints rather than
+being fixed in advance, because the reconstruction is open loop: after the
+maneuver the error is pure accumulated drift, and carrying the window to 1250 s
+to catch the flown angle's overshoot to 11.5 deg would end at 4.9 deg of error
+and put the page's final pointing angle three degrees above the angle actually
+flown. Carried open loop to the end of the hour the same run reaches 35 deg
+mean. The scenario is a reconstruction of the maneuver, not of the hour.
+
+**Why gravity-gradient torque is deliberately absent.** It is real, and
+`GravityGradientTorqueModel` supplies it for any run whose gravity force comes
+from a harmonics field with no place for it; the demo flies a second run with it
+so the difference can be read. It is out of the run of record because the
+telemetry says the *net* external torque on this vehicle is far smaller than
+gravity gradient alone. The total angular momentum in inertial space, formed
+from measured quantities only, drifts at (-3.2e-8, +3.2e-9, +9.5e-9) N m per
+axis over t_rel 890 to 3600 s, against a mean gravity-gradient torque of
+(-4.8e-7, +3.4e-8, +1.6e-7) N m: six to nine percent. Something cancels the
+rest, and the export names the likely culprit in a channel this reconstruction
+does not use, the magnetic-rod duty cycle, which is commanded through most of
+the hour. A model carrying gravity gradient while omitting that cancellation is
+further from flight than one carrying no external torque at all, and the
+attitude numbers agree: 0.53 against 0.49 deg mean over the maneuver, 75 against
+35 deg over the hour. `scripts/dev/viewer_demos/cygnss_slew_checks.jl`
+re-measures the closure.
 
 ### Extra channels in the panel and its plots
 
@@ -388,10 +410,13 @@ export_visualization(prefix; channels=[
 ```
 
 This is how a run publishes what its own `SaveField`s computed: the CYGNSS slew
-page carries the pointing angle that goes from zero to ten degrees, the
-attitude error against flight, the three body rates, the three wheel speeds,
-the three components of wheel momentum and the reaction torque, so the panel
-tells the story without prose.
+page carries the flown and simulated pointing angles that go from zero to ten
+degrees, the attitude error between them, the three body rates, the three wheel
+speeds and the reaction torque, so the panel tells the story without prose.
+Choosing the list is an editorial act as much as a technical one: that page
+leaves the body-frame wheel momentum out of its channels, although the run
+computes it, because alongside the wheel speeds their ratio would publish a mass
+property the page otherwise carries none of.
 
 ## Ground tracks
 

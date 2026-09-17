@@ -20,8 +20,33 @@
 # the exact reaction torque of a wheel assembly whose momentum is a prescribed
 # function of time. Nothing else about the attitude is injected: the body rate
 # and the quaternion are integrated by the engine's own rotational dynamics from
-# a single initial condition, and gravity-gradient torque is added through
-# `GravityGradientTorqueModel`, the toolkit's own torque.
+# a single initial condition, and NO external torque is applied at all.
+#
+# WHY GRAVITY-GRADIENT TORQUE IS LEFT OUT, ALTHOUGH IT IS REAL
+#
+# It is real and the toolkit has it (`GravityGradientTorqueModel`), and this
+# script still flies a second run with it so the difference can be read. It is
+# not in the run of record because the telemetry says the NET external torque on
+# this vehicle is far smaller than gravity gradient alone, so a model carrying
+# gravity gradient and nothing else is further from the truth than a model
+# carrying no external torque at all.
+#
+# The measurement uses no model. Form the total angular momentum in inertial
+# space from measured quantities only,
+#
+#     H_total(t) = C_bi(t)' ( I omega(t) + A J_w Omega_rw(t) ),
+#
+# and its drift IS the external torque, by definition. Over t_rel 890 to 3600 s
+# that drift is (-3.2e-8, +3.2e-9, +9.5e-9) N m per axis, against a mean
+# gravity-gradient torque of (-4.8e-7, +3.4e-8, +1.6e-7) N m: six to nine
+# percent. Something cancels the rest, and the export names the likely culprit
+# in a channel this reconstruction does not use, `actCommands.dplCmd`, the
+# magnetic-rod duty cycle, which is commanded through 43 to 94 percent of the
+# hour. `cygnss_slew_checks.jl` re-measures all of this.
+#
+# The attitude numbers follow the closure: leaving gravity gradient out is
+# better over the maneuver (0.49 against 0.53 deg mean) and much better over the
+# hour (35 against 75 deg mean). Both runs are printed below.
 #
 # The flight software's own commanded-torque channels (`tqDmdCtrl`,
 # `tqDmdMomMgr`) are deliberately NOT used as forcing. They are closed-loop
@@ -37,9 +62,12 @@
 # t_rel = 890 s, eleven seconds before the commanded step. That is the whole
 # calibration: no gain, no fit, no tuned scale. It reproduces the maneuver, and
 # it degrades afterwards, because the real disturbance torques the model does
-# not carry (the magnetic rods are commanded through most of this hour, and the
-# `dplCmd` channel shows it) accumulate. The script prints the error over the
-# maneuver window and over the rest of the hour so the page and the reader both
+# not carry accumulate and nothing corrects them: this is an open-loop
+# reconstruction with no attitude controller in it.
+#
+# The window therefore ends where the error does, not where the hour does. The
+# script prints the error against every candidate end time so the choice is
+# visible, and it prints the full hour as well, so the page and the reader both
 # see where the model stops being right.
 #
 # SPACECRAFT GEOMETRY AND CONFIDENTIALITY
@@ -73,11 +101,20 @@ const CONSTANTS_PATH = get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_CONSTANTS", joinpat
 # --- the window ------------------------------------------------------------
 # T_CAL is where the single initial condition is read. It sits eleven seconds
 # before the commanded step so the run starts from a settled attitude and the
-# step happens inside the simulation rather than at its boundary. T_END is where
-# the LVLH pointing angle reaches its overshoot peak and the transient is over;
-# past it the error grows steadily (the script measures how fast).
+# step happens inside the simulation rather than at its boundary.
+#
+# T_END is chosen from the error curve the script prints, under two conditions:
+# the window must cover the maneuver, and the attitude error at the end must
+# still be small enough that the final pointing angle on the page is the
+# maneuver and not the drift. The flown LVLH pointing angle first reaches
+# 9.91 deg at t_rel = 1100 s, which is the value it settles at over the
+# remaining forty-two minutes of the export (9.87 to 10.39 deg); it then
+# overshoots to 11.46 deg at 1250 s before coming back. Ending at 1100 s
+# captures the rise to that plateau with 1.47 deg of attitude error; carrying on
+# to 1250 s to include the overshoot costs 4.93 deg, which would put the page's
+# final pointing angle three degrees above the angle actually flown.
 const T_CAL_S = parse(Float64, get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_T_CAL", "890.0"))
-const T_END_S = parse(Float64, get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_T_END", "1250.0"))
+const T_END_S = parse(Float64, get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_T_END", "1100.0"))
 const COMMAND_STEP_S = SLEW_COMMAND_STEP_S   # where acsLvlhPoint.qwTgt.q steps, from the ADCS export
 const FULL_HOUR = get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_FULL_HOUR", "1") != "0"
 
@@ -244,8 +281,9 @@ The run configuration. Force models follow
 degree and order 50, Sun and Moon third body, solar radiation pressure and
 NRLMSISE-00 drag with real space-weather indices, integrated with DP8 (the
 record states the automatic stiff/nonstiff default costs 7.2 km on this
-scenario, so the solver is pinned). The torque side is the wheel assembly and,
-unless the caller turns it off for the control run, gravity gradient.
+scenario, so the solver is pinned). The torque side is the wheel assembly
+alone, unless the caller asks for gravity gradient as well for the comparison
+run; see the header for why the run of record does without it.
 """
 function build_run(mission_time::Float64, outdir::AbstractString; with_gravity_gradient::Bool=true)
     root = SM.Link(root=true, m=CYGNSS_MASS_KG,
@@ -377,8 +415,8 @@ end
 init_nrlmsise_space_indices!()
 window_s = T_END_S - T_CAL_S
 
-println("\nrun of record: wheel momentum exchange + gravity gradient, ", round(window_s; digits=1), " s")
-prefix = run_case("window", window_s; with_gravity_gradient=true)
+println("\nrun of record: wheel momentum exchange alone, ", round(window_s; digits=1), " s")
+prefix = run_case("window", window_s; with_gravity_gradient=false)
 main = score(prefix)
 @printf("  attitude error vs telemetry: mean %.3f  rms %.3f  max %.3f deg\n",
     mean(main.att), sqrt(mean(main.att .^ 2)), maximum(main.att))
@@ -397,62 +435,67 @@ let d = hypot.(main.df.sc1_drag_1, main.df.sc1_drag_2, main.df.sc1_drag_3)
         mean(d), CYGNSS_MASS_KG, 0.5 * (mean(d) / CYGNSS_MASS_KG) * window_s^2)
 end
 
-# The standalone reconstruction in `extra_examples/` reports its error over
-# t_rel 890 to 1100 s; score the same sub-window so the two numbers can be read
-# against each other.
-let k = findall(t -> t <= 1100.0 - T_CAL_S, main.t)
-    @printf("  over t_rel 890-1100 s, the window the standalone reconstruction reports: mean %.3f  rms %.3f  max %.3f deg\n",
-        mean(main.att[k]), sqrt(mean(main.att[k] .^ 2)), maximum(main.att[k]))
+# This is the window the standalone reconstruction in `extra_examples/` reports
+# over, so the two numbers can be read against each other directly.
+T_END_S == 1100.0 && @printf("  the standalone reconstruction reports 0.65 deg mean and 1.8 deg max over this same window\n")
+
+# Where the window could have ended, and what each choice costs. The run is one
+# trajectory, so an earlier end is a truncation of it and the table needs no
+# extra propagation.
+println("\nwindow end against error and pointing angle (the run of record, truncated):")
+for te in 1000.0:25.0:T_END_S
+    k = findall(x -> x <= te - T_CAL_S, main.t)
+    isempty(k) && continue
+    i = k[end]
+    @printf("    end t_rel %6.0f s: error at the end %6.3f deg (mean %6.3f, max %6.3f) | LVLH flight %6.3f, simulated %6.3f deg\n",
+        te, main.att[i], mean(main.att[k]), maximum(main.att[k]),
+        main.df.sc1_lvlh_pointing_flight_deg[i], main.df.sc1_lvlh_pointing_deg[i])
 end
 
-println("\ncontrol run: wheel momentum exchange alone, no gravity gradient")
-prefix_wheel = run_case("window_wheel_only", window_s; with_gravity_gradient=false)
-wheel_only = score(prefix_wheel)
+println("\ncomparison run: the same, with gravity-gradient torque added")
+prefix_gg = run_case("window_gravity_gradient", window_s; with_gravity_gradient=true)
+with_gg = score(prefix_gg)
 @printf("  attitude error vs telemetry: mean %.3f  rms %.3f  max %.3f deg\n",
-    mean(wheel_only.att), sqrt(mean(wheel_only.att .^ 2)), maximum(wheel_only.att))
-let k = findall(t -> t <= 1100.0 - T_CAL_S, wheel_only.t)
-    @printf("  over t_rel 890-1100 s: mean %.3f  rms %.3f  max %.3f deg (the standalone reports 0.65 / 1.8)\n",
-        mean(wheel_only.att[k]), sqrt(mean(wheel_only.att[k] .^ 2)), maximum(wheel_only.att[k]))
-end
+    mean(with_gg.att), sqrt(mean(with_gg.att .^ 2)), maximum(with_gg.att))
 
 println("\nagreement with the algebraic conservation solution (the reference)")
 ref_q = reference_attitude(splines, constants, T_CAL_S, T_CAL_S + window_s)
 ref_vs_sim = Float64[]
 ref_vs_tel = Float64[]
 gg_shift = Float64[]
-for i in eachindex(wheel_only.t)
-    tt = wheel_only.t[i] + T_CAL_S
+for i in eachindex(main.t)
+    tt = main.t[i] + T_CAL_S
     qr = ref_q(tt)
-    qw = SVector{4, Float64}(wheel_only.df.sc1_q_1[i], wheel_only.df.sc1_q_2[i], wheel_only.df.sc1_q_3[i], wheel_only.df.sc1_q_4[i])
-    qg = SVector{4, Float64}(main.df.sc1_q_1[i], main.df.sc1_q_2[i], main.df.sc1_q_3[i], main.df.sc1_q_4[i])
+    qw = SVector{4, Float64}(main.df.sc1_q_1[i], main.df.sc1_q_2[i], main.df.sc1_q_3[i], main.df.sc1_q_4[i])
+    qg = SVector{4, Float64}(with_gg.df.sc1_q_1[i], with_gg.df.sc1_q_2[i], with_gg.df.sc1_q_3[i], with_gg.df.sc1_q_4[i])
     push!(ref_vs_sim, attitude_angle_deg(qw, qr))
     push!(ref_vs_tel, attitude_angle_deg(qr, telemetry_quaternion(splines, tt)))
     push!(gg_shift, attitude_angle_deg(qg, qw))
 end
-@printf("  SpaceAGORA (wheel only) vs the algebraic reference: mean %.2e  max %.2e deg\n",
+@printf("  the run of record vs the algebraic reference: mean %.2e  max %.2e deg\n",
     mean(ref_vs_sim), maximum(ref_vs_sim))
-@printf("  the algebraic reference vs telemetry:               mean %.3f  max %.3f deg\n",
+@printf("  the algebraic reference vs telemetry:         mean %.3f  max %.3f deg\n",
     mean(ref_vs_tel), maximum(ref_vs_tel))
-@printf("  gravity gradient moves the simulated attitude by:   mean %.3f  max %.3f deg\n",
+@printf("  gravity gradient moves the simulated attitude by: mean %.3f  max %.3f deg\n",
     mean(gg_shift), maximum(gg_shift))
 
 full_hour = nothing
-full_hour_wheel = nothing
+full_hour_gg = nothing
 if FULL_HOUR
     hour_s = tel.t_rel[end] - T_CAL_S
     println("\nrange of validity: the same setup carried to the end of the hour (", round(hour_s; digits=0), " s)")
-    full_hour = score(run_case("full_hour", hour_s; with_gravity_gradient=true))
-    full_hour_wheel = score(run_case("full_hour_wheel_only", hour_s; with_gravity_gradient=false))
-    @printf("  with gravity gradient: mean %.2f  rms %.2f  max %.2f deg\n",
+    full_hour = score(run_case("full_hour", hour_s; with_gravity_gradient=false))
+    full_hour_gg = score(run_case("full_hour_gravity_gradient", hour_s; with_gravity_gradient=true))
+    @printf("  wheel momentum alone:   mean %.2f  rms %.2f  max %.2f deg\n",
         mean(full_hour.att), sqrt(mean(full_hour.att .^ 2)), maximum(full_hour.att))
-    @printf("  wheel momentum alone:  mean %.2f  rms %.2f  max %.2f deg\n",
-        mean(full_hour_wheel.att), sqrt(mean(full_hour_wheel.att .^ 2)), maximum(full_hour_wheel.att))
+    @printf("  with gravity gradient:  mean %.2f  rms %.2f  max %.2f deg\n",
+        mean(full_hour_gg.att), sqrt(mean(full_hour_gg.att .^ 2)), maximum(full_hour_gg.att))
     for mark in (window_s, 600.0, 1200.0, 1800.0, 2400.0, hour_s)
         i = findlast(t -> t <= mark, full_hour.t)
         i === nothing && continue
-        j = findlast(t -> t <= mark, full_hour_wheel.t)
-        @printf("    t_rel %6.0f s: %7.2f deg with gravity gradient, %7.2f deg without\n",
-            full_hour.t[i] + T_CAL_S, full_hour.att[i], full_hour_wheel.att[j])
+        j = findlast(t -> t <= mark, full_hour_gg.t)
+        @printf("    t_rel %6.0f s: %7.2f deg wheels only, %7.2f deg with gravity gradient\n",
+            full_hour.t[i] + T_CAL_S, full_hour.att[i], full_hour_gg.att[j])
     end
 end
 
@@ -462,6 +505,12 @@ end
 # zeroed, so no mass property reaches the page in any field. The link box stays,
 # because the viewer falls back to it when a model cannot be parsed, and it is
 # the published deployed span rather than any mission geometry.
+#
+# The body-frame wheel-momentum columns go too. They are a diagnostic worth
+# keeping in the run's own results, but on a page that also carries the wheel
+# speeds their ratio is the wheel inertia times the spin-axis matrix, and this
+# page carries no inertia of any kind. The three wheel SPEEDS stay: they are the
+# flight observable, and they tell a reader the same story.
 const PAGE_DIR = joinpath(OUTDIR, "page")
 mkpath(PAGE_DIR)
 page_prefix = joinpath(PAGE_DIR, "simulation_results")
@@ -474,9 +523,9 @@ let doc = JSON.parsefile(prefix * "_scene.json")
         JSON.print(io, doc)
     end
     full = DataFrame(Arrow.Table(prefix * ".feather"))
-    dropped = [c for c in names(full) if occursin(r"^sc\d+_mass$", c)]
+    dropped = [c for c in names(full) if occursin(r"^sc\d+_mass$", c) || occursin(r"^sc\d+_wheel_momentum_nms_\d$", c)]
     Arrow.write(page_prefix * ".feather", select(full, Not(dropped)))
-    println("\npage copy: dropped ", length(dropped), " mass column(s)")
+    println("\npage copy: dropped ", length(dropped), " column(s): ", join(dropped, ", "))
 end
 
 # The ghost carries BOTH the flown orbit and the flown attitude, so the
@@ -508,8 +557,9 @@ println("ghost: ", length(ghost_idx), " flown samples with position and attitude
 # a short arc that says nothing about an attitude maneuver.
 # The channels the page carries beside the trajectory, in the order they tell
 # the story: what the vehicle was commanded to do, how well the simulation did
-# it, and the wheel quantities that drove it. Every one is a flight observable
-# or an angle derived from one.
+# it, and the wheel speeds that drove it. Every one is a flight observable or an
+# angle derived from one. The body-frame wheel momentum is deliberately not
+# among them (see the page copy above).
 channels = [
     (column="lvlh_pointing_flight_deg", label="LVLH pointing, flight", unit="deg", digits=3),
     (column="lvlh_pointing_deg", label="LVLH pointing, simulated", unit="deg", digits=3),
@@ -520,9 +570,6 @@ channels = [
     (column="wheel_speed_rpm_1", label="wheel 1 speed", unit="rpm", digits=1),
     (column="wheel_speed_rpm_2", label="wheel 2 speed", unit="rpm", digits=1),
     (column="wheel_speed_rpm_3", label="wheel 3 speed", unit="rpm", digits=1),
-    (column="wheel_momentum_nms_1", label="wheel momentum x", unit="N m s", digits=6),
-    (column="wheel_momentum_nms_2", label="wheel momentum y", unit="N m s", digits=6),
-    (column="wheel_momentum_nms_3", label="wheel momentum z", unit="N m s", digits=6),
     (column="wheel_torque_nm", label="wheel reaction torque", unit="N m", digits=7),
 ]
 
@@ -535,16 +582,16 @@ html = export_visualization(page_prefix; max_frames=2000, trail_s=window_s, text
 println("html: ", html, " ", filesize(html))
 
 validity = full_hour === nothing ? "" : @sprintf(
-    "Carried past the transient it degrades, as the disturbance torques it does not carry accumulate: %.0f deg mean over the remaining forty minutes of the export. ",
+    "The window ends where the maneuver does. Carried on open loop to the end of the hour the same run drifts to %.0f deg mean, because the small external torques it does not carry accumulate and nothing corrects them. ",
     mean(full_hour.att[full_hour.t .> window_s]))
 cdn = build_cdn_page(html, joinpath(OUTDIR, "artifact.html"), "AGORA CYGNSS FM01 Slew",
     "AGORA CYGNSS FM01 · the commanded slew, $(DATE_LABEL) $(Dates.format(epoch_dt, "HH:MM")) UTC",
-    @sprintf("%.0f km, i %.2f°, %.1f min; EarthGGM05C 50x50, Sun + Moon, SRP, NRLMSISE-00; reaction-wheel momentum exchange + gravity gradient, dp8",
+    @sprintf("%.0f km, i %.2f°, %.1f min; EarthGGM05C 50x50, Sun + Moon, SRP, NRLMSISE-00; reaction-wheel momentum exchange, no external torque, dp8",
         (oe[1] - planet.Rp_e) / 1e3, rad2deg(oe[3]), 2pi * sqrt(oe[1]^3 / planet.μ) / 60),
     @sprintf("%.0f s, the commanded step at %+.0f s", window_s, COMMAND_STEP_S - T_CAL_S),
     "CYGNSS FM01 holds its LVLH pointing target until its flight software steps that target about ten degrees, and the reaction wheels turn the observatory to it. " *
     "SpaceAGORA integrates its own rigid-body attitude here; the only thing taken from the flight record is the measured wheel speed, entering as the reaction torque " *
-    "of the wheel momentum it implies, plus gravity-gradient torque. No commanded-torque channel and no controller is replayed, and the attitude is calibrated once, " *
+    "of the wheel momentum it implies. No external torque is applied, no commanded-torque channel and no controller is replayed, and the attitude is calibrated once, " *
     @sprintf("eleven seconds before the step. Over the %.0f s it tracks the flown attitude to %.2f deg mean and %.2f deg at worst. ", window_s, mean(main.att), maximum(main.att)) *
     validity *
     "The translucent observatory is the flight record itself, carrying both the flown orbit and the flown attitude, so the gap you can see between the two vehicles IS the error. " *

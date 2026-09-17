@@ -18,7 +18,7 @@ variant `artifact.html` built by `build_cdn_page.py`.
 | `cassini_titan_flyby.jl [TA\|T5\|all]` | Cassini's TA and T5 Titan flybys, Titan-centerd, SPICE ghost | GRAM (Titan), Cassini SCPSE kernels (auto-downloaded) |
 | `apollo11_lunar_orbit.jl` | Apollo 11 lunar module in the parking orbit, two orbits | SPICE (Moon frames) |
 | `cygnss_constellation.jl` | the seven CYGNSS observatories over the 96 hours their flight telemetry covers (2025-06-06 to 2025-06-09), ground tracks, a flown-track ghost beside every spacecraft | SPICE (Earth orientation), `data/telemetry/CYGNSS/` (gitignored), CelesTrak space-weather indices (auto-downloaded) |
-| `cygnss_slew.jl` | CYGNSS FM01 executing its commanded ten-degree reorientation on 2025-10-04, 6-DOF, the wheels driven by the telemetered wheel speeds, the flight record as a position-and-attitude ghost | SPICE (Earth orientation), `data/telemetry/CYGNSS/cyg01_slew_*.feather` and `cyg01_adcs_constants.toml` (gitignored), CelesTrak space-weather indices (auto-downloaded) |
+| `cygnss_slew.jl` | CYGNSS FM01 executing its commanded ten-degree reorientation on 2025-10-04, 6-DOF open loop, the wheels driven by the telemetered wheel speeds and no external torque, the flight record as a position-and-attitude ghost | SPICE (Earth orientation), `data/telemetry/CYGNSS/cyg01_slew_*.feather` and `cyg01_adcs_constants.toml` (gitignored), CelesTrak space-weather indices (auto-downloaded) |
 | `apollo11_landing.jl` | Apollo 11 powered descent from PDI to touchdown, 6-DOF with the quadratic guidance and RCS attitude control, LROC terrain and imagery | SPICE (Moon frames), site data from `scripts/dev/terrain/fetch_moon_site.py` |
 
 The mission cases share `common.jl`: kernel download into

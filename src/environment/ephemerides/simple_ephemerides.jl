@@ -1,6 +1,22 @@
 struct SpiceEphemeridesModel <: AbstractEphemeridesModel
 end
 
+"""
+    SimpleEphemeridesModel(; reference_epoch_seconds=0.0, prime_meridian_at_reference_rad=NaN)
+
+Analytic ephemerides/frame backend for onboarding and open-data runs that should
+not depend on local SPICE kernels.
+
+By default (`prime_meridian_at_reference_rad = NaN`) the planet-fixed frame uses
+the planet's true prime-meridian convention: Earth's rotation angle is GMST
+(IAU-82, treating the model's leap-second-free UTC timeline as UT1), so
+geographic longitude-keyed models — IGRF and tilted-dipole magnetic fields,
+lat/lon-dependent atmospheres, tesseral gravity harmonics — sample the correct
+longitudes. Other planets keep a zero prime-meridian angle at the reference
+epoch. Passing an explicit finite `prime_meridian_at_reference_rad` selects the
+legacy linear rotation `θ = pm + ω₃·(et − reference_epoch_seconds)` exactly as
+given.
+"""
 @kwdef struct SimpleEphemeridesModel <: AbstractEphemeridesModel
     reference_epoch_seconds::Float64 = 0.0
     # NaN is a sentinel meaning "planet-true prime meridian": Earth uses GMST

@@ -14,8 +14,8 @@ concurrency:
 jobs:
   tests-matrix:
     runs-on: ubuntu-latest
-    # 60 killed a fully-passing 1.12 leg at 1h00m20s (PR #35); runner-speed
-    # variance across runs is ~1.6x, so give the full suite real headroom.
+    # Includes dependency setup, the full suite and Earth thruster smoke.
+    # September runs hit 90 minutes with unit/parallel tests still running.
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -447,7 +447,9 @@ jobs:
 
   coverage-quality-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Instrumented runs hit 120 minutes before unit/parallel tests and the
+    # coverage gate finished; retain the full workload with setup headroom.
+    timeout-minutes: 150
     env:
       JULIA_NUM_THREADS: "4"
       # Coverage debt (July 2026): first real gate run measured 82.84%
@@ -461,8 +463,9 @@ jobs:
       # earlier. 1200s silently dropped the threaded/GRAM probe coverage
       # whenever the post-probe tail of the suite outgrew 20 min, failing
       # per-file floors on files those probes cover. Must exceed the whole
-      # suite step's wall time on the slowest hosted runner.
-      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "7200"
+      # suite step's wall time on the slowest hosted runner. Keep it at least
+      # as long as this job budget so early child coverage remains included.
+      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "9000"
     steps:
       - name: Checkout
         uses: actions/checkout@v7

@@ -1437,6 +1437,145 @@ end
     return forces, torques
 end
 
+@inline function _rhs_heat_rates_active(p)::Bool
+    return !(p.args.environment_model.density_model isa SimulationModel.EnvironmentModels.NoAtmosphereModel)
+end
+
+@inline function _rhs_final_assembly_direct_supported_kind(rhs_kind::Symbol)::Bool
+    return rhs_kind == :explicit || rhs_kind == :full || rhs_kind == :slow
+end
+
+@inline function _component_data_aliases(parent_data, child, expected_start::Int)::Bool
+    expected_start >= firstindex(parent_data) || return false
+    child_data = ComponentArrays.getdata(child)
+    length(child_data) > 0 || return true
+    return try
+        pointer(child_data) == pointer(parent_data, expected_start)
+    catch
+        false
+    end
+end
+
+function _probe_rhs_final_assembly_direct_stride(sc_state, sc_du, u, du)::Int
+    num_sats = length(sc_state)
+    num_sats == length(sc_du) || return 0
+    num_sats > 0 || return 0
+    Tuple(propertynames(u)) == (:sc,) || return 0
+    Tuple(propertynames(du)) == (:sc,) || return 0
+
+    first_state = sc_state[1]
+    first_du = sc_du[1]
+    Tuple(propertynames(first_state)) == (:pos, :vel, :mass, :heat_loads) || return 0
+    Tuple(propertynames(first_du)) == (:pos, :vel, :mass, :heat_loads) || return 0
+    length(first_state.pos) == 3 || return 0
+    length(first_state.vel) == 3 || return 0
+    length(first_du.pos) == 3 || return 0
+    length(first_du.vel) == 3 || return 0
+
+    first_state_data = ComponentArrays.getdata(first_state)
+    first_du_data = ComponentArrays.getdata(first_du)
+    stride = length(first_state_data)
+    stride == length(first_du_data) || return 0
+    stride >= 7 || return 0
+    length(first_state.heat_loads) == stride - 7 || return 0
+    length(first_du.heat_loads) == stride - 7 || return 0
+
+    u_data = ComponentArrays.getdata(u)
+    du_data = ComponentArrays.getdata(du)
+    length(u_data) == stride * num_sats || return 0
+    length(du_data) == stride * num_sats || return 0
+    _component_data_aliases(u_data, first_state, 1) || return 0
+    _component_data_aliases(du_data, first_du, 1) || return 0
+    last_start = (num_sats - 1) * stride + 1
+    _component_data_aliases(u_data, sc_state[num_sats], last_start) || return 0
+    _component_data_aliases(du_data, sc_du[num_sats], last_start) || return 0
+    return stride
+end
+
+@inline function _rhs_final_assembly_direct_stride!(shared_buffers, sc_state, sc_du, u, du)::Int
+    status = shared_buffers.rhs_final_assembly_direct_layout_status[]
+    status == Int8(1) && return shared_buffers.rhs_final_assembly_direct_layout_stride[]
+    status == Int8(-1) && return 0
+    stride = _probe_rhs_final_assembly_direct_stride(sc_state, sc_du, u, du)
+    shared_buffers.rhs_final_assembly_direct_layout_stride[] = stride
+    shared_buffers.rhs_final_assembly_direct_layout_status[] = stride > 0 ? Int8(1) : Int8(-1)
+    return stride
+end
+
+@inline function _zero_rhs_direct_segment!(du_data, base::Int, stride::Int)::Nothing
+    @inbounds for offset in 1:stride
+        du_data[base + offset] = 0.0
+    end
+    return nothing
+end
+
+@inline function _assign_rhs_direct_acceleration!(du_data, base::Int, totals, mass, sat_idx::Int)::Nothing
+    mass_f64 = Float64(mass)
+    if !isfinite(mass_f64) || abs(mass_f64) <= eps(Float64)
+        @inbounds begin
+            du_data[base + 4] = 0.0
+            du_data[base + 5] = 0.0
+            du_data[base + 6] = 0.0
+        end
+        return nothing
+    end
+
+    inv_mass = inv(mass_f64)
+    @inbounds begin
+        du_data[base + 4] = Float64(totals[1, sat_idx]) * inv_mass
+        du_data[base + 5] = Float64(totals[2, sat_idx]) * inv_mass
+        du_data[base + 6] = Float64(totals[3, sat_idx]) * inv_mass
+    end
+    return nothing
+end
+
+function _try_assign_flat_translational_rhs_direct_layout!(
+    du::ComponentVector,
+    u::ComponentVector,
+    p,
+    totals::Matrix{Float64},
+    env::SimulationModel.RhsPlanEnvConfig,
+    rhs_kind::Symbol,
+    assembly_allotment::Int,
+)::Bool
+    env.final_assembly_direct_layout || return false
+    _rhs_final_assembly_direct_supported_kind(rhs_kind) || return false
+    p.args.mission_configuration.orientation_sim && return false
+    !isempty(p.args.control_model.control_effectors) && return false
+    _robot_arm_present(p) && return false
+    _rhs_heat_rates_active(p) && return false
+
+    sc_state = u.sc
+    sc_du = du.sc
+    num_sats = length(sc_state)
+    stride = _rhs_final_assembly_direct_stride!(p.shared_buffers, sc_state, sc_du, u, du)
+    stride > 0 || return false
+
+    u_data = ComponentArrays.getdata(u)
+    du_data = ComponentArrays.getdata(du)
+    active_flags = p.is_active
+    SimulationModel.ParallelPolicy.threaded_foreach(num_sats, assembly_allotment) do sat_idx
+        base = (sat_idx - 1) * stride
+        @inbounds if !active_flags[sat_idx]
+            _zero_rhs_direct_segment!(du_data, base, stride)
+            return nothing
+        end
+
+        @inbounds begin
+            du_data[base + 1] = Float64(u_data[base + 4])
+            du_data[base + 2] = Float64(u_data[base + 5])
+            du_data[base + 3] = Float64(u_data[base + 6])
+        end
+        _assign_rhs_direct_acceleration!(du_data, base, totals, u_data[base + 7], sat_idx)
+        @inbounds du_data[base + 7] = 0.0
+        @inbounds for offset in 8:stride
+            du_data[base + offset] = 0.0
+        end
+        return nothing
+    end
+    return true
+end
+
 # Warm SpiceRhsMemo with solar and N-body positions for time t before the parallel region
 # starts. Workers then find immediate cache hits and only hold the memo lock for a fast
 # dict lookup rather than an expensive SPICE kernel call.
@@ -1601,6 +1740,20 @@ function _spacecraft_dynamics_flat_constellation_effector_queue!(
         end
     end
     totals = p.shared_buffers.rhs_flat_effector_totals[]
+
+    rhs_env = _rhs_env_config(p)
+    if rhs_env.final_assembly_direct_layout &&
+       _try_assign_flat_translational_rhs_direct_layout!(
+            du,
+            u,
+            p,
+            totals,
+            rhs_env,
+            rhs_kind,
+            plan.allotment,
+        )
+        return nothing
+    end
 
     SimulationModel.ParallelPolicy.threaded_foreach(length(sc_state), plan.allotment) do i
         @inbounds if !p.is_active[i] ||

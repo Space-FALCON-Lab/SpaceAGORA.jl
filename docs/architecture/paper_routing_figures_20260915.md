@@ -8,13 +8,12 @@ alongside them. Both machines ran the same code at the same commit.
 - **Code the numbers were measured against:** `origin/main` 4b42b544, run from a
   dedicated worktree so every figure in this document cites one hash. Harness
   changes on `parallelization-paper-results`.
-- **Base the branch now sits on:** `origin/main` 31e04bc8. The branch was
-  rebased after the fact for review, and main had moved 21 `src/` files in
-  between -- `simulation/campaigns/constellation_ensemble.jl` and
-  `simulation/engine/setup.jl` among them, both on the path P1 and P5 exercise.
-  Nothing here was re-measured against that tree, so a re-run from the branch
-  tip is not guaranteed to reproduce these numbers. 4b42b544 is the hash to
-  quote and the one to check out to reproduce them.
+- **Base the branch now sits on:** `origin/main` 31e04bc8, which moved 21 `src/`
+  files after the numbers were taken. P1 and P5 were re-measured against it,
+  with the calibration store controlled, and the difference is smaller than
+  run-to-run noise -- see "Re-measured against the branch's own base" below.
+  4b42b544 remains the hash to quote, since it is what P2/P3/P4 were measured
+  on and what the tables report.
 - **Machines:** `space-falcon-1`, Ryzen 9 9900X, 12 physical cores / 24 threads,
   60 GB, thread ladder `1,2,4,8,12`, process-worker cap 12; and
   `space-falcon-lab-TRX50-AERO-D`, 64 physical cores, thread ladder
@@ -212,15 +211,84 @@ came from, failing the run rather than writing a figure that disagrees with
 its own source data; `scripts/check_paper_routing_doc.py` does the same for
 every table cell in this document.
 
+## Re-measured against the branch's own base
+
+The branch was rebased onto `origin/main` 31e04bc8, which had moved 21 `src/`
+files since the numbers were taken -- `simulation/campaigns/constellation_ensemble.jl`
+and `simulation/engine/setup.jl` among them, both on the path P1 and P5
+exercise. P1 and P5 were re-run on TRX50 to find out whether that mattered.
+
+A straight re-run cannot answer it: the original run's calibration store was
+still converging while P1 ran, today's starts warm, and finding 4a already
+showed warmth alone worth 40% at one point. So the store was snapshotted and
+two runs were made back to back from the identical snapshot, on an idle
+machine, differing only in `src/`. The harness files are byte-identical between
+them (md5), and `src/` differs by exactly the 21 files.
+
+| comparison | `src/` | store + day | median | outside +/-8% |
+|---|---|---|---:|---:|
+| A: new base vs old base | **differs** | same | 1.001 | **3 of 90** |
+| B: old base vs original run | same | **differs** | 1.001 | 6 of 90 |
+
+**The `src/` change is performance-neutral, and moves the numbers less than
+running identical code on a different day does.** Comparison A's three movers
+are `policy_v2` at N=4096 (1.259, the adaptive route finding 5 identifies as
+the least stable number in the set), `outer_process` at P5's 2x16 (0.909) and
+`serial` at P5's 8x4 (1.085) -- and serial is the unrouted baseline, so a move
+there is machine variance by construction. Comparison B is the honest noise
+estimate: identical code, six points outside the band, and a far wider spread
+(0.640-1.465 against A's 0.909-1.259).
+
+Two things fell out of it that matter more than the rebase question.
+
+**The N=4096 rung is where P1's static routes are least reproducible.** The two
+static points that looked like a code regression on the first comparison --
+`outer_inner_static` +41% and `inner_only` -17% -- reproduce with *identical*
+code (1.465 and 0.816 in comparison B). The 8% band used elsewhere is too tight
+there.
+
+**P1's and P2's best-static route labels are noise**, which is finding 1's
+correction above. Three runs of P1, two of them running the same binary, name a
+different winning route at most rungs, because the routes are within 0.1-1.9%
+of each other. The dip itself is untouched by this: N=64's best static is
+34.46 s, 34.74 s and 34.46 s across the three runs, and N=256's is 20.91 s,
+21.25 s and 20.72 s. Finding 2 stands; finding 1 did not.
+
+Runs: `output/performance/paper_benchmarks_trx50_rebased/20260917_112754`
+(new base) and `..._control/20260917_141035` (old base), both gitignored.
+Compare any two with `scripts/compare_paper_routing_runs.py`.
+
 ## Findings
 
-**1. The best static route changes identity along every axis.** It moves three
-times down P1's column (`outer_inner_static` → `outer_threads` →
-`outer_inner_static` → `inner_only`), twice down P2's, and once across each of
-P5's, where `outer_threads` wins the thread-heavy splits and `outer_process`
-takes over from 4x3 outward. No single pinned route is the right answer at every
-size, budget or split, which is the case for routing at all — and it is measured
-here rather than asserted.
+**1. The best static route changes identity with the shape of the budget, and
+only there. The earlier version of this finding, which also claimed it changes
+down P1's and P2's columns, was reading noise.** What decides whether an argmin
+is a result is the gap to the second-best route, and that gap differs by orders
+of magnitude between the phases:
+
+| phase | gap, best to second-best static | argmin reproducible across runs? |
+|---|---|---|
+| P1 | 0.1-1.9% | no |
+| P2 | 0.4-9.1% (median ~2%) | no |
+| P3 | 0.9-5.9% | marginal |
+| P4 | 3.6-19.3%, growing with budget | yes above budget 4 |
+| P5 | 0.1-13.7% on the thread splits; **47-1188%** on the process splits | yes on the process splits |
+
+P5 is where the claim holds outright. `outer_process` wins the 8x4, 16x2 and
+32x1 splits by 47% to 1188%, and three separate TRX50 runs -- two of them
+running identical code -- name it every time. Threads win the narrow splits and
+processes win the wide ones, by margins nothing in this harness could
+manufacture. P4 supports a weaker version: `outer_threads` at budget 1,
+`outer_process` from budget 2 on, with the margin growing to 19.3% at 12.
+
+P1 and P2 do not support it. There the three in-process routes sit within a few
+percent of each other at every point, which is below run-to-run variance, so
+which one is "best" is decided by noise. Three TRX50 runs of P1 name a different
+winner at most rungs, and the two 12-core runs disagree at all six. The route
+column in P1's and P2's tables should be read as "any of the three", not as a
+result; the *times* in those tables are reproducible, and the route labels are
+not. Quoting them as a changing argmin would be claiming a signal the data does
+not contain.
 
 **2. At mid constellation sizes every static route is slower than serial, on
 both machines, and the cause is the RHS plan rather than the route.** On
@@ -372,3 +440,14 @@ state it, and do not print numbers from both conventions in the same table.
   release's store. The TRX50 P3/P4 columns are therefore cold-ish and may
   understate R6 at the low budgets, the same way finding 4a's withdrawn
   regression did locally. Optional — the qualitative result is unchanged.
+
+- **P2/P3/P4 have not been re-measured against 31e04bc8.** P1 and P5 were, and
+  neither moved; the same is likely for the other three, but likely is not
+  measured. Cheap to close if the manuscript wants the whole set on one base.
+
+- **How wide is the noise band, per rung?** The 8% used by
+  `compare_paper_routing_runs.py` is one number standing in for a spread that
+  demonstrably varies -- 0.1-2% between static routes at most P1 points, but
+  46% at N=4096 between two runs of the same binary. A per-rung band measured
+  from repeated identical-code runs would make "did this change anything" a
+  sharper question than it currently is.

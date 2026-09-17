@@ -29,8 +29,6 @@ docs/src/generated/
 docs/.CondaPkg/
 docs/Manifest.toml
 output/calibration/
-SpaceAGORACalibration.jl/test/output/
-SpaceAGORACalibration.jl/.CondaPkg/
 !test/golden/*/fixture.csv
 !test/golden/agora_earth_regression.csv
 data/telemetry/CYGNSS/

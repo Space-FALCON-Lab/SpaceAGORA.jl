@@ -18,6 +18,8 @@ What to read next:
 
 - [Atmosphere Models](atmosphere_models.md)
 - [Solver Configuration](solver_configuration.md)
+- [Adding a Force or Torque of Your Own](custom_effector.md)
+- [Stopping a Simulation on a Condition](stop_conditions.md)
 - [Extensibility](../extensibility.md)
 
 ## The top-level struct
@@ -67,9 +69,10 @@ This epoch is used as the reference for SPICE-backed ephemerides and for
 
 ## InitialCondition
 
-`InitialCondition` accepts two input modes. Use whichever is more natural for
-your scenario. All angular inputs are in degrees; the constructor converts to
-radians internally.
+`InitialCondition` accepts orbital elements, apsis radii, or apsis altitudes.
+The keyword-only constructor supports Modes 1 and 2; passing a planet as the
+first positional argument selects Mode 3. All angular inputs are in degrees;
+the constructor converts to radians internally.
 
 **Mode 1: apoapsis and periapsis radii**
 
@@ -80,7 +83,7 @@ ic = SM.InitialCondition(
     i   = 28.5,                   # inclination, degrees
     ω   = 10.0,                   # argument of periapsis, degrees
     Ω   = 20.0,                   # right ascension of ascending node, degrees
-    ν   = 0.0                     # true anomaly at epoch, degrees (default 0.0)
+    ν   = 0.0                     # start at periapsis; omitted ν defaults to 180.0 (apoapsis)
 )
 ```
 
@@ -97,8 +100,47 @@ ic = SM.InitialCondition(
 )
 ```
 
-You cannot mix both modes in the same call; providing both `ra`/`rp` and
-`a`/`e` raises an error.
+For the `a`/`e` form, omitting `ν` starts at periapsis (`0.0` degrees).
+For the `ra`/`rp` form, omitting `ν` starts at apoapsis (`180.0` degrees), so
+set `ν=0.0` explicitly when you want to start at periapsis.
+
+Choose one pair of inputs per call. The current keyword-only constructor
+gives `ra`/`rp` precedence if `a`/`e` are also supplied; it does not reject
+that combination. Supplying only one of `ra` and `rp` raises an error.
+
+**Mode 3: apoapsis and periapsis altitudes above the ellipsoid**
+
+```julia
+planet = SM.make_no_gram_planet(:earth)
+initial_time = SM.InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0)
+ephemerides_model = SM.SimpleEphemeridesModel()
+
+ic = SM.InitialCondition(
+    planet;
+    ra = 1_200e3,  # apoapsis altitude above the reference ellipsoid, m
+    hp = 400e3,    # periapsis altitude above the reference ellipsoid, m
+    i = 28.5,
+    ω = 10.0,
+    Ω = 20.0,
+    ν = 0.0,      # start at periapsis; omitted ν defaults to 180.0 (apoapsis)
+    initial_time=initial_time,
+    ephemerides_model=ephemerides_model,
+)
+```
+
+In this form, both `ra` and `hp` are altitudes in metres. The positional
+`planet` argument selects this meaning of `ra`; in Mode 1, `ra` is a radius
+from the planet's centre. The constructor finds the radius at each apsis
+whose geodetic altitude matches the requested value, then computes `a` and
+`e`. Both altitudes must be nonnegative, and the resulting apoapsis radius
+must exceed the periapsis radius.
+
+Use the same `initial_time` and `ephemerides_model` in the simulation
+configuration so the constructor uses the intended inertial-to-planet-fixed
+frame. Advanced callers can supply that rotation directly as `L_PI`, which
+takes precedence. With neither an explicit rotation nor an initial time,
+the constructor uses an initialized `planet.L_PI`, or the identity rotation
+if that matrix is unavailable or all zeros.
 
 **Cartesian initial condition**
 
@@ -106,13 +148,19 @@ For non-Keplerian starts or when state is available in an inertial Cartesian
 frame:
 
 ```julia
+using StaticArrays: SVector
+
 ic = SM.CartesianInitialCondition(
-    pos     = [6_778_137.0, 0.0, 0.0],   # inertial position, m
-    vel     = [0.0, 7784.0, 0.0],         # inertial velocity, m/s
-    q       = [1.0, 0.0, 0.0, 0.0],       # unit quaternion (scalar-first)
-    ang_vel = [0.0, 0.0, 0.0]             # body angular velocity, rad/s
+    [6_778_137.0, 0.0, 0.0],              # inertial position, m (positional)
+    [0.0, 7784.0, 0.0];                   # inertial velocity, m/s (positional)
+    q       = SVector(0.0, 0.0, 0.0, 1.0),   # unit quaternion, scalar-last [x, y, z, w]; the identity attitude
+    ang_vel = SVector(0.0, 0.0, 0.0)         # bus angular velocity, rad/s
 )
 ```
+
+Position and velocity are positional arguments; `q` and `ang_vel` are keyword
+arguments that must be `SVector`s and default to the values shown, so
+`SM.CartesianInitialCondition(pos, vel)` is also valid.
 
 ## MissionConfiguration
 

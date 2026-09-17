@@ -2,11 +2,10 @@
 # Test-suite division, step B1 (PI-approved July 15): move gate scripts,
 # runtime smokes, stress scripts, and coverage probes into subdirectories.
 # The telemetry benchmark manifest does NOT move (it is a compiled-in default
-# in src + the calibration subpackage + published example specs).
+# in src + published example specs).
 #
 # Run from the repo root on a branch cut from main AFTER PRs #46 and #47 merge.
-# All moves via git mv; all reference edits are exact-path and avoid the
-# SpaceAGORACalibration.jl/test/ bare-name look-alikes.
+# All moves via git mv; all reference edits use exact repository-relative paths.
 set -euo pipefail
 
 [ -f test/telemetry_benchmark_manifest.toml ] || { echo "run from repo root"; exit 1; }
@@ -59,7 +58,7 @@ perl -pi -e 's/joinpath\(\@__DIR__, "\.\.", "(coverage_[a-z0-9_]+_probes\.jl)"\)
 perl -pi -e 's/"coverage_debt_([a-z0-9_]+_probes\.jl)"/"$1"/g' test/suites/09_coverage_debt_probe_drivers.jl
 perl -pi -e 's{joinpath\((REPO_ROOT|[A-Za-z_]+), "test", ([A-Za-z_]+)\)}{joinpath($1, "test", "probes", $2)}g; s{joinpath\(\@__DIR__, "\.\.", ([a-z_]+)\)}{joinpath(\@__DIR__, "..", "probes", $1)}g' test/suites/09_coverage_debt_probe_drivers.jl
 
-# ---------- 5. workflows (exact paths; " test/ci_" prefix cannot match the calibration copies) ----------
+# ---------- 5. workflows (exact repository-relative paths) ----------
 for w in .github/workflows/julia-ci.yml .github/workflows/nightly-stress.yml; do
   perl -pi -e 's{ test/(ci_[a-z0-9_]+_gate\.jl)}{ test/gates/$1}g' "$w"
   perl -pi -e 's{ test/(ci_(clean_depot_smoke|threaded_smoke|no_gram_smoke|examples_suite_smoke|examples_regression)\.jl)}{ test/smoke/$1}g' "$w"

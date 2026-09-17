@@ -300,8 +300,25 @@ incidence policy. Panel-control changes take effect in heating without requiring
 a force calculation first. The aerodynamic scale factor is not applied directly
 to heat rates; it can still change heating by changing the trajectory.
 
-A configuration without a recognized aerodynamic model keeps its existing
-`Link.α` heating input. If a built-in model is present alongside custom effectors,
-the built-in model determines geometric incidence. Multiple built-in models must
-use the same fixed-attitude policy when attitude is not propagated; conflicting
-policies raise an error because there is no single angle for heating to use.
+`AerodynamicCoefficientfM.fixed_attitude_incidence` governs both aerodynamics
+and heating when attitude is not propagated. `AerodynamicCoefficientConstant`
+and `AerodynamicCoefficientNoBallisticFlight` always use `:max_drag` in that
+case. With propagated attitude, incidence follows the wind-relative flow;
+without it, the selected fixed-attitude policy supplies the geometric angle.
+
+A configuration without a recognized built-in aerodynamic model keeps its
+existing `Link.α` heating input. A custom effector does not become a geometric
+owner by declaring `environment_requirements(model).atmosphere = true`; its
+heating input remains the angle maintained by that effector or controller.
+If a built-in model is also present, it determines geometric incidence.
+Multiple built-in models must use the same fixed-attitude policy when attitude
+is not propagated; conflicting policies raise an error at the first thermal
+sample because there is no single angle for heating to use.
+
+For a controlled panel, heating follows its executed orientation. The resulting
+incidence equals the panel's commanded angle for the supported geometry with a
+panel offset along the body y axis and a flow-aligned root. Other offsets or
+root attitudes can give a different incidence without changing the stored
+command. In the Odyssey energy-depletion example, saved maximum-link heat
+columns include the uncontrolled bus, while the controller's panel heat limits
+apply only to its controlled panels.

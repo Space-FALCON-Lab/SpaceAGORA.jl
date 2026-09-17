@@ -111,8 +111,9 @@ end
 Free-molecular aerodynamics from the Hart et al. closed forms (rectangular
 prism, doi 10.2514/1.A33606), evaluated per link and summed.
 
-`fixed_attitude_incidence` selects how link incidence is treated when
-`orientation_sim=false` (it has no effect when attitude is simulated):
+`fixed_attitude_incidence` selects the link incidence used by both aerodynamics
+and heating when `orientation_sim=false`. When attitude is propagated, both
+use the current spacecraft and link geometry instead:
 
 - `:max_drag` (default, historical behavior): every link is treated as
   flow-normal and charged its full `ref_area` — the spacecraft permanently

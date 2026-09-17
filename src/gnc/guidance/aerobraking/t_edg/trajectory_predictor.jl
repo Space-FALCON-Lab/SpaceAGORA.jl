@@ -1,4 +1,3 @@
-using PreallocationTools
 using NLsolve
 using LinearAlgebra
 using OrdinaryDiffEq

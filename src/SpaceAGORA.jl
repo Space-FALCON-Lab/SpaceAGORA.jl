@@ -20,9 +20,10 @@ using .ParallelProfiles: parse_parallel_profile, parallel_profile_name, profile_
 using .ParallelProfiles: OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
 using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
-using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
+using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
+using .SimulationModel: StateAnchor, get_state_anchor_callback
 import .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 using .SimulationCampaigns: run_constellation_ensemble
@@ -78,6 +79,8 @@ using .SimulationModel: SolarPanelAngleOfAttackControlModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionGuidanceModel) AerobrakingEnergyDepletionGuidanceModel
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionControlModel) AerobrakingEnergyDepletionControlModel
 @doc (@doc SimulationModel.SolarPanelAngleOfAttackControlModel) SolarPanelAngleOfAttackControlModel
+@doc (@doc SimulationModel.StateAnchor) StateAnchor
+@doc (@doc SimulationModel.get_state_anchor_callback) get_state_anchor_callback
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
@@ -240,10 +243,20 @@ happen before the first atmosphere evaluation.
 init_nrlmsise_space_indices!
 
 """
-    SimpleEphemeridesModel(; reference_epoch_seconds=0.0, prime_meridian_at_reference_rad=0.0)
+    SimpleEphemeridesModel(; reference_epoch_seconds=0.0, prime_meridian_at_reference_rad=NaN)
 
 Analytic ephemerides/frame backend for onboarding and open-data runs that should
 not depend on local SPICE kernels.
+
+By default (`prime_meridian_at_reference_rad = NaN`) the planet-fixed frame uses
+the planet's true prime-meridian convention: Earth's rotation angle is GMST
+(IAU-82, treating the model's leap-second-free UTC timeline as UT1), so
+geographic longitude-keyed models — IGRF and tilted-dipole magnetic fields,
+lat/lon-dependent atmospheres, tesseral gravity harmonics — sample the correct
+longitudes. Other planets keep a zero prime-meridian angle at the reference
+epoch. Passing an explicit finite `prime_meridian_at_reference_rad` selects the
+legacy linear rotation `θ = pm + ω₃·(et − reference_epoch_seconds)` exactly as
+given.
 """
 SimpleEphemeridesModel
 
@@ -346,6 +359,11 @@ gravity_backbone_kick_acceleration_ii
 Stable extension hook for custom [`AbstractDensityModel`](@ref)
 implementations. The scalar form returns density, temperature, and wind for a
 single atmosphere query.
+
+Calendar-dependent models require the 7-argument form: `el_time` is elapsed
+seconds from the scenario epoch, which only `p.args.initial_time` can resolve
+to an absolute date. `NRLMSISE00AtmosphereModel` therefore throws on the
+6-argument form instead of silently evaluating at a fixed reference epoch.
 """
 getDensity
 
@@ -407,6 +425,7 @@ calcControlMassFlowRate
 @doc (@doc ParallelProcess.campaign_process_pool) campaign_process_pool
 @doc (@doc ParallelProcess.ensure_process_workers!) ensure_process_workers!
 @doc (@doc ParallelProcess.shutdown_process_pool!) shutdown_process_pool!
+@doc (@doc ParallelProcess.adopt_process_workers!) adopt_process_workers!
 
 @doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest
 @doc (@doc TelemetryVerification.VerificationResult) VerificationResult
@@ -422,13 +441,14 @@ export parse_parallel_profile, parallel_profile_name, profile_config, profile_en
 export OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
 export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
-export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
+export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 export run_constellation_ensemble
 export campaign_route_features, campaign_outer_route_state
+export StateAnchor, get_state_anchor_callback
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 export StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
@@ -558,5 +578,33 @@ This is the package-owned command surface used by the `bin/spaceagora` wrapper.
 run_cli(args...; kwargs...) = SpaceAGORACLI.run_cli(args...; kwargs...)
 
 include(joinpath(@__DIR__, "precompile_workload.jl"))
+
+# Runtime wiring that must not be baked into the precompiled image: these Refs
+# hold closures over EnvironmentModels functions, so assigning them at include
+# time would serialize a closure from an earlier world age. __init__ runs on
+# every load of the cached image, which is what this needs.
+function __init__()
+    try
+        SimulationModel.SimulationCallbacks._install_density_service_hooks!()
+    catch err
+        @warn "Could not install distributed density service hooks; the service will be unavailable." exception=(err, catch_backtrace())
+    end
+    return nothing
+end
+
+# The Monte Carlo dispatchers compile on their first campaign in a process --
+# the job channel, the feeders and local consumers of the mixed dispatcher, the
+# sample wrapper, the steady-cost estimator. Measured on the paper harness
+# (L12, independent_1sat_1hr, 64 samples): the runner's first pool campaign
+# cost 3.1-3.2 s against 1.8-2.2 s for the static pool path's own cold start
+# on both machines, and 0.2-0.6 s warm. A production process pays that once;
+# the harness pays it on the first repeat of every point. Exercised with a
+# trivial sample so the generic machinery is in the pkgimage; the user's sample
+# closure itself still specialises on first call. The body lives in
+# `SimulationCampaigns._warm_campaign_dispatchers` so the test suite can run
+# the same code at run time.
+@compile_workload begin
+    SimulationCampaigns._warm_campaign_dispatchers()
+end
 
 end # module SpaceAGORA

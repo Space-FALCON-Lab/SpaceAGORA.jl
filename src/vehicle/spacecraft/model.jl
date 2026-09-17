@@ -4,6 +4,7 @@ using StaticArrays
 using LinearAlgebra
 
 using ..Components
+using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 using ..EphemeridesModels: SpiceEphemeridesModel, ephemerides_time_seconds, planet_frame_lpi
 
 export Link, Joint, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
@@ -123,25 +124,11 @@ end
     return u / norm(u)
 end
 
-@inline function _initial_condition_oblate_altitude(radius::Float64, u_pp::SVector{3, Float64}, planet)::Float64
-    x = radius * u_pp[1]
-    y = radius * u_pp[2]
-    z = radius * u_pp[3]
+@inline _initial_condition_oblate_altitude(radius::Float64, u_pp::SVector{3, Float64}, planet)::Float64 =
+    geodetic_altitude(radius, u_pp, planet)
 
-    f = (planet.Rp_e - planet.Rp_p) / planet.Rp_e
-    e2 = 1.0 - (1.0 - f)^2
-    ep2 = e2 / (1.0 - e2)
-    p_xy = sqrt(x^2 + y^2)
-
-    θ = atan(z * planet.Rp_e, p_xy * planet.Rp_p)
-    lat = atan(z + ep2 * planet.Rp_p * sin(θ)^3, p_xy - e2 * planet.Rp_e * cos(θ)^3)
-    N = planet.Rp_e / sqrt(1.0 - e2 * sin(lat)^2)
-    return p_xy * cos(lat) + (z + e2 * N * sin(lat)^2) * sin(lat) - N
-end
-
-@inline function _initial_condition_oblate_surface_radius(u_pp::SVector{3, Float64}, planet)::Float64
-    return inv(sqrt((u_pp[1]^2 + u_pp[2]^2) / planet.Rp_e^2 + u_pp[3]^2 / planet.Rp_p^2))
-end
+@inline _initial_condition_oblate_surface_radius(u_pp::SVector{3, Float64}, planet)::Float64 =
+    ellipsoid_surface_radius(u_pp, planet)
 
 function _initial_condition_radius_for_oblate_altitude(
     target_altitude::Float64,
@@ -150,22 +137,7 @@ function _initial_condition_radius_for_oblate_altitude(
 )::Float64
     target_altitude >= 0.0 ||
         throw(ArgumentError("Oblate InitialCondition altitudes must be nonnegative; got $target_altitude m."))
-
-    lo = _initial_condition_oblate_surface_radius(u_pp, planet)
-    hi = lo + target_altitude + abs(planet.Rp_e - planet.Rp_p) + 1.0
-    while _initial_condition_oblate_altitude(hi, u_pp, planet) < target_altitude
-        hi += max(target_altitude, abs(planet.Rp_e - planet.Rp_p), 1.0)
-    end
-
-    for _ in 1:80
-        mid = 0.5 * (lo + hi)
-        if _initial_condition_oblate_altitude(mid, u_pp, planet) < target_altitude
-            lo = mid
-        else
-            hi = mid
-        end
-    end
-    return 0.5 * (lo + hi)
+    return radius_for_geodetic_altitude(target_altitude, u_pp, planet)
 end
 
 """
@@ -244,7 +216,7 @@ function CartesianInitialCondition(
     )
 end
 
-mutable struct Link{N_RW}
+mutable struct Link
     root::Bool # Whether this link is a root link (i.e., the main bus or core body of the spacecraft).
     r::MVector{3, Float64} # Position of COM (Body frame for non-root, inertial frame for root)
     q::MVector{4, Float64} # Orientation (Body frame for non-root, inertial frame for root)
@@ -261,7 +233,7 @@ mutable struct Link{N_RW}
     β::Float64 # Sideslip angle, rad
     θ::Float64 # Flow angle, rad
     reflection_coefficient::Float64 # Reflection coefficient for aerodynamic calculations
-    rw_assembly::ReactionWheelAssembly{N_RW} # Reaction wheel assembly
+    rw_assembly::ReactionWheelAssembly # Reaction wheel assembly
     net_force::MVector{3, Float64} # Net force acting on the link, to be updated at each simulation step
     net_torque::MVector{3, Float64} # Net torque acting on the link, to be updated at each simulation step
     attitude_control_rate::Float64 # Rate at which the attitude control function is called, in seconds
@@ -269,8 +241,9 @@ mutable struct Link{N_RW}
     J_thruster::Matrix{Float64} # Thruster Jacobian matrix
     thrusters::Vector{Thruster}
     magnets::Vector{Magnet} # List of magnetic dipoles attached to the link
+    cop_offset_b::MVector{3, Float64} # Aerodynamic center-of-pressure offset from the link COM (link frame, m); lever arm for the aero wrench torque, zeros = no intrinsic aero torque
 
-    function Link{N_RW}(; root=false,
+    function Link(; root=false,
         r=MVector{3, Float64}(0, 0, 0),
         q=MVector{4, Float64}(0, 0, 0, 1),
         ṙ=MVector{3, Float64}(0, 0, 0),
@@ -288,8 +261,8 @@ mutable struct Link{N_RW}
         reflection_coefficient=1.0,
         max_torque=0.25,
         max_h=70.0,
-        rw=MVector{N_RW, Float64}(zeros(N_RW)),
-        J_rw=MMatrix{3, N_RW, Float64}(zeros(3, N_RW)),
+        rw=Float64[],
+        J_rw=zeros(Float64, 3, 0),
         rw_τ=MVector{3, Float64}(zeros(3)),
         net_force=MVector{3, Float64}(zeros(3)),
         net_torque=MVector{3, Float64}(zeros(3)),
@@ -297,21 +270,23 @@ mutable struct Link{N_RW}
         SRP_facets=Facet[],
         J_thruster=Matrix{Float64}(zeros(3, 1)),
         thrusters=Thruster[],
-        magnets=Magnet[]) where {N_RW}
+        magnets=Magnet[],
+        cop_offset_b=MVector{3, Float64}(0, 0, 0))
 
-        rw_assembly = ReactionWheelAssembly{N_RW}(
-            J_rw=J_rw,
+        n_rw = size(J_rw, 2)
+        rw_assembly = ReactionWheelAssembly(
+            n_wheels=n_rw,
+            J_rw=Matrix{Float64}(J_rw),
             max_wheel_torque=max_torque,
             max_wheel_h=max_h,
-            h_wheels=MVector{N_RW, Float64}(zeros(N_RW)), # h_wheels
-            h_dot_wheels=MVector{N_RW, Float64}(zeros(N_RW)), # h_dot_wheels
+            h_wheels=zeros(Float64, n_rw),
+            h_dot_wheels=zeros(Float64, n_rw),
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
-        new{N_RW}(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets)
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets, cop_offset_b)
     end
 end
 
-Link(; kwargs...) = Link{0}(; kwargs...)
 
 mutable struct Joint
     link1::Link
@@ -349,7 +324,7 @@ mutable struct Joint
             translational_displacement, rotational_displacement)
     end
 
-    function Joint(;link1=Link{0}(), link2=Link{0}(), p1=link1.bᵇ, 
+    function Joint(;link1=Link(), link2=Link(), p1=link1.bᵇ, 
         p2=link2.aᵇ, 
         Kx=SMatrix{3,3, Float64}(1.0I), 
         Kt=SMatrix{3,3, Float64}(1.0I), 
@@ -383,7 +358,7 @@ mutable struct SpacecraftModel
     id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
 end
 
-function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link{0}(root=true),
+function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link(root=true),
                             instant_actuation::Bool=true,
                             prop_mass::Float64=0.0,
                             inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),

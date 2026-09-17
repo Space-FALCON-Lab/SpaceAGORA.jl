@@ -19,11 +19,12 @@ module DynamicEffectors
     using .GravityEffectors: aerobraking_gravity_force_ii
     using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     using .AerodynamicEffectors: _parse_bool_env, _multibody_outer_parallel_hint, collect_and_reset_link_wrenches!
-    using .AerodynamicEffectors: _multibody_parallel_mode, _multibody_thread_threshold, _multibody_max_threads
+    using .AerodynamicEffectors: _multibody_parallel_mode, _multibody_thread_threshold, _multibody_max_threads, refresh_multibody_parallel_mode!
     using .AerodynamicEffectors: _threadid_capacity, _multibody_use_threads, _multibody_thread_decision
     using .AerodynamicEffectors: _make_aero_scratch_workspace, _ensure_aero_workspace_capacity!, _aero_workspace_for_sat!
     using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
-    using .PerturbationEffectors: MagneticTorqueRodModel, get_magnetic_field_dipole, get_magnetic_field, calculate_magnetic_torque
+    using .PerturbationEffectors: MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque
+    using .PerturbationEffectors: EddyCurrentDampingModel, eddy_damping_torque
     using .PerturbationEffectors: LVLHCascadeAttitudeControlModel
     using .PerturbationEffectors: srp, srp_cannonball_accel, _spice_query_name
     using .PerturbationEffectors: planetary_albedo_accel, planetary_ir_accel
@@ -38,7 +39,8 @@ module DynamicEffectors
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
-    export MagneticTorqueRodModel, get_magnetic_field_dipole, get_magnetic_field, calculate_magnetic_torque
+    export MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque
+    export EddyCurrentDampingModel, eddy_damping_torque
     export LVLHCascadeAttitudeControlModel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     export calcForceTorque

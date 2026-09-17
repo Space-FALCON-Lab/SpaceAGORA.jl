@@ -1,5 +1,6 @@
 using ..SimulationModel: SimulationConfiguration, SimulationSettings, DynamicsModel, SpacecraftModel
 import ..SimulationEngine
+using ..SimulationModel.SimConfig: _with_configuration
 
 function _ensemble_member_settings(settings::SimulationSettings, member_tag::String)::SimulationSettings
     # Checkpoints can be read or written whenever checkpointing OR resume is on,
@@ -34,18 +35,9 @@ function _ensemble_member_configuration(
     spacecraft::SpacecraftModel,
     member_tag::String
 )::SimulationConfiguration
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
+    return _with_configuration(args;
         simulation_settings=_ensemble_member_settings(args.simulation_settings, member_tag),
-        mission_configuration=args.mission_configuration,
-        environment_model=args.environment_model,
         dynamics_model=DynamicsModel([spacecraft], args.dynamics_model.dynamic_effectors),
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances,
-        solver_config=args.solver_config
     )
 end
 

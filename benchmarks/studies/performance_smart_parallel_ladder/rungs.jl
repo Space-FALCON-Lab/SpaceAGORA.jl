@@ -223,8 +223,6 @@ function _ladder_env_pairs(
         "SPACEAGORA_EFFECTOR_PARALLEL" => matrix.effector,
         "SPACEAGORA_RHS_BATCH_PARALLEL" => (serial_rung ? "off" : "auto"),
         "SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER" => inner_scheduler,
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => (rung.mode == :outer_inner_full_smart ? "4" : "8"),
-        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => (rung.mode == :outer_inner_full_smart ? "1" : "0"),
         "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD" => measured_reward,
         "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => persistent_hints,
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => persistent_state_persist,

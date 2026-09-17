@@ -96,6 +96,45 @@ end
 
 @inline _dynamic_effector_threadsafe(::ScaledAerodynamicCoefficientfM)::Bool = true
 
+# Scaling changes the full aerodynamic wrench, including lift, cross force and
+# body-frame torque. Preserve the wrapped model's sampling and solver contracts.
+@inline SimulationModel.environment_requirements(model::ScaledAerodynamicCoefficientfM) =
+    SimulationModel.environment_requirements(model.model)
+
+@inline SimulationModel.solver_partition(model::ScaledAerodynamicCoefficientfM) =
+    SimulationModel.solver_partition(model.model)
+
+@inline SimulationModel.DynamicEffectors.AerodynamicEffectors._thermal_incidence_mode(
+    model::ScaledAerodynamicCoefficientfM,
+) = SimulationModel.DynamicEffectors.AerodynamicEffectors._thermal_incidence_mode(model.model)
+
+function SimulationModel.wrench(
+    model::ScaledAerodynamicCoefficientfM,
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64,
+)
+    f, τ = SimulationModel.wrench(model.model, x, env, t)
+    return model.cd_scale .* f, model.cd_scale .* τ
+end
+
+function SimulationModel.wrench_caching!(
+    model::ScaledAerodynamicCoefficientfM,
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64,
+    p::SimulationModel.ODEParams,
+    sat_idx::Int,
+)
+    # Use the cached hook so per-link atmosphere sampling is preserved. It
+    # replaces every component before scaling, including zero-density stages.
+    f, τ = SimulationModel.wrench_caching!(model.model, x, env, t, p, sat_idx)
+    for cache in (p.save_cache.drag_cache, p.save_cache.lift_cache, p.save_cache.cross_cache)
+        cache[sat_idx] = model.cd_scale .* cache[sat_idx]
+    end
+    return model.cd_scale .* f, model.cd_scale .* τ
+end
+
 function SimulationModel.calcForceTorque(
     model::ScaledAerodynamicCoefficientfM,
     x::AbstractVector,
@@ -115,7 +154,18 @@ function _scenario_dynamic_effectors(
 )
     effectors = Any[]
 
-    if cfg.gravity_harmonics_degree > 0
+    if cfg.gravity_harmonics_degree > 0 || cfg.gravity_harmonics_gm_override_m3s2 !== nothing
+        # An explicit GM override (gravity_harmonics_gm_override_m3s2) lets a
+        # degree-0 (J0/point-mass) scenario pin the central-body GM to a
+        # specific reference tool's own convention instead of the generic
+        # per-planet `planet.μ` used by `_base_gravity_effector` below. This
+        # exists because GMAT's and STK's own J0 scenario generators do not
+        # always agree with each other on a body's default GM (confirmed by
+        # reconstructing GM directly from each tool's reference trajectories
+        # -- see spaceagora_j0_gm_parity_investigation.md), so no single fixed
+        # `planet.μ` can match both simultaneously. When the override is set,
+        # it takes priority over both the file's own declared `gm_m3s2` and
+        # `planet.μ`.
         harmonics_file = cfg.gravity_harmonics_file
         isempty(harmonics_file) && throw(ArgumentError(
             "Scenario $(cfg.name) sets gravity_harmonics_degree=$(cfg.gravity_harmonics_degree) but does not provide gravity_harmonics_file."
@@ -129,7 +179,8 @@ function _scenario_dynamic_effectors(
                 harmonics_file,
                 planet;
                 coefficients_normalized=_telemetry_coefficients_normalized_for_scenario(cfg.name),
-                j2_source=_telemetry_j2_source_for_scenario(cfg.name)
+                j2_source=_telemetry_j2_source_for_scenario(cfg.name),
+                gm_m3s2=cfg.gravity_harmonics_gm_override_m3s2
             )
         )
     else
@@ -155,7 +206,8 @@ function _scenario_dynamic_effectors(
     end
 
     if cfg.drag_enabled
-        aero = AerodynamicCoefficientfM()
+        aero = AerodynamicCoefficientfM(
+            fixed_attitude_incidence=cfg.aero_fixed_attitude_incidence)
         if isapprox(cd_scale, 1.0; rtol=0.0, atol=1e-12)
             push!(effectors, aero)
         else
@@ -349,7 +401,10 @@ end
         ic=ic,
         prop_mass=cfg.prop_mass_kg,
         id=cfg.id,
-        bus_ram_face=cfg.bus_ram_face
+        bus_ram_face=cfg.bus_ram_face,
+        bus_attitude_q=cfg.bus_attitude_q,
+        panel_attitude_q_left=cfg.panel_attitude_q_left,
+        panel_attitude_q_right=cfg.panel_attitude_q_right
     )
 end
 
@@ -366,17 +421,8 @@ function _with_environment_wind(args::SimulationConfiguration, include_wind::Boo
         topo_order=env.topo_order,
         wind=include_wind
     )
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
-        simulation_settings=args.simulation_settings,
-        mission_configuration=args.mission_configuration,
+    return _with_configuration(args;
         environment_model=env_updated,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances
     )
 end
 
@@ -419,23 +465,15 @@ function _with_campaign_maneuvers(args::SimulationConfiguration, cfg::OrbitEvent
         maneuver_Δv=cfg.maneuver_delta_v_mps,
         maneuver_flight_apoapsis_radius_m=flight_apo_radius_m
     )
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
-        simulation_settings=args.simulation_settings,
-        mission_configuration=args.mission_configuration,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
+    return _with_configuration(args;
         guidance_model=GuidanceModel(
             guidance_effectors=(guidance_effector,),
             guidance_rates=[cfg.maneuver_guidance_rate_s]
         ),
-        navigation_model=args.navigation_model,
         control_model=ControlModel(
             control_effectors=(thruster,),
             control_rates=[cfg.maneuver_control_rate_s]
         ),
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances
     )
 end
 
@@ -454,17 +492,8 @@ function _with_orbit_mission(
         num_steps_to_save=mc.num_steps_to_save,
         data_rate=mc.data_rate
     )
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
-        simulation_settings=args.simulation_settings,
+    return _with_configuration(args;
         mission_configuration=mission_cfg,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances
     )
 end
 
@@ -583,19 +612,11 @@ function _make_time_aligned_args(
     cr_override::Union{Nothing, Float64}=nothing
 )::SimulationConfiguration
     planet = _planet_from_name(cfg.planet_name)
-    if cfg.drag_enabled && ic isa CartesianInitialCondition
-        ic_alt_km = (norm(ic.pos) - planet.Rp_e) * 1e-3
-        if ic_alt_km > cfg.EI_km
-            @warn(
-                "drag_enabled scenario starts above EI_km: aero forces are zeroed above " *
-                "the entry interface on the split/implicit solver paths, so drag silently " *
-                "vanishes. Set EI_km above the orbit altitude in the scenario manifest.",
-                EI_km = cfg.EI_km,
-                initial_altitude_km = round(ic_alt_km, digits=1),
-                maxlog = 1
-            )
-        end
-    end
+    # Historical note: drag_enabled scenarios starting above EI_km used to lose
+    # aero silently on the split/implicit solver paths, which zeroed forces
+    # above the entry interface for every density model. The implicit partition
+    # now keeps aero engaged at all altitudes for density models that do not
+    # vanish above EI, so no manifest-side EI_km workaround is needed.
     spacecraft = _make_spacecraft(cfg.spacecraft, ic)
     dynamic_effectors = _scenario_dynamic_effectors(
         cfg,
@@ -655,8 +676,7 @@ function _with_study_settings(args::SimulationConfiguration; quick::Bool=false):
     dt_atm_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_DT_MAX_ATM")
     dt_orbit = dt_orbit_env === nothing ? dt_orbit_base : min(dt_orbit_env, STRICT_DT_ORBIT)
     dt_atm = dt_atm_env === nothing ? dt_atm_base : min(dt_atm_env, STRICT_DT_ATM)
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
+    return _with_configuration(args;
         simulation_settings=SimulationSettings(
             results=true,
             verbose=false,
@@ -675,12 +695,6 @@ function _with_study_settings(args::SimulationConfiguration; quick::Bool=false):
             num_steps_to_save=2000,
             data_rate=args.mission_configuration.data_rate
         ),
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
         integration_tolerances=IntegrationTolerances(
             reltol_orbit=rel_orbit,
             abstol_orbit=abs_orbit,
@@ -688,7 +702,7 @@ function _with_study_settings(args::SimulationConfiguration; quick::Bool=false):
             reltol_atmosphere=rel_atm,
             abstol_atmosphere=abs_atm,
             dt_max_atmosphere=dt_atm
-        )
+        ),
     )
 end
 

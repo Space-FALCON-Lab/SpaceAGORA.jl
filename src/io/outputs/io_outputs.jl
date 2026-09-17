@@ -71,7 +71,111 @@ function _append_series_columns!(results_df::DataFrame, prefix::String, series)
     return nothing
 end
 
+# Direct assembly for the shape every built-in per-satellite save field has:
+# each snapshot holds one `Vector` of `num_sats` entries, and each entry is
+# either a real or a fixed-width vector of reals.
+#
+# The generic path reaches those columns through three layers of throwaway
+# intermediates -- one `sat_series` per satellite, then one `child_series` per
+# component, and `collect` copies that last one again. For a 3-vector field that
+# is 72 bytes of allocation per (satellite, row) to produce 24 bytes of column.
+# Here each final column is allocated once and filled in one pass.
+#
+# The reason this is split across a function barrier rather than written as one
+# loop: `saved_data` is a `Vector{SaveData}` and `SaveData` is
+# `Dict{Symbol, Any}`, so a snapshot lookup is `Any`. Doing the fills directly
+# off that makes every element access a dynamic dispatch, which measured *three
+# times worse* than the generic path it was meant to replace -- the generic
+# comprehensions are fast precisely because `[snapshot[name] for ...]` narrows
+# to a concrete element type. So the narrowing comprehension is kept, and the
+# concrete `values` is handed to a method that dispatches on its element type.
+#
+# Column order and column element types must match the generic path exactly,
+# because the feather schema is part of the output. On types, note that the
+# generic component path builds `value === nothing ? nothing : value[idx]` but
+# still yields a `Vector{T}`, not a `Vector{Union{Nothing, T}}` -- the
+# comprehension narrows to the element type actually produced.
+function _direct_assembly_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int)::Bool
+    (isempty(saved_data) || num_sats <= 0) && return false
+    values = [snapshot[field.name] for snapshot in saved_data]
+    return _fill_per_satellite_columns!(results_df, field.column_prefix, values, num_sats)
+end
+
+# Both concrete methods below require the same two things of their input, and
+# both learned it the hard way. `T` must be concrete: `T <: Real` admits `Real`
+# and `Union{Int, Float64}`, and a `Vector{T}` built from those carries a
+# different element type than the generic path's narrowing comprehension
+# produces -- which for a union is a different Arrow schema, not just a
+# different `eltype`. And every row must be indexed `1:num_sats`: `length` alone
+# proves the count, not the index range, so a row indexed `0:num_sats-1` passed
+# the old guard and the `@inbounds` write then read outside it.
+@inline _rows_are_one_based(values, num_sats::Int)::Bool =
+    all(row -> axes(row) == (Base.OneTo(num_sats),), values)
+
+# Anything the two concrete methods below do not claim stays with the generic path.
+_fill_per_satellite_columns!(::DataFrame, ::String, values, ::Int)::Bool = false
+
+# One scalar column per satellite.
+function _fill_per_satellite_columns!(
+    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
+)::Bool where {T <: Real, V <: AbstractVector{T}}
+    isconcretetype(T) || return false
+    n_rows = length(values)
+    _rows_are_one_based(values, num_sats) || return false
+    for sat_idx in 1:num_sats
+        column = Vector{T}(undef, n_rows)
+        @inbounds for row in 1:n_rows
+            column[row] = values[row][sat_idx]
+        end
+        results_df[!, "sc$(sat_idx)_$(prefix)"] = column
+    end
+    return true
+end
+
+# `n_comp` columns per satellite, named `_1`.._n` to match the generic path's
+# `eachindex` walk.
+#
+# The column set has to be a property of the field, so every entry must be
+# indexed `1:n_comp` for one fixed `n_comp`. That is checked here rather than
+# inferred from the element type. `isbitstype(S)` was used for it
+# once and is not proof of anything of the kind: it says the element type has a
+# fixed bit layout, not a fixed length, and `UnitRange{Int}` -- two `Int`s, so a
+# bitstype -- carries its length as runtime data. Both ways of getting it wrong
+# are silent. A ragged field whose first entry is short drops a real column
+# (`[[1:2, 10:12]]` wrote four columns where the generic path writes five,
+# losing `sc2_x_3`); one whose first entry is long fabricates a value, because
+# the write loop is `@inbounds` and reading past the end of a `UnitRange`
+# computes an element that was never there.
+function _fill_per_satellite_columns!(
+    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
+)::Bool where {T <: Real, S <: AbstractVector{T}, V <: AbstractVector{S}}
+    isconcretetype(T) || return false
+    n_rows = length(values)
+    _rows_are_one_based(values, num_sats) || return false
+    n_comp = length(first(first(values)))
+    n_comp > 0 || return false
+    for row in values, entry in row
+        axes(entry) == (Base.OneTo(n_comp),) || return false
+    end
+    for sat_idx in 1:num_sats
+        columns = [Vector{T}(undef, n_rows) for _ in 1:n_comp]
+        @inbounds for row in 1:n_rows
+            entry = values[row][sat_idx]
+            for comp in 1:n_comp
+                columns[comp][row] = entry[comp]
+            end
+        end
+        for comp in 1:n_comp
+            results_df[!, "sc$(sat_idx)_$(prefix)_$(comp)"] = columns[comp]
+        end
+    end
+    return true
+end
+
 function _append_save_field_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int)
+    if field.per_satellite && _direct_assembly_columns!(results_df, field, saved_data, num_sats)
+        return nothing
+    end
     field_series = [snapshot[field.name] for snapshot in saved_data]
     if field.per_satellite
         for sat_idx in 1:num_sats
@@ -170,6 +274,7 @@ end
 
 export _append_saved_segment!
 export _append_series_columns!
+export _direct_assembly_columns!
 export _build_results_dataframe
 export _write_results_csv!
 export _write_results_bundle!

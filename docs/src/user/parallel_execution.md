@@ -491,3 +491,28 @@ and restart calibration.
 For multi-node or process-worker execution, see [Distributed and HPC](../distributed_hpc.md)
 for guidance on the `SPACEAGORA_PERF_PROCS`, `SPACEAGORA_PERF_WORKER_PROJECT`,
 and `SPACEAGORA_PERF_MACHINE_LABEL` environment variables.
+
+## Optional direct derivative assembly
+
+For a performance experiment on a translational constellation in vacuum, you
+can enable direct writes into the derivative buffer:
+
+```julia
+withenv("SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT" => "1") do
+    run_simulation(args)
+end
+```
+
+This option is off by default. It only changes the final assembly step when
+the runtime already uses the flat constellation-effector route; it does not
+select that route itself. It supports the standard position, velocity, mass
+and heat-load layout with contiguous `Float64` storage, a `NoAtmosphereModel`,
+and no attitude propagation, control effectors or robot arm. Unsupported
+configurations and custom layouts continue through the existing assembly path.
+The option does not change the force calculation or its accumulation order.
+
+Keep it off for your baseline, then compare results, elapsed time and allocations
+with it enabled on the same warmed-up workload. No whole-simulation speedup is
+established by the correctness tests. Set the value to `"0"` or remove the
+variable to restore the default. As with other runtime controls, set it before
+starting the simulation.

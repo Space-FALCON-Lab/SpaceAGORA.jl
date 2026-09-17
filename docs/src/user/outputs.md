@@ -121,10 +121,30 @@ columns.
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_altitude` | m | Altitude above the reference ellipsoid |
+| `sc1_altitude` | m | Instantaneous geodetic altitude above the reference ellipsoid |
 | `sc1_latitude_deg` | deg | Geodetic latitude |
 | `sc1_longitude_deg` | deg | Longitude |
-| `sc1_periapsis_altitude` | m | Current osculating periapsis altitude |
+
+### Osculating orbit diagnostic
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_periapsis_altitude` | m | Osculating spherical periapsis altitude, `a * (1 - e) - planet.Rp_e` |
+
+Here `a` and `e` are the semimajor axis and eccentricity derived from the current
+inertial position and velocity. The periapsis column uses a reference sphere
+with the planet's equatorial radius, `planet.Rp_e`. It describes the
+instantaneous osculating Keplerian orbit; it is not a prediction of the minimum
+geodetic altitude reached by the propagated trajectory. The two altitude columns
+use different reference surfaces and need not agree at a periapsis event.
+
+The aerobraking examples' separate `periapsis_events.csv` tables instead contain
+geodetic estimates. Depending on the example and available solver output, these
+are evaluated at event-located radial minima or selected from sampled geodetic
+altitude minima.
+Simulation apoapsis plots may likewise use interpolated sample crossings and an
+initial sample. Those event and sampled values are distinct from
+`sc1_periapsis_altitude`.
 
 ### Mass
 

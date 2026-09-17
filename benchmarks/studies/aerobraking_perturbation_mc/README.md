@@ -19,6 +19,36 @@ and Titan:
 - argument-of-periapsis sweep (deg): 0, 30, 45, 60, 80, 90, 120, 135, 150, 180, 210, 240, 270, 300, 330
 - propagation length: `1` initial orbital period
 
+Dynamic pressure uses the same planet-relative velocity convention as propagation:
+rotate the inertial state into the planet frame, subtract planetary rotation there,
+then subtract the atmospheric wind after converting its local east/north/up components.
+The study uses SPICE and a 2020-01-01 UTC start. New `manifest.toml` files record that
+frame and epoch so density-history backfill can reproduce them. The study and backfill
+retain the runtime's existing `getDensity(..., true, ...)` request. In native GRAM,
+the wind mode determines whether returned winds are nominal or perturbed; a false
+request is not a general promise of zero wind. This correction changes coordinate
+conversion, not atmospheric wind policy.
+
+To inspect a density-history repair before writing:
+
+```bash
+julia --project=. benchmarks/studies/aerobraking_perturbation_mc/backfill_density_history.jl RUN_DIR --force --dry-run
+```
+
+This still requires the run's SPICE and atmosphere inputs. Older manifests omit
+frame metadata; backfill warns and uses the study's historical SPICE/2020 defaults.
+Unsupported frame metadata is rejected before writes. Remove `--dry-run` only
+after preserving the original outputs and comparing a representative case. Dry-run
+previews repaired rows but still reads existing files for run-level summary metrics;
+validate repaired aggregates on a preserved copy before replacing original products.
+Copied or moved runs can retain absolute `case_dir` paths in `results.feather`;
+confirm those paths and the reported `run_result_rows` match the cases being repaired
+before treating summaries as updated. This tool does not rewrite relocated case paths.
+Repaired dynamic pressure can change its peak, integral, paired differences,
+aggregates and inferred ballistic-coefficient plots. Backfill updates saved
+diagnostics, not the propagated states. The repair is limited to case-directory
+forms recognized by this tool; the `p01` to `p07` supplement labels are not yet supported.
+
 Run the default sweep:
 
 ```bash

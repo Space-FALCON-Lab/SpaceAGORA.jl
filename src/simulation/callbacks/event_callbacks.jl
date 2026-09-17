@@ -290,6 +290,7 @@ function TrajectoryRecorder(
     n_sats = length(args.dynamics_model.spacecraft)
     n_sats > 0 || throw(ArgumentError("TrajectoryRecorder requires at least one spacecraft."))
     rate = Float64(data_rate)
+    isfinite(rate) && rate > 0.0 || throw(ArgumentError("TrajectoryRecorder data_rate must be finite and > 0.0, got $data_rate."))
     cap = capacity === nothing ? _trajectory_recorder_capacity(args, rate) : Int(capacity)
     cap > 0 || throw(ArgumentError("TrajectoryRecorder capacity must be > 0, got $cap."))
     fields = _resolve_save_fields(save_fields, args)
@@ -492,8 +493,11 @@ function record_trajectory_sample!(rec::TrajectoryRecorder, u, t, integrator)::N
     rec.t[sample_idx] = Float64(t)
     if rec.fused_default_fields
         _record_default_save_fields_fused!(rec, u, t, integrator, sample_idx)
-    else
-        for field in rec.save_fields
+    end
+    # Default fields added by extensions still need their own getter. Explicit
+    # save_fields also use this path, including overrides of built-in names.
+    for field in rec.save_fields
+        if haskey(rec.fallback, field.name)
             rec.fallback[field.name][sample_idx] = field.getter(u, t, integrator)
         end
     end

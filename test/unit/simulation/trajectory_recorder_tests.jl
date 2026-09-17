@@ -127,3 +127,40 @@ end
     reset_trajectory_recorder!(recorder)
     @test recorder.count == 0
 end
+
+
+@testset "trajectory recorder validates explicit-capacity cadence" begin
+    args = _trajectory_recorder_test_config(n_sats=1, mission_s=6.0, data_rate=2.0)
+    for rate in (0.0, -1.0, Inf, NaN)
+        @test_throws ArgumentError TrajectoryRecorder(args; data_rate=rate, capacity=1)
+    end
+end
+
+@testset "trajectory recorder preserves custom getters and additional defaults" begin
+    args = _trajectory_recorder_test_config(n_sats=2, mission_s=6.0, data_rate=2.0)
+    fields = SaveField[
+        SaveField(:total_mass, (u, t, integrator) -> sum(sc.mass for sc in u.sc)),
+        SaveField(:position, (u, t, integrator) -> fill(42.0, length(u.sc)); per_satellite=true),
+    ]
+    custom = TrajectoryRecorder(args; capacity=1, save_fields=fields)
+    defaults = TrajectoryRecorder(args; capacity=1)
+    # Model a newly registered default that has no specialized array filler.
+    push!(defaults.save_fields, SaveField(:extension_value, (u, t, integrator) -> Float64(t) + 100.0))
+    defaults.fallback[:extension_value] = Vector{Any}(undef, length(defaults.t))
+    metadata = run_simulation(
+        args;
+        return_solver_metadata=true,
+        extra_callbacks=(get_trajectory_recorder_callback(custom), get_trajectory_recorder_callback(defaults)),
+    )
+    @test metadata.retcode == "Success"
+    @test custom.count > 1
+    @test collect(trajectory_times(custom)) == collect(trajectory_times(defaults))
+    @test all(value -> value == 1000.0, trajectory_field(custom, :total_mass))
+    @test all(value -> value == [42.0, 42.0], trajectory_field(custom, :position))
+    @test collect(trajectory_field(defaults, :extension_value)) == collect(trajectory_times(defaults)) .+ 100.0
+    snapshots = trajectory_save_data(defaults)
+    @test [snapshot[:extension_value] for snapshot in snapshots] == collect(trajectory_times(defaults)) .+ 100.0
+    reset_trajectory_recorder!(defaults)
+    @test isempty(trajectory_times(defaults))
+    @test isempty(trajectory_field(defaults, :extension_value))
+end

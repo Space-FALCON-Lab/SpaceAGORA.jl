@@ -210,3 +210,36 @@ per-seed closure returns), so the file layout above applies per sample
 whether the outer route is serial, threaded, or process-backed. See
 [Parallel Execution](parallel_execution.md) for how to select and configure
 outer routing.
+
+
+## In-memory constellation recorder
+
+For fixed-cadence output without retaining the solver's complete step history,
+attach the optional recorder to an existing `SimulationConfiguration` named
+`args`:
+
+```julia
+using SpaceAGORA
+using SpaceAGORA.SimulationModel: TrajectoryRecorder, get_trajectory_recorder_callback,
+    trajectory_times, trajectory_positions, trajectory_save_data
+
+recorder = TrajectoryRecorder(args)
+run_simulation(args; return_solution=false,
+    extra_callbacks=(get_trajectory_recorder_callback(recorder),))
+times = trajectory_times(recorder)
+positions = trajectory_positions(recorder)  # component x spacecraft x sample
+```
+
+The cadence defaults to `args.mission_configuration.data_rate`, in seconds.
+The recorder preallocates arrays and grows them when needed; memory still grows
+with the number of spacecraft and recorded samples. Read the returned views
+after the solve, and obtain new views after resetting or reusing the recorder.
+`trajectory_save_data(recorder)` materializes ordinary saved snapshots when
+needed; that conversion allocates dictionaries at the output boundary.
+
+This callback leaves configured file output unchanged. Use
+`SimulationSettings(results=false)` when an in-memory result is sufficient.
+Explicit `save_fields` use their supplied getters, including a custom getter
+with a built-in field name. Additional default fields without a specialized
+array filler also retain their getters. Timing improvements depend on the run
+and should be measured before adopting this recorder for a campaign.

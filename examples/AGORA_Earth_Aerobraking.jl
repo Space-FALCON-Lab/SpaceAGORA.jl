@@ -88,8 +88,8 @@ function _save_earth_aerobraking_apoapsis_periapsis_plot(args::SimulationConfigu
         peri_orbit,
         peri_altitude_km;
         xlabel="Orbit Number",
-        ylabel="Periapsis Altitude (km)",
-        label="Periapsis",
+        ylabel="Geodetic Periapsis Estimate (km)",
+        label="Periapsis estimate",
         linewidth=2.5,
         marker=:circle,
         color=:dodgerblue,
@@ -104,7 +104,7 @@ function _save_earth_aerobraking_apoapsis_periapsis_plot(args::SimulationConfigu
         apo_axis,
         extrema.apo.orbit,
         extrema.apo.altitude_km;
-        ylabel="Apoapsis Altitude (km)",
+        ylabel="Geodetic Apoapsis Estimate (km)",
         label=false,
         linewidth=2.5,
         marker=:diamond,
@@ -116,7 +116,7 @@ function _save_earth_aerobraking_apoapsis_periapsis_plot(args::SimulationConfigu
         p,
         [NaN],
         [NaN];
-        label="Apoapsis",
+        label="Apoapsis estimate",
         linewidth=2.5,
         marker=:diamond,
         color=:crimson
@@ -142,7 +142,7 @@ function _save_earth_aerobraking_ground_track_plot(args::SimulationConfiguration
         longitude_deg,
         latitude_deg;
         zcolor=altitude_km,
-        colorbar_title="Altitude (km)",
+        colorbar_title="Geodetic Altitude (km)",
         xlabel="Longitude (deg)",
         ylabel="Latitude (deg)",
         label=false,

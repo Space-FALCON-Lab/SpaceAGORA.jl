@@ -335,9 +335,9 @@ function _save_energy_depletion_plots(csv_path::AbstractString, plot_dir::Abstra
         t_drag,
         df.sc1_altitude[drag_indices] ./ 1_000.0;
         xlabel="Time from entry [s]",
-        ylabel="Altitude [km]",
-        label="Altitude",
-        title="Altitude",
+        ylabel="Geodetic Altitude [km]",
+        label="Geodetic altitude",
+        title="Geodetic Altitude",
         color=:royalblue,
         plot_theme...,
     )

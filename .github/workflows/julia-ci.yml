@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     # 60 killed a fully-passing 1.12 leg at 1h00m20s (PR #35); runner-speed
     # variance across runs is ~1.6x, so give the full suite real headroom.
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:

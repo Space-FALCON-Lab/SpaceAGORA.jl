@@ -1,4 +1,5 @@
 using Test
+using StaticArrays
 using DiffEqCallbacks: SavedValues
 using SpaceAGORA
 using SpaceAGORA.SimulationModel
@@ -6,7 +7,8 @@ using SpaceAGORA.SimulationModel
 const _TR_SM = SpaceAGORA.SimulationModel
 const _TR_SC = SpaceAGORA.SimulationModel.SimulationCallbacks
 
-function _trajectory_recorder_test_config(; n_sats::Int=3, mission_s::Float64=60.0, data_rate::Float64=10.0)
+function _trajectory_recorder_test_config(; n_sats::Int=3, mission_s::Float64=60.0,
+        data_rate::Float64=10.0, orientation::Bool=false, atmosphere::Bool=false)
     planet = _TR_SM.Earth()
     spacecraft = SpacecraftModel[]
     for i in 1:n_sats
@@ -18,6 +20,9 @@ function _trajectory_recorder_test_config(; n_sats::Int=3, mission_s::Float64=60
             ω=0.0,
             Ω=10.0,
             ν=360.0 * (i - 1) / n_sats,
+            q=SVector{4, Float64}(0.0, sind(20.0), 0.0, cosd(20.0)),
+            ang_vel=orientation ? SVector{3, Float64}(0.01, 0.02, 0.03) :
+                SVector{3, Float64}(0.0, 0.0, 0.0),
         )
         push!(
             spacecraft,
@@ -37,20 +42,23 @@ function _trajectory_recorder_test_config(; n_sats::Int=3, mission_s::Float64=60
             true,
             1,
             mission_s,
-            false,
+            orientation,
             20,
             data_rate,
         ),
         environment_model=EnvironmentModel(
             planet=planet,
             EI=300.0,
-            density_model=NoAtmosphereModel(),
+            density_model=atmosphere ? ExponentialAtmosphereModel(1.0e-11, 550e3, 50e3;
+                temperature_k=800.0, valid_max_altitude_m=1000e3) : NoAtmosphereModel(),
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
             topography=false,
             wind=false,
             ephemerides_model=SimpleEphemeridesModel(),
         ),
-        dynamics_model=DynamicsModel(spacecraft, (InverseSquaredGravityModel(),)),
+        dynamics_model=DynamicsModel(spacecraft, atmosphere ?
+            (InverseSquaredGravityModel(), AerodynamicCoefficientfM()) :
+            (InverseSquaredGravityModel(),)),
         guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
         control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
@@ -163,4 +171,41 @@ end
     reset_trajectory_recorder!(defaults)
     @test isempty(trajectory_times(defaults))
     @test isempty(trajectory_field(defaults, :extension_value))
+end
+
+
+@testset "trajectory recorder matches saved attitude and atmospheric heating" begin
+    # Compare both callbacks in the same solve, in either order. Positive drag
+    # and heat plus a changing quaternion keep the comparison out of vacuum
+    # and constant-attitude cases that can hide missing built-in field writes.
+    for recorder_first in (false, true)
+        args = _trajectory_recorder_test_config(n_sats=2, mission_s=6.0,
+            data_rate=2.0, orientation=true, atmosphere=true)
+        fields = default_save_fields(args)
+        reference = SavedValues(Float64, _TR_SM.SaveData)
+        reference_callback = _TR_SC.get_data_saving_callback(2, args, fields, reference)
+        recorder = TrajectoryRecorder(args; capacity=1)
+        recorder_callback = get_trajectory_recorder_callback(recorder)
+        callbacks = recorder_first ? (recorder_callback, reference_callback) :
+            (reference_callback, recorder_callback)
+        result = run_simulation(args; return_solver_metadata=true, extra_callbacks=callbacks)
+        @test result.retcode == "Success"
+        @test recorder.count > 1
+        @test collect(trajectory_times(recorder)) == reference.t
+        snapshots = trajectory_save_data(recorder)
+        @test length(snapshots) == length(reference.saveval)
+        for (got, expected) in zip(snapshots, reference.saveval)
+            @test Set(keys(got)) == Set(keys(expected))
+            for field in fields
+                _test_saved_value_matches(got[field.name], expected[field.name])
+            end
+        end
+        @test all(isfinite, trajectory_field(recorder, :quaternion))
+        @test trajectory_field(recorder, :quaternion)[:, :, end] !=
+            trajectory_field(recorder, :quaternion)[:, :, 1]
+        @test maximum(abs, trajectory_field(recorder, :drag)) > 0.0
+        @test maximum(trajectory_field(recorder, :heat_rate)) > 0.0
+        @test minimum(trajectory_field(recorder, :heat_load)[:, end]) > 0.0
+        @test size(trajectory_field(recorder, :quaternion)) == (4, 2, recorder.count)
+    end
 end

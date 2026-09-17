@@ -158,7 +158,8 @@ function build_viewer_frames(
     df::DataFrame,
     scene::VisualizationScene;
     max_frames::Integer=DEFAULT_MAX_FRAMES,
-    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB
+    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
+    channels=()
 )::Dict{String, Any}
     S = length(scene.spacecraft)
     S >= 1 || throw(ArgumentError("The scene has no spacecraft."))
@@ -221,7 +222,11 @@ function build_viewer_frames(
         arm_total += has_arm ? stride_lp * arm_counts[i] : 0
     end
 
-    bytes_per_frame = S * ((pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
+    # Extra named scalar channels the caller asked the page to carry, one value
+    # per spacecraft per frame; see `channel_payloads`.
+    channel_specs = _resolved_channels(df, channels, S)
+
+    bytes_per_frame = S * (4 * length(channel_specs) + (pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
                            (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
                            (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + 8
     budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
@@ -243,6 +248,13 @@ function build_viewer_frames(
     ap = has_arm ? Vector{Float64}(undef, N * arm_total) : Float64[]
     plume = has_plume ? [Vector{Float64}(undef, N * S) for _ in PLUME_FRAME_FIELDS] : Vector{Float64}[]
     thr = thr_total > 0 ? Vector{Float64}(undef, N * thr_total) : Float64[]
+    channel_values = [Vector{Float64}(undef, N * S) for _ in channel_specs]
+    for (c, spec) in enumerate(channel_specs)
+        cols = [df[!, "sc$(i)_$(spec.column)"] for i in 1:S]
+        @inbounds for (f, r) in enumerate(rows), i in 1:S
+            channel_values[c][(f - 1) * S + i] = Float64(cols[i][r])
+        end
+    end
     if has_sun
         scols = [df[!, "sun_dir_$(c)"] for c in 1:3]
         @inbounds for (f, r) in enumerate(rows)
@@ -347,6 +359,11 @@ function build_viewer_frames(
         "plume" => has_plume ? Dict{String, Any}(
             String(PLUME_FRAME_FIELDS[k]) => _float32_base64(plume[k]) for k in eachindex(PLUME_FRAME_FIELDS)
         ) : nothing,
+        "channels" => isempty(channel_specs) ? nothing : [Dict{String, Any}(
+            "name" => spec.column, "label" => spec.label, "unit" => spec.unit,
+            "digits" => spec.digits, "log" => spec.log,
+            "data" => _float32_base64(channel_values[c])
+        ) for (c, spec) in enumerate(channel_specs)],
         "thruster_level" => thr_total > 0 ? _float32_base64(thr) : nothing,
         "thruster_counts" => thr_total > 0 ? thruster_counts : nothing,
         "arm_pose" => has_arm ? Dict{String, Any}(
@@ -355,6 +372,37 @@ function build_viewer_frames(
         ) : nothing,
     )
     return frames
+end
+
+"""
+    _resolved_channels(df, channels, S) -> Vector{NamedTuple}
+
+The extra scalar channels the page can actually carry, out of the ones the
+caller asked for.
+
+Each entry of `channels` is a NamedTuple or Dict naming a PER-SPACECRAFT
+results column by its suffix, so `column = "attitude_error_deg"` reads
+`sc1_attitude_error_deg`, `sc2_attitude_error_deg` and so on. `label` names the
+row in the selection panel (default: the column with underscores turned into
+spaces), `unit` is appended to the value (default none), `digits` is how many
+decimals to print (default 3), and `log` asks the plot panel for a logarithmic
+axis (`false`, `true`, or `"auto"`; default `false`). A channel whose column is
+missing for any spacecraft is dropped rather than raising, the way every other
+optional block behaves.
+"""
+function _resolved_channels(df::DataFrame, channels, S::Int)::Vector{NamedTuple}
+    out = NamedTuple[]
+    for (k, ch) in enumerate(channels)
+        get_ = (key, default) -> ch isa AbstractDict ? get(ch, key, get(ch, String(key), default)) :
+            (hasproperty(ch, key) ? getproperty(ch, key) : default)
+        column = get_(:column, nothing)
+        column === nothing && throw(ArgumentError("channel $(k) needs a `column` (the per-spacecraft suffix)."))
+        name = String(column)
+        _has_columns(df, ["sc$(i)_$(name)" for i in 1:S]) || continue
+        push!(out, (column=name, label=String(get_(:label, replace(name, "_" => " "))),
+            unit=String(get_(:unit, "")), digits=Int(get_(:digits, 3)), log=get_(:log, false)))
+    end
+    return out
 end
 
 # ---------------------------------------------------------------------------
@@ -509,7 +557,8 @@ function viewer_payload(
     stl_scale::Real=1.0,
     paths=(),
     references=(),
-    terrain=nothing
+    terrain=nothing,
+    channels=()
 )::Dict{String, Any}
     textures = Dict{String, Any}()
     if include_textures
@@ -518,7 +567,7 @@ function viewer_payload(
     end
     return Dict{String, Any}(
         "scene" => scene_dict(scene),
-        "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb),
+        "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb, channels=channels),
         "textures" => textures,
         "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale),
         "paths" => path_payloads(paths),
@@ -773,7 +822,8 @@ spacecraft unless `model_center=false`; `stl`/`stl_scale` are the older spelling
 reference trajectories as translucent ghosts of a spacecraft (see
 `reference_payloads`); `paths` overlays
 reference polylines (see `path_payloads`), e.g. a planned RPO path in the
-target's RTN frame; `viewer_dir` and `textures_dir` override the repository locations.
+target's RTN frame; `channels` adds extra per-spacecraft scalar columns of the
+results table to the selection panel and its plots (see `_resolved_channels`); `viewer_dir` and `textures_dir` override the repository locations.
 """
 function export_visualization(
     prefix::AbstractString;
@@ -798,6 +848,7 @@ function export_visualization(
     paths=(),
     references=(),
     terrain=nothing,
+    channels=(),
     viewer_dir::AbstractString=VIEWER_DIR,
     textures_dir::AbstractString=TEXTURES_DIR
 )::String
@@ -814,7 +865,7 @@ function export_visualization(
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
-        paths=paths, references=references, terrain=terrain
+        paths=paths, references=references, terrain=terrain, channels=channels
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     html = render_viewer_html(payload; viewer_dir=viewer_dir, title=page_title)

@@ -348,6 +348,51 @@ Attitude comes from a `q` column (4 x N, scalar-last) when given and is
 velocity-aligned otherwise. `scripts/dev/viewer_demos/` has drivers that
 build such ghosts for Magellan at Venus, Odyssey at Mars and Cassini at Titan.
 
+### A ghost that carries the flown attitude: the CYGNSS FM01 slew
+
+`scripts/dev/viewer_demos/cygnss_slew.jl` is the case a `q` column is for.
+CYGNSS FM01 held its LVLH pointing target for fifteen minutes on
+2025-10-04, its flight software then stepped that target about ten degrees,
+and the reaction wheels turned the observatory to it. The page runs the
+maneuver through `run_simulation` with SpaceAGORA's own rigid-body attitude
+dynamics: the only thing taken from the flight record is the measured wheel
+speed, which enters as `ReactionWheelMomentumModel`, a force-torque effector
+returning the reaction torque `-dH_w/dt - omega x H_w` of the wheel momentum
+that speed implies. Gravity-gradient torque comes from
+`GravityGradientTorqueModel`. No commanded-torque channel and no controller is
+replayed, and the attitude is calibrated once, eleven seconds before the step.
+
+The reference ghost carries both `pos_m` and `q`, so it is simultaneously the
+orbit truth and the attitude truth, and the visible gap between the two
+observatories is the error. **Window and range of validity:** the page covers
+t_rel 890 to 1250 s, the commanded step and its transient, over which the run
+tracks the flown attitude to about 1.8 deg mean and 5.9 deg at worst. Carried
+to the end of the one-hour export it degrades steadily as the disturbance
+torques the model does not carry accumulate, so the demo prints that figure and
+the page states it; the scenario is a reconstruction of the maneuver, not of
+the hour.
+
+### Extra channels in the panel and its plots
+
+`channels` adds per-spacecraft scalar columns of the results table to the
+selection panel, each with its own label, unit and plot. Name a column by its
+suffix, so `column = "attitude_error_deg"` reads `sc1_attitude_error_deg` and
+its per-spacecraft siblings; a column that is missing for any spacecraft is
+dropped rather than raising.
+
+```julia
+export_visualization(prefix; channels=[
+    (column="lvlh_pointing_deg", label="LVLH pointing", unit="deg", digits=3),
+    (column="wheel_torque_nm", label="wheel reaction torque", unit="N m", digits=7),
+])
+```
+
+This is how a run publishes what its own `SaveField`s computed: the CYGNSS slew
+page carries the pointing angle that goes from zero to ten degrees, the
+attitude error against flight, the three body rates, the three wheel speeds,
+the three components of wheel momentum and the reaction torque, so the panel
+tells the story without prose.
+
 ## Ground tracks
 
 `ground_tracks=true` starts the page with the sub-satellite point of every

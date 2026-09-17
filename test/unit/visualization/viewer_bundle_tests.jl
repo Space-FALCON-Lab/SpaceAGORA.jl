@@ -300,6 +300,46 @@ end
         @test SV.build_viewer_frames(partial, scene)["thruster_level"] === nothing
     end
 
+    @testset "extra scalar channels" begin
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        scene = build_visualization_scene(args; rotation_max_samples=4)
+        df = _synthetic_results(scene; n_rows=25)
+
+        # Nothing asked for, nothing carried.
+        @test SV.build_viewer_frames(df, scene)["channels"] === nothing
+        # Asked for, but the column is not there: dropped, not raised, the way
+        # every other optional block behaves.
+        @test SV.build_viewer_frames(df, scene; channels=[(column="attitude_error_deg",)])["channels"] === nothing
+
+        df[!, "sc1_attitude_error_deg"] = [0.1 * r for r in 1:25]
+        df[!, "sc1_wheel_torque_nm"] = [1e-6 * r for r in 1:25]
+        frames = SV.build_viewer_frames(df, scene; channels=[
+            (column="attitude_error_deg", label="attitude error", unit="deg", digits=3),
+            (column="wheel_torque_nm",),
+        ])
+        chans = frames["channels"]
+        @test length(chans) == 2
+        @test chans[1]["name"] == "attitude_error_deg"
+        @test chans[1]["label"] == "attitude error"
+        @test chans[1]["unit"] == "deg"
+        @test chans[1]["digits"] == 3
+        @test chans[1]["log"] == false
+        # The default label is the column with underscores turned into spaces.
+        @test chans[2]["label"] == "wheel torque nm"
+        @test chans[2]["unit"] == ""
+        values = _decode_f32(chans[1]["data"])
+        @test length(values) == 25
+        @test values[1] ≈ 0.1f0
+        @test values[end] ≈ Float32(2.5)
+
+        # Decimation keeps the block aligned with the kept frames.
+        small = SV.build_viewer_frames(df, scene; max_frames=6, channels=[(column="attitude_error_deg",)])
+        @test length(_decode_f32(small["channels"][1]["data"])) == small["count"]
+
+        @test_throws ArgumentError SV.build_viewer_frames(df, scene; channels=[(label="no column",)])
+    end
+
     @testset "sun direction payload" begin
         dir = mktempdir()
         args = _viewer_config(results_directory=dir)

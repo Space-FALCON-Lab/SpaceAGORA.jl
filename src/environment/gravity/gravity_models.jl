@@ -318,3 +318,45 @@ function gravity_gradient(J::SMatrix{3,3,Float64}, rVec::SVector{3,Float64}, μ:
     r_hat = rVec / r
     return 3*μ/r^3 * cross(r_hat, J * r_hat)
 end
+
+"""
+    GravityGradientTorqueModel()
+
+The gravity-gradient torque on its own, with no gravitational force at all:
+`3μ/r³ (r̂_body × J r̂_body)`, exactly the torque the `gravity_gradient=true`
+option puts on the analytic gravity models, delivered as a separate effector.
+
+It exists because the force side of a run is often carried by
+`GravitationalHarmonicsModel`, which has no gravity-gradient option and no
+place for one: the torque needs the spacecraft's inertia tensor, and a
+harmonics field carries mass distribution of the PLANET, not of the vehicle.
+Pairing this effector with any gravity force model gives a run the torque
+without changing the force. Adding it beside an analytic gravity model that
+already has `gravity_gradient=true` would count the torque twice.
+
+The torque is zero unless the run integrates orientation
+(`orientation_sim=true`) and the spacecraft carries an attitude.
+"""
+@kwdef struct GravityGradientTorqueModel <: AbstractForceTorqueModel
+    # Named `gravity_gradient` so `_gravity_gradient_torque_body` reads this
+    # effector exactly as it reads the analytic gravity models. It is always
+    # true here: an effector whose only output is the gravity-gradient torque
+    # has nothing left to do with it switched off.
+    gravity_gradient::Bool = true
+end
+
+function calcForceTorque(model::GravityGradientTorqueModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    torque_body = _gravity_gradient_torque_body(model, pos_ii, x, param, i)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
+end
+
+@inline function wrench(
+    model::GravityGradientTorqueModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    torque_body = _gravity_gradient_torque_body(model, x, env.planet)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
+end

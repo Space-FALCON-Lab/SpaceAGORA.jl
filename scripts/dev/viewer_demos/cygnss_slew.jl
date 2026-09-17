@@ -1,0 +1,552 @@
+# CYGNSS FM01 executing its commanded reorientation, 2025-10-04.
+#
+# One spacecraft, six minutes. The CYGNSS flight software holds the observatory
+# on its LVLH pointing target until t_rel = 901.75 s of the hour this ADCS
+# export covers, where the target quaternion steps to a roughly ten degree
+# single-axis rotation and holds. The reaction wheels execute the step; the
+# telemetry records the wheel speeds that did it, the body rates that resulted,
+# and the attitude the onboard filter estimated throughout.
+#
+#   julia --project=. scripts/dev/viewer_demos/cygnss_slew.jl
+#
+# WHAT IS SIMULATED
+#
+# SpaceAGORA integrates its own six-degree-of-freedom rigid body. The wheels
+# enter as `ReactionWheelMomentumModel`, a force-torque effector that reads the
+# telemetered wheel speeds through a cubic spline and returns
+#
+#     tau_body = -dH_w/dt - omega x H_w(t),       H_w = A (J_w Omega_rw(t)),
+#
+# the exact reaction torque of a wheel assembly whose momentum is a prescribed
+# function of time. Nothing else about the attitude is injected: the body rate
+# and the quaternion are integrated by the engine's own rotational dynamics from
+# a single initial condition, and gravity-gradient torque is added through
+# `GravityGradientTorqueModel`, the toolkit's own torque.
+#
+# The flight software's own commanded-torque channels (`tqDmdCtrl`,
+# `tqDmdMomMgr`) are deliberately NOT used as forcing. They are closed-loop
+# feedback signals computed against the real state; replayed open loop into a
+# simulation that has drifted at all, they fight the simulation instead of
+# steering it, and doing so was measured at 50 to 100 degrees of error. The
+# wheel tachometer is a measurement, not a feedback signal, which is why it
+# works.
+#
+# RANGE OF VALIDITY
+#
+# The momentum-exchange model is calibrated by one initial condition taken at
+# t_rel = 890 s, eleven seconds before the commanded step. That is the whole
+# calibration: no gain, no fit, no tuned scale. It reproduces the maneuver, and
+# it degrades afterwards, because the real disturbance torques the model does
+# not carry (the magnetic rods are commanded through most of this hour, and the
+# `dplCmd` channel shows it) accumulate. The script prints the error over the
+# maneuver window and over the rest of the hour so the page and the reader both
+# see where the model stops being right.
+#
+# SPACECRAFT GEOMETRY AND CONFIDENTIALITY
+#
+# The body inertia and the wheel constants are read at run time from
+# `data/telemetry/CYGNSS/cyg01_adcs_constants.toml`, which is gitignored: the
+# inertia reached this project through limited-distribution mission
+# documentation. They configure the run. They are not written into the page, and
+# neither is any mass, dimension or area: the page's copy of the results drops
+# the mass column and zeroes the link mass, and the one link box is a cube of
+# the 1.67 m deployed span NASA publishes for the observatory, which is also the
+# size of the model the page draws. Wheel speeds, body rates, quaternions and
+# positions are flight observables and all appear.
+include(joinpath(@__DIR__, "common.jl"))
+include(joinpath(@__DIR__, "cygnss_slew_telemetry.jl"))
+using .CygnssSlewTelemetry
+using Dates
+using Printf
+using Statistics
+using TOML
+using OrdinaryDiffEq
+
+import SpaceAGORA.TelemetryVerification as TV
+
+const OUTDIR = demo_outdir("cygnss_slew")
+const TELEMETRY_DIR = joinpath(REPO_ROOT, "data", "telemetry", "CYGNSS")
+const ADCS_PATH = get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_ADCS", joinpath(TELEMETRY_DIR, "cyg01_slew_adcs.feather"))
+const PV_PATH = get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_PV", joinpath(TELEMETRY_DIR, "cyg01_slew_pv_eci.feather"))
+const CONSTANTS_PATH = get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_CONSTANTS", joinpath(TELEMETRY_DIR, "cyg01_adcs_constants.toml"))
+
+# --- the window ------------------------------------------------------------
+# T_CAL is where the single initial condition is read. It sits eleven seconds
+# before the commanded step so the run starts from a settled attitude and the
+# step happens inside the simulation rather than at its boundary. T_END is where
+# the LVLH pointing angle reaches its overshoot peak and the transient is over;
+# past it the error grows steadily (the script measures how fast).
+const T_CAL_S = parse(Float64, get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_T_CAL", "890.0"))
+const T_END_S = parse(Float64, get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_T_END", "1250.0"))
+const COMMAND_STEP_S = SLEW_COMMAND_STEP_S   # where acsLvlhPoint.qwTgt.q steps, from the ADCS export
+const FULL_HOUR = get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_FULL_HOUR", "1") != "0"
+
+# --- the epoch and the conventions -----------------------------------------
+# Both live in `cygnss_slew_telemetry.jl`, with the evidence that settled them
+# in its docstring and a script that re-runs every check:
+#
+#   julia --project=. scripts/dev/viewer_demos/cygnss_slew_checks.jl
+#
+# In one line each: the export's clock counts seconds from the J2000 epoch
+# 2000-01-01T12:00:00 (settled against an SGP4 orbit-plane comparison, an order
+# of magnitude better than the midnight reading); the quaternion maps into
+# SpaceAGORA's as (x, y, z, w) = (-t2, -t3, -t4, t1); the body rate is +w_eci;
+# and the constants file's wheel-axis matrix enters NEGATED, because it was
+# regressed against the other body-rate sign.
+
+# --- the drawn vehicle ------------------------------------------------------
+# NASA's own public 3D model of the observatory, as the constellation page uses
+# it (see `cygnss_constellation.jl` for the scale and rotation derivation and
+# `data/models/README.md` for the provenance). The nadir-face assumption is
+# inherited from there: a rotation of +90 degrees about model Z puts the antenna
+# deck on body +z and the solar cells on body -z.
+const CYGNSS_MODEL = joinpath(MODELS_DIR, "cygnss_nasa_3d_resources.glb")
+const CYGNSS_MODEL_SCALE = 1.0500
+const CYGNSS_MODEL_ROTATION_DEG = (0.0, 0.0, 90.0)
+
+# The one published dimension on this page: NASA's CYGNSS mission page gives the
+# observatory a 1.67 m deployed span. The link box is a cube of that span, which
+# bounds the drawn model and carries no mission geometry. It sets the drag and
+# SRP reference area; over the 360 s window that area moves the spacecraft by
+# far less than a metre, which the script prints from the run's own drag column.
+const CYGNSS_SPAN_M = 1.67
+const CYGNSS_REF_AREA_M2 = CYGNSS_SPAN_M^2
+# 29.00 kg is the vehicle mass stated in the SpaceAGORA CYGNSS reconstruction
+# record, section 2; it is the figure `cygnss_constellation.jl` already carries.
+const CYGNSS_MASS_KG = 29.0
+const CYGNSS_SRP_CR = 1.3          # ASSUMPTION: a generic small-satellite reflectivity; the record states only "fixed coefficients"
+# The reconstruction record (section 3) calibrated an effective drag scale of
+# about 0.3 against its own geometry. It is carried here as a named field
+# because the record's configuration is the one being reproduced, not because
+# this window can measure it: see the displacement the script prints.
+const CYGNSS_DRAG_SCALE = parse(Float64, get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_DRAG_SCALE", "0.3"))
+
+const RPM_TO_RAD_S = SLEW_RPM_TO_RAD_S
+
+# --- interpolants over the telemetry ---------------------------------------
+# The same natural cubic spline the wheel effector uses, so the reference
+# solution and the simulation read the telemetry through one interpolant.
+# The sample times are NOT uniform (the export's 4 Hz cadence jitters by up to
+# 0.08 s, and it opens with a 1 s gap), so the spline is fitted on the recorded
+# times; treating them as uniform, which an earlier standalone reconstruction
+# did, misplaces the middle of the hour by up to 0.8 s.
+spline_of(t, y) = SM.wheel_speed_spline(t, y)
+
+"Telemetered attitude (SpaceAGORA convention) at a telemetry time."
+function telemetry_quaternion(splines, t::Float64)::SVector{4, Float64}
+    q = SVector{4, Float64}(SM.wheel_spline_value(splines.q[1], t), SM.wheel_spline_value(splines.q[2], t),
+        SM.wheel_spline_value(splines.q[3], t), SM.wheel_spline_value(splines.q[4], t))
+    return q / norm(q)
+end
+
+"Telemetered body rate at a telemetry time."
+telemetry_omega(splines, t::Float64)::SVector{3, Float64} = SVector{3, Float64}(
+    SM.wheel_spline_value(splines.omega[1], t), SM.wheel_spline_value(splines.omega[2], t),
+    SM.wheel_spline_value(splines.omega[3], t))
+
+"Telemetered inertial position at a telemetry time."
+telemetry_position(splines, t::Float64)::SVector{3, Float64} = SVector{3, Float64}(
+    SM.wheel_spline_value(splines.pos[1], t), SM.wheel_spline_value(splines.pos[2], t),
+    SM.wheel_spline_value(splines.pos[3], t))
+
+"Telemetered inertial velocity at a telemetry time."
+telemetry_velocity(splines, t::Float64)::SVector{3, Float64} = SVector{3, Float64}(
+    SM.wheel_spline_value(splines.vel[1], t), SM.wheel_spline_value(splines.vel[2], t),
+    SM.wheel_spline_value(splines.vel[3], t))
+
+# --- the reference solution ------------------------------------------------
+
+"""
+    reference_attitude(tel, splines, constants, t_cal, t_end) -> function
+
+The algebraic conservation solution this scenario must agree with. For a
+torque-free body exchanging momentum only with its wheels the total angular
+momentum is constant IN INERTIAL SPACE, so the body rate at every instant
+follows from the attitude and the measured wheel speed with no dynamics at all:
+
+    omega(t) = inv(I) ( C_bi(q(t)) H_inertial - H_w(t) ),
+
+and the attitude is that rate integrated. No torque and no derivative of the
+wheel signal appears: it is a different formulation of the same physics as the
+simulated run, which is exactly why it is the check. The two must agree far more
+closely with each other than either agrees with telemetry; if they do not, the
+simulated scenario has a bug.
+
+The inertial rotation is not a detail. Holding the conserved momentum constant
+in the BODY frame instead, which the standalone reconstruction in
+`extra_examples/` does, is only right for a body that is not turning; this one
+turns once per revolution, so over the 360 s window the body frame carries the
+conserved vector through 23 degrees and the shortcut costs about 0.8 deg of
+attitude.
+
+Returns a callable giving the SpaceAGORA-convention quaternion at a telemetry
+time in `[t_cal, t_end]`.
+"""
+function reference_attitude(splines, constants, t_cal::Float64, t_end::Float64)
+    inertia = constants.inertia
+    axes = constants.wheel_axes
+    Jw = constants.wheel_inertia
+    wheel_momentum(t) = SVector{3, Float64}(axes * (Jw .* SVector{3, Float64}(
+        SM.wheel_spline_value(splines.speeds[1], t), SM.wheel_spline_value(splines.speeds[2], t),
+        SM.wheel_spline_value(splines.speeds[3], t))))
+    q0 = telemetry_quaternion(splines, t_cal)
+    omega0 = telemetry_omega(splines, t_cal)
+    h_inertial = SM.rot(q0)' * (inertia * omega0 + wheel_momentum(t_cal))
+    function rhs!(du, u, _p, t)
+        q = SVector{4, Float64}(u[1], u[2], u[3], u[4])
+        qn = q / norm(q)
+        omega = SVector{3, Float64}(inertia \ (SM.rot(qn) * h_inertial - wheel_momentum(t)))
+        du .= SM.DynamicsRotational.quaternion_derivative(omega, q)
+        return nothing
+    end
+    prob = ODEProblem(rhs!, collect(q0), (t_cal, t_end))
+    sol = solve(prob, Tsit5(); reltol=1e-12, abstol=1e-14, dtmax=0.25)
+    return t -> (u = sol(t); q = SVector{4, Float64}(u[1], u[2], u[3], u[4]); q / norm(q))
+end
+
+# --- the run ---------------------------------------------------------------
+
+println("CYGNSS FM01 commanded slew")
+tel = load_slew_telemetry(ADCS_PATH, PV_PATH)
+constants = load_slew_constants(CONSTANTS_PATH)
+splines = (
+    q=[spline_of(tel.t_rel, tel.q[k, :]) for k in 1:4],
+    omega=[spline_of(tel.t_rel, tel.omega[k, :]) for k in 1:3],
+    pos=[spline_of(tel.pv_t_rel, tel.pos_m[k, :]) for k in 1:3],
+    vel=[spline_of(tel.pv_t_rel, tel.vel_mps[k, :]) for k in 1:3],
+    speeds=[spline_of(tel.t_rel, tel.speeds_rad_s[:, k]) for k in 1:3],
+)
+epoch_dt = slew_epoch_utc(tel.t_abs[1] + T_CAL_S)
+const EPOCH_UTC = Dates.format(epoch_dt, "yyyy-mm-ddTHH:MM:SS.sss")
+const DATE_LABEL = Dates.format(epoch_dt, "yyyy-mm-dd")
+@printf("  export: %d samples over %.1f s, first sample %s UTC\n", length(tel.t_rel), tel.t_rel[end],
+    Dates.format(slew_epoch_utc(tel.t_abs[1]), "yyyy-mm-ddTHH:MM:SS.s"))
+@printf("  body-frame nadir spread (quaternion convention check): %.4f\n", tel.nadir_spread)
+@printf("  window: t_rel %.1f to %.1f s (%.1f s), commanded step at %.2f s, run epoch %s UTC\n",
+    T_CAL_S, T_END_S, T_END_S - T_CAL_S, COMMAND_STEP_S, EPOCH_UTC)
+
+planet = Earth("", SPICE_PATH)
+initial_time = initial_time_of(et_of(EPOCH_UTC))
+
+r0 = telemetry_position(splines, T_CAL_S)
+v0 = telemetry_velocity(splines, T_CAL_S)
+q0 = telemetry_quaternion(splines, T_CAL_S)
+omega0 = telemetry_omega(splines, T_CAL_S)
+oe = TV.rvtoorbitalelement(r0, v0, planet)
+@printf("  initial state: alt %.1f km, i %.3f deg, period %.2f min; |omega| %.3e rad/s\n",
+    (oe[1] - planet.Rp_e) / 1e3, rad2deg(oe[3]), 2pi * sqrt(oe[1]^3 / planet.μ) / 60, norm(omega0))
+
+"""
+    build_run(mission_time, outdir; with_gravity_gradient) -> (args, wheels)
+
+The run configuration. Force models follow
+`docs/spaceagora_cygnss_reconstruction_record.md` section 3: EarthGGM05C to
+degree and order 50, Sun and Moon third body, solar radiation pressure and
+NRLMSISE-00 drag with real space-weather indices, integrated with DP8 (the
+record states the automatic stiff/nonstiff default costs 7.2 km on this
+scenario, so the solver is pinned). The torque side is the wheel assembly and,
+unless the caller turns it off for the control run, gravity gradient.
+"""
+function build_run(mission_time::Float64, outdir::AbstractString; with_gravity_gradient::Bool=true)
+    root = SM.Link(root=true, m=CYGNSS_MASS_KG,
+        dims=MVector{3, Float64}(CYGNSS_SPAN_M, CYGNSS_SPAN_M, CYGNSS_SPAN_M),
+        ref_area=CYGNSS_REF_AREA_M2, q=MVector{4, Float64}(q0...), ω=MVector{3, Float64}(omega0...),
+        reflection_coefficient=CYGNSS_SRP_CR)
+    ic = SM.CartesianInitialCondition(r0, v0; q=q0, ang_vel=omega0)
+    sc = SM.SpacecraftModel(links=[root], root=root, prop_mass=0.0,
+        inertia_tensor=constants.inertia, initial_condition=ic, id=1)
+
+    wheels = SM.ReactionWheelMomentumModel(tel.t_rel, tel.speeds_rad_s,
+        constants.wheel_axes, constants.wheel_inertia; spacecraft_index=1, time_offset_s=T_CAL_S)
+
+    effectors = Any[
+        GravitationalHarmonicsModel(50, 50, joinpath(HARMONICS_DIR, "EarthGGM05C.csv"), planet),
+        NBodyGravityModel(body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet),
+        SolarRadiationPressureModel(CYGNSS_SRP_CR, CYGNSS_REF_AREA_M2),
+        TV.ScaledAerodynamicCoefficientfM(AerodynamicCoefficientfM(), CYGNSS_DRAG_SCALE),
+        wheels,
+    ]
+    with_gravity_gradient && push!(effectors, SM.GravityGradientTorqueModel())
+    effector_tuple = Tuple(effectors)
+
+    base = make_example_config(planet=planet, spacecraft=sc, mission_time=mission_time,
+        initial_time=initial_time, dynamic_effectors=effector_tuple,
+        density_model=NRLMSISE00AtmosphereModel(use_space_indices=true),
+        orientation_sim=true, keplerian=false, EI_km=120.0, verbose=false, results=true,
+        results_directory=String(outdir))
+    args = SM.SimulationConfiguration(
+        file_paths=base.file_paths, simulation_settings=base.simulation_settings,
+        mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, keplerian=false,
+            number_of_orbits=1, mission_time=mission_time, orientation_sim=true,
+            num_steps_to_save=8000, data_rate=0.25),
+        environment_model=base.environment_model,
+        dynamics_model=SM.DynamicsModel([sc], effector_tuple),
+        guidance_model=base.guidance_model, navigation_model=base.navigation_model,
+        control_model=base.control_model, initial_time=base.initial_time,
+        integration_tolerances=SM.IntegrationTolerances(reltol_orbit=1e-11, abstol_orbit=1e-9,
+            dt_max_orbit=2.0, reltol_atmosphere=1e-11, abstol_atmosphere=1e-9, dt_max_atmosphere=2.0),
+        solver_config=SM.SolverConfig(solver_mode=:dp8))
+    return args, wheels
+end
+
+"""
+    slew_save_fields(args, wheels) -> Vector{SaveField}
+
+The channels the page's plot panel tells the story with, per spacecraft:
+the attitude error against telemetry, the LVLH pointing angle that goes from
+zero to ten degrees, the three body rates, the three wheel speeds, the three
+components of the wheel momentum in the body frame, and the magnitude of the
+reaction torque the wheels apply. Every one of them is a flight observable or a
+quantity derived from one; none of them is a mass property.
+"""
+function slew_save_fields(args, wheels)
+    SC = SM.SimulationCallbacks
+    q_of(u) = SVector{4, Float64}(u.sc[1].q)
+    ω_of(u) = SVector{3, Float64}(u.sc[1].ω)
+    r_of(u) = SVector{3, Float64}(u.sc[1][1], u.sc[1][2], u.sc[1][3])
+    v_of(u) = SVector{3, Float64}(u.sc[1][4], u.sc[1][5], u.sc[1][6])
+    return [
+        SC.default_save_fields(args)...,
+        SC.SaveField(:attitude_error_deg,
+            (u, t, integ) -> [attitude_angle_deg(q_of(u), telemetry_quaternion(splines, t + T_CAL_S))];
+            per_satellite=true),
+        SC.SaveField(:lvlh_pointing_deg,
+            (u, t, integ) -> [lvlh_pointing_angle_deg(q_of(u), r_of(u), v_of(u))];
+            per_satellite=true),
+        # The same angle from the flight record, so the page's plot carries the
+        # commanded maneuver and the simulated one on one axis.
+        SC.SaveField(:lvlh_pointing_flight_deg,
+            (u, t, integ) -> [lvlh_pointing_angle_deg(telemetry_quaternion(splines, t + T_CAL_S),
+                telemetry_position(splines, t + T_CAL_S), telemetry_velocity(splines, t + T_CAL_S))];
+            per_satellite=true),
+        SC.SaveField(:body_rate_rad_s, (u, t, integ) -> [ω_of(u)]; per_satellite=true, column_prefix="body_rate"),
+        SC.SaveField(:wheel_speed_rpm,
+            (u, t, integ) -> [SM.wheel_speeds_rad_s(wheels, t) ./ RPM_TO_RAD_S];
+            per_satellite=true, column_prefix="wheel_speed_rpm"),
+        SC.SaveField(:wheel_momentum_nms,
+            (u, t, integ) -> [SM.wheel_momentum_body(wheels, t)];
+            per_satellite=true, column_prefix="wheel_momentum_nms"),
+        SC.SaveField(:wheel_torque_nm,
+            (u, t, integ) -> [norm(SM.wheel_reaction_torque(SM.wheel_momentum_body(wheels, t),
+                SM.wheel_momentum_rate_body(wheels, t), ω_of(u)))];
+            per_satellite=true),
+    ]
+end
+
+"""
+    run_case(name, mission_time; with_gravity_gradient) -> prefix
+
+One propagation into its own results directory, reused when it is already there
+(`SPACEAGORA_DEMO_FORCE=1` reruns).
+"""
+function run_case(name::AbstractString, mission_time::Float64; with_gravity_gradient::Bool=true)
+    dir = joinpath(OUTDIR, String(name))
+    mkpath(dir)
+    args, wheels = build_run(mission_time, dir; with_gravity_gradient=with_gravity_gradient)
+    return run_or_reuse!(args, dir; save_fields=slew_save_fields(args, wheels), isolate_state=false)
+end
+
+"""
+    score(prefix) -> NamedTuple
+
+Attitude and body-rate error of a run against the telemetry it is reproducing,
+plus the separation from the telemetered orbit, over the run's own saved times.
+"""
+function score(prefix::AbstractString)
+    df = DataFrame(Arrow.Table(prefix * ".feather"))
+    t = Float64.(df.time)
+    att = Float64.(df.sc1_attitude_error_deg)
+    rate = Float64[]
+    sep = Float64[]
+    across = Float64[]
+    for i in eachindex(t)
+        om = SVector{3, Float64}(df.sc1_body_rate_1[i], df.sc1_body_rate_2[i], df.sc1_body_rate_3[i])
+        push!(rate, norm(om - telemetry_omega(splines, t[i] + T_CAL_S)))
+        r = SVector{3, Float64}(df.sc1_pos_1[i], df.sc1_pos_2[i], df.sc1_pos_3[i])
+        v = SVector{3, Float64}(df.sc1_vel_1[i], df.sc1_vel_2[i], df.sc1_vel_3[i])
+        d = r - telemetry_position(splines, t[i] + T_CAL_S)
+        push!(sep, norm(d))
+        # The along-track component is the one the navigation fixes' quarter
+        # second of time-stamp resolution cannot pin (see `CygnssSlewTelemetry`),
+        # so the radial and cross-track part is reported separately.
+        push!(across, norm(d - dot(d, v / norm(v)) * (v / norm(v))))
+    end
+    return (df=df, t=t, att=att, rate=rate, sep=sep, across=across)
+end
+
+init_nrlmsise_space_indices!()
+window_s = T_END_S - T_CAL_S
+
+println("\nrun of record: wheel momentum exchange + gravity gradient, ", round(window_s; digits=1), " s")
+prefix = run_case("window", window_s; with_gravity_gradient=true)
+main = score(prefix)
+@printf("  attitude error vs telemetry: mean %.3f  rms %.3f  max %.3f deg\n",
+    mean(main.att), sqrt(mean(main.att .^ 2)), maximum(main.att))
+@printf("  body-rate error vs telemetry: rms %.3e  max %.3e rad/s\n", sqrt(mean(main.rate .^ 2)), maximum(main.rate))
+@printf("  position vs the telemetered orbit: start %.1f m, end %.1f m, max %.1f m\n",
+    main.sep[1], main.sep[end], maximum(main.sep))
+@printf("  the same, off the track (radial and cross-track only, which the fix time stamps do resolve): end %.1f m, max %.1f m\n",
+    main.across[end], maximum(main.across))
+@printf("  LVLH pointing angle, simulated: %.3f deg at the start, %.3f at the end (peak %.3f)\n",
+    main.df.sc1_lvlh_pointing_deg[1], main.df.sc1_lvlh_pointing_deg[end], maximum(main.df.sc1_lvlh_pointing_deg))
+@printf("  LVLH pointing angle, flight:    %.3f deg at the start, %.3f at the end (peak %.3f)\n",
+    main.df.sc1_lvlh_pointing_flight_deg[1], main.df.sc1_lvlh_pointing_flight_deg[end],
+    maximum(main.df.sc1_lvlh_pointing_flight_deg))
+let d = hypot.(main.df.sc1_drag_1, main.df.sc1_drag_2, main.df.sc1_drag_3)
+    @printf("  drag over the window: mean %.3e N on %.2f kg, so %.3f m of displacement at most\n",
+        mean(d), CYGNSS_MASS_KG, 0.5 * (mean(d) / CYGNSS_MASS_KG) * window_s^2)
+end
+
+# The standalone reconstruction in `extra_examples/` reports its error over
+# t_rel 890 to 1100 s; score the same sub-window so the two numbers can be read
+# against each other.
+let k = findall(t -> t <= 1100.0 - T_CAL_S, main.t)
+    @printf("  over t_rel 890-1100 s, the window the standalone reconstruction reports: mean %.3f  rms %.3f  max %.3f deg\n",
+        mean(main.att[k]), sqrt(mean(main.att[k] .^ 2)), maximum(main.att[k]))
+end
+
+println("\ncontrol run: wheel momentum exchange alone, no gravity gradient")
+prefix_wheel = run_case("window_wheel_only", window_s; with_gravity_gradient=false)
+wheel_only = score(prefix_wheel)
+@printf("  attitude error vs telemetry: mean %.3f  rms %.3f  max %.3f deg\n",
+    mean(wheel_only.att), sqrt(mean(wheel_only.att .^ 2)), maximum(wheel_only.att))
+let k = findall(t -> t <= 1100.0 - T_CAL_S, wheel_only.t)
+    @printf("  over t_rel 890-1100 s: mean %.3f  rms %.3f  max %.3f deg (the standalone reports 0.65 / 1.8)\n",
+        mean(wheel_only.att[k]), sqrt(mean(wheel_only.att[k] .^ 2)), maximum(wheel_only.att[k]))
+end
+
+println("\nagreement with the algebraic conservation solution (the reference)")
+ref_q = reference_attitude(splines, constants, T_CAL_S, T_CAL_S + window_s)
+ref_vs_sim = Float64[]
+ref_vs_tel = Float64[]
+gg_shift = Float64[]
+for i in eachindex(wheel_only.t)
+    tt = wheel_only.t[i] + T_CAL_S
+    qr = ref_q(tt)
+    qw = SVector{4, Float64}(wheel_only.df.sc1_q_1[i], wheel_only.df.sc1_q_2[i], wheel_only.df.sc1_q_3[i], wheel_only.df.sc1_q_4[i])
+    qg = SVector{4, Float64}(main.df.sc1_q_1[i], main.df.sc1_q_2[i], main.df.sc1_q_3[i], main.df.sc1_q_4[i])
+    push!(ref_vs_sim, attitude_angle_deg(qw, qr))
+    push!(ref_vs_tel, attitude_angle_deg(qr, telemetry_quaternion(splines, tt)))
+    push!(gg_shift, attitude_angle_deg(qg, qw))
+end
+@printf("  SpaceAGORA (wheel only) vs the algebraic reference: mean %.2e  max %.2e deg\n",
+    mean(ref_vs_sim), maximum(ref_vs_sim))
+@printf("  the algebraic reference vs telemetry:               mean %.3f  max %.3f deg\n",
+    mean(ref_vs_tel), maximum(ref_vs_tel))
+@printf("  gravity gradient moves the simulated attitude by:   mean %.3f  max %.3f deg\n",
+    mean(gg_shift), maximum(gg_shift))
+
+full_hour = nothing
+full_hour_wheel = nothing
+if FULL_HOUR
+    hour_s = tel.t_rel[end] - T_CAL_S
+    println("\nrange of validity: the same setup carried to the end of the hour (", round(hour_s; digits=0), " s)")
+    full_hour = score(run_case("full_hour", hour_s; with_gravity_gradient=true))
+    full_hour_wheel = score(run_case("full_hour_wheel_only", hour_s; with_gravity_gradient=false))
+    @printf("  with gravity gradient: mean %.2f  rms %.2f  max %.2f deg\n",
+        mean(full_hour.att), sqrt(mean(full_hour.att .^ 2)), maximum(full_hour.att))
+    @printf("  wheel momentum alone:  mean %.2f  rms %.2f  max %.2f deg\n",
+        mean(full_hour_wheel.att), sqrt(mean(full_hour_wheel.att .^ 2)), maximum(full_hour_wheel.att))
+    for mark in (window_s, 600.0, 1200.0, 1800.0, 2400.0, hour_s)
+        i = findlast(t -> t <= mark, full_hour.t)
+        i === nothing && continue
+        j = findlast(t -> t <= mark, full_hour_wheel.t)
+        @printf("    t_rel %6.0f s: %7.2f deg with gravity gradient, %7.2f deg without\n",
+            full_hour.t[i] + T_CAL_S, full_hour.att[i], full_hour_wheel.att[j])
+    end
+end
+
+# --- the page --------------------------------------------------------------
+# The page is exported from a trimmed copy of the results, as the constellation
+# page is: the per-spacecraft mass column is dropped and the link's mass is
+# zeroed, so no mass property reaches the page in any field. The link box stays,
+# because the viewer falls back to it when a model cannot be parsed, and it is
+# the published deployed span rather than any mission geometry.
+const PAGE_DIR = joinpath(OUTDIR, "page")
+mkpath(PAGE_DIR)
+page_prefix = joinpath(PAGE_DIR, "simulation_results")
+let doc = JSON.parsefile(prefix * "_scene.json")
+    doc["spacecraft"][1]["name"] = "CYGNSS FM01"
+    for link in doc["spacecraft"][1]["links"]
+        link["mass_kg"] = 0.0
+    end
+    open(page_prefix * "_scene.json", "w") do io
+        JSON.print(io, doc)
+    end
+    full = DataFrame(Arrow.Table(prefix * ".feather"))
+    dropped = [c for c in names(full) if occursin(r"^sc\d+_mass$", c)]
+    Arrow.write(page_prefix * ".feather", select(full, Not(dropped)))
+    println("\npage copy: dropped ", length(dropped), " mass column(s)")
+end
+
+# The ghost carries BOTH the flown orbit and the flown attitude, so the
+# translucent copy beside the simulated spacecraft is what the vehicle actually
+# did -- where it was and which way it was facing. At 4 Hz over six minutes the
+# whole flown arc is 1441 samples, small enough to embed entire.
+# The ghost's time base is the 4 Hz attitude, which is what this page is about;
+# the position and velocity are the 1 Hz navigation fixes read onto it through
+# the same splines the run scores against, because the position column of the
+# export repeats each fix four times (see `CygnssSlewTelemetry`).
+ghost_idx = [i for i in eachindex(tel.t_rel) if T_CAL_S - 1e-6 <= tel.t_rel[i] <= T_CAL_S + window_s + 1e-6]
+references = [(
+    name="CYGNSS FM01 flight telemetry",
+    t_s=tel.t_rel[ghost_idx] .- T_CAL_S,
+    pos_m=reduce(hcat, [telemetry_position(splines, tel.t_rel[i]) for i in ghost_idx]),
+    vel_mps=reduce(hcat, [telemetry_velocity(splines, tel.t_rel[i]) for i in ghost_idx]),
+    q=tel.q[:, ghost_idx],
+    target=1, color="#ffb347", opacity=0.45,
+)]
+println("ghost: ", length(ghost_idx), " flown samples with position and attitude")
+
+# Frame and trail. The commanded step is a rotation in INERTIAL space and the
+# window is 0.064 of a revolution, so an inertial frame is the one in which the
+# thing the page is about -- the vehicle turning about a fixed axis -- is the
+# only motion that reads; a planet-fixed frame would add half a degree per
+# second of Earth rotation to it for no gain. The trail is the whole window, so
+# the arc behind the spacecraft shows where the six minutes started rather than
+# a rolling stub. Ground tracks stay off: six minutes of sub-satellite track is
+# a short arc that says nothing about an attitude maneuver.
+# The channels the page carries beside the trajectory, in the order they tell
+# the story: what the vehicle was commanded to do, how well the simulation did
+# it, and the wheel quantities that drove it. Every one is a flight observable
+# or an angle derived from one.
+channels = [
+    (column="lvlh_pointing_flight_deg", label="LVLH pointing, flight", unit="deg", digits=3),
+    (column="lvlh_pointing_deg", label="LVLH pointing, simulated", unit="deg", digits=3),
+    (column="attitude_error_deg", label="attitude error vs flight", unit="deg", digits=3),
+    (column="body_rate_1", label="body rate x", unit="rad/s", digits=6),
+    (column="body_rate_2", label="body rate y", unit="rad/s", digits=6),
+    (column="body_rate_3", label="body rate z", unit="rad/s", digits=6),
+    (column="wheel_speed_rpm_1", label="wheel 1 speed", unit="rpm", digits=1),
+    (column="wheel_speed_rpm_2", label="wheel 2 speed", unit="rpm", digits=1),
+    (column="wheel_speed_rpm_3", label="wheel 3 speed", unit="rpm", digits=1),
+    (column="wheel_momentum_nms_1", label="wheel momentum x", unit="N m s", digits=6),
+    (column="wheel_momentum_nms_2", label="wheel momentum y", unit="N m s", digits=6),
+    (column="wheel_momentum_nms_3", label="wheel momentum z", unit="N m s", digits=6),
+    (column="wheel_torque_nm", label="wheel reaction torque", unit="N m", digits=7),
+]
+
+html = export_visualization(page_prefix; max_frames=2000, trail_s=window_s, texture_resolution="4k",
+    frame=:inertial, ground_tracks=false, channels=channels,
+    title="AGORA CYGNSS FM01 · the commanded slew, $(DATE_LABEL)",
+    models=Dict(1 => CYGNSS_MODEL), model_scale=CYGNSS_MODEL_SCALE,
+    model_rotation_deg=Dict(1 => CYGNSS_MODEL_ROTATION_DEG),
+    references=references)
+println("html: ", html, " ", filesize(html))
+
+validity = full_hour === nothing ? "" : @sprintf(
+    "Carried past the transient it degrades, as the disturbance torques it does not carry accumulate: %.0f deg mean over the remaining forty minutes of the export. ",
+    mean(full_hour.att[full_hour.t .> window_s]))
+cdn = build_cdn_page(html, joinpath(OUTDIR, "artifact.html"), "AGORA CYGNSS FM01 Slew",
+    "AGORA CYGNSS FM01 · the commanded slew, $(DATE_LABEL) $(Dates.format(epoch_dt, "HH:MM")) UTC",
+    @sprintf("%.0f km, i %.2f°, %.1f min; EarthGGM05C 50x50, Sun + Moon, SRP, NRLMSISE-00; reaction-wheel momentum exchange + gravity gradient, dp8",
+        (oe[1] - planet.Rp_e) / 1e3, rad2deg(oe[3]), 2pi * sqrt(oe[1]^3 / planet.μ) / 60),
+    @sprintf("%.0f s, the commanded step at %+.0f s", window_s, COMMAND_STEP_S - T_CAL_S),
+    "CYGNSS FM01 holds its LVLH pointing target until its flight software steps that target about ten degrees, and the reaction wheels turn the observatory to it. " *
+    "SpaceAGORA integrates its own rigid-body attitude here; the only thing taken from the flight record is the measured wheel speed, entering as the reaction torque " *
+    "of the wheel momentum it implies, plus gravity-gradient torque. No commanded-torque channel and no controller is replayed, and the attitude is calibrated once, " *
+    @sprintf("eleven seconds before the step. Over the %.0f s it tracks the flown attitude to %.2f deg mean and %.2f deg at worst. ", window_s, mean(main.att), maximum(main.att)) *
+    validity *
+    "The translucent observatory is the flight record itself, carrying both the flown orbit and the flown attitude, so the gap you can see between the two vehicles IS the error. " *
+    "Click the spacecraft for its channels; the LVLH pointing angle is the maneuver in one number. Drag to orbit, wheel to zoom, Space to pause, F to follow.")
+println("cdn: ", cdn, " ", filesize(cdn))

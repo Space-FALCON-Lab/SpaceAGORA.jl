@@ -10,6 +10,8 @@
 //   frames.mass_kg  Float32[N*S]       total mass (optional)
 //   frames.link_pose {stride, counts[S], offsets[S], total, data: Float32[N*total]} (optional)
 //   frames.sun_dir Float32[N*3]       unit vector planet center -> Sun, inertial (optional)
+//   frames.channels [{name, label, unit, digits, log, data: Float32[N*S]}]  extra named
+//                                      per-spacecraft scalars for the panel and its plots (optional)
 // Every block is base64 of little-endian floats.
 
 export function decodeBytes(b64) {
@@ -91,6 +93,13 @@ export class FrameData {
       this.plume = {};
       for (const key of Object.keys(frames.plume)) this.plume[key] = decodeFloat32(frames.plume[key]);
     }
+    // Extra named scalar channels the run asked the page to carry: one value per
+    // spacecraft per frame, each with the label, unit and formatting the caller
+    // gave it. Empty unless export_visualization was passed `channels`.
+    this.channels = (frames.channels || []).map((c) => ({
+      name: c.name, label: c.label, unit: c.unit || '', digits: c.digits ?? 3, log: c.log ?? false,
+      y: decodeFloat32(c.data),
+    }));
     // Unit vector from the planet center to the Sun, inertial, one per frame
     // (not per spacecraft); null when the run could not resolve the Sun.
     this.sunDir = frames.sun_dir ? decodeFloat32(frames.sun_dir) : null;
@@ -220,6 +229,17 @@ export class FrameData {
   }
 
   hasPlume() { return !!this.plume; }
+
+  // Extra channel `k` for spacecraft `sat`, linearly interpolated at `time`.
+  channelAt(k, time, sat) {
+    const c = this.channels[k];
+    if (!c) return NaN;
+    const { i, f } = this.locate(time);
+    const S = this.sats;
+    if (this.count < 2) return c.y[sat];
+    const a = c.y[i * S + sat], b = c.y[(i + 1) * S + sat];
+    return a + f * (b - a);
+  }
 
   // One plume quantity ('height_m', 'shear_pa', 'pressure_pa', 'erosion_kg_s',
   // 'eroded_kg', 'ejecta_mps', 'ground_effect_n') for spacecraft `sat`, linearly

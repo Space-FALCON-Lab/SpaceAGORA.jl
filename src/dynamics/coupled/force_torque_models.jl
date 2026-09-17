@@ -12,11 +12,13 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "plume_surface_interaction.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "reaction_wheel_momentum.jl"))
 
     # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
     @eval GravityEffectors using ..PerturbationEffectors
 
     using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
+    using .GravityEffectors: GravityGradientTorqueModel
     using .GravityEffectors: aerobraking_gravity_force_ii
     using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     using .AerodynamicEffectors: MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate, mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area, fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate, fibonacci_directions
@@ -39,8 +41,12 @@ module DynamicEffectors
     using .RobotArmReactionEffectors: RobotArmReactionEffector
     using .PlumeSurfaceInteraction: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
     using .PlumeSurfaceInteraction: plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities, plume_engine_axis
+    using .ReactionWheelMomentum: WheelSpeedSpline, ReactionWheelMomentumModel, ReactionWheelMomentumState
+    using .ReactionWheelMomentum: wheel_speed_spline, wheel_spline_value, wheel_spline_derivative
+    using .ReactionWheelMomentum: wheel_momentum_body, wheel_momentum_rate_body, wheel_reaction_torque, wheel_speeds_rad_s
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
+    export GravityGradientTorqueModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
     export MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque
@@ -55,4 +61,7 @@ module DynamicEffectors
     export RobotArmReactionEffector
     export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
     export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+    export WheelSpeedSpline, ReactionWheelMomentumModel, ReactionWheelMomentumState
+    export wheel_speed_spline, wheel_spline_value, wheel_spline_derivative
+    export wheel_momentum_body, wheel_momentum_rate_body, wheel_reaction_torque, wheel_speeds_rad_s
 end

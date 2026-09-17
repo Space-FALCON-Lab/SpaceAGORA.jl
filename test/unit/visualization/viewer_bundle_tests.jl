@@ -448,6 +448,59 @@ end
         @test SV.model_payloads(scene; models=Dict(1 => iss), model_center=Dict(1 => false))["1"]["center"] == [0.0, 0.0, 0.0]
     end
 
+    # A constellation drawn with one file embeds that file once: the first
+    # spacecraft carries the data URL and every later one points at it.
+    @testset "shared model bytes" begin
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        one = build_visualization_scene(args; rotation_max_samples=4)
+        g = one.spacecraft[1]
+        fleet = SV.VisualizationScene(one.schema, one.epoch_et_start_s, one.epoch_utc, one.planet,
+            [SV.SpacecraftGeometry(k, "sat$(k)", g.links, g.thrusters, g.facets, g.joints,
+                g.bounding_radius_m, g.stl_path, g.arm) for k in 1:4],
+            one.orientation_sim, one.results_feather, one.link_pose_field, one.link_pose_stride, one.atmosphere)
+
+        shared = joinpath(dir, "shared.obj")
+        write(shared, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
+        # A second path with byte-identical content: content, not the file name, decides.
+        twin = joinpath(dir, "twin.obj")
+        write(twin, read(shared))
+        other = joinpath(dir, "other.obj")
+        write(other, "v 0 0 0\nv 2 0 0\nv 0 2 0\nf 1 2 3\n")
+
+        m = SV.model_payloads(fleet;
+            models=Dict(1 => shared, 2 => twin, 3 => other, 4 => shared),
+            model_scale=Dict(1 => 1.0, 2 => 2.0, 3 => 3.0, 4 => 4.0),
+            model_rotation_deg=Dict(2 => (0.0, 0.0, 90.0)))
+        # One data URL per distinct content, and only the first holder carries it.
+        @test haskey(m["1"], "url") && !haskey(m["1"], "url_from")
+        @test !haskey(m["2"], "url") && m["2"]["url_from"] == "1"
+        @test !haskey(m["4"], "url") && m["4"]["url_from"] == "1"
+        @test haskey(m["3"], "url") && !haskey(m["3"], "url_from")
+        @test m["3"]["url"] != m["1"]["url"]
+        # Everything except the bytes stays per-spacecraft.
+        @test [m["$(k)"]["scale"] for k in 1:4] == [1.0, 2.0, 3.0, 4.0]
+        @test m["2"]["rotation_deg"] == [0.0, 0.0, 90.0]
+        @test m["1"]["rotation_deg"] == [0.0, 0.0, 0.0]
+        @test all(m["$(k)"]["format"] == "obj" for k in 1:4)
+        @test m["2"]["source"] == "twin.obj" && m["4"]["source"] == "shared.obj"
+        # The whole payload is smaller than four copies would be.
+        @test sum(length(get(m["$(k)"], "url", "")) for k in 1:4) < 3 * length(m["1"]["url"])
+
+        # Same bytes under two formats do NOT share: the viewer parses a shared
+        # entry with its own `format`, and an .obj parser cannot read .stl bytes.
+        as_stl = joinpath(dir, "shared.stl")
+        write(as_stl, read(shared))
+        split = SV.model_payloads(fleet; models=Dict(1 => shared, 2 => as_stl))
+        @test haskey(split["1"], "url") && haskey(split["2"], "url")
+        @test split["1"]["format"] == "obj" && split["2"]["format"] == "stl"
+
+        # No duplicates: every entry carries its own url, exactly as before.
+        plain = SV.model_payloads(fleet; models=Dict(1 => shared, 3 => other))
+        @test haskey(plain["1"], "url") && !haskey(plain["1"], "url_from")
+        @test haskey(plain["3"], "url") && !haskey(plain["3"], "url_from")
+    end
+
     @testset "reference paths" begin
         pts = [0.0 100.0 200.0; 0.0 10.0 0.0; 0.0 0.0 5.0]
         out = SV.path_payloads([(name="plan", points_m=pts, frame=:rtn, target=2, color="#ff0000", dashed=false)])

@@ -412,6 +412,15 @@ applied to the model in the body frame. `model_center` (a Bool or a per-id
 the spacecraft. Each entry is
 `{"url" => data URI, "format" => ..., "scale" => ..., "rotation_deg" => [rx, ry, rz], "center" => [cx, cy, cz] (model units), "source" => file name}`.
 A `.gltf` file must embed its buffers; external files are not carried along.
+
+Model bytes are embedded once, however many spacecraft share them: the first
+spacecraft whose file has a given content carries `"url"`, and every later
+spacecraft with byte-identical content carries `"url_from" => "<that id>"`
+instead and no `"url"` of its own. A constellation of seven spacecraft drawn
+with one model therefore costs one copy of the file, not seven. Every other
+field stays per-spacecraft, so the sharers keep their own scale, rotation,
+centering and articulations. Pages with no duplicate model carry `"url"` on
+every entry exactly as before.
 """
 function model_payloads(
     scene::VisualizationScene;
@@ -424,6 +433,12 @@ function model_payloads(
     stl_scale::Real=1.0
 )::Dict{String, Any}
     out = Dict{String, Any}()
+    # File bytes read once per path, and the id of the first spacecraft that
+    # embedded a given content, so byte-identical models are embedded once.
+    # The MIME type is part of the key: the viewer parses a shared entry with
+    # its OWN `format`, so only entries that would parse the same may share.
+    bytes_by_path = Dict{String, Vector{UInt8}}()
+    owner_by_bytes = Dict{Tuple{String, Vector{UInt8}}, String}()
     for sc in scene.spacecraft
         path = haskey(models, sc.id) ? String(models[sc.id]) : (haskey(stl, sc.id) ? String(stl[sc.id]) : sc.stl_path)
         path === nothing && continue
@@ -448,8 +463,8 @@ function model_payloads(
                 isempty(articulations) || rethrow()
             end
         end
-        out[string(sc.id)] = Dict{String, Any}(
-            "url" => _data_url(read(path), mime),
+        bytes = get!(() -> read(path), bytes_by_path, path)
+        entry = Dict{String, Any}(
             "format" => format,
             "scale" => scale,
             "rotation_deg" => Float64[Float64(r) for r in rot],
@@ -457,6 +472,15 @@ function model_payloads(
             "articulations" => articulation_dicts,
             "source" => basename(path),
         )
+        key = (String(mime), bytes)
+        owner = get(owner_by_bytes, key, nothing)
+        if owner === nothing
+            owner_by_bytes[key] = string(sc.id)
+            entry["url"] = _data_url(bytes, mime)
+        else
+            entry["url_from"] = owner
+        end
+        out[string(sc.id)] = entry
     end
     return out
 end

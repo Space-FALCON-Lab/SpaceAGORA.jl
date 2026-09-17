@@ -8,7 +8,7 @@
 // group sits at the floating origin like the assemblies.
 import * as THREE from 'three';
 import { decodeFloat64, decodeFloat32, slerp, velocityAlignedQuaternion, hermitePosition } from 'viewer/data.js';
-import { loadModelObject } from 'viewer/lod.js';
+import { loadModelObject, resolveModelUrl } from 'viewer/lod.js';
 import { makeLabelSprite } from 'viewer/spacecraft.js';
 
 const GHOST_M_TO_KM = 1e-3;
@@ -155,7 +155,9 @@ export function createReferences(specs, sidecar, frames, models, options = {}) {
     root.add(body);
     const model = models && models[String(targetSpec.id)];
     let status = null;
-    if (model && model.url) {
+    // The entry may borrow its bytes from another spacecraft's entry, so ask
+    // `resolveModelUrl` rather than testing `model.url` directly.
+    if (model && resolveModelUrl(model, models)) {
       status = 'loading';
       loadModelObject(model, spec.name || 'reference', (object, info) => {
         ghostMaterials(object, color, alpha);
@@ -164,7 +166,7 @@ export function createReferences(specs, sidecar, frames, models, options = {}) {
       }, (message) => {
         status = `failed: ${message}`;
         body.add(ghostBoxes(targetSpec, color, alpha));
-      });
+      }, models);
     } else {
       body.add(ghostBoxes(targetSpec, color, alpha));
       status = 'boxes';

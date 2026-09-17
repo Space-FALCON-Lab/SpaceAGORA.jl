@@ -81,6 +81,18 @@ apply, and the selection panel's "3D model" row reports the parsed mesh
 count or the reason a model failed. `data/models/README.md` lists the
 shipped models; the NASA ISS model there is public domain.
 
+A constellation drawn with one file costs one copy of it. The bundler embeds
+byte-identical model bytes once: the first spacecraft with a given content
+carries the data URL and every later one carries `url_from`, the id of the
+entry that holds it, so seven spacecraft sharing a 1.9 MB model add 1.9 MB to
+the page rather than 13 MB. The viewer resolves that indirection when it loads
+a model, parses each distinct file once and clones it for the other
+spacecraft and for any reference ghost that copies their model, so the
+geometries, materials and textures are uploaded to the GPU once. Everything
+except the bytes stays per-spacecraft, so the sharers keep their own scale,
+rotation and centering. Articulated models (`model_articulations`) are parsed
+separately because posing rewrites their vertices.
+
 The same file can feed a planner. `sample_model_pointcloud(path; n_points,
 scale, rotation_deg)` returns surface samples after the viewer's scale and
 rotation, centerd the same way, so an RPO station built from it (for

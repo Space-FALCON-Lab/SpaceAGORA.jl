@@ -139,7 +139,26 @@ function articulateObject(object, articulations) {
   }
 }
 
-export function loadModelObject(model, label, onReady, onFail) {
+// A model entry may borrow its bytes from another spacecraft's entry: the
+// bundler embeds byte-identical models once, so every entry after the first
+// carries `url_from` (the id of the entry that has the `url`) instead of a
+// `url` of its own. `models` is payload.models; entries that carry their own
+// `url` resolve without it, which is what pages built before sharing do.
+export function resolveModelUrl(model, models) {
+  let entry = model;
+  for (let hops = 0; entry && !entry.url && entry.url_from != null && hops < 8; hops++) {
+    entry = models ? models[String(entry.url_from)] : null;
+  }
+  return entry && entry.url ? entry.url : null;
+}
+
+// Parsed prototypes keyed by the resolved data URL: spacecraft sharing one
+// model parse it once and clone it, so the geometries, materials and textures
+// are uploaded to the GPU once rather than once per spacecraft. Articulated
+// models are excluded because articulation rewrites vertices in place.
+const LOD_MODEL_PROTOTYPES = new Map();
+
+export function loadModelObject(model, label, onReady, onFail, models) {
   const install = (object) => {
     articulateObject(object, model.articulations);
     let meshes = 0;
@@ -164,26 +183,56 @@ export function loadModelObject(model, label, onReady, onFail) {
     onReady(object, `${model.format} (${meshes} mesh${meshes === 1 ? '' : 'es'}, ×${s})`);
   };
   const message = (err) => (err && err.message ? err.message : String(err));
+  const url = resolveModelUrl(model, models);
+  if (url === null) { onFail('no model bytes'); return; }
+  // `install` poses and re-materials the object it is handed, so every caller
+  // gets its own clone and the cached prototype stays pristine.
+  const shareable = !model.articulations || model.articulations.length === 0;
+  const cached = shareable ? LOD_MODEL_PROTOTYPES.get(url) : undefined;
+  if (cached) {
+    if (cached.object) { try { install(cached.object.clone(true)); } catch (err) { onFail(message(err)); } }
+    else { cached.waiting.push({ install, onFail }); }
+    return;
+  }
+  const slot = shareable ? { object: null, waiting: [] } : null;
+  slot && LOD_MODEL_PROTOTYPES.set(url, slot);
+  const ready = (object) => {
+    if (slot) {
+      slot.object = object;
+      const waiting = slot.waiting.splice(0);
+      try { install(object.clone(true)); } catch (err) { onFail(message(err)); }
+      for (const w of waiting) {
+        try { w.install(object.clone(true)); } catch (err) { w.onFail(message(err)); }
+      }
+    } else {
+      install(object);
+    }
+  };
+  const failed = (err) => {
+    const text = message(err);
+    if (slot) { LOD_MODEL_PROTOTYPES.delete(url); for (const w of slot.waiting.splice(0)) w.onFail(text); }
+    onFail(text);
+  };
   try {
-    const bytes = decodeBytes(model.url.split(',')[1] || '');
+    const bytes = decodeBytes(url.split(',')[1] || '');
     const format = model.format || 'stl';
     if (format === 'stl') {
       const geometry = new STLLoader().parse(bytes.buffer);
       geometry.computeVertexNormals();
-      install(new THREE.Mesh(geometry));
+      ready(new THREE.Mesh(geometry));
     } else if (format === 'obj') {
-      install(new OBJLoader().parse(new TextDecoder().decode(bytes)));
+      ready(new OBJLoader().parse(new TextDecoder().decode(bytes)));
     } else if (format === 'glb' || format === 'gltf') {
       const loader = new GLTFLoader();
       const payload = format === 'glb' ? bytes.buffer : new TextDecoder().decode(bytes);
       loader.parse(payload, '', (gltf) => {
-        try { install(gltf.scene); } catch (err) { onFail(message(err)); }
-      }, (err) => onFail(message(err)));
+        try { ready(gltf.scene); } catch (err) { failed(err); }
+      }, (err) => failed(err));
     } else {
-      onFail(`unknown format ${format}`);
+      failed(`unknown format ${format}`);
     }
   } catch (err) {
-    onFail(message(err));
+    failed(err);
   }
 }
 
@@ -225,8 +274,9 @@ function buildAssembly(spec, models, scLength) {
 
   // 3D model override (STL, OBJ, glTF/GLB): the mesh replaces the boxes, glyphs stay on their links.
   const model = models && models[String(spec.id)];
-  group.userData.modelStatus = model && model.url ? 'loading' : null;
-  if (model && model.url) {
+  const modelUrl = model ? resolveModelUrl(model, models) : null;
+  group.userData.modelStatus = modelUrl ? 'loading' : null;
+  if (modelUrl) {
     loadModelObject(model, spec.name, (object, status) => {
       linkGroups[0].add(object);
       linkGroups.forEach((g) => { g.userData.boxes.visible = false; });
@@ -235,7 +285,7 @@ function buildAssembly(spec, models, scLength) {
     }, (message) => {
       group.userData.modelStatus = `failed: ${message}`;
       console.warn(`Model for ${spec.name} could not be parsed; showing boxes instead.`, message);
-    });
+    }, models);
   }
 
   const coneH = Math.max(0.05, 0.12 * r), coneR = 0.35 * coneH;

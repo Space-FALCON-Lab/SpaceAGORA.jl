@@ -92,7 +92,13 @@ of the facet area with their normal drawn, and the body axes are red, green
 and blue for x, y, z. Each of these has a toggle. A 3D model passed through
 `export_visualization(...; models=Dict(id => path), model_scale=..., model_rotation_deg=...)`
 (STL, OBJ, glTF or GLB, parsed in the browser) replaces the boxes for that
-spacecraft; the glyphs stay.
+spacecraft; the glyphs stay. Spacecraft that share one file share its bytes:
+the bundler embeds identical model bytes once and gives the other entries
+`url_from`, the id of the entry holding the data URL, which `resolveModelUrl`
+in `src/lod.js` follows. Each distinct file is parsed once and cloned for
+every other assembly and reference ghost, so a seven-satellite constellation
+costs one copy of the model in the page and one set of geometries, materials
+and textures on the GPU.
 
 Runs with at most 64 spacecraft embed positions as Float64 so the meter-scale
 models do not jitter at planetary distances; follow mode also re-centers the

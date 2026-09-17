@@ -79,16 +79,9 @@ guidance_effector = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
     maneuver_orbit_number=odyssey_schedule.maneuver_orbit_number,
     maneuver_Δv=odyssey_schedule.maneuver_Δv
 )
-args = SimulationConfiguration(
-    file_paths=base_args.file_paths,
-    simulation_settings=base_args.simulation_settings,
-    mission_configuration=base_args.mission_configuration,
-    environment_model=base_args.environment_model,
-    dynamics_model=base_args.dynamics_model,
+args = SM.SimConfig._with_configuration(base_args;
     guidance_model=GuidanceModel(guidance_effectors=(guidance_effector,), guidance_rates=[30.0]),
-    navigation_model=base_args.navigation_model,
     control_model=ControlModel(control_effectors=(thruster,), control_rates=[10.0]),
-    initial_time=base_args.initial_time,
     integration_tolerances=IntegrationTolerances(
         reltol_orbit=1e-8,
         abstol_orbit=1e-8,
@@ -96,7 +89,7 @@ args = SimulationConfiguration(
         reltol_atmosphere=1e-8,
         abstol_atmosphere=1e-8,
         dt_max_atmosphere=5.0
-    )
+    ),
 )
 
 args_eff = SpaceAGORA.TelemetryVerification._example_smoke_args(args)

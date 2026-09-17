@@ -48,13 +48,13 @@ function save_quickstart_plots(csv_path)
         p_alt = plot(
             t_hr,
             altitude_km;
-            label="Altitude",
+            label="Instantaneous geodetic altitude",
             xlabel="Time since start (hr)",
             ylabel="Altitude (km)",
-            title="Altitude",
+            title="Geodetic altitude and spherical periapsis",
             lw=2
         )
-        plot!(p_alt, t_hr, periapsis_altitude_km; label="Periapsis altitude", lw=2, ls=:dash)
+        plot!(p_alt, t_hr, periapsis_altitude_km; label="Osculating spherical periapsis", lw=2, ls=:dash)
 
         p_speed = plot(
             t_hr,

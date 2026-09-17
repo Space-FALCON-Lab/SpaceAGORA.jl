@@ -15,6 +15,7 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 
 What to read next:
 
+- [The Integrated State](integrated_state.md) (which columns are integrated and which are derived)
 - [Simulation Configuration](simulation_configuration.md)
 - [Verification Study](verification_study.md)
 - [Recipes](recipes.md)
@@ -35,6 +36,49 @@ The Feather file is always written. The CSV is written when
 `simulation_settings.save_csv = true` (also the default). The manifest records
 `schema_version`, `created_utc`, `mission_time_s`, `steps`,
 `spacecraft_count`, and SHA-256 hashes for each data file.
+
+## Where the examples write, and how to keep runs apart
+
+Most repository examples build their configuration with `make_example_config`,
+whose `results_directory` is `<repository root>/output` unless
+`SPACEAGORA_CLI_OUTPUT_DIR` is set; the CLI's `--output-dir` sets exactly that
+variable. With the default result settings, the three file names do not
+change, so:
+
+- two runs using the same results directory overwrite those files;
+- `julia --project=. src/cli/main.jl run --example=<script> --output-dir=output/<name>`
+  gives each run its own directory, for the scripts that take their directory
+  from `make_example_config`: the first-run scripts (`AGORA_Basic_Quickstart.jl`,
+  `AGORA_Earth_NoGRAM.jl`), the controls and torque
+  tests, and the mission scripts `AGORA_Basic_GRAMEarth.jl`, `AGORA_Odyssey.jl`,
+  `AGORA_Vex.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`,
+  `AGORA_Mars_NoGRAM.jl` and `Earth_Thruster_Test.jl`;
+- `--output-dir` has no effect on the scripts that choose their own directory:
+  `AGORA_Earth.jl`, `AGORA_Keplerian.jl` and `Earth_Navigation.jl` write to
+  `output/` directly, `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
+  `AGORA_Mars_RAAN_Scenario.jl` to `output/mars_raan_scenario/`, and the RPO,
+  robot-arm and cloth demos to their own `output/<demo>/` directories; running
+  one of them twice overwrites its previous results;
+- for your own scripts, pass `results_directory=` to `make_example_config` or
+  set it on `SimulationSettings`.
+
+The quickstart example additionally saves four PNG plots under
+`<results_directory>/plots/`. The RPO examples also generate HTML plots.
+`Solar_Panel_Cloth_Deployment_Demo.jl` writes four HTML files in its demo
+directory instead of the three simulation result files.
+
+`AGORA_Earth_MonteCarlo.jl` prints its successful and failed sample counts and
+elapsed time to the terminal. It disables result saving, so it writes no
+result files, including when `--output-dir` is supplied.
+
+Smoke mode (`--smoke` on the CLI, or `SPACEAGORA_EXAMPLE_SMOKE=1` for a script)
+shortens the mission to at most 120 s and one orbit. It does not honour
+`--output-dir` or `SPACEAGORA_CLI_OUTPUT_DIR`: the smoke configuration sets
+`results_directory` to `output/` under the current working directory, so a
+smoke run replaces the results of a previous full run in that `output/`
+(run from the repository root, that is the same `output/` the quickstart
+writes to). Results are kept only when `SPACEAGORA_EXAMPLE_SMOKE_RESULTS=1`,
+which the CLI sets for you.
 
 ## Loading results in Julia
 
@@ -77,10 +121,30 @@ columns.
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_altitude` | m | Altitude above the reference ellipsoid |
+| `sc1_altitude` | m | Instantaneous geodetic altitude above the reference ellipsoid |
 | `sc1_latitude_deg` | deg | Geodetic latitude |
 | `sc1_longitude_deg` | deg | Longitude |
-| `sc1_periapsis_altitude` | m | Current osculating periapsis altitude |
+
+### Osculating orbit diagnostic
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_periapsis_altitude` | m | Osculating spherical periapsis altitude, `a * (1 - e) - planet.Rp_e` |
+
+Here `a` and `e` are the semimajor axis and eccentricity derived from the current
+inertial position and velocity. The periapsis column uses a reference sphere
+with the planet's equatorial radius, `planet.Rp_e`. It describes the
+instantaneous osculating Keplerian orbit; it is not a prediction of the minimum
+geodetic altitude reached by the propagated trajectory. The two altitude columns
+use different reference surfaces and need not agree at a periapsis event.
+
+The aerobraking examples' separate `periapsis_events.csv` tables instead contain
+geodetic estimates. Depending on the example and available solver output, these
+are evaluated at event-located radial minima or selected from sampled geodetic
+altitude minima.
+Simulation apoapsis plots may likewise use interpolated sample crossings and an
+initial sample. Those event and sampled values are distinct from
+`sc1_periapsis_altitude`.
 
 ### Mass
 
@@ -109,8 +173,8 @@ columns.
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_heat_rate` | W/m² | Instantaneous stagnation heat rate |
-| `sc1_heat_load` | J/m² | Accumulated heat load (time-integral of heat rate) |
+| `sc1_heat_rate` | W/cm² | Largest of the per-link stagnation heat rates (the built-in Maxwellian model returns W/cm²) |
+| `sc1_heat_load` | J/cm² | Largest of the per-link accumulated heat loads (each link integrates its own rate, without an area-unit conversion); not the sum over links |
 
 ### Attitude (orientation_sim only)
 
@@ -118,10 +182,10 @@ These columns are present only when `mission_configuration.orientation_sim = tru
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_q_1` | — | Attitude quaternion component 1 (scalar-first convention) |
-| `sc1_q_2` | — | Attitude quaternion component 2 |
-| `sc1_q_3` | — | Attitude quaternion component 3 |
-| `sc1_q_4` | — | Attitude quaternion component 4 |
+| `sc1_q_1` | — | Attitude quaternion component `x` (scalar-last convention `[x, y, z, w]`, inertial to body) |
+| `sc1_q_2` | — | Attitude quaternion component `y` |
+| `sc1_q_3` | — | Attitude quaternion component `z` |
+| `sc1_q_4` | — | Attitude quaternion scalar component `w`; `[0, 0, 0, 1]` is the identity attitude |
 
 ## Multi-spacecraft runs
 

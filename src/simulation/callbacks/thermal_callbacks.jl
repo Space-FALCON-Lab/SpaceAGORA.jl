@@ -1,3 +1,5 @@
+using ..DynamicEffectors.AerodynamicEffectors: _thermal_incidence_mode, _aero_link_angles
+
 @inline function _heat_rate_buffer_for_sat!(p, sat_idx::Int)
     links = p.args.dynamics_model.spacecraft[sat_idx].links
     n_links = length(links)
@@ -57,8 +59,23 @@ function _compute_stage_heat_rates!(
 
     mach = v / sound_velocity
     S = sqrt(planet.γ * 0.5) * mach
+    orientation_sim = p.args.mission_configuration.orientation_sim
+    incidence_mode = _thermal_incidence_mode(p.args.dynamics_model.dynamic_effectors, orientation_sim)
+    spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
+    q_root = incidence_mode !== nothing && orientation_sim ?
+        engine.build_state_sample(x, spacecraft, true).q_ib : nothing
+    vel_pi = orientation_sim ? planet_frame.l_pi' * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
     @inbounds for j in eachindex(links)
-        alpha = links[j].α
+        # Typed wrenches intentionally do not mutate Link angles. Derive heating
+        # from the same current geometry, even if thermal sampling runs first.
+        # No recognized aero model: preserve custom/legacy stored-angle inputs.
+        alpha = if incidence_mode === nothing
+            links[j].α
+        else
+            angle, _, _ = _aero_link_angles(spacecraft, links[j], 1,
+                orientation_sim, vel_pi, 0.0, incidence_mode, q_root)
+            angle
+        end
         if !isfinite(alpha)
             continue
         end

@@ -3,7 +3,15 @@ module SpaceAGORACLI
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const DOT_AGORA_PROJECT = joinpath(REPO_ROOT, ".AGORA")
+# Every child process runs under the repository project, the environment whose
+# Project.toml is SpaceAGORA itself and the one `julia --project=.` selects.
+# The children used to be launched with `--project=<repo>/.AGORA`, an
+# untracked, machine-local directory that no setup step creates any more; a
+# child started with a missing project directory gets an empty project and
+# cannot load SpaceAGORA. Examples that include examples/common.jl hid the
+# defect by re-activating the repository project themselves; the telemetry and
+# benchmark launchers, and any example that loads the package directly, did not.
+const CHILD_PROJECT = REPO_ROOT
 const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
 const TELEMETRY_LAUNCHER = joinpath(REPO_ROOT, "benchmarks", "studies", "telemetry_orbit_accuracy_study.jl")
 const PERF_RUNTIME_LAUNCHER = joinpath(REPO_ROOT, "benchmarks", "studies", "performance_runtime_analysis.jl")
@@ -49,11 +57,18 @@ function _print_usage(io::IO=stdout)
     return 0
 end
 
+# The one place the child command is built. `--print-only` renders exactly this
+# object, so what is printed is what launches, and the CLI tests compare its
+# arguments directly rather than parsing the printed line (a path with spaces
+# is one argument here and a broken one in any whitespace-split rendering).
+function _child_command(script::String, script_args::Vector{String})::Cmd
+    return `$(Base.julia_cmd()) --project=$CHILD_PROJECT $script $script_args`
+end
+
 function _run_subprocess(script::String, script_args::Vector{String}; env_pairs::Vector{Pair{String,String}}=Pair{String,String}[], print_only::Bool=false, io::IO=stdout, errio::IO=stderr)::Int
-    cmd = Base.julia_cmd()
-    full = `$cmd --project=$DOT_AGORA_PROJECT $script $script_args`
+    full = _child_command(script, script_args)
     if print_only
-        println(io, "project=$(DOT_AGORA_PROJECT)")
+        println(io, "project=$(CHILD_PROJECT)")
         println(io, "script=$(script)")
         if !isempty(env_pairs)
             println(io, "env:")

@@ -96,12 +96,44 @@ end
 
 @inline _dynamic_effector_threadsafe(::ScaledAerodynamicCoefficientfM)::Bool = true
 
-# The wrapper's force is atmosphere-dependent through the wrapped model even
-# though it evaluates on the calcForceTorque path (where the requirements hook
-# is not consulted by the RHS); declaring it keeps the engine's
-# density-without-aero diagnostic from misfiring on cd-scaled scenarios.
-@inline SimulationModel.environment_requirements(::ScaledAerodynamicCoefficientfM) =
-    SimulationModel.EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+# Scaling changes the full aerodynamic wrench, including lift, cross force and
+# body-frame torque. Preserve the wrapped model's sampling and solver contracts.
+@inline SimulationModel.environment_requirements(model::ScaledAerodynamicCoefficientfM) =
+    SimulationModel.environment_requirements(model.model)
+
+@inline SimulationModel.solver_partition(model::ScaledAerodynamicCoefficientfM) =
+    SimulationModel.solver_partition(model.model)
+
+@inline SimulationModel.DynamicEffectors.AerodynamicEffectors._thermal_incidence_mode(
+    model::ScaledAerodynamicCoefficientfM,
+) = SimulationModel.DynamicEffectors.AerodynamicEffectors._thermal_incidence_mode(model.model)
+
+function SimulationModel.wrench(
+    model::ScaledAerodynamicCoefficientfM,
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64,
+)
+    f, τ = SimulationModel.wrench(model.model, x, env, t)
+    return model.cd_scale .* f, model.cd_scale .* τ
+end
+
+function SimulationModel.wrench_caching!(
+    model::ScaledAerodynamicCoefficientfM,
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64,
+    p::SimulationModel.ODEParams,
+    sat_idx::Int,
+)
+    # Use the cached hook so per-link atmosphere sampling is preserved. It
+    # replaces every component before scaling, including zero-density stages.
+    f, τ = SimulationModel.wrench_caching!(model.model, x, env, t, p, sat_idx)
+    for cache in (p.save_cache.drag_cache, p.save_cache.lift_cache, p.save_cache.cross_cache)
+        cache[sat_idx] = model.cd_scale .* cache[sat_idx]
+    end
+    return model.cd_scale .* f, model.cd_scale .* τ
+end
 
 function SimulationModel.calcForceTorque(
     model::ScaledAerodynamicCoefficientfM,
@@ -389,17 +421,8 @@ function _with_environment_wind(args::SimulationConfiguration, include_wind::Boo
         topo_order=env.topo_order,
         wind=include_wind
     )
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
-        simulation_settings=args.simulation_settings,
-        mission_configuration=args.mission_configuration,
+    return _with_configuration(args;
         environment_model=env_updated,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances
     )
 end
 
@@ -442,23 +465,15 @@ function _with_campaign_maneuvers(args::SimulationConfiguration, cfg::OrbitEvent
         maneuver_Δv=cfg.maneuver_delta_v_mps,
         maneuver_flight_apoapsis_radius_m=flight_apo_radius_m
     )
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
-        simulation_settings=args.simulation_settings,
-        mission_configuration=args.mission_configuration,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
+    return _with_configuration(args;
         guidance_model=GuidanceModel(
             guidance_effectors=(guidance_effector,),
             guidance_rates=[cfg.maneuver_guidance_rate_s]
         ),
-        navigation_model=args.navigation_model,
         control_model=ControlModel(
             control_effectors=(thruster,),
             control_rates=[cfg.maneuver_control_rate_s]
         ),
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances
     )
 end
 
@@ -477,17 +492,8 @@ function _with_orbit_mission(
         num_steps_to_save=mc.num_steps_to_save,
         data_rate=mc.data_rate
     )
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
-        simulation_settings=args.simulation_settings,
+    return _with_configuration(args;
         mission_configuration=mission_cfg,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances
     )
 end
 
@@ -670,8 +676,7 @@ function _with_study_settings(args::SimulationConfiguration; quick::Bool=false):
     dt_atm_env = _parse_positive_float_env("SPACEAGORA_TELEMETRY_DT_MAX_ATM")
     dt_orbit = dt_orbit_env === nothing ? dt_orbit_base : min(dt_orbit_env, STRICT_DT_ORBIT)
     dt_atm = dt_atm_env === nothing ? dt_atm_base : min(dt_atm_env, STRICT_DT_ATM)
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
+    return _with_configuration(args;
         simulation_settings=SimulationSettings(
             results=true,
             verbose=false,
@@ -690,12 +695,6 @@ function _with_study_settings(args::SimulationConfiguration; quick::Bool=false):
             num_steps_to_save=2000,
             data_rate=args.mission_configuration.data_rate
         ),
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
         integration_tolerances=IntegrationTolerances(
             reltol_orbit=rel_orbit,
             abstol_orbit=abs_orbit,
@@ -703,7 +702,7 @@ function _with_study_settings(args::SimulationConfiguration; quick::Bool=false):
             reltol_atmosphere=rel_atm,
             abstol_atmosphere=abs_atm,
             dt_max_atmosphere=dt_atm
-        )
+        ),
     )
 end
 

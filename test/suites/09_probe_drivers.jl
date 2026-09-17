@@ -7,12 +7,15 @@
     # the coverage flag so the coverage gates see their line data.
     probe_files = [
         "reference_system_probes.jl",
+        "aerobraking_study_frame_probes.jl",
+        "initial_condition_altitude_probes.jl",
         "parallel_policy_probes.jl",
         "density_selection_probes.jl",
         "ei_partition_drag_probes.jl",
         "fm_incidence_probes.jl",
         "eddy_damping_probes.jl",
         "aero_torque_probes.jl",
+        "thermal_incidence_probes.jl",
         "rpo_planning_probes.jl",
         "rpo_nav_probes.jl",
         "thruster_guidance_probes.jl",
@@ -24,6 +27,8 @@
         "state_anchor_probes.jl",
         "flat_route_parity_probes.jl",
         "kinematics_probes.jl",
+        "configuration_copy_probes.jl",
+        "shared_math_ownership_probes.jl",
     ]
     coverage_flags = Base.JLOptions().code_coverage == 0 ? String[] : ["--code-coverage=user"]
     for probe in probe_files

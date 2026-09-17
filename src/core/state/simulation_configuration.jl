@@ -60,6 +60,22 @@ module SimConfig
 
     ## 2. Simulation Configuration
     # 2.1. Solver Configuration
+    """
+        SolverConfig
+
+    Typed runtime configuration for solver selection, fixed-step settings, and
+    multirate/IMEX integration policy. Fields correspond to the `SPACEAGORA_SOLVER_*`
+    environment variables.
+
+    When `solver_config` is `nothing` on a `SimulationConfiguration`, `run_simulation`
+    reads the effective config from the active environment at call time (respecting any
+    `SimulationEngineConfig` overrides). Set this field explicitly to pin solver behavior
+    independent of environment variables.
+
+    `split_imex` uses the atmosphere-implicit IMEX partition. `multirate` keeps the
+    control-focused split path. `gravity_backbone_split` is a fixed-step symplectic
+    gravity-backbone mode; it is not a fully symplectic whole-system solve.
+    """
     Base.@kwdef struct SolverConfig
         solver_mode::Symbol = :tsit5
         maxiters::Union{Nothing, Int} = nothing
@@ -247,5 +263,18 @@ module SimConfig
         integration_tolerances::IntegrationTolerances = IntegrationTolerances() # Tolerances for the numerical integrator
         solver_config::Union{Nothing, SolverConfig} = nothing # nothing = read from env at run time
     end # struct SimulationConfiguration
+
+    """
+        _with_configuration(args::SimulationConfiguration; overrides...)
+
+    Rebuild a configuration with named field overrides, preserving all other
+    fields and their references. This is a shallow update; run_simulation owns
+    mutable-state isolation. Infer model types again when models are replaced.
+    """
+    function _with_configuration(args::SimulationConfiguration; overrides...)
+        names = fieldnames(typeof(args))
+        fields = NamedTuple{names}(map(name -> getfield(args, name), names))
+        return SimulationConfiguration(; merge(fields, (; overrides...))...)
+    end
     
 end # module SimConfig

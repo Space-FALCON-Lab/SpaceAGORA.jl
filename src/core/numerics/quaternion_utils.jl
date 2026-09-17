@@ -1,3 +1,8 @@
+module QuaternionMath
+
+export IDENTITY_QUATERNION, quat_mult, project_unit_quaternion, hat
+export rot, error_quaternion, qToEulerAngles, dcm_to_quaternion
+
 using LinearAlgebra
 using StaticArrays
 
@@ -127,3 +132,5 @@ function dcm_to_quaternion(dcm::SMatrix{3, 3, Float64})
         return q / norm(q)
     end
 end
+
+end # module QuaternionMath

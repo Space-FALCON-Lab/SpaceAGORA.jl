@@ -151,8 +151,7 @@ det_environment = EnvironmentModel(
     topography=false,
     wind=false
 )
-det_args = SimulationConfiguration(
-    simulation_settings=args.simulation_settings,
+det_args = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args;
     mission_configuration=MissionConfiguration(
         mission_type=MissionTime,
         keplerian=true,
@@ -163,11 +162,7 @@ det_args = SimulationConfiguration(
     ),
     environment_model=det_environment,
     dynamics_model=DynamicsModel([sc1, sc2], det_effectors),
-    guidance_model=args.guidance_model,
-    navigation_model=args.navigation_model,
     control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
-    initial_time=args.initial_time,
-    integration_tolerances=args.integration_tolerances
 )
 
 function det_run(env_pairs::Vector{Pair{String, String}})::Tuple{Matrix{Float64}, Vector{String}}

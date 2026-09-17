@@ -669,29 +669,13 @@
     )
     @test occursin("no control effectors", _gravity_backbone_reject_reason(args_backbone_control))
 
-    args_backbone_guidance = SimulationConfiguration(
-        simulation_settings=args_backbone.simulation_settings,
-        mission_configuration=args_backbone.mission_configuration,
-        environment_model=args_backbone.environment_model,
-        dynamics_model=args_backbone.dynamics_model,
+    args_backbone_guidance = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args_backbone;
         guidance_model=GuidanceModel(guidance_effectors=(CountingGuidanceModel([0]),), guidance_rates=[1.0]),
-        navigation_model=args_backbone.navigation_model,
-        control_model=args_backbone.control_model,
-        initial_time=args_backbone.initial_time,
-        integration_tolerances=args_backbone.integration_tolerances
     )
     @test occursin("no guidance effectors", _gravity_backbone_reject_reason(args_backbone_guidance))
 
-    args_backbone_navigation = SimulationConfiguration(
-        simulation_settings=args_backbone.simulation_settings,
-        mission_configuration=args_backbone.mission_configuration,
-        environment_model=args_backbone.environment_model,
-        dynamics_model=args_backbone.dynamics_model,
-        guidance_model=args_backbone.guidance_model,
+    args_backbone_navigation = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args_backbone;
         navigation_model=NavigationModel(navigation_effectors=(CountingNavigationModel([0]),), navigation_rates=[1.0]),
-        control_model=args_backbone.control_model,
-        initial_time=args_backbone.initial_time,
-        integration_tolerances=args_backbone.integration_tolerances
     )
     @test occursin("no navigation effectors", _gravity_backbone_reject_reason(args_backbone_navigation))
 

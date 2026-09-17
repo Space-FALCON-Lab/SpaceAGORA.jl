@@ -5,7 +5,7 @@ using SatelliteToolboxGeomagneticField
 using CSV
 using DataFrames
 using SpecialFunctions: loggamma
-include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
+using ...QuaternionMath
 # import .config
 # Define delta function
 δ(x,y) = ==(x,y)
@@ -311,8 +311,26 @@ end
 # so that @inbounds loops over the batch are unit-stride in memory.
 # ---------------------------------------------------------------------------
 
+# Row r of the ALF triangle lives in slot ((r-1) % 3) + 1 of the rolling window.
+# Degree l touches rows l, l+1 and l+2, which are three consecutive rows and so
+# always three distinct slots.
+@inline _harmonics_row_slot(row::Int)::Int = ((row - 1) % 3) + 1
+
 struct HarmonicsBatchWorkspace
-    A::Array{Float64, 3}    # [B, L+4, L+4]
+    # Rolling 3-row window over the ALF triangle, not the whole [B, L+4, L+4]
+    # triangle. Degree l reads rows l and l+1 and writes row l+2, so exactly
+    # three rows are live at any point; row r lives in slot ((r-1) % 3) + 1.
+    #
+    # The full triangle was 91 MB at B=4096, L=50 -- past this box's 64 MB L3,
+    # which is what made the kernel bandwidth-bound at large B (see the
+    # register-blocking result: strip-mining regressed 0.87x median because it
+    # turned contiguous column walks into strided gathers). The window is
+    # 3/(L+4) of that: 5.1 MB at the same point, which stays resident.
+    A::Array{Float64, 3}    # [B, 3, L+4]
+    # Position-independent diagonal A[r, r], previously stored in the triangle
+    # itself and never overwritten. A rolling slot cannot hold it across the
+    # rows that share the slot, so it is precomputed once per model instead.
+    diag::Vector{Float64}    # [L+4]
     R::Matrix{Float64}       # [B, M+3]
     I::Matrix{Float64}       # [B, M+3]
     s_vec::Vector{Float64}   # x/r per satellite
@@ -338,17 +356,19 @@ function _make_harmonics_batch_workspace(model::GravitationalHarmonicsModel, bat
     L = model.L
     M = model.M
     B = batch_size
-    A = zeros(Float64, B, L + 4, L + 4)
-    # Diagonal elements are position-independent; initialise once and never overwrite.
-    A[:, 1, 1] .= 1.0
+    A = zeros(Float64, B, 3, L + 4)
+    # Diagonal elements are position-independent. Same recurrence, same order,
+    # same values as the in-triangle version this replaces.
+    diag = zeros(Float64, L + 4)
+    diag[1] = 1.0
     @inbounds for l = 1:(L + 2)
         i = l + 1
-        diag_val = sqrt((2 * l + 1) / (2 * l)) * A[1, i - 1, i - 1]
-        A[:, i, i] .= diag_val
+        diag[i] = sqrt((2 * l + 1) / (2 * l)) * diag[i - 1]
     end
     z = B -> zeros(Float64, B)
     return HarmonicsBatchWorkspace(
         A,
+        diag,
         zeros(Float64, B, M + 3),
         zeros(Float64, B, M + 3),
         z(B), z(B), z(B), z(B), z(B),
@@ -461,17 +481,31 @@ function _harmonics_flat_batch_kernel!(
         ws.a4[b] = 0.0
     end
 
-    # Phase 2: A sub-diagonal — A[b, row+1, row] = u[b] * sqrt_2n_plus_3[n] * A[b, row, row].
-    # Diagonal A[b,i,i] was set once at workspace construction and is never overwritten.
+    # Phase 2: seed the two base rows of the recursion. Every later row is built
+    # inside Phase 4, into its rolling slot, immediately before the degree that
+    # reads it — the sub-diagonal pre-pass over all L+1 rows is gone with the
+    # full triangle.
+    #
+    # `zcol` here and in Phase 4 is the one column per row that the kernel reads
+    # but never writes, and which therefore has to hold zero: column r+1 while
+    # r-1 <= M (the triangle's zero above the diagonal), column M+2 past that
+    # (the order truncation — mathematically A[l, M+1] is nonzero for M+1 <= l,
+    # but the recursion stops at M+1 columns, so the full-triangle version read
+    # its allocation zero there and this must too). Every other column read for
+    # row r is written by the recursion, the sub-diagonal or the diagonal.
+    # Zeroing it is what makes a slot safe to reuse — three rows later within
+    # this call, and on the next call, which maps different rows onto the same
+    # three slots and would otherwise leave a late row's columns visible to an
+    # early one.
+    slot_1 = _harmonics_row_slot(1)
+    slot_2 = _harmonics_row_slot(2)
+    diag_2 = ws.diag[2]
     @inbounds for b = 1:B
-        A[b, 2, 1] = ws.u_vec[b] * sqrt_3
-    end
-    @inbounds for n = 1:(L + 1)
-        row = n + 1
-        s2n3 = model.sqrt_2n_plus_3[n]
-        @inbounds for b = 1:B
-            A[b, row + 1, row] = ws.u_vec[b] * s2n3 * A[b, row, row]
-        end
+        A[b, slot_1, 1] = 1.0
+        A[b, slot_1, 2] = 0.0
+        A[b, slot_2, 1] = ws.u_vec[b] * sqrt_3
+        A[b, slot_2, 2] = diag_2
+        A[b, slot_2, 3] = 0.0
     end
 
     # Phase 3: longitude trig recurrence R[b,j] + i*I[b,j] = (s[b]+i*t[b])^(j-1).
@@ -494,33 +528,46 @@ function _harmonics_flat_batch_kernel!(
     # pair and reused across the batch. The nesting (degree, then order, then
     # batch) is what makes this bit-identical to the scalar kernel: for a fixed
     # satellite the sums are accumulated in exactly the scalar sequence.
-    max_recur_row = 2
     @inbounds for l = 1:L
         row = l + 1
-
-        if row > max_recur_row
-            jmax = min(max(M, 1) + 1, l - 1)
-            for j = 1:jmax
-                N1v = model.N1[row, j]
-                N2v = model.N2[row, j]
-                @inbounds for b = 1:B
-                    A[b, row, j] = ws.u_vec[b] * N1v * A[b, row - 1, j] - N2v * A[b, row - 2, j]
-                end
-            end
-            max_recur_row = row
-        end
-
         next_row = row + 1
-        if next_row > max_recur_row
-            jmax_next = min(max(M, 1) + 1, l)
-            for j = 1:jmax_next
-                N1v = model.N1[next_row, j]
-                N2v = model.N2[next_row, j]
-                @inbounds for b = 1:B
-                    A[b, next_row, j] = ws.u_vec[b] * N1v * A[b, next_row - 1, j] - N2v * A[b, next_row - 2, j]
-                end
+        slot_prev = _harmonics_row_slot(row - 1)
+        slot_row = _harmonics_row_slot(row)
+        slot_next = _harmonics_row_slot(next_row)
+
+        # Build row l+2, the only row this degree creates. The full-triangle
+        # version wrapped this in `next_row > max_recur_row` beside a companion
+        # `row > max_recur_row` branch; the companion was dead and this guard
+        # always true, because max_recur_row is l+2 after iteration l while row
+        # is l+1. One row per degree is exactly what the three live slots hold.
+        jmax_next = min(max(M, 1) + 1, l)
+        for j = 1:jmax_next
+            N1v = model.N1[next_row, j]
+            N2v = model.N2[next_row, j]
+            @inbounds for b = 1:B
+                A[b, slot_next, j] = ws.u_vec[b] * N1v * A[b, slot_row, j] - N2v * A[b, slot_prev, j]
             end
-            max_recur_row = next_row
+        end
+        # m_cap, not M: the recursion's column bound is min(max(M, 1) + 1, l), so
+        # at M = 0 it still writes column 2 and zeroing M + 2 = 2 here would
+        # clobber it. Every M >= 1 is unaffected, which is why only the
+        # zonal-only configuration saw it.
+        m_cap = max(M, 1)
+        zcol_next = (next_row - 1) <= m_cap ? (next_row + 1) : (m_cap + 2)
+        if zcol_next <= L + 4
+            @inbounds for b = 1:B
+                A[b, slot_next, zcol_next] = 0.0
+            end
+        end
+        # Sub-diagonal and diagonal, written after the zeroing so that a zcol
+        # landing on either is restored rather than lost.
+        sub_j = next_row - 1
+        s2n3 = model.sqrt_2n_plus_3[next_row - 2]
+        sub_diag_src = ws.diag[sub_j]
+        diag_next = ws.diag[next_row]
+        @inbounds for b = 1:B
+            A[b, slot_next, sub_j] = ws.u_vec[b] * s2n3 * sub_diag_src
+            A[b, slot_next, next_row] = diag_next
         end
 
         @inbounds for b = 1:B
@@ -538,8 +585,8 @@ function _harmonics_flat_batch_kernel!(
         VR01_r1 = model.VR01[row, 1]
         VR11_r1 = model.VR11[row, 1]
         @inbounds @simd ivdep for b = 1:B
-            ws.sum3[b] += VR01_r1 * A[b, row, 2] * D0
-            ws.sum4[b] += VR11_r1 * A[b, row + 1, 2] * D0
+            ws.sum3[b] += VR01_r1 * A[b, slot_row, 2] * D0
+            ws.sum4[b] += VR11_r1 * A[b, slot_next, 2] * D0
         end
 
         active_orders = model.active_orders_by_degree[row]
@@ -559,11 +606,11 @@ function _harmonics_flat_batch_kernel!(
                 D = (Cv * Rj    + Sv * Ij)    * sqrt_2
                 E = (Cv * R_prev + Sv * I_prev) * sqrt_2
                 F = (Sv * R_prev - Cv * I_prev) * sqrt_2
-                mA = ordf * A[b, row, j]
+                mA = ordf * A[b, slot_row, j]
                 ws.sum1[b] += mA * E
                 ws.sum2[b] += mA * F
-                ws.sum3[b] += VR01v * A[b, row, j + 1] * D
-                ws.sum4[b] += VR11v * A[b, row + 1, j + 1] * D
+                ws.sum3[b] += VR01v * A[b, slot_row, j + 1] * D
+                ws.sum4[b] += VR11v * A[b, slot_next, j + 1] * D
             end
         end
 

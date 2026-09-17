@@ -13,6 +13,7 @@ isdefined(parentmodule(@__MODULE__), :RuntimeServices) ||
 
 # --- Utils ---
 include(joinpath(@__DIR__, "..", "core", "numerics", "quaternion_utils.jl"))
+using .QuaternionMath
 include(joinpath(@__DIR__, "..", "core", "state", "reference_system_config.jl"))
 include(joinpath(@__DIR__, "..", "environment", "ephemerides", "planet_shapes.jl"))
 
@@ -50,6 +51,8 @@ include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_models.jl"))
 	include(joinpath(@__DIR__, "..", "environment", "ephemerides", "ephemerides_models.jl"))
 	@reexport using .EphemeridesModels
 
+include(joinpath(@__DIR__, "numerics", "geodesy.jl"))
+
 # 2. Simple hardware data structs
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "components.jl"))
 @reexport using .Components
@@ -61,6 +64,21 @@ include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "model.jl"))
 # 4. Functions for building the model (add_...!)
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "assembly.jl"))
 @reexport using .Assembly
+
+# Private owner for shared coordinate transforms; preserve legacy qualified bindings.
+module FrameTransforms
+using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
+include(joinpath(@__DIR__, "interfaces", "reference_system.jl"))
+export _EARTH_HIGH_PREC_BODY_FIXED_FRAME, _EARTH_FALLBACK_BODY_FIXED_FRAME
+export _spice_lock, _spice_frame_lock, r_intor_p!, r_pintor_i
+export _spice_body_fixed_frame, _body_fixed_state_xform
+export _j2000_to_body_fixed_state, _body_fixed_to_j2000_state, _planet_flattening
+export orbitalelemtorv, _wrap_2pi, _safe_acos, _rvtoorbitalelement_core, rvtoorbitalelement
+export rtoalfadeltar, alfadeltartor, latlongtor, latlongtoOE, rtolatlong, rtolatlongrad
+export latlongtoNED, orbital_elements_to_lvlh_quaternion, rotate_vector_by_quaternion
+export rtn_dcm_from_inertial, _rtn_rate_rad_s, inertial_to_rtn_relative_state
+export rtn_to_inertial_relative_state, rtn_accel_to_inertial
+end
 
 # 5. Functions for rotations and frames
 include(joinpath(@__DIR__, "..", "vehicle", "kinematics", "kinematics.jl"))

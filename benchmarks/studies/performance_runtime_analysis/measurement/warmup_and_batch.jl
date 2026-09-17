@@ -426,17 +426,8 @@ function _with_mission_time(args::SimulationConfiguration, mission_time_s::Float
         num_steps_to_save=cfg.num_steps_to_save,
         data_rate=cfg.data_rate,
     )
-    return SimulationConfiguration(
-        file_paths=args.file_paths,
-        simulation_settings=args.simulation_settings,
+    return SimulationModel.SimConfig._with_configuration(args;
         mission_configuration=mission_cfg,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances,
     )
 end
 

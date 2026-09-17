@@ -347,10 +347,16 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 mode=decision.mode,
                 num_items=num_sats,
                 use_threads=use_threads,
-                elapsed_ns=(time_ns() - started_ns)
+                elapsed_ns=(time_ns() - started_ns),
+                env=_policy_env_config(p),
+                ctx=ParallelPolicy.policy_context_hint(p)
             )
         end
     end
 
-    return DiscreteCallback(condition, affect!, initialize=(cb, u, t, integrator) -> affect!(integrator))
+    # Housekeeping, not an event: the affect refreshes the density samples in
+    # p and never touches u, so the before/after saves of the DiscreteCallback
+    # default would only append two more copies of every accepted step.
+    return DiscreteCallback(condition, affect!; initialize=(cb, u, t, integrator) -> affect!(integrator),
+        save_positions=(false, false))
 end

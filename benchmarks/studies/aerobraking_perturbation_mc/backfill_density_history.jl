@@ -9,6 +9,7 @@ using DataFrames
 using LinearAlgebra
 using Printf
 using StaticArrays
+using TOML
 
 include(joinpath(@__DIR__, "study.jl"))
 using .AerobrakingPerturbationMC
@@ -16,7 +17,26 @@ using .AerobrakingPerturbationMC
 const MC = AerobrakingPerturbationMC
 const DENSITY_COLUMNS = (:altitude_m, :density_kg_m3, :dynamic_pressure_pa, :in_atmosphere)
 
-function _backfill_args(info, planet_cache, density_cache)
+function _backfill_frame_configuration(run_dir::String)
+    path = joinpath(run_dir, "manifest.toml")
+    manifest = isfile(path) ? TOML.parsefile(path) : Dict{String, Any}()
+    if !haskey(manifest, "frame")
+        @warn "Legacy study output has no frame metadata; using its historical SPICE frame and 2020-01-01 UTC epoch." run_dir
+        return MC._study_frame_configuration()
+    end
+    frame = manifest["frame"]
+    get(frame, "ephemerides_model", nothing) == "SpiceEphemeridesModel" ||
+        throw(ArgumentError("Unsupported or missing study ephemerides model in $(path); backfill was not started."))
+    epoch = get(frame, "initial_time", Dict{String, Any}())
+    names = fieldnames(MC.InitialTime)
+    all(name -> haskey(epoch, String(name)), names) ||
+        throw(ArgumentError("Incomplete study initial_time in $(path); backfill was not started."))
+    initial_time = MC.InitialTime(; (name => epoch[String(name)] for name in names)...)
+    return (; ephemerides_model=MC.SM.SpiceEphemeridesModel(), initial_time)
+end
+
+function _backfill_args(info, planet_cache, density_cache;
+        frame=MC._study_frame_configuration())
     planet = get!(planet_cache, info.planet) do
         MC._planet(info.planet)
     end
@@ -27,7 +47,7 @@ function _backfill_args(info, planet_cache, density_cache)
     rp_alt_m = MC._periapsis_altitude_m(info.planet, info.periapsis_regime)
     environment_model = (
         planet=planet,
-        ephemerides_model=MC.SM.SimpleEphemeridesModel(),
+        ephemerides_model=frame.ephemerides_model,
         density_model=density_model,
         EI=max(220.0, rp_alt_m / 1e3 + 80.0),
     )
@@ -35,7 +55,7 @@ function _backfill_args(info, planet_cache, density_cache)
     return (
         environment_model=environment_model,
         mission_configuration=mission_configuration,
-        initial_time=MC.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        initial_time=frame.initial_time,
     )
 end
 
@@ -137,7 +157,7 @@ function _sample_density_history(args, df::DataFrame)
                 p_stub,
             )
             density[i] = rho
-            qdyn[i] = 0.5 * rho * norm(frame.vel_pp - wind)^2
+            qdyn[i] = MC._dynamic_pressure(frame, rho, wind)
         end
     end
 
@@ -286,6 +306,7 @@ function _update_run_results!(run_dir::String, case_metrics::Dict{String, NamedT
 end
 
 function backfill_run!(run_dir::String; dry_run::Bool=false, force::Bool=false)
+    frame = _backfill_frame_configuration(run_dir)
     case_dirs = sort(filter(isdir, readdir(run_dir; join=true)))
     updated_files = 0
     updated_cases = 0
@@ -300,7 +321,7 @@ function backfill_run!(run_dir::String; dry_run::Bool=false, force::Bool=false)
         paths = _trajectory_paths(case_dir)
         isempty(paths) && continue
         processed_cases += 1
-        args = _backfill_args(info, planet_cache, density_cache)
+        args = _backfill_args(info, planet_cache, density_cache; frame)
 
         case_updated = false
         primary_path = joinpath(case_dir, "trajectory_with_active_force.feather")

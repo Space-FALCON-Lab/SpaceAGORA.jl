@@ -21,6 +21,24 @@ function _spice_lock()
     error("RuntimeServices.SPICE_LOCK not found in module ancestry for reference_system.jl")
 end
 
+# Attributed view of the same lock. Frame transforms are the SPICE half of the
+# shared native critical section and run per state conversion, so they are the
+# site most likely to carry occupancy on a workload with no GRAM in it at all --
+# which is exactly the case a density-model-family signature reports as
+# lock-free.
+function _spice_frame_lock()
+    mod = @__MODULE__
+    while true
+        if isdefined(mod, :RuntimeServices)
+            return getproperty(mod, :RuntimeServices).tracked_lock(:spice_frame)
+        end
+        parent = parentmodule(mod)
+        parent === mod && break
+        mod = parent
+    end
+    error("RuntimeServices.tracked_lock not found in module ancestry for reference_system.jl")
+end
+
 # eop_iau2000a = fetch_iers_eop(Val(:IAU2000A))
 
 function r_intor_p!(r_i::SVector{3, Float64}, v_i::SVector{3, Float64}, planet::T)::Tuple{SVector{3, Float64}, SVector{3, Float64}} where T
@@ -45,7 +63,7 @@ end
 end
 
 @inline function _body_fixed_state_xform(from_frame::String, to_frame::String, et::Float64)::SMatrix{6, 6, Float64}
-    return lock(_spice_lock()) do
+    return lock(_spice_frame_lock()) do
         SMatrix{6, 6, Float64}(sxform(from_frame, to_frame, et))
     end
 end
@@ -348,7 +366,7 @@ function latlongtoOE(LATLONGH, planet, γ, α, v)
     return OE
 end
 
-function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topography::Bool=false)
+@noinline function rtolatlong(r_p::SVector{3, Float64}, planet, spherical_harmonic_topography::Bool=false)
     # From PCPF to LLA through Bowring's method https://www.mathworks.com/help/aeroblks/ecefpositiontolla.html;jsessionid=2ae36964c7d5f2115d2c21286db0?nocookie=true
     x_p = r_p[1]
     y_p = r_p[2]

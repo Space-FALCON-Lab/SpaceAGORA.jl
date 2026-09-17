@@ -67,7 +67,8 @@ function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats
     init_callback = DiscreteCallback(
         (u, t, integrator) -> false,
         schedule_all!;
-        initialize=(cb, u, t, integrator) -> schedule_all!(integrator)
+        initialize=(cb, u, t, integrator) -> schedule_all!(integrator),
+        save_positions=(false, false)
     )
     return (init_callback,)
 end
@@ -121,7 +122,9 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
                     mode=decision.mode,
                     num_items=num_sats,
                     use_threads=use_threads,
-                    elapsed_ns=(time_ns() - started_ns)
+                    elapsed_ns=(time_ns() - started_ns),
+                    env=_policy_env_config(integrator.p),
+                    ctx=ParallelPolicy.policy_context_hint(integrator.p)
                 )
             end
         end

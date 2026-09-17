@@ -145,11 +145,50 @@ function _ensure_gram_isolated_pool!(
         sizehint!(models, workers)
         sizehint!(locks, workers)
         @inbounds for _ in 1:workers
-            push!(models, deepcopy(template_model))
+            model = deepcopy(template_model)
+            _warm_gram_pool_model!(model, template_model)
+            push!(models, model)
             push!(locks, ReentrantLock())
         end
     end
     return models, locks
+end
+
+"""
+    _warm_gram_pool_model!(model, template_model)
+
+Drive one throwaway evaluation through a freshly created pool instance, on this
+thread, before any worker touches it.
+
+A newly constructed GRAM atmosphere takes a one-time initialisation branch on
+its first `update()`. On Earth that branch reaches CSPICE
+(`EarthAtmosphere.cpp:472-475`, guarded by `if (initializing)`: `getDayOfYear`
+and `getStartTime`, both of which call `timout_c`). CSPICE is not thread-safe
+and shares a global call-trace stack, so letting N fresh clones take that branch
+concurrently on N worker threads corrupts `trcpkg` and aborts the process —
+observed as `SPICE(BADSUBSCRIPT) ... jul2gr / trcpkg`.
+
+Steady-state calls do not have this problem: the injected ephemeris state
+(`GRAMSuite._gram_apply_user_ephemeris_state!`) keeps GRAM out of CSPICE on
+every subsequent update. Only the first call per instance needs serialising,
+so paying it once here — inside the pool build, which already runs on a single
+thread — is enough, and costs one extra GRAM evaluation per worker.
+
+Errors are swallowed deliberately: this is a warm-up, and a failure here would
+also fail on the real call, where it is reported with proper context.
+"""
+function _warm_gram_pool_model!(
+    model::EnvironmentModels.GRAMAtmosphereModel,
+    template_model::EnvironmentModels.GRAMAtmosphereModel
+)
+    try
+        EnvironmentModels._gram_core_density_state(
+            model.core, 1.0e5, 0.0, 0.0, 0.0, true, model.instance_lock, 200.0
+        )
+    catch
+        # Non-fatal: see docstring.
+    end
+    return nothing
 end
 
 @inline function _gram_isolated_pool_batch_eval!(

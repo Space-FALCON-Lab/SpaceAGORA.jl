@@ -51,3 +51,23 @@ This contract defines canonical ownership for the topology cleanup that answers 
 2. `test/gates/ci_vehicle_structure_boundary_gate.jl`
 3. `test/gates/ci_architecture_contract_gate.jl`
 4. `test/gates/ci_thin_entry_files_gate.jl` (benchmark launchers stay thin forwarders)
+
+## Shared Configuration and Mathematics
+
+- `SimulationModel.SimConfig._with_configuration` copies an existing simulation
+  configuration and applies named overrides. Unchanged fields retain their
+  references, and model types are inferred again by the constructor. Callers
+  retain responsibility for nested settings and intentional resets. The telemetry
+  runner explicitly clears the typed solver so its environment-based retry
+  policy remains authoritative. Engine state isolation remains separate.
+- `SimulationModel.QuaternionMath` owns the quaternion functions in
+  `src/core/numerics/quaternion_utils.jl`. Consumers import this module rather
+  than including another copy of the implementation. Quaternions are scalar-last;
+  `rot(q)` maps inertial components to body components.
+- `SimulationModel.FrameTransforms` owns the coordinate functions in
+  `src/core/interfaces/reference_system.jl`. Engine, callbacks, GNC, aerodynamics
+  and telemetry import these same bindings. `rotate_vector_by_quaternion` is an
+  active vector rotation, so it is not interchangeable with `rot(q)`.
+- These are internal owners, not new root-level public APIs. Existing qualified
+  consumer bindings remain available. `ReferenceSystems` continues to own the
+  reference-system types.

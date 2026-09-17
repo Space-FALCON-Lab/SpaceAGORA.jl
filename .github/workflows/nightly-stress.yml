@@ -107,11 +107,29 @@ jobs:
   # runner reuses the calibration eval solve when the grid has one point).
   telemetry-regression:
     runs-on: ubuntu-latest
+    # The Odyssey runs that this limit cancelled in September 2026 were not
+    # slow integrations: the per-step solution storage of the replay grew
+    # without bound (every housekeeping callback saved the state twice per
+    # step on top of the solver's own save), and the garbage collector's
+    # walks over that heap took most of the wall clock before the runner
+    # starved. With the storage bounded the full Odyssey profile is a
+    # fraction of this limit on the hosted runner.
     timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
         scenario: [odyssey, vex, earth_gmat]
+        include:
+          # The Odyssey sentinel integrates with plain Tsit5. Under the default
+          # auto_stiff sequence the Rosenbrock fallback (finite-difference
+          # Jacobians) engages in the final orbits after the walk-out raise
+          # and the whole profile takes about twice as long, and the harness
+          # keeps per-step solution storage for that sequence (its switch
+          # detector reads the per-step algorithm record), so its memory grows
+          # with the campaign; the metrics agree to three significant digits
+          # (measured locally, September 2026). VEx and Earth keep the default.
+          - scenario: odyssey
+            solver_mode: tsit5
     env:
       JULIA_NUM_THREADS: "4"
     steps:
@@ -163,6 +181,7 @@ jobs:
       - name: Telemetry full regression (${{ matrix.scenario }})
         env:
           SPACEAGORA_EFFECTOR_PARALLEL: "off"
+          SPACEAGORA_TELEMETRY_SOLVER_MODE: ${{ matrix.solver_mode || 'auto_stiff' }}
         run: >-
           julia --startup-file=no --depwarn=error --heap-size-hint=10G --project=.
           benchmarks/studies/telemetry_orbit_accuracy_study.jl full --enforce=true

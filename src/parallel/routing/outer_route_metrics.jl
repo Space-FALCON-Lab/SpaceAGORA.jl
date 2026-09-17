@@ -12,9 +12,22 @@ function record_outer_route_feedback!(
     failures::Int,
     elapsed_success_s::Float64=0.0,
     elapsed_success_sq_sum_s::Float64=NaN,
-    tuning::OuterRouteTuning=OuterRouteTuning()
+    tuning::OuterRouteTuning=OuterRouteTuning(),
+    signature_prefix::String="",
+    discard_cold_observation::Bool=true,
+    # How many campaigns this observation counts for. The in-campaign split
+    # race measures every width after a warm-up sample, in one campaign, and
+    # records each as `adaptive_min_samples` observations so the selector can
+    # exploit the winner on the next campaign rather than re-trying each width
+    # once more. Weight > 1 skips cold eviction: the reading was already warm.
+    weight::Int=1,
 )::Nothing
-    route in (:none, :threads, :process) || return nothing
+    # Arms are not restricted to the three route symbols any more. The split
+    # selector (`select_outer_split!`) records under `split_<route>_w<N>` arms in
+    # the same per-signature bucket, so it inherits this function's statistics,
+    # its confidence handling and its persistence rather than duplicating them.
+    # Route arms and split arms never collide because the split arms are
+    # prefixed, and each selector only scores the arms it enumerated.
     success_count = max(0, successes)
     failure_count = max(0, failures)
     samples = success_count + failure_count
@@ -39,6 +52,9 @@ function record_outer_route_feedback!(
     elapsed_sq_sum_s = max(elapsed_sq_sum_s, (elapsed_sum_s^2) / samples)
 
     signatures = _outer_route_signature_hierarchy(f)
+    if !isempty(signature_prefix)
+        signatures = String[signature_prefix * sig for sig in signatures]
+    end
     lock(state.lock) do
         for signature in signatures
             bucket = get!(state.history, signature) do
@@ -46,6 +62,19 @@ function record_outer_route_feedback!(
             end
             stats = get!(bucket, route) do
                 OuterRouteStats()
+            end
+            # Evict this arm's first, cold timing as soon as a warm one exists.
+            # See OuterRouteStats.observations for why it is evicted rather than
+            # skipped, and for the measurement that motivates it at all.
+            stats.observations += max(1, weight)
+            stats.campaigns += max(1, weight)
+            if discard_cold_observation && weight == 1 && stats.observations == 2
+                stats.samples = samples
+                stats.successes = success_count
+                stats.failures = failure_count
+                stats.elapsed_sum_s = elapsed_sum_s
+                stats.elapsed_sq_sum_s = elapsed_sq_sum_s
+                continue
             end
             stats.samples += samples
             stats.successes += success_count

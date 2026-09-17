@@ -61,15 +61,18 @@ const TV = TelemetryVerification
     @test cfg_r4.inner_adaptive == true
     @test cfg_r4.thermal_mode == "auto"
     @test cfg_r4.inner_scheduler == "static"
-    @test cfg_r4.adaptive_control_tail_guard == false
     @test cfg_r4.adaptive_measured_reward == false
     @test cfg_full.outer_route_adaptive == true
     @test cfg_full.label == "r5"
-    @test cfg_full.thermal_mode == "on"
-    @test cfg_full.inner_scheduler == "dynamic"
-    @test cfg_full.adaptive_control_tail_guard == true
+    # Both of these track measured reversals in profile_definitions.jl.
+    # inner_scheduler went dynamic -> static in 622ae2a0 (the sweep now measures
+    # the scheduler, so a profile constant must not pre-empt it) and this probe
+    # was not updated with it. thermal_mode went on -> auto for the same reason:
+    # R5 was the only profile forcing it, and "on" was never measured to beat
+    # "auto" on any workload.
+    @test cfg_full.thermal_mode == "auto"
+    @test cfg_full.inner_scheduler == "static"
     @test cfg_full.adaptive_measured_reward == true
-    @test cfg_full.adaptive_window == 4
     @test cfg_full.persistent_hints == true
     @test cfg_full.persistent_state_persist == true
 
@@ -86,17 +89,13 @@ const TV = TelemetryVerification
     @test env_map_override["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "0"
     @test env_map_override["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "none"
     @test env_map_override["SPACEAGORA_RHS_BATCH_PARALLEL"] == "auto"
-    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "8"
-    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "0"
     @test parse(Float64, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) > 0.0
     @test parse(Int, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES"]) >= 1
     env_pairs_auto = PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false)
     env_map_auto = Dict(env_pairs_auto)
     @test env_map_auto["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "auto"
-    @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "on"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "dynamic"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "4"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "1"
+    @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "auto"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "static"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST"] == "1"
@@ -174,8 +173,39 @@ const TV = TelemetryVerification
     @test PP.default_outer_route(f_const; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_heavy; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_heavy; tuning=tune, machine_class=:small, threads_available=false, parallel_enabled=true) == :none
-    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
+    # Threads, not process, and this is a measured reversal.
+    #
+    # The Monte Carlo rule used to return :process whenever the machine was
+    # medium/large and either the sample count or the SIMULATED mission time
+    # cleared a threshold. Neither is a proxy for per-sample compute, and the
+    # process route lost on every Monte Carlo case in the benchmark catalog --
+    # +33% to +201% against the best static route. Measured at 64 samples on 12
+    # threads, process against threads: 2.45x slower at 0.038 s/sample, 2.90x at
+    # 0.072, 1.46x at 0.072, 1.41x at 0.259 and 1.69x at 3.179 s/sample. No
+    # crossover anywhere in that range, so the premise was wrong rather than the
+    # constants.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+    # ...but the process route must stay a CANDIDATE, or the bandit could never
+    # rediscover it on a machine or workload where it wins, and the reversal
+    # above would be permanent and unfalsifiable.
+    @test :process in PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true)
+    # With NO worker threads the reversal inverts, because everything it was
+    # measured against was threads. One Julia thread leaves the process pool as
+    # the only parallelism a Monte Carlo campaign can use, and falling through
+    # to :none was the worst result in the benchmark set: at one thread the
+    # fastest fixed route is outer processes on every Monte Carlo case measured,
+    # and both adaptive profiles trailed it by 67 to 89 percent.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) == :process
+    # The default must never name a route the selector did not enumerate.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) in
+          PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true)
+    # A campaign too small to amortise process startup still stays serial rather
+    # than spawning a pool for nothing.
+    @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) == :none
+    # Native GRAM is unaffected: there the process route is a thread-safety
+    # requirement, decided before the Monte Carlo rule is consulted.
+    @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=false) == :none
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :process
@@ -195,8 +225,32 @@ const TV = TelemetryVerification
 
     state = PP.OuterRouteState()
     @test isempty(PP.outer_route_stats_snapshot(state, sig))
+
+    # Arm symbols are deliberately unrestricted. This assertion used to require
+    # that an unrecognised route be dropped, and e6dc7539 removed the
+    # restriction on purpose so the split selector could reuse the route
+    # bandit wholesale -- same bucket, same statistics, same confidence
+    # handling, same persistence -- by naming its arms split_<route>_w<N>.
+    # The probe was not updated with it. Recording an arbitrary arm is now the
+    # documented behaviour, so assert that rather than its opposite.
     PP.record_outer_route_feedback!(state, f_heavy; route=:bad_route, successes=1, failures=0, tuning=tune)
-    @test isempty(PP.outer_route_stats_snapshot(state, sig))
+    @test haskey(PP.outer_route_stats_snapshot(state, sig), :bad_route)
+
+    # What actually keeps split arms from polluting route statistics is the
+    # signature namespace, not arm validation: record_outer_split_feedback!
+    # passes signature_prefix="split|", so split arms are invisible to a
+    # snapshot taken on the bare signature and visible under the prefixed one.
+    # That is the invariant worth pinning, and nothing covered it before.
+    state_split = PP.OuterRouteState()
+    PP.record_outer_split_feedback!(
+        state_split, f_heavy;
+        route=:threads, workers=4, successes=2, failures=0,
+        elapsed_success_s=10.0, tuning=tune
+    )
+    @test isempty(PP.outer_route_stats_snapshot(state_split, sig))
+    split_snap = PP.outer_route_stats_snapshot(state_split, "split|" * sig)
+    @test haskey(split_snap, Symbol("split_threads_w4"))
+    @test split_snap[Symbol("split_threads_w4")].samples == 2
 
     PP.record_outer_route_feedback!(state, f_heavy; route=:threads, successes=2, failures=0, elapsed_success_s=100.0, tuning=tune)
     PP.record_outer_route_feedback!(state, f_heavy; route=:process, successes=2, failures=0, elapsed_success_s=10.0, tuning=tune)
@@ -403,7 +457,10 @@ const TV = TelemetryVerification
         merged = PP.load_outer_route_state!(loaded_state, cache_path; replace=false)
         @test merged.rows >= 3
         snap_merged = PP.outer_route_stats_snapshot(loaded_state, sig)
-        @test snap_merged[:process].samples == 2 * snap[:process].samples + 1
+        # The restored arm carries one observation, so the live record above is
+        # its second: cold eviction replaces the restored history with that one
+        # sample, and the merge then adds the file's samples back once.
+        @test snap_merged[:process].samples == snap[:process].samples + 1
     end
 
     PP.reset_outer_route_state!(state)
@@ -460,6 +517,20 @@ end
     end
     withenv("SPACEAGORA_TELEMETRY_SOLVER_MODE" => "", "SPACEAGORA_SOLVER_MODE" => "rodas5p") do
         @test TV._telemetry_solver_mode() == "rodas5p"
+    end
+    # Per-step solver storage is off for the harness unless the mode
+    # autoswitches (the switch detector reads the per-step algorithm record)
+    # or the caller pinned the knob.
+    withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => nothing, "SPACEAGORA_SOLVER_SAVE_ON" => nothing) do
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "tsit5") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "tsit5") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "rodas5p") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "auto_stiff") == "true"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "multirate:auto_stiff/rodas5p") == "true"
+    end
+    withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => "1", "SPACEAGORA_SOLVER_SAVE_ON" => "0") do
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "tsit5") == "1"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "auto_stiff") == "0"
     end
     withenv("SPACEAGORA_TELEMETRY_SOLVER_MODE" => "", "SPACEAGORA_SOLVER_MODE" => "") do
         @test TV._telemetry_solver_mode() == "auto_stiff"
@@ -713,13 +784,20 @@ end
         @test parsed_sel.scenarios == ["odyssey", "vex"]
         @test TV._request_from_study_config(parsed_sel).scenarios == ["odyssey", "vex"]
         withenv("SPACEAGORA_TELEMETRY_SCENARIOS" => "earth_gmat") do
+            # The environment filter belongs to the CLI path only; a request
+            # built in code (the initial-condition fit's, for one) is never
+            # narrowed by it.
             @test TV.parse_cli(["quick", "--manifest=$(manifest_path)"]).scenarios == ["earth_gmat"]
-            @test TV.VerificationRequest().scenarios == ["earth_gmat"]
+            @test TV.VerificationRequest().scenarios == String[]
         end
         loaded = TV._load_scenarios_from_manifest(manifest_path)
         @test TV._select_scenarios(loaded, String[]) === loaded
+        @test TV._select_scenarios(loaded, ["", "  "]) === loaded
         first_name = lowercase(String(first(loaded).name))
         @test [String(sc.name) for sc in TV._select_scenarios(loaded, [first_name])] == [String(first(loaded).name)]
+        # A typed request bypasses the CLI parser; the selector normalises
+        # case and whitespace itself.
+        @test [String(sc.name) for sc in TV._select_scenarios(loaded, ["  " * uppercase(first_name) * " "])] == [String(first(loaded).name)]
         @test_throws ArgumentError TV._select_scenarios(loaded, ["no_such_scenario"])
         @test TV._single_point_calibration(true, [1.0], [1.3], :full, :full)
         @test !TV._single_point_calibration(false, [1.0], [1.3], :full, :full)
@@ -2594,6 +2672,105 @@ end
     fields = TV._save_fields_for_study()
     @test length(fields) == 2
     @test fields[1].column_prefix == "pos" && fields[2].column_prefix == "vel"
+end
+
+@testset "manifest state_anchors block" begin
+    scenario = Dict(
+        "name" => "anchor_key_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    state_a = [7.0e6, 0.0, 0.0, 0.0, 7.5e3, 0.0]
+    state_b = [0.0, 7.0e6, 0.0, -7.5e3, 0.0, 0.0]
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+
+        # Absent block: no anchors, nothing scheduled.
+        write_manifest(scenario)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == false
+        @test isempty(cfg.state_anchor_elapsed_s)
+        @test TV._scenario_extra_callbacks(cfg) === ()
+        @test TV._state_anchor_count(cfg) == 0
+
+        # Present block: parsed in order, counted in the summary, one callback.
+        anchored = merge(scenario, Dict("state_anchors" => Dict(
+            "burn_orbit_numbers" => [25, 32],
+            "elapsed_s" => [1000.0, 2000.0],
+            "states_j2000_m" => [state_a, state_b],
+        )))
+        write_manifest(anchored)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == true
+        @test cfg.state_anchor_burn_orbit_numbers == [25, 32]
+        @test cfg.state_anchor_elapsed_s == [1000.0, 2000.0]
+        @test cfg.state_anchor_states_j2000_m[2] == NTuple{6, Float64}(state_b)
+        @test TV._state_anchor_count(cfg) == 2
+        @test length(TV._scenario_extra_callbacks(cfg)) == 1
+        # Without a burn replay there is nothing to keep aligned and the
+        # anchors leave the orbit counter alone; with one, the count is
+        # B - offset + 1.
+        @test all(a -> a.orbit_count === nothing, TV._scenario_state_anchors(cfg))
+        with_burns = merge(anchored, Dict("maneuvers" => Dict(
+            "orbit_numbers" => [25, 32], "delta_v_mps" => [0.1, -0.1], "orbit_number_offset" => 18,
+            "thrust_n" => 4.0, "isp_s" => 220.0,
+        )))
+        write_manifest(with_burns)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.maneuver_orbit_number_offset == 18
+        @test [a.orbit_count for a in TV._scenario_state_anchors(cfg)] == [8, 15]
+
+        # Disabled block keeps the data but schedules nothing.
+        disabled = merge(scenario, Dict("state_anchors" => Dict(
+            "enabled" => false, "elapsed_s" => [1000.0], "states_j2000_m" => [state_a],
+        )))
+        write_manifest(disabled)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == false
+        @test TV._state_anchor_count(cfg) == 0
+        @test TV._scenario_extra_callbacks(cfg) === ()
+
+        # Guards: length mismatch, non-increasing times, short state, non-finite.
+        for bad in (
+            Dict("elapsed_s" => [1000.0, 2000.0], "states_j2000_m" => [state_a]),
+            Dict("elapsed_s" => [2000.0, 1000.0], "states_j2000_m" => [state_a, state_b]),
+            Dict("elapsed_s" => [1000.0], "states_j2000_m" => [state_a[1:3]]),
+            Dict("elapsed_s" => [1000.0], "states_j2000_m" => [state_a], "burn_orbit_numbers" => [1, 2]),
+            Dict("elapsed_s" => [-5.0], "states_j2000_m" => [state_a]),
+        )
+            write_manifest(merge(scenario, Dict("state_anchors" => bad)))
+            @test_throws ArgumentError TV._load_scenarios_from_manifest(manifest_path)
+        end
+    end
 end
 
 @testset "manifest link attitude quaternions" begin

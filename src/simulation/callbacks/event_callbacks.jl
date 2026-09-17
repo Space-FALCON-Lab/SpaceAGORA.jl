@@ -224,10 +224,16 @@ function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfi
         end
     end
 
+    # No before/after saves: the projection runs on every accepted step, and
+    # the step is saved once after the discrete callbacks have run, so the
+    # stored state is the projected one the next step starts from. With the
+    # DiscreteCallback default the solution held the pre- and post-projection
+    # states of every step as well.
     return DiscreteCallback(
         condition,
-        affect!,
-        initialize=(cb, u, t, integrator) -> affect!(integrator)
+        affect!;
+        initialize=(cb, u, t, integrator) -> affect!(integrator),
+        save_positions=(false, false)
     )
 end
 

@@ -1476,4 +1476,4 @@ class OrbitControls extends EventDispatcher {
 
 }
 
-export { OrbitControls };diff --git a/viewer/vendor/README.md b/viewer/vendor/README.md
+export { OrbitControls };

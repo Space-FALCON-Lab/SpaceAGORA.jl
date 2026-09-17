@@ -290,3 +290,18 @@ make_three_body_spacecraft(
 
 The `id` field determines the column prefix in the output CSV: spacecraft 1
 gets `sc1_*` columns, spacecraft 2 gets `sc2_*`, and so on.
+
+## Panel angles and heating
+
+With a built-in aerodynamic model, heating uses the current panel geometry. If
+`orientation_sim = true`, it follows the propagated spacecraft attitude and each
+panel's orientation. Otherwise it follows the aerodynamic model's fixed-attitude
+incidence policy. Panel-control changes take effect in heating without requiring
+a force calculation first. The aerodynamic scale factor is not applied directly
+to heat rates; it can still change heating by changing the trajectory.
+
+A configuration without a recognized aerodynamic model keeps its existing
+`Link.α` heating input. If a built-in model is present alongside custom effectors,
+the built-in model determines geometric incidence. Multiple built-in models must
+use the same fixed-attitude policy when attitude is not propagated; conflicting
+policies raise an error because there is no single angle for heating to use.

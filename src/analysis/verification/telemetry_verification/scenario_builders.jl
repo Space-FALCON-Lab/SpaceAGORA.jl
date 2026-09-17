@@ -104,6 +104,10 @@ end
 @inline SimulationModel.solver_partition(model::ScaledAerodynamicCoefficientfM) =
     SimulationModel.solver_partition(model.model)
 
+@inline SimulationModel.DynamicEffectors.AerodynamicEffectors._thermal_incidence_mode(
+    model::ScaledAerodynamicCoefficientfM,
+) = SimulationModel.DynamicEffectors.AerodynamicEffectors._thermal_incidence_mode(model.model)
+
 function SimulationModel.wrench(
     model::ScaledAerodynamicCoefficientfM,
     x::SimulationModel.StateSample,

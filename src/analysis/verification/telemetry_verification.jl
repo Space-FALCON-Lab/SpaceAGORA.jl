@@ -26,8 +26,9 @@ using Arrow
 using TOML
 
 using ..SimulationModel
+using ..SimulationModel.SimConfig: _with_configuration
 using ..SimulationEngine
-include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
+using ..SimulationModel.FrameTransforms
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 

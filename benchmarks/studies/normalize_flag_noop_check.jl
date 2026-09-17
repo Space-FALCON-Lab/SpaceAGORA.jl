@@ -68,7 +68,7 @@ function _build_config(; normalize::Bool, results_directory::String)
     )
 
     # make_example_config always sets normalize=false; override explicitly.
-    return SimulationModel.SimulationConfiguration(
+    return SimulationModel.SimConfig._with_configuration(args;
         simulation_settings=SimulationModel.SimulationSettings(
             results=args.simulation_settings.results,
             verbose=args.simulation_settings.verbose,
@@ -76,15 +76,6 @@ function _build_config(; normalize::Bool, results_directory::String)
             results_directory=args.simulation_settings.results_directory,
             normalize=normalize
         ),
-        mission_configuration=args.mission_configuration,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances,
-        solver_config=args.solver_config
     )
 end
 

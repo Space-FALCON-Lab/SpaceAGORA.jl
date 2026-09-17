@@ -7,15 +7,37 @@ using SPICE
 using Serialization
 
 const EM = SpaceAGORA.SimulationModel.EnvironmentModels
+# Spelled out rather than routed through `RS` below: ci_architecture_contract_gate
+# asserts this exact reference textually, because the one thing that must never
+# drift here is which lock this is. Same reason the gate exists at all.
 const GRAM_LOCK = SpaceAGORA.RuntimeServices.GRAM_LOCK
+const RS = SpaceAGORA.RuntimeServices
+
+# Attributed views of the one shared native lock. Same critical section, same
+# mutual exclusion; the site only decides which occupancy counter the time lands
+# in. See RuntimeServices' native-lock section for why occupancy is attributed
+# by call site rather than by density-model family.
+@inline _tl(site::Symbol) = RS.tracked_lock(site)
 
 # Lock used to serialize native GRAM calls for this model instance. With the
 # default global scope every call in the process contends on GRAM_LOCK; with
 # SPACEAGORA_GRAM_LOCK_SCOPE=model only calls on the same wrapper instance
 # serialize, so per-sample/per-worker model copies evaluate concurrently
 # (the same instance-isolation premise as the isolated-pool batch path).
-@inline function _gram_call_lock(model::EM.GRAMAtmosphereModel)::ReentrantLock
-    return EM._gram_lock_scope() === :model ? model.instance_lock : GRAM_LOCK
+#
+# Return type is left unannotated because the two branches now differ: the
+# global branch hands back a tracked view of the shared lock, the per-model
+# branch the instance's own `ReentrantLock`. GRAMSuite's `lock_obj` keyword is
+# untyped and reaches it through `lock(f, l)`, so both work; the small Union
+# splits at the call site.
+#
+# Per-model occupancy is deliberately NOT recorded: those calls do not contend
+# on the shared lock at all, which is the entire point of that mode, so their
+# absence from the shared counters is the correct reading. What is lost is the
+# per-instance duty cycle, which needs its own counters if that mode is ever
+# measured rather than merely offered.
+@inline function _gram_call_lock(model::EM.GRAMAtmosphereModel)
+    return EM._gram_lock_scope() === :model ? model.instance_lock : _tl(:gram_density)
 end
 
 function __init__()
@@ -70,6 +92,126 @@ function _gram_utc_string(initial_time)::String
     )
 end
 
+# ---------------------------------------------------------------------------
+# Epoch-level ephemeris cache.
+#
+# Six of the eight EphemerisStateC fields -- longitudeSun, subsolarLatitude,
+# subsolarLongitude, orbitalRadius, oneWayLightTime, secondsPerSol -- depend
+# only on (body, epoch). They do NOT depend on the query lat/lon. Only
+# solarTime and solarZenithAngle do, and both are closed-form arithmetic on the
+# subsolar point.
+#
+# Every satellite in a constellation is evaluated at the same `el_time` within
+# one right-hand-side call, so without a cache the five SPICE calls below
+# (utc2et, spkpos, lspcn, ltime, subslr) run once per satellite per stage and
+# serialize on the SPICE lock. Caching the epoch-level result collapses that to
+# once per epoch -- the same "compute shared environment once, amortize across
+# the constellation" mechanism already used for the N-body/SRP prepass.
+#
+# The cache holds ONE entry per body (the most recent epoch), not a growing
+# map: `el_time` advances every step, so an unbounded Dict keyed on epoch would
+# grow without limit over a mission. One entry is the right size because the
+# access pattern is "all satellites at epoch t, then all satellites at t'".
+#
+# Set SPACEAGORA_GRAM_EPHEMERIS_CACHE=off to bypass (for A/B checking); the
+# cached and uncached paths compute bit-identical values.
+#
+# Locking: the cache is guarded by GRAM_LOCK, which is `const GRAM_LOCK =
+# SPICE_LOCK` (runtime_services.jl:15) -- the same object that serializes every
+# other CSPICE call in the process. That matters because the miss path calls
+# SPICE.jl (utc2et/spkpos/lspcn/ltime/subslr), and CSPICE is not thread-safe:
+# guarding with a private lock would serialize misses against each other but
+# not against SpaceAGORA's own SRP/N-body SPICE calls on another thread. Using
+# the one shared lock also removes any lock-ordering hazard, since it is
+# reentrant and is already held on entry under the default global lock scope.
+# ---------------------------------------------------------------------------
+
+const _GRAM_EPHEM_CACHE = Dict{String, Tuple{Float64, NTuple{6, Float64}}}()
+const _GRAM_ET0_CACHE = Dict{String, Float64}()
+const _GRAM_NAIF_ID_CACHE = Dict{String, Int}()
+
+@inline function _gram_ephemeris_cache_enabled()::Bool
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_EPHEMERIS_CACHE", "on")))
+    raw in ("on", "1", "true", "yes") && return true
+    raw in ("off", "0", "false", "no") && return false
+    throw(ArgumentError(
+        "Unsupported SPACEAGORA_GRAM_EPHEMERIS_CACHE='$raw'. Use one of: on, off."
+    ))
+end
+
+"""
+    clear_gram_ephemeris_cache!()
+
+Drop the cached epoch-level ephemeris, start-epoch and NAIF-id lookups. Only
+needed when SPICE kernels are re-furnished mid-process.
+"""
+function clear_gram_ephemeris_cache!()
+    lock(_tl(:gram_setup)) do
+        empty!(_GRAM_EPHEM_CACHE)
+        empty!(_GRAM_ET0_CACHE)
+        empty!(_GRAM_NAIF_ID_CACHE)
+    end
+    return nothing
+end
+
+# Start epoch and NAIF id are fixed for the whole run; utc2et parses a string
+# and bodn2c does a name lookup, so neither belongs in a per-call path.
+@inline function _gram_et0(utc::String)::Float64
+    lock(_tl(:spice_body)) do
+        get!(_GRAM_ET0_CACHE, utc) do
+            SPICE.utc2et(utc)
+        end
+    end
+end
+
+@inline function _gram_naif_id(naif_name::String)::Int
+    lock(_tl(:spice_body)) do
+        get!(_GRAM_NAIF_ID_CACHE, naif_name) do
+            Int(SPICE.bodn2c(naif_name))
+        end
+    end
+end
+
+# The epoch-only half: longitudeSun, subsolarLat, subsolarLon, orbitalRadius,
+# oneWayLightTime, secondsPerSol.
+function _gram_body_ephemeris_uncached(naif_name::String, et::Float64)::NTuple{6, Float64}
+    frame = "IAU_" * naif_name
+
+    pos_sun, _ = SPICE.spkpos(naif_name, et, "J2000", "NONE", "SUN")
+    orbital_radius_au = sqrt(sum(abs2, pos_sun)) / _GRAM_AU_KM
+
+    longitude_sun_deg = mod(rad2deg(SPICE.lspcn(naif_name, et, "NONE")), 360.0)
+
+    _, howlng = SPICE.ltime(et, _gram_naif_id(naif_name), "->", _GRAM_EARTH_NAIF_ID)
+    one_way_light_time_min = howlng / 60.0
+
+    spoint, _, _ = SPICE.subslr("NEAR POINT/ELLIPSOID", naif_name, et, frame, "NONE", naif_name)
+    _, subsolar_lon, subsolar_lat = SPICE.reclat(spoint)
+    subsolar_lon_deg = mod(rad2deg(subsolar_lon), 360.0)
+    subsolar_lat_deg = rad2deg(subsolar_lat)
+
+    return (
+        longitude_sun_deg, subsolar_lat_deg, subsolar_lon_deg,
+        orbital_radius_au, one_way_light_time_min, _GRAM_SECONDS_PER_SOL[naif_name]
+    )
+end
+
+function _gram_body_ephemeris(naif_name::String, et::Float64)::NTuple{6, Float64}
+    _gram_ephemeris_cache_enabled() || return _gram_body_ephemeris_uncached(naif_name, et)
+    lock(_tl(:spice_ephemeris)) do
+        hit = get(_GRAM_EPHEM_CACHE, naif_name, nothing)
+        # Exact epoch match only: the value is a nonlinear function of et, so
+        # interpolating or tolerating a nearby epoch would silently change the
+        # atmosphere. Every satellite in one RHS call shares et exactly.
+        if hit !== nothing && hit[1] === et
+            return hit[2]
+        end
+        value = _gram_body_ephemeris_uncached(naif_name, et)
+        _GRAM_EPHEM_CACHE[naif_name] = (et, value)
+        return value
+    end
+end
+
 function _gram_spice_ephemeris_state(
     planet_name::String,
     initial_time,
@@ -80,25 +222,16 @@ function _gram_spice_ephemeris_state(
     naif_name = uppercase(planet_name)
     haskey(_GRAM_SECONDS_PER_SOL, naif_name) || return nothing
 
-    et = SPICE.utc2et(_gram_utc_string(initial_time)) + el_time
-    frame = "IAU_" * naif_name
+    et = _gram_et0(_gram_utc_string(initial_time)) + el_time
 
-    pos_sun, _ = SPICE.spkpos(naif_name, et, "J2000", "NONE", "SUN")
-    orbital_radius_au = sqrt(sum(abs2, pos_sun)) / _GRAM_AU_KM
-
-    longitude_sun_deg = mod(rad2deg(SPICE.lspcn(naif_name, et, "NONE")), 360.0)
-
-    _, howlng = SPICE.ltime(et, SPICE.bodn2c(naif_name), "->", _GRAM_EARTH_NAIF_ID)
-    one_way_light_time_min = howlng / 60.0
-
-    spoint, _, _ = SPICE.subslr("NEAR POINT/ELLIPSOID", naif_name, et, frame, "NONE", naif_name)
-    _, subsolar_lon, subsolar_lat = SPICE.reclat(spoint)
-    subsolar_lon_deg = mod(rad2deg(subsolar_lon), 360.0)
-    subsolar_lat_deg = rad2deg(subsolar_lat)
+    longitude_sun_deg, subsolar_lat_deg, subsolar_lon_deg,
+        orbital_radius_au, one_way_light_time_min, seconds_per_sol =
+            _gram_body_ephemeris(naif_name, et)
 
     # Local solar time & solar zenith angle from the subsolar point vs. the
     # query lat/lon (standard spherical-geometry relations; matches GRAM's
-    # own updateLocalSolarTime()/updateSolarZenithAngle()).
+    # own updateLocalSolarTime()/updateSolarZenithAngle()). These are the only
+    # per-satellite terms, and they are pure arithmetic -- no SPICE.
     hour_angle_deg = mod(lon_deg - subsolar_lon_deg + 180.0, 360.0) - 180.0
     solar_time_hr = mod(12.0 + hour_angle_deg / 15.0, 24.0)
 
@@ -106,8 +239,6 @@ function _gram_spice_ephemeris_state(
     dlon_r = deg2rad(lon_deg - subsolar_lon_deg)
     cos_zenith = sin(lat_r) * sin(sublat_r) + cos(lat_r) * cos(sublat_r) * cos(dlon_r)
     solar_zenith_deg = rad2deg(acos(clamp(cos_zenith, -1.0, 1.0)))
-
-    seconds_per_sol = _GRAM_SECONDS_PER_SOL[naif_name]
 
     return (
         solar_time_hr, longitude_sun_deg, subsolar_lat_deg, subsolar_lon_deg,
@@ -155,7 +286,7 @@ function EM.precompute_gram_static_grids!(
         base_model.core;
         planets=planets,
         wind=wind,
-        lock_obj=GRAM_LOCK
+        lock_obj=_tl(:gram_setup)
     )
 end
 
@@ -166,7 +297,7 @@ end
 
 function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
     haskey(stackdict, model) && return stackdict[model]
-    copied = lock(GRAM_LOCK) do
+    copied = lock(_tl(:gram_setup)) do
         EM.GRAMAtmosphereModel(deepcopy(model.core))
     end
     stackdict[model] = copied
@@ -175,7 +306,7 @@ end
 
 function Base.deepcopy_internal(model::EM.GRAMAtmosphereModelSurrogate, stackdict::IdDict)
     haskey(stackdict, model) && return stackdict[model]
-    copied = lock(GRAM_LOCK) do
+    copied = lock(_tl(:gram_setup)) do
         EM.GRAMAtmosphereModelSurrogate(
             deepcopy(model.base_model),
             model.surrogate_file,
@@ -324,7 +455,7 @@ function EM.getDensity(
     base_model = model.base_model isa EM.GRAMAtmosphereModel ? model.base_model.core : model.base_model
     point_fallback = model.base_model isa EM.GRAMAtmosphereModel ? nothing :
         (m, h_i, lat_i, lon_i, t_i, w_i) -> EM._gram_point_density(m, h_i, lat_i, lon_i, t_i, w_i)
-    lock_obj = model.base_model isa EM.GRAMAtmosphereModel ? _gram_call_lock(model.base_model) : GRAM_LOCK
+    lock_obj = model.base_model isa EM.GRAMAtmosphereModel ? _gram_call_lock(model.base_model) : _tl(:gram_density)
     h_gram = max(h, -30.0)
 
     # println("GRAM density altitude = $(h) m ($(h / 1e3) km)")

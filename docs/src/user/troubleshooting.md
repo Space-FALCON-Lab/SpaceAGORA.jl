@@ -51,8 +51,7 @@ expected local path.
    ```text
    data/GRAMSuite.jl/GRAM Suite 2.0
    ```
-3. Build the native shared library (needs a C/C++ toolchain and GNU Make; no
-   Fortran compiler, and CSPICE is bundled on Linux x86_64 and Windows):
+3. Build or verify the native shared library:
    ```text
    julia --project=. scripts/ensure_gram_native.jl
    ```
@@ -71,9 +70,8 @@ disk space and see [GRAMSuite Setup](gramsuite_setup.md#git-lfs-reports-no-space
 **Symptom:** GRAM assets are present but `GRAMAtmosphereModel` raises a library
 load error at runtime.
 
-**Cause:** The platform-native `libGRAM` was either never built on this host, or
-the GRAM tree was copied in from another machine with its `Build/lib` already
-populated.
+**Possible causes:** The native `libGRAM` is missing, was copied from an
+incompatible host, or cannot load one of its native dependencies.
 
 **Resolution:**
 
@@ -81,24 +79,19 @@ populated.
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If that prints `Native GRAM library already present for this host` and the load
-error persists, the library on disk belongs to a different machine. The
-existence check cannot distinguish it from a native build, so force a rebuild:
+The ordinary command skips the build if the expected library file exists; it
+does not check whether that binary is compatible with this host. If you copied
+a populated GRAM build from another machine or suspect a stale local build,
+force a rebuild:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean
 ```
 
-This is the common case on remote hosts, because
-`scripts/remote/spaceagora-remote` mirrors the entire working tree, native
-build outputs included.
-
-A checkout that was moved or renamed on the same machine does not need
-`--clean`; the vendored build helper detects the changed root from its build
-manifest and rebuilds on its own.
-
-Build prerequisites and the per-platform CSPICE story are covered in
-[GRAMSuite Setup](gramsuite_setup.md#build-the-native-gram-library).
+If loading still fails, retain the complete error. See
+[GRAMSuite Setup](gramsuite_setup.md#build-or-verify-the-native-gram-library)
+for build prerequisites and expected output, including the GNU Make requirement
+on macOS.
 
 ---
 
@@ -211,7 +204,7 @@ run_simulation(config; isolate_state=false)   # fast: config must not be shared 
 **Symptom:** `NRLMSISE00AtmosphereModel(use_space_indices=true)` errors on the
 first atmosphere evaluation with a network or download error.
 
-**Cause:** `SpaceIndices` (via `SatelliteToolbox`) needs to download CelesTrak
+**Cause:** `SpaceIndices.jl` needs to download CelesTrak
 space weather data on first use, and the download failed.
 
 **Resolution:** Run the prewarm step manually with network access before

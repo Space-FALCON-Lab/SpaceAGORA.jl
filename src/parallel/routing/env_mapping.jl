@@ -20,17 +20,22 @@ end
     if override_raw in ("small", "medium", "large")
         return Symbol(override_raw)
     end
-    cpu_threads = Sys.CPU_THREADS
-    if cpu_threads >= 24
+    # Cores this process may actually use, not logical CPUs the host advertises.
+    # The thresholds are unchanged, so what moves is only which machines meet
+    # them: the 12-physical/24-logical reference box classified :large on a
+    # count that included SMT siblings it measurably could not use, and a
+    # 4-core cgroup on a 64-core host classified :large outright.
+    cores = usable_core_budget()
+    if cores >= 24
         return :large
-    elseif cpu_threads >= 12
+    elseif cores >= 12
         return :medium
     end
     return :small
 end
 
 @inline function _inner_hint_defaults(cfg::ParallelProfileConfig)::NamedTuple{(:exploration, :min_samples), Tuple{Float64, Int}}
-    if cfg.profile != R5
+    if !(cfg.profile in (R5, R6))
         return (exploration=1.5, min_samples=2)
     end
     machine_class = _machine_parallel_class()
@@ -127,16 +132,6 @@ function profile_env_pairs(
             cfg.inner_scheduler;
             preserve_existing=preserve_existing
         ),
-        "SPACEAGORA_PARALLEL_POLICY_WINDOW" => _env_or_default(
-            "SPACEAGORA_PARALLEL_POLICY_WINDOW",
-            string(cfg.adaptive_window);
-            preserve_existing=preserve_existing
-        ),
-        "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD" => _env_or_default(
-            "SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD",
-            _coerce_env_bool(cfg.adaptive_control_tail_guard);
-            preserve_existing=preserve_existing
-        ),
         "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD" => _env_or_default(
             "SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD",
             _coerce_env_bool(cfg.adaptive_measured_reward);
@@ -150,6 +145,11 @@ function profile_env_pairs(
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => _env_or_default(
             "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST",
             _coerce_env_bool(cfg.persistent_state_persist);
+            preserve_existing=preserve_existing
+        ),
+        "SPACEAGORA_PARALLEL_POLICY_V2" => _env_or_default(
+            "SPACEAGORA_PARALLEL_POLICY_V2",
+            _coerce_env_bool(cfg.policy_v2);
             preserve_existing=preserve_existing
         ),
         "SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION" => _env_or_default(

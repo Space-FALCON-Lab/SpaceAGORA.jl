@@ -13,6 +13,6 @@ module AerodynamicEffectors
 
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
 
-    include(joinpath(@__DIR__, "..", "..", "..", "core", "interfaces", "reference_system.jl"))
+    using ...FrameTransforms
     include(joinpath(@__DIR__, "..", "aerodynamic_wrench_models.jl"))
 end

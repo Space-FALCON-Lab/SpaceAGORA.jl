@@ -28,9 +28,12 @@ catch err
     err
 end
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
-include(REFSYS_PATH)
+# Exercise the production owner; the isolated error-path sandbox above remains raw.
+const RuntimeServices = SpaceAGORA.RuntimeServices
+using .SimulationModel.FrameTransforms
 
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const EARTH = Earth("", SPICE_PATH)

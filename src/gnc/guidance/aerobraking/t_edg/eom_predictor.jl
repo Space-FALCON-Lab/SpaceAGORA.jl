@@ -1,4 +1,3 @@
-using PreallocationTools
 using NLsolve
 using LinearAlgebra
 using OrdinaryDiffEq
@@ -67,7 +66,6 @@ function asim_ctrl_targeting_plot(ip, m, time_0, OE, args, hf, vf, γf, energy_f
 
     function f_ctrl!(y_dot, in_cond, param, t0)
 
-        # param = get_tmp(param, first(in_cond) * t0)
 
         context = param
         m = context.mission

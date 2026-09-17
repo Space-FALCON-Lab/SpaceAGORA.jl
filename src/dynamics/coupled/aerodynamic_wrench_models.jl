@@ -5,9 +5,32 @@ const inv_sqrt_π = 1 / sqrt(π)
 
 @inline _parse_bool_env(name::String, default::Bool)::Bool = ParallelPolicy.parse_bool_env(name, default)
 
-@inline function _multibody_parallel_mode()::Symbol
-    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_MULTIBODY_PARALLEL")
+# SPACEAGORA_MULTIBODY_PARALLEL, read once per solve. _multibody_thread_decision
+# runs per satellite per RHS call from two effector sites, and the ENV read
+# (getenv + a fresh String, then strip/lowercase) was the one cost left in it
+# after the forced-false short-circuits: one per satellite per call on every
+# route. The engine refreshes the cache at each solve start
+# (refresh_multibody_parallel_mode!), which is where a harness `withenv` can
+# have changed the value; between solves it is a Ref read.
+const _MULTIBODY_MODE_CACHE = Ref{Union{Nothing, Symbol}}(nothing)
+
+"""
+    refresh_multibody_parallel_mode!() -> Symbol
+
+Re-read `SPACEAGORA_MULTIBODY_PARALLEL` into the per-solve cache the
+per-satellite thread decision consults. Called by the engine at solve start.
+"""
+function refresh_multibody_parallel_mode!()::Symbol
+    mode = ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_MULTIBODY_PARALLEL")
+    _MULTIBODY_MODE_CACHE[] = mode
+    return mode
 end
+
+@inline function _multibody_parallel_mode()::Symbol
+    cached = _MULTIBODY_MODE_CACHE[]
+    return cached === nothing ? refresh_multibody_parallel_mode!() : cached
+end
+
 
 @inline function _multibody_thread_threshold()::Int
     return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_MULTIBODY_THREAD_THRESHOLD", 4)
@@ -34,7 +57,33 @@ end
 
 @inline function _multibody_thread_decision(num_items::Int; heavy_work::Bool=true)
     mode = _multibody_parallel_mode()
+
+    # Cheap forced-false checks before the policy call, because this runs PER
+    # SATELLITE PER RHS CALL.
+    #
+    # Both call sites -- the n-body force and the aerodynamic wrench -- invoke
+    # this from inside the per-satellite effector chain, and the answer does not
+    # depend on the satellite: it is a function of `num_items` (third bodies, or
+    # aerodynamic links), which is the same for every one of them. Reaching
+    # thread_policy_decision costs roughly nine ENV reads, each allocating
+    # through strip/lowercase, plus two telemetry lock acquisitions. On a
+    # 256-satellite constellation with third-body gravity that is ~2300 ENV
+    # reads and 512 lock acquisitions per RHS call, to re-derive one answer 256
+    # times.
+    #
+    # The common case never had a decision to make. SPACEAGORA_MULTIBODY_THREAD_THRESHOLD
+    # defaults to 4 and a typical third-body set is Sun plus Moon, so num_items
+    # is 2 and threading is refused on the threshold -- after all that work.
+    #
+    # `mode == :on` is excluded from the threshold check because it forces
+    # threading regardless of item count, so its answer is not forced here.
+    if mode == :off || num_items <= 1 || Threads.nthreads() <= 1
+        return (use_threads=false, allotment=1, mode=mode)
+    end
     threshold = _multibody_thread_threshold()
+    if mode != :on && num_items < max(1, threshold)
+        return (use_threads=false, allotment=1, mode=mode)
+    end
     outer_active = _multibody_outer_parallel_hint()
     allow_with_outer = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER", false)
     heavy_only = _parse_bool_env("SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY", true)
@@ -62,8 +111,9 @@ end
 Free-molecular aerodynamics from the Hart et al. closed forms (rectangular
 prism, doi 10.2514/1.A33606), evaluated per link and summed.
 
-`fixed_attitude_incidence` selects how link incidence is treated when
-`orientation_sim=false` (it has no effect when attitude is simulated):
+`fixed_attitude_incidence` selects the link incidence used by both aerodynamics
+and heating when `orientation_sim=false`. When attitude is propagated, both
+use the current spacecraft and link geometry instead:
 
 - `:max_drag` (default, historical behavior): every link is treated as
   flow-normal and charged its full `ref_area` — the spacecraft permanently
@@ -109,31 +159,36 @@ end
     per_link_atmosphere::Bool = false
 end
 
-@inline function _make_aero_scratch_workspace(n_threads::Int)::AeroScratchWorkspace
-    n_threads >= 1 || throw(ArgumentError("Aerodynamic scratch workspace thread count must be >= 1, got $n_threads"))
-    thread_force = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_threads]
-    thread_cl = zeros(Float64, n_threads)
-    thread_cd = zeros(Float64, n_threads)
-    thread_area = zeros(Float64, n_threads)
-    return AeroScratchWorkspace(thread_force, thread_cl, thread_cd, thread_area)
+@inline function _make_aero_scratch_workspace(n_links::Int)::AeroScratchWorkspace
+    n_links >= 1 || throw(ArgumentError("Aerodynamic scratch workspace link count must be >= 1, got $n_links"))
+    zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    return AeroScratchWorkspace(
+        fill(zero3, n_links), fill(zero3, n_links), fill(zero3, n_links), fill(zero3, n_links),
+        zeros(Float64, n_links), zeros(Float64, n_links), zeros(Float64, n_links)
+    )
 end
 
 @inline function _ensure_aero_workspace_capacity!(
     workspace::AeroScratchWorkspace,
-    n_threads::Int
+    n_links::Int
 )::AeroScratchWorkspace
-    n_threads >= 1 || throw(ArgumentError("Aerodynamic scratch workspace thread count must be >= 1, got $n_threads"))
-    if length(workspace.thread_force) < n_threads
-        old_len = length(workspace.thread_force)
-        resize!(workspace.thread_force, n_threads)
-        @inbounds for tid in (old_len + 1):n_threads
-            workspace.thread_force[tid] = MVector{3, Float64}(0.0, 0.0, 0.0)
+    n_links >= 1 || throw(ArgumentError("Aerodynamic scratch workspace link count must be >= 1, got $n_links"))
+    if length(workspace.link_force) < n_links
+        zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+        for v in (workspace.link_force, workspace.link_drag, workspace.link_lift, workspace.link_cross)
+            old_len = length(v)
+            resize!(v, n_links)
+            @inbounds for idx in (old_len + 1):n_links
+                v[idx] = zero3
+            end
         end
-    end
-    if length(workspace.thread_cl) < n_threads
-        resize!(workspace.thread_cl, n_threads)
-        resize!(workspace.thread_cd, n_threads)
-        resize!(workspace.thread_area, n_threads)
+        for v in (workspace.link_cl_area, workspace.link_cd_area, workspace.link_area)
+            old_len = length(v)
+            resize!(v, n_links)
+            @inbounds for idx in (old_len + 1):n_links
+                v[idx] = 0.0
+            end
+        end
     end
     return workspace
 end
@@ -173,22 +228,61 @@ end
     error("SimulationModel.planet_frame_lpi not found in module ancestry for aerodynamic_wrench_models.jl")
 end
 
+# Guards the lazy-growth path below, and nothing else.
+#
+# Not on the hot path: `_initialize_save_cache_buffers!` (engine/setup.jl) sizes
+# these caches to the satellite count before any threaded dispatch can begin, so
+# in a solve the growth branch is never taken and this lock is never acquired.
+const _SAVE_CACHE_GROW_LOCK = ReentrantLock()
+
 @inline function _store_vector_cache!(
     cache::Vector{SVector{3, Float64}},
     sat_idx::Int,
     value::SVector{3, Float64}
 )::Nothing
     if length(cache) < sat_idx
-        resize!(cache, sat_idx)
-        @inbounds for idx in eachindex(cache)
-            if !isassigned(cache, idx)
-                cache[idx] = SVector{3, Float64}(0.0, 0.0, 0.0)
+        # Growing a SHARED vector from inside a parallel region.
+        #
+        # AerodynamicCoefficientfM's wrench is dispatched across persistent
+        # worker threads by the flat-constellation-effector-queue route, so two
+        # satellites on different workers can both see the cache too short and
+        # both call `resize!` on the same Vector. Julia 1.12 catches that as a
+        # ConcurrencyViolationError; at larger satellite counts, where the race
+        # window is tighter, it has instead corrupted memory badly enough to
+        # segfault.
+        #
+        # `_initialize_save_cache_buffers!` pre-sizes the caches and is called by
+        # `run_simulation`, which is why solves do not hit this. But safety then
+        # rests on every construction path remembering one call, and the paths
+        # that build `ODEParams` directly to drive the RHS -- the cost-model
+        # validation script and the contention probes -- did not. A missed call
+        # should cost a lock acquisition on a cold path, not a segfault at N=1024.
+        #
+        # Double-checked: the length is re-tested under the lock, so concurrent
+        # arrivals grow once and the losers fall through to the indexed write.
+        #
+        # This serialises growth against growth. It does NOT serialise growth
+        # against a concurrent indexed write lower down the same vector, which
+        # `resize!` can invalidate by reallocating -- guarding every write would
+        # put a lock on the hot path to fix a case that should not arise. So
+        # this is a survivability net, not a licence to skip initialisation:
+        # pre-sizing remains the only correct configuration, and callers that
+        # build `ODEParams` themselves must still call
+        # `_initialize_save_cache_buffers!`.
+        lock(_SAVE_CACHE_GROW_LOCK) do
+            if length(cache) < sat_idx
+                old_len = length(cache)
+                resize!(cache, sat_idx)
+                @inbounds for idx in (old_len + 1):sat_idx
+                    cache[idx] = SVector{3, Float64}(0.0, 0.0, 0.0)
+                end
             end
         end
     end
     @inbounds cache[sat_idx] = value
     return nothing
 end
+
 
 @inline function _store_aero_caches!(
     param::ODEParams,
@@ -222,6 +316,33 @@ end
 @inline solver_partition(::AerodynamicCoefficientConstant) = :implicit
 @inline solver_partition(::AerodynamicCoefficientfM) = :implicit
 @inline solver_partition(::AerodynamicCoefficientNoBallisticFlight) = :implicit
+
+# Internal bridge to thermal sampling. Built-in aero models own geometric
+# incidence. With no recognized owner, heating retains stored-angle inputs.
+@inline _thermal_incidence_mode(::Any) = nothing
+@inline _thermal_incidence_mode(::AerodynamicCoefficientConstant) = :max_drag
+@inline _thermal_incidence_mode(model::AerodynamicCoefficientfM) = model.fixed_attitude_incidence
+@inline _thermal_incidence_mode(::AerodynamicCoefficientNoBallisticFlight) = :max_drag
+
+# Peel the heterogeneous tuple so each effector keeps its concrete type; a
+# runtime loop boxes the models on every thermal/RHS sample.
+@inline _thermal_incidence_mode(effectors::Tuple, orientation_sim::Bool) =
+    _thermal_incidence_mode(effectors, orientation_sim, nothing)
+@inline _thermal_incidence_mode(::Tuple{}, ::Bool, mode) = mode
+
+@inline function _thermal_incidence_mode(effectors::Tuple, orientation_sim::Bool, mode)
+    candidate = _thermal_incidence_mode(first(effectors))
+    if candidate !== nothing
+        # Fixed-attitude policies are irrelevant when attitude is propagated.
+        orientation_sim && return :attitude
+        _validate_fm_incidence(candidate)
+        if mode !== nothing && mode !== candidate
+            throw(ArgumentError("Thermal incidence is ambiguous: aerodynamic effectors specify different fixed-attitude incidence modes."))
+        end
+        mode = candidate
+    end
+    return _thermal_incidence_mode(Base.tail(effectors), orientation_sim, mode)
+end
 
 @inline function _constant_drag_coefficient(alpha_rad::Float64)::Float64
     return 2 * (2.2 - 0.8) / pi * alpha_rad + 0.8
@@ -826,63 +947,58 @@ function calcForceTorque(model::AerodynamicCoefficientfM, x::AbstractVector{Floa
     cross_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
 
     started_ns = time_ns()
+    # Collect-then-sum over links: each link's wrench goes into its own slot
+    # (in parallel or not), then the slots are summed in link order on this
+    # thread, so the multibody aero wrench does not depend on the worker count.
+    n_links = length(bodies)
+    workspace = _aero_workspace_for_sat!(param, i, n_links)
+    slot_force = workspace.link_force
+    slot_drag = workspace.link_drag
+    slot_lift = workspace.link_lift
+    slot_cross = workspace.link_cross
+    slot_cl_area = workspace.link_cl_area
+    slot_cd_area = workspace.link_cd_area
+    slot_area = workspace.link_area
+    store_link! = idx -> begin
+        force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
+        @inbounds begin
+            slot_force[idx] = SVector{3, Float64}(force_body)
+            slot_drag[idx] = SVector{3, Float64}(drag_body)
+            slot_lift[idx] = SVector{3, Float64}(lift_body)
+            slot_cross[idx] = SVector{3, Float64}(cross_body)
+            slot_cl_area[idx] = cl_area
+            slot_cd_area[idx] = cd_area
+            slot_area[idx] = area
+        end
+        return nothing
+    end
     if use_threads
-        workspace = _aero_workspace_for_sat!(param, i, n_workers)
-        thread_force = workspace.thread_force
-        thread_drag = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
-        thread_lift = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
-        thread_cross = [MVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n_workers]
-        thread_cl = workspace.thread_cl
-        thread_cd = workspace.thread_cd
-        thread_area = workspace.thread_area
-        @inbounds for worker_id in 1:n_workers
-            thread_force[worker_id] .= 0.0
-            thread_drag[worker_id] .= 0.0
-            thread_lift[worker_id] .= 0.0
-            thread_cross[worker_id] .= 0.0
-            thread_cl[worker_id] = 0.0
-            thread_cd[worker_id] = 0.0
-            thread_area[worker_id] = 0.0
-        end
-
-        ParallelPolicy.threaded_foreach_worker_persistent(:rhs_aero, length(bodies), decision.allotment) do worker_id, idx
-            force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
-            thread_force[worker_id] .+= force_body
-            thread_drag[worker_id] .+= drag_body
-            thread_lift[worker_id] .+= lift_body
-            thread_cross[worker_id] .+= cross_body
-            thread_cl[worker_id] += cl_area
-            thread_cd[worker_id] += cd_area
-            thread_area[worker_id] += area
-        end
-
-        @inbounds for worker_id in 1:n_workers
-            force_ii .+= thread_force[worker_id]
-            drag_ii .+= thread_drag[worker_id]
-            lift_ii .+= thread_lift[worker_id]
-            cross_ii .+= thread_cross[worker_id]
-            CL += thread_cl[worker_id]
-            CD += thread_cd[worker_id]
-            total_area += thread_area[worker_id]
+        ParallelPolicy.threaded_foreach_worker_persistent(:rhs_aero, n_links, decision.allotment) do _, idx
+            store_link!(idx)
         end
     else
-        @inbounds for idx in eachindex(bodies)
-            force_body, drag_body, lift_body, cross_body, cl_area, cd_area, area = compute_link_wrench!(idx)
-            force_ii .+= force_body
-            drag_ii .+= drag_body
-            lift_ii .+= lift_body
-            cross_ii .+= cross_body
-            CL += cl_area
-            CD += cd_area
-            total_area += area
+        @inbounds for idx in 1:n_links
+            store_link!(idx)
         end
     end
+    @inbounds for idx in 1:n_links
+        force_ii .+= slot_force[idx]
+        drag_ii .+= slot_drag[idx]
+        lift_ii .+= slot_lift[idx]
+        cross_ii .+= slot_cross[idx]
+        CL += slot_cl_area[idx]
+        CD += slot_cd_area[idx]
+        total_area += slot_area[idx]
+    end
+    # Per satellite, and under satellite_batch on a Polyester worker task: pass
+    # the run's context rather than relying on task-local lookup.
     ParallelPolicy.record_policy_observation!(
         :multibody;
         mode=decision.mode,
         num_items=length(bodies),
         use_threads=use_threads,
-        elapsed_ns=(time_ns() - started_ns)
+        elapsed_ns=(time_ns() - started_ns),
+        ctx=ParallelPolicy.policy_context_hint(param)
     )
 
     if total_area > 0.0
@@ -1116,423 +1232,4 @@ function aerodynamic_coefficient_no_ballistic_flight(α, body, args, T=0, S=0, a
     end
 
     return CL_body, CD_body
-end
-
-"""
-    calculate_CA(t1, t2, t3, sin_α, cos_α, sin_β, cos_β, σ_T, σ_N, s, Tw, T_inf, θ)
-
-Calculates the expression C_A from the provided image.
-This version incorporates the clarification that θ is a scalar variable (an angle).
-
-Arguments:
-- t1, t2, t3: t₁, t₂, t₃
-- cos_α, sin_α, cos_β, sin_β: trig functions of angle of attack and sideslip angles (angles)
-- θ: theta (flow angle)
-- σ_T, σ_N: sigma_T, sigma_N
-- s: s
-- Tw: T_w (Wall Temperature)
-- T_inf: T_∞ (Temperature at infinity)
-"""
-function calculate_CA(t1, t2, t3, sin_α, cos_α, sin_β, cos_β, σ_T, σ_N, s, Tw, T_inf, θ)
-    # --- Pre-calculate common values ---
-    s_sq = s^2
-    sqrt_Tw_Tinf = sqrt(Tw / T_inf)
-
-    # --- Group 1: Terms 1 and 2 ---
-    s_sin_β = s * sin_β
-    erf_s_sin_β = erf(s_sin_β)
-    exp_s_sin_β_sq = exp(-s_sin_β^2)
-
-    paren_term_minus_1 = sqrt_π * s_sin_β * (erf_s_sin_β - 1) + exp_s_sin_β_sq
-    paren_term_plus_1 = sqrt_π * s_sin_β * (erf_s_sin_β + 1) + exp_s_sin_β_sq
-    
-    # Denominator simplifies because sqrt(sec(β)²) * abs(cos(β)) = 1
-    den1_2 = sqrt_π * s * t2
-    common_factor_1_2 = t1 * cos_α * cos_β * σ_T * θ
-    
-    term1 = (common_factor_1_2 * (-sin_β) * paren_term_minus_1) / den1_2
-    term2_frac = (common_factor_1_2 * sin_β * paren_term_plus_1) / den1_2
-
-    # --- Group 2: Terms 3 and 4 (no denominators) ---
-    s_ca_cb = s * cos_α * cos_β
-    erf_s_cacb = erf(s_ca_cb)
-    exp_s_cacb_sq = exp(-s_ca_cb^2)
-    s_sq_ca_sq_cb_sq = s_sq * cos_α^2 * cos_β^2
-    
-    # Term 3
-    exp_bracket3 = (s_ca_cb * (σ_N - 2)) / sqrt_π + 0.5 * σ_N * sqrt_Tw_Tinf
-    main_bracket3 = (1 - erf_s_cacb) * ((2 - σ_N) * (s_sq_ca_sq_cb_sq + 0.5) - 
-                    0.5 * sqrt_π * s_ca_cb * σ_N * sqrt_Tw_Tinf) + 
-                    exp_s_cacb_sq * exp_bracket3
-    term3 = 1/s_sq * θ * (-cos_α) * cos_β * main_bracket3
-    
-    # Term 4
-    exp_bracket4 = 0.5 * σ_N * sqrt_Tw_Tinf - (s_ca_cb * (σ_N - 2)) / sqrt_π
-    main_bracket4 = (erf_s_cacb + 1) * ((2 - σ_N) * (s_sq_ca_sq_cb_sq + 0.5) +
-                    0.5 * sqrt_π * s_ca_cb * σ_N * sqrt_Tw_Tinf) +
-                    exp_s_cacb_sq * exp_bracket4
-    term4 = 1/s_sq * θ * cos_α * cos_β * main_bracket4
-
-    # --- Group 3: Terms 5 and 6 ---
-    s_sa_cb = s * sin_α * cos_β
-    erf_s_sacb = erf(s_sa_cb)
-    exp_s_sacb_sq = exp(-s_sa_cb^2)
-
-    paren_term5 = sqrt_π * s_sa_cb * (erf_s_sacb - 1) + exp_s_sacb_sq
-    paren_term6 = sqrt_π * s_sa_cb * (erf_s_sacb + 1) + exp_s_sacb_sq
-
-    den5_6 = sqrt_π * s * t3
-    common_factor_5_6 = t1 * cos_α * cos_β * σ_T * θ
-    
-    term5 = (common_factor_5_6 * (-cos_β * sin_α) * paren_term5) / den5_6
-    term6 = (common_factor_5_6 * (cos_β * sin_α) * paren_term6) / den5_6
-
-    # --- Final Combination ---
-    # Based on the signs shown in the image:
-    # T1 + T2_frac - 1/s² - T3 + T4 + T5 + T6
-    Ca_result = term1 + term2_frac - term3 + term4 + term5 + term6
-    
-    return Ca_result
-end
-
-"""
-    calculate_CS(t1, t2, t3, θ, α, β, σ_T, σ_N, s, Tw, T_inf)
-
-Calculates the expression C_S from the provided image.
-
-Arguments:
-- t1, t2, t3: t₁, t₂, t₃
-- θ, α, β: theta, alpha, beta (angles)
-- σ_T, σ_N: sigma_T, sigma_N
-- s: s
-- Tw: T_w (Wall Temperature)
-- T_inf: T_∞ (Temperature at infinity)
-"""
-function calculate_CS(t1, t2, t3, θ, sin_α, cos_α, sin_β, cos_β, σ_T, σ_N, s, Tw, T_inf)
-    # --- Pre-calculate common values ---
-    s_sq = s^2
-    sqrt_Tw_Tinf = sqrt(Tw / T_inf)
-
-    # --- Group 1: Terms 1 and 2 ---
-    s_sin_β = s * sin_β
-    erf_s_sin_β = erf(s_sin_β)
-    exp_s_sin_β_sq = exp(-s_sin_β^2)
-    s_sq_sin_β_sq = s_sq * sin_β^2
-
-    # Term 1
-    exp_bracket1 = (s_sin_β * (σ_N - 2)) / sqrt_π + 0.5 * σ_N * sqrt_Tw_Tinf
-    main_bracket1 = (1 - erf_s_sin_β) * ((2 - σ_N) * s_sq_sin_β_sq + 0.5) -
-                    0.5 * sqrt_π * s_sin_β * σ_N * sqrt_Tw_Tinf +
-                    exp_s_sin_β_sq * exp_bracket1
-    num1 = t1 * θ * (-sin_β) * main_bracket1
-    den1_2 = s_sq * t2
-    term1 = num1 / den1_2
-
-    # Term 2
-    exp_bracket2 = 0.5 * σ_N * sqrt_Tw_Tinf - (s_sin_β * (σ_N - 2)) / sqrt_π
-    main_bracket2 = (erf_s_sin_β + 1) * ((2 - σ_N) * s_sq_sin_β_sq + 0.5) +
-                    0.5 * sqrt_π * s_sin_β * σ_N * sqrt_Tw_Tinf +
-                    exp_s_sin_β_sq * exp_bracket2
-    num2 = t1 * θ * sin_β * main_bracket2
-    term2 = num2 / den1_2
-
-    # --- Group 2: Terms 3 and 4 ---
-    s_ca_cb = s * cos_α * cos_β
-    erf_s_cacb = erf(s_ca_cb)
-    exp_s_cacb_sq = exp(-s_ca_cb^2)
-    
-    # Term 3
-    paren_term3 = sqrt_π * s_ca_cb * (erf_s_cacb - 1) + exp_s_cacb_sq
-    num3 = sin_β * σ_T * θ * (-cos_α * cos_β) * paren_term3
-    den3_4 = sqrt_π * s
-    term3 = num3 / den3_4
-
-    # Term 4
-    paren_term4 = sqrt_π * s_ca_cb * (erf_s_cacb + 1) + exp_s_cacb_sq
-    num4 = sin_β * σ_T * θ * (cos_α * cos_β) * paren_term4
-    term4 = num4 / den3_4
-
-    # --- Group 3: Terms 5 and 6 ---
-    s_sa_cb = s * sin_α * cos_β
-    erf_s_sacb = erf(s_sa_cb)
-    exp_s_sacb_sq = exp(-s_sa_cb^2)
-
-    paren_term5 = sqrt_π * s_sa_cb * (erf_s_sacb - 1) + exp_s_sacb_sq
-    paren_term6 = sqrt_π * s_sa_cb * (erf_s_sacb + 1) + exp_s_sacb_sq
-
-    den5_6 = sqrt_π * s * t3
-    common_factor_5_6_num = t1 * sin_β * σ_T * θ
-    
-    num5 = common_factor_5_6_num * (-cos_β * sin_α) * paren_term5
-    term5 = num5 / den5_6
-
-    num6 = common_factor_5_6_num * (cos_β * sin_α) * paren_term6
-    term6 = num6 / den5_6
-    
-    # --- Final Combination ---
-    # Based on the signs shown at the start and end of each line in the image
-    Cs_result = -term1 + term2 + term3 + term4 + term5 + term6
-    
-    return Cs_result
-end
-
-"""
-    calculate_CN(t1, t2, t3, θ, α, β, σ_T, σ_N, s, Tw, T_inf)
-
-Calculates the expression C_N from the provided image.
-
-Arguments:
-- t1, t2, t3: t₁, t₂, t₃
-- θ, α, β: theta, alpha, beta (angles)
-- σ_T, σ_N: sigma_T, sigma_N
-- s: s
-- Tw: T_w (Wall Temperature)
-- T_inf: T_∞ (Temperature at infinity)
-"""
-function calculate_CN(t1, t2, t3, θ, sin_α, cos_α, sin_β, cos_β, σ_T, σ_N, s, Tw, T_inf)
-    # --- Pre-calculate common values ---
-    s_sq = s^2
-    sqrt_Tw_Tinf = sqrt(Tw / T_inf)
-
-    # --- Group 1: Terms 1 and 2 ---
-    s_sin_β = s * sin_β
-    erf_s_sin_β = erf(s_sin_β)
-    exp_s_sin_β_sq = exp(-s_sin_β^2)
-
-    paren_term_minus_1 = sqrt_π * s_sin_β * (erf_s_sin_β - 1) + exp_s_sin_β_sq
-    paren_term_plus_1 = sqrt_π * s_sin_β * (erf_s_sin_β + 1) + exp_s_sin_β_sq
-    
-    # Denominator simplifies because sqrt(sec(β)²) * abs(cos(β)) = 1
-    den1_2 = sqrt_π * s * t2
-    common_factor_1_2_num = t1 * sin_α * cos_β * σ_T * θ
-    
-    num1 = common_factor_1_2_num * (-sin_β) * paren_term_minus_1
-    term1 = num1 / den1_2
-
-    num2_frac = common_factor_1_2_num * sin_β * paren_term_plus_1
-    term2_frac = num2_frac / den1_2
-    term2_sub = 1 / (s_sq * t3)
-
-    # --- Group 2: Terms 3 and 4 ---
-    s_sa_cb = s * sin_α * cos_β
-    erf_s_sacb = erf(s_sa_cb)
-    exp_s_sacb_sq = exp(-s_sa_cb^2)
-    s_sq_sa_sq_cb_sq = s_sq * sin_α^2 * cos_β^2
-
-    # Term 3
-    exp_bracket3 = (s_sa_cb * (σ_N - 2)) / sqrt_π + 0.5 * σ_N * sqrt_Tw_Tinf + 1 / (s_sq * t3)
-    main_bracket3 = (1 - erf_s_sacb) * ((2 - σ_N) * s_sq_sa_sq_cb_sq - 0.5) -
-                    0.5 * sqrt_π * s_sa_cb * σ_N * sqrt_Tw_Tinf +
-                    exp_s_sacb_sq * exp_bracket3
-    term3 = t1 * θ * (-cos_β * sin_α) * main_bracket3
-    
-    # Term 4
-    exp_bracket4 = 0.5 * σ_N * sqrt_Tw_Tinf - (s_sa_cb * (σ_N - 2)) / sqrt_π
-    main_bracket4 = (erf_s_sacb + 1) * ((2 - σ_N) * s_sq_sa_sq_cb_sq + 0.5) +
-                    0.5 * sqrt_π * s_sa_cb * σ_N * sqrt_Tw_Tinf +
-                    exp_s_sacb_sq * exp_bracket4
-    term4 = t1 * θ * (cos_β * sin_α) * main_bracket4
-
-    # --- Group 3: Terms 5 and 6 ---
-    s_ca_cb = s * cos_α * cos_β
-    erf_s_cacb = erf(s_ca_cb)
-    exp_s_cacb_sq = exp(-s_ca_cb^2)
-
-    paren_term5 = sqrt_π * s_ca_cb * (erf_s_cacb - 1) + exp_s_cacb_sq
-    paren_term6 = sqrt_π * s_ca_cb * (erf_s_cacb + 1) + exp_s_cacb_sq
-    
-    den5_6 = sqrt_π * s
-    common_factor_5_6_num = sin_α * cos_β * σ_T * θ
-
-    num5 = common_factor_5_6_num * (-cos_α * cos_β) * paren_term5
-    term5 = num5 / den5_6
-    
-    num6 = common_factor_5_6_num * (cos_α * cos_β) * paren_term6
-    term6 = num6 / den5_6
-    
-    # --- Final Combination ---
-    # Based on the signs shown in the image: 
-    # T1 + T2_frac - 1/(s²t₃) - T3 + T4 + T5 + T6
-    Cn_result = term1 + term2_frac - term2_sub - term3 + term4 + term5 + term6
-    
-    return Cn_result
-end
-
-"""
-    calculate_Cl(σ_T, s, α, β, θ)
-
-Calculates the expression C_L from the provided image.
-
-Arguments:
-- σ_T: sigma_T
-- s: s
-- α, β, θ: alpha, beta, theta (angles)
-"""
-function calculate_Cl(σ_T, s, sin_α, cos_α, sin_β, cos_β, θ)
-    # --- Pre-calculate common values ---
-
-    # --- Calculation for the "Top Part" (first three lines) ---
-    # This part is structured as: ( sin(β) * [ ... ] ) - 1/(sqrt(π)*|cos(β)|)
-    
-    s_sa_cb = s * sin_α * cos_β
-    erf_s_sacb = erf(s_sa_cb)
-    exp_s_sacb_sq = exp(-s_sa_cb^2)
-
-    # The two θ terms can be combined and simplified algebraically:
-    # θ(-x)A + θ(x)B = -θx A + θx B = θx(B - A)
-    paren_A = s_sa_cb * erf_s_sacb + exp_s_sacb_sq / sqrt_π - s_sa_cb
-    paren_B = -s_sa_cb * erf_s_sacb - exp_s_sacb_sq / sqrt_π - s_sa_cb
-    
-    term_in_paren_top = paren_B - paren_A # This simplifies to -2*s_sa_cb*erf - 2*exp/sqrt_π
-    
-    # Note: θ(-cos(β)sin(α)) becomes -θ*cos(β)sin(α) etc.
-    sub_part_1 = sin_β * (θ * cos_β * sin_α * term_in_paren_top)
-    
-    sub_part_2 = 1 / (sqrt_π * abs(cos_β))
-    
-    top_part = sub_part_1 #- sub_part_2
-
-    # --- Calculation for the "Bottom Part" (last three lines) ---
-    # This is structured as: [prefactors] * ( θ(-sinβ)[...] - θ(sinβ)[...] )
-    s_sin_β = s * sin_β
-    exp_s_sin_β_sq_neg = exp(-s_sin_β^2)
-    
-    # Note: sqrt(sec(β)²) simplifies to 1/abs(cos(β))
-    prefactor_bottom = sin_α * cos_β^3 * (1 / abs(cos_β)) * exp_s_sin_β_sq_neg
-
-    # The bracketed terms can also be simplified:
-    exp_s_sin_β_sq_pos = exp(s_sin_β^2)
-    erf_s_sin_β = erf(s_sin_β)
-    common_in_brackets = sqrt_π * s_sin_β * exp_s_sin_β_sq_pos * erf_s_sin_β
-    
-    bracket_A = common_in_brackets + sqrt_π * s_sin_β * (-exp_s_sin_β_sq_neg + 1)
-    bracket_B = common_in_brackets + sqrt_π * s_sin_β * (exp_s_sin_β_sq_neg + 1)
-    
-    # θ(-sinβ)A - θ(sinβ)B = -θ*sinβ*A - θ*sinβ*B = -θ*sinβ*(A + B)
-    sum_of_brackets = bracket_A + bracket_B # Simplifies to 2*common + 2*sqrt(π)*s_sin_β
-
-    main_paren_bottom = -θ * sin_β * sum_of_brackets
-
-    bottom_part = prefactor_bottom * main_paren_bottom
-    
-    # --- Final Combination ---
-    total_inside_braces = top_part - sub_part_2 * bottom_part
-    
-    Cl_result = (1 / (2 * s)) * σ_T * total_inside_braces
-    
-    return Cl_result
-end
-
-"""
-    calculate_Cm(σ_T, s, α, β, θ)
-
-Calculates the expression C_m from the provided image.
-
-Arguments:
-- σ_T: sigma_T
-- s: s
-- α, β, θ: alpha, beta, theta (angles)
-"""
-function calculate_Cm(σ_T, s, sin_α, cos_α, sin_β, cos_β, θ)
-    # --- Pre-calculate common values ---
-
-    # --- Define arguments for the two main patterns ---
-    arg1 = s * sin_α * cos_β
-    arg2 = s * cos_α * cos_β
-
-    # --- Term 1 ---
-    erf_arg1 = erf(arg1)
-    exp_arg1_sq = exp(-arg1^2)
-    
-    # NOTE: The structure of this parenthesis is unusual compared to the others.
-    # It is translated literally as it appears in the image.
-    paren1 = sin_α * cos_β - sin_α * cos_β * erf_arg1 - exp_arg1_sq / (sqrt_π * s)
-    # term1 = cos_α * (θ * (-cos_β * sin_α)) * paren1
-
-    # --- Term 2 ---
-    paren2 = arg1 * erf_arg1 + exp_arg1_sq / sqrt_π + arg1
-    # term2 = (1/s) * cos_α * (θ * (cos_β * sin_α)) * paren2
-
-    # --- Term 3 ---
-    erf_arg2 = erf(arg2)
-    exp_arg2_sq = exp(-arg2^2)
-    
-    paren3 = arg2 * erf_arg2 + exp_arg2_sq / sqrt_π - arg2
-    # term3 = sin_α * (θ * (-cos_α * cos_β)) * paren3
-
-    # --- Term 4 ---
-    # NOTE: This term is not prefixed by sin(α), unlike its counterpart, Term 3.
-    # This asymmetry is preserved from the image.
-    paren4 = -arg2 * erf_arg2 - exp_arg2_sq / sqrt_π - arg2
-    term4 = (θ * (cos_α * cos_β)) * paren4
-
-    # --- Final Combination ---
-    total_sum = cos_α*θ*(-cos_β*sin_α)*paren1 + 1/s*(cos_α*θ*cos_β*cos_α*paren2 + sin_α*(θ * (-cos_α * cos_β) * paren3 + term4))
-    
-    Cm_result = 0.5 * cos_β * σ_T * total_sum
-    
-    return Cm_result
-end
-
-"""
-    calculate_Cn(σ_T, s, α, β, θ)
-
-Calculates the expression C_n from the provided image.
-
-Arguments:
-- σ_T: sigma_T
-- s: s
-- α, β, θ: alpha, beta, theta (angles)
-"""
-function calculate_Cn(σ_T, s, sin_α, cos_α, sin_β, cos_β, θ)
-    # --- Pre-calculate common values ---
-    s_sq = s^2
-    abs_cos_β = abs(cos_β)
-
-    # --- Define common exponential terms ---
-    exp_arg_cos_term = s_sq * cos_α^2 * cos_β^2
-    exp_arg_sin_term = s_sq * sin_β^2
-    
-    exp_cos_pos = exp(exp_arg_cos_term)
-    exp_cos_neg = exp(-exp_arg_cos_term)
-    exp_sin_pos = exp(exp_arg_sin_term)
-    
-    exp_main_pos = exp(exp_arg_cos_term + exp_arg_sin_term)
-    exp_main_neg = exp(-(exp_arg_cos_term + exp_arg_sin_term))
-
-    # --- Outer Factor ---
-    outer_factor = (1 / (2 * sqrt_π * s * abs_cos_β)) * σ_T * exp_main_neg
-
-    # --- Part 1: Terms factored by (-sin(β)|cos(β)|) ---
-    s_ca_cb = s * cos_α * cos_β
-    
-    # The two θ terms inside the first main parenthesis can be combined and simplified.
-    # The structure is prop. to θ*cosαcosβ * (Paren_B - Paren_A)
-    # (Paren_B - Paren_A) simplifies to: 2 * sqrt(π) * s_ca_cb * exp(-s²cos²αcos²β)
-    diff_paren_AB = 2 * sqrt_π * s_ca_cb * exp_cos_neg
-    combo_AB = θ * cos_α * cos_β * diff_paren_AB
-    
-    part1 = (-sin_β * abs_cos_β) * combo_AB
-    
-    # --- Part 2: Terms factored by (cos³(β)sqrt(sec²(β))) ---
-    s_sin_β = s * sin_β
-    erf_s_sinb = erf(s_sin_β)
-
-    # The two θ terms inside the second main parenthesis can also be simplified.
-    # The structure is prop. to -θ*sinβ * (Paren_C + Paren_D)
-    # (Paren_C + Paren_D) simplifies to: 
-    # 2 * (sqrt(π)*s*sinβ*erf(s*sinβ)*exp_main_pos + exp(s²cos²αcos²β))
-    sum_paren_CD = 2 * (sqrt_π * s_sin_β * erf_s_sinb * exp_main_pos + exp_cos_pos)
-    combo_CD = θ * (-sin_β) * sum_paren_CD
-    
-    # Prefactor for Part 2 simplifies: cos³(β)sqrt(sec²(β)) = cos³(β)/|cos(β)|
-    prefactor2 = cos_β^3 / abs_cos_β
-    part2 = prefactor2 * combo_CD
-
-    # --- Final Combination ---
-    total_sum_in_brackets = part1 + part2
-    
-    Cn_result = outer_factor * total_sum_in_brackets
-    
-    return Cn_result
 end

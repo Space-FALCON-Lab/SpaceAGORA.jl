@@ -8,10 +8,19 @@ reverted to keep this repo mergeable with its upstream):
   which raw-includes the numbered `test/suites/01..09_*.jl` legacy suites into
   its own shared scope (mock models, builder helpers) — this is still the
   canonical default-entrypoint path, not yet split up.
+  The harness loads the package (`using SpaceAGORA`) and binds
+  `SimulationModel`, `SimulationEngine`, `TelemetryVerification`, the parallel
+  modules and a handful of frame helpers as aliases into it, so there is one
+  copy of every module in the process. It does not include `src/`; the one
+  exception is `src/mission/operations/maneuver_plans.jl`, which is not part
+  of the package. Suites 01 and 03 deliberately raw-include source files into
+  throwaway sandbox modules to test standalone loading — keep those.
 - `test/unit/`
   A smaller, standalone (`using SpaceAGORA`, no shared-scope dependency) set of
-  domain tests, separate from and not included by the default `test/runtests.jl`
-  chain — run via `test/unit/runtests.jl`.
+  domain tests, runnable on their own via `test/unit/runtests.jl`. The default
+  `test/runtests.jl` chain also runs the whole tree once, as a subprocess
+  dispatched from `test/suites/09_probe_drivers.jl` with the coverage flag
+  forwarded, so their line data reaches the coverage gate.
 - `test/integration/`
   Current home of the legacy end-to-end harness (mock models, builder helpers,
   `test/suites/` includes) plus example, persistence, CLI, and telemetry-facing
@@ -30,13 +39,21 @@ reverted to keep this repo mergeable with its upstream):
   Coverage quality gate plus two runtime-analysis gates. The probe suites it
   measures coverage of live in `test/probes/`, not here.
 - `test/probes/`
-  Standalone (`using SpaceAGORA`) coverage-targeted probe files. Three are
-  raw-included directly from `test/suites/05_thruster_control_and_quality_tests.jl`;
+  Standalone (`using SpaceAGORA`) coverage-targeted probe files. Four are
+  raw-included directly from `test/suites/05_thruster_control_and_quality_tests.jl`
+  (`coverage_r6_routing_probes.jl` among them, because its calibration probes
+  need that suite's multi-satellite fixtures);
   most of the rest are dispatched as subprocesses from
   `test/suites/09_probe_drivers.jl`, every run (not just under coverage).
   `coverage_threaded_probes.jl` is the one exception — its
   `test/suites/02_callbacks_parallel_and_smoke_tests.jl` driver only
   dispatches it when running with `--code-coverage=user`.
+  Every probe bootstraps the same way as the harness (`using SpaceAGORA` plus
+  module aliases), so a probe subprocess starts from the precompiled package
+  instead of recompiling `src/`. GRAM-backed probe checks need the
+  `SpaceAGORAGRAMSuiteExt` extension to load, which requires a vendored
+  `data/GRAMSuite.jl` checkout that provides the hooks the extension expects
+  (CI uses the dev submodule); otherwise they skip with an info message.
 - `test/helpers/`
   Currently unused (placeholder); no shared harness code lives here.
 

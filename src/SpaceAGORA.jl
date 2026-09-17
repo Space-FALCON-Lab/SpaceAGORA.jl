@@ -218,7 +218,8 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.make_no_gram_planet) make_no_gram_planet
 @doc (@doc SimulationModel.make_no_gram_density_model) make_no_gram_density_model
 @doc (@doc SimulationModel.make_no_gram_environment) make_no_gram_environment
-@doc (@doc SimulationModel.calcForceTorque) calcForceTorque
+# Copy canonical hook text into fresh documentation metadata for the root binding.
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.calcForceTorque)).text) calcForceTorque
 @doc (@doc SimulationModel.wrench) wrench
 @doc (@doc SimulationModel.environment_requirements) environment_requirements
 @doc (@doc SimulationModel.solver_partition) solver_partition
@@ -228,9 +229,19 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.gravity_backbone_kick_acceleration_ii) gravity_backbone_kick_acceleration_ii
 @doc (@doc SimulationModel.getDensity) getDensity
 @doc (@doc SimulationModel.getDensityBatch!) getDensityBatch!
-@doc (@doc SimulationModel.calcControlEffect!) calcControlEffect!
-@doc (@doc SimulationModel.calcControlForceTorque) calcControlForceTorque
-@doc (@doc SimulationModel.calcControlMassFlowRate) calcControlMassFlowRate
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!(
+    ::SimulationModel.ControlHooks.BaseThrusterModel,
+    ::SimulationModel.ControlHooks.ComponentVector,
+    ::SimulationModel.ODEParams, ::Float64, ::Int64,
+))).text) calcControlEffect!
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlForceTorque(
+    ::SimulationModel.ControlHooks.BaseThrusterModel,
+    ::AbstractVector, ::SimulationModel.ODEParams, ::Int64, ::Float64,
+))).text) calcControlForceTorque
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlMassFlowRate(
+    ::SimulationModel.AbstractTypes.AbstractControlEffectorModel,
+    ::AbstractVector, ::SimulationModel.ODEParams, ::Int64, ::Float64,
+))).text) calcControlMassFlowRate
 
 # 3.4. RPO Station Assets
 @doc (@doc RPOStationAssets.station_geometry_path) station_geometry_path

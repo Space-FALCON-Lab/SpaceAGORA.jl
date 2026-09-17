@@ -148,7 +148,7 @@ module SimConfig
 
     # 2.6. Mission Configuration
     # i) Struct
-    struct MissionConfiguration 
+    struct MissionConfiguration
         # Mission setup
         mission_type::MissionType # Indicator of the termination condition type (Time, number of orbits, etc.)
         keplerian::Bool # Whether to include step 2 (drag passage) as separate step or keep same integration parameters the whole time
@@ -157,7 +157,7 @@ module SimConfig
         orientation_sim::Bool # Whether to simulate orientation dynamics (if false, only position and velocity are simulated)
         num_steps_to_save::Int # Number of time steps to store in memory during the simulation before writing to a file
         data_rate::Float64 # Fixed data output rate in seconds, used for saveat in solve
-    
+
         # ii) Inner constructor with data type conversion and validation
         function MissionConfiguration(
             mission_type::MissionType,

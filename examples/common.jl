@@ -9,10 +9,28 @@ end # If Julia is not already using this project’s environment, switch to it
 
 ## 2. Load SpaceAGORA and its submodules
 using SpaceAGORA
-using SpaceAGORA: SimulationEngine, RuntimeServices, run_simulation
-using SpaceAGORA.SimulationModel; using SpaceAGORA: SimulationModel as SM
-using SpaceAGORA.SimulationModel: quat_mult
-using SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
+# Keep local aliases: study modules may define the same constants before or
+# after including this helper. Imported bindings cannot be redeclared that way.
+if !isdefined(@__MODULE__, :SimulationEngine)
+    const SimulationEngine = SpaceAGORA.SimulationEngine
+end
+if !isdefined(@__MODULE__, :SimulationModel)
+    const SimulationModel = SpaceAGORA.SimulationModel
+end
+if !isdefined(@__MODULE__, :RuntimeServices)
+    const RuntimeServices = SpaceAGORA.RuntimeServices
+end
+using .SimulationModel
+if !isdefined(@__MODULE__, :SM)
+    const SM = SimulationModel
+end
+if !isdefined(@__MODULE__, :run_simulation)
+    const run_simulation = SpaceAGORA.run_simulation
+end
+if !isdefined(@__MODULE__, :quat_mult)
+    const quat_mult = SimulationModel.quat_mult
+end
+import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
 
 
 ## 3. SPICE Helper Functions

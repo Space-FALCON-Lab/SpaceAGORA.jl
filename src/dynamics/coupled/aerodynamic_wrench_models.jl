@@ -111,8 +111,9 @@ end
 Free-molecular aerodynamics from the Hart et al. closed forms (rectangular
 prism, doi 10.2514/1.A33606), evaluated per link and summed.
 
-`fixed_attitude_incidence` selects how link incidence is treated when
-`orientation_sim=false` (it has no effect when attitude is simulated):
+`fixed_attitude_incidence` selects the link incidence used by both aerodynamics
+and heating when `orientation_sim=false`. When attitude is propagated, both
+use the current spacecraft and link geometry instead:
 
 - `:max_drag` (default, historical behavior): every link is treated as
   flow-normal and charged its full `ref_area` — the spacecraft permanently
@@ -315,6 +316,33 @@ end
 @inline solver_partition(::AerodynamicCoefficientConstant) = :implicit
 @inline solver_partition(::AerodynamicCoefficientfM) = :implicit
 @inline solver_partition(::AerodynamicCoefficientNoBallisticFlight) = :implicit
+
+# Internal bridge to thermal sampling. Built-in aero models own geometric
+# incidence. With no recognized owner, heating retains stored-angle inputs.
+@inline _thermal_incidence_mode(::Any) = nothing
+@inline _thermal_incidence_mode(::AerodynamicCoefficientConstant) = :max_drag
+@inline _thermal_incidence_mode(model::AerodynamicCoefficientfM) = model.fixed_attitude_incidence
+@inline _thermal_incidence_mode(::AerodynamicCoefficientNoBallisticFlight) = :max_drag
+
+# Peel the heterogeneous tuple so each effector keeps its concrete type; a
+# runtime loop boxes the models on every thermal/RHS sample.
+@inline _thermal_incidence_mode(effectors::Tuple, orientation_sim::Bool) =
+    _thermal_incidence_mode(effectors, orientation_sim, nothing)
+@inline _thermal_incidence_mode(::Tuple{}, ::Bool, mode) = mode
+
+@inline function _thermal_incidence_mode(effectors::Tuple, orientation_sim::Bool, mode)
+    candidate = _thermal_incidence_mode(first(effectors))
+    if candidate !== nothing
+        # Fixed-attitude policies are irrelevant when attitude is propagated.
+        orientation_sim && return :attitude
+        _validate_fm_incidence(candidate)
+        if mode !== nothing && mode !== candidate
+            throw(ArgumentError("Thermal incidence is ambiguous: aerodynamic effectors specify different fixed-attitude incidence modes."))
+        end
+        mode = candidate
+    end
+    return _thermal_incidence_mode(Base.tail(effectors), orientation_sim, mode)
+end
 
 @inline function _constant_drag_coefficient(alpha_rad::Float64)::Float64
     return 2 * (2.2 - 0.8) / pi * alpha_rad + 0.8

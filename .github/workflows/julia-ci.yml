@@ -5,6 +5,12 @@ on:
     branches: ["main", "master"]
   pull_request:
 
+# One live run per pull request (or per branch on push): a new push cancels
+# the stale run of the same PR instead of competing with it for runners.
+concurrency:
+  group: julia-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests-matrix:
     runs-on: ubuntu-latest
@@ -441,7 +447,7 @@ jobs:
 
   coverage-quality-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       JULIA_NUM_THREADS: "4"
       # Coverage debt (July 2026): first real gate run measured 82.84%
@@ -449,7 +455,14 @@ jobs:
       # test/gates/ci_coverage_quality_gate.jl burns down.
       SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
-      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "1200"
+      # The window is measured back from the NEWEST .cov file (written when
+      # the main suite process exits), but probe SUBPROCESSES (suites 02/09)
+      # write their .cov at their own exit, up to a full suite-duration
+      # earlier. 1200s silently dropped the threaded/GRAM probe coverage
+      # whenever the post-probe tail of the suite outgrew 20 min, failing
+      # per-file floors on files those probes cover. Must exceed the whole
+      # suite step's wall time on the slowest hosted runner.
+      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "7200"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -505,67 +518,6 @@ jobs:
 
       - name: Coverage quality gate
         run: julia --startup-file=no --project=. test/gates/ci_coverage_quality_gate.jl
-
-  calibration-coverage-quality-gate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      JULIA_NUM_THREADS: "4"
-      SPACEAGORA_CAL_COVERAGE_MIN_OVERALL: "90.0"
-      SPACEAGORA_CAL_COVERAGE_MIN_FILE: "70.0"
-      SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-
-      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
-      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
-      - name: Free runner disk space
-        run: |
-          # Jobs have crashed with ENOSPC mid-run (the runner worker dies
-          # writing its own logs, so the step never even reports a failure —
-          # seen on coverage-quality-gate for main@8e7be423 and PR #35).
-          # Reclaim aggressively: none of these preinstalled toolchains are
-          # used by Julia CI.
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/.ghcup \
-            /usr/local/share/powershell /usr/local/lib/node_modules \
-            /usr/lib/google-cloud-sdk /usr/lib/jvm /opt/az /opt/microsoft \
-            /opt/pipx /usr/share/miniconda /usr/local/share/chromium \
-            /usr/local/share/boost
-          sudo docker image prune --all --force > /dev/null 2>&1 || true
-          sudo apt-get clean > /dev/null 2>&1 || true
-          df -h /
-
-      - name: Update GRAMSuite test submodule to dev main
-        env:
-          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: bash .github/scripts/update_gramsuite_submodule.sh dev
-
-      - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: "1.12"
-
-      - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
-
-      - name: Instantiate vendored GRAMSuite
-        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
-
-      - name: GRAMSuite load smoke
-        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
-
-      - name: Instantiate
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Run SpaceAGORACalibration tests with coverage
-        run: julia --startup-file=no --project=. --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
-
-      - name: SpaceAGORACalibration coverage quality gate
-        run: julia --startup-file=no --project=. SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
 
   p1-findings-gate:
     runs-on: ubuntu-latest

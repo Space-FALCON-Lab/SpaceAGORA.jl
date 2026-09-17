@@ -196,7 +196,7 @@ run_simulation(config; isolate_state=false)   # fast: config must not be shared 
 **Symptom:** `NRLMSISE00AtmosphereModel(use_space_indices=true)` errors on the
 first atmosphere evaluation with a network or download error.
 
-**Cause:** `SpaceIndices` (via `SatelliteToolbox`) needs to download CelesTrak
+**Cause:** `SpaceIndices.jl` needs to download CelesTrak
 space weather data on first use, and the download failed.
 
 **Resolution:** Run the prewarm step manually with network access before

@@ -63,6 +63,22 @@ const DEFAULT_DEORBIT_BAILOUT = true
 const DEFAULT_DEORBIT_BAILOUT_MARGIN_KM = 25.0
 const DEFAULT_DEORBIT_BAILOUT_CHECK_DT_S = 30.0
 
+# Shared by the producer and the density-history backfill. Existing campaigns
+# used this SPICE frame and UTC epoch before frame metadata was recorded.
+_study_frame_configuration() = (
+    ephemerides_model=SM.SpiceEphemeridesModel(),
+    initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+)
+
+function _study_frame_metadata()
+    frame = _study_frame_configuration()
+    return Dict(
+        "ephemerides_model" => "SpiceEphemeridesModel",
+        "initial_time" => Dict(String(name) => getfield(frame.initial_time, name)
+            for name in fieldnames(typeof(frame.initial_time))),
+    )
+end
+
 @inline _timestamp() = Dates.format(now(), "HH:MM:SS")
 
 @inline function _sample_field(sample::NamedTuple, key::Symbol, default)
@@ -631,18 +647,8 @@ function _with_study_dtmax(
 )::SM.SimulationConfiguration
     dt_max_orbit_s > 0.0 || throw(ArgumentError("dt_max_orbit_s must be > 0; got $(dt_max_orbit_s)."))
     dt_max_atmosphere_s > 0.0 || throw(ArgumentError("dt_max_atmosphere_s must be > 0; got $(dt_max_atmosphere_s)."))
-    return SM.SimulationConfiguration(
-        file_paths=args.file_paths,
-        simulation_settings=args.simulation_settings,
-        mission_configuration=args.mission_configuration,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
+    return SM.SimConfig._with_configuration(args;
         integration_tolerances=_study_tolerances(args.integration_tolerances, dt_max_orbit_s, dt_max_atmosphere_s, tolerance_scale),
-        solver_config=args.solver_config,
     )
 end
 
@@ -664,11 +670,13 @@ function _make_config(sample::NamedTuple, results_directory::String, results::Bo
         auto_stiff_switch_max=_aero_auto_stiff_switch_max(sample),
     ) : nothing
 
+    frame = _study_frame_configuration()
     args = make_example_config(
         planet=planet,
         spacecraft=spacecraft,
         mission_time=mission_time,
-        initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        initial_time=frame.initial_time,
+        ephemerides_model=frame.ephemerides_model,
         dynamic_effectors=dynamic_effectors,
         density_model=density_model,
         orientation_sim=false,
@@ -792,48 +800,6 @@ function _elements_from_rv(pos::SVector{3, Float64}, vel::SVector{3, Float64}, �
     return (; a, e, inc, raan, argp, energy, rp=a * (1.0 - e), ra=a * (1.0 + e))
 end
 
-function _density_metrics(args, sol)
-    density_model = args.environment_model.density_model
-    if density_model isa NoAtmosphereModel
-        return (peak_density=0.0, integrated_density=0.0, max_dynamic_pressure=0.0, integrated_dynamic_pressure=0.0, time_below_interface_s=0.0)
-    end
-
-    planet = args.environment_model.planet
-    EI_m = args.environment_model.EI * 1e3
-    peak_density = 0.0
-    integrated_density = 0.0
-    max_dynamic_pressure = 0.0
-    integrated_dynamic_pressure = 0.0
-    time_below_interface_s = 0.0
-
-    for i in eachindex(sol.t)
-        pos, vel = _state_pos_vel(sol.u[i])
-        r = norm(pos)
-        alt = r - planet.Rp_e
-        lat = asind(clamp(pos[3] / r, -1.0, 1.0))
-        lon = atan(pos[2], pos[1]) * 180.0 / π
-        density_state = try
-            getDensity(density_model, Float64(alt), Float64(lat), Float64(lon), Float64(sol.t[i]), true)
-        catch
-            return (peak_density=NaN, integrated_density=NaN, max_dynamic_pressure=NaN, integrated_dynamic_pressure=NaN, time_below_interface_s=time_below_interface_s)
-        end
-        rho, _, wind = density_state
-        q = 0.5 * rho * norm(vel - wind)^2
-        peak_density = max(peak_density, rho)
-        max_dynamic_pressure = max(max_dynamic_pressure, q)
-        if i > 1
-            dt = sol.t[i] - sol.t[i - 1]
-            integrated_density += rho * dt
-            integrated_dynamic_pressure += q * dt
-            if alt <= EI_m
-                time_below_interface_s += dt
-            end
-        end
-    end
-
-    return (; peak_density, integrated_density, max_dynamic_pressure, integrated_dynamic_pressure, time_below_interface_s)
-end
-
 @inline function _state_mass_kg(u)::Float64
     sc = getproperty(u, :sc)[1]
     return Float64(getproperty(sc, :mass))
@@ -912,10 +878,19 @@ function _planet_frame_sample(args, state::SM.StateSample, t::Float64)
     et0 = SM.ephemerides_time_seconds(args.initial_time, ephemerides_model)
     et = et0 + t
     l_pi = SM.planet_frame_lpi(planet, et, ephemerides_model)
-    pos_pp = SVector{3, Float64}(l_pi * state.pos_ii)
-    vel_pp = SVector{3, Float64}(l_pi * (state.vel_ii - cross(planet.ω, state.pos_ii)))
+    pos_pp, vel_pp = SM.SimulationCallbacks._planet_relative_state(
+        state.pos_ii, state.vel_ii, planet, l_pi)
     alt, lat, lon = SM.SimulationCallbacks.rtolatlong(pos_pp, planet)
     return SM.PlanetFrameSample(l_pi, pos_pp, vel_pp, alt, lat, lon)
+end
+
+# getDensity returns local east/north/up wind, not planet-fixed Cartesian wind.
+# Use the same local basis as the aerodynamic wrench before subtracting it.
+function _dynamic_pressure(frame::SM.PlanetFrameSample, rho::Real, wind)
+    uD, uN, uE = SM.FrameTransforms.latlongtoNED((frame.alt_m, frame.lat_rad, frame.lon_rad))
+    wE, wN, wU = wind
+    wind_pp = wN * uN + wE * uE - wU * uD
+    return 0.5 * rho * norm(frame.vel_pp - wind_pp)^2
 end
 
 function _solar_sample(args, t::Float64)
@@ -1104,7 +1079,7 @@ function _stream_density_update!(
             return (; alt, rho=NaN, q=NaN, inside)
         end
         rho, _, wind = density_state
-        q = 0.5 * rho * norm(frame.vel_pp - wind)^2
+        q = _dynamic_pressure(frame, rho, wind)
         writer.peak_density = max(writer.peak_density, rho)
         writer.max_dynamic_pressure = max(writer.max_dynamic_pressure, q)
     end
@@ -1963,6 +1938,7 @@ function _manifest(spec::StudySpec, samples, outdir::String)
         "workers" => length(_aero_remote_workers()),
         "threads" => Threads.nthreads(),
         "output_dir" => outdir,
+        "frame" => _study_frame_metadata(),
         "spec" => Dict(
             "planets" => string.(spec.planets),
             "periapsis_regimes" => string.(spec.periapsis_regimes),

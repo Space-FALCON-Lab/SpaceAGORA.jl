@@ -50,10 +50,62 @@ const PP = SpaceAGORA.ParallelProfiles
         )
     end
 
-    @testset "adaptive campaign selects :process on a forced-large machine" begin
+    @testset "adaptive campaign selects :threads for analytic-density Monte Carlo" begin
+        # This testset used to be "selects :process on a forced-large machine",
+        # and it asserted the behaviour that made R4/R5 lose every Monte Carlo
+        # case in the benchmark catalog by +33% to +201% against the best static
+        # route. The Monte Carlo route rule preferred :process on any medium or
+        # large machine once the sample count or the SIMULATED mission time
+        # cleared a threshold, neither of which is a proxy for per-sample
+        # compute. Measured at 64 samples on 12 threads, process was 1.41x to
+        # 2.90x SLOWER than threads across five Monte Carlo cases spanning
+        # 0.038 s to 3.179 s of compute per sample -- no crossover anywhere in
+        # that range.
+        #
+        # An analytic-density campaign now routes to threads.
         tuning = PP.OuterRouteTuning(process_max_workers=2)
         state = PP.OuterRouteState()
         features = SC.campaign_route_features(samples=16, density_family="exponential", mission_time_s=1000.0)
+        result = withenv("SPACEAGORA_PERF_HARDWARE_CLASS" => "large") do
+            SC._run_campaign_adaptive(seed -> seed, 1:16; fail_fast=false, features=features, state=state, tuning=tuning)
+        end
+        @test result isa SC.MonteCarloResult
+        @test length(result.successful) == 16
+
+        sig = PP.outer_route_signature(features)
+        snap = PP.outer_route_stats_snapshot(state, sig)
+        # Which non-process route is taken depends on the thread count this
+        # suite happens to run under: with worker threads it is :threads, and on
+        # a single-threaded run threads_available is false and the rule falls
+        # through to :none. Both are correct and neither is :process, which is
+        # the property under test. Asking default_outer_route for the expected
+        # answer keeps this green at any thread count without weakening it.
+        expected = PP.default_outer_route(
+            features; tuning=tuning, machine_class=:large,
+            threads_available=(Threads.nthreads() > 1), parallel_enabled=true
+        )
+        @test expected in (:threads, :none)
+        @test haskey(snap, expected)
+        @test snap[expected].samples == 16
+        @test snap[expected].success_rate == 1.0
+        @test !haskey(snap, :process)
+        # The process route must remain a CANDIDATE even though it is no longer
+        # the default, or the bandit could never rediscover it where it wins.
+        @test :process in PP.outer_route_candidates(
+            features; tuning=tuning, machine_class=:large,
+            threads_available=true, parallel_enabled=true
+        )
+    end
+
+    @testset "adaptive campaign still selects :process for native GRAM density" begin
+        # Native GRAM is not thread-safe, so there the process route is a
+        # correctness requirement rather than a performance preference, and
+        # _is_native_gram_point_density decides it before the Monte Carlo rule
+        # above is consulted. This keeps the process path covered end-to-end now
+        # that analytic-density campaigns no longer exercise it.
+        tuning = PP.OuterRouteTuning(process_max_workers=2)
+        state = PP.OuterRouteState()
+        features = SC.campaign_route_features(samples=16, density_family="gram_point", mission_time_s=1000.0)
         result = withenv("SPACEAGORA_PERF_HARDWARE_CLASS" => "large") do
             SC._run_campaign_adaptive(seed -> seed, 1:16; fail_fast=false, features=features, state=state, tuning=tuning)
         end

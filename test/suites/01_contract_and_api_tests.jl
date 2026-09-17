@@ -652,18 +652,35 @@ end
         )
 
         fixed_nrl = NRLMSISE00AtmosphereModel(f107a=120.0, f107=130.0, ap=6.0)
-        expected_nrl_fixed = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+        expected_nrl_fixed = SatelliteToolboxAtmosphericModels.AtmosphericModels.nrlmsise00(
             dt_nrl, 400.0e3, 0.1, 0.2, 120.0, 130.0, 6.0
         )
-        rho_nrl_fixed, T_nrl_fixed, wind_nrl_fixed = getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, el_time_nrl, false)
-        @test isapprox(rho_nrl_fixed, expected_nrl_fixed.total_density; atol=0.0, rtol=1e-12)
-        @test isapprox(T_nrl_fixed, expected_nrl_fixed.temperature; atol=0.0, rtol=1e-12)
-        @test wind_nrl_fixed == SVector{3, Float64}(0.0, 0.0, 0.0)
+        # NRLMSISE-00 is calendar-dependent: the 6-arg form has no scenario
+        # epoch to anchor el_time and must refuse instead of silently
+        # evaluating at the J2000 reference epoch.
+        @test_throws ArgumentError getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, el_time_nrl, false)
 
         rho_nrl_rel, T_nrl_rel, wind_nrl_rel = getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, 0.0, false, p_nrl)
         @test isapprox(rho_nrl_rel, expected_nrl_fixed.total_density; atol=0.0, rtol=1e-12)
         @test isapprox(T_nrl_rel, expected_nrl_fixed.temperature; atol=0.0, rtol=1e-12)
         @test wind_nrl_rel == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+        # p.args.initial_time controls the evaluation epoch: the same query
+        # with initial_time moved to a different season (different day-of-year,
+        # NRLMSISE-00's seasonal input) must change the answer.
+        p_nrl_july = (
+            args=(
+                initial_time=InitialTime(year=2024, month=7, day=1, hour=0, minute=0, second=0.0),
+                environment_model=(planet=EARTH,),
+            ),
+        )
+        expected_nrl_july = SatelliteToolboxAtmosphericModels.AtmosphericModels.nrlmsise00(
+            DateTime(2024, 7, 1, 0, 0, 0), 400.0e3, 0.1, 0.2, 120.0, 130.0, 6.0
+        )
+        rho_nrl_july, T_nrl_july, _ = getDensity(fixed_nrl, 400.0e3, 0.1, 0.2, 0.0, false, p_nrl_july)
+        @test isapprox(rho_nrl_july, expected_nrl_july.total_density; atol=0.0, rtol=1e-12)
+        @test isapprox(T_nrl_july, expected_nrl_july.temperature; atol=0.0, rtol=1e-12)
+        @test !isapprox(rho_nrl_july, rho_nrl_rel; atol=0.0, rtol=1e-6)
 
         provider_hits = Ref(0)
         provider_nrl = NRLMSISE00AtmosphereModel(
@@ -672,10 +689,10 @@ end
                 return (f107a=95.0, f107=105.0, ap=[8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0])
             end
         )
-        expected_nrl_provider = SatelliteToolbox.AtmosphericModels.nrlmsise00(
+        expected_nrl_provider = SatelliteToolboxAtmosphericModels.AtmosphericModels.nrlmsise00(
             dt_nrl, 400.0e3, 0.1, 0.2, 95.0, 105.0, [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0]
         )
-        rho_nrl_provider, T_nrl_provider, wind_nrl_provider = getDensity(provider_nrl, 400.0e3, 0.1, 0.2, el_time_nrl, false)
+        rho_nrl_provider, T_nrl_provider, wind_nrl_provider = getDensity(provider_nrl, 400.0e3, 0.1, 0.2, 0.0, false, p_nrl)
         @test provider_hits[] == 1
         @test isapprox(rho_nrl_provider, expected_nrl_provider.total_density; atol=0.0, rtol=1e-12)
         @test isapprox(T_nrl_provider, expected_nrl_provider.temperature; atol=0.0, rtol=1e-12)
@@ -825,7 +842,7 @@ end
     @test ic.e == 0.0
 
     link = Link()
-    @test link isa Link{0}
+    @test link isa Link
 
     joint = Joint()
     @test joint isa Joint
@@ -834,7 +851,7 @@ end
     @test sc isa SpacecraftModel
     @test sc.root.root
 
-    custom_root = Link{0}(root=true, m=100.0)
+    custom_root = Link(root=true, m=100.0)
     sc_custom = SpacecraftModel(root=custom_root, id=42)
     @test sc_custom.id == 42
     @test sc_custom.root === custom_root
@@ -1056,6 +1073,56 @@ end
     sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 0.0
+end
+
+@testset "Guidance Sandbox: Periapsis Raise" begin
+    ensure_guidance_sandbox_loaded!()
+    sandbox = GUIDANCE_SANDBOX
+    planet = Earth()
+
+    # Exercise the raw-included helpers, not just the package's GuidanceHooks.
+    # Their shared Geodesy functions must be imported into this sandbox too.
+    direction = normalize(SVector(1.0, 0.0, -1.0))
+    radius = sandbox._radius_for_oblate_altitude(200e3, direction, planet)
+    @test sandbox._oblate_altitude_from_radius(radius, direction, planet) ≈ 200e3 atol=1e-3 rtol=0
+    @test sandbox._oblate_surface_radius(SVector(0.0, 0.0, 1.0), planet) ≈ planet.Rp_p atol=1e-6 rtol=0
+    @test isnan(sandbox._radius_for_oblate_altitude(-1.0, direction, planet))
+
+    # An equatorial orbit gives an independent radius = Rp_e + height oracle.
+    # A state inside the pre-apoapsis window must issue a prograde raise command.
+    args = build_config(
+        spacecraft=make_single_link_spacecraft(planet=planet,
+            ra_alt_m=500e3, rp_alt_m=100e3, i_deg=0.0,
+            ω_deg=0.0, Ω_deg=0.0, ν_deg=160.0),
+        planet=planet,
+        density_model=NoAtmosphereModel(),
+        ephemerides_model=SimpleEphemeridesModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        simulation_settings=SimulationSettings(results=false, verbose=false,
+            generate_plots=false, normalize=false)
+    )
+    p = ODEParams(n_sats=1, args=args)
+    p.orbit_counter[1] = 7
+    u = build_initial_conditions(args)
+    model = sandbox.ApoapsisTargetPeriapsisRaiseGuidanceModel(
+        target_apoapsis_radius_m=planet.Rp_e + 600e3,
+        target_periapsis_altitude_m=200e3
+    )
+    @test sandbox.calcGuidanceEffect!(model, u, p, 0.0, 1) === nothing
+    command = p.shared_buffers.maneuver_commands[1]
+    apoapsis = planet.Rp_e + 500e3
+    current_a = (apoapsis + planet.Rp_e + 100e3) / 2
+    target_a = (apoapsis + planet.Rp_e + 200e3) / 2
+    expected_delta_v = sqrt(planet.μ * (2 / apoapsis - 1 / target_a)) -
+                       sqrt(planet.μ * (2 / apoapsis - 1 / current_a))
+    @test command.valid
+    @test command.delta_v_mps > 0.0
+    @test command.delta_v_mps ≈ expected_delta_v atol=1e-8 rtol=0
+    @test command.direction_rad == 0.0
+    @test command.source_orbit == 7
 end
 
 @testset "Odyssey Maneuver Schedule Bridge" begin

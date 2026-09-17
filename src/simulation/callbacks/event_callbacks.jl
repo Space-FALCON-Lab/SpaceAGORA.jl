@@ -224,10 +224,16 @@ function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfi
         end
     end
 
+    # No before/after saves: the projection runs on every accepted step, and
+    # the step is saved once after the discrete callbacks have run, so the
+    # stored state is the projected one the next step starts from. With the
+    # DiscreteCallback default the solution held the pre- and post-projection
+    # states of every step as well.
     return DiscreteCallback(
         condition,
-        affect!,
-        initialize=(cb, u, t, integrator) -> affect!(integrator)
+        affect!;
+        initialize=(cb, u, t, integrator) -> affect!(integrator),
+        save_positions=(false, false)
     )
 end
 
@@ -244,26 +250,4 @@ function get_data_saving_callback(
     data_rate = args.mission_configuration.data_rate
     data_rate > 0.0 || throw(ArgumentError("mission_configuration.data_rate must be > 0.0, got $data_rate."))
     return SavingCallback(save_func, saved_values; saveat=data_rate, save_everystep=false)
-end
-
-
-function get_periapsis_save_callback(num_sats::Int)
-    function condition!(out, u, t, integrator)
-        @inbounds for i in 1:num_sats
-            OE = rvtoorbitalelement(
-                _simulation_engine_module()._state_position_ii(u, i),
-                _simulation_engine_module()._state_velocity_ii(u, i),
-                integrator.p.args.environment_model.planet
-            )
-            out[i] = OE[6] # Return the true anomaly (ν) which is zero at periapsis
-        end
-    end
-
-    function affect!(integrator, idx::Int64)
-        if callback_verbose(integrator)
-            println("Periapsis reached for Satellite $idx at time $(integrator.t) seconds!")
-        end
-    end
-
-    return VectorContinuousCallback(condition!, affect!, nothing, num_sats)
 end

@@ -27,6 +27,14 @@ If you only need to check that the benchmark path works, run:
 julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
 ```
 
+All benchmark and study launchers, through the CLI or run directly with
+`--project=.`, need the `data/GRAMSuite.jl` submodule
+([GRAMSuite Setup](gramsuite_setup.md)); the GRAM-backed benchmark cases also
+need the native GRAM library built. Without the submodule the command stops
+with "Package GRAMSuite not found in current path". The CLI runs its child
+under the repository project, so nothing else is needed beyond
+`Pkg.instantiate()`.
+
 If you need telemetry verification outputs, run:
 
 ```text
@@ -119,6 +127,12 @@ Run [GRAMSuite Setup](gramsuite_setup.md) before using GRAM-backed studies.
 | Performance support | `performance_effector_reduction_microbench.jl`, `performance_split_imex_compare.jl`, `performance_static_vs_parallel.jl`, `performance_thread_scaling_1024.jl`, `performance_thread_scaling_64_aero_gram.jl`, `performance_hybrid_scaling_64_aero_gram.jl`, `performance_mc_thread_scaling.jl`, `performance_smart_parallel_ladder_cross_machine.jl` |
 | Parallelization paper benchmarks | `paper_parallelization_benchmarks.jl`, `parallelization_performance.jl` — each has a same-named subdirectory with its own `protocol.sh`, `cli.jl`, and `CASES.md` case catalog |
 | Tuning and validation | `telemetry_hybrid_tuner.jl`, `telemetry_odyssey_tuner.jl` |
+
+The former `SpaceAGORACalibration.jl/` campaign package and its `bin/` drivers
+have been retired. Use the tuning scripts listed above for telemetry parameter
+fitting, or [Verification Study](verification_study.md) to compare simulations
+with observations. Automatic performance tuning for parallel execution remains
+available.
 
 For long studies, set an explicit output directory and keep the terminal log with
 the artifacts.

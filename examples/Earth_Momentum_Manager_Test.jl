@@ -72,21 +72,13 @@ function run_managed(mu; reltol=1e-9)
         keplerian=true,
         EI_km=140.0
     )
-    args = SimulationConfiguration(
-        file_paths=base.file_paths,
-        simulation_settings=base.simulation_settings,
-        mission_configuration=base.mission_configuration,
-        environment_model=base.environment_model,
-        dynamics_model=base.dynamics_model,
-        guidance_model=base.guidance_model,
-        navigation_model=base.navigation_model,
+    args = SM.SimConfig._with_configuration(base;
         control_model=ControlModel(control_effectors=(manager,), control_rates=[1.0]),
-        initial_time=base.initial_time,
         integration_tolerances=IntegrationTolerances(
             reltol_orbit=reltol, abstol_orbit=reltol,
             reltol_quaternion=reltol, abstol_quaternion=reltol,
             dt_max_orbit=3.0
-        )
+        ),
     )
     # isolate_state=false: run_simulation deep-copies args by default, so the
     # in-sim manager would be a copy and this handle would stay untouched.

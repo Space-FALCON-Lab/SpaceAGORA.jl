@@ -19,6 +19,8 @@ module ControlHooks
     using ..StaticArrays
     using ..Kinematics
     using SparseArrays
+    using AstroTime
+    using SPICE
     using OSQP
 
     const config = Structure
@@ -34,7 +36,7 @@ module ControlHooks
     export rpo_allocate_six_axis_thrusters, rpo_thruster_wrench_body
 
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
-    include(joinpath(@__DIR__, "..", "..", "core", "numerics", "quaternion_utils.jl"))
+    using ..QuaternionMath
     include(joinpath(@__DIR__, "propulsive_maneuvers.jl"))
     include(joinpath(@__DIR__, "heat_rate_control.jl"))
     include(joinpath(@__DIR__, "heat_load_control.jl"))

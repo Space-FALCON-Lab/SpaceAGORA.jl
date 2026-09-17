@@ -139,12 +139,16 @@ occursin("partition === nothing && _has_any_harmonics_effector(dynamic_effectors
 occursin("_count_flat_queue_only_effectors(dynamic_effectors) == 0 && return nothing", dynamics_src) ||
     error("Early exit for all-pre-passed effector set is missing from dynamics_rhs.jl")
 
-# _accumulate_harmonics_flat_batch! must accept init_scratch keyword so the pre-pass
-# can skip re-zeroing totals (which would overwrite batchable pre-pass contributions).
-occursin("init_scratch::Bool=true", dynamics_src) ||
-    error("_accumulate_harmonics_flat_batch! is missing init_scratch::Bool=true keyword in dynamics_rhs.jl")
-occursin("_accumulate_harmonics_flat_batch!(sc_state, p, t, effector, plan; init_scratch=false)", dynamics_src) ||
-    error("Harmonics pre-pass does not call _accumulate_harmonics_flat_batch! with init_scratch=false in dynamics_rhs.jl")
+# _accumulate_harmonics_flat_batch! writes the harmonics contribution into the
+# per-effector slot of every satellite (eff_idx keyword); the flat driver sums
+# the slots in effector order afterwards, so the pre-pass never accumulates
+# into totals itself.
+occursin("eff_idx::Int=1,", dynamics_src) ||
+    error("_accumulate_harmonics_flat_batch! is missing the eff_idx::Int keyword in dynamics_rhs.jl")
+occursin("_accumulate_harmonics_flat_batch!(sc_state, p, t, effector, plan; eff_idx=eff_idx)", dynamics_src) ||
+    error("Harmonics pre-pass does not call _accumulate_harmonics_flat_batch! with eff_idx in dynamics_rhs.jl")
+occursin("_reduce_flat_effector_slots!(", dynamics_src) ||
+    error("Flat driver does not reduce the per-effector slots in effector order in dynamics_rhs.jl")
 
 # _prepare_rhs_flat_work_items! must exclude pre-pass effectors from the work list.
 occursin("_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue", dynamics_src) ||

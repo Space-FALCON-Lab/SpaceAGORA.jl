@@ -6,12 +6,12 @@ using LinearAlgebra
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
-include(joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
 
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
 if !isdefined(@__MODULE__, :build_initial_conditions)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
@@ -28,7 +28,7 @@ function make_probe_spacecraft(;
     rp_alt_m::Float64=100e3,
     ν_deg::Float64=160.0
 )
-    root = Link{0}(root=true, m=500.0, ref_area=12.0)
+    root = Link(root=true, m=500.0, ref_area=12.0)
     ic = InitialCondition(
         ra=EARTH.Rp_e + ra_alt_m,
         rp=EARTH.Rp_e + rp_alt_m,

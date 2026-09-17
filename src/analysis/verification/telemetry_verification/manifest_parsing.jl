@@ -51,6 +51,25 @@ end
     return isempty(mode) ? "auto_stiff" : mode
 end
 
+# Per-step solver storage. The harness reads every trajectory sample from the
+# results CSV the saving callback writes and reads the returned solution only
+# for its return code and solver trace, so the per-step storage (the state and
+# the interpolant stages at every accepted step) is never used. It is the
+# dominant allocation of a long replay: with it the anchored Odyssey campaign
+# grows past the hosted runner's memory, without it the run stays small. The
+# automatic stiff sequence is the exception: the engine detects a switch from
+# sol.alg_choice, which is recorded per saved step, so any mode that contains
+# it keeps the storage. A SPACEAGORA_SOLVER_SAVE_* value already set in the
+# environment is passed through unchanged.
+@inline _telemetry_mode_reads_saved_steps(solver_mode::AbstractString)::Bool =
+    occursin("auto_stiff", lowercase(solver_mode))
+
+@inline function _telemetry_solver_save_env(name::String, solver_mode::AbstractString)::String
+    explicit = strip(get(ENV, name, ""))
+    isempty(explicit) || return String(explicit)
+    return _telemetry_mode_reads_saved_steps(solver_mode) ? "true" : "false"
+end
+
 @inline _is_maxiters_error(err)::Bool = occursin("MaxIters", sprint(showerror, err))
 
 @inline function _require_key(tbl, key::String, context::String)
@@ -202,6 +221,39 @@ end
     throw(ArgumentError("Unsupported truth_mask='$raw' in $context; use none|nightside|dayside."))
 end
 
+function _parse_state_anchor_config(tbl, context::String)
+    empty = (enabled=false, burn_orbit_numbers=Int64[], elapsed_s=Float64[], states_j2000_m=NTuple{6, Float64}[])
+    haskey(tbl, "state_anchors") || return empty
+    atbl = _require_table(tbl, "state_anchors", context)
+    enabled = _optional_bool(atbl, "enabled", true)
+    elapsed_s = _optional_float64_vector(atbl, "elapsed_s")
+    burn_orbit_numbers = _optional_int64_vector(atbl, "burn_orbit_numbers")
+    raw_states = get(atbl, "states_j2000_m", Any[])
+    raw_states isa AbstractVector || throw(ArgumentError("state_anchors.states_j2000_m must be an array of six-element arrays in $context"))
+    isempty(elapsed_s) && throw(ArgumentError("state_anchors.elapsed_s must be non-empty in $context"))
+    length(raw_states) == length(elapsed_s) || throw(ArgumentError(
+        "state_anchors.states_j2000_m length ($(length(raw_states))) must match state_anchors.elapsed_s length ($(length(elapsed_s))) in $context"
+    ))
+    if !isempty(burn_orbit_numbers)
+        length(burn_orbit_numbers) == length(elapsed_s) || throw(ArgumentError(
+            "state_anchors.burn_orbit_numbers length ($(length(burn_orbit_numbers))) must match state_anchors.elapsed_s length ($(length(elapsed_s))) in $context"
+        ))
+    end
+    all(t -> isfinite(t) && t > 0.0, elapsed_s) || throw(ArgumentError("state_anchors.elapsed_s entries must be positive and finite in $context"))
+    issorted(elapsed_s; lt=(<)) && allunique(elapsed_s) || throw(ArgumentError("state_anchors.elapsed_s must be strictly increasing in $context"))
+    states = NTuple{6, Float64}[]
+    for (k, row) in enumerate(raw_states)
+        (row isa AbstractVector && length(row) == 6) || throw(ArgumentError(
+            "state_anchors.states_j2000_m[$k] must have six components (x, y, z in m; vx, vy, vz in m/s) in $context"
+        ))
+        vals = Float64[Float64(v) for v in row]
+        all(isfinite, vals) || throw(ArgumentError("state_anchors.states_j2000_m[$k] must be finite in $context"))
+        push!(states, NTuple{6, Float64}(vals))
+    end
+    enabled && println("state_anchors context=$context count=$(length(elapsed_s)) first_elapsed_s=$(first(elapsed_s)) last_elapsed_s=$(last(elapsed_s))")
+    return (enabled=enabled, burn_orbit_numbers=burn_orbit_numbers, elapsed_s=elapsed_s, states_j2000_m=states)
+end
+
 function _parse_maneuver_config(tbl, context::String)
     if !haskey(tbl, "maneuvers")
         return (
@@ -213,7 +265,8 @@ function _parse_maneuver_config(tbl, context::String)
             thrust_n=0.0,
             isp_s=0.0,
             guidance_rate_s=30.0,
-            control_rate_s=10.0
+            control_rate_s=10.0,
+            orbit_number_offset=0
         )
     end
     mtbl = _require_table(tbl, "maneuvers", context)
@@ -279,7 +332,8 @@ function _parse_maneuver_config(tbl, context::String)
         thrust_n=_optional_float(mtbl, "thrust_n", 4.0),
         isp_s=_optional_float(mtbl, "isp_s", 220.0),
         guidance_rate_s=_optional_float(mtbl, "guidance_rate_s", 30.0),
-        control_rate_s=_optional_float(mtbl, "control_rate_s", 10.0)
+        control_rate_s=_optional_float(mtbl, "control_rate_s", 10.0),
+        orbit_number_offset=offset
     )
 end
 
@@ -455,6 +509,19 @@ function _parse_vec3(tbl, key::String, context::String)::NTuple{3, Float64}
     return (Float64(raw[1]), Float64(raw[2]), Float64(raw[3]))
 end
 
+function _parse_attitude_q(tbl, key::String, context::String)::Union{Nothing, NTuple{4, Float64}}
+    haskey(tbl, key) || return nothing
+    raw = tbl[key]
+    raw isa AbstractVector || throw(ArgumentError("Expected 4-element array '$key' in $context"))
+    length(raw) == 4 || throw(ArgumentError(
+        "Expected 4 values (x, y, z, w scalar-last) for '$key' in $context, got $(length(raw))"))
+    q = (Float64(raw[1]), Float64(raw[2]), Float64(raw[3]), Float64(raw[4]))
+    all(isfinite, q) || throw(ArgumentError("Non-finite value in '$key' for $context"))
+    n = sqrt(sum(abs2, q))
+    n > 1e-8 || throw(ArgumentError("Attitude quaternion '$key' in $context has (near-)zero norm"))
+    return (q[1] / n, q[2] / n, q[3] / n, q[4] / n)
+end
+
 function _parse_spacecraft_config(tbl, context::String)::SpacecraftConfig
     stbl = _require_table(tbl, "spacecraft", context)
     return SpacecraftConfig(
@@ -465,7 +532,10 @@ function _parse_spacecraft_config(tbl, context::String)::SpacecraftConfig
         panel_offset_y_m=_require_float(stbl, "panel_offset_y_m", "$context.spacecraft"),
         prop_mass_kg=_require_float(stbl, "prop_mass_kg", "$context.spacecraft"),
         id=Int64(_require_int(stbl, "id", "$context.spacecraft")),
-        bus_ram_face=Symbol(_optional_str(stbl, "bus_ram_face", "legacy"))
+        bus_ram_face=Symbol(_optional_str(stbl, "bus_ram_face", "legacy")),
+        bus_attitude_q=_parse_attitude_q(stbl, "bus_attitude_q", "$context.spacecraft"),
+        panel_attitude_q_left=_parse_attitude_q(stbl, "panel_attitude_q_left", "$context.spacecraft"),
+        panel_attitude_q_right=_parse_attitude_q(stbl, "panel_attitude_q_right", "$context.spacecraft")
     )
 end
 
@@ -530,14 +600,36 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
         gravity_harmonics_order = _optional_int(tbl, "gravity_harmonics_order", 0)
         raw_harmonics_file = _optional_str(tbl, "gravity_harmonics_file", "")
         gravity_harmonics_file = isempty(strip(raw_harmonics_file)) ? "" : _resolve_repo_path(raw_harmonics_file)
+        gravity_harmonics_gm_override_m3s2 = haskey(tbl, "gravity_harmonics_gm_override_m3s2") ?
+            _require_float(tbl, "gravity_harmonics_gm_override_m3s2", context) : nothing
         nbody_bodies = _optional_str_vector(tbl, "nbody_bodies")
         srp_enabled = _optional_bool(tbl, "srp_enabled", false)
         srp_cr = _optional_float(tbl, "srp_cr", 1.3)
         srp_area_m2 = _optional_float(tbl, "srp_area_m2", 0.0)
         drag_enabled = _optional_bool(tbl, "drag_enabled", true)
+        aero_fixed_attitude_incidence = let raw = _optional_str(tbl, "aero_fixed_attitude_incidence", "max_drag")
+            raw in ("max_drag", "attitude", "tumbling_average") || error(
+                "Scenario $(context): aero_fixed_attitude_incidence must be max_drag, attitude, or tumbling_average, got $(raw)")
+            Symbol(raw)
+        end
+        # Link attitude quaternions are meaningful only under the :attitude
+        # incidence mode. The historical :max_drag path reads non-root link
+        # quaternions through _quaternion_link_alpha, so letting configured
+        # panel attitudes through any other mode would silently change
+        # default-mode physics — reject the combination at parse time.
+        if aero_fixed_attitude_incidence !== :attitude &&
+           (spacecraft.bus_attitude_q !== nothing ||
+            spacecraft.panel_attitude_q_left !== nothing ||
+            spacecraft.panel_attitude_q_right !== nothing)
+            error("Scenario $(context): spacecraft attitude quaternions " *
+                  "(bus_attitude_q / panel_attitude_q_left / panel_attitude_q_right) " *
+                  "require aero_fixed_attitude_incidence = \"attitude\"; " *
+                  "got $(aero_fixed_attitude_incidence)")
+        end
         include_wind = _optional_bool(tbl, "include_wind", false)
         orbit_altitude_mode = _parse_orbit_altitude_mode(_optional_str(tbl, "orbit_altitude_mode", "vacuum"), context)
         maneuver = _parse_maneuver_config(tbl, context)
+        anchors = _parse_state_anchor_config(tbl, context)
         atmosphere_truth = _parse_atmosphere_truth_config(tbl, context)
         calibration = _parse_calibration_config(tbl, context)
 
@@ -572,11 +664,13 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 gravity_harmonics_degree=gravity_harmonics_degree,
                 gravity_harmonics_order=gravity_harmonics_order,
                 gravity_harmonics_file=gravity_harmonics_file,
+                gravity_harmonics_gm_override_m3s2=gravity_harmonics_gm_override_m3s2,
                 nbody_bodies=nbody_bodies,
                 srp_enabled=srp_enabled,
                 srp_cr=srp_cr,
                 srp_area_m2=srp_area_m2,
                 drag_enabled=drag_enabled,
+                aero_fixed_attitude_incidence=aero_fixed_attitude_incidence,
                 include_wind=include_wind,
                 orbit_altitude_mode=orbit_altitude_mode,
                 maneuver_orbit_numbers=maneuver.orbit_numbers,
@@ -588,6 +682,11 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 maneuver_isp_s=maneuver.isp_s,
                 maneuver_guidance_rate_s=maneuver.guidance_rate_s,
                 maneuver_control_rate_s=maneuver.control_rate_s,
+                maneuver_orbit_number_offset=maneuver.orbit_number_offset,
+                state_anchors_enabled=anchors.enabled,
+                state_anchor_burn_orbit_numbers=anchors.burn_orbit_numbers,
+                state_anchor_elapsed_s=anchors.elapsed_s,
+                state_anchor_states_j2000_m=anchors.states_j2000_m,
                 atmosphere_truth=atmosphere_truth,
                 calibration=calibration,
                 EI_km=EI_km
@@ -639,11 +738,13 @@ function _load_scenarios_from_manifest(manifest_path::String)::Vector{AbstractSc
                 gravity_harmonics_degree=gravity_harmonics_degree,
                 gravity_harmonics_order=gravity_harmonics_order,
                 gravity_harmonics_file=gravity_harmonics_file,
+                gravity_harmonics_gm_override_m3s2=gravity_harmonics_gm_override_m3s2,
                 nbody_bodies=nbody_bodies,
                 srp_enabled=srp_enabled,
                 srp_cr=srp_cr,
                 srp_area_m2=srp_area_m2,
                 drag_enabled=drag_enabled,
+                aero_fixed_attitude_incidence=aero_fixed_attitude_incidence,
                 include_wind=include_wind,
                 orbit_altitude_mode=orbit_altitude_mode,
                 cartesian_ic_frame=_parse_reference_frame(
@@ -679,6 +780,7 @@ function parse_cli(args::Vector{String})::StudyConfig
     manifest_path = get(ENV, "SPACEAGORA_TELEMETRY_MANIFEST", DEFAULT_MANIFEST_PATH)
     enforce = _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_ENFORCE", "0"), false)
     generate_plots = _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_PLOTS", "1"), true)
+    scenarios = _parse_scenario_list(get(ENV, "SPACEAGORA_TELEMETRY_SCENARIOS", ""))
 
     i = 1
     while i <= length(args)
@@ -697,8 +799,10 @@ function parse_cli(args::Vector{String})::StudyConfig
             enforce = _safe_parse_bool(split(arg, "=", limit=2)[2], enforce)
         elseif startswith(arg, "--plots=")
             generate_plots = _safe_parse_bool(split(arg, "=", limit=2)[2], generate_plots)
+        elseif startswith(arg, "--scenarios=")
+            scenarios = _parse_scenario_list(split(arg, "=", limit=2)[2])
         else
-            throw(ArgumentError("Unsupported argument '$arg'. Supported: [quick|full], --profile=..., --manifest=..., --out-summary=..., --out-errors=..., --enforce=true|false, --plots=true|false"))
+            throw(ArgumentError("Unsupported argument '$arg'. Supported: [quick|full], --profile=..., --manifest=..., --scenarios=a,b,..., --out-summary=..., --out-errors=..., --enforce=true|false, --plots=true|false"))
         end
         i += 1
     end
@@ -710,7 +814,8 @@ function parse_cli(args::Vector{String})::StudyConfig
         out_errors=abspath(out_errors),
         manifest_path=abspath(manifest_path),
         enforce=enforce,
-        generate_plots=generate_plots
+        generate_plots=generate_plots,
+        scenarios=scenarios
     )
 end
 
@@ -723,7 +828,8 @@ end
         out_errors=abspath(request.out_errors),
         manifest_path=abspath(request.manifest_path),
         enforce=request.enforce,
-        generate_plots=request.generate_plots
+        generate_plots=request.generate_plots,
+        scenarios=copy(request.scenarios)
     )
 end
 
@@ -734,6 +840,7 @@ end
         out_errors=cfg.out_errors,
         manifest_path=cfg.manifest_path,
         enforce=cfg.enforce,
-        generate_plots=cfg.generate_plots
+        generate_plots=cfg.generate_plots,
+        scenarios=copy(cfg.scenarios)
     )
 end

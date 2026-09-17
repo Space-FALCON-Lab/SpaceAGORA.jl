@@ -2,22 +2,26 @@ using Test
 using TOML
 using DataFrames
 using LinearAlgebra
+using Logging
 using StaticArrays
 
 const _COV_REPO_ROOT = isdefined(Main, :REPO_ROOT) ? Main.REPO_ROOT : normpath(joinpath(@__DIR__, "..", ".."))
 
+using SpaceAGORA
+
 if !isdefined(@__MODULE__, :SimulationModel)
-    include(joinpath(_COV_REPO_ROOT, "src", "core", "simulation_model.jl"))
+    const SimulationModel = SpaceAGORA.SimulationModel
     using .SimulationModel
 end
 if !isdefined(@__MODULE__, :SimulationEngine)
-    include(joinpath(_COV_REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
+    const SimulationEngine = SpaceAGORA.SimulationEngine
 end
 if !isdefined(@__MODULE__, :TelemetryVerification)
-    include(joinpath(_COV_REPO_ROOT, "src", "analysis", "verification", "telemetry_verification.jl"))
+    const TelemetryVerification = SpaceAGORA.TelemetryVerification
 end
-
-include(joinpath(_COV_REPO_ROOT, "src", "parallel", "routing", "parallel_profiles.jl"))
+if !isdefined(@__MODULE__, :ParallelProfiles)
+    const ParallelProfiles = SpaceAGORA.ParallelProfiles
+end
 
 const PP = ParallelProfiles
 const TV = TelemetryVerification
@@ -57,15 +61,18 @@ const TV = TelemetryVerification
     @test cfg_r4.inner_adaptive == true
     @test cfg_r4.thermal_mode == "auto"
     @test cfg_r4.inner_scheduler == "static"
-    @test cfg_r4.adaptive_control_tail_guard == false
     @test cfg_r4.adaptive_measured_reward == false
     @test cfg_full.outer_route_adaptive == true
     @test cfg_full.label == "r5"
-    @test cfg_full.thermal_mode == "on"
-    @test cfg_full.inner_scheduler == "dynamic"
-    @test cfg_full.adaptive_control_tail_guard == true
+    # Both of these track measured reversals in profile_definitions.jl.
+    # inner_scheduler went dynamic -> static in 622ae2a0 (the sweep now measures
+    # the scheduler, so a profile constant must not pre-empt it) and this probe
+    # was not updated with it. thermal_mode went on -> auto for the same reason:
+    # R5 was the only profile forcing it, and "on" was never measured to beat
+    # "auto" on any workload.
+    @test cfg_full.thermal_mode == "auto"
+    @test cfg_full.inner_scheduler == "static"
     @test cfg_full.adaptive_measured_reward == true
-    @test cfg_full.adaptive_window == 4
     @test cfg_full.persistent_hints == true
     @test cfg_full.persistent_state_persist == true
 
@@ -82,17 +89,13 @@ const TV = TelemetryVerification
     @test env_map_override["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "0"
     @test env_map_override["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "none"
     @test env_map_override["SPACEAGORA_RHS_BATCH_PARALLEL"] == "auto"
-    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "8"
-    @test env_map_override["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "0"
     @test parse(Float64, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION"]) > 0.0
     @test parse(Int, env_map_override["SPACEAGORA_PARALLEL_POLICY_HINT_MIN_SAMPLES"]) >= 1
     env_pairs_auto = PP.profile_env_pairs("R5"; preserve_existing=false, outer_parallel_active=false)
     env_map_auto = Dict(env_pairs_auto)
     @test env_map_auto["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "auto"
-    @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "on"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "dynamic"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_WINDOW"] == "4"
-    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_CONTROL_TAIL_GUARD"] == "1"
+    @test env_map_auto["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "auto"
+    @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_INNER_SCHEDULER"] == "static"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS"] == "1"
     @test env_map_auto["SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST"] == "1"
@@ -170,8 +173,39 @@ const TV = TelemetryVerification
     @test PP.default_outer_route(f_const; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_heavy; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_heavy; tuning=tune, machine_class=:small, threads_available=false, parallel_enabled=true) == :none
-    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
+    # Threads, not process, and this is a measured reversal.
+    #
+    # The Monte Carlo rule used to return :process whenever the machine was
+    # medium/large and either the sample count or the SIMULATED mission time
+    # cleared a threshold. Neither is a proxy for per-sample compute, and the
+    # process route lost on every Monte Carlo case in the benchmark catalog --
+    # +33% to +201% against the best static route. Measured at 64 samples on 12
+    # threads, process against threads: 2.45x slower at 0.038 s/sample, 2.90x at
+    # 0.072, 1.46x at 0.072, 1.41x at 0.259 and 1.69x at 3.179 s/sample. No
+    # crossover anywhere in that range, so the premise was wrong rather than the
+    # constants.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :threads
     @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :threads
+    # ...but the process route must stay a CANDIDATE, or the bandit could never
+    # rediscover it on a machine or workload where it wins, and the reversal
+    # above would be permanent and unfalsifiable.
+    @test :process in PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true)
+    # With NO worker threads the reversal inverts, because everything it was
+    # measured against was threads. One Julia thread leaves the process pool as
+    # the only parallelism a Monte Carlo campaign can use, and falling through
+    # to :none was the worst result in the benchmark set: at one thread the
+    # fastest fixed route is outer processes on every Monte Carlo case measured,
+    # and both adaptive profiles trailed it by 67 to 89 percent.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) == :process
+    # The default must never name a route the selector did not enumerate.
+    @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) in
+          PP.outer_route_candidates(f_mc; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true)
+    # A campaign too small to amortise process startup still stays serial rather
+    # than spawning a pool for nothing.
+    @test PP.default_outer_route(f_mc_small; tuning=tune, machine_class=:large, threads_available=false, parallel_enabled=true) == :none
+    # Native GRAM is unaffected: there the process route is a thread-safety
+    # requirement, decided before the Monte Carlo rule is consulted.
+    @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_mc; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=false) == :none
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:large, threads_available=true, parallel_enabled=true) == :process
     @test PP.default_outer_route(f_gram_point; tuning=tune, machine_class=:small, threads_available=true, parallel_enabled=true) == :process
@@ -191,8 +225,32 @@ const TV = TelemetryVerification
 
     state = PP.OuterRouteState()
     @test isempty(PP.outer_route_stats_snapshot(state, sig))
+
+    # Arm symbols are deliberately unrestricted. This assertion used to require
+    # that an unrecognised route be dropped, and e6dc7539 removed the
+    # restriction on purpose so the split selector could reuse the route
+    # bandit wholesale -- same bucket, same statistics, same confidence
+    # handling, same persistence -- by naming its arms split_<route>_w<N>.
+    # The probe was not updated with it. Recording an arbitrary arm is now the
+    # documented behaviour, so assert that rather than its opposite.
     PP.record_outer_route_feedback!(state, f_heavy; route=:bad_route, successes=1, failures=0, tuning=tune)
-    @test isempty(PP.outer_route_stats_snapshot(state, sig))
+    @test haskey(PP.outer_route_stats_snapshot(state, sig), :bad_route)
+
+    # What actually keeps split arms from polluting route statistics is the
+    # signature namespace, not arm validation: record_outer_split_feedback!
+    # passes signature_prefix="split|", so split arms are invisible to a
+    # snapshot taken on the bare signature and visible under the prefixed one.
+    # That is the invariant worth pinning, and nothing covered it before.
+    state_split = PP.OuterRouteState()
+    PP.record_outer_split_feedback!(
+        state_split, f_heavy;
+        route=:threads, workers=4, successes=2, failures=0,
+        elapsed_success_s=10.0, tuning=tune
+    )
+    @test isempty(PP.outer_route_stats_snapshot(state_split, sig))
+    split_snap = PP.outer_route_stats_snapshot(state_split, "split|" * sig)
+    @test haskey(split_snap, Symbol("split_threads_w4"))
+    @test split_snap[Symbol("split_threads_w4")].samples == 2
 
     PP.record_outer_route_feedback!(state, f_heavy; route=:threads, successes=2, failures=0, elapsed_success_s=100.0, tuning=tune)
     PP.record_outer_route_feedback!(state, f_heavy; route=:process, successes=2, failures=0, elapsed_success_s=10.0, tuning=tune)
@@ -399,7 +457,10 @@ const TV = TelemetryVerification
         merged = PP.load_outer_route_state!(loaded_state, cache_path; replace=false)
         @test merged.rows >= 3
         snap_merged = PP.outer_route_stats_snapshot(loaded_state, sig)
-        @test snap_merged[:process].samples == 2 * snap[:process].samples + 1
+        # The restored arm carries one observation, so the live record above is
+        # its second: cold eviction replaces the restored history with that one
+        # sample, and the merge then adds the file's samples back once.
+        @test snap_merged[:process].samples == snap[:process].samples + 1
     end
 
     PP.reset_outer_route_state!(state)
@@ -456,6 +517,20 @@ end
     end
     withenv("SPACEAGORA_TELEMETRY_SOLVER_MODE" => "", "SPACEAGORA_SOLVER_MODE" => "rodas5p") do
         @test TV._telemetry_solver_mode() == "rodas5p"
+    end
+    # Per-step solver storage is off for the harness unless the mode
+    # autoswitches (the switch detector reads the per-step algorithm record)
+    # or the caller pinned the knob.
+    withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => nothing, "SPACEAGORA_SOLVER_SAVE_ON" => nothing) do
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "tsit5") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "tsit5") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "rodas5p") == "false"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "auto_stiff") == "true"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "multirate:auto_stiff/rodas5p") == "true"
+    end
+    withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => "1", "SPACEAGORA_SOLVER_SAVE_ON" => "0") do
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_EVERYSTEP", "tsit5") == "1"
+        @test TV._telemetry_solver_save_env("SPACEAGORA_SOLVER_SAVE_ON", "auto_stiff") == "0"
     end
     withenv("SPACEAGORA_TELEMETRY_SOLVER_MODE" => "", "SPACEAGORA_SOLVER_MODE" => "") do
         @test TV._telemetry_solver_mode() == "auto_stiff"
@@ -703,7 +778,40 @@ end
         @test parsed_cli.profile == :quick
         @test parsed_cli.enforce == true
         @test parsed_cli.generate_plots == false
+        @test parsed_cli.scenarios == String[]
         @test_throws ArgumentError TV.parse_cli(["--unknown=1"])
+        parsed_sel = TV.parse_cli(["quick", "--manifest=$(manifest_path)", "--scenarios=Odyssey, vex,"])
+        @test parsed_sel.scenarios == ["odyssey", "vex"]
+        @test TV._request_from_study_config(parsed_sel).scenarios == ["odyssey", "vex"]
+        withenv("SPACEAGORA_TELEMETRY_SCENARIOS" => "earth_gmat") do
+            # The environment filter belongs to the CLI path only; a request
+            # built in code (the initial-condition fit's, for one) is never
+            # narrowed by it.
+            @test TV.parse_cli(["quick", "--manifest=$(manifest_path)"]).scenarios == ["earth_gmat"]
+            @test TV.VerificationRequest().scenarios == String[]
+        end
+        loaded = TV._load_scenarios_from_manifest(manifest_path)
+        @test TV._select_scenarios(loaded, String[]) === loaded
+        @test TV._select_scenarios(loaded, ["", "  "]) === loaded
+        first_name = lowercase(String(first(loaded).name))
+        @test [String(sc.name) for sc in TV._select_scenarios(loaded, [first_name])] == [String(first(loaded).name)]
+        # A typed request bypasses the CLI parser; the selector normalises
+        # case and whitespace itself.
+        @test [String(sc.name) for sc in TV._select_scenarios(loaded, ["  " * uppercase(first_name) * " "])] == [String(first(loaded).name)]
+        @test_throws ArgumentError TV._select_scenarios(loaded, ["no_such_scenario"])
+        @test TV._single_point_calibration(true, [1.0], [1.3], :full, :full)
+        @test !TV._single_point_calibration(false, [1.0], [1.3], :full, :full)
+        @test !TV._single_point_calibration(true, [0.9, 1.1], [1.3], :full, :full)
+        @test !TV._single_point_calibration(true, [1.0], [1.15, 1.45], :full, :full)
+        @test !TV._single_point_calibration(true, [1.0], [1.3], :quick, :full)
+        reused = TV._final_run_or_reused_eval((; tag=:eval), true, [1.0], [1.3], :full, :full, "x", 1.0, 1.3) do
+            error("must not solve again")
+        end
+        @test reused.tag == :eval
+        solved = TV._final_run_or_reused_eval(nothing, true, [1.0], [1.3], :full, :full, "x", 1.0, 1.3) do
+            (; tag=:final)
+        end
+        @test solved.tag == :final
     end
 
     req = TV.VerificationRequest(
@@ -1238,6 +1346,13 @@ end
     @test isapprox(rho_above, 1e-10; rtol=1e-6)                            # tail continues H
     rho_below, _, _ = SimulationModel.getDensity(m, 90.0e3, 0.0, 0.0, 10.0, false)
     @test isapprox(rho_below, 1e-6; rtol=1e-6)
+    # NaN altitude (an adaptive solver's trial state): both tail guards are
+    # false for NaN and searchsortedlast points past the last bin, so this
+    # used to BoundsError out of the ensemble task mid-study; it must return
+    # NaN density for the solver to reject the step instead.
+    rho_nan, T_nan, w_nan = SimulationModel.getDensity(m, NaN, 0.0, 0.0, 10.0, false)
+    @test isnan(rho_nan) && isnan(T_nan)
+    @test w_nan == SimulationModel.SVector{3, Float64}(0.0, 0.0, 0.0)
     mp = SimulationModel.TabulatedFlightAtmosphereModel(
         [0.0], [(alts, alts)], [(logs, logs)], [(sigs, sigs)], 1.0, 3.4, 188.92)
     rho_p, _, _ = SimulationModel.getDensity(mp, 105.0e3, 0.0, 0.0, 10.0, false)
@@ -1923,6 +2038,11 @@ end
     # constructor must catch that at configuration time (Codex P2, PR 64).
     @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=2050.0)
     @test_throws ArgumentError PE.MagneticTorqueRodModel(field_model=:igrf, igrf_year=1899.0)
+    # Epochs past 2030 warn exactly once at construction; the per-evaluation
+    # library warning is suppressed so the integrator hot loop stays silent.
+    m_2032 = @test_logs (:warn, r"reduced for epochs past 2030") PE.MagneticTorqueRodModel(
+        field_model=:igrf, igrf_year=2032.0)
+    @test m_2032.igrf_year == 2032.0
 
     # Tilted-dipole SIGN pins. The pre-fix implementation used the north-pole
     # axis as the dipole moment and returned the antiparallel field (~170 deg
@@ -1950,6 +2070,14 @@ end
         @test B_d == PE.get_magnetic_field_dipole(r, MMatrix{3, 3, Float64}(l_pi))
         @test acosd(clamp(dot(B_i, B_d) / (norm(B_i) * norm(B_d)), -1, 1)) < 35
     end
+
+    # The post-2030 epoch evaluates warning-free: the construction-time warning
+    # above is the only one, never the integrator hot loop.
+    r32 = 6898e3 * SVector(cosd(25.0) * cosd(40.0), cosd(25.0) * sind(40.0), sind(25.0))
+    alt32, lat32, lon32 = PE.rtolatlong(r32, earth)
+    B32 = @test_logs min_level = Logging.Warn PE._magnetic_field_inertial(
+        m_2032, l_pi, r32, lat32, lon32, alt32)
+    @test 1.5e-5 < norm(B32) < 7e-5
 
     # wrench plumbing: one magnet, identity attitude -> torque = m x B_ii for
     # BOTH field sources, zero force, and tau ⊥ m.
@@ -2233,6 +2361,522 @@ end
     end
     @test norm(mgr2.h_wheels) < 0.5 * norm(drift)
     @test norm(mgr2.h_wheels) < 1.5 * norm(tau_d) / 0.01   # plateau ~ tau/mu
+end
+
+
+@testset "manifest aero_fixed_attitude_incidence key" begin
+    scenario = Dict(
+        "name" => "incidence_key_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+
+        # Absent key: bit-compat default, the historical accounting.
+        write_manifest(scenario)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.aero_fixed_attitude_incidence === :max_drag
+
+        # Key present: parsed and forwarded into the built fM effector.
+        scenario["aero_fixed_attitude_incidence"] = "tumbling_average"
+        write_manifest(scenario)
+        cfg_t = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg_t.aero_fixed_attitude_incidence === :tumbling_average
+        planet = TV._planet_from_name("earth")
+        ic = TV._scenario_initial_condition(cfg_t, planet)
+        sc = TV._make_spacecraft(cfg_t.spacecraft, ic)
+        eff = TV._scenario_dynamic_effectors(cfg_t, planet, sc)
+        fm = only(filter(e -> e isa SimulationModel.AerodynamicCoefficientfM, collect(eff)))
+        @test fm.fixed_attitude_incidence === :tumbling_average
+
+        # Invalid value: loud parse error naming the key.
+        scenario["aero_fixed_attitude_incidence"] = "sideways"
+        write_manifest(scenario)
+        err = try
+            TV._load_scenarios_from_manifest(manifest_path)
+            nothing
+        catch e
+            e
+        end
+        @test err !== nothing
+        @test occursin("aero_fixed_attitude_incidence", sprint(showerror, err))
+    end
+end
+
+@testset "campaign maneuver and wind config plumbing" begin
+    scenario = Dict(
+        "name" => "maneuver_plumbing_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+        load_cfg = () -> only(TV._load_scenarios_from_manifest(manifest_path))
+        planet = TV._planet_from_name("earth")
+
+        write_manifest(scenario)
+        cfg0 = load_cfg()
+        sc = TV._make_spacecraft(cfg0.spacecraft, TV._scenario_initial_condition(cfg0, planet))
+        args = TV.make_example_config(
+            planet=planet, spacecraft=sc, mission_time=60.0,
+            initial_time=SimulationModel.InitialTime(year=2020, month=1, day=1),
+            verbose=false
+        )
+
+        # No maneuvers configured: identity pass-through.
+        @test !TV._has_campaign_maneuvers(cfg0)
+        @test TV._with_campaign_maneuvers(args, cfg0) === args
+
+        # Wind plumbing toggles only the environment wind flag.
+        @test TV._with_environment_wind(args, true).environment_model.wind === true
+        @test TV._with_environment_wind(args, false).environment_model.wind === false
+
+        # Maneuver replay wiring: thruster control effector + campaign guidance
+        # effector carrying the manifest burn schedule.
+        scenario["maneuvers"] = Dict(
+            "orbit_numbers" => [2, 4], "delta_v_mps" => [0.1, 0.2],
+            "thrust_n" => 1.0, "isp_s" => 200.0
+        )
+        write_manifest(scenario)
+        cfg_m = load_cfg()
+        @test TV._has_campaign_maneuvers(cfg_m)
+        args_m = TV._with_campaign_maneuvers(args, cfg_m)
+        thr = only(args_m.control_model.control_effectors)
+        @test thr isa SimulationModel.BaseThrusterModel
+        @test thr.thrust == [1.0] && thr.Isp == [200.0]
+        gm = only(args_m.guidance_model.guidance_effectors)
+        @test gm.maneuver_orbit_number == [2, 4]
+        @test gm.maneuver_Δv == [0.1, 0.2]
+        @test isempty(gm.maneuver_flight_apoapsis_radius_m)
+        @test args_m.guidance_model.guidance_rates == [cfg_m.maneuver_guidance_rate_s]
+        @test args_m.control_model.control_rates == [cfg_m.maneuver_control_rate_s]
+
+        # Diagnostic replay scaling: flight apoapsis altitudes become radii.
+        scenario["maneuvers"]["replay_scale_mode"] = "flight_apoapsis_ratio"
+        scenario["maneuvers"]["flight_apoapsis_alt_km"] = [300.0, 310.0]
+        write_manifest(scenario)
+        cfg_r = load_cfg()
+        gm_r = only(TV._with_campaign_maneuvers(args, cfg_r).guidance_model.guidance_effectors)
+        @test gm_r.maneuver_flight_apoapsis_radius_m ≈
+              [alt + planet.Rp_e for alt in cfg_r.maneuver_flight_apoapsis_alt_m]
+
+        # Validation branches fail loudly, naming the scenario.
+        for field in (:maneuver_thrust_n, :maneuver_isp_s,
+                      :maneuver_guidance_rate_s, :maneuver_control_rate_s)
+            vals = Dict(
+                :maneuver_thrust_n => cfg_m.maneuver_thrust_n,
+                :maneuver_isp_s => cfg_m.maneuver_isp_s,
+                :maneuver_guidance_rate_s => cfg_m.maneuver_guidance_rate_s,
+                :maneuver_control_rate_s => cfg_m.maneuver_control_rate_s
+            )
+            vals[field] = 0.0
+            cfg_bad = TV.OrbitEventsScenarioConfig(
+                name=cfg_m.name, planet_name=cfg_m.planet_name,
+                telemetry_peri_path=cfg_m.telemetry_peri_path,
+                telemetry_apo_path=cfg_m.telemetry_apo_path,
+                target_orbits_quick=cfg_m.target_orbits_quick,
+                target_orbits_full=cfg_m.target_orbits_full,
+                compare_points_quick=cfg_m.compare_points_quick,
+                compare_points_full=cfg_m.compare_points_full,
+                min_eval_points=cfg_m.min_eval_points,
+                units_x=cfg_m.units_x, units_y=cfg_m.units_y,
+                tolerances_quick=cfg_m.tolerances_quick,
+                tolerances_full=cfg_m.tolerances_full,
+                initial_time=cfg_m.initial_time,
+                ra_m=cfg_m.ra_m, rp_altitude_m=cfg_m.rp_altitude_m,
+                i_deg=cfg_m.i_deg, aop_deg=cfg_m.aop_deg,
+                raan_deg=cfg_m.raan_deg, ta_deg=cfg_m.ta_deg,
+                spacecraft=cfg_m.spacecraft, gravity_model=cfg_m.gravity_model,
+                maneuver_orbit_numbers=cfg_m.maneuver_orbit_numbers,
+                maneuver_delta_v_mps=cfg_m.maneuver_delta_v_mps,
+                maneuver_thrust_n=vals[:maneuver_thrust_n],
+                maneuver_isp_s=vals[:maneuver_isp_s],
+                maneuver_guidance_rate_s=vals[:maneuver_guidance_rate_s],
+                maneuver_control_rate_s=vals[:maneuver_control_rate_s],
+                EI_km=cfg_m.EI_km
+            )
+            err = try
+                TV._with_campaign_maneuvers(args, cfg_bad)
+                nothing
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin(cfg_m.name, sprint(showerror, err))
+        end
+    end
+end
+
+@testset "scenario builder frame and helper coverage" begin
+    planet = TV._planet_from_name("earth")
+
+    # Orbital period helper against the closed form it implements.
+    T = TV._period_seconds(planet, 7.2e6, 6.8e6)
+    @test T ≈ 2π * sqrt(7.0e6^3 / planet.μ) rtol = 1e-12
+
+    # Gravity effector selection and its failure branch.
+    @test TV._base_gravity_effector(:inverse_squared) isa SimulationModel.InverseSquaredGravityModel
+    @test TV._base_gravity_effector(:inverse_squared_j2) isa SimulationModel.InverseSquaredJ2GravityModel
+    @test_throws ArgumentError TV._base_gravity_effector(:cubed)
+
+    # Harmonics order clamping table.
+    @test TV._harmonics_order(0, 5) == 0
+    @test TV._harmonics_order(50, 0) == 0
+    @test TV._harmonics_order(50, -1) == 50
+    @test TV._harmonics_order(50, 30) == 30
+    @test TV._harmonics_order(50, 70) == 50
+
+    # N-body primary naming and its failure branch.
+    for (key, name) in ("earth" => "Earth", "mars" => "Mars", "venus" => "Venus",
+                        "moon" => "Moon", "titan" => "Titan")
+        @test TV._nbody_primary_name(key) == name
+    end
+    @test_throws ArgumentError TV._nbody_primary_name("pluto")
+    @test_throws ArgumentError TV._planet_from_name("pluto")
+
+    # Env-gated J2-source and normalization selection: defaults, default
+    # override, and scenario-set membership (member vs non-member).
+    withenv("SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS" => nothing) do
+        @test TV._telemetry_j2_source_for_scenario("anything") === :file_c20
+    end
+    withenv("SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT" => "planet",
+            "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS" => nothing) do
+        @test TV._telemetry_j2_source_for_scenario("anything") === :planet_j2
+    end
+    withenv("SPACEAGORA_TELEMETRY_J2_SOURCE_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_J2_SOURCE_PLANET_SCENARIOS" => "special, other") do
+        @test TV._telemetry_j2_source_for_scenario("Special") === :planet_j2
+        @test TV._telemetry_j2_source_for_scenario("regular") === :file_c20
+    end
+    withenv("SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS" => nothing) do
+        @test TV._telemetry_coefficients_normalized_for_scenario("anything")
+    end
+    withenv("SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT" => "false",
+            "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS" => nothing) do
+        @test !TV._telemetry_coefficients_normalized_for_scenario("anything")
+    end
+    withenv("SPACEAGORA_TELEMETRY_HARMONICS_NORMALIZED_DEFAULT" => nothing,
+            "SPACEAGORA_TELEMETRY_HARMONICS_UNNORMALIZED_SCENARIOS" => "raw_one") do
+        @test !TV._telemetry_coefficients_normalized_for_scenario("RAW_ONE")
+        @test TV._telemetry_coefficients_normalized_for_scenario("normalized_one")
+    end
+
+    # Scaled-fM wrapper contract: positive scale required, thread-safe, and
+    # atmosphere-consuming so the density-without-aero diagnostic stays quiet.
+    fm = SimulationModel.AerodynamicCoefficientfM()
+    scaled = TV.ScaledAerodynamicCoefficientfM(fm, 1.2)
+    @test scaled.cd_scale == 1.2
+    @test_throws ArgumentError TV.ScaledAerodynamicCoefficientfM(fm, 0.0)
+    @test TV._dynamic_effector_threadsafe(scaled)
+    @test SimulationModel.environment_requirements(scaled).atmosphere
+
+    # Orbit-mission plumbing swaps only the mission configuration.
+    ic = SimulationModel.InitialCondition(
+        7.0e6, 1.0e-3, 35.0, 0.0, 0.0, 0.0,
+        SVector{4, Float64}(0.0, 0.0, 0.0, 1.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    )
+    sc = TV.make_three_body_spacecraft(
+        bus_dims=(0.2, 0.5, 0.6), panel_dims=(0.4, 0.001, 0.5), bus_mass=29.0,
+        panel_mass_each=0.0, panel_offset_y=0.5, ic=ic
+    )
+    args = TV.make_example_config(
+        planet=planet, spacecraft=sc, mission_time=60.0,
+        initial_time=SimulationModel.InitialTime(year=2020, month=1, day=1),
+        verbose=false
+    )
+    args_o = TV._with_orbit_mission(args, 5, 1234.0)
+    @test args_o.mission_configuration.mission_type === SimulationModel.MissionOrbits
+    @test args_o.mission_configuration.number_of_orbits == 5
+    @test args_o.mission_configuration.mission_time == 1234.0
+    @test args_o.environment_model === args.environment_model
+
+    # Body-equator frame math: a z-aligned pole degenerates to identity; a
+    # tilted pole yields an orthonormal frame with ẑ along the pole and the
+    # node axis in the J2000 equatorial plane.
+    R_id = TV._body_equator_frame_rotation(SVector{3, Float64}(0.0, 0.0, 1.0))
+    @test R_id ≈ SMatrix{3, 3, Float64}(1.0I) atol = 1e-14
+    pole = SVector{3, Float64}(0.2, -0.3, 0.9)
+    R = TV._body_equator_frame_rotation(pole)
+    @test R' * R ≈ SMatrix{3, 3, Float64}(1.0I) atol = 1e-12
+    @test R[:, 3] ≈ pole / norm(pole) atol = 1e-12
+    @test abs(R[3, 1]) < 1e-12   # node axis lies in the J2000 equatorial plane
+
+    # Element-frame conversion: :j2000 is the identity path; unsupported
+    # frames fail loudly.
+    it = SimulationModel.InitialTime(year=2020, month=1, day=1)
+    @test TV._initial_condition_in_j2000(ic, planet, it, :j2000) === ic
+    @test_throws ArgumentError TV._initial_condition_in_j2000(ic, planet, it, :ecliptic)
+
+    # Study save-fields: position and velocity per-satellite extractors.
+    fields = TV._save_fields_for_study()
+    @test length(fields) == 2
+    @test fields[1].column_prefix == "pos" && fields[2].column_prefix == "vel"
+end
+
+@testset "manifest state_anchors block" begin
+    scenario = Dict(
+        "name" => "anchor_key_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    state_a = [7.0e6, 0.0, 0.0, 0.0, 7.5e3, 0.0]
+    state_b = [0.0, 7.0e6, 0.0, -7.5e3, 0.0, 0.0]
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+
+        # Absent block: no anchors, nothing scheduled.
+        write_manifest(scenario)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == false
+        @test isempty(cfg.state_anchor_elapsed_s)
+        @test TV._scenario_extra_callbacks(cfg) === ()
+        @test TV._state_anchor_count(cfg) == 0
+
+        # Present block: parsed in order, counted in the summary, one callback.
+        anchored = merge(scenario, Dict("state_anchors" => Dict(
+            "burn_orbit_numbers" => [25, 32],
+            "elapsed_s" => [1000.0, 2000.0],
+            "states_j2000_m" => [state_a, state_b],
+        )))
+        write_manifest(anchored)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == true
+        @test cfg.state_anchor_burn_orbit_numbers == [25, 32]
+        @test cfg.state_anchor_elapsed_s == [1000.0, 2000.0]
+        @test cfg.state_anchor_states_j2000_m[2] == NTuple{6, Float64}(state_b)
+        @test TV._state_anchor_count(cfg) == 2
+        @test length(TV._scenario_extra_callbacks(cfg)) == 1
+        # Without a burn replay there is nothing to keep aligned and the
+        # anchors leave the orbit counter alone; with one, the count is
+        # B - offset + 1.
+        @test all(a -> a.orbit_count === nothing, TV._scenario_state_anchors(cfg))
+        with_burns = merge(anchored, Dict("maneuvers" => Dict(
+            "orbit_numbers" => [25, 32], "delta_v_mps" => [0.1, -0.1], "orbit_number_offset" => 18,
+            "thrust_n" => 4.0, "isp_s" => 220.0,
+        )))
+        write_manifest(with_burns)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.maneuver_orbit_number_offset == 18
+        @test [a.orbit_count for a in TV._scenario_state_anchors(cfg)] == [8, 15]
+
+        # Disabled block keeps the data but schedules nothing.
+        disabled = merge(scenario, Dict("state_anchors" => Dict(
+            "enabled" => false, "elapsed_s" => [1000.0], "states_j2000_m" => [state_a],
+        )))
+        write_manifest(disabled)
+        cfg = only(TV._load_scenarios_from_manifest(manifest_path))
+        @test cfg.state_anchors_enabled == false
+        @test TV._state_anchor_count(cfg) == 0
+        @test TV._scenario_extra_callbacks(cfg) === ()
+
+        # Guards: length mismatch, non-increasing times, short state, non-finite.
+        for bad in (
+            Dict("elapsed_s" => [1000.0, 2000.0], "states_j2000_m" => [state_a]),
+            Dict("elapsed_s" => [2000.0, 1000.0], "states_j2000_m" => [state_a, state_b]),
+            Dict("elapsed_s" => [1000.0], "states_j2000_m" => [state_a[1:3]]),
+            Dict("elapsed_s" => [1000.0], "states_j2000_m" => [state_a], "burn_orbit_numbers" => [1, 2]),
+            Dict("elapsed_s" => [-5.0], "states_j2000_m" => [state_a]),
+        )
+            write_manifest(merge(scenario, Dict("state_anchors" => bad)))
+            @test_throws ArgumentError TV._load_scenarios_from_manifest(manifest_path)
+        end
+    end
+end
+
+@testset "manifest link attitude quaternions" begin
+    scenario = Dict(
+        "name" => "link_attitude_probe",
+        "kind" => "orbit_events",
+        "planet" => "earth",
+        "events" => ["peri", "apo"],
+        "telemetry_peri" => "data/telemetry/fake_peri.feather",
+        "telemetry_apo" => "data/telemetry/fake_apo.feather",
+        "target_orbits_quick" => 2, "target_orbits_full" => 3,
+        "compare_points_quick" => 2, "compare_points_full" => 3,
+        "min_eval_points" => 1,
+        "ra_m" => 7.1e6, "rp_altitude_m" => 120000.0,
+        "i_deg" => 30.0, "aop_deg" => 20.0, "raan_deg" => 10.0, "ta_deg" => 170.0,
+        "gravity_model" => "inverse_squared",
+        "EI_km" => 120.0,
+        "initial_time" => Dict("year" => 2020, "month" => 1, "day" => 1,
+                               "hour" => 0, "minute" => 0, "second" => 0.0),
+        "spacecraft" => Dict(
+            "bus_dims_m" => [1.0, 1.0, 1.0],
+            "panel_dims_m" => [0.1, 0.2, 0.3],
+            "bus_mass_kg" => 100.0,
+            "panel_mass_each_kg" => 5.0,
+            "panel_offset_y_m" => 0.5,
+            "prop_mass_kg" => 10.0,
+            "id" => 1
+        ),
+        "units" => Dict("x" => "orbit", "peri" => "km", "apo" => "km"),
+        "tolerances_quick" => Dict("peri" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0),
+                                   "apo" => Dict("max_abs_km" => 100.0, "max_nmae" => 1.0)),
+        "tolerances_full" => Dict("peri" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9),
+                                  "apo" => Dict("max_abs_km" => 80.0, "max_nmae" => 0.9)),
+    )
+    mktempdir() do tmp
+        manifest_path = joinpath(tmp, "manifest.toml")
+        write_manifest = s -> open(manifest_path, "w") do io
+            TOML.print(io, Dict("version" => 1, "scenarios" => Any[s]))
+        end
+        build_sc = cfg -> begin
+            planet = TV._planet_from_name("earth")
+            TV._make_spacecraft(cfg.spacecraft, TV._scenario_initial_condition(cfg, planet))
+        end
+        IDENTITY = (0.0, 0.0, 0.0, 1.0)
+
+        # Absent keys: every link at identity — bit-compat with the
+        # pre-capability spacecraft.
+        write_manifest(scenario)
+        sc0 = build_sc(only(TV._load_scenarios_from_manifest(manifest_path)))
+        @test all(Tuple(link.q) == IDENTITY for link in sc0.links)
+
+        # Attitude keys with any non-:attitude mode are a manifest error —
+        # the historical :max_drag path reads panel quaternions, so letting
+        # them through would silently change default-mode physics (Codex
+        # review, PR #84).
+        s, c = sin(pi / 16), cos(pi / 16)
+        scenario["spacecraft"]["panel_attitude_q_left"] = [0.0, 2s, 0.0, 2c]
+        scenario["spacecraft"]["panel_attitude_q_right"] = [0.0, -2s, 0.0, 2c]
+        write_manifest(scenario)
+        err_mode = try
+            TV._load_scenarios_from_manifest(manifest_path)
+            nothing
+        catch e
+            e
+        end
+        @test err_mode !== nothing
+        @test occursin("require aero_fixed_attitude_incidence", sprint(showerror, err_mode))
+
+        # Round-trip under :attitude: canted panels (±22.5° about y,
+        # deliberately UNNORMALIZED input) land on the built links
+        # normalized; bus stays identity.
+        scenario["aero_fixed_attitude_incidence"] = "attitude"
+        write_manifest(scenario)
+        cfg_q = only(TV._load_scenarios_from_manifest(manifest_path))
+        sc_q = build_sc(cfg_q)
+        bus, left, right = sc_q.links
+        @test Tuple(bus.q) == IDENTITY
+        @test collect(left.q) ≈ [0.0, s, 0.0, c] atol = 1e-12
+        @test collect(right.q) ≈ [0.0, -s, 0.0, c] atol = 1e-12
+
+        # The point of the capability: under :attitude the canted panels now
+        # see oblique incidence (mirrored about flow-normal), where the
+        # identity-quaternion configuration is pinned flow-normal.
+        AeroFM = SimulationModel.DynamicEffectors.AerodynamicEffectors
+        α_left = AeroFM._attitude_link_alpha(left, bus)
+        α_right = AeroFM._attitude_link_alpha(right, bus)
+        @test abs(α_left - pi / 2) ≈ pi / 8 atol = 1e-10
+        @test α_left + α_right ≈ pi atol = 1e-10
+        @test AeroFM._attitude_link_alpha(bus, bus) ≈ pi / 2 atol = 1e-12
+
+        # Validation: wrong length and zero norm fail loudly, naming the key
+        # (mode already :attitude from the round-trip above, so the shape
+        # errors are what fire).
+        for bad in (Any[0.0, 1.0, 0.0], Any[0.0, 0.0, 0.0, 0.0])
+            scenario["spacecraft"]["bus_attitude_q"] = bad
+            write_manifest(scenario)
+            err = try
+                TV._load_scenarios_from_manifest(manifest_path)
+                nothing
+            catch e
+                e
+            end
+            @test err !== nothing
+            @test occursin("bus_attitude_q", sprint(showerror, err))
+        end
+    end
 end
 
 println("coverage_parallel_telemetry_probes_ok")

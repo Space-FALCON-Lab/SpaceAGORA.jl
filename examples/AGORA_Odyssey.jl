@@ -25,10 +25,10 @@ ic = _mars_odyssey_initial_condition_from_spice(initial_time, SPICE_PATH)
 
 spacecraft = make_three_body_spacecraft(
     bus_dims=(2.2, 2.6, 1.7),
-    panel_dims=(0.01, 5.5 / 1.35, 2.6),
+    panel_dims=(0.01, 3.89 / 2.0, 1.7),
     bus_mass=391.0,
     panel_mass_each=10.0,
-    panel_offset_y=2.6 / 2.0 + 5.5 / 4.0,
+    panel_offset_y=2.6 / 2.0 + 3.89 / 4.0,
     ic=ic,
     reflection_coefficient=0.9,
     prop_mass=50.0,
@@ -79,16 +79,9 @@ guidance_effector = AerobrakingCampaignPropulsiveManeuverGuidanceModel(
     maneuver_orbit_number=odyssey_schedule.maneuver_orbit_number,
     maneuver_Δv=odyssey_schedule.maneuver_Δv
 )
-args = SimulationConfiguration(
-    file_paths=base_args.file_paths,
-    simulation_settings=base_args.simulation_settings,
-    mission_configuration=base_args.mission_configuration,
-    environment_model=base_args.environment_model,
-    dynamics_model=base_args.dynamics_model,
+args = SM.SimConfig._with_configuration(base_args;
     guidance_model=GuidanceModel(guidance_effectors=(guidance_effector,), guidance_rates=[30.0]),
-    navigation_model=base_args.navigation_model,
     control_model=ControlModel(control_effectors=(thruster,), control_rates=[10.0]),
-    initial_time=base_args.initial_time,
     integration_tolerances=IntegrationTolerances(
         reltol_orbit=1e-8,
         abstol_orbit=1e-8,
@@ -96,7 +89,7 @@ args = SimulationConfiguration(
         reltol_atmosphere=1e-8,
         abstol_atmosphere=1e-8,
         dt_max_atmosphere=5.0
-    )
+    ),
 )
 
 args_eff = SpaceAGORA.TelemetryVerification._example_smoke_args(args)

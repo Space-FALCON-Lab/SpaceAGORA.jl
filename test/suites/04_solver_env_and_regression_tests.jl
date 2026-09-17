@@ -113,14 +113,36 @@
         "SPACEAGORA_EFFECTOR_WORK_NS_PER_WORKER_THRESHOLD" => "1000.0",
         "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0"
     ) do
+        # One satellite never threads its effectors under the automatic policy,
+        # however heavy the estimated work: the per-step task overhead loses.
         decision_single = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 1)
-        if Threads.nthreads() > 1
-            @test decision_single.use_threads == true
-            @test decision_single.allotment >= 2
-            @test decision_single.allotment <= min(Threads.nthreads(), 4)
-        else
-            @test decision_single.use_threads == false
+        @test decision_single.use_threads == false
+        @test decision_single.allotment == 1
+        @test decision_single.policy_applied == false
+        # Forcing threading on still threads a single satellite.
+        withenv("SPACEAGORA_EFFECTOR_PARALLEL" => "on") do
+            decision_single_on = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 1)
+            if Threads.nthreads() > 1
+                @test decision_single_on.use_threads == true
+                @test decision_single_on.allotment >= 2
+                @test decision_single_on.allotment <= min(Threads.nthreads(), 4)
+            else
+                @test decision_single_on.use_threads == false
+            end
         end
+        # The same heavy estimate with two satellites keeps the automatic path.
+        decision_pair = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 2)
+        if Threads.nthreads() > 1
+            @test decision_pair.use_threads == true
+        else
+            @test decision_pair.use_threads == false
+        end
+        # Two configured satellites of which one is still active (the other
+        # impacted) are a single satellite for this gate: serial from then on.
+        decision_survivor = _dynamic_effector_thread_decision(args_eff_single, p_eff_single, args_eff_single.dynamics_model.dynamic_effectors, 2; active_sats=1)
+        @test decision_survivor.use_threads == false
+        @test decision_survivor.allotment == 1
+        @test decision_survivor.policy_applied == false
     end
 
     args_eff_multi = build_config(
@@ -647,29 +669,13 @@
     )
     @test occursin("no control effectors", _gravity_backbone_reject_reason(args_backbone_control))
 
-    args_backbone_guidance = SimulationConfiguration(
-        simulation_settings=args_backbone.simulation_settings,
-        mission_configuration=args_backbone.mission_configuration,
-        environment_model=args_backbone.environment_model,
-        dynamics_model=args_backbone.dynamics_model,
+    args_backbone_guidance = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args_backbone;
         guidance_model=GuidanceModel(guidance_effectors=(CountingGuidanceModel([0]),), guidance_rates=[1.0]),
-        navigation_model=args_backbone.navigation_model,
-        control_model=args_backbone.control_model,
-        initial_time=args_backbone.initial_time,
-        integration_tolerances=args_backbone.integration_tolerances
     )
     @test occursin("no guidance effectors", _gravity_backbone_reject_reason(args_backbone_guidance))
 
-    args_backbone_navigation = SimulationConfiguration(
-        simulation_settings=args_backbone.simulation_settings,
-        mission_configuration=args_backbone.mission_configuration,
-        environment_model=args_backbone.environment_model,
-        dynamics_model=args_backbone.dynamics_model,
-        guidance_model=args_backbone.guidance_model,
+    args_backbone_navigation = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args_backbone;
         navigation_model=NavigationModel(navigation_effectors=(CountingNavigationModel([0]),), navigation_rates=[1.0]),
-        control_model=args_backbone.control_model,
-        initial_time=args_backbone.initial_time,
-        integration_tolerances=args_backbone.integration_tolerances
     )
     @test occursin("no navigation effectors", _gravity_backbone_reject_reason(args_backbone_navigation))
 
@@ -1427,13 +1433,14 @@
     nbody_ws = dyn._make_nbody_scratch_workspace(1)
     dyn._ensure_nbody_workspace_capacity!(nbody_ws, 3, 4)
     @test length(nbody_ws.pos_primary_k_all) == 3
-    @test length(nbody_ws.thread_force) == 4
+    # per-body slots (summed in body order); the worker count no longer sizes anything
+    @test length(nbody_ws.body_force_ii) == 3
     nbody_ws_typed = @inferred dyn._nbody_workspace_for_sat!(p_nbody_srp, 1, 2, 2)
     @test nbody_ws_typed isa NBodyScratchWorkspace
     @test p_nbody_srp.shared_buffers.nbody_workspaces[1] === nbody_ws_typed
     nbody_ws_oob = @inferred dyn._nbody_workspace_for_sat!(p_nbody_srp, 5, 2, 2)
     @test length(nbody_ws_oob.pos_primary_k_all) == 2
-    @test length(nbody_ws_oob.thread_force) == 2
+    @test length(nbody_ws_oob.body_force_ii) == 2
 
     aero_ws_typed = @inferred dyn._aero_workspace_for_sat!(p_workspace_resize, 1, 2)
     @test aero_ws_typed isa AeroScratchWorkspace
@@ -1519,10 +1526,20 @@
                 SVector{3, Float64}(4.8e6, 2.1e6, 1.7e6),
                 SVector{3, Float64}(-3.9e6, 5.2e6, 2.4e6)
             )
+            # The effector takes an inertial position and returns an inertial
+            # force, rotating through the ephemerides model's planet frame.
+            # Evaluate that same frame here and compare in planet-fixed axes,
+            # so the parity check is independent of the frame convention (the
+            # Earth frame is GMST-aligned, not identity, at the epoch).
+            et_compare = p_harmonics_compare.shared_buffers.et_start[] +
+                         p_harmonics_compare.shared_buffers.current_time[]
+            l_pi_compare = SimulationModel.planet_frame_lpi(
+                EARTH, et_compare, args_harmonics_compare.environment_model.ephemerides_model)
             for pos_pp in sample_positions_pp
-                state = ComponentVector(pos=collect(pos_pp), vel=[0.0, 0.0, 0.0], mass=200.0)
-                force_pp, torque_pp = calcForceTorque(model_full, state, p_harmonics_compare, 1)
-                acc_pp = force_pp / state.mass
+                pos_ii = l_pi_compare' * pos_pp
+                state = ComponentVector(pos=collect(pos_ii), vel=[0.0, 0.0, 0.0], mass=200.0)
+                force_ii, torque_pp = calcForceTorque(model_full, state, p_harmonics_compare, 1)
+                acc_pp = (l_pi_compare * force_ii) / state.mass
                 ref_total_pp = SVector{3, Float64}(
                     SatelliteToolboxGravityModels.GravityModels.gravitational_acceleration(
                         ref_model,
@@ -2098,9 +2115,13 @@ end
         rp_alt_m=500e3,
         orientation_state=(q0_outside, ω0_outside)
     )
+    # The above-EI fast path only applies to density models that vanish above
+    # the entry interface (NoAtmosphereModel); all other models keep aero
+    # engaged at every altitude, so the buffer-trust behavior under test here
+    # must be probed with the vacuum model.
     args_outside = build_config(
         spacecraft=sc_outside,
-        density_model=ExponentialAtmosphereModel(EARTH),
+        density_model=NoAtmosphereModel(),
         orientation_sim=true,
         mission_time=10.0,
         EI_km=120.0,
@@ -2140,6 +2161,33 @@ end
     p_outside.shared_buffers.in_atmosphere_sample_t[1] = 0.0
     @test SimulationEngine._drag_state_buffer_current(p_outside, 1, 0.0)
     @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_outside.sc, p_outside, 0.0)
+
+    # Density models that do not vanish above EI never take the fast path: an
+    # orbit entirely above the entry interface still sees continuous aero.
+    @test SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(NoAtmosphereModel())
+    @test !SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(ExponentialAtmosphereModel(EARTH))
+    @test !SimulationModel.EnvironmentModels.density_vanishes_above_entry_interface(ConstantDensityModel(1e-11, 900.0))
+    args_nonvanishing = build_config(
+        spacecraft=sc_outside,
+        density_model=ExponentialAtmosphereModel(EARTH),
+        orientation_sim=true,
+        mission_time=10.0,
+        EI_km=120.0,
+        dynamic_effectors=(
+            InverseSquaredGravityModel(),
+            AerodynamicCoefficientfM(),
+        ),
+        keplerian=true
+    )
+    args_nonvanishing.environment_model.planet.L_PI .= SMatrix{3, 3, Float64}(I(3))
+    u0_nonvanishing = build_initial_conditions(args_nonvanishing)
+    p_nonvanishing = ODEParams(n_sats=1, args=args_nonvanishing)
+    _initialize_heat_rate_buffers!(p_nonvanishing)
+    p_nonvanishing.shared_buffers.in_atmosphere[1] = false
+    p_nonvanishing.shared_buffers.in_atmosphere_sample_t[1] = 0.0
+    @test SimulationEngine._drag_state_buffer_current(p_nonvanishing, 1, 0.0)
+    @test !SimulationEngine._spacecraft_outside_atmosphere_for_current_state(u0_nonvanishing.sc[1], p_nonvanishing, 1, 0.0)
+    @test !SimulationEngine._all_active_spacecraft_outside_atmosphere(u0_nonvanishing.sc, p_nonvanishing, 0.0)
 
     sc_mixed = [
         make_spacecraft(ra_alt_m=220e3, rp_alt_m=100e3, ν_deg=0.0),
@@ -2726,6 +2774,11 @@ end
     # the whole trajectory, not the cached endpoints-only integrator.
     sol_full = run_simulation(args_cache; return_solution=true, solver_cache=cache)
     @test length(sol_full.t) > 2
+    # One saved state per accepted step plus the start: the per-step
+    # housekeeping callbacks (planet frame, density and thermal samples,
+    # quaternion projection) add no before/after saves of their own, and no
+    # continuous event fires in the first 600 s of this orbit.
+    @test length(sol_full.t) == sol_full.stats.naccept + 1
     @test cache.integrator !== integ_no_output
     @test cache.save_on == true
 

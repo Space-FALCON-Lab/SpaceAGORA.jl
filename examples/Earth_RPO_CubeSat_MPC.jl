@@ -52,7 +52,7 @@ function build_rpo_cubesat_mpc_demo(;
     geometry = RPOReferenceGeometry(station_geometry; chaser=chaser_geometry)
 
     q_identity = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
-    station_root = Link{0}(
+    station_root = Link(
         root=true,
         m=500.0,
         dims=MVector{3, Float64}(4.0, 2.0, 2.0),
@@ -68,7 +68,7 @@ function build_rpo_cubesat_mpc_demo(;
         id=201,
     )
 
-    chaser_root = Link{0}(
+    chaser_root = Link(
         root=true,
         m=5.0,
         dims=MVector{3, Float64}(0.1, 0.1, 0.3),

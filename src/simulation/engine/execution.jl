@@ -295,6 +295,31 @@ function _try_save_simulation_results_if_enabled!(args...)
     end
 end
 
+"""
+    run_simulation(args...; isolate_state=true, kwargs...)
+
+Stable package entrypoint for simulation execution used by calibration integrations.
+
+By default, `isolate_state=true` deep-copies the simulation configuration before execution.
+This preserves correctness and reentrancy across repeated runs and concurrent callers by
+preventing one run from mutating shared campaign or model state that another run still
+references.
+
+Set `isolate_state=false` only as an advanced performance lever when the caller owns the
+configuration instance and will not reuse it concurrently or across runs that may mutate
+shared state. This can reduce setup cost for large mission definitions or many short runs,
+but it trades away the default isolation guarantee.
+
+# Examples
+```jldoctest
+julia> args = spaceagora_no_gram_example_args();
+
+julia> sol = run_simulation(args; return_solution=true);
+
+julia> length(sol.t) > 1
+true
+```
+"""
 function run_simulation(
     args::SimulationConfiguration;
     isolate_state::Bool=true,

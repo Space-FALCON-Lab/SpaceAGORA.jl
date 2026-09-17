@@ -144,20 +144,21 @@ EffectorEnvironmentRequirements(;
 """
     environment_requirements(model) -> EffectorEnvironmentRequirements
 
-Preferred additive declaration for the sampled environment data required by a
-[`wrench`](@ref) implementation. The default requests no additional sampled
-fields.
+Preferred additive declaration hook for the sampled environment capabilities a
+[`wrench`](@ref) implementation requires. The default requests no sampled
+environment fields.
 """
 @inline environment_requirements(::Any) = EffectorEnvironmentRequirements()
 
 """
-    wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)
+    wrench(model, x::StateSample, env::EnvironmentSample, t::Float64) -> (force_ii, torque_body)
 
-Preferred additive force/torque extension hook for dynamic effectors.
+Preferred additive extension hook for custom [`AbstractForceTorqueModel`](@ref)
+implementations. The engine owns stage-consistent sampling and caching, then
+passes a typed state/environment bundle into `wrench`.
 
-Returns `(force_ii, torque_body)` in SI units, where force is expressed in the
-inertial frame and torque is expressed in the body frame. Implementations should
-behave as pure functions of `(model, x, env, t)`.
+Return inertial-frame force and body-frame torque in SI units. Implementations
+should behave as pure functions of `(model, x, env, t)`.
 """
 function wrench end
 
@@ -174,30 +175,31 @@ function wrench_caching! end
 """
     solver_partition(model) -> Symbol
 
-Optional additive declaration for solver-side IMEX partitioning of dynamic
-effectors.
+Optional additive declaration hook for `split_imex` solver partitioning of
+dynamic effectors.
 
-Return `:implicit` to place the effector on the stiff implicit side of
-`split_imex`, or `:explicit` to keep it on the non-stiff explicit side. The
-default is `:explicit`.
+Return `:implicit` to place the effector on the atmosphere-implicit IMEX side,
+or `:explicit` to keep it on the non-stiff explicit side. The default is
+`:explicit`.
 """
 @inline solver_partition(::Any) = :explicit
 
 """
     gravity_backbone_structure(model) -> Symbol
 
-Optional additive declaration for the gravity-backbone solver mode.
+Optional additive declaration hook for the `gravity_backbone_split` solver
+mode.
 
-Return `:position_only_static_gravity` for effectors that can participate in the
-gravity-only translational backbone, or `:unsupported` otherwise. The default is
-`:unsupported`.
+Return `:position_only_static_gravity` for effectors that can participate in
+the gravity-only translational backbone, or `:unsupported` otherwise. The
+default is `:unsupported`.
 """
 @inline gravity_backbone_structure(::Any) = :unsupported
 
 """
-    gravity_backbone_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64)
+    gravity_backbone_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64) -> accel_ii
 
-Optional additive acceleration hook for the gravity-backbone solver mode.
+Optional additive acceleration hook for `gravity_backbone_split`.
 
 Implementations must return inertial-frame translational acceleration in SI
 units for effectors that declare
@@ -208,17 +210,17 @@ function gravity_backbone_acceleration_ii end
 """
     gravity_backbone_kick_structure(model) -> Symbol
 
-Optional additive declaration for explicit perturbation kicks in
-`gravity_backbone_split`.
+Optional additive declaration hook for explicit translational perturbation kicks
+in `gravity_backbone_split`.
 
-Return `:velocity_kick_explicit` for translational perturbations that should be
-applied as explicit velocity kicks around the gravity core, or `:unsupported`
-otherwise. The default is `:unsupported`.
+Return `:velocity_kick_explicit` for effectors that should be applied as
+explicit velocity kicks around the gravity core, or `:unsupported` otherwise.
+The default is `:unsupported`.
 """
 @inline gravity_backbone_kick_structure(::Any) = :unsupported
 
 """
-    gravity_backbone_kick_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64)
+    gravity_backbone_kick_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64) -> accel_ii
 
 Optional additive acceleration hook for explicit velocity kicks in
 `gravity_backbone_split`.

@@ -10,7 +10,7 @@
 # on this page comes from the NASA CYGNSS Level 1 navigation solution for that
 # spacecraft over this window; nothing is a catalogue propagation and nothing is
 # a design orbit. There is therefore nothing to distinguish between and no
-# provenance to colour-code: the page says once that the whole constellation is
+# provenance to color-code: the page says once that the whole constellation is
 # flown.
 #
 # The constellation has no propulsion, so by June 2025 drag had taken it well
@@ -31,12 +31,13 @@
 # body, solar radiation pressure, and NRLMSISE-00 drag with real CelesTrak
 # space-weather indices.
 #
-# Spacecraft geometry. The drawn and simulated vehicle is a GENERIC small
-# satellite box built only from publicly published CYGNSS figures (body
-# roughly 51 x 64 x 28 cm and a 1.67 m deployed array span, NASA/eoPortal;
-# about 29 kg, the mass in the reconstruction record). It is deliberately not
-# a to-scale reconstruction, and no restricted mission-configuration geometry
-# is read, embedded or published here.
+# Spacecraft geometry. The SIMULATED vehicle is a GENERIC small satellite box
+# built only from publicly published CYGNSS figures (body roughly 51 x 64 x 28
+# cm and a 1.67 m deployed array span, NASA/eoPortal; about 29 kg, the mass in
+# the reconstruction record). The DRAWN vehicle is NASA's own public 3D model
+# of the observatory, scaled to the published span (see `CYGNSS_MODEL` below);
+# it is a drawing override and enters no force, mass or area. No restricted
+# mission-configuration geometry is read, embedded or published here.
 #
 #   julia --project=. scripts/dev/viewer_demos/cygnss_constellation.jl
 include(joinpath(@__DIR__, "common.jl"))
@@ -82,6 +83,36 @@ const CYGNSS_ARRAY_MASS_EACH_KG = 0.0      # folded into the bus mass; the recor
 # minus the body it grows out of.
 const CYGNSS_ARRAY_HALF_SPAN_M = (CYGNSS_ARRAY_SPAN_M - CYGNSS_BUS_DIMS_M[2]) / 2
 const CYGNSS_SRP_CR = 1.3                  # ASSUMPTION: a generic small-satellite reflectivity; the record states only "fixed coefficients"
+
+# --- the drawn vehicle ------------------------------------------------------
+# NASA's own 3D model of the observatory (NASA 3D Resources, "Cyclone Global
+# Navigation Satellite System (CYGNSS)"), decompressed for the viewer; see
+# `data/models/README.md` for the provenance. It replaces the link boxes in the
+# page only. The SIMULATED vehicle is unchanged: drag, SRP and mass properties
+# still come from the generic public box above, so the trajectory does not
+# depend on the model and no restricted geometry is read, embedded or drawn.
+const CYGNSS_MODEL = joinpath(MODELS_DIR, "cygnss_nasa_3d_resources.glb")
+# Scale, meters per model unit. The file is authored close to meters: its
+# deployed extent across the arrays is 1.5905 model units against the published
+# 1.67 m span, so 1.0500 puts the span on the published figure. The same factor
+# leaves the model's own bus at 0.634 x 0.538 x 0.256 m against the published
+# 0.64 x 0.51 x 0.28 m envelope -- within 1% on the long axis, 5% over on the
+# ram axis and 9% under through the deck, the last of which the model measures
+# across its own antenna deck rather than the bare bus. No non-uniform scale is
+# applied: one number for a rigid model is the honest choice, and the span is
+# the mission's headline dimension.
+const CYGNSS_MODEL_SCALE = 1.67 / 1.5905
+# Model axes (read off renders of the file, not assumed): the arrays deploy
+# along model X, the solar cells face model -Z, and the instrument deck with
+# the gold antenna panels faces model +Z. The run has no attitude solution, so
+# the viewer draws every spacecraft velocity-aligned: body +x along the
+# velocity, body +z toward the planet, body +y completing the triad. A
+# rotation of +90 degrees about model Z carries model +X to body +y (the array
+# span across the track, matching the simulated box, whose panels are offset
+# along body y) and leaves model +Z on body +z, which puts the antenna deck
+# toward Earth and the cells toward the Sun -- the way a nadir-pointing
+# observatory flies.
+const CYGNSS_MODEL_ROTATION_DEG = (0.0, 0.0, 90.0)
 
 # Starting effective drag scale. The reconstruction record calibrated about 0.3 against
 # its own (restricted, non-public) geometry; that number does not transfer to
@@ -535,8 +566,10 @@ prefix = run_or_reuse!(args, OUTDIR)
 # default saved column that the viewer shows as a panel row, so the
 # `sc<i>_mass` columns are dropped from the page's copy, and each link's
 # `mass_kg` is zeroed in the scene, which nothing in the viewer reads. The link
-# box DIMENSIONS stay, because the viewer needs them to draw the generic box at
-# all; they are the published body envelope, not a reconstruction.
+# box DIMENSIONS stay, because the viewer falls back to them if the model
+# cannot be parsed; they are the published body envelope, not a reconstruction.
+# The 3D model that is drawn over them is NASA's own published file and carries
+# no figure from the restricted geometry either.
 const mixed_provenance = length(unique(first(split(s.provenance, ',')) for s in states)) > 1
 const PAGE_DIR = joinpath(OUTDIR, "page")
 mkpath(PAGE_DIR)
@@ -625,9 +658,14 @@ end
 # the ground tracks both read well and which keeps the page inside its size
 # budget alongside a 4k texture and seven 2500-sample flown-track ghosts. The
 # planet-fixed frame opens on the picture the ground tracks belong to.
+# Every spacecraft is drawn with the same file, so the bundler embeds the model
+# bytes once and the other six entries point at that one (`url_from`).
 html = export_visualization(page_prefix; max_frames=3000, trail_orbits=1, texture_resolution="4k",
     frame=:planet_fixed, ground_tracks=true,
     title="AGORA CYGNSS · the constellation over its telemetry window",
+    models=Dict(k => CYGNSS_MODEL for k in 1:length(states)),
+    model_scale=CYGNSS_MODEL_SCALE,
+    model_rotation_deg=Dict(k => CYGNSS_MODEL_ROTATION_DEG for k in 1:length(states)),
     references=references)
 println("html: ", html, " ", filesize(html))
 
@@ -662,6 +700,6 @@ cdn = build_cdn_page(html, joinpath(OUTDIR, "artifact.html"), "AGORA CYGNSS Cons
     (FIT_SMA ? "Two scalars per spacecraft, the magnitude of its initial velocity and an effective drag scale, were fitted to that spacecraft's own track over this window, so the agreement between a spacecraft and its ghost is an in-sample fit and not a prediction. " : "") *
     "Click a solid spacecraft to read its separation from its own flown track. " *
     separation_note *
-    "The spacecraft is drawn as a generic small-satellite box, not as a reconstruction of the flight geometry. " *
+    "Each observatory is drawn with NASA's own public 3D model of CYGNSS, scaled to the published deployed span and flown velocity-aligned; the simulation itself uses a generic box built from published figures, not a reconstruction of the flight geometry. " *
     "\"Ground tracks\" draws each sub-satellite point on the surface. Drag to orbit, wheel to zoom, Space to pause, F to follow.")
 println("cdn: ", cdn, " ", filesize(cdn))

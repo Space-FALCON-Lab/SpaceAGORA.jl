@@ -7,7 +7,6 @@ using LinearAlgebra
 using Random
 using CSV
 using DataFrames
-const RuntimeServices = SpaceAGORA.RuntimeServices
 const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
 const MISSION_TIME_SEC = 4800
 const THRESHOLD_DISTANCE_KM = 500.0 

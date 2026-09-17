@@ -1,13 +1,46 @@
-const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
-const REPO_PROJECT = joinpath(REPO_ROOT, "Project.toml")
-
+## 1. Load project repo and activate its environment
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..")) # path to the root of the repository
+const REPO_PROJECT = joinpath(REPO_ROOT, "Project.toml") # path to the Project.toml file of the repository
 if something(Base.active_project(), "") != REPO_PROJECT
     import Pkg
     Pkg.activate(REPO_ROOT; io=devnull)
-end
+end # If Julia is not already using this project’s environment, switch to it
 
+
+## 2. Load SpaceAGORA and its submodules
 using SpaceAGORA
+# Keep local aliases: study modules may define the same constants before or
+# after including this helper. Imported bindings cannot be redeclared that way.
+if !isdefined(@__MODULE__, :SimulationEngine)
+    const SimulationEngine = SpaceAGORA.SimulationEngine
+end
+if !isdefined(@__MODULE__, :SimulationModel)
+    const SimulationModel = SpaceAGORA.SimulationModel
+end
+if !isdefined(@__MODULE__, :RuntimeServices)
+    const RuntimeServices = SpaceAGORA.RuntimeServices
+end
+using .SimulationModel
+if !isdefined(@__MODULE__, :SM)
+    const SM = SimulationModel
+end
+if !isdefined(@__MODULE__, :run_simulation)
+    const run_simulation = SpaceAGORA.run_simulation
+end
+if !isdefined(@__MODULE__, :quat_mult)
+    const quat_mult = SimulationModel.quat_mult
+end
+import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
 
+
+## 3. SPICE Helper Functions
+if !isdefined(@__MODULE__, :SPICE_PATH)
+    const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+end # if SPICE_PATH is not already defined, define it here
+
+
+## 4. GRAM Helper Functions
+# 4.1. Prepare the dependencies of the bundled GRAMSuite project.
 function _instantiate_vendored_gramsuite!(vendored_gramsuite::String)
     Pkg = Base.require(Base.PkgId(Base.UUID("44cfe95a-1eb2-52ea-b672-e2afdf69b78f"), "Pkg"))
     previous_project = something(Base.active_project(), "")
@@ -24,12 +57,14 @@ function _instantiate_vendored_gramsuite!(vendored_gramsuite::String)
     return nothing
 end
 
+# 4.2. Try to save a failed GRAMSuite import by installing dependencies
 function _missing_dependency_error(err)::Bool
     msg = sprint(showerror, err)
     return occursin("is required but does not seem to be installed", msg) ||
         occursin("Run `Pkg.instantiate()` to install all recorded dependencies", msg)
 end
 
+# 4.3. Make GRAMSuite available so Julia can activate SpaceAGORA’s GRAM integration
 function ensure_gramsuite_loaded!()
     if !isdefined(SpaceAGORA, :GRAMSuite)
         vendored_gramsuite = joinpath(REPO_ROOT, "data", "GRAMSuite.jl")
@@ -61,6 +96,7 @@ function ensure_gramsuite_loaded!()
     return nothing
 end
 
+## 4.4. Prepare convenient names and GRAM support for a GRAM-backed example.
 function setup_gram_example!(mod::Module=@__MODULE__)
     ensure_gramsuite_loaded!()
     if !isdefined(mod, :InitialTime)
@@ -72,32 +108,8 @@ function setup_gram_example!(mod::Module=@__MODULE__)
     return nothing
 end
 
-if !isdefined(@__MODULE__, :SimulationEngine)
-    const SimulationEngine = SpaceAGORA.SimulationEngine
-end
-if !isdefined(@__MODULE__, :SimulationModel)
-    const SimulationModel = SpaceAGORA.SimulationModel
-end
-if !isdefined(@__MODULE__, :RuntimeServices)
-    const RuntimeServices = SpaceAGORA.RuntimeServices
-end
-using .SimulationModel
 
-if !isdefined(@__MODULE__, :SM)
-    const SM = SimulationModel
-end
-if !isdefined(@__MODULE__, :run_simulation)
-    const run_simulation = SpaceAGORA.run_simulation
-end
-if !isdefined(@__MODULE__, :quat_mult)
-    const quat_mult = SimulationModel.quat_mult
-end
-if !isdefined(@__MODULE__, :SPICE_PATH)
-    const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
-end
-
-import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
-
+## 5. Inspect the simulation’s threading configuration.
 function print_thread_diagnostics(args; label::String="")
     PP  = SimulationModel.ParallelPolicy
     SE  = SimulationEngine

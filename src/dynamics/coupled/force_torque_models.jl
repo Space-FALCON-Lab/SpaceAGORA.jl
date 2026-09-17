@@ -2,6 +2,13 @@
     Wrapper module for all dynamic effector models (all forces/torques)
 """
 module DynamicEffectors
+    """
+        calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
+
+    Stable extension hook for custom [`AbstractForceTorqueModel`](@ref)
+    implementations. Extend this method for package or user models that contribute
+    translational and rotational wrench terms to the simulation RHS.
+    """
     function calcForceTorque end
     using ..EffectorSampling: wrench, wrench_caching!, environment_requirements, solver_partition
 

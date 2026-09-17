@@ -263,6 +263,19 @@ function _run_benchmark(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::
     return _run_subprocess(launcher, script_args; env_pairs=env_pairs, print_only=print_only, io=io, errio=errio)
 end
 
+"""
+    run_cli([args=ARGS]; io=stdout, errio=stderr) -> Int
+
+Stable CLI entrypoint for SpaceAGORA operational commands:
+
+- `run` (add `--visualize` for the 3D viewer page)
+- `visualize`
+- `telemetry`
+- `benchmark`
+- `assets check`
+
+This is the package-owned command surface used by the `bin/spaceagora` wrapper.
+"""
 function run_cli(args::Vector{String}=copy(ARGS); io::IO=stdout, errio::IO=stderr)::Int
     isempty(args) && return _print_usage(io)
     cmd = first(args)

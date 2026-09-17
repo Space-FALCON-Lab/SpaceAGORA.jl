@@ -26,6 +26,7 @@ module ControlHooks
     const config = Structure
 
     export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate, calcReactionWheelTorque
+    export control_thruster_levels
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
     export RpoLQMPCController, init_rpo_lqmpc, rpo_lqmpc_control
     export RPOHeldActuation, RPOMPCControlModel
@@ -34,6 +35,22 @@ module ControlHooks
     export init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview
     export robot_arm_joint_mpc_control, robot_arm_measured_joint_state
     export rpo_allocate_six_axis_thrusters, rpo_thruster_wrench_body
+
+    """
+        control_thruster_levels(effector, i::Int) -> Union{Nothing, AbstractVector{<:Real}}
+
+    Optional hook: the firing level (0 to 1) of every thruster of spacecraft `i`,
+    in the order the visualization scene lists them (the spacecraft's links in
+    order, each link's `thrusters` in order). Effectors that drive no named
+    thruster return `nothing`, the default for any effector type that does not
+    override this method; an effector that drives only some of them may return a
+    shorter vector, and the remaining thrusters are idle.
+
+    The engine reads this at save time, so an effector must compute the levels
+    in `calcControlEffect!` and keep them in its own actuator state rather than
+    recomputing them here.
+    """
+    control_thruster_levels(effector, i::Int) = nothing
 
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     using ..QuaternionMath

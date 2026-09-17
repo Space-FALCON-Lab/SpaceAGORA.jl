@@ -9,7 +9,7 @@ using SPICE
 using Dates
 using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK, tracked_lock
 using ..SimulationModel: PlanetFrameEphemerisCache, rot
-using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice
+using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice, ephemerides_sun_direction_ii
 using ..ParallelPolicy
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getDensityBatch!, NoAtmosphereModel
@@ -19,9 +19,10 @@ using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientConstant, A
 using ..GravityEffectors: InverseSquaredJ2GravityModel, j2_secular_rates
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
+using ..SceneVisualization: link_pose_vector, link_pose_link_indices, arm_pose_vector, robot_arm_plan_for
 import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
-using ..ControlHooks: calcControlEffect!
+using ..ControlHooks: calcControlEffect!, control_thruster_levels
 using ..GuidanceHooks: calcGuidanceEffect!
 using ..NavigationHooks: calcNavigationEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits

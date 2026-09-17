@@ -1463,42 +1463,63 @@ function _probe_rhs_final_assembly_direct_stride(sc_state, sc_du, u, du)::Int
     Tuple(propertynames(u)) == (:sc,) || return 0
     Tuple(propertynames(du)) == (:sc,) || return 0
 
-    first_state = sc_state[1]
-    first_du = sc_du[1]
-    Tuple(propertynames(first_state)) == (:pos, :vel, :mass, :heat_loads) || return 0
-    Tuple(propertynames(first_du)) == (:pos, :vel, :mass, :heat_loads) || return 0
-    length(first_state.pos) == 3 || return 0
-    length(first_state.vel) == 3 || return 0
-    length(first_du.pos) == 3 || return 0
-    length(first_du.vel) == 3 || return 0
-
-    first_state_data = ComponentArrays.getdata(first_state)
-    first_du_data = ComponentArrays.getdata(first_du)
-    stride = length(first_state_data)
-    stride == length(first_du_data) || return 0
-    stride >= 7 || return 0
-    length(first_state.heat_loads) == stride - 7 || return 0
-    length(first_du.heat_loads) == stride - 7 || return 0
-
     u_data = ComponentArrays.getdata(u)
     du_data = ComponentArrays.getdata(du)
+    # Restrict the raw writer to the ordinary contiguous Float64 storage used
+    # by build_initial_conditions. Custom array storage keeps the generic RHS.
+    u_data isa Vector{Float64} || return 0
+    du_data isa Vector{Float64} || return 0
+    sc_state[1] isa ComponentVector || return 0
+    stride = length(ComponentArrays.getdata(sc_state[1]))
+    stride >= 7 || return 0
     length(u_data) == stride * num_sats || return 0
     length(du_data) == stride * num_sats || return 0
-    _component_data_aliases(u_data, first_state, 1) || return 0
-    _component_data_aliases(du_data, first_du, 1) || return 0
-    last_start = (num_sats - 1) * stride + 1
-    _component_data_aliases(u_data, sc_state[num_sats], last_start) || return 0
-    _component_data_aliases(du_data, sc_du[num_sats], last_start) || return 0
+    for sat_idx in 1:num_sats
+        state = sc_state[sat_idx]
+        derivative = sc_du[sat_idx]
+        _rhs_direct_spacecraft_layout_matches(state, stride) || return 0
+        _rhs_direct_spacecraft_layout_matches(derivative, stride) || return 0
+        start = (sat_idx - 1) * stride + 1
+        _component_data_aliases(u_data, state, start) || return 0
+        _component_data_aliases(du_data, derivative, start) || return 0
+    end
     return stride
 end
 
+function _rhs_direct_spacecraft_layout_matches(sc, stride::Int)::Bool
+    sc isa ComponentVector || return false
+    Tuple(propertynames(sc)) == (:pos, :vel, :mass, :heat_loads) || return false
+    sc.pos isa AbstractVector && length(sc.pos) == 3 || return false
+    sc.vel isa AbstractVector && length(sc.vel) == 3 || return false
+    sc.mass isa Real || return false
+    sc.heat_loads isa AbstractVector && length(sc.heat_loads) == stride - 7 || return false
+    data = ComponentArrays.getdata(sc)
+    length(data) == stride || return false
+    data isa StridedVector{Float64} || return false
+    Base.stride(data, 1) == 1 || return false
+    # Names and lengths alone do not establish offsets: ComponentArrays permits
+    # axes that name pos before vel while mapping pos to the later data slots.
+    axis = only(ComponentArrays.getaxes(sc))
+    axis[:pos].idx == 1:3 || return false
+    axis[:vel].idx == 4:6 || return false
+    axis[:mass].idx == 7 || return false
+    axis[:heat_loads].idx == 8:stride || return false
+    return true
+end
+
 @inline function _rhs_final_assembly_direct_stride!(shared_buffers, sc_state, sc_du, u, du)::Int
-    status = shared_buffers.rhs_final_assembly_direct_layout_status[]
-    status == Int8(1) && return shared_buffers.rhs_final_assembly_direct_layout_stride[]
-    status == Int8(-1) && return 0
+    # ComponentArray types encode their complete axes. With Vector backing,
+    # the types and lengths identify the layout independently of buffer address.
+    signature = (typeof(u), typeof(du), length(u), length(du))
+    if shared_buffers.rhs_final_assembly_direct_layout_signature[] === signature
+        status = shared_buffers.rhs_final_assembly_direct_layout_status[]
+        status == Int8(1) && return shared_buffers.rhs_final_assembly_direct_layout_stride[]
+        status == Int8(-1) && return 0
+    end
     stride = _probe_rhs_final_assembly_direct_stride(sc_state, sc_du, u, du)
     shared_buffers.rhs_final_assembly_direct_layout_stride[] = stride
     shared_buffers.rhs_final_assembly_direct_layout_status[] = stride > 0 ? Int8(1) : Int8(-1)
+    shared_buffers.rhs_final_assembly_direct_layout_signature[] = signature
     return stride
 end
 
@@ -1544,6 +1565,7 @@ function _try_assign_flat_translational_rhs_direct_layout!(
     !isempty(p.args.control_model.control_effectors) && return false
     _robot_arm_present(p) && return false
     _rhs_heat_rates_active(p) && return false
+    length(u) == length(du) || return false
 
     sc_state = u.sc
     sc_du = du.sc

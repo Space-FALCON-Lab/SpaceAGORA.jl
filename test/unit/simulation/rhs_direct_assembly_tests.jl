@@ -73,6 +73,147 @@ function _rhs_direct_assembly_config(; n_sats::Int=3)
     )
 end
 
+# Explicit axes can retain the same property names while changing storage order.
+function _rhs_direct_assembly_reaxis(u; pos=1:3, vel=4:6, mass=7, heat_loads=8:8)
+    n_sats = length(u.sc)
+    stride = length(ComponentArrays.getdata(u.sc[1]))
+    fields = (pos=pos, vel=vel, mass=mass, heat_loads=heat_loads)
+    axis = ComponentArrays.Axis(sc=ComponentArrays.ViewAxis(
+        1:length(u), ComponentArrays.PartitionedAxis(stride, fields)))
+    return ComponentArray(copy(ComponentArrays.getdata(u)), axis)
+end
+
+@testset "RHS direct layout probe rejects noncanonical field offsets" begin
+    u = RHSDA_SE.build_initial_conditions(_rhs_direct_assembly_config(n_sats=3))
+    du = zero(u)
+    @test RHSDA_SE._probe_rhs_final_assembly_direct_stride(u.sc, du.sc, u, du) == 8
+    for bad in (
+        _rhs_direct_assembly_reaxis(u; pos=4:6, vel=1:3),
+        _rhs_direct_assembly_reaxis(u; mass=8, heat_loads=7:7),
+        _rhs_direct_assembly_reaxis(u; pos=1:2:5, vel=2:2:6),
+    )
+        @test propertynames(bad.sc[1]) == propertynames(u.sc[1])
+        @test RHSDA_SE._probe_rhs_final_assembly_direct_stride(bad.sc, du.sc, bad, du) == 0
+        @test RHSDA_SE._probe_rhs_final_assembly_direct_stride(u.sc, bad.sc, u, bad) == 0
+    end
+
+    # First/last starts and total length can agree with stride 8 even when the
+    # two intermediate satellites have different body counts (2 and 0).
+    # Construct the child views directly to exercise that probe boundary.
+    four = RHSDA_SE.build_initial_conditions(_rhs_direct_assembly_config(n_sats=4))
+    four_du = zero(four)
+    child_views = ComponentVector[]
+    for (start, n_heat) in ((1, 1), (9, 2), (18, 0), (25, 1))
+        width = 7 + n_heat
+        push!(child_views, ComponentArray(
+            view(ComponentArrays.getdata(four), start:(start + width - 1)),
+            ComponentArrays.Axis(pos=1:3, vel=4:6, mass=7, heat_loads=8:width)))
+    end
+    @test RHSDA_SE._probe_rhs_final_assembly_direct_stride(
+        child_views, four_du.sc, four, four_du) == 0
+end
+
+@testset "RHS direct layout cache follows both state and derivative layouts" begin
+    args = _rhs_direct_assembly_config(n_sats=3)
+    u = RHSDA_SE.build_initial_conditions(args)
+    du = zero(u)
+    p = ODEParams(n_sats=3, args=args)
+    env = withenv("SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT" => "1") do
+        RHSDA_SE._snapshot_rhs_plan_env_config()
+    end
+    totals = ones(Float64, 6, 3)
+    assign!(out, state) = RHSDA_SE._try_assign_flat_translational_rhs_direct_layout!(
+        out, state, p, totals, env, :full, 1)
+
+    @test assign!(du, u)
+    @test assign!(zero(u), copy(u)) # Same axes with fresh backing buffers.
+    bad = _rhs_direct_assembly_reaxis(u; pos=4:6, vel=1:3)
+    fill!(du, 123.0)
+    @test !assign!(du, bad)
+    @test all(==(123.0), ComponentArrays.getdata(du))
+    @test assign!(du, u) # A cached rejection must not disable a valid layout.
+    fill!(bad, 456.0)
+    @test !assign!(bad, u)
+    @test all(==(456.0), ComponentArrays.getdata(bad))
+    @test assign!(du, u)
+
+    # Array storage and its length are also part of the cache boundary.
+    storage = zeros(Float64, 2 * length(u))
+    strided = ComponentArray(view(storage, 1:2:length(storage)), ComponentArrays.getaxes(u))
+    @test !assign!(strided, u)
+    @test all(iszero, storage)
+    @test assign!(du, u)
+    shorter = copy(u)
+    resize!(ComponentArrays.getdata(shorter), length(shorter) - 1)
+    @test !assign!(du, shorter)
+    @test assign!(du, u)
+end
+
+@testset "RHS direct final assembly matches the generic translational assembly" begin
+    args = _rhs_direct_assembly_config(n_sats=3)
+    u = RHSDA_SE.build_initial_conditions(args)
+    p = ODEParams(n_sats=3, args=args)
+    p.is_active[2] = false
+    totals = reshape(collect(1.0:18.0), 6, 3)
+    env = withenv("SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT" => "1") do
+        RHSDA_SE._snapshot_rhs_plan_env_config()
+    end
+    for kind in (:full, :explicit, :slow), mass in (500.0, 0.0, eps(Float64), NaN, Inf, -500.0)
+        u.sc[1].mass = mass
+        direct = fill!(zero(u), 99.0)
+        generic = fill!(zero(u), 99.0)
+        for i in eachindex(p.is_active)
+            if !p.is_active[i]
+                generic.sc[i] .= 0.0
+                continue
+            end
+            forces = view(totals, 1:3, i)
+            if kind == :slow
+                SpaceAGORA.SimulationModel.DynamicsTranslational.assign_slow_translational_rhs!(generic.sc[i], u.sc[i], forces)
+            else
+                SpaceAGORA.SimulationModel.DynamicsTranslational.assign_full_translational_rhs!(generic.sc[i], u.sc[i], forces, 0.0)
+            end
+            generic.sc[i].heat_loads .= 0.0
+        end
+        @test RHSDA_SE._try_assign_flat_translational_rhs_direct_layout!(
+            direct, u, p, totals, env, kind, 2)
+        @test isequal(ComponentArrays.getdata(direct), ComponentArrays.getdata(generic))
+    end
+end
+
+@testset "Flat RHS preserves derivatives when direct assembly is enabled or declined" begin
+    args = _rhs_direct_assembly_config(n_sats=3)
+    canonical = RHSDA_SE.build_initial_conditions(args)
+    noncanonical = _rhs_direct_assembly_reaxis(canonical; pos=4:6, vel=1:3)
+    plan = (
+        mode=:flat_constellation_effector_queue, allotment=1, scheduler=:static,
+        dominant_axis=:effector, policy_applied=false,
+        effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
+    )
+    for u in (canonical, noncanonical), kind in (:full, :explicit, :slow)
+        outputs = ComponentVector[]
+        for enabled in (false, true)
+            p = ODEParams(n_sats=3, args=args)
+            p.is_active[2] = false
+            p.shared_buffers.rhs_env_config[] = withenv(
+                "SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT" => (enabled ? "1" : "0"),
+            ) do
+                RHSDA_SE._snapshot_rhs_plan_env_config()
+            end
+            du = fill!(zero(u), 99.0)
+            RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(
+                du, u, p, 0.0, plan; rhs_kind=kind,
+                partition=kind == :explicit ? :explicit : nothing,
+            )
+            expected_status = !enabled ? Int8(0) : (u === canonical ? Int8(1) : Int8(-1))
+            @test p.shared_buffers.rhs_final_assembly_direct_layout_status[] == expected_status
+            @test all(iszero, ComponentArrays.getdata(du.sc[2]))
+            push!(outputs, du)
+        end
+        @test isequal(ComponentArrays.getdata(outputs[1]), ComponentArrays.getdata(outputs[2]))
+    end
+end
+
 @testset "RHS direct final assembly writes translational derivatives" begin
     args = _rhs_direct_assembly_config(n_sats=3)
     u = RHSDA_SE.build_initial_conditions(args)

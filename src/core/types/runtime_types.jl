@@ -802,6 +802,8 @@ export RhsEffectorDecision, RhsExecutionPlan
         rhs_flat_packet_disabled::Base.RefValue{Bool} = Ref(false)
         rhs_final_assembly_direct_layout_status::Base.RefValue{Int8} = Ref(Int8(0))
         rhs_final_assembly_direct_layout_stride::Base.RefValue{Int} = Ref(0)
+        rhs_final_assembly_direct_layout_signature::Base.RefValue{Union{Nothing, Tuple{DataType, DataType, Int, Int}}} =
+            Ref{Union{Nothing, Tuple{DataType, DataType, Int, Int}}}(nothing)
         rhs_planet_frame_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_atmosphere_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)

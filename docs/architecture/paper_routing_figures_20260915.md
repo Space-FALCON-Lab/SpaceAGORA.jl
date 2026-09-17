@@ -215,48 +215,85 @@ every table cell in this document.
 
 The branch was rebased onto `origin/main` 31e04bc8, which had moved 21 `src/`
 files since the numbers were taken -- `simulation/campaigns/constellation_ensemble.jl`
-and `simulation/engine/setup.jl` among them, both on the path P1 and P5
-exercise. P1 and P5 were re-run on TRX50 to find out whether that mattered.
+and `simulation/engine/setup.jl` among them, both on the path the constellation
+phases exercise. All five phases were re-run on TRX50 to find out whether that
+mattered.
 
-A straight re-run cannot answer it: the original run's calibration store was
-still converging while P1 ran, today's starts warm, and finding 4a already
-showed warmth alone worth 40% at one point. So the store was snapshotted and
-two runs were made back to back from the identical snapshot, on an idle
-machine, differing only in `src/`. The harness files are byte-identical between
-them (md5), and `src/` differs by exactly the 21 files.
+A straight re-run cannot answer it. The original run's calibration store was
+still converging while P1 ran, a fresh run starts warm, and finding 4a already
+put store warmth at 40% on one point. So each phase group was measured twice,
+back to back on an idle machine, from one snapshot of the store restored
+byte-for-byte between them (md5 checked each time), with byte-identical harness
+files and `src/` differing by exactly the 21 files. That gives two comparisons:
 
-| comparison | `src/` | store + day | median | outside +/-8% |
-|---|---|---|---:|---:|
-| A: new base vs old base | **differs** | same | 1.001 | **3 of 90** |
-| B: old base vs original run | same | **differs** | 1.001 | 6 of 90 |
+| comparison | `src/` | store + day | n | median | median abs dev | p90 | outside +/-8% |
+|---|---|---|---:|---:|---:|---:|---:|
+| **A: new base vs old base** | **differs** | same | 163 | 1.001 | 1.5% | 4.5% | **6** |
+| **B: old base vs original run** | same | **differs** | 163 | 1.002 | 1.8% | 6.4% | **11** |
 
-**The `src/` change is performance-neutral, and moves the numbers less than
-running identical code on a different day does.** Comparison A's three movers
-are `policy_v2` at N=4096 (1.259, the adaptive route finding 5 identifies as
-the least stable number in the set), `outer_process` at P5's 2x16 (0.909) and
-`serial` at P5's 8x4 (1.085) -- and serial is the unrouted baseline, so a move
-there is machine variance by construction. Comparison B is the honest noise
-estimate: identical code, six points outside the band, and a far wider spread
-(0.640-1.465 against A's 0.909-1.259).
+**The `src/` change is performance-neutral.** It is smaller than run-to-run
+variance on every statistic: fewer points outside the band (6 against 11), a
+smaller median deviation, and a smaller p90. Per phase, A puts 1 of 30 outside
+on P1, 1 of 25 on P2, **0 of 24 on P3**, 2 of 24 on P4 and 2 of 60 on P5.
 
-Two things fell out of it that matter more than the rebase question.
+Half of A's six movers are `policy_v2`, all three at the top budget, and two
+more are barely over the line (`outer_process` 0.909 and 0.912). The sixth is
+`serial` at P5's 8x4 split (1.085) -- the unrouted baseline, where a move is
+machine variance by construction. P2's `policy_v2` at 32 threads looks like the
+largest effect in the table at 0.405, and is the clearest argument for running
+the control: comparison B moves that same point by 2.489 with identical code.
+The three measurements are 2.176 s, 5.418 s and 2.194 s; the control simply
+caught R6 in a bad campaign sequence, and a two-run comparison would have
+banked a 2.5x code win that does not exist.
+
+Two things fell out of this that matter more than the rebase question.
 
 **The N=4096 rung is where P1's static routes are least reproducible.** The two
-static points that looked like a code regression on the first comparison --
+static points that looked like a code regression on the naive comparison --
 `outer_inner_static` +41% and `inner_only` -17% -- reproduce with *identical*
-code (1.465 and 0.816 in comparison B). The 8% band used elsewhere is too tight
-there.
+code, at 1.465 and 0.816 in comparison B.
 
 **P1's and P2's best-static route labels are noise**, which is finding 1's
-correction above. Three runs of P1, two of them running the same binary, name a
-different winning route at most rungs, because the routes are within 0.1-1.9%
-of each other. The dip itself is untouched by this: N=64's best static is
-34.46 s, 34.74 s and 34.46 s across the three runs, and N=256's is 20.91 s,
-21.25 s and 20.72 s. Finding 2 stands; finding 1 did not.
+correction below. Three runs of P1, two of them the same binary, name a
+different winning route at most rungs, because the routes sit within 0.1-1.9%
+of each other. The dip is untouched by this: N=64's best static is 34.46 s,
+34.74 s and 34.46 s across the three runs, and N=256's is 20.91 s, 21.25 s and
+20.72 s. Finding 2 stands; finding 1 did not.
 
-Runs: `output/performance/paper_benchmarks_trx50_rebased/20260917_112754`
-(new base) and `..._control/20260917_141035` (old base), both gitignored.
-Compare any two with `scripts/compare_paper_routing_runs.py`.
+### What run-to-run noise actually looks like
+
+Comparison B is 163 points of identical code re-measured on a quiet machine,
+which is the first proper noise characterization this harness has. The 8%
+band used by `compare_paper_routing_runs.py` sits near the p90; the tail is
+much longer than that, and it is not evenly distributed.
+
+| phase | n | median abs dev | p90 | max |
+|---|---:|---:|---:|---:|
+| P1 | 30 | 1.8% | 14.8% | 46.5% |
+| P2 | 25 | 2.5% | 7.6% | 148.9% |
+| P3 | 24 | 1.1% | 3.3% | 11.2% |
+| P4 | 24 | 2.3% | 5.2% | 7.6% |
+| P5 | 60 | 1.7% | 5.2% | 11.5% |
+
+| mode | n | median abs dev | p90 | max |
+|---|---:|---:|---:|---:|
+| `policy_v2` | 36 | 2.2% | 10.2% | 148.9% |
+| `outer_process` | 24 | 2.1% | 6.4% | 11.2% |
+| `inner_only` | 12 | 2.0% | 3.8% | 18.4% |
+| `serial` | 31 | 1.8% | 3.8% | 6.0% |
+| `outer_threads` | 36 | 1.7% | 5.2% | 10.9% |
+| `outer_inner_static` | 24 | 1.5% | 3.6% | 46.5% |
+
+A typical point is reproducible to about 2%, which is why the sub-1% gaps
+between P1's static routes cannot support an argmin. The tails belong to
+`policy_v2` -- consistent with finding 5, and now quantified against a control
+rather than inferred from one run's repeat spread.
+
+Runs, all gitignored: `paper_benchmarks_trx50_rebased/20260917_112754` and
+`paper_benchmarks_trx50_p234_new/20260917_171125` (new base);
+`paper_benchmarks_trx50_control/20260917_141035` and
+`paper_benchmarks_trx50_p234_control/20260917_193014` (old base). Compare any
+two with `scripts/compare_paper_routing_runs.py`.
 
 ## Findings
 
@@ -441,13 +478,10 @@ state it, and do not print numbers from both conventions in the same table.
   understate R6 at the low budgets, the same way finding 4a's withdrawn
   regression did locally. Optional — the qualitative result is unchanged.
 
-- **P2/P3/P4 have not been re-measured against 31e04bc8.** P1 and P5 were, and
-  neither moved; the same is likely for the other three, but likely is not
-  measured. Cheap to close if the manuscript wants the whole set on one base.
-
-- **How wide is the noise band, per rung?** The 8% used by
-  `compare_paper_routing_runs.py` is one number standing in for a spread that
-  demonstrably varies -- 0.1-2% between static routes at most P1 points, but
-  46% at N=4096 between two runs of the same binary. A per-rung band measured
-  from repeated identical-code runs would make "did this change anything" a
-  sharper question than it currently is.
+- **The default 8% band in `compare_paper_routing_runs.py` is now known to be a
+  p90, not a ceiling.** The measured noise section above gives per-phase and
+  per-mode figures; a `policy_v2` point can move 149% between identical-code
+  runs and a P1 static point 46%. The script still applies one flat band, which
+  is the right default for a first look but will keep flagging `policy_v2` as a
+  change when it is variance. Teaching it the per-mode bands measured here
+  would remove most of that.

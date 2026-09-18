@@ -18,6 +18,7 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "thruster_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "reaction_wheel_momentum.jl"))
 
     include(joinpath(@__DIR__, "force_torque_models", "plume_surface_interaction.jl"))
 
@@ -44,6 +45,9 @@ module DynamicEffectors
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using .RobotArmReactionEffectors: RobotArmReactionEffector
+    using .ReactionWheelMomentum: WheelSpeedSpline, ReactionWheelMomentumModel, ReactionWheelMomentumState
+    using .ReactionWheelMomentum: wheel_speed_spline, wheel_spline_value, wheel_spline_derivative
+    using .ReactionWheelMomentum: wheel_momentum_body, wheel_momentum_rate_body, wheel_reaction_torque, wheel_speeds_rad_s
 
     using .PlumeSurfaceInteraction: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
     export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
@@ -60,4 +64,7 @@ module DynamicEffectors
     export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
     export RobotArmReactionEffector
+    export WheelSpeedSpline, ReactionWheelMomentumModel, ReactionWheelMomentumState
+    export wheel_speed_spline, wheel_spline_value, wheel_spline_derivative
+    export wheel_momentum_body, wheel_momentum_rate_body, wheel_reaction_torque, wheel_speeds_rad_s
 end

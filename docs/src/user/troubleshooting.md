@@ -70,8 +70,8 @@ disk space and see [GRAMSuite Setup](gramsuite_setup.md#git-lfs-reports-no-space
 **Symptom:** GRAM assets are present but `GRAMAtmosphereModel` raises a library
 load error at runtime.
 
-**Cause:** The platform-native `libGRAM` was either not built or was built on a
-different machine or checkout path.
+**Possible causes:** The native `libGRAM` is missing, was copied from an
+incompatible host, or cannot load one of its native dependencies.
 
 **Resolution:**
 
@@ -79,11 +79,19 @@ different machine or checkout path.
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If the build metadata came from a different machine or path:
+The ordinary command skips the build if the expected library file exists; it
+does not check whether that binary is compatible with this host. If you copied
+a populated GRAM build from another machine or suspect a stale local build,
+force a rebuild:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean
 ```
+
+If loading still fails, retain the complete error. See
+[GRAMSuite Setup](gramsuite_setup.md#build-or-verify-the-native-gram-library)
+for build prerequisites and expected output, including the GNU Make requirement
+on macOS.
 
 ---
 

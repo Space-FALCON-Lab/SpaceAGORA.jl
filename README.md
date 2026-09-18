@@ -96,8 +96,9 @@ it with:
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If the build metadata came from a different machine or checkout path, force a
-clean rebuild with:
+The command checks whether the library file exists; it does not check its
+architecture or test whether it can load. If you copied an existing build from
+another machine, force a clean rebuild with:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean

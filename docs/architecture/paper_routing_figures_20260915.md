@@ -446,6 +446,57 @@ began empty and were still converging while P3 and P4 ran; every prior B- and
 L-series number used the repository's accumulated store. A warm re-run of P3/P4
 is recorded in the "Calibration-store warmth" section of the generated tables.
 
+**8. R6 stops exploring once the calibration store converges, and can be locked
+onto a plan 2.4x slower than one it had already found.** This is the most
+consequential thing the 11-repeat work turned up, and it was invisible at 3 and
+5 repeats.
+
+At P1's N=1024 rung, two independent runs from a partly-converged store explore
+and improve monotonically:
+
+```
+ctrl: r1 cache/heuristic@0 = 5.243 | r2 sweep/satellite_batch@1 = 3.236 | r3 = 2.075
+new : r1 cache/heuristic@0 = 5.213 | r2 sweep/satellite_batch@1 = 3.325 | r3 = 2.065
+```
+
+The two runs agree on the final value to 0.5%, and both are *still improving*
+when the repeats run out. For scale, every pinned static route at that rung
+takes 4.86-5.32 s and serial takes 12.3 s, so `sweep/satellite_batch@1` at
+~2.07 s is **2.4x faster than the best pinned route and 6x faster than
+serial** -- by a wide margin the largest routing win anywhere in the P-series.
+
+A third run, started from a store those runs had left converged, never found it:
+all 11 repeats ran `cache/heuristic@0` at 4.85-5.23 s, which is parity with the
+pinned routes. The exploration rate across the whole P1/P2 set tells the same
+story -- share of `policy_v2` campaigns that ran a `sweep`: 33% and 22% from the
+partly-converged store, **5%** from the converged one, with 4 of 12 points never
+exploring at all.
+
+Three things follow, and they matter more than the routing numbers themselves.
+
+*The cache suppresses the search that would fix it.* R6 exploits a cached
+verdict without re-testing, so a store that converged early on a mediocre plan
+keeps R6 on it indefinitely. This is finding 4a's mirror image: there a cold
+store made R6 look worse than it is, here a converged store does the same by a
+different mechanism, and the second is worse because it is stable and therefore
+looks like a real measurement.
+
+*"Warm store" is not one operating point.* The methodology used throughout this
+document, and the warm/cold contrast in finding 6, treats store warmth as a
+transient to be got past. It is not: the converged state is a persistent input
+that selects which plan R6 runs, and two warm stores can differ by 2.4x.
+Anything quoting a single R6 number has to say which store produced it.
+
+*The headline R6 result is a floor, not a ceiling.* The P-series medians were
+all measured from stores in some partly-converged state. At least at this rung
+R6's reachable performance is far better than its reported median, and the
+limiter is the policy's exploration schedule rather than its routing.
+
+Worth an issue against the inner-policy cache independently of the paper: a
+cached verdict should carry an expiry or a re-test probability, so a converged
+store cannot permanently foreclose an arm the policy has never compared against
+on this machine.
+
 ## Methodology notes
 
 - **The measurability floor drove the workload design.** At one fixed mission
@@ -525,6 +576,15 @@ state it, and do not print numbers from both conventions in the same table.
   release's store. The TRX50 P3/P4 columns are therefore cold-ish and may
   understate R6 at the low budgets, the same way finding 4a's withdrawn
   regression did locally. Optional — the qualitative result is unchanged.
+
+- **Every P-series R6 number predates finding 8 and should be relabelled by
+  store state.** The tables above quote R6 medians measured from stores in
+  various partly-converged states, which finding 8 shows is a selector for which
+  plan R6 runs rather than a transient. Two 11-repeat runs are being measured to
+  bracket this properly: `paper_benchmarks_trx50_r11/20260918_140559` is the
+  converged-store end (P1 and P2 complete, P3-P5 abandoned once the lock-in was
+  found), and a cleared-store pass of all five phases is in flight. Until both
+  land, quote R6 with the store state named.
 
 - **The default 8% band in `compare_paper_routing_runs.py` is now known to be a
   p90, not a ceiling.** The measured noise section above gives per-phase and

@@ -250,6 +250,7 @@ SM.SimulationSettings(
     generate_filenames = false,          # embed run parameters in output filenames (default)
     normalize          = false,          # legacy compatibility flag; typed run_simulation propagates SI state directly (default)
     save_csv           = true,           # write CSV alongside the Feather bundle
+    save_visualization_scene = false,    # write the viewer scene sidecar and link_pose columns (see Simulation Outputs)
     checkpoint_enabled = false,          # periodic checkpoint for restart safety
     checkpoint_interval_s = 300.0,      # checkpoint cadence, simulated seconds
     checkpoint_directory  = "",         # defaults to results_directory/checkpoints

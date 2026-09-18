@@ -136,6 +136,7 @@ makedocs(
             "Atmosphere Models" => "user/atmosphere_models.md",
             "Solver Configuration" => "user/solver_configuration.md",
             "Simulation Outputs" => "user/outputs.md",
+            "Interactive Visualization" => "user/visualization.md",
             "The Integrated State" => "user/integrated_state.md",
             "Adding a Force or Torque" => "user/custom_effector.md",
             "Stopping on a Condition" => "user/stop_conditions.md",

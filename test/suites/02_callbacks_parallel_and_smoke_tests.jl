@@ -2181,6 +2181,15 @@ end
     split_ck_default = SimulationCampaigns._ensemble_member_settings(settings_ck_default, "sat_1_id_11")
     @test split_ck_default.results_directory == joinpath("outdir", "sat_1_id_11")
 
+    # The visualization sidecar flag must survive the per-member rebuild.
+    settings_scene = SimulationSettings(
+        results=true, verbose=false, generate_plots=false, normalize=false,
+        results_directory="outdir", save_visualization_scene=true
+    )
+    split_scene = SimulationCampaigns._ensemble_member_settings(settings_scene, "sat_4_id_44")
+    @test split_scene.results_directory == joinpath("outdir", "sat_4_id_44")
+    @test split_scene.save_visualization_scene
+
     settings_resume_explicit = SimulationSettings(
         results=false, verbose=false, generate_plots=false, normalize=false,
         results_directory="outdir", checkpoint_directory="ckdir", resume_from_checkpoint=true

@@ -167,6 +167,154 @@ end
     return quaternions
 end
 
+# Non-root link poses for the visualization sidecar. These are not integrated
+# state on the standard path; control code rotates the `Link` objects in place,
+# so the snapshot has to read them at save time. Ragged across spacecraft
+# (7 floats per non-root link), so the output layer falls back to its generic
+# per-satellite column expansion: `sc{i}_link_pose_{1..7n}`.
+@inline function _save_link_poses(num_sats::Int, u, t, integrator)
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    poses = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        poses[i] = link_pose_vector(spacecraft[i])
+    end
+    return poses
+end
+
+# Atmospheric density the RHS last evaluated for each satellite (kg/m^3), for
+# the viewer's pass colouring; zero outside the atmosphere or without one.
+@inline function _save_density(num_sats::Int, u, t, integrator)
+    densities = integrator.p.shared_buffers.densities
+    out = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        out[i] = i <= length(densities) ? Float64(densities[i]) : 0.0
+    end
+    return out
+end
+
+# Unit vector from the planet's center to the Sun in the inertial frame of the
+# saved positions, for the viewer's sun lighting. One direction per row, not
+# per satellite: every spacecraft of a run shares the central body.
+@inline function _save_sun_direction(u, t, integrator)
+    environment = integrator.p.args.environment_model
+    et = integrator.p.shared_buffers.et_start[] + Float64(t)
+    direction = ephemerides_sun_direction_ii(environment.planet, et, environment.ephemerides_model)
+    return direction === nothing ? SVector{3, Float64}(NaN, NaN, NaN) : direction
+end
+
+# Cloth robot-arm chain: the integrated arm state (`arm_r`, `arm_q` per arm
+# link) relative to the spacecraft position, 7 floats per link.
+@inline function _save_arm_poses(num_sats::Int, u, t, integrator)
+    poses = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        sc_view = hasproperty(u, :sc) ? u.sc[i] : nothing
+        r_ii = _simulation_engine_module()._state_position_ii(u, i)
+        poses[i] = sc_view === nothing ? Float64[] : arm_pose_vector(sc_view, r_ii)
+    end
+    return poses
+end
+
+# Thruster firing levels (0 to 1) for the viewer's plumes, in the order the
+# visualization scene lists the thrusters: the spacecraft's links in order,
+# each link's `thrusters` in order. Ragged across spacecraft (one value per
+# thruster), so the output layer expands them as `sc{i}_thruster_level_{k}`.
+@inline function _thruster_count(model)::Int
+    n = 0
+    for link in model.links
+        n += length(link.thrusters)
+    end
+    return n
+end
+
+@inline function _save_thruster_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)
+    effectors = integrator.p.args.control_model.control_effectors
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        levels = zeros(Float64, counts[i])
+        if counts[i] > 0
+            for effector in effectors
+                reported = control_thruster_levels(effector, i)
+                reported === nothing && continue
+                for k in 1:min(counts[i], length(reported))
+                    value = Float64(reported[k])
+                    levels[k] = isfinite(value) ? clamp(value, 0.0, 1.0) : 0.0
+                end
+                break   # the first effector that drives this spacecraft's thrusters owns them
+            end
+        end
+        out[i] = levels
+    end
+    return out
+end
+
+"""
+    thruster_level_counts(args) -> Vector{Int}
+
+Number of thrusters per spacecraft, in the scene's order. Zero for a
+spacecraft whose links carry none or whose control effectors report no firing
+levels, so the `thruster_level` field covers only the vehicles that fly them.
+"""
+function thruster_level_counts(args::SimulationConfiguration)::Vector{Int}
+    spacecraft = args.dynamics_model.spacecraft
+    effectors = hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors) ?
+        args.control_model.control_effectors : ()
+    counts = zeros(Int, length(spacecraft))
+    for i in eachindex(spacecraft)
+        n = _thruster_count(spacecraft[i])
+        n == 0 && continue
+        any(effector -> control_thruster_levels(effector, i) !== nothing, effectors) || continue
+        counts[i] = n
+    end
+    return counts
+end
+
+"""
+    thruster_level_save_field(args) -> SaveField
+
+The `thruster_level` field: every thruster's firing level (0 to 1) per
+spacecraft, written to `sc{i}_thruster_level_{k}`.
+"""
+function thruster_level_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    counts = thruster_level_counts(args)
+    return SaveField(:thruster_level, (u, t, integrator) -> _save_thruster_levels(num_sats, counts, u, t, integrator); per_satellite=true, column_prefix="thruster_level")
+end
+
+@inline _thruster_level_field_enabled(args::SimulationConfiguration)::Bool =
+    args.simulation_settings.save_visualization_scene && any(>(0), thruster_level_counts(args))
+
+@inline function _arm_pose_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return any(i -> robot_arm_plan_for(args, i) !== nothing, eachindex(args.dynamics_model.spacecraft))
+end
+
+# The Sun direction is available when the run's ephemerides backend can
+# actually resolve the Sun for this body at the start epoch: SPICE with the
+# planet's kernels furnished, or the simple model at Earth. The probe is the
+# resolution itself, so a SPICE-backed configuration whose kernels were never
+# loaded omits the columns instead of throwing at the first save.
+function _sun_direction_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return try
+        environment = args.environment_model
+        et = ephemerides_time_seconds(args.initial_time, environment.ephemerides_model)
+        direction = ephemerides_sun_direction_ii(environment.planet, et, environment.ephemerides_model)
+        direction !== nothing && all(isfinite, direction)
+    catch
+        false
+    end
+end
+
+@inline function _density_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return !(args.environment_model.density_model isa NoAtmosphereModel)
+end
+
+@inline function _link_pose_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return any(model -> !isempty(link_pose_link_indices(model)), args.dynamics_model.spacecraft)
+end
+
 function default_save_fields(args::SimulationConfiguration)
     num_sats = length(args.dynamics_model.spacecraft)
     fields = SaveField[
@@ -187,7 +335,75 @@ function default_save_fields(args::SimulationConfiguration)
     if args.mission_configuration.orientation_sim
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
     end
+    for field in visualization_save_fields(args)
+        push!(fields, field)
+    end
     return fields
+end
+
+"""
+    density_save_field(args) -> SaveField
+
+The `density` field (kg/m^3 per satellite) the viewer colours passes by.
+"""
+function density_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:density, (u, t, integrator) -> _save_density(num_sats, u, t, integrator); per_satellite=true, column_prefix="density")
+end
+
+"""
+    sun_direction_save_field(args) -> SaveField
+
+The `sun_dir` field: the unit vector from the planet's center to the Sun in
+the inertial frame of the saved positions, written as `sun_dir_1..3` (one
+direction per row, shared by every spacecraft). The viewer's sun lighting
+reads it; `_sun_direction_field_enabled` decides whether the run's ephemerides
+can supply it.
+"""
+function sun_direction_save_field(::SimulationConfiguration)
+    return SaveField(:sun_dir, _save_sun_direction; per_satellite=false, column_prefix="sun_dir")
+end
+
+"""
+    visualization_save_fields(args) -> Vector{SaveField}
+
+The extra fields the viewer wants when `save_visualization_scene` is on:
+`link_pose` for articulated spacecraft and `density` when the run has an
+atmosphere. Empty when the flag is off. The engine appends any of these that
+an explicit `save_fields` list lacks.
+"""
+function visualization_save_fields(args::SimulationConfiguration)
+    fields = SaveField[]
+    _thruster_level_field_enabled(args) && push!(fields, thruster_level_save_field(args))
+    _sun_direction_field_enabled(args) && push!(fields, sun_direction_save_field(args))
+    _link_pose_field_enabled(args) && push!(fields, link_pose_save_field(args))
+    _arm_pose_field_enabled(args) && push!(fields, arm_pose_save_field(args))
+    _density_field_enabled(args) && push!(fields, density_save_field(args))
+    return fields
+end
+
+"""
+    arm_pose_save_field(args) -> SaveField
+
+The `arm_pose` field: per spacecraft, every cloth robot-arm link's COM
+position relative to the spacecraft (inertial, metres) and inertial
+quaternion.
+"""
+function arm_pose_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:arm_pose, (u, t, integrator) -> _save_arm_poses(num_sats, u, t, integrator); per_satellite=true, column_prefix="arm_pose")
+end
+
+"""
+    link_pose_save_field(args) -> SaveField
+
+The `link_pose` field on its own, so a caller that passes explicit
+`save_fields` to `run_simulation` still gets it when the visualization flag
+is on (the engine appends it if absent).
+"""
+function link_pose_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:link_pose, (u, t, integrator) -> _save_link_poses(num_sats, u, t, integrator); per_satellite=true, column_prefix="link_pose")
 end
 
 @inline function _resolve_save_fields(save_fields, args::SimulationConfiguration)

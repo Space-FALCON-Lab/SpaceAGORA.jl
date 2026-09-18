@@ -35,6 +35,7 @@ run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kw
 ## 2.4. Simulation Campaigns
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 using .SimulationCampaigns: run_constellation_ensemble
+using .SimulationCampaigns: run_monte_carlo_visualization
 using .SimulationCampaigns: campaign_route_features, campaign_outer_route_state
 
 ## 2.5. Simulation Model
@@ -79,10 +80,19 @@ using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleratio
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: getDensity, getDensityBatch!
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+using .SimulationModel: control_thruster_levels
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
+using .SimulationModel: VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec
+using .SimulationModel: ArmGeometry, arm_geometry
+using .SimulationModel: load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload
+using .SimulationModel: spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
+using .SimulationModel: visualization_scene_path, write_visualization_scene, read_visualization_scene
+using .SimulationModel: velocity_aligned_quaternion, visualization_frame_budget
+using .SimulationModel: export_visualization, with_visualization_scene, write_viewer_dev_payload
+using .SimulationModel: EnsembleSample, sample_results_directory, with_results_directory, write_ensemble_manifest, export_ensemble_visualization
 
 ## 2.6. Telemetry Verification
 using .TelemetryVerification: VerificationRequest, VerificationResult
@@ -242,6 +252,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
     ::SimulationModel.AbstractTypes.AbstractControlEffectorModel,
     ::AbstractVector, ::SimulationModel.ODEParams, ::Int64, ::Float64,
 ))).text) calcControlMassFlowRate
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_thruster_levels(::Any, ::Int))).text) control_thruster_levels
 
 # 3.4. RPO Station Assets
 @doc (@doc RPOStationAssets.station_geometry_path) station_geometry_path
@@ -249,6 +260,39 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
 @doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
 @doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
+
+# Scene visualization and display geometry
+@doc (@doc SimulationModel.SceneVisualization.VisualizationScene) VisualizationScene
+@doc (@doc SimulationModel.SceneVisualization.PlanetSpec) PlanetSpec
+@doc (@doc SimulationModel.SceneVisualization.SpacecraftGeometry) SpacecraftGeometry
+@doc (@doc SimulationModel.SceneVisualization.LinkBox) LinkBox
+@doc (@doc SimulationModel.SceneVisualization.AtmosphereSpec) AtmosphereSpec
+@doc (@doc SimulationModel.SceneVisualization.atmosphere_spec) atmosphere_spec
+@doc (@doc SimulationModel.SceneVisualization.ArmGeometry) ArmGeometry
+@doc (@doc SimulationModel.SceneVisualization.arm_geometry) arm_geometry
+@doc (@doc SimulationModel.Structure.load_model_triangles) load_model_triangles
+@doc (@doc SimulationModel.Structure.model_bounding_box) model_bounding_box
+@doc (@doc SimulationModel.Structure.sample_model_pointcloud) sample_model_pointcloud
+@doc (@doc SimulationModel.Structure.articulate_triangles) articulate_triangles
+@doc (@doc SimulationModel.Structure.articulation_payload) articulation_payload
+@doc (@doc SimulationModel.SceneVisualization.spacecraft_geometry) spacecraft_geometry
+@doc (@doc SimulationModel.SceneVisualization.planet_spec) planet_spec
+@doc (@doc SimulationModel.SceneVisualization.planet_rotation_table) planet_rotation_table
+@doc (@doc SimulationModel.SceneVisualization.build_visualization_scene) build_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.visualization_scene_path) visualization_scene_path
+@doc (@doc SimulationModel.SceneVisualization.write_visualization_scene) write_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.read_visualization_scene) read_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.velocity_aligned_quaternion) velocity_aligned_quaternion
+@doc (@doc SimulationModel.SceneVisualization.visualization_frame_budget) visualization_frame_budget
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.SceneVisualization.export_visualization(::AbstractString))).text) export_visualization
+@doc (@doc SimulationModel.SceneVisualization.with_visualization_scene) with_visualization_scene
+@doc (@doc SimulationModel.SceneVisualization.write_viewer_dev_payload) write_viewer_dev_payload
+@doc (@doc SimulationModel.SceneVisualization.EnsembleSample) EnsembleSample
+@doc (@doc SimulationModel.SceneVisualization.sample_results_directory) sample_results_directory
+@doc (@doc SimulationModel.SceneVisualization.with_results_directory) with_results_directory
+@doc (@doc SimulationModel.SceneVisualization.write_ensemble_manifest) write_ensemble_manifest
+@doc (@doc SimulationModel.SceneVisualization.export_ensemble_visualization) export_ensemble_visualization
+@doc (@doc SimulationCampaigns.run_monte_carlo_visualization) run_monte_carlo_visualization
 
 # 3.5. Parallel Profiles
 @doc (@doc ParallelProfiles.ParallelProfile) ParallelProfile
@@ -340,6 +384,7 @@ export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export getDensity, getDensityBatch!
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
+export control_thruster_levels
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
@@ -347,6 +392,14 @@ export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
+export load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload
+export spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
+export visualization_scene_path, write_visualization_scene, read_visualization_scene
+export velocity_aligned_quaternion, visualization_frame_budget
+export export_visualization, with_visualization_scene, write_viewer_dev_payload
+export EnsembleSample, sample_results_directory, with_results_directory, write_ensemble_manifest
+export export_ensemble_visualization, run_monte_carlo_visualization
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 

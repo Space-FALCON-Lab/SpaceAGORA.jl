@@ -371,6 +371,29 @@ function calcReactionWheelTorque(controlModel, u::AbstractVector, p::ODEParams, 
     return nothing
 end
 
+# Whether spacecraft `i`'s burn window is open right now. The flag is kept by
+# `calcControlEffect!` on every control cycle (not only while tracing), so it
+# is the effector's record of the throttle it is commanding.
+@inline function _maneuver_burn_active(controlModel::BaseThrusterModel, i::Int64)::Bool
+    key = _maneuver_trace_key(controlModel, i)
+    return lock(_MANEUVER_TRACE_LOCK) do
+        get(_MANEUVER_TRACE_BURN_ACTIVE, key, false)
+    end
+end
+
+"""
+    control_thruster_levels(controlModel::BaseThrusterModel, i)
+
+The commanded throttle of the maneuver engine: 1 while the burn window for
+spacecraft `i` is open and 0 otherwise. A maneuver burn drives one engine, so
+the vector covers the first thruster only and the vehicle's remaining
+thrusters stay idle.
+"""
+function control_thruster_levels(controlModel::BaseThrusterModel, i::Int)
+    (1 <= i <= length(controlModel.thrust)) || return nothing
+    return [_maneuver_burn_active(controlModel, Int64(i)) ? 1.0 : 0.0]
+end
+
 """
     calcControlForceTorque(model, u, p, i, t)
     calcControlForceTorque(model::BaseThrusterModel, u, p, i, t)

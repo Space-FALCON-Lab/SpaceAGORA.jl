@@ -140,6 +140,7 @@ module SimConfig
         generate_filenames::Bool = false # Whether to generate filenames with specifics of simulation parameters
         normalize::Bool = false # Legacy compatibility flag; typed run_simulation propagates SI-state directly
         save_csv::Bool = true # Whether to save results in CSV format in addition to feather
+        save_visualization_scene::Bool = false # Write the viewer scene sidecar and the link_pose save field (off by default; see SceneVisualization)
         checkpoint_enabled::Bool = false # Periodically checkpoint state for restart safety
         checkpoint_interval_s::Float64 = 300.0 # Checkpoint cadence in seconds of simulated time
         checkpoint_directory::String = "" # Empty => use results_directory/checkpoints

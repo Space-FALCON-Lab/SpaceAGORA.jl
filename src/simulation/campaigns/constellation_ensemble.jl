@@ -22,6 +22,7 @@ function _ensemble_member_settings(settings::SimulationSettings, member_tag::Str
         generate_filenames=settings.generate_filenames,
         normalize=settings.normalize,
         save_csv=settings.save_csv,
+        save_visualization_scene=settings.save_visualization_scene,
         checkpoint_enabled=settings.checkpoint_enabled,
         checkpoint_interval_s=settings.checkpoint_interval_s,
         checkpoint_directory=needs_checkpoint_split ?

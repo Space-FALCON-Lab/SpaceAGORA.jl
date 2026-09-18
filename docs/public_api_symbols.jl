@@ -82,7 +82,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :getDensityBatch!, rendered = "SpaceAGORA.getDensityBatch!"),
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
             (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
-            (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate")
+            (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
+            (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels")
         ]
     ),
     (
@@ -176,6 +177,42 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :load_rpo_station_pointcloud, rendered = "SpaceAGORA.load_rpo_station_pointcloud"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_triangles, rendered = "SpaceAGORA.load_rpo_station_cad_triangles"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud")
+        ]
+    ),
+    (
+        title = "Visualization Scene",
+        items = [
+            (owner = :SpaceAGORA, symbol = :VisualizationScene, rendered = "SpaceAGORA.VisualizationScene"),
+            (owner = :SpaceAGORA, symbol = :PlanetSpec, rendered = "SpaceAGORA.PlanetSpec"),
+            (owner = :SpaceAGORA, symbol = :SpacecraftGeometry, rendered = "SpaceAGORA.SpacecraftGeometry"),
+            (owner = :SpaceAGORA, symbol = :LinkBox, rendered = "SpaceAGORA.LinkBox"),
+            (owner = :SpaceAGORA, symbol = :AtmosphereSpec, rendered = "SpaceAGORA.AtmosphereSpec"),
+            (owner = :SpaceAGORA, symbol = :atmosphere_spec, rendered = "SpaceAGORA.atmosphere_spec"),
+            (owner = :SpaceAGORA, symbol = :ArmGeometry, rendered = "SpaceAGORA.ArmGeometry"),
+            (owner = :SpaceAGORA, symbol = :arm_geometry, rendered = "SpaceAGORA.arm_geometry"),
+            (owner = :SpaceAGORA, symbol = :load_model_triangles, rendered = "SpaceAGORA.load_model_triangles"),
+            (owner = :SpaceAGORA, symbol = :model_bounding_box, rendered = "SpaceAGORA.model_bounding_box"),
+            (owner = :SpaceAGORA, symbol = :sample_model_pointcloud, rendered = "SpaceAGORA.sample_model_pointcloud"),
+            (owner = :SpaceAGORA, symbol = :articulate_triangles, rendered = "SpaceAGORA.articulate_triangles"),
+            (owner = :SpaceAGORA, symbol = :articulation_payload, rendered = "SpaceAGORA.articulation_payload"),
+            (owner = :SpaceAGORA, symbol = :spacecraft_geometry, rendered = "SpaceAGORA.spacecraft_geometry"),
+            (owner = :SpaceAGORA, symbol = :planet_spec, rendered = "SpaceAGORA.planet_spec"),
+            (owner = :SpaceAGORA, symbol = :planet_rotation_table, rendered = "SpaceAGORA.planet_rotation_table"),
+            (owner = :SpaceAGORA, symbol = :build_visualization_scene, rendered = "SpaceAGORA.build_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :visualization_scene_path, rendered = "SpaceAGORA.visualization_scene_path"),
+            (owner = :SpaceAGORA, symbol = :write_visualization_scene, rendered = "SpaceAGORA.write_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :read_visualization_scene, rendered = "SpaceAGORA.read_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :velocity_aligned_quaternion, rendered = "SpaceAGORA.velocity_aligned_quaternion"),
+            (owner = :SpaceAGORA, symbol = :visualization_frame_budget, rendered = "SpaceAGORA.visualization_frame_budget"),
+            (owner = :SpaceAGORA, symbol = :export_visualization, rendered = "SpaceAGORA.export_visualization"),
+            (owner = :SpaceAGORA, symbol = :with_visualization_scene, rendered = "SpaceAGORA.with_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :write_viewer_dev_payload, rendered = "SpaceAGORA.write_viewer_dev_payload"),
+            (owner = :SpaceAGORA, symbol = :EnsembleSample, rendered = "SpaceAGORA.EnsembleSample"),
+            (owner = :SpaceAGORA, symbol = :sample_results_directory, rendered = "SpaceAGORA.sample_results_directory"),
+            (owner = :SpaceAGORA, symbol = :with_results_directory, rendered = "SpaceAGORA.with_results_directory"),
+            (owner = :SpaceAGORA, symbol = :write_ensemble_manifest, rendered = "SpaceAGORA.write_ensemble_manifest"),
+            (owner = :SpaceAGORA, symbol = :export_ensemble_visualization, rendered = "SpaceAGORA.export_ensemble_visualization"),
+            (owner = :SimulationCampaigns, symbol = :run_monte_carlo_visualization, rendered = "SpaceAGORA.run_monte_carlo_visualization")
         ]
     ),
     (

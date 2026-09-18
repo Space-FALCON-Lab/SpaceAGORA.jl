@@ -327,9 +327,14 @@ function run_simulation(
     return_solver_metadata::Bool=false,
     save_fields=nothing,
     extra_callbacks=(),
-    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
+    visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
     return SimulationModel.ParallelPolicy.with_policy_context() do
+    # `visualization=true` (or SPACEAGORA_VISUALIZATION=1, so an unmodified
+    # example script can opt in) turns the scene sidecar on for this run and
+    # builds the viewer page once the results are written (see SceneVisualization).
+    args = visualization ? SimulationModel.SceneVisualization.with_visualization_scene(args, true) : args
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args
@@ -384,6 +389,13 @@ function run_simulation(
     p.shared_buffers.debug_control[] = _engine_env_get("SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = _engine_env_get("SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
     save_fields_resolved = isnothing(save_fields) ? SimulationModel.default_save_fields(args) : collect(save_fields)
+    # Explicit save_fields built before the visualization flag was applied
+    # (e.g. `vcat(default_save_fields(args), ...)` in an example run under
+    # SPACEAGORA_VISUALIZATION=1) would silently miss the link poses.
+    for extra in SimulationModel.SimulationCallbacks.visualization_save_fields(args)
+        any(field -> field.name === extra.name, save_fields_resolved) && continue
+        save_fields_resolved = vcat(save_fields_resolved, [extra])
+    end
     save_field_names = Symbol[field.name for field in save_fields_resolved]
     length(unique(save_field_names)) == length(save_field_names) || throw(ArgumentError("save_fields names must be unique. Got $(save_field_names)."))
     saved_values = SavedValues(Float64, SimulationModel.SaveData)
@@ -762,6 +774,10 @@ function run_simulation(
         backbone_saved_times,
         backbone_saved_data,
     )
+    _write_visualization_scene_if_enabled!(args; density_params=p)
+    if visualization && args.simulation_settings.results
+        SimulationModel.SceneVisualization.export_visualization(args)
+    end
 
     if return_solution && checkpoint_active && args.simulation_settings.checkpoint_interval_s < mission_end
         @warn "return_solution=true with checkpointed integration returns the final segment ODESolution, not a stitched full-history ODESolution."

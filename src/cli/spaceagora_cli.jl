@@ -1,4 +1,5 @@
 module SpaceAGORACLI
+using ..SimulationModel: SimulationModel
 
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
@@ -47,7 +48,8 @@ end
 
 function _print_usage(io::IO=stdout)
     println(io, "Usage:")
-    println(io, "  spaceagora run --example=<file> [--output-dir=<dir>] [--smoke] [--print-only]")
+    println(io, "  spaceagora run --example=<file> [--output-dir=<dir>] [--smoke] [--visualize] [--print-only]")
+    println(io, "  spaceagora visualize --run=<results dir or bundle prefix> [--out=<html>] [--max-frames=<n>] [--frame=inertial|planet_fixed] [--texture=best|4k|8k] [--trail-orbits=<n>] [--model=<id>=<stl|obj|glb>] [--model-scale=<m per unit>] [--model-center=0|1] [--ensemble]")
     println(io, "  spaceagora telemetry [quick|full|smoke] [--output-dir=<dir>] [--enforce=0|1] [--plots=0|1] [--print-only]")
     println(io, "  spaceagora benchmark runtime-analysis [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
     println(io, "  spaceagora benchmark smart-parallel-ladder [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
@@ -89,6 +91,7 @@ function _run_example(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::In
     example = ""
     output_dir = ""
     smoke = false
+    visualize = false
     print_only = false
     for arg in args
         if _starts_with(arg, "--example=")
@@ -97,6 +100,8 @@ function _run_example(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::In
             output_dir = abspath(_value_after_equals(arg, "--output-dir="))
         elseif arg == "--smoke"
             smoke = true
+        elseif arg == "--visualize"
+            visualize = true
         elseif arg == "--print-only"
             print_only = true
         else
@@ -111,7 +116,69 @@ function _run_example(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::In
         push!(env_pairs, "SPACEAGORA_EXAMPLE_SMOKE" => "1")
         push!(env_pairs, "SPACEAGORA_EXAMPLE_SMOKE_RESULTS" => "1")
     end
+    # The example scripts call run_simulation themselves; the environment switch
+    # turns on the scene sidecar and builds the viewer page after the run.
+    visualize && push!(env_pairs, "SPACEAGORA_VISUALIZATION" => "1")
     return _run_subprocess(script, String[]; env_pairs=env_pairs, print_only=print_only, io=io, errio=errio)
+end
+
+# `--run` accepts a results directory (holding simulation_results.feather and
+# its scene sidecar), the bundle prefix itself, or, with --ensemble, a campaign
+# directory of sample subdirectories.
+function _run_visualize(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::Int
+    run = ""
+    out = nothing
+    ensemble = false
+    models = Dict{Int, String}()
+    kwargs = Pair{Symbol, Any}[]
+    for arg in args
+        if _starts_with(arg, "--run=")
+            run = _value_after_equals(arg, "--run=")
+        elseif _starts_with(arg, "--out=")
+            out = abspath(_value_after_equals(arg, "--out="))
+        elseif _starts_with(arg, "--max-frames=")
+            push!(kwargs, :max_frames => parse(Int, _value_after_equals(arg, "--max-frames=")))
+        elseif _starts_with(arg, "--frame=")
+            push!(kwargs, :frame => Symbol(_value_after_equals(arg, "--frame=")))
+        elseif _starts_with(arg, "--texture=")
+            value = lowercase(strip(_value_after_equals(arg, "--texture=")))
+            push!(kwargs, :texture_resolution => (value == "best" ? :best : value))
+        elseif _starts_with(arg, "--trail-orbits=")
+            push!(kwargs, :trail_orbits => parse(Float64, _value_after_equals(arg, "--trail-orbits=")))
+        elseif _starts_with(arg, "--title=")
+            push!(kwargs, :title => _value_after_equals(arg, "--title="))
+        elseif arg == "--no-textures"
+            push!(kwargs, :textures => false)
+        elseif _starts_with(arg, "--model=")
+            spec = _value_after_equals(arg, "--model=")
+            occursin("=", spec) || throw(ArgumentError("--model expects <spacecraft id>=<file>, got '$spec'."))
+            id_text, path = split(spec, "="; limit=2)
+            models[parse(Int, id_text)] = String(path)
+        elseif _starts_with(arg, "--model-scale=")
+            push!(kwargs, :model_scale => parse(Float64, _value_after_equals(arg, "--model-scale=")))
+        elseif _starts_with(arg, "--model-center=")
+            push!(kwargs, :model_center => lowercase(strip(_value_after_equals(arg, "--model-center="))) in ("1", "true", "yes", "on"))
+        elseif arg == "--ensemble"
+            ensemble = true
+        else
+            throw(ArgumentError("Unknown visualize argument '$arg'."))
+        end
+    end
+    isempty(run) && throw(ArgumentError("visualize requires --run=<results dir or bundle prefix>."))
+    run = abspath(run)
+    out === nothing || push!(kwargs, :out => out)
+    if !isempty(models)
+        ensemble && throw(ArgumentError("--model applies to single-run pages, not --ensemble."))
+        push!(kwargs, :models => models)
+    end
+    page = if ensemble
+        SimulationModel.SceneVisualization.export_ensemble_visualization(run; kwargs...)
+    else
+        prefix = isdir(run) ? joinpath(run, "simulation_results") : run
+        SimulationModel.SceneVisualization.export_visualization(prefix; kwargs...)
+    end
+    println(io, "viewer=$(page)")
+    return 0
 end
 
 function _run_telemetry(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::Int
@@ -201,7 +268,8 @@ end
 
 Stable CLI entrypoint for SpaceAGORA operational commands:
 
-- `run`
+- `run` (add `--visualize` for the 3D viewer page)
+- `visualize`
 - `telemetry`
 - `benchmark`
 - `assets check`
@@ -230,6 +298,8 @@ function run_cli(args::Vector{String}=copy(ARGS); io::IO=stdout, errio::IO=stder
         throw(ArgumentError("assets supports only: check, manifest, or setup-open"))
     elseif cmd == "run"
         return _run_example(tail; io=io, errio=errio)
+    elseif cmd == "visualize"
+        return _run_visualize(tail; io=io, errio=errio)
     elseif cmd == "telemetry"
         return _run_telemetry(tail; io=io, errio=errio)
     elseif cmd == "benchmark"

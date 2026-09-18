@@ -97,10 +97,17 @@ Answer a whole batch of density queries from the distributed density service.
 
 Returns `true` if the batch was served and the output arrays are filled, `false`
 if the service declined (disabled, below threshold, nested inside an outer
-process split, no live workers, a non-native-GRAM model, or an unknown recipe), in which case the
-caller must fall through to its existing path. Never throws on a service-level
-failure: a density service that cannot answer must degrade to the in-process
-path, not fail the solve.
+process split, no live workers, a non-native-GRAM model, an unknown recipe, or a
+recipe the service is remembered as unable to serve), in which case the caller
+must fall through to its existing path. Never throws on a service-level failure:
+a density service that cannot answer must degrade to the in-process path, not
+fail the solve.
+
+A recipe whose worker setup or batch failed is remembered
+(`ParallelProcess.record_density_service_failure!`), so later batches with an
+equal recipe decline at once instead of rebuilding native models on every
+worker at every RHS evaluation. `ParallelProcess.clear_density_service_failures!`
+or `shutdown_density_workers!` makes the service try again.
 
 Signature deliberately mirrors `_gram_isolated_pool_batch_eval!` so the two can
 sit behind a single call site.
@@ -123,16 +130,24 @@ function _gram_process_pool_batch_eval!(
     _gram_process_pool_enabled(n) || return false
 
     recipe = deepcopy(density_model.constructor_kwargs)
+    ParallelProcess.density_service_failed(recipe) && return false
 
     workers = try
         ParallelProcess.ensure_density_workers!(
             _gram_process_pool_workers(); constructor_kwargs=recipe
         )
     catch err
-        @warn "Density service unavailable; falling back to the in-process path." exception=(err, catch_backtrace())
+        if ParallelProcess.record_density_service_failure!(recipe, sprint(showerror, err))
+            @warn "Density service unavailable; falling back to the in-process path for this recipe until clear_density_service_failures! or a pool restart." exception=(err, catch_backtrace())
+        end
         return false
     end
-    isempty(workers) && return false
+    if isempty(workers)
+        if ParallelProcess.record_density_service_failure!(recipe, "no density worker could build the model")
+            @warn "No density worker could build the GRAM model; falling back to the in-process path for this recipe until clear_density_service_failures! or a pool restart." planet=get(recipe, :planet_name, nothing)
+        end
+        return false
+    end
 
     hs_f = _density_service_f64(hs, n)
     lats_f = _density_service_f64(lats, n)
@@ -146,7 +161,11 @@ function _gram_process_pool_batch_eval!(
         workers, ranges, hs_f, lats_f, lons_f, els_f, wind,
         p.args.environment_model.planet.T_ref; constructor_kwargs=recipe,
     )
-    results === nothing && return false
+    if results === nothing
+        # density_service_dispatch already warned per failed range.
+        ParallelProcess.record_density_service_failure!(recipe, "a density worker failed on a batch")
+        return false
+    end
 
     @inbounds for (k, rng) in enumerate(ranges)
         (rho_k, T_k, wx, wy, wz) = results[k]
@@ -188,6 +207,7 @@ native-GRAM configuration is eligible.
     model = p.args.environment_model.density_model
     model isa EnvironmentModels.GRAMAtmosphereModel || return false
     model.constructor_kwargs === nothing && return false
+    ParallelProcess.density_service_failed(model.constructor_kwargs) && return false
     cb_env = _callback_env_config(p)
     _gram_track_cache_enabled(cb_env.gram_track_cache, model) && return false
     # The vacuum-predicted cache keeps a per-satellite spline that a batched

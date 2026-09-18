@@ -185,6 +185,85 @@ function ensure_density_workers!(n::Int;
     return ready
 end
 
+# ---------------------------------------------------------------------------
+# Coordinator-side memo of recipes the service could not serve.
+#
+# `ensure_density_workers!` asks every pool worker to build and warm up a native
+# model for the batch's recipe, and the coordinator calls it on every batch --
+# once per RHS evaluation. When that setup fails for a deterministic reason (a
+# planet whose kernels were never furnished on the workers, an unsupported body,
+# a missing data directory), every retry pays the full native construction
+# again on every worker, with a warning and backtrace each time, before the
+# batch falls back locally. The memo remembers the recipe that failed; later
+# batches carrying an equal recipe decline immediately: local fallback, no
+# worker contact, no log line.
+#
+# Recovery is deliberate, never automatic. A different recipe is a different
+# key. `clear_density_service_failures!()` forgets every entry, and
+# `shutdown_density_workers!()` clears it as well, because restarting the pool
+# is how a change of worker setup (environment variables, kernels furnished on
+# the workers) takes effect. Nothing here changes which values are computed:
+# a remembered failure only skips a retry that would have fallen back anyway.
+# ---------------------------------------------------------------------------
+const _DENSITY_SERVICE_FAILURES = Dict{Dict{Symbol, Any}, String}()
+const _DENSITY_SERVICE_FAILURES_LOCK = ReentrantLock()
+
+"""
+    density_service_failed(constructor_kwargs) -> Bool
+
+Whether the service is remembered as unable to serve this recipe (see
+[`clear_density_service_failures!`](@ref)).
+"""
+function density_service_failed(constructor_kwargs::AbstractDict)::Bool
+    # Once per RHS evaluation: look the recipe up as is, copy only foreign dict types.
+    key = constructor_kwargs isa Dict{Symbol, Any} ? constructor_kwargs : Dict{Symbol, Any}(constructor_kwargs)
+    lock(_DENSITY_SERVICE_FAILURES_LOCK) do
+        return haskey(_DENSITY_SERVICE_FAILURES, key)
+    end
+end
+
+"""
+    record_density_service_failure!(constructor_kwargs, reason) -> Bool
+
+Remember that the service could not serve this recipe. Returns `true` the first
+time the recipe is recorded (the caller logs once), `false` on repeats.
+"""
+function record_density_service_failure!(constructor_kwargs::AbstractDict, reason::AbstractString)::Bool
+    key = deepcopy(Dict{Symbol, Any}(constructor_kwargs))
+    lock(_DENSITY_SERVICE_FAILURES_LOCK) do
+        first = !haskey(_DENSITY_SERVICE_FAILURES, key)
+        first && (_DENSITY_SERVICE_FAILURES[key] = String(reason))
+        return first
+    end
+end
+
+"""
+    density_service_failures() -> Dict{Dict{Symbol, Any}, String}
+
+A copy of the remembered failures: recipe => reason. Diagnostics only.
+"""
+function density_service_failures()::Dict{Dict{Symbol, Any}, String}
+    lock(_DENSITY_SERVICE_FAILURES_LOCK) do
+        return deepcopy(_DENSITY_SERVICE_FAILURES)
+    end
+end
+
+"""
+    clear_density_service_failures!() -> Nothing
+
+Forget every recipe the density service is remembered as unable to serve, so
+the next batch tries the workers again. Call it after correcting the worker
+setup (furnishing kernels on the pool workers, changing
+`SPACEAGORA_GRAM_PROCESS_POOL_WORKERS`, fixing data paths); restarting the pool
+with `shutdown_density_workers!` clears it as well.
+"""
+function clear_density_service_failures!()::Nothing
+    lock(_DENSITY_SERVICE_FAILURES_LOCK) do
+        empty!(_DENSITY_SERVICE_FAILURES)
+    end
+    return nothing
+end
+
 """
     shutdown_density_workers!() -> Nothing
 
@@ -206,6 +285,8 @@ function shutdown_density_workers!()::Nothing
         # Teardown runs at process exit, where Distributed may already be tearing
         # down its own transport; a failure here must not mask the real exit.
     end
+    # A new pool is a new worker setup: forget what the old one could not serve.
+    clear_density_service_failures!()
     return nothing
 end
 

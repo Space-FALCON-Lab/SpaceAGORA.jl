@@ -116,8 +116,13 @@ GRAM construction paths do not transfer the coordinator's SPICE kernel pool.
 The existing process bootstrap loads default Earth kernels. Non-Earth missions
 or custom kernel sets still require the caller to furnish the needed kernels on
 the density workers before dispatch; unavailable ephemerides cause local fallback.
-A persistent setup failure currently retries construction on later batches. Keep
-the service off until worker setup is corrected if these retries are expensive.
+A recipe whose worker setup or batch fails is remembered for the rest of the
+session: later batches with the same settings fall back locally at once, without
+rebuilding native models on every worker. Recovery is explicit. Change the
+configuration (a different recipe is tried once more), call
+`SpaceAGORA.ParallelProcess.clear_density_service_failures!()` after correcting
+the worker setup, or restart the pool with `shutdown_density_workers!()`, which
+also forgets remembered failures. `density_service_failures()` lists them.
 
 This preserves construction settings, not an already advanced random stream or
 manual changes to a native handle. Runtime environment policy, such as

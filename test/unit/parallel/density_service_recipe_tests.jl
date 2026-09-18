@@ -46,6 +46,7 @@ function with_fixture(f)
     active, peak = Ref(0), Ref(0)
     events = Tuple{Int, Float64}[]
     before_eval = Ref{Function}((_model, _h) -> nothing)
+    warmup_fail = Ref(false) # fail the warm-up of ANY recipe while set: a setup fault, not a recipe key
     builder = function (kwargs)
         owned = deepcopy(kwargs)
         push!(builds, owned) # Model a native constructor mutating global state first.
@@ -60,7 +61,7 @@ function with_fixture(f)
         peak[] = max(peak[], active[])
         try
             model.id == length(builds) || error("fixture stale native state")
-            get(model.recipe, :fail_warmup, false) && h == 1.0e5 && error("fixture warmup failure")
+            (get(model.recipe, :fail_warmup, false) || warmup_fail[]) && h == 1.0e5 && error("fixture warmup failure")
             before_eval[](model, h)
             yield() # Exercise task interleaving even on a one-thread test runner.
             get(model.recipe, :fail_query, false) && h == 12.0 && error("fixture query failure")
@@ -77,9 +78,11 @@ function with_fixture(f)
         PP._DENSITY_SERVICE_BUILD_MODEL_FN[] = builder
         PP._DENSITY_SERVICE_EVAL_FN[] = evaluator
     end
+    PP.clear_density_service_failures!()
     try
-        f((; builds, peak, events, before_eval))
+        f((; builds, peak, events, before_eval, warmup_fail))
     finally
+        PP.clear_density_service_failures!()
         lock(PP._WORKER_DENSITY_LOCK) do
             PP._DENSITY_SERVICE_BUILD_MODEL_FN[] = saved[1]
             PP._DENSITY_SERVICE_EVAL_FN[] = saved[2]
@@ -283,6 +286,94 @@ batch(kwargs; hs=[11.0, 12.0, 13.0]) = PP.density_batch_remote(
                     @test winds == fill(SVector(2.0, 3.0, 4.0), 4)
                     @test [r[:seed] for r in ctx.builds[before+1:end]] == [17, 29, 17]
                     @test isequal(PP._WORKER_DENSITY_RECIPE[], a)
+                end
+            finally
+                lock(pool.lock) do
+                    empty!(pool.workers)
+                    append!(pool.workers, old_workers)
+                end
+                PP._DENSITY_ATEXIT_REGISTERED[] = old_atexit
+            end
+        end
+    end
+
+    @testset "persistent setup failure is remembered; recovery is explicit" begin
+        with_fixture() do ctx
+            hs = [11.0, 12.0, 13.0, 14.0]
+            rho, temp = fill(-1.0, 4), fill(-2.0, 4)
+            winds = fill(SVector(-3.0, -3.0, -3.0), 4)
+            p = (args=(environment_model=(planet=(T_ref=200.0,),),),)
+            batch_eval(model) = CB._gram_process_pool_batch_eval!(rho, temp, winds, model,
+                hs, zeros(4), zeros(4), 0.0, true, p)
+            pool = PP.density_process_pool()
+            old_workers = copy(pool.workers)
+            old_atexit = PP._DENSITY_ATEXIT_REGISTERED[]
+            lock(pool.lock) do
+                empty!(pool.workers)
+                push!(pool.workers, myid())
+            end
+            PP._DENSITY_ATEXIT_REGISTERED[] = true
+            try
+                withenv("SPACEAGORA_GRAM_PROCESS_POOL" => "on",
+                        "SPACEAGORA_GRAM_PROCESS_POOL_WORKERS" => "1",
+                        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing) do
+                    r = recipe(seed=31)
+                    model = EM.GRAMAtmosphereModel(nothing, ReentrantLock(), r)
+                    @test isempty(PP.density_service_failures())
+
+                    # Persistent worker setup fault: the first batch pays one
+                    # construction attempt and warns once; later batches decline
+                    # without contacting the worker and without a log line.
+                    ctx.warmup_fail[] = true
+                    before = length(ctx.builds)
+                    @test_logs (:warn, r"could not build its GRAM instance") (:warn, r"No density worker could build") begin
+                        @test !batch_eval(model)
+                    end
+                    @test length(ctx.builds) == before + 1
+                    @test PP.density_service_failed(r)
+                    @test haskey(PP.density_service_failures(), r)
+                    @test_logs min_level=Logging.Warn begin
+                        @test !batch_eval(model)
+                        @test !batch_eval(model)
+                    end
+                    @test length(ctx.builds) == before + 1
+                    @test rho == fill(-1.0, 4) && temp == fill(-2.0, 4)
+                    # The RHS prefill gate declines the remembered recipe up front.
+                    @test !CB._rhs_density_service_candidate((args=(environment_model=(density_model=model,),),), 4)
+
+                    # A changed configuration is a new key and is tried once more.
+                    ctx.warmup_fail[] = false
+                    other = EM.GRAMAtmosphereModel(nothing, ReentrantLock(), recipe(seed=32))
+                    @test batch_eval(other)
+                    @test rho == fill(32.0, 4)
+                    @test PP.density_service_failed(r)
+
+                    # Fixing the worker setup alone does not retry: recovery is explicit.
+                    @test !batch_eval(model)
+                    @test length(ctx.builds) == before + 2
+                    PP.clear_density_service_failures!()
+                    @test !PP.density_service_failed(r)
+                    @test batch_eval(model)
+                    @test rho == fill(31.0, 4)
+                    @test length(ctx.builds) == before + 3
+
+                    # A batch failure is remembered the same way, and a pool restart clears it.
+                    bad = merge(recipe(seed=33), Dict(:fail_query => true))
+                    bad_model = EM.GRAMAtmosphereModel(nothing, ReentrantLock(), bad)
+                    @test_logs (:warn, r"Density service worker failed on a batch") begin
+                        @test !batch_eval(bad_model)
+                    end
+                    @test PP.density_service_failed(bad)
+                    events_before = length(ctx.events)
+                    @test_logs min_level=Logging.Warn begin
+                        @test !batch_eval(bad_model)
+                    end
+                    @test length(ctx.events) == events_before
+                    lock(pool.lock) do
+                        empty!(pool.workers) # nothing to remove; the restart only has to clear the memo
+                    end
+                    PP.shutdown_density_workers!()
+                    @test isempty(PP.density_service_failures())
                 end
             finally
                 lock(pool.lock) do

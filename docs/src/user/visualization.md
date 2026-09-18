@@ -58,6 +58,24 @@ Viewer-derived dynamic pressure uses its available velocity approximation;
 use the verified study diagnostics for quantitative atmosphere-relative
 pressure comparisons.
 
+## Plot another saved value
+
+To display a saved results column such as `sc1_mass`, pass its suffix without
+the spacecraft prefix:
+
+```julia
+export_visualization("output/simulation_results";
+    channels=[(column="mass", label="Mass", unit="kg", digits=2)])
+```
+
+Select a spacecraft, then click its **Mass** row in the inspector to plot the
+value. Scrubbing the timeline updates the displayed value. Each spacecraft
+must have the corresponding column (`sc1_mass`, `sc2_mass`, and so on); a
+channel is omitted when any column is absent. Missing values appear as gaps,
+and interpolation does not bridge a gap. These values use the same saved-row
+decimation as the trajectory, so choose enough `max_frames` to retain the
+features you want to inspect.
+
 ## Size and optional detail
 
 ```julia
@@ -68,7 +86,13 @@ export_visualization("output/simulation_results";
 
 The exporter decimates saved rows to the frame and data limits. The page
 reports its resulting cadence. Smaller textures or `textures=false` reduce
-the page size; no texture changes the recorded trajectory.
+the page size; no texture changes the recorded trajectory. Export defaults to
+`texture_resolution="4k"`. Earth, Mars and Moon also include 8192 x 4096
+textures: opt in with `texture_resolution="8k"` or select the largest available
+tier with `:best`. Venus and Titan fall back to 4k. An 8k image has four times
+the decoded pixels of 4k, and its embedded JPEG also makes the HTML larger.
+The standalone builder likewise defaults to 4k; use `--textures 8k` for
+a page containing the higher tiers.
 
 STL, OBJ and uncompressed GLB models can replace link boxes:
 
@@ -81,6 +105,12 @@ export_visualization("output/simulation_results";
 Match the spacecraft ID, scale and orientation to your model. The model is
 display geometry; it does not replace the aerodynamic or structural model.
 `data/models/README.md` and `data/textures/manifest.toml` record asset sources.
+Bundled mission display meshes include Apollo Lunar Module, Cassini with and
+without Huygens, CYGNSS, Magellan and Mars Odyssey, in addition to ISS. Supply
+the corresponding GLB path through `models`; models are embedded only when
+selected. Their model coordinates need mission-specific scale and rotation.
+These six models and three higher-resolution textures add about 35.6 MB to
+the checkout. No asset download or native atmosphere library is needed.
 
 Atmosphere displays use density values already saved along the trajectory.
 The sidecar also adds an altitude profile for the built-in exponential and

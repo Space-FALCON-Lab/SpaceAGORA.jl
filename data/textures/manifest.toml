@@ -63,3 +63,36 @@ license = "public-domain (NASA)"
 width = 4096
 height = 2048
 lon_left_deg = -180.0
+
+[[texture]]
+body = "earth"
+file = "earth_bluemarble_ng_8k.jpg"
+resolution = "8k"
+source = "NASA Earth Observatory, Blue Marble Next Generation (December 2004, topography + bathymetry), resampled from 21600x10800"
+source_url = "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x21600x10800.jpg"
+license = "public-domain (NASA)"
+width = 8192
+height = 4096
+lon_left_deg = -180.0
+
+[[texture]]
+body = "mars"
+file = "mars_viking_mdim21_8k.jpg"
+resolution = "8k"
+source = "NASA Trek / USGS, Viking MDIM 2.1 colorized global mosaic, stitched from WMTS zoom 4 tiles"
+source_url = "https://trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m/"
+license = "public-domain (NASA/USGS)"
+width = 8192
+height = 4096
+lon_left_deg = -180.0
+
+[[texture]]
+body = "moon"
+file = "moon_lroc_wac_8k.jpg"
+resolution = "8k"
+source = "NASA SVS 4720 CGI Moon Kit, LRO WAC color mosaic with LOLA poles, 8k"
+source_url = "https://svs.gsfc.nasa.gov/4720"
+license = "public-domain (NASA)"
+width = 8192
+height = 4096
+lon_left_deg = -180.0

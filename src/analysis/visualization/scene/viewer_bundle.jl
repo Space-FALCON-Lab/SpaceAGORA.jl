@@ -90,13 +90,13 @@ end
 @inline _js_data_url(source::AbstractString)::String = _data_url(Vector{UInt8}(codeunits(String(source))), "text/javascript")
 
 """
-    texture_payload(planet_key; resolution=:best, dir=TEXTURES_DIR) -> Union{Nothing, Dict}
+    texture_payload(planet_key; resolution="4k", dir=TEXTURES_DIR) -> Union{Nothing, Dict}
 
 `{"url" => data URI, "lon_left_deg" => ..., "resolution" => ..., "width" => ...}`
 for the body at the chosen tier (see `texture_entry`), or `nothing` when no
 texture is registered (the viewer then draws a flat color).
 """
-function texture_payload(planet_key::AbstractString; resolution=:best, dir::AbstractString=TEXTURES_DIR)
+function texture_payload(planet_key::AbstractString; resolution="4k", dir::AbstractString=TEXTURES_DIR)
     entry = texture_entry(planet_key; resolution=resolution, dir=dir)
     entry === nothing && return nothing
     path = entry["path"]
@@ -158,7 +158,8 @@ function build_viewer_frames(
     df::DataFrame,
     scene::VisualizationScene;
     max_frames::Integer=DEFAULT_MAX_FRAMES,
-    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB
+    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
+    channels=()
 )::Dict{String, Any}
     S = length(scene.spacecraft)
     S >= 1 || throw(ArgumentError("The scene has no spacecraft."))
@@ -221,9 +222,10 @@ function build_viewer_frames(
         arm_total += has_arm ? stride_lp * arm_counts[i] : 0
     end
 
+    channel_specs = _resolved_channels(df, channels, S)
     bytes_per_frame = S * ((pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
                            (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
-                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + 8
+                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0) + 4 * length(channel_specs)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + 8
     budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
                                         bytes_per_sat_frame=cld(bytes_per_frame, S))
     rows = kept_row_indices(n_rows, budget.stride)
@@ -323,7 +325,19 @@ function build_viewer_frames(
         end
     end
 
+    channel_values = [Vector{Float32}(undef, N * S) for _ in channel_specs]
+    for (c, spec) in enumerate(channel_specs)
+        cols = [df[!, "sc$(i)_$(spec.column)"] for i in 1:S]
+        @inbounds for (f, r) in enumerate(rows), i in 1:S
+            channel_values[c][(f - 1) * S + i] = _channel_float32(cols[i][r], spec.column)
+        end
+    end
     frames = Dict{String, Any}(
+        "channels" => isempty(channel_specs) ? nothing : [Dict{String, Any}(
+            "name" => spec.column, "label" => spec.label, "unit" => spec.unit,
+            "digits" => spec.digits, "log" => spec.log,
+            "data" => _float32_base64(channel_values[k])
+        ) for (k, spec) in enumerate(channel_specs)],
         "count" => N,
         "sats" => S,
         "source_rows" => n_rows,
@@ -355,6 +369,53 @@ function build_viewer_frames(
         ) : nothing,
     )
     return frames
+end
+
+# Missing samples and NaN are plot gaps; infinities and Float32 overflow are errors.
+function _channel_float32(value, column::AbstractString)::Float32
+    value === missing && return NaN32
+    value isa Real && !(value isa Bool) ||
+        throw(ArgumentError("Channel $(column) samples must be real numbers or missing."))
+    x = try
+        Float32(value)
+    catch
+        throw(ArgumentError("Channel $(column) sample cannot be represented as Float32."))
+    end
+    isinf(x) && throw(ArgumentError("Channel $(column) samples must not be infinite or overflow Float32."))
+    return x
+end
+
+function _resolved_channels(df::DataFrame, channels, S::Integer)
+    channels isa Union{Tuple, AbstractVector} || throw(ArgumentError("channels must be a tuple or vector of specifications."))
+    specs = NamedTuple[]
+    seen = Set{String}()
+    for spec in channels
+        spec isa Union{NamedTuple, AbstractDict} || throw(ArgumentError("Each channel must be a NamedTuple or Dict."))
+        field(key, default) = spec isa AbstractDict ? get(spec, key, get(spec, String(key), default)) : get(spec, key, default)
+        column = field(:column, nothing)
+        column isa Union{AbstractString, Symbol} || throw(ArgumentError("Each channel requires a string or symbol column suffix."))
+        column = String(column)
+        isempty(column) && throw(ArgumentError("Channel column suffix must not be empty."))
+        column in seen && throw(ArgumentError("Duplicate channel column $(column)."))
+        push!(seen, column)
+        label = field(:label, replace(column, '_' => ' '))
+        unit = field(:unit, "")
+        label isa AbstractString && unit isa AbstractString || throw(ArgumentError("Channel label and unit must be strings."))
+        digits = field(:digits, 3)
+        digits isa Integer && !(digits isa Bool) && 0 <= digits <= 100 ||
+            throw(ArgumentError("Channel digits must be an integer from 0 through 100."))
+        log = field(:log, false)
+        log isa Bool || log === :auto || (log isa AbstractString && log == "auto") ||
+            throw(ArgumentError("Channel log must be true, false, :auto or \"auto\"."))
+        log = log isa Bool ? log : "auto"
+        # Omit a channel unless every spacecraft has it, keeping spacecraft indices aligned.
+        all(i -> "sc$(i)_$(column)" in names(df), 1:S) || continue
+        for i in 1:S, value in df[!, "sc$(i)_$(column)"]
+            _channel_float32(value, column)
+        end
+        push!(specs, (column=column, label=String(label), unit=String(unit), digits=Int(digits), log=log))
+    end
+    return specs
 end
 
 # ---------------------------------------------------------------------------
@@ -411,7 +472,9 @@ applied to the model in the body frame. `model_center` (a Bool or a per-id
 `Dict`, default true) shifts the model so its bounding-box center sits on
 the spacecraft. Each entry is
 `{"url" => data URI, "format" => ..., "scale" => ..., "rotation_deg" => [rx, ry, rz], "center" => [cx, cy, cz] (model units), "source" => file name}`.
-A `.gltf` file must embed its buffers; external files are not carried along.
+Identical bytes with the same format are embedded once; later entries carry
+`"url_from" => owning spacecraft id` instead of `"url"`. Transforms and
+articulations remain per spacecraft. A `.gltf` file must embed its buffers; external files are not carried along.
 """
 function model_payloads(
     scene::VisualizationScene;
@@ -424,6 +487,8 @@ function model_payloads(
     stl_scale::Real=1.0
 )::Dict{String, Any}
     out = Dict{String, Any}()
+    bytes_by_path = Dict{String, Vector{UInt8}}()
+    owner_by_bytes = Dict{Tuple{String, Vector{UInt8}}, String}()
     for sc in scene.spacecraft
         path = haskey(models, sc.id) ? String(models[sc.id]) : (haskey(stl, sc.id) ? String(stl[sc.id]) : sc.stl_path)
         path === nothing && continue
@@ -448,8 +513,8 @@ function model_payloads(
                 isempty(articulations) || rethrow()
             end
         end
-        out[string(sc.id)] = Dict{String, Any}(
-            "url" => _data_url(read(path), mime),
+        bytes = get!(() -> read(path), bytes_by_path, path)
+        entry = Dict{String, Any}(
             "format" => format,
             "scale" => scale,
             "rotation_deg" => Float64[Float64(r) for r in rot],
@@ -457,6 +522,16 @@ function model_payloads(
             "articulations" => articulation_dicts,
             "source" => basename(path),
         )
+        # Content and parser format define identity, independent of file name and transforms.
+        key = (String(format), bytes)
+        owner = get(owner_by_bytes, key, nothing)
+        if owner === nothing
+            owner_by_bytes[key] = string(sc.id)
+            entry["url"] = _data_url(bytes, mime)
+        else
+            entry["url_from"] = owner
+        end
+        out[string(sc.id)] = entry
     end
     return out
 end
@@ -472,7 +547,7 @@ function viewer_payload(
     df::DataFrame;
     textures_dir::AbstractString=TEXTURES_DIR,
     include_textures::Bool=true,
-    texture_resolution=:best,
+    texture_resolution="4k",
     options::AbstractDict=Dict{String, Any}(),
     max_frames::Integer=DEFAULT_MAX_FRAMES,
     data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
@@ -484,7 +559,8 @@ function viewer_payload(
     stl::AbstractDict=Dict{Int, String}(),
     stl_scale::Real=1.0,
     paths=(),
-    references=()
+    references=(),
+    channels=()
 )::Dict{String, Any}
     textures = Dict{String, Any}()
     if include_textures
@@ -493,7 +569,7 @@ function viewer_payload(
     end
     return Dict{String, Any}(
         "scene" => scene_dict(scene),
-        "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb),
+        "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb, channels=channels),
         "textures" => textures,
         "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale),
         "paths" => path_payloads(paths),
@@ -638,8 +714,8 @@ trajectory's periapsis passages) or `trail_s` set the trail window; `frame`
 is `:inertial` (default) or `:planet_fixed`; `speed` is the initial playback
 rate in simulated seconds per wall second; `title` names the page;
 `textures=false` skips the surface texture and `texture_resolution` picks a
-tier (`:best`, the default, takes the largest registered, 4k in this checkout;
-`"4k"` keeps the page small); `ground_tracks=true` starts the page with the
+tier (`"4k"` by default; `"8k"` opts into more detail for Earth, Mars and Moon;
+`:best` takes the largest registered tier); `ground_tracks=true` starts the page with the
 sub-satellite tracks drawn on the body's surface (the toolbar toggles them
 either way); `models` maps spacecraft ids to STL, OBJ, glTF
 or GLB files drawn instead of the link boxes, at `model_scale` meters per
@@ -650,7 +726,12 @@ spacecraft unless `model_center=false`; `stl`/`stl_scale` are the older spelling
 reference trajectories as translucent ghosts of a spacecraft (see
 `reference_payloads`); `paths` overlays
 reference polylines (see `path_payloads`), e.g. a planned RPO path in the
-target's RTN frame; `viewer_dir` and `textures_dir` override the repository locations.
+target's RTN frame; `channels` is a tuple or vector of NamedTuples/Dicts with a
+`column` suffix (`sc<i>_<column>`), optional string `label`/`unit`, integer
+`digits` in 0:100 (default 3), and `log` true, false or `:auto`/`"auto"`.
+A channel missing from any spacecraft is omitted. Samples are Float32;
+`missing`/NaN are gaps and infinities/overflow are rejected. Channels use the
+same decimated rows and budget as positions. `viewer_dir` and `textures_dir` override the repository locations.
 """
 function export_visualization(
     prefix::AbstractString;
@@ -664,7 +745,7 @@ function export_visualization(
     title::Union{Nothing, AbstractString}=nothing,
     ground_tracks::Bool=false,
     textures::Bool=true,
-    texture_resolution=:best,
+    texture_resolution="4k",
     models::AbstractDict=Dict{Int, String}(),
     model_scale=nothing,
     model_rotation_deg::AbstractDict=Dict{Int, Any}(),
@@ -674,6 +755,7 @@ function export_visualization(
     stl_scale::Real=1.0,
     paths=(),
     references=(),
+    channels=(),
     viewer_dir::AbstractString=VIEWER_DIR,
     textures_dir::AbstractString=TEXTURES_DIR
 )::String
@@ -690,7 +772,7 @@ function export_visualization(
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
-        paths=paths, references=references
+        paths=paths, references=references, channels=channels
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     html = render_viewer_html(payload; viewer_dir=viewer_dir, title=page_title)

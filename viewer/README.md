@@ -146,7 +146,11 @@ spacecraft.
 ## Texture resolution
 
 `data/textures/manifest.toml` may hold several tiers per body. The exporter
-embeds the largest by default (`texture_resolution=:best`); the globe
+embeds 4k by default (`texture_resolution="4k"`) for both individual runs
+and ensembles. Earth, Mars and Moon provide an opt-in 8k tier; use
+`texture_resolution="8k"` or `:best` for the largest available tier. Venus
+and Titan fall back to 4k. The standalone builder also defaults to 4k and
+accepts `--textures 8k`. Higher tiers increase HTML and decoded image size. The globe
 downscales on load when the GPU's maximum texture size is smaller than the
 image, and the info panel shows the tier and the GPU limit.
 

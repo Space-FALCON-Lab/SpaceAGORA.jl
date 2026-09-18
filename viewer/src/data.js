@@ -10,6 +10,7 @@
 //   frames.mass_kg  Float32[N*S]       total mass (optional)
 //   frames.link_pose {stride, counts[S], offsets[S], total, data: Float32[N*total]} (optional)
 //   frames.sun_dir Float32[N*3]       unit vector planet center -> Sun, inertial (optional)
+//   frames.channels [{name, label, unit, digits, log, data: Float32[N*S]}] (optional)
 // Every block is base64 of little-endian floats.
 
 export function decodeBytes(b64) {
@@ -91,6 +92,31 @@ export class FrameData {
       this.plume = {};
       for (const key of Object.keys(frames.plume)) this.plume[key] = decodeFloat32(frames.plume[key]);
     }
+    const specs = frames.channels ?? [];
+    if (!Array.isArray(specs)) throw new Error('channels must be an array');
+    const names = new Set();
+    this.channels = specs.map((c) => {
+      if (!c || typeof c.name !== 'string' || !c.name || names.has(c.name)) throw new Error('invalid or duplicate channel name');
+      names.add(c.name);
+      const label = c.label ?? c.name.replaceAll('_', ' '), unit = c.unit ?? '';
+      const digits = c.digits ?? 3, log = c.log ?? false;
+      if (typeof label !== 'string' || typeof unit !== 'string') throw new Error('channel label and unit must be strings');
+      if (!Number.isInteger(digits) || digits < 0 || digits > 100) throw new Error('channel digits must be an integer from 0 through 100');
+      if (log !== true && log !== false && log !== 'auto') throw new Error('invalid channel log option');
+      let y;
+      if (typeof c.data === 'string') {
+        const bytes = decodeBytes(c.data);
+        if (bytes.length !== 4 * this.count * this.sats) throw new Error('channel data length does not match frames');
+        y = new Float32Array(bytes.buffer);
+      } else {
+        if ((!Array.isArray(c.data) && !ArrayBuffer.isView(c.data)) ||
+            !Array.from(c.data).every((v) => typeof v === 'number')) throw new Error('channel data must contain numbers');
+        y = decodeFloat32(c.data);
+      }
+      if (y.length !== this.count * this.sats) throw new Error('channel data length does not match frames');
+      if (y.some((v) => !Number.isFinite(v) && !Number.isNaN(v))) throw new Error('channel samples must not be infinite or overflow Float32');
+      return { name: c.name, label, unit, digits, log, y };
+    });
     // Unit vector from the planet center to the Sun, inertial, one per frame
     // (not per spacecraft); null when the run could not resolve the Sun.
     this.sunDir = frames.sun_dir ? decodeFloat32(frames.sun_dir) : null;
@@ -217,6 +243,17 @@ export class FrameData {
       case 'altitude': return true;
       default: return false;
     }
+  }
+
+  // Values are linear in time even when the plot uses a logarithmic axis.
+  channelAt(k, time, sat) {
+    const c = Number.isInteger(k) ? this.channels[k] : null;
+    if (!c || this.count === 0 || !Number.isFinite(time) || !Number.isInteger(sat) || sat < 0 || sat >= this.sats) return NaN;
+    if (this.count === 1) return c.y[sat];
+    const { i, f } = this.locate(time);
+    const a = c.y[i * this.sats + sat], b = c.y[(i + 1) * this.sats + sat];
+    // A neighbouring gap must not hide a saved endpoint.
+    return f === 0 ? a : f === 1 ? b : a + f * (b - a);
   }
 
   hasPlume() { return !!this.plume; }

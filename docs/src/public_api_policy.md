@@ -24,7 +24,8 @@ surface.
 ## Stable surface
 
 The generated [Public API](generated/public_api.md) reference and its linked
-[Terrain API](generated/terrain_api.md) and
+[Terrain API](generated/terrain_api.md),
+[Mesh Aerodynamics API](generated/mesh_aerodynamics_api.md) and
 [Visualization API](generated/visualization_api.md) pages document the supported
 exported symbols. That surface currently includes:
 

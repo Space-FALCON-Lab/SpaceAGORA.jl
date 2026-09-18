@@ -45,7 +45,9 @@ wall-to-freestream temperature ratio `tw_ratio`. Facets behind other facets
 along the flow are found with a depth buffer (`panel_shadow_mask`) and
 contribute nothing, so a dish in front of a bus shields it and a panel
 behind another is dead. The Hart box formulas are the same integrand with the
-back faces dropped, and a box mesh reproduces them to round-off.
+back faces dropped, and a box mesh reproduces them away from grazing incidence. At exactly
+grazing faces the panel model retains tangential shear that the box model
+omits.
 
 ## Surrogate
 
@@ -60,25 +62,31 @@ degree `poly_degree` in `1/s` by least squares. The result is a
 moment reference point, the accommodation coefficients, the fitted
 speed-ratio range (evaluation clamps to it) and metadata with the residuals,
 both over the training samples and over fresh holdout directions. Read the
-holdout error against the coefficient scale before trusting a degree: a
-smooth body fits at degree 6, a body with thin panels and edges wants 10 or
-more. The fit takes one shadow buffer per direction and speed ratio; a few
-thousand facets take seconds, a half-million-facet model minutes.
+holdout error against the coefficient scale before choosing a degree. Fit
+quality and construction time depend on geometry, shadowing resolution and
+the sampled directions and speed ratios. Validate the fit for the vehicle
+and flight conditions you will use.
 
-`mesh_aero_coefficients(surrogate, vhat, s; tw_ratio)` evaluates it in a few
-hundred multiply-adds. `write_mesh_aero_surrogate` and
+`mesh_aero_coefficients(surrogate, vhat, s; tw_ratio)` evaluates the fitted
+coefficients without loading or resampling the mesh. `write_mesh_aero_surrogate` and
 `read_mesh_aero_surrogate` store it as JSON.
 
 ### Limits and validation
 
 `degree` is limited to `MESH_AERO_MAX_DEGREE` (20): the evaluator keeps its
-direction basis in a fixed buffer of that size. The limit, `poly_degree >= 0`,
+direction basis in a fixed buffer of that size. The coefficient count uses
+checked integer arithmetic to reject overflowing degree combinations. The
+limit, `poly_degree >= 0`,
 the coefficient shapes and finiteness, the positive normalization, the finite
 reference point, accommodation coefficients in `[0, 1]` and
 `0 < speed_ratio_min <= speed_ratio_max` are checked by the one
 `MeshAeroSurrogate` constructor, so there is no construction route that
 skips them. `fit_mesh_aero_surrogate` checks the degrees before it tabulates
-anything, and `read_mesh_aero_surrogate` checks every field of the file
+anything. Fitting requires at least `(degree + 1)^2` directions and
+`poly_degree + 1` distinct speed ratios; a larger total sample count cannot
+compensate for too few directions or speeds. The holdout checks fresh
+directions at a training speed, so it does not establish interpolation
+accuracy between sampled speeds. `read_mesh_aero_surrogate` checks every field of the file
 (schema, integer degrees, six numeric coefficient rows of equal length,
 numeric normalization and range, a three-component reference point) and
 raises an `ArgumentError` naming the file for anything else. A file that
@@ -89,8 +97,8 @@ are read.
 
 `AerodynamicCoefficientMeshSurrogate(Dict(link_index => surrogate);
 wall_temperature_k)` carries one surrogate per link, keyed by the link's
-integer position in `spacecraft.links` (1 is the root); the single-surrogate
-form puts a whole-vehicle fit on the root. Links without a surrogate carry no
+integer position in `spacecraft.links`; the single-surrogate form puts a
+whole-vehicle fit on the actual root, regardless of its position in that list. Links without a surrogate carry no
 aerodynamic load, so a rigid vehicle uses one whole-vehicle mesh, and a
 vehicle whose panels articulate under aerobraking guidance uses one mesh per
 link, composed through the link poses the way the box model is (with no
@@ -158,4 +166,5 @@ attitude run whose rate build-up matches the plate torque, a radial descent
 whose energy loss matches the recorded drag work, and a fixed-attitude run of
 a cube against the same cube under `AerodynamicCoefficientfM`.
 `scripts/dev/aero/fit_mesh_aero_surrogate.jl` fits a model file from the
-command line.
+command line. See the [Mesh Aerodynamics API](../generated/mesh_aerodynamics_api.md)
+for the supported constructors and fitting functions.

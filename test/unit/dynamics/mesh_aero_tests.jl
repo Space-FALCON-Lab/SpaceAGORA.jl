@@ -350,6 +350,39 @@ end
             @test tr ≈ q_dyn * 3.0 * L * cm + cross(r0, f_link) rtol=1e-12
         end
 
+        @testset "whole-vehicle form follows the actual root, not link one" begin
+            # SpacecraftModel appends the root when links initially contains
+            # only children. A constant asymmetric wrench makes the wrong
+            # child's rotation and lever arm directly observable.
+            coeff = reshape(sqrt(4pi) .* [-1.0, 0.2, 0.1, 0.05, 0.1, -0.07], 6, 1)
+            constant = MeshAeroSurrogate(0, 0, coeff, zeros(6, 1),
+                1.0, 1.0, ZERO3, 1.0, 1.0, 3.0, 20.0)
+            bus = SM.Link(root=true, m=300.0)
+            child = SM.Link(root=false, m=100.0,
+                r=MVector{3, Float64}(1.5, -0.4, 0.2),
+                q=MVector{4, Float64}(_quat_axis_angle((0.0, 0.0, 1.0), pi / 2)))
+            sc = SM.SpacecraftModel(root=bus, links=[child], id=97)
+            @test sc.links[1] === child && sc.links[2] === bus
+            whole = AerodynamicCoefficientMeshSurrogate(constant)
+            actual_root = AerodynamicCoefficientMeshSurrogate(Dict(2 => constant))
+            first_link = AerodynamicCoefficientMeshSurrogate(Dict(1 => constant))
+            for q_ib in (_quat_axis_angle((0.3, 1.0, -0.4), 0.9), nothing)
+                x, env = _samples(planet, sc, q_ib, pos, vel, rho, T)
+                force, torque = SM.wrench(whole, x, env, 0.0)
+                expected_force, expected_torque = SM.wrench(actual_root, x, env, 0.0)
+                child_force, child_torque = SM.wrench(first_link, x, env, 0.0)
+                @test force ≈ expected_force rtol=1e-13
+                @test torque ≈ expected_torque rtol=1e-13
+                @test norm(force - child_force) > 0.1 * norm(force)
+                if q_ib !== nothing
+                    @test norm(torque) > 0
+                    @test norm(torque - child_torque) > 0.1 * norm(torque)
+                else
+                    @test torque == ZERO3
+                end
+            end
+        end
+
         @testset "child link: reference point, link attitude and root-frame offset compose" begin
             bus = SM.Link(root=true, m=300.0, dims=MVector{3, Float64}(1.0, 1.0, 1.0), ref_area=1.0)
             q_child = _quat_axis_angle((0.0, 0.0, 1.0), pi / 2)
@@ -467,6 +500,18 @@ end
         @test MeshAeroSurrogate(good()...) isa MeshAeroSurrogate
         @test MESH_AERO_MAX_DEGREE == 20
         @test MeshAeroSurrogate(good(20, 0)...).degree == 20
+        # Addition overflow and multiplication-to-zero must not admit an
+        # empty matrix into the evaluator. Never evaluate these invalid inputs.
+        for huge_poly in (typemax(Int), typemax(Int) ÷ 2)
+            err = try
+                MeshAeroSurrogate(1, huge_poly, zeros(6, 0), zeros(6, 0),
+                    1.0, 1.0, ZERO3, 1.0, 1.0, 3.0, 20.0)
+                nothing
+            catch e
+                e
+            end
+            @test err isa ArgumentError && occursin("basis size", err.msg)
+        end
         # every constructor route validates: exact field types cannot bypass it
         @test_throws ArgumentError MeshAeroSurrogate(good(21, 2)...)
         @test_throws ArgumentError MeshAeroSurrogate(21, 2, zeros(6, nb(21, 2)), zeros(6, nb(21, 2)), 1.0, 1.0, SVector(0.0, 0.0, 0.0), 1.0, 1.0, 3.0, 20.0, Dict{String, Any}())
@@ -490,6 +535,10 @@ end
         elapsed = @elapsed @test_throws ArgumentError fit_mesh_aero_surrogate(panels; degree=21, n_directions=100000)
         @test elapsed < 5.0
         @test_throws ArgumentError fit_mesh_aero_surrogate(panels; poly_degree=-1)
+        # Enough total samples cannot compensate for an undetermined basis factor.
+        @test_throws ArgumentError fit_mesh_aero_surrogate(panels; degree=1, poly_degree=2, n_directions=100, speed_ratios=(4.0, 8.0))
+        @test_throws ArgumentError fit_mesh_aero_surrogate(panels; degree=1, poly_degree=2, n_directions=100, speed_ratios=(4.0, 4.0, 8.0))
+        @test_throws ArgumentError fit_mesh_aero_surrogate(panels; degree=2, poly_degree=0, n_directions=8, speed_ratios=(4.0, 8.0))
         @test_throws ArgumentError fit_mesh_aero_surrogate(panels; sigma_n=1.2, n_directions=50, degree=2)
         @test_throws ArgumentError fit_mesh_aero_surrogate(panels; speed_ratios=(0.0, 4.0), n_directions=50, degree=2)
         @test_throws ArgumentError fit_mesh_aero_surrogate(panels; speed_ratios=(), n_directions=50, degree=2)
@@ -518,6 +567,16 @@ end
             return p
         end
         @test read_mesh_aero_surrogate(written(d -> nothing)).degree == 4
+        for huge_poly in (typemax(Int), typemax(Int) ÷ 2)
+            overflowing = written(d -> begin
+                d["degree"] = 1
+                d["poly_degree"] = huge_poly
+                d["coeff_a"] = [Float64[] for _ in 1:6]
+                d["coeff_b"] = [Float64[] for _ in 1:6]
+            end)
+            err = try; read_mesh_aero_surrogate(overflowing); nothing; catch e; e; end
+            @test err isa ArgumentError && occursin("variant.json", err.msg) && occursin("basis size", err.msg)
+        end
         oversized = written(d -> (d["degree"] = 25; d["coeff_a"] = [zeros(nb(25, 1)) for _ in 1:6]; d["coeff_b"] = [zeros(nb(25, 1)) for _ in 1:6]))
         err = try; read_mesh_aero_surrogate(oversized); nothing; catch e; e; end
         @test err isa ArgumentError && occursin("variant.json", err.msg) && occursin("degree", err.msg)

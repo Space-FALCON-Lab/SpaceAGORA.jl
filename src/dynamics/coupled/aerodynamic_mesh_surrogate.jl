@@ -415,7 +415,16 @@ end
 
 # Basis of the full fit: Y_lm(v) * x^k with x = 1/s, k = 0..P, laid out as
 # [k = 0 block][k = 1 block]... so the direction basis is reused.
-@inline _basis_count(degree::Int, poly_degree::Int)::Int = _sh_count(degree) * (poly_degree + 1)
+@inline function _basis_count(degree::Int, poly_degree::Int)::Int
+    # A wrapped size could admit undersized coefficient matrices into the
+    # evaluator's bounds-check-free loop. Reject it before shape validation.
+    return try
+        Base.Checked.checked_mul(_sh_count(degree), Base.Checked.checked_add(poly_degree, 1))
+    catch err
+        err isa OverflowError || rethrow()
+        throw(ArgumentError("surrogate basis size overflows Int for degree $(degree), poly_degree $(poly_degree)."))
+    end
+end
 
 function _fit_basis!(row::AbstractVector{Float64}, Y::AbstractVector{Float64}, degree::Int, poly_degree::Int, v::SVector{3, Float64}, s::Float64)
     nsh = _sh_count(degree)
@@ -583,7 +592,9 @@ directions at the middle speed ratio) is stored in the metadata under
 `"fit"`; compare it with the coefficient magnitudes there before trusting a
 low degree. Cost is one shadow buffer per direction and speed ratio pair.
 `degree` is limited to [`MESH_AERO_MAX_DEGREE`](@ref); the limits are checked
-before any tabulation starts.
+before any tabulation starts. At least `(degree + 1)^2` directions and
+`poly_degree + 1` distinct speed ratios are required to determine the two
+factors of the fitted basis.
 """
 function fit_mesh_aero_surrogate(
     panels::MeshAeroPanels;
@@ -605,8 +616,10 @@ function fit_mesh_aero_surrogate(
     srs = sort!(Float64[Float64(s) for s in speed_ratios])
     isempty(srs) && throw(ArgumentError("speed_ratios is empty."))
     all(s -> isfinite(s) && s > 0.0, srs) || throw(ArgumentError("speed ratios must be positive and finite."))
-    dirs = fibonacci_directions(n_directions)
     nb = _basis_count(L, P)
+    n_directions >= _sh_count(L) || throw(ArgumentError("n_directions must be at least $(_sh_count(L)) for degree $(L)."))
+    length(unique(srs)) >= P + 1 || throw(ArgumentError("poly_degree $(P) requires at least $(P + 1) distinct speed ratios."))
+    dirs = fibonacci_directions(n_directions)
     nsamp = length(dirs) * length(srs)
     nsamp >= nb || throw(ArgumentError("$(nsamp) samples cannot determine $(nb) basis functions; raise n_directions or lower degree."))
     X = Matrix{Float64}(undef, nsamp, nb)
@@ -748,6 +761,7 @@ function read_mesh_aero_surrogate(path::AbstractString)::MeshAeroSurrogate
     poly_degree = integer_field("poly_degree")
     try
         _validate_surrogate_degrees(degree, poly_degree)   # before the coefficient arrays are touched
+        _basis_count(degree, poly_degree)
     catch err
         err isa ArgumentError ? throw(ArgumentError("$(p): $(err.msg)")) : rethrow()
     end
@@ -776,8 +790,8 @@ end
     AerodynamicCoefficientMeshSurrogate(surrogate::MeshAeroSurrogate; kwargs...)
 
 Free-molecular aerodynamics from fitted mesh surrogates, one per link keyed
-by the link's integer index in `spacecraft.links` (1 is the root); the
-single-argument form puts one whole-vehicle surrogate on the root. Links
+by the link's integer index in `spacecraft.links`. The single-surrogate
+form follows `spacecraft.root` regardless of its position in that list. Links
 without a surrogate carry no aerodynamic load. Each link's coefficients are
 evaluated from the airspeed direction in that link's frame, the speed ratio
 V / sqrt(2 R T) of the wind-relative airspeed and the ratio of
@@ -811,7 +825,8 @@ stored link angles).
 struct AerodynamicCoefficientMeshSurrogate <: AbstractForceTorqueModel
     surrogates::Dict{Int, MeshAeroSurrogate}
     wall_temperature_k::Float64
-    function AerodynamicCoefficientMeshSurrogate(surrogates::AbstractDict; wall_temperature_k::Real=300.0)
+    root_only::Bool
+    function AerodynamicCoefficientMeshSurrogate(surrogates::AbstractDict, root_only::Bool; wall_temperature_k::Real=300.0)
         isempty(surrogates) && throw(ArgumentError("AerodynamicCoefficientMeshSurrogate needs at least one surrogate."))
         tw = Float64(wall_temperature_k)
         (isfinite(tw) && tw > 0.0) || throw(ArgumentError("wall_temperature_k must be positive and finite, got $(wall_temperature_k)."))
@@ -821,11 +836,14 @@ struct AerodynamicCoefficientMeshSurrogate <: AbstractForceTorqueModel
             v isa MeshAeroSurrogate || throw(ArgumentError("surrogate for link $(k) must be a MeshAeroSurrogate, got $(typeof(v))."))
             d[Int(k)] = v
         end
-        return new(d, tw)
+        root_only && (length(d) != 1 || !haskey(d, 1)) &&
+            throw(ArgumentError("the root-only form requires one whole-vehicle surrogate."))
+        return new(d, tw, root_only)
     end
 end
 
-AerodynamicCoefficientMeshSurrogate(sur::MeshAeroSurrogate; kwargs...) = AerodynamicCoefficientMeshSurrogate(Dict{Int, MeshAeroSurrogate}(1 => sur); kwargs...)
+AerodynamicCoefficientMeshSurrogate(surrogates::AbstractDict; kwargs...) = AerodynamicCoefficientMeshSurrogate(surrogates, false; kwargs...)
+AerodynamicCoefficientMeshSurrogate(sur::MeshAeroSurrogate; kwargs...) = AerodynamicCoefficientMeshSurrogate(Dict{Int, MeshAeroSurrogate}(1 => sur), true; kwargs...)
 
 @inline environment_requirements(::AerodynamicCoefficientMeshSurrogate) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
 @inline solver_partition(::AerodynamicCoefficientMeshSurrogate) = :implicit
@@ -895,7 +913,7 @@ function _mesh_aero_wrench(
     force_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
     torque_root = MVector{3, Float64}(0.0, 0.0, 0.0)
     @inbounds for (k, body) in enumerate(spacecraft.links)
-        sur = get(model.surrogates, k, nothing)
+        sur = model.root_only ? (body === spacecraft.root ? model.surrogates[1] : nothing) : get(model.surrogates, k, nothing)
         sur === nothing && continue
         q_child = SVector{4, Float64}(body.q...)
         if orientation_sim

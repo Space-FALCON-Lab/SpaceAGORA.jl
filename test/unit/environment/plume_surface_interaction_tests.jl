@@ -86,6 +86,39 @@ end
     @test sample.height_m ≈ 1.0
 end
 
+@testset "explicit plume datum and backward-compatible defaults" begin
+    radius = PLANET.Rp_e + 2_000.0
+    pos = SVector(radius + 2.0, 0.0, 0.0)
+    sample = SM.StateSample(pos,Z3,500.0)
+    frame = SM.PlanetFrameSample(EYE,pos,Z3,2_002.0,0.0,0.0)
+    env = SM.EnvironmentSample(PLANET;planet_frame=frame)
+    model = PlumeSurfaceInteractionModel(control([1_000.0]);reference_radius_m=radius)
+    datum = PSI._plume_sample(model,sample,env,0.0,1)
+    @test model.reference_radius_m == radius
+    @test datum.height_m == 2.0
+    @test datum.ground_effect_n > 0
+    @test datum.erosion_kg_s > 0
+    fallback = PlumeSurfaceInteractionModel(control([1_000.0]))
+    @test fallback.reference_radius_m === nothing
+    @test PSI._plume_sample(fallback,sample,env,0.0,1).height_m == 2_002.0
+    @test PSI._plume_sample(fallback,sample,env,0.0,1).ground_effect_n == 0
+    legacy = PlumeSurfaceInteractionModel(PlumeSurfaceConfig(),control([1_000.0]),
+        NoTerrainModel(),PlumeSurfaceState(1))
+    @test legacy.reference_radius_m === nothing
+    @test wrench(legacy,sample,env,0.0) == wrench(fallback,sample,env,0.0)
+    grid = DEMGrid(fill(1.0f0,2,2),-5.0,5.0,-5.0,5.0;reference_radius_m=radius)
+    terrain = DEMTerrainModel([grid];reference_radius_m=radius)
+    matching = PlumeSurfaceInteractionModel(control([1_000.0]),terrain;reference_radius_m=radius)
+    implicit = PlumeSurfaceInteractionModel(control([1_000.0]),terrain)
+    @test PSI._plume_sample(matching,sample,env,0.0,1).height_m == 1.0
+    @test wrench(matching,sample,env,0.0) == wrench(implicit,sample,env,0.0)
+    @test_throws ArgumentError PlumeSurfaceInteractionModel(control([1_000.0]),terrain;reference_radius_m=radius+1.0)
+    @test_throws ArgumentError PlumeSurfaceInteractionModel(PlumeSurfaceConfig(),control([1_000.0]),terrain,PlumeSurfaceState(1),radius+1.0)
+    for invalid in (0.0,-1.0,NaN,Inf,"radius",big"1e1000")
+        @test_throws ArgumentError PlumeSurfaceInteractionModel(control([1_000.0]);reference_radius_m=invalid)
+    end
+end
+
 mutable struct HeldControl <: SpaceAGORA.AbstractControlEffectorModel
     actuators::NamedTuple{(:thrust_n,),Tuple{Vector{Float64}}}
     initial::Vector{Float64}

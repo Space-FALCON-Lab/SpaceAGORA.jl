@@ -14,8 +14,12 @@ transport or a changing surface. Engine and soil metadata fields that do not
 enter the closure are identified in [`PlumeSurfaceConfig`](@ref).
 
 The supplied terrain uses planetocentric latitude/longitude in degrees and a
-reference sphere in meters. For DEM terrain its declared radius is used. For
-other terrain the planet's equatorial radius supplies that reference. At each
+reference sphere in meters. Pass `reference_radius_m` when the mission uses an
+explicit datum, and use the same radius for guidance and touchdown. An explicit
+radius must match DEM terrain's declared radius. If omitted, DEM terrain uses
+its own radius and other terrain uses the planet's equatorial radius. For example,
+`PlumeSurfaceInteractionModel(control, terrain; reference_radius_m=landing_radius)`
+keeps a landing and its plume on the same reference sphere. At each
 state the local radial tangent plane at the subspacecraft terrain sample gives
 the radial clearance; dividing by the downward exhaust cosine gives slant
 height. This approximation does not ray trace the terrain, relocate the tilted

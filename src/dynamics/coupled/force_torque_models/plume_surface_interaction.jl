@@ -133,7 +133,7 @@ function PlumeSurfaceState(num_sats::Integer)
 end
 
 """
-    PlumeSurfaceInteractionModel(control, terrain=NoTerrainModel(); config=PlumeSurfaceConfig(), num_sats=...)
+    PlumeSurfaceInteractionModel(control, terrain=NoTerrainModel(); config=PlumeSurfaceConfig(), num_sats=..., reference_radius_m=nothing)
 
 Add only modeled ground-effect augmentation to an existing engine's thrust.
 `control.actuators.thrust_n` must be a finite, nonnegative vector in simulation
@@ -142,7 +142,10 @@ does not apply primary engine thrust. Its length must match the simulation.
 
 Geometry uses a local radial tangent plane at the subspacecraft terrain sample,
 with planetocentric latitude/longitude in degrees and the terrain reference
-sphere. Slant height is radial clearance divided by the downward axis cosine;
+sphere. Supply `reference_radius_m` when touchdown/guidance uses an explicit
+sphere; it must agree with a DEM's declared radius. When omitted, DEM terrain
+uses its declared radius and other terrain uses the planet's equatorial radius.
+Slant height is radial clearance divided by the downward axis cosine;
 curvature, the tilted impact point, DEM slopes and ray tracing are not modeled.
 Horizontal or upward exhaust gives no interaction. Without attitude the exhaust
 is radial inward; with attitude it is body +z. The scalar nozzle offset lies on
@@ -159,16 +162,30 @@ struct PlumeSurfaceInteractionModel{C, T <: AbstractTerrainModel} <: AbstractFor
     control::C
     terrain::T
     state::PlumeSurfaceState
+    reference_radius_m::Union{Nothing,Float64}
     function PlumeSurfaceInteractionModel(config::PlumeSurfaceConfig, control,
-            terrain::T, state::PlumeSurfaceState) where {T <: AbstractTerrainModel}
+            terrain::T, state::PlumeSurfaceState, reference_radius_m=nothing) where {T <: AbstractTerrainModel}
         n = _control_spacecraft_count(control)
         _validate_plume_state(state, n)
-        return new{typeof(control), T}(config, control, terrain, state)
+        radius = if reference_radius_m === nothing
+            nothing
+        else
+            reference_radius_m isa Real && isfinite(reference_radius_m) && reference_radius_m > 0 ||
+                throw(ArgumentError("Plume reference_radius_m must be finite and positive."))
+            value = Float64(reference_radius_m)
+            isfinite(value) && value > 0 ||
+                throw(ArgumentError("Plume reference_radius_m must be representable as a finite positive Float64."))
+            terrain isa DEMTerrainModel && value != terrain.reference_radius_m &&
+                throw(ArgumentError("Plume reference_radius_m differs from the DEM reference radius."))
+            value
+        end
+        return new{typeof(control), T}(config, control, terrain, state, radius)
     end
 end
 function PlumeSurfaceInteractionModel(control, terrain::AbstractTerrainModel=NoTerrainModel();
-        config::PlumeSurfaceConfig=PlumeSurfaceConfig(), num_sats::Integer=_control_spacecraft_count(control))
-    return PlumeSurfaceInteractionModel(config, control, terrain, PlumeSurfaceState(num_sats))
+        config::PlumeSurfaceConfig=PlumeSurfaceConfig(), num_sats::Integer=_control_spacecraft_count(control),
+        reference_radius_m=nothing)
+    return PlumeSurfaceInteractionModel(config, control, terrain, PlumeSurfaceState(num_sats), reference_radius_m)
 end
 function _control_spacecraft_count(control)
     hasproperty(control, :actuators) && hasproperty(control.actuators, :thrust_n) ||
@@ -310,7 +327,9 @@ function _plume_height_along_axis(model, x, env, axis)
     # Terrain uses planetocentric coordinates, not pf.lat_rad (geodetic).
     lat = atand(pf.pos_pp[3], hypot(pf.pos_pp[1], pf.pos_pp[2]))
     lon = atand(pf.pos_pp[2], pf.pos_pp[1])
-    reference = model.terrain isa DEMTerrainModel ? model.terrain.reference_radius_m : Float64(env.planet.Rp_e)
+    reference = model.reference_radius_m === nothing ?
+        (model.terrain isa DEMTerrainModel ? model.terrain.reference_radius_m : Float64(env.planet.Rp_e)) :
+        model.reference_radius_m
     ground = terrain_radius(model.terrain, lat, lon, reference)
     down_cos = dot(axis, -x.pos_ii / norm(x.pos_ii))
     down_cos > 0 || return Inf

@@ -496,6 +496,17 @@ foreclose a large win at some points", not "R6 is 2.4x slower with a warm
 store". The N=64 and N=256 columns are finding 2's calibration artifacts and
 both stores handle them identically.
 
+**A limit of this experiment, which bounds what the later phases can show.**
+The store is shared across a run and fills as the phases progress, so a
+"cleared-store run" is only genuinely cold for whichever phase meets a case
+first. P2's case *is* P1's top rung (`gravity_4096sat_l50_vacuum_5800s`), so by
+the time P2 runs, P1 has calibrated it in both runs and the two are comparing
+identical store states. P2 duly shows nothing -- every rung within 3%,
+exploration 4 sweeps against 3 of 66 campaigns -- and that is a null by
+construction rather than evidence of no effect. It should not pad the
+denominator. P3, P4 and P5 carry cases no earlier phase touches, so they remain
+real tests.
+
 Three things follow, and they matter more than the routing numbers themselves.
 
 *The cache suppresses the search that would fix it.* R6 exploits a cached

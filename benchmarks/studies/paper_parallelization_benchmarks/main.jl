@@ -22,7 +22,48 @@ function _ppb_active_phases(ppb::PPBConfig)::Vector{PPBPhase}
     ppb.preview && (phases = _ppb_preview_phase.(phases))
     ppb.lean_modes && (phases = _ppb_lean_phase.(phases))
     phases = _ppb_cap_worker_counts.(phases, ppb.process_workers)
+    phases = _ppb_apply_repeats_floor.(phases, _ppb_min_repeats())
     return phases
+end
+
+# Raise every phase to at least this many repeats (SPACEAGORA_PPB_MIN_REPEATS).
+#
+# The per-phase repeat counts are chosen for cost, and at three or five they are
+# enough to separate the pinned routes, whose per-point spread is 1.7-2.9%. They
+# are not enough for the adaptive route: bootstrapping the repeats we have puts
+# the 90% interval of a five-repeat policy_v2 median at ~7%, which is the same
+# size as the band used to decide whether two runs differ at all, so an adaptive
+# point cannot be compared against anything. Eleven repeats takes that interval
+# to ~2.2% and it plateaus there.
+#
+# A floor rather than a multiplier, because what matters is the absolute number
+# of samples behind a median, not a ratio to whatever the phase happened to
+# declare. Phases already above the floor keep their own count.
+function _ppb_min_repeats()::Int
+    raw = strip(get(ENV, "SPACEAGORA_PPB_MIN_REPEATS", ""))
+    isempty(raw) && return 0
+    n = tryparse(Int, raw)
+    (n === nothing || n < 1) && return 0
+    return n
+end
+
+function _ppb_apply_repeats_floor(phase::PPBPhase, floor_repeats::Int)::PPBPhase
+    (floor_repeats <= phase.repeats) && return phase
+    println("[paper-benchmarks] phase $(phase.id): repeats $(phase.repeats) -> $(floor_repeats)")
+    return PPBPhase(
+        id            = phase.id,
+        label         = phase.label,
+        cases         = phase.cases,
+        parity_cases  = phase.parity_cases,
+        modes         = phase.modes,
+        mc_samples    = phase.mc_samples,
+        repeats       = floor_repeats,
+        warmup        = phase.warmup,
+        thread_mode   = phase.thread_mode,
+        worker_ladder = phase.worker_ladder,
+        budget_grid   = phase.budget_grid,
+        budget_grid_fixed = phase.budget_grid_fixed,
+    )
 end
 
 # No phase may request more concurrent worker PROCESSES than the run was given.

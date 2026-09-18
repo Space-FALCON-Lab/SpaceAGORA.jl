@@ -48,7 +48,7 @@ end
 """
     _gram_process_pool_mode() -> Symbol
 
-`off` (default), `on`, or `auto`. `auto` engages only above the batch-size
+`off` (default), `on`, or `auto`. `auto` engages at or above the batch-size
 threshold, since below it the round-trip cost is not amortised.
 """
 @inline function _gram_process_pool_mode()::Symbol
@@ -205,8 +205,9 @@ end
 
 Fill the shared density/temperature/wind buffers for every active satellite from
 the distributed density service, using planet-frame values the caller has
-already computed. Returns `false` if the service declined or failed, leaving the
-buffers untouched so the caller can fall back.
+already computed. Returns `false` if the service declined or failed so the caller
+can fall back. Native-query slots remain untouched on failure; vacuum and
+analytic-fallback slots may already contain their locally computed values.
 
 Queries carry the current `(alt, lat, lon, t)` and an owned construction recipe,
 including epoch and resolved paths. Workers reuse a model only for the same

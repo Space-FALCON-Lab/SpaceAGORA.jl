@@ -2,16 +2,10 @@ using Test
 using Distributed
 using SpaceAGORA
 
-# Regression for the PR #139 coverage failure (job 105631685037): Distributed
-# serialises the coordinator's LOAD_PATH into each worker's JULIA_LOAD_PATH, so
-# a coordinator that had prepended the vendored GRAMSuite environment (the
-# native probes and ensure_gramsuite_loaded! do this while GRAMSuite is only a
-# weak dependency) handed every pool worker a stack in which that environment
-# shadowed the pool's own project, and the worker's `using SpaceAGORA` failed
-# while precompiling a package extension it resolved through the wrong
-# manifest. Pool workers must resolve packages from the pool project first;
-# other coordinator entries stay behind it as fallbacks. Native-free: the
-# spawned worker is bare (no SpaceAGORA bootstrap) and is removed afterwards.
+# A vendored environment prepended by the coordinator must not shadow the pool
+# project on a fresh worker. This pins the reproduced mixed-resolution mechanism;
+# the exact PR139 CI extension failure still needs current-head CI confirmation.
+# Native-free: the worker is bare and is removed afterwards.
 
 const PWLP = SpaceAGORA.ParallelProcess
 const PWLP_PROJECT = Base.active_project()
@@ -21,7 +15,8 @@ const PWLP_VENDORED = joinpath(PWLP_REPO, "data", "GRAMSuite.jl")
 @testset "process workers start on a project-first load path" begin
     saved = copy(LOAD_PATH)
     prior_workers = sort(workers())
-    extra = isdir(PWLP_VENDORED) ? PWLP_VENDORED : mktempdir()
+    temporary_extra = !isdir(PWLP_VENDORED)
+    extra = temporary_extra ? mktempdir() : PWLP_VENDORED
     try
         pushfirst!(LOAD_PATH, extra)
         pathsep = Sys.iswindows() ? ";" : ":"
@@ -52,6 +47,7 @@ const PWLP_VENDORED = joinpath(PWLP_REPO, "data", "GRAMSuite.jl")
     finally
         empty!(LOAD_PATH)
         append!(LOAD_PATH, saved)
+        temporary_extra && rm(extra; recursive=true, force=true)
     end
     @test sort(workers()) == prior_workers
 end

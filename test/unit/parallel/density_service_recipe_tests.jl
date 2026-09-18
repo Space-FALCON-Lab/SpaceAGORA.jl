@@ -20,6 +20,25 @@ recipe(; seed=17) = Dict{Symbol, Any}(
     :gram_min_relative_step_size => 0.02, :gram_perturbation_scales => (0.25, 0.5, 0.75, 0.0),
 )
 
+# Trigger an intervening request only when the coordinator copies the query
+# vector, after ensure_density_workers! and before density_service_dispatch.
+# This owns its array methods; no production method or hook is replaced.
+struct RecipeSwitchVector{F} <: AbstractVector{Float64}
+    values::Vector{Float64}
+    on_first_read::F
+    triggered::Base.RefValue{Bool}
+end
+Base.size(v::RecipeSwitchVector) = size(v.values)
+Base.IndexStyle(::Type{<:RecipeSwitchVector}) = IndexLinear()
+function Base.getindex(v::RecipeSwitchVector, i::Int)
+    @boundscheck checkbounds(v.values, i)
+    if !v.triggered[]
+        v.triggered[] = true
+        v.on_first_read()
+    end
+    return v.values[i]
+end
+
 function with_fixture(f)
     saved = (PP._DENSITY_SERVICE_BUILD_MODEL_FN[], PP._DENSITY_SERVICE_EVAL_FN[],
              PP._WORKER_DENSITY_MODEL[], PP._WORKER_DENSITY_RECIPE[])
@@ -244,6 +263,26 @@ batch(kwargs; hs=[11.0, 12.0, 13.0]) = PP.density_batch_remote(
                     @test rho == fill(-1.0, 4)
                     @test temp == fill(-2.0, 4)
                     @test winds == fill(SVector(-3.0, -3.0, -3.0), 4)
+
+                    # The worker can be reassigned between ensure(A) and dispatch.
+                    # Only the actual coordinator's recipe keyword restores A.
+                    a, b = recipe(seed=17), recipe(seed=29)
+                    before = length(ctx.builds)
+                    switched = Ref(false)
+                    switch_recipe = function ()
+                        @test isequal(PP._WORKER_DENSITY_RECIPE[], a)
+                        @test PP.install_worker_density_model!(b)
+                    end
+                    intervened_hs = RecipeSwitchVector(copy(hs), switch_recipe, switched)
+                    good_model = EM.GRAMAtmosphereModel(nothing, ReentrantLock(), a)
+                    @test CB._gram_process_pool_batch_eval!(rho, temp, winds, good_model,
+                        intervened_hs, fill(2.0, 4), fill(3.0, 4), 4.0, true, p)
+                    @test switched[]
+                    @test rho == fill(17.0, 4)
+                    @test temp == 200.0 .+ hs
+                    @test winds == fill(SVector(2.0, 3.0, 4.0), 4)
+                    @test [r[:seed] for r in ctx.builds[before+1:end]] == [17, 29, 17]
+                    @test isequal(PP._WORKER_DENSITY_RECIPE[], a)
                 end
             finally
                 lock(pool.lock) do

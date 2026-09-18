@@ -97,6 +97,14 @@ end
             @test second_a.handle != first_b.handle
             @test isequal(second_a.recipe,recipe_a)
             @test isequal(a.constructor_kwargs,recipe_a)
+            # Retain the old native handle on this test-owned worker so failure
+            # recovery cannot reuse a collected object's address. Compare live
+            # objects below instead of objectid values after cache invalidation.
+            remotecall_fetch(Core.eval, worker, Main, quote
+                global _density_probe_prior_handle =
+                    SpaceAGORA.ParallelProcess._WORKER_DENSITY_MODEL[].gram_atmosphere
+                nothing
+            end)
             # Unsupported planet selection throws after library selection and
             # native initialization. Recovery must reconstruct the old recipe.
             bad = merge(recipe_a, Dict{Symbol,Any}(:planet_name=>"unsupported"))
@@ -105,8 +113,12 @@ end
             @test failed === nothing
             @test worker_snapshot(worker).handle === nothing
             @test worker_snapshot(worker).recipe === nothing
+            remotecall_fetch(GC.gc, worker)
             @test batch(a)
-            @test worker_snapshot(worker).handle != second_a.handle
+            @test remotecall_fetch(Core.eval, worker, Main, quote
+                SpaceAGORA.ParallelProcess._WORKER_DENSITY_MODEL[].gram_atmosphere !==
+                    _density_probe_prior_handle
+            end)
             @test isequal(worker_snapshot(worker).recipe,recipe_a)
             @test matches(ref_a)
         finally

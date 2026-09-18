@@ -19,9 +19,9 @@
 # over 12 workers that is 12 round trips carrying ~21 queries each, and the
 # ~8 KB of query data amortizes against ~5 ms of GRAM work per worker.
 #
-# Batches can come from the density callback or the RHS atmosphere prefill.
-# Both use `SimulationCallbacks._gram_process_pool_batch_eval!` and retain
-# their existing cache and outer-parallel eligibility guards.
+# The RHS atmosphere prefill calls
+# `SimulationCallbacks._gram_process_pool_batch_eval!`, retaining its cache and
+# outer-parallel eligibility guards. The density callback uses the isolated pool.
 
 const _DENSITY_PROCESS_POOL = ProcessPool(Base.active_project())
 

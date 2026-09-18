@@ -26,6 +26,10 @@ using ..GuidanceHooks: calcGuidanceEffect!
 using ..NavigationHooks: calcNavigationEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits
 export SaveField, default_save_fields, get_callbacks
+export TrajectoryRecorder, get_trajectory_recorder_callback
+export record_trajectory_sample!, reset_trajectory_recorder!
+export trajectory_times, trajectory_field, trajectory_save_data
+export trajectory_positions, trajectory_velocities, trajectory_masses
 
 const _simulation_model_module = parentmodule(@__MODULE__)
 

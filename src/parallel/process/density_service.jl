@@ -19,10 +19,9 @@
 # over 12 workers that is 12 round trips carrying ~21 queries each, and the
 # ~8 KB of query data amortizes against ~5 ms of GRAM work per worker.
 #
-# Consequently this is only reachable from a call site that has every satellite's
-# state in hand at once -- the density callback with
-# `SPACEAGORA_DENSITY_FREEZE_PER_STEP=1`, not the per-satellite RHS path (see
-# `SimulationCallbacks._gram_process_pool_batch_eval!`).
+# Batches can come from the density callback or the RHS atmosphere prefill.
+# Both use `SimulationCallbacks._gram_process_pool_batch_eval!` and retain
+# their existing cache and outer-parallel eligibility guards.
 
 const _DENSITY_PROCESS_POOL = ProcessPool(Base.active_project())
 
@@ -42,57 +41,72 @@ density_process_pool()::ProcessPool = _DENSITY_PROCESS_POOL
 # EnvironmentModels at load time; this is the same Ref-injection pattern
 # density_models.jl uses for the GRAMSuite extension.
 const _DENSITY_SERVICE_BUILD_MODEL_FN = Ref{Function}(
-    (_planet) -> error("Density service model constructor not installed.")
+    (_recipe) -> error("Density service model constructor not installed.")
 )
 const _DENSITY_SERVICE_EVAL_FN = Ref{Function}(
     (_model, _h, _lat, _lon, _el, _wind, _vacT) -> error("Density service evaluator not installed.")
 )
 
 # Worker-side state. One instance per worker process, created on first use and
-# reused for the life of the worker: construction is the expensive part (it loads
+# reused until its recipe changes: construction is the expensive part (it loads
 # MERRA2 data and takes GRAM's one-time init branch through CSPICE), and it is
 # also the only part that is unsafe to do concurrently.
 const _WORKER_DENSITY_MODEL = Ref{Any}(nothing)
-const _WORKER_DENSITY_PLANET = Ref{String}("")
+const _WORKER_DENSITY_RECIPE = Ref{Union{Nothing, Dict{Symbol, Any}}}(nothing)
+const _WORKER_DENSITY_LOCK = ReentrantLock()
 
 """
+    install_worker_density_model!(constructor_kwargs) -> Bool
     install_worker_density_model!(planet_name) -> Bool
 
-Create this worker's GRAM instance for `planet_name` if it does not already have
-one, and drive a single throwaway evaluation through it.
+Reuse this worker's model only when its complete construction recipe matches.
+Changed settings, epoch or paths create a fresh native model. The string form
+retains explicit default construction for callers that supply only a planet.
 
-The warm-up is not an optimisation. A freshly constructed GRAM atmosphere takes a
-one-time initialisation branch on its first `update()` that reaches CSPICE, and
-CSPICE shares a global call-trace stack; taking that branch for the first time
-inside a batch would put it in the same window as other work. Here it runs once,
-alone, before the instance is ever published for queries.
+Construction and warm-up finish before publishing the replacement. A failed
+replacement clears the cached model and recipe before throwing to the service
+caller, which declines the batch. Construction can mutate process-global native
+state before failing, so the previous handle cannot safely be reused. A worker-local lock also protects entire query batches
+so another request cannot replace a model midway through its evaluation.
 """
-function install_worker_density_model!(planet_name::AbstractString)::Bool
-    planet = String(planet_name)
-    if _WORKER_DENSITY_MODEL[] !== nothing && _WORKER_DENSITY_PLANET[] == planet
+function install_worker_density_model!(constructor_kwargs::AbstractDict)::Bool
+    recipe = deepcopy(Dict{Symbol, Any}(constructor_kwargs))
+    return lock(_WORKER_DENSITY_LOCK) do
+        if _WORKER_DENSITY_MODEL[] !== nothing && isequal(_WORKER_DENSITY_RECIPE[], recipe)
+            return true
+        end
+        model = try
+            replacement = _DENSITY_SERVICE_BUILD_MODEL_FN[](deepcopy(recipe))
+            _DENSITY_SERVICE_EVAL_FN[](replacement, 1.0e5, 0.0, 0.0, 0.0, true, 200.0)
+            replacement
+        catch
+            # A constructor may change native library/SPICE globals before it
+            # throws. Force reconstruction even when the next request is old.
+            _WORKER_DENSITY_MODEL[] = nothing
+            _WORKER_DENSITY_RECIPE[] = nothing
+            rethrow()
+        end
+        _WORKER_DENSITY_MODEL[] = model
+        _WORKER_DENSITY_RECIPE[] = recipe
         return true
     end
-    model = _DENSITY_SERVICE_BUILD_MODEL_FN[](planet)
-    try
-        _DENSITY_SERVICE_EVAL_FN[](model, 1.0e5, 0.0, 0.0, 0.0, true, 200.0)
-    catch
-        # Non-fatal: a real failure here recurs on the first real query, where it
-        # is reported with the caller's context instead of as a bare warm-up error.
-    end
-    _WORKER_DENSITY_MODEL[] = model
-    _WORKER_DENSITY_PLANET[] = planet
-    return true
 end
 
+install_worker_density_model!(planet_name::AbstractString)::Bool =
+    install_worker_density_model!(Dict{Symbol, Any}(:planet_name => String(planet_name)))
+
 """
-    density_batch_remote(hs, lats, lons, els, wind) -> (rhos, Ts, winds)
+    density_batch_remote(hs, lats, lons, els, wind, vacuum_temperature, recipe=nothing)
 
-Evaluate a batch of density queries on this worker's own GRAM instance.
+Evaluate a batch using the supplied construction recipe, checking it again under
+the worker lock. This prevents another coordinator request between pool setup
+and dispatch from selecting the wrong model. The legacy no-recipe form uses
+the already installed model.
 
-Runs *on the worker*. Takes and returns plain arrays only -- never the solver
-parameter object, which is large, full of live runtime state, and in general not
-serialisable. The whole payload for a 256-satellite batch is ~8 KB out and
-~10 KB back.
+Runs *on the worker*. Takes plain arrays and construction settings, never the
+solver parameter object, which is large and full of live runtime state. The
+query arrays for a 256-satellite batch are ~8 KB out and ~10 KB back; the
+construction recipe is sent alongside them.
 """
 function density_batch_remote(
     hs::Vector{Float64},
@@ -101,39 +115,44 @@ function density_batch_remote(
     els::Vector{Float64},
     wind::Bool,
     vacuum_temperature::Float64,
+    constructor_kwargs::Union{Nothing, AbstractDict}=nothing,
 )
-    model = _WORKER_DENSITY_MODEL[]
-    model === nothing && error(
-        "Density service worker has no GRAM instance; install_worker_density_model! " *
-        "was not called on this worker before dispatch."
-    )
-    n = length(hs)
-    rhos = Vector{Float64}(undef, n)
-    Ts = Vector{Float64}(undef, n)
-    wind_x = Vector{Float64}(undef, n)
-    wind_y = Vector{Float64}(undef, n)
-    wind_z = Vector{Float64}(undef, n)
-    eval_fn = _DENSITY_SERVICE_EVAL_FN[]
-    @inbounds for i in 1:n
-        rho, T, w = eval_fn(model, hs[i], lats[i], lons[i], els[i], wind, vacuum_temperature)
-        rhos[i] = rho
-        Ts[i] = T
-        wind_x[i] = w[1]
-        wind_y[i] = w[2]
-        wind_z[i] = w[3]
+    return lock(_WORKER_DENSITY_LOCK) do
+        constructor_kwargs === nothing || install_worker_density_model!(constructor_kwargs)
+        model = _WORKER_DENSITY_MODEL[]
+        model === nothing && error(
+            "Density service worker has no GRAM instance; install_worker_density_model! " *
+            "was not called on this worker before dispatch."
+        )
+        n = length(hs)
+        rhos = Vector{Float64}(undef, n)
+        Ts = Vector{Float64}(undef, n)
+        wind_x = Vector{Float64}(undef, n)
+        wind_y = Vector{Float64}(undef, n)
+        wind_z = Vector{Float64}(undef, n)
+        eval_fn = _DENSITY_SERVICE_EVAL_FN[]
+        @inbounds for i in 1:n
+            rho, T, w = eval_fn(model, hs[i], lats[i], lons[i], els[i], wind, vacuum_temperature)
+            rhos[i] = rho
+            Ts[i] = T
+            wind_x[i] = w[1]
+            wind_y[i] = w[2]
+            wind_z[i] = w[3]
+        end
+        # Wind is returned as three flat vectors rather than a Vector{SVector}: the
+        # coordinator may hold a different StaticArrays version resolution than the
+        # worker in a mixed environment, and flat Float64 vectors serialize without
+        # depending on any of that.
+        return (rhos, Ts, wind_x, wind_y, wind_z)
     end
-    # Wind is returned as three flat vectors rather than a Vector{SVector}: the
-    # coordinator may hold a different StaticArrays version resolution than the
-    # worker in a mixed environment, and flat Float64 vectors serialize without
-    # depending on any of that.
-    return (rhos, Ts, wind_x, wind_y, wind_z)
 end
 
 """
+    ensure_density_workers!(n; constructor_kwargs) -> Vector{Int}
     ensure_density_workers!(n; planet_name) -> Vector{Int}
 
-Grow the density pool to `n` workers, each carrying its own GRAM instance for
-`planet_name`, and return their ids.
+Grow the density pool to `n` workers carrying the supplied construction recipe.
+The legacy `planet_name` keyword requests default construction explicitly.
 
 Worker startup is expensive (SpaceAGORA + GRAMSuite + SPICE kernels, then the
 GRAM instance itself: tens of seconds each), so this is worth calling once at
@@ -141,15 +160,22 @@ solve setup and never inside a timed region. Workers that fail to build an
 instance are dropped from the returned list rather than left to fail on their
 first query -- a short pool is degraded, but a pool with a dead member is wrong.
 """
-function ensure_density_workers!(n::Int; planet_name::AbstractString)::Vector{Int}
+function ensure_density_workers!(n::Int;
+    planet_name::Union{Nothing, AbstractString}=nothing,
+    constructor_kwargs::Union{Nothing, AbstractDict}=nothing,
+)::Vector{Int}
     n <= 0 && return Int[]
+    (planet_name === nothing) == (constructor_kwargs === nothing) &&
+        throw(ArgumentError("Supply either constructor_kwargs or planet_name."))
+    recipe = constructor_kwargs === nothing ?
+        Dict{Symbol, Any}(:planet_name => String(planet_name)) :
+        deepcopy(Dict{Symbol, Any}(constructor_kwargs))
     _ensure_density_atexit!()
     workers_all = ensure_process_workers!(_DENSITY_PROCESS_POOL, n)
-    planet = String(planet_name)
     ready = Int[]
     for w in workers_all
         ok = try
-            remotecall_fetch(install_worker_density_model!, w, planet)
+            remotecall_fetch(install_worker_density_model!, w, recipe)
         catch err
             @warn "Density service worker could not build its GRAM instance; excluding it from the pool." worker=w exception=(err, catch_backtrace())
             false
@@ -218,7 +244,7 @@ function density_service_partition(n_items::Int, n_workers::Int)::Vector{UnitRan
 end
 
 """
-    density_service_dispatch(workers, ranges, hs, lats, lons, els, wind)
+    density_service_dispatch(workers, ranges, hs, lats, lons, els, wind, vacuum_temperature; constructor_kwargs=nothing)
         -> Union{Nothing, Vector{Tuple}}
 
 Scatter one batch across `workers` and gather the per-range results, or `nothing`
@@ -240,10 +266,13 @@ function density_service_dispatch(
     lons::Vector{Float64},
     els::Vector{Float64},
     wind::Bool,
-    vacuum_temperature::Float64,
+    vacuum_temperature::Float64;
+    constructor_kwargs::Union{Nothing, AbstractDict}=nothing,
 )
     n_r = length(ranges)
     (n_r == 0 || length(workers) < n_r) && return nothing
+    recipe = constructor_kwargs === nothing ? nothing :
+        deepcopy(Dict{Symbol, Any}(constructor_kwargs))
     results = Vector{Union{Nothing, Tuple}}(nothing, n_r)
     failed = fill(false, n_r)
     @sync for k in 1:n_r
@@ -253,7 +282,7 @@ function density_service_dispatch(
             try
                 results[k] = remotecall_fetch(
                     density_batch_remote, w,
-                    hs[rng], lats[rng], lons[rng], els[rng], wind, vacuum_temperature,
+                    hs[rng], lats[rng], lons[rng], els[rng], wind, vacuum_temperature, recipe,
                 )
             catch err
                 @warn "Density service worker failed on a batch; falling back to the in-process path." worker=w exception=(err, catch_backtrace())

@@ -93,6 +93,35 @@ eight-thread re-sweep was wrong. Measure it with
 --src-runner --profile=full`, not with the block-ordered benchmark harness,
 whose resolution is about eight points.
 
+## Optional native GRAM density workers
+
+`SPACEAGORA_GRAM_PROCESS_POOL` defaults to `off`. For a large batch of
+satellites using native GRAM, `auto` enables a separate density-worker pool
+above `SPACEAGORA_GRAM_PROCESS_POOL_THRESHOLD` (default 64); `on` also enables
+it for smaller batches. Set `SPACEAGORA_GRAM_PROCESS_POOL_WORKERS` explicitly
+to control its memory and process cost. This service does not apply to
+surrogate models, and it declines work inside an outer parallel run.
+
+Workers reconstruct the model from its saved constructor settings, including
+the epoch and resolved data paths. They reuse a model only while that recipe
+matches. Each batch carries the recipe so overlapping requests use the right
+configuration. If construction or a query fails, the batch falls back to local
+evaluation. A model wrapped directly from a native core has no saved recipe
+and uses local evaluation without starting density workers. A failed replacement
+clears the worker cache so the next valid request rebuilds its native model.
+
+GRAM construction paths do not transfer the coordinator's SPICE kernel pool.
+The existing process bootstrap loads default Earth kernels. Non-Earth missions
+or custom kernel sets still require the caller to furnish the needed kernels on
+the density workers before dispatch; unavailable ephemerides cause local fallback.
+
+This preserves construction settings, not an already advanced random stream or
+manual changes to a native handle. Identical recipes can share worker state
+across requests; this pool does not isolate stochastic streams by simulation.
+Compare your results against local evaluation before using it for a study.
+Per-satellite model instances and stateful interpolation caches retain their
+existing exclusions. No speedup is guaranteed for small batches.
+
 ## Using environment variables
 
 For CLI runs or scripted batch execution, set the controls before launching:

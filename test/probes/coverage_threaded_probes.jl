@@ -8,6 +8,8 @@ using StaticArrays
 using ComponentArrays
 using TOML
 
+include(joinpath(@__DIR__, "..", "helpers", "native_probe_reporting.jl"))
+
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 using SpaceAGORA
@@ -54,8 +56,9 @@ const HAS_GRAMSUITE = let
     end
 end
 
-if HAS_GRAMSUITE
+NativeProbeReporting.run_native_probes(; available=HAS_GRAMSUITE) do
     include(joinpath(@__DIR__, "gram_construction_probes.jl"))
+    include(joinpath(@__DIR__, "gram_density_service_probes.jl"))
 end
 
 struct ProbeDensityModel <: SimulationModel.AbstractDensityModel

@@ -63,33 +63,34 @@ Use the verification study when you need:
 - explicit enforcement behavior
 - a repeatable output directory for local inspection
 
-## Decay and energy diagnostics need a zero reference
+## Interpreting finite-window orbital decay
 
-Any secular or energy diagnostic computed from the errors table — a
-semi-major-axis slope, an orbital-energy drift, a decay rate on either the
-simulation (`sim_interp_value_km`) or the telemetry side — must be differenced
-against a drag-free reference propagation of the same arc before it is read as
-physics. A conservative force model cannot change the semi-major axis
-secularly, but J2 precesses the argument of perigee (about 8° per day for a
-CYGNSS-class orbit) and slowly evolves the eccentricity, so the short-period
-harmonics of the osculating semi-major axis drift in amplitude and phase over a
-multi-day window. A fixed-amplitude harmonic regression leaks that drift into
-its linear term: over a 48-hour window a drag-free propagation shows an
-apparent slope of roughly +11 to +12.5 m/day that does not depend on the save
-grid, on the number of fitted harmonics or on the gravity-field truncation, and
-that changes sign between 12-hour windows. The leakage is common-mode between
-the simulation and the flight telemetry, so subtracting the reference cancels
-it and leaves an estimator-independent decay (about −62 m/day for the CYGNSS
-48-hour arc with either estimator).
+A slope fitted to osculating semi-major axis over a finite window can include
+orbital-period variations and their modulation as well as drag. For example,
+J2 perturbations can produce a nonzero fitted slope even in a drag-free run.
+A trend in this two-body diagnostic alone therefore does not establish
+energy loss through drag.
 
+Before interpreting such a slope as drag-related decay, compare it with a
+drag-free reference propagation of the same arc. Set `drag_enabled = false`
+in the reference scenario's manifest table and preserve its initial state,
+gravity field and other force settings. Evaluate both series over the same
+time window and comparison grid, including the same sampling gaps.
 `SpaceAGORA.TelemetryVerification.zero_referenced_decay(t_s, sma_m, t_ref_s,
-sma_ref_m; period_s)` applies the identical estimator to the measured series
-and to the drag-free reference and returns the corrected slope together with
-both raw slopes; `visviva_sma` builds the osculating semi-major axis from the
-saved state columns, and `flight_density_table` turns windowed corrected decay
-rates into a `tabulated_time` density source. Produce the reference by running
-the same scenario with `drag_enabled = false` in its manifest table, keeping
-the gravity field, window and sampling of the measured arc.
+sma_ref_m; period_s)` applies the same harmonic estimator to both series and
+returns their slope difference as `decay_m_per_day`, together with
+`raw_m_per_day` and `reference_m_per_day`. This removes the fitted reference
+trend; check sensitivity to the fit window and estimator before attributing
+the difference to drag, since subtraction does not guarantee cancellation of
+model mismatch or other perturbations.
+
+The same module provides `visviva_sma(r_m, v_mps, mu)` to compute osculating
+semi-major axis from position and velocity magnitudes, and
+`flight_density_table` to convert windowed, reference-subtracted decay rates
+into a `time_s` / `rho_kgm3` table for the `tabulated_time` density source. The
+conversion uses a near-circular drag relation and the supplied mass and
+effective drag area (`cd_area_m2`), so its density estimate depends on those
+assumptions.
 
 ## Scheduled state anchors
 

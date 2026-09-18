@@ -316,7 +316,7 @@ Density models are first aligned to `args.initial_time` through
 [`with_density_model_epoch`](@ref). Known GRAM construction settings are retained;
 unknown raw-core realignment and fixed-surrogate epoch changes are rejected.
 
-By default, `isolate_state=true` deep-copies the aligned configuration before execution.
+By default, `isolate_state=true` deep-copies the simulation configuration after epoch alignment, before execution.
 This preserves correctness and reentrancy across repeated runs and concurrent callers by
 preventing one run from mutating shared campaign or model state that another run still
 references.

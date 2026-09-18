@@ -63,6 +63,34 @@ Use the verification study when you need:
 - explicit enforcement behavior
 - a repeatable output directory for local inspection
 
+## Decay and energy diagnostics need a zero reference
+
+Any secular or energy diagnostic computed from the errors table — a
+semi-major-axis slope, an orbital-energy drift, a decay rate on either the
+simulation (`sim_interp_value_km`) or the telemetry side — must be differenced
+against a drag-free reference propagation of the same arc before it is read as
+physics. A conservative force model cannot change the semi-major axis
+secularly, but J2 precesses the argument of perigee (about 8° per day for a
+CYGNSS-class orbit) and slowly evolves the eccentricity, so the short-period
+harmonics of the osculating semi-major axis drift in amplitude and phase over a
+multi-day window. A fixed-amplitude harmonic regression leaks that drift into
+its linear term: over a 48-hour window a drag-free propagation shows an
+apparent slope of roughly +11 to +12.5 m/day that does not depend on the save
+grid, on the number of fitted harmonics or on the gravity-field truncation, and
+that changes sign between 12-hour windows. The leakage is common-mode between
+the simulation and the flight telemetry, so subtracting the reference cancels
+it and leaves an estimator-independent decay (about −62 m/day for the CYGNSS
+48-hour arc with either estimator).
+
+`SpaceAGORA.TelemetryVerification.zero_referenced_decay(t_s, sma_m, t_ref_s,
+sma_ref_m; period_s)` applies the identical estimator to the measured series
+and to the drag-free reference and returns the corrected slope together with
+both raw slopes; `visviva_sma` builds the osculating semi-major axis from the
+saved state columns, and `flight_density_table` turns windowed corrected decay
+rates into a `tabulated_time` density source. Produce the reference by running
+the same scenario with `drag_enabled = false` in its manifest table, keeping
+the gravity field, window and sampling of the measured arc.
+
 ## Scheduled state anchors
 
 A scenario can re-anchor the simulated state to an external trajectory at

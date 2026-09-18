@@ -221,13 +221,21 @@ and P2 sit on parity.
 
 `fig_repeat_variance` is finding 5 as a distribution rather than an anecdote,
 and is the honest counterweight to put beside any R6 win. Pooled over every run
-on disk, with each point's warm-up repeat dropped, the spread across repeats of
-a single point has median 7.3% for `policy_v2` against 1.7-2.0% for the pinned
-thread routes and 0.5% for serial -- roughly a decade of separation between the
-three classes, visible as three separated ECDF curves. Dropping the warm-up
-repeat is not cosmetic: repeat 1 runs 2.0x the steady-state time for
-`policy_v2` and 1.4x for `outer_process`, so including it would measure
-process-pool startup rather than routing.
+on disk, with each point's warm-up repeat dropped, a single point's spread
+separates the three route classes by roughly a decade, visible as three
+separated ECDF curves. Dropping the warm-up repeat is not cosmetic: repeat 1
+runs 2.0x the steady-state time for `policy_v2` and 1.4x for `outer_process`,
+so including it would measure process-pool startup rather than routing.
+
+The spread statistic is **IQR/median, not (max-min)/median**, and that matters
+once runs with different repeat counts are pooled. The range of *k* draws grows
+with *k*, so a max-min spread compares the repeat count as much as the
+variance: the same P1 points read 3.3% for `policy_v2` at 3 repeats and 9.2% at
+11, which is an artifact and not a regression. On IQR the same comparison is
+3.3% against 3.2%, and on CV 1.6% against 2.7% -- i.e. unchanged, which is the
+right answer for identical code on one machine. More repeats do not reduce a
+point's spread; they make its *median* precise from the same spread, which is
+what the repeat-count bootstrap in Open measures.
 
 R6 does not converge over a five-campaign sequence -- repeats 2 through 5 sit
 flat at 1.005-1.010 of each other -- so this spread is the steady-state cost of

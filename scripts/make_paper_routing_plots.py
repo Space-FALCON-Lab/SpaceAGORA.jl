@@ -422,12 +422,22 @@ def variance_figure(run_dirs, out_dir, formats, drop_warmup=True, min_repeats=3)
                     groups[(f,) + tuple(r.get(k, "") for k in KEY)].append((rep, t))
 
     series = collections.defaultdict(list)
+    repeat_counts = set()
     for k, v in groups.items():
         v = sorted(v)[1:] if drop_warmup else sorted(v)
         if len(v) < min_repeats:
             continue
+        repeat_counts.add(len(v))
         ts = [t for _, t in v]
-        spread = (max(ts) - min(ts)) / statistics.median(ts) * 100
+        med = statistics.median(ts)
+        # IQR, not (max-min): the range of k draws grows with k, so a max-min
+        # spread cannot be compared between a 3-repeat phase and an 11-repeat
+        # one, and pooling them would report the repeat count as if it were
+        # variance. IQR/median is stable across k and robust to the single
+        # exploration campaign that dominates an adaptive point's range.
+        q = (statistics.quantiles(ts, n=4) if len(ts) >= 4
+             else [min(ts), med, max(ts)])
+        spread = (q[2] - q[0]) / med * 100
         mode = k[3]
         if mode == ADAPTIVE:
             series[f"{ADAPTIVE_LABEL} (adaptive)"].append(spread)
@@ -460,7 +470,7 @@ def variance_figure(run_dirs, out_dir, formats, drop_warmup=True, min_repeats=3)
                  color=c, label=lbl)
     for a_ in (ax, ax2):
         a_.set_xscale("log")
-        a_.set_xlabel("spread across repeats,  (max-min)/median  [%]")
+        a_.set_xlabel("spread across repeats,  IQR/median  [%]")
         a_.grid(alpha=0.2, lw=0.6)
         a_.legend(fontsize=8, frameon=False, loc="upper left")
     ax.set_ylabel("density")
@@ -470,6 +480,8 @@ def variance_figure(run_dirs, out_dir, formats, drop_warmup=True, min_repeats=3)
                  fontweight="bold", loc="left")
     ax2.set_title("ECDF (same data)", fontsize=10, fontweight="bold", loc="left")
     note = "warm-up repeat excluded" if drop_warmup else "all repeats"
+    if len(repeat_counts) > 1:
+        note += f"; {min(repeat_counts)}-{max(repeat_counts)} repeats per point"
     fig.suptitle(f"The variance cost of adaptivity  \u2014  {note}", fontsize=9.5,
                  y=1.02, color="#444444")
     fig.tight_layout()

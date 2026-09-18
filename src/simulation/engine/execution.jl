@@ -295,12 +295,28 @@ function _try_save_simulation_results_if_enabled!(args...)
     end
 end
 
+function _with_density_model_epoch(args::SimulationConfiguration)
+    environment = args.environment_model
+    density_model = SimulationModel.with_density_model_epoch(environment.density_model, args.initial_time)
+    density_model === environment.density_model && return args
+    names = fieldnames(typeof(environment))
+    fields = NamedTuple{names}(map(name -> getfield(environment, name), names))
+    aligned_environment = SimulationModel.EnvironmentModel(;
+        merge(fields, (; density_model))...)
+    return SimulationModel.SimConfig._with_configuration(args;
+        environment_model=aligned_environment)
+end
+
 """
     run_simulation(args...; isolate_state=true, kwargs...)
 
 Stable package entrypoint for simulation execution used by calibration integrations.
 
-By default, `isolate_state=true` deep-copies the simulation configuration before execution.
+Density models are first aligned to `args.initial_time` through
+[`with_density_model_epoch`](@ref). Known GRAM construction settings are retained;
+unknown raw-core realignment and fixed-surrogate epoch changes are rejected.
+
+By default, `isolate_state=true` deep-copies the aligned configuration before execution.
 This preserves correctness and reentrancy across repeated runs and concurrent callers by
 preventing one run from mutating shared campaign or model state that another run still
 references.
@@ -335,6 +351,7 @@ function run_simulation(
     # example script can opt in) turns the scene sidecar on for this run and
     # builds the viewer page once the results are written (see SceneVisualization).
     args = visualization ? SimulationModel.SceneVisualization.with_visualization_scene(args, true) : args
+    args = _with_density_model_epoch(args)
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args

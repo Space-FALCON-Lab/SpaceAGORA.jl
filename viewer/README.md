@@ -20,7 +20,12 @@ run_simulation(args; visualization=true)            # sidecar + viewer page in o
 export_visualization("output/simulation_results")   # or later, from an existing bundle
 ```
 
-`export_visualization` writes `output/simulation_results_viewer.html`, a
+The string passed to `export_visualization` is the results prefix, without a
+file extension. `run_simulation(args; visualization=true)` writes the page to
+`<results_directory>/simulation_results_viewer.html`, beside the results.
+The CLI `visualize --run=` also accepts a results directory.
+
+In the example above, `export_visualization` writes `output/simulation_results_viewer.html`, a
 self-contained file: three.js, these modules, the texture and the trajectory
 are all embedded, so the default page opens from disk without a server or network.
 Optional CDN builds and imported models with external buffer or texture URLs
@@ -76,7 +81,8 @@ Space plays and pauses, the arrow keys step by one speed unit, the slider
 scrubs. Drag to orbit, wheel to zoom, right-drag to pan. "Planet-fixed"
 counter-rotates the scene so the body stands still and orbits precess past it.
 
-Click a marker to select a spacecraft: the panel at the top right shows its
+Click a spacecraft marker or visible model to select it: the selection panel
+at the top right shows its
 altitude, geodetic latitude and longitude, radius, speed, mass (when the run
 saved it) and whether it is currently drawn as a marker or a 3D model.
 "Follow" (or F) keeps the selected spacecraft at the center and moves the
@@ -84,6 +90,12 @@ camera close enough to see the assembly; Esc deselects. The trail selector
 sets the history drawn behind each spacecraft in orbits (the period is
 estimated from periapsis passages in the saved trajectory, so a run shorter
 than one orbit shows "longer than run" and the trail covers the whole run).
+
+Click a quantity's name or value in the selection panel to plot its history.
+The **log** checkbox switches between logarithmic and linear axes; zeros are
+gaps on a logarithmic axis. Additional saved columns can be added with
+`channels`; see [Plot another saved value](../docs/src/user/visualization.md#plot-another-saved-value)
+for an example and explanations of absent rows, missing samples and held states.
 
 ## Close-up models
 
@@ -215,7 +227,8 @@ never enabled by scene or run export.
 
 Trails can be colored by heat rate, dynamic
 pressure, density, altitude or speed through inferno (`src/colormaps.js`);
-the dimensional ones use a log scale over the run's range. Viewer-derived
+Heat rate, dynamic pressure and density use logarithmic color scales; altitude
+and speed use linear scales. Viewer-derived
 dynamic pressure and surface heating are illustrative estimates, not the
 verified study pressure or a replacement thermal solution.
 

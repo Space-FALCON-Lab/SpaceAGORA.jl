@@ -19,14 +19,16 @@ For a short first run:
 julia --project=. scripts/dev/viewer_demos/iss_demo.jl --duration-s 60 --output-dir output/iss-first-run
 ```
 
-All four scripts accept `--duration-s` and `--output-dir`. Without an explicit
+All four scripts accept `--duration-s` and `--output-dir` with space-separated
+values, as in the command above. These scripts do not accept the `--key=value`
+spelling used by the main CLI. Without an explicit
 output directory, they use `output/viewer_demos/<script-name>`; the environment
 variable `SPACEAGORA_VIEWER_DEMO_OUT` changes that parent directory. An existing
 nonempty output directory is rejected, so a new run cannot erase earlier work.
 Choose a new directory for another run.
 
-Each run writes simulation results, its scene description and a standalone HTML
-viewer into that directory, then prints the HTML path. Open the HTML after the
+Each run writes simulation results, its scene description and a self-contained HTML
+page into that directory, then prints the HTML path. Open the HTML after the
 simulation finishes. The viewer replays saved results. A short run checks the
 setup and export, but does not demonstrate a full orbit, aerobraking passage or
 completed robot-arm maneuver. The Mars scenario is a demonstration of the

@@ -27,12 +27,20 @@ For a configuration you already built:
 run_simulation(args; visualization=true)
 ```
 
+The page is written beside the results as
+`<results_directory>/simulation_results_viewer.html`, using
+`args.simulation_settings.results_directory`.
+
 For a completed run that already has its scene sidecar:
 
 ```julia
 export_visualization("output/viewer-earth/simulation_results"; max_frames=2000)
 SpaceAGORA.run_cli(["visualize", "--run=output/viewer-earth"])
 ```
+
+`export_visualization` takes the results prefix:
+`<results_directory>/simulation_results`, with no file extension. The CLI
+`visualize --run=` accepts either that prefix or the results directory.
 
 `with_visualization_scene(args, true)` sets the sidecar flag when preparing
 a configuration. This saves the extra fields and sidecar; use
@@ -43,7 +51,8 @@ standalone data-file viewer below.
 ## Read the page
 
 - Drag to orbit, scroll to zoom, and use the timeline to play or scrub.
-- Select a spacecraft and press F to follow it. Escape clears the selection.
+- Click a spacecraft marker or visible model to select it. Its selection
+  panel opens at the top right. Press F to follow it; Escape clears the selection.
 - Switch between inertial and planet-fixed views. Ground tracks follow the
   body's rotation sampled from the run's own frame model.
 - Nearby spacecraft show link boxes and articulated parts. A run without
@@ -60,26 +69,45 @@ pressure comparisons.
 
 ## Plot another saved value
 
-To display a saved results column such as `sc1_mass`, pass its suffix without
-the spacecraft prefix:
+Click a quantity's name or value in the selection panel to plot its history.
+Altitude, speed, mass, density, heat rate, drag and wind already have clickable
+rows when the corresponding data is available.
+
+To add the saved `sc1_periapsis_altitude` column, pass its suffix without the
+spacecraft prefix. It contains osculating spherical periapsis altitude in metres:
 
 ```julia
-export_visualization("output/simulation_results";
-    channels=[(column="mass", label="Mass", unit="kg", digits=2)])
+export_visualization("output/viewer-earth/simulation_results";
+    channels=[(column="periapsis_altitude", label="Spherical periapsis altitude",
+               unit="m", digits=1, log=false)])
 ```
 
-Select a spacecraft, then click its **Mass** row in the inspector to plot the
-value. Scrubbing the timeline updates the displayed value. Each spacecraft
-must have the corresponding column (`sc1_mass`, `sc2_mass`, and so on); a
-channel is omitted when any column is absent. Missing values appear as gaps,
-and interpolation does not bridge a gap. These values use the same saved-row
-decimation as the trajectory, so choose enough `max_frames` to retain the
-features you want to inspect.
+Reopen the generated page, select a spacecraft and click its **Spherical
+periapsis altitude** row in the selection panel. Scrubbing the timeline updates
+the displayed value. Channel names come from the saved results headers; see
+[Simulation Outputs](outputs.md) for names, units and definitions.
+
+Each spacecraft must have the corresponding column (`sc1_periapsis_altitude`,
+`sc2_periapsis_altitude`, and so on). If any column is absent, the channel is
+omitted without a message. If its row does not appear, check the spelling and
+the headers for every spacecraft in the results table.
+
+Missing values appear as gaps, and interpolation does not bridge a gap. Some
+plots automatically use a logarithmic axis when their positive values span a
+wide range. Zeros also appear as gaps on that axis; clear the **log** checkbox
+to show them on a linear scale. Negative values disable logarithmic scaling.
+
+If saved rows repeat a spacecraft's state after impact or touchdown while the
+run continues, those held quantities plot as flat segments. The viewer uses the
+saved rows and does not automatically end a history at deactivation.
+
+Channel values use the same saved-row decimation as the trajectory. Choose
+enough `max_frames` to retain the features you want to inspect.
 
 ## Size and optional detail
 
 ```julia
-export_visualization("output/simulation_results";
+export_visualization("output/viewer-earth/simulation_results";
     max_frames=2000, data_budget_mb=150.0,
     texture_resolution="4k", trail_orbits=3, frame=:inertial)
 ```
@@ -97,7 +125,7 @@ a page containing the higher tiers.
 STL, OBJ and uncompressed GLB models can replace link boxes:
 
 ```julia
-export_visualization("output/simulation_results";
+export_visualization("output/viewer-earth/simulation_results";
     models=Dict(1 => "data/models/iss_nasa_3d_resources_b.glb"),
     model_scale=2.4, model_rotation_deg=Dict(1 => (-90, 0, -90)))
 ```

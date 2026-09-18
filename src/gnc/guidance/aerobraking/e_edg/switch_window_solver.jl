@@ -88,7 +88,7 @@ function switch_calculation(ip, m, position, args, t, heat_rate_control, reevalu
     delta_Q_min = func(0.0, m, args, coeff, position, heat_rate_control, approx_sol, zeros(length(aoa_cf)))
 
     if delta_Q_max * delta_Q_min < 0
-        k_cf = fzero(k -> func(k, m, args, coeff, position, heat_rate_control, approx_sol, aoa_cf), [0.0, 0.1], Roots.Brent())
+        k_cf = Roots.find_zero(k -> func(k, m, args, coeff, position, heat_rate_control, approx_sol, aoa_cf), [0.0, 0.1], Roots.Brent())
     elseif delta_Q_max < 0.0
         return [0.0, 0.0]
     elseif delta_Q_min > 0.0

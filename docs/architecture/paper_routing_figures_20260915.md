@@ -181,6 +181,7 @@ the result.
 | File | Shows |
 |---|---|
 | `fig_summary_regret` | R6 against the best pinned route at all 69 measured points, by phase |
+| `fig_regret_distribution` | the same regret as a distribution, drawn against the measured noise floor |
 | `fig_p1` | Constellation size, 1 -> 4096 spacecraft, both machines |
 | `fig_p2_gravity_4096sat_l50_vacuum_5800s` | Thread budget at 4096 spacecraft |
 | `fig_p3_independent_1sat_1hr` | Monte Carlo resource ladder, cheap samples |
@@ -203,6 +204,30 @@ a 10x win. Read with those two excluded, R6's per-phase median ratio runs
 the constellation and thread axes (1.006-1.017), and below it on all four
 Monte Carlo ladders (0.824-1.001), where the mixed dispatch of finding 3 is
 something no pinned route can express.
+
+`fig_regret_distribution` is the one to lead an adaptive-policy section with.
+A single median per point cannot carry that claim -- `policy_v2` is the least
+reproducible mode in the set -- so it plots the whole distribution of
+R6 / best-static with the identical-code noise floor behind it, and states how
+many points clear that floor in each direction: **20 of 66 faster than
+measurement noise explains, 8 slower**. The three finding-2 calibration
+artifacts are excluded and counted in the annotation rather than banked, since
+they are the batched-RHS heuristic failing on every pinned route and not the
+router out-routing them. Its right panel is a per-phase ECDF rather than more
+histograms, because 9-24 points per phase is too few to bin honestly; it is
+what shows that the wins are concentrated in the Monte Carlo phases while P1
+and P2 sit on parity.
+
+Regenerate it by naming two runs of identical code with `--noise-pair`, which
+is what supplies the floor:
+
+```
+python3 scripts/make_paper_routing_plots.py <run> <run> \
+    --noise-pair output/performance/paper_benchmarks_trx50/20260916_143516 \
+    --noise-pair output/performance/paper_benchmarks_trx50_control/20260917_141035 \
+    --noise-pair output/performance/paper_benchmarks_trx50_p234_control/20260917_193014 \
+    --out output/paper_routing_plots
+```
 
 Both scripts share one loader, so a figure and the table beside it cannot
 disagree about which route won a point. `make_paper_routing_plots.py` also

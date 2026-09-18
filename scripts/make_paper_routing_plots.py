@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import glob
 import os
 import statistics
 import sys
@@ -278,12 +279,132 @@ def summary_figure(frames, out_dir, formats):
     return written
 
 
+def noise_reference(sources):
+    """Ratios between pairs of runs of IDENTICAL code, if such pairs are given.
+
+    Each source is a (label, dir) pair; two sources sharing a label are treated
+    as a re-run pair. Returns the ratios, which are the measurement floor every
+    other claim has to clear.
+    """
+    import csv as _csv
+    KEY = ["phase_id", "case", "mode", "thread_count", "process_workers", "mc_samples"]
+
+    def index(d):
+        hits = ([d] if d.endswith(".csv")
+                else sorted(glob.glob(os.path.join(d, "paper_benchmarks_aggregated_*.csv"))))
+        out = {}
+        for r in _csv.DictReader(open(hits[-1])):
+            try:
+                t = float(r["wall_time_median_s"])
+            except (TypeError, ValueError):
+                continue
+            if t > 0:
+                out[tuple(r[k] for k in KEY)] = t
+        return out
+
+    merged = {}
+    for label, d in sources:
+        merged.setdefault(label, {}).update(index(d))
+    if len(merged) < 2:
+        return []
+    (_, a), (_, b) = list(merged.items())[:2]
+    return [b[k] / a[k] for k in a if k in b]
+
+
+def distribution_figure(frames, out_dir, formats, noise=None, calib_cut=0.6):
+    """R6's regret as a distribution, against the measurement floor.
+
+    A single median per point cannot carry this claim -- policy_v2's own
+    reproducibility is the widest of any mode -- so the honest presentation is
+    the whole distribution with the noise floor drawn behind it. Points below
+    calib_cut are the batched-RHS calibration artifacts of finding 2: they are
+    excluded and counted in the caption rather than banked as routing wins.
+    """
+    import numpy as np
+
+    per_phase, excluded = {}, []
+    for _, df in frames:
+        for ph in ["P1", "P2", "P3", "P4", "P5"]:
+            for r in phase_rows(df, ph):
+                if r.get("adaptive_s") and r.get("best_static_s"):
+                    x = r["adaptive_s"] / r["best_static_s"]
+                    (excluded if x < calib_cut else per_phase.setdefault(ph, [])).append(x)
+    allreg = np.array([v for vs in per_phase.values() for v in vs])
+    if not len(allreg):
+        return []
+
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11.2, 4.3),
+                                  gridspec_kw={"width_ratios": [1.25, 1]})
+    lo = hi = None
+    if noise is not None and len(noise):
+        noise = np.asarray(noise)
+        lo, hi = np.percentile(noise, 5), np.percentile(noise, 95)
+
+    bins = np.linspace(0.6, 1.35, 31)
+    if lo is not None:
+        ax.axvspan(lo, hi, color="#c9d6e3", alpha=0.55, zorder=0,
+                   label=f"measurement floor, p5-p95 ({lo:.2f}-{hi:.2f})")
+        ax.hist(noise, bins=bins, density=True, color="#7f9bb5", alpha=0.45, zorder=1,
+                label=f"identical-code re-runs (n={len(noise)})")
+    ax.hist(allreg, bins=bins, density=True, histtype="step", lw=2.1, color=C_R6,
+            zorder=3, label=f"{ADAPTIVE_LABEL} / best static (n={len(allreg)})")
+    ax.axvline(1.0, color="#333333", ls="--", lw=1.3, zorder=2)
+    ax.set_xlabel(f"ratio to best pinned static route   (<1 = {ADAPTIVE_LABEL} faster)")
+    ax.set_ylabel("density")
+    ax.set_title(f"{ADAPTIVE_LABEL}'s regret against the measurement floor",
+                 fontsize=11, fontweight="bold", loc="left")
+    ax.legend(fontsize=7.5, frameon=False, loc="upper left")
+    ax.grid(alpha=0.2, lw=0.6)
+
+    if lo is not None:
+        below = int((allreg < lo).sum()); above = int((allreg > hi).sum())
+        ax.text(0.02, 0.62,
+                f"{below} of {len(allreg)} points faster than the floor explains\n"
+                f"{above} of {len(allreg)} slower\n"
+                f"{len(excluded)} calibration artifacts excluded (finding 2)",
+                transform=ax.transAxes, fontsize=7.8, color="#444444", va="top")
+
+    for ph, c in zip(["P1", "P2", "P3", "P4", "P5"],
+                     ["#888888", "#5b8c5a", "#1f6fb4", C_R6, "#8452a1"]):
+        if ph not in per_phase:
+            continue
+        v = np.sort(np.array(per_phase[ph]))
+        ax2.step(v, np.arange(1, len(v) + 1) / len(v), where="post", lw=1.9,
+                 color=c, label=f"{ph} (n={len(v)})")
+    if lo is not None:
+        v = np.sort(noise)
+        ax2.step(v, np.arange(1, len(v) + 1) / len(v), where="post", lw=1.4,
+                 color="#7f9bb5", ls=":", label=f"floor (n={len(v)})")
+        ax2.axvspan(lo, hi, color="#c9d6e3", alpha=0.45, zorder=0)
+    ax2.axvline(1.0, color="#333333", ls="--", lw=1.2)
+    ax2.set_xlim(0.6, 1.35)
+    ax2.set_xlabel("ratio to best pinned static route")
+    ax2.set_ylabel("cumulative fraction of points")
+    ax2.set_title("by phase (ECDF; n too small for per-phase histograms)",
+                  fontsize=10, fontweight="bold", loc="left")
+    ax2.legend(fontsize=7.5, frameon=False, loc="lower right")
+    ax2.grid(alpha=0.2, lw=0.6)
+    fig.tight_layout()
+
+    written = []
+    for fmt in formats:
+        q = os.path.join(out_dir, f"fig_regret_distribution.{fmt}")
+        fig.savefig(q, dpi=200, bbox_inches="tight")
+        written.append(q)
+    plt.close(fig)
+    return written
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sources", nargs="+")
     ap.add_argument("--out", default="output/paper_routing_plots")
     ap.add_argument("--label", action="append", default=[])
     ap.add_argument("--format", default="png,pdf")
+    ap.add_argument("--noise-pair", action="append", default=[], metavar="DIR",
+                    help="two runs of IDENTICAL code; their ratios become the "
+                         "measurement floor drawn behind the regret distribution. "
+                         "Repeatable; pass each half of the pair once.")
     args = ap.parse_args()
 
     formats = [f.strip() for f in args.format.split(",") if f.strip()]
@@ -316,6 +437,10 @@ def main():
                                   case_label=case or "")
 
     written += summary_figure(frames, args.out, formats)
+    noise = (noise_reference([("a", args.noise_pair[0])] +
+                             [("b", d) for d in args.noise_pair[1:]])
+             if len(args.noise_pair) >= 2 else [])
+    written += distribution_figure(frames, args.out, formats, noise=noise)
 
     for p in written:
         print("wrote", p)

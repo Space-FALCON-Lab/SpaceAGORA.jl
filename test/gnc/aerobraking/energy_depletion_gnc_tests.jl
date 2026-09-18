@@ -29,6 +29,8 @@ function _edg_test_context(;
     heat_rate_limit_w_cm2=_ODYSSEY_LIMIT_QDOT_W_CM2,
     heat_load_limit_j_cm2=1e-4,
     structural_load_limit_pa=_ODYSSEY_LIMIT_DYN_PRESS_PA,
+    density_model=_EDG_SM.ExponentialAtmosphereModel(1e-4, 100e3, 20e3; temperature_k=150.0),
+    planning_horizon_s=5_000.0,
 )
     planet = _EDG_SM.Mars()
     planet.L_PI .= @SMatrix [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
@@ -85,7 +87,7 @@ function _edg_test_context(;
         heat_rate_limit_w_cm2=heat_rate_limit_w_cm2,
         heat_load_limit_j_cm2=heat_load_limit_j_cm2,
         structural_load_limit_pa=structural_load_limit_pa,
-        planning_horizon_s=5_000.0,
+        planning_horizon_s=planning_horizon_s,
         switch_recompute_interval_s=1.0,
     )
     guidance = _EDG_SM.AerobrakingEnergyDepletionGuidanceModel(config, state)
@@ -94,7 +96,7 @@ function _edg_test_context(;
         environment_model=_EDG_SM.EnvironmentModel(
             planet=planet,
             EI=160.0,
-            density_model=_EDG_SM.ExponentialAtmosphereModel(1e-4, 100e3, 20e3; temperature_k=150.0),
+            density_model=density_model,
             ephemerides_model=_EDG_SM.SimpleEphemeridesModel(),
             topography=false,
             topo_degree=0,
@@ -320,4 +322,96 @@ end
     @test heat_limited.times == candidate_times[1:2]
     @test heat_limited.failure == :heat_load
     @test heat_limited.failure_time_s == candidate_times[3]
+end
+
+@testset "EDG-T physical interior targeting and unreachable targets" begin
+    # Keep this analytic passage dilute and bounded so all candidates certify.
+    # The original dense fixture remains unchanged for its existing fallbacks.
+    fixture = (
+        guidance_modes=(:targeting, :max_energy_depletion),
+        max_energy_submodes=(:heat_rate, :structural_load),
+        heat_rate_limit_w_cm2=Inf, structural_load_limit_pa=Inf,
+        density_model=_EDG_SM.ExponentialAtmosphereModel(1e-8, 100e3, 20e3; temperature_k=150.0),
+        planning_horizon_s=400.0,
+    )
+    ctx = _edg_test_context(; fixture...)
+    hooks, config, p = _EDG_SM.ControlHooks, ctx.config, ctx.p
+    sc = ctx.u.sc[1]
+    pos, vel, mass = SVector{3,Float64}(sc.pos), SVector{3,Float64}(sc.vel), Float64(sc.mass)
+    duration = hooks._edg_drag_passage_duration(config, p, pos, vel, mass)
+    times = collect(range(0.0, duration + 1.0; length=config.targeting_certification_samples))
+    predict(cfg, ts) = hooks._edg_targeting_outcome_with_heat_load(
+        cfg, p, ctx.spacecraft, pos, vel, mass, 0.0, ts, 0.0;
+        heat_rate_control=true, structural_control=true)
+    certified = hooks._edg_certify_targeting_candidates(times, ts -> predict(config, ts);
+        heat_load_limit_j_cm2=Inf,
+        energy_order_tolerance_jkg=config.targeting_energy_order_tolerance_jkg,
+        heat_load_tolerance_j_cm2=config.targeting_heat_load_tolerance_j_cm2)
+    energies = [o.energy_jkg for o in certified.outcomes]
+    apoapses = [o.apoapsis_radius_m for o in certified.outcomes]
+    @test certified.failure == :none
+    @test certified.times == times
+    @test all(diff(energies) .< -config.targeting_energy_order_tolerance_jkg)
+    @test all(diff(apoapses) .< 0.0)
+    @test all(o -> minimum(o.track.h) > 0.0, certified.outcomes)
+    desired = predict(config, 0.373 * last(times))
+    @test last(energies) < desired.energy_jkg < first(energies)
+    @test last(apoapses) < desired.apoapsis_radius_m < first(apoapses)
+    @test (first(apoapses) - desired.apoapsis_radius_m) *
+        (last(apoapses) - desired.apoapsis_radius_m) < 0.0
+    target_config = _edg_test_context(; fixture...,
+        target_apoapsis_radius_m=desired.apoapsis_radius_m).config
+    state = ctx.state
+    state.target_energy_jkg[1] = desired.energy_jkg
+    state.targeting_active[1] = true
+    state.selected_mode[1] = :targeting
+    switch = hooks._edg_solve_targeting_switch(
+        target_config, state, p, ctx.spacecraft, pos, vel, mass, 0.0, 1;
+        heat_load_j_cm2=0.0, heat_rate_control=true, structural_control=true)
+    result = predict(target_config, switch)
+    @test first(times) < switch < last(times)
+    @test state.targeting_active[1]
+    @test state.selected_mode[1] == :targeting
+    @test abs(result.apoapsis_radius_m - target_config.target_apoapsis_radius_m) <= 25.0
+    @test state.target_energy_jkg[1] == result.energy_jkg
+    @test state.bracket_min_energy_jkg[1] == last(energies)
+    @test state.bracket_max_energy_jkg[1] == first(energies)
+    # Independently recover the orbit from the predictor's final Cartesian state.
+    r, v, mu = result.track.positions[end], result.track.velocities[end], p.args.environment_model.planet.μ
+    energy = dot(v, v) / 2 - mu / norm(r)
+    h2 = dot(cross(r, v), cross(r, v))
+    eccentricity = sqrt(1 + 2 * energy * h2 / mu^2)
+    recovered_apoapsis = -mu / (2 * energy) * (1 + eccentricity)
+    @test energy < 0.0
+    @test 0.0 < eccentricity < 1.0
+    @test isapprox(energy, result.energy_jkg; atol=1e-6, rtol=0.0)
+    @test abs(recovered_apoapsis - target_config.target_apoapsis_radius_m) <= 25.0
+    margin = max(first(energies) - last(energies), 1.0)
+    for (outside, expected_mode, safe) in (
+        (first(energies) + margin, :safe_low_drag, true),
+        (last(energies) - margin, :max_energy_depletion, false),
+    )
+        fallback = _EDG_SM.AerobrakingEnergyDepletionState(num_sats=1)
+        fallback.target_energy_jkg[1] = outside
+        fallback.targeting_active[1] = true
+        fallback.selected_mode[1] = :targeting
+        failed_switch = hooks._edg_solve_targeting_switch(
+            target_config, fallback, p, ctx.spacecraft, pos, vel, mass, 0.0, 1;
+            heat_load_j_cm2=0.0, heat_rate_control=true, structural_control=true)
+        @test failed_switch == Inf
+        @test !fallback.targeting_active[1]
+        @test fallback.selected_mode[1] == expected_mode
+        @test fallback.safe_low_drag[1] == safe
+    end
+    env = hooks._edg_targeting_prediction_environment(p, pos, vel, 0.0)
+    heat_fixture = merge(fixture, (max_energy_submodes=(:heat_rate, :structural_load, :heat_load),
+        heat_load_limit_j_cm2=10.0))
+    for mode in (:closed_form, :tpbvp_integration)
+        heat_config = _edg_test_context(; heat_fixture..., heat_load_switch_solver=mode).config
+        switches = hooks._edg_solve_heat_load_switches(
+            heat_config, p, ctx.spacecraft, pos, vel, mass, env, 0.0, 0.0;
+            heat_rate_control=true, structural_control=true)
+        @test all(isfinite, switches)
+        @test 0.0 <= switches[1] < switches[2] <= duration
+    end
 end

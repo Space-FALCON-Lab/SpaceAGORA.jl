@@ -299,13 +299,15 @@ function public_api_specs(spaceagora::Module)
     return specs
 end
 
-function render_public_api_markdown(spaceagora::Module)::String
+function render_public_api_markdown(spaceagora::Module;
+                                    sections=PUBLIC_API_SECTIONS,
+                                    title::AbstractString="Public API")::String
     io = IOBuffer()
-    println(io, "# Public API")
+    println(io, "# $(title)")
     println(io)
     println(io, "This page documents the stable exported interface available from `SpaceAGORA`.")
     println(io)
-    for section in PUBLIC_API_SECTIONS
+    for section in sections
         println(io, "## $(section.title)")
         println(io)
         println(io, "```@docs")

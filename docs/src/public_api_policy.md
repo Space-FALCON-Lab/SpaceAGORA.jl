@@ -23,8 +23,9 @@ surface.
 
 ## Stable surface
 
-The generated [Public API](generated/public_api.md) page is the canonical list
-of supported exported symbols. That surface currently includes:
+The generated [Public API](generated/public_api.md) reference and its linked
+[Visualization API](generated/visualization_api.md) pages document the supported
+exported symbols. That surface currently includes:
 
 - simulation entrypoints such as `run_simulation`
 - typed runtime configuration objects
@@ -34,8 +35,8 @@ of supported exported symbols. That surface currently includes:
 - verification entrypoints
 - CLI and asset-report entrypoints
 
-If a symbol is not re-exported from `SpaceAGORA` and documented on the generated
-API page, it should be treated as internal.
+If a symbol is not re-exported from `SpaceAGORA` and documented in the generated
+API reference, it should be treated as internal.
 
 ## Internal modules
 

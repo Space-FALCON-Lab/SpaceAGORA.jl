@@ -66,7 +66,7 @@ end
     env = EnvironmentSample(args.environment_model.planet)
     @test SM.DynamicEffectors.GravityGradientTorqueModel === SM.GravityEffectors.GravityGradientTorqueModel
     @test model.gravity_gradient
-    @test !SE._dynamic_effector_threadsafe(model)
+    @test SE._dynamic_effector_threadsafe(model)
     @test SM.solver_partition(model) == :explicit
     for r in (SVector(7e6,2e6,-1e6),SVector(-2e6,6e6,3e6)), q in (Q0,-Q0,normalize(SVector(-0.3,0.1,0.4,0.8)))
         x = StateSample(r,ZERO3,500.0;q_ib=q,ω_body=W0,spacecraft=sc)
@@ -116,23 +116,24 @@ end
     @test SM.calcForceTorque(SM.GravityGradientTorqueModel(),noatt.sc[1],p_noatt,Int64(1))==(ZERO3,ZERO3)
 end
 
-function run_recorded(args)
+function run_recorded(args; execution_mode="serial", return_runtime=false)
     fields=SaveField[
         SaveField(:q,(u,t,int)->[SVector{4,Float64}(sc.q) for sc in u.sc];per_satellite=true),
         SaveField(:omega,(u,t,int)->[SVector{3,Float64}(sc.ω) for sc in u.sc];per_satellite=true),
         SaveField(:position,(u,t,int)->[SVector{3,Float64}(sc.pos) for sc in u.sc];per_satellite=true)]
     recorder=TrajectoryRecorder(args;save_fields=fields)
-    result=withenv("SPACEAGORA_RHS_EXECUTION_MODE"=>"serial","SPACEAGORA_RHS_CALIBRATE"=>"off",
+    result=withenv("SPACEAGORA_RHS_EXECUTION_MODE"=>execution_mode,"SPACEAGORA_RHS_CALIBRATE"=>"off",
         "SPACEAGORA_RHS_IDENTIFY"=>"0","SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS"=>"0",
         "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST"=>"0") do
-        run_simulation(args;return_solver_metadata=true,visualization=false,
+        run_simulation(args;return_solver_metadata=true,return_solution=return_runtime,visualization=false,
             extra_callbacks=(get_trajectory_recorder_callback(recorder),))
     end
     @test result.retcode=="Success"
     @test recorder.count>=15
     @test first(trajectory_times(recorder))≈0.0 atol=1e-12
     @test last(trajectory_times(recorder))≈DURATION atol=1e-12
-    return collect(trajectory_times(recorder)),trajectory_save_data(recorder)
+    times, rows = collect(trajectory_times(recorder)),trajectory_save_data(recorder)
+    return return_runtime ? (times=times, rows=rows, runtime=result.solution.prob.p) : (times,rows)
 end
 
 @testset "separate and built-in torque agree in real attitude propagation" begin
@@ -152,6 +153,82 @@ end
     end
     for i in 1:2
         @test norm(separate[end][:omega][i]-bare[end][:omega][i])>1e-7
+    end
+end
+
+@testset "stateless gravity torque supports concurrent calls and the real flat route" begin
+    args=configuration(:separate)
+    model=SM.GravityGradientTorqueModel()
+    craft=args.dynamics_model.spacecraft[1]
+    sample=StateSample(SVector(7e6,2e6,-1e6),ZERO3,500.0;
+        q_ib=Q0,ω_body=W0,spacecraft=craft)
+    environment=EnvironmentSample(args.environment_model.planet)
+    expected=SM.wrench(model,sample,environment,0.0)
+    before=deepcopy((craft.inertia_tensor,craft.root.r,craft.root.q,craft.root.ω))
+    # Reuse the same model and read-only physical inputs on all tasks.
+    outputs=Vector{Vector{typeof(expected)}}(undef,16)
+    @sync for k in eachindex(outputs)
+        Threads.@spawn outputs[k]=[SM.wrench(model,sample,environment,Float64(j)) for j in 1:64]
+    end
+    @test all(values->all(==(expected),values),outputs)
+    @test (craft.inertia_tensor,craft.root.r,craft.root.q,craft.root.ω)==before
+    if Threads.nthreads() < 2
+        @test_skip Threads.nthreads() >= 2
+    else
+        planet=args.environment_model.planet
+        coefficients=joinpath(@__DIR__,"..","..","..","data","Gravity_harmonics_data","EarthGGM05C.csv")
+        harmonics=GravitationalHarmonicsModel(4,4,coefficients,planet)
+        args=SM.SimConfig._with_configuration(args;dynamics_model=
+            DynamicsModel(args.dynamics_model.spacecraft,(harmonics,model)))
+        withenv("SPACEAGORA_INNER_THREAD_BUDGET"=>"2",
+            "SPACEAGORA_OUTER_PARALLEL_ACTIVE"=>"0",
+            "SPACEAGORA_PARALLEL_PROFILE"=>nothing,
+            "SPACEAGORA_EFFECTOR_PARALLEL"=>"on",
+            "SPACEAGORA_EFFECTOR_PARALLEL_HEAVY_ONLY"=>"0",
+            "SPACEAGORA_EFFECTOR_THREAD_THRESHOLD"=>"1",
+            "SPACEAGORA_EFFECTOR_MAX_THREADS"=>"2",
+            # Keep auto-routing deterministic for this small regression fixture.
+            "SPACEAGORA_EFFECTOR_FLAT_MIN_SATS"=>"2",
+            "SPACEAGORA_EFFECTOR_FLAT_MIN_THREAD_BUDGET"=>"2",
+            "SPACEAGORA_EFFECTOR_FLAT_WORK_NS_THRESHOLD"=>"1",
+            "SPACEAGORA_RHS_FLAT_WORK_PER_WORKER_NS_THRESHOLD"=>"1") do
+            serial=run_recorded(args;execution_mode="serial",return_runtime=true)
+            flat=run_recorded(args;execution_mode="flat",return_runtime=true)
+            automatic=run_recorded(args;execution_mode="auto",return_runtime=true)
+            effects=flat.runtime.args.dynamics_model.dynamic_effectors
+            serial_plan=SE._rhs_execution_plan(serial.runtime.args,serial.runtime,effects,2)
+            flat_plan=SE._rhs_execution_plan(flat.runtime.args,flat.runtime,effects,2)
+            @test serial_plan.mode===:serial
+            @test flat_plan.mode===:flat_constellation_effector_queue
+            @test flat_plan.allotment==2
+            auto_plan=SE._rhs_execution_plan(automatic.runtime.args,automatic.runtime,effects,2)
+            @test auto_plan.mode===:flat_constellation_effector_queue
+            @test auto_plan.allotment==2
+            # Only the actual flat dispatcher fills these per-effector slots.
+            slots=flat.runtime.shared_buffers.rhs_flat_effector_partials[]
+            @test size(slots)==(6,2,2)
+            if size(slots)==(6,2,2)
+                @test all(iszero,@view slots[1:3,2,:])
+                @test any(!iszero,@view slots[4:6,2,:])
+            end
+            @test isempty(serial.runtime.shared_buffers.rhs_flat_effector_partials[])
+            auto_slots=automatic.runtime.shared_buffers.rhs_flat_effector_partials[]
+            @test size(auto_slots)==(6,2,2)
+            if size(auto_slots)==(6,2,2)
+                @test any(!iszero,@view auto_slots[4:6,2,:])
+            end
+            bits(xs)=reinterpret(UInt64,Float64.(collect(xs)))
+            @test bits(serial.times)==bits(flat.times)
+            @test length(serial.rows)==length(flat.rows)
+            @test all(zip(serial.rows,flat.rows)) do (left,right)
+                all(key->all(i->bits(left[key][i])==bits(right[key][i]),1:2),(:q,:omega,:position))
+            end
+            @test bits(serial.times)==bits(automatic.times)
+            @test length(serial.rows)==length(automatic.rows)
+            @test all(zip(serial.rows,automatic.rows)) do (left,right)
+                all(key->all(i->bits(left[key][i])==bits(right[key][i]),1:2),(:q,:omega,:position))
+            end
+        end
     end
 end
 end

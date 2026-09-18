@@ -31,8 +31,8 @@ from matplotlib.ticker import LogLocator, NullFormatter, ScalarFormatter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_paper_routing_tables import (  # noqa: E402
-    ADAPTIVE_LABEL, NOISE_FLOOR_S, PHASE_AXIS, PHASE_TITLE, STATIC_PARALLEL,
-    load, phase_rows,
+    ADAPTIVE, ADAPTIVE_LABEL, NOISE_FLOOR_S, PHASE_AXIS, PHASE_TITLE,
+    STATIC_PARALLEL, load, phase_rows,
 )
 
 C_SERIAL, C_STATIC, C_R6, C_FAINT = "#6b6b6b", "#1f6fb4", "#c23b22", "#b8c6d4"
@@ -395,6 +395,94 @@ def distribution_figure(frames, out_dir, formats, noise=None, calib_cut=0.6):
     return written
 
 
+def variance_figure(run_dirs, out_dir, formats, drop_warmup=True, min_repeats=3):
+    """How reproducible is a single measured point, by route class?
+
+    This is the variance cost of adaptivity, and it needs the raw per-repeat
+    rows rather than the aggregated medians. The first repeat of every point is
+    dropped by default: it carries warm-up that is 2x for policy_v2 and 1.4x for
+    outer_process, which would otherwise dominate the comparison and say more
+    about process-pool startup than about routing.
+    """
+    import csv as _csv
+    import collections
+    import numpy as np
+
+    KEY = ["phase_id", "case", "mode", "thread_count", "process_workers", "mc_samples"]
+    groups = collections.defaultdict(list)
+    for d in run_dirs:
+        for f in sorted(glob.glob(os.path.join(d, "**", "paper_benchmarks_raw_*.csv"),
+                                  recursive=True)):
+            for r in _csv.DictReader(open(f)):
+                try:
+                    t, rep = float(r["wall_time_s"]), int(r.get("repeat", 0))
+                except (TypeError, ValueError):
+                    continue
+                if t > 0:
+                    groups[(f,) + tuple(r.get(k, "") for k in KEY)].append((rep, t))
+
+    series = collections.defaultdict(list)
+    for k, v in groups.items():
+        v = sorted(v)[1:] if drop_warmup else sorted(v)
+        if len(v) < min_repeats:
+            continue
+        ts = [t for _, t in v]
+        spread = (max(ts) - min(ts)) / statistics.median(ts) * 100
+        mode = k[3]
+        if mode == ADAPTIVE:
+            series[f"{ADAPTIVE_LABEL} (adaptive)"].append(spread)
+        elif mode in STATIC_PARALLEL:
+            series["pinned static routes"].append(spread)
+        elif mode == "serial":
+            series["serial"].append(spread)
+    if not series.get(f"{ADAPTIVE_LABEL} (adaptive)"):
+        return []
+
+    order = ["serial", "pinned static routes", f"{ADAPTIVE_LABEL} (adaptive)"]
+    style = {"serial": ("#6b6b6b", 0.30, "stepfilled", 1.2),
+             "pinned static routes": (C_STATIC, 0.40, "stepfilled", 1.4),
+             f"{ADAPTIVE_LABEL} (adaptive)": (C_R6, 1.0, "step", 2.2)}
+
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11.2, 4.2),
+                                  gridspec_kw={"width_ratios": [1.2, 1]})
+    lo = max(0.02, min(min(v) for v in series.values()))
+    hi = max(max(v) for v in series.values()) * 1.5
+    bins = np.logspace(np.log10(lo), np.log10(hi), 30)
+    for lbl in order:
+        if lbl not in series:
+            continue
+        c, a, ht, lw = style[lbl]
+        d = np.array(series[lbl])
+        ax.hist(d, bins=bins, density=True, histtype=ht, lw=lw, color=c, alpha=a,
+                label=f"{lbl}  (n={len(d)}, median {np.median(d):.1f}%)")
+        ds = np.sort(d)
+        ax2.step(ds, np.arange(1, len(ds) + 1) / len(ds), where="post", lw=2.0,
+                 color=c, label=lbl)
+    for a_ in (ax, ax2):
+        a_.set_xscale("log")
+        a_.set_xlabel("spread across repeats,  (max-min)/median  [%]")
+        a_.grid(alpha=0.2, lw=0.6)
+        a_.legend(fontsize=8, frameon=False, loc="upper left")
+    ax.set_ylabel("density")
+    ax2.set_ylabel("cumulative fraction of points")
+    ax2.axhline(0.5, color="#999999", ls=":", lw=1.0)
+    ax.set_title("Reproducibility of one measured point", fontsize=11,
+                 fontweight="bold", loc="left")
+    ax2.set_title("ECDF (same data)", fontsize=10, fontweight="bold", loc="left")
+    note = "warm-up repeat excluded" if drop_warmup else "all repeats"
+    fig.suptitle(f"The variance cost of adaptivity  \u2014  {note}", fontsize=9.5,
+                 y=1.02, color="#444444")
+    fig.tight_layout()
+
+    written = []
+    for fmt in formats:
+        q = os.path.join(out_dir, f"fig_repeat_variance.{fmt}")
+        fig.savefig(q, dpi=200, bbox_inches="tight")
+        written.append(q)
+    plt.close(fig)
+    return written
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sources", nargs="+")
@@ -441,6 +529,7 @@ def main():
                              [("b", d) for d in args.noise_pair[1:]])
              if len(args.noise_pair) >= 2 else [])
     written += distribution_figure(frames, args.out, formats, noise=noise)
+    written += variance_figure(args.sources + args.noise_pair, args.out, formats)
 
     for p in written:
         print("wrote", p)

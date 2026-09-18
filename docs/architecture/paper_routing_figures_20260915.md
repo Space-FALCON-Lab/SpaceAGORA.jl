@@ -182,6 +182,7 @@ the result.
 |---|---|
 | `fig_summary_regret` | R6 against the best pinned route at all 69 measured points, by phase |
 | `fig_regret_distribution` | the same regret as a distribution, drawn against the measured noise floor |
+| `fig_repeat_variance` | how reproducible one measured point is, R6 against pinned routes and serial |
 | `fig_p1` | Constellation size, 1 -> 4096 spacecraft, both machines |
 | `fig_p2_gravity_4096sat_l50_vacuum_5800s` | Thread budget at 4096 spacecraft |
 | `fig_p3_independent_1sat_1hr` | Monte Carlo resource ladder, cheap samples |
@@ -218,8 +219,22 @@ histograms, because 9-24 points per phase is too few to bin honestly; it is
 what shows that the wins are concentrated in the Monte Carlo phases while P1
 and P2 sit on parity.
 
-Regenerate it by naming two runs of identical code with `--noise-pair`, which
-is what supplies the floor:
+`fig_repeat_variance` is finding 5 as a distribution rather than an anecdote,
+and is the honest counterweight to put beside any R6 win. Pooled over every run
+on disk, with each point's warm-up repeat dropped, the spread across repeats of
+a single point has median 7.3% for `policy_v2` against 1.7-2.0% for the pinned
+thread routes and 0.5% for serial -- roughly a decade of separation between the
+three classes, visible as three separated ECDF curves. Dropping the warm-up
+repeat is not cosmetic: repeat 1 runs 2.0x the steady-state time for
+`policy_v2` and 1.4x for `outer_process`, so including it would measure
+process-pool startup rather than routing.
+
+R6 does not converge over a five-campaign sequence -- repeats 2 through 5 sit
+flat at 1.005-1.010 of each other -- so this spread is the steady-state cost of
+adaptivity, not a transient that more campaigns would settle.
+
+Regenerate the regret distribution by naming two runs of identical code with
+`--noise-pair`, which is what supplies the floor:
 
 ```
 python3 scripts/make_paper_routing_plots.py <run> <run> \

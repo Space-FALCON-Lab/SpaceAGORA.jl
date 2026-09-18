@@ -152,6 +152,94 @@ const CH = SM.ControlHooks
         @test_throws ArgumentError ApolloDescentGuidanceModel(cfg, malformed, terrain)
     end
 
+    @testset "descent thruster diagnostics and actuator shutdown" begin
+        # Exhaust points opposite to force. Unit lever arms and deliberately
+        # non-unit directions give independent +x/+y/+z torque oracles.
+        jet(r, d, thrust) = SM.Thruster(location=MVector{3,Float64}(r),
+            direction=MVector{3,Float64}(d), max_thrust=thrust)
+        engine = jet((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 100.0)
+        root = SM.Link(root=true, m=500.0, thrusters=[
+            jet((0.0, 1.0, 0.0), (0.0, 0.0, -2.0), 10.0), engine])
+        pod = SM.Link(thrusters=[
+            jet((0.0, 0.0, 1.0), (-3.0, 0.0, 0.0), 20.0),
+            jet((1.0, 0.0, 0.0), (0.0, -4.0, 0.0), 30.0)])
+        planet = SM.Moon()
+        craft = SM.SpacecraftModel(links=[root, pod], root=root, id=97,
+            inertia_tensor=SMatrix{3,3,Float64}(10, 0, 0, 0, 20, 0, 0, 0, 30),
+            initial_condition=SM.CartesianInitialCondition(
+                SVector(planet.Rp_e + 100.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0)))
+        layout = CH.descent_thruster_layout(craft)
+        @test layout.engine == 2
+        @test layout.engine_max_thrust_n == 100.0
+        @test layout.jets == [1, 3, 4]
+        @test layout.torque_arms_nm ≈ Diagonal([10.0, 20.0, 30.0])
+        levels = fill(-1.0, 4)
+        @test CH.descent_thruster_levels!(levels, layout, 50.0, SVector(5.0, 10.0, 15.0)) === levels
+        @test levels ≈ fill(0.5, 4)
+        @test layout.torque_arms_nm * levels[layout.jets] ≈ [5.0, 10.0, 15.0]
+        @test_throws BoundsError CH.descent_thruster_levels!(zeros(2), layout,
+            50.0, SVector(5.0, 10.0, 15.0))
+        # Negative jet demand clips to zero; demands above capacity clip to one.
+        CH.descent_thruster_levels!(levels, layout, 150.0, SVector(-10.0, 40.0, 0.0))
+        @test levels ≈ [0.0, 1.0, 1.0, 0.0]
+        CH.descent_thruster_levels!(levels, layout, NaN, SVector(NaN, 0.0, 0.0))
+        @test all(iszero, levels)
+        engine_only = CH.descent_thruster_layout((links=[SM.Link(root=true, thrusters=[engine])],))
+        @test isempty(engine_only.jets)
+        @test CH.descent_thruster_levels!([1.0], engine_only, -1.0, zero(SVector{3,Float64})) == [0.0]
+
+        b, ap = apollo11_descent_targets()
+        gcfg = ApolloDescentConfig(reference_radius_m=planet.Rp_e,
+            site_lat_deg=0.0, site_lon_deg=0.0, braking=b, approach=ap)
+        state = ApolloDescentState(1)
+        control = ApolloDescentControlModel(ApolloDescentControlConfig(
+            thrust_slew_n_s=30.0, rate_gain=1.0, rate_limit_rad_s=0.1,
+            rate_bandwidth=2.0), gcfg, state, NoTerrainModel())
+        args = make_example_config(planet=planet, spacecraft=craft, mission_time=1.0,
+            initial_time=SM.InitialTime(year=2000, month=1, day=1, hour=12),
+            dynamic_effectors=(), density_model=SM.NoAtmosphereModel(),
+            ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+            keplerian=false, verbose=false, results=false)
+        params = SM.ODEParams(n_sats=1, args=args)
+        sample = (q=SVector(0.0, 0.0, 0.0, 1.0), ω=zero(SVector{3,Float64}))
+        CH.calcControlEffect!(control, sample, params, 0.0, 1)
+        cached_layout = control.actuators.thruster_layout[1]
+        saved_levels = CH.control_thruster_levels(control, 1)
+        @test cached_layout.engine == 2
+        @test saved_levels === control.actuators.thruster_level[1]
+        @test saved_levels == zeros(4)
+        state.phase_start_s[1, 1] = 0.0
+        state.thrust_cmd_n[1] = 50.0
+        state.attitude_cmd[1] = SVector(1.0, 0.0, 0.0, 0.0)
+        CH.calcControlEffect!(control, sample, params, 1.0, 1)
+        @test control.actuators.thruster_layout[1] === cached_layout
+        @test CH.control_thruster_levels(control, 1) === saved_levels
+        @test control.actuators.thrust_n[1] == 30.0
+        # A half turn saturates the commanded rate at 0.1 rad/s, giving
+        # 10 kg m² * 2 /s * 0.1 rad/s = 2 N m, below the RCS torque cap.
+        @test control.actuators.torque_nm[1] ≈ SVector(2.0, 0.0, 0.0)
+        @test saved_levels ≈ [0.2, 0.3, 0.0, 0.0]
+
+        # Contact can precede the first guidance update that creates a site
+        # frame. Store the planet-fixed velocity and clear every actuator.
+        @test state.site_frame[1] === nothing
+        v_p = SVector(1.0, 2.0, -3.0)
+        CH.touchdown_spec(control, 1).on_touchdown(2.0,
+            SVector(planet.Rp_e, 0.0, 0.0), v_p, 1)
+        @test state.phase[1] == :landed
+        @test state.touchdown_s[1] == 2.0
+        @test state.touchdown_v_mps[1] == v_p
+        @test isnan(state.touchdown_miss_m[1])
+        @test state.thrust_cmd_n[1] == 0.0
+        @test control.actuators.thrust_n[1] == 0.0
+        @test iszero(control.actuators.torque_nm[1])
+        @test all(iszero, saved_levels)
+        params.is_active[1] = false
+        CH.calcControlEffect!(control, sample, params, 3.0, 1)
+        @test CH.control_thruster_levels(control, 1) === saved_levels
+        @test all(iszero, saved_levels)
+    end
+
     @testset "closed-loop vertical descent with RCS attitude control" begin
         planet = SM.Moon()
         ephem = SM.SimpleEphemeridesModel()

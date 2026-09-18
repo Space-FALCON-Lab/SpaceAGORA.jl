@@ -176,7 +176,7 @@ function descent_thruster_levels!(levels::Vector{Float64}, layout::DescentThrust
         levels[layout.engine] = clamp(thrust_n / layout.engine_max_thrust_n, 0.0, 1.0)
     end
     isempty(layout.jets) && return levels
-    @inbounds for (j, k) in enumerate(layout.jets)
+    for (j, k) in enumerate(layout.jets)
         u = layout.torque_to_levels[j, 1] * torque_nm[1] +
             layout.torque_to_levels[j, 2] * torque_nm[2] +
             layout.torque_to_levels[j, 3] * torque_nm[3]

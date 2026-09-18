@@ -335,6 +335,7 @@ function default_save_fields(args::SimulationConfiguration)
     if args.mission_configuration.orientation_sim
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
     end
+    append!(fields, plume_save_fields(args))
     for field in visualization_save_fields(args)
         push!(fields, field)
     end

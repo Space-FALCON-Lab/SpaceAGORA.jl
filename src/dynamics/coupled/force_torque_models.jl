@@ -19,6 +19,8 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
 
+    include(joinpath(@__DIR__, "force_torque_models", "plume_surface_interaction.jl"))
+
     # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
     @eval GravityEffectors using ..PerturbationEffectors
 
@@ -42,6 +44,9 @@ module DynamicEffectors
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using .RobotArmReactionEffectors: RobotArmReactionEffector
+
+    using .PlumeSurfaceInteraction: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+    export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel

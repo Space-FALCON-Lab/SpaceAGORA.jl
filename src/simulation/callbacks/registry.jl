@@ -23,7 +23,8 @@ using ..ConfigTypes: SaveData
 using ..SceneVisualization: link_pose_vector, link_pose_link_indices, arm_pose_vector, robot_arm_plan_for
 import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
-using ..ControlHooks: calcControlEffect!, control_thruster_levels
+using ..ControlHooks: calcControlEffect!, control_thruster_levels, touchdown_spec
+using ..TerrainModels: AbstractTerrainModel, DEMTerrainModel, terrain_radius
 using ..GuidanceHooks: calcGuidanceEffect!
 using ..NavigationHooks: calcNavigationEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits

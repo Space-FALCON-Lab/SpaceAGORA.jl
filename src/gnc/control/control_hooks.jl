@@ -11,6 +11,9 @@ module ControlHooks
     using ..AerodynamicEffectors: aerodynamic_coefficient_fM
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
+    using ..GuidanceHooks: ApolloDescentConfig, ApolloDescentState, _validate_descent_config, _descent_indices
+    using ..AbstractTypes: AbstractTerrainModel
+    using ..TerrainModels: NoTerrainModel, DEMTerrainModel
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
     using ..EnvironmentModels: getDensity
     using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
@@ -26,8 +29,9 @@ module ControlHooks
     const config = Structure
 
     export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate, calcReactionWheelTorque
-    export control_thruster_levels
+    export control_thruster_levels, touchdown_spec
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
+    export ApolloDescentControlConfig, ApolloDescentControlModel, ApolloDescentControlState, attitude_error_vector
     export RpoLQMPCController, init_rpo_lqmpc, rpo_lqmpc_control
     export RPOHeldActuation, RPOMPCControlModel
     export MagneticMomentumManagerModel
@@ -52,6 +56,24 @@ module ControlHooks
     """
     control_thruster_levels(effector, i::Int) = nothing
 
+    """
+        touchdown_spec(effector, spacecraft_index::Int) -> Union{Nothing, NamedTuple}
+
+    Optional terrain-contact event for a selected spacecraft's index in the run
+    (not its user-defined ID). Return `nothing` for unselected spacecraft, or
+    `(terrain, reference_radius_m, height_m, on_touchdown)`: an AbstractTerrainModel,
+    its explicit positive reference-sphere radius in metres, a finite nonnegative
+    clearance in metres, and a callable accepting `(t, r_p, v_p, spacecraft_index)`.
+    The callback receives planet-fixed position and ground-relative velocity in
+    metres and metres per second. It may record contact and turn off actuators.
+
+    The first downward crossing deactivates only this spacecraft; the solve ends
+    once all spacecraft are inactive. Initial contact/below-ground states and
+    multiple specifications for one index are rejected. The usual 50 km impact
+    stop remains active for every spacecraft with no touchdown specification.
+    """
+    touchdown_spec(effector, spacecraft_index::Int) = nothing
+
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     using ..QuaternionMath
     include(joinpath(@__DIR__, "propulsive_maneuvers.jl"))
@@ -69,4 +91,5 @@ module ControlHooks
     include(joinpath(@__DIR__, "aerobraking", "control_commands.jl"))
     include(joinpath(@__DIR__, "aerobraking", "constraint_tracking.jl"))
     include(joinpath(@__DIR__, "aerobraking", "tracking_executor.jl"))
+    include(joinpath(@__DIR__, "landing", "apollo_descent_control.jl"))
 end

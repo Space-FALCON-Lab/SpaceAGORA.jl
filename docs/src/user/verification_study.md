@@ -63,6 +63,35 @@ Use the verification study when you need:
 - explicit enforcement behavior
 - a repeatable output directory for local inspection
 
+## Interpreting finite-window orbital decay
+
+A slope fitted to osculating semi-major axis over a finite window can include
+orbital-period variations and their modulation as well as drag. For example,
+J2 perturbations can produce a nonzero fitted slope even in a drag-free run.
+A trend in this two-body diagnostic alone therefore does not establish
+energy loss through drag.
+
+Before interpreting such a slope as drag-related decay, compare it with a
+drag-free reference propagation of the same arc. Set `drag_enabled = false`
+in the reference scenario's manifest table and preserve its initial state,
+gravity field and other force settings. Evaluate both series over the same
+time window and comparison grid, including the same sampling gaps.
+`SpaceAGORA.TelemetryVerification.zero_referenced_decay(t_s, sma_m, t_ref_s,
+sma_ref_m; period_s)` applies the same harmonic estimator to both series and
+returns their slope difference as `decay_m_per_day`, together with
+`raw_m_per_day` and `reference_m_per_day`. This removes the fitted reference
+trend; check sensitivity to the fit window and estimator before attributing
+the difference to drag, since subtraction does not guarantee cancellation of
+model mismatch or other perturbations.
+
+The same module provides `visviva_sma(r_m, v_mps, mu)` to compute osculating
+semi-major axis from position and velocity magnitudes, and
+`flight_density_table` to convert windowed, reference-subtracted decay rates
+into a `time_s` / `rho_kgm3` table for the `tabulated_time` density source. The
+conversion uses a near-circular drag relation and the supplied mass and
+effective drag area (`cd_area_m2`), so its density estimate depends on those
+assumptions.
+
 ## Scheduled state anchors
 
 A scenario can re-anchor the simulated state to an external trajectory at

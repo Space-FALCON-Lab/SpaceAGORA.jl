@@ -40,6 +40,25 @@ campaign_process_pool()::ProcessPool = _CAMPAIGN_PROCESS_POOL
     return Cmd(["--threads=1", "--startup-file=no", "--project=$(project_path)"])
 end
 
+# Distributed inherits the coordinator's LOAD_PATH unless JULIA_LOAD_PATH is
+# supplied explicitly. A prepended vendored GRAMSuite environment can therefore
+# shadow the pool project on fresh workers. This mixed package resolution was
+# reproduced during PR139 CI triage; the exact CI-only extension-precompile
+# failure still requires confirmation on the runner's Julia version.
+# Put the worker's --project first, retaining other coordinator entries in order
+# as fallbacks for packages the project does not carry.
+function _process_worker_load_path()::String
+    pathsep = Sys.iswindows() ? ";" : ":"
+    rest = String[entry for entry in LOAD_PATH if entry != "@"]
+    return join(["@"; rest], pathsep)
+end
+
+@inline function _spawn_process_workers(n::Int, project_path::AbstractString)::Vector{Int}
+    return addprocs(n;
+        exeflags=_process_worker_exeflags(project_path),
+        env=["JULIA_LOAD_PATH" => _process_worker_load_path()])
+end
+
 # `Distributed.remotecall_eval` (the plain function `@everywhere` itself
 # expands to -- not the macro, which expands to a `:toplevel` Expr and is
 # therefore only legal as a direct top-level statement, never inside a
@@ -195,7 +214,7 @@ function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing)::
     lock(pool.lock) do
         shortfall = desired - length(pool.workers)
         if shortfall > 0
-            new_workers = addprocs(shortfall; exeflags=_process_worker_exeflags(pool.project_path))
+            new_workers = _spawn_process_workers(shortfall, pool.project_path)
             for w in new_workers
                 _bootstrap_process_worker!(w, pool.project_path)
             end

@@ -53,9 +53,12 @@ reverted to keep this repo mergeable with its upstream):
   instead of recompiling `src/`. GRAM-backed probe checks need the
   `SpaceAGORAGRAMSuiteExt` extension to load, which requires a vendored
   `data/GRAMSuite.jl` checkout that provides the hooks the extension expects
-  (CI uses the dev submodule); otherwise they skip with an info message.
+  (CI uses the dev submodule). Optional local runs report unavailable native
+  prerequisites as skipped. The native-enabled coverage job sets
+  `SPACEAGORA_REQUIRE_NATIVE_GRAM_PROBES=1` and fails unless construction and
+  density-service probes both finish and the child exits successfully.
 - `test/helpers/`
-  Currently unused (placeholder); no shared harness code lives here.
+  Shared native-probe reporting and parent verification live here.
 
 Recommended commands:
 

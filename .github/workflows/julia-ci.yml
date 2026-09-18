@@ -455,6 +455,8 @@ jobs:
       # Coverage debt (July 2026): first real gate run measured 82.84%
       # overall; restore to 90.0 as the debt register in
       # test/gates/ci_coverage_quality_gate.jl burns down.
+      # This job builds native GRAM, so skipping its native probes must fail.
+      SPACEAGORA_REQUIRE_NATIVE_GRAM_PROBES: "1"
       SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
       # The window is measured back from the NEWEST .cov file (written when

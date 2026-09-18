@@ -250,6 +250,12 @@ end
 # Constructors
 # ---------------------------------------------------------------------------
 
+function EM._rebuild_gram_epoch_model(recipe::Dict{Symbol, Any})
+    return lock(_tl(:gram_setup)) do
+        EM.GRAMAtmosphereModel(; recipe...)
+    end
+end
+
 function EM.GRAMAtmosphereModel(; kwargs...)
     # Own the recipe independently of both the caller and the native model.
     # In particular, mutable option values must not alias either one.

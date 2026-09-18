@@ -251,7 +251,21 @@ end
 # ---------------------------------------------------------------------------
 
 function EM.GRAMAtmosphereModel(; kwargs...)
-    return EM.GRAMAtmosphereModel(GRAMSuite.GRAMAtmosphereModel(; kwargs...))
+    # Own the recipe independently of both the caller and the native model.
+    # In particular, mutable option values must not alias either one.
+    recipe = deepcopy(Dict{Symbol, Any}(kwargs))
+    core = GRAMSuite.GRAMAtmosphereModel(; deepcopy(recipe)...)
+    # Preserve what construction resolved, even if the working directory or
+    # path-discovery environment changes before copying or process transfer.
+    recipe[:gram_root_directory] = String(core.gram_root)
+    recipe[:gram_data_directory] = String(core.gram_data_root)
+    recipe[:spice_directory] = String(core.spice_root)
+    recipe[:planet_name] = String(core.planet_name)
+    recipe[:initial_time] = deepcopy(core.initial_time)
+    if haskey(recipe, :gram_library_path) && !isempty(recipe[:gram_library_path])
+        recipe[:gram_library_path] = GRAMSuite.resolve_path(recipe[:gram_library_path])
+    end
+    return EM.GRAMAtmosphereModel(core, ReentrantLock(), recipe)
 end
 
 function EM.GRAMAtmosphereModelSurrogate(;
@@ -298,7 +312,11 @@ end
 function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict)
     haskey(stackdict, model) && return stackdict[model]
     copied = lock(_tl(:gram_setup)) do
-        EM.GRAMAtmosphereModel(deepcopy(model.core))
+        recipe = model.constructor_kwargs
+        # Raw-core wrappers retain their previous fallback; no recipe is
+        # inferred from the subset of settings exposed by the core.
+        recipe === nothing ? EM.GRAMAtmosphereModel(deepcopy(model.core)) :
+            EM.GRAMAtmosphereModel(; recipe...)
     end
     stackdict[model] = copied
     return copied
@@ -323,23 +341,30 @@ end
 # native handle, and `instance_lock` is a ReentrantLock that must never be
 # serialized as-is (Task/condition-variable state has no meaning on another
 # process, mirroring why deepcopy_internal above never copies it either).
-# Serialize only `core` (which recurses into GRAMSuite's own serialize method)
-# and reconstruct with a fresh instance_lock on the receiving side -- the same
-# "fresh lock per construction" contract the single-arg constructor already
-# documents. This lets a SimulationConfiguration carrying one of these models
-# cross a Distributed process boundary (e.g. remotecall) transparently.
+# Known keyword-built models send a tagged constructor recipe, never their
+# native core. Raw-core wrappers retain the legacy core payload and fallback.
+# The receiver accepts that legacy payload too, but cannot recover options
+# the core's own serializer omitted. All reconstructed wrappers get a fresh
+# instance lock. Distributed workers must load the same SpaceAGORA version.
 # ---------------------------------------------------------------------------
+
+const _GRAM_CONSTRUCTOR_RECIPE_TAG = :SpaceAGORA_GRAM_constructor_recipe_v1
 
 function Serialization.serialize(s::Serialization.AbstractSerializer, model::EM.GRAMAtmosphereModel)
     Serialization.writetag(s.io, Serialization.OBJECT_TAG)
     Serialization.serialize(s, EM.GRAMAtmosphereModel)
-    Serialization.serialize(s, model.core)
+    recipe = model.constructor_kwargs
+    payload = recipe === nothing ? model.core : (_GRAM_CONSTRUCTOR_RECIPE_TAG, recipe)
+    Serialization.serialize(s, payload)
     return nothing
 end
 
 function Serialization.deserialize(s::Serialization.AbstractSerializer, ::Type{EM.GRAMAtmosphereModel})
-    core = Serialization.deserialize(s)
-    return EM.GRAMAtmosphereModel(core)
+    payload = Serialization.deserialize(s)
+    if payload isa Tuple{Symbol, Dict{Symbol, Any}} && payload[1] === _GRAM_CONSTRUCTOR_RECIPE_TAG
+        return EM.GRAMAtmosphereModel(; payload[2]...)
+    end
+    return EM.GRAMAtmosphereModel(payload)
 end
 
 function Serialization.serialize(s::Serialization.AbstractSerializer, model::EM.GRAMAtmosphereModelSurrogate)

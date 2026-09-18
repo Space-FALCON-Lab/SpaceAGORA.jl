@@ -167,9 +167,9 @@ end
     return out
 end
 
-# The worker needs a planet name, not the model: a GRAMAtmosphereModel wraps a
-# live native handle that cannot be serialised across a process boundary. Each
-# worker builds its own from the name instead.
+# This service currently sends only the planet name and rebuilds worker models
+# with defaults. Keyword-built wrappers can serialize their construction recipe,
+# but this path does not use it; coordinator settings and epoch are not carried.
 @inline function _density_service_planet_name(model)::String
     for field in (:planet_name, :planet)
         if hasproperty(model, field)
@@ -219,12 +219,11 @@ the distributed density service, using planet-frame values the caller has
 already computed. Returns `false` if the service declined or failed, leaving the
 buffers untouched so the caller can fall back.
 
-**This is exact, not an approximation.** The queries carry the same
-`(alt, lat, lon, t)` the per-satellite path would have passed for this same
-derivative evaluation, so the density each satellite sees is identical; only
-*where* the native call runs changes. That is the whole reason this hook sits in
-the RHS prefill rather than behind `density_freeze_per_step`, which reuses a
-once-per-accepted-step sample and does change the answer.
+Queries carry the current `(alt, lat, lon, t)` rather than reusing a sample
+from an accepted step. The optional service nevertheless builds worker models
+from planet names only; it does not transfer the coordinator's construction
+recipe, epoch or configured paths. Matching query coordinates alone therefore
+does not guarantee the same density as the in-process model.
 
 Inactive satellites are excluded from the dispatch rather than sent with stale
 buffer contents: their planet frames were never computed this pass, so their

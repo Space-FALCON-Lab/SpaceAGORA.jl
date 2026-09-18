@@ -278,6 +278,36 @@ its own: only the built-in aerodynamic model writes per-force diagnostics.
   `wrench` is meant to be a pure function of its four arguments, because the
   solver evaluates it at trial points it later rejects.
 
+## Add gravity-gradient torque without another gravity force
+
+`SM.GravityGradientTorqueModel()` supplies the central body's gravity-gradient
+attitude torque. This is useful when a separate model already supplies the
+orbital gravity, such as `SM.GravitationalHarmonicsModel`.
+
+For example, these effectors apply inverse-squared gravity and its attitude
+torque as separate terms:
+
+```julia
+using SpaceAGORA
+SM = SpaceAGORA.SimulationModel
+
+effectors = (SM.InverseSquaredGravityModel(), SM.GravityGradientTorqueModel())
+# Pass effectors to SM.DynamicsModel and set orientation_sim=true.
+```
+
+The new effector returns zero force and the body-frame torque
+`3μ/r³ (r̂ × J r̂)`. Here `J` is the spacecraft's body-frame inertia tensor,
+`r̂` points from the central body to the spacecraft, expressed in the spacecraft
+body frame, and `μ` is the body's gravitational parameter. Torque is in N m.
+The effector uses the existing central-field calculation; pairing it with
+harmonic gravity does not add nonspherical corrections to this torque law.
+
+Enable attitude propagation with `orientation_sim=true`. Do not also set
+`gravity_gradient=true` on an analytic gravity model in the same run, because
+that would apply the torque twice. When using only an analytic gravity model,
+its existing `gravity_gradient=true` option is an equivalent way to request the
+same central-field torque.
+
 ## Reference: the interface as it exists today
 
 This section names the types and functions; the walkthrough above did not

@@ -168,13 +168,25 @@ underlying GRAMSuite model object; constructors are provided by the
 `instance_lock` serializes native GRAM calls against this wrapper instance when
 `SPACEAGORA_GRAM_LOCK_SCOPE=model` is active (see [`_gram_lock_scope`](@ref));
 each construction (including `deepcopy`) gets a fresh lock.
+
+Keyword construction records a private copy of the supplied options, resolved
+native paths, planet and initial epoch. Copying or serializing such a wrapper
+reconstructs a fresh native model from that recipe; it does not snapshot an
+advanced native random stream or later manual changes to the native handle.
+
+`GRAMAtmosphereModel(core)` and `GRAMAtmosphereModel(core, lock)` retain the
+existing raw-core behavior. Their recipe is unknown (`nothing`), so copying
+and serialization still delegate to the core, with its existing limitations
+on preserving nondefault construction settings.
 """
 struct GRAMAtmosphereModel <: AbstractDensityModel
     core
     instance_lock::ReentrantLock
+    constructor_kwargs::Union{Nothing, Dict{Symbol, Any}}
 end
 
-GRAMAtmosphereModel(core) = GRAMAtmosphereModel(core, ReentrantLock())
+GRAMAtmosphereModel(core) = GRAMAtmosphereModel(core, ReentrantLock(), nothing)
+GRAMAtmosphereModel(core, lock::ReentrantLock) = GRAMAtmosphereModel(core, lock, nothing)
 
 @kwdef struct ConstantDensityModel <: AbstractDensityModel
     density_kg_m3::Float64
@@ -389,7 +401,7 @@ function NRLMSISE00AtmosphereModel(;
 end
 
 @inline function Base.getproperty(model::GRAMAtmosphereModel, name::Symbol)
-    if name === :core || name === :instance_lock
+    if name === :core || name === :instance_lock || name === :constructor_kwargs
         return getfield(model, name)
     end
     return getproperty(getfield(model, :core), name)
@@ -397,7 +409,7 @@ end
 
 @inline function Base.propertynames(model::GRAMAtmosphereModel, private::Bool=false)
     wrapped = propertynames(getfield(model, :core), private)
-    return (:core, :instance_lock, wrapped...)
+    return (:core, :instance_lock, :constructor_kwargs, wrapped...)
 end
 
 @inline function Base.getproperty(model::GRAMAtmosphereModelSurrogate, name::Symbol)

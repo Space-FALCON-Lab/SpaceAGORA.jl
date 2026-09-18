@@ -54,6 +54,10 @@ const HAS_GRAMSUITE = let
     end
 end
 
+if HAS_GRAMSUITE
+    include(joinpath(@__DIR__, "gram_construction_probes.jl"))
+end
+
 struct ProbeDensityModel <: SimulationModel.AbstractDensityModel
 end
 

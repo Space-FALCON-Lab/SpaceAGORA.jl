@@ -472,6 +472,30 @@ story -- share of `policy_v2` campaigns that ran a `sweep`: 33% and 22% from the
 partly-converged store, **5%** from the converged one, with 4 of 12 points never
 exploring at all.
 
+**It is localized, not pervasive, and that matters for how it is quoted.** A
+cleared-store 11-repeat run of P1 settles the frequency. It finds
+`sweep/satellite_batch@1` on repeat 1 at N=1024 and converges to a median of
+1.987 s against the converged store's 5.01 s -- 2.5x, slightly better than the
+2.07 s the 3-repeat runs had reached, as expected from runs that were still
+improving when they stopped. But at the other five rungs the two stores agree
+within 3%:
+
+| N | serial | best static | R6 converged | R6 cold | cold/converged |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 8.65 | 8.54 | 8.93 | 8.64 | 0.97 |
+| 16 | 10.70 | 2.11 | 2.11 | 2.16 | 1.02 |
+| 64 | 11.23 | 34.67 | 3.25 | 3.29 | 1.01 |
+| 256 | 11.67 | 21.02 | 2.80 | 2.85 | 1.02 |
+| **1024** | 11.84 | 4.96 | **5.01** | **1.99** | **0.40** |
+| 4096 | 11.38 | 2.17 | 2.23 | 2.16 | 0.97 |
+
+So the lock-in is severe where it lands and absent elsewhere: one of six P1
+rungs, with exploration over the whole phase running 26% of campaigns from cold
+against 6% from converged. The claim to make is "a converged store can
+foreclose a large win at some points", not "R6 is 2.4x slower with a warm
+store". The N=64 and N=256 columns are finding 2's calibration artifacts and
+both stores handle them identically.
+
 Three things follow, and they matter more than the routing numbers themselves.
 
 *The cache suppresses the search that would fix it.* R6 exploits a cached

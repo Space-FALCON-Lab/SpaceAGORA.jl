@@ -40,6 +40,35 @@ campaign_process_pool()::ProcessPool = _CAMPAIGN_PROCESS_POOL
     return Cmd(["--threads=1", "--startup-file=no", "--project=$(project_path)"])
 end
 
+# Distributed's LocalManager serialises the coordinator's *current* `LOAD_PATH`
+# into each new worker's `JULIA_LOAD_PATH` unless the caller supplies one
+# (Distributed/src/managers.jl, `launch(::LocalManager, ...)`). A coordinator
+# that has prepended another environment -- `ensure_gramsuite_loaded!` and the
+# native test probes push the vendored GRAMSuite project in front of the stack
+# so `import GRAMSuite` resolves while GRAMSuite is only a weak dependency --
+# therefore handed every pool worker a stack in which that environment shadowed
+# the pool's own project. Packages present in both manifests (StaticArrays,
+# Serialization, ...) then resolved through the GRAMSuite manifest, and a
+# package extension found through it could not see the project's other
+# dependencies: `using SpaceAGORA` on such a worker failed while precompiling
+# StaticArraysChainRulesCoreExt with "ChainRulesCore ... does not seem to be
+# installed" (PR #139 coverage job 105631685037, the first Distributed worker
+# spawned from the coverage child). Workers start with the pool project first;
+# every other coordinator entry is kept, in order, behind it, so deliberate
+# stacks (a shared site environment, the GRAMSuite fallback) still resolve
+# packages the project does not carry. `@` expands to `--project` on the worker.
+function _process_worker_load_path()::String
+    pathsep = Sys.iswindows() ? ";" : ":"
+    rest = String[entry for entry in LOAD_PATH if entry != "@"]
+    return join(["@"; rest], pathsep)
+end
+
+@inline function _spawn_process_workers(n::Int, project_path::AbstractString)::Vector{Int}
+    return addprocs(n;
+        exeflags=_process_worker_exeflags(project_path),
+        env=["JULIA_LOAD_PATH" => _process_worker_load_path()])
+end
+
 # `Distributed.remotecall_eval` (the plain function `@everywhere` itself
 # expands to -- not the macro, which expands to a `:toplevel` Expr and is
 # therefore only legal as a direct top-level statement, never inside a
@@ -195,7 +224,7 @@ function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing)::
     lock(pool.lock) do
         shortfall = desired - length(pool.workers)
         if shortfall > 0
-            new_workers = addprocs(shortfall; exeflags=_process_worker_exeflags(pool.project_path))
+            new_workers = _spawn_process_workers(shortfall, pool.project_path)
             for w in new_workers
                 _bootstrap_process_worker!(w, pool.project_path)
             end

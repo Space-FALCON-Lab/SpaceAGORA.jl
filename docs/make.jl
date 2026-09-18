@@ -10,6 +10,7 @@ const DOCS_SRC = joinpath(@__DIR__, "src")
 const GENERATED_SRC = joinpath(DOCS_SRC, "generated")
 const GENERATED_API_PAGE = joinpath(GENERATED_SRC, "public_api.md")
 const API_REFERENCE_PAGES = (
+    (section="Terrain Queries", title="Terrain API", file="terrain_api.md"),
     (section="Visualization Scene", title="Visualization API", file="visualization_api.md"),
 )
 const GENERATED_CONTRACTS_ROOT = joinpath(GENERATED_SRC, "contracts")
@@ -168,6 +169,7 @@ makedocs(
         "Reference" => Any[
             "CLI" => "cli.md",
             "Public API" => "generated/public_api.md",
+            "Terrain API" => "generated/terrain_api.md",
             "Visualization API" => "generated/visualization_api.md",
             "Publications" => "publications.md",
             "Distributed and HPC" => "distributed_hpc.md",

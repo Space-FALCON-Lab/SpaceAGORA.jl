@@ -74,6 +74,8 @@ using .SimulationModel: robot_arm_joint_mpc_control, robot_arm_measured_joint_st
 using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
+using .SimulationModel.TerrainModels: AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
+using .SimulationModel.TerrainModels: terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
 using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
@@ -219,6 +221,15 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.robot_arm_joint_mpc_control) robot_arm_joint_mpc_control
 @doc (@doc SimulationModel.robot_arm_measured_joint_state) robot_arm_measured_joint_state
 @doc (@doc SimulationModel.ApoapsisTargetPeriapsisRaiseGuidanceModel) ApoapsisTargetPeriapsisRaiseGuidanceModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractTerrainModel) AbstractTerrainModel
+@doc (@doc SimulationModel.TerrainModels.NoTerrainModel) NoTerrainModel
+@doc (@doc SimulationModel.TerrainModels.DEMGrid) DEMGrid
+@doc (@doc SimulationModel.TerrainModels.DEMTerrainModel) DEMTerrainModel
+@doc (@doc SimulationModel.TerrainModels.terrain_height) terrain_height
+@doc (@doc SimulationModel.TerrainModels.terrain_radius) terrain_radius
+@doc (@doc SimulationModel.TerrainModels.load_dem_grid) load_dem_grid
+@doc (@doc SimulationModel.TerrainModels.load_site_terrain) load_site_terrain
+@doc (@doc SimulationModel.TerrainModels.dem_grid_covers) dem_grid_covers
 @doc (@doc SimulationModel.NoAtmosphereModel) NoAtmosphereModel
 @doc (@doc SimulationModel.ExponentialAtmosphereModel) ExponentialAtmosphereModel
 @doc (@doc SimulationModel.PiecewiseExponentialAtmosphereModel) PiecewiseExponentialAtmosphereModel
@@ -375,6 +386,8 @@ export assign_coupled_cloth_robot_arm_rhs!
 export RobotArmHeldActuation, RobotArmJointMPCController, RobotArmControlEffector, RobotArmReactionEffector
 export init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview
 export robot_arm_joint_mpc_control, robot_arm_measured_joint_state
+export AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
+export terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel

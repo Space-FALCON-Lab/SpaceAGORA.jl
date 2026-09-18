@@ -337,3 +337,40 @@ Solver modes other than the default are described on
 [Solver Configuration](solver_configuration.md); the gravity-backbone hooks
 listed on the Extensibility page are for effectors that take part in that
 special mode and are not needed for an ordinary force.
+
+## Replaying reaction-wheel speeds
+
+For recorded or prescribed wheel-speed histories, use
+`SpaceAGORA.SimulationModel.ReactionWheelMomentumModel`. It supplies the reaction
+torque on the spacecraft body, including the gyroscopic contribution. It needs
+no atmosphere, GRAM, SPICE, or additional package.
+
+```julia
+using SpaceAGORA
+using LinearAlgebra
+const SM = SpaceAGORA.SimulationModel
+
+# Seconds, signed radians per second, body-frame axes, and kg m².
+times = [0.0, 5.0, 10.0]
+speeds = [0.0 0.0 0.0; 50.0 0.0 0.0; 100.0 0.0 0.0]
+wheels = SM.ReactionWheelMomentumModel(times, speeds, Matrix{Float64}(I, 3, 3), 2e-5;
+    spacecraft_index=1)
+```
+
+Include `wheels` in the configuration's `DynamicsModel` effector tuple and set
+`orientation_sim=true`. The index selects a spacecraft's position in the run's
+array, not its ID. Keep the same physical wheels out of the commanded
+`rw_assembly`, or their momentum would be counted twice. This model replays a
+history; it does not enforce actuator torque or momentum limits.
+
+`SM.wheel_momentum_body(wheels, t)` evaluates wheel momentum at a requested run
+time. Speeds use a natural cubic spline and hold their endpoint value outside
+the recorded interval; their derivative is zero outside. The derivative can jump
+at either endpoint. Choose a table covering the run when endpoint transitions
+are not part of the intended forcing.
+
+Default state isolation leaves the input diagnostic state unchanged. With
+`isolate_state=false`, `wheels.state` records the last evaluated solver stage,
+which may be a rejected trial. Use the query functions at saved times for
+analysis. Direct `SpaceAGORA.wrench` is pure; the engine's indexed hook owns
+spacecraft selection and diagnostic updates.

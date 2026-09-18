@@ -36,7 +36,7 @@ GRAMSuite extension.
 function _install_density_service_hooks!()
     ParallelProcess === nothing && return nothing
     ParallelProcess._DENSITY_SERVICE_BUILD_MODEL_FN[] =
-        (planet) -> EnvironmentModels.GRAMAtmosphereModel(planet_name=String(planet))
+        (recipe) -> EnvironmentModels.GRAMAtmosphereModel(; recipe...)
     ParallelProcess._DENSITY_SERVICE_EVAL_FN[] =
         (model, h, lat, lon, el, wind, vacT) -> EnvironmentModels._gram_core_density_state(
             model.core, Float64(h), Float64(lat), Float64(lon), Float64(el),
@@ -48,7 +48,7 @@ end
 """
     _gram_process_pool_mode() -> Symbol
 
-`off` (default), `on`, or `auto`. `auto` engages only above the batch-size
+`off` (default), `on`, or `auto`. `auto` engages at or above the batch-size
 threshold, since below it the round-trip cost is not amortised.
 """
 @inline function _gram_process_pool_mode()::Symbol
@@ -97,10 +97,17 @@ Answer a whole batch of density queries from the distributed density service.
 
 Returns `true` if the batch was served and the output arrays are filled, `false`
 if the service declined (disabled, below threshold, nested inside an outer
-process split, no live workers, or a non-native-GRAM model), in which case the
-caller must fall through to its existing path. Never throws on a service-level
-failure: a density service that cannot answer must degrade to the in-process
-path, not fail the solve.
+process split, no live workers, a non-native-GRAM model, an unknown recipe, or a
+recipe the service is remembered as unable to serve), in which case the caller
+must fall through to its existing path. Never throws on a service-level failure:
+a density service that cannot answer must degrade to the in-process path, not
+fail the solve.
+
+A recipe whose worker setup or batch failed is remembered
+(`ParallelProcess.record_density_service_failure!`), so later batches with an
+equal recipe decline at once instead of rebuilding native models on every
+worker at every RHS evaluation. `ParallelProcess.clear_density_service_failures!`
+or `shutdown_density_workers!` makes the service try again.
 
 Signature deliberately mirrors `_gram_isolated_pool_batch_eval!` so the two can
 sit behind a single call site.
@@ -118,21 +125,29 @@ function _gram_process_pool_batch_eval!(
     p,
 )::Bool
     density_model isa EnvironmentModels.GRAMAtmosphereModel || return false
+    density_model.constructor_kwargs === nothing && return false
     n = length(hs)
     _gram_process_pool_enabled(n) || return false
 
-    planet = _density_service_planet_name(density_model)
-    isempty(planet) && return false
+    recipe = deepcopy(density_model.constructor_kwargs)
+    ParallelProcess.density_service_failed(recipe) && return false
 
     workers = try
         ParallelProcess.ensure_density_workers!(
-            _gram_process_pool_workers(); planet_name=planet
+            _gram_process_pool_workers(); constructor_kwargs=recipe
         )
     catch err
-        @warn "Density service unavailable; falling back to the in-process path." exception=(err, catch_backtrace())
+        if ParallelProcess.record_density_service_failure!(recipe, sprint(showerror, err))
+            @warn "Density service unavailable; falling back to the in-process path for this recipe until clear_density_service_failures! or a pool restart." exception=(err, catch_backtrace())
+        end
         return false
     end
-    isempty(workers) && return false
+    if isempty(workers)
+        if ParallelProcess.record_density_service_failure!(recipe, "no density worker could build the model")
+            @warn "No density worker could build the GRAM model; falling back to the in-process path for this recipe until clear_density_service_failures! or a pool restart." planet=get(recipe, :planet_name, nothing)
+        end
+        return false
+    end
 
     hs_f = _density_service_f64(hs, n)
     lats_f = _density_service_f64(lats, n)
@@ -144,9 +159,13 @@ function _gram_process_pool_batch_eval!(
 
     results = ParallelProcess.density_service_dispatch(
         workers, ranges, hs_f, lats_f, lons_f, els_f, wind,
-        p.args.environment_model.planet.T_ref,
+        p.args.environment_model.planet.T_ref; constructor_kwargs=recipe,
     )
-    results === nothing && return false
+    if results === nothing
+        # density_service_dispatch already warned per failed range.
+        ParallelProcess.record_density_service_failure!(recipe, "a density worker failed on a batch")
+        return false
+    end
 
     @inbounds for (k, rng) in enumerate(ranges)
         (rho_k, T_k, wx, wy, wz) = results[k]
@@ -167,18 +186,6 @@ end
     return out
 end
 
-# This service currently sends only the planet name and rebuilds worker models
-# with defaults. Keyword-built wrappers can serialize their construction recipe,
-# but this path does not use it; coordinator settings and epoch are not carried.
-@inline function _density_service_planet_name(model)::String
-    for field in (:planet_name, :planet)
-        if hasproperty(model, field)
-            value = getproperty(model, field)
-            value isa AbstractString && return lowercase(strip(String(value)))
-        end
-    end
-    return ""
-end
 
 """
     _rhs_density_service_candidate(p, num_sats) -> Bool
@@ -199,13 +206,15 @@ native-GRAM configuration is eligible.
     _gram_process_pool_enabled(num_sats) || return false
     model = p.args.environment_model.density_model
     model isa EnvironmentModels.GRAMAtmosphereModel || return false
+    model.constructor_kwargs === nothing && return false
+    ParallelProcess.density_service_failed(model.constructor_kwargs) && return false
     cb_env = _callback_env_config(p)
     _gram_track_cache_enabled(cb_env.gram_track_cache, model) && return false
     # The vacuum-predicted cache keeps a per-satellite spline that a batched
     # query cannot advance, same reason the track cache disqualifies a run.
     cb_env.vacuum_gram_cache_enabled && return false
     # Per-satellite density model instances mean per-satellite native handles;
-    # the service builds one instance per worker from a planet name and cannot
+    # the service builds one instance per worker from one recipe and cannot
     # reproduce a heterogeneous set.
     isempty(p.shared_buffers.density_models) || return false
     return true
@@ -216,14 +225,16 @@ end
 
 Fill the shared density/temperature/wind buffers for every active satellite from
 the distributed density service, using planet-frame values the caller has
-already computed. Returns `false` if the service declined or failed, leaving the
-buffers untouched so the caller can fall back.
+already computed. Returns `false` if the service declined or failed so the caller
+can fall back. Native-query slots remain untouched on failure; vacuum and
+analytic-fallback slots may already contain their locally computed values.
 
-Queries carry the current `(alt, lat, lon, t)` rather than reusing a sample
-from an accepted step. The optional service nevertheless builds worker models
-from planet names only; it does not transfer the coordinator's construction
-recipe, epoch or configured paths. Matching query coordinates alone therefore
-does not guarantee the same density as the in-process model.
+Queries carry the current `(alt, lat, lon, t)` and an owned construction recipe,
+including epoch and resolved paths. Workers reuse a model only for the same
+recipe and select it atomically with each batch. This preserves construction
+settings, not the coordinator's evolved native random state or manual handle
+mutations; it does not promise stochastic equality with in-process evaluation.
+Raw-core wrappers with unknown recipes decline before any worker is requested.
 
 Inactive satellites are excluded from the dispatch rather than sent with stale
 buffer contents: their planet frames were never computed this pass, so their

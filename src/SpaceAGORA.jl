@@ -80,7 +80,7 @@ using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no
 using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
 using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
-using .SimulationModel: getDensity, getDensityBatch!
+using .SimulationModel: getDensity, getDensityBatch!, with_density_model_epoch
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .SimulationModel: control_thruster_levels
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
@@ -93,6 +93,9 @@ using .SimulationModel: load_model_triangles, model_bounding_box, sample_model_p
 using .SimulationModel: spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
 using .SimulationModel: visualization_scene_path, write_visualization_scene, read_visualization_scene
 using .SimulationModel: velocity_aligned_quaternion, visualization_frame_budget
+using .SimulationModel: MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate, MESH_AERO_MAX_DEGREE
+using .SimulationModel: mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
+using .SimulationModel: fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
 using .SimulationModel: export_visualization, with_visualization_scene, write_viewer_dev_payload
 using .SimulationModel: EnsembleSample, sample_results_directory, with_results_directory, write_ensemble_manifest, export_ensemble_visualization
 
@@ -250,6 +253,9 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.gravity_backbone_kick_acceleration_ii) gravity_backbone_kick_acceleration_ii
 @doc (@doc SimulationModel.getDensity) getDensity
 @doc (@doc SimulationModel.getDensityBatch!) getDensityBatch!
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EnvironmentModels.with_density_model_epoch(
+    ::SimulationModel.AbstractDensityModel, ::Any,
+))).text) with_density_model_epoch
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!(
     ::SimulationModel.ControlHooks.BaseThrusterModel,
     ::SimulationModel.ControlHooks.ComponentVector,
@@ -294,6 +300,19 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.SceneVisualization.write_visualization_scene) write_visualization_scene
 @doc (@doc SimulationModel.SceneVisualization.read_visualization_scene) read_visualization_scene
 @doc (@doc SimulationModel.SceneVisualization.velocity_aligned_quaternion) velocity_aligned_quaternion
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.MeshAeroPanels) MeshAeroPanels
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.MeshAeroSurrogate) MeshAeroSurrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientMeshSurrogate) AerodynamicCoefficientMeshSurrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.MESH_AERO_MAX_DEGREE) MESH_AERO_MAX_DEGREE
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.mesh_aero_panels) mesh_aero_panels
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_aero_coefficients) panel_aero_coefficients
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_aero_coefficients_split) panel_aero_coefficients_split
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_shadow_mask) panel_shadow_mask
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.panel_projected_area) panel_projected_area
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.fit_mesh_aero_surrogate) fit_mesh_aero_surrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.mesh_aero_coefficients) mesh_aero_coefficients
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.write_mesh_aero_surrogate) write_mesh_aero_surrogate
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.read_mesh_aero_surrogate) read_mesh_aero_surrogate
 @doc (@doc SimulationModel.SceneVisualization.visualization_frame_budget) visualization_frame_budget
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.SceneVisualization.export_visualization(::AbstractString))).text) export_visualization
 @doc (@doc SimulationModel.SceneVisualization.with_visualization_scene) with_visualization_scene
@@ -395,7 +414,7 @@ export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 export calcForceTorque, wrench, environment_requirements, solver_partition
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
-export getDensity, getDensityBatch!
+export getDensity, getDensityBatch!, with_density_model_epoch
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export control_thruster_levels
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
@@ -410,6 +429,9 @@ export load_model_triangles, model_bounding_box, sample_model_pointcloud, articu
 export spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
 export visualization_scene_path, write_visualization_scene, read_visualization_scene
 export velocity_aligned_quaternion, visualization_frame_budget
+export MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate, MESH_AERO_MAX_DEGREE
+export mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
+export fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
 export export_visualization, with_visualization_scene, write_viewer_dev_payload
 export EnsembleSample, sample_results_directory, with_results_directory, write_ensemble_manifest
 export export_ensemble_visualization, run_monte_carlo_visualization

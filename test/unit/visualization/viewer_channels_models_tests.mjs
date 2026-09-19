@@ -37,6 +37,35 @@ const obj = 'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n';
 const getModel = (model, models) => new Promise((ok, fail) => loadModelObject(model, 'test', ok, (err) => fail(new Error(err)), models));
 const meshOf = (object) => { let mesh; object.traverse((o) => { if (!mesh && o.isMesh) mesh = o; }); return mesh; };
 
+test('bounded atmosphere profiles do not invent density or shells outside grid coverage', async () => {
+  const { createAtmosphere } = await load('src/atmosphere.js');
+  const planet = { equatorial_radius_m: 3396190, polar_radius_m: 3376200, name: 'Mars' };
+  const spec = { model: 'GRAMGridAtmosphereModel', ei_altitude_m: 100000,
+    profile: { altitude_m: [60000, 90000], density_kg_m3: [1e-8, 1e-9] } };
+  const atmosphere = createAtmosphere(spec, planet);
+  assert.ok(Number.isNaN(atmosphere.densityAtAltitude(59999)));
+  assert.ok(Number.isNaN(atmosphere.densityAtAltitude(90001)));
+  assert.ok(Number.isNaN(atmosphere.densityAtAltitude(NaN)));
+  assert.equal(atmosphere.densityAtAltitude(60000), 1e-8);
+  assert.equal(atmosphere.densityAtAltitude(90000), 1e-9);
+  assert.ok(Math.abs(atmosphere.densityAtAltitude(75000) / Math.sqrt(1e-17) - 1) < 1e-14);
+  assert.ok(atmosphere.info.layers.length > 0);
+  assert.ok(atmosphere.info.layers.every(layer => layer.altitude_km >= 60 && layer.altitude_km <= 90));
+  assert.ok(atmosphere.info.layers.every(layer => Number.isFinite(layer.opacity)));
+  assert.ok(Number.isNaN(atmosphere.info.profile.surface));
+  assert.ok(Number.isNaN(atmosphere.info.profile.atEi));
+  const disjoint = createAtmosphere({ ...spec, profile: {
+    altitude_m: [150000, 180000], density_kg_m3: [1e-10, 1e-11] } }, planet);
+  assert.equal(disjoint.layers.children.length, 0);
+  const analytic = createAtmosphere({ ...spec, profile: {
+    altitude_m: [0, 150000], density_kg_m3: [1e-5, 1e-12] } }, planet);
+  assert.equal(analytic.layers.children.length, 6);
+  assert.equal(analytic.info.profile.surface, 1e-5);
+  for (const item of [atmosphere, disjoint, analytic]) item.group.traverse(node => {
+    node.geometry?.dispose(); node.material?.dispose();
+  });
+});
+
 test('scalar rows, interpolation, bounds and gaps', () => {
   const f = frames([channel({ log: 'auto' })]);
   assert.equal(f.channelAt(0, 5, 0), 2); assert.equal(f.channelAt(0, 5, 1), 102);

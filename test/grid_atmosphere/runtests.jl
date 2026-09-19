@@ -37,6 +37,11 @@ using SpaceAGORA, GRAMSuite
 include("schema_tests.jl")
 end
 
+module GridVisualizationTests
+using SpaceAGORA, GRAMSuite
+include("visualization_tests.jl")
+end
+
 # CI uses small synthetic payloads. The 654-point retained Odyssey fixture is
 # opt-in and must identify all three externally supplied inputs by SHA256.
 const GRID_REFERENCE_KEYS = ["SPACEAGORA_TEST_GRID_" * name * suffix

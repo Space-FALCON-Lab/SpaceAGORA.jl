@@ -82,6 +82,8 @@ using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleratio
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 using .SimulationModel: getDensity, getDensityBatch!, with_density_model_epoch
+using .SimulationModel: DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
+using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .SimulationModel: control_thruster_levels
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
@@ -238,6 +240,14 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ExponentialAtmosphereModel) ExponentialAtmosphereModel
 @doc (@doc SimulationModel.PiecewiseExponentialAtmosphereModel) PiecewiseExponentialAtmosphereModel
 @doc (@doc SimulationModel.NRLMSISE00AtmosphereModel) NRLMSISE00AtmosphereModel
+@doc (@doc SimulationModel.DescentPhaseTargets) DescentPhaseTargets
+@doc (@doc SimulationModel.apollo11_descent_targets) apollo11_descent_targets
+@doc (@doc SimulationModel.ApolloDescentConfig) ApolloDescentConfig
+@doc (@doc SimulationModel.ApolloDescentState) ApolloDescentState
+@doc (@doc SimulationModel.ApolloDescentGuidanceModel) ApolloDescentGuidanceModel
+@doc (@doc SimulationModel.ApolloDescentControlConfig) ApolloDescentControlConfig
+@doc (@doc SimulationModel.ApolloDescentControlModel) ApolloDescentControlModel
+@doc (@doc SimulationModel.descent_attitude_command) descent_attitude_command
 @doc (@doc SimulationModel.init_nrlmsise_space_indices!) init_nrlmsise_space_indices!
 @doc (@doc SimulationModel.SimpleEphemeridesModel) SimpleEphemeridesModel
 @doc (@doc SimulationModel.make_no_gram_planet) make_no_gram_planet
@@ -423,6 +433,8 @@ export calcForceTorque, wrench, environment_requirements, solver_partition
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+export DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
+export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export getDensity, getDensityBatch!, with_density_model_epoch
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export control_thruster_levels

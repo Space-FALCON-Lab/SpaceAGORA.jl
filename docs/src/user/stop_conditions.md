@@ -321,14 +321,14 @@ solution's configuration, while the input configuration is unchanged.
 
 ## Apollo-style powered descent
 
-The optional `SM.ApolloDescentGuidanceModel` and `SM.ApolloDescentControlModel`
+The optional [`ApolloDescentGuidanceModel`](@ref) and [`ApolloDescentControlModel`](@ref)
 provide a quadratic braking/approach law followed by a vertical descent-rate
 controller. They require `orientation_sim=true`, positive spacecraft mass and
 an explicitly selected reference-sphere radius. They are a configurable model
 inspired by Apollo descent, not a validated reproduction of a particular flight.
 
-Construct one `SM.ApolloDescentState(number_of_spacecraft)` and pass that same
-state, the same `SM.ApolloDescentConfig`, and the same terrain to both models.
+Construct one [`ApolloDescentState`](@ref)`(number_of_spacecraft)` and pass that same
+state, the same [`ApolloDescentConfig`](@ref), and the same terrain to both models.
 Both constructors accept `spacecraft_indices=(2,)`, for example, to guide and
 stop only the second spacecraft. The default selects every state index. Use
 identical selections for the paired models and matching guidance/control rates
@@ -336,7 +336,7 @@ in `GuidanceModel` and `ControlModel`. The configuration's required
 `reference_radius_m` must equal the DEM datum; with `NoTerrainModel`, it defines
 the spherical ground surface explicitly.
 
-`SM.apollo11_descent_targets()` supplies starting braking and approach targets
+[`apollo11_descent_targets`](@ref)`()` supplies starting braking and approach targets
 that you should adapt to the vehicle and scenario. The guidance subtracts a
 central-gravity prediction and rotating-frame terms from the requested
 acceleration, then commands engine direction and throttle. The control effector

@@ -78,6 +78,19 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Lunar Landing",
+        items = [
+            (owner = :SpaceAGORA, symbol = :DescentPhaseTargets, rendered = "SpaceAGORA.DescentPhaseTargets"),
+            (owner = :SpaceAGORA, symbol = :apollo11_descent_targets, rendered = "SpaceAGORA.apollo11_descent_targets"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentConfig, rendered = "SpaceAGORA.ApolloDescentConfig"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentState, rendered = "SpaceAGORA.ApolloDescentState"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentGuidanceModel, rendered = "SpaceAGORA.ApolloDescentGuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentControlConfig, rendered = "SpaceAGORA.ApolloDescentControlConfig"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentControlModel, rendered = "SpaceAGORA.ApolloDescentControlModel"),
+            (owner = :SpaceAGORA, symbol = :descent_attitude_command, rendered = "SpaceAGORA.descent_attitude_command")
+        ]
+    ),
+    (
         title = "Terrain Queries",
         items = [
             (owner = :SpaceAGORA, symbol = :AbstractTerrainModel, rendered = "SpaceAGORA.AbstractTerrainModel"),

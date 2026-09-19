@@ -42,7 +42,16 @@ export function createUI(container, timeline, state, info) {
       .sa-viewer-ui { --sa-brand-width: 112px; --sa-brand-height: 118px; }
       .sa-info { max-width: calc(100% - 166px); }
     }
-    .sa-select { right: 14px; top: var(--sa-panel-top, 182px); min-width: 26ch; max-height: calc(100% - var(--sa-toolbar, 100px) - var(--sa-panel-top, 182px) - 32px); overflow-y: auto; overscroll-behavior: contain; }
+    /* Short viewports (a phone in landscape, a small window): shrink the badge, then drop it,
+       so the selection panel keeps room; its height never falls below a readable floor. */
+    @media (max-height: 640px) {
+      .sa-viewer-ui { --sa-brand-width: 96px; --sa-brand-height: 101px; }
+    }
+    @media (max-height: 480px) {
+      .sa-viewer-ui { --sa-brand-width: 0px; --sa-brand-height: 0px; }
+      .sa-brand { display: none; }
+    }
+    .sa-select { right: 14px; top: var(--sa-panel-top, 182px); min-width: 26ch; max-height: max(160px, calc(100% - var(--sa-toolbar, 100px) - var(--sa-panel-top, 182px) - 32px)); overflow-y: auto; overscroll-behavior: contain; }
     .sa-select[hidden] { display: none; }
     .sa-panel h1 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: #fff; }
     .sa-panel dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 1px 8px; }

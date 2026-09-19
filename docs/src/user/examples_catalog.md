@@ -126,6 +126,21 @@ library. Start with one RPO case:
 julia --project=. examples/Earth_RPO_CubeSat_MPC.jl
 ```
 
+By default that script builds the Gateway-core scenario. Its
+`build_rpo_cubesat_mpc_demo` also accepts another station as a 3 x N
+body-frame point cloud (`station_points`, for example from
+`sample_model_pointcloud`) together with `station_keepout_radius_m`,
+`station_name`, `station_dims_m`, `station_mass_kg` and
+`station_ref_area_m2`, and scales the planner with `safe_distance_m`,
+`cost_ref_distance_m`, `search_margin_m` and `sample_ds_m`. Leaving every
+keyword at its default reproduces the original run, and the returned
+`station` record states what was used.
+`scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
+model and exports a viewer page with the planned path overlaid.
+`SPACEAGORA_DEMO_SMOKE=1` runs a short bounded hop instead of the full
+approach, and every run writes an `iss_hypr_provenance.json` sidecar that
+names its inputs and outputs.
+
 For a planner-comparison smoke run:
 
 ```text

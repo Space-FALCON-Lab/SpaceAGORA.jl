@@ -6,6 +6,7 @@ end
 
 include(joinpath(@__DIR__, "example_imports_tests.jl"))
 include("rpo_port_tests.jl")
+include("gnc/rpo_configurable_station_tests.jl")
 include(joinpath(@__DIR__, "parallel", "machine_topology_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "native_lock_stats_tests.jl"))
 include(joinpath(@__DIR__, "parallel", "contention_inputs_tests.jl"))

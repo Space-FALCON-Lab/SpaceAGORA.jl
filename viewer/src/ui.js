@@ -18,7 +18,7 @@ export function createUI(container, timeline, state, info) {
   container.classList.add('sa-viewer-ui');
   const style = document.createElement('style');
   style.textContent = `
-    .sa-viewer-ui { --sa-brand-width: 180px; --sa-brand-height: 190px;
+    .sa-viewer-ui { --sa-brand-width: 150px; --sa-brand-height: 158px;
       --sa-panel-top: calc(var(--sa-brand-height) + var(--sa-reload-space, 0px) + 24px); }
     .sa-ui { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 14px;
       font: 13px/1.4 system-ui, sans-serif; color: #e8ecf1;
@@ -42,7 +42,7 @@ export function createUI(container, timeline, state, info) {
       .sa-viewer-ui { --sa-brand-width: 112px; --sa-brand-height: 118px; }
       .sa-info { max-width: calc(100% - 166px); }
     }
-    .sa-select { right: 14px; top: var(--sa-panel-top, 214px); min-width: 26ch; max-height: calc(100% - var(--sa-toolbar, 100px) - var(--sa-panel-top, 214px) - 32px); overflow-y: auto; overscroll-behavior: contain; }
+    .sa-select { right: 14px; top: var(--sa-panel-top, 182px); min-width: 26ch; max-height: calc(100% - var(--sa-toolbar, 100px) - var(--sa-panel-top, 182px) - 32px); overflow-y: auto; overscroll-behavior: contain; }
     .sa-select[hidden] { display: none; }
     .sa-panel h1 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: #fff; }
     .sa-panel dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 1px 8px; }

@@ -56,6 +56,19 @@ Main per-file overrides:
 1. `src/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
 2. `src/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
 
+## Native GRAM probe reporting
+
+The threaded coverage child prints `spaceagora_native_gram_probes=completed`
+only after both native construction and density-worker probes return successfully.
+Its parent forwards that status even when the child passes. When native setup
+is unavailable, a developer run prints `spaceagora_native_gram_probes=skipped`.
+
+The native-enabled coverage-quality job sets
+`SPACEAGORA_REQUIRE_NATIVE_GRAM_PROBES=1`. A skip, missing or malformed status,
+failed child, or disabled coverage then fails the test. This makes native execution
+visible without depending on a fixed assertion count. A completion marker covers
+these named probes, not every native-GRAM scenario or a performance comparison.
+
 ## Architecture/Dependency Policy
 1. `SpaceAGORA.run_simulation` forwards to `SimulationEngine.run_simulation`.
 2. `TelemetryVerification` calls `SimulationEngine.run_simulation`.

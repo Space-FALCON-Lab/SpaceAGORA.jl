@@ -517,6 +517,7 @@ end
     return false
 end
 @inline _dynamic_effector_threadsafe(::SimulationModel.InverseSquaredGravityModel)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.GravityGradientTorqueModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.InverseSquaredJ2GravityModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.NBodyGravityModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.GravitationalHarmonicsModel)::Bool = true

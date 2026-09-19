@@ -542,10 +542,13 @@ if FIT_SMA
 end
 
 spacecraft = [build_spacecraft(s.ic, k) for (k, s) in enumerate(states)]
-args = build_args(planet, spacecraft, initial_time, OUTDIR; mission_time=WINDOW_S,
+# The fit writes under OUTDIR/fit. Keep the final propagation in its own
+# fresh directory so the shared no-overwrite guard remains effective.
+const RUN_DIR = joinpath(OUTDIR, "run")
+args = build_args(planet, spacecraft, initial_time, RUN_DIR; mission_time=WINDOW_S,
     num_steps_to_save=6000, drag_scales=drag_scales)
 
-prefix = run_or_reuse!(args, OUTDIR)
+prefix = run_or_reuse!(args, RUN_DIR)
 
 # --- the page's own copy of the run ----------------------------------------
 # The page is exported from a trimmed copy of the results, not from the run

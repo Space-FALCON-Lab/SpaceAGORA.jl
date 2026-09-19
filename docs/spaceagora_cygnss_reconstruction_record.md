@@ -25,10 +25,33 @@ The Julia launcher keeps the root project first and adds the development project
 behind it. It does not edit the root Project or Manifest, or bypass the stale-dependency
 check. Use this launcher for the build and diagnostic scripts below.
 
-Set `SPACEAGORA_SPICE_PATH` to the SPICE starter asset directory. Native GRAM is
-not required for these tools; the slew uses NRLMSISE-00 and space-weather indices.
-The constellation builder also needs the Earth orientation kernel listed in its
-`furnish_kernels!` function. Missing kernels are errors, not zero rotations.
+Native GRAM is not required. Both examples use NRLMSISE-00 and space-weather
+indices. SPICE supplies the clocks, Earth orientation and planetary positions.
+For a fresh checkout, download these public kernels from the
+[NASA NAIF archive](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/)
+into a separate directory (about 125 MB):
+
+```sh
+export SPACEAGORA_SPICE_PATH=/absolute/path/to/cygnss-spice
+mkdir -p "$SPACEAGORA_SPICE_PATH/lsk" "$SPACEAGORA_SPICE_PATH/pck" \
+  "$SPACEAGORA_SPICE_PATH/spk/planets" "$SPACEAGORA_SPICE_PATH/tf"
+curl --fail --location --output "$SPACEAGORA_SPICE_PATH/lsk/naif0012.tls" \
+  https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls
+curl --fail --location --output "$SPACEAGORA_SPICE_PATH/pck/pck00011.tpc" \
+  https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc
+curl --fail --location --output "$SPACEAGORA_SPICE_PATH/pck/earth_latest_high_prec.bpc" \
+  https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_latest_high_prec.bpc
+curl --fail --location --output "$SPACEAGORA_SPICE_PATH/spk/planets/de430.bsp" \
+  https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de430.bsp
+curl --fail --location --output "$SPACEAGORA_SPICE_PATH/tf/earth_assoc_itrf93.tf" \
+  https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_assoc_itrf93.tf
+```
+
+These are POSIX-shell commands. On Windows, create the same subdirectories and
+save the linked files with those names, then set `$env:SPACEAGORA_SPICE_PATH`.
+Keep the kernels with your reconstruction inputs: the Earth orientation file is
+updated by NAIF, so record its hash when retaining a run. Missing kernels or
+coverage outside their supported dates are errors, not zero rotations.
 
 Set `SPACEAGORA_CYGNSS_DATA` to a data directory outside the public checkout and
 `SPACEAGORA_VIEWER_DEMO_OUT` to a private output directory. Environment-variable
@@ -95,6 +118,24 @@ The builder writes `constellation_ics_20250606.json`, its catalogue counterpart,
 Inspect spacecraft coverage, frame-check results and fit residuals before accepting
 the constellation page. The fitted initial states are scored on the same arc used
 by the fit. This is an in-sample reconstruction, not an independent prediction test.
+
+The default simulation spans all 96 hours for all seven spacecraft, after up to
+four fitting runs of the same duration. It needs network access for the public
+space-weather indices on first use. Under
+`$SPACEAGORA_VIEWER_DEMO_OUT/cygnss_constellation/`, fitting products go in `fit/`,
+the final results and scene go in `run/`, and the self-contained viewer is
+`page/simulation_results_viewer.html`. Open that HTML file in a browser. The page
+contains seven simulated spacecraft and seven translucent navigation references.
+The fit adjusts the initial velocity magnitude, so the fitted trajectories need
+not start exactly on the original navigation velocities.
+
+The output directory must be absent or empty. Choose a new
+`SPACEAGORA_VIEWER_DEMO_OUT` for another run; the demo refuses to overwrite a
+previous one. For a short installation check, set
+`SPACEAGORA_DEMO_CYGNSS_HOURS=0.02` and `SPACEAGORA_DEMO_CYGNSS_FIT_SMA=0`, then
+unset both before the full reconstruction. A short run does not validate the
+96-hour example.
+
 
 ### 2.2 Private attitude and command data
 

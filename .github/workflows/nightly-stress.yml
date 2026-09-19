@@ -53,7 +53,7 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
           fetch-depth: 0
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -139,7 +139,7 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
           fetch-depth: 0
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev

@@ -66,7 +66,7 @@ reuses the recorded simulation and plan; it does not compare an old trajectory
 with a newly planned route. The smoke hop checks the pipeline and does not
 demonstrate the complete approach.
 
-Open the printed HTML, click the station marker or label and press **F** to
+Open the printed HTML, click the marker beside the station label and press **F** to
 follow it. The blue dashed line is the reference the chaser followed, and the
 yellow line connects the planner's waypoints. The reference is expressed in
 the station's local orbital frame. Playback shows saved simulation states.
@@ -75,6 +75,18 @@ Seeded plans with fixed iteration budgets are reproducible across thread counts.
 Wall-clock stopping budgets can end at different iterations. The new particle
 random streams change seeded plans from older versions; use the plan recorded
 with each run when checking tracking and clearance.
+
+The ISS demonstration caps reference speed at 0.1 m/s so the simulated chaser
+can track the approach with its configured thrusters. The run automatically
+extends beyond its requested duration when the reference needs longer. The geometric retimer
+does not enforce a full acceleration profile from rest, and the LQ-MPC
+controller does not impose collision constraints. Check the simulated path
+and clearance as well as the planned path when changing the scenario.
+
+The station body rotates with the circular orbit so its body-frame point
+cloud stays aligned with the planner's RTN frame and the saved 3D attitude.
+This setup assumes the example's circular equatorial orbit and principal-axis
+rotation; it does not model arbitrary tumbling-station rendezvous.
 
 ## Mission demonstrations and SPICE comparisons
 
@@ -141,15 +153,3 @@ initial states and reference tables agree. It does not establish flight accuracy
 For example, the default native-GRAM Odyssey run reaches about 552 km separation
 from its navigation reference over 34.6 hours, with the second periapsis about
 120 seconds late. Quantitative reconstruction requires further model validation.
-
-The ISS demonstration caps reference speed at 0.1 m/s so the simulated chaser
-can track the approach with its configured thrusters. The run automatically
-extends beyond 900 s when the reference needs longer. The geometric retimer
-does not enforce a full acceleration profile from rest, and the LQ-MPC
-controller does not impose collision constraints. Check the simulated path
-and clearance as well as the planned path when changing the scenario.
-
-The station body rotates with the circular orbit so its body-frame point
-cloud stays aligned with the planner's RTN frame and the saved 3D attitude.
-This setup assumes the example's circular equatorial orbit and principal-axis
-rotation; it does not model arbitrary tumbling-station rendezvous.

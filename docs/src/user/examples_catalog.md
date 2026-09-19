@@ -140,7 +140,12 @@ reference area, and the returned
 model and exports a viewer page with the planned path overlaid.
 `SPACEAGORA_DEMO_SMOKE=1` runs a short bounded hop instead of the full
 approach, and every run writes an `iss_hypr_provenance.json` sidecar that
-names its inputs and outputs.
+names its inputs and outputs. The ISS demo caps reference speed at 0.1 m/s
+and extends the run to finish the approach. Its station rotates with the circular
+orbit so the saved attitude and the planner's station geometry share the RTN
+frame. The geometric retimer does not guarantee an acceleration profile from
+rest, and LQ-MPC does not impose collision constraints. Check simulated
+clearance as well as planned clearance when changing the scenario.
 
 With a fixed seed and iteration budget, the planner gives the same plan across
 Julia thread counts. Runs using a wall-clock stopping budget can stop at different

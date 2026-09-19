@@ -72,7 +72,7 @@ const _INITIAL_TIME_UTC_FORMAT = dateformat"yyyy-mm-ddTHH:MM:SS.sss"
 
 The `InitialTime` calendar fields as an ISO UTC string on the engine's
 millisecond clock (`yyyy-mm-ddTHH:MM:SS.sss`), the form SPICE's `utc2et`
-parses. This is the only route from `InitialTime` to ephemeris time. It
+parses. The SPICE ephemerides method and engine fallback share this helper. It
 deliberately does not pass through a TAI epoch: AstroTime's UTC round trip
 is inexact before 1972, where the TAI-UTC offset is fractional, and its
 string form then rendered `20:05:05` as the malformed `20:05:04.1000`,

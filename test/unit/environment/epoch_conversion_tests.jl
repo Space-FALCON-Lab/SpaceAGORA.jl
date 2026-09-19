@@ -13,10 +13,10 @@ using SPICE: str2et
 const SM_EPOCH = SpaceAGORA.SimulationModel
 const EPH = SM_EPOCH.EphemeridesModels
 const EPOCH_REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
-const EPOCH_SPICE_PATH = joinpath(EPOCH_REPO, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
-const EPOCH_SPICE_READY = isfile(joinpath(EPOCH_SPICE_PATH, "lsk", "naif0012.tls")) &&
-    isfile(joinpath(EPOCH_SPICE_PATH, "spk", "satellites", "SPICELunaCurrentKernel.bpc")) &&
-    isfile(joinpath(EPOCH_SPICE_PATH, "tf", "SPICELunaFrameKernel.tf"))
+const EPOCH_SPICE_PATH = get(ENV, "SPACEAGORA_SPICE_PATH",
+    joinpath(EPOCH_REPO, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE"))
+const EPOCH_LSK = joinpath(EPOCH_SPICE_PATH, "lsk", "naif0012.tls")
+const EPOCH_SPICE_READY = isfile(EPOCH_LSK)
 
 # A model that carries the SPICE model's name but is not the package type: the
 # engine's flexible resolver has no `ephemerides_time_seconds` method for it and
@@ -34,6 +34,7 @@ const EPOCH_CASES = (
     (_it(1969, 7, 20, 17, 44, 0.0), "1969-07-20T17:44:00"),     # an exact minute was unaffected
     (_it(1969, 7, 20, 20, 5, 5.5), "1969-07-20T20:05:05.5"),    # a half second was unaffected
     (_it(1971, 12, 31, 23, 59, 30.0), "1971-12-31T23:59:30"),   # last day of the fractional-offset era
+    (_it(1971, 12, 31, 23, 59, 59.0), "1971-12-31T23:59:59"),   # fractional-offset boundary also changed the old round trip
     (_it(1972, 1, 1, 0, 0, 5.0), "1972-01-01T00:00:05"),        # first day of integer leap seconds
     (_it(2025, 6, 6, 0, 0, 0.0), "2025-06-06T00:00:00"),
 )
@@ -54,19 +55,20 @@ const EPOCH_CASES = (
 
     if EPOCH_SPICE_READY
         @testset "SPICE ET equals the requested UTC" begin
-            SM_EPOCH.Moon("", EPOCH_SPICE_PATH)   # furnishes the leapseconds kernel
+            SM_EPOCH.Planets._furnsh_once(EPOCH_LSK)   # UTC conversion needs only the leap-second kernel
             spice = SM_EPOCH.SpiceEphemeridesModel()
             for (it, utc) in EPOCH_CASES
                 requested = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
                     str2et(utc)
                 end
-                @test isapprox(SM_EPOCH.ephemerides_time_seconds(it, spice), requested; atol=1e-6)
+                @test isapprox(SM_EPOCH.ephemerides_time_seconds(it, spice), requested; atol=1e-6, rtol=0.0)
                 @test isapprox(SpaceAGORA.SimulationEngine._ephemerides_time_seconds_flexible(it, DuckTypes.SpiceEphemeridesModel()),
-                               requested; atol=1e-6)
+                               requested; atol=1e-6, rtol=0.0)
             end
         end
     else
-        @info "SPICE kernels absent; skipping the ephemeris-time regression" EPOCH_SPICE_PATH
+        @info "Set SPACEAGORA_SPICE_PATH to a directory containing lsk/naif0012.tls to run the SPICE epoch regression" EPOCH_SPICE_PATH
+        @test_skip EPOCH_SPICE_READY
     end
 end
 end # module

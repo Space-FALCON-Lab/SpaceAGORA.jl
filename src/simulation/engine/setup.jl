@@ -1122,7 +1122,7 @@ end
         max_cost = max(max_cost, cost)
         if effector isa SimulationModel.NBodyGravityModel
             has_nbody = true
-        elseif effector isa SimulationModel.AerodynamicCoefficientfM
+        elseif effector isa SimulationModel.AerodynamicCoefficientfM || effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
             has_aero = true
         elseif effector isa SimulationModel.GravitationalHarmonicsModel
             has_harmonics = true

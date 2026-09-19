@@ -109,22 +109,30 @@ end
 end
 
 @testset "Staleness canary" begin
-    # Constants recorded against this machine's actual reference must pass.
     live = PC.reference_kernel_ns()
-    ok = PC.constants_are_current(_synthetic_constants(ref_fma = live))
-    @test ok.ok
-    @test abs(ok.drift) < 0.25
+    @test isfinite(live) && live > 0.0
 
-    # Constants from a machine four times faster must fail: that is the
-    # categorical error the canary exists to catch -- a constants file that does
-    # not describe this box, or a cgroup quota making its throughput
-    # unreachable.
-    bad = PC.constants_are_current(_synthetic_constants(ref_fma = live / 4))
-    @test !bad.ok
-    @test bad.drift > 0.25
+    # The real sampler may move between calls, especially on a shared runner.
+    # Check each decision against its own reported measurement, not an assumed
+    # agreement with a previous timing. Reference variations cover both faster
+    # and slower stored calibrations without changing the production threshold.
+    for reference in (live / 4, live / 1.4, live, live / 0.6, live * 4)
+        result = PC.constants_are_current(_synthetic_constants(ref_fma = reference))
+        @test isfinite(result.measured_ns) && result.measured_ns > 0.0
+        # Relative change in cost is dimensionless and signed. This equivalent
+        # difference form also checks consistency of the two returned numbers.
+        @test result.drift ≈ (result.measured_ns - reference) / reference atol = 4eps(Float64) rtol = 4eps(Float64)
+        @test result.ok == (-0.25 <= result.drift <= 0.25)
+    end
 
-    # A missing reference cannot be validated, so it is treated as stale.
-    @test !PC.constants_are_current(_synthetic_constants(ref_fma = 0.0)).ok
+    # An unusable stored reference cannot establish freshness. The real live
+    # reading is still returned, but its relative drift is undefined.
+    for reference in (0.0, -1.0, NaN, Inf)
+        result = PC.constants_are_current(_synthetic_constants(ref_fma = reference))
+        @test !result.ok
+        @test isnan(result.drift)
+        @test isfinite(result.measured_ns) && result.measured_ns > 0.0
+    end
 end
 
 @testset "Dispatch mechanisms are priced separately" begin

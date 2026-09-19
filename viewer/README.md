@@ -276,6 +276,6 @@ verified study pressure or a replacement thermal solution.
 
 ### Lab branding
 
-The viewer displays the Space-FALCON Lab logo in the upper-right corner, above the selection panel. The original 1280 × 1351 artwork is embedded in the shared UI module, so exported and standalone pages need no external image request. The badge is 150px wide on desktop and 112px on narrow screens; its original wordmark remains visible. Existing exported pages must be regenerated to pick up viewer changes. The badge is a page overlay; the canvas-only video export does not include it.
+The viewer displays the Space-FALCON Lab logo in the upper-right corner, above the selection panel. The approved primary logo B (1221 × 1288 PNG) is embedded unchanged in the shared UI module, so exported and standalone pages need no external image request. The source is `SpaceFALCON_Lab_Logo_Main.png` from the Space-FALCON Lab brand library; its SHA-256 is recorded beside the data URL. The badge is 150px wide on desktop and 112px on narrow screens; the lab wordmark remains visible. Existing exported pages must be regenerated to pick up viewer changes. The badge is a page overlay; the canvas-only video export does not include it.
 
-The viewer background uses the artwork’s original dark color (`#060a0f`) so the badge has no contrasting rectangular backdrop.
+The viewer retains its dark background (`#060a0f`), which suits the approved logo’s dark backdrop. The current PNG is a raster export with a partly transparent dark background, not a clean transparent or vector master. Embedding the unchanged 1.65 MB PNG preserves the approved artwork and adds about 2.20 MB of base64 text to the UI module; no image fetch or dependency is added.

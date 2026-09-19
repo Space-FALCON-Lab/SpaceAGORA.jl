@@ -248,7 +248,9 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
     iteration_timeout_iter = 0
     iteration_timeout_phase = :none
     iteration_timeout_events = NamedTuple[]
-    thread_rngs = [MersenneTwister(rand(rng, UInt)) for _ in 1:max(1, maxthreadid())]
+    # A particle owns its random stream, independently of task scheduling and
+    # Julia thread count. Wall-clock iteration limits still permit early exits.
+    particle_rngs = [MersenneTwister(rand(rng, UInt)) for _ in 1:cfg.n_particles]
 
     # Return elapsed wall-clock seconds for the current PSO iteration.
     function iteration_elapsed_s(iter_start_ns::UInt64)
@@ -366,7 +368,9 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
 
     # Evaluate one flattened particle position as an RPO path-cost component bundle.
     function evaluate_position(pos; cost_cutoff=Inf)
-        path = rpo_position_to_path(pos, start, goal, current_n_waypoints)
+        # The outer planner also binds `path`; this value belongs to this call,
+        # including when several particles are evaluated concurrently.
+        local path = rpo_position_to_path(pos, start, goal, current_n_waypoints)
         return rpo_normalized_path_cost_components(
             path,
             geometry,
@@ -415,10 +419,10 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
             return curr_cost, curr_obs, iteration_timed_out(iter_start_ns)
         end
         @threads for pidx in 1:cfg.n_particles
-            comps = evaluate_position(view(positions, :, pidx); cost_cutoff=pbest_cost[pidx])
-            curr_cost[pidx] = comps.total
-            curr_obs[pidx] = comps.J_obs
-            curr_components[pidx] = comps
+            local particle_components = evaluate_position(view(positions, :, pidx); cost_cutoff=pbest_cost[pidx])
+            curr_cost[pidx] = particle_components.total
+            curr_obs[pidx] = particle_components.J_obs
+            curr_components[pidx] = particle_components
         end
         @inbounds for pidx in 1:cfg.n_particles
             comps = curr_components[pidx]
@@ -587,7 +591,7 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
 
         weights = rpo_pso_iteration_weights(cfg, iter)
         @threads for pidx in 1:cfg.n_particles
-            local_rng = thread_rngs[threadid()]
+            local_rng = particle_rngs[pidx]
             for d in 1:dim
                 velocities[d, pidx] = weights.w_inertia * velocities[d, pidx] +
                     weights.c1 * rand(local_rng) * (pbest[d, pidx] - positions[d, pidx]) +

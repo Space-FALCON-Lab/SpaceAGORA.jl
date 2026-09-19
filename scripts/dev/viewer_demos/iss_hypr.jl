@@ -14,8 +14,8 @@
 # Results go to <root>/iss_hypr_<inputs digest>/. A finished run is reused
 # only when the provenance sidecar written beside it lists exactly the inputs
 # of the current invocation and the plan it flew is on disk; the page is then
-# rebuilt from that recorded plan, never from a new one, because the PSO is
-# reproducible only on a single Julia thread. Otherwise the run is fresh.
+# rebuilt from that recorded plan, never from a new one. With fixed iteration
+# budgets, seeded planning is reproducible across thread counts. Otherwise the run is fresh.
 # Nothing is deleted.
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 include(joinpath(REPO_ROOT, "examples", "Earth_RPO_CubeSat_MPC.jl"))
@@ -41,6 +41,7 @@ function iss_hypr_inputs(; smoke::Bool=DEMO_SMOKE)
         model_sha256=bytes2hex(open(sha256, ISS_MODEL)),
         model_scale=ISS_SCALE,
         model_rotation_deg=ISS_ROTATION_DEG,
+        implementation="owned-qp-particle-streams-v1",
         cloud_seed=7,
         station_keepout_radius_m=3.0,
         station_name="iss",
@@ -162,11 +163,7 @@ function main()
             JSON.print(io, iss_hypr_plan_record(demo))
         end
         println("simulating into ", outdir)
-        # The engine simulates a copy of the configuration whose LQ-MPC
-        # controller shares the native OSQP workspace of `demo.control`; keep
-        # the builder result alive for the whole run so that workspace is not
-        # finalized underneath the copy.
-        GC.@preserve demo run_simulation(demo.args; visualization=true)
+        run_simulation(demo.args; visualization=true)
     end
 
     html = export_visualization(

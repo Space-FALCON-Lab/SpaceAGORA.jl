@@ -92,18 +92,12 @@ else
             end
             # Same seeds through the new keywords give the same sampled cloud.
             @test d0.geometry.station.points_body == d1.geometry.station.points_body
-            # The PSO draws per-thread random numbers inside threaded loops, so
-            # its plan is reproducible only when Julia runs a single thread;
-            # there the explicit defaults must give the same plan bit for bit.
-            if Threads.nthreads() == 1
-                @test d0.plan_result.path == d1.plan_result.path
-                @test d0.plan_result.cost == d1.plan_result.cost
-                @test d0.initial_plan.t_ref_s == d1.initial_plan.t_ref_s
-                @test d0.initial_plan.r_ref_rtn == d1.initial_plan.r_ref_rtn
-                @test d0.initial_plan.v_ref_rtn == d1.initial_plan.v_ref_rtn
-            else
-                @info "planner runs threaded; bitwise plan parity is checked with JULIA_NUM_THREADS=1" Threads.nthreads()
-            end
+            # Identical seeds reproduce the plan at every supported thread count.
+            @test d0.plan_result.path == d1.plan_result.path
+            @test d0.plan_result.cost == d1.plan_result.cost
+            @test d0.initial_plan.t_ref_s == d1.initial_plan.t_ref_s
+            @test d0.initial_plan.r_ref_rtn == d1.initial_plan.r_ref_rtn
+            @test d0.initial_plan.v_ref_rtn == d1.initial_plan.v_ref_rtn
         end
 
         @testset "custom point cloud, dimensions and mass" begin
@@ -178,10 +172,7 @@ else
             start = SVector{3, Float64}(-8.0, -4.0, 2.0)
             goal = SVector{3, Float64}(-5.5, -2.5, 1.0)
             dt = build_station_demo(; mission_time=30.0, start_rtn=start, goal_rtn=goal, data_rate_s=1.0)
-            # The engine simulates a deep copy whose LQ-MPC controller shares
-            # the native OSQP workspace of `dt.control`; keep the builder result
-            # alive so that workspace is not finalized under the copy.
-            GC.@preserve dt run_simulation(dt.args)
+            run_simulation(dt.args)
             csv = joinpath(dt.args.simulation_settings.results_directory, "simulation_results.csv")
             @test isfile(csv)
             df, actual_rtn, ref_rtn, err = RPOX._rpo_postprocess(csv, dt)

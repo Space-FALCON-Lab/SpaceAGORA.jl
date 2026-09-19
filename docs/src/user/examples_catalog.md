@@ -133,13 +133,25 @@ body-frame point cloud (`station_points`, for example from
 `station_name`, `station_dims_m`, `station_mass_kg` and
 `station_ref_area_m2`, and scales the planner with `safe_distance_m`,
 `cost_ref_distance_m`, `search_margin_m` and `sample_ds_m`. Leaving every
-keyword at its default reproduces the original run, and the returned
+keyword at its default preserves the Gateway dimensions, mass and 8 m²
+reference area, and the returned
 `station` record states what was used.
 `scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
 model and exports a viewer page with the planned path overlaid.
 `SPACEAGORA_DEMO_SMOKE=1` runs a short bounded hop instead of the full
 approach, and every run writes an `iss_hypr_provenance.json` sidecar that
 names its inputs and outputs.
+
+With a fixed seed and iteration budget, the planner gives the same plan across
+Julia thread counts. Runs using a wall-clock stopping budget can stop at different
+iterations. The particle-based random streams introduced with this demo change
+seeded plans from earlier versions; compare tracking against the plan saved by
+the run, rather than a newly generated plan.
+
+The default simulation copy owns its own MPC solver workspace. Its stored primal
+warm start is copied, while the solver's internal caches are rebuilt. A copied
+controller is therefore safe to use after the original is released, but is not
+an exact checkpoint of an optimization already in progress.
 
 For a planner-comparison smoke run:
 

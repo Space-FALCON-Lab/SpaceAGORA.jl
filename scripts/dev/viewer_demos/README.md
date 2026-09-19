@@ -40,6 +40,42 @@ The Odyssey demonstration explicitly uses Tsit5 and budgets solver steps for its
 0.1-second controller over the requested duration, with a margin for rejected
 steps. This changes the iteration ceiling, not the integration tolerances.
 
+## Rendezvous around the ISS
+
+`iss_hypr.jl` plans and flies a CubeSat approach around a point cloud sampled from
+the tracked ISS display model. It needs the starter SPICE kernels in the
+GRAMSuite asset directory, but does not use native GRAM or private telemetry.
+The station model and controller are a demonstration, not an ISS flight model.
+
+Start with the short hop:
+
+```sh
+SPACEAGORA_DEMO_SMOKE=1 julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
+```
+
+Run the complete approach by omitting the environment variable:
+
+```sh
+julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
+```
+
+The script prints the HTML path under `output/viewer_demos/iss_hypr_<inputs digest>/`.
+`SPACEAGORA_VIEWER_DEMO_OUT` changes the parent directory. The saved plan and
+provenance sit beside the results. A repeated invocation with matching inputs
+reuses the recorded simulation and plan; it does not compare an old trajectory
+with a newly planned route. The smoke hop checks the pipeline and does not
+demonstrate the complete approach.
+
+Open the printed HTML, click the station marker or label and press **F** to
+follow it. The blue dashed line is the reference the chaser followed, and the
+yellow line connects the planner's waypoints. The reference is expressed in
+the station's local orbital frame. Playback shows saved simulation states.
+
+Seeded plans with fixed iteration budgets are reproducible across thread counts.
+Wall-clock stopping budgets can end at different iterations. The new particle
+random streams change seeded plans from older versions; use the plan recorded
+with each run when checking tracking and clearance.
+
 ## Mission demonstrations and SPICE comparisons
 
 `apollo11_lunar_orbit.jl`, `magellan_aerobraking.jl`, `odyssey_aerobraking.jl`, and

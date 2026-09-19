@@ -244,4 +244,4 @@ verified study pressure or a replacement thermal solution.
 
 ### Lab branding
 
-The viewer displays the Space-FALCON Lab logo in the upper-right corner, above the selection panel. The existing blue signature artwork is embedded in the shared UI module, so exported and standalone pages need no external image request. On narrow screens the wordmark is hidden and the logo remains visible. Existing exported pages must be regenerated to pick up viewer changes. The badge is a page overlay; the canvas-only video export does not include it.
+The viewer displays the Space-FALCON Lab logo in the upper-right corner, above the selection panel. The original 1280 × 1351 artwork is embedded in the shared UI module, so exported and standalone pages need no external image request. The badge is 180px wide on desktop and 112px on narrow screens; its original wordmark remains visible. Existing exported pages must be regenerated to pick up viewer changes. The badge is a page overlay; the canvas-only video export does not include it.

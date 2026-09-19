@@ -143,3 +143,6 @@ remote_runs/
 data/merra2_native/
 # Viewer development payload written by write_viewer_dev_payload
 viewer/dev_data.js
+
+# Optional terrain asset tooling environment
+.venv-terrain/

@@ -11,6 +11,19 @@
 import * as THREE from 'three';
 import { RotationTable } from 'viewer/data.js';
 
+const GLOBE_WIDTH_SEGMENTS = 128;
+const GLOBE_HEIGHT_SEGMENTS = 64;
+
+// An interior sphere of the rendered triangular ellipsoid, not just its
+// analytic surface. Every triangle stays within one latitude/longitude cell.
+export function globeInteriorRadiusKm(planet) {
+  const radii = [planet.equatorial_radius_m, planet.polar_radius_m];
+  if (radii.some(r => typeof r !== 'number' || !Number.isFinite(r) || r <= 0)) return 0;
+  const cellAngle = 2 * Math.PI / GLOBE_WIDTH_SEGMENTS + Math.PI / GLOBE_HEIGHT_SEGMENTS;
+  const float32Allowance = 8 * 2 ** -23;
+  return Math.min(...radii) * 1e-3 * Math.max(0, Math.cos(cellAngle) - float32Allowance);
+}
+
 // geometry (x, y, z) -> body (x, -z, y): pole +y -> +z, and u = 0.75 (east) -> +y.
 export const GEOMETRY_TO_BODY = new THREE.Quaternion().setFromRotationMatrix(
   new THREE.Matrix4().set(
@@ -59,7 +72,7 @@ export function createGlobe(planet, textureEntry, options = {}) {
   const group = new THREE.Group();
   group.name = 'globe';
 
-  const geometry = new THREE.SphereGeometry(1, 128, 64);
+  const geometry = new THREE.SphereGeometry(1, GLOBE_WIDTH_SEGMENTS, GLOBE_HEIGHT_SEGMENTS);
   const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const key = (planet.texture || planet.name || '').toLowerCase();
   const textureDataUrl = textureEntry ? (typeof textureEntry === 'string' ? textureEntry : textureEntry.url) : null;
@@ -90,11 +103,12 @@ export function createGlobe(planet, textureEntry, options = {}) {
         .replace('#include <common>', '#include <common>\nuniform vec4 uHole;\nvarying vec3 vBodyDir;')
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
   {
-    float latDeg = degrees(asin(clamp(vBodyDir.z, -1.0, 1.0)));
-    float lonDeg = degrees(atan(vBodyDir.y, vBodyDir.x));
+    vec3 bodyDir = normalize(vBodyDir);
+    float latDeg = degrees(asin(clamp(bodyDir.z, -1.0, 1.0)));
+    float lonDeg = degrees(atan(bodyDir.y, bodyDir.x));
     float lonMin = uHole.z, lonMax = uHole.w;
-    if (lonDeg < lonMin - 180.0) lonDeg += 360.0;
-    if (lonDeg > lonMax + 180.0) lonDeg -= 360.0;
+    lonDeg = mod(lonDeg, 360.0);
+    if (lonMax >= 360.0 && lonDeg < lonMin && lonDeg <= lonMax - 360.0) lonDeg += 360.0;
     if (latDeg >= uHole.x && latDeg <= uHole.y && lonDeg >= lonMin && lonDeg <= lonMax) discard;
   }`);
     };

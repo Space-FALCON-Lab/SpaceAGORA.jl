@@ -82,6 +82,8 @@ end
 Calendar fields for an ET, stored with `InitialTime`'s Float32 seconds.
 Resolve these fields with `et_of(initial_time)` before sampling an initial state:
 the engine and saved scene use millisecond resolution, not the search's raw ET.
+Starts inside a UTC leap second, or rounding into one, are rejected because the
+engine calendar cannot represent them. Ordinary minute and day rollover is supported.
 """
 function initial_time_of(et::Float64)::SM.InitialTime
     utc = lock(RuntimeServices.SPICE_LOCK) do
@@ -90,7 +92,18 @@ function initial_time_of(et::Float64)::SM.InitialTime
     d, tm = split(utc, 'T')
     y, mo, dd = parse.(Int, split(d, '-'))
     hh, mm, ss = split(tm, ':')
-    return SM.InitialTime(year=y, month=mo, day=dd, hour=parse(Int, hh), minute=parse(Int, mm), second=parse(Float64, ss))
+    seconds = parse(Float64, ss)
+    seconds < 60 || throw(ArgumentError("mission start inside a UTC leap second is unsupported; choose a start outside the leap second"))
+    initial_time = SM.InitialTime(year=y, month=mo, day=dd, hour=parse(Int, hh), minute=parse(Int, mm), second=seconds)
+    if round(Int, 1000 * Float64(initial_time.second)) >= 60_000
+        # Ordinary minute/day rollover is supported. At a leap-second minute,
+        # DateTime would skip second 60 and silently move the start one second.
+        boundary_utc = lock(RuntimeServices.SPICE_LOCK) do
+            et2utc(str2et(d * "T" * hh * ":" * mm * ":00") + 60.0, "ISOC", 0)
+        end
+        endswith(boundary_utc, ":60") && throw(ArgumentError("mission start rounds into an unsupported UTC leap second; choose a start outside the leap second"))
+    end
+    return initial_time
 end
 
 utc_of(et::Float64)::String = lock(RuntimeServices.SPICE_LOCK) do

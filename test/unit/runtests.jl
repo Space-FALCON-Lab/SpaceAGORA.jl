@@ -56,6 +56,7 @@ include(joinpath(@__DIR__, "dynamics", "reaction_wheel_momentum_tests.jl"))
 include(joinpath(@__DIR__, "visualization", "demo_options_tests.jl"))
 include(joinpath(@__DIR__, "environment", "plume_surface_interaction_tests.jl"))
 include(joinpath(@__DIR__, "dynamics", "mesh_aero_tests.jl"))
+include(joinpath(@__DIR__, "dynamics", "mesh_aero_threading_tests.jl"))
 
 include("visualization/mission_demo_tests.jl")
 include(joinpath(@__DIR__, "mission", "cygnss_ics_tests.jl"))

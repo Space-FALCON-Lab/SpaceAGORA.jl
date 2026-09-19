@@ -168,3 +168,16 @@ a cube against the same cube under `AerodynamicCoefficientfM`.
 `scripts/dev/aero/fit_mesh_aero_surrogate.jl` fits a model file from the
 command line. See the [Mesh Aerodynamics API](../generated/mesh_aerodynamics_api.md)
 for the supported constructors and fitting functions.
+
+## Parallel execution
+
+The mesh surrogate supports the engine's automatic and explicitly selected
+threaded routes. Evaluation reads the fitted coefficients and spacecraft geometry;
+its temporary basis and force buffers belong to each call. Treat the surrogate
+matrices, link map and geometry as read-only while a run is active.
+
+A tuple containing more than one mesh or box aerodynamic effector uses the
+serial fallback because those effectors share the drag/lift/cross diagnostic
+slots. Use one mesh effector with its per-link surrogate map. Other model and
+thread-budget restrictions still apply. Eligibility for threading does not
+guarantee a speedup; the execution policy selects the route for the workload.

@@ -65,9 +65,10 @@ The station defaults to the Gateway core: a sampled CAD point cloud with a
 `station_keepout_radius_m`, `station_name`, `station_dims_m`,
 `station_mass_kg` and optionally `station_ref_area_m2` for another station,
 and scale the planner with `safe_distance_m`, `cost_ref_distance_m`,
-`search_margin_m` and `sample_ds_m`. Leaving every keyword at its default
-reproduces the original scenario; the returned `station` record states what
-was used.
+`search_margin_m` and `sample_ds_m`. `reference_max_speed_mps` optionally
+caps the reference speed without changing the geometric plan. Defaults keep
+the Gateway geometry, mass and reference area; the returned `station` record
+states what was used.
 """
 function build_rpo_cubesat_mpc_demo(;
     mission_time=180.0,
@@ -91,6 +92,7 @@ function build_rpo_cubesat_mpc_demo(;
     cost_ref_distance_m::Real=20.0,
     search_margin_m=nothing,
     sample_ds_m::Real=0.05,
+    reference_max_speed_mps=nothing,
     data_rate_s::Real=10.0,
     pso_iteration_runtime_limit_s=nothing,
     pso_iteration_callback=nothing,
@@ -219,6 +221,12 @@ function build_rpo_cubesat_mpc_demo(;
     end
     if search_margin_m !== nothing
         pso_cfg = rpo_pso_config(pso_cfg; search_margin_m=Float64(search_margin_m))
+    end
+    if reference_max_speed_mps !== nothing
+        speed_limit = Float64(reference_max_speed_mps)
+        isfinite(speed_limit) && speed_limit > 0.0 ||
+            throw(ArgumentError("reference_max_speed_mps must be finite and positive."))
+        pso_cfg = rpo_pso_config(pso_cfg; retime_max_speed_mps=speed_limit)
     end
 
     plan_buffer = RPOPlanBuffer()

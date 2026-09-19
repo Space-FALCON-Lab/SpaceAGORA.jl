@@ -98,6 +98,10 @@ else
             @test d0.initial_plan.t_ref_s == d1.initial_plan.t_ref_s
             @test d0.initial_plan.r_ref_rtn == d1.initial_plan.r_ref_rtn
             @test d0.initial_plan.v_ref_rtn == d1.initial_plan.v_ref_rtn
+            capped = build_station_demo(; reference_max_speed_mps=0.05)
+            @test capped.pso_config.retime_max_speed_mps == 0.05
+            @test capped.plan_result.path == d0.plan_result.path
+            @test maximum(norm.(eachcol(capped.initial_plan.v_ref_rtn))) <= 0.05 + 1e-10
         end
 
         @testset "custom point cloud, dimensions and mass" begin
@@ -166,6 +170,8 @@ else
             @test_throws ArgumentError build_station_demo(; station_mass_kg=-1.0)
             @test_throws ArgumentError build_station_demo(; station_ref_area_m2=0.0)
             @test_throws ArgumentError build_station_demo(; station_keepout_radius_m=-0.1)
+            @test_throws ArgumentError build_station_demo(; reference_max_speed_mps=0.0)
+            @test_throws ArgumentError build_station_demo(; reference_max_speed_mps=Inf)
         end
 
         @testset "bounded tracking of a short hop beside the default station" begin
@@ -203,6 +209,7 @@ else
             smoke = D.iss_hypr_inputs(; smoke=true)
             @test full.smoke === false && smoke.smoke === true
             @test full.station_dims_m == (73.0, 109.0, 20.0)
+            @test full.reference_max_speed_mps == smoke.reference_max_speed_mps == 0.1
             @test length(full.model_sha256) == 64
             @test D.iss_hypr_outdir(full) == D.iss_hypr_outdir(D.iss_hypr_inputs(; smoke=false))   # same inputs, same directory
             @test D.iss_hypr_outdir(full) != D.iss_hypr_outdir(smoke)                                # different inputs, different directory

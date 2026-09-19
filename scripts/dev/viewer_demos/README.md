@@ -141,3 +141,10 @@ initial states and reference tables agree. It does not establish flight accuracy
 For example, the default native-GRAM Odyssey run reaches about 552 km separation
 from its navigation reference over 34.6 hours, with the second periapsis about
 120 seconds late. Quantitative reconstruction requires further model validation.
+
+The ISS demonstration caps reference speed at 0.1 m/s so the simulated chaser
+can track the approach with its configured thrusters. The run automatically
+extends beyond 900 s when the reference needs longer. The geometric retimer
+does not enforce a full acceleration profile from rest, and the LQ-MPC
+controller does not impose collision constraints. Check the simulated path
+and clearance as well as the planned path when changing the scenario.

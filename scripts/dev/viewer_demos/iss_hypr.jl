@@ -48,6 +48,9 @@ function iss_hypr_inputs(; smoke::Bool=DEMO_SMOKE)
         station_dims_m=(73.0, 109.0, 20.0),
         station_mass_kg=420_000.0,
         safe_distance_m=2.0,
+        # Keep the reference within the demonstrated tracking envelope. The
+        # geometric retimer alone does not enforce acceleration from rest.
+        reference_max_speed_mps=0.1,
         cost_ref_distance_m=150.0,
         search_margin_m=80.0,
         seed=741,
@@ -90,6 +93,7 @@ function iss_hypr_build(inputs, outdir::AbstractString)
         cost_ref_distance_m=inputs.cost_ref_distance_m,
         search_margin_m=inputs.search_margin_m,
         sample_ds_m=inputs.sample_ds_m,
+        reference_max_speed_mps=inputs.reference_max_speed_mps,
         pso_n_particles=inputs.pso_n_particles,
         pso_n_iters=inputs.pso_n_iters,
         data_rate_s=inputs.data_rate_s,

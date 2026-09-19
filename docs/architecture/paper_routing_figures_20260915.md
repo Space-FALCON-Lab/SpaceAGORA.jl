@@ -591,14 +591,29 @@ with it:
 | throughput | 5.35 samples/s | 0.0048 samples/s |
 
 Allocation rises by two orders of magnitude and GC follows it, so the run is
-not computing more, it is allocating and collecting. *Inference, not
-measurement:* this has the shape of the nested-parallelism guard failing open.
-The inner split sizes its per-thread workspaces on the assumption that an
-enclosing outer split has declared itself active
-(`SPACEAGORA_OUTER_PARALLEL_ACTIVE`, see `src/parallel/`); with
-`outer_active = false` on a 16-sample, 8-satellite, 32-thread campaign there is
-nothing bounding that allocation. Confirming it means reproducing the point
-with allocation profiling, which has not been done.
+not computing more, it is allocating and collecting.
+
+**The flag is necessary but not sufficient, and an earlier draft of this
+finding got that wrong.** `policy_last_outer_active = false` reads on 164 of
+the run's 396 `policy_v2` campaigns and nearly all of them are healthy: every
+P1 campaign, every P2 campaign, and P3's and P4's single-worker rungs all
+report `false` and behave normally, because at those points there is genuinely
+no outer split to be active. Only 9 campaigns are pathological, all at the one
+point. A guard keyed on the flag alone would fire on 40% of all campaigns. What
+distinguishes the failure is the combination: outer parallelism switched *off*
+by the policy on a workload that has outer work to do -- 16 samples of an
+8-satellite constellation -- with 32 threads still configured underneath it.
+Note that repeat 1 of that point runs `outer_active = true` and takes 2.99 s;
+the collapse begins when the policy turns outer off.
+
+*Inference, not measurement:* this has the shape of the nested-parallelism
+guard failing open. The inner split sizes its per-thread workspaces on the
+assumption that an enclosing outer split has declared itself active
+(`SPACEAGORA_OUTER_PARALLEL_ACTIVE`, see `src/parallel/`); with outer switched
+off but 16 samples and 8 satellites still to run across 32 threads, nothing
+bounds that allocation. Confirming it means reproducing the point under
+allocation profiling, which has not been done. The reliable detector is the
+allocation itself, not the flag: 48 GB against 5.48 TB needs no interpretation.
 
 Three consequences.
 
@@ -616,7 +631,8 @@ protocol that produced every number in this document would not have found it.
 that reporting medians cannot cover. Worth an issue against `policy_v2`
 independently of the paper: at minimum a sanity bound that abandons a campaign
 whose projected cost exceeds the serial baseline by some factor, which would
-have caught this on repeat 2.
+have caught this on repeat 2 and, unlike the `outer_active` flag, fires on
+nothing else in the 396 campaigns measured here.
 
 ## Methodology notes
 

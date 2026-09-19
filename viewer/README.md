@@ -241,3 +241,7 @@ verified study pressure or a replacement thermal solution.
 - The sphere's texture seam is placed so that longitude 0 is on body +x; a
   texture whose left edge is not 180 W is shifted by its manifest
   `lon_left_deg`.
+
+### Lab branding
+
+The viewer displays the Space-FALCON Lab logo in the upper-right corner, above the selection panel. The existing blue signature artwork is embedded in the shared UI module, so exported and standalone pages need no external image request. On narrow screens the wordmark is hidden and the logo remains visible. Existing exported pages must be regenerated to pick up viewer changes. The badge is a page overlay; the canvas-only video export does not include it.

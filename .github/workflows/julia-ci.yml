@@ -15,8 +15,9 @@ jobs:
   tests-matrix:
     runs-on: ubuntu-latest
     # Includes dependency setup, the full suite and Earth thruster smoke.
-    # September runs hit 90 minutes with unit/parallel tests still running.
-    timeout-minutes: 120
+    # PR151 reached 120 minutes after its standalone unit suite passed;
+    # reserve time for the remaining suite and cold dependency compilation.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:

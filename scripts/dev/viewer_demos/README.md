@@ -40,6 +40,56 @@ The Odyssey demonstration explicitly uses Tsit5 and budgets solver steps for its
 0.1-second controller over the requested duration, with a margin for rejected
 steps. This changes the iteration ceiling, not the integration tolerances.
 
+## Rendezvous around the ISS
+
+`iss_hypr.jl` plans and flies a CubeSat approach around a point cloud sampled from
+the tracked ISS display model. It needs the starter SPICE kernels in the
+GRAMSuite asset directory, but does not use native GRAM or private telemetry.
+The station model and controller are a demonstration, not an ISS flight model.
+
+Start with the short hop:
+
+```sh
+SPACEAGORA_DEMO_SMOKE=1 julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
+```
+
+Run the complete approach by omitting the environment variable:
+
+```sh
+julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
+```
+
+The script prints the HTML path under `output/viewer_demos/iss_hypr_<inputs digest>/`.
+`SPACEAGORA_VIEWER_DEMO_OUT` changes the parent directory. The saved plan and
+provenance sit beside the results. A repeated invocation with matching inputs
+reuses the recorded simulation and plan only when the plan, scene and Feather
+results match the hashes in the provenance. Missing, empty or changed files
+trigger a fresh run, as do older outputs without a recorded Feather hash.
+Reused runs display the plan that produced their trajectory. The smoke hop
+checks the pipeline and does not demonstrate the complete approach.
+
+Open the printed HTML, click the marker beside the station label and press **F** to
+follow it. The blue dashed line is the reference the chaser followed, and the
+yellow line connects the planner's waypoints. The reference is expressed in
+the station's local orbital frame. Playback shows saved simulation states.
+
+Seeded plans with fixed iteration budgets are reproducible across thread counts.
+Wall-clock stopping budgets can end at different iterations. The new particle
+random streams change seeded plans from older versions; use the plan recorded
+with each run when checking tracking and clearance.
+
+The ISS demonstration caps reference speed at 0.1 m/s so the simulated chaser
+can track the approach with its configured thrusters. The run automatically
+extends beyond its requested duration when the reference needs longer. The geometric retimer
+does not enforce a full acceleration profile from rest, and the LQ-MPC
+controller does not impose collision constraints. Check the simulated path
+and clearance as well as the planned path when changing the scenario.
+
+The station body rotates with the circular orbit so its body-frame point
+cloud stays aligned with the planner's RTN frame and the saved 3D attitude.
+This setup assumes the example's circular equatorial orbit and principal-axis
+rotation; it does not model arbitrary tumbling-station rendezvous.
+
 ## Mission demonstrations and SPICE comparisons
 
 `apollo11_lunar_orbit.jl`, `magellan_aerobraking.jl`, `odyssey_aerobraking.jl`, and

@@ -65,10 +65,27 @@ end
     return base + Millisecond(round(Int, 1000 * Float64(initial_time.second)))
 end
 
+const _INITIAL_TIME_UTC_FORMAT = dateformat"yyyy-mm-ddTHH:MM:SS.sss"
+
+"""
+    _initial_time_utc_string(initial_time) -> String
+
+The `InitialTime` calendar fields as an ISO UTC string on the engine's
+millisecond clock (`yyyy-mm-ddTHH:MM:SS.sss`), the form SPICE's `utc2et`
+parses. This is the only route from `InitialTime` to ephemeris time. It
+deliberately does not pass through a TAI epoch: AstroTime's UTC round trip
+is inexact before 1972, where the TAI-UTC offset is fractional, and its
+string form then rendered `20:05:05` as the malformed `20:05:04.1000`,
+which SPICE read as 4.1 s.
+"""
+@inline function _initial_time_utc_string(initial_time)::String
+    return Dates.format(_initial_time_datetime(initial_time), _INITIAL_TIME_UTC_FORMAT)
+end
+
 @inline function ephemerides_time_seconds(initial_time, ::SpiceEphemeridesModel)::Float64
-    start_epoch = from_utc(_initial_time_datetime(initial_time))
+    utc = _initial_time_utc_string(initial_time)
     return lock(tracked_lock(:spice_body)) do
-        utc2et(to_utc(start_epoch))
+        utc2et(utc)
     end
 end
 

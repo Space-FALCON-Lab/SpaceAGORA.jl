@@ -38,6 +38,12 @@ function synthetic_flat_site(dir)
     return path
 end
 
+@testset "Apollo 11 landing demo: requested calendar epoch" begin
+    @test PDI_UTC == "1969-07-20T20:05:05"
+    requested = SM.InitialTime(year=1969, month=7, day=20, hour=20, minute=5, second=5.0)
+    @test SM.EphemeridesModels._initial_time_utc_string(requested) == "1969-07-20T20:05:05.000"
+end
+
 @testset "Apollo 11 landing demo: vehicle geometry" begin
     q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
     sc = lunar_module(SM.CartesianInitialCondition(SVector(1.8e6, 0.0, 0.0), SVector(0.0, 1.7e3, 0.0); q=q))
@@ -46,7 +52,7 @@ end
     @test count(t -> t.max_thrust == DPS_THRUST_N, thrusters) == 1
     @test count(t -> t.max_thrust == RCS_THRUST_N, thrusters) == 16
     dps = only(filter(t -> t.max_thrust == DPS_THRUST_N, thrusters))
-    @test SVector{3, Float64}(dps.direction) == SVector(0.0, 0.0, 1.0)        # thrust along body +z, down through the legs
+    @test SVector{3, Float64}(dps.direction) == SVector(0.0, 0.0, 1.0)        # display exhaust direction; the control effector applies thrust along body -z
     quads = unique(SVector{3, Float64}(t.location) for t in thrusters if t.max_thrust == RCS_THRUST_N)
     @test length(quads) == 4
     @test all(q -> abs(q[1]) == RCS_QUAD_ARM_M && abs(q[2]) == RCS_QUAD_ARM_M && q[3] == RCS_QUAD_Z_M, quads)
@@ -100,13 +106,20 @@ end
 end
 
 const SPICE_READY = isdir(SPICE_PATH) && isfile(joinpath(SPICE_PATH, "lsk", "naif0012.tls")) &&
-    isfile(joinpath(SPICE_PATH, "spk", "satellites", "SPICELunaCurrentKernel.bpc"))
+    isfile(joinpath(SPICE_PATH, "spk", "satellites", "SPICELunaCurrentKernel.bpc")) &&
+    isfile(joinpath(SPICE_PATH, "tf", "SPICELunaFrameKernel.tf"))
 if SPICE_READY
     @testset "Apollo 11 landing demo: PDI state" begin
         mktempdir() do dir
             terrain, site = load_site_terrain(synthetic_flat_site(dir))
             planet = SM.Moon("", SPICE_PATH)
             et0 = LandingDemo.et_of(LandingDemo.initial_time_of(LandingDemo.et_of(PDI_UTC)))
+            # Pin the calendar request, not a self-consistent but shifted round trip.
+            @test LandingDemo.utc_of(et0) == "1969-07-20T20:05:05.000"
+            requested_et = lock(SpaceAGORA.RuntimeServices.SPICE_LOCK) do
+                LandingDemo.str2et("1969-07-20T20:05:05.000")
+            end
+            @test isapprox(et0, requested_et; atol=1e-6, rtol=0.0)
             r_i, v_i, q_pdi = pdi_state(site, planet, et0)
             @test norm(r_i) ≈ RADIUS_M + site.height_m + PDI_ALTITUDE_M rtol=1e-9
             @test norm(q_pdi) ≈ 1.0
@@ -129,6 +142,7 @@ if SPICE_READY
         end
     end
 else
-    @info "SPICE kernels absent; skipping the Apollo 11 PDI-state test" SPICE_PATH
+    @info "SPICE kernels absent; set SPACEAGORA_SPICE_PATH to run the Apollo 11 PDI-state test" SPICE_PATH
+    @test_skip SPICE_READY
 end
 end # module

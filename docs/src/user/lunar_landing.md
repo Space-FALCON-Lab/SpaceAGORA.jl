@@ -20,6 +20,10 @@ The descent types live in `SpaceAGORA.SimulationModel`; the examples below use
 `SM = SpaceAGORA.SimulationModel`. The terrain loaders and the plume model are
 exported at the package root.
 
+The requested start remains exactly `1969-07-20T20:05:05.000` UTC on the
+engine's millisecond clock. The demo regression checks this against SPICE,
+including the pre-1972 calendar conversion.
+
 ## Terrain models
 
 `DEMTerrainModel` holds one or more `DEMGrid`s, regular planetocentric
@@ -88,8 +92,9 @@ the descent engine's throttle follows the DPS envelope (`throttle_min` to
 attitude command points body `-z` (the engine axis) along the thrust with the
 windows (body `+x`) along the projection of up plus the flight direction:
 windows up during braking, facing the site once the vehicle pitches back.
-`SM.descent_attitude_command` returns that attitude as a scalar-last body-to-
-inertial quaternion, the convention the engine's initial conditions take.
+`SM.descent_attitude_command` returns a scalar-last quaternion in the engine's
+initial-condition convention: `rot(q)` maps inertial vectors into the body
+frame, and its transpose maps body axes into the inertial frame.
 
 `SM.ApolloDescentControlModel` throttles the engine toward the command with a
 slew limit, runs a rate-limited attitude loop whose torques are bounded by the
@@ -153,7 +158,7 @@ plume = PlumeSurfaceInteractionModel(control, terrain; reference_radius_m=site.r
 # ... dynamic_effectors = (gravity..., plume)
 ```
 
-Whenever the effector is in the run, the default save fields publish its state
+When the effector is in the run, the default save fields publish its state
 as seven result columns per spacecraft: `sc{i}_plume_height_m`,
 `sc{i}_plume_pressure_pa`, `sc{i}_plume_shear_pa`, `sc{i}_plume_erosion_kg_s`,
 `sc{i}_plume_eroded_kg`, `sc{i}_plume_ejecta_mps` and
@@ -191,3 +196,21 @@ the touchdown time, vertical and horizontal contact speed, miss distance and
 propellant used, the phase start times, the plume summary and the number of
 thruster-level columns, then writes the standalone viewer page. Optional
 `SPACEAGORA_DEMO_CDN=1` invokes the separate CDN page tool when it is installed.
+
+
+The output directory contains `simulation_results.csv`,
+`simulation_results.feather`, `simulation_results_scene.json` and the
+self-contained `simulation_results_viewer.html`. Open the HTML file, click the
+spacecraft marker or label, and press **F** to follow the lander. Pause and move
+the time slider to inspect braking, approach and the final vertical descent.
+The selection panel shows height above terrain; click a value to plot its
+history. Switch between inertial and planet-fixed views to inspect the same
+landing in either frame. Near the surface, the viewer shows the site imagery,
+engine and RCS plume glyphs, and modeled dust.
+
+Results are saved every 0.25 seconds. The touchdown event can fall between those
+samples, so the last saved row and viewer frame can still show thrust shortly
+before contact. The printed touchdown time and the returned control state refer
+to the actual event, where engine thrust, torque and thruster levels are zeroed.
+Early radar-altitude entries can be unavailable before the first guidance
+update. These gaps are not negative terrain clearance.

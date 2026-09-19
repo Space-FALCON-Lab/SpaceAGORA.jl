@@ -1704,11 +1704,9 @@ end
 
     model_name = nameof(typeof(ephemerides_model))
     if model_name == :SpiceEphemeridesModel
-        start_epoch = SimulationModel.EphemeridesModels.from_utc(
-            SimulationModel.EphemeridesModels._initial_time_datetime(initial_time)
-        )
+        utc = SimulationModel.EphemeridesModels._initial_time_utc_string(initial_time)
         return lock(RuntimeServices.SPICE_LOCK) do
-            utc2et(SimulationModel.EphemeridesModels.to_utc(start_epoch))
+            utc2et(utc)
         end
     elseif model_name == :SimpleEphemeridesModel
         start_time = SimulationModel.EphemeridesModels._initial_time_datetime(initial_time)

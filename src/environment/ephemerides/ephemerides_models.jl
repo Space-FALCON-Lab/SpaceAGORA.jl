@@ -1,7 +1,6 @@
 module EphemeridesModels
 
 using Dates
-using AstroTime
 using StaticArrays
 using LinearAlgebra
 using SPICE

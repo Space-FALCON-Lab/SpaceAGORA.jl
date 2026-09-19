@@ -70,10 +70,10 @@ function pdi_state(site, planet, et0::Float64)
     flight_pdi = normalize(flight - dot(flight, up_pdi) * up_pdi)   # horizontal at PDI, still toward the site
     r_p = (R + site.height_m + PDI_ALTITUDE_M) * up_pdi
     v_p = PDI_SPEED_MPS * flight_pdi                         # relative to the rotating Moon
-    # planet-fixed to J2000 with the rotation term, as the descent tests do
-    l_pi = SM.planet_frame_lpi(planet, et0, SM.SpiceEphemeridesModel())
-    r_i = SVector{3, Float64}(l_pi' * r_p)
-    v_i = SVector{3, Float64}(l_pi' * (v_p + cross(SVector{3, Float64}(planet.ω), r_p)))
+    # planet-fixed to J2000 through the engine's SPICE state transform, so the requested
+    # horizontal speed holds in the runtime's body-fixed frame (MOON_PA_DE421 with its
+    # libration), not in a constant-spin approximation of it
+    r_i, v_i = SM.FrameTransforms.r_pintor_i(r_p, v_p, planet, et0)
     q_pdi = SM.descent_attitude_command(-normalize(v_i), normalize(r_i), normalize(v_i))
     return r_i, v_i, q_pdi
 end

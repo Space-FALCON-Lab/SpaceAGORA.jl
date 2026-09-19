@@ -124,11 +124,16 @@ if SPICE_READY
             @test norm(r_i) ≈ RADIUS_M + site.height_m + PDI_ALTITUDE_M rtol=1e-9
             @test norm(q_pdi) ≈ 1.0
             # back in the rotating body frame: horizontal at the local speed, and the uprange arc to the site
+            # reverse through the runtime's SPICE state transform (MOON_PA_DE421 with its
+            # libration), the same transform pdi_state applies forward
+            r_p, v_p = SM.FrameTransforms.r_intor_p!(r_i, v_i, planet, et0)
+            @test abs(dot(v_p, normalize(r_p))) < 1e-9 * PDI_SPEED_MPS
+            @test norm(v_p) ≈ PDI_SPEED_MPS rtol=1e-12
+            # the constant-spin inverse is not that transform: at this epoch it leaves a
+            # residual near 1.7e-4 m/s, which the earlier 1e-6-relative tolerance could not see
             l_pi = SM.planet_frame_lpi(planet, et0, SM.SpiceEphemeridesModel())
-            r_p = SVector{3, Float64}(l_pi * r_i)
-            v_p = SVector{3, Float64}(l_pi * v_i) - cross(SVector{3, Float64}(planet.ω), r_p)
-            @test abs(dot(v_p, normalize(r_p))) < 1e-6 * PDI_SPEED_MPS
-            @test norm(v_p) ≈ PDI_SPEED_MPS rtol=1e-9
+            v_const = SVector{3, Float64}(l_pi * v_i) - cross(SVector{3, Float64}(planet.ω), SVector{3, Float64}(l_pi * r_i))
+            @test norm(v_const - v_p) > 1e-5
             φ = deg2rad(site.lat_deg); λ = deg2rad(site.lon_deg)
             up_site = SVector(cos(φ) * cos(λ), cos(φ) * sin(λ), sin(φ))
             arc = acos(clamp(dot(normalize(r_p), up_site), -1.0, 1.0)) * RADIUS_M

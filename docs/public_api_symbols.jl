@@ -66,6 +66,18 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Plume Interaction",
+        items = [
+            (owner = :SpaceAGORA, symbol = :PlumeSurfaceConfig, rendered = "SpaceAGORA.PlumeSurfaceConfig"),
+            (owner = :SpaceAGORA, symbol = :PlumeSurfaceInteractionModel, rendered = "SpaceAGORA.PlumeSurfaceInteractionModel"),
+            (owner = :SpaceAGORA, symbol = :PlumeSurfaceState, rendered = "SpaceAGORA.PlumeSurfaceState"),
+            (owner = :SpaceAGORA, symbol = :plume_surface_footprint, rendered = "SpaceAGORA.plume_surface_footprint"),
+            (owner = :SpaceAGORA, symbol = :plume_erosion_onset_height, rendered = "SpaceAGORA.plume_erosion_onset_height"),
+            (owner = :SpaceAGORA, symbol = :plume_ground_effect_force, rendered = "SpaceAGORA.plume_ground_effect_force"),
+            (owner = :SpaceAGORA, symbol = :plume_quantities, rendered = "SpaceAGORA.plume_quantities")
+        ]
+    ),
+    (
         title = "Terrain Queries",
         items = [
             (owner = :SpaceAGORA, symbol = :AbstractTerrainModel, rendered = "SpaceAGORA.AbstractTerrainModel"),

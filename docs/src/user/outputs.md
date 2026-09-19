@@ -111,6 +111,31 @@ scene = read_visualization_scene("output/simulation_results_scene.json")
 scene.planet.name, length(scene.spacecraft), scene.spacecraft[1].bounding_radius_m
 ```
 
+The flag adds four more fields when the run can supply them, each listed in
+the [CSV column reference](#Visualization-fields) below:
+
+- `thruster_level`: `sc{N}_thruster_level_{k}`, the firing level of thruster
+  `k` from 0 to 1, for a spacecraft with thrusters whose control effector
+  reports per-thruster levels. Thrusters are numbered in the sidecar's order:
+  the spacecraft's links in order, each link's thrusters in order.
+- `sun_dir`: `sun_dir_1` .. `sun_dir_3`, the unit vector from the planet's
+  centre to the Sun in the inertial frame of the saved positions. One
+  direction per row, shared by every spacecraft, written when the run's
+  ephemerides can locate the Sun at the start epoch. The viewer's sun lighting
+  reads it.
+- `arm_pose`: `sc{N}_arm_pose_1` .. `sc{N}_arm_pose_7m` for a spacecraft with
+  a cloth robot-arm plan, `[rx, ry, rz, qx, qy, qz, qw]` per arm link: the
+  link centre of mass relative to the spacecraft position, in inertial metres,
+  and the link's inertial attitude quaternion.
+- `density`: `sc{N}_density`, the atmospheric density along the trajectory in
+  kg/m³, for a run with an atmosphere model.
+
+An explicit `save_fields` list receives the visualization fields it lacks,
+appended once after the fields you named. The plume columns below are not
+visualization fields: they belong to the default field list whenever the
+plume-surface effector is in the run, with or without the sidecar, and an
+explicit list that omits them does not write them.
+
 ### Interactive viewer page
 
 With the sidecar present, `export_visualization` builds a self-contained
@@ -251,6 +276,40 @@ These columns are present only when `mission_configuration.orientation_sim = tru
 | `sc1_q_2` | — | Attitude quaternion component `y` |
 | `sc1_q_3` | — | Attitude quaternion component `z` |
 | `sc1_q_4` | — | Attitude quaternion scalar component `w`; `[0, 0, 0, 1]` is the identity attitude |
+
+### Visualization fields
+
+These columns are added automatically when `simulation_settings.save_visualization_scene = true`
+and the run can supply them; see the [sidecar section](#Visualization-scene-sidecar-(opt-in))
+for the conditions:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_link_pose_1` .. `sc1_link_pose_7n` | m, — | `[rx, ry, rz, qx, qy, qz, qw]` per non-root link, relative to the root bus, in the sidecar's link order |
+| `sc1_thruster_level_1` .. `sc1_thruster_level_k` | — | Firing level of each thruster, 0 to 1, in the sidecar's thruster order |
+| `sc1_arm_pose_1` .. `sc1_arm_pose_7m` | m, — | `[rx, ry, rz, qx, qy, qz, qw]` per robot-arm link: centre of mass relative to the spacecraft (inertial) and inertial attitude |
+| `sc1_density` | kg/m³ | Atmospheric density at the spacecraft |
+| `sun_dir_1` .. `sun_dir_3` | — | Unit vector from the planet's centre to the Sun, inertial frame, one per row (not per spacecraft) |
+
+### Plume interaction
+
+These columns are written by the plume-surface effector
+([Plume interaction](plume_interaction.md)) for every spacecraft in the run,
+when using the default save-field list, whether or not the visualization sidecar
+is enabled. An explicit list must include them to write them:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_plume_height_m` | m | Slant height of the vehicle reference point above the terrain along the engine axis (radial clearance divided by the downward exhaust cosine); infinite when the exhaust does not point toward the surface |
+| `sc1_plume_pressure_pa` | Pa | Peak surface pressure under the plume |
+| `sc1_plume_shear_pa` | Pa | Peak wall shear stress under the plume |
+| `sc1_plume_erosion_kg_s` | kg/s | Regolith mass erosion rate |
+| `sc1_plume_eroded_kg` | kg | Eroded mass integrated over accepted solver steps (trapezoidal), reset at the start of a run |
+| `sc1_plume_ejecta_mps` | m/s | Bounded speed at which eroded grains leave the surface |
+| `sc1_plume_ground_effect_n` | N | Modeled thrust augmentation in ground effect |
+
+The plume quantities are diagnostics of an illustrative closure, as described on
+the plume page; they are not a calibrated flight reconstruction.
 
 ## Multi-spacecraft runs
 

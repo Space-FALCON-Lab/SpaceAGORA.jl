@@ -80,6 +80,7 @@ using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no
 using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
 using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
+using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 using .SimulationModel: getDensity, getDensityBatch!, with_density_model_epoch
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .SimulationModel: control_thruster_levels
@@ -251,6 +252,13 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.gravity_backbone_acceleration_ii) gravity_backbone_acceleration_ii
 @doc (@doc SimulationModel.gravity_backbone_kick_structure) gravity_backbone_kick_structure
 @doc (@doc SimulationModel.gravity_backbone_kick_acceleration_ii) gravity_backbone_kick_acceleration_ii
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceConfig)).text) PlumeSurfaceConfig
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceInteractionModel)).text) PlumeSurfaceInteractionModel
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceState)).text) PlumeSurfaceState
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.plume_surface_footprint(::SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceConfig, ::Real, ::Real))).text) plume_surface_footprint
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.plume_erosion_onset_height(::SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceConfig, ::Real))).text) plume_erosion_onset_height
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.plume_ground_effect_force(::SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceConfig, ::Real, ::Real))).text) plume_ground_effect_force
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.plume_quantities(::SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceConfig, ::Real, ::Real))).text) plume_quantities
 @doc (@doc SimulationModel.getDensity) getDensity
 @doc (@doc SimulationModel.getDensityBatch!) getDensityBatch!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EnvironmentModels.with_density_model_epoch(
@@ -414,6 +422,7 @@ export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 export calcForceTorque, wrench, environment_requirements, solver_partition
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
+export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 export getDensity, getDensityBatch!, with_density_model_epoch
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export control_thruster_levels

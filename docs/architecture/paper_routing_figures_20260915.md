@@ -558,6 +558,66 @@ cached verdict should carry an expiry or a re-test probability, so a converged
 store cannot permanently foreclose an arm the policy has never compared against
 on this machine.
 
+**9. From a cold calibration store R6 can enter a state 3500x slower than every
+route it is choosing among, and the signature is an allocation explosion.**
+This is a defect, not a measurement, and it is the most serious thing the
+11-repeat work found.
+
+P5's `mcgrid_8sat_16mc` at the 1x32 split, same point, across four runs:
+
+```
+orig (5 rep, warm store):   3.0   1.0   1.0   1.0   1.0
+ctrl (5 rep, warm store):   2.9   1.0   0.9   1.0   0.9
+new  (5 rep, warm store):   2.8   0.9   0.9   0.9   0.9
+cold (11 rep, empty):       3.0  767.9 3333.6 390.3 840.7 1223.9
+                                3496.9 1710.2 1796.0 2063.5  36.7
+```
+
+Every pinned route measures ~1.0 s at that point and serial measures 10.3 s, so
+the worst campaign is 3500x the best static route and 340x serial. Ten of the
+eleven repeats are affected, so it is a state the policy settles into rather
+than a transient.
+
+The per-campaign telemetry identifies it. Repeat 1 is healthy and reports
+`policy_last_outer_active = true`; every subsequent repeat reports `false`, and
+with it:
+
+| | repeat 1 (healthy) | repeat 3 (pathological) |
+|---|---:|---:|
+| `policy_last_outer_active` | true | false |
+| allocation over the campaign | 48 GB | 5.48 TB |
+| GC time | 5.5 s | 657 s |
+| mean sample wall time | 1.15 s | 2053 s |
+| throughput | 5.35 samples/s | 0.0048 samples/s |
+
+Allocation rises by two orders of magnitude and GC follows it, so the run is
+not computing more, it is allocating and collecting. *Inference, not
+measurement:* this has the shape of the nested-parallelism guard failing open.
+The inner split sizes its per-thread workspaces on the assumption that an
+enclosing outer split has declared itself active
+(`SPACEAGORA_OUTER_PARALLEL_ACTIVE`, see `src/parallel/`); with
+`outer_active = false` on a 16-sample, 8-satellite, 32-thread campaign there is
+nothing bounding that allocation. Confirming it means reproducing the point
+with allocation profiling, which has not been done.
+
+Three consequences.
+
+*Neither store state is safe.* Finding 8 says a converged store can foreclose a
+2.4x win; this says an empty one can produce a 3500x loss. The warm-store runs
+that hid finding 8 were also hiding this, and the two fail in opposite
+directions, so "use a warm store" is not a fix for either.
+
+*It is invisible at five repeats from a warm store.* Three separate runs of
+this exact point reported 0.9-1.0 s and nothing anomalous. The measurement
+protocol that produced every number in this document would not have found it.
+
+*R6 should not be recommended without a guard.* A routing policy that can be
+3500x worse than every alternative it is selecting among has a failure mode
+that reporting medians cannot cover. Worth an issue against `policy_v2`
+independently of the paper: at minimum a sanity bound that abandons a campaign
+whose projected cost exceeds the serial baseline by some factor, which would
+have caught this on repeat 2.
+
 ## Methodology notes
 
 - **The measurability floor drove the workload design.** At one fixed mission

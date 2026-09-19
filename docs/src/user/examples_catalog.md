@@ -126,6 +126,38 @@ library. Start with one RPO case:
 julia --project=. examples/Earth_RPO_CubeSat_MPC.jl
 ```
 
+By default that script builds the Gateway-core scenario. Its
+`build_rpo_cubesat_mpc_demo` also accepts another station as a 3 x N
+body-frame point cloud (`station_points`, for example from
+`sample_model_pointcloud`) together with `station_keepout_radius_m`,
+`station_name`, `station_dims_m`, `station_mass_kg` and
+`station_ref_area_m2`, and scales the planner with `safe_distance_m`,
+`cost_ref_distance_m`, `search_margin_m` and `sample_ds_m`. Leaving every
+keyword at its default preserves the Gateway dimensions, mass and 8 m²
+reference area, and the returned
+`station` record states what was used.
+`scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
+model and exports a viewer page with the planned path overlaid.
+`SPACEAGORA_DEMO_SMOKE=1` runs a short bounded hop instead of the full
+approach, and every run writes an `iss_hypr_provenance.json` sidecar that
+names its inputs and outputs. The ISS demo caps reference speed at 0.1 m/s
+and extends the run to finish the approach. Its station rotates with the circular
+orbit so the saved attitude and the planner's station geometry share the RTN
+frame. The geometric retimer does not guarantee an acceleration profile from
+rest, and LQ-MPC does not impose collision constraints. Check simulated
+clearance as well as planned clearance when changing the scenario.
+
+With a fixed seed and iteration budget, the planner gives the same plan across
+Julia thread counts. Runs using a wall-clock stopping budget can stop at different
+iterations. The particle-based random streams introduced with this demo change
+seeded plans from earlier versions; compare tracking against the plan saved by
+the run, rather than a newly generated plan.
+
+The default simulation copy owns its own MPC solver workspace. Its stored primal
+warm start is copied, while the solver's internal caches are rebuilt. A copied
+controller is therefore safe to use after the original is released, but is not
+an exact checkpoint of an optimization already in progress.
+
 For a planner-comparison smoke run:
 
 ```text

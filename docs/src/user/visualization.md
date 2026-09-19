@@ -177,5 +177,60 @@ The default page embeds its renderer and assets. Optional CDN builds and
 imported models with external resource URLs can make network requests.
 
 See `viewer/README.md` for detailed controls, renderer development and
-licensing. Terrain payload export, landing dynamics and plume-surface
-physics are separate work and are not part of this viewer integration.
+licensing. Landing dynamics and plume-surface physics are separate from the viewer.
+
+## Regional terrain in exported pages
+
+For a completed Moon run with a scene sidecar, add a local terrain bundle:
+
+```julia
+export_visualization("output/moon-run/simulation_results";
+    terrain="output/terrain/site.json", terrain_max_grid=512)
+```
+
+Reopen `output/moon-run/simulation_results_viewer.html`. The site bundle
+contains `site.json`, the named DEM metadata and `.f32` samples, and optional
+JPEG tiles. The Moon download tools and legacy imagery converter live in
+`scripts/dev/terrain/`; `docs/reference/lunar_imagery_sources.md` explains their
+Python requirements, commands, data sources and output layout. Downloading
+assets is a separate step. Existing local bundles export without a network
+connection or native GRAM.
+
+The local site bundle follows `load_site_terrain`: regional DEMs in priority
+order, explicit common reference radius, planetocentric latitude, east-positive
+longitude and little-endian Float32 metre heights at cell centres. Export uses
+the canonical loader, keeps the original outer edges, and samples reduced grids
+uniformly at their new cell centres. `terrain_max_grid` must be an integer in
+1:2048. The shared reduction factor can produce a singleton row or column. The
+result approximates the source surface; `site.height_m` records the source query,
+while markers and radar queries use the exported approximation.
+
+The first covering grid supplies the height, with the canonical zero fallback
+outside all grids. Longitude wraps without iteration. Radar clearance is radial:
+`norm(position_body_m) - reference_radius_m - terrain_height_m`. The terrain
+radius comes from the DEM, including for dust placement; scene planet metadata
+is preserved. If the scene globe is an ellipsoid or uses another radius, the
+terrain boundary can differ from that globe. The run and terrain must refer to
+the same body. Use a consistent reference sphere to align their datums. Even
+with matching radii, a visible rim is expected where the regional terrain meets
+the reference globe at a different height. Export performs no datum conversion.
+
+Select a spacecraft and read its **height above terrain** in the selection
+panel. With a single spacecraft, **Follow** also selects it. This value is a
+radial clearance based on the exported grid, not the saved geodetic altitude.
+Zoom toward the site to inspect the local imagery mesh.
+
+Imagery is optional. With no imagery, height queries and the height-above-terrain
+readout remain available, while the normal globe is drawn. With a quadtree,
+every declared local JPEG is embedded. Missing declared indices or tiles are
+errors. Each tile has `level`, `x`, `y`, `file`, and positive `m_per_px`; the
+root tile is required and sparse deeper levels inherit available ancestors.
+The index uses a regional `root`, integer `tile_px`, and matching `max_level`.
+Source, attribution and resolution metadata accompany the imagery.
+
+To bound export size, the site accepts at most 64 DEMs and 128 MiB of DEM samples,
+with 1 MiB per JSON document. Imagery accepts at most 8192 tiles through level
+20, 4096 pixels per side, 8 MiB per JPEG, and 128 MiB total. Tile dimensions are
+checked against their JPEG header. Paths, including symlinks, must resolve
+inside the site or imagery directory. Export neither downloads terrain nor
+changes propagation, touchdown or atmosphere state.

@@ -425,8 +425,21 @@ function _rhs_calib_heuristic_votes(sig::String)::Int
     end
 end
 
-# How many consecutive heuristic verdicts a signature needs before a long
-# solve honours the cached verdict instead of re-sweeping (V2 only).
+# How many consecutive heuristic verdicts count as a reproduced verdict for
+# this signature (V2 only).
+#
+# This threshold used to decide whether a long solve honored the cached
+# heuristic verdict at all, and a verdict that reached it was then honored
+# permanently. The permanence was a measured defect (see
+# _rhs_calib_cached_verdict) and is gone: every cached verdict on a long solve
+# is now honored on the amortized re-verification budget instead, so the count
+# is a record of how often the sweep has agreed with itself, not an exemption
+# from re-testing. The count itself is still written, carried through a pin and
+# read back (_rhs_calib_heuristic_votes); this THRESHOLD, and with it
+# SPACEAGORA_RHS_CALIBRATE_HEURISTIC_VOTES, no longer changes any routing
+# decision and is left in place only because the calibration probes read it.
+# Delete both when a use for a reproduction threshold either returns or does
+# not.
 @inline function _rhs_calibrate_heuristic_votes_needed()::Int
     n = try
         parse(Int, strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_HEURISTIC_VOTES", "3")))
@@ -1246,6 +1259,15 @@ const _RHS_PLAN_VOTES_TO_HONOUR = 2
 # `share` on any machine. A verdict whose sweep cost was never measured
 # (sweep_ns = 0: written by an older store, or by the in-run width trial) is
 # re-verified as before, which is the conservative reading.
+#
+# This applies to a cached heuristic verdict exactly as it does to a pinned
+# plan: the heuristic entry accumulates honoured_ns the same way (the solve
+# that replays it is charged to it in _rhs_calib_record_solve_time!), and a
+# reproduced heuristic verdict is no longer exempt from the budget. The one
+# asymmetry left is the vote clause below, which is a plan rule only: a plan
+# pinned by a single sweep re-verifies on the next long solve, whereas a
+# heuristic verdict -- which pins nothing and is the no-regret floor the sweep
+# falls back to -- runs on the budget from its first vote.
 function _rhs_calib_reverify_due(sig::String)::Bool
     _rhs_calib_load!()
     entry = lock(_rhs_calib_lock) do
@@ -1334,32 +1356,46 @@ function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool)
     (long_solve && !honour_heuristic_verdict) && return nothing
     cached = _rhs_calib_lookup(sig)
     cached === nothing && return nothing
-    # V2 on a long solve: a pinned plan, and a heuristic verdict that has not
-    # yet reproduced, are honoured until the re-verification budget is spent
-    # (_rhs_calib_reverify_due); a reproduced heuristic verdict is honoured
-    # outright, below.
-    if long_solve && honour_heuristic_verdict &&
-       (cached !== :heuristic || _rhs_calib_heuristic_votes(sig) < _rhs_calibrate_heuristic_votes_needed())
+    # V2 on a long solve: EVERY cached verdict -- a pinned plan, and a
+    # heuristic verdict whether or not it has reproduced -- is honored only
+    # until its re-verification budget is spent (_rhs_calib_reverify_due).
+    #
+    # A heuristic verdict that had reproduced `heuristic_votes` times used to
+    # graduate out of that budget and be honored for good, with no path back to
+    # a sweep. That was the largest single routing loss in the 2026-09-15
+    # routing-figure run (finding 8): on gravity_1024sat_l50_vacuum_24600s at
+    # 32 threads a converged store held R6 on rhs_plan_source=cache,
+    # rhs_plan_mode=heuristic at ~5.0 s across all 11 repeats, while a fresh
+    # store found sweep/satellite_batch@1 at ~1.99 s -- 2.5x faster, and faster
+    # than every pinned static route measured in that point (4.86-5.32 s).
+    # Reproduction says the sweep agreed with itself several times on one
+    # machine in one state; it does not say the ranking cannot move when the
+    # thread budget, the machine's load or the shape itself does, and with no
+    # re-test nothing could ever discover that it had.
+    #
+    # The budget is what makes the re-test affordable, and it is the same
+    # arithmetic a pinned plan already uses: the verdict is honored until the
+    # solve time charged to it reaches sweep_ns / share, so re-verification
+    # costs at most `share` of solve time whether the verdict holds or not.
+    # (The coin-flip concern that motivated the vote count is answered by that
+    # bound rather than by permanence: on a shape whose verdict flips -- e.g.
+    # interact_256sat_1hr, satellite_batch three to four sweeps in five -- the
+    # re-test now recovers the other side instead of replaying the losing one
+    # for the life of the store.)
+    #
+    # A re-test is not a reset. The re-sweep writes back through
+    # _rhs_calib_store_heuristic! / _rhs_calib_store! exactly as a first sweep
+    # does, so a heuristic verdict that is still best returns with one more
+    # vote, a freshly measured sweep_ns and honoured_ns = 0 -- the next window
+    # is as long as this one was, and the re-test amortizes instead of being
+    # paid every campaign. heuristic_votes still records how often the verdict
+    # has reproduced (and still survives a pin); it no longer exempts it.
+    long_solve && honour_heuristic_verdict &&
         return _rhs_calib_reverify_due(sig) ? nothing : cached
-    end
-    if cached === :heuristic
-        # On a long solve, only a REPRODUCIBLE heuristic verdict is honoured.
-        #
-        # The sweep's verdict is not stable on every workload: on
-        # interact_256sat_1hr it pins satellite_batch three to four times in
-        # five and otherwise retains the heuristic, a 17-point regret swing
-        # documented in the sweep record. Honouring the first heuristic verdict
-        # to land pinned the losing side of that coin flip for good -- measured
-        # in the paper run at eight threads: R6 replayed a cached heuristic
-        # verdict at 3.61 s while six R4/R5 sweeps in the same point pinned
-        # satellite_batch at 3.09 s. Requiring several consecutive heuristic
-        # verdicts keeps the re-sweep where the verdict flips and skips it
-        # where it does not (gravity_4096: heuristic 13 of 16 sweeps).
-        (long_solve && _rhs_calib_heuristic_votes(sig) < _rhs_calibrate_heuristic_votes_needed()) &&
-            return nothing
-        return :heuristic
-    end
-    return long_solve ? nothing : cached
+    # Short solve: any cached verdict is honored, as shipped. (A long solve
+    # returned above either way: without V2 at the solve-cost gate, with V2 on
+    # the budget.)
+    return cached
 end
 
 function _calibrate_rhs_plan_if_needed!(p, u0, args)

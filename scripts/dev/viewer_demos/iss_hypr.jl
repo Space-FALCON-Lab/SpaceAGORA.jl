@@ -13,7 +13,8 @@
 #
 # Results go to <root>/iss_hypr_<inputs digest>/. A finished run is reused
 # only when the provenance sidecar written beside it lists exactly the inputs
-# of the current invocation and the plan it flew is on disk; the page is then
+# of the current invocation and the plan, scene and Feather results match their
+# recorded hashes; the page is then
 # rebuilt from that recorded plan, never from a new one. With fixed iteration
 # budgets, seeded planning is reproducible across thread counts. Otherwise the run is fresh.
 # Nothing is deleted.
@@ -103,20 +104,33 @@ function iss_hypr_build(inputs, outdir::AbstractString)
 end
 
 """
-True when a finished run with exactly these inputs already sits in `outdir`: the
-provenance sidecar with the station, plan and cloud records the reuse path reads,
-the flown plan, the scene sidecar and the results bundle (`<prefix>.feather`) that
-the viewer export reads through the scene. A run missing any of them, including a
-results bundle removed or truncated after the fact, is not reusable; the demo then
-runs afresh instead of reusing a directory it could not export.
+True when a finished run with exactly these inputs has intact recorded results.
+The provenance must include the station, plan and cloud records used by reuse,
+and matching SHA-256 hashes for the flown plan, scene and Feather results.
+Missing, empty, altered or older unrecorded bundles cause a fresh run.
 """
 function iss_hypr_matching_run(sidecar::AbstractString, inputs, prefix::AbstractString, planfile::AbstractString)
-    for path in (sidecar, planfile, prefix * "_scene.json", prefix * ".feather")
-        isfile(path) && filesize(path) > 0 || return false
+    isfile(sidecar) && filesize(sidecar) > 0 || return false
+    recorded = try
+        JSON.parsefile(sidecar)
+    catch err
+        err isa InterruptException && rethrow()
+        return false
     end
-    recorded = JSON.parsefile(sidecar)
-    all(haskey(recorded, key) for key in ("inputs", "station", "plan", "cloud_extents_m")) || return false
-    return recorded["inputs"] == _json_roundtrip(inputs)
+    recorded isa AbstractDict || return false
+    all(haskey(recorded, key) for key in ("inputs", "station", "plan", "cloud_extents_m", "outputs")) || return false
+    recorded["inputs"] == _json_roundtrip(inputs) || return false
+    outputs = recorded["outputs"]
+    outputs isa AbstractDict || return false
+    for (key, path) in (("plan", planfile), ("scene", prefix * "_scene.json"),
+                        ("results_feather", prefix * ".feather"))
+        isfile(path) && filesize(path) > 0 || return false
+        metadata = get(outputs, key, nothing)
+        metadata isa AbstractDict || return false
+        get(metadata, "bytes", nothing) == filesize(path) || return false
+        get(metadata, "sha256", nothing) == bytes2hex(open(sha256, path)) || return false
+    end
+    return true
 end
 
 """The flown plan as written by a fresh run: waypoints, retimed reference and cost."""
@@ -204,6 +218,7 @@ function main()
             "plan" => _file_record(planfile),
             "scene" => _file_record(prefix * "_scene.json"),
             "results_csv" => _file_record(prefix * ".csv"),
+            "results_feather" => _file_record(prefix * ".feather"),
             "viewer_html" => _file_record(html),
         ),
         "software" => Dict("julia" => string(VERSION), "julia_threads" => Threads.nthreads(), "spaceagora" => string(pkgversion(SpaceAGORA))),

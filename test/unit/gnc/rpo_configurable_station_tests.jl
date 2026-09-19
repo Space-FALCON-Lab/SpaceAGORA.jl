@@ -3,6 +3,7 @@ using LinearAlgebra
 using Random
 using StaticArrays
 using CSV
+using Arrow
 using DataFrames
 using SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
@@ -232,14 +233,46 @@ else
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # results bundle still missing
             write(prefix * ".feather", "")
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # an empty results bundle is not a run
-            write(prefix * ".feather", "not a real bundle, but present and nonempty")
-            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # sidecar lacks the station, plan and cloud records
-            write(sidecar, D.JSON.json(Dict("inputs" => D._json_roundtrip(smoke), "station" => Dict(), "plan" => Dict(), "cloud_extents_m" => [])))
+            Arrow.write(prefix * ".feather", (time=[0.0, 1.0], sc1_mass=[1.0, 1.0]))
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # missing provenance records
+            records = Dict("plan" => D._file_record(planfile),
+                "scene" => D._file_record(prefix * "_scene.json"),
+                "results_feather" => D._file_record(prefix * ".feather"))
+            provenance = Dict("inputs" => D._json_roundtrip(smoke), "station" => Dict(),
+                "plan" => Dict(), "cloud_extents_m" => [], "outputs" => records)
+            write(sidecar, D.JSON.json(provenance))
             @test D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
-            @test !D.iss_hypr_matching_run(sidecar, full, prefix, planfile)        # other inputs never reuse this run
-            rm(prefix * ".feather")
-            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # a results bundle removed after the fact ends reuse
-            write(prefix * ".feather", "present again")
+            @test !D.iss_hypr_matching_run(sidecar, full, prefix, planfile)
+            # Every reusable payload is bound to the successful run, including
+            # nonempty corruption that a presence or size check would accept.
+            for path in (prefix * ".feather", prefix * "_scene.json", planfile)
+                original = read(path)
+                try
+                    rm(path)
+                    @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
+                    write(path, UInt8[])
+                    @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
+                    write(path, original[1:end-1])
+                    @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
+                    altered = copy(original)
+                    altered[end] = xor(altered[end], 0x01)
+                    write(path, altered)
+                    @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
+                finally
+                    write(path, original)
+                end
+                @test D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
+            end
+            # Older output records need one rebuild to acquire the Feather hash.
+            old_records = deepcopy(provenance)
+            delete!(old_records["outputs"], "results_feather")
+            write(sidecar, D.JSON.json(old_records))
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
+            for bad in ("{broken", "[]", "null")
+                write(sidecar, bad)
+                @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
+            end
+            write(sidecar, D.JSON.json(provenance))
             @test D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
             @test D._matrix3(D.JSON.parsefile(planfile)["path_rtn"]) == [1.0 4.0; 2.0 5.0; 3.0 6.0]
         end

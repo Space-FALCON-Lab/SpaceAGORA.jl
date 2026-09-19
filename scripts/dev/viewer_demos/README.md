@@ -62,9 +62,11 @@ julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
 The script prints the HTML path under `output/viewer_demos/iss_hypr_<inputs digest>/`.
 `SPACEAGORA_VIEWER_DEMO_OUT` changes the parent directory. The saved plan and
 provenance sit beside the results. A repeated invocation with matching inputs
-reuses the recorded simulation and plan; it does not compare an old trajectory
-with a newly planned route. The smoke hop checks the pipeline and does not
-demonstrate the complete approach.
+reuses the recorded simulation and plan only when the plan, scene and Feather
+results match the hashes in the provenance. Missing, empty or changed files
+trigger a fresh run, as do older outputs without a recorded Feather hash.
+Reused runs display the plan that produced their trajectory. The smoke hop
+checks the pipeline and does not demonstrate the complete approach.
 
 Open the printed HTML, click the marker beside the station label and press **F** to
 follow it. The blue dashed line is the reference the chaser followed, and the

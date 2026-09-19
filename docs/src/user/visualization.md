@@ -216,8 +216,9 @@ carry no exhaust physics.
 With density and velocity in the frames, the **heating** toggle colours every
 link box and model face by ½ρV³cosθ on an inferno scale, logarithmic over
 three decades below the run's peak. θ is the angle between the outward face
-normal and the airspeed (inertial velocity minus ω × r), and faces turned away
-from the flow stay cold. The legend reads W/cm². This is a viewer overlay
+normal and the velocity relative to the rotating atmosphere (inertial velocity
+minus ω × r). This display approximation does not subtract atmospheric winds.
+Faces turned away from the flow stay cold. The legend reads W/cm². This is a viewer overlay
 built from the saved density and the drawn geometry, not the simulation's
 thermal solution; `sc1_heat_rate` remains the saved stagnation value.
 
@@ -240,8 +241,9 @@ without shadows and says so in its information panel.
 
 The lighting selector always offers **lighting: real-time**. The default
 self-contained page embeds its renderer and stops there. A page whose import
-map resolves the renderer's path tracer from a CDN (currently the `--cdn` form
-of the standalone builder) also offers **lighting: path traced when paused**:
+map includes the optional path tracer also offers **lighting: path traced when paused**.
+This is available in the standalone builder's `--cdn` mode and pages made with
+`viewer/build_cdn_page.py` unless `--no-pathtracer` is set:
 the GPU path tracer loads on demand, refines the still image whenever playback
 is paused and hands back to real-time rendering while the timeline moves. When
 the tracer cannot load, the selector offers real-time lighting only and the
@@ -266,8 +268,8 @@ export_visualization("output/viewer-earth/simulation_results";
                  target=1, color="#ffcc66", opacity=0.5)])
 ```
 
-Times and positions are embedded as Float64, so a ghost sits within metres of
-the flown spacecraft when the two agree. The flown spacecraft's selection panel
+Times and positions retain Float64 precision during export. The displayed
+separation still depends on the reference sampling and interpolation. The flown spacecraft's selection panel
 shows the separation from each ghost that refers to it as a **vs name** row in
 km. Times outside the reference table hide the ghost.
 
@@ -295,8 +297,8 @@ without the body rotation, because the poses are already inertial.
 
 ## Landing dust
 
-A run with the plume-surface effector saves the seven `sc{i}_plume_*` columns
-described in [Plume interaction](plume_interaction.md) and listed in
+With the default save-field list, a run with the plume-surface effector saves
+the seven `sc{i}_plume_*` columns described in [Plume interaction](plume_interaction.md) and listed in
 [Simulation Outputs](outputs.md#Plume-interaction). The page reads them into
 its plume block and, with the **dust** toggle, draws regolith blown off the
 surface by the descent engine: a particle sheet fed by the saved erosion rate,

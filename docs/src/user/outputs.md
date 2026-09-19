@@ -279,7 +279,7 @@ These columns are present only when `mission_configuration.orientation_sim = tru
 
 ### Visualization fields
 
-These columns are present only when `simulation_settings.save_visualization_scene = true`
+These columns are added automatically when `simulation_settings.save_visualization_scene = true`
 and the run can supply them; see the [sidecar section](#Visualization-scene-sidecar-(opt-in))
 for the conditions:
 
@@ -295,7 +295,8 @@ for the conditions:
 
 These columns are written by the plume-surface effector
 ([Plume interaction](plume_interaction.md)) for every spacecraft in the run,
-whether or not the visualization sidecar is enabled:
+when using the default save-field list, whether or not the visualization sidecar
+is enabled. An explicit list must include them to write them:
 
 | Column | Unit | Description |
 |---|---|---|

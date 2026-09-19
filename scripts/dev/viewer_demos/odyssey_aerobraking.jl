@@ -7,8 +7,11 @@
 # (the epoch of the reconstruction record, orbit P19/P20, periapsis near
 # 100 km and a 17 h period), straight from SPICE (J2000, Mars-centered).
 # Force model: Mars-50c gravity to degree and order 50, Sun third body,
-# solar radiation pressure, Mars-GRAM (TES mapping year 2) density through
-# the free-molecular coefficient model. The spacecraft is the reconstruction
+# solar radiation pressure and Mars-GRAM density through the free-molecular
+# coefficient model. The constructor requests TES mapping year 2; the tested
+# native wrapper needs a later parameter-setting call to apply that selection.
+# This demonstration preserves its existing configuration. See the README
+# for this limitation before interpreting the navigation comparison. The spacecraft is the reconstruction
 # record's bus-plus-two-wings composition (2.2 x 2.6 x 1.7 m bus, 1.95 x
 # 1.7 m wings beside it, 461 kg), 11 m² broadside to the flow, the array on
 # the +y side of the bus. NASA's Odyssey model is posed the same way: the

@@ -58,6 +58,13 @@ coordinate, datum or climatology assumptions. Mission navigation SPKs are fetche
 from NAIF only when missing, into `SPACEAGORA_MISSION_SPK_DIR` or the configured
 SPICE tree's `spk/missions` directory. Native GRAM itself is never downloaded.
 
+Odyssey requests TES mapping year 2 with `mars_map_year=2`. In the tested native
+wrapper, that request alone does not apply the year selection to the native
+model; a later parameter-setting call is needed. This example preserves its
+existing numerical configuration, so do not interpret it as a validated
+year-2 atmosphere. An explicitly applied profile and its effect on the
+trajectory need separate validation.
+
 References are central-body-relative, geometric J2000 SPICE states in SI units
 at the saved simulation times. Missing SPK coverage is reported and omitted.
 The target is a one-based spacecraft index, not its public id. Separation is a

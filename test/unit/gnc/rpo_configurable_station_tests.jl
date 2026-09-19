@@ -225,12 +225,22 @@ else
             planfile = joinpath(outdir, "iss_hypr_plan.json")
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
             write(sidecar, D.JSON.json(Dict("inputs" => D._json_roundtrip(smoke))))
-            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # scene and plan still missing
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # scene, plan and results still missing
             write(prefix * "_scene.json", "{}")
-            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # plan still missing
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # plan and results still missing
             write(planfile, D.JSON.json(Dict("path_rtn" => [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])))
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # results bundle still missing
+            write(prefix * ".feather", "")
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # an empty results bundle is not a run
+            write(prefix * ".feather", "not a real bundle, but present and nonempty")
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # sidecar lacks the station, plan and cloud records
+            write(sidecar, D.JSON.json(Dict("inputs" => D._json_roundtrip(smoke), "station" => Dict(), "plan" => Dict(), "cloud_extents_m" => [])))
             @test D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
             @test !D.iss_hypr_matching_run(sidecar, full, prefix, planfile)        # other inputs never reuse this run
+            rm(prefix * ".feather")
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # a results bundle removed after the fact ends reuse
+            write(prefix * ".feather", "present again")
+            @test D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
             @test D._matrix3(D.JSON.parsefile(planfile)["path_rtn"]) == [1.0 4.0; 2.0 5.0; 3.0 6.0]
         end
     end

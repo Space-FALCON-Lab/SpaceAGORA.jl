@@ -102,11 +102,21 @@ function iss_hypr_build(inputs, outdir::AbstractString)
     return demo, extents
 end
 
-"""True when a finished run with exactly these inputs, its scene sidecar and its flown plan already sit in `outdir`."""
+"""
+True when a finished run with exactly these inputs already sits in `outdir`: the
+provenance sidecar with the station, plan and cloud records the reuse path reads,
+the flown plan, the scene sidecar and the results bundle (`<prefix>.feather`) that
+the viewer export reads through the scene. A run missing any of them, including a
+results bundle removed or truncated after the fact, is not reusable; the demo then
+runs afresh instead of reusing a directory it could not export.
+"""
 function iss_hypr_matching_run(sidecar::AbstractString, inputs, prefix::AbstractString, planfile::AbstractString)
-    isfile(sidecar) && isfile(planfile) && isfile(prefix * "_scene.json") || return false
+    for path in (sidecar, planfile, prefix * "_scene.json", prefix * ".feather")
+        isfile(path) && filesize(path) > 0 || return false
+    end
     recorded = JSON.parsefile(sidecar)
-    return get(recorded, "inputs", nothing) == _json_roundtrip(inputs)
+    all(haskey(recorded, key) for key in ("inputs", "station", "plan", "cloud_extents_m")) || return false
+    return recorded["inputs"] == _json_roundtrip(inputs)
 end
 
 """The flown plan as written by a fresh run: waypoints, retimed reference and cost."""

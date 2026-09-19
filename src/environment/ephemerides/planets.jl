@@ -449,7 +449,10 @@ module Planets
         key = (topo_harmonics_file, spice_path)
         return lock(_SPICE_BODY_LOCK) do
             haskey(_TITAN_CACHE, key) && return _TITAN_CACHE[key]
-            _furnsh_required(spice_path, "pck/pck00010.tpc")
+            # Share the modern PCK used by the other planet constructors. Loading
+            # 00010 after 00011 partially overwrites Mars's nutation/precession
+            # constants and can invalidate IAU_MARS in the shared SPICE pool.
+            _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
             _gravity_constants_kernel_if_available(spice_path)

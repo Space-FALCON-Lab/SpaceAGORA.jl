@@ -12,12 +12,14 @@ its loaders and mp4-muxer are fetched from cdn.jsdelivr.net, and the renderer
 modules are concatenated into one inline module script. The trajectory,
 textures and models stay embedded exactly as exported.
 
-What the built page requests from the network, and nothing else:
+The built-in libraries and optional fonts use these network hosts:
   - https://cdn.jsdelivr.net/npm/...   three.js r160.1, its addons, mp4-muxer 5.1.5
                                         and, unless --no-pathtracer, the optional
                                         path-traced lighting packages
-  - https://fonts.googleapis.com/...   only with --fonts (IBM Plex; the default
-                                        page uses system fonts)
+  - https://fonts.googleapis.com/...   only with --fonts (IBM Plex stylesheet)
+  - https://fonts.gstatic.com/...      only with --fonts (font files)
+Imported models can also request their own external resources; those URLs
+are preserved from the source page.
 The page lists these hosts and the third-party notices in its footer. It does
 not add a Content-Security-Policy and does not work around any host policy.
 
@@ -176,7 +178,7 @@ def notices(payload, cdn, fonts):
              "loaded from cdn.jsdelivr.net at the pinned versions listed in the import map."]
     if any(key in cdn for key in PATHTRACER_SPECIFIERS):
         items.append("Optional path-traced lighting: three-gpu-pathtracer 0.0.23 and three-mesh-bvh 0.7.8 (MIT), fetched from "
-                     "cdn.jsdelivr.net only when that lighting mode is selected.")
+                     "cdn.jsdelivr.net during viewer startup unless disabled.")
     for body, texture in sorted((payload.get("textures") or {}).items()):
         source = texture.get("source") or "unspecified source"
         licence = texture.get("license") or "license not recorded"
@@ -187,8 +189,9 @@ def notices(payload, cdn, fonts):
     hosts = ["cdn.jsdelivr.net"]
     if fonts:
         hosts += ["fonts.googleapis.com", "fonts.gstatic.com"]
-    items.append("Network requests made by this page: " + ", ".join(hosts) + ". Everything else is embedded. "
-                 "The default exported page makes no network requests at all.")
+    items.append("Built-in library and font hosts: " + ", ".join(hosts) + ". Trajectory data and bundled assets stay embedded. "
+                 "Imported models can request external resources named in the source page. "
+                 "The default self-contained export embeds its viewer libraries.")
     return items
 
 
@@ -201,7 +204,7 @@ def build(page_html, title, heading, orbit_note, span_note, foot, modules="page"
     vendor_imports, body = assemble_modules(sources, cdn)
     resolution = ((payload.get("textures") or {}).get(planet.get("texture"), {}) or {}).get("resolution", "none")
     esc = lambda value: html.escape(str(value), quote=True)
-    default_foot = ("Drag to orbit, wheel to zoom, Space to pause. Click a spacecraft marker or visible model (or press F) "
+    default_foot = ("Drag to orbit, wheel to zoom, Space to pause. Click a spacecraft marker or visible model to select it, then press F "
                     "to follow it; Planet-fixed holds the body still so the ground track drifts instead.")
     notice_html = "".join(f"<li>{esc(item)}</li>" for item in notices(payload, cdn, fonts))
     font_links = ('<link rel="preconnect" href="https://fonts.googleapis.com">\n'
@@ -306,7 +309,7 @@ def main(argv=None):
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page)
     print(f"wrote {out} ({out.stat().st_size / 1e6:.1f} MB); renderer modules from {args.modules}; "
-          f"network hosts: cdn.jsdelivr.net{', fonts.googleapis.com, fonts.gstatic.com' if args.fonts else ''}")
+          f"built-in library and font hosts: cdn.jsdelivr.net{', fonts.googleapis.com, fonts.gstatic.com' if args.fonts else ''}")
 
 
 if __name__ == "__main__":

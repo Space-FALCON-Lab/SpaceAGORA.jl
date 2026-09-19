@@ -165,14 +165,14 @@ class NoticesAndHosts(unittest.TestCase):
         self.assertIn("three.js r160 (MIT", page)
         self.assertIn("mp4-muxer 5.1.5 (MIT", page)
         self.assertIn("Earth texture: NASA Blue Marble (public-domain (NASA))", page)
-        self.assertIn("Network requests made by this page: cdn.jsdelivr.net.", page)
+        self.assertIn("Built-in library and font hosts: cdn.jsdelivr.net.", page)
         self.assertNotIn("fonts.googleapis.com", page)
         self.assertNotIn("Content-Security-Policy", page)
 
     def test_fonts_option_adds_the_font_hosts_and_says_so(self):
         page = cdn.build(fake_page(payload_fixture(), fake_modules()), "T", "H", "O", "S", None, fonts=True)
         self.assertEqual(self.external_hosts(page), ["cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"])
-        self.assertIn("Network requests made by this page: cdn.jsdelivr.net, fonts.googleapis.com, fonts.gstatic.com.", page)
+        self.assertIn("Built-in library and font hosts: cdn.jsdelivr.net, fonts.googleapis.com, fonts.gstatic.com.", page)
 
     def test_cdn_map_is_the_standalone_builders_pinned_map(self):
         standalone = cdn._standalone_builder()

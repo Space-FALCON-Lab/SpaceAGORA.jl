@@ -208,15 +208,17 @@ kept verbatim and checked for script safety, a module that declares a
 top-level name twice is refused with the two file names, and any vendor
 specifier without a pinned CDN location is an error.
 
-The only network host of the default built page is `cdn.jsdelivr.net`
-(three.js and its addons, mp4-muxer and, unless `--no-pathtracer`, the
-optional path-traced lighting packages, which load only when that mode is
-selected). `--fonts` adds `fonts.googleapis.com` and `fonts.gstatic.com`
-for the IBM Plex faces; without it the page uses system fonts. The footer
-of every built page lists these hosts, the three.js and mp4-muxer notices
-and the texture attributions carried in the payload. The tool adds no
-Content-Security-Policy and does not work around any host's policy; if a
-host blocks `cdn.jsdelivr.net`, the page reports that it failed to start.
+The built-in libraries use `cdn.jsdelivr.net`: three.js and its addons,
+mp4-muxer and, unless `--no-pathtracer`, the optional path-traced lighting
+packages, which load during viewer startup. `--fonts` adds
+`fonts.googleapis.com` and `fonts.gstatic.com` for the IBM Plex faces;
+without it the page uses system fonts. Imported models can also request
+external buffers or textures; their resource URLs are preserved from the
+source page. The footer lists the library and font hosts, the three.js and
+mp4-muxer notices and the texture attributions carried in the payload.
+The tool adds no Content-Security-Policy and does not work around any
+host's policy; if a host blocks `cdn.jsdelivr.net`, the page reports that
+it failed to start.
 Tests: `python3 -m unittest discover -s test/scripts -p test_build_cdn_page.py`.
 
 ## Reference ghosts

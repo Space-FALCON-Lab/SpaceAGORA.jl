@@ -5,8 +5,8 @@
 # the initial epoch, and the "ghost" reference table for
 # `export_visualization(...; references=...)`.
 #
-# Everything here is dev tooling: it needs the GRAM/SPICE asset tier and
-# network access the first time a mission kernel is fetched.
+# These helpers need the SPICE asset tier and network access the first time a
+# mission kernel is fetched. The atmosphere drivers additionally need native GRAM.
 const SPICE_PATH = abspath(get(ENV, "SPACEAGORA_SPICE_PATH", joinpath(@__DIR__, "..", "..", "..", "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")))
 include(joinpath(@__DIR__, "..", "..", "..", "examples", "common.jl"))
 include(joinpath(@__DIR__, "demo_options.jl"))
@@ -296,14 +296,14 @@ end
     demo_aero_effector(model_path, outdir; scale, rotation_deg, reference_area_m2, wall_temperature_k) -> effector
 
 `AerodynamicCoefficientfM()` by default. Explicit mesh mode fits the current
-mission geometry afresh with the separately supplied mesh-aerodynamics feature.
+mission geometry afresh using SpaceAGORA's built-in mesh-aerodynamics feature.
 It never silently reuses a fitted model from another configuration.
 """
 function demo_aero_effector(model_path::AbstractString, outdir::AbstractString; scale::Real=1.0, rotation_deg=(0.0, 0.0, 0.0),
                             reference_area_m2=nothing, wall_temperature_k::Real=300.0, degree::Int=10, articulations=())
     get(ENV, "SPACEAGORA_DEMO_MESH_AERO", "0") == "1" || return AerodynamicCoefficientfM()
     all(name -> isdefined(@__MODULE__, name), (:mesh_aero_panels, :fit_mesh_aero_surrogate, :AerodynamicCoefficientMeshSurrogate)) ||
-        throw(ArgumentError("mesh mode requires the separately supplied mesh-aerodynamics feature"))
+        throw(ArgumentError("mesh mode requires an updated SpaceAGORA checkout with mesh aerodynamics"))
     panels = mesh_aero_panels(model_path; scale=scale, rotation_deg=rotation_deg, reference_area_m2=reference_area_m2, articulations=articulations)
     println("mesh aero: ", length(panels), " facets from ", basename(model_path))
     elapsed = @elapsed surrogate = fit_mesh_aero_surrogate(panels; degree=degree, n_directions=1200, verbose=true)
@@ -320,6 +320,6 @@ end
 
 function demo_model_path(filename::AbstractString)
     path = joinpath(MODELS_DIR, filename)
-    isfile(path) && filesize(path) > 0 || throw(ArgumentError("mission model asset missing: $path; install the mission-assets package"))
+    isfile(path) && filesize(path) > 0 || throw(ArgumentError("mission display model missing: $path; restore the tracked asset from data/models in this repository"))
     return path
 end

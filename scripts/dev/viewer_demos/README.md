@@ -1,7 +1,8 @@
 # Local viewer demonstrations
 
 Run these scripts from the repository with its Julia environment instantiated.
-They use analytic ephemerides and either no atmosphere or an exponential model.
+The four basic demonstrations below use analytic ephemerides and either no
+atmosphere or an exponential model.
 Native GRAM, SPICE kernels and private telemetry are not required. The ISS display
 uses the tracked NASA model in `data/models/`; it is display geometry, not the
 physical mass or aerodynamic mesh.
@@ -39,7 +40,7 @@ The Odyssey demonstration explicitly uses Tsit5 and budgets solver steps for its
 0.1-second controller over the requested duration, with a margin for rejected
 steps. This changes the iteration ceiling, not the integration tolerances.
 
-## Mission reconstruction drivers
+## Mission demonstrations and SPICE comparisons
 
 `apollo11_lunar_orbit.jl`, `magellan_aerobraking.jl`, `odyssey_aerobraking.jl`, and
 `cassini_titan_flyby.jl [TA|T5|all]` retain the PR121 mission cases. The first
@@ -49,9 +50,9 @@ starting 2.5 hours before the searched closest approach. All accept
 bounded run. Existing nonempty outputs are refused, never reused or removed.
 `SPACEAGORA_DEMO_FORCE` no longer overrides that protection.
 
-These require existing SPICE kernels (`SPACEAGORA_SPICE_PATH`) and the mission
-models supplied by the mission-assets package. Magellan, Odyssey and Cassini
-require installed native GRAM support; each wrapper is constructed explicitly
+These drivers use the tracked mission display models in `data/models/` and
+require existing SPICE kernels (`SPACEAGORA_SPICE_PATH`). Magellan, Odyssey and
+Cassini require installed native GRAM support; each wrapper is constructed explicitly
 at the simulation's initial epoch. This does not validate native time-system,
 coordinate, datum or climatology assumptions. Mission navigation SPKs are fetched
 from NAIF only when missing, into `SPACEAGORA_MISSION_SPK_DIR` or the configured
@@ -71,14 +72,16 @@ product 91. No time-varying body tide is implied. Odyssey's optional
 `SPACEAGORA_DEMO_ODYSSEY_ATMOSPHERE=accelerometer` requires a separately supplied
 local density table; it is not silently substituted for GRAM.
 `SPACEAGORA_DEMO_MAGELLAN_ANTENNA=forward|aft` controls the model pose.
-`SPACEAGORA_DEMO_MESH_AERO=1` requires the separate mesh-aerodynamics package and
-fits the selected geometry afresh; it does not reuse a stale mesh fit.
+`SPACEAGORA_DEMO_MESH_AERO=1` enables SpaceAGORA's built-in mesh aerodynamic model
+and fits the selected geometry afresh; it does not reuse a stale mesh fit.
 
 The canonical output is standalone `simulation_results_viewer.html`. Optional
 `SPACEAGORA_DEMO_CDN=1` invokes the separate `build_cdn_page.py` tool when present.
 That network-dependent sharing feature remains separate from these drivers.
 `check_odyssey.jl [results_directory]` inspects saved articulation and altitude
 from the basic energy-depletion Odyssey demonstration without propagating it.
+Without an argument, it reads the `odyssey_two_orbits` results directory under
+the configured viewer-demo output parent.
 
 ### Mission time and reference alignment
 
@@ -89,3 +92,9 @@ the run measure the selected simulation against the navigation reconstruction,
 not an initial sub-millisecond timestamp mismatch. This does not validate the
 atmosphere's native time or coordinate conventions. Apollo's lunar orbit remains
 a nominal example, not a reconstruction from an Apollo flight kernel.
+
+Full-duration validation checks that these examples run and that their clocks,
+initial states and reference tables agree. It does not establish flight accuracy.
+For example, the default native-GRAM Odyssey run reaches about 552 km separation
+from its navigation reference over 34.6 hours, with the second periapsis about
+120 seconds late. Quantitative reconstruction requires further model validation.

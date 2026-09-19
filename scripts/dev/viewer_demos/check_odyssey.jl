@@ -2,7 +2,7 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const DEMO_OUT_ROOT = get(ENV, "SPACEAGORA_VIEWER_DEMO_OUT", joinpath(REPO_ROOT, "output", "viewer_demos"))
 using SpaceAGORA, Arrow, DataFrames, Statistics
 length(ARGS) <= 1 || throw(ArgumentError("usage: check_odyssey.jl [results_directory]"))
-dir = isempty(ARGS) ? joinpath(DEMO_OUT_ROOT, "odyssey_ed") : abspath(only(ARGS))
+dir = isempty(ARGS) ? joinpath(DEMO_OUT_ROOT, "odyssey_two_orbits") : abspath(only(ARGS))
 isdir(dir) || throw(ArgumentError("results directory does not exist: $dir"))
 
 df = DataFrame(Arrow.Table(joinpath(dir, "simulation_results.feather")))

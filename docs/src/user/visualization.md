@@ -147,6 +147,177 @@ For GRAM, surrogate, empirical and user-defined models, export adds the
 entry-interface shell without making extra atmosphere calls. It does not
 reinitialize the atmosphere, change its epoch or advance its sampler.
 
+## Toolbar and keyboard
+
+The toolbar holds the playback controls, the **Inertial** and **Planet-fixed**
+frame buttons, **Follow**, the trail length and trail colour selectors, and
+one checkbox per overlay: labels, planned paths, reference ghosts, ground
+tracks, graticule, 3D models, thrusters, plumes, facets, body axes, heating,
+dust, atmosphere, density shells and density map. An overlay whose data is
+absent from the page hides its checkbox. The lighting selector and **Save
+video…** are described below; **Reset view** returns the camera to its
+starting position.
+
+| Key | Action |
+|---|---|
+| Space | Play or pause |
+| Left or Right arrow | Step back or forward by one speed unit |
+| F | Follow the selected spacecraft |
+| Escape | Clear the selected face, then the selected spacecraft |
+
+Trails can be coloured by heat rate, dynamic pressure, density, altitude or
+speed. Heat rate, dynamic pressure and density use logarithmic colour scales;
+altitude and speed use linear scales.
+
+## Close-up models, thrusters and plumes
+
+When a spacecraft's bounding radius covers a few pixels, its marker gives way
+to the assembly recorded in the sidecar: one box per link from `Link.dims`,
+placed by the saved attitude quaternion. Runs without orientation state use an
+attitude with body +x along the velocity and body +z toward nadir. Non-root
+links follow the `link_pose` columns when the run saved them, otherwise their
+configured pose. Thrusters are cones with the apex at the thruster location,
+pointing along the thrust direction; facets are translucent squares of the
+facet area with their normal drawn; the body axes are red, green and blue for
+x, y and z. Each has a toolbar toggle.
+
+A model passed through `models` replaces the boxes; the glyphs stay. Parts
+that the file holds in another position can be posed with
+`model_articulations`, which takes the same specification as
+`articulate_triangles`, so the drawn model and an articulated aerodynamic mesh
+agree:
+
+```julia
+export_visualization("output/viewer-earth/simulation_results";
+    models=Dict(1 => "data/models/iss_nasa_3d_resources_b.glb"), model_scale=2.4,
+    model_articulations=Dict(1 => [
+        (region=(x_min=10.0,), axis=(0.0, 1.0, 0.0), angle_deg=90.0, pivot=:centroid)]))
+```
+
+Each articulation names a `region` (an axis-aligned box in model units with
+`x_min`, `x_max`, `y_min`, `y_max`, `z_min` and `z_max`; a missing bound is
+unbounded), a rotation `axis` in model axes, an `angle_deg`, and a `pivot`: a
+point on the axis in model units, or `:centroid` for the centre of the selected
+vertices' bounding box. Vertices inside the region rotate.
+
+Thruster firing levels saved with the run (the `thruster_level` field, see
+[Simulation Outputs](outputs.md#Visualization-fields)) drive a plume on every
+thruster: an additive, flickering cone pair along the thruster's direction,
+long and orange-white for a main engine and short and blue-white for an
+attitude jet, with reach and brightness set by the rated thrust and by the
+level through a fractional exponent, so a jet firing a fraction of a percent of
+its rating still reads. Level 0 draws nothing and dims the static cone. The
+selection panel lists a **thruster k level** row per thruster; click it to plot
+the firing history. Plumes are display glyphs driven by the recorded levels and
+carry no exhaust physics.
+
+## Heating overlay and face inspection
+
+With density and velocity in the frames, the **heating** toggle colours every
+link box and model face by ½ρV³cosθ on an inferno scale, logarithmic over
+three decades below the run's peak. θ is the angle between the outward face
+normal and the airspeed (inertial velocity minus ω × r), and faces turned away
+from the flow stay cold. The legend reads W/cm². This is a viewer overlay
+built from the saved density and the drawn geometry, not the simulation's
+thermal solution; `sc1_heat_rate` remains the saved stagnation value.
+
+Click a face of a drawn assembly to inspect it. The face panel reports the
+incidence θ in degrees, the local heat flux ½ρV³cosθ in W/cm², the ram
+pressure ρV²cos²θ in Pa, the airspeed, the flow direction in body axes, the
+face normal in body axes and the spacecraft's inertial position and velocity,
+all updating as the timeline plays. Each row plots like any other channel.
+Escape clears the face selection before the spacecraft selection.
+
+## Sun lighting and path tracing
+
+When the run saved the Sun direction (the `sun_dir` field, written when the
+run's ephemerides can locate the Sun), the page lights the scene from it: a
+directional sun with a shadow map fitted to the followed vehicle, and an
+exposure measured from the ground texture's mean albedo and the sun elevation
+at the site rather than assumed, so the surface renders at the same brightness
+every time the page opens. Without `sun_dir` the page uses a fixed light
+without shadows and says so in its information panel.
+
+The lighting selector always offers **lighting: real-time**. The default
+self-contained page embeds its renderer and stops there. A page whose import
+map resolves the renderer's path tracer from a CDN (currently the `--cdn` form
+of the standalone builder) also offers **lighting: path traced when paused**:
+the GPU path tracer loads on demand, refines the still image whenever playback
+is paused and hands back to real-time rendering while the timeline moves. When
+the tracer cannot load, the selector offers real-time lighting only and the
+browser console records why. Lighting is a rendering choice and changes no
+saved quantity.
+
+## Reference ghosts and planned paths
+
+`references` draws reference trajectories as translucent ghosts of a flown
+spacecraft on the run's own timeline: a SPICE reconstruction, a telemetry
+record or a plan. Each entry is a NamedTuple or Dict with `name`, `t_s`
+(elapsed seconds from the run epoch, non-decreasing), `pos_m` (3 × N inertial
+metres) and optionally `vel_mps` (3 × N), `q` (4 × N scalar-last
+body-to-inertial attitude; velocity-aligned when absent), `target` (1-based
+index of the spacecraft whose geometry and model the ghost copies, default 1),
+`color` (hex string), `opacity` (0 to 1, default 0.45) and `trail` (draw the
+whole reference line, default true):
+
+```julia
+export_visualization("output/viewer-earth/simulation_results";
+    references=[(name="reconstruction", t_s=t, pos_m=r, vel_mps=v,
+                 target=1, color="#ffcc66", opacity=0.5)])
+```
+
+Times and positions are embedded as Float64, so a ghost sits within metres of
+the flown spacecraft when the two agree. The flown spacecraft's selection panel
+shows the separation from each ghost that refers to it as a **vs name** row in
+km. Times outside the reference table hide the ghost.
+
+`paths` overlays reference polylines. Each entry has `name`, `points_m`
+(3 × N metres), `frame` (`:inertial`; `:rtn` for the radial, transverse and
+normal frame of spacecraft `target`; or `:body` for that spacecraft's body
+frame) and optionally `color` and `dashed`. RTN and body paths are rebuilt
+every frame from the target's saved state, so a planned approach stays attached
+to a moving target:
+
+```julia
+export_visualization("output/viewer-earth/simulation_results";
+    paths=[(name="approach", points_m=plan_m, frame=:rtn, target=2, dashed=true)])
+```
+
+## Robot arms
+
+A spacecraft carrying the cloth robot-arm chain records the `arm_pose` field:
+per arm link, the link centre of mass relative to the spacecraft in inertial
+metres and the link's inertial attitude quaternion. The page draws one
+cylinder per link along the link's own vector, a joint sphere at its origin and
+a red tip at the end effector, recovering the joint origin each frame from the
+saved centre of mass and quaternion. The arm group sits at the spacecraft
+without the body rotation, because the poses are already inertial.
+
+## Landing dust
+
+A run with the plume-surface effector saves the seven `sc{i}_plume_*` columns
+described in [Plume interaction](plume_interaction.md) and listed in
+[Simulation Outputs](outputs.md#Plume-interaction). The page reads them into
+its plume block and, with the **dust** toggle, draws regolith blown off the
+surface by the descent engine: a particle sheet fed by the saved erosion rate,
+ejecta speed, eroded mass and engine height, a ground haze disk and a scour
+mark. Dust sits on the terrain radius when a site bundle is exported and on
+the reference globe otherwise. It illustrates the saved diagnostics; the
+erosion closure itself is described on the plume page.
+
+## Save a video
+
+**Save video…** opens a dialog with the time range, the playback speed in
+simulated seconds per second of video, the frame rate (24, 30 or 60 frames per
+second) and the output size (the canvas size, 1280 × 720, 1920 × 1080 or
+2560 × 1440), and shows the resulting video length and frame count. The page
+renders the range frame by frame, encodes it as H.264 with the browser's
+WebCodecs encoder and muxes an MP4 in memory before offering the download; the
+live view stands still while it records. **Record WebM (10 s)** is the fallback
+for browsers without an H.264 encoder: it records ten seconds of the live
+playback with MediaRecorder. Both files are produced in the browser, and
+nothing leaves the machine.
+
 ## Ensembles
 
 ```julia
@@ -176,8 +347,9 @@ not replace the frame metadata saved by a simulation.
 The default page embeds its renderer and assets. Optional CDN builds and
 imported models with external resource URLs can make network requests.
 
-See `viewer/README.md` for detailed controls, renderer development and
-licensing. Landing dynamics and plume-surface physics are separate from the viewer.
+See `viewer/README.md` for renderer development, module layout and
+licensing. Landing dynamics and plume-surface physics are separate from the
+viewer: the page only draws what the run saved.
 
 ## Regional terrain in exported pages
 

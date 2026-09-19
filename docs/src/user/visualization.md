@@ -173,8 +173,13 @@ quaternion columns. Check units and the inertial-frame convention before
 interpreting the view. The standalone rotation is an approximation; it does
 not replace the frame metadata saved by a simulation.
 
-The default page embeds its renderer and assets. Optional CDN builds and
-imported models with external resource URLs can make network requests.
+The default page embeds its renderer and assets and makes no network
+requests. Imported models with external resource URLs can request them. For
+a host that refuses embedded `data:` scripts, `viewer/build_cdn_page.py`
+rewrites an exported page to load the pinned three.js and mp4-muxer from
+`cdn.jsdelivr.net` with the renderer modules inlined; the built page lists
+its network hosts and third-party notices in its footer, and adds fonts
+from Google Fonts only with `--fonts`. See `viewer/README.md`.
 
 See `viewer/README.md` for detailed controls, renderer development and
 licensing. Terrain payload export, landing dynamics and plume-surface

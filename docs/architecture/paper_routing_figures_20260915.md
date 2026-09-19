@@ -430,6 +430,32 @@ flapping and R6 wins outright. Quote both: the median over a short campaign
 sequence is what a user with five campaigns to run experiences, and the steady
 state is what the routing itself achieves.
 
+**4c. The five-repeat median is a biased estimator, and its reproducibility
+across runs hid that.** R6's exploration schedule is itself reproducible, so
+three separate runs agreeing on a value is not evidence the value is right.
+TRX50's P4 budget 16 is the clean case. All four runs produce the same campaign
+sequence -- warm-up ~4.4 s, process ~1.8 s, two exploring campaigns on threads
+at ~3.1 and ~2.7 s, then process ~1.8 s:
+
+```
+orig  : proc 4.46  proc 1.86  thre 3.09  thre 2.73  proc 1.79            -> median 2.730
+ctrl  : proc 4.41  proc 1.79  thre 3.01  thre 2.74  proc 1.82            -> median 2.735
+new   : proc 4.66  proc 1.76  thre 3.01  thre 2.76  proc 1.74            -> median 2.760
+cold11: proc 4.32  proc 1.99  thre 3.12  thre 2.78  proc 1.76
+        proc 2.13  proc 1.90  proc 2.03  proc 1.88  proc 2.04  proc 1.91 -> median 2.033
+```
+
+With five repeats, two of the five samples are exploration, so the median *is*
+an exploring campaign by construction and overstates the steady state by 34%.
+The three five-repeat runs agree to within 1% -- and all three are wrong in the
+same direction, because they are reproducing a biased estimator rather than a
+value. At eleven repeats the same two exploring campaigns are diluted among
+nine exploiting ones and the median falls to 2.033 s.
+
+Every five-repeat R6 median in this document is exposed to this, in proportion
+to how many of its five campaigns explored. It is the concrete reason the
+eleven-repeat runs were worth their wall time, separately from finding 8.
+
 **5. R6's variance is far higher than the static routes'.** Every mode pays a
 warm-up cost on its first repeat; what separates them is what happens after it.
 At P4's budget 12, repeats 2-5 of `outer_process` span 2.832-2.970 s -- a 5%

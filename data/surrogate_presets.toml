@@ -1,0 +1,140 @@
+catalog_revision = "odyssey-p20-1.0.0"
+schema_version = 1
+
+[[presets]]
+artifact_name = "odyssey_p20_frozen_v1_1_0_0"
+description = "Mars Odyssey P20 frozen nominal atmosphere"
+id = "odyssey_p20_frozen_v1"
+planet = "mars"
+release_enabled = true
+version = "1.0.0"
+
+    [presets.atmosphere]
+    api_units = ["m", "rad", "rad"]
+    epoch_utc = "2001-11-07T11:51:04.794789Z"
+    equatorial_radius_m = 3.39619e6
+    fields = ["density_kgm3", "temperature_K", "wind_ew_ms", "wind_ns_ms", "wind_up_ms"]
+    height = "ellipsoidal"
+    latitude = "geodetic"
+    longitude = "east_positive_periodic"
+    mode = "frozen_mean_snapshot"
+    polar_radius_m = 3.3762e6
+    pole_policy = "Requested longitude-label ENU components; no unique physical pole-vector claim."
+    pressure_available = false
+    query_elapsed_time_applied = false
+    wind_boolean_suppresses_stored_components = false
+    wind_convention = "stored_nominal_local_ENU"
+
+    [presets.axes.altitude]
+    count = 161
+    start = 100.0
+    step = 1.0
+
+    [presets.axes.latitude]
+    count = 51
+    start = 40.0
+    step = 1.0
+
+    [presets.axes.longitude]
+    count = 144
+    start = 0.0
+    step = 2.5
+
+    [presets.distribution]
+    archive_sha256 = "75b2396446c12dd4ac3a698f3f04c19eef5e13bdaa9699ba0ad7ec3cc97a27bd"
+    git_tree_sha1 = "6542c3e8157d0a97e9e7efad52b7464dd522e98c"
+    status = "public_versioned_snapshot"
+    urls = ["https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-odyssey-p20-1.0.0/odyssey_p20_frozen_v1-1.0.0.tar.gz"]
+
+    [presets.domain]
+    above_grid_vacuum = false
+    height_m = [100000.0, 260000.0]
+    latitude_deg = [40.0, 90.0]
+    longitude_period_deg = 360.0
+    outside_height = "error"
+    outside_latitude = "error"
+
+    [presets.generation_provenance]
+    generation_inputs = "generation_inputs.json"
+    generation_inputs_sha256 = "f83306b9f766b9c97820fca7b437a3de5b4cdc809599ad7bc930b9f3579b38e0"
+    native_library_bytes = 4114304
+    native_library_sha256 = "19c5715b1d18c9b4f8afa315fb77466091cb240e7954bc84e8e4ab540e76e3f4"
+    native_model_input_data_included = false
+    native_model_version_identity = "Pinned library and input hashes in generation_inputs.json; no unrecorded semantic version inferred"
+    native_software_included = false
+    numerical_release_limits = "not established by this artifact"
+    original_generation_julia = "1.12.3"
+    original_generator_filename = "build_offline_static_grids.jl"
+    original_generator_sha256 = "a514bbd1349dc6ac41182de40760d83c3089e061892dc4af3b26aa22c82af288"
+    packaging_adds_scientific_validation = false
+    payload = "mars_grid.jls"
+    payload_bytes = 47299649
+    payload_created_at_utc = "2026-09-18T20:40:12.729"
+    payload_modified_for_distribution = false
+    payload_sha256 = "3643c9116b75c511d20edee2866e2b5ba06baaeba9e693c4f3ad1055a7820e8c"
+    preset_id = "odyssey_p20_frozen_v1"
+    public_generator_revision = "003bcf78dc8e834458a82b4af665874a0c1dcd5e"
+    publisher = "Space-FALCON Lab"
+    recipe = "recipe.toml"
+    runtime_wrapper_revision = "12eb2ee722881247970d38bbc2bb1ffa3a921523"
+    schema = "spaceagora_public_grid_provenance_v1"
+    serialization = "Julia.Serialization"
+    version = "1.0.0"
+
+    [presets.payload]
+    bytes = 47299649
+    file = "mars_grid.jls"
+    format = "spaceagora_gram_static_grid_v1"
+    sha256 = "3643c9116b75c511d20edee2866e2b5ba06baaeba9e693c4f3ad1055a7820e8c"
+
+    [presets.required_metadata]
+    dust = "native_default_unmodified"
+    elapsed_time_s = 0.0
+    format = "spaceagora_gram_static_grid_v1"
+    monte_carlo = "off"
+    planet = "mars"
+    seed = 1001
+    status = "ok"
+    type = "full_grid"
+    wind_mode = "on_mean"
+
+        [presets.required_metadata.generation_config]
+        elapsed_time_s = 0.0
+        equatorial_radius_km = 3396.19
+        is_planetocentric = false
+        mars_dust_mode = "native-default"
+        mars_map_year = 2
+        mars_min_max = 1
+        mars_mola_heights = false
+        perturbation_action = false
+        perturbation_scales = [0.0, 0.0, 0.0, 0.0]
+        polar_radius_km = 3376.2
+        position_units = "kilometres_and_degrees"
+        record_type = "applied_binding_arguments_not_native_effective_state"
+        seed = 1001
+        start_time_frame = 0
+        start_time_scale = 1
+        wind_product = "stored_mean_ENU"
+
+            [presets.required_metadata.generation_config.initial_time]
+            day = 7
+            hour = 11
+            minute = 51
+            month = 11
+            second = 4.794789
+            year = 2001
+
+        [presets.required_metadata.initial_time]
+        day = 7
+        hour = 11
+        minute = 51
+        month = 11
+        second = 4.794789
+        year = 2001
+
+    [presets.support]
+    algorithm_changes_inherit_reference_accuracy = false
+    application_accuracy_requirements = "unset; choose for the intended study"
+    changed_date_selects_new_atmosphere = false
+    evidence = "Accepted bounded Odyssey P20 diagnostic and propagation comparisons"
+    stored_domain_is_uniform_accuracy_claim = false

@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["SpaceAGORA Contributors"]
 
 [deps]
+Artifacts = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 Arrow = "69666777-d1a9-59fb-9406-91d4454c9d45"

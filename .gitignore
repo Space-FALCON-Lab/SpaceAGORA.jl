@@ -146,3 +146,6 @@ viewer/dev_data.js
 
 # Optional terrain asset tooling environment
 .venv-terrain/
+
+# Reproducible public Odyssey example environment resolves on each platform.
+examples/odyssey_surrogate_env/Manifest.toml

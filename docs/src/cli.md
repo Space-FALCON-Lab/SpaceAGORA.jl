@@ -169,3 +169,27 @@ julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --smoke --
 julia --project=. src/cli/main.jl telemetry smoke --output-dir=output/telemetry_smoke --print-only
 julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke --print-only
 ```
+
+### Named surrogate data
+
+After [setting up the public Odyssey environment](tutorials/odyssey_surrogate.md):
+
+```sh
+julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets list
+julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0
+julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
+```
+
+`list` reads the catalog without downloading. `fetch` downloads only the selected
+version and verifies its bytes. `check` uses installed data offline and validates
+the grid schema, coordinates and generation settings. `--file=<path>` selects
+an explicit exact-byte copy; an invalid path never falls back to retrieval.
+`fetch --offline` verifies an installed artifact without network access.
+Both `--preset=<id>` and `--preset <id>` forms are accepted, likewise `version`
+and `file`. An exact version is required.
+
+The native-free wrapper loads automatically for the preset `check` command.
+These commands do not build or initialize native GRAM. Normal Odyssey example
+startup performs preset retrieval itself, so the commands above are optional
+inspection/prefetch tools. The unqualified `assets check` remains an inventory
+of repository-local asset roots and catalogs, not proof that a grid is valid.

@@ -8,6 +8,7 @@ using TOML
 
 using ..IOConfig
 using ..IOSerialization
+using ..EnvironmentModels: atmosphere_provenance
 
 function _append_saved_segment!(times_acc::Vector{Float64}, data_acc::Vector, saved_values)
     seg_len = length(saved_values.t)
@@ -260,6 +261,7 @@ function _write_results_bundle!(
         "steps" => length(times),
         "spacecraft_count" => length(args.dynamics_model.spacecraft),
         "orientation_sim" => args.mission_configuration.orientation_sim,
+        "atmosphere" => atmosphere_provenance(args.environment_model.density_model),
         "files" => files
     )
 

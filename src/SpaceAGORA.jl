@@ -11,6 +11,7 @@ include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "simulation", "campaigns", "simulation_campaigns.jl"))
 include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
 include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
+include(joinpath(@__DIR__, "assets", "odyssey_surrogate_assets.jl"))
 include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
 include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
 
@@ -73,6 +74,7 @@ using .SimulationModel: init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_
 using .SimulationModel: robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 using .SimulationModel: GRAMGridAtmosphereModel
+using .SimulationModel.EnvironmentModels: SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel.TerrainModels: AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
@@ -105,6 +107,9 @@ using .SimulationModel: EnsembleSample, sample_results_directory, with_results_d
 using .TelemetryVerification: VerificationRequest, VerificationResult
 using .TelemetryVerification: run_verification, run_verification_cli, run_study
 
+using .OdysseySurrogateAssets: odyssey_surrogate_assets
+export odyssey_surrogate_assets
+
 ## 2.7. RPO Station Assets
 using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 
@@ -115,6 +120,13 @@ using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
 using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 
+
+@doc (@doc SimulationModel.EnvironmentModels.SurrogatePresetResolution) SurrogatePresetResolution
+@doc (@doc SimulationModel.EnvironmentModels.available_surrogate_presets) available_surrogate_presets
+@doc (@doc SimulationModel.EnvironmentModels.resolve_surrogate_preset) resolve_surrogate_preset
+@doc (@doc SimulationModel.EnvironmentModels.surrogate_preset_model) surrogate_preset_model
+@doc (@doc SimulationModel.EnvironmentModels.atmosphere_provenance) atmosphere_provenance
+@doc (@doc OdysseySurrogateAssets.odyssey_surrogate_assets) odyssey_surrogate_assets
 
 ## 3. Attach description of each function / model to the SpaceAGORA module's bindings
 # Forward the docstrings onto this module's bindings: the docs build resolves
@@ -419,6 +431,7 @@ export AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
 export terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
 export GRAMGridAtmosphereModel
+export SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment

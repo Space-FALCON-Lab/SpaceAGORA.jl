@@ -1,0 +1,20 @@
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+SpaceAGORA = "afbfb69f-5c0b-4832-b760-43725dff8540"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[sources]
+SpaceAGORA = {path = "../.."}
+GRAMSuite = {url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl.git", rev = "12eb2ee722881247970d38bbc2bb1ffa3a921523"}
+
+[compat]
+CSV = "0.10"
+GRAMSuite = "0.1"
+SpaceAGORA = "0.1"
+StaticArrays = "1"
+julia = "1.12"

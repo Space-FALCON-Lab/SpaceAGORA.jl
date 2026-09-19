@@ -1,0 +1,225 @@
+# Apollo 11 powered descent to Tranquility Base, 1969-07-20, from powered
+# descent initiation (PDI, 20:05:05 UTC, 15.24 km above the site and 480 km
+# uprange on the descent orbit, flying west at 1693 m/s) to touchdown. The
+# lunar module descent stage is flown six-degree-of-freedom: the Apollo
+# quadratic guidance (P63 braking, P64 approach, P66 rate of descent) commands
+# the descent engine's thrust and the attitude that points it, an RCS attitude
+# controller tracks that attitude, and the thrust acts along the vehicle's
+# actual engine axis. The terrain is a local site bundle (LOLA and, where it
+# exists, the LROC NAC digital terrain model, fetched by
+# scripts/dev/terrain/fetch_moon_site.py): it is the guidance's radar
+# altimeter, the ground the touchdown event fires on, and the surface the page
+# draws, draped with the bundle's imagery quadtree when one was built.
+#
+#   python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --nac-half-deg 0.03 --out data/terrain/moon/apollo11
+#   julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl [--duration-s S] [--output-dir DIR]
+#
+# The NAC window is narrowed to 0.03 degrees because the registered Apollo 11
+# NAC digital terrain model is a narrow strip whose fully valid square around
+# the site is about 0.036 degrees; the producer refuses a window with no-data.
+# SPACEAGORA_TERRAIN_SITE points the demo at another site.json (a regenerated
+# bundle under output/terrain, say) instead of the one under data/. The site
+# bundle declares its own reference sphere; guidance, touchdown, plume and the
+# page all use that explicit datum. The run ends at the touchdown event, so
+# --duration-s is only a cap. An existing nonempty output directory is refused.
+#
+# What this run does and does not establish: it demonstrates the merged descent
+# guidance, control, terrain-contact and plume models on one documented case.
+# It is not a reconstruction of the flown Apollo 11 trajectory and does not
+# establish flight accuracy; see docs/src/user/lunar_landing.md.
+include(joinpath(@__DIR__, "common.jl"))
+
+const APOLLO11_SITE_DEFAULT = joinpath(REPO_ROOT, "data", "terrain", "moon", "apollo11", "site.json")
+const LM_MODEL_FILE = "apollo_lunar_module_nasa_3d_resources.glb"
+const LM_ROTATION_DEG = (-180, 90, 90)   # legs along body +z (down through the engine), hatch and windows along body +x
+const LM_MODEL_SCALE = 1.45
+const PDI_UTC = "1969-07-20T20:05:05"
+const PDI_ALTITUDE_M = 15_240.0      # 50,000 ft above the site
+const PDI_UPRANGE_M = 480.0e3        # along the approach, east of the site
+const PDI_SPEED_MPS = 1_693.0        # perilune speed of the 15.24 x 105 km descent orbit
+const APPROACH_AZIMUTH_DEG = 270.0   # flying west
+const LM_MASS_KG = 6_900.0           # dry, descent plus ascent stage
+const LM_PROPELLANT_KG = 8_200.0     # DPS propellant at PDI
+const LM_INERTIA = SMatrix{3, 3, Float64}(2.2e4, 0, 0, 0, 2.4e4, 0, 0, 0, 2.0e4)
+const LM_DIMS_M = (4.2, 4.2, 7.0)
+const DPS_THRUST_N = 45_040.0
+const RCS_THRUST_N = 445.0
+const RCS_QUAD_ARM_M = 1.65
+const RCS_QUAD_Z_M = -0.3
+const TOUCHDOWN_HEIGHT_M = 3.7       # the state point is the model's center, 3.7 m above the footpads at this scale
+
+"""
+    pdi_state(site, planet, et0) -> (r_i, v_i, q_pdi)
+
+The powered-descent-initiation state in the J2000 frame: `PDI_UPRANGE_M` back
+along the approach azimuth from the site on the site's explicit reference
+sphere, `PDI_ALTITUDE_M` above the site height, moving horizontally at
+`PDI_SPEED_MPS` relative to the rotating Moon toward the site, engine
+retrograde with the windows up.
+"""
+function pdi_state(site, planet, et0::Float64)
+    R = site.reference_radius_m
+    az = deg2rad(APPROACH_AZIMUTH_DEG)
+    φ = deg2rad(site.lat_deg); λ = deg2rad(site.lon_deg)
+    up_s = SVector(cos(φ) * cos(λ), cos(φ) * sin(λ), sin(φ))
+    east_s = SVector(-sin(λ), cos(λ), 0.0)
+    north_s = SVector(-sin(φ) * cos(λ), -sin(φ) * sin(λ), cos(φ))
+    flight = normalize(cos(az) * north_s + sin(az) * east_s)
+    θ = PDI_UPRANGE_M / R                                   # uprange arc on the reference sphere
+    up_pdi = normalize(cos(θ) * up_s - sin(θ) * flight)
+    flight_pdi = normalize(flight - dot(flight, up_pdi) * up_pdi)   # horizontal at PDI, still toward the site
+    r_p = (R + site.height_m + PDI_ALTITUDE_M) * up_pdi
+    v_p = PDI_SPEED_MPS * flight_pdi                         # relative to the rotating Moon
+    # planet-fixed to J2000 with the rotation term, as the descent tests do
+    l_pi = SM.planet_frame_lpi(planet, et0, SM.SpiceEphemeridesModel())
+    r_i = SVector{3, Float64}(l_pi' * r_p)
+    v_i = SVector{3, Float64}(l_pi' * (v_p + cross(SVector{3, Float64}(planet.ω), r_p)))
+    q_pdi = SM.descent_attitude_command(-normalize(v_i), normalize(r_i), normalize(v_i))
+    return r_i, v_i, q_pdi
+end
+
+"""
+    lunar_module(ic) -> SpacecraftModel
+
+Descent stage plus ascent stage, about 15.1 t at PDI with 8.2 t of DPS
+propellant. Body frame: +z down through the descent engine, +x out of the
+windows. One descent engine and sixteen RCS jets in four quads (two lateral,
+one up, one down per quad) at the LM's quad positions; the viewer draws a plume
+on each firing thruster from the levels the control effector reports.
+"""
+function lunar_module(ic::SM.CartesianInitialCondition)
+    dps = SM.Thruster(max_thrust=DPS_THRUST_N, location=MVector{3, Float64}(0.0, 0.0, 1.5),
+        direction=MVector{3, Float64}(0.0, 0.0, 1.0), Isp=311.0)
+    rcs = SM.Thruster[]
+    for sx in (-1.0, 1.0), sy in (-1.0, 1.0)
+        quad = MVector{3, Float64}(RCS_QUAD_ARM_M * sx, RCS_QUAD_ARM_M * sy, RCS_QUAD_Z_M)
+        for d in ((sx, 0.0, 0.0), (0.0, sy, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, -1.0))
+            push!(rcs, SM.Thruster(max_thrust=RCS_THRUST_N, location=copy(quad), direction=MVector{3, Float64}(d...), Isp=290.0))
+        end
+    end
+    root = SM.Link(root=true, m=LM_MASS_KG, dims=MVector{3, Float64}(LM_DIMS_M...), ref_area=1.0,
+        q=MVector{4, Float64}(ic.q...), thrusters=[dps; rcs])
+    return SM.SpacecraftModel(links=[root], root=root, prop_mass=LM_PROPELLANT_KG, inertia_tensor=LM_INERTIA,
+        initial_condition=ic, id=1)
+end
+
+"""
+    descent_models(site, terrain) -> (guidance, control, plume, state)
+
+The Apollo 11 targets on the site's explicit datum: the quadratic guidance,
+the throttle and RCS attitude controller that reports its thruster levels and
+the touchdown event, and the descent engine's plume on the regolith. All three
+share the site's reference sphere and the same terrain.
+"""
+function descent_models(site, terrain)
+    braking, approach = SM.apollo11_descent_targets()
+    gcfg = SM.ApolloDescentConfig(reference_radius_m=site.reference_radius_m, site_lat_deg=site.lat_deg,
+        site_lon_deg=site.lon_deg, site_height_m=site.height_m, approach_azimuth_deg=APPROACH_AZIMUTH_DEG,
+        braking=braking, approach=approach)
+    state = SM.ApolloDescentState(1)
+    guidance = SM.ApolloDescentGuidanceModel(gcfg, state, terrain)
+    control = SM.ApolloDescentControlModel(SM.ApolloDescentControlConfig(touchdown_height_m=TOUCHDOWN_HEIGHT_M), gcfg, state, terrain)
+    plume = PlumeSurfaceInteractionModel(control, terrain; reference_radius_m=site.reference_radius_m)
+    return guidance, control, plume, state
+end
+
+phase_code(s::Symbol) = s === :braking ? 1.0 : s === :approach ? 2.0 : s === :vertical ? 3.0 : 4.0
+
+function main(argv=ARGS)
+    model = demo_model_path(LM_MODEL_FILE)
+    site_json = get(ENV, "SPACEAGORA_TERRAIN_SITE", APOLLO11_SITE_DEFAULT)
+    isfile(site_json) || error("site terrain not found at $(site_json); run scripts/dev/terrain/fetch_moon_site.py first or set SPACEAGORA_TERRAIN_SITE")
+    options = viewer_demo_options("apollo11_landing", 1_000.0; argv=argv)
+    OUTDIR = options.output_dir
+    mission_time = options.duration_s   # the touchdown event ends the run earlier
+
+    planet = Moon("", SPICE_PATH)
+    terrain, site = load_site_terrain(site_json)
+    println("site ", site.name, " at ", site.lat_deg, "N ", site.lon_deg, "E, ground ", round(site.height_m; digits=1),
+        " m relative to the ", site.reference_radius_m / 1e3, " km sphere")
+
+    initial_time = initial_time_of(et_of(PDI_UTC))
+    et0 = et_of(initial_time)   # the epoch the frame transform and the engine share
+    r_i, v_i, q_pdi = pdi_state(site, planet, et0)
+    ic = SM.CartesianInitialCondition(r_i, v_i; q=q_pdi)
+    println("PDI at ", utc_of(et0), ": r=", round(norm(r_i) / 1e3; digits=2), " km, v=", round(norm(v_i); digits=1), " m/s inertial")
+
+    sc = lunar_module(ic)
+    guidance, control, plume, state = descent_models(site, terrain)
+    effectors = (
+        GravitationalHarmonicsModel(50, 50, joinpath(HARMONICS_DIR, "LP165P.csv"), planet),
+        NBodyGravityModel(body_names=("Earth", "Sun"), primary_body_name="Moon", planet=planet),
+        plume,
+    )
+    base = make_example_config(planet=planet, spacecraft=sc, mission_time=mission_time, initial_time=initial_time,
+        dynamic_effectors=effectors, density_model=NoAtmosphereModel(), orientation_sim=true,
+        keplerian=false, EI_km=1.0, verbose=false, results=true, results_directory=OUTDIR)
+    args = SM.SimConfig._with_configuration(base;
+        mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, keplerian=false, number_of_orbits=1,
+            mission_time=mission_time, orientation_sim=true, num_steps_to_save=4000, data_rate=0.25),
+        guidance_model=SM.GuidanceModel(guidance_effectors=(guidance,), guidance_rates=[2.0]),
+        control_model=SM.ControlModel(control_effectors=(control,), control_rates=[0.05]),
+        integration_tolerances=SM.IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9, dt_max_orbit=0.25,
+            reltol_atmosphere=1e-9, abstol_atmosphere=1e-9, dt_max_atmosphere=0.25),
+        solver_config=SM.SolverConfig(solver_mode=:tsit5))
+
+    # Guidance and control diagnostics saved beside the state; the plume columns
+    # and the seventeen thruster levels come from the default save fields.
+    save_fields = [
+        SM.SimulationCallbacks.default_save_fields(args)...,
+        SM.SimulationCallbacks.SaveField(:dps_thrust_n, (u, t, integ) -> [control.actuators.thrust_n[1]]; per_satellite=true),
+        SM.SimulationCallbacks.SaveField(:throttle, (u, t, integ) -> [state.throttle[1]]; per_satellite=true),
+        SM.SimulationCallbacks.SaveField(:time_to_go_s, (u, t, integ) -> [state.t_go_s[1]]; per_satellite=true),
+        SM.SimulationCallbacks.SaveField(:radar_altitude_m, (u, t, integ) -> [state.radar_altitude_m[1]]; per_satellite=true),
+        SM.SimulationCallbacks.SaveField(:guidance_phase, (u, t, integ) -> [phase_code(state.phase[1])]; per_satellite=true),
+        SM.SimulationCallbacks.SaveField(:attitude_error_deg, (u, t, integ) -> [rad2deg(control.actuators.attitude_error_rad[1])]; per_satellite=true),
+    ]
+    # isolate_state=false keeps the guidance state and actuators readable after the run.
+    prefix = run_or_reuse!(args, OUTDIR; save_fields=save_fields, isolate_state=false)
+
+    df = DataFrame(Arrow.Table(prefix * ".feather"))
+    last = df[end, :]
+    println("rows=", nrow(df), "  span=", round(last.time; digits=1), " s (", round(last.time / 60; digits=2), " min)")
+    landed = isfinite(state.touchdown_s[1])
+    if landed
+        v = state.touchdown_v_mps[1]
+        println("touchdown at t=", round(state.touchdown_s[1]; digits=1), " s: vertical ", round(v[3]; digits=2), " m/s, horizontal ",
+            round(hypot(v[1], v[2]); digits=2), " m/s, ", round(state.touchdown_miss_m[1]; digits=1), " m from the target; propellant used ",
+            round(LM_MASS_KG + LM_PROPELLANT_KG - last.sc1_mass; digits=0), " kg; engine off, attitude error ",
+            round(rad2deg(control.actuators.attitude_error_rad[1]); digits=2), " deg")
+        for (k, name) in enumerate(("braking", "approach", "vertical", "landed"))
+            isfinite(state.phase_start_s[k, 1]) && println("  ", name, " from t=", round(state.phase_start_s[k, 1]; digits=1), " s")
+        end
+    else
+        println("no touchdown within ", round(mission_time; digits=1), " s: radar altitude ", round(last.sc1_radar_altitude_m; digits=1),
+            " m, phase ", last.sc1_guidance_phase)
+    end
+    let onset = SM.plume_erosion_onset_height(plume.config, 11_500.0), erosion = df.sc1_plume_erosion_kg_s
+        below = findfirst(>(0.0), erosion)
+        println("plume: erosion onset height ", round(onset; digits=1), " m at the approach thrust; first erosion at t=",
+            below === nothing ? "never" : string(round(df.time[below]; digits=1), " s, ", round(df.sc1_plume_height_m[below]; digits=1), " m above the ground"))
+        println("  peak erosion ", round(maximum(erosion); digits=2), " kg/s, peak ejecta ", round(maximum(df.sc1_plume_ejecta_mps); digits=1),
+            " m/s, peak surface pressure ", round(maximum(df.sc1_plume_pressure_pa); digits=1), " Pa, peak shear ", round(maximum(df.sc1_plume_shear_pa); digits=2), " Pa")
+        println("  regolith eroded ", round(last.sc1_plume_eroded_kg; digits=0), " kg; peak ground-effect thrust ",
+            round(maximum(df.sc1_plume_ground_effect_n); digits=1), " N")
+    end
+    levels = [c for c in names(df) if startswith(c, "sc1_thruster_level_")]
+    println("thruster level columns: ", length(levels))
+
+    html = export_visualization(prefix; max_frames=4000, trail_orbits=1, texture_resolution="4k",
+        title="AGORA Apollo 11 · powered descent to Tranquility Base",
+        models=Dict(1 => model), model_scale=LM_MODEL_SCALE, model_rotation_deg=Dict(1 => LM_ROTATION_DEG), terrain=site_json)
+    println("html: ", html, " ", filesize(html))
+    cdn = build_cdn_page(html, joinpath(OUTDIR, "artifact.html"), "AGORA Apollo 11 Landing",
+        "AGORA Apollo 11 · powered descent to Tranquility Base, 1969-07-20 20:05 UTC",
+        "PDI 15.24 km above the site, 480 km uprange; LP165P 50x50, Earth + Sun; quadratic guidance P63/P64/P66, DPS 10-60% + full, RCS attitude control",
+        "PDI to touchdown (≈$(round(last.time / 60; digits=1)) min)",
+        "The LM flies 6-DOF over the site bundle's terrain. A demonstration of the descent models on a documented case, not a reconstruction of the flown trajectory. Click values for their history, click the LM for a face, F follows.")
+    cdn === nothing || println("cdn: ", cdn, " ", filesize(cdn))
+
+    return (args=args, prefix=prefix, html=html, cdn=cdn, state=state, control=control, plume=plume, landed=landed)
+end # main
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

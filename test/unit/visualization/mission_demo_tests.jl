@@ -146,6 +146,27 @@ end
             end
         end
 
+        @testset "unsupported leap-second starts fail explicitly" begin
+            for utc in ("2015-06-30T23:59:60.000000", "2016-12-31T23:59:60.000000",
+                        "2016-12-31T23:59:60.500000", "2016-12-31T23:59:60.999600",
+                        "2016-12-31T23:59:59.999600")
+                err = try
+                    MDH.initial_time_of(MDH.et_of(utc))
+                    nothing
+                catch ex
+                    ex
+                end
+                @test err isa ArgumentError
+                @test occursin("leap second", sprint(showerror, err))
+            end
+            for utc in ("2016-12-31T23:59:59.999000", "2017-01-01T00:00:00.000000",
+                        "2017-01-01T00:00:00.200000")
+                requested = MDH.et_of(utc)
+                resolved = MDH.et_of(MDH.initial_time_of(requested))
+                @test resolved == requested
+            end
+        end
+
         mktempdir() do output
             requested_utc, expected_utc = cases[2]
             initial_time = MDH.initial_time_of(MDH.et_of(requested_utc))

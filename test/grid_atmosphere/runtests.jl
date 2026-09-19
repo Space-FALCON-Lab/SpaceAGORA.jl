@@ -3,10 +3,9 @@ using Test, Libdl
 # A dedicated process prevents native-wrapper state from other suites masking
 # accidental initialization. Load ordinary packages and their extension only.
 const GRID_TEST_REPO = normpath(joinpath(@__DIR__, "..", ".."))
-const GRID_TEST_VENDORED = joinpath(GRID_TEST_REPO, "data", "GRAMSuite.jl")
-if Base.find_package("GRAMSuite") === nothing && isfile(joinpath(GRID_TEST_VENDORED, "Project.toml"))
-    pushfirst!(LOAD_PATH, GRID_TEST_VENDORED)
-end
+Base.find_package("GRAMSuite") === nothing && error(
+    "Prepare the shared test environment with test/grid_atmosphere/setup.jl, " *
+    "then run this suite with --project=test/grid_atmosphere.")
 ENV["SPACEAGORA_GRAM_STATIC_GRID"] = "off"
 ENV["SPACEAGORA_GRAM_OFFLINE_SURROGATE"] = "off"
 

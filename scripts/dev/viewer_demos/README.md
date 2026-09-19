@@ -105,3 +105,11 @@ initial states and reference tables agree. It does not establish flight accuracy
 For example, the default native-GRAM Odyssey run reaches about 552 km separation
 from its navigation reference over 34.6 hours, with the second periapsis about
 120 seconds late. Quantitative reconstruction requires further model validation.
+
+### Leap-second start times
+
+Mission starts inside a UTC leap second, or close enough to round into it at the
+simulator's millisecond resolution, are rejected with an explicit error. Choose
+a start outside that leap second. Ordinary minute, day and calendar rollovers
+remain supported. This guard applies to the mission helpers; it does not add
+leap-second calendar fields to the general `InitialTime` API.

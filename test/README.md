@@ -27,6 +27,13 @@ reverted to keep this repo mergeable with its upstream):
   tests.
 - `test/smoke/`
   Environment and startup smokes such as clean-depot, threaded, and no-GRAM checks.
+- `test/grid_atmosphere/`
+  A standalone native-free grid-adapter suite with normal package imports.
+  Synthetic fixtures cover scalar/batch queries, strict domain checks, buffered
+  sampling, ENU wind rotation, ownership, serialization, threaded reads and
+  full-grid schema compatibility. It requires the matching GRAMSuite pure-grid
+  API and four Julia threads. The `tests-matrix` CI job runs it once as a separate
+  bounded step; it is not also included in the default or unit harness.
 - `test/contracts/`
   Orchestration only (`pr_runtests.jl`, `nightly_runtests.jl`, `runtests.jl`);
   the architecture/API-surface/boundary/naming/docs/policy gate implementations
@@ -70,7 +77,24 @@ julia --project=. test/contracts/nightly_runtests.jl
 julia --project=. test/contracts/runtests.jl
 julia --project=. test/stress/runtests.jl
 julia --project=. test/coverage/runtests.jl
+julia --startup-file=no --threads=4 --project=. test/grid_atmosphere/runtests.jl
 ```
+
+The grid suite constructs no native model and needs no GRAM data, shared library
+or SPICE kernels. `EXPECTED_GRAMSUITE_ROOT` can pin the resolved wrapper directory
+when testing a separately staged package. Package dependencies must already be
+installed; the suite performs no package operations.
+
+The optional retained Odyssey fine-grid regression checks 654 saved passage
+points against an existing interpolation CSV. Supply all six variables:
+`SPACEAGORA_TEST_GRID_FILE`, `SPACEAGORA_TEST_GRID_FILE_SHA256`,
+`SPACEAGORA_TEST_GRID_POINTS`, `SPACEAGORA_TEST_GRID_POINTS_SHA256`,
+`SPACEAGORA_TEST_GRID_REFERENCE`, and `SPACEAGORA_TEST_GRID_REFERENCE_SHA256`.
+Paths refer respectively to the retained fine `.jls` payload, passage point CSV,
+and `grid_fine` evaluation CSV. Each input is checked before and after use.
+These inputs are optional and are not distributed by this test suite. This is a
+software regression against retained results, not a fresh native comparison or
+a claim of physical accuracy. No private workspace path is built into the tests.
 
 Migration notes:
 

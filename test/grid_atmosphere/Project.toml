@@ -1,0 +1,17 @@
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+SpaceAGORA = "afbfb69f-5c0b-4832-b760-43725dff8540"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+CSV = "0.10"
+GRAMSuite = "0.1"
+SpaceAGORA = "0.1"
+StaticArrays = "1"
+julia = "1.12"

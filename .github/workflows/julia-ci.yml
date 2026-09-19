@@ -49,7 +49,10 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Pinned GRAMSuite retrieval regression
+        run: python3 test/scripts/test_gramsuite_retrieval.py
+
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -70,6 +73,13 @@ jobs:
 
       - name: Instantiate
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Prepare grid adapter test environment
+        run: julia --startup-file=no test/grid_atmosphere/setup.jl
+
+      - name: Native-free GRAM grid adapter
+        timeout-minutes: 15
+        run: julia --startup-file=no --project=test/grid_atmosphere test/grid_atmosphere/runtests.jl
 
       - name: Run test suite
         run: julia --startup-file=no --project=. test/runtests.jl
@@ -129,7 +139,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -181,7 +191,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -241,7 +251,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -316,7 +326,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -376,7 +386,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -434,7 +444,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -520,7 +530,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -579,7 +589,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -663,7 +673,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev

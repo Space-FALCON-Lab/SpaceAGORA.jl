@@ -60,3 +60,8 @@ include(joinpath(@__DIR__, "environment", "plume_surface_interaction_tests.jl"))
 include(joinpath(@__DIR__, "dynamics", "mesh_aero_tests.jl"))
 
 include("visualization/mission_demo_tests.jl")
+include(joinpath(@__DIR__, "mission", "cygnss_ics_tests.jl"))
+include(joinpath(@__DIR__, "mission", "cygnss_tracks_tests.jl"))
+include(joinpath(@__DIR__, "mission", "cygnss_slew_tests.jl"))
+
+include(joinpath(@__DIR__, "mission", "cygnss_command_replay_tests.jl"))

@@ -75,7 +75,7 @@ end
 """
     ApolloDescentControlModel(config, guidance_config, state, terrain=NoTerrainModel())
 
-Control effector paired with [`ApolloDescentGuidanceModel`](@ref) through the
+Control effector paired with `ApolloDescentGuidanceModel` through the
 shared [`ApolloDescentState`](@ref). Carries the terrain model so the engine
 registers the touchdown event on it.
 """

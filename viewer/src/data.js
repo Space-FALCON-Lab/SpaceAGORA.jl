@@ -375,7 +375,10 @@ export function matrixToQuaternion(m11, m12, m13, m21, m22, m23, m31, m32, m33, 
 
 // Rotate a vector by the conjugate of a scalar-last quaternion (inertial -> body).
 export function rotateByConjugate(q, v, out) {
-  const x = -q[0], y = -q[1], z = -q[2], w = q[3];
+  // Float32 storage can move a unit quaternion off the unit sphere. Normalize
+  // before q* v q so a rotation cannot scale the radius and terrain clearance.
+  const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+  const x = -q[0] / n, y = -q[1] / n, z = -q[2] / n, w = q[3] / n;
   const ix = w * v[0] + y * v[2] - z * v[1];
   const iy = w * v[1] + z * v[0] - x * v[2];
   const iz = w * v[2] + x * v[1] - y * v[0];

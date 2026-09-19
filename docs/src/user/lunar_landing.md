@@ -208,6 +208,10 @@ history. Switch between inertial and planet-fixed views to inspect the same
 landing in either frame. Near the surface, the viewer shows the site imagery,
 engine and RCS plume glyphs, and modeled dust.
 
+The selection panel recomputes terrain clearance at each saved frame. The
+recorded guidance radar-altitude column updates on the guidance cycle and can
+lag that instantaneous value.
+
 Results are saved every 0.25 seconds. The touchdown event can fall between those
 samples, so the last saved row and viewer frame can still show thrust shortly
 before contact. The printed touchdown time and the returned control state refer

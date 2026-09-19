@@ -560,7 +560,9 @@ function viewer_payload(
     stl_scale::Real=1.0,
     paths=(),
     references=(),
-    channels=()
+    channels=(),
+    terrain=nothing,
+    terrain_max_grid=512
 )::Dict{String, Any}
     textures = Dict{String, Any}()
     if include_textures
@@ -574,7 +576,7 @@ function viewer_payload(
         "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale),
         "paths" => path_payloads(paths),
         "references" => reference_payloads(references, scene),
-        "terrain" => nothing,
+        "terrain" => terrain === nothing ? nothing : terrain_payload(terrain; max_grid=terrain_max_grid),
         "options" => Dict{String, Any}(options),
     )
 end
@@ -731,7 +733,9 @@ target's RTN frame; `channels` is a tuple or vector of NamedTuples/Dicts with a
 `digits` in 0:100 (default 3), and `log` true, false or `:auto`/`"auto"`.
 A channel missing from any spacecraft is omitted. Samples are Float32;
 `missing`/NaN are gaps and infinities/overflow are rejected. Channels use the
-same decimated rows and budget as positions. `viewer_dir` and `textures_dir` override the repository locations.
+same decimated rows and budget as positions. `terrain` names a local site.json;
+`terrain_max_grid` (default 512) limits its exported DEM dimensions (see
+`terrain_payload`). `viewer_dir` and `textures_dir` override the repository locations.
 """
 function export_visualization(
     prefix::AbstractString;
@@ -756,6 +760,8 @@ function export_visualization(
     paths=(),
     references=(),
     channels=(),
+    terrain=nothing,
+    terrain_max_grid=512,
     viewer_dir::AbstractString=VIEWER_DIR,
     textures_dir::AbstractString=TEXTURES_DIR
 )::String
@@ -772,7 +778,7 @@ function export_visualization(
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
-        paths=paths, references=references, channels=channels
+        paths=paths, references=references, channels=channels, terrain=terrain, terrain_max_grid=terrain_max_grid
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     html = render_viewer_html(payload; viewer_dir=viewer_dir, title=page_title)

@@ -257,6 +257,27 @@ jobs:
       - name: README instantiate command
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Terrain exporter Julia-to-JavaScript regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          terrain_fixture_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain.XXXXXX")"
+          trap 'rm -rf "$terrain_fixture_dir"' EXIT
+          export SPACEAGORA_TERRAIN_TEST_FIXTURE_DIR="$terrain_fixture_dir"
+          julia --startup-file=no --depwarn=error --project=. test/unit/visualization/terrain_export_tests.jl
+          node test/unit/visualization/terrain_sampling_tests.mjs "$terrain_fixture_dir/fixtures.json"
+
+      - name: Terrain producer tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          terrain_python_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain-python.XXXXXX")"
+          trap 'rm -rf "$terrain_python_dir"' EXIT
+          python3 -m venv "$terrain_python_dir"
+          "$terrain_python_dir/bin/python" -m pip install -r scripts/dev/terrain/requirements.txt
+          test -s test/scripts/test_terrain_pipeline.py
+          "$terrain_python_dir/bin/python" -m unittest discover -s test/scripts -p test_terrain_pipeline.py -v
+
       - name: README example command
         run: julia --startup-file=no --compiled-modules=existing --project=. examples/Earth_Thruster_Test.jl
 

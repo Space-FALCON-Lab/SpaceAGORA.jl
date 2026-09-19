@@ -70,6 +70,16 @@ checksum. A mismatched bundle must be regenerated in a fresh output directory.
 `--reuse DIR` can borrow matching DEMs and source caches from another bundle.
 Exported DEM files are copied into the new bundle so it remains self-contained;
 raw download caches may be linked to avoid duplicating large source rasters.
+Borrowed DEM pairs are validated before copying. A mismatched source leaves a
+fresh output directory unchanged, so retrying without `--reuse` can build the DEM.
+
+Trek tiles must decode completely at the expected size before cache reuse;
+archive tiles must have the byte count declared by the raster index. Invalid
+entries are skipped and refetched into the current output's cache without
+modifying a borrowed cache. Cache writes publish complete files atomically.
+An explicit marker remembers a Trek HTTP 404; legacy empty files are refetched
+because they could be interrupted writes. Invalid image responses raise an
+error rather than silently creating missing imagery.
 
 Imagery is stored in `imagery/tiles.json` and JPEG tiles. Reuse checks the build
 request, including the track, source registry, registration corrections,

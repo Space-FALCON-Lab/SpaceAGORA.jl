@@ -233,6 +233,129 @@ class TerrainPipeline(unittest.TestCase):
             path=out/'dem_lola.f32';path.unlink();path.symlink_to(original/path.name)
             self.assertTrue(f.borrow(out,str(original),path.name));self.assertFalse(path.is_symlink())
 
+    @staticmethod
+    def nac_bytes():
+        keys=(1,1,0,8,1024,0,1,1,1025,0,1,1,3075,0,1,17,3076,0,1,9001,
+              2057,34736,1,0,2058,34736,1,0,3078,34736,1,1,3080,34736,1,2)
+        stream=io.BytesIO()
+        Image.fromarray(np.arange(35,dtype=np.float32).reshape(5,7)).save(stream,format='TIFF',
+            tiffinfo={33550:(2.,2.,0.),33922:(0.,0.,0.,-6.,6.,0.),34735:keys,34736:(1737400.,1.,180.)})
+        return stream.getvalue()
+
+    def test_dem_reuse_rejection_leaves_fresh_output_recoverable(self):
+        root=dict(lat_min=-1.,lat_max=1.,lon_min=-1.,lon_max=1.)
+        cases=[('dem_lola',dict(lat=0.,lon=0.,half_deg=1.),'lat',1.,
+                lambda out,reuse:f.fetch_lola(out,0.,0.,1.,reuse)),
+               ('dem_lola_wide',dict(root=root,samples=2),'samples',4,
+                lambda out,reuse:f.fetch_lola_wide(out,root,2,reuse)),
+               ('dem_nac',dict(site='synthetic',lat=0.,lon=180.,half_deg=.001,step_m=4.),'step_m',2.,
+                lambda out,reuse:f.fetch_nac(out,'synthetic',0.,180.,.001,4.,reuse))]
+        for name,request,key,other,run in cases:
+            with self.subTest(name=name),tempfile.TemporaryDirectory() as d,contextlib.redirect_stdout(io.StringIO()):
+                parent=pathlib.Path(d);source=parent/'source';source.mkdir();out=parent/'out';out.mkdir()
+                meta=f.write_grid(source/name,np.ones((2,2)),-1,1,-1,1,'synthetic')
+                meta['request']={**request,key:other};(source/(name+'.json')).write_text(json.dumps(meta))
+                before={p.name:p.read_bytes() for p in source.iterdir()}
+                spec={'url':'https://example.invalid/nac.tif','lines':5,'samples':7}
+                with patch.dict(f.NAC_DTM,synthetic=spec),patch.object(f,'fetch',return_value=self.nac_bytes()) as network,patch.object(f,'lola_window',return_value=(np.ones((2,2)),-1.,1.,-1.,1.)) as lola:
+                    with self.assertRaisesRegex(ValueError,'does not match'):run(out,source)
+                    network.assert_not_called();lola.assert_not_called()
+                    self.assertEqual(list(out.iterdir()),[],'Rejected reuse must not materialize files.')
+                    run(out,None)
+                    self.assertTrue(f.existing(out/name,request))
+                self.assertEqual(before,{p.name:p.read_bytes() for p in source.iterdir()})
+
+    def test_dem_borrow_failure_does_not_publish_half_a_pair(self):
+        with tempfile.TemporaryDirectory() as d,contextlib.redirect_stdout(io.StringIO()):
+            parent=pathlib.Path(d);source=parent/'source';source.mkdir();out=parent/'out';out.mkdir()
+            with patch.object(f,'lola_window',return_value=(np.ones((2,2)),-1.,1.,-1.,1.)):
+                f.fetch_lola(source,0.,0.,1.,None)
+            real_copy=f.shutil.copy2;calls=[]
+            def interrupted(src,dst):
+                calls.append(str(src))
+                if len(calls)==2:raise OSError('interrupted copy')
+                return real_copy(src,dst)
+            with patch.object(f.shutil,'copy2',side_effect=interrupted):
+                with self.assertRaisesRegex(OSError,'interrupted copy'):f.fetch_lola(out,0.,0.,1.,source)
+            self.assertEqual(list(out.iterdir()),[])
+            f.fetch_lola(out,0.,0.,1.,source)
+            self.assertTrue(f.existing(out/'dem_lola'))
+
+    @staticmethod
+    def tile_bytes(size=(256,256)):
+        stream=io.BytesIO();Image.new('L',size,72).save(stream,format='PNG');return stream.getvalue()
+
+    def test_trek_corrupt_entries_refetch_in_get_and_prefetch(self):
+        good=self.tile_bytes()
+        for bad in (b'',b'broken',good[:len(good)//2],self.tile_bytes((32,32))):
+            for prefetch in (False,True):
+                with self.subTest(length=len(bad),prefetch=prefetch),tempfile.TemporaryDirectory() as d,patch.object(f,'fetch',return_value=good) as network:
+                    source=f.TrekTiles([d],workers=1);p=source.path('wac',0,0,0);p.parent.mkdir(parents=True);p.write_bytes(bad)
+                    if prefetch:source.prefetch([('wac',0,0,0)])
+                    self.assertEqual(source.get('wac',0,0,0),good)
+                    self.assertEqual(source.hits,1 if prefetch else 0);self.assertEqual(source.misses,1)
+                    network.assert_called_once();self.assertEqual(p.read_bytes(),good)
+
+    def test_trek_reuse_fallback_and_negative_cache(self):
+        good=self.tile_bytes()
+        with tempfile.TemporaryDirectory() as d:
+            parent=pathlib.Path(d);source=f.TrekTiles([parent/'local',parent/'reuse'])
+            bad=source.path('wac',0,0,0);goodpath=source.path('wac',0,0,0,1)
+            for p,data in [(bad,b'broken'),(goodpath,good)]:p.parent.mkdir(parents=True);p.write_bytes(data)
+            with patch.object(f,'fetch',side_effect=AssertionError('valid fallback exists')):
+                self.assertEqual(source.get('wac',0,0,0),good);self.assertEqual(source.hits,1)
+            self.assertEqual(bad.read_bytes(),b'broken');self.assertEqual(goodpath.read_bytes(),good)
+            # A legacy empty cache is ambiguous; only a newly recorded 404 is reusable.
+            negative=source.path('wac',0,1,0);negative.write_bytes(b'')
+            with patch.object(f,'fetch',return_value=None) as network:
+                self.assertIsNone(source.get('wac',0,1,0));self.assertIsNone(source.get('wac',0,1,0))
+                network.assert_called_once();self.assertEqual(source.absent,1)
+            self.assertTrue(negative.read_bytes())
+
+    def test_invalid_trek_response_is_not_cached_or_silently_omitted(self):
+        with tempfile.TemporaryDirectory() as d,patch.object(f,'fetch',return_value=b'broken'):
+            source=f.TrekTiles([d])
+            with self.assertRaisesRegex(RuntimeError,'invalid.*tile'):source.image('wac',0,0,0)
+            self.assertFalse(source.path('wac',0,0,0).exists());self.assertEqual(source.misses,0)
+
+    def test_cache_publication_failure_preserves_previous_entry(self):
+        with tempfile.TemporaryDirectory() as d,patch.object(f,'fetch',return_value=self.tile_bytes()):
+            source=f.TrekTiles([d]);p=source.path('wac',0,0,0);p.parent.mkdir(parents=True);p.write_bytes(b'old truncated tile')
+            with patch.object(f.os,'replace',side_effect=OSError('interrupted publication')):
+                with self.assertRaisesRegex(OSError,'interrupted publication'):source.get('wac',0,0,0)
+            self.assertEqual(p.read_bytes(),b'old truncated tile');self.assertEqual(list(p.parent.iterdir()),[p])
+            source.get('wac',0,0,0);self.assertEqual(p.read_bytes(),self.tile_bytes())
+
+    def test_archive_short_cache_refetches_and_valid_reuse_is_read_only(self):
+        for bad in (b'',b'x',b'oversized'):
+            with self.subTest(data=bad),tempfile.TemporaryDirectory() as d:
+                parent=pathlib.Path(d);source=f.ArchiveRaster('a11_pho_r',[parent/'local',parent/'reuse'],verbose=False)
+                source._index=dict(tile_bytes=4,tile_h=2,tile_w=2,tiles_across=1,tile_offsets=np.array([16]))
+                p=source._tile_path(0,0);p.parent.mkdir(parents=True);p.write_bytes(bad)
+                with patch.object(source,'_range',return_value=bytes([1,2,3,4])) as network:
+                    np.testing.assert_array_equal(source._tile(0,0),[[1,2],[3,4]])
+                    network.assert_called_once_with(16,19);self.assertEqual(source.hits,0)
+                self.assertEqual(p.read_bytes(),bytes([1,2,3,4]));p.write_bytes(bad)
+                reused=source._tile_path(0,0,1);reused.parent.mkdir(parents=True);reused.write_bytes(bytes([5,6,7,8]))
+                with patch.object(source,'_range',side_effect=AssertionError('valid fallback exists')):
+                    np.testing.assert_array_equal(source._tile(0,0),[[5,6],[7,8]])
+                self.assertEqual(p.read_bytes(),bad);self.assertEqual(reused.read_bytes(),bytes([5,6,7,8]))
+
+    def test_archive_prefetch_recovers_after_interrupted_publication(self):
+        with tempfile.TemporaryDirectory() as d,contextlib.redirect_stdout(io.StringIO()):
+            source=f.ArchiveRaster('a11_pho_r',d,verbose=False)
+            source._index=dict(tile_bytes=4,tile_h=2,tile_w=2,tiles_across=1,tile_offsets=np.array([16]))
+            p=source._tile_path(0,0);p.parent.mkdir(parents=True);p.write_bytes(b'x')
+            with patch.object(source,'_tile_span',return_value=(0,0,0,0)),patch.object(source,'_range',return_value=bytes([1,2,3,4])) as network:
+                with patch.object(f.os,'replace',side_effect=OSError('interrupted publication')):
+                    with self.assertRaisesRegex(OSError,'interrupted publication'):source.prefetch([(0,0,1,1)])
+                self.assertEqual(p.read_bytes(),b'x');self.assertEqual(list(p.parent.iterdir()),[p])
+                self.assertEqual(source.hits,0);self.assertEqual(source.fetched,0)
+                source.prefetch([(0,0,1,1)])
+                self.assertEqual(p.read_bytes(),bytes([1,2,3,4]));self.assertEqual(network.call_count,2)
+                source.prefetch([(0,0,1,1)])
+                self.assertEqual(network.call_count,2);self.assertEqual(source.hits,1)
+
     def test_lola_only_cli_produces_complete_bundle_offline(self):
         raster=np.arange(18*36,dtype='<i2').reshape(18,36)
         def fetch(url,headers):

@@ -250,6 +250,52 @@ def existing(base, request=None):
     return True
 
 
+def reuse_grid(base, request, reuse):
+    """Validate a complete DEM before copying; failed reuse leaves new outputs empty."""
+    if existing(base, request):
+        if reuse is not None:
+            for suffix in ('.f32', '.json'):
+                borrow(base.parent, reuse, base.name + suffix)
+        return True
+    if reuse is None:
+        return False
+    source = pathlib.Path(reuse) / base.name
+    if not existing(source, request):
+        return False
+    targets = [base.with_suffix(suffix) for suffix in ('.f32', '.json')]
+    if any(p.exists() or p.is_symlink() for p in targets):
+        raise ValueError(f"{base}: incomplete output DEM; choose a fresh output directory.")
+    with tempfile.TemporaryDirectory(prefix='.dem-reuse-', dir=base.parent) as directory:
+        staged = pathlib.Path(directory) / base.name
+        for suffix in ('.f32', '.json'):
+            shutil.copy2(source.with_suffix(suffix), staged.with_suffix(suffix))
+        existing(staged, request)
+        published = []
+        try:
+            for target in targets:  # publish metadata last
+                os.replace(staged.with_suffix(target.suffix), target)
+                published.append(target)
+        except OSError:
+            for target in published:
+                target.unlink(missing_ok=True)
+            raise
+    return True
+
+
+def atomic_write(path, data):
+    """Publish complete cache bytes; interruption cannot truncate the final path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix='.cache-', dir=path.parent, delete=False) as handle:
+            temporary = pathlib.Path(handle.name)
+            handle.write(data)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def lola_window(lat_max, lat_min, lon_min, lon_max, step, lines_per_row, label):
     """Mean columns and evenly spaced representative rows inside each LOLA cell.
 
@@ -302,8 +348,7 @@ def lola_window(lat_max, lat_min, lon_min, lon_max, step, lines_per_row, label):
 def fetch_lola(out, lat, lon, half_deg, reuse):
     base = out / "dem_lola"
     request = dict(lat=lat,lon=lon,half_deg=half_deg)
-    borrow(out, reuse, "dem_lola.json"); borrow(out, reuse, "dem_lola.f32")
-    if existing(base, request):
+    if reuse_grid(base, request, reuse):
         print("lola: reusing", base.with_suffix(".json"))
         return json.loads(base.with_suffix(".json").read_text())
     lon360 = lon % 360.0
@@ -321,8 +366,7 @@ def fetch_lola_wide(out, root, samples, reuse):
     """The coarse height window under the whole imagery root, so the horizon has relief."""
     base = out / "dem_lola_wide"
     request = dict(root=root,samples=samples)
-    borrow(out, reuse, "dem_lola_wide.json"); borrow(out, reuse, "dem_lola_wide.f32")
-    if existing(base, request):
+    if reuse_grid(base, request, reuse):
         print("lola wide: reusing", base.with_suffix(".json"))
         return json.loads(base.with_suffix(".json").read_text())
     step = max(1, int(round((root["lat_max"] - root["lat_min"]) * LOLA_PPD / max(1, samples))))
@@ -390,8 +434,7 @@ def fetch_nac(out, site, lat, lon, half_deg, step_m, reuse):
         return None
     base = out / "dem_nac"
     request = dict(site=site,lat=lat,lon=lon,half_deg=half_deg,step_m=step_m)
-    borrow(out, reuse, "dem_nac.json"); borrow(out, reuse, "dem_nac.f32")
-    if existing(base, request):
+    if reuse_grid(base, request, reuse):
         print("nac: reusing", base.with_suffix(".json"))
         return json.loads(base.with_suffix(".json").read_text())
     raw = out / "raw" / pathlib.Path(spec["url"]).name
@@ -544,22 +587,46 @@ class TrekTiles:
         lon_min, lon_max = longitude_box_near(lon_min, lon_max, 0.5*(w+e))
         return not (lon_max <= w or lon_min >= e or lat_max <= s or lat_min >= nn)
 
+    # Empty legacy entries may be interrupted writes, so use an explicit 404 marker.
+    NOT_FOUND = b'SpaceAGORA Trek cache: HTTP 404\n'
+
+    @staticmethod
+    def valid_tile(data):
+        try:
+            with Image.open(io.BytesIO(data)) as image:
+                if image.size != (256, 256):
+                    return False
+                image.load()
+            return True
+        except (OSError, ValueError):
+            return False
+
+    def _cached(self, key, z, x, y):
+        for root in range(len(self.cache_dirs)):
+            p = self.path(key, z, x, y, root)
+            if p.is_file():
+                data = p.read_bytes()
+                if data == self.NOT_FOUND:
+                    return True, None
+                if self.valid_tile(data):
+                    return True, data
+        return False, None
+
     def get(self, key, z, x, y):
         """The raw bytes of one Trek tile, or None when the service does not have it."""
         if not 0 <= y < 2**z:
             return None
         x %= 2**(z+1)
-        for root in range(len(self.cache_dirs)):
-            p = self.path(key, z, x, y, root)
-            if p.exists():
-                self.hits += 1
-                data = p.read_bytes()
-                return data or None
+        found, data = self._cached(key, z, x, y)
+        if found:
+            self.hits += 1
+            return data
         spec = TREK_LAYERS[key]
         data = fetch(TREK.format(layer=spec["layer"], z=z, y=y, x=x, ext=spec["ext"]), timeout=90)
         p = self.path(key, z, x, y)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(data or b"")            # an empty file remembers a 404
+        if data is not None and not self.valid_tile(data):
+            raise RuntimeError(f"{key}/{z}/{y}/{x}: invalid Trek tile response; not cached.")
+        atomic_write(p, self.NOT_FOUND if data is None else data)
         if data is None:
             self.absent += 1
         else:
@@ -567,7 +634,7 @@ class TrekTiles:
         return data
 
     def prefetch(self, jobs):
-        jobs = [j for j in jobs if not any(self.path(*j, root=r).exists() for r in range(len(self.cache_dirs)))]
+        jobs = [j for j in jobs if not self._cached(*j)[0]]
         if not jobs:
             return
         print(f"  trek: fetching {len(jobs)} tiles", flush=True)
@@ -580,10 +647,8 @@ class TrekTiles:
         data = self.get(key, z, x, y)
         if not data:
             return None
-        try:
-            return Image.open(io.BytesIO(data)).convert("LA")
-        except Exception:
-            return None
+        with Image.open(io.BytesIO(data)) as image:
+            return image.convert("LA")
 
 
 class ArchiveRaster:
@@ -715,7 +780,7 @@ class ArchiveRaster:
         except Exception:
             self._index = None
             raise
-        path.write_text(json.dumps(idx))
+        atomic_write(path, json.dumps(idx).encode())
         idx["tile_offsets"] = offsets
         if self.verbose:
             print(f"  {self.key}: {width} x {height} px, {across} x {down} tiles of {tw} x {th}, "
@@ -790,9 +855,10 @@ class ArchiveRaster:
         return self.dirs[root] / str(row) / f"{col}.bin"
 
     def _cached(self, row, col):
+        size = self.index()["tile_bytes"]
         for r in range(len(self.dirs)):
             p = self._tile_path(row, col, r)
-            if p.exists():
+            if p.is_file() and p.stat().st_size == size:
                 return p
         return None
 
@@ -863,8 +929,7 @@ class ArchiveRaster:
         for c in cols:
             start = int(off[row * idx["tiles_across"] + c] - first)
             p = self._tile_path(row, c)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_bytes(data[start:start + nb])         # written as it arrives, so a kill resumes
+            atomic_write(p, data[start:start + nb])
             self.fetched += 1
 
     def _tile(self, row, col):

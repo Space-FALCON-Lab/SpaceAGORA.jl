@@ -214,7 +214,9 @@ many points clear that floor in each direction: **20 of 66 faster than
 measurement noise explains, 8 slower**. The three finding-2 calibration
 artifacts are excluded and counted in the annotation rather than banked, since
 they are the batched-RHS heuristic failing on every pinned route and not the
-router out-routing them. Its right panel is a per-phase ECDF rather than more
+router out-routing them. It also does not show finding 9's failure, because
+the figure reads aggregated medians and the aggregated median at that point is
+the single healthy repeat. Its right panel is a per-phase ECDF rather than more
 histograms, because 9-24 points per phase is too few to bin honestly; it is
 what shows that the wins are concentrated in the Monte Carlo phases while P1
 and P2 sit on parity.
@@ -634,6 +636,18 @@ whose projected cost exceeds the serial baseline by some factor, which would
 have caught this on repeat 2 and, unlike the `outer_active` flag, fires on
 nothing else in the 396 campaigns measured here.
 
+**The aggregation hid this finding's true size.** The harness marks all ten
+pathological `mcgrid_8sat_16mc` 1x32 repeats `success=false` -- the only
+failed campaigns among the run's 1,793 rows -- and `_ppb_aggregate` in
+`benchmarks/studies/paper_parallelization_benchmarks/reporting.jl` drops every
+`success=false` row before taking the median. With only the healthy repeat 1
+left, the aggregated CSV reports this point as `n_repeats=1`: a `policy_v2`
+median of 2.99 s against `outer_threads`' 1.016 s, a 2.945x loss. The true
+eleven-repeat median is 1223.9 s, a loss of about 1205x. The paper's P5 tables
+and the regret figures were both built from the aggregated CSV, so both carry
+this understatement at this one point; the raw-row numbers above are the
+correct ones.
+
 ## Methodology notes
 
 - **The measurability floor drove the workload design.** At one fixed mission
@@ -730,3 +744,12 @@ state it, and do not print numbers from both conventions in the same table.
   is the right default for a first look but will keep flagging `policy_v2` as a
   change when it is variance. Teaching it the per-mode bands measured here
   would remove most of that.
+
+- **The aggregation drops failed campaigns before the median.** Any repeat
+  marked `success=false` is excluded silently before `_ppb_aggregate` takes a
+  point's median, with nothing in the aggregated CSV to say a campaign failed.
+  That is what hid finding 9 in every aggregated table: ten pathological
+  repeats vanished from the sample and the one surviving repeat read as a
+  routine result. A failed campaign should surface as a failed point, not
+  disappear from the count that produced the median. The per-repeat checker
+  `scripts/check_policy_criterion.py` reads raw rows for that reason.

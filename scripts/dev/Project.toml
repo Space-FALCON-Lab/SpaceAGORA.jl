@@ -1,0 +1,8 @@
+[deps]
+SatelliteToolboxSgp4 = "ba14ac17-bfc9-4710-a76f-b32930ef2339"
+SatelliteToolboxTle = "7ff27aeb-5fff-4337-a9ee-a9fe6b7ed35e"
+
+[compat]
+SatelliteToolboxSgp4 = "=2.3.0"
+SatelliteToolboxTle = "=1.1.1"
+julia = "1.12"

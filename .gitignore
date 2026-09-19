@@ -146,3 +146,6 @@ viewer/dev_data.js
 
 # Optional terrain asset tooling environment
 .venv-terrain/
+
+# Optional CYGNSS development Python environment
+.venv-cygnss/

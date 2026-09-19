@@ -142,7 +142,11 @@ function build_rpo_cubesat_mpc_demo(;
         root=station_root,
         prop_mass=0.0,
         inertia_tensor=station_root.inertia,
-        initial_condition=CartesianInitialCondition(r_station_ii, v_station_ii; q=q_identity),
+        # The planner's body-frame station cloud is fixed in RTN. For this
+        # circular, equatorial, torque-free orbit, spin about the normal at n
+        # keeps the simulated body and its displayed model in that frame.
+        initial_condition=CartesianInitialCondition(r_station_ii, v_station_ii;
+            q=q_identity, ang_vel=SVector{3, Float64}(0.0, 0.0, n)),
         id=201,
     )
 

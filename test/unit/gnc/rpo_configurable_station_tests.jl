@@ -74,6 +74,9 @@ else
                 @test link.m == 500.0
                 @test Tuple(link.dims) == (4.0, 2.0, 2.0)
                 @test link.ref_area == 8.0
+                station_ic = d.args.dynamics_model.spacecraft[2].initial_condition
+                station_n = norm(cross(station_ic.pos, station_ic.vel)) / dot(station_ic.pos, station_ic.pos)
+                @test station_ic.ang_vel ≈ SVector(0.0, 0.0, station_n)
                 @test d.geometry.station.name == "gateway_core"
                 @test d.geometry.station.keepout_radius_m == 0.25
                 @test size(d.geometry.station.points_body) == (3, 256)

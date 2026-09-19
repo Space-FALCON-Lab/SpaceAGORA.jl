@@ -148,3 +148,8 @@ extends beyond 900 s when the reference needs longer. The geometric retimer
 does not enforce a full acceleration profile from rest, and the LQ-MPC
 controller does not impose collision constraints. Check the simulated path
 and clearance as well as the planned path when changing the scenario.
+
+The station body rotates with the circular orbit so its body-frame point
+cloud stays aligned with the planner's RTN frame and the saved 3D attitude.
+This setup assumes the example's circular equatorial orbit and principal-axis
+rotation; it does not model arbitrary tumbling-station rendezvous.

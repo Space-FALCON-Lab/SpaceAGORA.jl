@@ -139,6 +139,8 @@ end
 @inline density_model_threadsafe(::EnvironmentModels.ExponentialAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.PiecewiseExponentialAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.PolynomialFitAtmosphereModel)::Bool = true
+# The owned grid snapshot is shared read-only during evaluation.
+@inline density_model_threadsafe(::EnvironmentModels.GRAMGridAtmosphereModel)::Bool = true
 # GRAM C-wrapper calls are serialized inside getDensity via RuntimeServices.GRAM_LOCK.
 @inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
 @inline density_model_threadsafe(::EnvironmentModels.GRAMAtmosphereModelSurrogate)::Bool = true

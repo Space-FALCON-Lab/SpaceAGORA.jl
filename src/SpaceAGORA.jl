@@ -72,6 +72,7 @@ using .SimulationModel: RobotArmHeldActuation, RobotArmJointMPCController, Robot
 using .SimulationModel: init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview
 using .SimulationModel: robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
+using .SimulationModel: GRAMGridAtmosphereModel
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel.TerrainModels: AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
@@ -239,6 +240,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.NoAtmosphereModel) NoAtmosphereModel
 @doc (@doc SimulationModel.ExponentialAtmosphereModel) ExponentialAtmosphereModel
 @doc (@doc SimulationModel.PiecewiseExponentialAtmosphereModel) PiecewiseExponentialAtmosphereModel
+@doc (@doc SimulationModel.GRAMGridAtmosphereModel) GRAMGridAtmosphereModel
 @doc (@doc SimulationModel.NRLMSISE00AtmosphereModel) NRLMSISE00AtmosphereModel
 @doc (@doc SimulationModel.DescentPhaseTargets) DescentPhaseTargets
 @doc (@doc SimulationModel.apollo11_descent_targets) apollo11_descent_targets
@@ -426,6 +428,7 @@ export robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 export AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
 export terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
+export GRAMGridAtmosphereModel
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment

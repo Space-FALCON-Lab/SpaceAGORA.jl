@@ -26,6 +26,7 @@ What to read next:
 | `ExponentialAtmosphereModel(planet)` | Low | None | Single scale height; valid near one altitude band |
 | `PiecewiseExponentialAtmosphereModel(...)` | Low–medium | None | Multi-layer; better altitude-shape fit |
 | `NRLMSISE00AtmosphereModel(...)` | Medium | None (fixed indices) or internet (live indices) | Standard empirical model; ~0–1000 km |
+| `GRAMGridAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its grid API and a trusted grid payload | Native-free evaluation within documented grid coverage |
 | `GRAMAtmosphereModel(...)` | High | Licensed NASA GRAM | Requires GRAM asset setup |
 
 For GRAM setup, see [GRAMSuite Setup](gramsuite_setup.md).
@@ -166,6 +167,55 @@ density_model = NRLMSISE00AtmosphereModel(index_provider=my_provider)
 ```
 
 `use_space_indices=true` and a custom `index_provider` cannot be combined.
+
+---
+
+## Fixed GRAM grid snapshot
+
+`GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
+kernel to SpaceAGORA. It needs the Julia wrapper with its native-free grid API
+and a trusted serialized grid payload. Construction and density evaluation use
+no native GRAM installation or native fallback.
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+
+density_model = GRAMGridAtmosphereModel(
+    planet="earth",
+    surrogate_file="/path/to/authorized/earth_surrogate.jls",
+    above_grid=:error,
+)
+```
+
+The constructor forwards grid-loader options, including `search_roots` and
+`expected_sha256`. Missing files, undownloaded Git LFS pointers, and invalid
+payloads produce errors. A checksum pins file contents; it does not establish
+scientific provenance or permission to distribute the file. Grid distribution
+and an independently reproducible public installation remain separate work.
+
+Queries use altitude in metres and latitude/longitude in radians, on the grid's
+documented reference surfaces. Results contain density in kg/m³, temperature in
+kelvin, and local east/north/up winds in m/s. The stored atmosphere is frozen:
+elapsed time and the wind selector do not alter its density or stored winds.
+Select and validate the atmospheric epoch, coordinates, forcing, and coverage
+for the mission before use. Legacy metadata may leave these facts unknown;
+loading a file cannot recover them or establish physical accuracy.
+
+The default policy rejects altitude and latitude outside the grid. Longitude is
+periodic. Explicit `above_grid=:vacuum` returns zero density and wind above the
+ceiling, with `vacuum_temperature` in kelvin; lower-bound extrapolation remains
+an error. The adapter does not apply the native model's entry-interface
+polynomial, fixed 2000 km cutoff, or lower-altitude clamp.
+
+The grid model bypasses `SPACEAGORA_VACUUM_GRAM_CACHE` and
+`SPACEAGORA_DENSITY_FREEZE_PER_STEP`, and it reevaluates coordinates even when a
+buffered sample has the same timestamp. Native GRAM track caches, isolated pools,
+and per-satellite native copies do not apply. Shared read-only queries support
+threaded evaluation; keep the arrays and metadata unchanged during a run.
+Ordinary `deepcopy` produces independent arrays, including when configuration
+isolation copies an entire run. Managed process-worker startup has separate
+native warm-up behavior and is outside this native-free adapter's scope.
 
 ---
 

@@ -148,14 +148,20 @@ function get_callbacks(
 )::CallbackSet
     save_fields_resolved = _resolve_save_fields(save_fields, args)
     backbone_mode = _simulation_engine_module()._solver_policy_mode() == :gravity_backbone_split
+    touchdown_specs = _touchdown_specs(args, num_sats)
+    has_touchdown = any(spec -> spec !== nothing, touchdown_specs)
+    impact_callback = has_touchdown ? get_impact_callback(num_sats;
+        excluded_spacecraft=map(spec -> spec !== nothing, touchdown_specs)) : get_impact_callback(num_sats)
     callbacks = if backbone_mode
-        (get_impact_callback(num_sats),)
+        (impact_callback,)
     else
         (
-            get_impact_callback(num_sats),
+            impact_callback,
             update_planet_frame_callback(),
         )
     end
+
+    has_touchdown && (callbacks = _append_callback(callbacks, get_touchdown_callback(touchdown_specs)))
 
     if !backbone_mode && _requires_staged_density_callback(effectors, args)
         callbacks = _append_callback(callbacks, get_density_callback(num_sats, effectors, args))
@@ -185,6 +191,7 @@ function get_callbacks(
     if !backbone_mode && _requires_quaternion_projection_callback(args)
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
+    callbacks = _append_callback(callbacks, get_plume_callback(args))
     if !backbone_mode && args.simulation_settings.results
         callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
     end

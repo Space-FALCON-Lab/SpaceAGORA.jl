@@ -291,6 +291,18 @@ jobs:
           test -s test/scripts/test_terrain_pipeline.py
           "$terrain_python_dir/bin/python" -m unittest discover -s test/scripts -p test_terrain_pipeline.py -v
 
+      - name: CYGNSS development environment
+        run: |
+          julia --startup-file=no --project=scripts/dev -e 'using Pkg; Pkg.instantiate()'
+          julia --startup-file=no --project=. scripts/dev/run.jl test_cygnss_environment.jl
+
+      - name: CYGNSS offline data-access checks
+        run: |
+          python3 -m venv /tmp/spaceagora-cygnss-tools
+          /tmp/spaceagora-cygnss-tools/bin/python -m pip install -r scripts/dev/requirements-cygnss.txt
+          /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/test_cygnss_fetch.py
+          /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/fetch_cygnss_l1_states.py --self-test
+
       - name: README example command
         run: julia --startup-file=no --compiled-modules=existing --project=. examples/Earth_Thruster_Test.jl
 

@@ -163,3 +163,12 @@ simulator's millisecond resolution, are rejected with an explicit error. Choose
 a start outside that leap second. Ordinary minute, day and calendar rollovers
 remain supported. This guard applies to the mission helpers; it does not add
 leap-second calendar fields to the general `InitialTime` API.
+
+## CYGNSS research tools
+
+Use the [reconstruction record](../../../docs/spaceagora_cygnss_reconstruction_record.md)
+for the separate development environment, seven-spacecraft Earthdata fetch,
+private-input access, and the distinction between the wheels-only diagnostic
+and recorded-command reconstruction. Generated flight pages remain private.
+The wheels-only physical-adequacy check is currently failing, even when the
+demo completes. Do not report execution success as physical acceptance.

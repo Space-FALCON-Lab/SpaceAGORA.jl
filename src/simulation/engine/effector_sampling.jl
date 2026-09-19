@@ -67,13 +67,15 @@ end
 )::AtmosphereSample
     callbacks = SimulationModel.SimulationCallbacks
     cb_env = callbacks._callback_env_config(p)
+    density_model = callbacks._density_model_for_sat(p, sat_idx)
     # Freeze-per-step mode (see CallbackEnvConfig.density_freeze_per_step): reuse
     # the once-per-accepted-step sample from shared_buffers for every caller and
     # call site, not just the sample_buffered_atmosphere path -- wrench-based
     # effectors (the `AerodynamicCoefficientfM` path taken outside flat-mode
     # atmosphere prefill) call straight into this function with
     # write_buffers=false, bypassing that path entirely.
-    if cb_env.density_freeze_per_step
+    # A fixed grid still varies with position and must check its spatial domain.
+    if cb_env.density_freeze_per_step && !(density_model isa SimulationModel.EnvironmentModels.GRAMGridAtmosphereModel)
         times = p.shared_buffers.density_sample_t
         if sat_idx <= length(times) && isfinite(times[sat_idx])
             rho = sat_idx <= length(p.shared_buffers.densities) ? p.shared_buffers.densities[sat_idx] : 0.0
@@ -86,7 +88,6 @@ end
     stats_enabled = cb_env.gram_runtime_stats_enabled
     target_include_j2 = cb_env.gram_track_cache_target_use_j2 &&
         callbacks._uses_j2_gravity_effector(p.args.dynamics_model.dynamic_effectors)
-    density_model = callbacks._density_model_for_sat(p, sat_idx)
     caches = p.shared_buffers.gram_density_cache
     pos_ii, vel_ii = _extract_sample_pos_vel(x)
     current_mass_kg = _extract_sample_mass_kg(x)
@@ -139,6 +140,14 @@ end
 end
 
 @inline function sample_buffered_atmosphere(x, p, sat_idx::Int, t::Float64)::AtmosphereSample
+    # Time alone does not identify a grid query: solver stages can share a time
+    # and have different positions, including outside grid bounds. Concurrent
+    # effectors may call this path for one satellite, so leave writes to the
+    # callback/prefill owners when bypassing the buffer for a read-only grid.
+    density_model = SimulationModel.SimulationCallbacks._density_model_for_sat(p, sat_idx)
+    if density_model isa SimulationModel.EnvironmentModels.GRAMGridAtmosphereModel
+        return sample_atmosphere(x, p, sat_idx, t; write_buffers=false)
+    end
     if !_buffered_atmosphere_valid(p, sat_idx, t)
         return sample_atmosphere(x, p, sat_idx, t; write_buffers=true)
     end

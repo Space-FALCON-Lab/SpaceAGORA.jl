@@ -22,6 +22,20 @@ using StaticArrays
 export fit_state_from_arc, rtn_offset, orbit_plane_angle_deg, along_track_time_s
 export ConstellationTracks, load_constellation_tracks, track_names, track_state_at
 
+"""
+    reference_sample_indices(times, stop_s; max_samples=2500)
+
+Choose evenly spaced indices in an ordered navigation track up to `stop_s`,
+retaining both endpoints. Decimation must not shorten the reference coverage.
+"""
+function reference_sample_indices(times::AbstractVector, stop_s::Real; max_samples::Int=2500)
+    max_samples >= 2 || throw(ArgumentError("reference budget must be at least two samples"))
+    isfinite(stop_s) || throw(ArgumentError("reference end time must be finite"))
+    last = searchsortedlast(times, stop_s)
+    last == 0 && return Int[]
+    return unique!(round.(Int, range(1, last; length=min(last, max_samples))))
+end
+
 # ---------------------------------------------------------------------------
 # Fitting a state out of a sampled position arc
 # ---------------------------------------------------------------------------

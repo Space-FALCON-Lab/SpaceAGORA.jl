@@ -126,6 +126,10 @@ space-weather indices on first use. Under
 the final results and scene go in `run/`, and the self-contained viewer is
 `page/simulation_results_viewer.html`. Open that HTML file in a browser. The page
 contains seven simulated spacecraft and seven translucent navigation references.
+Both are sampled more sparsely for display and interpolated between samples.
+Use the saved results and printed residuals for quantitative comparisons. A
+reference shows "not covered" outside its available navigation interval, including
+the final instant if the navigation record ends before the simulation.
 The fit adjusts the initial velocity magnitude, so the fitted trajectories need
 not start exactly on the original navigation velocities.
 

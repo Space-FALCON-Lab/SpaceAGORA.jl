@@ -60,6 +60,24 @@ function cygtr_write_table(path; names = ["A", "B"], times = 0.0:10.0:600.0)
 end
 
 @testset "CygnssTracks" begin
+    @testset "reference decimation keeps coverage" begin
+        sample = CygnssTracks.reference_sample_indices
+        @test isempty(sample(Float64[], 10.0))
+        @test isempty(sample([5.0, 6.0], 4.0))
+        @test sample([5.0], 5.0) == [1]
+        @test sample(0.0:10.0, 3.0; max_samples=2) == [1, 4]
+        @test sample(0.0:10.0, 3.5; max_samples=3) == [1, 2, 4]
+        @test_throws ArgumentError sample(0.0:10.0, 10.0; max_samples=1)
+        @test_throws ArgumentError sample(0.0:10.0, Inf)
+        for times in (collect(0.0:345599.0), [0.0, 1.0, 8.0, 100.0, 107.0])
+            idx = sample(times, last(times); max_samples=3)
+            @test length(idx) <= 3
+            @test issorted(idx) && allunique(idx)
+            @test times[first(idx)] == first(times)
+            @test times[last(idx)] == last(times)
+        end
+    end
+
 
     # =======================================================================
     # Fitting a state out of a position arc

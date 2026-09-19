@@ -626,13 +626,12 @@ for (k, s_) in enumerate(states)
     series = track_series(s_.name)
     label = s_.name
 
-    # Ghost: one sample every `stride` rows of the flown track. The record is
+    # Ghost: an evenly spaced subset retaining both endpoints. The record is
     # 345,600 samples per spacecraft and there are seven of them; a couple of
     # thousand each is indistinguishable at globe scale and keeps the page
     # inside its size budget. Each ghost takes its twin's own color, so the
     # translucent copy beside a spacecraft is unmistakably that spacecraft's.
-    stride = max(1, cld(length(series.t_s), 2_500))
-    idx = [j for j in 1:stride:length(series.t_s) if series.t_s[j] <= saved_t[end] + 1.0]
+    idx = CygnssTracks.reference_sample_indices(series.t_s, saved_t[end])
     println("ghost ", label, ": ", length(idx), " samples, ", series.note)
     push!(references, (name="$(label) flown track", t_s=series.t_s[idx], pos_m=series.pos_m[:, idx],
         vel_mps=series.vel_mps[:, idx], target=k,
@@ -665,7 +664,7 @@ end
 # bytes once and the other six entries point at that one (`url_from`).
 html = export_visualization(page_prefix; max_frames=3000, trail_orbits=1, texture_resolution="4k",
     frame=:planet_fixed, ground_tracks=true,
-    title="AGORA CYGNSS · the constellation over its telemetry window",
+    title=FIT_SMA ? "AGORA CYGNSS · in-sample fitted reconstruction" : "AGORA CYGNSS · unfitted propagation",
     models=Dict(k => CYGNSS_MODEL for k in 1:length(states)),
     model_scale=CYGNSS_MODEL_SCALE,
     model_rotation_deg=Dict(k => CYGNSS_MODEL_ROTATION_DEG for k in 1:length(states)),

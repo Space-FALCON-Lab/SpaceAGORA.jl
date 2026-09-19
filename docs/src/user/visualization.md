@@ -27,12 +27,20 @@ For a configuration you already built:
 run_simulation(args; visualization=true)
 ```
 
+The page is written beside the results as
+`<results_directory>/simulation_results_viewer.html`, using
+`args.simulation_settings.results_directory`.
+
 For a completed run that already has its scene sidecar:
 
 ```julia
 export_visualization("output/viewer-earth/simulation_results"; max_frames=2000)
 SpaceAGORA.run_cli(["visualize", "--run=output/viewer-earth"])
 ```
+
+`export_visualization` takes the results prefix:
+`<results_directory>/simulation_results`, with no file extension. The CLI
+`visualize --run=` accepts either that prefix or the results directory.
 
 `with_visualization_scene(args, true)` sets the sidecar flag when preparing
 a configuration. This saves the extra fields and sidecar; use
@@ -43,7 +51,8 @@ standalone data-file viewer below.
 ## Read the page
 
 - Drag to orbit, scroll to zoom, and use the timeline to play or scrub.
-- Select a spacecraft and press F to follow it. Escape clears the selection.
+- Click a spacecraft marker or visible model to select it. Its selection
+  panel opens at the top right. Press F to follow it; Escape clears the selection.
 - Switch between inertial and planet-fixed views. Ground tracks follow the
   body's rotation sampled from the run's own frame model.
 - Nearby spacecraft show link boxes and articulated parts. A run without
@@ -58,22 +67,65 @@ Viewer-derived dynamic pressure uses its available velocity approximation;
 use the verified study diagnostics for quantitative atmosphere-relative
 pressure comparisons.
 
+## Plot another saved value
+
+Click a quantity's name or value in the selection panel to plot its history.
+Altitude, speed, mass, density, heat rate, drag and wind already have clickable
+rows when the corresponding data is available.
+
+To add the saved `sc1_periapsis_altitude` column, pass its suffix without the
+spacecraft prefix. It contains osculating spherical periapsis altitude in metres:
+
+```julia
+export_visualization("output/viewer-earth/simulation_results";
+    channels=[(column="periapsis_altitude", label="Spherical periapsis altitude",
+               unit="m", digits=1, log=false)])
+```
+
+Reopen the generated page, select a spacecraft and click its **Spherical
+periapsis altitude** row in the selection panel. Scrubbing the timeline updates
+the displayed value. Channel names come from the saved results headers; see
+[Simulation Outputs](outputs.md) for names, units and definitions.
+
+Each spacecraft must have the corresponding column (`sc1_periapsis_altitude`,
+`sc2_periapsis_altitude`, and so on). If any column is absent, the channel is
+omitted without a message. If its row does not appear, check the spelling and
+the headers for every spacecraft in the results table.
+
+Missing values appear as gaps, and interpolation does not bridge a gap. Some
+plots automatically use a logarithmic axis when their positive values span a
+wide range. Zeros also appear as gaps on that axis; clear the **log** checkbox
+to show them on a linear scale. Negative values disable logarithmic scaling.
+
+If saved rows repeat a spacecraft's state after impact or touchdown while the
+run continues, those held quantities plot as flat segments. The viewer uses the
+saved rows and does not automatically end a history at deactivation.
+
+Channel values use the same saved-row decimation as the trajectory. Choose
+enough `max_frames` to retain the features you want to inspect.
+
 ## Size and optional detail
 
 ```julia
-export_visualization("output/simulation_results";
+export_visualization("output/viewer-earth/simulation_results";
     max_frames=2000, data_budget_mb=150.0,
     texture_resolution="4k", trail_orbits=3, frame=:inertial)
 ```
 
 The exporter decimates saved rows to the frame and data limits. The page
 reports its resulting cadence. Smaller textures or `textures=false` reduce
-the page size; no texture changes the recorded trajectory.
+the page size; no texture changes the recorded trajectory. Export defaults to
+`texture_resolution="4k"`. Earth, Mars and Moon also include 8192 x 4096
+textures: opt in with `texture_resolution="8k"` or select the largest available
+tier with `:best`. Venus and Titan fall back to 4k. An 8k image has four times
+the decoded pixels of 4k, and its embedded JPEG also makes the HTML larger.
+The standalone builder likewise defaults to 4k; use `--textures 8k` for
+a page containing the higher tiers.
 
 STL, OBJ and uncompressed GLB models can replace link boxes:
 
 ```julia
-export_visualization("output/simulation_results";
+export_visualization("output/viewer-earth/simulation_results";
     models=Dict(1 => "data/models/iss_nasa_3d_resources_b.glb"),
     model_scale=2.4, model_rotation_deg=Dict(1 => (-90, 0, -90)))
 ```
@@ -81,6 +133,12 @@ export_visualization("output/simulation_results";
 Match the spacecraft ID, scale and orientation to your model. The model is
 display geometry; it does not replace the aerodynamic or structural model.
 `data/models/README.md` and `data/textures/manifest.toml` record asset sources.
+Bundled mission display meshes include Apollo Lunar Module, Cassini with and
+without Huygens, CYGNSS, Magellan and Mars Odyssey, in addition to ISS. Supply
+the corresponding GLB path through `models`; models are embedded only when
+selected. Their model coordinates need mission-specific scale and rotation.
+These six models and three higher-resolution textures add about 35.6 MB to
+the checkout. No asset download or native atmosphere library is needed.
 
 Atmosphere displays use density values already saved along the trajectory.
 The sidecar also adds an altitude profile for the built-in exponential and

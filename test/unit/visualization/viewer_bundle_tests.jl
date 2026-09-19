@@ -139,8 +139,8 @@ end
         @test manifest["titan"]["4k"]["lon_left_deg"] == 0.0
         @test manifest["earth"]["4k"]["lon_left_deg"] == -180.0
         @test SV.texture_entry("earth"; resolution="4k")["resolution"] == "4k"
-        @test SV.texture_entry("earth"; resolution=:best)["resolution"] == "4k"
-        @test SV.texture_entry("earth"; resolution="16k")["resolution"] == "4k"   # largest at or below
+        @test SV.texture_entry("earth"; resolution=:best)["resolution"] == "8k"
+        @test SV.texture_entry("earth"; resolution="16k")["resolution"] == "8k"   # largest at or below
         @test SV.texture_entry("venus"; resolution="8k")["resolution"] == "4k"     # only tier
         @test SV.texture_entry("titan"; resolution="2k")["resolution"] == "4k"     # smallest available
         @test_throws ArgumentError SV.texture_entry("earth"; resolution="huge")
@@ -322,6 +322,79 @@ end
         @test SV.build_viewer_frames(partial, scene)["thruster_level"] === nothing
     end
 
+    @testset "scalar channels align with selected rows" begin
+        args = _viewer_config(results_directory=mktempdir())
+        one = build_visualization_scene(args; rotation_max_samples=4)
+        g = one.spacecraft[1]
+        fleet = SV.VisualizationScene(one.schema, one.epoch_et_start_s, one.epoch_utc, one.planet,
+            [SV.SpacecraftGeometry(k, "sat$(k)", g.links, g.thrusters, g.facets, g.joints,
+                g.bounding_radius_m, g.stl_path, g.arm) for k in 1:2],
+            one.orientation_sim, one.results_feather, one.link_pose_field, one.link_pose_stride, one.atmosphere)
+        df = _synthetic_results(fleet; n_rows=51)
+        @test SV.build_viewer_frames(df, fleet)["channels"] === nothing
+        df[!, "sc1_error_deg"] = Float64.(1:51)
+        @test SV.build_viewer_frames(df, fleet; channels=[(column="error_deg",)])["channels"] === nothing
+        df[!, "sc2_error_deg"] = Float64.(1001:1051)
+        specs = [(column=:error_deg, label="<script>label</script>", unit="<u>deg</u>", digits=5, log=:auto)]
+        for opts in ((max_frames=7,), (max_frames=2000, data_budget_mb=0.001))
+            frames = SV.build_viewer_frames(df, fleet; channels=specs, opts...)
+            channel = only(frames["channels"])
+            @test channel["label"] == "<script>label</script>"
+            @test channel["unit"] == "<u>deg</u>"
+            @test channel["digits"] == 5 && channel["log"] == "auto"
+            times = _decode_f64(frames["t_s"])
+            rows = Int.(times ./ 10) .+ 1
+            values = _decode_f32(channel["data"])
+            @test length(values) == 2 * frames["count"]
+            @test values[1:2:end] == Float32.(rows)
+            @test values[2:2:end] == Float32.(rows .+ 1000)
+            @test rows[1] == 1 && rows[end] == 51
+        end
+        # Additional channels must contribute to the budget, not only to the payload.
+        for k in 1:20, i in 1:2
+            df[!, "sc$(i)_channel$(k)"] = fill(Float64(k), 51)
+        end
+        base = SV.build_viewer_frames(df, fleet; data_budget_mb=0.005)
+        many = SV.build_viewer_frames(df, fleet; data_budget_mb=0.005,
+            channels=[(column="channel$(k)",) for k in 1:20])
+        @test many["count"] < base["count"]
+        @test all(length(_decode_f32(c["data"])) == 2 * many["count"] for c in many["channels"])
+        defaults = only(SV.build_viewer_frames(df, fleet; channels=[Dict("column" => "error_deg")])["channels"])
+        @test defaults["label"] == "error deg" && defaults["unit"] == ""
+        @test defaults["digits"] == 3 && defaults["log"] === false
+        for digits in (0, 100), log in (true, false, "auto")
+            @test only(SV.build_viewer_frames(df, fleet; channels=[(column="error_deg", digits=digits, log=log)])["channels"])["digits"] == digits
+        end
+        for spec in ((label="missing column",), (column=1,), (column="",),
+                     (column="error_deg", digits=-1), (column="error_deg", digits=101),
+                     (column="error_deg", digits=2.5), (column="error_deg", digits=true),
+                     (column="error_deg", log=1), (column="error_deg", log=nothing),
+                     (column="error_deg", log="yes"), (column="error_deg", label=3), (column="error_deg", unit=:m))
+            @test_throws ArgumentError SV.build_viewer_frames(df, fleet; channels=[spec])
+        end
+        @test_throws ArgumentError SV.build_viewer_frames(df, fleet; channels=[(column="error_deg",), (column="error_deg",)])
+        @test_throws ArgumentError SV.build_viewer_frames(df, fleet; channels="error_deg")
+        @test_throws ArgumentError SV.build_viewer_frames(df, fleet; channels=[1])
+        # Even a discarded row is checked, so decimation cannot conceal invalid input.
+        for value in (Inf, -Inf, 1e100, "bad", true, 1 + 2im)
+            bad = copy(df)
+            bad[!, "sc1_error_deg"] = Any[bad[!, "sc1_error_deg"]...]
+            bad[2, "sc1_error_deg"] = value
+            @test_throws ArgumentError SV.build_viewer_frames(bad, fleet; max_frames=3, channels=[(column="error_deg",)])
+        end
+        gaps = copy(df)
+        gaps[!, "sc1_error_deg"] = Union{Missing, Float64}[gaps[!, "sc1_error_deg"]...]
+        gaps[1, "sc1_error_deg"] = missing
+        gaps[2, "sc1_error_deg"] = NaN
+        y = _decode_f32(only(SV.build_viewer_frames(gaps, fleet; channels=[(column="error_deg",)])["channels"])["data"])
+        @test isnan(y[1]) && isnan(y[3]) && y[2] == 1001f0
+        payload = SV.viewer_payload(fleet, df; include_textures=false, channels=specs)
+        @test only(payload["frames"]["channels"])["name"] == "error_deg"
+        html = SV.render_viewer_html(payload)
+        @test !occursin("<script>label</script>", html)
+        @test occursin("<script>label<\\/script>", html)
+    end
+
     @testset "sun direction payload" begin
         dir = mktempdir()
         args = _viewer_config(results_directory=dir)
@@ -467,6 +540,67 @@ end
         @test SV.model_payloads(scene; models=Dict(1 => iss), model_center=Dict(1 => false))["1"]["center"] == [0.0, 0.0, 0.0]
     end
 
+    @testset "shared model bytes" begin
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        one = build_visualization_scene(args; rotation_max_samples=4)
+        g = one.spacecraft[1]
+        fleet = SV.VisualizationScene(one.schema, one.epoch_et_start_s, one.epoch_utc, one.planet,
+            [SV.SpacecraftGeometry(k, "sat$(k)", g.links, g.thrusters, g.facets, g.joints,
+                g.bounding_radius_m, g.stl_path, g.arm) for k in 1:4],
+            one.orientation_sim, one.results_feather, one.link_pose_field, one.link_pose_stride, one.atmosphere)
+
+        shared = joinpath(dir, "shared.obj")
+        write(shared, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
+        # A second path with byte-identical content: content, not the file name, decides.
+        twin = joinpath(dir, "twin.obj")
+        write(twin, read(shared))
+        other = joinpath(dir, "other.obj")
+        write(other, "v 0 0 0\nv 2 0 0\nv 0 2 0\nf 1 2 3\n")
+
+        m = SV.model_payloads(fleet;
+            models=Dict(1 => shared, 2 => twin, 3 => other, 4 => shared),
+            model_scale=Dict(1 => 1.0, 2 => 2.0, 3 => 3.0, 4 => 4.0),
+            model_rotation_deg=Dict(2 => (0.0, 0.0, 90.0)))
+        # One data URL per distinct content, and only the first holder carries it.
+        @test haskey(m["1"], "url") && !haskey(m["1"], "url_from")
+        @test !haskey(m["2"], "url") && m["2"]["url_from"] == "1"
+        @test !haskey(m["4"], "url") && m["4"]["url_from"] == "1"
+        @test haskey(m["3"], "url") && !haskey(m["3"], "url_from")
+        @test m["3"]["url"] != m["1"]["url"]
+        # Everything except the bytes stays per-spacecraft.
+        @test [m["$(k)"]["scale"] for k in 1:4] == [1.0, 2.0, 3.0, 4.0]
+        @test m["2"]["rotation_deg"] == [0.0, 0.0, 90.0]
+        @test m["1"]["rotation_deg"] == [0.0, 0.0, 0.0]
+        @test all(m["$(k)"]["format"] == "obj" for k in 1:4)
+        @test m["2"]["source"] == "twin.obj" && m["4"]["source"] == "shared.obj"
+        # The whole payload is smaller than four copies would be.
+        @test sum(length(get(m["$(k)"], "url", "")) for k in 1:4) < 3 * length(m["1"]["url"])
+
+        # Same bytes under two formats do NOT share: the viewer parses a shared
+        # entry with its own `format`, and an .obj parser cannot read .stl bytes.
+        as_stl = joinpath(dir, "shared.stl")
+        write(as_stl, read(shared))
+        split = SV.model_payloads(fleet; models=Dict(1 => shared, 2 => as_stl), model_center=false)
+        @test haskey(split["1"], "url") && haskey(split["2"], "url")
+        @test split["1"]["format"] == "obj" && split["2"]["format"] == "stl"
+
+        # Byte sharing does not merge centering or articulation metadata.
+        posed = SV.model_payloads(fleet; models=Dict(1 => shared, 2 => twin),
+            model_center=Dict(1 => false, 2 => true),
+            model_articulations=Dict(2 => [(region=(x_min=0.0,), axis=(0.0, 0.0, 1.0), angle_deg=90.0)]))
+        @test posed["2"]["url_from"] == "1"
+        @test posed["1"]["center"] == [0.0, 0.0, 0.0]
+        @test isempty(posed["1"]["articulations"])
+        @test length(posed["2"]["articulations"]) == 1
+        @test posed["2"]["articulations"][1]["angle_deg"] == 90.0
+
+        # No duplicates: every entry carries its own url, exactly as before.
+        plain = SV.model_payloads(fleet; models=Dict(1 => shared, 3 => other))
+        @test haskey(plain["1"], "url") && !haskey(plain["1"], "url_from")
+        @test haskey(plain["3"], "url") && !haskey(plain["3"], "url_from")
+    end
+
     @testset "reference paths" begin
         pts = [0.0 100.0 200.0; 0.0 10.0 0.0; 0.0 0.0 5.0]
         out = SV.path_payloads([(name="plan", points_m=pts, frame=:rtn, target=2, color="#ff0000", dashed=false)])
@@ -600,6 +734,15 @@ end
         @test payload["frames"]["sats"] == 1
         @test payload["frames"]["link_pose"]["counts"] == [2]
         @test payload["options"]["frame"] == "inertial"
+        channel_page = export_visualization(args; out=joinpath(dir, "channels.html"), textures=false,
+            channels=[(column="mass", label="saved mass", unit="kg", digits=2)])
+        channel_html = read(channel_page, String)
+        channel_start = findfirst("window.SPACEAGORA_VIEWER = ", channel_html)
+        channel_stop = findnext(";\n</script>", channel_html, last(channel_start))
+        channel_payload = JSON.parse(channel_html[last(channel_start)+1:first(channel_stop)-1])
+        @test only(channel_payload["frames"]["channels"])["name"] == "mass"
+        @test _decode_f32(only(channel_payload["frames"]["channels"])["data"]) ==
+            _decode_f32(channel_payload["frames"]["mass_kg"])
 
         iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
         iss_page = export_visualization(args; out=joinpath(dir, "iss.html"), textures=false, models=Dict(1 => iss), model_scale=2.4, model_rotation_deg=Dict(1 => (-90, 0, -90)))
@@ -690,5 +833,91 @@ end
         (joinpath(REPO, "viewer", "build_standalone.py"), "\"groundtrack.js\""),
     )
         @test occursin(needle, read(path, String))
+    end
+end
+
+@testset "Mission model and 8k asset acceptance" begin
+    mktempdir() do dir
+        args = _viewer_config(results_directory=dir)
+        scene = build_visualization_scene(args; rotation_max_samples=4)
+        files = [
+            "apollo_lunar_module_nasa_3d_resources.glb",
+            "cassini_huygens_nasa_3d_resources_a.glb",
+            "cassini_nasa_3d_resources_a_without_huygens.glb",
+            "cygnss_nasa_3d_resources.glb",
+            "magellan_nasa_3d_resources.glb",
+            "mars_odyssey_nasa_3d_resources.glb",
+        ]
+        raw = SV.scene_dict(scene)
+        craft = only(raw["spacecraft"])
+        raw["spacecraft"] = [merge(copy(craft), Dict("id" => i, "name" => "mission $(i)")) for i in eachindex(files)]
+        scene = SV._scene_from_dict(raw)
+        models = Dict(i => joinpath(REPO, "data", "models", file) for (i, file) in enumerate(files))
+        payload = SV.model_payloads(scene; models=models)
+        @test length(payload) == length(files)
+        for (i, file) in enumerate(files)
+            path = models[i]
+            triangles = SV.load_model_triangles(path)
+            @test size(triangles, 1) == 3 && size(triangles, 2) > 0 && size(triangles, 2) % 3 == 0
+            @test all(isfinite, triangles)
+            lo = [minimum(triangles[c, :]) for c in 1:3]
+            hi = [maximum(triangles[c, :]) for c in 1:3]
+            @test all(hi .> lo)
+            model = payload[string(i)]
+            @test model["format"] == "glb" && model["source"] == file
+            @test model["center"] ≈ (lo + hi) / 2
+            @test base64decode(split(model["url"], ","; limit=2)[2]) == read(path)
+            @test isempty(intersect(SV.gltf_required_extensions(path), SV.GLTF_UNSUPPORTED_REQUIRED))
+            bytes = read(path)
+            json_length = Int(ltoh(reinterpret(UInt32, bytes[13:16])[1]))
+            doc = JSON.parse(String(bytes[21:20+json_length]))
+            @test all(!haskey(buffer, "uri") for buffer in doc["buffers"])
+            @test all(!haskey(image, "uri") for image in doc["images"])
+            for texture in doc["textures"]
+                @test haskey(texture, "source")
+                image = doc["images"][texture["source"] + 1]
+                @test image["mimeType"] == "image/png"
+                @test doc["images"][texture["extensions"]["EXT_texture_webp"]["source"] + 1]["mimeType"] == "image/webp"
+            end
+        end
+        df = _synthetic_results(scene; n_rows=3)
+        prefix = joinpath(dir, "mission_assets")
+        # Real sidecar/Arrow/HTML pipeline with synthetic saved states: no native models.
+        raw = SV.scene_dict(scene)
+        raw["results"]["feather"] = "mission_assets.feather"
+        scene = SV._scene_from_dict(raw)
+        SV.write_visualization_scene(prefix * "_scene.json", scene)
+        Arrow.write(prefix * ".feather", df)
+        function page_payload(path)
+            html = read(path, String)
+            a = findfirst("window.SPACEAGORA_VIEWER = ", html)
+            b = findnext(";\n</script>", html, last(a))
+            return JSON.parse(html[last(a)+1:first(b)-1])
+        end
+        page = export_visualization(prefix; models=models)
+        exported = page_payload(page)
+        @test length(exported["models"]) == 6
+        @test exported["textures"]["mars"]["resolution"] == "4k"
+        @test exported["frames"]["sats"] == 6 && exported["frames"]["count"] == 3
+        for (i, file) in enumerate(files)
+            @test base64decode(split(exported["models"][string(i)]["url"], ","; limit=2)[2]) == read(models[i])
+        end
+        for body in ("earth", "mars", "moon")
+            entry = SV.texture_entry(body; resolution="8k")
+            @test entry["resolution"] == "8k"
+            @test _jpeg_size(entry["path"]) == (8192, 4096)
+            @test SV.texture_payload(body)["resolution"] == "4k"
+            @test SV.texture_entry(body; resolution=:best)["resolution"] == "8k"
+            raw["planet"]["texture"] = body
+            body_scene = SV._scene_from_dict(raw)
+            @test SV.viewer_payload(body_scene, df)["textures"][body]["resolution"] == "4k"
+            SV.write_visualization_scene(prefix * "_scene.json", body_scene)
+            page8 = export_visualization(prefix; out=joinpath(dir, body * "8k.html"), texture_resolution="8k")
+            tex = page_payload(page8)["textures"][body]
+            @test tex["resolution"] == "8k" && tex["width"] == 8192 && tex["height"] == 4096
+            @test base64decode(split(tex["url"], ","; limit=2)[2]) == read(entry["path"])
+        end
+        @test SV.texture_payload("venus"; resolution="8k")["resolution"] == "4k"
+        @test SV.texture_payload("titan"; resolution="8k")["resolution"] == "4k"
     end
 end

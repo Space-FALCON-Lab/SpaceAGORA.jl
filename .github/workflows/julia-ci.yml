@@ -216,6 +216,9 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      - name: Viewer JavaScript regressions
+        run: node test/unit/visualization/viewer_channels_models_tests.mjs
+
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
       - name: Free runner disk space

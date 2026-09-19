@@ -331,6 +331,12 @@ export function start(payload, container = document.body) {
           (o) => fmt(o[0], 3));
       }
     }
+    // Extra channels the run asked the page to carry (export_visualization's
+    // `channels`): one panel row and one plot each, in the order given.
+    frames.channels.forEach((c, k) => {
+      add(`ch_${c.name}`, c.label, c.unit, 1, (t, o) => { o[0] = frames.channelAt(k, t, s); },
+        (o) => `${fmt(o[0], c.digits)}${c.unit ? ' ' + c.unit : ''}`, { log: c.log });
+    });
     refs.items.forEach((it, k) => {
       if (it.target !== s) return;
       add(`ref${k}`, `vs ${it.spec.name}`, 'km', 1, (t, o) => { o[0] = refs.separationKm(t, k); },

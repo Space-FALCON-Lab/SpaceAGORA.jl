@@ -155,7 +155,7 @@ export function createReferences(specs, sidecar, frames, models, options = {}) {
     root.add(body);
     const model = models && models[String(targetSpec.id)];
     let status = null;
-    if (model && model.url) {
+    if (model) {
       status = 'loading';
       loadModelObject(model, spec.name || 'reference', (object, info) => {
         ghostMaterials(object, color, alpha);
@@ -164,7 +164,7 @@ export function createReferences(specs, sidecar, frames, models, options = {}) {
       }, (message) => {
         status = `failed: ${message}`;
         body.add(ghostBoxes(targetSpec, color, alpha));
-      });
+      }, models);
     } else {
       body.add(ghostBoxes(targetSpec, color, alpha));
       status = 'boxes';

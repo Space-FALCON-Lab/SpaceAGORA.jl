@@ -405,7 +405,7 @@ function export_ensemble_visualization(
     speed::Union{Nothing, Real}=nothing,
     title::Union{Nothing, AbstractString}=nothing,
     textures::Bool=true,
-    texture_resolution=:best,
+    texture_resolution="4k",
     viewer_dir::AbstractString=VIEWER_DIR,
     textures_dir::AbstractString=TEXTURES_DIR
 )::String

@@ -139,7 +139,27 @@ function articulateObject(object, articulations) {
   }
 }
 
-export function loadModelObject(model, label, onReady, onFail) {
+// Resolve byte ownership, never transforms. Invalid links fail visibly through loadModelObject.
+export function resolveModelUrl(model, models) {
+  if (!model) return null;
+  const seen = new Set(), format = model.format || 'stl';
+  let current = model;
+  for (;;) {
+    if (!current || typeof current !== 'object' || seen.has(current)) throw new Error('invalid or cyclic model byte reference');
+    seen.add(current);
+    if ((current.format || 'stl') !== format) throw new Error('model byte reference has a different format');
+    if (typeof current.url === 'string' && current.url) return current.url;
+    const id = current.url_from;
+    if (id == null) throw new Error('model has no embedded bytes');
+    if (!models || !Object.prototype.hasOwnProperty.call(models, String(id))) throw new Error(`missing model byte owner ${id}`);
+    current = models[String(id)];
+  }
+}
+
+// Keep prototypes within one payload's lifetime, with parser format in their identity.
+const MODEL_PROTOTYPES = new WeakMap();
+
+export function loadModelObject(model, label, onReady, onFail, models) {
   const install = (object) => {
     articulateObject(object, model.articulations);
     let meshes = 0;
@@ -156,6 +176,11 @@ export function loadModelObject(model, label, onReady, onFail) {
         if (!child.material || model.format === 'obj' || model.format === 'stl') {
           child.material = new THREE.MeshStandardMaterial({ color: STL_COLOR, roughness: 0.55, metalness: 0.2 });
         }
+        else {
+          // Object3D.clone shares materials; each spacecraft owns its mutable appearance.
+          child.material = Array.isArray(child.material)
+            ? child.material.map((m) => m.clone()) : child.material.clone();
+        }
         child.userData.heatable = true;
         child.castShadow = true;
         child.receiveShadow = true;
@@ -164,26 +189,72 @@ export function loadModelObject(model, label, onReady, onFail) {
     onReady(object, `${model.format} (${meshes} mesh${meshes === 1 ? '' : 'es'}, ×${s})`);
   };
   const message = (err) => (err && err.message ? err.message : String(err));
+  const deliver = (object, clone = false) => {
+    try { install(clone ? object.clone(true) : object); } catch (err) { onFail(message(err)); }
+  };
+  let url;
+  try { url = resolveModelUrl(model, models); } catch (err) { onFail(message(err)); return; }
+  if (!url) { onFail('model has no embedded bytes'); return; }
+  const format = model.format || 'stl';
+  const owner = models || model;
+  let cache = MODEL_PROTOTYPES.get(owner);
+  if (!cache) { cache = new Map(); MODEL_PROTOTYPES.set(owner, cache); }
+  const key = `${format}\0${url}`;
+  const shareable = !model.articulations || model.articulations.length === 0;
+  const previous = shareable ? cache.get(key) : null;
+  if (previous?.object) { deliver(previous.object, true); return; }
+  if (previous?.waiting) {
+    previous.waiting.push({ deliver, onFail, retry: () => loadModelObject(model, label, onReady, onFail, models) });
+    return;
+  }
+  // Skinned meshes cannot use Object3D.clone safely; each request parses those afresh.
+  const slot = shareable && !previous?.unshareable ? { waiting: [] } : null;
+  if (slot) cache.set(key, slot);
+  let settled = false;
+  const ready = (object) => {
+    if (settled) return;
+    settled = true;
+    if (!slot) { deliver(object); return; }
+    const waiting = slot.waiting;
+    delete slot.waiting;
+    let skinned = false;
+    object.traverse((child) => { if (child.isSkinnedMesh) skinned = true; });
+    if (skinned) {
+      slot.unshareable = true;
+      deliver(object);
+      for (const waiter of waiting) waiter.retry();
+    } else {
+      slot.object = object;
+      deliver(object, true);
+      for (const waiter of waiting) waiter.deliver(object, true);
+    }
+  };
+  const failed = (err) => {
+    if (settled) return;
+    settled = true;
+    if (slot && cache.get(key) === slot) cache.delete(key);
+    const waiting = slot?.waiting || [];
+    if (slot) delete slot.waiting;
+    onFail(message(err));
+    for (const waiter of waiting) waiter.onFail(message(err));
+  };
   try {
-    const bytes = decodeBytes(model.url.split(',')[1] || '');
-    const format = model.format || 'stl';
+    const bytes = decodeBytes(url.split(',')[1] || '');
     if (format === 'stl') {
       const geometry = new STLLoader().parse(bytes.buffer);
       geometry.computeVertexNormals();
-      install(new THREE.Mesh(geometry));
+      ready(new THREE.Mesh(geometry));
     } else if (format === 'obj') {
-      install(new OBJLoader().parse(new TextDecoder().decode(bytes)));
+      ready(new OBJLoader().parse(new TextDecoder().decode(bytes)));
     } else if (format === 'glb' || format === 'gltf') {
       const loader = new GLTFLoader();
       const payload = format === 'glb' ? bytes.buffer : new TextDecoder().decode(bytes);
-      loader.parse(payload, '', (gltf) => {
-        try { install(gltf.scene); } catch (err) { onFail(message(err)); }
-      }, (err) => onFail(message(err)));
+      loader.parse(payload, '', (gltf) => ready(gltf.scene), failed);
     } else {
-      onFail(`unknown format ${format}`);
+      failed(`unknown format ${format}`);
     }
   } catch (err) {
-    onFail(message(err));
+    failed(err);
   }
 }
 
@@ -225,8 +296,8 @@ function buildAssembly(spec, models, scLength) {
 
   // 3D model override (STL, OBJ, glTF/GLB): the mesh replaces the boxes, glyphs stay on their links.
   const model = models && models[String(spec.id)];
-  group.userData.modelStatus = model && model.url ? 'loading' : null;
-  if (model && model.url) {
+  group.userData.modelStatus = model ? 'loading' : null;
+  if (model) {
     loadModelObject(model, spec.name, (object, status) => {
       linkGroups[0].add(object);
       linkGroups.forEach((g) => { g.userData.boxes.visible = false; });
@@ -235,7 +306,7 @@ function buildAssembly(spec, models, scLength) {
     }, (message) => {
       group.userData.modelStatus = `failed: ${message}`;
       console.warn(`Model for ${spec.name} could not be parsed; showing boxes instead.`, message);
-    });
+    }, models);
   }
 
   const coneH = Math.max(0.05, 0.12 * r), coneR = 0.35 * coneH;

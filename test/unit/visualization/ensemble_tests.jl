@@ -97,7 +97,7 @@ end
 
     @testset "Monte Carlo campaign writes samples, manifest and page" begin
         campaign = mktempdir()
-        result, page = run_monte_carlo_visualization(_sample_args, [1, 2], campaign; threads=1, texture_resolution="4k", max_frames=200)
+        result, page = run_monte_carlo_visualization(_sample_args, [1, 2], campaign; threads=1, max_frames=200)
         @test length(result.successful) == 2
         @test isfile(page) && page == joinpath(campaign, "ensemble_viewer.html")
         @test isfile(joinpath(campaign, "sample_0001", "simulation_results_scene.json"))
@@ -109,6 +109,9 @@ end
         @test all(s -> isfinite(s.value), result.successful)
 
         payload = _payload_of(page)
+        @test payload["textures"]["mars"]["resolution"] == "4k"
+        detailed = export_ensemble_visualization(campaign; out=joinpath(campaign, "8k.html"), texture_resolution="8k")
+        @test _payload_of(detailed)["textures"]["mars"]["resolution"] == "8k"
         @test payload["ensemble"]["count"] == 2
         @test payload["ensemble"]["spacecraft_per_sample"] == 1
         @test payload["ensemble"]["samples"][2]["label"] == "sample 2 (seed 2)"

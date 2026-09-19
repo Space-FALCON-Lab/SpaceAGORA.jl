@@ -1,17 +1,18 @@
 const IMPACT_ALTITUDE_M = 50_000.0
 
-function get_impact_callback(num_sats::Int)
+function get_impact_callback(num_sats::Int; excluded_spacecraft=nothing)
     function condition!(out, u, t, integrator)
         p = integrator.p
         Rp_e = p.args.environment_model.planet.Rp_e
         @inbounds for i in 1:num_sats
-            out[i] = norm(_simulation_engine_module()._state_position_ii(u, i)) - Rp_e - IMPACT_ALTITUDE_M
+            out[i] = excluded_spacecraft !== nothing && excluded_spacecraft[i] ? 1.0 :
+                norm(_simulation_engine_module()._state_position_ii(u, i)) - Rp_e - IMPACT_ALTITUDE_M
         end
     end
 
     function affect_downcrossing!(integrator, idx::Int64)
         p = integrator.p
-        if p.is_active[idx]
+        if p.is_active[idx] && (excluded_spacecraft === nothing || !excluded_spacecraft[idx])
             if callback_verbose(integrator)
                 println("Impact detected for satellite $idx at time $(integrator.t) seconds at altitude <= $(IMPACT_ALTITUDE_M * 1e-3) km!")
             end
@@ -32,6 +33,97 @@ function get_impact_callback(num_sats::Int)
     end
 
     return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
+end
+
+# Terrain coordinates are planetocentric; geodetic latitude would sample a
+# different part of a DEM on an oblate planet. This is an opt-in event only.
+function _touchdown_specs(args, num_sats::Int)
+    specs = Any[nothing for _ in 1:num_sats]
+    for effector in args.control_model.control_effectors, i in 1:num_sats
+        spec = touchdown_spec(effector, i)
+        spec === nothing && continue
+        specs[i] === nothing || throw(ArgumentError("multiple touchdown specifications for spacecraft index $i"))
+        spec isa NamedTuple && all(k -> hasproperty(spec, k),
+            (:terrain, :reference_radius_m, :height_m, :on_touchdown)) ||
+            throw(ArgumentError("touchdown_spec must return nothing or a complete touchdown NamedTuple"))
+        spec.terrain isa AbstractTerrainModel || throw(ArgumentError("touchdown terrain must be an AbstractTerrainModel"))
+        radius, height = spec.reference_radius_m, spec.height_m
+        radius isa Real && isfinite(radius) && radius > 0 ||
+            throw(ArgumentError("touchdown reference_radius_m must be finite and positive"))
+        height isa Real && isfinite(height) && height >= 0 ||
+            throw(ArgumentError("touchdown height_m must be finite and nonnegative"))
+        radius, height = try
+            Float64(radius), Float64(height)
+        catch
+            throw(ArgumentError("touchdown dimensions must be representable as Float64"))
+        end
+        isfinite(radius) && radius > 0 && isfinite(height) ||
+            throw(ArgumentError("touchdown dimensions must be finite, with positive radius, after Float64 conversion"))
+        spec.terrain isa DEMTerrainModel && spec.terrain.reference_radius_m != radius &&
+            throw(ArgumentError("touchdown reference radius must match the DEM terrain model"))
+        zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+        applicable(spec.on_touchdown, 0.0, zero3, zero3, i) ||
+            throw(ArgumentError("touchdown on_touchdown must accept (t, r_p, v_p, spacecraft_index)"))
+        specs[i] = (terrain=spec.terrain, reference_radius_m=radius,
+                    height_m=height, on_touchdown=spec.on_touchdown)
+    end
+    return specs
+end
+
+@inline function _touchdown_fixed_state(u, t, p, i::Int)
+    engine = _simulation_engine_module()
+    r_i, v_i = engine._state_position_ii(u, i), engine._state_velocity_ii(u, i)
+    env = p.args.environment_model
+    et = p.shared_buffers.et_start[] + Float64(t)
+    return r_intor_p!(r_i, v_i, env.planet, et, env.ephemerides_model)
+end
+
+function get_touchdown_callback(specs)
+    num_sats = length(specs)
+    function condition!(out, u, t, integrator)
+        p = integrator.p
+        @inbounds for i in 1:num_sats
+            spec = specs[i]
+            if spec === nothing || !p.is_active[i]
+                out[i] = 1.0
+                continue
+            end
+            r_p, _ = _touchdown_fixed_state(u, t, p, i)
+            radius = norm(r_p)
+            isfinite(radius) && radius > 0 || throw(ArgumentError("touchdown position must have a finite positive radius"))
+            _, lat, lon = rtolatlongrad(r_p, p.args.environment_model.planet)
+            ground_radius = terrain_radius(spec.terrain, rad2deg(lat), rad2deg(lon), spec.reference_radius_m)
+            out[i] = radius - ground_radius - spec.height_m
+        end
+        return nothing
+    end
+    function affect_downcrossing!(integrator, idx::Int64)
+        p, spec = integrator.p, specs[idx]
+        (spec === nothing || !p.is_active[idx]) && return nothing
+        r_p, v_p = _touchdown_fixed_state(integrator.u, integrator.t, p, idx)
+        spec.on_touchdown(Float64(integrator.t), r_p, v_p, idx)
+        p.is_active[idx] = false
+        if _simulation_engine_module()._is_gravity_backbone_state(integrator.u)
+            integrator.u.x[1].sc[idx].vel .= 0.0
+        end
+        if all(!, p.is_active)
+            println("termination_cause=touchdown sat=$idx t_s=$(integrator.t)")
+            terminate!(integrator)
+        end
+        return nothing
+    end
+    function initialize!(callback, u, t, integrator)
+        values = zeros(num_sats)
+        condition!(values, u, t, integrator)
+        for i in 1:num_sats
+            if specs[i] !== nothing && integrator.p.is_active[i] && values[i] <= 0
+                throw(ArgumentError("spacecraft index $i must start above terrain plus touchdown clearance"))
+            end
+        end
+        return nothing
+    end
+    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats;
+                                    initialize=initialize!)
 end
 
 function get_orbit_end_callback(num_sats::Int)

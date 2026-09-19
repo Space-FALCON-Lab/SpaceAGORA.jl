@@ -41,7 +41,8 @@ does what you need:
   spacecraft in the run is inactive the run ends and prints
   `termination_cause=impact`.
 
-Anything else is a callback of your own.
+A landing controller can instead opt selected spacecraft into the terrain-contact
+stop described below. Other conditions use a callback of your own.
 
 ## The lines that teach the new action
 
@@ -276,3 +277,78 @@ Inspected in the source, not run: the built-in stops (impact deactivation
 and termination, orbit counting, the mission-time end), the conditional
 assembly of the engine's callbacks, the multi-spacecraft behaviour, and the
 `save_positions` default.
+
+## Terrain contact for a landing controller
+
+Terrain queries alone do not change propagation. A custom control effector can
+opt individual spacecraft into touchdown by extending
+`SpaceAGORA.SimulationModel.touchdown_spec(controller, spacecraft_index)`.
+Return `nothing` for every unselected spacecraft. For a selected spacecraft,
+return these named fields:
+
+```julia
+(terrain = my_terrain,
+ reference_radius_m = my_reference_radius_m,
+ height_m = 1.0,
+ on_touchdown = (t, r_p, v_p, i) -> record_contact!(controller, t, r_p, v_p, i))
+```
+
+This is an interface example for your controller: `my_terrain` and
+`record_contact!` are supplied by your code. The index `i` is the spacecraft's
+position in the run's spacecraft vector, not its user-defined ID. Only one
+controller may provide a touchdown specification for each index.
+
+Use the same explicit reference-sphere radius as the terrain model. `height_m`
+is a finite, nonnegative radial clearance above that terrain, in metres.
+Queries use planetocentric latitude and east-positive longitude in the
+planet-fixed frame, as described in [Terrain Queries](concepts.md#Query-a-regional-terrain-map). This is not
+geodetic altitude above an ellipsoid. No default planetary radius is assumed.
+
+The spacecraft must start above the requested clearance. The solver locates the
+first downward crossing, calls `on_touchdown` with time in seconds, planet-fixed
+position in metres and ground-relative velocity in metres per second, then
+stops propagating that spacecraft. Use the hook to record contact or clear your
+controller's actuators; it does not model a bounce, ground forces or a landing
+controller. Other spacecraft continue until their own stop condition. The run
+prints `termination_cause=touchdown` if the last active spacecraft touches down.
+
+A selected spacecraft can descend below the usual 50 km impact threshold. Every
+unselected spacecraft retains that threshold. Configuration defaults, solver
+selection and runs without a touchdown specification keep their existing
+behaviour. The usual `run_simulation` state isolation also applies to your
+controller: by default, recorded controller state belongs to the returned
+solution's configuration, while the input configuration is unchanged.
+
+## Apollo-style powered descent
+
+The optional `SM.ApolloDescentGuidanceModel` and `SM.ApolloDescentControlModel`
+provide a quadratic braking/approach law followed by a vertical descent-rate
+controller. They require `orientation_sim=true`, positive spacecraft mass and
+an explicitly selected reference-sphere radius. They are a configurable model
+inspired by Apollo descent, not a validated reproduction of a particular flight.
+
+Construct one `SM.ApolloDescentState(number_of_spacecraft)` and pass that same
+state, the same `SM.ApolloDescentConfig`, and the same terrain to both models.
+Both constructors accept `spacecraft_indices=(2,)`, for example, to guide and
+stop only the second spacecraft. The default selects every state index. Use
+identical selections for the paired models and matching guidance/control rates
+in `GuidanceModel` and `ControlModel`. The configuration's required
+`reference_radius_m` must equal the DEM datum; with `NoTerrainModel`, it defines
+the spherical ground surface explicitly.
+
+`SM.apollo11_descent_targets()` supplies starting braking and approach targets
+that you should adapt to the vehicle and scenario. The guidance subtracts a
+central-gravity prediction and rotating-frame terms from the requested
+acceleration, then commands engine direction and throttle. The control effector
+applies thrust along the actual body minus-z engine axis, limits thrust slew
+and body torque, and accounts for engine and approximate RCS propellant use.
+The RCS model applies bounded body torque directly. Its per-jet firing levels
+are an approximate visualization allocation, not individual simulated jet forces. Their geometry must be expressed in the spacecraft body frame.
+
+The state records phases, commands, site-relative motion and contact. The
+existing `radar_altitude_m` field is radial terrain clearance, not a slant-range
+radar measurement. The shared touchdown hook records ground-relative velocity
+and lateral miss, clears actuator commands and deactivates the selected craft.
+Default state isolation preserves the shared guidance/control state inside the
+copied run configuration; inspect it through a returned solution, or explicitly
+choose `isolate_state=false` to retain diagnostics in your input models.

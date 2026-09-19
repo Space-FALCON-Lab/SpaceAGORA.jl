@@ -26,6 +26,7 @@ module DynamicEffectors
     @eval GravityEffectors using ..PerturbationEffectors
 
     using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
+    using .GravityEffectors: GravityGradientTorqueModel
     using .GravityEffectors: aerobraking_gravity_force_ii
     using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     using .AerodynamicEffectors: _parse_bool_env, _multibody_outer_parallel_hint, collect_and_reset_link_wrenches!
@@ -56,6 +57,7 @@ module DynamicEffectors
     export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
+    export GravityGradientTorqueModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
     export MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque

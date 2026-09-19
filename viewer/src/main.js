@@ -289,7 +289,7 @@ export function start(payload, container = document.body) {
     add('latitude', 'latitude', '°', 1, (t, o) => { geodeticAt(t, s, geo3); o[0] = geo3[1]; }, (o) => `${fmt(o[0], 3)}°`);
     add('longitude', 'longitude', '°', 1, (t, o) => { geodeticAt(t, s, geo3); o[0] = geo3[2]; }, (o) => `${fmt(o[0], 3)}°`);
     add('radius', 'radius', 'km', 1, (t, o) => { frames.positionAt(t, s, tmpPos); o[0] = Math.hypot(tmpPos[0], tmpPos[1], tmpPos[2]); }, (o) => `${fmt(o[0], 1)} km`);
-    if (terrain.levels.length) {
+    if (terrain.hasHeights) {
       // height above the terrain grids (the radar altitude), from the body-fixed position
       add('terrain_altitude', 'height above terrain', 'm', 1, (t, o) => {
         frames.positionAt(t, s, tmpPos); globe.rotationAt(t, qPi); rotateByConjugate(qPi, tmpPos, rBody);

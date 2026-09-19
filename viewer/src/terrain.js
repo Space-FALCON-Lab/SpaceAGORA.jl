@@ -37,7 +37,8 @@
 //     way, so y = 0 is the northern row (the grids' convention).
 //   terrain.imagery[]          legacy nested squares; only the widest is used, as the root tile.
 import * as THREE from 'three';
-import { decodeFloat32 } from 'viewer/data.js';
+import { decodeBytes } from 'viewer/data.js';
+import { globeInteriorRadiusKm } from 'viewer/globe.js';
 
 const TERRAIN_M_TO_KM = 1e-3;
 const TERRAIN_NODE_SEGMENTS = 16;      // quads per node edge; a node's DEM sampling
@@ -53,33 +54,96 @@ const TERRAIN_SKIRT_SIZE = 0.02;       // plus this fraction of the node's width
 const TERRAIN_SKIRT_MAX_M = 3000;      // and never deeper than this
 const TERRAIN_SKIRT_SINK = 1e-4;       // the skirt's top, below the node's own edge, as a fraction of its width
 
-// Height at (lat, lon) from one grid, bilinear, NaN outside it.
-function terrainGridHeight(g, latDeg, lonDeg) {
-  let lon = lonDeg;
-  while (lon < g.lon_min - 1e-12 && lon + 360 <= g.lon_max + 1e-9) lon += 360;
-  while (lon > g.lon_max + 1e-12 && lon - 360 >= g.lon_min - 1e-9) lon -= 360;
-  if (latDeg < g.lat_min || latDeg > g.lat_max || lon < g.lon_min || lon > g.lon_max) return NaN;
+// Longitude normalization is bounded even for finite Float64 values near 1e308.
+function canonicalLongitude(lon) {
+  let result = lon % 360;
+  if (result < 0) result += 360;
+  return result;
+}
+function terrainBounds(g) {
+  const keys = ['lat_min', 'lat_max', 'lon_min', 'lon_max'];
+  if (!g || keys.some(k => typeof g[k] !== 'number' || !Number.isFinite(g[k]))) throw new Error('terrain bounds must be finite numbers');
+  if (!(g.lat_min >= -90 && g.lat_min < g.lat_max && g.lat_max <= 90)) throw new Error('invalid terrain latitude bounds');
+  const span = g.lon_max - g.lon_min;
+  if (!(span > 0 && span < 360)) throw new Error('invalid regional terrain longitude span');
+  let west = canonicalLongitude(g.lon_min);
+  if (west === 360 || west === 0) west = 0;
+  const east = west + span;
+  if (!(east > west && east - west < 360)) throw new Error('terrain longitude bounds are not representable');
+  return { lat_min: g.lat_min, lat_max: g.lat_max, lon_min: west, lon_max: east };
+}
+function terrainUlp(x) {
+  const b = new DataView(new ArrayBuffer(8));
+  b.setFloat64(0, Math.abs(x));
+  const exponent = (b.getUint32(0) >>> 20) & 0x7ff;
+  return exponent === 0 ? Number.MIN_VALUE : 2 ** (exponent - 1023 - 52);
+}
+// Returns a coordinate in the increasing stored interval, or NaN outside it.
+export function terrainLongitude(g, lonDeg) {
+  if (typeof lonDeg !== 'number' || !Number.isFinite(lonDeg)) return NaN;
+  const lon = canonicalLongitude(lonDeg);
+  if (lon >= g.lon_min && lon <= Math.min(g.lon_max, 360)) return lon;
+  if (g.lon_max >= 360 && lon <= g.lon_max - 360) return lon + 360;
+  return NaN;
+}
+export function decodeTerrainGrids(spec) {
+  if (!Array.isArray(spec.grids) || spec.grids.length > 64) throw new Error('terrain grids must be an array of at most 64 grids');
+  let samples = 0;
+  return spec.grids.map(g => {
+    const bounds = terrainBounds(g), rows = g.rows, cols = g.cols;
+    if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows < 1 || cols < 1 || rows > 2048 || cols > 2048) throw new Error('terrain dimensions must be integers in 1:2048');
+    samples += rows * cols;
+    if (samples * 4 > 128 * 1024 * 1024) throw new Error('terrain grids exceed 128 MiB');
+    const dlat = (bounds.lat_max - bounds.lat_min) / rows, dlon = (bounds.lon_max - bounds.lon_min) / cols;
+    if (dlat < 2 * terrainUlp(Math.max(Math.abs(bounds.lat_min), Math.abs(bounds.lat_max))) || dlon < 2 * terrainUlp(bounds.lon_max)) throw new Error('terrain cell centres are not distinct');
+    let data;
+    if (typeof g.heights === 'string') {
+      if (g.heights.length !== 4 * Math.ceil(rows * cols * 4 / 3)) throw new Error('terrain height byte count does not match grid');
+      const bytes = decodeBytes(g.heights);
+      if (bytes.length !== rows * cols * 4) throw new Error('terrain height byte count does not match grid');
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      data = Float32Array.from({ length: rows * cols }, (_, i) => view.getFloat32(i * 4, true));
+    } else {
+      if ((!ArrayBuffer.isView(g.heights) && !Array.isArray(g.heights)) || g.heights.length !== rows * cols) throw new Error('terrain height count does not match grid');
+      if (Array.from(g.heights).some(v => typeof v !== 'number' || !Number.isFinite(v))) throw new Error('terrain heights must be finite numbers');
+      data = Float32Array.from(g.heights);
+    }
+    if (data.some(v => !Number.isFinite(v))) throw new Error('terrain heights must be finite Float32 values');
+    return { ...g, ...bounds, data };
+  });
+}
+// Strict coverage agrees with TerrainModels; no edge tolerance changes membership.
+export function terrainGridHeight(g, latDeg, lonDeg) {
+  if (typeof latDeg !== 'number' || !Number.isFinite(latDeg) || latDeg < -90 || latDeg > 90) return NaN;
+  const lon = terrainLongitude(g, lonDeg);
+  if (!Number.isFinite(lon) || latDeg < g.lat_min || latDeg > g.lat_max) return NaN;
   return terrainGridSample(g, latDeg, lon);
 }
-
-// The same, with the sample point clamped into the grid: the coarsest grid
-// extends its edge values outward instead of stepping down to the sphere.
-function terrainGridSample(g, latDeg, lonDeg) {
+// Clamp edge half-cells, independently on each axis, including 1xN and Nx1 grids.
+export function terrainGridSample(g, latDeg, lonDeg) {
+  if (!Number.isFinite(latDeg) || !Number.isFinite(lonDeg)) return NaN;
   const rows = g.rows, cols = g.cols;
+  let lon = terrainLongitude(g, lonDeg);
+  if (!Number.isFinite(lon)) {
+    lon = canonicalLongitude(lonDeg);
+    const distance = x => Math.max(g.lon_min - x, 0, x - g.lon_max);
+    const candidates = [lon - 360, lon, lon + 360];
+    lon = candidates.reduce((best, value) => distance(value) < distance(best) ? value : best, lon);
+  }
   const dlat = (g.lat_max - g.lat_min) / rows, dlon = (g.lon_max - g.lon_min) / cols;
-  let fr = (g.lat_max - latDeg) / dlat - 0.5, fc = (lonDeg - g.lon_min) / dlon - 0.5;
-  fr = Math.min(rows - 1, Math.max(0, fr)); fc = Math.min(cols - 1, Math.max(0, fc));
-  const r0 = Math.min(rows - 2, Math.floor(fr)), c0 = Math.min(cols - 2, Math.floor(fc));
-  const tr = fr - r0, tc = fc - c0;
-  const h = g.data;
-  const h00 = h[r0 * cols + c0], h01 = h[r0 * cols + c0 + 1], h10 = h[(r0 + 1) * cols + c0], h11 = h[(r0 + 1) * cols + c0 + 1];
-  return (1 - tr) * ((1 - tc) * h00 + tc * h01) + tr * ((1 - tc) * h10 + tc * h11);
+  const fr = Math.min(rows - 1, Math.max(0, (g.lat_max - latDeg) / dlat - 0.5));
+  const fc = Math.min(cols - 1, Math.max(0, (lon - g.lon_min) / dlon - 0.5));
+  const r0 = Math.floor(fr), c0 = Math.floor(fc), r1 = Math.min(rows - 1, r0 + 1), c1 = Math.min(cols - 1, c0 + 1);
+  const tr = fr - r0, tc = fc - c0, h = g.data;
+  return (1 - tr) * ((1 - tc) * h[r0 * cols + c0] + tc * h[r0 * cols + c1]) + tr * ((1 - tc) * h[r1 * cols + c0] + tc * h[r1 * cols + c1]);
 }
 
 // 1 well inside the grid, falling to 0 at its edges over `TERRAIN_GRID_TAPER`
 // of its span: a fine grid blends into the coarser surface under it instead of
 // ending in a cliff.
 function terrainGridWeight(g, latDeg, lonDeg) {
+  lonDeg = terrainLongitude(g, lonDeg);
+  if (!Number.isFinite(lonDeg)) return 0;
   const latSpan = g.lat_max - g.lat_min, lonSpan = g.lon_max - g.lon_min;
   const a = Math.min(latDeg - g.lat_min, g.lat_max - latDeg) / (latSpan * TERRAIN_GRID_TAPER);
   const b = Math.min(lonDeg - g.lon_min, g.lon_max - lonDeg) / (lonSpan * TERRAIN_GRID_TAPER);
@@ -121,40 +185,73 @@ export function createTerrain(spec, planet, options = {}) {
       update() {}, setGlobeTexture() {}, setVisible(v) { group.visible = v; }, modelStatus: 'no terrain',
     };
   }
-  const tiles = spec.tiles && spec.tiles.nodes && spec.tiles.nodes.length ? spec.tiles : terrainTilesFromImagery(spec.imagery);
+  const radius = spec.reference_radius_m;
+  if (typeof radius !== 'number' || !Number.isFinite(radius) || radius <= 0) throw new Error('terrain needs an explicit positive reference radius');
+  const R = radius * TERRAIN_M_TO_KM;
+  const priorityGrids = decodeTerrainGrids(spec);
+  if (priorityGrids.some(g => g.data.some(h => radius + h <= 0))) throw new Error('terrain gives a nonpositive radial distance');
+  const fallback = spec.fallback_height_m === undefined ? NaN : spec.fallback_height_m;
+  if (spec.fallback_height_m !== undefined && (typeof fallback !== 'number' || !Number.isFinite(fallback) || radius + fallback <= 0)) throw new Error('invalid terrain fallback height');
+  const heightAt = (latDeg, lonDeg) => {
+    if (!Number.isFinite(latDeg) || !Number.isFinite(lonDeg) || latDeg < -90 || latDeg > 90) return NaN;
+    for (const g of priorityGrids) {
+      const h = terrainGridHeight(g, latDeg, lonDeg);
+      if (!Number.isNaN(h)) return h;
+    }
+    return fallback;
+  };
+  if (spec.site && (typeof spec.site.lat_deg !== 'number' || typeof spec.site.lon_deg !== 'number' || !Number.isFinite(spec.site.lat_deg) || !Number.isFinite(spec.site.lon_deg) || Math.abs(spec.site.lat_deg) > 90)) throw new Error('invalid terrain site coordinates');
+  const tiles = spec.tiles == null ? terrainTilesFromImagery(spec.imagery) : spec.tiles;
   if (!tiles) {
     return {
-      group, levels: [], hole: null, site: null, heightAt: () => NaN, stats: emptyStats,
-      update() {}, setGlobeTexture() {}, setVisible(v) { group.visible = v; }, modelStatus: 'no imagery',
+      group, levels: [], hole: null, site: spec.site || null, hasHeights: true,
+      referenceRadiusKm: R, heightAt, surfaceHeight: heightAt, stats: emptyStats,
+      update() {}, setGlobeTexture() {}, setVisible(v) { group.visible = v; }, modelStatus: 'height grids; no imagery mesh',
     };
   }
-
-  const R = (spec.reference_radius_m || planet.equatorial_radius_m) * TERRAIN_M_TO_KM;
+  if (tiles.scheme !== 'quadtree' || !Array.isArray(tiles.nodes) || (tiles.nodes.length < 1 || tiles.nodes.length > 8192)) throw new Error('invalid terrain quadtree');
+  const root = terrainBounds(tiles.root);
+  const maxTileLevel = tiles.max_level;
+  if (!Number.isInteger(maxTileLevel) || maxTileLevel < 0 || maxTileLevel > 20 || !Number.isInteger(tiles.tile_px) || tiles.tile_px < 1 || tiles.tile_px > 4096) throw new Error('invalid terrain tile dimensions or depth');
+  const keys = new Set();
+  for (const n of tiles.nodes) {
+    if (!Number.isInteger(n.level) || n.level < 0 || n.level > maxTileLevel || !Number.isInteger(n.x) || !Number.isInteger(n.y) || n.x < 0 || n.y < 0 || n.x >= 2 ** n.level || n.y >= 2 ** n.level || typeof n.m_per_px !== 'number' || !Number.isFinite(n.m_per_px) || n.m_per_px <= 0 || typeof n.url !== 'string') throw new Error('invalid terrain tile node');
+    const key = `${n.level}/${n.x}/${n.y}`;
+    if (keys.has(key)) throw new Error('duplicate terrain tile');
+    keys.add(key);
+  }
+  if (!keys.has('0/0/0') || Math.max(...tiles.nodes.map(n => n.level)) !== maxTileLevel) throw new Error('terrain tile root or depth mismatch');
   const DEG_TO_KM = R * Math.PI / 180;
   const splitPixels = options.splitPixels || TERRAIN_SPLIT_PIXELS;
   const buildBudget = options.buildBudget || TERRAIN_BUILD_BUDGET;
-  const segments = options.segments || TERRAIN_NODE_SEGMENTS;
-  const root = tiles.root;
+  const segments = options.segments ?? TERRAIN_NODE_SEGMENTS;
+  if (!Number.isInteger(segments) || segments < 1 || segments > 128) throw new Error('terrain segments must be an integer in 1:128');
+  if (!Number.isFinite(splitPixels) || splitPixels <= 0 || !Number.isInteger(buildBudget) || buildBudget < 1 || buildBudget > 64) throw new Error('invalid terrain build options');
   const rootSpan = root.lat_max - root.lat_min;
   const rootLonSpan = root.lon_max - root.lon_min;
-  const maxTileLevel = Number.isFinite(tiles.max_level) ? tiles.max_level : 0;
   const maxLevel = maxTileLevel + TERRAIN_EXTRA_LEVELS;
-
-  // Grids, coarsest first: each finer one is blended into the surface below it.
-  const grids = spec.grids.map((g) => ({ ...g, data: decodeFloat32(g.heights) }))
-    .sort((a, b) => (b.lat_max - b.lat_min) - (a.lat_max - a.lat_min));
-  const finest = grids[grids.length - 1];
-
-  // The published height: the finest grid that covers the point, NaN off them
-  // all. This is the radar-altitude lookup the panel and the dust decals use,
-  // so it stays strict.
-  const heightAt = (latDeg, lonDeg) => {
-    for (let k = grids.length - 1; k >= 0; k--) {
-      const h = terrainGridHeight(grids[k], latDeg, lonDeg);
-      if (!Number.isNaN(h)) return h;
-    }
-    return NaN;
-  };
+  // Preserve first-covering priority for queries. Reverse it only for visual blending.
+  const grids = priorityGrids.slice().reverse();
+  const finest = priorityGrids[0];
+  // Bound the actual rendered surface, including skirts and the inward chord
+  // between coarse mesh vertices. An assumed fixed depth hides deep basins.
+  let minimumHeightM = Number.isFinite(fallback) ? Math.min(0, fallback) : 0;
+  let maximumHeightM = Number.isFinite(fallback) ? Math.max(0, fallback) : 0;
+  for (const grid of priorityGrids) for (const h of grid.data) {
+    minimumHeightM = Math.min(minimumHeightM, h);
+    maximumHeightM = Math.max(maximumHeightM, h);
+  }
+  const skirtDepthM = Math.max(TERRAIN_SKIRT_MAX_M,
+    TERRAIN_SKIRT_SINK * Math.max(rootSpan, rootLonSpan) * DEG_TO_KM * 1000);
+  const minimumRadiusKm = R + (minimumHeightM - skirtDepthM) * TERRAIN_M_TO_KM;
+  const maximumRadiusKm = R + maximumHeightM * TERRAIN_M_TO_KM;
+  const renderedRadiusBoundKm = Math.max(Math.abs(minimumRadiusKm), Math.abs(maximumRadiusKm));
+  const boundsPaddingKm = Math.max(1e-6, 8 * 2 ** -23 * Math.max(1, R, renderedRadiusBoundKm));
+  const cellAngle = THREE.MathUtils.degToRad((rootSpan + rootLonSpan) / segments);
+  let horizonFloorKm = cellAngle < Math.PI / 2
+    ? Math.max(0, minimumRadiusKm * Math.cos(cellAngle) - boundsPaddingKm)
+    : 0;
+  horizonFloorKm = Math.min(horizonFloorKm, globeInteriorRadiusKm(planet));
 
   // The surface the tree draws: the coarsest grid extended to its edge values,
   // every finer grid blended in over its own taper band, and the whole thing
@@ -177,7 +274,7 @@ export function createTerrain(spec, planet, options = {}) {
   };
 
   const bodyPoint = (latDeg, lonDeg, hM, out) => {
-    const lat = THREE.MathUtils.degToRad(latDeg), lon = THREE.MathUtils.degToRad(lonDeg);
+    const lat = THREE.MathUtils.degToRad(latDeg), lon = THREE.MathUtils.degToRad(canonicalLongitude(lonDeg));
     const r = R + hM * TERRAIN_M_TO_KM;
     return out.set(r * Math.cos(lat) * Math.cos(lon), r * Math.cos(lat) * Math.sin(lon), r * Math.sin(lat));
   };
@@ -299,7 +396,14 @@ export function createTerrain(spec, planet, options = {}) {
       center: bodyPoint(0.5 * (latMin + latMax), 0.5 * (lonMin + lonMax), surfaceHeight(0.5 * (latMin + latMax), 0.5 * (lonMin + lonMax)), new THREE.Vector3()),
       radiusKm: 0, mesh: null, children: null, parent: null, texKey: '', used: -1,
     };
-    node.radiusKm = 0.75 * node.sizeKm;   // refined from the real heights when the node is built
+    // Before building, include all possible relief and skirts. A size-only
+    // radius can reject a high peak or a deep floor before its mesh exists.
+    const centerRadius = node.center.length();
+    const angle = Math.min(Math.PI, THREE.MathUtils.degToRad(size + lonSize) / 2);
+    node.radiusKm = minimumRadiusKm < 0
+      ? centerRadius + renderedRadiusBoundKm + boundsPaddingKm
+      : Math.max(Math.abs(minimumRadiusKm - centerRadius), Math.abs(maximumRadiusKm - centerRadius))
+        + 2 * renderedRadiusBoundKm * Math.sin(angle / 2) + boundsPaddingKm;
     nodes.set(tileKey(level, x, y), node);
     return node;
   }
@@ -443,7 +547,11 @@ export function createTerrain(spec, planet, options = {}) {
     mesh.frustumCulled = false;   // the tree culls; three's own test would use the node-local bounds
     node.mesh = mesh;
     node.texKey = source ? source.key : '';
-    node.radiusKm = geometry.boundingSphere ? geometry.boundingSphere.radius : node.radiusKm;
+    // The measured local sphere is not generally centered at the node origin.
+    // Keep our culling sphere anchored at node.center and include that offset.
+    if (geometry.boundingSphere) {
+      node.radiusKm = geometry.boundingSphere.center.length() + geometry.boundingSphere.radius + boundsPaddingKm;
+    }
     node.heightSpanM = hMax - hMin;
     group.add(mesh);
     builtCount++;
@@ -505,15 +613,30 @@ export function createTerrain(spec, planet, options = {}) {
   const drawn = [];
   const queue = [];
   let frameIndex = 0;
-  let horizonPlane = -Infinity, camRadius = 0, pixelScale = 1000;
+  let horizonEnabled = false, shadowSin = 0, shadowCos = 1, tangentDistance = 0;
+  let camRadius = 0, pixelScale = 1000;
   const stats = { nodes: 0, drawn: 0, triangles: 0, pending: 0, built: 1, updateMs: 0, maxLevel: 0 };
 
   function visible(node) {
     terrainSphere.center.copy(node.center);
     terrainSphere.radius = node.radiusKm * 1.05;
     if (!terrainFrustum.intersectsSphere(terrainSphere)) return false;
-    // Below the horizon: the sphere of the covered region hides it from the camera.
-    if (horizonPlane > -Infinity && node.center.dot(camDir) + node.radiusKm < horizonPlane) return false;
+    if (horizonEnabled) {
+      // Hide only a bounding sphere wholly inside the interior sphere's shadow
+      // cone and beyond its tangent distance. A tangent plane alone incorrectly
+      // hides raised terrain that remains visible outside that cone.
+      const projection = node.center.dot(camDir);
+      const depth = camRadius - projection;
+      const lateral = Math.hypot(
+        node.center.x - projection * camDir.x,
+        node.center.y - projection * camDir.y,
+        node.center.z - projection * camDir.z,
+      );
+      const coneClearance = depth * shadowSin - lateral * shadowCos;
+      const nearestDistance = camLocal.distanceTo(node.center) - node.radiusKm;
+      if (Number.isFinite(coneClearance) && coneClearance > node.radiusKm + boundsPaddingKm
+          && nearestDistance > tangentDistance + boundsPaddingKm) return false;
+    }
     return true;
   }
 
@@ -583,10 +706,14 @@ export function createTerrain(spec, planet, options = {}) {
     camera.getWorldPosition(camLocal).applyMatrix4(terrainInverse);
     camRadius = camLocal.length();
     camDir.copy(camLocal).divideScalar(camRadius || 1);
-    // The horizon plane of a sphere just under the lowest ground: points behind
-    // it cannot be seen. Skip it when the camera is at or below that sphere.
-    const rFloor = R - 5;
-    horizonPlane = camRadius > rFloor * 1.0000001 ? (rFloor * rFloor) / camRadius : -Infinity;
+    // At or inside the interior sphere there is no valid camera shadow cone.
+    horizonEnabled = Number.isFinite(camRadius) && Number.isFinite(horizonFloorKm)
+      && horizonFloorKm > 0 && camRadius > horizonFloorKm * 1.0000001;
+    if (horizonEnabled) {
+      shadowSin = horizonFloorKm / camRadius;
+      shadowCos = Math.sqrt(Math.max(0, (1 - shadowSin) * (1 + shadowSin)));
+      tangentDistance = camRadius * shadowCos;
+    }
     const fov = THREE.MathUtils.degToRad(camera.fov);
     pixelScale = (viewportHeight || 900) / (2 * Math.tan(0.5 * fov));
 
@@ -612,16 +739,17 @@ export function createTerrain(spec, planet, options = {}) {
 
   // The globe is cut open under the covered region, a hair inside it so the
   // sphere and the terrain's faded outer ring overlap rather than leave a gap.
-  const inset = 0.0025 * rootSpan;
+  const inset = 0.0025 * rootSpan, lonInset = 0.0025 * rootLonSpan;
   const hole = {
     lat_min: root.lat_min + inset, lat_max: root.lat_max - inset,
-    lon_min: root.lon_min + inset, lon_max: root.lon_max - inset,
+    lon_min: root.lon_min + lonInset, lon_max: root.lon_max - lonInset,
   };
 
   // Site marker: a thin ring on the ground.
   let siteMarker = null;
   if (spec.site) {
-    const h = Number.isFinite(spec.site.height_m) ? spec.site.height_m : heightAt(spec.site.lat_deg, spec.site.lon_deg) || 0;
+    const sampled = heightAt(spec.site.lat_deg, spec.site.lon_deg);
+    const h = Number.isFinite(sampled) ? sampled : 0;
     const center = bodyPoint(spec.site.lat_deg, spec.site.lon_deg, h + 0.5, new THREE.Vector3());
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.004, 0.005, 48), new THREE.MeshBasicMaterial({ color: 0xf2b950, side: THREE.DoubleSide, transparent: true, opacity: 0.8, depthWrite: false }));
     ring.position.copy(center);
@@ -642,8 +770,10 @@ export function createTerrain(spec, planet, options = {}) {
     let found = null;
     for (let level = 0; level <= maxTileLevel; level++) {
       const n = 1 << level;
-      const x = Math.floor((spec.site.lon_deg - root.lon_min) / rootLonSpan * n);
-      const y = Math.floor((root.lat_max - spec.site.lat_deg) / rootSpan * n);
+      const lon = terrainLongitude(root, spec.site.lon_deg);
+      if (!Number.isFinite(lon) || spec.site.lat_deg < root.lat_min || spec.site.lat_deg > root.lat_max) break;
+      const x = Math.min(n - 1, Math.floor((lon - root.lon_min) / rootLonSpan * n));
+      const y = Math.min(n - 1, Math.floor((root.lat_max - spec.site.lat_deg) / rootSpan * n));
       const entry = tileIndex.get(tileKey(level, x, y));
       if (entry) found = entry;
     }
@@ -662,6 +792,7 @@ export function createTerrain(spec, planet, options = {}) {
     hole,
     site: spec.site || null,
     referenceRadiusKm: R,
+    hasHeights: true,
     heightAt,
     surfaceHeight,
     stats,

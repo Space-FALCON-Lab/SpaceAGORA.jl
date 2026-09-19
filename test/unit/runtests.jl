@@ -50,6 +50,7 @@ include(joinpath(@__DIR__, "visualization", "atmosphere_tests.jl"))
 include(joinpath(@__DIR__, "visualization", "ensemble_tests.jl"))
 include(joinpath(@__DIR__, "visualization", "scene_visualization_tests.jl"))
 include(joinpath(@__DIR__, "visualization", "viewer_bundle_tests.jl"))
+include(joinpath(@__DIR__, "visualization", "terrain_export_tests.jl"))
 
 include(joinpath(@__DIR__, "dynamics", "reaction_wheel_momentum_tests.jl"))
 include(joinpath(@__DIR__, "visualization", "demo_options_tests.jl"))

@@ -26,6 +26,7 @@ using ..EphemeridesModels: _initial_time_datetime
 using ..SimConfig: SimulationConfiguration, SimulationSettings, _with_configuration
 using ..IOConfig
 using ..IOSerialization
+using ..TerrainModels
 using ..Structure: load_model_triangles, model_bounding_box, model_bounding_box_center, sample_model_pointcloud
 using ..Structure: articulate_triangles, articulation_payload
 using ..Structure: model_format, gltf_required_extensions, GLTF_UNSUPPORTED_REQUIRED
@@ -41,6 +42,7 @@ export write_visualization_scene, read_visualization_scene, write_visualization_
 export velocity_aligned_quaternion, visualization_frame_budget
 export export_visualization, write_viewer_dev_payload
 export texture_manifest, texture_entry, texture_payload, build_viewer_frames, viewer_payload, model_payloads, model_format, gltf_required_extensions, path_payloads
+export terrain_payload, terrain_tiles_payload
 export render_viewer_html, viewer_import_map, kept_row_indices
 export load_model_triangles, model_bounding_box, model_bounding_box_center, sample_model_pointcloud
 export EnsembleSample, sample_results_directory, with_results_directory, default_sample_scalar
@@ -192,6 +194,7 @@ include(joinpath(@__DIR__, "spacecraft_geometry.jl"))
 include(joinpath(@__DIR__, "planet_spec.jl"))
 include(joinpath(@__DIR__, "scene_export.jl"))
 include(joinpath(@__DIR__, "viewer_bundle.jl"))
+include(joinpath(@__DIR__, "terrain_payload.jl"))
 include(joinpath(@__DIR__, "ensemble_export.jl"))
 
 end # module SceneVisualization

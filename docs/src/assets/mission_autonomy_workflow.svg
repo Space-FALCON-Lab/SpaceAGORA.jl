@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg role="img" aria-labelledby="figure-title figure-desc" xmlns:xlink="http://www.w3.org/1999/xlink" width="518.740157pt" height="374.173228pt" viewBox="0 0 518.740157 374.173228" xmlns="http://www.w3.org/2000/svg" version="1.1">
+<title id="figure-title">SpaceAGORA within a mission autonomy workflow</title><desc id="figure-desc">Mission design provides scenarios to the implemented simulator and proposed autonomy layer. Autonomy sends actions and receives observations. The simulator contains multicomponent spacecraft, GNC and physical propagation. Validation is implemented through individual checks; human oversight, learning and operational integration are proposed common connections.</desc>
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-09-20T17:15:00.749372</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.8.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 374.173228
+L 518.740157 374.173228
+L 518.740157 0
+L 0 0
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 155.905512 124.724409
+L 371.338583 124.724409
+L 371.338583 53.858268
+L 155.905512 53.858268
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #f2f7fc; stroke-dasharray: 3.6,2.7; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 405.354331 121.889764
+L 507.401575 121.889764
+L 507.401575 53.858268
+L 405.354331 53.858268
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #ffffff; stroke-dasharray: 3.6,2.7; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 405.354331 87.874016
+L 372.288912 87.874016
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 375.488912 89.474016
+L 372.288912 87.874016
+L 375.488912 86.274016
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 11.338583 246.614173
+L 124.724409 246.614173
+L 124.724409 147.401575
+L 11.338583 147.401575
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 124.724409 172.913386
+L 138.897638 172.913386
+L 138.897638 87.874016
+L 154.955183 87.874016
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 151.755183 86.274016
+L 154.955183 87.874016
+L 151.755183 89.474016
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 124.724409 215.433071
+L 154.955183 215.433071
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 151.755183 213.833071
+L 154.955183 215.433071
+L 151.755183 217.033071
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 155.905512 263.622047
+L 371.338583 263.622047
+L 371.338583 167.244094
+L 155.905512 167.244094
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 215.433071 124.724409
+L 215.433071 166.293766
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 217.033071 163.093766
+L 215.433071 166.293766
+L 213.833071 163.093766
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 311.811024 167.244094
+L 311.811024 125.674738
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 310.211024 128.874738
+L 311.811024 125.674738
+L 313.411024 128.874738
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 405.354331 246.614173
+L 507.401575 246.614173
+L 507.401575 155.905512
+L 405.354331 155.905512
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #ffffff; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 371.338583 215.433071
+L 404.404002 215.433071
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 401.204002 213.833071
+L 404.404002 215.433071
+L 401.204002 217.033071
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_13">
+    <path d="M 405.354331 340.15748
+L 507.401575 340.15748
+L 507.401575 274.96063
+L 405.354331 274.96063
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #ffffff; stroke-dasharray: 3.6,2.7; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 456.377953 246.614173
+L 456.377953 274.010301
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 457.977953 270.810301
+L 456.377953 274.010301
+L 454.777953 270.810301
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_15">
+    <path d="M 155.905512 340.15748
+L 371.338583 340.15748
+L 371.338583 291.968504
+L 155.905512 291.968504
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #ffffff; stroke-dasharray: 3.6,2.7; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_16">
+    <path d="M 263.622047 263.622047
+L 263.622047 291.018175
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 265.222047 287.818175
+L 263.622047 291.018175
+L 262.022047 287.818175
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_17">
+    <path d="M 405.354331 311.811024
+L 372.288912 311.811024
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 375.488912 313.411024
+L 372.288912 311.811024
+L 375.488912 310.211024
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_18">
+    <path d="M 155.905512 314.645669
+L 68.031496 314.645669
+L 68.031496 247.564502
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 66.431496 250.764502
+L 68.031496 247.564502
+L 69.631496 250.764502
+z
+" clip-path="url(#p8fd22829aa)" style="fill: #2f5f7f; stroke-dasharray: 3.4,2.55; stroke-dashoffset: 0; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 11.338583 31.181102
+L 507.401575 31.181102
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke: #8cbde7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 11.338583 31.181102
+L 48.188976 31.181102
+" clip-path="url(#p8fd22829aa)" style="fill: none; stroke: #ffcb05; stroke-width: 2.5; stroke-linecap: square"/>
+   </g>
+   <g id="text_1">
+    <text style="fill: #1f3f59; font: 700 12px 'Arial'; text-anchor: start" x="11.338583" y="20.112874" transform="rotate(-0 11.338583 20.112874)">SpaceAGORA within a mission-autonomy workflow</text>
+   </g>
+   <g id="text_2">
+    <text style="fill: #1f3f59; font: 700 10.5px 'Arial'; text-anchor: middle" x="263.622047" y="76.353678" transform="rotate(-0 263.622047 76.353678)">Autonomy + scheduling</text>
+   </g>
+   <g id="text_3">
+    <text style="fill: #1f3f59; font: 9.2px 'Arial'" transform="translate(192.035985 98.958524)">Assign tasks; select actions; replan</text>
+    <text style="fill: #1f3f59; font: 9.2px 'Arial'" transform="translate(185.384672 109.784839)">Policy + constraints + execution status</text>
+   </g>
+   <g id="text_4">
+    <text style="fill: #1f3f59; font: 700 9.5px 'Arial'; text-anchor: middle" x="456.377953" y="76.101022" transform="rotate(-0 456.377953 76.101022)">Human oversight</text>
+   </g>
+   <g id="text_5">
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(424.862484 99.185982)">Goals, approval</text>
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(431.364281 109.671475)">and override</text>
+   </g>
+   <g id="text_6">
+    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="68.031496" y="169.770657" transform="rotate(-0 68.031496 169.770657)">Mission design</text>
+   </g>
+   <g id="text_7">
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(25.88759 195.935637)">Craft + constellations</text>
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(29.644387 206.421129)">Tasks + constraints</text>
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(36.014699 216.906621)">Initial conditions</text>
+   </g>
+   <g id="text_8">
+    <text style="fill: #1f3f59; font: 700 10.5px 'Arial'; text-anchor: middle" x="263.622047" y="189.872395" transform="rotate(-0 263.622047 189.872395)">SpaceAGORA simulation</text>
+   </g>
+   <g id="text_9">
+    <text style="fill: #1f3f59; font: 9.2px 'Arial'" transform="translate(187.052172 212.634768)">Environment + spacecraft assemblies</text>
+    <text style="fill: #1f3f59; font: 9.2px 'Arial'" transform="translate(184.614172 223.353272)">Rigid, articulated and compliant bodies</text>
+    <text style="fill: #1f3f59; font: 9.2px 'Arial'" transform="translate(206.47136 234.330956)">GNC + coupled propagation</text>
+   </g>
+   <g id="text_10">
+    <text style="fill: #1f3f59; font: 8.5px 'Arial'; text-anchor: end" x="206.929134" y="148.181635" transform="rotate(-0 206.929134 148.181635)">actions</text>
+   </g>
+   <g id="text_11">
+    <text style="fill: #1f3f59; font: 8.5px 'Arial'; text-anchor: start" x="320.314961" y="148.181635" transform="rotate(-0 320.314961 148.181635)">observations</text>
+   </g>
+   <g id="text_12">
+    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="456.377953" y="178.340219" transform="rotate(-0 456.377953 178.340219)">Validation</text>
+   </g>
+   <g id="text_13">
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(425.609906 204.3128)">Reference data</text>
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(418.362797 214.798292)">Regression checks</text>
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(420.617718 225.537331)">Task performance</text>
+   </g>
+   <g id="text_14">
+    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="456.377953" y="294.621629" transform="rotate(-0 456.377953 294.621629)">Operations</text>
+   </g>
+   <g id="text_15">
+    <text style="fill: #1f3f59; font: 8.5px 'Arial'" transform="translate(417.993148 314.553094)">Telemetry + updates</text>
+    <text style="fill: #1f3f59; font: 8.5px 'Arial'" transform="translate(416.453851 324.702692)">Qualified deployment</text>
+   </g>
+   <g id="text_16">
+    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="263.622047" y="311.568565" transform="rotate(-0 263.622047 311.568565)">Learn and revise</text>
+   </g>
+   <g id="text_17">
+    <text style="fill: #1f3f59; font: 9.2px 'Arial'; text-anchor: middle" x="263.622047" y="329.726012" transform="rotate(-0 263.622047 329.726012)">Mission, model and policy updates</text>
+   </g>
+   <g id="text_18">
+    <text style="fill: #5f6b7a; font: 8.5px 'Arial'; text-anchor: start" x="11.338583" y="362.199375" transform="rotate(-0 11.338583 362.199375)">Solid: implemented components. Dashed: proposed common or operational integration.</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p8fd22829aa">
+   <rect x="0" y="0" width="518.740157" height="374.173228"/>
+  </clipPath>
+ </defs>
+</svg>

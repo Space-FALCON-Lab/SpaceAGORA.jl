@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg role="img" aria-labelledby="figure-title figure-desc" xmlns:xlink="http://www.w3.org/1999/xlink" width="518.740157pt" height="538.582677pt" viewBox="0 0 518.740157 538.582677" xmlns="http://www.w3.org/2000/svg" version="1.1">
+<title id="figure-title">Runtime architecture of SpaceAGORA</title><desc id="figure-desc">Scenario configuration and engine setup feed a repeated solver loop. Environment, individual multicomponent spacecraft and GNC feed the dynamics. Callbacks update commands and save state. The spacecraft collection belongs to the scenario; no general mission scheduler is implied.</desc>
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-09-20T17:14:59.876832</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.8.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 538.582677
+L 518.740157 538.582677
+L 518.740157 0
+L 0 0
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 79.370079 102.047244
+L 439.370079 102.047244
+L 439.370079 36.850394
+L 79.370079 36.850394
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 259.370079 102.047244
+L 259.370079 120.939435
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 260.970079 117.739435
+L 259.370079 120.939435
+L 257.770079 117.739435
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 79.370079 187.086614
+L 439.370079 187.086614
+L 439.370079 121.889764
+L 79.370079 121.889764
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 259.370079 187.086614
+L 259.370079 205.978805
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 260.970079 202.778805
+L 259.370079 205.978805
+L 257.770079 202.778805
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 8.503937 450.708661
+L 510.23622 450.708661
+L 510.23622 206.929134
+L 8.503937 206.929134
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #fafcff; stroke: #2f5f7f; stroke-width: 0.7; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 22.677165 314.645669
+L 167.244094 314.645669
+L 167.244094 238.110236
+L 22.677165 238.110236
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #ffffff; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 94.96063 314.645669
+L 94.96063 333.53786
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 96.56063 330.33786
+L 94.96063 333.53786
+L 93.36063 330.33786
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 187.086614 314.645669
+L 331.653543 314.645669
+L 331.653543 238.110236
+L 187.086614 238.110236
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #ffffff; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 259.370079 314.645669
+L 259.370079 333.53786
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 260.970079 330.33786
+L 259.370079 333.53786
+L 257.770079 330.33786
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 351.496063 314.645669
+L 496.062992 314.645669
+L 496.062992 238.110236
+L 351.496063 238.110236
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #ffffff; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 423.779528 314.645669
+L 423.779528 333.53786
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 425.379528 330.33786
+L 423.779528 333.53786
+L 422.179528 330.33786
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_13">
+    <path d="M 65.19685 379.84252
+L 453.543307 379.84252
+L 453.543307 334.488189
+L 65.19685 334.488189
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 259.370079 379.84252
+L 259.370079 393.065419
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 260.970079 389.865419
+L 259.370079 393.065419
+L 257.770079 389.865419
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_15">
+    <path d="M 65.19685 439.370079
+L 453.543307 439.370079
+L 453.543307 394.015748
+L 65.19685 394.015748
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_16">
+    <path d="M 65.19685 416.692913
+L 36.850394 416.692913
+L 36.850394 357.165354
+L 64.246522 357.165354
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 61.046522 355.565354
+L 64.246522 357.165354
+L 61.046522 358.765354
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_17">
+    <path d="M 453.543307 416.692913
+L 501.732283 416.692913
+L 501.732283 232.440945
+L 423.779528 232.440945
+L 423.779528 237.159907
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 425.379528 233.959907
+L 423.779528 237.159907
+L 422.179528 233.959907
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_18">
+    <path d="M 259.370079 439.370079
+L 259.370079 469.600852
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+    <path d="M 260.970079 466.400852
+L 259.370079 469.600852
+L 257.770079 466.400852
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+   </g>
+   <g id="patch_19">
+    <path d="M 79.370079 530.07874
+L 439.370079 530.07874
+L 439.370079 470.551181
+L 79.370079 470.551181
+z
+" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 11.338583 31.181102
+L 507.401575 31.181102
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #8cbde7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 11.338583 31.181102
+L 48.188976 31.181102
+" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #ffcb05; stroke-width: 2.5; stroke-linecap: square"/>
+   </g>
+   <g id="text_1">
+    <text style="fill: #1f3f59; font: 700 12px 'Arial'; text-anchor: start" x="11.338583" y="20.191624" transform="rotate(-0 11.338583 20.191624)">SpaceAGORA simulation architecture</text>
+   </g>
+   <g id="text_2">
+    <text style="fill: #1f3f59; font: 700 10.5px 'Arial'; text-anchor: middle" x="259.370079" y="56.575143" transform="rotate(-0 259.370079 56.575143)">Scenario configuration</text>
+   </g>
+   <g id="text_3">
+    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(145.315157 79.050687)">Environment + spacecraft collection + initial conditions</text>
+    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(165.646641 90.275012)">GNC models, solver and stopping conditions</text>
+   </g>
+   <g id="text_4">
+    <text style="fill: #1f3f59; font: 700 10.5px 'Arial'; text-anchor: middle" x="259.370079" y="141.550528" transform="rotate(-0 259.370079 141.550528)">Engine setup</text>
+   </g>
+   <g id="text_5">
+    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(151.211837 164.032167)">Validate models; isolate state; assemble initial state</text>
+    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(179.459493 175.256491)">Allocate buffers and register callbacks</text>
+   </g>
+   <g id="text_6">
+    <text style="fill: #1f3f59; font: 700 9.5px 'Arial'; text-anchor: start" x="22.677165" y="223.56494" transform="rotate(-0 22.677165 223.56494)">Repeated solve loop</text>
+   </g>
+   <g id="text_7">
+    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="94.96063" y="257.710298" transform="rotate(-0 94.96063 257.710298)">Environment</text>
+   </g>
+   <g id="text_8">
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(61.328755 286.165018)">Frames + gravity</text>
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(52.817427 296.755979)">Atmosphere + terrain</text>
+   </g>
+   <g id="text_9">
+    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="259.370079" y="257.771235" transform="rotate(-0 259.370079 257.771235)">Each spacecraft</text>
+   </g>
+   <g id="text_10">
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(207.853516 286.038245)">Links, joints, mass, inertia</text>
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(201.596407 296.777284)">Rigid / articulated / compliant</text>
+   </g>
+   <g id="text_11">
+    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="423.779528" y="257.710298" transform="rotate(-0 423.779528 257.710298)">GNC models</text>
+   </g>
+   <g id="text_12">
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(379.124762 286.165018)">Navigation + guidance</text>
+    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(386.017496 296.755979)">Control commands</text>
+   </g>
+   <g id="text_13">
+    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="259.370079" y="352.164936" transform="rotate(-0 259.370079 352.164936)">Evaluate forces, torques and state derivatives</text>
+   </g>
+   <g id="text_14">
+    <text style="fill: #1f3f59; font: 9.2px 'Arial'; text-anchor: middle" x="259.370079" y="369.469989" transform="rotate(-0 259.370079 369.469989)">Orbital, attitude and supported internal dynamics</text>
+   </g>
+   <g id="text_15">
+    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="259.370079" y="410.781164" transform="rotate(-0 259.370079 410.781164)">Advance state and execute callbacks</text>
+   </g>
+   <g id="text_16">
+    <text style="fill: #1f3f59; font: 9.2px 'Arial'; text-anchor: middle" x="259.370079" y="429.048579" transform="rotate(-0 259.370079 429.048579)">Scheduled updates, saved values and event detection</text>
+   </g>
+   <g id="text_17">
+    <text style="fill: #1f3f59; font: 8.5px 'Arial'; text-anchor: middle" x="331.653543" y="462.827304" transform="rotate(-0 331.653543 462.827304)">run ends</text>
+   </g>
+   <g id="text_18">
+    <text style="fill: #1f3f59; font: 700 10.5px 'Arial'; text-anchor: middle" x="259.370079" y="490.280852" transform="rotate(-0 259.370079 490.280852)">Recorded outputs + optional viewer</text>
+   </g>
+   <g id="text_19">
+    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(164.056133 511.278488)">Saved state, diagnostics, manifest and scene</text>
+    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(156.139219 522.61414)">Reference comparisons use the resulting outputs</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="pdb74d257ff">
+   <rect x="0" y="0" width="518.740157" height="538.582677"/>
+  </clipPath>
+ </defs>
+</svg>

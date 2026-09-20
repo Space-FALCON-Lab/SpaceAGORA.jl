@@ -140,6 +140,21 @@ from the basic energy-depletion Odyssey demonstration without propagating it.
 Without an argument, it reads the `odyssey_two_orbits` results directory under
 the configured viewer-demo output parent.
 
+### Apollo 11 powered descent
+
+`apollo11_landing.jl [--duration-s S] [--output-dir DIR]` flies the lunar
+module from powered descent initiation to touchdown over a local terrain
+bundle: quadratic descent guidance, RCS attitude control, the terrain-contact
+touchdown event and the descent-engine plume model, with the seventeen thruster
+levels and the plume diagnostics saved as columns and the terrain embedded in
+the page. It needs the site bundle written by `scripts/dev/terrain/fetch_moon_site.py`
+(with `--nac-half-deg 0.03` at Apollo 11, or `SPACEAGORA_TERRAIN_SITE`), the tracked lunar module model, the LP165P
+coefficients and the SPICE starter assets; no atmosphere or native GRAM. The
+touchdown event ends the run, so `--duration-s` is only a cap. See the
+[Lunar Landing](../../../docs/src/user/lunar_landing.md) guide. This is a
+demonstration of the merged descent models on a documented case, not a
+reconstruction of the flown trajectory or a flight-accuracy claim.
+
 ### Mission time and reference alignment
 
 The event searches retain their estimated SPICE epoch. Each run converts its

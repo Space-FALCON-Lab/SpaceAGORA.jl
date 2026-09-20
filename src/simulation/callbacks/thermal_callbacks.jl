@@ -85,6 +85,65 @@ function _compute_stage_heat_rates!(
     return heat_rates
 end
 
+# Per-satellite cost class for the thermal callback's thread decision.
+#
+# `_compute_stage_heat_rates!` is called here with `use_buffered_density=true`
+# (it reads shared_buffers rather than evaluating a density model), so its
+# per-satellite cost is one `sample_planet_frame` (a planet-relative
+# position/velocity transform through `rtolatlong`) plus one `getHeatRate`
+# call per thermal link on that spacecraft (a Maxwellian free-molecular
+# heating model -- a handful of `erf`/`exp`/`sqrt` evaluations). The
+# `sample_planet_frame` part is fixed per satellite; the per-link loop is what
+# grows, and it is what a fanned-out dispatch actually has more of to hand a
+# worker.
+#
+# Measured driving _compute_stage_heat_rates! directly for an 8-spacecraft
+# shape (mirrors the density-guard measurement shape), median of 9 timed
+# batches with GC disabled during each batch, at thread widths 1 (serial), 2,
+# 4 and 8, varying links-per-spacecraft. `_thread_worker_count` caps the
+# worker count at num_sats, so width 8 -- one worker per satellite -- is what
+# an 8-satellite auto dispatch actually reaches under any budget >= 8
+# (the shape this callback was seen regressing on used 24 threads); width 2
+# is the achieved width only under a much narrower budget.
+#
+# us/call, serial vs. width 8, by links-per-spacecraft:
+#   1: 45.71 / 48.21   2: 48.84 / 49.67    4: 46.72 / 50.38
+#   8: 49.44 / 49.46   16: 51.74 / 50.97   32: 61.62 / 51.57
+#   64: 78.11 / 54.90  128: 109.83 / 59.51  256: 170.64 / 72.19
+#   512: 298.93 / 93.09
+#
+# At and below 8 links, width 8 is a dead heat with serial or slightly worse
+# (dispatch overhead not amortized). 16 links is the first point where
+# threaded is measurably faster (-1.5%), and every larger count measured
+# widens that margin monotonically (-16% at 32, -69% at 512) -- consistent
+# with a real crossover rather than noise. Width 2 does not reach break-even
+# until roughly 64 links, so a narrow-budget run stays conservative near the
+# threshold; that is judged an acceptable trade against leaving every
+# ordinary few-link vehicle threaded for no reason.  See
+# test/unit/parallel/thermal_callback_light_work_tests.jl for the guard this
+# backs.
+const THERMAL_CALLBACK_HEAVY_LINK_THRESHOLD = 16  # measured, see comment above
+
+"""
+    _thermal_callback_work_is_heavy(p, num_sats) -> Bool
+
+True when at least one of the first `num_sats` spacecraft has enough thermal
+links that the per-satellite body of `_compute_stage_heat_rates!` is worth a
+threaded dispatch. `p === nothing` (the no-run-state overload of
+`_thermal_callback_thread_decision`) answers `true` so that call path is
+unaffected -- it exists only for direct unit testing, not for a real run.
+"""
+@inline function _thermal_callback_work_is_heavy(p, num_sats::Int)::Bool
+    p === nothing && return true
+    spacecraft = p.args.dynamics_model.spacecraft
+    limit = min(num_sats, length(spacecraft))
+    limit <= 0 && return false
+    @inbounds for i in 1:limit
+        length(spacecraft[i].links) >= THERMAL_CALLBACK_HEAVY_LINK_THRESHOLD && return true
+    end
+    return false
+end
+
 function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
     function update_thermal_sat!(i::Int, p, u, t::Float64)
         _compute_stage_heat_rates!(p, u.sc[i], i, t; use_buffered_density=true)
@@ -96,7 +155,10 @@ function get_thermal_callback(num_sats::Int, args::SimulationConfiguration)
     function affect!(integrator)
         p = integrator.p
         u = integrator.u
-        decision = _thermal_callback_thread_decision(p, num_sats)
+        decision = _thermal_callback_thread_decision(
+            p, num_sats;
+            heavy_work=_thermal_callback_work_is_heavy(p, num_sats)
+        )
         use_threads = decision.use_threads
         started_ns = time_ns()
         if use_threads

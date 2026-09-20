@@ -20,6 +20,15 @@ using StaticArrays
 # Measured on 8 spacecraft, three effectors, 12 threads, same process,
 # alternating: 341904 B per RHS call nested against 230464 B with the inner
 # axis serial.
+#
+# The nested route only exists when the thread budget (== Threads.nthreads()
+# here, since no SPACEAGORA_INNER_THREAD_BUDGET is pinned -- see
+# effective_inner_thread_budget) exceeds the satellite count: below that,
+# _satellite_batch_saturates_pool correctly routes to :satellite_batch instead,
+# which is not the route this file is about. N_SATS below shrinks on a host
+# with too few threads for 8 satellites to leave headroom, so the guard's
+# target scenario stays reachable at any --threads this file is run with,
+# rather than reproducing the measurement above verbatim on every host.
 
 const SE = SpaceAGORA.SimulationEngine
 const PPol = SpaceAGORA.SimulationModel.ParallelPolicy
@@ -92,7 +101,9 @@ const NESTING_ENV = [
     "SPACEAGORA_RHS_EXECUTION_MODE" => "auto",
 ]
 
-const N_SATS = 8
+# See the file header: shrinks below 8 only when the host doesn't have enough
+# threads to give 8 satellites headroom under the thread budget.
+const N_SATS = Threads.nthreads() > 8 ? 8 : max(2, Threads.nthreads() ÷ 2)
 
 function guard_plan(pairs)
     args = guard_config(N_SATS)
@@ -111,8 +122,11 @@ function guard_plan(pairs)
 end
 
 @testset "a threaded satellite batch does not nest a threaded effector team" begin
-    if Threads.nthreads() < 2
-        @test_skip "needs julia --threads>=2 to exercise the nested route"
+    if Threads.nthreads() < 4
+        # Below 4 threads the effector-flat-queue's own thread-budget floor
+        # (_rhs_flat_min_thread_budget, default 4) routes to :satellite_batch
+        # before the nested-route split this file is testing is even reached.
+        @test_skip "needs julia --threads>=4 to exercise the nested route"
     else
         probe = guard_plan(NESTING_ENV)
         # Preconditions: this is the route the guard is about, and the satellite
@@ -129,8 +143,8 @@ end
 end
 
 @testset "the effector team survives where the satellite axis is serial" begin
-    if Threads.nthreads() < 2
-        @test_skip "needs julia --threads>=2 to exercise the effector team"
+    if Threads.nthreads() < 4
+        @test_skip "needs julia --threads>=4 to exercise the effector team"
     else
         # Same shape, satellite batch off: the effector team is then the only
         # parallelism in the RHS and the guard must leave it alone. This is the

@@ -36,7 +36,7 @@ export function start(payload, container = document.body) {
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
-  renderer.setClearColor(0x05070c, 1);
+  renderer.setClearColor(0x060a0f, 1);
   container.style.position = container.style.position || 'relative';
   container.appendChild(renderer.domElement);
 

@@ -76,9 +76,11 @@ end
 end
 
 """
-    check_assets(; repo_root=REPO_ROOT) -> AssetCheckReport
+    check_assets(; repo_root=REPO_ROOT, manifest_path=joinpath(repo_root, "data", "assets_manifest.toml")) -> AssetCheckReport
 
-Inspect the standard SpaceAGORA asset roots and return a typed availability report.
+Inspect the standard SpaceAGORA asset roots and return a typed availability
+report for baseline, optional, and high-fidelity assets. By default, inspect
+the package repository root, not the current working directory.
 """
 function check_assets(; repo_root::String=REPO_ROOT, manifest_path::String=joinpath(repo_root, "data", "assets_manifest.toml"))::AssetCheckReport
     entries = load_asset_manifest(; repo_root=repo_root, manifest_path=manifest_path)
@@ -101,7 +103,7 @@ end
 """
     render_asset_report(report; io=stdout)
 
-Render a human-readable summary of an `AssetCheckReport`.
+Render a human-readable asset status report.
 """
 function render_asset_report(report::AssetCheckReport; io::IO=stdout)
     println(io, "SpaceAGORA asset check")
@@ -153,4 +155,59 @@ function setup_open_assets(; repo_root::String=REPO_ROOT, io::IO=stdout)
     println(io)
     render_asset_report(report; io=io)
     return report
+end
+
+function _run_preset_assets(command::String, args::Vector{String}; io::IO=stdout)::Int
+    if command == "list"
+        isempty(args) || throw(ArgumentError("assets list takes no options"))
+        for entry in available_surrogate_presets()
+            status = entry["release_enabled"] ? "available" : "unpublished"
+            println(io, entry["id"], "@", entry["version"], " (", entry["planet"], ", ", status, ")")
+            println(io, "  ", entry["description"])
+        end
+        return 0
+    end
+    options = Dict{String,String}()
+    offline = command == "check"
+    i = 1
+    while i <= length(args)
+        arg = args[i]
+        if arg == "--offline"
+            offline = true
+        elseif startswith(arg, "--")
+            key_value = split(arg[3:end], '='; limit=2)
+            key = first(key_value)
+            key in ("preset", "version", "file") || throw(ArgumentError("Unknown preset option $arg"))
+            haskey(options, key) && throw(ArgumentError("Duplicate --$key option"))
+            if length(key_value) == 2
+                options[key] = key_value[2]
+            else
+                i += 1
+                i <= length(args) && !startswith(args[i], "--") || throw(ArgumentError("--$key needs a value"))
+                options[key] = args[i]
+            end
+            isempty(options[key]) && throw(ArgumentError("--$key needs a nonempty value"))
+        else
+            throw(ArgumentError("Unexpected preset argument $arg"))
+        end
+        i += 1
+    end
+    all(key -> haskey(options, key), ("preset", "version")) || throw(ArgumentError(
+        "assets $command requires --preset=<id> and --version=<version>; use assets list"))
+    preset = options["preset"]
+    version = options["version"]
+    file = get(options, "file", "")
+    # Fetch verifies the downloaded bytes. Check additionally loads and validates
+    # the schema, axes and metadata; neither command initializes native GRAM.
+    if command == "fetch"
+        resolved = resolve_surrogate_preset(preset; version, file, offline)
+        println(io, "Verified ", preset, "@", version, ": ", resolved.file)
+        println(io, "sha256=", resolved.expected_sha256)
+    else
+        model = surrogate_preset_model(preset; version, file, offline)
+        provenance = atmosphere_provenance(model)
+        println(io, "Validated ", preset, "@", version)
+        TOML.print(io, provenance)
+    end
+    return 0
 end

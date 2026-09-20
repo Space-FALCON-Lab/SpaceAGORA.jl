@@ -9,23 +9,30 @@ using SPICE
 using Dates
 using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK, tracked_lock
 using ..SimulationModel: PlanetFrameEphemerisCache, rot
-using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice
+using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice, ephemerides_sun_direction_ii
 using ..ParallelPolicy
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getDensityBatch!, NoAtmosphereModel
 using ..VehicleThermalModels: getHeatRate
 using ..ThrusterModels: BaseThrusterModel
+using ..DynamicEffectors: PlumeSurfaceInteraction
 using ..DynamicEffectors.AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
 using ..GravityEffectors: InverseSquaredJ2GravityModel, j2_secular_rates
 using ..AbstractTypes: AbstractPlanet, AbstractDensityModel
 using ..ConfigTypes: SaveData
+using ..SceneVisualization: link_pose_vector, link_pose_link_indices, arm_pose_vector, robot_arm_plan_for
 import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
-using ..ControlHooks: calcControlEffect!
+using ..ControlHooks: calcControlEffect!, control_thruster_levels, touchdown_spec
+using ..TerrainModels: AbstractTerrainModel, DEMTerrainModel, terrain_radius
 using ..GuidanceHooks: calcGuidanceEffect!
 using ..NavigationHooks: calcNavigationEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits
 export SaveField, default_save_fields, get_callbacks
+export TrajectoryRecorder, get_trajectory_recorder_callback
+export record_trajectory_sample!, reset_trajectory_recorder!
+export trajectory_times, trajectory_field, trajectory_save_data
+export trajectory_positions, trajectory_velocities, trajectory_masses
 
 const _simulation_model_module = parentmodule(@__MODULE__)
 

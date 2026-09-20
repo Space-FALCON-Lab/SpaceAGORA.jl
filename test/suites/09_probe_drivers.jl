@@ -7,6 +7,8 @@
     # the coverage flag so the coverage gates see their line data.
     probe_files = [
         "reference_system_probes.jl",
+        "legacy_roots_callers_probes.jl",
+        "aerobraking_study_frame_probes.jl",
         "initial_condition_altitude_probes.jl",
         "parallel_policy_probes.jl",
         "density_selection_probes.jl",
@@ -14,6 +16,7 @@
         "fm_incidence_probes.jl",
         "eddy_damping_probes.jl",
         "aero_torque_probes.jl",
+        "thermal_incidence_probes.jl",
         "rpo_planning_probes.jl",
         "rpo_nav_probes.jl",
         "thruster_guidance_probes.jl",

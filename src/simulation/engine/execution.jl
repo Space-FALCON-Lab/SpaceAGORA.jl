@@ -295,6 +295,47 @@ function _try_save_simulation_results_if_enabled!(args...)
     end
 end
 
+function _with_density_model_epoch(args::SimulationConfiguration)
+    environment = args.environment_model
+    density_model = SimulationModel.with_density_model_epoch(environment.density_model, args.initial_time)
+    density_model === environment.density_model && return args
+    names = fieldnames(typeof(environment))
+    fields = NamedTuple{names}(map(name -> getfield(environment, name), names))
+    aligned_environment = SimulationModel.EnvironmentModel(;
+        merge(fields, (; density_model))...)
+    return SimulationModel.SimConfig._with_configuration(args;
+        environment_model=aligned_environment)
+end
+
+"""
+    run_simulation(args...; isolate_state=true, kwargs...)
+
+Stable package entrypoint for simulation execution used by calibration integrations.
+
+Density models are first aligned to `args.initial_time` through
+[`with_density_model_epoch`](@ref). Known GRAM construction settings are retained;
+unknown raw-core realignment and fixed-surrogate epoch changes are rejected.
+
+By default, `isolate_state=true` deep-copies the simulation configuration after epoch alignment, before execution.
+This preserves correctness and reentrancy across repeated runs and concurrent callers by
+preventing one run from mutating shared campaign or model state that another run still
+references.
+
+Set `isolate_state=false` only as an advanced performance lever when the caller owns the
+configuration instance and will not reuse it concurrently or across runs that may mutate
+shared state. This can reduce setup cost for large mission definitions or many short runs,
+but it trades away the default isolation guarantee.
+
+# Examples
+```jldoctest
+julia> args = spaceagora_no_gram_example_args();
+
+julia> sol = run_simulation(args; return_solution=true);
+
+julia> length(sol.t) > 1
+true
+```
+"""
 function run_simulation(
     args::SimulationConfiguration;
     isolate_state::Bool=true,
@@ -302,9 +343,15 @@ function run_simulation(
     return_solver_metadata::Bool=false,
     save_fields=nothing,
     extra_callbacks=(),
-    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing
+    solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
+    visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
     return SimulationModel.ParallelPolicy.with_policy_context() do
+    # `visualization=true` (or SPACEAGORA_VISUALIZATION=1, so an unmodified
+    # example script can opt in) turns the scene sidecar on for this run and
+    # builds the viewer page once the results are written (see SceneVisualization).
+    args = visualization ? SimulationModel.SceneVisualization.with_visualization_scene(args, true) : args
+    args = _with_density_model_epoch(args)
     # Isolate mutable campaign/model state by default so repeated/concurrent runs
     # do not alias shared in-memory objects.
     args = isolate_state ? deepcopy(args) : args
@@ -359,6 +406,13 @@ function run_simulation(
     p.shared_buffers.debug_control[] = _engine_env_get("SPACEAGORA_DEBUG_CONTROL", "0") == "1"
     p.shared_buffers.debug_initial_derivative[] = _engine_env_get("SPACEAGORA_DEBUG_INITIAL_DERIVATIVE", "0") == "1"
     save_fields_resolved = isnothing(save_fields) ? SimulationModel.default_save_fields(args) : collect(save_fields)
+    # Explicit save_fields built before the visualization flag was applied
+    # (e.g. `vcat(default_save_fields(args), ...)` in an example run under
+    # SPACEAGORA_VISUALIZATION=1) would silently miss the link poses.
+    for extra in SimulationModel.SimulationCallbacks.visualization_save_fields(args)
+        any(field -> field.name === extra.name, save_fields_resolved) && continue
+        save_fields_resolved = vcat(save_fields_resolved, [extra])
+    end
     save_field_names = Symbol[field.name for field in save_fields_resolved]
     length(unique(save_field_names)) == length(save_field_names) || throw(ArgumentError("save_fields names must be unique. Got $(save_field_names)."))
     saved_values = SavedValues(Float64, SimulationModel.SaveData)
@@ -737,6 +791,10 @@ function run_simulation(
         backbone_saved_times,
         backbone_saved_data,
     )
+    _write_visualization_scene_if_enabled!(args; density_params=p)
+    if visualization && args.simulation_settings.results
+        SimulationModel.SceneVisualization.export_visualization(args)
+    end
 
     if return_solution && checkpoint_active && args.simulation_settings.checkpoint_interval_s < mission_end
         @warn "return_solution=true with checkpointed integration returns the final segment ODESolution, not a stitched full-history ODESolution."

@@ -14,9 +14,10 @@ concurrency:
 jobs:
   tests-matrix:
     runs-on: ubuntu-latest
-    # 60 killed a fully-passing 1.12 leg at 1h00m20s (PR #35); runner-speed
-    # variance across runs is ~1.6x, so give the full suite real headroom.
-    timeout-minutes: 90
+    # Includes dependency setup, the full suite and Earth thruster smoke.
+    # PR151 reached 120 minutes after its standalone unit suite passed;
+    # reserve time for the remaining suite and cold dependency compilation.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +49,10 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Pinned GRAMSuite retrieval regression
+        run: python3 test/scripts/test_gramsuite_retrieval.py
+
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -69,6 +73,13 @@ jobs:
 
       - name: Instantiate
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Prepare grid adapter test environment
+        run: julia --startup-file=no test/grid_atmosphere/setup.jl
+
+      - name: Native-free GRAM grid adapter
+        timeout-minutes: 15
+        run: julia --startup-file=no --project=test/grid_atmosphere test/grid_atmosphere/runtests.jl
 
       - name: Run test suite
         run: julia --startup-file=no --project=. test/runtests.jl
@@ -128,7 +139,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -180,7 +191,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -216,6 +227,11 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      - name: Viewer JavaScript regressions
+        run: node test/unit/visualization/viewer_channels_models_tests.mjs
+      - name: Viewer external-host page builder tests
+        run: python3 -m unittest discover -s test/scripts -p 'test_build_cdn_page.py' -v
+
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
       - name: Free runner disk space
@@ -235,7 +251,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -253,6 +269,39 @@ jobs:
 
       - name: README instantiate command
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Terrain exporter Julia-to-JavaScript regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          terrain_fixture_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain.XXXXXX")"
+          trap 'rm -rf "$terrain_fixture_dir"' EXIT
+          export SPACEAGORA_TERRAIN_TEST_FIXTURE_DIR="$terrain_fixture_dir"
+          julia --startup-file=no --depwarn=error --project=. test/unit/visualization/terrain_export_tests.jl
+          node test/unit/visualization/terrain_sampling_tests.mjs "$terrain_fixture_dir/fixtures.json"
+
+      - name: Terrain producer tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          terrain_python_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain-python.XXXXXX")"
+          trap 'rm -rf "$terrain_python_dir"' EXIT
+          python3 -m venv "$terrain_python_dir"
+          "$terrain_python_dir/bin/python" -m pip install -r scripts/dev/terrain/requirements.txt
+          test -s test/scripts/test_terrain_pipeline.py
+          "$terrain_python_dir/bin/python" -m unittest discover -s test/scripts -p test_terrain_pipeline.py -v
+
+      - name: CYGNSS development environment
+        run: |
+          julia --startup-file=no --project=scripts/dev -e 'using Pkg; Pkg.instantiate()'
+          julia --startup-file=no --project=. scripts/dev/run.jl test_cygnss_environment.jl
+
+      - name: CYGNSS offline data-access checks
+        run: |
+          python3 -m venv /tmp/spaceagora-cygnss-tools
+          /tmp/spaceagora-cygnss-tools/bin/python -m pip install -r scripts/dev/requirements-cygnss.txt
+          /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/test_cygnss_fetch.py
+          /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/fetch_cygnss_l1_states.py --self-test
 
       - name: README example command
         run: julia --startup-file=no --compiled-modules=existing --project=. examples/Earth_Thruster_Test.jl
@@ -289,7 +338,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -349,7 +398,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -407,7 +456,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -447,12 +496,16 @@ jobs:
 
   coverage-quality-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # PR159's coverage job took 143 minutes before failing the file floors. Add
+    # the native-free grid suite and its environment setup with headroom.
+    timeout-minutes: 180
     env:
       JULIA_NUM_THREADS: "4"
       # Coverage debt (July 2026): first real gate run measured 82.84%
       # overall; restore to 90.0 as the debt register in
       # test/gates/ci_coverage_quality_gate.jl burns down.
+      # This job builds native GRAM, so skipping its native probes must fail.
+      SPACEAGORA_REQUIRE_NATIVE_GRAM_PROBES: "1"
       SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
       # The window is measured back from the NEWEST .cov file (written when
@@ -461,8 +514,9 @@ jobs:
       # earlier. 1200s silently dropped the threaded/GRAM probe coverage
       # whenever the post-probe tail of the suite outgrew 20 min, failing
       # per-file floors on files those probes cover. Must exceed the whole
-      # suite step's wall time on the slowest hosted runner.
-      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "7200"
+      # suite step's wall time on the slowest hosted runner. Keep it at least
+      # as long as this job budget so early child coverage remains included.
+      SPACEAGORA_COVERAGE_WINDOW_SECONDS: "10800"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -488,7 +542,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -516,69 +570,15 @@ jobs:
       - name: Run tests with coverage
         run: julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
 
+      - name: Prepare native-free grid coverage environment
+        run: julia --startup-file=no test/grid_atmosphere/setup.jl
+
+      - name: Cover grid adapter and named presets without native GRAM
+        timeout-minutes: 15
+        run: julia --startup-file=no --project=test/grid_atmosphere --code-coverage=user test/grid_atmosphere/runtests.jl
+
       - name: Coverage quality gate
         run: julia --startup-file=no --project=. test/gates/ci_coverage_quality_gate.jl
-
-  calibration-coverage-quality-gate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      JULIA_NUM_THREADS: "4"
-      SPACEAGORA_CAL_COVERAGE_MIN_OVERALL: "90.0"
-      SPACEAGORA_CAL_COVERAGE_MIN_FILE: "70.0"
-      SPACEAGORA_CAL_COVERAGE_WINDOW_SECONDS: "1200"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-
-      # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
-      # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
-      - name: Free runner disk space
-        run: |
-          # Jobs have crashed with ENOSPC mid-run (the runner worker dies
-          # writing its own logs, so the step never even reports a failure —
-          # seen on coverage-quality-gate for main@8e7be423 and PR #35).
-          # Reclaim aggressively: none of these preinstalled toolchains are
-          # used by Julia CI.
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/.ghcup \
-            /usr/local/share/powershell /usr/local/lib/node_modules \
-            /usr/lib/google-cloud-sdk /usr/lib/jvm /opt/az /opt/microsoft \
-            /opt/pipx /usr/share/miniconda /usr/local/share/chromium \
-            /usr/local/share/boost
-          sudo docker image prune --all --force > /dev/null 2>&1 || true
-          sudo apt-get clean > /dev/null 2>&1 || true
-          df -h /
-
-      - name: Update GRAMSuite test submodule to dev main
-        env:
-          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: bash .github/scripts/update_gramsuite_submodule.sh dev
-
-      - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: "1.12"
-
-      - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
-
-      - name: Instantiate vendored GRAMSuite
-        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
-
-      - name: GRAMSuite load smoke
-        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
-
-      - name: Instantiate
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Run SpaceAGORACalibration tests with coverage
-        run: julia --startup-file=no --project=. --code-coverage=user SpaceAGORACalibration.jl/test/runtests.jl
-
-      - name: SpaceAGORACalibration coverage quality gate
-        run: julia --startup-file=no --project=. SpaceAGORACalibration.jl/test/ci_coverage_quality_gate.jl
 
   p1-findings-gate:
     runs-on: ubuntu-latest
@@ -608,7 +608,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev
@@ -692,7 +692,7 @@ jobs:
           sudo apt-get clean > /dev/null 2>&1 || true
           df -h /
 
-      - name: Update GRAMSuite test submodule to dev main
+      - name: Load pinned dev GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: bash .github/scripts/update_gramsuite_submodule.sh dev

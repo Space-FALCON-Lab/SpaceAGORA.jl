@@ -9,6 +9,12 @@ const REPO_URL = "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl"
 const DOCS_SRC = joinpath(@__DIR__, "src")
 const GENERATED_SRC = joinpath(DOCS_SRC, "generated")
 const GENERATED_API_PAGE = joinpath(GENERATED_SRC, "public_api.md")
+const API_REFERENCE_PAGES = (
+    (section="Terrain Queries", title="Terrain API", file="terrain_api.md"),
+    (section="Mesh Aerodynamics", title="Mesh Aerodynamics API", file="mesh_aerodynamics_api.md"),
+    (section="Visualization Scene", title="Visualization API", file="visualization_api.md"),
+    (section="Lunar Landing", title="Lunar Landing API", file="lunar_landing_api.md"),
+)
 const GENERATED_CONTRACTS_ROOT = joinpath(GENERATED_SRC, "contracts")
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -24,8 +30,22 @@ const CONTRACT_PAGES = [
 
 function _write_generated_public_api_page()::String
     mkpath(GENERATED_SRC)
+    separated_titles = [page.section for page in API_REFERENCE_PAGES]
+    main_sections = filter(section -> section.title ∉ separated_titles, PUBLIC_API_SECTIONS)
     open(GENERATED_API_PAGE, "w") do io
-        write(io, render_public_api_markdown(SpaceAGORA))
+        write(io, render_public_api_markdown(SpaceAGORA; sections=main_sections))
+        for page in API_REFERENCE_PAGES
+            println(io, "See the [$(page.title)]($(page.file)) for $(lowercase(page.section)).")
+            println(io)
+        end
+    end
+    for page in API_REFERENCE_PAGES
+        sections = filter(section -> section.title == page.section, PUBLIC_API_SECTIONS)
+        length(sections) == 1 || error("Expected one $(page.section) API section")
+        open(joinpath(GENERATED_SRC, page.file), "w") do io
+            write(io, render_public_api_markdown(SpaceAGORA; sections, title=page.title))
+            println(io, "See the [Public API](public_api.md) for the rest of the exported interface.")
+        end
     end
     return GENERATED_API_PAGE
 end
@@ -134,8 +154,16 @@ makedocs(
             "First Simulation" => "user/first_simulation.md",
             "Simulation Configuration" => "user/simulation_configuration.md",
             "Atmosphere Models" => "user/atmosphere_models.md",
+            "Odyssey Surrogate Control Exercise" => "tutorials/odyssey_surrogate.md",
+            "Plume Interaction" => "user/plume_interaction.md",
+            "Lunar Landing" => "user/lunar_landing.md",
+            "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
             "Solver Configuration" => "user/solver_configuration.md",
             "Simulation Outputs" => "user/outputs.md",
+            "Interactive Visualization" => "user/visualization.md",
+            "The Integrated State" => "user/integrated_state.md",
+            "Adding a Force or Torque" => "user/custom_effector.md",
+            "Stopping on a Condition" => "user/stop_conditions.md",
             "Parallel Execution" => "user/parallel_execution.md",
             "Verification Study" => "user/verification_study.md",
             "Examples Catalog" => "user/examples_catalog.md",
@@ -147,6 +175,10 @@ makedocs(
         "Reference" => Any[
             "CLI" => "cli.md",
             "Public API" => "generated/public_api.md",
+            "Terrain API" => "generated/terrain_api.md",
+            "Mesh Aerodynamics API" => "generated/mesh_aerodynamics_api.md",
+            "Visualization API" => "generated/visualization_api.md",
+            "Lunar Landing API" => "generated/lunar_landing_api.md",
             "Publications" => "publications.md",
             "Distributed and HPC" => "distributed_hpc.md",
             "Extensibility" => "extensibility.md",

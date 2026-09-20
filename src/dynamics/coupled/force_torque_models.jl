@@ -2,6 +2,13 @@
     Wrapper module for all dynamic effector models (all forces/torques)
 """
 module DynamicEffectors
+    """
+        calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
+
+    Stable extension hook for custom [`AbstractForceTorqueModel`](@ref)
+    implementations. Extend this method for package or user models that contribute
+    translational and rotational wrench terms to the simulation RHS.
+    """
     function calcForceTorque end
     using ..EffectorSampling: wrench, wrench_caching!, environment_requirements, solver_partition
 
@@ -11,17 +18,24 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "thruster_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "reaction_wheel_momentum.jl"))
+
+    include(joinpath(@__DIR__, "force_torque_models", "plume_surface_interaction.jl"))
 
     # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
     @eval GravityEffectors using ..PerturbationEffectors
 
     using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
+    using .GravityEffectors: GravityGradientTorqueModel
     using .GravityEffectors: aerobraking_gravity_force_ii
     using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
     using .AerodynamicEffectors: _parse_bool_env, _multibody_outer_parallel_hint, collect_and_reset_link_wrenches!
     using .AerodynamicEffectors: _multibody_parallel_mode, _multibody_thread_threshold, _multibody_max_threads, refresh_multibody_parallel_mode!
     using .AerodynamicEffectors: _threadid_capacity, _multibody_use_threads, _multibody_thread_decision
     using .AerodynamicEffectors: _make_aero_scratch_workspace, _ensure_aero_workspace_capacity!, _aero_workspace_for_sat!
+    using .AerodynamicEffectors: MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate, MESH_AERO_MAX_DEGREE
+    using .AerodynamicEffectors: mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
+    using .AerodynamicEffectors: fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
     using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
     using .PerturbationEffectors: MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque
     using .PerturbationEffectors: EddyCurrentDampingModel, eddy_damping_torque
@@ -35,17 +49,30 @@ module DynamicEffectors
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using .RobotArmReactionEffectors: RobotArmReactionEffector
+    using .ReactionWheelMomentum: WheelSpeedSpline, ReactionWheelMomentumModel, ReactionWheelMomentumState
+    using .ReactionWheelMomentum: wheel_speed_spline, wheel_spline_value, wheel_spline_derivative
+    using .ReactionWheelMomentum: wheel_momentum_body, wheel_momentum_rate_body, wheel_reaction_torque, wheel_speeds_rad_s
+
+    using .PlumeSurfaceInteraction: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
+    export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
+    export GravityGradientTorqueModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
     export aerobraking_gravity_force_ii, srp, srp_cannonball_accel, planetary_albedo_accel, planetary_ir_accel
     export MagneticTorqueRodModel, get_magnetic_field_dipole, calculate_magnetic_torque
     export EddyCurrentDampingModel, eddy_damping_torque
     export LVLHCascadeAttitudeControlModel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
+    export MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate, MESH_AERO_MAX_DEGREE
+    export mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
+    export fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
     export calcForceTorque
     export wrench, wrench_caching!, environment_requirements, solver_partition
     export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
     export RobotArmReactionEffector
+    export WheelSpeedSpline, ReactionWheelMomentumModel, ReactionWheelMomentumState
+    export wheel_speed_spline, wheel_spline_value, wheel_spline_derivative
+    export wheel_momentum_body, wheel_momentum_rate_body, wheel_reaction_torque, wheel_speeds_rad_s
 end

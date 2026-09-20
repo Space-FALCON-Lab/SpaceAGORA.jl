@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #060a0f; overflow: hidden; }
+  #viewer { position: relative; width: 100%; height: 100%; }
+  #viewer canvas { display: block; }
+  #sa-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #9fb3c8; font: 14px system-ui, sans-serif; pointer-events: none; }
+</style>
+<script type="importmap">__IMPORTMAP__</script>
+
+<!-- Embedded renderer licenses:
+The MIT License
+
+Copyright © 2010-2023 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+MIT License
+
+Copyright (c) 2023 Vanilagy
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+</head>
+<body>
+<div id="viewer"><div id="sa-loading">Loading scene…</div></div>
+<script>
+window.SPACEAGORA_VIEWER = __PAYLOAD__;
+</script>
+<script type="module">
+import { start } from 'viewer/main.js';
+const loading = document.getElementById('sa-loading');
+try {
+  window.SPACEAGORA_VIEWER.manualStart = true;
+  window.spaceagoraViewer = start(window.SPACEAGORA_VIEWER, document.getElementById('viewer'));
+  loading.remove();
+} catch (err) {
+  loading.textContent = 'Viewer failed to start: ' + (err && err.message ? err.message : err);
+  console.error(err);
+}
+</script>
+</body>
+</html>

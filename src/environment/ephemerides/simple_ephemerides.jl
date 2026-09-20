@@ -1,6 +1,22 @@
 struct SpiceEphemeridesModel <: AbstractEphemeridesModel
 end
 
+"""
+    SimpleEphemeridesModel(; reference_epoch_seconds=0.0, prime_meridian_at_reference_rad=NaN)
+
+Analytic ephemerides/frame backend for onboarding and open-data runs that should
+not depend on local SPICE kernels.
+
+By default (`prime_meridian_at_reference_rad = NaN`) the planet-fixed frame uses
+the planet's true prime-meridian convention: Earth's rotation angle is GMST
+(IAU-82, treating the model's leap-second-free UTC timeline as UT1), so
+geographic longitude-keyed models — IGRF and tilted-dipole magnetic fields,
+lat/lon-dependent atmospheres, tesseral gravity harmonics — sample the correct
+longitudes. Other planets keep a zero prime-meridian angle at the reference
+epoch. Passing an explicit finite `prime_meridian_at_reference_rad` selects the
+legacy linear rotation `θ = pm + ω₃·(et − reference_epoch_seconds)` exactly as
+given.
+"""
 @kwdef struct SimpleEphemeridesModel <: AbstractEphemeridesModel
     reference_epoch_seconds::Float64 = 0.0
     # NaN is a sentinel meaning "planet-true prime meridian": Earth uses GMST
@@ -49,10 +65,27 @@ end
     return base + Millisecond(round(Int, 1000 * Float64(initial_time.second)))
 end
 
+const _INITIAL_TIME_UTC_FORMAT = dateformat"yyyy-mm-ddTHH:MM:SS.sss"
+
+"""
+    _initial_time_utc_string(initial_time) -> String
+
+The `InitialTime` calendar fields as an ISO UTC string on the engine's
+millisecond clock (`yyyy-mm-ddTHH:MM:SS.sss`), the form SPICE's `utc2et`
+parses. The SPICE ephemerides method and engine fallback share this helper. It
+deliberately does not pass through a TAI epoch: AstroTime's UTC round trip
+is inexact before 1972, where the TAI-UTC offset is fractional, and its
+string form then rendered `20:05:05` as the malformed `20:05:04.1000`,
+which SPICE read as 4.1 s.
+"""
+@inline function _initial_time_utc_string(initial_time)::String
+    return Dates.format(_initial_time_datetime(initial_time), _INITIAL_TIME_UTC_FORMAT)
+end
+
 @inline function ephemerides_time_seconds(initial_time, ::SpiceEphemeridesModel)::Float64
-    start_epoch = from_utc(_initial_time_datetime(initial_time))
+    utc = _initial_time_utc_string(initial_time)
     return lock(tracked_lock(:spice_body)) do
-        utc2et(to_utc(start_epoch))
+        utc2et(utc)
     end
 end
 
@@ -130,4 +163,66 @@ end
         # typemin is unreachable from any physically sane explicit override.
         isnan(pm) ? typemin(Int64) : round(Int64, pm * 1e12)
     )
+end
+
+# ---------------------------------------------------------------------------
+# Sun direction
+# ---------------------------------------------------------------------------
+
+# Low-precision solar coordinates (Astronomical Almanac, section C): the Sun's
+# apparent geocentric direction to about 0.01 degrees over 1950-2050, as a unit
+# vector on the mean equator and equinox of date. `days` is days past the
+# J2000 epoch. The difference between the mean equinox of date and J2000 is
+# precession, under 0.4 degrees over the model's own validity span, which is
+# well inside what a light direction needs.
+@inline function _low_precision_sun_direction_eme(days::Float64)::SVector{3, Float64}
+    mean_longitude = deg2rad(280.460 + 0.9856474 * days)
+    mean_anomaly = deg2rad(357.528 + 0.9856003 * days)
+    ecliptic_longitude = mean_longitude + deg2rad(1.915) * sin(mean_anomaly) + deg2rad(0.020) * sin(2.0 * mean_anomaly)
+    obliquity = deg2rad(23.439 - 4.0e-7 * days)
+    sin_lambda = sin(ecliptic_longitude)
+    return SVector{3, Float64}(
+        cos(ecliptic_longitude),
+        cos(obliquity) * sin_lambda,
+        sin(obliquity) * sin_lambda
+    )
+end
+
+@inline _sun_observer_name(planet)::String = replace(lowercase(strip(String(planet.name))), ' ' => '_')
+
+"""
+    ephemerides_sun_direction_ii(planet, et, ephemerides_model) -> Union{Nothing, SVector{3, Float64}}
+
+Unit vector from the planet's center to the Sun, in the inertial (J2000) frame
+the integrated state uses, or `nothing` when this ephemeris backend cannot
+resolve the Sun for this body.
+
+`SpiceEphemeridesModel` asks SPICE for the Sun's position relative to the
+planet, so it works for every body whose SPK is furnished. `SimpleEphemeridesModel`
+carries no planetary ephemeris, so it answers only for Earth, from the
+low-precision analytic Sun above; it returns `nothing` for any other body
+rather than inventing a direction.
+"""
+function ephemerides_sun_direction_ii(planet, et::Float64, ::SpiceEphemeridesModel)::Union{Nothing, SVector{3, Float64}}
+    observer = _sun_observer_name(planet)
+    position = try
+        spice_position_j2000_m("sun", et, observer)
+    catch
+        # A body whose own SPK is absent (its barycenter is the only target the
+        # generic kernel carries): the direction to the Sun is the same to well
+        # under an arcsecond either way.
+        try
+            spice_position_j2000_m("sun", et, observer * "_barycenter")
+        catch
+            return nothing
+        end
+    end
+    distance = norm(position)
+    isfinite(distance) && distance > 0.0 || return nothing
+    return position / distance
+end
+
+function ephemerides_sun_direction_ii(planet, et::Float64, model::SimpleEphemeridesModel)::Union{Nothing, SVector{3, Float64}}
+    _sun_observer_name(planet) == "earth" || return nothing
+    return _low_precision_sun_direction_eme((et - model.reference_epoch_seconds) / 86400.0)
 end

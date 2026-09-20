@@ -93,6 +93,46 @@ eight-thread re-sweep was wrong. Measure it with
 --src-runner --profile=full`, not with the block-ordered benchmark harness,
 whose resolution is about eight points.
 
+## Optional native GRAM density workers
+
+`SPACEAGORA_GRAM_PROCESS_POOL` defaults to `off`. For a large batch of
+satellites using native GRAM, `auto` enables a separate density-worker pool
+at or above `SPACEAGORA_GRAM_PROCESS_POOL_THRESHOLD` (default 64); `on` also
+enables it for smaller batches. `SPACEAGORA_GRAM_PROCESS_POOL_WORKERS` defaults
+to half the logical CPU count, with a minimum of one. Set it explicitly to
+control memory and process cost. This service does not apply to
+surrogate models, and it declines work inside an outer parallel run.
+
+Workers reconstruct the model from its saved constructor settings, including
+the epoch and resolved data paths. They reuse a model only while that recipe
+matches. Each batch carries the recipe so overlapping requests use the right
+configuration. Workers whose model setup fails are excluded; the remaining
+workers can still serve the batch. If no worker is usable or a query fails, the
+batch falls back to local evaluation. A model wrapped directly from a native core has no saved recipe
+and uses local evaluation without starting density workers. A failed replacement
+clears the worker cache so the next valid request rebuilds its native model.
+
+GRAM construction paths do not transfer the coordinator's SPICE kernel pool.
+The existing process bootstrap loads default Earth kernels. Non-Earth missions
+or custom kernel sets still require the caller to furnish the needed kernels on
+the density workers before dispatch; unavailable ephemerides cause local fallback.
+A recipe whose worker setup or batch fails is remembered for the rest of the
+session: later batches with the same settings fall back locally at once, without
+rebuilding native models on every worker. Recovery is explicit. Change the
+configuration (a different recipe is tried once more), call
+`SpaceAGORA.ParallelProcess.clear_density_service_failures!()` after correcting
+the worker setup, or restart the pool with `shutdown_density_workers!()`, which
+also forgets remembered failures. `density_service_failures()` lists them.
+
+This preserves construction settings, not an already advanced random stream or
+manual changes to a native handle. Runtime environment policy, such as
+`SPACEAGORA_GRAM_WIND_MODE`, is not part of the recipe: set it before workers
+start. Identical recipes can share worker state
+across requests; this pool does not isolate stochastic streams by simulation.
+Compare your results against local evaluation before using it for a study.
+Per-satellite model instances and stateful interpolation caches retain their
+existing exclusions. No speedup is guaranteed for small batches.
+
 ## Using environment variables
 
 For CLI runs or scripted batch execution, set the controls before launching:
@@ -491,3 +531,28 @@ and restart calibration.
 For multi-node or process-worker execution, see [Distributed and HPC](../distributed_hpc.md)
 for guidance on the `SPACEAGORA_PERF_PROCS`, `SPACEAGORA_PERF_WORKER_PROJECT`,
 and `SPACEAGORA_PERF_MACHINE_LABEL` environment variables.
+
+## Optional direct derivative assembly
+
+For a performance experiment on a translational constellation in vacuum, you
+can enable direct writes into the derivative buffer:
+
+```julia
+withenv("SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT" => "1") do
+    run_simulation(args)
+end
+```
+
+This option is off by default. It only changes the final assembly step when
+the runtime already uses the flat constellation-effector route; it does not
+select that route itself. It supports the standard position, velocity, mass
+and heat-load layout with contiguous `Float64` storage, a `NoAtmosphereModel`,
+and no attitude propagation, control effectors or robot arm. Unsupported
+configurations and custom layouts continue through the existing assembly path.
+The option does not change the force calculation or its accumulation order.
+
+Keep it off for your baseline, then compare results, elapsed time and allocations
+with it enabled on the same warmed-up workload. No whole-simulation speedup is
+established by the correctness tests. Set the value to `"0"` or remove the
+variable to restore the default. As with other runtime controls, set it before
+starting the simulation.

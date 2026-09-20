@@ -852,9 +852,13 @@ end
     @test orbit_integrator.terminated == true
 end
 
+include(joinpath(REPO_ROOT, "test", "probes", "native_probe_reporting_tests.jl"))
+
 @testset "Coverage Threaded Probe Driver" begin
     if Base.JLOptions().code_coverage == 0
-        @test true
+        required = NativeProbeReporting.native_probe_required()
+        println(NativeProbeReporting.SKIPPED, " reason=coverage_disabled required=", required)
+        @test !required
     else
         probe_script = joinpath(REPO_ROOT, "test", "probes", "coverage_threaded_probes.jl")
         cmd = `$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(REPO_ROOT) --code-coverage=user --threads=2 $(probe_script)`
@@ -871,6 +875,9 @@ end
             println(text)
         end
 
+        # Forward the status even when the child succeeds; its other output
+        # remains captured. Required native execution cannot pass via a skip.
+        @test NativeProbeReporting.report_native_probes(stdout, text, success(proc))
         @test success(proc)
         @test occursin("coverage_threaded_probes_ok", text)
     end
@@ -2180,6 +2187,15 @@ end
     )
     split_ck_default = SimulationCampaigns._ensemble_member_settings(settings_ck_default, "sat_1_id_11")
     @test split_ck_default.results_directory == joinpath("outdir", "sat_1_id_11")
+
+    # The visualization sidecar flag must survive the per-member rebuild.
+    settings_scene = SimulationSettings(
+        results=true, verbose=false, generate_plots=false, normalize=false,
+        results_directory="outdir", save_visualization_scene=true
+    )
+    split_scene = SimulationCampaigns._ensemble_member_settings(settings_scene, "sat_4_id_44")
+    @test split_scene.results_directory == joinpath("outdir", "sat_4_id_44")
+    @test split_scene.save_visualization_scene
 
     settings_resume_explicit = SimulationSettings(
         results=false, verbose=false, generate_plots=false, normalize=false,

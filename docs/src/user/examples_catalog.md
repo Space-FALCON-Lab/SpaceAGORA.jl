@@ -28,10 +28,10 @@ quickstart:
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
-If the quickstart already works and you want a fuller no-GRAM run, use:
+To run the same no-GRAM scenario without generating plots, use:
 
 ```text
-julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
 ```
 
 If you prefer the CLI wrapper:
@@ -48,22 +48,34 @@ the CSV, Feather, and manifest files under `output/`.
 ### First no-GRAM run
 
 Use this path when you want something runnable without GRAM, SPICE, or licensed
-assets:
+assets. These three run on a fresh clone with nothing but `Pkg.instantiate()`:
 
 ```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
-julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
+julia --project=. examples/AGORA_Earth_MonteCarlo.jl
 ```
 
-Related scripts:
+### Runs that need the SPICE kernels but not GRAM
 
-- `AGORA_Earth_NoGRAM.jl`
-- `AGORA_Keplerian.jl`
-- `AGORA_Earth_MonteCarlo.jl`
+`Earth_Thruster_Test.jl` and `AGORA_Keplerian.jl` use no atmosphere but build
+their planet with `Earth("", SPICE_PATH)` / `Mars("", SPICE_PATH)`, which loads
+the SPICE kernels shipped in the `data/GRAMSuite.jl` submodule. On a fresh clone
+they stop with "Required SPICE kernel not found: .../GRAM Suite 2.0/SPICE/...".
+Initialise the submodule first ([GRAMSuite Setup](gramsuite_setup.md)); the
+native GRAM library is not needed for these two.
+
+```text
+julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Keplerian.jl
+```
 
 ### GRAM-backed atmosphere run
 
-Use this path only after [GRAMSuite Setup](gramsuite_setup.md) succeeds:
+Use this path only after [GRAMSuite Setup](gramsuite_setup.md) succeeds. The
+scripts call `setup_gram_example!()`, which loads the vendored `GRAMSuite`
+package; without the submodule they stop with "GRAM-backed examples require
+loading `GRAMSuite`", and that includes the `--smoke` form below.
 
 ```text
 julia --project=. examples/AGORA_Basic_GRAMEarth.jl
@@ -106,11 +118,45 @@ surface rather than a full mission case:
 
 ### RPO and robotics
 
-Start with one RPO case:
+The RPO examples need the SPICE kernels from the `data/GRAMSuite.jl` submodule
+([GRAMSuite Setup](gramsuite_setup.md)); they do not need the native GRAM
+library. Start with one RPO case:
 
 ```text
 julia --project=. examples/Earth_RPO_CubeSat_MPC.jl
 ```
+
+By default that script builds the Gateway-core scenario. Its
+`build_rpo_cubesat_mpc_demo` also accepts another station as a 3 x N
+body-frame point cloud (`station_points`, for example from
+`sample_model_pointcloud`) together with `station_keepout_radius_m`,
+`station_name`, `station_dims_m`, `station_mass_kg` and
+`station_ref_area_m2`, and scales the planner with `safe_distance_m`,
+`cost_ref_distance_m`, `search_margin_m` and `sample_ds_m`. Leaving every
+keyword at its default preserves the Gateway dimensions, mass and 8 m²
+reference area, and the returned
+`station` record states what was used.
+`scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
+model and exports a viewer page with the planned path overlaid.
+`SPACEAGORA_DEMO_SMOKE=1` runs a short bounded hop instead of the full
+approach, and every run writes an `iss_hypr_provenance.json` sidecar that
+names its inputs and outputs. The ISS demo caps reference speed at 0.1 m/s
+and extends the run to finish the approach. Its station rotates with the circular
+orbit so the saved attitude and the planner's station geometry share the RTN
+frame. The geometric retimer does not guarantee an acceleration profile from
+rest, and LQ-MPC does not impose collision constraints. Check simulated
+clearance as well as planned clearance when changing the scenario.
+
+With a fixed seed and iteration budget, the planner gives the same plan across
+Julia thread counts. Runs using a wall-clock stopping budget can stop at different
+iterations. The particle-based random streams introduced with this demo change
+seeded plans from earlier versions; compare tracking against the plan saved by
+the run, rather than a newly generated plan.
+
+The default simulation copy owns its own MPC solver workspace. Its stored primal
+warm start is copied, while the solver's internal caches are rebuilt. A copied
+controller is therefore safe to use after the original is released, but is not
+an exact checkpoint of an optimization already in progress.
 
 For a planner-comparison smoke run:
 
@@ -141,7 +187,8 @@ Related scripts:
 
 | Group | Scripts |
 |---|---|
-| First runs | `AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, `AGORA_Earth_MonteCarlo.jl` |
+| First runs (no assets) | `AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl` |
+| First runs (SPICE kernels from the GRAMSuite submodule) | `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl` |
 | GRAM and missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl`, `AGORA_Mars_NoGRAM.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` |
 | Controls and torques | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` |
 | RPO and robotics | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl`, `Robot_Arm_Planner_Cloth_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl` |

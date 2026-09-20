@@ -100,6 +100,9 @@ include(joinpath(@__DIR__, "..", "core", "state", "simulation_configuration.jl")
 include(joinpath(@__DIR__, "..", "environment", "physical_models.jl"))
 @reexport using .EnvironmentModels
 
+include(joinpath(@__DIR__, "..", "environment", "terrain", "terrain_models.jl"))
+@reexport using .TerrainModels
+
 include(joinpath(@__DIR__, "..", "core", "types", "compat_model_codes.jl"))
 @reexport using .LegacyModelCodes
 
@@ -158,6 +161,8 @@ include(joinpath(@__DIR__, "..", "gnc", "control", "control_hooks.jl"))
 	@reexport using .NoGramPresets
 
 # --- Integrator Callbacks ---
+include(joinpath(@__DIR__, "..", "analysis", "visualization", "scene", "scene_visualization.jl"))
+@reexport using .SceneVisualization
 include(joinpath(@__DIR__, "..", "simulation", "callbacks", "callbacks.jl"))
 @reexport using .SimulationCallbacks
 end # module SimulationModel

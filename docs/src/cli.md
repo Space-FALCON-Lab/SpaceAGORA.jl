@@ -32,6 +32,28 @@ Convenience wrappers:
 - Linux/macOS: `./bin/spaceagora`
 - Windows: `bin\spaceagora.bat`
 
+## What each command needs
+
+Every child process the CLI starts (`run`, `telemetry`, `benchmark`) runs
+under the repository project, the same environment as `julia --project=.`,
+so the script can load `SpaceAGORA` whether or not it activates the project
+itself. `--print-only` prints that project on its `project=` line and the
+full command on its `cmd=` line without running anything.
+
+What a command needs beyond `Pkg.instantiate()` depends on the script it
+starts, not on the CLI:
+
+| Command | Needs on top of the instantiated repository |
+|---|---|
+| `assets check`, `assets manifest`, `assets setup-open` | nothing |
+| `run --example=<no-GRAM example>` (`AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`) | nothing |
+| `run --example=<GRAM-backed or SPICE-backed example>` (`AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, the RPO examples, and the others listed on the [Examples Catalog](user/examples_catalog.md)) | the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](user/gramsuite_setup.md)); the GRAM-backed ones also need the native GRAM library built |
+| `telemetry ...` | the `data/GRAMSuite.jl` submodule: the study loads the vendored `GRAMSuite` package before it reads any scenario, even for `--scenarios=odyssey`; the truth files it grades are in the repository |
+| `benchmark ...` | the `data/GRAMSuite.jl` submodule, and for the GRAM-backed cases the native GRAM library |
+
+Without the submodule, `telemetry` and `benchmark` stop with "Package
+GRAMSuite not found in current path"; that is the prerequisite, not the CLI.
+
 ## Commands
 
 ### Run an example
@@ -147,3 +169,27 @@ julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --smoke --
 julia --project=. src/cli/main.jl telemetry smoke --output-dir=output/telemetry_smoke --print-only
 julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke --print-only
 ```
+
+### Named surrogate data
+
+After [setting up the public Odyssey environment](tutorials/odyssey_surrogate.md):
+
+```sh
+julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets list
+julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0
+julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
+```
+
+`list` reads the catalog without downloading. `fetch` downloads only the selected
+version and verifies its bytes. `check` uses installed data offline and validates
+the grid schema, coordinates and generation settings. `--file=<path>` selects
+an explicit exact-byte copy; an invalid path never falls back to retrieval.
+`fetch --offline` verifies an installed artifact without network access.
+Both `--preset=<id>` and `--preset <id>` forms are accepted, likewise `version`
+and `file`. An exact version is required.
+
+The native-free wrapper loads automatically for the preset `check` command.
+These commands do not build or initialize native GRAM. Normal Odyssey example
+startup performs preset retrieval itself, so the commands above are optional
+inspection/prefetch tools. The unqualified `assets check` remains an inventory
+of repository-local asset roots and catalogs, not proof that a grid is valid.

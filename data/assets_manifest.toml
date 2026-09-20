@@ -116,3 +116,39 @@ kind = "file"
 required = false
 licensing = "open-repo"
 detail = "Gateway Core STL used by the RPO station reference geometry and MPC RPO test case."
+
+[[asset]]
+name = "visualization_textures"
+scope = "visualization"
+relative_path = "data/textures"
+kind = "directory"
+required = false
+licensing = "open-repo"
+detail = "Public-domain NASA/USGS surface textures for the post-hoc 3D viewer, registered in data/textures/manifest.toml."
+
+[[asset]]
+name = "visualization_models"
+scope = "visualization"
+relative_path = "data/models"
+kind = "directory"
+required = false
+licensing = "open-repo"
+detail = "NASA display models with source and attribution in data/models/README.md."
+
+[[asset]]
+name = "surrogate_preset_catalog"
+scope = "Named frozen atmospheres"
+relative_path = "data/surrogate_presets.toml"
+kind = "file"
+required = false
+licensing = "public-generated-data"
+detail = "Catalog availability only. Use assets check --preset=<id> --version=<version> to verify an installed grid; ordinary startup retrieves the selected Julia artifact."
+
+[[asset]]
+name = "odyssey_scenario_catalog"
+scope = "Public Odyssey P20 SPICE and gravity assets"
+relative_path = "data/odyssey_surrogate_assets.toml"
+kind = "file"
+required = false
+licensing = "public-source-notices-in-artifact"
+detail = "Catalog availability only. odyssey_surrogate_assets verifies the lazy artifact; native GRAM is unnecessary."

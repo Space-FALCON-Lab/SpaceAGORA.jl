@@ -26,6 +26,7 @@ What to read next:
 | `ExponentialAtmosphereModel(planet)` | Low | None | Single scale height; valid near one altitude band |
 | `PiecewiseExponentialAtmosphereModel(...)` | Low–medium | None | Multi-layer; better altitude-shape fit |
 | `NRLMSISE00AtmosphereModel(...)` | Medium | None (fixed indices) or internet (live indices) | Standard empirical model; ~0–1000 km |
+| `GRAMGridAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its grid API and a trusted grid payload | Native-free evaluation within documented grid coverage |
 | `GRAMAtmosphereModel(...)` | High | Licensed NASA GRAM | Requires GRAM asset setup |
 
 For GRAM setup, see [GRAMSuite Setup](gramsuite_setup.md).
@@ -169,6 +170,57 @@ density_model = NRLMSISE00AtmosphereModel(index_provider=my_provider)
 
 ---
 
+## Fixed GRAM grid snapshot
+
+For a named, automatically retrieved atmosphere, start with the [Odyssey surrogate workflow](../tutorials/odyssey_surrogate.md). Use `surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0")` after loading `GRAMSuite`; retrieval and verification occur once before the solver.
+
+`GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
+kernel to SpaceAGORA. It needs the Julia wrapper with its native-free grid API
+and a trusted serialized grid payload. Construction and density evaluation use
+no native GRAM installation or native fallback.
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+
+density_model = GRAMGridAtmosphereModel(
+    planet="earth",
+    surrogate_file="/path/to/authorized/earth_surrogate.jls",
+    above_grid=:error,
+)
+```
+
+The constructor forwards grid-loader options, including `search_roots` and
+`expected_sha256`. Missing files, undownloaded Git LFS pointers, and invalid
+payloads produce errors. A checksum pins file contents; it does not establish
+scientific provenance or permission to distribute the file. Grid distribution
+and an independently reproducible public installation remain separate work.
+
+Queries use altitude in metres and latitude/longitude in radians, on the grid's
+documented reference surfaces. Results contain density in kg/m³, temperature in
+kelvin, and local east/north/up winds in m/s. The stored atmosphere is frozen:
+elapsed time and the wind selector do not alter its density or stored winds.
+Select and validate the atmospheric epoch, coordinates, forcing, and coverage
+for the mission before use. Legacy metadata may leave these facts unknown;
+loading a file cannot recover them or establish physical accuracy.
+
+The default policy rejects altitude and latitude outside the grid. Longitude is
+periodic. Explicit `above_grid=:vacuum` returns zero density and wind above the
+ceiling, with `vacuum_temperature` in kelvin; lower-bound extrapolation remains
+an error. The adapter does not apply the native model's entry-interface
+polynomial, fixed 2000 km cutoff, or lower-altitude clamp.
+
+The grid model bypasses `SPACEAGORA_VACUUM_GRAM_CACHE` and
+`SPACEAGORA_DENSITY_FREEZE_PER_STEP`, and it reevaluates coordinates even when a
+buffered sample has the same timestamp. Native GRAM track caches, isolated pools,
+and per-satellite native copies do not apply. Shared read-only queries support
+threaded evaluation; keep the arrays and metadata unchanged during a run.
+Ordinary `deepcopy` produces independent arrays, including when configuration
+isolation copies an entire run. Managed process-worker startup has separate
+native warm-up behavior and is outside this native-free adapter's scope.
+
+---
+
 ## GRAM-backed atmosphere
 
 When GRAMSuite assets are available, the GRAM-backed constructor is provided by
@@ -186,3 +238,47 @@ density_model = GRAMAtmosphereModel(planet_name="earth")
 available after `GRAMSuite` is loaded and is accessed through
 `SpaceAGORA.SimulationModel.GRAMAtmosphereModel` (or via `setup_gram_example!`
 in the examples).
+
+### GRAM epoch alignment
+
+A GRAM model carries its own epoch: the `initial_time` keyword of
+`GRAMAtmosphereModel` (the GRAMSuite default when omitted). The simulation
+carries another in `SimulationConfiguration.initial_time`. Before every run,
+`run_simulation` passes the density model through
+[`with_density_model_epoch`](@ref) so the two agree. This happens before the
+configuration is copied for state isolation, and the caller's configuration is
+left unchanged.
+
+For a keyword-built `GRAMAtmosphereModel` the rule is:
+
+- An unchanged epoch returns the same model object. Epochs are compared on
+  their integer year, month, day, hour and minute and on the seconds as
+  `Float32`, with no time tolerance.
+- A changed epoch rebuilds a fresh native model from the recorded constructor
+  keywords with only `initial_time` replaced; planet, paths, perturbation
+  options and every other recorded keyword are preserved. The rebuild runs
+  under the GRAM setup lock.
+- A `GRAMAtmosphereModel` wrapped around a raw GRAMSuite core, whose
+  constructor keywords are unknown, cannot be realigned and raises an
+  `ArgumentError` when the epochs differ. Construct it with the keyword
+  constructor at the run's `initial_time` instead.
+
+A `GRAMAtmosphereModelSurrogate` built over a GRAM base keeps its object, file
+and fallback setting for an unchanged epoch and rejects a changed one with an
+`ArgumentError`: its table was generated for one epoch, and rebuilding the
+native fallback would not re-epoch the table. Build and validate a surrogate
+for the epoch you intend to run. Surrogates over other base models, the grid
+model, `NRLMSISE00AtmosphereModel` and the analytic models are not touched by
+the hook.
+
+To avoid a rebuild, construct the model at the run's epoch:
+
+```julia
+density_model = GRAMAtmosphereModel(planet_name="earth", initial_time=args.initial_time)
+```
+
+The hook changes the construction epoch only. It does not convert between time
+systems, validate atmospheric coordinate or datum conventions, certify cached
+or surrogate data, or carry over a native random stream that was advanced or a
+handle that was edited by hand before the run. The existing native cache and
+environment policies apply to the rebuilt model as to any other.

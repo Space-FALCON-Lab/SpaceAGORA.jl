@@ -36,7 +36,7 @@ jobs:
       # dev tree (private) carries the GRAM sources needed for a native
       # build; when the read token cannot reach it, fall back to the public
       # tree, which ships data only.
-      - name: Update GRAMSuite submodule to latest main
+      - name: Load pinned GRAMSuite revision
         env:
           GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
         run: |

@@ -37,6 +37,8 @@ const RETIRED_PATHS = (
     joinpath("src", "vehicle", "sensors"),
     joinpath("src", "gnc", "guidance", "targeting_control"),
     joinpath("src", "gnc", "control", "heatload_control"),
+    # the browser viewer is top-level viewer/ (interactive_visualization_plan.md)
+    joinpath("src", "viewer"),
     # retired source files
     joinpath("src", "core", "utils", "typed_example_utils.jl"),
     joinpath("src", "gnc", "control", "effectors.jl"),
@@ -76,6 +78,7 @@ const REQUIRED_PATHS = (
     joinpath("src", "io", "config", "io_config.jl"),
     joinpath("src", "io", "serialization", "io_serialization.jl"),
     joinpath("src", "io", "outputs", "io_outputs.jl"),
+    joinpath("src", "analysis", "visualization", "scene", "scene_visualization.jl"),
     joinpath("benchmarks", "studies", "performance_runtime_analysis.jl"),
     joinpath("benchmarks", "studies", "performance_smart_parallel_ladder.jl"),
     joinpath("benchmarks", "studies", "parallelization_performance.jl"),

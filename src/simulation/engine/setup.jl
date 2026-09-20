@@ -517,21 +517,26 @@ end
     return false
 end
 @inline _dynamic_effector_threadsafe(::SimulationModel.InverseSquaredGravityModel)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.GravityGradientTorqueModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.InverseSquaredJ2GravityModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.NBodyGravityModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.GravitationalHarmonicsModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.SolarRadiationPressureModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientfM)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientMeshSurrogate)::Bool = true
 
 @inline function _dynamic_effectors_parallel_supported(dynamic_effectors::Tuple)::Bool
-    aero_fm_count = 0
+    aero_cache_writers = 0
     @inbounds for effector in dynamic_effectors
-        if effector isa SimulationModel.AerodynamicCoefficientfM
-            aero_fm_count += 1
+        # Box and mesh aerodynamic effectors write the same per-satellite
+        # drag/lift/cross slots. Only one writer may run in an effector queue.
+        if effector isa SimulationModel.AerodynamicCoefficientfM ||
+           effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
+            aero_cache_writers += 1
         end
         _dynamic_effector_threadsafe(effector) || return false
     end
-    return aero_fm_count <= 1
+    return aero_cache_writers <= 1
 end
 
 @inline function _mission_is_long_for_effector_threads(args)::Bool
@@ -840,6 +845,10 @@ end
     ))
 end
 
+@inline function _rhs_final_assembly_direct_layout_enabled()::Bool
+    return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_RHS_FINAL_ASSEMBLY_DIRECT_LAYOUT", false)
+end
+
 @inline function _rhs_flat_min_sats()::Int
     return SimulationModel.ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_EFFECTOR_FLAT_MIN_SATS", 24)
 end
@@ -917,6 +926,7 @@ function _snapshot_rhs_plan_env_config()::SimulationModel.RhsPlanEnvConfig
     return SimulationModel.RhsPlanEnvConfig(
         _rhs_execution_mode_env(),
         _profile_forces_serial_rhs(),
+        _rhs_final_assembly_direct_layout_enabled(),
         _rhs_batch_parallel_mode(),
         _rhs_batch_thread_threshold(),
         _effector_parallel_mode(),
@@ -1116,7 +1126,7 @@ end
         max_cost = max(max_cost, cost)
         if effector isa SimulationModel.NBodyGravityModel
             has_nbody = true
-        elseif effector isa SimulationModel.AerodynamicCoefficientfM
+        elseif effector isa SimulationModel.AerodynamicCoefficientfM || effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
             has_aero = true
         elseif effector isa SimulationModel.GravitationalHarmonicsModel
             has_harmonics = true
@@ -1731,11 +1741,9 @@ end
 
     model_name = nameof(typeof(ephemerides_model))
     if model_name == :SpiceEphemeridesModel
-        start_epoch = SimulationModel.EphemeridesModels.from_utc(
-            SimulationModel.EphemeridesModels._initial_time_datetime(initial_time)
-        )
+        utc = SimulationModel.EphemeridesModels._initial_time_utc_string(initial_time)
         return lock(RuntimeServices.SPICE_LOCK) do
-            utc2et(SimulationModel.EphemeridesModels.to_utc(start_epoch))
+            utc2et(utc)
         end
     elseif model_name == :SimpleEphemeridesModel
         start_time = SimulationModel.EphemeridesModels._initial_time_datetime(initial_time)

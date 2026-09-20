@@ -515,3 +515,119 @@ end
         SimulationModel.SimpleEphemeridesModel(prime_meridian_at_reference_rad = 0.0))
     @test key_default != key_zero
 end
+
+# Keep this last: the earlier error-path checks deliberately have no lunar
+# orientation kernels loaded. Suite 09 already runs this file in its own process.
+@testset "Planet constructors preserve a compatible shared PCK pool" begin
+    lock(RuntimeServices.SPICE_LOCK) do
+        planets_owner = SimulationModel.Planets
+        reset_pool!() = (kclear(); planets_owner._reset_furnished_kernels!())
+        pck10 = joinpath(SPICE_PATH, "pck", "pck00010.tpc")
+        pck11 = joinpath(SPICE_PATH, "pck", "pck00011.tpc")
+        lsk = joinpath(SPICE_PATH, "lsk", "naif0012.tls")
+        try
+            # Independent old-Titan baseline, before loading any newer PCK.
+            reset_pool!()
+            furnsh(pck10)
+            furnsh(lsk)
+            titan_epochs = (utc2et("2004-10-26T15:30:04.608"),
+                            utc2et("2005-04-16T19:11:45.772"))
+            titan_frames = [pxform("J2000", "IAU_TITAN", et) for et in titan_epochs]
+            titan_radii = bodvrd("TITAN", "RADII") .* 1e3
+            moon_radii = bodvrd("MOON", "RADII") .* 1e3
+            furnsh(joinpath(SPICE_PATH, "spk", "satellites", "SPICELunaCurrentKernel.bpc"))
+            furnsh(joinpath(SPICE_PATH, "tf", "SPICELunaFrameKernel.tf"))
+            moon_epochs = (0.0, 86400.0)
+            moon_frames = Dict(frame => [pxform("J2000", frame, et) for et in moon_epochs]
+                               for frame in ("IAU_MOON", "MOON_PA_DE421"))
+
+            # Mars needs an internally consistent newer PCK. Loading 00010 after
+            # 00011 used to overwrite only part of its nutation/precession model.
+            reset_pool!()
+            furnsh(pck11)
+            furnsh(lsk)
+            mars_et = utc2et("2001-11-06T18:44:35.434")
+            mars_epochs = (mars_et - 180.0, mars_et, mars_et + 180.0)
+            mars_frames = [pxform("J2000", "IAU_MARS", et) for et in mars_epochs]
+
+            constructors = (mars=Mars, titan=Titan, moon=Moon)
+            for order in ((:mars, :titan, :moon), (:titan, :mars, :moon),
+                          (:moon, :titan, :mars))
+                @testset "Constructor order $order" begin
+                    reset_pool!()
+                    made = Dict{Symbol, Any}()
+                    for name in order
+                        made[name] = getproperty(constructors, name)("", SPICE_PATH)
+                        # Check immediately after every constructor. A later
+                        # constructor must not conceal a transient broken pool.
+                        if haskey(made, :mars)
+                            @test Mars("", SPICE_PATH) === made[:mars]
+                            for (et, expected) in zip(mars_epochs, mars_frames)
+                                @test pxform("J2000", "IAU_MARS", et) == expected
+                                @test SimulationModel.planet_frame_lpi(
+                                    made[:mars], et, SimulationModel.SpiceEphemeridesModel()
+                                ) == expected
+                            end
+                        end
+                        if haskey(made, :titan)
+                            @test Titan("", SPICE_PATH) === made[:titan]
+                            for (et, expected) in zip(titan_epochs, titan_frames)
+                                @test pxform("J2000", "IAU_TITAN", et) == expected
+                            end
+                        end
+                        if haskey(made, :moon)
+                            @test Moon("", SPICE_PATH) === made[:moon]
+                            for frame in ("IAU_MOON", "MOON_PA_DE421")
+                                for (et, expected) in zip(moon_epochs, moon_frames[frame])
+                                    @test pxform("J2000", frame, et) == expected
+                                end
+                            end
+                            for (et, expected) in zip(moon_epochs, moon_frames["MOON_PA_DE421"])
+                                @test SimulationModel.planet_frame_lpi(
+                                    made[:moon], et, SimulationModel.SpiceEphemeridesModel()
+                                ) == expected
+                            end
+                        end
+                    end
+                    @test made[:mars].μ == 0.4282837285418775e5 * 1e9
+                    @test made[:titan].Rp_e == titan_radii[1]
+                    @test made[:titan].Rp_p == titan_radii[3]
+                    @test made[:titan].Rp_m == sum(titan_radii) / 3.0
+                    @test made[:moon].Rp_e == moon_radii[1]
+                    @test made[:moon].Rp_p == moon_radii[3]
+                    @test abspath(pck11) in planets_owner._FURNISHED_KERNELS
+                    @test !(abspath(pck10) in planets_owner._FURNISHED_KERNELS)
+                    kernel_count = ktotal("ALL")
+                    for _ in 1:3, name in (:mars, :titan, :moon)
+                        @test getproperty(constructors, name)("", SPICE_PATH) === made[name]
+                    end
+                    @test ktotal("ALL") == kernel_count
+                end
+            end
+
+            # A 00010-only bundle must fail at the required PCK, before changing
+            # the pool or publishing a cached Titan instance.
+            mktempdir() do old_bundle
+                mkpath(joinpath(old_bundle, "pck"))
+                cp(pck10, joinpath(old_bundle, "pck", "pck00010.tpc"))
+                kernel_count = ktotal("ALL")
+                furnished = copy(planets_owner._FURNISHED_KERNELS)
+                err = try
+                    Titan("", old_bundle)
+                    nothing
+                catch failure
+                    failure
+                end
+                @test err isa ArgumentError
+                @test occursin("Required SPICE kernel not found", sprint(showerror, err))
+                @test occursin(joinpath(old_bundle, "pck", "pck00011.tpc"), sprint(showerror, err))
+                @test !haskey(planets_owner._TITAN_CACHE, ("", old_bundle))
+                @test ktotal("ALL") == kernel_count
+                @test planets_owner._FURNISHED_KERNELS == furnished
+            end
+        finally
+            reset_pool!()
+            Earth("", SPICE_PATH)
+        end
+    end
+end

@@ -1,0 +1,35 @@
+artifact_name = "odyssey_p20_scenario_v1_1_0_0"
+id = "odyssey_p20_scenario_v1"
+kernel_order = ["naif0012.tls", "pck00011.tpc", "de405.bsp", "m01_ab_v2.bsp"]
+version = "1.0.0"
+
+[[files]]
+bytes = 5257
+name = "naif0012.tls"
+path = "kernels/naif0012.tls"
+sha256 = "678e32bdb5a744117a467cd9601cd6b373f0e9bc9bbde1371d5eee39600a039b"
+source = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls"
+[[files]]
+bytes = 131226
+name = "pck00011.tpc"
+path = "kernels/pck00011.tpc"
+sha256 = "3dff7b1dbeceaa01f25467767d3fa25816051c85d162d1edf04acb310ee28bb1"
+source = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc"
+[[files]]
+bytes = 10898432
+name = "de405.bsp"
+path = "kernels/de405.bsp"
+sha256 = "30a7113793ee5b6bf1e5546c6dfc21d9682d9ffabfe9b17b4bab27ba2ac75c89"
+source = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/a_old_versions/de405.bsp"
+[[files]]
+bytes = 165260288
+name = "m01_ab_v2.bsp"
+path = "kernels/m01_ab_v2.bsp"
+sha256 = "8e34e9cb08f0e6446435f0594f884a0d5c5c7a72d19c1273b81587b6dcf9a7a5"
+source = "https://naif.jpl.nasa.gov/pub/naif/M01/kernels/spk/m01_ab_v2.bsp"
+[[files]]
+bytes = 53621
+name = "Mars50c.csv"
+path = "gravity/Mars50c.csv"
+sha256 = "2dc04ee568486e80865325c453744c9819d2135e474b26653aa17e1db3847089"
+source = "https://raw.githubusercontent.com/Space-FALCON-Lab/SpaceAGORA.jl/62d56d8b2cf440922ae9f013deb9d8a77b3aeed4/data/Gravity_harmonics_data/Mars50c.csv"

@@ -22,12 +22,26 @@ Cross-platform command conventions used below:
 Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs:
 
 ```text
-git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate()"
 ```
 
-The `--filter=blob:none` keeps the clone to the current tree: the repository history carries large data blobs that no longer exist in `main`, and a plain clone downloads all of them.
+On Windows the variable is set in a separate statement. PowerShell:
+
+```text
+$env:GIT_LFS_SKIP_SMUDGE = "1"
+git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+```
+
+Command Prompt:
+
+```text
+set GIT_LFS_SKIP_SMUDGE=1
+git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
+```
+
+`GIT_LFS_SKIP_SMUDGE=1` leaves the seven GRAM surrogate grids under `data/GRAM_surrogate/` as small Git LFS pointers instead of downloading about 2.5 GB that nothing on the quickstart path reads (a benchmark study is their only consumer; `git lfs pull --include "data/GRAM_surrogate/*"` fetches them later if you need that study). The `--filter=blob:none` keeps the clone to the current tree: the repository history carries large data blobs that no longer exist in `main`, and a plain clone downloads all of them.
 
 That gives you the baseline open-data onboarding path immediately. You do not
 need GRAM or SPICE to run the first quickstart example, and there is no bootstrap step beyond instantiating the committed root environment.
@@ -42,6 +56,24 @@ julia --project=. src/cli/main.jl assets setup-open
 `assets check` reports which optional local assets are present.
 `assets setup-open` summarizes the baseline repo-only path and which licensed
 external assets remain user-provided.
+
+## Guidance and control with a surrogate atmosphere
+
+The bounded Mars Odyssey P20 preset supplies a reproducible frozen atmosphere
+without native GRAM. From a normal clone, install the pinned public packages and
+run the active solar-panel control comparison:
+
+```sh
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
+```
+
+Only the selected grid and public scenario assets download on first use. Their
+checksums are verified before simulation. The example compares 90-degree and
+30-degree panel-angle limits and saves the actual commands, trajectory, heating
+and atmosphere provenance. See the [Odyssey walkthrough](docs/src/tutorials/odyssey_surrogate.md)
+for the supported domain, frozen epoch, offline use and changing the controller.
+Native GRAM remains an optional advanced backend for atmosphere studies.
 
 ## Asset model
 
@@ -82,8 +114,9 @@ it with:
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If the build metadata came from a different machine or checkout path, force a
-clean rebuild with:
+The command checks whether the library file exists; it does not check its
+architecture or test whether it can load. If you copied an existing build from
+another machine, force a clean rebuild with:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean

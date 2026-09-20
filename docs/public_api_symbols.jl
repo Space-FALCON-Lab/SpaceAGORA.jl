@@ -34,17 +34,81 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Mesh Aerodynamics",
+        items = [
+            (owner = :SpaceAGORA, symbol = :MeshAeroPanels, rendered = "SpaceAGORA.MeshAeroPanels"),
+            (owner = :SpaceAGORA, symbol = :MeshAeroSurrogate, rendered = "SpaceAGORA.MeshAeroSurrogate"),
+            (owner = :SpaceAGORA, symbol = :AerodynamicCoefficientMeshSurrogate, rendered = "SpaceAGORA.AerodynamicCoefficientMeshSurrogate"),
+            (owner = :SpaceAGORA, symbol = :MESH_AERO_MAX_DEGREE, rendered = "SpaceAGORA.MESH_AERO_MAX_DEGREE"),
+            (owner = :SpaceAGORA, symbol = :mesh_aero_panels, rendered = "SpaceAGORA.mesh_aero_panels"),
+            (owner = :SpaceAGORA, symbol = :panel_aero_coefficients, rendered = "SpaceAGORA.panel_aero_coefficients"),
+            (owner = :SpaceAGORA, symbol = :panel_aero_coefficients_split, rendered = "SpaceAGORA.panel_aero_coefficients_split"),
+            (owner = :SpaceAGORA, symbol = :panel_shadow_mask, rendered = "SpaceAGORA.panel_shadow_mask"),
+            (owner = :SpaceAGORA, symbol = :panel_projected_area, rendered = "SpaceAGORA.panel_projected_area"),
+            (owner = :SpaceAGORA, symbol = :fit_mesh_aero_surrogate, rendered = "SpaceAGORA.fit_mesh_aero_surrogate"),
+            (owner = :SpaceAGORA, symbol = :mesh_aero_coefficients, rendered = "SpaceAGORA.mesh_aero_coefficients"),
+            (owner = :SpaceAGORA, symbol = :write_mesh_aero_surrogate, rendered = "SpaceAGORA.write_mesh_aero_surrogate"),
+            (owner = :SpaceAGORA, symbol = :read_mesh_aero_surrogate, rendered = "SpaceAGORA.read_mesh_aero_surrogate")
+        ]
+    ),
+    (
         title = "No-GRAM and Baseline Models",
         items = [
             (owner = :SpaceAGORA, symbol = :NoAtmosphereModel, rendered = "SpaceAGORA.NoAtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :ExponentialAtmosphereModel, rendered = "SpaceAGORA.ExponentialAtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :PiecewiseExponentialAtmosphereModel, rendered = "SpaceAGORA.PiecewiseExponentialAtmosphereModel"),
+            (owner = :SpaceAGORA, symbol = :GRAMGridAtmosphereModel, rendered = "SpaceAGORA.GRAMGridAtmosphereModel"),
+            (owner = :SpaceAGORA, symbol = :SurrogatePresetResolution, rendered = "SpaceAGORA.SurrogatePresetResolution"),
+            (owner = :SpaceAGORA, symbol = :available_surrogate_presets, rendered = "SpaceAGORA.available_surrogate_presets"),
+            (owner = :SpaceAGORA, symbol = :resolve_surrogate_preset, rendered = "SpaceAGORA.resolve_surrogate_preset"),
+            (owner = :SpaceAGORA, symbol = :surrogate_preset_model, rendered = "SpaceAGORA.surrogate_preset_model"),
+            (owner = :SpaceAGORA, symbol = :atmosphere_provenance, rendered = "SpaceAGORA.atmosphere_provenance"),
+            (owner = :SpaceAGORA, symbol = :odyssey_surrogate_assets, rendered = "SpaceAGORA.odyssey_surrogate_assets"),
             (owner = :SpaceAGORA, symbol = :NRLMSISE00AtmosphereModel, rendered = "SpaceAGORA.NRLMSISE00AtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :init_nrlmsise_space_indices!, rendered = "SpaceAGORA.init_nrlmsise_space_indices!"),
             (owner = :SpaceAGORA, symbol = :SimpleEphemeridesModel, rendered = "SpaceAGORA.SimpleEphemeridesModel"),
             (owner = :SpaceAGORA, symbol = :make_no_gram_planet, rendered = "SpaceAGORA.make_no_gram_planet"),
             (owner = :SpaceAGORA, symbol = :make_no_gram_density_model, rendered = "SpaceAGORA.make_no_gram_density_model"),
             (owner = :SpaceAGORA, symbol = :make_no_gram_environment, rendered = "SpaceAGORA.make_no_gram_environment")
+        ]
+    ),
+    (
+        title = "Plume Interaction",
+        items = [
+            (owner = :SpaceAGORA, symbol = :PlumeSurfaceConfig, rendered = "SpaceAGORA.PlumeSurfaceConfig"),
+            (owner = :SpaceAGORA, symbol = :PlumeSurfaceInteractionModel, rendered = "SpaceAGORA.PlumeSurfaceInteractionModel"),
+            (owner = :SpaceAGORA, symbol = :PlumeSurfaceState, rendered = "SpaceAGORA.PlumeSurfaceState"),
+            (owner = :SpaceAGORA, symbol = :plume_surface_footprint, rendered = "SpaceAGORA.plume_surface_footprint"),
+            (owner = :SpaceAGORA, symbol = :plume_erosion_onset_height, rendered = "SpaceAGORA.plume_erosion_onset_height"),
+            (owner = :SpaceAGORA, symbol = :plume_ground_effect_force, rendered = "SpaceAGORA.plume_ground_effect_force"),
+            (owner = :SpaceAGORA, symbol = :plume_quantities, rendered = "SpaceAGORA.plume_quantities")
+        ]
+    ),
+    (
+        title = "Lunar Landing",
+        items = [
+            (owner = :SpaceAGORA, symbol = :DescentPhaseTargets, rendered = "SpaceAGORA.DescentPhaseTargets"),
+            (owner = :SpaceAGORA, symbol = :apollo11_descent_targets, rendered = "SpaceAGORA.apollo11_descent_targets"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentConfig, rendered = "SpaceAGORA.ApolloDescentConfig"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentState, rendered = "SpaceAGORA.ApolloDescentState"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentGuidanceModel, rendered = "SpaceAGORA.ApolloDescentGuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentControlConfig, rendered = "SpaceAGORA.ApolloDescentControlConfig"),
+            (owner = :SpaceAGORA, symbol = :ApolloDescentControlModel, rendered = "SpaceAGORA.ApolloDescentControlModel"),
+            (owner = :SpaceAGORA, symbol = :descent_attitude_command, rendered = "SpaceAGORA.descent_attitude_command")
+        ]
+    ),
+    (
+        title = "Terrain Queries",
+        items = [
+            (owner = :SpaceAGORA, symbol = :AbstractTerrainModel, rendered = "SpaceAGORA.AbstractTerrainModel"),
+            (owner = :SpaceAGORA, symbol = :NoTerrainModel, rendered = "SpaceAGORA.NoTerrainModel"),
+            (owner = :SpaceAGORA, symbol = :DEMGrid, rendered = "SpaceAGORA.DEMGrid"),
+            (owner = :SpaceAGORA, symbol = :DEMTerrainModel, rendered = "SpaceAGORA.DEMTerrainModel"),
+            (owner = :SpaceAGORA, symbol = :terrain_height, rendered = "SpaceAGORA.terrain_height"),
+            (owner = :SpaceAGORA, symbol = :terrain_radius, rendered = "SpaceAGORA.terrain_radius"),
+            (owner = :SpaceAGORA, symbol = :load_dem_grid, rendered = "SpaceAGORA.load_dem_grid"),
+            (owner = :SpaceAGORA, symbol = :load_site_terrain, rendered = "SpaceAGORA.load_site_terrain"),
+            (owner = :SpaceAGORA, symbol = :dem_grid_covers, rendered = "SpaceAGORA.dem_grid_covers")
         ]
     ),
     (
@@ -80,9 +144,11 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :gravity_backbone_kick_acceleration_ii, rendered = "SpaceAGORA.gravity_backbone_kick_acceleration_ii"),
             (owner = :SpaceAGORA, symbol = :getDensity, rendered = "SpaceAGORA.getDensity"),
             (owner = :SpaceAGORA, symbol = :getDensityBatch!, rendered = "SpaceAGORA.getDensityBatch!"),
+            (owner = :SpaceAGORA, symbol = :with_density_model_epoch, rendered = "SpaceAGORA.with_density_model_epoch"),
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
             (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
-            (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate")
+            (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
+            (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels")
         ]
     ),
     (
@@ -179,6 +245,42 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Visualization Scene",
+        items = [
+            (owner = :SpaceAGORA, symbol = :VisualizationScene, rendered = "SpaceAGORA.VisualizationScene"),
+            (owner = :SpaceAGORA, symbol = :PlanetSpec, rendered = "SpaceAGORA.PlanetSpec"),
+            (owner = :SpaceAGORA, symbol = :SpacecraftGeometry, rendered = "SpaceAGORA.SpacecraftGeometry"),
+            (owner = :SpaceAGORA, symbol = :LinkBox, rendered = "SpaceAGORA.LinkBox"),
+            (owner = :SpaceAGORA, symbol = :AtmosphereSpec, rendered = "SpaceAGORA.AtmosphereSpec"),
+            (owner = :SpaceAGORA, symbol = :atmosphere_spec, rendered = "SpaceAGORA.atmosphere_spec"),
+            (owner = :SpaceAGORA, symbol = :ArmGeometry, rendered = "SpaceAGORA.ArmGeometry"),
+            (owner = :SpaceAGORA, symbol = :arm_geometry, rendered = "SpaceAGORA.arm_geometry"),
+            (owner = :SpaceAGORA, symbol = :load_model_triangles, rendered = "SpaceAGORA.load_model_triangles"),
+            (owner = :SpaceAGORA, symbol = :model_bounding_box, rendered = "SpaceAGORA.model_bounding_box"),
+            (owner = :SpaceAGORA, symbol = :sample_model_pointcloud, rendered = "SpaceAGORA.sample_model_pointcloud"),
+            (owner = :SpaceAGORA, symbol = :articulate_triangles, rendered = "SpaceAGORA.articulate_triangles"),
+            (owner = :SpaceAGORA, symbol = :articulation_payload, rendered = "SpaceAGORA.articulation_payload"),
+            (owner = :SpaceAGORA, symbol = :spacecraft_geometry, rendered = "SpaceAGORA.spacecraft_geometry"),
+            (owner = :SpaceAGORA, symbol = :planet_spec, rendered = "SpaceAGORA.planet_spec"),
+            (owner = :SpaceAGORA, symbol = :planet_rotation_table, rendered = "SpaceAGORA.planet_rotation_table"),
+            (owner = :SpaceAGORA, symbol = :build_visualization_scene, rendered = "SpaceAGORA.build_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :visualization_scene_path, rendered = "SpaceAGORA.visualization_scene_path"),
+            (owner = :SpaceAGORA, symbol = :write_visualization_scene, rendered = "SpaceAGORA.write_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :read_visualization_scene, rendered = "SpaceAGORA.read_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :velocity_aligned_quaternion, rendered = "SpaceAGORA.velocity_aligned_quaternion"),
+            (owner = :SpaceAGORA, symbol = :visualization_frame_budget, rendered = "SpaceAGORA.visualization_frame_budget"),
+            (owner = :SpaceAGORA, symbol = :export_visualization, rendered = "SpaceAGORA.export_visualization"),
+            (owner = :SpaceAGORA, symbol = :with_visualization_scene, rendered = "SpaceAGORA.with_visualization_scene"),
+            (owner = :SpaceAGORA, symbol = :write_viewer_dev_payload, rendered = "SpaceAGORA.write_viewer_dev_payload"),
+            (owner = :SpaceAGORA, symbol = :EnsembleSample, rendered = "SpaceAGORA.EnsembleSample"),
+            (owner = :SpaceAGORA, symbol = :sample_results_directory, rendered = "SpaceAGORA.sample_results_directory"),
+            (owner = :SpaceAGORA, symbol = :with_results_directory, rendered = "SpaceAGORA.with_results_directory"),
+            (owner = :SpaceAGORA, symbol = :write_ensemble_manifest, rendered = "SpaceAGORA.write_ensemble_manifest"),
+            (owner = :SpaceAGORA, symbol = :export_ensemble_visualization, rendered = "SpaceAGORA.export_ensemble_visualization"),
+            (owner = :SimulationCampaigns, symbol = :run_monte_carlo_visualization, rendered = "SpaceAGORA.run_monte_carlo_visualization")
+        ]
+    ),
+    (
         title = "Parallel Profiles and Routing",
         items = [
             (owner = :ParallelProfiles, symbol = :ParallelProfile, rendered = "SpaceAGORA.ParallelProfile"),
@@ -262,13 +364,15 @@ function public_api_specs(spaceagora::Module)
     return specs
 end
 
-function render_public_api_markdown(spaceagora::Module)::String
+function render_public_api_markdown(spaceagora::Module;
+                                    sections=PUBLIC_API_SECTIONS,
+                                    title::AbstractString="Public API")::String
     io = IOBuffer()
-    println(io, "# Public API")
+    println(io, "# $(title)")
     println(io)
     println(io, "This page documents the stable exported interface available from `SpaceAGORA`.")
     println(io)
-    for section in PUBLIC_API_SECTIONS
+    for section in sections
         println(io, "## $(section.title)")
         println(io)
         println(io, "```@docs")

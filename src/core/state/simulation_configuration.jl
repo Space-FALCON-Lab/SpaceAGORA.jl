@@ -6,12 +6,15 @@ module SimConfig
     using ..EphemeridesModels: SpiceEphemeridesModel
     using ..Planets: Earth
 
+    ## 1. Mission Type (Duration, Orbits)
+    # 1.1. Definition
     @enum MissionType::UInt8 begin
         MissionTime = 0x01
         MissionOrbits = 0x02
     end
 
-    const _deprecated_mission_type_input_warned = Ref(false)
+    # 1.2. Warn when mission_type is passed as a String or Symbol instead of the MissionType enum.
+    const _deprecated_mission_type_input_warned = Ref(false) # Tracks whether the deprecation warning for mission_type input has been issued.
     @inline _warn_deprecated_config_enabled() = get(ENV, "SPACEAGORA_WARN_DEPRECATED_CONFIG", "1") == "1"
     @inline function _warn_deprecated_mission_type_input!(mission_type)
         if !_warn_deprecated_config_enabled() || _deprecated_mission_type_input_warned[]
@@ -22,15 +25,16 @@ module SimConfig
         return nothing
     end
 
-    @inline function _parse_mission_type(mission_type::MissionType)::MissionType
+    # 1.3. Convert different input types (String, Symbol) to the MissionType enum.
+    @inline function _parse_mission_type(mission_type::MissionType)::MissionType # Directly returns the input if it's already a MissionType.
         return mission_type
     end
 
-    @inline function _parse_mission_type(mission_type::Symbol)::MissionType
+    @inline function _parse_mission_type(mission_type::Symbol)::MissionType # Converts a Symbol to a MissionType by first converting it to a String.
         return _parse_mission_type(String(mission_type))
     end
 
-    @inline function _parse_mission_type(mission_type::AbstractString)::MissionType
+    @inline function _parse_mission_type(mission_type::AbstractString)::MissionType # Parses a string to determine the corresponding MissionType.
         key = lowercase(strip(mission_type))
         if key == "time"
             _warn_deprecated_mission_type_input!(mission_type)
@@ -42,7 +46,7 @@ module SimConfig
         throw(ArgumentError("Invalid mission_type=$(repr(mission_type)). Valid mission types: \"Time\", \"Orbits\"."))
     end
 
-    # Backward-compatible comparisons for downstream code still using string/symbol checks.
+    # 1.4. Backward-compatible comparisons for downstream code still using string/symbol checks.
     @inline function Base.:(==)(lhs::MissionType, rhs::AbstractString)
         try
             return lhs == _parse_mission_type(rhs)
@@ -54,6 +58,8 @@ module SimConfig
     @inline Base.:(==)(lhs::MissionType, rhs::Symbol) = lhs == String(rhs)
     @inline Base.:(==)(lhs::Symbol, rhs::MissionType) = rhs == lhs
 
+    ## 2. Simulation Configuration
+    # 2.1. Solver Configuration
     """
         SolverConfig
 
@@ -84,6 +90,7 @@ module SimConfig
         auto_stiff_switch_max::Int = 50
     end
 
+    # 2.2. Initial Time
     @kwdef struct InitialTime
         year::Int32 = 2000
         month::Int16 = 1
@@ -93,6 +100,7 @@ module SimConfig
         second::Float32 = 0.0
     end # struct InitialTime
     
+    # 2.3. Integration Tolerances
     @kwdef struct IntegrationTolerances
         reltol::Float64 = 1e-9
         abstol::Float64 = 1e-11
@@ -113,6 +121,7 @@ module SimConfig
         dt_max_atmosphere::Float64 = 1.0
     end # struct IntegrationTolerances
 
+    # 2.4. File Paths
     @kwdef struct FilePaths
         results::String = "Results" # Directory to save results
         GRAM::String = "data/GRAMSuite.jl/GRAM Suite 2.0" # Directory for GRAM atmospheric model data
@@ -121,6 +130,7 @@ module SimConfig
         gravity_harmonics::String = "data/Gravity_harmonics_data" # Directory for gravity harmonics data (move to planet?)
     end # struct FilePaths
 
+    # 2.5. Simulation Settings
     @kwdef struct SimulationSettings
         # Misc simulation parameters
         results::Bool = true # Whether to save simulation results to a file
@@ -130,12 +140,15 @@ module SimConfig
         generate_filenames::Bool = false # Whether to generate filenames with specifics of simulation parameters
         normalize::Bool = false # Legacy compatibility flag; typed run_simulation propagates SI-state directly
         save_csv::Bool = true # Whether to save results in CSV format in addition to feather
+        save_visualization_scene::Bool = false # Write the viewer scene sidecar and the link_pose save field (off by default; see SceneVisualization)
         checkpoint_enabled::Bool = false # Periodically checkpoint state for restart safety
         checkpoint_interval_s::Float64 = 300.0 # Checkpoint cadence in seconds of simulated time
         checkpoint_directory::String = "" # Empty => use results_directory/checkpoints
         resume_from_checkpoint::Bool = false # Resume run from latest checkpoint if present
     end # struct SimulationSettings
 
+    # 2.6. Mission Configuration
+    # i) Struct
     struct MissionConfiguration
         # Mission setup
         mission_type::MissionType # Indicator of the termination condition type (Time, number of orbits, etc.)
@@ -146,6 +159,7 @@ module SimConfig
         num_steps_to_save::Int # Number of time steps to store in memory during the simulation before writing to a file
         data_rate::Float64 # Fixed data output rate in seconds, used for saveat in solve
 
+        # ii) Inner constructor with data type conversion and validation
         function MissionConfiguration(
             mission_type::MissionType,
             keplerian::Bool,
@@ -171,6 +185,7 @@ module SimConfig
         end
     end # struct MissionConfiguration
 
+    # ii) Outer constructor with default values and type parsing
     function MissionConfiguration(;
         mission_type::Union{MissionType, AbstractString, Symbol}=MissionTime,
         keplerian::Bool=true,
@@ -179,7 +194,7 @@ module SimConfig
         orientation_sim::Bool=false,
         num_steps_to_save::Integer=1000,
         data_rate::Float64=10.0
-    )
+    ) # Constructor
         return MissionConfiguration(
             _parse_mission_type(mission_type),
             keplerian,
@@ -191,7 +206,9 @@ module SimConfig
         )
     end
 
+    # 2.7. Environment Model
     # TODO: Convert all the strings to abstract types to avoid needing if-else statements in complete passage and other functions. This will also make it easier to add new models in the future without needing to change the main code.
+    # i) Struct
     @kwdef struct EnvironmentModel{P <: AbstractPlanet, D <: AbstractDensityModel, E <: AbstractEphemeridesModel, T <: AbstractThermalModel}
         # Physical environment model
         planet::P # Planet for which to run the simulation (used for gravity model, atmospheric model, etc.)
@@ -204,6 +221,7 @@ module SimConfig
         wind::Bool = true # Whether to include wind in the simulation for atmospheric effects
         thermal_model::T # Thermal model to use (Maxwellian heat transfer, Convective and Radiative)
 
+        # ii) Inner constructor with data type conversion and validation
         function EnvironmentModel(
             planet::P,
             EI::Real,
@@ -232,6 +250,7 @@ module SimConfig
         end
     end # struct EnvironmentModel
 
+    # 2.8. Simulation Configuration
     @kwdef struct SimulationConfiguration{P <: AbstractPlanet, D <: AbstractDensityModel, E <: AbstractEphemeridesModel, T <: AbstractThermalModel, DM <: Tuple}
         file_paths::FilePaths = FilePaths() # File paths for data and results
         simulation_settings::SimulationSettings = SimulationSettings() # General simulation settings

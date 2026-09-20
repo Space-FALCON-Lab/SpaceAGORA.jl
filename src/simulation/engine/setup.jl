@@ -1456,6 +1456,39 @@ end
     end
 
     # Few satellites, many threads: each satellite gets its own effector-reduce.
+    #
+    # This is the one auto route that keeps a threaded effector_decision, and
+    # `_satellite_batch_saturates_pool` above is not a sufficient guard for it.
+    # That predicate asks whether the satellite count reaches the budget; it
+    # cannot see that the budget is the whole pool only because nothing is
+    # splitting it. With no outer split advertised, a constellation below the
+    # budget therefore lands here with the full pool, and the RHS dispatch then
+    # runs a Polyester `@batch` over the satellites (dynamics_rhs.jl, gated on
+    # `plan.mode != :serial` and `_rhs_batch_parallel_enabled`) while every
+    # satellite inside it spawns its own effector team -- two nested splits of
+    # one pool, per satellite, on every RHS call, with
+    # `_accumulate_dynamic_effectors!` allocating a fresh `contributions` vector
+    # for each of them.
+    #
+    # The condition that matters is whether the satellite axis is already
+    # threaded, not whether an outer campaign declared itself: nesting is
+    # nesting either way. Where the batch does not run -- a constellation under
+    # `SPACEAGORA_RHS_BATCH_THREAD_THRESHOLD`, or a one-wide batch -- the
+    # effector team is the only parallelism there is and is left alone.
+    # Measured on 8 spacecraft at 12 threads with the batch forced on and the
+    # heavy-work gate lifted (the only way to reach the nested path on that
+    # shape), same process, alternating: 127.1 us and 341904 B per RHS call
+    # nested against 98.9 us and 227936 B with the effectors serial.
+    if _rhs_batch_parallel_enabled(env, num_sats) && _rhs_batch_workers(p) > 1
+        return (
+            mode=:per_satellite_effector_reduce,
+            allotment=1,
+            scheduler=:auto,
+            dominant_axis=:per_satellite_inner_effector,
+            policy_applied=effector_decision.policy_applied,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
+    end
     return (
         mode=:per_satellite_effector_reduce,
         allotment=effector_decision.allotment,

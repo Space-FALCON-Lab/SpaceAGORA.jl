@@ -97,6 +97,39 @@ end
     )
 end
 
+# Per-effector result slots for the threaded effector reduce.
+#
+# The two call sites below used to build
+# `Vector{Tuple{SVector{3,Float64},SVector{3,Float64}}}(undef, n_effectors)`
+# fresh on every invocation -- once per satellite per RHS call, on a path that
+# fires for every stage of every step. The slot count is a property of the
+# effector tuple's *type*, so it is known at compile time and the storage can
+# live on the stack instead of the heap: nothing here outlives the call, so no
+# workspace has to be threaded through `shared_buffers` and no buffer is shared
+# between satellites, samples or solves.
+#
+# Do not read more into this than it is worth. The vector header is not where
+# this path's allocation lives: measured on 8 spacecraft with three effectors
+# at 12 threads, the threaded reduce costs 340928 B per RHS call against a
+# serial 216713 B, and the slot change accounts for 384 B of that 124215 B gap
+# (48 B per satellite, 0.3%). The remaining 99.7% is the per-call task spawn
+# inside `threaded_collect!`, which is not a buffer at all. Routing the same
+# call through the persistent worker pool instead was measured worse on both
+# axes -- 605377 B and 782.7 us per call against 340928 B and 444.3 us -- the
+# channel round trip costing more than the spawn it replaces for three items.
+# What actually removes the cost is not taking the path: see the nesting guard
+# at the `:per_satellite_effector_reduce` fallthrough in setup.jl.
+#
+# The collect-then-sum contract is unchanged: workers only write their own
+# index, the caller sums in effector order on one thread, and the result stays
+# bit-identical to the serial chain.
+@inline function _effector_contribution_slots(dynamic_effectors::Tuple)
+    return MVector{
+        length(dynamic_effectors),
+        Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    }(undef)
+end
+
 @inline function _accumulate_dynamic_effectors!(
     forces::MVector{3, Float64},
     torques::MVector{3, Float64},
@@ -139,7 +172,7 @@ end
     # count, the scheduler and the runtime policy decision therefore change
     # timing only, never bits.
     if effector_decision.use_threads
-        contributions = Vector{Tuple{SVector{3, Float64}, SVector{3, Float64}}}(undef, n_effectors)
+        contributions = _effector_contribution_slots(dynamic_effectors)
         SimulationModel.ParallelPolicy.threaded_collect!(contributions, n_effectors, effector_decision.allotment) do eff_idx
             effector = dynamic_effectors[eff_idx]
             force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
@@ -202,7 +235,7 @@ end
     if effector_decision.use_threads && selected_count > 1
         n_effectors = length(dynamic_effectors)
         zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
-        contributions = Vector{Tuple{SVector{3, Float64}, SVector{3, Float64}}}(undef, n_effectors)
+        contributions = _effector_contribution_slots(dynamic_effectors)
         SimulationModel.ParallelPolicy.threaded_collect!(contributions, n_effectors, effector_decision.allotment) do eff_idx
             effector = dynamic_effectors[eff_idx]
             _effector_in_partition(effector, partition) || return (zero3, zero3)

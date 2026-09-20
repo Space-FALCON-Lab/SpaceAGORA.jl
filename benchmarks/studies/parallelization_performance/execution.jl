@@ -655,6 +655,13 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         success=total_success,
         retcode=final_retcode,
         error_message=final_error_message,
+        # The slowest sample and its share of the campaign. @timed's counters are
+        # process-global, so without this the aggregate row cannot say whether
+        # one sample hung or every sample ran slow -- the two explanations for
+        # a 100x campaign that need opposite fixes.
+        max_sample_wall_time_s=maximum(Float64(r.wall_time_s) for r in sample_results; init=0.0),
+        max_sample_index=(isempty(sample_results) ? 0 :
+            argmax([Float64(r.wall_time_s) for r in sample_results])),
         wall_time_s=batch.batch_wall_time_s,
         sample_wall_time_sum_s=sample_wall_sum,
         mean_sample_wall_time_s=sample_wall_sum / max(1, samples),

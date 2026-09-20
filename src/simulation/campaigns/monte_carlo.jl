@@ -318,8 +318,8 @@ end
     outer_split_env_pairs(worker_count) -> Vector{Pair{String,String}}
 
 Environment a threaded outer split must run its samples under: the split is
-declared active, and -- unless the caller set one -- each sample's inner
-thread budget is its share of the pool, `fld(Threads.nthreads(), worker_count)`.
+declared active, and each sample's inner thread budget is at most its share of
+the pool, `fld(Threads.nthreads(), worker_count)`.
 
 Without the budget a sample resolves `effective_inner_thread_budget()` to the
 whole pool. The shipped inner policy (R4/R5) survives that because its AIMD
@@ -331,15 +331,63 @@ the share advertised, 4.56 s for R5 under the same overstatement.
 
 The adaptive campaign runner already did this for the `threads=:auto` path
 (adaptive_routing.jl); `run_monte_carlo(f, seeds; threads=N)` did not, so the
-integer-threads API paid the full cost. An explicit user budget always wins.
+integer-threads API paid the full cost.
+
+An inherited budget is a CEILING the split may lower, not one it must honor.
+
+It used to outrank the share outright -- "an explicit user budget always
+wins" -- and that is the wrong way round whenever the inherited value is the
+wider of the two. Whoever set it did not know how many samples would run
+beside each other; this function is the only place that does. Honoring a
+whole-pool budget under a W-wide split hands every one of W concurrent
+samples the whole pool, which is the overstatement the measurement above
+prices, and nothing downstream can detect it: the width and the route are
+both still correct, so the campaign looks healthy from the outside.
+
+Measured on this repo's 24-logical-core workstation, mcgrid_8sat_16mc at
+32 threads, 16 samples over a warm store, R6, idle box: 1.57 s per campaign
+and 43.9 GB summed sample allocation with the share declared, against 2.50 s
+and 69.9 GB with an inherited `SPACEAGORA_INNER_THREAD_BUDGET=32` honored --
+1.59x on both. `policy_threads_enabled_total` separates the two regimes
+cleanly (0 against 874), which is what makes the overstatement identifiable
+in a row after the fact.
+
+A narrower explicit budget still wins, since it can only reduce concurrency.
 """
 function outer_split_env_pairs(worker_count::Int)::Vector{Pair{String, String}}
     pairs = Pair{String, String}["SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"]
-    if isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))
-        share = max(1, fld(Base.Threads.nthreads(), max(1, worker_count)))
-        push!(pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(share))
-    end
+    share = max(1, fld(Base.Threads.nthreads(), max(1, worker_count)))
+    budget = capped_inner_thread_budget(share)
+    budget === nothing || push!(pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(budget))
     return pairs
+end
+
+"""
+    capped_inner_thread_budget(share) -> Union{Nothing, Int}
+
+The per-sample inner thread budget an outer split of this `share` must
+declare, or `nothing` when the environment already says something the split
+is happy with.
+
+`nothing` means "leave `SPACEAGORA_INNER_THREAD_BUDGET` alone": either the
+inherited value is already at or below `share`, or it is unparseable, in
+which case the split declines to rewrite a setting it cannot read rather than
+silently discarding it. Anything else is the value to declare -- `share` when
+nothing was inherited, and `share` again when the inherited budget is wider
+than the split can afford. See `outer_split_env_pairs` for why a wider
+inherited budget does not win.
+"""
+function capped_inner_thread_budget(share::Int)::Union{Nothing, Int}
+    floor_share = max(1, share)
+    raw = strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", ""))
+    isempty(raw) && return floor_share
+    inherited = tryparse(Int, raw)
+    inherited === nothing && return nothing
+    # A non-positive inherited budget is how the policy layer spells "the whole
+    # pool" (effective_inner_thread_budget), so it is the widest value there is
+    # and the split must cap it.
+    inherited <= 0 && return floor_share
+    return inherited > floor_share ? floor_share : nothing
 end
 
 """

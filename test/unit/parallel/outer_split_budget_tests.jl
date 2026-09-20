@@ -21,9 +21,11 @@ const SCamp = SpaceAGORA.SimulationCampaigns
         # The share is never zero, however wide the split.
         @test parse(Int, Dict(SCamp.outer_split_env_pairs(10_000))["SPACEAGORA_INNER_THREAD_BUDGET"]) == 1
     end
-    # An explicit user budget always wins: the split declares itself active
-    # but does not overwrite what the caller asked for.
-    withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "3") do
+    # An explicit user budget wins only where it is the NARROWER of the two:
+    # the split may lower an inherited budget but never raise itself to it.
+    # See outer_split_budget_cap_tests.jl for the regression this guards.
+    narrow = max(1, fld(n, 8))
+    withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(narrow)) do
         pairs = Dict(SCamp.outer_split_env_pairs(8))
         @test pairs["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "1"
         @test !haskey(pairs, "SPACEAGORA_INNER_THREAD_BUDGET")

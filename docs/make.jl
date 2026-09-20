@@ -13,6 +13,7 @@ const API_REFERENCE_PAGES = (
     (section="Terrain Queries", title="Terrain API", file="terrain_api.md"),
     (section="Mesh Aerodynamics", title="Mesh Aerodynamics API", file="mesh_aerodynamics_api.md"),
     (section="Visualization Scene", title="Visualization API", file="visualization_api.md"),
+    (section="Lunar Landing", title="Lunar Landing API", file="lunar_landing_api.md"),
 )
 const GENERATED_CONTRACTS_ROOT = joinpath(GENERATED_SRC, "contracts")
 const BUILD_DIR = joinpath(@__DIR__, "build")
@@ -155,6 +156,7 @@ makedocs(
             "Atmosphere Models" => "user/atmosphere_models.md",
             "Odyssey Surrogate Control Exercise" => "tutorials/odyssey_surrogate.md",
             "Plume Interaction" => "user/plume_interaction.md",
+            "Lunar Landing" => "user/lunar_landing.md",
             "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
             "Solver Configuration" => "user/solver_configuration.md",
             "Simulation Outputs" => "user/outputs.md",
@@ -176,6 +178,7 @@ makedocs(
             "Terrain API" => "generated/terrain_api.md",
             "Mesh Aerodynamics API" => "generated/mesh_aerodynamics_api.md",
             "Visualization API" => "generated/visualization_api.md",
+            "Lunar Landing API" => "generated/lunar_landing_api.md",
             "Publications" => "publications.md",
             "Distributed and HPC" => "distributed_hpc.md",
             "Extensibility" => "extensibility.md",

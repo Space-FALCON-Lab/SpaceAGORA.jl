@@ -126,13 +126,6 @@ function ApolloDescentState(num_sats::Integer)
         fill(NaN, 4, n), fill(NaN, n), Vector{Union{Nothing, NamedTuple}}(nothing, n), fill(NaN, n), fill(z3, n), fill(NaN, n))
 end
 
-"""
-    ApolloDescentGuidanceModel(config, state, terrain=NoTerrainModel())
-
-Guidance effector: runs the quadratic guidance at the guidance rate, reads
-the radial terrain clearance from the terrain model, and writes the thrust and
-attitude commands into `state` for [`ApolloDescentControlModel`](@ref).
-"""
 # Both models use the same selected run indices and explicit terrain datum.
 function _descent_indices(state::ApolloDescentState, indices)
     n = length(state.phase)
@@ -180,6 +173,16 @@ function _validate_descent_config(c::ApolloDescentConfig, terrain::AbstractTerra
     return nothing
 end
 
+"""
+    ApolloDescentGuidanceModel(config, state, terrain=NoTerrainModel(); spacecraft_indices=eachindex(state.phase))
+
+Guidance effector: runs the quadratic guidance at the guidance rate, reads
+the radial terrain clearance from the terrain model, and writes the thrust and
+attitude commands into `state` for `ApolloDescentControlModel`, which lives in
+the control hooks and is documented beside it.
+`spacecraft_indices` selects the run indices it guides; the paired control
+model must use the same selection, state, configuration and terrain.
+"""
 struct ApolloDescentGuidanceModel{T <: AbstractTerrainModel, N} <: AbstractGuidanceModel
     config::ApolloDescentConfig
     state::ApolloDescentState

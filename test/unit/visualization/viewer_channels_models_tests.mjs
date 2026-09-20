@@ -25,7 +25,7 @@ for (const dir of ['src', 'vendor']) {
   }
 }
 const load = (path) => import(pathToFileURL(join(scratch, path)).href);
-const { FrameData } = await load('src/data.js');
+const { FrameData, rotateByConjugate } = await load('src/data.js');
 const THREE = await load('vendor/three.module.js');
 const { GLTFLoader } = await load('vendor/GLTFLoader.js');
 const { loadModelObject, resolveModelUrl } = await load('src/lod.js');
@@ -203,4 +203,23 @@ test('assemblies and reference ghosts resolve shared owners and report failed re
     assert.match(failed.items[0].modelStatus, /failed:.*cyclic/);
     assert.ok(meshOf(failed.items[0].body));
   } finally { globalThis.document = previousDocument; }
+});
+
+
+test('body-frame rotation preserves metre-scale clearance after Float32 quaternion storage', () => {
+  const unit = new THREE.Quaternion(0.31, 0.27, 0.5, 0.75).normalize();
+  const stored = new Float32Array(unit.toArray());
+  // Planet-scale position and metre-scale clearance, as in the landing panel.
+  const radiusKm = 1737.4, clearanceM = 3.7;
+  const position = new Float64Array([radiusKm + clearanceM / 1000, 0, 0]);
+  const expected = new THREE.Vector3(...position).applyQuaternion(new THREE.Quaternion(...stored).normalize().conjugate());
+  for (const scale of [1, -1, 7]) {
+    const q = Array.from(stored, x => x * scale), out = new Float64Array(3);
+    rotateByConjugate(q, position, out);
+    assert.ok(Math.abs((Math.hypot(...out) - radiusKm) * 1000 - clearanceM) < 1e-6);
+    assert.ok(Math.hypot(out[0] - expected.x, out[1] - expected.y, out[2] - expected.z) < 1e-9);
+  }
+  const out = new Float64Array(3);
+  rotateByConjugate([0, 0, Math.SQRT1_2, Math.SQRT1_2], [1, 0, 0], out);
+  assert.ok(Math.abs(out[0]) < 1e-15 && Math.abs(out[1] + 1) < 1e-15 && Math.abs(out[2]) < 1e-15);
 });

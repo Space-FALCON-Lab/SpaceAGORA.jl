@@ -86,6 +86,86 @@ end
     @test sample.height_m ≈ 1.0
 end
 
+# Ported from the original closure suite (PR121 cc891c76, test/unit/dynamics/plume_surface_tests.jl):
+# the footprint pressure integral, reference-height bounds, the erosion onset height, the zero
+# cases and the ground-effect shape, at the Apollo approach thrust that suite used. The original
+# nonfinite-height zero case is omitted on purpose: this implementation rejects nonfinite inputs
+# with an ArgumentError, which the construction tests above assert.
+const APPROACH_THRUST_N = 11_500.0   # Apollo 11 near the end of the descent: about 7100 kg of lunar weight
+
+@testset "original closure assertions: pressure integral, reference heights, onset, ground effect" begin
+    cfg = PlumeSurfaceConfig()
+    @testset "surface pressure footprint conserves the thrust" begin
+        for h in (5.0, 20.0, 50.0)
+            p0, R = plume_surface_footprint(cfg, APPROACH_THRUST_N, h)
+            @test R ≈ max(h * tand(cfg.plume_half_angle_deg), cfg.nozzle_exit_radius_m)
+            # ∫ p0 exp(-(r/R)^2) dA over the plane is p0 π R^2, the engine thrust
+            @test p0 * pi * R^2 ≈ APPROACH_THRUST_N
+        end
+        # never narrower than the nozzle
+        _, R_contact = plume_surface_footprint(cfg, APPROACH_THRUST_N, 0.0)
+        @test R_contact == cfg.nozzle_exit_radius_m
+    end
+
+    @testset "shear stress and erosion rate at reference heights" begin
+        # At 10 m under the approach thrust the closure puts the surface pressure in the
+        # hundreds of pascals, the wall shear near a pascal and the erosion rate at tens of kg/s.
+        q10 = plume_quantities(cfg, APPROACH_THRUST_N, 10.0)
+        @test 10.0 < q10.pressure_pa < 1.0e4
+        @test 0.1 < q10.shear_pa < 10.0
+        @test 1.0 < q10.erosion_kg_s < 100.0
+        @test 10.0 <= q10.ejecta_mps <= 200.0        # the order the Apollo films show
+        @test 0.0 < q10.inner_m < q10.outer_m        # erosion happens in an annulus, not a disk
+        # the peak shear sits at R / sqrt(2), inside the eroding annulus
+        _, R = plume_surface_footprint(cfg, APPROACH_THRUST_N, 10.0)
+        @test q10.inner_m < R / sqrt(2) < q10.outer_m
+        # deeper in the descent the footprint tightens and the pressure rises
+        q3 = plume_quantities(cfg, APPROACH_THRUST_N, 3.0)
+        @test q3.pressure_pa > q10.pressure_pa
+        @test q3.shear_pa > q10.shear_pa
+        @test q3.outer_m < q10.outer_m
+    end
+
+    @testset "erosion onset height" begin
+        onset = plume_erosion_onset_height(cfg, APPROACH_THRUST_N)
+        @test 20.0 < onset < 40.0                    # Apollo 11: dust from about 30 m
+        @test plume_quantities(cfg, APPROACH_THRUST_N, onset * 1.02).erosion_kg_s == 0.0
+        @test plume_quantities(cfg, APPROACH_THRUST_N, onset * 1.02).ejecta_mps == 0.0
+        @test plume_quantities(cfg, APPROACH_THRUST_N, onset * 0.9).erosion_kg_s > 0.0
+        # the onset is exactly where the peak shear crosses the threshold
+        @test plume_quantities(cfg, APPROACH_THRUST_N, onset).shear_pa ≈ cfg.threshold_shear_pa rtol = 1e-9
+        # peak shear scales with thrust over the square of the footprint radius, so the onset scales with sqrt(thrust)
+        @test plume_erosion_onset_height(cfg, 4 * APPROACH_THRUST_N) ≈ 2 * onset rtol = 1e-9
+        @test plume_erosion_onset_height(cfg, 0.0) == 0.0
+    end
+
+    @testset "everything is zero with no engine and far above the ground" begin
+        for q in (plume_quantities(cfg, 0.0, 5.0),
+                  plume_quantities(cfg, APPROACH_THRUST_N, cfg.max_height_m + 1.0))
+            @test q.pressure_pa == 0.0
+            @test q.shear_pa == 0.0
+            @test q.erosion_kg_s == 0.0
+            @test q.ejecta_mps == 0.0
+            @test q.ground_effect_n == 0.0
+        end
+    end
+
+    @testset "ground effect is monotone and vanishes at the cutoff" begin
+        D = 2 * cfg.nozzle_exit_radius_m
+        F = APPROACH_THRUST_N
+        @test plume_ground_effect_force(cfg, F, 0.0) ≈ cfg.ground_effect_max_fraction * F
+        heights = collect(0.0:0.05:(cfg.ground_effect_cutoff * D))
+        forces = [plume_ground_effect_force(cfg, F, h) for h in heights]
+        @test all(diff(forces) .< 0.0)                                   # strictly falling with height
+        @test forces[end] ≈ 0.0 atol = 1e-12                             # continuous into the cutoff
+        @test plume_ground_effect_force(cfg, F, cfg.ground_effect_cutoff * D) == 0.0
+        @test plume_ground_effect_force(cfg, F, 10 * D) == 0.0
+        @test plume_ground_effect_force(cfg, 0.0, 0.5) == 0.0
+        # a modest fraction of the thrust, never more
+        @test maximum(forces) < 0.05 * F
+    end
+end
+
 @testset "explicit plume datum and backward-compatible defaults" begin
     radius = PLANET.Rp_e + 2_000.0
     pos = SVector(radius + 2.0, 0.0, 0.0)

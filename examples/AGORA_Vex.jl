@@ -9,23 +9,6 @@ using StaticArrays
 setup_gram_example!()
 
 
-struct ConstantDensityModel <: AbstractDensityModel
-    rho::Float64
-    temp::Float64
-end
-
-function SimulationModel.EnvironmentModels.getDensity(
-    model::ConstantDensityModel,
-    h::Float64,
-    lat::Float64,
-    lon::Float64,
-    el_time::Float64,
-    wind::Bool,
-    p
-)
-    return model.rho, model.temp, SVector{3, Float64}(0.0, 0.0, 0.0)
-end
-
 function _load_aerobraking_maneuver_schedule(csv_path::String; burn_orbit_offset::Int=0)
     isfile(csv_path) || throw(ArgumentError("Maneuver schedule CSV not found at $(abspath(csv_path))."))
     df = CSV.read(csv_path, DataFrame)

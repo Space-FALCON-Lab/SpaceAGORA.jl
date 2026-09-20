@@ -625,6 +625,13 @@ function ppc_run_worker_performance(cfg::PPCConfig)
     sample_alloc_mb = sum(r -> Float64(get(r, :alloc_bytes, 0)), sample_results; init=0.0) / 2^20
     final_result = sample_results[end]
     final_retcode = total_success ? string(final_result.retcode) : join(unique(string(r.retcode) for r in sample_results if !r.success), "|")
+    # The per-sample rows carry the exception text; keep the distinct texts of the
+    # failed samples on the aggregate row too, or a campaign that threw reports
+    # only the exception TYPE and the message has to be re-run for. Bounded so a
+    # long stack cannot blow up the CSV cell.
+    final_error_message = total_success ? "" :
+        first(join(unique(String(get(r, :error_message, "")) for r in sample_results
+                          if !r.success && !isempty(get(r, :error_message, ""))), " | "), 2000)
     final_terminal = final_result.terminal
     throughput = samples / max(batch.batch_wall_time_s, eps(Float64))
 
@@ -647,6 +654,7 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         solver_mode=cfg.solver_mode,
         success=total_success,
         retcode=final_retcode,
+        error_message=final_error_message,
         wall_time_s=batch.batch_wall_time_s,
         sample_wall_time_sum_s=sample_wall_sum,
         mean_sample_wall_time_s=sample_wall_sum / max(1, samples),

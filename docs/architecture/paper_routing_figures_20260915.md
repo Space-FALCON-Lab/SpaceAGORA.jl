@@ -608,14 +608,35 @@ by the policy on a workload that has outer work to do -- 16 samples of an
 Note that repeat 1 of that point runs `outer_active = true` and takes 2.99 s;
 the collapse begins when the policy turns outer off.
 
-*Inference, not measurement:* this has the shape of the nested-parallelism
-guard failing open. The inner split sizes its per-thread workspaces on the
-assumption that an enclosing outer split has declared itself active
-(`SPACEAGORA_OUTER_PARALLEL_ACTIVE`, see `src/parallel/`); with outer switched
-off but 16 samples and 8 satellites still to run across 32 threads, nothing
-bounds that allocation. Confirming it means reproducing the point under
-allocation profiling, which has not been done. The reliable detector is the
-allocation itself, not the flag: 48 GB against 5.48 TB needs no interpretation.
+*The nested-parallelism guard hypothesis was tested and eliminated.* At 8
+spacecraft the RHS satellite batch is not enabled -- its auto gate requires
+>= 16 spacecraft -- and the effector team never threads, gated on heavier
+work than this case provides, so the nested inner-split path the inference
+named is never reached here. A guard was still added on that path
+(`a16e3daa`), but it is not this failure's cause. Two real inefficiencies
+turned up while chasing it. The density callback threaded on satellite count
+alone with no light-work guard and made that decision before the batch route
+resolved, dispatching a thread pool for a 3x3 rotation and a lat/lon
+conversion per accepted step; fixed in `7848a3c5`, measured 5.7x slower than
+unthreaded at 24 threads on this exact case shape and now 0.99x,
+bit-identical -- this plausibly explains why disabling the density
+callback's parallel path helped in an earlier ablation, but it does not
+explain the ODE solve throwing. Separately, an inherited
+`SPACEAGORA_INNER_THREAD_BUDGET` wider than an outer split's per-sample share
+was being obeyed, handing every concurrent sample the whole pool; capped to
+the share in `6a20a2c9`. Forcing that condition locally cost 1.6x, not
+3500x, and it moves `policy_threads_enabled_total`, a counter the failing
+rows do not show moving, so it is also not this failure's cause. Repeat 2's
+raw row shows the mechanism's scope: `sample_wall_time_sum_s` = 9320 s over
+16 samples (mean 582 s per sample against a healthy 1.15 s), `wall_time_s`
+= 768 s -- all sixteen samples ran roughly 500x slow concurrently before the
+campaign threw, not one sample hanging while the rest waited. The cause of
+the throw is still unidentified. The exception text itself was never
+recorded -- the harness captured it per sample and dropped it at
+aggregation, fixed in `177bce2f` -- so the next run of this point will name
+it; a 48-repeat attempt to reproduce the collapse locally on an idle
+24-thread box did not reproduce it. The reliable detector remains the
+allocation, not any flag: 48 GB against 5.48 TB needs no interpretation.
 
 Three consequences.
 
@@ -647,6 +668,13 @@ eleven-repeat median is 1223.9 s, a loss of about 1205x. The paper's P5 tables
 and the regret figures were both built from the aggregated CSV, so both carry
 this understatement at this one point; the raw-row numbers above are the
 correct ones.
+
+**The failing rows' zeroed telemetry is an error-path artifact, not a
+signal.** On a campaign that throws, the benchmark harness records
+`policy=nothing` for that sample, so `policy_decisions_total=0`,
+`rhs_plan_source=none`, and `policy_last_allotment=0` on repeats 2-11 are
+defaults the harness substitutes on the error path, not a report of what the
+policy did. Do not cite them as mechanism evidence.
 
 ## Methodology notes
 

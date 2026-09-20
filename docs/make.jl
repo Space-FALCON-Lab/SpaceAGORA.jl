@@ -154,6 +154,7 @@ makedocs(
             "First Simulation" => "user/first_simulation.md",
             "Simulation Configuration" => "user/simulation_configuration.md",
             "Atmosphere Models" => "user/atmosphere_models.md",
+            "Odyssey Surrogate Control Exercise" => "tutorials/odyssey_surrogate.md",
             "Plume Interaction" => "user/plume_interaction.md",
             "Lunar Landing" => "user/lunar_landing.md",
             "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",

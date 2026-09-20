@@ -172,6 +172,8 @@ density_model = NRLMSISE00AtmosphereModel(index_provider=my_provider)
 
 ## Fixed GRAM grid snapshot
 
+For a named, automatically retrieved atmosphere, start with the [Odyssey surrogate workflow](../tutorials/odyssey_surrogate.md). Use `surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0")` after loading `GRAMSuite`; retrieval and verification occur once before the solver.
+
 `GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
 kernel to SpaceAGORA. It needs the Julia wrapper with its native-free grid API
 and a trusted serialized grid payload. Construction and density evaluation use

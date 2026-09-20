@@ -188,3 +188,31 @@ Direct asset check script:
 ```text
 julia --project=. scripts/assets/check_assets.jl
 ```
+
+
+## Named frozen surrogate presets
+
+For the supported Odyssey guidance/control exercise, use the
+[public surrogate workflow](tutorials/odyssey_surrogate.md). Its dedicated
+`examples/odyssey_surrogate_env` environment retrieves a pinned public GRAMSuite
+wrapper; native GRAM and private repositories are unnecessary.
+
+```sh
+julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets list
+julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0
+julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
+```
+
+`fetch` installs and verifies the exact grid bytes. `check` stays offline and
+also validates its schema, coordinates and generation metadata. Normal example
+startup performs the same retrieval automatically. A supplied `--file` must
+match the named preset and never falls back to a download. Missing files, LFS
+pointers, corrupt downloads and incompatible data fail before propagation.
+Julia artifacts handle concurrent installation; a corrupt managed artifact or
+override must be repaired explicitly. User-supplied files are never replaced.
+
+A named version fixes the atmosphere's epoch and domain. Changing the simulation
+date does not evolve the grid. Only the bounded P20 preset is currently listed;
+other planets and epochs require separately generated and validated presets.
+The ordinary results-bundle manifest includes an `atmosphere` section identifying
+the backend, preset/version, payload/catalog hashes and frozen-domain contract.

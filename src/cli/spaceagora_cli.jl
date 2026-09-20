@@ -1,5 +1,6 @@
 module SpaceAGORACLI
 using ..SimulationModel: SimulationModel
+using ..SimulationModel.EnvironmentModels: available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
@@ -54,6 +55,9 @@ function _print_usage(io::IO=stdout)
     println(io, "  spaceagora benchmark runtime-analysis [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
     println(io, "  spaceagora benchmark smart-parallel-ladder [quick|full|smoke] [--output-dir=<dir>] [--print-only]")
     println(io, "  spaceagora assets check")
+    println(io, "  spaceagora assets list")
+    println(io, "  spaceagora assets fetch --preset=<id> --version=<version>")
+    println(io, "  spaceagora assets check --preset=<id> --version=<version> [--file=<path>]")
     println(io, "  spaceagora assets manifest")
     println(io, "  spaceagora assets setup-open")
     return 0
@@ -283,9 +287,11 @@ function run_cli(args::Vector{String}=copy(ARGS); io::IO=stdout, errio::IO=stder
     if cmd in ("help", "--help", "-h")
         return _print_usage(io)
     elseif cmd == "assets"
-        isempty(tail) && throw(ArgumentError("assets requires a subcommand: check, manifest, or setup-open"))
+        isempty(tail) && throw(ArgumentError("assets requires a subcommand: list, fetch, check, manifest, or setup-open"))
         subcmd = first(tail)
-        if subcmd == "check"
+        if subcmd in ("list", "fetch") || (subcmd == "check" && length(tail) > 1)
+            return _run_preset_assets(subcmd, tail[2:end]; io=io)
+        elseif subcmd == "check"
             render_asset_report(check_assets(); io=io)
             return 0
         elseif subcmd == "manifest"
@@ -295,7 +301,7 @@ function run_cli(args::Vector{String}=copy(ARGS); io::IO=stdout, errio::IO=stder
             setup_open_assets(; io=io)
             return 0
         end
-        throw(ArgumentError("assets supports only: check, manifest, or setup-open"))
+        throw(ArgumentError("assets supports only: list, fetch, check, manifest, or setup-open"))
     elseif cmd == "run"
         return _run_example(tail; io=io, errio=errio)
     elseif cmd == "visualize"

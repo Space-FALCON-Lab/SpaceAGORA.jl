@@ -57,6 +57,24 @@ julia --project=. src/cli/main.jl assets setup-open
 `assets setup-open` summarizes the baseline repo-only path and which licensed
 external assets remain user-provided.
 
+## Guidance and control with a surrogate atmosphere
+
+The bounded Mars Odyssey P20 preset supplies a reproducible frozen atmosphere
+without native GRAM. From a normal clone, install the pinned public packages and
+run the active solar-panel control comparison:
+
+```sh
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
+```
+
+Only the selected grid and public scenario assets download on first use. Their
+checksums are verified before simulation. The example compares 90-degree and
+30-degree panel-angle limits and saves the actual commands, trajectory, heating
+and atmosphere provenance. See the [Odyssey walkthrough](docs/src/tutorials/odyssey_surrogate.md)
+for the supported domain, frozen epoch, offline use and changing the controller.
+Native GRAM remains an optional advanced backend for atmosphere studies.
+
 ## Asset model
 
 SpaceAGORA supports two common setup modes:

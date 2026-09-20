@@ -4,8 +4,11 @@ const PROJECT_PATH = REPO_ROOT
 
 function list_examples()
     helper_files = Set(["common.jl", "aerobraking_mission_plot_utils.jl"])
+    # Odyssey uses its pinned example environment, not this repository environment.
+    # surrogate-user.yml runs its full native-free passage and verifies the outputs.
+    dedicated_environment_examples = Set(["odyssey_surrogate.jl"])
     files = sort(filter(f -> endswith(f, ".jl"), readdir(EXAMPLES_DIR; join=true)))
-    files = filter(f -> !(basename(f) in helper_files), files)
+    files = filter(f -> !(basename(f) in helper_files || basename(f) in dedicated_environment_examples), files)
     token = strip(get(ENV, "SPACEAGORA_EXAMPLE_FILTER", ""))
     if !isempty(token)
         files = filter(f -> occursin(token, basename(f)), files)

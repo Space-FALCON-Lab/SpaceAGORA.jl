@@ -13,4 +13,5 @@ module EnvironmentModels
     include(joinpath(@__DIR__, "..", "environment", "atmosphere", "density_models.jl"))
     include(joinpath(@__DIR__, "atmosphere", "density_epoch.jl"))
     include(joinpath(@__DIR__, "atmosphere", "gram_grid_atmosphere_model.jl"))
+    include(joinpath(@__DIR__, "atmosphere", "surrogate_presets.jl"))
 end # module EnvironmentModels

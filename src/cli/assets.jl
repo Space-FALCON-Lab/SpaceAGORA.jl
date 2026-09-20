@@ -156,3 +156,58 @@ function setup_open_assets(; repo_root::String=REPO_ROOT, io::IO=stdout)
     render_asset_report(report; io=io)
     return report
 end
+
+function _run_preset_assets(command::String, args::Vector{String}; io::IO=stdout)::Int
+    if command == "list"
+        isempty(args) || throw(ArgumentError("assets list takes no options"))
+        for entry in available_surrogate_presets()
+            status = entry["release_enabled"] ? "available" : "unpublished"
+            println(io, entry["id"], "@", entry["version"], " (", entry["planet"], ", ", status, ")")
+            println(io, "  ", entry["description"])
+        end
+        return 0
+    end
+    options = Dict{String,String}()
+    offline = command == "check"
+    i = 1
+    while i <= length(args)
+        arg = args[i]
+        if arg == "--offline"
+            offline = true
+        elseif startswith(arg, "--")
+            key_value = split(arg[3:end], '='; limit=2)
+            key = first(key_value)
+            key in ("preset", "version", "file") || throw(ArgumentError("Unknown preset option $arg"))
+            haskey(options, key) && throw(ArgumentError("Duplicate --$key option"))
+            if length(key_value) == 2
+                options[key] = key_value[2]
+            else
+                i += 1
+                i <= length(args) && !startswith(args[i], "--") || throw(ArgumentError("--$key needs a value"))
+                options[key] = args[i]
+            end
+            isempty(options[key]) && throw(ArgumentError("--$key needs a nonempty value"))
+        else
+            throw(ArgumentError("Unexpected preset argument $arg"))
+        end
+        i += 1
+    end
+    all(key -> haskey(options, key), ("preset", "version")) || throw(ArgumentError(
+        "assets $command requires --preset=<id> and --version=<version>; use assets list"))
+    preset = options["preset"]
+    version = options["version"]
+    file = get(options, "file", "")
+    # Fetch verifies the downloaded bytes. Check additionally loads and validates
+    # the schema, axes and metadata; neither command initializes native GRAM.
+    if command == "fetch"
+        resolved = resolve_surrogate_preset(preset; version, file, offline)
+        println(io, "Verified ", preset, "@", version, ": ", resolved.file)
+        println(io, "sha256=", resolved.expected_sha256)
+    else
+        model = surrogate_preset_model(preset; version, file, offline)
+        provenance = atmosphere_provenance(model)
+        println(io, "Validated ", preset, "@", version)
+        TOML.print(io, provenance)
+    end
+    return 0
+end

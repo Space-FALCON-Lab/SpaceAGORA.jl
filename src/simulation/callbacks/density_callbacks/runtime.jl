@@ -254,8 +254,6 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         density_models = p.shared_buffers.density_models
         fallback_density_model = p.args.environment_model.density_model
         cb_env = _callback_env_config(p)
-        decision = _density_callback_thread_decision(p, args, num_sats)
-        use_threads = decision.use_threads
         use_batch = false
         batch_model = nothing
         use_gram_isolated_pool = false
@@ -275,6 +273,19 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
         elseif batch_model isa EnvironmentModels.GRAMAtmosphereModel
             use_gram_isolated_pool = true
         end
+        # What the threaded region actually contains decides whether threading it
+        # can pay, so the decision is taken after the batch route is resolved and
+        # not before it. On the batch route the loop below stages altitude,
+        # latitude and longitude and nothing else -- the density evaluation
+        # happens afterwards, on one thread, inside getDensityBatch! -- so it is
+        # light work whatever the model is. Off the batch route the loop calls
+        # update_density_sat! per satellite, which is heavy exactly when the
+        # model is (density_model_work_is_heavy).
+        decision = _density_callback_thread_decision(
+            p, args, num_sats;
+            heavy_work=(!use_batch && _density_callback_work_is_heavy(p, num_sats))
+        )
+        use_threads = decision.use_threads
         started_ns = time_ns()
 
         if use_batch
@@ -306,6 +317,13 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                     lons[i] = kin.lon
                 end
             end
+            # The isolated GRAM pool evaluates native GRAM per satellite on its
+            # own dispatch, so its width comes from a heavy-work decision rather
+            # than from `decision`, which now describes the kinematics pre-fill
+            # above and collapses to 1 on a light model.
+            pool_allotment = use_gram_isolated_pool ?
+                _density_callback_thread_decision(p, args, num_sats; heavy_work=true).allotment :
+                decision.allotment
             pooled = use_gram_isolated_pool && _gram_isolated_pool_batch_eval!(
                 p.shared_buffers.densities,
                 p.shared_buffers.temperatures,
@@ -317,7 +335,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 Float64(integrator.t),
                 true,
                 p;
-                allotment_hint=decision.allotment
+                allotment_hint=pool_allotment
             )
             if !pooled
                 getDensityBatch!(

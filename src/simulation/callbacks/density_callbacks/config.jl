@@ -132,6 +132,58 @@ end
     return ParallelPolicy.outer_parallel_active()
 end
 
+# Per-satellite cost class for the density callback's thread decision.
+#
+# `thread_policy_decision` already carries a light-work guard -- `heavy_only`
+# with `heavy_work` false pins `use_threads` to false -- and the effector policy
+# has used it from the start, for exactly this reason: a dispatch that costs
+# more than the work it hands out makes the callback slower, not faster. The
+# density callback never passed it. Its decision asked only "are there enough
+# satellites", so eight spacecraft on an analytic atmosphere threaded a loop
+# whose body is a 3x3 rotation, a lat/lon conversion and one `exp`, once per
+# accepted step, through a persistent-pool round trip per worker.
+#
+# Heavy means the per-satellite body can reach a native GRAM evaluation or a
+# GRAM track-cache/surrogate lookup -- tens of microseconds and up, which is
+# what the threaded path was built for and where it is measured to win. Every
+# closed-form atmosphere is light. So is the batch pre-fill loop whatever the
+# model is: that loop only stages altitude/latitude/longitude and the density
+# evaluation itself happens afterwards, on one thread, inside
+# `getDensityBatch!`.
+#
+# `SPACEAGORA_DENSITY_CALLBACK_PARALLEL=on` is unaffected -- an explicit `on`
+# forces threads ahead of the guard -- so a caller that wants the dispatch
+# measured on light work can still ask for it.
+@inline density_model_work_is_heavy(::AbstractDensityModel)::Bool = false
+@inline density_model_work_is_heavy(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
+@inline density_model_work_is_heavy(::EnvironmentModels.GRAMAtmosphereModelSurrogate)::Bool = true
+
+"""
+    _density_callback_work_is_heavy(p, num_sats) -> Bool
+
+True when at least one satellite's density evaluation is expensive enough to be
+worth a threaded dispatch.  Reads the per-satellite model vector when the run
+installed one and the configured model otherwise, and treats a run with the
+vacuum-predicted GRAM cache enabled as heavy: that path rebuilds a spline over
+the look-ahead trajectory inside the callback body.
+"""
+@inline function _density_callback_work_is_heavy(p, num_sats::Int)::Bool
+    env = _callback_env_config(p)
+    env.vacuum_gram_cache_enabled && return true
+    if p !== nothing && hasproperty(p, :shared_buffers)
+        models = p.shared_buffers.density_models
+        if !isempty(models)
+            limit = min(num_sats, length(models))
+            @inbounds for i in 1:limit
+                density_model_work_is_heavy(models[i]) && return true
+            end
+            num_sats <= length(models) && return false
+        end
+    end
+    p === nothing && return false
+    return density_model_work_is_heavy(p.args.environment_model.density_model)
+end
+
 # Extend this for custom user density models as needed:
 # SimulationModel.SimulationCallbacks.density_model_threadsafe(::MyDensityModel) = true
 @inline density_model_threadsafe(::AbstractDensityModel)::Bool = false
@@ -251,11 +303,27 @@ end
     return Threads.nthreads() > 1 && num_items >= env.gram_isolated_pool_threshold
 end
 
-@inline function _density_callback_thread_decision(args::SimulationConfiguration, num_sats::Int)
-    return _density_callback_thread_decision(nothing, args, num_sats)
+# `heavy_work` defaults to true because the cost of the loop body is a property
+# of the call site, not of this function: the callback's batch route stages
+# kinematics only, its per-satellite route runs a full density evaluation, and
+# the RHS-side atmosphere pre-fill (dynamics_rhs.jl) samples density inline. A
+# caller that knows its body is light says so; the default answers the older,
+# narrower question -- would the policy thread this if the work were worth
+# threading -- and so leaves every existing call site's behavior unchanged.
+@inline function _density_callback_thread_decision(
+    args::SimulationConfiguration,
+    num_sats::Int;
+    heavy_work::Bool=true
+)
+    return _density_callback_thread_decision(nothing, args, num_sats; heavy_work=heavy_work)
 end
 
-@inline function _density_callback_thread_decision(p, args::SimulationConfiguration, num_sats::Int)
+@inline function _density_callback_thread_decision(
+    p,
+    args::SimulationConfiguration,
+    num_sats::Int;
+    heavy_work::Bool=true
+)
     env = _callback_env_config(p)
     penv = _policy_env_config(p)
     mode = env.density_parallel_mode
@@ -287,12 +355,17 @@ end
     # separate source category, rather than being held to the same 16-thread gate
     # for no reason (see PARALLELIZATION_CURRENT_STATE.md / Finding 1).
     source = model isa EnvironmentModels.GRAMAtmosphereModel ? :density_callback : :density_callback_lockfree
+    # heavy_only is passed unconditionally: the guard only bites when the caller
+    # says the per-satellite body is light, and `:on` overrides it either way.
+    # See density_model_work_is_heavy for what "light" costs here.
     policy = ParallelPolicy.thread_policy_decision(
         num_sats;
         mode=mode,
         threshold=env.density_thread_threshold,
         outer_active=outer_active,
         allow_with_outer=allow_with_outer,
+        heavy_only=true,
+        heavy_work=heavy_work,
         source=source,
         env=penv
     )
@@ -339,11 +412,28 @@ end
     return _control_callback_thread_decision(control_model, num_sats).use_threads
 end
 
-@inline function _thermal_callback_thread_decision(num_sats::Int)
-    return _thermal_callback_thread_decision(nothing, num_sats)
+# `heavy_work` is a keyword with the same contract as the density version, and
+# for the same reason: the thermal callback's per-satellite body reads its
+# density from `shared_buffers` rather than evaluating a model
+# (`_compute_stage_heat_rates!` is called with `use_buffered_density=true`), so
+# what it costs is one `sample_planet_frame` plus one `getHeatRate` per link --
+# light for a single-link spacecraft.
+#
+# Measured on the same 8-spacecraft one-hour shape at 24 threads, alternating
+# arms in one process: density and thermal both off, 0.61-0.67 s; density auto
+# and thermal off, 0.57-0.62 s; thermal auto, 1.14-2.04 s whichever way density
+# is set. All twelve runs produced identical final states. So after the density
+# guard the thermal callback is what is left of this shape's inner-threading
+# cost, and `get_thermal_callback`'s dispatch is the call site that would have
+# to pass its own classification here -- one keyword at
+# src/simulation/callbacks/thermal_callbacks.jl:82, in a file this change does
+# not own. The default stays `true` so that call site's behavior is unchanged
+# until someone measures what link count makes the dispatch worth paying for.
+@inline function _thermal_callback_thread_decision(num_sats::Int; heavy_work::Bool=true)
+    return _thermal_callback_thread_decision(nothing, num_sats; heavy_work=heavy_work)
 end
 
-@inline function _thermal_callback_thread_decision(p, num_sats::Int)
+@inline function _thermal_callback_thread_decision(p, num_sats::Int; heavy_work::Bool=true)
     env = _callback_env_config(p)
     penv = _policy_env_config(p)
     mode = env.thermal_parallel_mode
@@ -355,6 +445,8 @@ end
         threshold=env.thermal_thread_threshold,
         outer_active=outer_active,
         allow_with_outer=allow_with_outer,
+        heavy_only=true,
+        heavy_work=heavy_work,
         source=:thermal_callback,
         env=penv
     )

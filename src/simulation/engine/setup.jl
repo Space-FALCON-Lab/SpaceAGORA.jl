@@ -523,16 +523,20 @@ end
 @inline _dynamic_effector_threadsafe(::SimulationModel.GravitationalHarmonicsModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.SolarRadiationPressureModel)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientfM)::Bool = true
+@inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientMeshSurrogate)::Bool = true
 
 @inline function _dynamic_effectors_parallel_supported(dynamic_effectors::Tuple)::Bool
-    aero_fm_count = 0
+    aero_cache_writers = 0
     @inbounds for effector in dynamic_effectors
-        if effector isa SimulationModel.AerodynamicCoefficientfM
-            aero_fm_count += 1
+        # Box and mesh aerodynamic effectors write the same per-satellite
+        # drag/lift/cross slots. Only one writer may run in an effector queue.
+        if effector isa SimulationModel.AerodynamicCoefficientfM ||
+           effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
+            aero_cache_writers += 1
         end
         _dynamic_effector_threadsafe(effector) || return false
     end
-    return aero_fm_count <= 1
+    return aero_cache_writers <= 1
 end
 
 @inline function _mission_is_long_for_effector_threads(args)::Bool

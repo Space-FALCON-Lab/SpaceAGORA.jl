@@ -225,7 +225,10 @@ add mission-specific guidance, maneuvers, and higher-fidelity dynamics.
 
 - User docs live in `docs/src/` and are built with `julia --project=. docs/make.jl`
 - Generated API pages come from `docs/public_api_symbols.jl`
-- Architecture and quality references live under the docs Maintainer Guide
+- Start with [Architecture and Responsibilities](docs/src/user/architecture.md)
+  for the simulation flow, spacecraft composition, source owners and where new
+  work belongs. Architecture contracts and quality references live under the
+  docs Maintainer Guide.
 
 Generated reports, docs builds, and other local outputs stay in ignored paths
 such as `output/`, `docs/build/`, `docs/site/`, and `docs/src/generated/`.

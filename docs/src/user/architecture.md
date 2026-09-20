@@ -11,7 +11,7 @@ it is at commit
 of `main` (browse that tree at
 [github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5ca4d327](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5ca4d3274ee2b2b55ef41d1580aba9b4a66161f9));
 every path below is relative to the repository root at that commit. Proposed
-changes are labelled as proposals in the last section.
+integrations and cleanup changes are explicitly labelled.
 
 Shortest successful command:
 
@@ -36,7 +36,9 @@ scheduled or event callbacks. Control forces enter the right-hand side;
 navigation, guidance and control-command updates use callbacks. Outputs are
 saved along the way and assembled into files at the end.
 
-![Run flow: configuration enters setup; environment, spacecraft and GNC supply the repeated right-hand-side and solver loop; saved values become outputs and an optional viewer.](../assets/architecture_run_flow.svg)
+![Run flow: scenario configuration contains the spacecraft collection; individual spacecraft contain rigid, articulated or compliant assemblies. Environment, spacecraft and GNC supply the repeated dynamics and solver loop; callbacks update commands and save values for outputs.](../assets/architecture_run_flow.svg)
+
+[Download the vector architecture figure (PDF).](../assets/architecture_run_flow.pdf)
 
 The arrows show runtime data flow, not Julia module-loading dependencies. At the
 module level, `SimulationModel` assembles the model types and hooks,
@@ -44,6 +46,38 @@ module level, `SimulationModel` assembles the model types and hooks,
 coordinates Monte Carlo and ensemble runs. `src/SpaceAGORA.jl` loads these
 modules and exposes the supported public interface. The folder map below
 identifies where their implementations live.
+
+## Spacecraft assembly and constellation composition
+
+A spacecraft contains components; a scenario contains spacecraft.
+`SpacecraftModel` in `src/vehicle/spacecraft/model.jl` holds its links,
+joints, root body, mass properties, actuators and initial conditions.
+`DynamicsModel` holds the spacecraft collection. This physical collection
+can represent a single vehicle, a servicing pair or a constellation; it
+does not by itself allocate tasks or provide a communication network.
+
+The cloth-style lumped multibody capability belongs to this physical
+foundation. `src/dynamics/multibody_cloth/cloth_multibody.jl` defines bodies
+with mass and inertia, compliant connections with translational and rotational
+stiffness and damping, and topology builders. The coupled robot-arm path in
+`cloth_robot_arm_dynamics.jl` supplies internal-state initialization and
+derivatives to the engine. This supports specified articulated and compliant
+models; it is not a claim that every arbitrary flexible surface or contact
+interaction is already coupled and validated. A mesh describes surface
+geometry, while a multibody model describes motion and loads.
+
+For example, an arm attached to a station belongs to the station's assembly.
+A free-flying inspector is another spacecraft. Their task assignment and
+coordination belong at the mission level, above individual vehicle construction.
+The source-owner table below distinguishes vehicle construction from dynamics.
+
+Use a joint simulation when spacecraft interact. The independent
+`run_constellation_ensemble` route in
+`src/simulation/campaigns/constellation_ensemble.jl` rejects nonempty GNC
+effectors by default because they might couple spacecraft. Its explicit
+opt-in is for independently acting effectors, not a way to add cross-vehicle
+communication. Independent ensemble runs and coordinated constellation
+simulation are different execution contracts.
 
 ## Following one configuration through the code
 
@@ -215,6 +249,32 @@ plotting scripts out of `src/` and avoiding relative includes of package
 internals from examples. These checks do not prove every ownership or data
 decision is correct. Keep restricted inputs and private research outputs out
 of the public repository; review their provenance separately.
+
+## Proposed mission-autonomy integration
+
+The next figure places the implemented simulator in a broader workflow. Solid
+boxes identify implemented components; dashed boxes and connections identify
+proposed common integration or operational capability. Individual GNC algorithms
+already provide closed-loop behavior. A reusable mission executive, shared
+task/resource model and operational digital twin are not claimed to be complete.
+
+![Mission design supplies scenarios to SpaceAGORA. A proposed autonomy and scheduling layer sends actions and receives observations. Reference comparisons support validation; human oversight, learning and live operations require further integration.](../assets/mission_autonomy_workflow.svg)
+
+[Download the vector mission-workflow figure (PDF).](../assets/mission_autonomy_workflow.pdf)
+
+A mission executive would select tasks, assign vehicles and update targets or
+modes through an explicit execution interface. It would receive timestamped
+observations and task outcomes. One mission decision may span many numerical
+integration steps. Constraint checks, action rejection and fallback behavior
+must be explicit; a learning reward is not a replacement for those checks.
+
+Research-specific schedulers, planners and learned policies can then share
+that interface without copying the propagation engine. A Gym-style adapter
+is one possible boundary, not an existing package API. The existing
+`src/mission/` owner contains aerobraking policy code. Resource, network and
+estimator scaffolds under `experimental/` are not loaded by the package and
+do not establish a working general mission-management system. CPU scheduling
+under `src/parallel/` remains separate from mission task scheduling.
 
 ## Remaining cleanup
 

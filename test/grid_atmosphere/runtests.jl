@@ -37,6 +37,16 @@ using SpaceAGORA, GRAMSuite
 include("schema_tests.jl")
 end
 
+# Synthetic named presets exercise the resolver through the real package
+# extension, without downloading the public mission assets or loading native GRAM.
+module GridPresetTests
+include("../surrogate_presets_tests.jl")
+end
+
+module GridPresetCLITests
+include("preset_cli_tests.jl")
+end
+
 # CI uses small synthetic payloads. The 654-point retained Odyssey fixture is
 # opt-in and must identify all three externally supplied inputs by SHA256.
 const GRID_REFERENCE_KEYS = ["SPACEAGORA_TEST_GRID_" * name * suffix

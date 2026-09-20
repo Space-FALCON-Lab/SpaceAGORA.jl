@@ -1,6 +1,16 @@
 # Kept separate from the native adapter: this path only loads and evaluates an
 # owned offline snapshot. Resolve the optional API at construction time so an
 # older GRAMSuite can still load the extension for its existing model families.
+if isdefined(GRAMSuite, :GRAMGridAtmosphereModel)
+    function SpaceAGORA.SimulationModel.SceneVisualization._atmosphere_grid_bounds(
+        model::EM.GRAMGridAtmosphereModel{GRAMSuite.GRAMGridAtmosphereModel}
+    )
+        grid = model.core.surrogate
+        return (alt_min_m=first(grid.alt_nodes_m), alt_max_m=last(grid.alt_nodes_m),
+            lat_min_rad=first(grid.lat_nodes_rad), lat_max_rad=last(grid.lat_nodes_rad))
+    end
+end
+
 function EM.GRAMGridAtmosphereModel(; kwargs...)
     isdefined(GRAMSuite, :GRAMGridAtmosphereModel) || throw(ArgumentError(
         "The loaded GRAMSuite version does not provide the native-free grid API. " *

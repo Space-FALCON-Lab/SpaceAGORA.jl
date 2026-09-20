@@ -249,10 +249,13 @@ saved center of mass and quaternion.
 shell at the entry interface (a Fresnel shader, additive, double-sided so it
 reads from inside during a pass), translucent density shells whose opacity
 follows an available profile, and an optional supplied density map.
-Automatic scene export samples only the built-in exponential and piecewise
-exponential models. Native GRAM, surrogate, empirical and user-defined
-models retain the shell and saved trajectory density without additional
-model calls. For advanced standalone analysis only,
+Automatic scene export samples the built-in exponential and piecewise
+exponential models and native-free `GRAMGridAtmosphereModel` snapshots.
+Fixed-grid profiles stay within the stored altitude coverage and require
+equatorial coverage; global maps require all sampled latitudes. Density shells
+are omitted outside the sampled altitude range. Native GRAM, hybrid
+native/surrogate, empirical and user-defined models retain the shell and
+saved trajectory density without additional model calls. For advanced standalone analysis only,
 `atmosphere_spec(args; sample_model=true, density_params=p)` explicitly
 permits live model sampling; this may mutate model/native state and is
 never enabled by scene or run export.

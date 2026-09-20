@@ -141,11 +141,25 @@ These six models and three higher-resolution textures add about 35.6 MB to
 the checkout. No asset download or native atmosphere library is needed.
 
 Atmosphere displays use density values already saved along the trajectory.
-The sidecar also adds an altitude profile for the built-in exponential and
-piecewise exponential models, whose evaluations have no model state.
-For GRAM, surrogate, empirical and user-defined models, export adds the
-entry-interface shell without making extra atmosphere calls. It does not
-reinitialize the atmosphere, change its epoch or advance its sampler.
+The sidecar automatically adds an altitude profile for the exponential and
+piecewise exponential models and for the native-free `GRAMGridAtmosphereModel`.
+These evaluations read the model without advancing a sampler or changing its epoch.
+
+Fixed-grid profiles use the equator and longitude zero, over the overlap between
+the grid's altitude coverage and zero to 1.5 times the entry-interface altitude.
+A grid that does not cover the equator has no equatorial profile. The viewer
+draws no density shells outside the sampled altitude range. A global density map
+is included only when the grid covers every sampled latitude; regional grids
+are not stretched over the globe. The default map height is 0.6 times the entry
+interface, bounded by the grid's altitude range, and the sidecar records that
+height. These displays describe the stored snapshot, not a newly generated
+atmosphere at the simulation epoch.
+
+Native GRAM, hybrid native/surrogate, empirical and custom models keep the
+entry-interface shell and saved trajectory density without extra export-time
+queries. Standalone `atmosphere_spec(args; sample_model=true, density_params=...)`
+remains an explicit advanced operation that can change such a model's state;
+scene export never opts into it.
 
 ## Toolbar and keyboard
 

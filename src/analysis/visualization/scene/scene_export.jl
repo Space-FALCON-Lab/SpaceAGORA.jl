@@ -254,9 +254,9 @@ end
 Write the sidecar for `args` when `simulation_settings.save_visualization_scene`
 is set; otherwise do nothing and return `nothing`. Called by the engine after
 the results bundle is written, with its integrator parameters as
-`density_params`. Only the verified pure analytic atmosphere models are
-sampled automatically; native and user models keep their shell and saved
-trajectory density without additional density calls.
+`density_params`. Verified pure analytic atmosphere models and fixed grid
+snapshots are sampled automatically within their coverage; native and user
+models keep their shell and saved trajectory density without additional calls.
 """
 function write_visualization_scene!(args::SimulationConfiguration; density_params=nothing)::Union{Nothing, String}
     args.simulation_settings.save_visualization_scene || return nothing

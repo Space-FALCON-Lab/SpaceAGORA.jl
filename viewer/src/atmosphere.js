@@ -46,8 +46,9 @@ function oblateSphere(Re, Rp, altitudeKm, segments = 96) {
 function profileDensity(profile, hM) {
   const h = profile.altitude_m, d = profile.density_kg_m3;
   if (!h || h.length < 2) return NaN;
-  if (hM <= h[0]) return d[0];
-  if (hM >= h[h.length - 1]) return d[d.length - 1];
+  if (!Number.isFinite(hM) || hM < h[0] || hM > h[h.length - 1]) return NaN;
+  if (hM === h[0]) return d[0];
+  if (hM === h[h.length - 1]) return d[d.length - 1];
   let lo = 0, hi = h.length - 1;
   while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (h[mid] <= hM) lo = mid; else hi = mid; }
   const f = (hM - h[lo]) / (h[hi] - h[lo]);
@@ -85,13 +86,16 @@ export function createAtmosphere(spec, planet, options = {}) {
   const profile = spec.profile || {};
   const hasProfile = profile.altitude_m && profile.altitude_m.length > 1;
   if (hasProfile) {
-    const rhoEi = profileDensity(profile, spec.ei_altitude_m);
-    const rhoLow = profileDensity(profile, 0.3 * spec.ei_altitude_m);
+    const low = Math.max(0.3 * spec.ei_altitude_m, profile.altitude_m[0]);
+    const high = Math.min(spec.ei_altitude_m, profile.altitude_m.at(-1));
+    const rhoEi = profileDensity(profile, high);
+    const rhoLow = profileDensity(profile, low);
     const span = Math.log(Math.max(rhoLow, 1e-30)) - Math.log(Math.max(rhoEi, 1e-30));
     const K = options.layers ?? 6;
     for (let k = 0; k < K; k++) {
       const hM = spec.ei_altitude_m * (0.3 + 0.7 * k / (K - 1));
       const rho = profileDensity(profile, hM);
+      if (!Number.isFinite(rho)) continue; // never extend a bounded grid's profile
       const a = span > 0 ? (Math.log(Math.max(rho, 1e-30)) - Math.log(Math.max(rhoEi, 1e-30))) / span : 0;
       const opacity = 0.02 + 0.16 * Math.min(1, Math.max(0, a));
       const shell = oblateSphere(Re, Rp, hM / 1000, 64);
@@ -152,7 +156,7 @@ export function createAtmosphere(spec, planet, options = {}) {
     info: {
       model: spec.model,
       ei_km: eiKm,
-      profile: hasProfile ? { points: profile.altitude_m.length, surface: profile.density_kg_m3[0], atEi: profileDensity(profile, spec.ei_altitude_m) } : null,
+      profile: hasProfile ? { points: profile.altitude_m.length, surface: profileDensity(profile, 0), atEi: profileDensity(profile, spec.ei_altitude_m) } : null,
       layers: layerInfo,
       map: mapInfo,
     },

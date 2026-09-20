@@ -170,6 +170,7 @@ makedocs(
             "Studies and Benchmarks" => "user/studies_benchmarks.md",
             "Recipes" => "user/recipes.md",
             "Concepts" => "user/concepts.md",
+            "Architecture and Responsibilities" => "user/architecture.md",
             "Troubleshooting" => "user/troubleshooting.md",
         ],
         "Reference" => Any[

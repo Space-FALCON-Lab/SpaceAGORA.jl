@@ -605,12 +605,22 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
                                 route=:process, local_slots=local_slots)
     end
     env_pairs = Pair{String, String}["SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1"]
-    if isempty(strip(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "")))
-        # Split the thread pool between the outer workers and each sample's
-        # inner parallelism instead of oversubscribing; an explicit user budget
-        # always wins.
-        push!(env_pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(plan.inner_thread_budget))
-    end
+    # Split the thread pool between the outer workers and each sample's inner
+    # parallelism instead of oversubscribing. An inherited budget is a ceiling
+    # this split may lower, never one that outranks it: whoever set it did not
+    # know how many samples would run beside each other. See
+    # `capped_inner_thread_budget`.
+    declared = capped_inner_thread_budget(plan.inner_thread_budget)
+    declared === nothing ||
+        push!(env_pairs, "SPACEAGORA_INNER_THREAD_BUDGET" => string(declared))
+    # The budget each sample will actually resolve, traced beside the width.
+    # A campaign that overstates it looks healthy in every other column --
+    # same route, same width, same plan -- so without this the only symptom
+    # is the wall time. See `capped_inner_thread_budget`.
+    _dispatch_trace_enabled() && println(
+        "[dispatch-trace] threads dispatch workers=$(worker_count) " *
+        "plan_budget=$(plan.inner_thread_budget) declared=$(declared === nothing ? "inherited" : string(declared)) " *
+        "env_budget=$(get(ENV, "SPACEAGORA_INNER_THREAD_BUDGET", "<unset>"))")
     result = withenv(env_pairs...) do
         run_monte_carlo(f, spec)
     end

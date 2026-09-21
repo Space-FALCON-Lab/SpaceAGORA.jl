@@ -1,0 +1,91 @@
+include(joinpath(@__DIR__, "0_Spacecraft.jl"))
+
+# Builds the configuration for the case 2 of the Oracle simulation.
+# Pass results_directory to enable SpaceAGORA's native output pipeline.
+function build_case_config(opts::OracleCase2Options, results_directory::Union{String, Nothing}=nothing)
+    # 1. Sanity-checks every number the user passed in (altitudes > 0, mass > 0, etc.) 
+    _validate_options(opts)
+    isfinite(opts.output_interval_s) && opts.output_interval_s > 0 || throw(ArgumentError("output interval must be finite and positive"))
+    
+    # 2. Planet + radii
+    planet = make_no_gram_planet(:earth)
+    target_radius_m = planet.Rp_e + opts.target_altitude_km * 1e3
+    helper_radius_m = planet.Rp_e + opts.helper_altitude_km * 1e3
+
+    # 3. Build the spacecraft array
+    spacecraft = SpacecraftModel[]
+    helper_inclination_deg = opts.helper_inclination_deg
+    for helper in 1:opts.helpers
+        nu_deg = 360.0 * (helper - 1) / opts.helpers # evenly space them around the orbit
+        push!(spacecraft, _spacecraft(helper, opts.mass_kg, InitialCondition(
+            helper_radius_m, 0.0, helper_inclination_deg, 0.0, 0.0, nu_deg
+        )))
+    end
+    push!(spacecraft, _spacecraft(opts.helpers + 1, opts.mass_kg, InitialCondition(
+        target_radius_m, opts.target_ecc, opts.target_inclination_deg, 0.0, 0.0, opts.target_nu_deg
+    )))
+
+    # 4. Build the laser model
+    laser_model = OpenCavityLaserLinkModel(
+        target_idx=opts.helpers + 1,
+        helper_indices=collect(1:opts.helpers),
+        range_m=opts.laser_range_km * 1e3,
+        power_w=opts.laser_power_w,
+        magnification=opts.magnification,
+        beta=opts.beta,
+        eta=opts.eta,
+        schedule=opts.schedule,
+    )
+
+    # 5. Mission time duration in seconds
+    target_period_s = 2pi * sqrt(target_radius_m^3 / planet.μ)  # initial period [s] (for reference)
+    mission_time_s = opts.orbits * target_period_s
+
+    # 6. The big constructor — wires everything together into one config object
+    args = SimulationConfiguration(
+        simulation_settings=SimulationSettings(
+            results=results_directory !== nothing,
+            verbose=false,
+            results_directory=results_directory !== nothing ? results_directory : "output",
+            generate_plots=false,
+            save_csv=false,
+            normalize=false,
+        ),
+
+        mission_configuration=MissionConfiguration(
+            mission_type=MissionTime,
+            keplerian=true,
+            number_of_orbits=1,
+            mission_time=mission_time_s,
+            orientation_sim=false,
+            num_steps_to_save=opts.timeseries_points - 1,
+            data_rate=opts.output_interval_s,
+        ), # 6.2. Mission duration, output buffer size, and output interval
+
+        environment_model=EnvironmentModel(
+            planet=planet,
+            EI=120.0,
+            density_model=NoAtmosphereModel(),
+            ephemerides_model=SimpleEphemeridesModel(),
+            thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
+            topography=false,
+            wind=false,
+        ), # 6.3. Earth gravity + no atmosphere + simple Sun/Moon ephemerides + thermal model
+
+        dynamics_model=DynamicsModel(spacecraft, (InverseSquaredJ2GravityModel(), laser_model)), # 6.4. forces acting on all spacecraft: J2 gravity + the laser link model
+
+        guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]), 
+        navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+        control_model=ControlModel(control_effectors=(), control_rates=Float64[]), # 6.5, no attitude control, no navigation
+
+        initial_time=InitialTime(year=2026, month=1, day=1, hour=0, minute=0, second=0.0), # 6.6. Calendar start date (Jan 1 2026) used for ephemerides
+        integration_tolerances=IntegrationTolerances(
+            reltol_orbit=1e-12,
+            abstol_orbit=1e-12,
+            dt_max_orbit=opts.dt_max_s,
+        ), # 6.7. Very tight ODE tolerances (1e-12) and a max step size so the integrator doesn't skip over fast events
+
+        solver_config=SolverConfig(solver_mode=:tsit5), # 6.8. 	Use the Tsitouras 5th-order Runge-Kutta solver (:tsit5)
+    )
+    return args, laser_model, target_period_s
+end

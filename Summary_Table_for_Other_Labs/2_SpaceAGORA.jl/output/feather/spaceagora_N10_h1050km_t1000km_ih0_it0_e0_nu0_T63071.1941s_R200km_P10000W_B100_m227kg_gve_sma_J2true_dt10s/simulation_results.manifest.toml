@@ -1,0 +1,22 @@
+scenario = "spaceagora_N10_h1050km_t1000km_ih0_it0_e0_nu0_T63071.1941s_R200km_P10000W_B100_m227kg_gve_sma_J2true_dt10s"
+steps = 6309
+orientation_sim = false
+created_utc = "2026-09-18T17:51:43.592"
+mission_time_s = 63071.19406698447
+schema_version = "1"
+spacecraft_count = 11
+
+[files.laser_on]
+size_bytes = 7450
+sha256 = "0397e3c69d71469fa935ec67119506400dd0c6ec4f2b9e063c6541dd442b00e7"
+path = "/home/space-falcon-3/Desktop/Summary_Table_for_Other_Labs/2_SpaceAGORA.jl/output/feather/spaceagora_N10_h1050km_t1000km_ih0_it0_e0_nu0_T63071.1941s_R200km_P10000W_B100_m227kg_gve_sma_J2true_dt10s/laser_on.feather"
+
+[files.geometry_encounters]
+size_bytes = 7274
+sha256 = "f740257e6e90342b144be20356adcf220e8d6b738ad04de038ef31eebc771b67"
+path = "/home/space-falcon-3/Desktop/Summary_Table_for_Other_Labs/2_SpaceAGORA.jl/output/feather/spaceagora_N10_h1050km_t1000km_ih0_it0_e0_nu0_T63071.1941s_R200km_P10000W_B100_m227kg_gve_sma_J2true_dt10s/geometry_encounters.feather"
+
+[files.trajectory]
+size_bytes = 14176658
+sha256 = "2fbd7774a1e70f08041a1e3839833b352506b0e9da51a294c0cf3e5a04e39226"
+path = "/home/space-falcon-3/Desktop/Summary_Table_for_Other_Labs/2_SpaceAGORA.jl/output/feather/spaceagora_N10_h1050km_t1000km_ih0_it0_e0_nu0_T63071.1941s_R200km_P10000W_B100_m227kg_gve_sma_J2true_dt10s/trajectory.feather"

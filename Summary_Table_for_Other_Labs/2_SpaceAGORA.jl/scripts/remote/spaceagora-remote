@@ -1,0 +1,431 @@
+#!/usr/bin/env bash
+# Push the full current SpaceAGORA.jl working tree to a remote box and run a job
+# there, detached, with output synced back automatically. See:
+#   docs/architecture/remote_job_push_plan.md
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CONF_FILE="$SCRIPT_DIR/remotes.conf"
+RUNS_DIR="$REPO_ROOT/remote_runs"
+
+declare -A REMOTES
+
+DEFAULT_DATA_ALLOWLIST=(
+  "data/GRAMSuite.jl"
+  "data/GRAM_surrogate"
+  "data/Topography_harmonics_data"
+  "data/Gravity_harmonics_data"
+  "Magnetic_field_harmonics_data"
+  "data/spice.txt"
+)
+DEFAULT_PULL_PATHS=("output" "results")
+DEFAULT_POLL_INTERVAL=30
+
+usage() {
+  cat <<'EOF'
+spaceagora-remote — sync SpaceAGORA.jl to a remote box and run a job there.
+
+Usage:
+  spaceagora-remote push [--remote NAME] [--threads N] [--ram SIZE]
+                          [--attach] [--sync-data] [--poll-interval SEC]
+                          -- <command> [args...]
+  spaceagora-remote seed-data [--remote NAME]
+  spaceagora-remote list       [--remote NAME]
+  spaceagora-remote status     [--remote NAME] <job-id>
+  spaceagora-remote attach     [--remote NAME] <job-id>
+  spaceagora-remote log        [--remote NAME] [-f] <job-id>
+  spaceagora-remote pull       [--remote NAME] <job-id>
+  spaceagora-remote watch      [--remote NAME] [--poll-interval SEC] <job-id>
+  spaceagora-remote kill       [--remote NAME] <job-id>
+
+Config: scripts/remote/remotes.conf (copy remotes.conf.example, gitignored).
+EOF
+}
+
+load_config() {
+  if [[ ! -f "$CONF_FILE" ]]; then
+    echo "error: missing $CONF_FILE — copy remotes.conf.example and edit it." >&2
+    exit 1
+  fi
+  # shellcheck source=/dev/null
+  source "$CONF_FILE"
+}
+
+resolve_remote() {
+  local name="$1"
+  if [[ -z "$name" ]]; then
+    local names=() key
+    for key in "${!REMOTES[@]}"; do
+      [[ "$key" == *_host ]] && names+=("${key%_host}")
+    done
+    if [[ ${#names[@]} -eq 1 ]]; then
+      name="${names[0]}"
+    else
+      echo "error: --remote NAME required (configured: ${names[*]:-none})" >&2
+      exit 1
+    fi
+  fi
+  REMOTE_NAME="$name"
+  SSH_ALIAS="${REMOTES[${name}_host]:-}"
+  REMOTE_BASE="${REMOTES[${name}_base]:-}"
+  if [[ -z "$SSH_ALIAS" || -z "$REMOTE_BASE" ]]; then
+    echo "error: remote '$name' not found in $CONF_FILE" >&2
+    exit 1
+  fi
+  # Quoting every use of REMOTE_BASE below (needed for safety) suppresses shell
+  # tilde-expansion, so resolve a leading "~" to an absolute path once here
+  # rather than shipping a literal "~" through to remote mkdir/rsync/cd calls.
+  if [[ "$REMOTE_BASE" == "~"* ]]; then
+    local remote_home
+    remote_home="$(rsh 'printf %s "$HOME"')"
+    REMOTE_BASE="${remote_home}${REMOTE_BASE#\~}"
+  fi
+}
+
+data_allowlist() {
+  local override="REMOTES[${REMOTE_NAME}_data_allowlist]"
+  if [[ -n "${REMOTES[${REMOTE_NAME}_data_allowlist]+x}" ]]; then
+    # shellcheck disable=SC2086
+    echo ${REMOTES[${REMOTE_NAME}_data_allowlist]}
+  else
+    printf '%s\n' "${DEFAULT_DATA_ALLOWLIST[@]}"
+  fi
+}
+
+rsh() { ssh "$SSH_ALIAS" "$@"; }
+
+ensure_remote_dirs() {
+  rsh "mkdir -p '$REMOTE_BASE/canonical_code' '$REMOTE_BASE/canonical_data' '$REMOTE_BASE/releases' '$REMOTE_BASE/jobs' '$REMOTE_BASE/shared_depot'"
+}
+
+sync_code() {
+  # Full working-tree mirror (not git-ls-files-restricted) so the remote sees
+  # exactly what's on this machine -- uncommitted edits, untracked scripts,
+  # and the current Manifest.toml -- rather than only the last commit's tracked
+  # set. `--filter=':- .gitignore'` applies every nested .gitignore the same
+  # way git itself would, which is what keeps this from also dragging along
+  # tool/env scratch (.CondaPkg/, cache/, .claude/, generated *.csv/*.png,
+  # etc. -- see .gitignore). data/ stays out here regardless of ignore status
+  # (opt-in via seed-data/--sync-data, see sync_data) since it's a ~20G
+  # allowlisted blob with its own sync path; output/ and remote_runs/ are pure
+  # local scratch that never belongs on the remote.
+  rsync -az --delete \
+    --filter=':- .gitignore' \
+    --exclude='/.git/' \
+    --exclude='/output/' \
+    --exclude='/data/' \
+    --exclude='/remote_runs/' \
+    --exclude='/scripts/remote/remotes.conf' \
+    "$REPO_ROOT/" "$SSH_ALIAS:$REMOTE_BASE/canonical_code/"
+}
+
+sync_data() {
+  local path parent
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    parent="$(dirname "$path")"
+    rsh "mkdir -p '$REMOTE_BASE/canonical_data/$parent'"
+    if [[ -d "$REPO_ROOT/$path" ]]; then
+      rsync -az --exclude='.git/' "$REPO_ROOT/$path/" "$SSH_ALIAS:$REMOTE_BASE/canonical_data/$path/"
+    elif [[ -f "$REPO_ROOT/$path" ]]; then
+      rsync -az "$REPO_ROOT/$path" "$SSH_ALIAS:$REMOTE_BASE/canonical_data/$path"
+    else
+      echo "warning: data allowlist path not found locally, skipping: $path" >&2
+    fi
+  done < <(data_allowlist)
+}
+
+new_job_id() {
+  echo "$(date +%Y%m%d-%H%M%S)-$$"
+}
+
+cmd_push() {
+  local remote="" threads="" ram="" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      --threads) threads="$2"; shift 2 ;;
+      --ram) ram="$2"; shift 2 ;;
+      --attach) attach=1; shift ;;
+      --sync-data) sync_data_flag=1; shift ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      --) shift; break ;;
+      *) echo "error: unexpected push argument '$1'" >&2; exit 1 ;;
+    esac
+  done
+  if [[ $# -eq 0 ]]; then
+    echo "error: no command given after --" >&2
+    exit 1
+  fi
+  resolve_remote "$remote"
+
+  local job_id session job_dir release_dir
+  job_id="$(new_job_id)"
+  session="spaceagora-$job_id"
+  job_dir="$REMOTE_BASE/jobs/$job_id"
+  release_dir="$REMOTE_BASE/releases/$job_id"
+
+  echo "==> syncing code to $REMOTE_NAME ($SSH_ALIAS)"
+  ensure_remote_dirs
+  sync_code
+  if [[ $sync_data_flag -eq 1 ]]; then
+    echo "==> syncing data allowlist (this can be slow the first time)"
+    sync_data
+  fi
+
+  echo "==> building release $job_id"
+  rsh "mkdir -p '$job_dir' '$release_dir/output' '$release_dir/results' && cp -al '$REMOTE_BASE/canonical_code/.' '$release_dir/' && (cp -al '$REMOTE_BASE/canonical_data/.' '$release_dir/' 2>/dev/null || true)"
+
+  local cmd_str
+  cmd_str="$(printf '%q ' "$@")"
+  local run_sh
+  run_sh="$(mktemp)"
+  cat > "$run_sh" <<EOF
+#!/usr/bin/env bash
+set -uo pipefail
+cd "$release_dir" || exit 1
+export JULIA_DEPOT_PATH="$REMOTE_BASE/shared_depot"
+export JULIA_NUM_THREADS="${threads:-}"
+export SPACEAGORA_PERF_PROCS="${threads:-}"
+export SPACEAGORA_REMOTE_JOB_RAM_HINT="${ram:-}"
+echo "PID=\$\$" >> "$job_dir/job.meta"
+echo "START=\$(date -Iseconds)" >> "$job_dir/job.meta"
+julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$job_dir/instantiate.log" 2>&1
+INSTANTIATE_EXIT=\$?
+if [ \$INSTANTIATE_EXIT -ne 0 ]; then
+  { echo "Pkg.instantiate() failed (exit \$INSTANTIATE_EXIT) -- see instantiate.log"; cat "$job_dir/instantiate.log"; } > "$job_dir/job.log"
+  echo "END=\$(date -Iseconds)" >> "$job_dir/job.meta"
+  echo "EXIT_CODE=\$INSTANTIATE_EXIT" >> "$job_dir/job.meta"
+  exit \$INSTANTIATE_EXIT
+fi
+$cmd_str > "$job_dir/job.log" 2>&1
+EXIT_CODE=\$?
+echo "END=\$(date -Iseconds)" >> "$job_dir/job.meta"
+echo "EXIT_CODE=\$EXIT_CODE" >> "$job_dir/job.meta"
+exit \$EXIT_CODE
+EOF
+  rsh "cat > '$job_dir/run.sh'" < "$run_sh"
+  rm -f "$run_sh"
+  rsh "chmod +x '$job_dir/run.sh'"
+
+  {
+    echo "JOB_ID=$job_id"
+    echo "REMOTE=$REMOTE_NAME"
+    echo "SESSION=$session"
+    echo "COMMAND=$cmd_str"
+    echo "THREADS=${threads:-unset}"
+    echo "RAM_HINT=${ram:-unset}"
+  } | rsh "cat > '$job_dir/job.meta'"
+
+  echo "==> launching (tmux session: $session)"
+  local tmux_cmd
+  tmux_cmd="$(printf 'tmux new-session -d -s %q %q' "$session" "bash '$job_dir/run.sh'")"
+  rsh "$tmux_cmd"
+
+  echo "job id: $job_id"
+  echo "log:    spaceagora-remote log --remote $REMOTE_NAME $job_id -f"
+  echo "status: spaceagora-remote status --remote $REMOTE_NAME $job_id"
+
+  if [[ $attach -eq 1 ]]; then
+    ssh -t "$SSH_ALIAS" "tmux attach -t '$session'"
+  else
+    spawn_watcher "$job_id" "$poll_interval"
+    echo "watcher: backgrounded locally, will auto-pull output/results on completion"
+  fi
+}
+
+cmd_seed_data() {
+  local remote=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) echo "error: unexpected argument '$1'" >&2; exit 1 ;;
+    esac
+  done
+  resolve_remote "$remote"
+  ensure_remote_dirs
+  echo "==> syncing data allowlist to $REMOTE_NAME (first run can take a while, ~20G)"
+  sync_data
+  echo "done"
+}
+
+cmd_list() {
+  local remote=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) echo "error: unexpected argument '$1'" >&2; exit 1 ;;
+    esac
+  done
+  resolve_remote "$remote"
+  rsh "cd '$REMOTE_BASE/jobs' 2>/dev/null && for j in \$(ls -1t 2>/dev/null | head -20); do
+    running=\$(tmux has-session -t \"spaceagora-\$j\" 2>/dev/null && echo running || echo done)
+    cmd=\$(grep '^COMMAND=' \"\$j/job.meta\" 2>/dev/null | cut -d= -f2- | cut -c1-60)
+    printf '%-28s %-8s %s\n' \"\$j\" \"\$running\" \"\$cmd\"
+  done"
+}
+
+require_job_id() {
+  if [[ $# -eq 0 ]]; then
+    echo "error: job-id required" >&2
+    exit 1
+  fi
+}
+
+cmd_status() {
+  local remote="" job_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  rsh "tmux has-session -t 'spaceagora-$job_id' 2>/dev/null && echo 'state: running' || echo 'state: not running (see EXIT_CODE below if finished)'; echo; cat '$REMOTE_BASE/jobs/$job_id/job.meta' 2>/dev/null || echo 'no job.meta found'"
+}
+
+cmd_attach() {
+  local remote="" job_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  ssh -t "$SSH_ALIAS" "tmux attach -t 'spaceagora-$job_id'"
+}
+
+cmd_log() {
+  local remote="" job_id="" follow=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      -f) follow=1; shift ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  if [[ $follow -eq 1 ]]; then
+    ssh -t "$SSH_ALIAS" "tail -n 100 -f '$REMOTE_BASE/jobs/$job_id/job.log'"
+  else
+    rsh "tail -n 200 '$REMOTE_BASE/jobs/$job_id/job.log'"
+  fi
+}
+
+cmd_kill() {
+  local remote="" job_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  rsh "tmux kill-session -t 'spaceagora-$job_id'"
+  # tmux kill-session skips run.sh's own EXIT_CODE write, so mark it here —
+  # otherwise any watcher polling this job.meta for completion loops forever.
+  rsh "echo 'EXIT_CODE=killed' >> '$REMOTE_BASE/jobs/$job_id/job.meta'"
+  pkill -f "$job_id/\.watch\.sh" 2>/dev/null
+}
+
+do_pull() {
+  local job_id="$1"
+  local local_dir="$RUNS_DIR/$REMOTE_NAME/$job_id"
+  mkdir -p "$local_dir"
+  local p
+  for p in "${DEFAULT_PULL_PATHS[@]}"; do
+    if rsh "[[ -d '$REMOTE_BASE/releases/$job_id/$p' ]]"; then
+      mkdir -p "$local_dir/$p"
+      rsync -az "$SSH_ALIAS:$REMOTE_BASE/releases/$job_id/$p/" "$local_dir/$p/"
+    fi
+  done
+  rsh "cat '$REMOTE_BASE/jobs/$job_id/job.log'" > "$local_dir/job.log" 2>/dev/null
+  rsh "cat '$REMOTE_BASE/jobs/$job_id/job.meta'" > "$local_dir/job.meta" 2>/dev/null
+  echo "pulled to $local_dir"
+}
+
+cmd_pull() {
+  local remote="" job_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  do_pull "$job_id"
+}
+
+spawn_watcher() {
+  local job_id="$1" poll_interval="$2"
+  local local_dir="$RUNS_DIR/$REMOTE_NAME/$job_id"
+  mkdir -p "$local_dir"
+  local watch_log="$local_dir/.watch.log"
+  local watch_sh="$local_dir/.watch.sh"
+  # Written to a real file (rather than an inline `bash -c "..."` string) so the
+  # generation-time substitutions below (SSH_ALIAS, REMOTE_BASE, job_id, ...) and
+  # the runtime-only expansions (escaped $meta / $(...)) don't fight over the
+  # same quoting layer.
+  cat > "$watch_sh" <<EOF
+#!/usr/bin/env bash
+while true; do
+  meta=\$(ssh "$SSH_ALIAS" "cat '$REMOTE_BASE/jobs/$job_id/job.meta' 2>/dev/null")
+  if echo "\$meta" | grep -q '^EXIT_CODE='; then
+    "$SCRIPT_DIR/spaceagora-remote" pull --remote "$REMOTE_NAME" "$job_id"
+    echo "watch complete: \$(echo "\$meta" | grep '^EXIT_CODE=')"
+    command -v notify-send >/dev/null 2>&1 && notify-send 'spaceagora-remote' 'job $job_id finished'
+    break
+  fi
+  sleep "$poll_interval"
+done
+EOF
+  chmod +x "$watch_sh"
+  setsid bash "$watch_sh" < /dev/null > "$watch_log" 2>&1 &
+  disown
+}
+
+cmd_watch() {
+  local remote="" job_id="" poll_interval="$DEFAULT_POLL_INTERVAL"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) remote="$2"; shift 2 ;;
+      --poll-interval) poll_interval="$2"; shift 2 ;;
+      *) job_id="$1"; shift ;;
+    esac
+  done
+  require_job_id "$job_id"
+  resolve_remote "$remote"
+  spawn_watcher "$job_id" "$poll_interval"
+  echo "watcher backgrounded for $job_id (log: $RUNS_DIR/$REMOTE_NAME/$job_id/.watch.log)"
+}
+
+main() {
+  if [[ $# -eq 0 ]]; then
+    usage
+    exit 1
+  fi
+  load_config
+  local sub="$1"; shift
+  case "$sub" in
+    push) cmd_push "$@" ;;
+    seed-data) cmd_seed_data "$@" ;;
+    list) cmd_list "$@" ;;
+    status) cmd_status "$@" ;;
+    attach) cmd_attach "$@" ;;
+    log) cmd_log "$@" ;;
+    pull) cmd_pull "$@" ;;
+    watch) cmd_watch "$@" ;;
+    kill) cmd_kill "$@" ;;
+    -h|--help|help) usage ;;
+    *) echo "error: unknown subcommand '$sub'" >&2; usage; exit 1 ;;
+  esac
+}
+
+main "$@"

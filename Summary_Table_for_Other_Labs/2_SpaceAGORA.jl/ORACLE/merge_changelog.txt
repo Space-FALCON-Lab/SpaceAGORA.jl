@@ -1,0 +1,117 @@
+ORACLE → SpaceAGORA Merge Changes
+Date: 2026-08-03
+Branch: laser-actuators
+
+================================================================================
+1. LaserImpulseTracker moved into src/
+================================================================================
+NEW in src/dynamics/coupled/force_torque_models/laser_link_effectors.jl:
+  - struct LaserImpulseTracker (was _LaserImpulseTracker in ORACLE/functions/2_Laser_Forces_ver2.jl)
+  - function laser_impulse_callback (was _make_laser_impulse_callback)
+  - function tracked_dv_at (was _tracked_dv_at)
+  - All three exported from LaserLinkEffectors module
+
+UPDATED src/dynamics/coupled/force_torque_models.jl:
+  - Added: using .LaserLinkEffectors: LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
+  - Added: export LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
+
+UPDATED src/SpaceAGORA.jl:
+  - Added: using .SimulationModel: LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
+  - Added: export LaserImpulseTracker, laser_impulse_callback, tracked_dv_at
+
+================================================================================
+2. ORACLE updated to use new names from src/
+================================================================================
+UPDATED ORACLE/functions/2_Laser_Forces_ver2.jl:
+  - Cleared all function definitions; file now contains only a redirect comment
+
+UPDATED ORACLE/functions/8_LoS_time_series.jl:
+  - _LaserImpulseTracker  -> LaserImpulseTracker  (type annotation)
+  - _tracked_dv_at        -> tracked_dv_at
+
+UPDATED ORACLE/functions/9_Runners.jl:
+  - _LaserImpulseTracker()          -> LaserImpulseTracker()
+  - _make_laser_impulse_callback    -> laser_impulse_callback
+  - _LaserImpulseTracker (type annotation on _build_laser_save_fields) -> LaserImpulseTracker
+
+UPDATED ORACLE/run_case2_laser_links.jl:
+  - Removed: include("functions/2_Laser_Forces_ver2.jl")
+  - Added comment noting tracker now lives in src/
+
+================================================================================
+3. build_case_config / build_case_config_native merged into one function
+================================================================================
+UPDATED ORACLE/functions/3_Dynamics.jl:
+  - build_case_config_native(opts, results_directory) deleted
+  - build_case_config(opts) signature changed to:
+      build_case_config(opts, results_directory::Union{String,Nothing}=nothing)
+  - SimulationSettings now set conditionally:
+      results      = results_directory !== nothing
+      results_directory = results_directory !== nothing ? results_directory : "output"
+      save_csv     = results_directory !== nothing && !opts.feather_only
+
+UPDATED ORACLE/functions/9_Runners.jl:
+  - run_open_cavity_case_native: build_case_config_native(opts, results_dir)
+    -> build_case_config(opts, results_dir)
+
+================================================================================
+4. _spacecraft/_ver_spacecraft deduplication
+================================================================================
+NEW ORACLE/functions/0_Spacecraft.jl:
+  - Contains the single canonical _spacecraft(id, mass_kg, ic) function
+
+UPDATED ORACLE/functions/3_Dynamics.jl:
+  - Removed inline _spacecraft function definition and surrounding comment blocks
+  - Added: include(joinpath(@__DIR__, "0_Spacecraft.jl"))
+
+UPDATED ORACLE/Paper_Numerical_Verification_Code/run_verification.jl:
+  - Removed _ver_spacecraft function definition and its section header comment
+  - Added: include(joinpath(@__DIR__, "..", "functions", "0_Spacecraft.jl"))
+  - All _ver_spacecraft(...) call sites updated to _spacecraft(...)
+
+================================================================================
+5. Non-native runner retired
+================================================================================
+UPDATED ORACLE/functions/9_Runners.jl:
+  - Removed run_open_cavity_case (old prototype runner that built its own
+    timeseries DataFrame). run_open_cavity_case_native is the only runner now.
+
+================================================================================
+Why the ORACLE folder stays in this repo
+================================================================================
+ORACLE is research/application code that USES SpaceAGORA — it is not part of the
+SpaceAGORA library itself and will never live in src/.  It is analogous to the
+examples/ folder but for a full paper simulation.
+
+  run_case2_laser_links.jl        -- simulation driver for the laser-links paper
+  functions/                      -- mission-specific config, analysis, and plot helpers
+  post_processing/                -- standalone scripts that read feather output files
+  Paper_Numerical_Verification_Code/ -- conservation-law verification runs for the paper
+
+It stays here (rather than a separate repo) because:
+  1. It depends on include(common.jl) and SpaceAGORA internals that are not yet
+     stable public API.
+  2. Co-location makes it easy to keep in sync as SpaceAGORA's API evolves.
+
+Future: once the paper is published and SpaceAGORA's API stabilises, ORACLE can
+be spun out into its own SpaceAGORAOracle.jl repo with SpaceAGORA as a dependency.
+
+================================================================================
+Deferred / Not Yet Implemented
+================================================================================
+- Move _FlatSol, _make_flat_sol_from_feather, _orbit_count_from_flat_sol from
+  ORACLE/functions/4_Diagnostics.jl to src/analysis/
+  Blocked on: _rv_to_elements is not yet in src/ (currently only in
+  ORACLE/functions/5_OE_Converters.jl).
+
+- Resolve _rtn_basis duplication: defined in both
+  src/dynamics/coupled/force_torque_models/laser_link_effectors.jl (module-scoped)
+  and ORACLE/functions/5_OE_Converters.jl (file-scope include).
+  No name conflict at runtime but worth unifying once _rv_to_elements moves to src/.
+
+================================================================================
+Files NOT changed (historic, self-contained)
+================================================================================
+  ORACLE/run_case2_laser_links_ver2.jl  -- own copy of tracker, left as-is
+  ORACLE/run_case2_laser_links_ver3.jl  -- own copy of tracker, left as-is
+  ORACLE/run_case2_laser_links_ver4.jl  -- own copy of tracker, left as-is

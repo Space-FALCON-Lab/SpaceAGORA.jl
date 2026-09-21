@@ -37,7 +37,7 @@ run() { # case mode workers threads mc label
   echo "[targeted] $lbl: case=$c mode=$m workers=$w threads=$t mc=$mc"
   timeout 7200 julia --threads="$t" --project=. benchmarks/studies/parallelization_performance.jl \
     --profile=full --worker --case="$c" --mode="$m" --thread-count="$t" \
-    --worker-repeats=11 --worker-mc-samples="$mc" --warmup=1 --process-workers="$w" --parity=0 \
+    --worker-repeats="${REPEATS:-11}" --worker-mc-samples="$mc" --warmup=1 --process-workers="$w" --parity=0 \
     --outfile="$OUT/${lbl}_${m}.csv" > "$OUT/${lbl}_${m}.log" 2>&1
   tail -3 "$OUT/${lbl}_${m}.log"
 }
@@ -65,6 +65,9 @@ case "${POINT:?set POINT}" in
     SPACEAGORA_POOL_WORKER_GC=incremental run montecarlo_heavy_aerobraking outer_process 32 32 32 dAgcincr
     SPACEAGORA_POOL_WORKER_GC=off         run montecarlo_heavy_aerobraking predictive    32 32 32 dAgcoff
     SPACEAGORA_POOL_WORKER_GC=off         run montecarlo_heavy_aerobraking outer_process 32 32 32 dAgcoff ;;
+  defectA_33) # cold store, 33 repeats: is R7's higher mid-campaign worker-GC incidence real?
+    REPEATS=33 run montecarlo_heavy_aerobraking predictive    32 32 32 dA33
+    REPEATS=33 run montecarlo_heavy_aerobraking outer_process 32 32 32 dA33 ;;
   *) echo "unknown POINT=$POINT"; exit 2 ;;
 esac
 echo "[targeted] done -> $OUT"; ls "$OUT"

@@ -461,6 +461,89 @@ python3 scripts/make_paper_routing_tables.py \
     output/performance/paper_benchmarks/<stamp> --out output/paper_routing_tables
 ```
 
+## Figure F2 (P6, P6p) — thread scaling across force models and density paths
+
+One constellation size, six traces, the thread ladder `1, 2, 4, 8, 16, 32`: what
+happens to constellation thread scaling as the force model and the density path
+get heavier. Trace 2 is P1/P2's own 4096 rung, reused rather than duplicated, so
+the figure and those tables share a serial baseline.
+
+| # | Trace | Case | Mission | `dt_max` | Phase |
+|---|---|---|---|---:|---|
+| 1 | degree 20 harmonics, vacuum | `gravity_4096sat_l20_vacuum_19700s` | 19 700 s | 20 s | P6 |
+| 2 | degree 50 harmonics, vacuum | `gravity_4096sat_l50_vacuum_5800s` | 5 800 s | 20 s | P6 |
+| 3 | + SRP + Sun/Moon third body | `gravity_4096sat_l50_srp_nbody_vacuum_5800s` | 5 800 s | 20 s | P6 |
+| 4 | + analytic exponential atmosphere | `aero_4096sat_l50_expatm_100s` | 100 s | 5 s | P6 |
+| 5 | + native GRAM, look-ahead cache | `aero_4096sat_l50_gram_lookahead_100s` | 100 s | 5 s | P6 |
+| 6 | + native GRAM, process route | `aero_4096sat_l50_gram_process_100s` | 100 s | 5 s | P6p |
+
+Modes: P6 runs `serial` (the speedup denominator, at the bottom rung only),
+`inner_only` (R2 — one simulation, the split inside the RHS across satellites,
+which is what this figure is about) and `predictive` (R7, the adaptive arm).
+P6p runs `serial`, `outer_process` and `predictive` over a worker ladder with
+threads pinned at 1. Three repeats, one warm-up, cold store.
+
+**Two phases, one figure.** A phase declares one mode ladder for all of its
+cases and the six traces do not share one. Traces 1–5 are single simulations of
+4096 spacecraft, and `outer_process` is a no-op on them: the harness only ever
+spreads *samples* across processes
+(`uses_process_pool = sample_count > 1 && mode.backend == "process"`,
+`execution.jl`), so a one-sample constellation case under the process route
+degenerates to one in-process solve and contributes six identical rows per case.
+Trace 6 is the same 4096 spacecraft-missions arranged as 4096 one-spacecraft
+samples — the only arrangement the process route can spread, and the same
+arrangement `paper_scenarios` S2 uses for its `process_members` mode — and
+running *that* under `inner_only` would be 4096 sequential solves with the pool
+idle. The satellites in this catalog exert no force on one another, so the two
+arrangements do the same total physics; what differs is where the parallelism
+can go and how many native GRAM images the machine must hold at once, which is
+the trade the figure exists to show. Always run and archive P6 and P6p together.
+
+**The density path is selected by environment, not by configuration.** Which of
+the two ways of reading one shared native `GRAMAtmosphereModel` a run uses lives
+in `SPACEAGORA_*` env read at density-callback assembly time, so neither the
+case builder nor the phase can express it. `_ppc_p6_gram_density_env!` in
+`cases.jl` sets it from the `--case=` argument at include time, the same way
+`ppc_ensure_gramsuite_loaded!` decides whether to load GRAMSuite. The values are
+S2's: the look-ahead trace puts the cache horizon past the end of the mission and
+the deviation threshold past anything the mission can reach, so only the
+initial (proven-safe) build ever runs — a workaround for the native
+cache-rebuild hang with two or more satellites, not a tuning choice — and the
+process trace freezes density per accepted step, without which per-RK-stage
+perturbation noise collapses the adaptive step size.
+
+**Mission length is per trace, and it is a prediction.** A single duration across
+stacks this different puts the light traces under the 3 s measurability floor and
+the GRAM traces into the hours, so each trace is sized against trace 2's measured
+serial baseline instead, exactly as `PPC_L50_ISO_MISSION_S` sizes the
+constellation-count ladder, and the duration is a column of the figure's table.
+The derivations, and the CSV behind each number, are in `FIGURE_RUNS.md`;
+the short version, all against trace 2's measured TRX50 serial baseline of
+**11.86 s**
+(`paper_benchmarks_trx50_cold11/20260918_162845`, phase P2, 11 repeats):
+
+| Trace | Mission | Predicted serial baseline on the TRX50 | Derived from |
+|---|---:|---:|---|
+| 1 | 19 700 s | 7.0–11.9 s | S1's degree-50/degree-20 serial ratio at 4096 spacecraft (3.39), bracketed against the batched kernel's term-count ratio (5.74) |
+| 2 | 5 800 s | 11.86 s (measured) | — |
+| 3 | 5 800 s | 13–15 s | ≥ trace 2 by construction; `atmo256_gram_live_nbody`/`atmo256_gram_live` puts the third body at +10% |
+| 4 | 100 s | 12.9 s | `atmo256_exponential_10min` serial 4.854 s, scaled ×16 in spacecraft and ×100/600 in duration |
+| 5 | 100 s | 112 s | `atmo256_gram_live_10min` serial 42.06 s, same scaling |
+| 6 | 100 s | ~356 s over 4096 samples | S2 `process_members`, 87 ms per one-spacecraft sample |
+
+Trace 5 is nine times trace 2's baseline and dominates P6's wall clock. That is
+deliberate and is the shortest mission at which the GRAM traces are still
+simulations rather than measurements of per-solve setup: sizing trace 5 to
+11.86 s the way the others are sized would demand a 10 s mission at 4096
+spacecraft.
+
+Recalibrate on a host these were not derived for before quoting anything from a
+run there:
+
+```bash
+bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh calibrate-p6 --execute
+```
+
 ## Underlying case families (`parallelization_performance/cases.jl`)
 
 The phases above draw from a shared case catalog, grouped into families:
@@ -504,6 +587,21 @@ The phases above draw from a shared case catalog, grouped into families:
 - **`duration_cadence`** — `gravity_16sat_l20_vacuum_longmission`,
   `gravity_1024sat_l50_vacuum_15min`, `cadence_1024sat_{none,10s,1s}`. Mission
   length and trajectory-output volume. B14.
+- **`p6_force_ladder`** — `gravity_{N}sat_l20_vacuum_19700s`,
+  `gravity_{N}sat_l50_srp_nbody_vacuum_5800s`. Traces 1 and 3 of figure F2:
+  the vacuum force model made lighter (degree 20) and heavier (SRP plus
+  Sun/Moon third body, which puts CSPICE under `SPICE_LOCK` in the middle of an
+  otherwise perfectly parallel RHS). P6.
+- **`p6_density_ladder`** — `aero_{N}sat_l50_{expatm,gram_lookahead,gram_process}_100s`.
+  Traces 4–6 of the same figure: the `atmo256_*` ladder's design (fixed
+  spacecraft count, mission and harmonic degree; only the density model varies)
+  at the figure's constellation size. `gram_process` is a Monte Carlo case with
+  `default_samples` equal to the constellation size — one spacecraft per sample —
+  because the process route spreads samples and never constellation members.
+  P6 and P6p. Registered at N = 4096 (the figure) and N = 16; **the 16-spacecraft
+  entries exist for the `--profile=test` smoke path only** — that profile pins the
+  mission at 10 s and so ignores the duration in the name, and those rows are not
+  sized rungs and must never be quoted as measurements.
 
 ### Measured case costs (space-falcon-1, serial, post-warm-up)
 

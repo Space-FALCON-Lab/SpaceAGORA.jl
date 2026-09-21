@@ -297,6 +297,60 @@ const PPB_PAPER_SIZE_CASES =
 _ppb_paper_size_case(n::Int) =
     PPB_PAPER_SIZE_CASES[something(findfirst(p -> p[1] == n, PPC_L50_ISO_MISSION_S), 1)]
 
+# ── P6/P6p: the force-model and atmosphere figure (F2) ───────────────────────
+#
+# One constellation size, six traces, thread ladder 1..32: what happens to
+# constellation thread scaling as the force model and the density path get
+# heavier. Trace 2 is P2's own rung, reused rather than duplicated, so the figure
+# and the P1/P2 tables share a serial baseline.
+#
+#   1  degree 20 harmonics, vacuum                     gravity_<N>sat_l20_vacuum_<S>s
+#   2  degree 50 harmonics, vacuum                     gravity_<N>sat_l50_vacuum_<S>s
+#   3  + solar radiation pressure + Sun/Moon third body  gravity_<N>sat_l50_srp_nbody_vacuum_<S>s
+#   4  degree 50 + analytic exponential atmosphere     aero_<N>sat_l50_expatm_<S>s
+#   5  degree 50 + native GRAM, look-ahead density cache  aero_<N>sat_l50_gram_lookahead_<S>s
+#   6  degree 50 + native GRAM on the process route    aero_<N>sat_l50_gram_process_<S>s
+#
+# WHY TWO PHASES. A phase declares one mode ladder for all of its cases, and the
+# six traces do not share one. Traces 1-5 are single simulations of N spacecraft,
+# where the thing under test is the inner (per-satellite RHS) split, and the
+# process route is a no-op on them -- the harness only spreads *samples* across
+# processes (`uses_process_pool = sample_count > 1 && mode.backend == "process"`,
+# execution.jl), so outer_process on a one-sample constellation case degenerates
+# to one in-process solve and would contribute six identical rows per case.
+# Trace 6 is the same spacecraft-missions arranged as N one-spacecraft samples,
+# which is the only arrangement the process route can spread, and running *it*
+# under inner_only would be N sequential solves with the pool idle. Splitting
+# them is what keeps every point in this figure a measurement; both phases are
+# the same figure and are archived together.
+#
+# SIZE. 4096 spacecraft, and the native-GRAM traces fit there too -- which is not
+# what the router's own memory model predicts. `native_gram_worker_extra_bytes`
+# charges 90 MB per spacecraft for a native GRAM constellation (~360 GB at 4096,
+# more than the benchmark box has), but the measured resident memory of a live
+# GRAM constellation on that box is 1.7 GB plus ~1.0 MB per spacecraft, i.e.
+# ~5.9 GB at 4096; the process trace's 32 workers at 128 samples each is the
+# binding case at ~174 GB against 250 GB installed. Both figures are fitted from
+# measurement in FIGURE_RUNS.md, which names the CSV behind each one. The
+# discrepancy with the 90 MB constant is recorded there; it is not resolved here.
+#
+# MISSION LENGTH IS PER TRACE. See the ppc_single_config branches and
+# FIGURE_RUNS.md: a shared duration puts the light traces under the 3 s
+# measurability floor and the GRAM traces into the hours, so each one is sized
+# against trace 2's measured serial baseline instead, and the duration is a
+# column of the figure's table. These are per-machine predictions -- recalibrate
+# with `bash paper_figure_runs.sh calibrate-p6` before a paper run on a host they
+# were not derived for.
+const PPB_P6_N_SAT              = 4096
+const PPB_P6_L20_MISSION_S      = 19700
+const PPB_P6_VACUUM_MISSION_S   = 5800
+const PPB_P6_AERO_MISSION_S     = 100
+
+_ppb_p6_l20_case(n::Int=PPB_P6_N_SAT)   = "gravity_$(n)sat_l20_vacuum_$(PPB_P6_L20_MISSION_S)s"
+_ppb_p6_nbody_case(n::Int=PPB_P6_N_SAT) = "gravity_$(n)sat_l50_srp_nbody_vacuum_$(PPB_P6_VACUUM_MISSION_S)s"
+_ppb_p6_aero_case(variant::String, n::Int=PPB_P6_N_SAT) =
+    "aero_$(n)sat_l50_$(variant)_$(PPB_P6_AERO_MISSION_S)s"
+
 # ── Phase catalog ─────────────────────────────────────────────────────────────
 
 const PAPER_BENCHMARK_PHASES = PPBPhase[
@@ -1143,6 +1197,65 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         repeats      = 5,
         warmup       = 1,
         budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P6",
+        label = "Paper — Thread Scaling at 4096 Spacecraft, Force-Model and Atmosphere Variants",
+        # Traces 1-5. Trace 2 comes from _ppb_paper_size_case so the rung is the
+        # same object P1 and P2 use and cannot drift from PPC_L50_ISO_MISSION_S.
+        cases = [
+            _ppb_p6_l20_case(),
+            _ppb_paper_size_case(PPB_P6_N_SAT),
+            _ppb_p6_nbody_case(),
+            _ppb_p6_aero_case("expatm"),
+            _ppb_p6_aero_case("gram_lookahead"),
+        ],
+        # No parity case, for P2's reason and one more: a parity run is 512
+        # sampled trajectory points per mode at the top thread count, and at 4096
+        # spacecraft against live native GRAM that is the most expensive single
+        # thing this catalog can be asked to do. P1 carries the P-series parity
+        # check at 256 spacecraft, and the force models here are the ones B10 and
+        # B11 already parity-check at their own sizes.
+        parity_cases = String[],
+        # inner_only (R2) is the route this figure is about: one simulation, the
+        # split inside the RHS across satellites, no outer split to confound it.
+        # serial supplies the speedup denominator -- the controller runs it at the
+        # bottom rung only, which is the one place it is not redundant. predictive
+        # (R7) is the adaptive arm; it runs the whole ladder rather than only the
+        # top rung because a phase cannot restrict one mode to one thread count,
+        # and the extra rungs roughly double the phase's cost.
+        modes        = ["serial", "inner_only", "predictive"],
+        mc_samples   = [1],
+        repeats      = 3,
+        warmup       = 1,
+        thread_mode  = :full_ladder,
+    ),
+    PPBPhase(
+        id    = "P6p",
+        label = "Paper — Process Route at 4096 Spacecraft, Native GRAM",
+        # Trace 6. Same spacecraft-missions as trace 5, arranged as one-spacecraft
+        # samples so the process route has something to spread; see the phase
+        # comment above the P6 constants for why this cannot live in P6.
+        cases        = [_ppb_p6_aero_case("gram_process")],
+        parity_cases = String[],
+        modes        = ["serial", "outer_process", "predictive"],
+        # Must equal the case name's spacecraft count: the trace only means "the
+        # same constellation, propagated as independent members" if every member
+        # is a sample. The case also carries this in default_samples, which the
+        # harness honours only for the joint_routing family, so the phase states
+        # it too.
+        mc_samples   = [PPB_P6_N_SAT],
+        repeats      = 3,
+        warmup       = 1,
+        # Worker count per rung, threads pinned at 1: each Distributed worker is
+        # its own --threads=1 process with its own native GRAM instance, which is
+        # the whole point of the trace and also its memory cost. The ladder is the
+        # host-sized budget ladder, the same axis P6's thread ladder sweeps, so
+        # the two traces can be plotted against one x axis. budget_grid_fixed
+        # because the ladder is already derived from this host -- see
+        # PPBPhase.budget_grid_fixed.
+        budget_grid  = [(w, 1) for w in _ppb_paper_budget_ladder()],
         budget_grid_fixed = true,
     ),
 ]

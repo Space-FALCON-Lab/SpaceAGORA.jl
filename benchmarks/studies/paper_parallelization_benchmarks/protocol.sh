@@ -5,7 +5,9 @@
 #   SPACEAGORA_PPB_OUTDIR           — output root directory
 #                                     default: <repo>/output/performance/paper_benchmarks
 #   SPACEAGORA_PPB_PHASES           — comma-separated phase subset, e.g. B1,B2
-#                                     default: all phases (B1–B8)
+#                                     default: every phase in the catalog
+#                                     (B1–B15, the light L8–L15 set, and the
+#                                     paper figure phases P1–P5, P6 and P6p)
 #   SPACEAGORA_PPB_THREADS          — comma-separated thread ladder override
 #                                     default: auto-scaled to the machine's
 #                                     PHYSICAL core count (not Sys.CPU_THREADS —
@@ -86,6 +88,36 @@
 # Example — resume a crashed run instead of starting over:
 #   SPACEAGORA_PPB_PHASES=B6 SPACEAGORA_PPB_RESUME=output/performance/paper_benchmarks/20260819_195133 \
 #     bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
+
+# ── The paper's figure runs ──────────────────────────────────────────────────
+#
+# This script runs "the suite". A figure needs more than that: a machine, an
+# ordering, and a calibration-store state, any of which can be wrong in a way
+# that still produces a plausible CSV. Those live in paper_figure_runs.sh in
+# this directory, which prints and (with --execute) runs the ordered sequence
+# per machine, and which refuses to start a timed run on a busy box.
+#
+#   bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh workstation
+#   bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh trx50
+#
+# Example — figure F2 (thread scaling at 4096 spacecraft across force models and
+# density paths) on the benchmark box. P6 carries the five traces that are one
+# simulation of 4096 spacecraft; P6p carries the sixth, the same spacecraft
+# arranged as independent samples so the process route has something to spread.
+# They are one figure and are always run and archived together:
+#   SPACEAGORA_PPB_PHASES=P6,P6p SPACEAGORA_PPB_THREADS=1,2,4,8,16,32 \
+#     SPACEAGORA_PPB_PROCESS_WORKERS=32 \
+#     bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
+#
+# Example — see what that would run, without running it:
+#   SPACEAGORA_PPB_PHASES=P6,P6p SPACEAGORA_PPB_DRY_RUN=1 \
+#     bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
+#
+# P6's mission lengths are per-machine predictions, not constants of the
+# physics — the same status PPC_L50_ISO_MISSION_S has. Recalibrate them on a
+# host they were not derived for before quoting anything from a run there:
+#   bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh \
+#     calibrate-p6 --execute
 
 set -euo pipefail
 

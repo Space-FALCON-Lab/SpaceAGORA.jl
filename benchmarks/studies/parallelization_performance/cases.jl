@@ -58,8 +58,75 @@ const PPC_GRAM_LIVE_CASES = (
     # the worker dies with "no method matching GRAMAtmosphereModel(; planet_name)"
     # -- which reads like a broken case rather than a missing import.
     "campaign_gnc_6dof_gram",
+    # Matches both P6 native-GRAM traces
+    # (aero_<N>sat_l50_gram_lookahead_<S>s and aero_<N>sat_l50_gram_process_<S>s)
+    # the same way the ladders above do, so new sizes and durations do not need
+    # adding here. The process trace needs it on the coordinator as well as on
+    # the pool workers: ppc_ensure_process_workers! loads GRAMSuite on every
+    # Distributed worker unconditionally, but the coordinator builds the probe
+    # config for route resolution and the warm-up solves itself.
+    "l50_gram_",
 )
 any(a -> any(c -> occursin(c, a), PPC_GRAM_LIVE_CASES), ARGS) && ppc_ensure_gramsuite_loaded!()
+
+"""
+    _ppc_p6_gram_density_env!(args)
+
+Select the density path for the two P6 native-GRAM traces, from the case name on
+the command line.
+
+Which of the two ways of reading one shared native `GRAMAtmosphereModel` a run
+uses is not part of `SimulationConfiguration` -- it is read from `SPACEAGORA_*`
+env when the density callback is assembled
+(`src/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl` for the
+look-ahead cache, `.../density_callbacks/config.jl` for the freeze-per-accepted-
+step switch). So the case builder cannot express it and the phase definition
+cannot either; the case name has to.
+
+Set at include time from ARGS, for the same reason `ppc_ensure_gramsuite_loaded!`
+is called that way: a worker subprocess serves exactly one `--case=X` for its
+whole lifetime (`ppc_worker_cmd`), so the case name is on the command line before
+anything here is compiled and a process-level setting cannot leak into another
+case. `ppc_mode_env_pairs` names none of these keys, so the per-mode `withenv`
+around each timed run leaves them alone, and a Distributed pool worker inherits
+them from the coordinator it was spawned from.
+
+The values are the ones paper_scenarios' S2 scenario uses and has run on the
+TRX50 benchmark box (`benchmarks/studies/paper_scenarios/common.jl`,
+`ps_constellation_env`):
+
+  * `gram_lookahead` -- the vacuum-predicted trajectory cache, with the horizon
+    put past the end of the mission and the deviation threshold past anything the
+    mission can reach, so only the initial (proven-safe) build ever runs. That is
+    a deliberate workaround for the native cache-rebuild hang with two or more
+    satellites, not a tuning choice; a rebuild mid-run hangs the job.
+  * `gram_process` -- direct native GRAM with density frozen per accepted step.
+    Without the freeze, per-RK-stage perturbation noise collapses the adaptive
+    step size and the solve never finishes.
+"""
+function _ppc_p6_gram_density_env!(args)
+    spec = nothing
+    for arg in args
+        startswith(arg, "--case=") || continue
+        spec = match(
+            r"^--case=aero_[0-9]+sat_l50_gram_(lookahead|process)_([0-9]+)s$", arg
+        )
+    end
+    spec === nothing && return nothing
+    if spec.captures[1] == "lookahead"
+        mission_s = parse(Float64, spec.captures[2])
+        ENV["SPACEAGORA_DENSITY_FREEZE_PER_STEP"] = "0"
+        ENV["SPACEAGORA_VACUUM_GRAM_CACHE"] = "1"
+        ENV["SPACEAGORA_VACUUM_GRAM_CACHE_NPOINTS"] = "20"
+        ENV["SPACEAGORA_VACUUM_GRAM_CACHE_HORIZON_S"] = string(mission_s + 500.0)
+        ENV["SPACEAGORA_VACUUM_GRAM_CACHE_DEVIATION_M"] = "1e8"
+    else
+        ENV["SPACEAGORA_DENSITY_FREEZE_PER_STEP"] = "1"
+        ENV["SPACEAGORA_VACUUM_GRAM_CACHE"] = "0"
+    end
+    return nothing
+end
+_ppc_p6_gram_density_env!(ARGS)
 
 # GRAMAtmosphereModel is cached per planet (not rebuilt per call/sample): the
 # vendored GRAMSuite.jl itself dynamically (re)defines `set_library!` inside
@@ -1231,6 +1298,183 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             density_model=ExponentialAtmosphereModel(mars),
             dt_max_orbit=1.0
         )
+
+    # ── P6: force-model and atmosphere variants of the 4096-spacecraft thread
+    #    scaling trace (figure F2) ──────────────────────────────────────────────
+    #
+    # One constellation size, six traces, so the figure reads "how does thread
+    # scaling change as the force model and the density path get heavier". Trace 2
+    # is the EXISTING gravity_<N>sat_l50_vacuum_<S>s rung that P1 and P2 already
+    # use; the five builders below are the other five traces, and every one of them
+    # keeps that rung's constellation geometry (ppc_constellation), tolerances and
+    # `orientation_sim=false` so the only thing that moves between traces is the
+    # force/density stack named in the case name.
+    #
+    # MISSION LENGTH IS PER TRACE, not shared, for the same reason
+    # PPC_L50_ISO_MISSION_S carries one duration per spacecraft count: a single
+    # duration across stacks this different puts some traces under the harness's
+    # 3 s measurability floor and others into the hours. Each duration below is
+    # sized against the measured TRX50 serial baseline of trace 2
+    # (11.86 s, gravity_4096sat_l50_vacuum_5800s, run 20260918_162845), and the
+    # derivation for each one is written out in
+    # paper_parallelization_benchmarks/FIGURE_RUNS.md with the CSV it came from.
+    # The durations are predictions for a machine, not constants of the physics --
+    # recalibrate them with the P6 block of paper_figure_runs.sh before a paper run
+    # on a host they were not derived for.
+
+    elseif occursin(r"^gravity_[0-9]+sat_l20_vacuum_[0-9]+s$", case_name)
+        # Trace 1: degree 20 instead of degree 50, everything else identical to
+        # the gravity_<N>sat_l50_vacuum_<S>s rung -- the per-satellite RHS gets
+        # cheaper while the constellation width, the callbacks (none) and the
+        # solver settings stay put, which is the cleanest read there is on how
+        # much of the thread scaling is per-satellite arithmetic.
+        #
+        # Iso-work against trace 2 rather than iso-duration: at trace 2's own
+        # 5800 s a degree-20 constellation lands at 2-4 s serial, on or under the
+        # floor, so the mission grows instead and the duration is a column of the
+        # figure's table.
+        n = parse(Int, match(r"^gravity_([0-9]+)sat", case_name).captures[1])
+        mission_s = parse(Float64, match(r"_([0-9]+)s$", case_name).captures[1])
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, n),
+            mission_time_s=ppc_mission_time(
+                cfg.profile; test=10.0, smoke=min(300.0, mission_s), full=mission_s
+            ),
+            orientation_sim=false,
+            dynamic_effectors=(ppc_harmonics_model(planet, 20),),
+            density_model=NoAtmosphereModel(),
+            dt_max_orbit=20.0
+        )
+
+    elseif occursin(r"^gravity_[0-9]+sat_l50_srp_nbody_vacuum_[0-9]+s$", case_name)
+        # Trace 3: trace 2's effector tuple plus solar radiation pressure and
+        # Sun/Moon third-body gravity, still in vacuum. Two things are added at
+        # once deliberately -- this trace is "the vacuum force model a real
+        # mission carries", not a single-model ladder rung; B11 is where model
+        # count is swept one at a time.
+        #
+        # The third body is what makes it interesting for a thread-scaling
+        # figure: NBodyGravityModel drives CSPICE ephemeris lookups under
+        # SPICE_LOCK, so the trace carries one serialised native library on top
+        # of an otherwise perfectly parallel RHS, and the gap to trace 2 is the
+        # cost of that serialisation at 4096 spacecraft.
+        #
+        # Mission length is trace 2's unchanged: adding effectors can only make
+        # the serial baseline larger, so this trace is above the floor by
+        # construction and needs no extrapolation to size it. That also makes
+        # trace 3 vs trace 2 an exact iso-mission, iso-size, single-variable
+        # comparison.
+        n = parse(Int, match(r"^gravity_([0-9]+)sat", case_name).captures[1])
+        mission_s = parse(Float64, match(r"_([0-9]+)s$", case_name).captures[1])
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=ppc_constellation(planet, n),
+            mission_time_s=ppc_mission_time(
+                cfg.profile; test=10.0, smoke=min(300.0, mission_s), full=mission_s
+            ),
+            orientation_sim=false,
+            dynamic_effectors=(
+                ppc_harmonics_model(planet, 50),
+                SolarRadiationPressureModel(1.2, 12.0),
+                NBodyGravityModel(
+                    body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet
+                ),
+            ),
+            density_model=NoAtmosphereModel(),
+            dt_max_orbit=20.0
+        )
+
+    elseif occursin(r"^aero_[0-9]+sat_l50_(expatm|gram_lookahead|gram_process)_[0-9]+s$", case_name)
+        # Traces 4, 5 and 6: the density path, at fixed spacecraft count, fixed
+        # mission and fixed degree-50 harmonics. This is the atmo256_* ladder's
+        # design (only the density model varies, so any difference between the
+        # three is attributable to the density path) moved up to the figure's
+        # constellation size, and the sizing below is derived from that ladder's
+        # own TRX50 measurements.
+        #
+        #   expatm          analytic ExponentialAtmosphereModel + aero. Density
+        #                   callback and drag, no native library.
+        #   gram_lookahead  one shared native GRAMAtmosphereModel read through the
+        #                   vacuum-predicted look-ahead cache, so the RHS threads
+        #                   against a spline instead of against GRAM's own lock.
+        #   gram_process    the same native GRAM atmosphere with the constellation
+        #                   arranged as N independent single-spacecraft samples,
+        #                   which is the only arrangement the process route can
+        #                   actually spread (see below).
+        #
+        # dt_max_orbit is 5 s for all three, matching the atmo256_* ladder the
+        # durations are derived from, rather than the 20 s the vacuum traces use:
+        # the three are single-variable against each other, which is what the
+        # density-path comparison needs, and they are not iso-step with traces
+        # 1-3 -- the figure's table carries dt alongside the mission length.
+        #
+        # gram_lookahead vs gram_process is NOT just a mode change on one case,
+        # and this is the load-bearing detail for anyone re-running this. The
+        # harness only ever spreads *samples* across processes
+        # (`uses_process_pool = sample_count > 1 && mode.backend == "process"` in
+        # execution.jl), so a constellation case run under outer_process
+        # degenerates to one in-process solve and measures nothing. The process
+        # trace therefore carries its spacecraft as samples -- one spacecraft per
+        # sample, N samples -- exactly as paper_scenarios' S2 `process_members`
+        # mode does, which is where its cost and memory numbers come from. The
+        # satellites in this catalog exert no force on one another, so the two
+        # arrangements do the same total physics; what differs is where the
+        # parallelism can go and how many native GRAM images the machine has to
+        # hold at once, which is the trade the figure exists to show.
+        #
+        # How the two GRAM traces select their density path: not here, but in
+        # _ppc_p6_gram_density_env! at the top of this file. The look-ahead cache
+        # and the freeze-per-accepted-step switch are read from SPACEAGORA_* env
+        # by the density-callback assembly, not from SimulationConfiguration.
+        aero_match = match(
+            r"^aero_([0-9]+)sat_l50_(expatm|gram_lookahead|gram_process)_([0-9]+)s$", case_name
+        )
+        aero_n = parse(Int, aero_match.captures[1])
+        aero_variant = aero_match.captures[2]
+        aero_mission_s = parse(Float64, aero_match.captures[3])
+        aero_time = ppc_mission_time(
+            cfg.profile; test=10.0, smoke=min(90.0, aero_mission_s), full=aero_mission_s
+        )
+        aero_effectors = (ppc_harmonics_model(planet, 50), AerodynamicCoefficientfM())
+        if aero_variant == "expatm"
+            return ppc_build_config(
+                planet=planet,
+                spacecraft=ppc_constellation(planet, aero_n),
+                mission_time_s=aero_time,
+                orientation_sim=false,
+                dynamic_effectors=aero_effectors,
+                density_model=ExponentialAtmosphereModel(planet),
+                dt_max_orbit=5.0
+            )
+        elseif aero_variant == "gram_lookahead"
+            return ppc_build_config(
+                planet=planet,
+                spacecraft=ppc_constellation(planet, aero_n),
+                mission_time_s=aero_time,
+                orientation_sim=false,
+                dynamic_effectors=aero_effectors,
+                density_model=ppc_gram_atmosphere_model("earth"),
+                dt_max_orbit=5.0
+            )
+        end
+        # gram_process: one spacecraft per sample. The sample count is the
+        # constellation size and is carried by default_samples in the catalog, so
+        # a phase asks for this case at mc_samples = aero_n and gets the same
+        # aero_n spacecraft-missions the other five traces propagate together.
+        # Not jittered, for independent_1sat_1hr's reason: a spread in the
+        # initial conditions would give each sample its own step count and show up
+        # as load imbalance on the process route, confounding the very comparison
+        # this trace is in the figure for.
+        return ppc_build_config(
+            planet=planet,
+            spacecraft=[ppc_spacecraft(planet; id=1)],
+            mission_time_s=aero_time,
+            orientation_sim=false,
+            dynamic_effectors=aero_effectors,
+            density_model=ppc_gram_atmosphere_model("earth"),
+            dt_max_orbit=5.0
+        )
     end
 
     throw(ArgumentError("Unknown parallelization performance case '$case_name'."))
@@ -1380,6 +1624,44 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
     add!("cadence_1024sat_none", "duration_cadence", "1024 spacecraft, L50 harmonics, no trajectory output (cadence-ladder zero point)")
     add!("cadence_1024sat_10s", "duration_cadence", "1024 spacecraft, L50 harmonics, trajectory saved every 10 s")
     add!("cadence_1024sat_1s", "duration_cadence", "1024 spacecraft, L50 harmonics, trajectory saved every 1 s (cadence-flatness check)")
+
+    # ── P6: force-model and atmosphere variants of the 4096-spacecraft thread
+    #    scaling trace (figure F2) ──────────────────────────────────────────────
+    #
+    # Five of the figure's six traces; the sixth is the existing
+    # gravity_4096sat_l50_vacuum_5800s rung P1 and P2 already run, which is reused
+    # rather than duplicated. Every mission length below is derived from that
+    # rung's measured TRX50 serial baseline -- see the ppc_single_config branches
+    # and, for the derivation and the CSV behind each number,
+    # paper_parallelization_benchmarks/FIGURE_RUNS.md.
+    #
+    # Registered at 4096 (the figure) and at 16 (the harness smoke path: a
+    # --profile=test run of every new case, which pins the mission at 10 s and so
+    # ignores the duration in the name -- the 16-spacecraft entries are NOT sized
+    # rungs and must not be quoted as measurements).
+    for p6_n in (16, 4096)
+        add!("gravity_$(p6_n)sat_l20_vacuum_19700s", "p6_force_ladder",
+             "$(p6_n) spacecraft, L20 harmonics, no atmosphere, 19 700 s mission " *
+             "(P6 trace 1: iso-work against the L50 vacuum rung)")
+        add!("gravity_$(p6_n)sat_l50_srp_nbody_vacuum_5800s", "p6_force_ladder",
+             "$(p6_n) spacecraft, L50 harmonics + SRP + Sun/Moon third body, no " *
+             "atmosphere, 5800 s mission (P6 trace 3: one serialised native " *
+             "library, SPICE, on an otherwise parallel RHS)")
+        add!("aero_$(p6_n)sat_l50_expatm_100s", "p6_density_ladder",
+             "$(p6_n) spacecraft, L50 harmonics + aero, analytic exponential " *
+             "density, 100 s mission (P6 trace 4)")
+        add!("aero_$(p6_n)sat_l50_gram_lookahead_100s", "p6_density_ladder",
+             "$(p6_n) spacecraft, L50 harmonics + aero, live native GRAM through " *
+             "the vacuum-predicted look-ahead cache, 100 s mission (P6 trace 5)")
+        # montecarlo, default_samples = the constellation size: the process route
+        # spreads samples, never constellation members, so this trace carries its
+        # spacecraft as one-spacecraft samples. See the ppc_single_config branch.
+        add!("aero_$(p6_n)sat_l50_gram_process_100s", "p6_density_ladder",
+             "$(p6_n) single-spacecraft samples, L50 harmonics + aero, live " *
+             "native GRAM per worker process, 100 s mission (P6 trace 6: the " *
+             "same spacecraft-missions as trace 5 arranged for the process route)",
+             montecarlo=true, default_samples=p6_n)
+    end
 
     return cases
 end

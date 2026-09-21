@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Plot the paper's routing comparisons: serial vs best static route vs R6.
+"""Plot the paper's routing comparisons: serial vs best static route vs the
+adaptive route (R6 policy_v2 by default, R7 predictive under --adaptive).
 
 Reads the same aggregated CSVs as make_paper_routing_tables.py and reuses its
 row builder, so a figure and the table beside it cannot disagree about which
@@ -13,7 +14,8 @@ itself the result (see finding 2).
 
 Usage:
     python3 scripts/make_paper_routing_plots.py RUN_DIR_OR_CSV [...] \
-        [--out DIR] [--label NAME] [--format png,pdf]
+        [--out DIR] [--label NAME] [--format png,pdf] \
+        [--adaptive policy_v2|predictive]
 """
 from __future__ import annotations
 
@@ -31,10 +33,28 @@ from matplotlib.ticker import LogLocator, NullFormatter, ScalarFormatter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_paper_routing_tables import (  # noqa: E402
-    ADAPTIVE, ADAPTIVE_LABEL, NOISE_FLOOR_S, PHASE_AXIS, PHASE_TITLE,
-    STATIC_PARALLEL, load, phase_rows,
+    ADAPTIVE_MODES, DEFAULT_ADAPTIVE, NOISE_FLOOR_S, PHASE_AXIS, PHASE_TITLE,
+    STATIC_PARALLEL, add_adaptive_argument, load, phase_rows,
 )
+from make_paper_routing_tables import set_adaptive as _tables_set_adaptive  # noqa: E402
 
+# Which adaptive mode is drawn. Read at call time by every function below, and
+# kept in step with the table builder's own globals by set_adaptive -- the row
+# builder imported above picks the adaptive column by ITS copy, so setting only
+# one of the two would plot one mode and label it as the other.
+ADAPTIVE = DEFAULT_ADAPTIVE
+ADAPTIVE_LABEL = ADAPTIVE_MODES[DEFAULT_ADAPTIVE]
+
+
+def set_adaptive(mode: str) -> None:
+    global ADAPTIVE, ADAPTIVE_LABEL
+    _tables_set_adaptive(mode)
+    ADAPTIVE = mode
+    ADAPTIVE_LABEL = ADAPTIVE_MODES[mode]
+
+# C_R6 / MARK_R6 are the adaptive route's colour and marker, whichever adaptive
+# mode is selected; the names are kept so the figures stay comparable to the
+# ones already in the paper.
 C_SERIAL, C_STATIC, C_R6, C_FAINT = "#6b6b6b", "#1f6fb4", "#c23b22", "#b8c6d4"
 MARK_STATIC, MARK_R6 = "s", "o"
 
@@ -216,10 +236,16 @@ def figure(phase, per_machine, out_dir, formats, case_label=""):
 
 
 def summary_figure(frames, out_dir, formats):
-    """One panel: R6 divided by the best pinned static route at every measured
-    point. 1.0 is parity with an oracle that already knew the right route; below
-    it R6 is faster than any pinned route measured there."""
+    """One panel: the adaptive route divided by the best pinned static route at
+    every measured point. 1.0 is parity with an oracle that already knew the
+    right route; below it the adaptive route is faster than any pinned route
+    measured there."""
     phases = ["P1", "P2", "P3", "P4", "P5"]
+    # An empty panel is worse than no panel: it reads as "the router scored
+    # nothing" rather than "this run does not contain that mode".
+    if not any(r.get("adaptive_s") and r.get("best_static_s")
+               for _, df in frames for ph in phases for r in phase_rows(df, ph)):
+        return []
     fig, ax = plt.subplots(figsize=(9.2, 4.4))
     machine_style = [(C_R6, "o"), (C_STATIC, "^")]
 
@@ -501,11 +527,13 @@ def main():
     ap.add_argument("--out", default="output/paper_routing_plots")
     ap.add_argument("--label", action="append", default=[])
     ap.add_argument("--format", default="png,pdf")
+    add_adaptive_argument(ap)
     ap.add_argument("--noise-pair", action="append", default=[], metavar="DIR",
                     help="two runs of IDENTICAL code; their ratios become the "
                          "measurement floor drawn behind the regret distribution. "
                          "Repeatable; pass each half of the pair once.")
     args = ap.parse_args()
+    set_adaptive(args.adaptive)
 
     formats = [f.strip() for f in args.format.split(",") if f.strip()]
     os.makedirs(args.out, exist_ok=True)
@@ -514,6 +542,9 @@ def main():
     for i, src in enumerate(args.sources):
         df = load(src)
         name = args.label[i] if i < len(args.label) else machine_of(df)
+        if "mode" not in df.columns or not (df["mode"] == ADAPTIVE).any():
+            print(f"{name}: no data: `{ADAPTIVE}` ({ADAPTIVE_LABEL}) was not measured "
+                  "in this run; its series is omitted from every figure")
         frames.append((name, df))
 
     written = []

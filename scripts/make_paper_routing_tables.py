@@ -5,7 +5,8 @@ Reads one or more `paper_benchmarks_aggregated_*.csv` files (the P1-P5 phases in
 benchmarks/studies/paper_parallelization_benchmarks) and writes, per machine and
 per phase, a table of
 
-    serial | best static route | R6 (policy_v2)
+    serial | best static route | the adaptive route (R6 policy_v2 by default,
+                                    R7 predictive under --adaptive predictive)
 
 with the raw median wall times and the ratio of each against that point's serial
 baseline. The best static route is the fastest *parallel* static route measured
@@ -14,7 +15,7 @@ the minimum would hide the comparison the table exists to make.
 
 Usage:
     python3 scripts/make_paper_routing_tables.py RUN_DIR_OR_CSV [...] \
-        [--out DIR] [--label NAME]
+        [--out DIR] [--label NAME] [--adaptive policy_v2|predictive]
 
 Each positional argument is either an aggregated CSV or a run directory holding
 one. --label renames the machine for that source (repeatable, positional order).
@@ -31,8 +32,40 @@ import sys
 import pandas as pd
 
 STATIC_PARALLEL = ["outer_threads", "outer_process", "inner_only", "outer_inner_static"]
-ADAPTIVE = "policy_v2"
-ADAPTIVE_LABEL = "R6"
+# Harness mode name -> the profile it is. Which one the tables report is
+# selected with --adaptive; everything downstream reads the two module globals
+# below at call time, so make_paper_routing_plots.py selects the same mode by
+# calling set_adaptive() rather than by duplicating the mapping.
+ADAPTIVE_MODES = {"policy_v2": "R6", "predictive": "R7"}
+DEFAULT_ADAPTIVE = "policy_v2"
+ADAPTIVE = DEFAULT_ADAPTIVE
+ADAPTIVE_LABEL = ADAPTIVE_MODES[DEFAULT_ADAPTIVE]
+
+
+def set_adaptive(mode: str) -> None:
+    """Select the adaptive mode reported as the adaptive column."""
+    global ADAPTIVE, ADAPTIVE_LABEL
+    if mode not in ADAPTIVE_MODES:
+        raise SystemExit(f"unknown adaptive mode '{mode}'; "
+                         f"use one of {', '.join(sorted(ADAPTIVE_MODES))}")
+    ADAPTIVE = mode
+    ADAPTIVE_LABEL = ADAPTIVE_MODES[mode]
+
+
+def add_adaptive_argument(ap) -> None:
+    """Register the shared --adaptive flag on an ArgumentParser."""
+    ap.add_argument(
+        "--adaptive",
+        choices=sorted(ADAPTIVE_MODES),
+        default=DEFAULT_ADAPTIVE,
+        help="which adaptive harness mode to report: policy_v2 (R6, default) "
+             "or predictive (R7)",
+    )
+
+
+def adaptive_present(df) -> bool:
+    """Does this frame hold any row of the selected adaptive mode?"""
+    return "mode" in df.columns and bool((df["mode"] == ADAPTIVE).any())
 
 PHASE_TITLE = {
     "P1": "Constellation size scaling (fixed thread budget)",
@@ -308,7 +341,7 @@ def latex_table(phase: str, rows: list[dict], machine: str) -> str:
 def warmth_table(cold: pd.DataFrame, warm: pd.DataFrame, phase: str) -> str:
     """Cold-store against warm-store for one phase, mode by mode.
 
-    R6 carries state across campaigns -- the persisted RHS-calibration verdicts
+    The adaptive route carries state across campaigns -- the persisted RHS-calibration verdicts
     and inner-policy hints -- so the same point measured on a machine that has
     never run the workload and on one that has is not the same measurement. The
     static routes form no such state and are the control: if they move between
@@ -354,6 +387,7 @@ def main() -> int:
     ap.add_argument("sources", nargs="+")
     ap.add_argument("--out", default=None, help="directory for the generated files")
     ap.add_argument("--label", action="append", default=[], help="machine label per source")
+    add_adaptive_argument(ap)
     ap.add_argument(
         "--cold",
         default=None,
@@ -361,8 +395,10 @@ def main() -> int:
              "cold-vs-warm section for every phase both runs contain",
     )
     args = ap.parse_args()
+    set_adaptive(args.adaptive)
 
-    md_parts = ["# Routing comparison tables (R6 vs serial vs best static route)\n"]
+    md_parts = [f"# Routing comparison tables ({ADAPTIVE_LABEL} vs serial vs "
+                "best static route)\n"]
     tex_parts = []
     for i, src in enumerate(args.sources):
         df = load(src)
@@ -373,6 +409,11 @@ def main() -> int:
         )
         md_parts.append(f"\n## {machine}\n")
         md_parts.append(f"\nSource: `{df._source.iloc[0]}`\n")
+        if not adaptive_present(df):
+            note = (f"no data: `{ADAPTIVE}` ({ADAPTIVE_LABEL}) was not measured in this "
+                    "run, so its column is empty")
+            print(f"{machine}: {note}")
+            md_parts.append(f"\n_{note}._\n")
         for phase in ["P1", "P2", "P3", "P4", "P5"]:
             rows = phase_rows(df, phase)
             if not rows:
@@ -389,7 +430,7 @@ def main() -> int:
         warm_df = load(args.sources[0])
         md_parts.append("\n## Calibration-store warmth\n")
         md_parts.append(
-            "\nR6 persists what it learns: RHS-calibration verdicts and inner-policy "
+            f"\n{ADAPTIVE_LABEL} persists what it learns: RHS-calibration verdicts and inner-policy "
             "hints outlive the campaign that produced them. A point measured on a "
             "machine that has never run the workload is therefore not the same "
             "measurement as one taken after the store has converged. The static "

@@ -35,7 +35,7 @@ end
 end
 
 @inline function _inner_hint_defaults(cfg::ParallelProfileConfig)::NamedTuple{(:exploration, :min_samples), Tuple{Float64, Int}}
-    if !(cfg.profile in (R5, R6))
+    if !(cfg.profile in (R5, R6, R7))
         return (exploration=1.5, min_samples=2)
     end
     machine_class = _machine_parallel_class()
@@ -150,6 +150,15 @@ function profile_env_pairs(
         "SPACEAGORA_PARALLEL_POLICY_V2" => _env_or_default(
             "SPACEAGORA_PARALLEL_POLICY_V2",
             _coerce_env_bool(cfg.policy_v2);
+            preserve_existing=preserve_existing
+        ),
+        # Emitted by every profile, not only by the one that changes it: a
+        # profile that left it unset would inherit whatever the shell already
+        # held, which is how a paired R6/R7 comparison would silently run the
+        # same planner twice.
+        "SPACEAGORA_CAMPAIGN_PLANNER" => _env_or_default(
+            "SPACEAGORA_CAMPAIGN_PLANNER",
+            cfg.campaign_planner;
             preserve_existing=preserve_existing
         ),
         "SPACEAGORA_PARALLEL_POLICY_HINT_EXPLORATION" => _env_or_default(

@@ -47,6 +47,36 @@ end
     @test Set(diffs) == Set(["SPACEAGORA_PARALLEL_POLICY_V2", "SPACEAGORA_PARALLEL_PROFILE"])
 end
 
+@testset "R7 is R6 plus the predictive planner" begin
+    @test PPr.parse_parallel_profile("R7") === PPr.R7
+    @test PPr.parse_parallel_profile("r7_predictive") === PPr.R7
+    @test PPr.parse_parallel_profile("predictive") === PPr.R7
+    @test PPr.parallel_profile_name(PPr.R7) == "R7"
+    r6 = PPr.profile_config(PPr.R6)
+    r7 = PPr.profile_config(PPr.R7)
+    @test r6.campaign_planner == "bandit"
+    @test r7.campaign_planner == "predictive"
+    @test r7.label == "r7_predictive"
+    # R7 keeps the V2 switch: it is R6 plus a planner, not an alternative to it.
+    @test r7.policy_v2
+    # Everything else identical, by construction.
+    for name in fieldnames(PPr.ParallelProfileConfig)
+        name in (:profile, :label, :campaign_planner) && continue
+        @test getfield(r6, name) == getfield(r7, name)
+    end
+    pairs6 = Dict(PPr.profile_env_pairs(PPr.R6; preserve_existing = false))
+    pairs7 = Dict(PPr.profile_env_pairs(PPr.R7; preserve_existing = false))
+    # Every profile states the planner, so a stale shell value cannot decide it.
+    @test Dict(PPr.profile_env_pairs(PPr.R5; preserve_existing = false))["SPACEAGORA_CAMPAIGN_PLANNER"] == "bandit"
+    @test pairs6["SPACEAGORA_CAMPAIGN_PLANNER"] == "bandit"
+    @test pairs7["SPACEAGORA_CAMPAIGN_PLANNER"] == "predictive"
+    @test pairs7["SPACEAGORA_PARALLEL_POLICY_V2"] == "1"
+    @test pairs7["SPACEAGORA_PARALLEL_PROFILE"] == "R7"
+    # The planner is the only env-level difference from R6.
+    diffs = [k for k in keys(pairs7) if pairs6[k] != pairs7[k]]
+    @test Set(diffs) == Set(["SPACEAGORA_CAMPAIGN_PLANNER", "SPACEAGORA_PARALLEL_PROFILE"])
+end
+
 @testset "The switch is snapshotted, default off" begin
     withenv("SPACEAGORA_PARALLEL_POLICY_V2" => nothing) do
         @test !PP.policy_v2_enabled()

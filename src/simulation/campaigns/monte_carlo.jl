@@ -243,6 +243,145 @@ end
 # each task just blocks on IPC waiting for a worker's reply, so it should not
 # occupy an OS thread the way genuinely CPU-bound work would.
 """
+    _make_dispatch_runner(f)
+
+The per-sample callable a consumer runs: `f` wrapped in the result and timing
+bookkeeping every route shares. This is the object a `CachingPool` keys its
+worker-side cache on, which is why it is built once per campaign function
+rather than once per dispatch -- see [`_acquire_dispatch_runner`](@ref).
+"""
+_make_dispatch_runner(f) = (index, seed) -> _run_monte_carlo_sample(f, index, seed)
+
+# What one dispatch borrowed: the `CachingPool` its worker feeders dispatch
+# through (`nothing` when there are no pool workers, or when a `worker_runner`
+# stands in for them), the per-sample callable both classes run, and whether
+# the two came from the process pool's cache (release them) or belong to this
+# dispatch alone (clear them).
+struct _DispatchRunner
+    pool::Union{Nothing, CachingPool}
+    run::Any
+    shared::Bool
+end
+
+"""
+    _pool_dispatch_cache_enabled() -> Bool
+
+Whether a process dispatch may reuse the pool's cached closure across
+campaigns. `SPACEAGORA_POOL_DISPATCH_CACHE=0` restores the per-dispatch
+`CachingPool` plus `clear!`, so the two can be measured against each other in
+one build.
+"""
+@inline function _pool_dispatch_cache_enabled()::Bool
+    return lowercase(strip(get(ENV, "SPACEAGORA_POOL_DISPATCH_CACHE", "1"))) in ("1", "true", "yes", "on")
+end
+
+"""
+    _acquire_dispatch_runner(cache_pool, f, worker_ids, needs_pool) -> _DispatchRunner
+
+The `CachingPool` and per-sample callable for one dispatch, reused from
+`cache_pool` when the last dispatch through it ran the same `f` over the same
+workers.
+
+`CachingPool` keys its worker-side cache on the identity of the function it is
+handed -- an `IdDict` on `(worker, f)`, and `objectid` on a closure is by
+field, exactly as the `!==` test below is -- so a dispatch that builds a fresh
+pool and a fresh wrapper closure is a guaranteed cache miss on every worker:
+the campaign's closure is serialized to each of them again, a `RemoteChannel`
+is created there to hold it, and the `clear!` in the dispatch's `finally`
+tears both down. That is a per-dispatch cost, not a per-sample one.
+
+It is a SMALL one on a small closure. Measured on this repo's workstation at
+the P3 point, on a 2357-byte campaign closure, it is 0.3-0.6 ms per worker,
+about 4 ms across eight against a 500 ms campaign -- not what a pool worker's
+first sample of a campaign waits for (see `_collect_on_workers` for what is).
+What it removes scales with the size of what a campaign captures, and 2357
+bytes is the small end of that.
+
+Reuse is dropped -- the worker-side copies cleared, not merely forgotten --
+whenever `f` changes or the worker set changes, and by
+`shutdown_process_pool!`. The retained closure is one campaign's, never an
+accumulation; see the `ProcessPool` docstring.
+
+It costs one assumption. A worker runs a DESERIALIZED COPY of the campaign
+function, so state the function captures and the coordinator then mutates is
+not seen by the copy. One dispatch already required that -- the closure is
+shipped once and reused for every sample of the campaign -- and reuse extends
+the requirement across consecutive campaigns that dispatch the same function.
+A campaign whose function reads mutable state that changes between campaigns
+must set `SPACEAGORA_POOL_DISPATCH_CACHE=0`.
+
+`needs_pool` is false when the worker class is standing in for
+`remotecall_fetch` (the `worker_runner` seam) or absent, in which case the
+callable is still cached but no `CachingPool` is built.
+"""
+function _acquire_dispatch_runner(cache_pool::Union{Nothing, ProcessPool}, f,
+                                  worker_ids::Vector{Int}, needs_pool::Bool)::_DispatchRunner
+    private = () -> _DispatchRunner(needs_pool ? CachingPool(copy(worker_ids)) : nothing,
+                                    _make_dispatch_runner(f), false)
+    (cache_pool === nothing || !_pool_dispatch_cache_enabled()) && return private()
+    return lock(cache_pool.lock) do
+        # One `CachingPool` cannot serve two dispatches at once: its feeders
+        # take workers from one channel, so a second campaign running beside
+        # this one would consume the workers this one is waiting for. It gets
+        # its own pool and pays the old cost, which is what it paid before.
+        cache_pool.dispatch_busy && return private()
+        if cache_pool.dispatch_runner === nothing || cache_pool.dispatch_f !== f ||
+                cache_pool.dispatch_workers != worker_ids
+            _drop_dispatch_cache!(cache_pool)
+            cache_pool.dispatch_f = f
+            cache_pool.dispatch_runner = _make_dispatch_runner(f)
+            cache_pool.dispatch_workers = copy(worker_ids)
+        end
+        if needs_pool && cache_pool.dispatch_pool === nothing
+            cache_pool.dispatch_pool = CachingPool(copy(worker_ids))
+        end
+        cache_pool.dispatch_busy = true
+        return _DispatchRunner(needs_pool ? cache_pool.dispatch_pool : nothing,
+                               cache_pool.dispatch_runner, true)
+    end
+end
+
+"""
+    _release_dispatch_runner(cache_pool, entry)
+
+End one dispatch's use of `entry`: a borrowed cache goes back to the pool for
+the next campaign, a private one is cleared on its workers here and now.
+"""
+function _release_dispatch_runner(cache_pool::Union{Nothing, ProcessPool},
+                                  entry::_DispatchRunner)::Nothing
+    if !entry.shared
+        # Drop the cached closure on the workers; it can capture large
+        # configuration state that should not outlive the campaign.
+        entry.pool === nothing || Distributed.clear!(entry.pool)
+        return nothing
+    end
+    cache_pool === nothing && return nothing
+    lock(cache_pool.lock) do
+        cache_pool.dispatch_busy = false
+    end
+    return nothing
+end
+
+"""
+    _drop_dispatch_cache!(cache_pool)
+
+Forget the cached closure and clear its copies on the workers. This is the
+bound on what the cache retains, and the only thing that removes a campaign's
+configuration state from the pool's workers.
+"""
+function _drop_dispatch_cache!(cache_pool::ProcessPool)::Nothing
+    lock(cache_pool.lock) do
+        cache_pool.dispatch_pool === nothing || Distributed.clear!(cache_pool.dispatch_pool)
+        cache_pool.dispatch_pool = nothing
+        cache_pool.dispatch_f = nothing
+        cache_pool.dispatch_runner = nothing
+        empty!(cache_pool.dispatch_workers)
+        return nothing
+    end
+    return nothing
+end
+
+"""
     DispatchAdmission(workers, locals)
 
 Per-consumer admission for [`_run_monte_carlo_mixed`](@ref): one flag per pool
@@ -342,8 +481,9 @@ dispatch_open_count(a::DispatchAdmission)::Int =
 """
     _run_monte_carlo_mixed(f, seeds, spec, worker_ids, local_slots;
                            class_sink=nothing, take_sink=nothing,
-                           admission=nothing, on_complete=nothing,
-                           worker_runner=nothing) -> Vector{MonteCarloSampleResult}
+                           ordinal_sink=nothing, admission=nothing,
+                           on_complete=nothing, worker_runner=nothing,
+                           cache_pool=nothing) -> Vector{MonteCarloSampleResult}
 
 One job queue, two kinds of consumer: one `@async` feeder per pool worker,
 each blocking on a `remotecall_fetch` of a single sample, and `local_slots`
@@ -375,10 +515,20 @@ watches the classes and closes consumers (see [`DispatchAdmission`](@ref)),
 and the consumers it closes drop out at their next take. The hook runs on the
 dispatch's hot path, so it must be cheap and it must not throw.
 
+`ordinal_sink` is the third of that family: which consumer of its class ran
+the sample, at the same index. With `class_sink` it identifies the individual
+consumer, which is what separates "a pool worker's first sample is slow" from
+"the pool is slow".
+
 `worker_runner` replaces `remotecall_fetch` for the worker class. It exists so
 the consumer bookkeeping above -- admission, class tags, take stamps, the
 completion hook -- can be tested against both classes in one process, without
 a `Distributed` pool. It changes nothing when `nothing`.
+
+`cache_pool` is the [`ProcessPool`](@ref) whose cached `CachingPool` and
+per-sample closure this dispatch may reuse (see
+[`_acquire_dispatch_runner`](@ref)). Without it the dispatch builds both for
+itself and clears them afterwards, as every dispatch used to.
 
 Pool workers are `--threads=1`, so with W workers on a T-thread coordinator a
 process-only campaign uses W cores and leaves T idle; the local slots are how
@@ -391,9 +541,11 @@ function _run_monte_carlo_mixed(
     f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int}, local_slots::Int;
     class_sink::Union{Nothing, Vector{Symbol}} = nothing,
     take_sink::Union{Nothing, Vector{Float64}} = nothing,
+    ordinal_sink::Union{Nothing, Vector{Int}} = nothing,
     admission::Union{Nothing, DispatchAdmission} = nothing,
     on_complete = nothing,
-    worker_runner = nothing
+    worker_runner = nothing,
+    cache_pool::Union{Nothing, ProcessPool} = nothing
 )
     (isempty(worker_ids) && local_slots < 1) && throw(ArgumentError(
         "_run_monte_carlo_mixed needs at least one pool worker or one local slot."))
@@ -403,6 +555,9 @@ function _run_monte_carlo_mixed(
     take_sink === nothing || length(take_sink) == length(seeds) || throw(ArgumentError(
         "_run_monte_carlo_mixed take_sink must have one entry per seed; got " *
         "$(length(take_sink)) for $(length(seeds)) seeds."))
+    ordinal_sink === nothing || length(ordinal_sink) == length(seeds) || throw(ArgumentError(
+        "_run_monte_carlo_mixed ordinal_sink must have one entry per seed; got " *
+        "$(length(ordinal_sink)) for $(length(seeds)) seeds."))
     jobs = Channel{Tuple{Int, Any}}(length(seeds))
     for (index, seed) in enumerate(seeds)
         put!(jobs, (index, seed))
@@ -411,7 +566,13 @@ function _run_monte_carlo_mixed(
 
     samples = Vector{Union{Nothing, MonteCarloSampleResult}}(nothing, length(seeds))
     stop_requested = Base.Threads.Atomic{Bool}(false)
-    run_sample = (index, seed) -> _run_monte_carlo_sample(f, index, seed)
+    # Both classes run the same callable; only how it is reached differs. It
+    # comes from the pool's cache when there is one, so the workers' copies of
+    # it survive from campaign to campaign.
+    dispatch = _acquire_dispatch_runner(cache_pool, f, worker_ids,
+                                        worker_runner === nothing && !isempty(worker_ids))
+    run_sample = dispatch.run
+    pool = dispatch.pool
     consume = (run, class, ordinal) -> begin
         while true
             spec.fail_fast && stop_requested[] && break
@@ -431,6 +592,7 @@ function _run_monte_carlo_mixed(
             sample = _stamp_finished(run(index, seed))
             samples[index] = sample
             class_sink === nothing || (class_sink[index] = class)
+            ordinal_sink === nothing || (ordinal_sink[index] = ordinal)
             on_complete === nothing || on_complete(sample, class, ordinal)
             if spec.fail_fast && !sample.success
                 Base.Threads.atomic_xchg!(stop_requested, true)
@@ -439,7 +601,6 @@ function _run_monte_carlo_mixed(
         end
     end
 
-    pool = worker_runner === nothing && !isempty(worker_ids) ? CachingPool(worker_ids) : nothing
     try
         Base.@sync begin
             for (ordinal, _) in enumerate(worker_ids)
@@ -453,9 +614,7 @@ function _run_monte_carlo_mixed(
             end
         end
     finally
-        # Drop the cached closure on the workers; it can capture large
-        # configuration state that should not outlive the campaign.
-        pool === nothing || Distributed.clear!(pool)
+        _release_dispatch_runner(cache_pool, dispatch)
     end
 
     # samples[index] writes plus the in-order filter above already leave
@@ -471,11 +630,128 @@ end
 function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int};
                                   class_sink::Union{Nothing, Vector{Symbol}} = nothing,
                                   take_sink::Union{Nothing, Vector{Float64}} = nothing,
+                                  ordinal_sink::Union{Nothing, Vector{Int}} = nothing,
                                   admission::Union{Nothing, DispatchAdmission} = nothing,
-                                  on_complete = nothing)
+                                  on_complete = nothing,
+                                  cache_pool::Union{Nothing, ProcessPool} = nothing)
     return _run_monte_carlo_mixed(f, seeds, spec, worker_ids, 0; class_sink = class_sink,
-                                  take_sink = take_sink, admission = admission,
-                                  on_complete = on_complete)
+                                  take_sink = take_sink, ordinal_sink = ordinal_sink,
+                                  admission = admission, on_complete = on_complete,
+                                  cache_pool = cache_pool)
+end
+
+# ── Attributing a pool dispatch's fixed cost ─────────────────────────────────
+#
+# A pool worker's first sample of a campaign comes home long after a local slot
+# has finished the same work, and on a short campaign that is most of the wall
+# clock. The parts it could be made of are not separable from the dispatch's
+# own timings, so this measures them one at a time, on the campaign's real
+# closure and the pool's real workers, and prints what each costs:
+#
+#   coordinator   the same sample run here, for scale.
+#   serialize     how large the campaign's closure is and what it costs to
+#                 write out. An approximation: a plain `Serializer` over an
+#                 `IOBuffer`, not the `ClusterSerializer` a real dispatch uses.
+#   trivial       the round trip floor, for a named function (nothing to
+#                 serialize) and for a fresh anonymous closure (something
+#                 small to serialize), on a warm idle worker.
+#   cold/warm     the real closure's first call on a worker against its second
+#                 through the same `CachingPool`, and then the two shapes a
+#                 dispatch can have: the same pool after `clear!`, and a fresh
+#                 pool with a fresh closure, which is what every dispatch did
+#                 before the cache existed. Measured, the first two are
+#                 one-time compilation per worker per process rather than a
+#                 per-dispatch cost -- `Distributed.exec_from_cache` reaches a
+#                 cache miss and a cache hit through different methods, so
+#                 each is compiled at its own first use -- and the last two,
+#                 at 0.3-0.6 ms, are what rebuilding the pool actually costs.
+#   after-gc      a round trip issued immediately after the post-campaign
+#                 collection is fired at the workers, against the same floor:
+#                 what the next campaign's first sample waits for.
+#   loaded        a round trip while `local_slots` CPU-bound tasks run on the
+#                 coordinator, against the idle floor: whether the dispatch's
+#                 own local slots delay its worker feeders.
+#
+# Enabled by SPACEAGORA_POOL_DISPATCH_PROBE=1, once per process, before a
+# campaign's timed region. A run that probes is not a run whose campaign times
+# mean anything: the probe leaves the workers' caches and heaps in a state the
+# campaign would not have found.
+function _probe_pool_dispatch_cost(f, seed, worker_ids::Vector{Int}; local_slots::Int = 0)
+    isempty(worker_ids) && return nothing
+    ms(x::Real) = round(Float64(x) * 1.0e3; digits=2)
+    println("[pool-probe] workers=$(worker_ids) local_slots=$(local_slots) " *
+            "threads=$(Base.Threads.nthreads())")
+
+    local_timed = @timed _run_monte_carlo_sample(f, 0, seed)
+    println("[pool-probe] coordinator sample=$(ms(local_timed.time))ms " *
+            "work=$(ms(local_timed.value.elapsed_s))ms")
+
+    runner = _make_dispatch_runner(f)
+    for (name, obj) in (("f", f), ("runner", runner))
+        Distributed.serialize(IOBuffer(), obj)   # first write compiles the serializer
+        io = IOBuffer()
+        t = @elapsed Distributed.serialize(io, obj)
+        println("[pool-probe] serialize $(name) bytes=$(io.size) time=$(ms(t))ms")
+    end
+
+    for w in worker_ids
+        remotecall_fetch(identity, w, 0)
+        named = [(@elapsed remotecall_fetch(identity, w, 0)) for _ in 1:5]
+        closure = [(@elapsed remotecall_fetch(() -> nothing, w)) for _ in 1:5]
+        println("[pool-probe] worker $(w) trivial_named=$(ms(minimum(named)))/$(ms(maximum(named)))ms " *
+                "trivial_closure=$(ms(minimum(closure)))/$(ms(maximum(closure)))ms")
+    end
+
+    for w in worker_ids
+        overhead(t) = ms(t.time - t.value.elapsed_s)
+        shared = CachingPool([w])
+        cold = @timed remotecall_fetch(runner, shared, 0, seed)
+        warm = @timed remotecall_fetch(runner, shared, 0, seed)
+        Distributed.clear!(shared)
+        recleared = @timed remotecall_fetch(runner, shared, 0, seed)
+        fresh_pool = CachingPool([w])
+        fresh_runner = _make_dispatch_runner(f)
+        fresh = @timed remotecall_fetch(fresh_runner, fresh_pool, 0, seed)
+        Distributed.clear!(shared)
+        Distributed.clear!(fresh_pool)
+        println("[pool-probe] worker $(w) sample overhead cold=$(overhead(cold))ms " *
+                "warm=$(overhead(warm))ms after_clear=$(overhead(recleared))ms " *
+                "fresh_pool_and_closure=$(overhead(fresh))ms " *
+                "work=$(ms(warm.value.elapsed_s))ms")
+    end
+
+    for (label, gc_call) in (("full", GC.gc), ("incremental", () -> GC.gc(false)))
+        for w in worker_ids
+            Distributed.remote_do(gc_call, w)
+        end
+        waits = zeros(Float64, length(worker_ids))
+        Base.@sync for (i, w) in enumerate(worker_ids)
+            Base.@async waits[i] = @elapsed remotecall_fetch(identity, w, 0)
+        end
+        println("[pool-probe] after-gc $(label) round trip per worker=$(ms.(waits))ms")
+    end
+
+    if local_slots > 0
+        w = first(worker_ids)
+        idle = [(@elapsed remotecall_fetch(identity, w, 0)) for _ in 1:20]
+        stop = Base.Threads.Atomic{Bool}(false)
+        busy = Task[]
+        for _ in 1:local_slots
+            push!(busy, Base.Threads.@spawn begin
+                acc = 0.0
+                while !stop[]
+                    acc += sqrt(abs(acc) + 1.0)
+                end
+                acc
+            end)
+        end
+        loaded = [(@elapsed remotecall_fetch(identity, w, 0)) for _ in 1:20]
+        Base.Threads.atomic_xchg!(stop, true)
+        foreach(wait, busy)
+        println("[pool-probe] worker $(w) trivial idle=$(ms(minimum(idle)))/$(ms(maximum(idle)))ms " *
+                "under_$(local_slots)_busy_tasks=$(ms(minimum(loaded)))/$(ms(maximum(loaded)))ms")
+    end
+    return nothing
 end
 
 """

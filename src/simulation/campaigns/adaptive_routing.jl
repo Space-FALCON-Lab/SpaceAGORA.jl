@@ -529,6 +529,117 @@ const _GC_DEBT = Base.Threads.Atomic{Bool}(false)
     return lowercase(strip(get(ENV, "SPACEAGORA_CAMPAIGN_DISPATCH_TRACE", "0"))) in ("1", "true", "yes", "on")
 end
 
+# SPACEAGORA_POOL_DISPATCH_PROBE=1 runs the fixed-cost attribution once per
+# process, on the campaign's own closure and the pool's own workers, before a
+# dispatch's timed region. See `_probe_pool_dispatch_cost`: a run that probes
+# is not a run whose campaign times mean anything.
+const _POOL_PROBE_DONE = Base.Threads.Atomic{Bool}(false)
+
+@inline function _pool_probe_enabled()::Bool
+    return lowercase(strip(get(ENV, "SPACEAGORA_POOL_DISPATCH_PROBE", "0"))) in ("1", "true", "yes", "on")
+end
+
+function _maybe_probe_pool_dispatch(f, seed, workers::Vector{Int}, local_slots::Int)::Nothing
+    (_pool_probe_enabled() && !isempty(workers)) || return nothing
+    Base.Threads.atomic_xchg!(_POOL_PROBE_DONE, true) && return nothing
+    try
+        _probe_pool_dispatch_cost(f, seed, workers; local_slots=local_slots)
+    catch err
+        @warn "Pool dispatch probe failed." exception=(err, catch_backtrace())
+    end
+    return nothing
+end
+
+# What the post-campaign collection on the workers is: `incremental` (the
+# default, `GC.gc(false)`), `full` (`GC.gc()`, what this hook did before), or
+# `off`. See `_collect_on_workers` for what the three cost.
+@inline function _worker_gc_mode()::Symbol
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_POOL_WORKER_GC", "incremental")))
+    raw in ("off", "0", "false", "no") && return :off
+    raw in ("full", "major", "1", "true", "yes") && return :full
+    return :incremental
+end
+
+# The collection a worker runs between campaigns is a YOUNG-generation one.
+#
+# A full one does not fit between two campaigns. Measured on this workstation
+# at the P3 point (independent_1sat_1hr, 64 samples, 8 workers, 8 threads),
+# with SPACEAGORA_POOL_DISPATCH_PROBE=1: a trivial round trip issued right
+# after `remote_do(GC.gc, w)` reaches all eight workers waits 587-714 ms, and
+# the next campaign starts well inside that window. The dispatch trace shows
+# what that costs where it lands: every pool worker's FIRST sample occupied
+# 299-407 ms while reporting 37-54 ms of work, against a 43.9 ms median for
+# every later sample on the same workers. The same round trip after
+# `GC.gc(false)` waits 7.8-12.7 ms, and with it the first sample occupies what
+# it works. P3's median campaign goes from 0.661 s to 0.401 s.
+#
+# Collecting nothing is worse than either, and for the reason the hook was
+# written: over five repeats with the hook off, two campaigns ran at 0.398 and
+# 0.420 s and two at 0.692 and 0.806 s, and the trace caught the cause in one
+# of them -- a single sample reporting 509 ms of work on a worker that had
+# stopped to collect in the middle of the round. Median 0.692 s.
+#
+# `GC.gc(true)` and `GC.gc(false)` rather than a shipped closure: `remote_do`
+# passes arguments, and `GC.gc` resolves on a bare worker.
+function _collect_on_workers(workers::Vector{Int})::Nothing
+    mode = _worker_gc_mode()
+    mode === :off && return nothing
+    full = mode === :full
+    for w in workers
+        Distributed.remote_do(GC.gc, w, full)
+    end
+    return nothing
+end
+
+# Per-consumer occupancy: each consumer's FIRST sample against the rest of its
+# own samples.
+#
+# A dispatch's fixed cost is paid once per consumer, at its first take, so a
+# campaign-wide mean cannot see it and the completion timeline can only show
+# that the first round was slow, not what in it was. This splits the two: the
+# work each first sample reported (timed where it ran) beside the occupancy
+# the coordinator saw for it, and the median occupancy of everything after.
+function _trace_consumer_occupancy(samples, classes, takes, ordinals, start_ns::UInt64)::Nothing
+    (classes === nothing || takes === nothing || ordinals === nothing) && return nothing
+    n = length(classes)
+    finished = fill(NaN, n)
+    work = fill(NaN, n)
+    for s in samples
+        (1 <= s.index <= n) || continue
+        finished[s.index] = s.finished_ns
+        work[s.index] = s.elapsed_s
+    end
+    started = Float64(start_ns)
+    med(v::Vector{Float64}) = isempty(v) ? NaN : sort(v)[cld(length(v), 2)]
+    ms(v) = round.(v .* 1.0e3; digits=1)
+    for class in (:worker, :local)
+        members = [i for i in 1:n if classes[i] === class && takes[i] > 0.0 && isfinite(finished[i])]
+        isempty(members) && continue
+        first_occupancy = Float64[]
+        first_work = Float64[]
+        first_take = Float64[]
+        rest_occupancy = Float64[]
+        for ordinal in sort!(unique(ordinals[i] for i in members))
+            own = sort!([i for i in members if ordinals[i] == ordinal]; by = i -> takes[i])
+            for (k, i) in enumerate(own)
+                occupancy = (finished[i] - takes[i]) / 1.0e9
+                if k == 1
+                    push!(first_occupancy, occupancy)
+                    push!(first_work, work[i])
+                    push!(first_take, (takes[i] - started) / 1.0e9)
+                else
+                    push!(rest_occupancy, occupancy)
+                end
+            end
+        end
+        println("[dispatch-trace] $(class) first_take=$(ms(first_take))ms " *
+                "first_occupancy=$(ms(first_occupancy))ms first_work=$(ms(first_work))ms " *
+                "rest_median_occupancy=$(round(med(rest_occupancy) * 1.0e3; digits=1))ms " *
+                "rest_n=$(length(rest_occupancy))")
+    end
+    return nothing
+end
+
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
                                       class_sink::Union{Nothing, Vector{Symbol}} = nothing,
                                       take_sink::Union{Nothing, Vector{Float64}} = nothing,
@@ -569,26 +680,41 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
         # process's pool, declared once around the whole dispatch -- never per
         # task, since ENV is process-global and the tasks run concurrently.
         local_slots = hasproperty(plan, :local_slots) ? Int(plan.local_slots) : 0
+        _maybe_probe_pool_dispatch(f, first(spec.seeds), active_workers, local_slots)
+        trace = _dispatch_trace_enabled()
+        # Consumer bookkeeping for the trace. The caller's sinks win when it
+        # has its own (the R7 guard's); otherwise the trace allocates them, so
+        # a traced run can attribute a dispatch's wall to individual consumers
+        # rather than to the pool as a whole. Two array writes per sample, and
+        # only when tracing.
+        n_seeds = length(spec.seeds)
+        classes = class_sink === nothing && trace ? fill(:unset, n_seeds) : class_sink
+        takes = take_sink === nothing && trace ? zeros(Float64, n_seeds) : take_sink
+        ordinals = trace ? zeros(Int, n_seeds) : nothing
         start_ns = time_ns()
-        _dispatch_trace_enabled() && println("[dispatch-trace] ensure_process_workers=$(round((start_ns - t_ensure) / 1e9; digits=3))s " *
+        trace && println("[dispatch-trace] ensure_process_workers=$(round((start_ns - t_ensure) / 1e9; digits=3))s " *
             "workers=$(length(active_workers)) local_slots=$(local_slots) pool_size=$(length(worker_ids))")
         samples = if local_slots > 0
             withenv(outer_split_env_pairs(local_slots)...) do
                 _run_monte_carlo_mixed(f, spec.seeds, spec, active_workers, local_slots;
-                                       class_sink=class_sink, take_sink=take_sink,
-                                       admission=admission, on_complete=on_complete)
+                                       class_sink=classes, take_sink=takes,
+                                       ordinal_sink=ordinals,
+                                       admission=admission, on_complete=on_complete,
+                                       cache_pool=pool)
             end
         else
-            _run_monte_carlo_process(f, spec.seeds, spec, active_workers; class_sink=class_sink,
-                                     take_sink=take_sink, admission=admission,
-                                     on_complete=on_complete)
+            _run_monte_carlo_process(f, spec.seeds, spec, active_workers; class_sink=classes,
+                                     take_sink=takes, ordinal_sink=ordinals,
+                                     admission=admission, on_complete=on_complete,
+                                     cache_pool=pool)
         end
         elapsed_s = (time_ns() - start_ns) / 1.0e9
-        if _dispatch_trace_enabled()
+        if trace
             fin = sort!(Float64[x.finished_ns for x in samples if isfinite(x.finished_ns)])
             rel = isempty(fin) ? Float64[] : round.((fin .- start_ns) ./ 1e9; digits=2)
             println("[dispatch-trace] process dispatch=$(round(elapsed_s; digits=3))s n=$(length(samples)) " *
                 "worker_elapsed_sum=$(round(sum(x.elapsed_s for x in samples); digits=2))s completions_s=$(rel)")
+            _trace_consumer_occupancy(samples, classes, takes, ordinals, start_ns)
         end
         # Collect on the workers NOW, while they sit idle between campaigns,
         # rather than letting each one collect mid-round in the next campaign
@@ -599,13 +725,14 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
         # of GC summed across the workers against 0.1 s -- and that lands on
         # every second or third campaign. The noise it put on the route
         # bandit's observations is what made the tie decision unreliable here.
-        # Fire-and-forget: a worker that is handed the next campaign's first
-        # sample right away runs the collection first, which is the same work
-        # at the start of the round instead of in the middle of it.
         #
-        for w in active_workers
-            Distributed.remote_do(GC.gc, w)
-        end
+        # Fire-and-forget, which is only sound if the collection ENDS before
+        # the next campaign starts. A full one does not: it moved the stall
+        # from the middle of a round to the front of the next one, where it is
+        # still in the way, and that is what the next campaign's first round
+        # was waiting for. `_collect_on_workers` carries the measurement and
+        # the young-generation collection that fits.
+        _collect_on_workers(active_workers)
         # The local slots ran samples on the coordinator's own heap, exactly
         # as a threaded dispatch does, and leave the same debt behind.
         local_slots > 0 && (_GC_DEBT[] = true)

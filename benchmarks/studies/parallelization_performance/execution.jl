@@ -349,13 +349,13 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
                 case_name, local_cfg, mode_name, sample_idx, sample_seed = task
                 ppc_process_sample_task(case_name, local_cfg, mode_name, sample_idx, sample_seed)
             end
-            # As the campaign runner does after its own dispatch: collect on the
-            # idle workers between batches so the next batch does not pay a
-            # mid-round stall. Keeps the static process route and the adaptive
-            # runner on the same footing.
-            for w in worker_ids
-                Distributed.remote_do(GC.gc, w)
-            end
+            # Literally what the campaign runner does after its own dispatch,
+            # through the same function: collect on the idle workers between
+            # batches so the next batch does not pay a mid-round stall. Calling
+            # it rather than repeating it is what keeps the static process route
+            # and the adaptive runner on the same footing, including under
+            # SPACEAGORA_POOL_WORKER_GC.
+            SpaceAGORA.SimulationCampaigns._collect_on_workers(worker_ids)
         end
     else
         withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do
@@ -442,6 +442,53 @@ function _ppc_adaptive_route_state()
     return st
 end
 
+# The campaign closure, cached per point.
+#
+# `CachingPool` keys its worker-side cache on the IDENTITY of the function it
+# is handed (see `_acquire_dispatch_runner` in
+# src/simulation/campaigns/monte_carlo.jl), so a closure rebuilt for every
+# repeat is a guaranteed cache miss on every worker, every time: the campaign's
+# closure is serialized to each of them again and torn down again. Repeats of
+# one point are the same campaign run again, and that is what they should cost.
+#
+# The key is what the sample path actually reads out of the config, not the
+# config itself: `ppc_single_config` reads `profile`, `ppc_mode_env_pairs`
+# reads `process_workers` and `solver_mode`, and `ppc_solve_once` reads
+# nothing. The config object DOES differ between repeats of one point
+# (`worker_seed`, `warmup`, `worker_repeat` -- see `ppc_run_worker_performance`),
+# and the sample index and seed both arrive as the sample's own job rather than
+# being derived from a captured `worker_seed`, so none of the three is read
+# through the reused closure. The key is the statement that nothing the closure
+# can act on differs; if a field the sample path reads is ever added to it, it
+# belongs in the key.
+#
+# SPACEAGORA_PPC_SAMPLE_FN_REUSE=0 rebuilds the closure per batch, which is
+# what this harness did before, for measuring the difference.
+const _PPC_SAMPLE_FN_CACHE = Ref{Any}(nothing)
+
+@inline function _ppc_sample_fn_reuse()::Bool
+    return _ppc_bool(get(ENV, "SPACEAGORA_PPC_SAMPLE_FN_REUSE", "1"))
+end
+
+function _ppc_sample_fn(case_name::String, mode_name::String, cfg::PPCConfig)
+    key = (case_name, mode_name, cfg.profile, cfg.process_workers, cfg.solver_mode)
+    cached = _PPC_SAMPLE_FN_CACHE[]
+    if _ppc_sample_fn_reuse() && cached !== nothing && cached.key == key
+        return cached.fn
+    end
+    # One job is (index, seed): a coordinator-side sample and a worker-side one
+    # need the index, and deriving it from a captured seed origin is what used
+    # to tie this closure to one repeat.
+    fn = job -> begin
+        idx, seed = job
+        Distributed.myid() == 1 ?
+            ppc_run_sample_once(case_name, cfg, idx, seed) :
+            ppc_process_sample_task(case_name, cfg, mode_name, idx, seed)
+    end
+    _PPC_SAMPLE_FN_CACHE[] = (key=key, fn=fn)
+    return fn
+end
+
 function ppc_run_adaptive_batch(
     case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSpec,
     sample_indices::Vector{Int}, sample_seeds::Vector{Int}
@@ -463,14 +510,9 @@ function ppc_run_adaptive_batch(
     # Pool before the clock, adopted into the runner's pool. One worker can
     # never carry the process route (it withdraws below two), so none then.
     case_name = case.name
-    mode_name = mode.name
     worker_seed = cfg.worker_seed
-    sample_fn = seed -> begin
-        idx = seed - worker_seed + 1
-        Distributed.myid() == 1 ?
-            ppc_run_sample_once(case_name, cfg, idx, seed) :
-            ppc_process_sample_task(case_name, cfg, mode_name, idx, seed)
-    end
+    sample_jobs = [(sample_indices[i], sample_seeds[i]) for i in eachindex(sample_seeds)]
+    sample_fn = _ppc_sample_fn(case_name, mode.name, cfg)
     if cfg.process_workers >= 2
         ids = ppc_ensure_process_workers!(cfg.process_workers)
         SpaceAGORA.adopt_process_workers!(SpaceAGORA.campaign_process_pool(), ids)
@@ -482,8 +524,8 @@ function ppc_run_adaptive_batch(
         if cfg.warmup > 0 && !isempty(ids)
             @sync for (offset, w) in enumerate(ids)
                 @async try
-                    remotecall_wait(w, cfg.worker_seed - offset) do warm_seed
-                        SpaceAGORA.SimulationCampaigns._run_monte_carlo_sample(sample_fn, 0, warm_seed)
+                    remotecall_wait(w, (offset, cfg.worker_seed - offset)) do warm_job
+                        SpaceAGORA.SimulationCampaigns._run_monte_carlo_sample(sample_fn, 0, warm_job)
                     end
                 catch
                 end
@@ -502,7 +544,7 @@ function ppc_run_adaptive_batch(
     batch_started = time()
     r = withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...,
                 "SPACEAGORA_OUTER_ROUTE_STATE_PATH" => state_path) do
-        SCamp.run_monte_carlo(sample_fn, sample_seeds; threads=:auto,
+        SCamp.run_monte_carlo(sample_fn, sample_jobs; threads=:auto,
                               route_features=features, route_state=route_state)
     end
     batch_wall = Float64(time() - batch_started)

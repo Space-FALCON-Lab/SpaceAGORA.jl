@@ -15,14 +15,41 @@ Each worker is started with `--threads=1`: process workers do not share the
 coordinator's Julia thread pool, so inner thread-based parallelism inside a
 worker's own `run_simulation` call is unaffected by (and does not contend
 with) how many process workers are active.
+
+# The dispatch cache
+
+The `dispatch_*` fields are storage for the campaign layer's per-dispatch
+closure cache; the policy that fills and drops them lives with the dispatcher
+that uses them (`_acquire_dispatch_runner` in
+`src/simulation/campaigns/monte_carlo.jl`), because when a cached closure may
+be reused is a property of the dispatch, not of the pool.
+
+What they hold is one `CachingPool` over `dispatch_workers`, the campaign
+function `dispatch_f` it was built for, and the per-sample wrapper closure
+`dispatch_runner` that `CachingPool` keys its worker-side cache on. A campaign
+that dispatches the same `f` to the same workers reuses all three instead of
+building a pool, re-serializing the closure to every worker, and clearing it
+again -- the shape a Monte Carlo campaign run repeatedly in one session has.
+
+Retention is bounded, which the per-dispatch `clear!` used to do on its own:
+the cached closure (and whatever configuration state it captures) stays alive
+on the coordinator and on every worker until a campaign dispatches a different
+`f`, until the worker set changes, or until [`shutdown_process_pool!`](@ref)
+runs. It is one campaign's closure at a time, never an accumulation.
 """
 mutable struct ProcessPool
     workers::Vector{Int}
     project_path::String
     lock::ReentrantLock
+    dispatch_pool::Union{Nothing, CachingPool}
+    dispatch_f::Any
+    dispatch_runner::Any
+    dispatch_workers::Vector{Int}
+    dispatch_busy::Bool
 end
 
-ProcessPool(project_path::AbstractString) = ProcessPool(Int[], String(project_path), ReentrantLock())
+ProcessPool(project_path::AbstractString) = ProcessPool(
+    Int[], String(project_path), ReentrantLock(), nothing, nothing, nothing, Int[], false)
 
 const _CAMPAIGN_PROCESS_POOL = ProcessPool(Base.active_project())
 
@@ -262,9 +289,24 @@ end
 Remove every worker currently in `pool` via `rmprocs` and clear it. Mainly
 useful for tests; campaign code leaves the process-global pool warm across
 calls by design.
+
+Also drops the dispatch cache (see [`ProcessPool`](@ref)): the cached closure
+is held for the sake of workers that no longer exist, and the pool must not
+outlive its own workers holding a reference to a campaign's configuration.
 """
 function shutdown_process_pool!(pool::ProcessPool)::Nothing
     lock(pool.lock) do
+        # Unconditional, and before the worker check: a pool whose workers were
+        # adopted and then removed elsewhere still has a cache to drop.
+        # `_drop_dispatch_cache!` in monte_carlo.jl is the same three lines on
+        # the campaign side; neither module can call the other's (see the
+        # `ProcessPool` docstring on where the policy lives).
+        pool.dispatch_pool === nothing || Distributed.clear!(pool.dispatch_pool)
+        pool.dispatch_pool = nothing
+        pool.dispatch_f = nothing
+        pool.dispatch_runner = nothing
+        empty!(pool.dispatch_workers)
+        pool.dispatch_busy = false
         isempty(pool.workers) && return nothing
         rmprocs(pool.workers)
         empty!(pool.workers)

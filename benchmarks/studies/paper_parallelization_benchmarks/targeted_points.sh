@@ -38,7 +38,8 @@ run() { # case mode workers threads mc label
   timeout 7200 julia --threads="$t" --project=. benchmarks/studies/parallelization_performance.jl \
     --profile=full --worker --case="$c" --mode="$m" --thread-count="$t" \
     --worker-repeats=11 --worker-mc-samples="$mc" --warmup=1 --process-workers="$w" --parity=0 \
-    --outfile="$OUT/${lbl}_${m}.csv" 2>&1 | tail -3
+    --outfile="$OUT/${lbl}_${m}.csv" > "$OUT/${lbl}_${m}.log" 2>&1
+  tail -3 "$OUT/${lbl}_${m}.log"
 }
 case "${POINT:?set POINT}" in
   finding8)   # converged store: does R6 re-sweep off cache/heuristic at N=1024?
@@ -57,6 +58,13 @@ case "${POINT:?set POINT}" in
     run montecarlo_heavy_aerobraking policy_v2     32 32 32 dA
     run montecarlo_heavy_aerobraking predictive    32 32 32 dA
     run montecarlo_heavy_aerobraking outer_process 32 32 32 dA ;;
+  defectA_gc) # cold store: is R7's extra worker-side GC at P4@32 the collection mode?
+    SPACEAGORA_POOL_WORKER_GC=full        run montecarlo_heavy_aerobraking predictive    32 32 32 dAgcfull
+    SPACEAGORA_POOL_WORKER_GC=full        run montecarlo_heavy_aerobraking outer_process 32 32 32 dAgcfull
+    SPACEAGORA_POOL_WORKER_GC=incremental run montecarlo_heavy_aerobraking predictive    32 32 32 dAgcincr
+    SPACEAGORA_POOL_WORKER_GC=incremental run montecarlo_heavy_aerobraking outer_process 32 32 32 dAgcincr
+    SPACEAGORA_POOL_WORKER_GC=off         run montecarlo_heavy_aerobraking predictive    32 32 32 dAgcoff
+    SPACEAGORA_POOL_WORKER_GC=off         run montecarlo_heavy_aerobraking outer_process 32 32 32 dAgcoff ;;
   *) echo "unknown POINT=$POINT"; exit 2 ;;
 esac
 echo "[targeted] done -> $OUT"; ls "$OUT"

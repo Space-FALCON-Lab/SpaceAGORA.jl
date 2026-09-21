@@ -283,17 +283,32 @@ The `CachingPool` and per-sample callable for one dispatch, reused from
 workers.
 
 `CachingPool` keys its worker-side cache on the identity of the function it is
-handed, so a dispatch that builds a fresh pool and a fresh wrapper closure is
-a guaranteed cache miss on every worker: the campaign's closure is serialized
-to each of them again, a `RemoteChannel` is created there to hold it, and the
-`clear!` in the dispatch's `finally` tears both down. That is a per-dispatch
-cost, not a per-sample one, which is why it is invisible on a long campaign
-and not on a short one.
+handed -- an `IdDict` on `(worker, f)`, and `objectid` on a closure is by
+field, exactly as the `!==` test below is -- so a dispatch that builds a fresh
+pool and a fresh wrapper closure is a guaranteed cache miss on every worker:
+the campaign's closure is serialized to each of them again, a `RemoteChannel`
+is created there to hold it, and the `clear!` in the dispatch's `finally`
+tears both down. That is a per-dispatch cost, not a per-sample one.
+
+It is a SMALL one on a small closure. Measured on this repo's workstation at
+the P3 point, on a 2357-byte campaign closure, it is 0.3-0.6 ms per worker,
+about 4 ms across eight against a 500 ms campaign -- not what a pool worker's
+first sample of a campaign waits for (see `_collect_on_workers` for what is).
+What it removes scales with the size of what a campaign captures, and 2357
+bytes is the small end of that.
 
 Reuse is dropped -- the worker-side copies cleared, not merely forgotten --
 whenever `f` changes or the worker set changes, and by
 `shutdown_process_pool!`. The retained closure is one campaign's, never an
 accumulation; see the `ProcessPool` docstring.
+
+It costs one assumption. A worker runs a DESERIALIZED COPY of the campaign
+function, so state the function captures and the coordinator then mutates is
+not seen by the copy. One dispatch already required that -- the closure is
+shipped once and reused for every sample of the campaign -- and reuse extends
+the requirement across consecutive campaigns that dispatch the same function.
+A campaign whose function reads mutable state that changes between campaigns
+must set `SPACEAGORA_POOL_DISPATCH_CACHE=0`.
 
 `needs_pool` is false when the worker class is standing in for
 `remotecall_fetch` (the `worker_runner` seam) or absent, in which case the
@@ -641,11 +656,15 @@ end
 #                 serialize) and for a fresh anonymous closure (something
 #                 small to serialize), on a warm idle worker.
 #   cold/warm     the real closure's first call on a worker against its second
-#                 through the same `CachingPool` -- the serialization and
-#                 worker-side specialization a cache hit avoids -- and then
-#                 the two shapes a dispatch can have: the same pool after
-#                 `clear!`, and a fresh pool with a fresh closure, which is
-#                 what every dispatch did before the cache existed.
+#                 through the same `CachingPool`, and then the two shapes a
+#                 dispatch can have: the same pool after `clear!`, and a fresh
+#                 pool with a fresh closure, which is what every dispatch did
+#                 before the cache existed. Measured, the first two are
+#                 one-time compilation per worker per process rather than a
+#                 per-dispatch cost -- `Distributed.exec_from_cache` reaches a
+#                 cache miss and a cache hit through different methods, so
+#                 each is compiled at its own first use -- and the last two,
+#                 at 0.3-0.6 ms, are what rebuilding the pool actually costs.
 #   after-gc      a round trip issued immediately after the post-campaign
 #                 collection is fired at the workers, against the same floor:
 #                 what the next campaign's first sample waits for.

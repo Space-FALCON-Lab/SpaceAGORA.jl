@@ -550,28 +550,43 @@ function _maybe_probe_pool_dispatch(f, seed, workers::Vector{Int}, local_slots::
     return nothing
 end
 
-# What the post-campaign collection on the workers is. `full` is `GC.gc()`,
-# which is what the measurement at the call site was taken with; `incremental`
-# is `GC.gc(false)`, a young-generation collection that returns sooner and so
-# is less likely to still be running when the next campaign's first sample
-# arrives; `off` leaves the workers alone.
+# What the post-campaign collection on the workers is: `incremental` (the
+# default, `GC.gc(false)`), `full` (`GC.gc()`, what this hook did before), or
+# `off`. See `_collect_on_workers` for what the three cost.
 @inline function _worker_gc_mode()::Symbol
-    raw = lowercase(strip(get(ENV, "SPACEAGORA_POOL_WORKER_GC", "full")))
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_POOL_WORKER_GC", "incremental")))
     raw in ("off", "0", "false", "no") && return :off
-    raw in ("incremental", "young", "minor") && return :incremental
-    return :full
+    raw in ("full", "major", "1", "true", "yes") && return :full
+    return :incremental
 end
 
-# A named function rather than a closure: it is shipped to every worker after
-# every campaign, and a named function costs one symbol to serialize.
-_worker_incremental_gc() = (GC.gc(false); nothing)
-
+# The collection a worker runs between campaigns is a YOUNG-generation one.
+#
+# A full one does not fit between two campaigns. Measured on this workstation
+# at the P3 point (independent_1sat_1hr, 64 samples, 8 workers, 8 threads),
+# with SPACEAGORA_POOL_DISPATCH_PROBE=1: a trivial round trip issued right
+# after `remote_do(GC.gc, w)` reaches all eight workers waits 587-714 ms, and
+# the next campaign starts well inside that window. The dispatch trace shows
+# what that costs where it lands: every pool worker's FIRST sample occupied
+# 299-407 ms while reporting 37-54 ms of work, against a 43.9 ms median for
+# every later sample on the same workers. The same round trip after
+# `GC.gc(false)` waits 7.8-12.7 ms, and with it the first sample occupies what
+# it works. P3's median campaign goes from 0.661 s to 0.401 s.
+#
+# Collecting nothing is worse than either, and for the reason the hook was
+# written: over five repeats with the hook off, two campaigns ran at 0.398 and
+# 0.420 s and two at 0.692 and 0.806 s, and the trace caught the cause in one
+# of them -- a single sample reporting 509 ms of work on a worker that had
+# stopped to collect in the middle of the round. Median 0.692 s.
+#
+# `GC.gc(true)` and `GC.gc(false)` rather than a shipped closure: `remote_do`
+# passes arguments, and `GC.gc` resolves on a bare worker.
 function _collect_on_workers(workers::Vector{Int})::Nothing
     mode = _worker_gc_mode()
     mode === :off && return nothing
-    call = mode === :incremental ? _worker_incremental_gc : GC.gc
+    full = mode === :full
     for w in workers
-        Distributed.remote_do(call, w)
+        Distributed.remote_do(GC.gc, w, full)
     end
     return nothing
 end
@@ -710,13 +725,13 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
         # of GC summed across the workers against 0.1 s -- and that lands on
         # every second or third campaign. The noise it put on the route
         # bandit's observations is what made the tie decision unreliable here.
-        # Fire-and-forget: a worker that is handed the next campaign's first
-        # sample right away runs the collection first, which is the same work
-        # at the start of the round instead of in the middle of it -- unless
-        # the next campaign starts before the collection ends, in which case it
-        # is work at the start of the round AND in the way of it. See
-        # `_worker_gc_mode` for what this run asked for and
-        # `_probe_pool_dispatch_cost`'s `after-gc` line for what it costs here.
+        #
+        # Fire-and-forget, which is only sound if the collection ENDS before
+        # the next campaign starts. A full one does not: it moved the stall
+        # from the middle of a round to the front of the next one, where it is
+        # still in the way, and that is what the next campaign's first round
+        # was waiting for. `_collect_on_workers` carries the measurement and
+        # the young-generation collection that fits.
         _collect_on_workers(active_workers)
         # The local slots ran samples on the coordinator's own heap, exactly
         # as a threaded dispatch does, and leave the same debt behind.

@@ -416,6 +416,128 @@ of the first completions of a SINGLE dispatch, and a re-plan could then change
 what the still-idle consumers do rather than requiring a synchronization point.
 That is a v2 item, not a v1 tuning knob.
 
+## The pool's per-dispatch fixed cost
+
+A pool worker's first sample of a campaign comes home long after a local slot
+has finished the same work, and on a campaign whose whole wall is half a second
+that is most of it. The P3 trace above shows it plainly: on
+`independent_1sat_1hr` at 64 samples, 8 workers and 3 local slots, each pool
+worker's FIRST sample occupied 313-370 ms while reporting 39-47 ms of work,
+and the median occupancy of every later sample on the same workers was 43.8 ms.
+A local slot's first sample occupied what it worked, 43-47 ms. The cost is paid
+once per worker per dispatch, which is why it is invisible on a long campaign
+and why the same campaign on the TRX50, where it runs 1-9 s, shows the pool
+winning.
+
+`SPACEAGORA_POOL_DISPATCH_PROBE=1` attributes it. It runs once per process,
+before a dispatch's timed region, on the campaign's own closure and the pool's
+own workers (see `_probe_pool_dispatch_cost`). On this repo's workstation
+(12 physical / 24 logical cores, `--threads=8`, 8 workers, the P3 point):
+
+| Part | Measured |
+|---|---|
+| The campaign closure, serialized | 2357 bytes, 0.1 ms |
+| Round trip of a named function, idle warm worker | 0.02 ms, worst of five 0.11-0.12 ms |
+| Round trip of a fresh anonymous closure | 0.02-0.04 ms |
+| First call of the campaign's closure on a worker | 145-291 ms above the sample's own work |
+| Second call through the same `CachingPool` | 33-60 ms |
+| Call after `clear!` -- a cache miss with the code already compiled | 0.47-0.64 ms |
+| Call through a fresh `CachingPool` and a fresh closure | 0.33-0.56 ms |
+| Round trip issued right after `remote_do(GC.gc, w)` on all eight | 587-714 ms |
+| The same after `GC.gc(false)` | 7.8-12.7 ms |
+| Round trip while three CPU-bound tasks run on the coordinator | 0.02-0.06 ms, against 0.02-0.09 ms idle |
+
+The first three rows of the middle block are one-time compilation per worker
+per process, not per dispatch: the miss and hit paths through
+`Distributed.exec_from_cache` are different methods, so each is JIT-compiled at
+its own first use. What a dispatch actually pays to build a fresh
+`CachingPool` and ship the closure again is the two rows at 0.3-0.6 ms -- about
+4 ms across eight workers, against a 500 ms campaign.
+
+So the per-dispatch pool churn is not what the first sample waits for. The
+previous campaign's collection is. `_run_campaign_with_route_env` fires
+`remote_do(GC.gc, w)` at every worker when a dispatch ends, to keep a worker's
+collection out of the middle of the next round; a full collection on these
+workers takes long enough that a round trip issued while it runs waits 587-714
+ms, and the next campaign starts well inside that window. The hook moved the
+stall from the middle of a round to the front of the next one, where it is
+still in the way. A young-generation collection does the same job in 8-13 ms.
+
+`SPACEAGORA_POOL_WORKER_GC` selects which one: `incremental` (the default,
+`GC.gc(false)`), `full` (`GC.gc()`, what the hook did before), or `off`. Five
+repeats each, `predictive`, the P3 point, repeat 1 cold in every row:
+
+| Collection | Repeats | Median |
+|---|---|---|
+| `full` | 4.086, 0.487, 0.678, 0.656, 0.661 | 0.661 |
+| `incremental` | 4.173, 0.838, 0.395, 0.401, 0.387 | **0.401** |
+| `off` | 4.506, 0.806, 0.692, 0.398, 0.420 | 0.692 |
+
+Under `incremental` the per-consumer trace shows no fixed cost left at all: on
+the warm repeats every pool worker's first sample occupies what it works
+(40-67 ms against a 43-45 ms median for the rest), where under `full` it
+occupied 299-407 ms for 37-54 ms of work.
+
+`off` is not the answer, and for exactly the reason the hook was written: two
+of its five repeats ran at 0.398 and 0.420 s and two at 0.692 and 0.806 s, and
+the trace caught the cause in one of them -- a single sample reporting 509 ms
+of work on a worker that had stopped to collect in the middle of the round.
+The collection has to happen; it has to be one that ends before the next
+campaign starts.
+
+Two limits on that default. It is measured over five repeats of one 64-sample
+campaign, not over a long session: a worker that only ever collects its young
+generation between campaigns will eventually need a full collection, and when
+Julia's own heuristic fires it, it fires mid-campaign -- which is the stall the
+`off` row prices. And it is measured on this shape, where each worker allocates
+on the order of 80 MB per campaign.
+
+### What the P3 point costs now
+
+Five repeats each, the same session, the same machine, repeat 1 cold in every
+row. "Before" is this branch with `SPACEAGORA_POOL_WORKER_GC=full`,
+`SPACEAGORA_POOL_DISPATCH_CACHE=0` and `SPACEAGORA_PPC_SAMPLE_FN_REUSE=0`,
+which is what the code did before this change; "after" is the shipped
+defaults.
+
+| Mode | Before | After |
+|---|---|---|
+| `outer_process` (pinned pool) | 1.801, 0.649, 0.715, 0.739, 0.728 -> 0.728 | 1.591, 0.358, 0.322, 0.323, 0.327 -> **0.327** |
+| `policy_v2` (R6 bandit) | 4.078, 0.415, 0.638, 0.635, 0.637 -> 0.637 | 4.112, 0.396, 0.451, 0.386, 0.389 -> **0.396** |
+| `predictive` (R7) | 4.086, 0.487, 0.678, 0.656, 0.661 -> 0.661 | 4.188, 0.459, 0.423, 0.398, 0.401 -> **0.423** |
+| `outer_threads` (pinned threads) | not affected: no pool, no collection hook | 0.591, 0.457, 0.450, 0.430, 0.422 -> 0.450 |
+
+Those before medians reproduce the ones measured on this point before the
+change (0.722, 0.647, 0.644) to within 3%, and the `outer_threads` column,
+which none of the three switches can touch, is the control.
+
+The caveat stated elsewhere in this document -- that repeat-to-repeat spread on
+this case ran 0.40-0.76 s for identical plans and identical code, so no
+difference inside it means anything -- was itself a symptom. That spread is
+what a campaign costs depending on how much of the previous campaign's full
+collection it ran inside. With the young-generation collection the warm
+repeats of a row span 0.322-0.327 (`outer_process`) and 0.386-0.451
+(`policy_v2`), and every before/after difference above is far outside both the
+old spread and the new one.
+
+What it changes for the router: on this shape the pool now wins outright. The
+pinned pool is 0.327 against the pinned threads route's 0.450, where before it
+was 0.728 against 0.427, and both adaptive profiles land between them rather
+than behind both.
+
+`SPACEAGORA_POOL_DISPATCH_CACHE` is the other half. `CachingPool` keys its
+worker-side cache on the identity of the function it is handed, so a dispatch
+that built a fresh pool and a fresh wrapper closure missed on every worker; the
+pool now holds both between campaigns, keyed on the campaign function and the
+worker set, and drops them when either changes or when the pool is shut down.
+On this shape it is worth the 0.3-0.6 ms per worker above and nothing more, and
+it is kept because what it removes scales with the size of the closure a
+campaign captures, which 2357 bytes is the small end of. It costs one
+assumption: that a campaign function's captured state is not mutated between
+campaigns that dispatch it, where before the assumption only had to hold within
+one campaign. `SPACEAGORA_POOL_DISPATCH_CACHE=0` restores the per-dispatch
+pool.
+
 ## Tracing
 
 `SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1` prints, per campaign:

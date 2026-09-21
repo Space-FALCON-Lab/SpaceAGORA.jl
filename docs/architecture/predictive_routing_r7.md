@@ -169,11 +169,44 @@ So the guard has two directions.
 | Observation | Verdict |
 |---|---|
 | any sample failed | drop the local slots to zero (`:process@L=0`) |
-| worker occupancy > `guard_factor` x local occupancy, **and** the pinned threads plan predicted (from the observed occupancies) to finish the remainder sooner than continuing | the remainder runs `:threads` at `min(remaining, T)`, budget 1, pool idle |
+| worker occupancy > `guard_factor` x local occupancy, **and** the pinned threads plan predicted (from the observed occupancies) to finish the remainder sooner than continuing | move the remainder to `:threads` at `min(remaining, T)`, budget 1, pool idle -- **only when `route_switch` is on, which it is not by default**; otherwise `route_switch_disabled` and the plan stands |
 | worker occupancy past the factor but threads no faster | keep the plan (`threads_no_better`) |
 | work ratio > `guard_factor` | halve the local slots |
 | work ratio > 2 x `guard_factor` | drop the local slots to zero |
 | otherwise | keep the plan |
+
+### The route switch is built, measured, and off
+
+`SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH` defaults to `false`. The verdict is
+still computed and traced with it off, so the evidence is readable without
+being acted on; only the move is suppressed.
+
+It is off because it measured worse, and the reason is instructive. On this
+repo's workstation, `independent_1sat_1hr` at 64 samples over 8 workers plus 3
+local slots, five repeats with the switch ON: the campaigns that switched ran
+0.853 and 0.983 s, and the campaigns that did not ran 0.398 and 0.514 s. The
+verdict alternated between repeats, and the first round's process dispatch
+alternated with it -- 0.736, 0.052, 0.499, 0.052, 0.376 s for the same eleven
+samples.
+
+The cheap first rounds are exactly the campaigns whose remainder stayed on the
+pool. Switching to the threads route leaves the pool idle for the rest of the
+campaign, so the NEXT campaign's first round pays to wake it again -- the
+`CachingPool` closure re-serialization that `Distributed.clear!` forces at the
+end of every dispatch, and the workers' post-campaign collection landing at the
+start of the next one -- and the guard reads that cost as evidence that it
+should switch again. The mechanism manufactures its own evidence.
+
+The underlying premise did not survive the measurement either. What is slow at
+this point is `:process@L=0` (0.722 s against the threads route's 0.427 s); the
+MIXED plan the planner actually chose runs 0.398-0.514 s when left alone, which
+is competitive with the pinned threads route. The campaign was never on the
+wrong side of the machine; only the pure-pool static plan was.
+
+What a working version needs is a measurement that is not taken in the round
+that pays the dispatch's one-time costs. That is the same lesson
+`steady_per_sample_s` already encodes for the bandit, and it is the v2 item
+below.
 
 Both directions end on a static-equivalent plan -- `:process@L=0` on one side,
 the pinned threads plan on the other -- and `predictive_replan` enforces that:
@@ -278,6 +311,19 @@ on the median and 6% at p90, so differences below those are not differences.
 | `mcgrid_8sat_16mc`, n=16, 1 worker | `predictive` | 3.734, 1.323, 1.341 | 1.341 | `threads@w8` |
 | `mcgrid_8sat_16mc`, n=16, 1 worker | `outer_threads` | 1.590, 1.427, 1.427 | 1.427 | pinned threads |
 
+With the guard's second direction added (5 repeats, `independent_1sat_1hr`;
+3 repeats, `mcgrid_8sat_16mc`):
+
+| Case | Mode | Repeats | Median |
+|---|---|---|---|
+| `independent_1sat_1hr`, n=64, 8 workers | `predictive`, route switch OFF (shipped) | 3.513, 0.631, 0.741, 0.703, 0.715 | 0.715 |
+| `independent_1sat_1hr`, n=64, 8 workers | `predictive`, route switch ON | 3.674, 0.514, 0.983, 0.398, 0.853 | 0.853 |
+| `mcgrid_8sat_16mc`, n=16, 1 worker | `predictive` | 3.822, 1.381, 1.395 | 1.395 |
+
+The shipped default is stable across repeats (0.631-0.741 after the cold one)
+and lands on the pinned pool's 0.722. P5 is unchanged, as it must be: no pool
+is affordable there, so the plan is static and the guard never splits a round.
+
 Three things to read off it.
 
 The static-equivalent plan really is the pinned static route: forced to it
@@ -329,8 +375,19 @@ outright), `predicted_gain` (a deviation cleared the margin),
 
 - An inner-speedup measurement, so the inner thread budget becomes a decision
   and the narrower widths become worth enumerating.
+- **The guard round, removed.** It is now the single largest avoidable cost at
+  the P3 point: with the shipped default, round one's eleven samples take
+  0.24-0.36 s while the whole 53-sample remainder takes 0.24-0.26 s. The
+  barrier is not the sample time -- it is a second process dispatch, and a
+  dispatch's fixed cost (pool wake-up, closure re-serialization, the workers'
+  collection) is paid per dispatch, not per sample. The class means and the
+  occupancies the guard needs are all available from `take_sink`,
+  `finished_ns` and the class tags of the FIRST COMPLETIONS OF A SINGLE
+  DISPATCH; a re-plan could then change what the still-idle consumers do next
+  instead of requiring a synchronization point. That also fixes the route
+  switch, which is unusable while its evidence comes from the round that pays
+  the one-time costs.
 - A remote round-trip term measured BEFORE the first round rather than after
-  it. The guard now supplies it one round late, which costs the campaign that
-  round; a cheap pool probe at plan time would supply it on time.
+  it, for the first round's own plan.
 - A per-sample cost spread, for campaigns whose samples are known to differ
   (an aerobraking grid whose corners run far longer than its center).

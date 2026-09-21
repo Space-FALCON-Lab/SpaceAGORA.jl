@@ -141,9 +141,19 @@ end
     seeds = collect(1:12)
     spec = SCamp.MonteCarloSpec(seeds = seeds, threads = 1)
     sink = fill(:unset, length(seeds))
-    out = SCamp._run_monte_carlo_mixed(x -> x * 3, seeds, spec, Int[], 3; class_sink = sink)
+    taken = zeros(Float64, length(seeds))
+    out = SCamp._run_monte_carlo_mixed(x -> x * 3, seeds, spec, Int[], 3;
+                                       class_sink = sink, take_sink = taken)
     @test [s.value for s in out] == seeds .* 3
     @test all(c -> c === :local, sink)
+    # Every sample was taken before it finished, and the bracket is its own.
+    @test all(t -> t > 0.0, taken)
+    for s in out
+        @test s.finished_ns > taken[s.index]
+        @test (s.finished_ns - taken[s.index]) / 1e9 >= s.elapsed_s * 0.9
+    end
+    @test_throws ArgumentError SCamp._run_monte_carlo_mixed(
+        identity, seeds, spec, Int[], 2; take_sink = zeros(Float64, 3))
     # A sink of the wrong length is a caller bug, not a silently partial record.
     @test_throws ArgumentError SCamp._run_monte_carlo_mixed(
         identity, seeds, spec, Int[], 2; class_sink = fill(:unset, 3))

@@ -29,10 +29,12 @@ function _constants(; alpha = 0.05, beta_alloc = 0.004)
     )
 end
 
-_cfg(; margin = 0.15, guard_factor = 1.5, local_slots_max = 64, remote_overhead = 0.0) =
+_cfg(; margin = 0.15, guard_factor = 1.5, local_slots_max = 64, remote_overhead = 0.0,
+     route_switch = true) =
     SCamp.PredictivePlannerConfig(margin = margin, guard_factor = guard_factor,
                                   local_slots_max = local_slots_max,
-                                  remote_overhead = remote_overhead)
+                                  remote_overhead = remote_overhead,
+                                  route_switch = route_switch)
 
 # Shorthand for "the plan the planner chose for this shape", with the machine
 # supplied rather than inherited.
@@ -83,6 +85,7 @@ end
         @test c.guard_factor == 1.5
         @test c.local_slots_max == max(0, Base.Threads.nthreads() - 1)
         @test c.remote_overhead == 0.0
+        @test c.route_switch == false          # built, measured, shipped off
     end
     withenv("SPACEAGORA_PREDICTIVE_MARGIN" => "0.4",
             "SPACEAGORA_PREDICTIVE_GUARD_FACTOR" => "2.5",
@@ -102,6 +105,12 @@ end
     @test_throws ArgumentError SCamp.PredictivePlannerConfig(remote_overhead = -0.1)
     withenv("SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD" => "0.6") do
         @test SCamp.PredictivePlannerConfig().remote_overhead == 0.6
+    end
+    withenv("SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH" => "on") do
+        @test SCamp.PredictivePlannerConfig().route_switch
+    end
+    withenv("SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH" => "maybe") do
+        @test_throws ArgumentError SCamp.PredictivePlannerConfig()
     end
 end
 
@@ -549,6 +558,36 @@ end
     @test steep.threads_s > charged.threads_s
 end
 
+@testset "the route switch is off by default, and the evidence is still reported" begin
+    # The capability exists and is measured; the default is what measured
+    # better. With the switch off the guard computes the same comparison and
+    # says so, but leaves the plan alone.
+    off = _cfg(guard_factor = 1.5, route_switch = false)
+    plan = _guard_plan()
+    obs = (worker_mean_s = 0.038, local_mean_s = 0.046,
+           worker_occupancy_s = 0.333, local_occupancy_s = 0.050,
+           remaining = 53, threads = 8, threads_candidate = true, constants = nothing)
+    v = SCamp.predictive_guard_verdict(plan, off; obs...)
+    @test !v.replan
+    @test v.route === :process && v.local_slots == plan.local_slots
+    @test v.reason === :route_switch_disabled
+    # The measurement that would have driven it is still there to read.
+    @test v.occupancy_ratio > off.guard_factor
+    @test v.threads_s < v.continue_s
+    # And with the switch on, the same observation moves the remainder.
+    on = _cfg(guard_factor = 1.5, route_switch = true)
+    @test SCamp.predictive_guard_verdict(plan, on; obs...).route === :threads
+    # The local-slot direction is unaffected by the switch either way.
+    slow_locals = (worker_mean_s = 0.05, local_mean_s = 0.20,
+                   worker_occupancy_s = 0.05, local_occupancy_s = 0.05,
+                   remaining = 53, threads = 8, threads_candidate = true,
+                   constants = nothing)
+    for cfg in (off, on)
+        v2 = SCamp.predictive_guard_verdict(plan, cfg; slow_locals...)
+        @test v2.replan && v2.route === :process && v2.local_slots == 0
+    end
+end
+
 @testset "predictive_replan refuses anything that is not a move toward static" begin
     plan = _guard_plan()
     @test_throws ArgumentError SCamp.predictive_replan(plan, 0, 53, nothing; route = :none,
@@ -557,8 +596,16 @@ end
                                                         workers = 8)
     # The reduce-L path is unchanged and still cannot widen.
     @test SCamp.predictive_replan(plan, 99, 53, nothing).local_slots == plan.local_slots
-    # A threads re-plan carries the same worker pricing the round was planned with.
+    # Pricing after a re-plan. The reduce-L path keeps the pool pricing the
+    # round was planned with; the threads path does not carry it and must not,
+    # because a plan with no pool workers has no pool-worker class -- its cost
+    # is entirely `heap_slowdown`, and `worker_slowdown` is the route's own 1.0.
     priced = SCamp._predictive_plan(:process, 8, 3, 64, false, nothing, 0.6)
-    @test SCamp.predictive_replan(priced, 0, 53, nothing; route = :threads,
-                                   workers = 4).worker_slowdown == 1.6
+    @test priced.worker_slowdown == 1.6
+    @test SCamp.predictive_replan(priced, 1, 53, nothing).worker_slowdown == 1.6
+    moved = SCamp.predictive_replan(priced, 0, 53, nothing; route = :threads, workers = 4)
+    @test moved.route === :threads
+    @test moved.worker_slowdown == 1.0
+    @test moved.heap_slowdown == SCamp.predictive_heap_slowdown(nothing, 4)
+    @test moved.makespan == SCamp.predictive_makespan(53, fill(moved.heap_slowdown, 4))
 end

@@ -258,8 +258,19 @@ index, the same way `samples[index]` is. Nothing in the result itself records
 which kind of consumer ran a sample -- a worker's `elapsed_s` is measured on
 the worker and comes home indistinguishable from a local slot's -- and the R7
 planner's guard needs exactly that split to compare the two classes against
-what it predicted. It defaults to `nothing`, so the bandit path writes nothing
-and behaves as before.
+what it predicted.
+
+`take_sink` is the companion: the coordinator's `time_ns()` at the moment that
+consumer TOOK the job, written at the same index. With `finished_ns` (stamped
+when its result was in hand) it brackets one consumer's occupancy for one
+sample -- the work plus that sample's own share of the round trip and
+serialization, and nothing else. Measured from a single dispatch-wide start
+instead, the number carries the pool's shared setup and the queueing of
+whoever was served earlier, which on an 8-worker round reads 965 ms for a
+38 ms sample and is not a per-sample cost at all.
+
+Both default to `nothing`, so the bandit path writes nothing and behaves as
+before.
 
 Pool workers are `--threads=1`, so with W workers on a T-thread coordinator a
 process-only campaign uses W cores and leaves T idle; the local slots are how
@@ -270,13 +281,17 @@ is their share. `local_slots = 0` is the process-only dispatch.
 """
 function _run_monte_carlo_mixed(
     f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int}, local_slots::Int;
-    class_sink::Union{Nothing, Vector{Symbol}} = nothing
+    class_sink::Union{Nothing, Vector{Symbol}} = nothing,
+    take_sink::Union{Nothing, Vector{Float64}} = nothing
 )
     (isempty(worker_ids) && local_slots < 1) && throw(ArgumentError(
         "_run_monte_carlo_mixed needs at least one pool worker or one local slot."))
     class_sink === nothing || length(class_sink) == length(seeds) || throw(ArgumentError(
         "_run_monte_carlo_mixed class_sink must have one entry per seed; got " *
         "$(length(class_sink)) for $(length(seeds)) seeds."))
+    take_sink === nothing || length(take_sink) == length(seeds) || throw(ArgumentError(
+        "_run_monte_carlo_mixed take_sink must have one entry per seed; got " *
+        "$(length(take_sink)) for $(length(seeds)) seeds."))
     jobs = Channel{Tuple{Int, Any}}(length(seeds))
     for (index, seed) in enumerate(seeds)
         put!(jobs, (index, seed))
@@ -289,6 +304,7 @@ function _run_monte_carlo_mixed(
     consume = (run, class) -> begin
         for (index, seed) in jobs
             spec.fail_fast && stop_requested[] && break
+            take_sink === nothing || (take_sink[index] = Float64(time_ns()))
             sample = _stamp_finished(run(index, seed))
             samples[index] = sample
             class_sink === nothing || (class_sink[index] = class)
@@ -327,8 +343,10 @@ end
 
 # Process-backend dispatch: the mixed dispatcher with no local slots.
 function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int};
-                                  class_sink::Union{Nothing, Vector{Symbol}} = nothing)
-    return _run_monte_carlo_mixed(f, seeds, spec, worker_ids, 0; class_sink = class_sink)
+                                  class_sink::Union{Nothing, Vector{Symbol}} = nothing,
+                                  take_sink::Union{Nothing, Vector{Float64}} = nothing)
+    return _run_monte_carlo_mixed(f, seeds, spec, worker_ids, 0; class_sink = class_sink,
+                                  take_sink = take_sink)
 end
 
 """

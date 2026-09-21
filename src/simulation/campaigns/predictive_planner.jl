@@ -60,6 +60,14 @@ end
     return parsed
 end
 
+@inline function _predictive_env_bool(name::AbstractString, fallback::Bool)::Bool
+    raw = lowercase(strip(get(ENV, String(name), "")))
+    isempty(raw) && return fallback
+    raw in ("1", "true", "yes", "on") && return true
+    raw in ("0", "false", "no", "off") && return false
+    throw(ArgumentError("$(name) must be a boolean; got \"$(raw)\"."))
+end
+
 @inline function _predictive_env_int(name::AbstractString, fallback::Int)::Int
     raw = strip(get(ENV, String(name), ""))
     isempty(raw) && return fallback
@@ -100,6 +108,14 @@ the unit tests drive a plan space the host machine does not have).
   dispatch. DERIVED from R6's measured practice: `mixed_local_slots` keeps
   thread 1 free for the `@async` feeders that keep the pool supplied, so the
   most slots the coordinator can ever offer is `T - 1`.
+- `route_switch` (`SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH`, default `false`):
+  whether the guard may move the remainder of a campaign from the pool to the
+  threads route. Built, measured, and shipped OFF: on this repo's workstation
+  it made `independent_1sat_1hr` roughly twice as slow, because switching
+  leaves the pool idle and the next campaign's first round then reads the cost
+  of waking it as evidence that it should switch again. The verdict is still
+  computed and traced with the switch off, so the evidence is visible without
+  being acted on. See `docs/architecture/predictive_routing_r7.md`.
 - `remote_overhead` (`SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD`, default `0.0`):
   the `remotecall_fetch` round trip relative to one uncontended sample time,
   i.e. how much more a pool worker costs per sample than a coordinator thread.
@@ -112,6 +128,7 @@ struct PredictivePlannerConfig
     guard_factor::Float64
     local_slots_max::Int
     remote_overhead::Float64
+    route_switch::Bool
 end
 
 function PredictivePlannerConfig(;
@@ -121,6 +138,8 @@ function PredictivePlannerConfig(;
         "SPACEAGORA_PREDICTIVE_LOCAL_SLOTS_MAX", max(0, Base.Threads.nthreads() - 1)),
     remote_overhead::Real = _predictive_env_float(
         "SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD", PREDICTIVE_REMOTE_OVERHEAD),
+    route_switch::Bool = _predictive_env_bool(
+        "SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH", false),
 )
     margin >= 0.0 || throw(ArgumentError("PredictivePlannerConfig margin must be >= 0; got $(margin)."))
     guard_factor >= 1.0 ||
@@ -130,7 +149,7 @@ function PredictivePlannerConfig(;
     remote_overhead >= 0.0 ||
         throw(ArgumentError("PredictivePlannerConfig remote_overhead must be >= 0; got $(remote_overhead)."))
     return PredictivePlannerConfig(Float64(margin), Float64(guard_factor), Int(local_slots_max),
-                                   Float64(remote_overhead))
+                                   Float64(remote_overhead), route_switch)
 end
 
 
@@ -512,6 +531,12 @@ function predictive_guard_verdict(
             n_rest, vcat(fill(worker_occupancy_s, plan.workers),
                          fill(local_occupancy_s, plan.local_slots)))
         if threads_s < continue_s
+            # Computed and reported either way; acted on only when the switch
+            # is enabled. See `PredictivePlannerConfig.route_switch` for the
+            # measurement that turned it off.
+            config.route_switch || return (; keep..., ratio = ratio,
+                    occupancy_ratio = occupancy_ratio, continue_s = continue_s,
+                    threads_s = threads_s, reason = :route_switch_disabled)
             return (; keep..., replan = true, route = :threads, workers = width,
                     local_slots = 0, ratio = ratio, occupancy_ratio = occupancy_ratio,
                     continue_s = continue_s, threads_s = threads_s,

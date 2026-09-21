@@ -530,7 +530,8 @@ const _GC_DEBT = Base.Threads.Atomic{Bool}(false)
 end
 
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
-                                      class_sink::Union{Nothing, Vector{Symbol}} = nothing)
+                                      class_sink::Union{Nothing, Vector{Symbol}} = nothing,
+                                      take_sink::Union{Nothing, Vector{Float64}} = nothing)
     # Collect BEFORE dispatch (V2). A threaded campaign leaves the coordinator
     # with a heap of many GiB, and the process route's dispatch loop -- a set
     # of async tasks each blocking on one remote call -- then stalls in the
@@ -572,10 +573,11 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
         samples = if local_slots > 0
             withenv(outer_split_env_pairs(local_slots)...) do
                 _run_monte_carlo_mixed(f, spec.seeds, spec, active_workers, local_slots;
-                                       class_sink=class_sink)
+                                       class_sink=class_sink, take_sink=take_sink)
             end
         else
-            _run_monte_carlo_process(f, spec.seeds, spec, active_workers; class_sink=class_sink)
+            _run_monte_carlo_process(f, spec.seeds, spec, active_workers; class_sink=class_sink,
+                                     take_sink=take_sink)
         end
         elapsed_s = (time_ns() - start_ns) / 1.0e9
         if _dispatch_trace_enabled()
@@ -721,6 +723,7 @@ end
 # function untouched.
 function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::OuterRouteTuning;
                               fail_fast::Bool, class_sink::Union{Nothing, Vector{Symbol}}=nothing,
+                              take_sink::Union{Nothing, Vector{Float64}}=nothing,
                               mid_campaign::Bool=false)
     width = max(1, min(plan.workers, length(batch)))
     slots = min(plan.local_slots, max(0, length(batch) - width))
@@ -732,9 +735,11 @@ function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::Ou
                      mid_campaign=mid_campaign)
     spec = MonteCarloSpec(seeds=batch, threads=width, fail_fast=fail_fast)
     plan.consumers <= 1 &&
-        return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink)
+        return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
+                                            take_sink=take_sink)
     return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "1") do
-        _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink)
+        _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
+                                     take_sink=take_sink)
     end
 end
 
@@ -747,17 +752,21 @@ end
 #   mean_s      the mean `elapsed_s`, the work INSIDE the sample, timed where
 #               the sample ran -- on the worker for a worker, here for a local
 #               slot.
-#   occupancy_s the mean wall from the dispatch starting to that sample's
-#               result being in hand (`finished_ns`, stamped on the
-#               coordinator by whichever dispatcher collected it). Round one
-#               runs exactly one sample per consumer, so this is that
-#               consumer's whole cost for it: the work plus the round trip,
-#               the closure's serialization, and the scheduling around it.
+#   occupancy_s the mean wall from that consumer TAKING the job (`take_sink`)
+#               to its result being in hand (`finished_ns`), both stamped on
+#               the coordinator. That brackets one consumer's cost for one
+#               sample: the work plus that sample's own share of the round
+#               trip and serialization.
+#
+#               Measured from a single dispatch-wide start instead, the number
+#               carries the pool's shared setup and the queueing of whoever
+#               was served earlier: on an 8-worker round it read 965 ms for a
+#               38 ms sample, and the guard acted on it.
 #
 # The difference between them is everything a worker pays that a local slot
 # does not, and nothing in `elapsed_s` can see it.
 function _predictive_class_means(samples::Vector{MonteCarloSampleResult}, sink::Vector{Symbol},
-                                 started_ns::UInt64)
+                                 taken::Vector{Float64}, started_ns::UInt64)
     worker_sum = 0.0; worker_n = 0
     local_sum = 0.0; local_n = 0
     worker_occ = 0.0; worker_occ_n = 0
@@ -766,7 +775,9 @@ function _predictive_class_means(samples::Vector{MonteCarloSampleResult}, sink::
     for s in samples
         (1 <= s.index <= length(sink)) || continue
         cls = sink[s.index]
-        occ = isfinite(s.finished_ns) ? (s.finished_ns - start) / 1.0e9 : NaN
+        took = (1 <= s.index <= length(taken)) && taken[s.index] > 0.0 ?
+            taken[s.index] : start
+        occ = isfinite(s.finished_ns) ? (s.finished_ns - took) / 1.0e9 : NaN
         if cls === :worker
             worker_sum += s.elapsed_s; worker_n += 1
             if isfinite(occ) && occ > 0.0
@@ -843,11 +854,12 @@ function _run_campaign_predictive(
 
     head = seeds[1:plan.consumers]
     sink = fill(:unset, length(head))
+    taken = zeros(Float64, length(head))
     round_started_ns = time_ns()
     first_round = _predictive_dispatch(f, head, plan, tuning; fail_fast=fail_fast,
-                                       class_sink=sink, mid_campaign=true)
+                                       class_sink=sink, take_sink=taken, mid_campaign=true)
     samples = collect(first_round.samples)
-    observed = _predictive_class_means(samples, sink, round_started_ns)
+    observed = _predictive_class_means(samples, sink, taken, round_started_ns)
     rest = seeds[(length(head) + 1):n]
     verdict = predictive_guard_verdict(
         plan, config;

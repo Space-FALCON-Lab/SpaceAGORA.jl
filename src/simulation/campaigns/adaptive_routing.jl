@@ -738,22 +738,51 @@ function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::Ou
     end
 end
 
-# Mean sample time per consumer class over one round, from the class tags the
-# mixed dispatcher wrote. NaN for a class that ran nothing.
-function _predictive_class_means(samples::Vector{MonteCarloSampleResult}, sink::Vector{Symbol})
+# What each consumer class cost over one round, from the class tags the mixed
+# dispatcher wrote. NaN for a class that ran nothing.
+#
+# Two quantities, because the guard asks two questions of them (see
+# `predictive_guard_verdict`):
+#
+#   mean_s      the mean `elapsed_s`, the work INSIDE the sample, timed where
+#               the sample ran -- on the worker for a worker, here for a local
+#               slot.
+#   occupancy_s the mean wall from the dispatch starting to that sample's
+#               result being in hand (`finished_ns`, stamped on the
+#               coordinator by whichever dispatcher collected it). Round one
+#               runs exactly one sample per consumer, so this is that
+#               consumer's whole cost for it: the work plus the round trip,
+#               the closure's serialization, and the scheduling around it.
+#
+# The difference between them is everything a worker pays that a local slot
+# does not, and nothing in `elapsed_s` can see it.
+function _predictive_class_means(samples::Vector{MonteCarloSampleResult}, sink::Vector{Symbol},
+                                 started_ns::UInt64)
     worker_sum = 0.0; worker_n = 0
     local_sum = 0.0; local_n = 0
+    worker_occ = 0.0; worker_occ_n = 0
+    local_occ = 0.0; local_occ_n = 0
+    start = Float64(started_ns)
     for s in samples
         (1 <= s.index <= length(sink)) || continue
         cls = sink[s.index]
+        occ = isfinite(s.finished_ns) ? (s.finished_ns - start) / 1.0e9 : NaN
         if cls === :worker
             worker_sum += s.elapsed_s; worker_n += 1
+            if isfinite(occ) && occ > 0.0
+                worker_occ += occ; worker_occ_n += 1
+            end
         elseif cls === :local
             local_sum += s.elapsed_s; local_n += 1
+            if isfinite(occ) && occ > 0.0
+                local_occ += occ; local_occ_n += 1
+            end
         end
     end
     return (worker_mean_s = worker_n > 0 ? worker_sum / worker_n : NaN,
             local_mean_s = local_n > 0 ? local_sum / local_n : NaN,
+            worker_occupancy_s = worker_occ_n > 0 ? worker_occ / worker_occ_n : NaN,
+            local_occupancy_s = local_occ_n > 0 ? local_occ / local_occ_n : NaN,
             workers = worker_n, locals = local_n)
 end
 
@@ -814,25 +843,37 @@ function _run_campaign_predictive(
 
     head = seeds[1:plan.consumers]
     sink = fill(:unset, length(head))
+    round_started_ns = time_ns()
     first_round = _predictive_dispatch(f, head, plan, tuning; fail_fast=fail_fast,
                                        class_sink=sink, mid_campaign=true)
     samples = collect(first_round.samples)
-    observed = _predictive_class_means(samples, sink)
+    observed = _predictive_class_means(samples, sink, round_started_ns)
+    rest = seeds[(length(head) + 1):n]
     verdict = predictive_guard_verdict(
         plan, config;
         worker_mean_s=observed.worker_mean_s, local_mean_s=observed.local_mean_s,
-        failures=length(first_round.failed))
-    rest = seeds[(length(head) + 1):n]
+        worker_occupancy_s=observed.worker_occupancy_s,
+        local_occupancy_s=observed.local_occupancy_s,
+        remaining=length(rest), threads=threads,
+        threads_candidate=(:threads in candidates) && threads > 1,
+        constants=constants, failures=length(first_round.failed))
     final_plan = verdict.replan ?
-        predictive_replan(plan, verdict.local_slots, length(rest), constants) : plan
+        predictive_replan(plan, verdict.local_slots, length(rest), constants;
+                          route=verdict.route, workers=verdict.workers) : plan
     if trace
         println("[predictive] guard round1=$(round(first_round.elapsed_s; digits=3))s " *
                 "worker_mean=$(round(observed.worker_mean_s * 1e3; digits=2))ms/$(observed.workers) " *
                 "local_mean=$(round(observed.local_mean_s * 1e3; digits=2))ms/$(observed.locals) " *
                 "predicted_ratio=$(round(plan.heap_slowdown / plan.worker_slowdown; digits=3)) " *
-                "observed/predicted=$(round(verdict.ratio; digits=3)) " *
-                "verdict=$(verdict.reason) replan=$(verdict.replan) " *
-                "local_slots=$(plan.local_slots)->$(final_plan.local_slots)")
+                "observed/predicted=$(round(verdict.ratio; digits=3))")
+        println("[predictive] guard occupancy worker=$(round(observed.worker_occupancy_s * 1e3; digits=2))ms " *
+                "local=$(round(observed.local_occupancy_s * 1e3; digits=2))ms " *
+                "worker/local=$(round(verdict.occupancy_ratio; digits=3)) " *
+                "remainder continue=$(round(verdict.continue_s; digits=3))s " *
+                "threads=$(round(verdict.threads_s; digits=3))s")
+        println("[predictive] guard verdict=$(verdict.reason) replan=$(verdict.replan) " *
+                "plan=$(plan.route)@w$(plan.workers)+l$(plan.local_slots)" *
+                "->$(final_plan.route)@w$(final_plan.workers)+l$(final_plan.local_slots)")
     end
     if !isempty(rest)
         second = _predictive_dispatch(f, rest, final_plan, tuning; fail_fast=fail_fast)

@@ -402,3 +402,163 @@ end
                                       constants = _constants(), config = _cfg())
     @test planning2.constants_loaded == true
 end
+
+# ── The guard's second direction: which side of the machine the campaign is on ──
+#
+# Round one measures each class twice: the work inside the sample (`mean_s`)
+# and what the consumer occupied to deliver it (`occupancy_s`, work plus the
+# round trip and serialization around it). The first ratio says whether the
+# local slots cost what the contention model charged them; the second says
+# whether the pool is paying for itself at all. Both verdicts end on a
+# static-equivalent plan.
+#
+# The occupancy numbers below are from this repo's workstation,
+# independent_1sat_1hr at 64 samples of ~38 ms over 8 pool workers and 3 local
+# slots, and from the TRX50 cold-11 ratios quoted for W <= 8. They are used as
+# the expected DIRECTION of the decision, never as a fitted target.
+
+# A mixed plan with a known shape, priced the way the planner would price it
+# on an uncalibrated machine.
+_guard_plan(; local_slots = 3, workers = 8, n = 64, remote_overhead = 0.0) =
+    SCamp._predictive_plan(:process, workers, local_slots, n, local_slots == 0,
+                           nothing, remote_overhead)
+
+@testset "workers occupying far more than local slots move the remainder to threads" begin
+    cfg = _cfg(guard_factor = 1.5)
+    plan = _guard_plan()
+    @test plan.route === :process && plan.local_slots == 3 && plan.workers == 8
+    v = SCamp.predictive_guard_verdict(plan, cfg;
+        worker_mean_s = 0.038, local_mean_s = 0.046,
+        worker_occupancy_s = 0.333, local_occupancy_s = 0.050,
+        remaining = 53, threads = 8, threads_candidate = true, constants = nothing)
+    @test v.replan
+    @test v.route === :threads
+    @test v.workers == 8                 # min(remaining, T)
+    @test v.local_slots == 0
+    @test v.reason === :workers_occupying_more_than_threads
+    @test v.occupancy_ratio > cfg.guard_factor
+    @test v.threads_s < v.continue_s
+    # The work-only ratio alone would have said "nothing is wrong": 0.046/0.038
+    # is inside the factor. That is the point of the second measurement.
+    @test v.ratio < cfg.guard_factor
+    # And the re-plan the verdict asks for is the pinned threads plan.
+    replanned = SCamp.predictive_replan(plan, v.local_slots, 53, nothing;
+                                        route = v.route, workers = v.workers)
+    @test replanned.route === :threads
+    @test replanned.workers == 8 && replanned.local_slots == 0
+    @test replanned.consumers == 8
+    @test replanned.static_equivalent
+    @test replanned.inner_thread_budget == 1
+end
+
+@testset "a slow-looking pool that would still finish sooner is left alone" begin
+    # Ratio past the factor, but only two threads to move to: the pool's eight
+    # workers finish the remainder first even at twice a local slot's cost.
+    cfg = _cfg(guard_factor = 1.5)
+    plan = _guard_plan()
+    v = SCamp.predictive_guard_verdict(plan, cfg;
+        worker_mean_s = 0.09, local_mean_s = 0.045,
+        worker_occupancy_s = 0.10, local_occupancy_s = 0.05,
+        remaining = 53, threads = 2, threads_candidate = true, constants = nothing)
+    @test !v.replan
+    @test v.route === plan.route && v.local_slots == plan.local_slots
+    @test v.reason === :threads_no_better
+    @test v.threads_s > v.continue_s
+end
+
+@testset "the TRX50 W<=8 occupancy band is the no-change band" begin
+    # 1.07 to 1.11 there; inside the factor, so the guard does nothing and the
+    # campaign stays on the plan it was given.
+    cfg = _cfg(guard_factor = 1.5)
+    plan = _guard_plan()
+    for ratio in (1.0, 1.07, 1.11, 1.49)
+        v = SCamp.predictive_guard_verdict(plan, cfg;
+            worker_mean_s = 0.10, local_mean_s = 0.10,
+            worker_occupancy_s = 0.10 * ratio, local_occupancy_s = 0.10,
+            remaining = 53, threads = 8, threads_candidate = true, constants = nothing)
+        @test !v.replan
+        @test v.route === :process && v.local_slots == plan.local_slots
+        @test v.reason === :observation_matches
+    end
+end
+
+@testset "the two directions coexist, and the route change wins a tie" begin
+    cfg = _cfg(guard_factor = 1.5)
+    plan = _guard_plan()
+    # Healthy occupancies, slow local work: direction one, as before.
+    v1 = SCamp.predictive_guard_verdict(plan, cfg;
+        worker_mean_s = 0.05, local_mean_s = 0.20,
+        worker_occupancy_s = 0.05, local_occupancy_s = 0.05,
+        remaining = 53, threads = 8, threads_candidate = true, constants = nothing)
+    @test v1.replan && v1.route === :process && v1.local_slots == 0
+    @test v1.reason === :local_slots_far_slower
+    # Both qualify: being on the wrong side of the machine outranks holding too
+    # many local slots on the right one.
+    v2 = SCamp.predictive_guard_verdict(plan, cfg;
+        worker_mean_s = 0.05, local_mean_s = 0.20,
+        worker_occupancy_s = 0.60, local_occupancy_s = 0.10,
+        remaining = 53, threads = 8, threads_candidate = true, constants = nothing)
+    @test v2.replan && v2.route === :threads
+    @test v2.reason === :workers_occupying_more_than_threads
+    # A failure still outranks both, and still lands on :process@L=0.
+    v3 = SCamp.predictive_guard_verdict(plan, cfg;
+        worker_mean_s = 0.05, local_mean_s = 0.05,
+        worker_occupancy_s = 0.60, local_occupancy_s = 0.10,
+        remaining = 53, threads = 8, threads_candidate = true, constants = nothing,
+        failures = 1)
+    @test v3.replan && v3.route === :process && v3.local_slots == 0
+    @test v3.reason === :sample_failure
+end
+
+@testset "the guard cannot move to a threads route that is not a candidate" begin
+    # Native GRAM point density withdraws the threads route entirely; a
+    # single-threaded coordinator has none to move to either.
+    cfg = _cfg(guard_factor = 1.5)
+    plan = _guard_plan()
+    obs = (worker_mean_s = 0.05, local_mean_s = 0.05,
+           worker_occupancy_s = 0.60, local_occupancy_s = 0.10, remaining = 53)
+    v_none = SCamp.predictive_guard_verdict(plan, cfg; obs...,
+        threads = 8, threads_candidate = false, constants = nothing)
+    @test !v_none.replan && v_none.route === :process
+    v_one = SCamp.predictive_guard_verdict(plan, cfg; obs...,
+        threads = 1, threads_candidate = true, constants = nothing)
+    @test !v_one.replan && v_one.route === :process
+    # Nothing left to run is nothing to re-plan.
+    v_empty = SCamp.predictive_guard_verdict(plan, cfg;
+        worker_mean_s = 0.05, local_mean_s = 0.05,
+        worker_occupancy_s = 0.60, local_occupancy_s = 0.10,
+        remaining = 0, threads = 8, threads_candidate = true, constants = nothing)
+    @test !v_empty.replan
+end
+
+@testset "widening from local slots to threads tasks is charged, never credited" begin
+    # The threads plan is priced from the observed local class. Going from 3
+    # slots to 8 tasks on one heap costs the USL ratio when the machine has
+    # constants, and nothing when it does not -- but never less than nothing.
+    cfg = _cfg(guard_factor = 1.5)
+    plan = _guard_plan()
+    obs = (worker_mean_s = 0.05, local_mean_s = 0.05,
+           worker_occupancy_s = 0.60, local_occupancy_s = 0.10,
+           remaining = 53, threads = 8, threads_candidate = true)
+    flat = SCamp.predictive_guard_verdict(plan, cfg; obs..., constants = nothing)
+    charged = SCamp.predictive_guard_verdict(plan, cfg; obs..., constants = _constants())
+    @test charged.threads_s >= flat.threads_s
+    # A machine contended enough can make the move not worth it at all.
+    steep = SCamp.predictive_guard_verdict(plan, cfg; obs...,
+        constants = _constants(alpha = 0.5, beta_alloc = 0.5))
+    @test steep.threads_s > charged.threads_s
+end
+
+@testset "predictive_replan refuses anything that is not a move toward static" begin
+    plan = _guard_plan()
+    @test_throws ArgumentError SCamp.predictive_replan(plan, 0, 53, nothing; route = :none,
+                                                        workers = 1)
+    @test_throws ArgumentError SCamp.predictive_replan(plan, 2, 53, nothing; route = :threads,
+                                                        workers = 8)
+    # The reduce-L path is unchanged and still cannot widen.
+    @test SCamp.predictive_replan(plan, 99, 53, nothing).local_slots == plan.local_slots
+    # A threads re-plan carries the same worker pricing the round was planned with.
+    priced = SCamp._predictive_plan(:process, 8, 3, 64, false, nothing, 0.6)
+    @test SCamp.predictive_replan(priced, 0, 53, nothing; route = :threads,
+                                   workers = 4).worker_slowdown == 1.6
+end

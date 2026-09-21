@@ -135,23 +135,70 @@ on the makespan and the preference never fires.
 ## The guard
 
 A plan that deviates (`L > 0`) and has more samples than consumers is
-dispatched in two rounds. The first round is one sample per consumer; the mixed
-dispatcher tags each sample with the class that ran it (`class_sink`, added to
-`_run_monte_carlo_mixed` for this purpose -- nothing in a `MonteCarloResult`
-otherwise records it), and the means of the two classes are compared against
-the ratio the plan predicted, `s_heap / s_w`. The pool workers are the
-uncontended reference, so the observed ratio is directly comparable.
+dispatched in two rounds. The first round is one sample per consumer, so it
+measures both consumer classes at once; the mixed dispatcher tags each sample
+with the class that ran it (`class_sink`, added to `_run_monte_carlo_mixed` for
+this purpose -- nothing in a `MonteCarloResult` otherwise records it).
+
+Two quantities come out of that round, and they answer two different
+questions.
+
+**Work (`mean_s`)** is the class's mean `elapsed_s`: what happened INSIDE the
+sample, timed where the sample ran. Its ratio between the classes tests the
+plan's own `s_heap / s_w` -- the contention the model predicted. The pool
+workers are the uncontended reference, so observed over predicted is directly
+comparable and `1.0` is the model being right.
+
+**Occupancy (`occupancy_s`)** is the class's mean wall from the dispatch
+starting to that sample's result being in hand. Round one runs exactly one
+sample per consumer, so this is that consumer's whole cost for it: the work
+plus the `remotecall_fetch` round trip, the closure's serialization to that
+worker, and the scheduling around it. This is what the `remote_overhead`
+constant stands in for a priori, and it is the measurement that says which
+SIDE of the machine the campaign belongs on.
+
+The second quantity exists because the first cannot see the thing that
+actually decided the P3 point. Measured on this repo's workstation,
+`independent_1sat_1hr` at 64 samples of ~38 ms: the two classes' `elapsed_s`
+differ by 21%, well inside any sane guard factor, while the campaign on the
+pool takes 1.7x the campaign on threads. Nothing inside a sample's own timing
+can reveal a cost paid around it.
+
+So the guard has two directions.
 
 | Observation | Verdict |
 |---|---|
-| ratio <= `guard_factor` | keep the plan |
-| ratio > `guard_factor` | halve the local slots |
-| ratio > 2 x `guard_factor` | drop the local slots to zero |
-| any sample failed | drop the local slots to zero |
+| any sample failed | drop the local slots to zero (`:process@L=0`) |
+| worker occupancy > `guard_factor` x local occupancy, **and** the pinned threads plan predicted (from the observed occupancies) to finish the remainder sooner than continuing | the remainder runs `:threads` at `min(remaining, T)`, budget 1, pool idle |
+| worker occupancy past the factor but threads no faster | keep the plan (`threads_no_better`) |
+| work ratio > `guard_factor` | halve the local slots |
+| work ratio > 2 x `guard_factor` | drop the local slots to zero |
+| otherwise | keep the plan |
 
-The guard only ever moves toward a static-equivalent plan: fewer local slots,
-never more, never a different route. A guard that could widen would be an
-optimizer running inside the campaign, which is what R7 exists not to be.
+Both directions end on a static-equivalent plan -- `:process@L=0` on one side,
+the pinned threads plan on the other -- and `predictive_replan` enforces that:
+it accepts a reduced local-slot count on the same route, or a move to
+`:threads` with no local slots, and throws on anything else, so a future caller
+cannot quietly widen through it. The guard never widens, never invents a plan
+the planner would not have enumerated, and never moves to a route
+`outer_route_candidates` did not offer (native GRAM point density withdraws the
+threads route; a single-threaded coordinator has none to move to).
+
+When both directions qualify, the route change wins: being on the wrong side of
+the machine costs more than holding too many local slots on the right one.
+
+The threads plan is priced from the observed LOCAL class, because a local slot
+and a threads-route task are the same thing -- a sample on this process's heap.
+Widening from `L` slots to `W` tasks is charged the USL ratio
+`s_heap(W) / s_heap(L)` when the machine has constants, and nothing when it does
+not; that flat case is ASSUMED and optimistic for the threads plan, and the
+ratio is clamped at 1 so widening is never predicted to make a sample cheaper.
+
+This is the direction the machine-specific part of the decision lives in. The
+worker-to-local occupancy ratio is about 1.6 on this workstation at 8 workers,
+1.07-1.11 on the TRX50 at W <= 8, and inverts there at W >= 16 -- one number,
+measured in the campaign's own first round, in place of a constant that would
+have to be right on every machine.
 
 A static-equivalent plan is dispatched in ONE round, not two. The only
 reduction the guard can make is to the local slots, which are already zero, so
@@ -188,7 +235,7 @@ Every number the planner uses, and what kind of number it is.
 | `SPACEAGORA_PREDICTIVE_MARGIN` | `0.15` | ASSUMED | No measurement of this model's error exists, so no margin can be derived from one. 0.15 is a round number chosen to sit above the ~6% p90 identical-code noise floor of the reduced-scale harness and below the 25-40% mixed-dispatch wins R6 measured at the P3/P4 mid budgets, i.e. large enough to refuse noise and small enough to keep the wins that motivated mixed dispatch. Tune it, do not trust it. |
 | `SPACEAGORA_PREDICTIVE_GUARD_FACTOR` | `1.5` | ASSUMED | Same standing. A local slot running 1.5x slower than predicted relative to a pool worker is outside anything the round-count model explains; the second threshold at 2x that is the "stop entirely" case. |
 | `SPACEAGORA_PREDICTIVE_LOCAL_SLOTS_MAX` | `Threads.nthreads() - 1` | DERIVED | `ParallelProfiles.mixed_local_slots` keeps thread 1 free for the `@async` feeders that keep the pool supplied, so `T - 1` is the most slots the coordinator can offer under R6's own measured practice. |
-| `SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD` (`o_r`) | `0.0` | ASSUMED, and measurably wrong on short samples | The assumption was that a `remotecall_fetch` round trip is milliseconds against samples of 0.03-1 s, so the term sits below any noise floor the planner could measure. The reduced-scale run below refutes that at the bottom of the stated domain: on `independent_1sat_1hr`, 64 samples of ~38 ms, 8 pool workers against 8 coordinator threads, the pool campaign ran 0.722 s against the threads route's 0.427 s for the same per-sample work -- a worker class roughly 1.6x a coordinator thread, not 1.0x. The default stays zero because one point on one machine is not a value to hard-code. It is a named field now, so a machine that has measured its own can declare it, and declaring 0.6 on that point moves the planner to the threads route and to parity with it (0.409 s). |
+| `SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD` (`o_r`) | `0.0` | ASSUMED, and measurably wrong on short samples | The assumption was that a `remotecall_fetch` round trip is milliseconds against samples of 0.03-1 s, so the term sits below any noise floor the planner could measure. The reduced-scale run below refutes that at the bottom of the stated domain: on `independent_1sat_1hr`, 64 samples of ~38 ms, 8 pool workers against 8 coordinator threads, the pool campaign ran 0.722 s against the threads route's 0.427 s for the same per-sample work -- a worker class roughly 1.6x a coordinator thread, not 1.0x. The default stays zero because one point on one machine is not a value to hard-code, and it now has a better answer than a constant: the guard measures the same quantity in the campaign's own first round (see The guard) and moves the remainder to the threads route when the pool is not paying for itself. The field remains for a machine that has measured its own and wants the FIRST round planned correctly too; declaring 0.6 on that point moves the planner to the threads route from the start and to parity with it (0.409 s). |
 | `alpha` in `s_heap` | `MachineConstants.usl_alpha_base` | SOURCED (fit), ASSUMED (mapping) | Fitted per machine by `scripts/calibrate_machine.jl` on the allocation kernel. Applying it to campaign samples claims only that a sample's contention with its neighbors on one heap has the same SHAPE as that kernel's, not the same magnitude. |
 | `beta` in `s_heap` | `MachineConstants.usl_beta_alloc` | SOURCED (fit), ASSUMED (mapping) | As above. |
 | `s_heap` with no constants | `1.0` | DERIVED | "Unknown means no gain" applied to a cost: an unmeasured contention term is not modeled, and the margin rule carries the safety. |
@@ -264,8 +311,14 @@ That is a v2 item, not a v1 tuning knob.
 [predictive] shape n=... threads=... pool=... local_cap=... candidates=[...] constants=loaded|absent margin=... guard_factor=... local_slots_max=...
 [predictive]   candidate <route>@w<W>+l<L> makespan=... consumers=... s_worker=... s_heap=... [static]
 [predictive] chosen <plan> reason=... gain=...
-[predictive] guard round1=...s worker_mean=...ms/<n> local_mean=...ms/<n> predicted_ratio=... observed/predicted=... verdict=... replan=... local_slots=A->B
+[predictive] guard round1=...s worker_mean=...ms/<n> local_mean=...ms/<n> predicted_ratio=... observed/predicted=...
+[predictive] guard occupancy worker=...ms local=...ms worker/local=... remainder continue=...s threads=...s
+[predictive] guard verdict=... replan=... plan=<route>@w<W>+l<L>-><route>@w<W>+l<L>
 ```
+
+The guard's `verdict` is one of `observation_matches`, `local_slots_slower`,
+`local_slots_far_slower`, `workers_occupying_more_than_threads`,
+`threads_no_better`, `sample_failure`, `not_observed` or `nothing_to_reduce`.
 
 `reason` is one of `static_equivalent_best` (the static plan was best
 outright), `predicted_gain` (a deviation cleared the margin),
@@ -276,7 +329,8 @@ outright), `predicted_gain` (a deviation cleared the margin),
 
 - An inner-speedup measurement, so the inner thread budget becomes a decision
   and the narrower widths become worth enumerating.
-- A remote round-trip term with a measured value, for workloads whose samples
-  are short enough for it to matter.
+- A remote round-trip term measured BEFORE the first round rather than after
+  it. The guard now supplies it one round late, which costs the campaign that
+  round; a cheap pool probe at plan time would supply it on time.
 - A per-sample cost spread, for campaigns whose samples are known to differ
   (an aerobraking grid whose corners run far longer than its center).

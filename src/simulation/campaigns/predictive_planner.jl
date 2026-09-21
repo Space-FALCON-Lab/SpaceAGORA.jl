@@ -408,69 +408,166 @@ end
 
 """
     predictive_guard_verdict(plan, config; worker_mean_s, local_mean_s,
+                             worker_occupancy_s, local_occupancy_s, remaining,
+                             threads, threads_candidate, constants,
                              failures) -> NamedTuple
 
 What to do with the rest of the campaign after its first round.
 
-The prediction under test is the ratio between the two consumer classes:
-`heap_slowdown / worker_slowdown`, i.e. how much slower a coordinator local
-slot should be than a pool worker. The first round measures the same ratio
-directly, since the pool workers are the uncontended reference (`s_w = 1`).
-`ratio` below is observed over predicted; `1.0` is the model being right.
+Round one runs exactly one sample per consumer, so it measures both consumer
+classes directly and at the same moment. Two different things come out of it,
+and they answer two different questions.
 
-The verdict only ever moves toward a static-equivalent plan -- fewer local
-slots, never more, never a different route. A guard that could widen would be
-an optimizer running inside the campaign, which is the thing R7 exists not to
-be. A failed sample is treated as the strongest signal available and drops the
-local slots outright: the plan that remains is `:process@L=0`, the static
-route, which is the conservative answer when something about the deviation is
-not understood.
+`worker_mean_s` / `local_mean_s` are the classes' mean `elapsed_s`: the work
+INSIDE the sample, timed where the sample ran. Their ratio tests the plan's
+`heap_slowdown / worker_slowdown` -- how much slower a coordinator local slot
+should be than a pool worker, which is what the contention model predicted.
+`ratio` is observed over predicted; `1.0` is the model being right. Too high
+means the local slots cost more than the model said, and the verdict reduces
+them toward `:process@L=0`.
+
+`worker_occupancy_s` / `local_occupancy_s` are the classes' mean wall from the
+dispatch starting to that sample's result being in hand -- the work PLUS
+everything around it, which for a pool worker is the `remotecall_fetch` round
+trip and the closure's serialization to that worker, and for a local slot is
+little more than task scheduling. This is the measurement the planner's
+`remote_overhead` constant stands in for a priori, and it is the one that says
+which SIDE the campaign belongs on: a worker that occupies far more than a
+local slot for the same work is a worker that is not paying for itself, and
+the remainder belongs on the pinned threads route. Nothing inside a sample's
+`elapsed_s` can see this, which is why the class means alone were not enough:
+measured on this repo's workstation, `independent_1sat_1hr` at 64 samples of
+~38 ms, the two classes' `elapsed_s` differ by 21% while the campaign on the
+pool takes 1.7x the campaign on threads.
+
+So the guard has two directions, and both of them end on a
+static-equivalent plan:
+
+- local slots slower than predicted -> halve them, or drop them entirely past
+  twice the factor. The plan that remains is `:process@L=0`.
+- pool workers occupying more than `guard_factor` times a local slot, AND the
+  pinned threads plan predicted (from the observed occupancies) to finish the
+  remainder sooner than continuing -> the remainder runs `:threads` at
+  `min(remaining, T)`, budget 1, with the pool left idle.
+
+It still never widens and never invents a plan the planner would not have
+enumerated. A failed sample is the strongest signal available and drops the
+local slots outright, which is the conservative answer when something about
+the deviation is not understood.
+
+When both directions qualify, the route change wins: being on the wrong side
+of the machine costs more than holding too many local slots on the right one.
+
+The threads plan is priced from the observed LOCAL class, because a local slot
+and a threads-route task are the same thing -- a sample on this process's
+heap. Widening from `L` slots to `W` tasks is charged the USL ratio
+`s_heap(W) / s_heap(L)` when the machine has constants, and nothing when it
+does not, which is ASSUMED and optimistic for the threads plan; it is clamped
+at 1 so widening is never predicted to make a sample cheaper.
 """
 function predictive_guard_verdict(
     plan::PredictivePlan,
     config::PredictivePlannerConfig;
     worker_mean_s::Float64,
     local_mean_s::Float64,
+    worker_occupancy_s::Float64 = NaN,
+    local_occupancy_s::Float64 = NaN,
+    remaining::Integer = 0,
+    threads::Integer = Base.Threads.nthreads(),
+    threads_candidate::Bool = true,
+    constants::Union{Nothing, ParallelCost.MachineConstants} = nothing,
     failures::Integer = 0,
 )
-    if plan.route !== :process || plan.local_slots <= 0
-        return (replan = false, local_slots = plan.local_slots, ratio = NaN,
-                reason = :nothing_to_reduce)
-    end
+    keep = (; replan = false, route = plan.route, workers = plan.workers,
+            local_slots = plan.local_slots, ratio = NaN, occupancy_ratio = NaN,
+            continue_s = NaN, threads_s = NaN, reason = :nothing_to_reduce)
+    (plan.route === :process && plan.local_slots > 0) || return keep
     if failures > 0
-        return (replan = true, local_slots = 0, ratio = NaN, reason = :sample_failure)
+        return (; keep..., replan = true, local_slots = 0, reason = :sample_failure)
     end
     ok = isfinite(worker_mean_s) && worker_mean_s > 0.0 &&
          isfinite(local_mean_s) && local_mean_s > 0.0
-    ok || return (replan = false, local_slots = plan.local_slots, ratio = NaN,
-                  reason = :not_observed)
+    ok || return (; keep..., reason = :not_observed)
     predicted = plan.heap_slowdown / plan.worker_slowdown
-    predicted > 0.0 || return (replan = false, local_slots = plan.local_slots, ratio = NaN,
-                               reason = :not_observed)
+    predicted > 0.0 || return (; keep..., reason = :not_observed)
     ratio = (local_mean_s / worker_mean_s) / predicted
+
+    # Direction two: is the campaign on the wrong side of the machine?
+    occupancy_ok = isfinite(worker_occupancy_s) && worker_occupancy_s > 0.0 &&
+                   isfinite(local_occupancy_s) && local_occupancy_s > 0.0
+    occupancy_ratio = occupancy_ok ? worker_occupancy_s / local_occupancy_s : NaN
+    n_rest = max(0, Int(remaining))
+    width = min(n_rest, max(1, Int(threads)))
+    if occupancy_ok && threads_candidate && width > 1 && n_rest > 0 &&
+       occupancy_ratio > config.guard_factor
+        scale = if constants === nothing
+            1.0
+        else
+            predictive_heap_slowdown(constants, width) /
+                max(1.0e-12, predictive_heap_slowdown(constants, plan.local_slots))
+        end
+        threads_unit = local_occupancy_s * max(1.0, scale)
+        threads_s = predictive_makespan(n_rest, fill(threads_unit, width))
+        continue_s = predictive_makespan(
+            n_rest, vcat(fill(worker_occupancy_s, plan.workers),
+                         fill(local_occupancy_s, plan.local_slots)))
+        if threads_s < continue_s
+            return (; keep..., replan = true, route = :threads, workers = width,
+                    local_slots = 0, ratio = ratio, occupancy_ratio = occupancy_ratio,
+                    continue_s = continue_s, threads_s = threads_s,
+                    reason = :workers_occupying_more_than_threads)
+        end
+        return (; keep..., ratio = ratio, occupancy_ratio = occupancy_ratio,
+                continue_s = continue_s, threads_s = threads_s,
+                reason = :threads_no_better)
+    end
+
+    # Direction one: were the local slots worth what the model charged them?
     if ratio > 2.0 * config.guard_factor
-        return (replan = true, local_slots = 0, ratio = ratio, reason = :local_slots_far_slower)
+        return (; keep..., replan = true, local_slots = 0, ratio = ratio,
+                occupancy_ratio = occupancy_ratio, reason = :local_slots_far_slower)
     elseif ratio > config.guard_factor
-        return (replan = true, local_slots = plan.local_slots ÷ 2, ratio = ratio,
+        return (; keep..., replan = true, local_slots = plan.local_slots ÷ 2,
+                ratio = ratio, occupancy_ratio = occupancy_ratio,
                 reason = :local_slots_slower)
     end
-    return (replan = false, local_slots = plan.local_slots, ratio = ratio,
+    return (; keep..., ratio = ratio, occupancy_ratio = occupancy_ratio,
             reason = :observation_matches)
 end
 
 """
-    predictive_replan(plan, local_slots, n_samples, constants) -> PredictivePlan
+    predictive_replan(plan, local_slots, n_samples, constants;
+                      route = plan.route, workers = plan.workers) -> PredictivePlan
 
-The same route and pool with a reduced local-slot count, re-priced so the
-remainder's makespan and the guard's own record describe what is about to run.
+The plan the remainder of a campaign runs under, re-priced for the samples
+that are left so its makespan and the guard's record describe what is about to
+run.
+
+Two shapes only, and the function refuses anything else: the same route and
+pool with fewer local slots, or the pinned threads plan the guard's second
+direction moves to. Both are moves toward a static-equivalent plan, which is
+the guard's invariant; enforcing it here rather than at the call site means a
+future caller cannot quietly widen through this door.
 """
 function predictive_replan(plan::PredictivePlan, local_slots::Integer, n_samples::Integer,
-                           constants::Union{Nothing, ParallelCost.MachineConstants})::PredictivePlan
-    L = clamp(Int(local_slots), 0, plan.local_slots)
+                           constants::Union{Nothing, ParallelCost.MachineConstants};
+                           route::Symbol = plan.route,
+                           workers::Integer = plan.workers)::PredictivePlan
     # The plan's own worker slowdown, not the environment's: a re-plan must
     # price the remainder the same way the first round was priced.
-    return _predictive_plan(plan.route, plan.workers, L, Int(n_samples), L == 0, constants,
-                            plan.worker_slowdown - 1.0)
+    overhead = plan.worker_slowdown - 1.0
+    if route === plan.route && Int(workers) == plan.workers
+        L = clamp(Int(local_slots), 0, plan.local_slots)
+        return _predictive_plan(plan.route, plan.workers, L, Int(n_samples), L == 0,
+                                constants, overhead)
+    end
+    route === :threads || throw(ArgumentError(
+        "predictive_replan may only reduce local slots or move to the threads route; " *
+        "got route=:$(route) from a :$(plan.route) plan."))
+    Int(local_slots) == 0 || throw(ArgumentError(
+        "predictive_replan to the threads route must carry no local slots; got $(local_slots)."))
+    W = max(1, Int(workers))
+    return _predictive_plan(:threads, W, 0, Int(n_samples), true, constants, overhead)
 end
 
 # Machine constants are read from disk once per process. They are a calibration

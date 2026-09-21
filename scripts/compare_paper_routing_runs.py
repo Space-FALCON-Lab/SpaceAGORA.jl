@@ -6,6 +6,10 @@ and reports the ratio new/old at every point both measured. The question this
 answers is not "is the new run fast" but "is it the same measurement", so the
 output leads with how many points moved further than run-to-run noise.
 
+A mode one run measured and the other did not (a run taken before `predictive`
+joined the ladder, say) is not an error: it simply has no counterpart to be
+compared against, and is reported as such rather than dropped silently.
+
 The noise band defaults to 8%, which is the worst static-route drift observed
 between two runs of identical code on this harness (median 1.6%); pass
 --band to set your own.
@@ -63,6 +67,14 @@ def main():
     print(f"\n{len(shared)} points measured by both"
           + (f"; {len(only_a)} only in {args.label_old}, {len(only_b)} only in {args.label_new}"
              if only_a or only_b else ""))
+    # Name the modes that exist on one side only. Without this, adding a mode to
+    # the ladder shows up as nothing more than a larger "only in new" count.
+    modes_a = {k[2] for k in a}
+    modes_b = {k[2] for k in b}
+    for side, extra in ((args.label_old, modes_a - modes_b), (args.label_new, modes_b - modes_a)):
+        if extra:
+            print(f"  modes only in {side}: {', '.join(sorted(extra))} "
+                  "(not compared: no counterpart run)")
     ratios = [r for r, _ in rows]
     print(f"ratio {args.label_new}/{args.label_old}: median {statistics.median(ratios):.3f}, "
           f"range {min(ratios):.3f}-{max(ratios):.3f}")

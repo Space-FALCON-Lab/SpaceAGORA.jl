@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Check the R6 (policy_v2) adaptive-routing acceptance criterion against raw
+"""Check an adaptive profile's routing acceptance criterion against raw
 per-repeat benchmark data.
 
-Criterion: at every measured point, the median wall time of R6 over ALL
-repeats must be no more than `--tolerance` (default 10%) slower than the
-bias-corrected best pinned static route at that point, AND no R6 campaign at
-any point may have failed.
+Criterion: at every measured point, the median wall time of the adaptive mode
+over ALL repeats must be no more than `--tolerance` (default 10%) slower than
+the bias-corrected best pinned static route at that point, AND no campaign of
+that mode at any point may have failed.
+
+`--adaptive` selects which mode is scored: `policy_v2` (profile R6, the
+default), `predictive` (profile R7), or `both`, which prints one table per
+mode for the modes a run actually contains.
 
 This reads the RAW per-repeat CSV (`paper_benchmarks_raw_<stamp>.csv`), not
 the aggregated one that `scripts/make_paper_routing_tables.py` reads: the
@@ -17,7 +21,8 @@ count.
 
 Usage:
     python3 scripts/check_policy_criterion.py RUN_DIR [RUN_DIR ...] \
-        [--label NAME ...] [--tolerance 0.10] [--equiv-band 0.03] [--markdown]
+        [--label NAME ...] [--adaptive policy_v2|predictive|both] \
+        [--tolerance 0.10] [--equiv-band 0.03] [--markdown]
 
 Each RUN_DIR is searched recursively for `paper_benchmarks_raw_*.csv`; every
 match found under it is loaded. --label assigns a display name to each
@@ -36,7 +41,11 @@ import sys
 import pandas as pd
 
 STATIC_PARALLEL = ["outer_threads", "outer_process", "inner_only", "outer_inner_static"]
-ADAPTIVE = "policy_v2"
+# Harness mode name -> the profile it is. Both are scored by the same criterion
+# against the same pinned-static baseline, which is the only way an R6/R7
+# comparison means anything.
+ADAPTIVE_MODES = {"policy_v2": "R6", "predictive": "R7"}
+DEFAULT_ADAPTIVE = "policy_v2"
 
 POINT_KEYS = ["phase_id", "case", "thread_count", "process_workers", "mc_samples"]
 
@@ -121,7 +130,8 @@ def mode_stats(grp: pd.DataFrame) -> dict:
     return out
 
 
-def evaluate_point(key: tuple, grp: pd.DataFrame, tolerance: float, equiv_band: float):
+def evaluate_point(key: tuple, grp: pd.DataFrame, tolerance: float, equiv_band: float,
+                   adaptive: str):
     stats = mode_stats(grp)
     statics = {m: s for m, s in stats.items() if m in STATIC_PARALLEL}
     if not statics:
@@ -134,17 +144,17 @@ def evaluate_point(key: tuple, grp: pd.DataFrame, tolerance: float, equiv_band: 
     else:
         baseline, kind = lo, "min"
 
-    if ADAPTIVE not in stats:
-        return None  # R6 did not run at this point
+    if adaptive not in stats:
+        return None  # the adaptive mode did not run at this point
 
-    r6 = stats[ADAPTIVE]
-    ratio = r6["median"] / baseline if baseline else float("inf")
+    adapt = stats[adaptive]
+    ratio = adapt["median"] / baseline if baseline else float("inf")
 
     row0 = grp.iloc[0]
     axis, order = axis_for(row0)
 
-    if r6["n_failed"] > 0:
-        verdict, reason = "FAIL", f"failed campaigns: {r6['n_failed']}/{r6['n']}"
+    if adapt["n_failed"] > 0:
+        verdict, reason = "FAIL", f"failed campaigns: {adapt['n_failed']}/{adapt['n']}"
     elif ratio > 1.0 + tolerance:
         verdict, reason = "FAIL", f"ratio {ratio:.3f}"
     else:
@@ -155,36 +165,38 @@ def evaluate_point(key: tuple, grp: pd.DataFrame, tolerance: float, equiv_band: 
         "case": row0["case"],
         "axis": axis,
         "_order": order,
-        "r6_median": r6["median"],
+        "adaptive_median": adapt["median"],
         "baseline": baseline,
         "baseline_kind": kind,
         "ratio": ratio,
-        "n_failed": r6["n_failed"],
-        "n": r6["n"],
+        "n_failed": adapt["n_failed"],
+        "n": adapt["n"],
         "verdict": verdict,
         "reason": reason,
     }
 
 
-def evaluate_run(df: pd.DataFrame, tolerance: float, equiv_band: float) -> list[dict]:
+def evaluate_run(df: pd.DataFrame, tolerance: float, equiv_band: float,
+                 adaptive: str) -> list[dict]:
+    label = ADAPTIVE_MODES.get(adaptive, adaptive)
     results = []
     skipped_no_static = 0
-    skipped_no_r6 = 0
+    skipped_no_adaptive = 0
     for key, grp in df.groupby(POINT_KEYS, dropna=False):
-        rec = evaluate_point(key, grp, tolerance, equiv_band)
+        rec = evaluate_point(key, grp, tolerance, equiv_band, adaptive)
         if rec is None:
             statics_present = any(m in grp["mode"].unique() for m in STATIC_PARALLEL)
             if not statics_present:
                 skipped_no_static += 1
-            elif ADAPTIVE not in grp["mode"].unique():
-                skipped_no_r6 += 1
+            elif adaptive not in grp["mode"].unique():
+                skipped_no_adaptive += 1
             continue
         results.append(rec)
     results.sort(key=lambda r: (r["phase"], r["case"], r["_order"]))
     if skipped_no_static:
         print(f"  ({skipped_no_static} point(s) skipped: no pinned static route present)")
-    if skipped_no_r6:
-        print(f"  ({skipped_no_r6} point(s) skipped: no policy_v2 (R6) data present)")
+    if skipped_no_adaptive:
+        print(f"  ({skipped_no_adaptive} point(s) skipped: no {adaptive} ({label}) data present)")
     return results
 
 
@@ -192,9 +204,10 @@ def fmt(x, digits=3):
     return f"{x:.{digits}f}"
 
 
-def print_table(label: str, rows: list[dict], markdown: bool) -> None:
+def print_table(label: str, rows: list[dict], markdown: bool, adaptive: str) -> None:
+    profile = ADAPTIVE_MODES.get(adaptive, adaptive)
     headers = [
-        "phase", "case", "axis", "R6 median (s)", "baseline (s)", "baseline kind",
+        "phase", "case", "axis", f"{profile} median (s)", "baseline (s)", "baseline kind",
         "ratio", "n_failed/n", "verdict", "reason",
     ]
     cells = [headers]
@@ -203,7 +216,7 @@ def print_table(label: str, rows: list[dict], markdown: bool) -> None:
             r["phase"],
             r["case"],
             str(r["axis"]),
-            fmt(r["r6_median"]),
+            fmt(r["adaptive_median"]),
             fmt(r["baseline"]),
             r["baseline_kind"],
             fmt(r["ratio"]),
@@ -212,7 +225,7 @@ def print_table(label: str, rows: list[dict], markdown: bool) -> None:
             r["reason"] or "-",
         ])
 
-    print(f"\n== {label} ==")
+    print(f"\n== {label} — {adaptive} ({profile}) ==")
     if markdown:
         print("| " + " | ".join(headers) + " |")
         print("|" + "|".join(["---"] * len(headers)) + "|")
@@ -227,7 +240,7 @@ def print_table(label: str, rows: list[dict], markdown: bool) -> None:
     n_fail_ratio = sum(1 for r in rows if r["verdict"] == "FAIL" and r["reason"].startswith("ratio"))
     n_failing = n_fail_campaigns + n_fail_ratio
     print(
-        f"\n{label}: {len(rows)} points, {n_failing} failing "
+        f"\n{label} / {adaptive} ({profile}): {len(rows)} points, {n_failing} failing "
         f"({n_fail_campaigns} by failed campaigns, {n_fail_ratio} by ratio)"
     )
 
@@ -236,7 +249,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("run_dirs", nargs="+", help="Run directories containing paper_benchmarks_raw_*.csv")
     parser.add_argument("--label", action="append", default=[], help="Display label for each run dir, by position (repeatable)")
-    parser.add_argument("--tolerance", type=float, default=0.10, help="Max allowed R6/baseline overhead (default 0.10 = 10%%)")
+    parser.add_argument(
+        "--adaptive",
+        choices=sorted(ADAPTIVE_MODES) + ["both"],
+        default=DEFAULT_ADAPTIVE,
+        help="Which adaptive mode to score: policy_v2 (R6, default), predictive (R7), "
+             "or both (one table per mode present in the run)",
+    )
+    parser.add_argument("--tolerance", type=float, default=0.10, help="Max allowed adaptive/baseline overhead (default 0.10 = 10%%)")
     parser.add_argument("--equiv-band", type=float, default=0.03, help="Static routes within this relative band are treated as tied (default 0.03)")
     parser.add_argument("--markdown", action="store_true", help="Emit GitHub-flavored markdown tables instead of plain text")
     args = parser.parse_args()
@@ -246,10 +266,26 @@ def main() -> int:
     any_failing = False
     for run_dir, label in zip(args.run_dirs, labels):
         df = load_raw(run_dir)
-        rows = evaluate_run(df, args.tolerance, args.equiv_band)
-        print_table(label, rows, args.markdown)
-        if any(r["verdict"] == "FAIL" for r in rows):
-            any_failing = True
+        present = set(df["mode"].unique()) if "mode" in df.columns else set()
+        if args.adaptive == "both":
+            wanted = [m for m in ADAPTIVE_MODES if m in present]
+            if not wanted:
+                print(f"\n== {label} ==\nno adaptive mode "
+                      f"({', '.join(sorted(ADAPTIVE_MODES))}) present in this run")
+                continue
+        else:
+            wanted = [args.adaptive]
+        for adaptive in wanted:
+            profile = ADAPTIVE_MODES[adaptive]
+            if adaptive not in present:
+                print(f"\n== {label} — {adaptive} ({profile}) ==\nno data: this run "
+                      f"contains no {adaptive} rows "
+                      f"(modes present: {', '.join(sorted(present)) or 'none'})")
+                continue
+            rows = evaluate_run(df, args.tolerance, args.equiv_band, adaptive)
+            print_table(label, rows, args.markdown, adaptive)
+            if any(r["verdict"] == "FAIL" for r in rows):
+                any_failing = True
 
     return 1 if any_failing else 0
 

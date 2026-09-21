@@ -51,6 +51,7 @@ through `with_parallel_profile` or `SPACEAGORA_PARALLEL_PROFILE`:
 | `R4` | auto, adaptive | auto | The outer-route bandit and pre-solve RHS plan calibration |
 | `R5` | auto, adaptive | auto | R4 plus persistent hints and the measured-reward width chooser |
 | `R6` | auto, adaptive | auto | R5 plus `SPACEAGORA_PARALLEL_POLICY_V2` |
+| `R7` | auto, adaptive | auto | R6 plus `SPACEAGORA_CAMPAIGN_PLANNER=predictive` |
 
 `R6` is the recommended profile for both single constellations and Monte
 Carlo campaigns. Everything it changes sits behind one switch,
@@ -92,6 +93,32 @@ eight-thread re-sweep was wrong. Measure it with
 `scripts/paired_profile_probe.jl` and `scripts/paired_campaign_probe.jl
 --src-runner --profile=full`, not with the block-ordered benchmark harness,
 whose resolution is about eight points.
+
+`R7` is `R6` with the campaign route chosen by a predictive planner instead of
+the bandit. The planner scores the candidate routes for the campaign in front
+of it -- its sample count, spacecraft count, force model and mission length --
+against per-machine calibration constants, and dispatches the route it prices
+as cheapest. Nothing is explored inside a campaign: the choice is made before
+the first sample runs and held for all of them, and a first round that the
+planner cannot price confidently falls back to the guarded default rather than
+guessing. Everything else is exactly `R6`, and the single switch
+`SPACEAGORA_CAMPAIGN_PLANNER` (`bandit`, the default, or `predictive`) is the
+only difference between them, so a paired run of the two measures the planner
+and nothing else.
+
+The calibration constants come from
+
+```bash
+julia --project=. --threads=<T> scripts/calibrate_machine.jl
+```
+
+which is run once per machine, at the thread count you intend to simulate at,
+and writes `output/parallel_policy_state/cost_constants_<fingerprint>.toml`.
+Every later run on that machine reads the file instead of measuring anything
+itself. `R7` works without it, but then it prices the routes with no model of
+contention, so run the calibration before comparing `R7` against `R6` on a new
+machine. The comparison itself is still pending on the benchmark machine, so
+no relative figure is quoted here.
 
 ## Optional native GRAM density workers
 

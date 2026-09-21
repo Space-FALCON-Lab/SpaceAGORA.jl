@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""Archive a benchmark run into the paper repository's ``data/raw`` tree.
+"""Archive a benchmark run into the benchmark-data archive.
 
 Benchmark runs land in gitignored ``output/`` directories inside simulator
 worktrees, which means a reboot, a ``git clean`` or a deleted worktree takes
 them with it.  Every figure in the manuscript has to be regenerable from files
-the paper repository actually carries, so each run gets copied into
+that survive that, so each run gets copied into
 
-    <paper repo>/data/raw/<run_id>/
+    <archive>/<run_id>/
 
 with a ``manifest.toml`` describing it, a row in ``index.csv`` and an entry in
 ``PROVENANCE.md``.
+
+The archive is a local, remote-less git repository, kept apart from both the
+simulator and the manuscript because measurement data belongs in neither.  Its
+default location is ``DEFAULT_ARCHIVE`` below, overridable per invocation with
+``--archive`` or, for the machine as a whole, with the
+``SPACEAGORA_PAPER_ARCHIVE`` environment variable.
 
 ``run_id`` is ``<machine>_<harness>_<store>_<YYYYMMDD_HHMMSS>``:
 
@@ -29,10 +35,10 @@ that is not in the table gets ``"unknown"``.
 
 Usage::
 
-    python3 scripts/archive_paper_run.py <run_dir> --archive <paper>/data/raw \\
+    python3 scripts/archive_paper_run.py <run_dir> \\
         --store converged [--machine trx50] [--notes "..."] [--dry-run]
 
-    python3 scripts/archive_paper_run.py --verify --archive <paper>/data/raw
+    python3 scripts/archive_paper_run.py --verify
 
 ``--store`` is required for ``ppb`` runs: the calibration store's state is not
 recorded in the CSV and only the person who launched the run knows it.
@@ -89,6 +95,11 @@ HOST_FACTS = {
     },
 }
 
+# Where archived runs live by default: a local, remote-less git repository,
+# outside both this checkout and the manuscript's.  Override per invocation
+# with --archive, or for the machine with SPACEAGORA_PAPER_ARCHIVE.
+DEFAULT_ARCHIVE = "/home/space-falcon-1/Documents/SpaceAGORA-paper-data/data/raw"
+
 MACHINE_NAMES = {"trx50", "workstation", "macbook"}
 STORE_STATES = {"cold", "converged", "mixed", "na"}
 
@@ -98,10 +109,10 @@ PS_CSV_RE = re.compile(r"^s[1-9]_.*\.csv$")
 
 STAMP_RE = re.compile(r"(\d{8}_\d{6})")
 
-# The paper repository is shared with a co-author and with Overleaf, and the
-# local tooling layout of this checkout is not part of a measurement's
-# provenance.  Hidden per-tool worktree directories are therefore elided from
-# the paths recorded there; everything else in the path is kept verbatim.
+# What the archive records is where a run came from, not the local tooling
+# layout of the working copy it was copied out of.  Hidden per-tool worktree
+# directories are therefore elided from the recorded paths; everything else in
+# the path is kept verbatim.
 AGENT_WORKTREE_RE = re.compile(r"/\.[A-Za-z0-9_.-]+/worktrees/")
 AGENT_WORKTREE_PLACEHOLDER = "/<agent-worktrees>/"
 
@@ -795,7 +806,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("run_dir", nargs="?", help="benchmark run directory to archive")
-    parser.add_argument("--archive", required=True, help="the paper repository's data/raw directory")
+    parser.add_argument(
+        "--archive",
+        default=os.environ.get("SPACEAGORA_PAPER_ARCHIVE", DEFAULT_ARCHIVE),
+        help="the benchmark-data archive's data/raw directory "
+             "(default: $SPACEAGORA_PAPER_ARCHIVE, else %s)" % DEFAULT_ARCHIVE,
+    )
     parser.add_argument("--machine", choices=sorted(MACHINE_NAMES),
                         help="override the machine name derived from the hostname")
     parser.add_argument("--store", choices=sorted(STORE_STATES),

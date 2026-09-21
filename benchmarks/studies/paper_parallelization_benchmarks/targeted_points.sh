@@ -46,13 +46,13 @@ case "${POINT:?set POINT}" in
     run gravity_1024sat_l50_vacuum_24600s predictive         32 32 1  f8
     run gravity_1024sat_l50_vacuum_24600s outer_inner_static 32 32 1  f8 ;;
   p5_16sat)   # cold store: WS3's inner-split gate at the 1x32 split
-    run mcgrid_16sat_8mc policy_v2     1 32 1 p5_16
-    run mcgrid_16sat_8mc predictive    1 32 1 p5_16
-    run mcgrid_16sat_8mc outer_threads 1 32 1 p5_16 ;;
+    run mcgrid_16sat_8mc policy_v2 1 32 8 p5_16
+    run mcgrid_16sat_8mc predictive 1 32 8 p5_16
+    run mcgrid_16sat_8mc outer_threads 1 32 8 p5_16 ;;
   finding9)   # cold store: the throw -- error_message + max_sample now recorded
-    run mcgrid_8sat_16mc policy_v2     1 32 1 f9
-    run mcgrid_8sat_16mc predictive    1 32 1 f9
-    run mcgrid_8sat_16mc outer_threads 1 32 1 f9 ;;
+    run mcgrid_8sat_16mc policy_v2 1 32 16 f9
+    run mcgrid_8sat_16mc predictive 1 32 16 f9
+    run mcgrid_8sat_16mc outer_threads 1 32 16 f9 ;;
   defectA)    # baseline only (no fix yet): mixed dispatch at W=32
     run montecarlo_heavy_aerobraking policy_v2     32 32 32 dA
     run montecarlo_heavy_aerobraking predictive    32 32 32 dA

@@ -243,8 +243,107 @@ end
 # each task just blocks on IPC waiting for a worker's reply, so it should not
 # occupy an OS thread the way genuinely CPU-bound work would.
 """
+    DispatchAdmission(workers, locals)
+
+Per-consumer admission for [`_run_monte_carlo_mixed`](@ref): one flag per pool
+worker and one per coordinator local slot, each of which that consumer checks
+BEFORE taking its next job.
+
+This is how a campaign changes its own shape without a barrier. The alternative
+-- stopping the dispatch, deciding, and dispatching the remainder -- costs a
+whole extra dispatch, and a dispatch's fixed cost is paid per dispatch rather
+than per sample: measured on this repo's workstation, a guard round of eleven
+samples cost 0.24-0.36 s against 0.24-0.26 s for the remaining fifty-three.
+Closing a consumer costs one atomic store.
+
+Closing is one-way and never interrupts work in flight: a closed consumer
+finishes the sample it holds, declines to take another, and drops out of the
+dispatch. Closing every local slot is "reduce L to zero"; closing the pool
+class is "the rest of this campaign runs on the coordinator's threads".
+Reducing L to `k > 0` closes the `L - k` highest-numbered local slots, so which
+consumers stop is deterministic.
+
+The flags can only be closed, never reopened, which is what keeps a guard from
+becoming an optimizer that widens a running campaign.
+"""
+struct DispatchAdmission
+    worker_open::Vector{Base.Threads.Atomic{Bool}}
+    local_open::Vector{Base.Threads.Atomic{Bool}}
+end
+
+function DispatchAdmission(workers::Integer, locals::Integer)
+    workers >= 0 || throw(ArgumentError("DispatchAdmission workers must be >= 0; got $(workers)."))
+    locals >= 0 || throw(ArgumentError("DispatchAdmission locals must be >= 0; got $(locals)."))
+    return DispatchAdmission(
+        [Base.Threads.Atomic{Bool}(true) for _ in 1:Int(workers)],
+        [Base.Threads.Atomic{Bool}(true) for _ in 1:Int(locals)],
+    )
+end
+
+@inline function _dispatch_admission_flags(a::DispatchAdmission, class::Symbol)
+    class === :worker && return a.worker_open
+    class === :local && return a.local_open
+    throw(ArgumentError("DispatchAdmission class must be :worker or :local; got :$(class)."))
+end
+
+"""
+    dispatch_admits(admission, class, ordinal) -> Bool
+
+Whether that consumer may take another job. An out-of-range ordinal admits, so
+a dispatcher running more consumers than the admission was built for is never
+silently starved.
+"""
+@inline function dispatch_admits(a::DispatchAdmission, class::Symbol, ordinal::Integer)::Bool
+    flags = _dispatch_admission_flags(a, class)
+    (1 <= ordinal <= length(flags)) || return true
+    return flags[ordinal][]
+end
+
+"""
+    close_dispatch_consumer!(admission, class, ordinal) -> Bool
+
+Stop one consumer taking further work. Returns whether this call was the one
+that closed it. Refuses to close the last open consumer of the whole dispatch:
+something has to drain the queue.
+"""
+function close_dispatch_consumer!(a::DispatchAdmission, class::Symbol, ordinal::Integer)::Bool
+    flags = _dispatch_admission_flags(a, class)
+    (1 <= ordinal <= length(flags)) || return false
+    dispatch_open_count(a) > 1 || return false
+    return Base.Threads.atomic_xchg!(flags[ordinal], false)
+end
+
+"""
+    close_dispatch_class!(admission, class) -> Int
+
+Stop every consumer of one class, and return how many were closed. Refuses if
+that class is all that is left open.
+"""
+function close_dispatch_class!(a::DispatchAdmission, class::Symbol)::Int
+    flags = _dispatch_admission_flags(a, class)
+    dispatch_open_count(a) > count(f -> f[], flags) || return 0
+    closed = 0
+    for i in eachindex(flags)
+        Base.Threads.atomic_xchg!(flags[i], false) && (closed += 1)
+    end
+    return closed
+end
+
+"""
+    dispatch_open_count(admission[, class]) -> Int
+
+Consumers still taking work, in one class or in total.
+"""
+dispatch_open_count(a::DispatchAdmission, class::Symbol)::Int =
+    count(f -> f[], _dispatch_admission_flags(a, class))
+dispatch_open_count(a::DispatchAdmission)::Int =
+    count(f -> f[], a.worker_open) + count(f -> f[], a.local_open)
+
+"""
     _run_monte_carlo_mixed(f, seeds, spec, worker_ids, local_slots;
-                           class_sink=nothing) -> Vector{MonteCarloSampleResult}
+                           class_sink=nothing, take_sink=nothing,
+                           admission=nothing, on_complete=nothing,
+                           worker_runner=nothing) -> Vector{MonteCarloSampleResult}
 
 One job queue, two kinds of consumer: one `@async` feeder per pool worker,
 each blocking on a `remotecall_fetch` of a single sample, and `local_slots`
@@ -269,8 +368,17 @@ instead, the number carries the pool's shared setup and the queueing of
 whoever was served earlier, which on an 8-worker round reads 965 ms for a
 38 ms sample and is not a per-sample cost at all.
 
-Both default to `nothing`, so the bandit path writes nothing and behaves as
-before.
+`on_complete(sample, class, ordinal)` is called by the consumer that finished
+a sample, on that consumer's task, immediately after the sample is recorded.
+With `admission` it is how a campaign re-plans itself while it runs: the hook
+watches the classes and closes consumers (see [`DispatchAdmission`](@ref)),
+and the consumers it closes drop out at their next take. The hook runs on the
+dispatch's hot path, so it must be cheap and it must not throw.
+
+`worker_runner` replaces `remotecall_fetch` for the worker class. It exists so
+the consumer bookkeeping above -- admission, class tags, take stamps, the
+completion hook -- can be tested against both classes in one process, without
+a `Distributed` pool. It changes nothing when `nothing`.
 
 Pool workers are `--threads=1`, so with W workers on a T-thread coordinator a
 process-only campaign uses W cores and leaves T idle; the local slots are how
@@ -282,7 +390,10 @@ is their share. `local_slots = 0` is the process-only dispatch.
 function _run_monte_carlo_mixed(
     f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int}, local_slots::Int;
     class_sink::Union{Nothing, Vector{Symbol}} = nothing,
-    take_sink::Union{Nothing, Vector{Float64}} = nothing
+    take_sink::Union{Nothing, Vector{Float64}} = nothing,
+    admission::Union{Nothing, DispatchAdmission} = nothing,
+    on_complete = nothing,
+    worker_runner = nothing
 )
     (isempty(worker_ids) && local_slots < 1) && throw(ArgumentError(
         "_run_monte_carlo_mixed needs at least one pool worker or one local slot."))
@@ -301,13 +412,26 @@ function _run_monte_carlo_mixed(
     samples = Vector{Union{Nothing, MonteCarloSampleResult}}(nothing, length(seeds))
     stop_requested = Base.Threads.Atomic{Bool}(false)
     run_sample = (index, seed) -> _run_monte_carlo_sample(f, index, seed)
-    consume = (run, class) -> begin
-        for (index, seed) in jobs
+    consume = (run, class, ordinal) -> begin
+        while true
             spec.fail_fast && stop_requested[] && break
+            # Admission is checked BEFORE the take, not after: a consumer that
+            # took a job and then withdrew would drop that sample on the floor.
+            (admission === nothing || dispatch_admits(admission, class, ordinal)) || break
+            # The channel is filled and closed before any consumer starts, so
+            # `take!` either returns a job or throws because the queue is
+            # drained. That is what ends the loop; there is no other producer.
+            job = try
+                take!(jobs)
+            catch
+                break
+            end
+            index, seed = job
             take_sink === nothing || (take_sink[index] = Float64(time_ns()))
             sample = _stamp_finished(run(index, seed))
             samples[index] = sample
             class_sink === nothing || (class_sink[index] = class)
+            on_complete === nothing || on_complete(sample, class, ordinal)
             if spec.fail_fast && !sample.success
                 Base.Threads.atomic_xchg!(stop_requested, true)
                 break
@@ -315,15 +439,17 @@ function _run_monte_carlo_mixed(
         end
     end
 
-    pool = isempty(worker_ids) ? nothing : CachingPool(worker_ids)
+    pool = worker_runner === nothing && !isempty(worker_ids) ? CachingPool(worker_ids) : nothing
     try
         Base.@sync begin
-            for _ in worker_ids
-                Base.@async consume(
-                    (index, seed) -> remotecall_fetch(run_sample, pool, index, seed), :worker)
+            for (ordinal, _) in enumerate(worker_ids)
+                run = worker_runner === nothing ?
+                    ((index, seed) -> remotecall_fetch(run_sample, pool, index, seed)) :
+                    ((index, seed) -> worker_runner(f, index, seed))
+                Base.@async consume(run, :worker, ordinal)
             end
-            for _ in 1:local_slots
-                Base.Threads.@spawn consume(run_sample, :local)
+            for ordinal in 1:local_slots
+                Base.Threads.@spawn consume(run_sample, :local, ordinal)
             end
         end
     finally
@@ -344,9 +470,12 @@ end
 # Process-backend dispatch: the mixed dispatcher with no local slots.
 function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int};
                                   class_sink::Union{Nothing, Vector{Symbol}} = nothing,
-                                  take_sink::Union{Nothing, Vector{Float64}} = nothing)
+                                  take_sink::Union{Nothing, Vector{Float64}} = nothing,
+                                  admission::Union{Nothing, DispatchAdmission} = nothing,
+                                  on_complete = nothing)
     return _run_monte_carlo_mixed(f, seeds, spec, worker_ids, 0; class_sink = class_sink,
-                                  take_sink = take_sink)
+                                  take_sink = take_sink, admission = admission,
+                                  on_complete = on_complete)
 end
 
 """

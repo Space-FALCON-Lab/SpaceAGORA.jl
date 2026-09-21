@@ -442,7 +442,7 @@ _guard_plan(; local_slots = 3, workers = 8, n = 64, remote_overhead = 0.0) =
         remaining = 53, threads = 8, threads_candidate = true, constants = nothing)
     @test v.replan
     @test v.route === :threads
-    @test v.workers == 8                 # min(remaining, T)
+    @test v.workers == 8                 # the width budget it was handed
     @test v.local_slots == 0
     @test v.reason === :workers_occupying_more_than_threads
     @test v.occupancy_ratio > cfg.guard_factor
@@ -556,6 +556,37 @@ end
     steep = SCamp.predictive_guard_verdict(plan, cfg; obs...,
         constants = _constants(alpha = 0.5, beta_alloc = 0.5))
     @test steep.threads_s > charged.threads_s
+end
+
+@testset "the reachable threads width is the local slots already running" begin
+    # The caller hands the verdict the width it can actually reach WITHOUT a
+    # barrier, which is the local slots already consuming the queue: closing
+    # the pool class leaves them, and starting new consumers mid-dispatch is
+    # the widening the guard is not allowed to do. Priced at a width it could
+    # not run, the comparison would be against a plan that does not exist.
+    cfg = _cfg(guard_factor = 1.5)
+    plan = _guard_plan(local_slots = 3)
+    obs = (worker_mean_s = 0.038, local_mean_s = 0.046,
+           worker_occupancy_s = 0.333, local_occupancy_s = 0.050,
+           remaining = 53, threads_candidate = true, constants = nothing)
+    reachable = SCamp.predictive_guard_verdict(plan, cfg; obs..., threads = plan.local_slots)
+    wide = SCamp.predictive_guard_verdict(plan, cfg; obs..., threads = 8)
+    # Three slots at 50 ms cannot beat eight workers at 333 ms plus those same
+    # three slots, so at the reachable width this verdict does not fire --
+    # which is the honest answer, and the optimistic one would not have been.
+    @test !reachable.replan
+    @test reachable.reason === :threads_no_better
+    @test reachable.threads_s > reachable.continue_s
+    # A verdict that does not move reports the plan it is leaving alone, not a
+    # width it declined to use.
+    @test reachable.workers == plan.workers
+    @test reachable.route === plan.route
+    # The same observation at a width the caller cannot reach would have fired,
+    # and the difference is entirely the pricing: eight consumers against three.
+    @test wide.reason === :workers_occupying_more_than_threads
+    @test wide.workers == 8
+    @test reachable.threads_s > wide.threads_s
+    @test reachable.continue_s == wide.continue_s
 end
 
 @testset "the route switch is off by default, and the evidence is still reported" begin

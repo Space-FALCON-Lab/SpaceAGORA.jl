@@ -529,7 +529,8 @@ const _GC_DEBT = Base.Threads.Atomic{Bool}(false)
     return lowercase(strip(get(ENV, "SPACEAGORA_CAMPAIGN_DISPATCH_TRACE", "0"))) in ("1", "true", "yes", "on")
 end
 
-function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
+function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
+                                      class_sink::Union{Nothing, Vector{Symbol}} = nothing)
     # Collect BEFORE dispatch (V2). A threaded campaign leaves the coordinator
     # with a heap of many GiB, and the process route's dispatch loop -- a set
     # of async tasks each blocking on one remote call -- then stalls in the
@@ -570,10 +571,11 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan)
             "workers=$(length(active_workers)) local_slots=$(local_slots) pool_size=$(length(worker_ids))")
         samples = if local_slots > 0
             withenv(outer_split_env_pairs(local_slots)...) do
-                _run_monte_carlo_mixed(f, spec.seeds, spec, active_workers, local_slots)
+                _run_monte_carlo_mixed(f, spec.seeds, spec, active_workers, local_slots;
+                                       class_sink=class_sink)
             end
         else
-            _run_monte_carlo_process(f, spec.seeds, spec, active_workers)
+            _run_monte_carlo_process(f, spec.seeds, spec, active_workers; class_sink=class_sink)
         end
         elapsed_s = (time_ns() - start_ns) / 1.0e9
         if _dispatch_trace_enabled()
@@ -682,6 +684,153 @@ function _record_campaign_route_feedback!(
     return nothing
 end
 
+# ── The predictive path (R7) ─────────────────────────────────────────────────
+#
+# Everything below runs only under SPACEAGORA_CAMPAIGN_PLANNER=predictive. It
+# shares the dispatchers with the bandit path and nothing else: no route
+# selection, no split race, no feedback, and neither loading nor saving the
+# persisted route state. See predictive_planner.jl for the model.
+
+# One batch of seeds under one plan.
+#
+# The width handed to the spec is clamped to the batch, because the guard
+# leaves a remainder that can be smaller than the plan's own width and
+# `run_monte_carlo` validates a thread count against `Threads.nthreads()` --
+# a pool of 32 workers declared on an 8-thread coordinator would throw there
+# rather than simply having nothing for the extra workers to do.
+#
+# The inner budget is declared as an environment CEILING around the whole
+# dispatch rather than passed down the plan: `outer_split_env_pairs`, which the
+# mixed dispatch calls for itself, would otherwise hand each local slot
+# `fld(T, L)` threads. R7 v1 gives every concurrent sample one thread (see the
+# module docs), and `capped_inner_thread_budget` treats an inherited budget of
+# 1 as a ceiling it need not lower, so this leaves the bandit's own use of that
+# function untouched.
+function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::OuterRouteTuning;
+                              fail_fast::Bool, class_sink::Union{Nothing, Vector{Symbol}}=nothing)
+    width = max(1, min(plan.workers, length(batch)))
+    slots = min(plan.local_slots, max(0, length(batch) - width))
+    dispatch_plan = (route=plan.route, threads=width,
+                     inner_thread_budget=_predictive_declared_budget(plan),
+                     record=false, split_race=false, split_candidates=Int[],
+                     gc_first=tuning.gc_before_dispatch,
+                     local_slots=slots, local_slots_at=(w -> slots))
+    spec = MonteCarloSpec(seeds=batch, threads=width, fail_fast=fail_fast)
+    plan.consumers <= 1 &&
+        return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink)
+    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "1") do
+        _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink)
+    end
+end
+
+# Mean sample time per consumer class over one round, from the class tags the
+# mixed dispatcher wrote. NaN for a class that ran nothing.
+function _predictive_class_means(samples::Vector{MonteCarloSampleResult}, sink::Vector{Symbol})
+    worker_sum = 0.0; worker_n = 0
+    local_sum = 0.0; local_n = 0
+    for s in samples
+        (1 <= s.index <= length(sink)) || continue
+        cls = sink[s.index]
+        if cls === :worker
+            worker_sum += s.elapsed_s; worker_n += 1
+        elseif cls === :local
+            local_sum += s.elapsed_s; local_n += 1
+        end
+    end
+    return (worker_mean_s = worker_n > 0 ? worker_sum / worker_n : NaN,
+            local_mean_s = local_n > 0 ? local_sum / local_n : NaN,
+            workers = worker_n, locals = local_n)
+end
+
+function _run_campaign_predictive(
+    f, seeds::Vector, features::OuterRouteFeatures, tuning::OuterRouteTuning; fail_fast::Bool
+)::MonteCarloResult
+    started = time_ns()
+    n = length(seeds)
+    config = PredictivePlannerConfig()
+    threads = Base.Threads.nthreads()
+    # Route CANDIDACY is still the shipped rule -- whether a pool is allowed at
+    # all on this shape and machine is a feasibility question, not a cost one,
+    # and R7 replaces only the cost decision.
+    candidates = outer_route_candidates(
+        features;
+        tuning=tuning,
+        machine_class=ParallelProfiles._machine_parallel_class(),
+        threads_available=threads > 1,
+        parallel_enabled=true,
+    )
+    process_cap = ParallelProfiles.effective_process_workers(features, tuning)
+    pool_workers = (:process in candidates) && process_cap >= 2 ? min(process_cap, n) : 0
+    local_cap = pool_workers >= 1 ?
+        ParallelProfiles.mixed_local_slots(features, tuning, pool_workers) : 0
+    constants = predictive_machine_constants()
+    planning = predictive_plan(
+        n_samples=n, threads=threads, process_workers=pool_workers,
+        threads_candidate=(:threads in candidates), local_slots_cap=local_cap,
+        constants=constants, config=config)
+    trace = _dispatch_trace_enabled()
+    if trace
+        println("[predictive] shape n=$(n) threads=$(threads) pool=$(pool_workers) " *
+                "local_cap=$(local_cap) candidates=$(candidates) " *
+                "constants=$(planning.constants_loaded ? "loaded" : "absent") " *
+                "margin=$(config.margin) guard_factor=$(config.guard_factor) " *
+                "local_slots_max=$(config.local_slots_max)")
+        for p in planning.plans
+            println("[predictive]   candidate $(_predictive_plan_line(p))")
+        end
+        println("[predictive] chosen $(_predictive_plan_line(planning.chosen)) " *
+                "reason=$(planning.reason) gain=$(round(planning.gain; digits=3))")
+    end
+
+    plan = planning.chosen
+    # A static-equivalent plan gives the guard nothing to act on: the only
+    # reduction it can make is to the local slots, which are already zero.
+    # Splitting such a campaign into two dispatches would buy no information
+    # and cost a synchronization barrier -- every consumer waiting on the
+    # round's straggler -- so the static plans run in exactly one dispatch,
+    # which is also what makes them comparable with the pinned static routes.
+    if plan.local_slots <= 0 || n <= plan.consumers
+        result = _predictive_dispatch(f, seeds, plan, tuning; fail_fast=fail_fast)
+        trace && println("[predictive] single-round dispatch=$(round(result.elapsed_s; digits=3))s " *
+                         "n=$(length(result.samples)) failures=$(length(result.failed))")
+        return MonteCarloResult(result.samples, (time_ns() - started) / 1.0e9, plan.consumers;
+                                route=plan.route, local_slots=plan.local_slots)
+    end
+
+    head = seeds[1:plan.consumers]
+    sink = fill(:unset, length(head))
+    first_round = _predictive_dispatch(f, head, plan, tuning; fail_fast=fail_fast, class_sink=sink)
+    samples = collect(first_round.samples)
+    observed = _predictive_class_means(samples, sink)
+    verdict = predictive_guard_verdict(
+        plan, config;
+        worker_mean_s=observed.worker_mean_s, local_mean_s=observed.local_mean_s,
+        failures=length(first_round.failed))
+    rest = seeds[(length(head) + 1):n]
+    final_plan = verdict.replan ?
+        predictive_replan(plan, verdict.local_slots, length(rest), constants) : plan
+    if trace
+        println("[predictive] guard round1=$(round(first_round.elapsed_s; digits=3))s " *
+                "worker_mean=$(round(observed.worker_mean_s * 1e3; digits=2))ms/$(observed.workers) " *
+                "local_mean=$(round(observed.local_mean_s * 1e3; digits=2))ms/$(observed.locals) " *
+                "predicted_ratio=$(round(plan.heap_slowdown / plan.worker_slowdown; digits=3)) " *
+                "observed/predicted=$(round(verdict.ratio; digits=3)) " *
+                "verdict=$(verdict.reason) replan=$(verdict.replan) " *
+                "local_slots=$(plan.local_slots)->$(final_plan.local_slots)")
+    end
+    if !isempty(rest)
+        second = _predictive_dispatch(f, rest, final_plan, tuning; fail_fast=fail_fast)
+        offset = length(head)
+        append!(samples, (_reindexed_sample(s, offset + s.index) for s in second.samples))
+    end
+    sort!(samples; by=s -> s.index)
+    # The plan reported is the one the remainder ran under, which is the plan
+    # that produced most of the campaign and the one a reader of the row should
+    # see; the trace above carries the first round's plan and the change.
+    return MonteCarloResult(samples, (time_ns() - started) / 1.0e9, final_plan.consumers;
+                            route=final_plan.route, local_slots=final_plan.local_slots)
+end
+
 function _run_campaign_adaptive(
     f,
     seeds;
@@ -692,6 +841,16 @@ function _run_campaign_adaptive(
 )::MonteCarloResult
     seed_values = collect(seeds)
     isempty(seed_values) && return MonteCarloResult(MonteCarloSampleResult[], 0.0, 0)
+    # R7. Nested under an enclosing outer split the predictive path defers to
+    # the bandit path's nested branch, which runs the campaign serially and
+    # records nothing -- the reason for it (a nested split oversubscribes the
+    # machine) is a property of the situation, not of the planner.
+    if campaign_planner_mode() === :predictive && !ParallelPolicy.outer_parallel_active()
+        return _run_campaign_predictive(
+            f, seed_values,
+            _campaign_features_for_routing(features, length(seed_values)),
+            tuning; fail_fast=fail_fast)
+    end
     t0 = time_ns()
     routed_features = _campaign_features_for_routing(features, length(seed_values))
     plan = _campaign_route_plan(routed_features, length(seed_values); state=state, tuning=tuning)

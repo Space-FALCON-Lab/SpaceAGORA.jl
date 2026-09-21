@@ -243,13 +243,23 @@ end
 # each task just blocks on IPC waiting for a worker's reply, so it should not
 # occupy an OS thread the way genuinely CPU-bound work would.
 """
-    _run_monte_carlo_mixed(f, seeds, spec, worker_ids, local_slots) -> Vector{MonteCarloSampleResult}
+    _run_monte_carlo_mixed(f, seeds, spec, worker_ids, local_slots;
+                           class_sink=nothing) -> Vector{MonteCarloSampleResult}
 
 One job queue, two kinds of consumer: one `@async` feeder per pool worker,
 each blocking on a `remotecall_fetch` of a single sample, and `local_slots`
 `Threads.@spawn` tasks running samples in this process. Whichever finishes a
 sample first takes the next, so a slow slot (a 1-thread worker on a heavy
 sample) is balanced against a fast one without any static partition.
+
+`class_sink`, when given, is a `Vector{Symbol}` as long as `seeds` into which
+each sample's consumer class (`:worker` or `:local`) is written at its own
+index, the same way `samples[index]` is. Nothing in the result itself records
+which kind of consumer ran a sample -- a worker's `elapsed_s` is measured on
+the worker and comes home indistinguishable from a local slot's -- and the R7
+planner's guard needs exactly that split to compare the two classes against
+what it predicted. It defaults to `nothing`, so the bandit path writes nothing
+and behaves as before.
 
 Pool workers are `--threads=1`, so with W workers on a T-thread coordinator a
 process-only campaign uses W cores and leaves T idle; the local slots are how
@@ -259,10 +269,14 @@ how many). The caller sets the local samples' inner budget with
 is their share. `local_slots = 0` is the process-only dispatch.
 """
 function _run_monte_carlo_mixed(
-    f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int}, local_slots::Int
+    f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int}, local_slots::Int;
+    class_sink::Union{Nothing, Vector{Symbol}} = nothing
 )
     (isempty(worker_ids) && local_slots < 1) && throw(ArgumentError(
         "_run_monte_carlo_mixed needs at least one pool worker or one local slot."))
+    class_sink === nothing || length(class_sink) == length(seeds) || throw(ArgumentError(
+        "_run_monte_carlo_mixed class_sink must have one entry per seed; got " *
+        "$(length(class_sink)) for $(length(seeds)) seeds."))
     jobs = Channel{Tuple{Int, Any}}(length(seeds))
     for (index, seed) in enumerate(seeds)
         put!(jobs, (index, seed))
@@ -272,11 +286,12 @@ function _run_monte_carlo_mixed(
     samples = Vector{Union{Nothing, MonteCarloSampleResult}}(nothing, length(seeds))
     stop_requested = Base.Threads.Atomic{Bool}(false)
     run_sample = (index, seed) -> _run_monte_carlo_sample(f, index, seed)
-    consume = run -> begin
+    consume = (run, class) -> begin
         for (index, seed) in jobs
             spec.fail_fast && stop_requested[] && break
             sample = _stamp_finished(run(index, seed))
             samples[index] = sample
+            class_sink === nothing || (class_sink[index] = class)
             if spec.fail_fast && !sample.success
                 Base.Threads.atomic_xchg!(stop_requested, true)
                 break
@@ -288,10 +303,11 @@ function _run_monte_carlo_mixed(
     try
         Base.@sync begin
             for _ in worker_ids
-                Base.@async consume((index, seed) -> remotecall_fetch(run_sample, pool, index, seed))
+                Base.@async consume(
+                    (index, seed) -> remotecall_fetch(run_sample, pool, index, seed), :worker)
             end
             for _ in 1:local_slots
-                Base.Threads.@spawn consume(run_sample)
+                Base.Threads.@spawn consume(run_sample, :local)
             end
         end
     finally
@@ -310,8 +326,9 @@ function _run_monte_carlo_mixed(
 end
 
 # Process-backend dispatch: the mixed dispatcher with no local slots.
-function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int})
-    return _run_monte_carlo_mixed(f, seeds, spec, worker_ids, 0)
+function _run_monte_carlo_process(f, seeds::Vector, spec::MonteCarloSpec, worker_ids::Vector{Int};
+                                  class_sink::Union{Nothing, Vector{Symbol}} = nothing)
+    return _run_monte_carlo_mixed(f, seeds, spec, worker_ids, 0; class_sink = class_sink)
 end
 
 """

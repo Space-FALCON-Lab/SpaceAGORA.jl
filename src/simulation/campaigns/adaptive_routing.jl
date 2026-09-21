@@ -596,12 +596,25 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
         # Fire-and-forget: a worker that is handed the next campaign's first
         # sample right away runs the collection first, which is the same work
         # at the start of the round instead of in the middle of it.
-        for w in active_workers
-            Distributed.remote_do(GC.gc, w)
+        #
+        # Both of these are END-OF-CAMPAIGN hooks, and the R7 guard round is
+        # not the end of a campaign: it is a dispatch with another one already
+        # queued behind it. Firing them there sends all W workers into a full
+        # collection in the instant before they are handed the remainder, and
+        # leaves a debt the remainder's own dispatch then pays on the
+        # coordinator -- both of them mid-campaign, which is exactly what the
+        # comments above say these hooks exist to avoid. `mid_campaign` is set
+        # only by the predictive path's first round; the bandit path never sets
+        # the field and is unaffected.
+        mid_campaign = hasproperty(plan, :mid_campaign) && plan.mid_campaign
+        if !mid_campaign
+            for w in active_workers
+                Distributed.remote_do(GC.gc, w)
+            end
+            # The local slots ran samples on the coordinator's own heap, exactly
+            # as a threaded dispatch does, and leave the same debt behind.
+            local_slots > 0 && (_GC_DEBT[] = true)
         end
-        # The local slots ran samples on the coordinator's own heap, exactly
-        # as a threaded dispatch does, and leave the same debt behind.
-        local_slots > 0 && (_GC_DEBT[] = true)
         spec.fail_fast && _throw_first_monte_carlo_failure(samples)
         return MonteCarloResult(samples, elapsed_s, length(active_workers) + local_slots;
                                 route=:process, local_slots=local_slots)
@@ -707,14 +720,16 @@ end
 # 1 as a ceiling it need not lower, so this leaves the bandit's own use of that
 # function untouched.
 function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::OuterRouteTuning;
-                              fail_fast::Bool, class_sink::Union{Nothing, Vector{Symbol}}=nothing)
+                              fail_fast::Bool, class_sink::Union{Nothing, Vector{Symbol}}=nothing,
+                              mid_campaign::Bool=false)
     width = max(1, min(plan.workers, length(batch)))
     slots = min(plan.local_slots, max(0, length(batch) - width))
     dispatch_plan = (route=plan.route, threads=width,
                      inner_thread_budget=_predictive_declared_budget(plan),
                      record=false, split_race=false, split_candidates=Int[],
                      gc_first=tuning.gc_before_dispatch,
-                     local_slots=slots, local_slots_at=(w -> slots))
+                     local_slots=slots, local_slots_at=(w -> slots),
+                     mid_campaign=mid_campaign)
     spec = MonteCarloSpec(seeds=batch, threads=width, fail_fast=fail_fast)
     plan.consumers <= 1 &&
         return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink)
@@ -799,7 +814,8 @@ function _run_campaign_predictive(
 
     head = seeds[1:plan.consumers]
     sink = fill(:unset, length(head))
-    first_round = _predictive_dispatch(f, head, plan, tuning; fail_fast=fail_fast, class_sink=sink)
+    first_round = _predictive_dispatch(f, head, plan, tuning; fail_fast=fail_fast,
+                                       class_sink=sink, mid_campaign=true)
     samples = collect(first_round.samples)
     observed = _predictive_class_means(samples, sink)
     verdict = predictive_guard_verdict(

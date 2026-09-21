@@ -29,9 +29,10 @@ function _constants(; alpha = 0.05, beta_alloc = 0.004)
     )
 end
 
-_cfg(; margin = 0.15, guard_factor = 1.5, local_slots_max = 64) =
+_cfg(; margin = 0.15, guard_factor = 1.5, local_slots_max = 64, remote_overhead = 0.0) =
     SCamp.PredictivePlannerConfig(margin = margin, guard_factor = guard_factor,
-                                  local_slots_max = local_slots_max)
+                                  local_slots_max = local_slots_max,
+                                  remote_overhead = remote_overhead)
 
 # Shorthand for "the plan the planner chose for this shape", with the machine
 # supplied rather than inherited.
@@ -81,6 +82,7 @@ end
         @test c.margin == 0.15
         @test c.guard_factor == 1.5
         @test c.local_slots_max == max(0, Base.Threads.nthreads() - 1)
+        @test c.remote_overhead == 0.0
     end
     withenv("SPACEAGORA_PREDICTIVE_MARGIN" => "0.4",
             "SPACEAGORA_PREDICTIVE_GUARD_FACTOR" => "2.5",
@@ -97,6 +99,30 @@ end
     @test_throws ArgumentError SCamp.PredictivePlannerConfig(margin = -0.1)
     @test_throws ArgumentError SCamp.PredictivePlannerConfig(guard_factor = 0.5)
     @test_throws ArgumentError SCamp.PredictivePlannerConfig(local_slots_max = -1)
+    @test_throws ArgumentError SCamp.PredictivePlannerConfig(remote_overhead = -0.1)
+    withenv("SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD" => "0.6") do
+        @test SCamp.PredictivePlannerConfig().remote_overhead == 0.6
+    end
+end
+
+@testset "a declared remote overhead prices the pool against the threads route" begin
+    # Measured on this repo's workstation, independent_1sat_1hr, 64 samples of
+    # ~38 ms, 8 pool workers against 8 coordinator threads: outer_process
+    # 0.722 s against outer_threads 0.427 s, i.e. a worker class roughly 1.6x a
+    # thread rather than the 1.0x the default assumes. With the overhead left
+    # at its default the planner prefers the pool here; declared, it does not.
+    shape = (n_samples = 64, threads = 8, process_workers = 8, threads_candidate = true,
+             local_slots_cap = 4, constants = nothing)
+    default = SCamp.predictive_plan(; shape..., config = _cfg(local_slots_max = 7))
+    @test default.chosen.route === :process
+    declared = SCamp.predictive_plan(; shape...,
+                                     config = _cfg(local_slots_max = 7, remote_overhead = 0.6))
+    @test declared.chosen.route === :threads
+    @test declared.chosen.workers == 8
+    # The worker class is priced as declared, and a re-plan keeps that price.
+    pool_plan = first(p for p in declared.plans if p.route === :process)
+    @test pool_plan.worker_slowdown == 1.6
+    @test SCamp.predictive_replan(pool_plan, 0, 32, nothing).worker_slowdown == 1.6
 end
 
 @testset "makespan is a greedy list schedule in units of one sample" begin

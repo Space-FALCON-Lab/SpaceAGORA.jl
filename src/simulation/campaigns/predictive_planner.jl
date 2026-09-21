@@ -68,6 +68,19 @@ end
     return parsed
 end
 
+# Round-trip cost of handing one sample to a pool worker and taking the result
+# back, relative to one uncontended sample time. The default of zero is an
+# ASSUMPTION with a stated domain -- a `remotecall_fetch` round trip is
+# milliseconds against samples of 0.03-1 s -- and the reduced-scale run on this
+# repo's workstation refutes it at the bottom of that domain: on
+# independent_1sat_1hr, 64 samples of ~38 ms over 8 pool workers against 8
+# coordinator threads, the pool campaign ran 0.722 s against the threads
+# route's 0.427 s with the same per-sample work, which is a worker class
+# roughly 1.6x a thread rather than 1.0x. The default stays zero because one
+# point on one machine is not a value to hard-code; it is now a named field, so
+# a machine that has measured its own can declare it.
+const PREDICTIVE_REMOTE_OVERHEAD = 0.0
+
 """
     PredictivePlannerConfig(; margin, guard_factor, local_slots_max)
 
@@ -87,11 +100,18 @@ the unit tests drive a plan space the host machine does not have).
   dispatch. DERIVED from R6's measured practice: `mixed_local_slots` keeps
   thread 1 free for the `@async` feeders that keep the pool supplied, so the
   most slots the coordinator can ever offer is `T - 1`.
+- `remote_overhead` (`SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD`, default `0.0`):
+  the `remotecall_fetch` round trip relative to one uncontended sample time,
+  i.e. how much more a pool worker costs per sample than a coordinator thread.
+  ASSUMED at zero, and measurably wrong on short samples -- see the constants
+  table in `docs/architecture/predictive_routing_r7.md` for the measurement and
+  why the default is still zero.
 """
 struct PredictivePlannerConfig
     margin::Float64
     guard_factor::Float64
     local_slots_max::Int
+    remote_overhead::Float64
 end
 
 function PredictivePlannerConfig(;
@@ -99,23 +119,20 @@ function PredictivePlannerConfig(;
     guard_factor::Real = _predictive_env_float("SPACEAGORA_PREDICTIVE_GUARD_FACTOR", 1.5),
     local_slots_max::Integer = _predictive_env_int(
         "SPACEAGORA_PREDICTIVE_LOCAL_SLOTS_MAX", max(0, Base.Threads.nthreads() - 1)),
+    remote_overhead::Real = _predictive_env_float(
+        "SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD", PREDICTIVE_REMOTE_OVERHEAD),
 )
     margin >= 0.0 || throw(ArgumentError("PredictivePlannerConfig margin must be >= 0; got $(margin)."))
     guard_factor >= 1.0 ||
         throw(ArgumentError("PredictivePlannerConfig guard_factor must be >= 1; got $(guard_factor)."))
     local_slots_max >= 0 ||
         throw(ArgumentError("PredictivePlannerConfig local_slots_max must be >= 0; got $(local_slots_max)."))
-    return PredictivePlannerConfig(Float64(margin), Float64(guard_factor), Int(local_slots_max))
+    remote_overhead >= 0.0 ||
+        throw(ArgumentError("PredictivePlannerConfig remote_overhead must be >= 0; got $(remote_overhead)."))
+    return PredictivePlannerConfig(Float64(margin), Float64(guard_factor), Int(local_slots_max),
+                                   Float64(remote_overhead))
 end
 
-# Round-trip cost of handing one sample to a pool worker and taking the result
-# back, relative to one uncontended sample time. Zero in v1, and that is an
-# ASSUMPTION with a stated domain: a `remotecall_fetch` round trip is
-# milliseconds, and the campaign samples this planner routes are 0.03-1 s in
-# the P3-P5 measurements, so the term is below the noise floor of anything the
-# planner could measure. It is named rather than inlined so a workload with
-# sub-millisecond samples has one place to change.
-const PREDICTIVE_REMOTE_OVERHEAD = 0.0
 
 """
     PredictivePlan
@@ -226,8 +243,9 @@ function predictive_makespan(n_samples::Integer, slowdowns::Vector{Float64})::Fl
 end
 
 function _predictive_slowdowns(route::Symbol, workers::Int, local_slots::Int,
-                               constants::Union{Nothing, ParallelCost.MachineConstants})
-    worker_s = 1.0 + PREDICTIVE_REMOTE_OVERHEAD
+                               constants::Union{Nothing, ParallelCost.MachineConstants},
+                               remote_overhead::Float64)
+    worker_s = 1.0 + remote_overhead
     if route === :process
         heap_s = predictive_heap_slowdown(constants, local_slots)
         return (vcat(fill(worker_s, workers), fill(heap_s, local_slots)), worker_s, heap_s)
@@ -243,8 +261,10 @@ end
 
 function _predictive_plan(route::Symbol, workers::Int, local_slots::Int, n_samples::Int,
                           static_equivalent::Bool,
-                          constants::Union{Nothing, ParallelCost.MachineConstants})::PredictivePlan
-    slowdowns, worker_s, heap_s = _predictive_slowdowns(route, workers, local_slots, constants)
+                          constants::Union{Nothing, ParallelCost.MachineConstants},
+                          remote_overhead::Float64 = PREDICTIVE_REMOTE_OVERHEAD)::PredictivePlan
+    slowdowns, worker_s, heap_s = _predictive_slowdowns(route, workers, local_slots, constants,
+                                                        remote_overhead)
     consumers = route === :process ? workers + local_slots : workers
     return PredictivePlan(
         route, workers, local_slots, consumers,
@@ -299,20 +319,20 @@ function predictive_plan_candidates(;
     pool = Int(process_workers) >= 2 ? min(Int(process_workers), n) : 0
     plans = PredictivePlan[]
     if n <= 1 || (T <= 1 && pool == 0)
-        push!(plans, _predictive_plan(:none, 1, 0, n, true, constants))
+        push!(plans, _predictive_plan(:none, 1, 0, n, true, constants, config.remote_overhead))
     end
     if n > 1 && T > 1 && threads_candidate
         W = min(n, T)
-        W > 1 && push!(plans, _predictive_plan(:threads, W, 0, n, true, constants))
+        W > 1 && push!(plans, _predictive_plan(:threads, W, 0, n, true, constants, config.remote_overhead))
     end
     if n > 1 && pool >= 2
         lmax = max(0, min(config.local_slots_max, n - pool, Int(local_slots_cap)))
         for L in 0:lmax
-            push!(plans, _predictive_plan(:process, pool, L, n, L == 0, constants))
+            push!(plans, _predictive_plan(:process, pool, L, n, L == 0, constants, config.remote_overhead))
         end
     end
     # A shape with no parallel route at all still has to run.
-    isempty(plans) && push!(plans, _predictive_plan(:none, 1, 0, n, true, constants))
+    isempty(plans) && push!(plans, _predictive_plan(:none, 1, 0, n, true, constants, config.remote_overhead))
     return plans
 end
 
@@ -447,7 +467,10 @@ remainder's makespan and the guard's own record describe what is about to run.
 function predictive_replan(plan::PredictivePlan, local_slots::Integer, n_samples::Integer,
                            constants::Union{Nothing, ParallelCost.MachineConstants})::PredictivePlan
     L = clamp(Int(local_slots), 0, plan.local_slots)
-    return _predictive_plan(plan.route, plan.workers, L, Int(n_samples), L == 0, constants)
+    # The plan's own worker slowdown, not the environment's: a re-plan must
+    # price the remainder the same way the first round was priced.
+    return _predictive_plan(plan.route, plan.workers, L, Int(n_samples), L == 0, constants,
+                            plan.worker_slowdown - 1.0)
 end
 
 # Machine constants are read from disk once per process. They are a calibration

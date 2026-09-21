@@ -160,6 +160,14 @@ every consumer waiting on the round's straggler. This also keeps the static
 plans dispatch-for-dispatch comparable with the pinned static routes they are
 measured against.
 
+The round-one dispatch is marked `mid_campaign`, which suppresses the two
+END-OF-CAMPAIGN hooks the process dispatch otherwise fires: the fire-and-forget
+`GC.gc` on every pool worker, and the coordinator GC debt the local slots
+leave. Those hooks exist to keep a collection out of the MIDDLE of a campaign,
+and the guard round is the middle of one. Measured on this repo's workstation,
+`independent_1sat_1hr` at 64 samples over 8 workers plus 3 local slots: 1.298 s
+median with the hooks firing between the rounds, 0.767 s without.
+
 `MonteCarloResult` reports the plan the remainder ran under: `route`,
 `threads = W_p + L` (or `W`, or 1), and `local_slots = L`. The dispatch trace
 carries the first round's plan and the change.
@@ -180,7 +188,7 @@ Every number the planner uses, and what kind of number it is.
 | `SPACEAGORA_PREDICTIVE_MARGIN` | `0.15` | ASSUMED | No measurement of this model's error exists, so no margin can be derived from one. 0.15 is a round number chosen to sit above the ~6% p90 identical-code noise floor of the reduced-scale harness and below the 25-40% mixed-dispatch wins R6 measured at the P3/P4 mid budgets, i.e. large enough to refuse noise and small enough to keep the wins that motivated mixed dispatch. Tune it, do not trust it. |
 | `SPACEAGORA_PREDICTIVE_GUARD_FACTOR` | `1.5` | ASSUMED | Same standing. A local slot running 1.5x slower than predicted relative to a pool worker is outside anything the round-count model explains; the second threshold at 2x that is the "stop entirely" case. |
 | `SPACEAGORA_PREDICTIVE_LOCAL_SLOTS_MAX` | `Threads.nthreads() - 1` | DERIVED | `ParallelProfiles.mixed_local_slots` keeps thread 1 free for the `@async` feeders that keep the pool supplied, so `T - 1` is the most slots the coordinator can offer under R6's own measured practice. |
-| `PREDICTIVE_REMOTE_OVERHEAD` (`o_r`) | `0.0` | ASSUMED | A `remotecall_fetch` round trip is milliseconds; the campaign samples in the P3-P5 measurements are 0.03-1 s. The term is below the noise floor of anything the planner could measure at that ratio. Named rather than inlined so a workload with sub-millisecond samples has one place to change. |
+| `SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD` (`o_r`) | `0.0` | ASSUMED, and measurably wrong on short samples | The assumption was that a `remotecall_fetch` round trip is milliseconds against samples of 0.03-1 s, so the term sits below any noise floor the planner could measure. The reduced-scale run below refutes that at the bottom of the stated domain: on `independent_1sat_1hr`, 64 samples of ~38 ms, 8 pool workers against 8 coordinator threads, the pool campaign ran 0.722 s against the threads route's 0.427 s for the same per-sample work -- a worker class roughly 1.6x a coordinator thread, not 1.0x. The default stays zero because one point on one machine is not a value to hard-code. It is a named field now, so a machine that has measured its own can declare it, and declaring 0.6 on that point moves the planner to the threads route and to parity with it (0.409 s). |
 | `alpha` in `s_heap` | `MachineConstants.usl_alpha_base` | SOURCED (fit), ASSUMED (mapping) | Fitted per machine by `scripts/calibrate_machine.jl` on the allocation kernel. Applying it to campaign samples claims only that a sample's contention with its neighbors on one heap has the same SHAPE as that kernel's, not the same magnitude. |
 | `beta` in `s_heap` | `MachineConstants.usl_beta_alloc` | SOURCED (fit), ASSUMED (mapping) | As above. |
 | `s_heap` with no constants | `1.0` | DERIVED | "Unknown means no gain" applied to a cost: an unmeasured contention term is not modeled, and the margin rule carries the safety. |
@@ -203,6 +211,32 @@ and never as a target the model is fitted to. Medians in seconds.
 | P5 `mcgrid_16sat_8mc` | n=8, (1, 32) | threads 1.896, R6 2.104 | `:threads` at `W=8`, budget 1 |
 | P5 `mcgrid_8sat_16mc` | n=16, (1, 32) | threads 1.016; R6 threw in 10 of 11 | `:threads` at `W=16`, budget 1 |
 | P5 `mcgrid_8sat_16mc` | n=16, (32, 1) | process 0.728, threads 1.467 | `:process` at `L=0` |
+
+## Reduced-scale measurements on this repo's workstation
+
+12 physical / 24 logical cores, Julia at `--threads=8`, the
+`parallelization_performance` single-case worker, 3 repeats, `--warmup=1`,
+uncalibrated (no machine constants present). Medians in seconds; repeat 1 is
+the cold one in every column. Identical-code noise on this harness is about 2%
+on the median and 6% at p90, so differences below those are not differences.
+
+| Case | Mode | Repeats | Median | Plan chosen |
+|---|---|---|---|---|
+| `independent_1sat_1hr`, n=64, 8 workers | `predictive` | 3.454, 0.628, 0.767 | 0.767 | `process@w8+l3` |
+| `independent_1sat_1hr`, n=64, 8 workers | `outer_process` | 1.876, 0.626, 0.722 | 0.722 | pinned pool |
+| `independent_1sat_1hr`, n=64, 8 workers | `outer_threads` | 0.559, 0.427, 0.407 | 0.427 | pinned threads |
+| `independent_1sat_1hr`, n=64, 8 workers | `predictive`, `o_r=0.6` | 2.864, 0.409, 0.404 | 0.409 | `threads@w8` |
+| `mcgrid_8sat_16mc`, n=16, 1 worker | `predictive` | 3.734, 1.323, 1.341 | 1.341 | `threads@w8` |
+| `mcgrid_8sat_16mc`, n=16, 1 worker | `outer_threads` | 1.590, 1.427, 1.427 | 1.427 | pinned threads |
+
+Two things to read off it. On the P5 shape, where no pool is affordable, the
+planner returns the static plan and runs at parity with it (1.341 against
+1.427, inside the noise floor). On the P3 shape it matches the pinned pool
+(0.767 against 0.722, at the edge of the noise floor) but both are behind the
+pinned threads route, because with `o_r = 0` the model cannot see that a pool
+worker costs more than a thread on a 38 ms sample. That is a failure of ONE
+ASSUMED CONSTANT, not of the model: declared at the measured value the same
+planner picks the threads route and reaches 0.409.
 
 ## Tracing
 

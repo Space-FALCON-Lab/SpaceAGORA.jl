@@ -178,3 +178,145 @@ end
         @test length(r.samples) == 64
     end
 end
+
+# ── Admission: how a campaign re-plans itself without a barrier ───────────────
+#
+# The dispatcher's two consumer classes are checked against per-consumer
+# admission flags before each take. Closing a consumer is how the R7 guard acts
+# on its verdict: no second dispatch, nothing interrupted, and a dispatch's
+# fixed cost paid once. `worker_runner` stands in for `remotecall_fetch` so
+# both classes can be exercised in one process.
+
+_in_process_worker = (f, index, seed) -> SCamp._run_monte_carlo_sample(f, index, seed)
+
+@testset "DispatchAdmission opens everything, closes one way, and keeps a consumer" begin
+    a = SCamp.DispatchAdmission(3, 2)
+    @test SCamp.dispatch_open_count(a) == 5
+    @test SCamp.dispatch_open_count(a, :worker) == 3
+    @test SCamp.dispatch_open_count(a, :local) == 2
+    @test SCamp.dispatch_admits(a, :worker, 1)
+    @test SCamp.dispatch_admits(a, :local, 2)
+    # An ordinal the admission does not know about is admitted, never starved.
+    @test SCamp.dispatch_admits(a, :local, 9)
+    @test SCamp.close_dispatch_consumer!(a, :local, 2)
+    @test !SCamp.dispatch_admits(a, :local, 2)
+    @test !SCamp.close_dispatch_consumer!(a, :local, 2)     # one way, and idempotent
+    @test SCamp.dispatch_open_count(a) == 4
+    # Closing a class leaves the other one running.
+    @test SCamp.close_dispatch_class!(a, :local) == 1
+    @test SCamp.dispatch_open_count(a, :local) == 0
+    @test SCamp.dispatch_open_count(a, :worker) == 3
+    # Nothing may close the last consumer of the whole dispatch: something has
+    # to drain the queue.
+    @test SCamp.close_dispatch_class!(a, :worker) == 0
+    @test SCamp.dispatch_open_count(a, :worker) == 3
+    b = SCamp.DispatchAdmission(0, 2)
+    @test SCamp.close_dispatch_consumer!(b, :local, 1)
+    @test !SCamp.close_dispatch_consumer!(b, :local, 2)      # would leave none
+    @test_throws ArgumentError SCamp.dispatch_admits(b, :pool, 1)
+    @test_throws ArgumentError SCamp.DispatchAdmission(-1, 0)
+end
+
+@testset "the local class closed mid-dispatch: every sample still runs exactly once" begin
+    seeds = collect(101:160)
+    spec = SCamp.MonteCarloSpec(seeds = seeds, threads = 1)
+    admission = SCamp.DispatchAdmission(2, 3)
+    classes = fill(:unset, length(seeds))
+    taken = zeros(Float64, length(seeds))
+    seen = Base.Threads.Atomic{Int}(0)
+    on_complete = (sample, class, ordinal) -> begin
+        Base.Threads.atomic_add!(seen, 1)
+        seen[] >= 5 && SCamp.close_dispatch_class!(admission, :local)
+        return nothing
+    end
+    out = SCamp._run_monte_carlo_mixed(x -> x * 2, seeds, spec, [1, 2], 3;
+        class_sink = classes, take_sink = taken, admission = admission,
+        on_complete = on_complete, worker_runner = _in_process_worker)
+    # The campaign is complete and in order, with no sample dropped on the
+    # floor by a consumer that withdrew and no sample run twice.
+    @test length(out) == length(seeds)
+    @test [s.index for s in out] == collect(1:length(seeds))
+    @test [s.seed for s in out] == seeds
+    @test [s.value for s in out] == seeds .* 2
+    @test all(s -> s.success, out)
+    @test length(unique(s.index for s in out)) == length(seeds)
+    # The local slots really did stop, and the workers really did carry on.
+    @test SCamp.dispatch_open_count(admission, :local) == 0
+    @test SCamp.dispatch_open_count(admission, :worker) == 2
+    @test all(c -> c in (:worker, :local), classes)
+    @test count(c -> c === :worker, classes) >= length(seeds) - 8
+    @test all(t -> t > 0.0, taken)
+end
+
+@testset "closing some local slots leaves the rest of them working" begin
+    seeds = collect(1:80)
+    spec = SCamp.MonteCarloSpec(seeds = seeds, threads = 1)
+    admission = SCamp.DispatchAdmission(1, 4)
+    classes = fill(:unset, length(seeds))
+    seen = Base.Threads.Atomic{Int}(0)
+    # Reduce four slots to one, highest-numbered first, exactly as the guard
+    # does when it decides the local class costs more than predicted.
+    on_complete = (sample, class, ordinal) -> begin
+        if Base.Threads.atomic_add!(seen, 1) == 4
+            for o in 4:-1:2
+                SCamp.close_dispatch_consumer!(admission, :local, o)
+            end
+        end
+        return nothing
+    end
+    out = SCamp._run_monte_carlo_mixed(identity, seeds, spec, [1], 4;
+        class_sink = classes, admission = admission, on_complete = on_complete,
+        worker_runner = _in_process_worker)
+    @test [s.index for s in out] == collect(1:length(seeds))
+    @test [s.value for s in out] == seeds
+    @test SCamp.dispatch_open_count(admission, :local) == 1
+    @test SCamp.dispatch_admits(admission, :local, 1)
+    @test !SCamp.dispatch_admits(admission, :local, 4)
+end
+
+@testset "the pool class closed mid-dispatch: the local slots finish the campaign" begin
+    seeds = collect(1:40)
+    spec = SCamp.MonteCarloSpec(seeds = seeds, threads = 1)
+    admission = SCamp.DispatchAdmission(3, 2)
+    classes = fill(:unset, length(seeds))
+    seen = Base.Threads.Atomic{Int}(0)
+    on_complete = (sample, class, ordinal) -> begin
+        Base.Threads.atomic_add!(seen, 1)
+        seen[] >= 5 && SCamp.close_dispatch_class!(admission, :worker)
+        return nothing
+    end
+    out = SCamp._run_monte_carlo_mixed(x -> x + 1, seeds, spec, [1, 2, 3], 2;
+        class_sink = classes, admission = admission, on_complete = on_complete,
+        worker_runner = _in_process_worker)
+    @test [s.index for s in out] == collect(1:length(seeds))
+    @test [s.value for s in out] == seeds .+ 1
+    @test SCamp.dispatch_open_count(admission, :worker) == 0
+    @test SCamp.dispatch_open_count(admission, :local) == 2
+end
+
+@testset "no admission and no hook is the bandit path, unchanged" begin
+    seeds = collect(1:24)
+    spec = SCamp.MonteCarloSpec(seeds = seeds, threads = 1)
+    out = SCamp._run_monte_carlo_mixed(x -> x * 5, seeds, spec, Int[], 3)
+    @test [s.index for s in out] == collect(1:24)
+    @test [s.value for s in out] == seeds .* 5
+    @test all(s -> s.success, out)
+    # fail_fast still rethrows the first failure after the queue drains.
+    specf = SCamp.MonteCarloSpec(seeds = seeds, threads = 1, fail_fast = true)
+    @test_throws Exception SCamp._run_monte_carlo_mixed(
+        x -> (x == 9 ? error("boom") : x), seeds, specf, Int[], 2)
+end
+
+@testset "a guarded predictive campaign still returns every sample once" begin
+    # No pool is affordable in these tests, so the planner takes a static plan
+    # and the guard never arms. What this asserts is that the guarded path's
+    # bookkeeping did not change the contract the unguarded one already meets.
+    seeds = collect(1:40)
+    r = _predictive(x -> x * 3, seeds;
+                    route_features = _feat(samples = length(seeds)),
+                    route_state = PPr.OuterRouteState(), route_tuning = _tuning())
+    @test [s.index for s in r.samples] == collect(1:length(seeds))
+    @test [s.value for s in r.samples] == seeds .* 3
+    @test r.local_slots == 0
+    @test isempty(r.failed)
+end

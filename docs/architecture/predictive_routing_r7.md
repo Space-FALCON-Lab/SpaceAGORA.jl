@@ -134,13 +134,39 @@ on the makespan and the preference never fires.
 
 ## The guard
 
-A plan that deviates (`L > 0`) and has more samples than consumers is
-dispatched in two rounds. The first round is one sample per consumer, so it
-measures both consumer classes at once; the mixed dispatcher tags each sample
-with the class that ran it (`class_sink`, added to `_run_monte_carlo_mixed` for
-this purpose -- nothing in a `MonteCarloResult` otherwise records it).
+A plan that deviates (`L > 0`) is watched from inside its own dispatch. There
+is no second round and no barrier: the guard rides along on the dispatcher's
+completion hook, decides once, and acts by closing consumers that then drop out
+at their next take.
 
-Two quantities come out of that round, and they answer two different
+That is a change from the first version, which dispatched one round, stopped,
+decided, and dispatched the remainder. The barrier was not the sample time --
+it was a second process dispatch, and a dispatch's fixed cost (pool wake-up,
+the `CachingPool` closure re-serialization that `Distributed.clear!` forces at
+the end of every dispatch, the workers' collection) is paid per dispatch, not
+per sample. Measured on this repo's workstation: a guard round of eleven
+samples cost 0.24-0.36 s against 0.24-0.26 s for the remaining fifty-three.
+
+**Admission.** `DispatchAdmission` carries one flag per pool worker and one per
+local slot, which that consumer checks BEFORE taking its next job -- before,
+because a consumer that took a job and then withdrew would drop that sample on
+the floor. Closing is one-way and never interrupts work in flight: the consumer
+finishes the sample it holds, declines the next, and leaves. Closing every
+local slot is "reduce L to zero"; reducing L to `k > 0` closes the `L - k`
+highest-numbered slots, so which consumers stop is deterministic; closing the
+pool class leaves the local slots to finish the campaign. Flags can only be
+closed, never reopened, which is what keeps the guard from becoming an
+optimizer that widens a running campaign.
+
+**When it decides.** On the first completion at which both classes have
+delivered at least one sample AND one round's worth (`consumers` samples) is
+done -- so the decision rests on every consumer having been seen, not on
+whichever few finished first. If the campaign drains before that, the verdict
+is computed anyway and traced as `never_decided`; there is nothing left to act
+on. The observation runs under a lock on the completing consumer's task, and
+after the decision every later completion early-outs on one atomic load.
+
+Two quantities come out of the observation, and they answer two different
 questions.
 
 **Work (`mean_s`)** is the class's mean `elapsed_s`: what happened INSIDE the
@@ -149,11 +175,13 @@ plan's own `s_heap / s_w` -- the contention the model predicted. The pool
 workers are the uncontended reference, so observed over predicted is directly
 comparable and `1.0` is the model being right.
 
-**Occupancy (`occupancy_s`)** is the class's mean wall from the dispatch
-starting to that sample's result being in hand. Round one runs exactly one
-sample per consumer, so this is that consumer's whole cost for it: the work
-plus the `remotecall_fetch` round trip, the closure's serialization to that
-worker, and the scheduling around it. This is what the `remote_overhead`
+**Occupancy (`occupancy_s`)** is the class's mean wall from that consumer
+TAKING the job (`take_sink`) to that sample's result being in hand
+(`finished_ns`). That brackets one consumer's cost for one
+sample: the work plus that sample's own share of the `remotecall_fetch` round
+trip, the closure's serialization, and the scheduling around it. Measured from
+a dispatch-wide start instead it carries the pool's shared setup and the
+queueing of whoever was served earlier, and reads 965 ms for a 38 ms sample. This is what the `remote_overhead`
 constant stands in for a priori, and it is the measurement that says which
 SIDE of the machine the campaign belongs on.
 
@@ -233,24 +261,30 @@ worker-to-local occupancy ratio is about 1.6 on this workstation at 8 workers,
 measured in the campaign's own first round, in place of a constant that would
 have to be right on every machine.
 
-A static-equivalent plan is dispatched in ONE round, not two. The only
-reduction the guard can make is to the local slots, which are already zero, so
-a second round would buy no information and cost a synchronization barrier --
-every consumer waiting on the round's straggler. This also keeps the static
-plans dispatch-for-dispatch comparable with the pinned static routes they are
-measured against.
+A static-equivalent plan is dispatched without a guard at all: the only thing
+it could close is a local slot, and there are none. It is a plain dispatch,
+which is what keeps it comparable with the pinned static route it is equivalent
+to.
 
-The round-one dispatch is marked `mid_campaign`, which suppresses the two
-END-OF-CAMPAIGN hooks the process dispatch otherwise fires: the fire-and-forget
-`GC.gc` on every pool worker, and the coordinator GC debt the local slots
-leave. Those hooks exist to keep a collection out of the MIDDLE of a campaign,
-and the guard round is the middle of one. Measured on this repo's workstation,
-`independent_1sat_1hr` at 64 samples over 8 workers plus 3 local slots: 1.298 s
-median with the hooks firing between the rounds, 0.767 s without.
+`MonteCarloResult` reports what the campaign ended up running -- the consumers
+still admitted when the queue drained: `route`, `threads` and `local_slots`.
+The trace carries the chosen plan, the observation, the verdict, how many
+consumers of each class were closed, and the plan it ended on.
 
-`MonteCarloResult` reports the plan the remainder ran under: `route`,
-`threads = W_p + L` (or `W`, or 1), and `local_slots = L`. The dispatch trace
-carries the first round's plan and the change.
+Because there is only ever one dispatch, its end IS the end of the campaign,
+so the process dispatch's end-of-campaign hooks (the fire-and-forget `GC.gc` on
+each pool worker and the coordinator GC debt the local slots leave) fire where
+they always did. The `mid_campaign` suppression the two-round version needed is
+gone with the round it existed for.
+
+**The width the switch can reach.** Closing the pool class leaves the `L` local
+slots consuming the queue, so the threads plan reachable without a barrier is
+at width `L` -- not `min(remaining, T)`, which would mean starting consumers
+mid-dispatch, i.e. the widening the guard is not allowed to do. The comparison
+is priced at `L` for that reason. It makes the switch much harder to trigger,
+and correctly so: three local slots do not beat eight pool workers plus those
+same three slots, and the earlier version fired only because it compared
+against a plan it could not run.
 
 ## No learning state
 
@@ -322,7 +356,12 @@ With the guard's second direction added (5 repeats, `independent_1sat_1hr`;
 
 The shipped default is stable across repeats (0.631-0.741 after the cold one)
 and lands on the pinned pool's 0.722. P5 is unchanged, as it must be: no pool
-is affordable there, so the plan is static and the guard never splits a round.
+is affordable there, so the plan is static and the guard never arms.
+
+Both tables above were measured with the two-round guard. The guard is now
+barrier-free (see The guard), which removes the 0.24-0.36 s second dispatch
+those numbers include; the rows are kept because they are what the barrier
+cost, and they are superseded by the single-dispatch measurements below.
 
 Three things to read off it.
 
@@ -357,14 +396,20 @@ That is a v2 item, not a v1 tuning knob.
 [predictive] shape n=... threads=... pool=... local_cap=... candidates=[...] constants=loaded|absent margin=... guard_factor=... local_slots_max=...
 [predictive]   candidate <route>@w<W>+l<L> makespan=... consumers=... s_worker=... s_heap=... [static]
 [predictive] chosen <plan> reason=... gain=...
-[predictive] guard round1=...s worker_mean=...ms/<n> local_mean=...ms/<n> predicted_ratio=... observed/predicted=...
-[predictive] guard occupancy worker=...ms local=...ms worker/local=... remainder continue=...s threads=...s
-[predictive] guard verdict=... replan=... plan=<route>@w<W>+l<L>-><route>@w<W>+l<L>
+[predictive] dispatch=...s n=... failures=... decided_after=<k>/<n> samples
+[predictive] guard worker_mean=...ms/<n> local_mean=...ms/<n> predicted_ratio=... observed/predicted=...
+[predictive] guard occupancy worker=...ms local=...ms worker/local=... rest continue=...s threads=...s
+[predictive] guard verdict=... closed=<w>w/<l>l plan=<route>@w<W>+l<L>-><route>@w<W>+l<L>
 ```
+
+An unguarded (static-equivalent) plan prints one `dispatch=...s ... unguarded`
+line instead.
 
 The guard's `verdict` is one of `observation_matches`, `local_slots_slower`,
 `local_slots_far_slower`, `workers_occupying_more_than_threads`,
-`threads_no_better`, `sample_failure`, `not_observed` or `nothing_to_reduce`.
+`route_switch_disabled`, `threads_no_better`, `sample_failure`,
+`not_observed`, `nothing_to_reduce`, or `never_decided` when the campaign
+drained before both classes had been seen.
 
 `reason` is one of `static_equivalent_best` (the static plan was best
 outright), `predicted_gain` (a deviation cleared the margin),
@@ -375,19 +420,12 @@ outright), `predicted_gain` (a deviation cleared the margin),
 
 - An inner-speedup measurement, so the inner thread budget becomes a decision
   and the narrower widths become worth enumerating.
-- **The guard round, removed.** It is now the single largest avoidable cost at
-  the P3 point: with the shipped default, round one's eleven samples take
-  0.24-0.36 s while the whole 53-sample remainder takes 0.24-0.26 s. The
-  barrier is not the sample time -- it is a second process dispatch, and a
-  dispatch's fixed cost (pool wake-up, closure re-serialization, the workers'
-  collection) is paid per dispatch, not per sample. The class means and the
-  occupancies the guard needs are all available from `take_sink`,
-  `finished_ns` and the class tags of the FIRST COMPLETIONS OF A SINGLE
-  DISPATCH; a re-plan could then change what the still-idle consumers do next
-  instead of requiring a synchronization point. That also fixes the route
-  switch, which is unusable while its evidence comes from the round that pays
-  the one-time costs.
-- A remote round-trip term measured BEFORE the first round rather than after
-  it, for the first round's own plan.
+- A remote round-trip term measured BEFORE the dispatch rather than during it,
+  so the FIRST plan is right and not only the plan the guard corrects to. A
+  cheap pool probe at plan time would supply it.
+- Re-measuring the route switch now that its evidence comes from inside the
+  dispatch and its width is the one it can reach. Both defects the first
+  version had are gone; whether anything is left to gain is unmeasured, which
+  is why it is still off by default.
 - A per-sample cost spread, for campaigns whose samples are known to differ
   (an aerobraking grid whose corners run far longer than its center).

@@ -531,7 +531,9 @@ end
 
 function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
                                       class_sink::Union{Nothing, Vector{Symbol}} = nothing,
-                                      take_sink::Union{Nothing, Vector{Float64}} = nothing)
+                                      take_sink::Union{Nothing, Vector{Float64}} = nothing,
+                                      admission::Union{Nothing, DispatchAdmission} = nothing,
+                                      on_complete = nothing)
     # Collect BEFORE dispatch (V2). A threaded campaign leaves the coordinator
     # with a heap of many GiB, and the process route's dispatch loop -- a set
     # of async tasks each blocking on one remote call -- then stalls in the
@@ -573,11 +575,13 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
         samples = if local_slots > 0
             withenv(outer_split_env_pairs(local_slots)...) do
                 _run_monte_carlo_mixed(f, spec.seeds, spec, active_workers, local_slots;
-                                       class_sink=class_sink, take_sink=take_sink)
+                                       class_sink=class_sink, take_sink=take_sink,
+                                       admission=admission, on_complete=on_complete)
             end
         else
             _run_monte_carlo_process(f, spec.seeds, spec, active_workers; class_sink=class_sink,
-                                     take_sink=take_sink)
+                                     take_sink=take_sink, admission=admission,
+                                     on_complete=on_complete)
         end
         elapsed_s = (time_ns() - start_ns) / 1.0e9
         if _dispatch_trace_enabled()
@@ -599,24 +603,12 @@ function _run_campaign_with_route_env(f, spec::MonteCarloSpec, plan;
         # sample right away runs the collection first, which is the same work
         # at the start of the round instead of in the middle of it.
         #
-        # Both of these are END-OF-CAMPAIGN hooks, and the R7 guard round is
-        # not the end of a campaign: it is a dispatch with another one already
-        # queued behind it. Firing them there sends all W workers into a full
-        # collection in the instant before they are handed the remainder, and
-        # leaves a debt the remainder's own dispatch then pays on the
-        # coordinator -- both of them mid-campaign, which is exactly what the
-        # comments above say these hooks exist to avoid. `mid_campaign` is set
-        # only by the predictive path's first round; the bandit path never sets
-        # the field and is unaffected.
-        mid_campaign = hasproperty(plan, :mid_campaign) && plan.mid_campaign
-        if !mid_campaign
-            for w in active_workers
-                Distributed.remote_do(GC.gc, w)
-            end
-            # The local slots ran samples on the coordinator's own heap, exactly
-            # as a threaded dispatch does, and leave the same debt behind.
-            local_slots > 0 && (_GC_DEBT[] = true)
+        for w in active_workers
+            Distributed.remote_do(GC.gc, w)
         end
+        # The local slots ran samples on the coordinator's own heap, exactly
+        # as a threaded dispatch does, and leave the same debt behind.
+        local_slots > 0 && (_GC_DEBT[] = true)
         spec.fail_fast && _throw_first_monte_carlo_failure(samples)
         return MonteCarloResult(samples, elapsed_s, length(active_workers) + local_slots;
                                 route=:process, local_slots=local_slots)
@@ -706,13 +698,13 @@ end
 # selection, no split race, no feedback, and neither loading nor saving the
 # persisted route state. See predictive_planner.jl for the model.
 
-# One batch of seeds under one plan.
+# The campaign's one dispatch, under one plan.
 #
-# The width handed to the spec is clamped to the batch, because the guard
-# leaves a remainder that can be smaller than the plan's own width and
-# `run_monte_carlo` validates a thread count against `Threads.nthreads()` --
-# a pool of 32 workers declared on an 8-thread coordinator would throw there
-# rather than simply having nothing for the extra workers to do.
+# The width handed to the spec is clamped to the batch, because a plan's width
+# can exceed the samples there are and `run_monte_carlo` validates a thread
+# count against `Threads.nthreads()` -- a pool of 32 workers declared on an
+# 8-thread coordinator would throw there rather than simply having nothing for
+# the extra workers to do.
 #
 # The inner budget is declared as an environment CEILING around the whole
 # dispatch rather than passed down the plan: `outer_split_env_pairs`, which the
@@ -724,77 +716,100 @@ end
 function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::OuterRouteTuning;
                               fail_fast::Bool, class_sink::Union{Nothing, Vector{Symbol}}=nothing,
                               take_sink::Union{Nothing, Vector{Float64}}=nothing,
-                              mid_campaign::Bool=false)
+                              admission::Union{Nothing, DispatchAdmission}=nothing,
+                              on_complete=nothing)
     width = max(1, min(plan.workers, length(batch)))
     slots = min(plan.local_slots, max(0, length(batch) - width))
     dispatch_plan = (route=plan.route, threads=width,
                      inner_thread_budget=_predictive_declared_budget(plan),
                      record=false, split_race=false, split_candidates=Int[],
                      gc_first=tuning.gc_before_dispatch,
-                     local_slots=slots, local_slots_at=(w -> slots),
-                     mid_campaign=mid_campaign)
+                     local_slots=slots, local_slots_at=(w -> slots))
     spec = MonteCarloSpec(seeds=batch, threads=width, fail_fast=fail_fast)
     plan.consumers <= 1 &&
         return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
-                                            take_sink=take_sink)
+                                            take_sink=take_sink, admission=admission,
+                                            on_complete=on_complete)
     return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "1") do
         _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
-                                     take_sink=take_sink)
+                                     take_sink=take_sink, admission=admission,
+                                     on_complete=on_complete)
     end
 end
 
-# What each consumer class cost over one round, from the class tags the mixed
-# dispatcher wrote. NaN for a class that ran nothing.
+# The guard's running observation of a dispatch it is watching.
 #
-# Two quantities, because the guard asks two questions of them (see
-# `predictive_guard_verdict`):
+# The guard used to get its numbers from a first round dispatched on its own
+# and a barrier after it. It does not any more: `on_complete` hands it every
+# sample as that sample lands, it decides once, and it acts by closing
+# consumers that then drop out at their next take (see `DispatchAdmission`).
+# Nothing is interrupted and no second dispatch is paid for.
 #
-#   mean_s      the mean `elapsed_s`, the work INSIDE the sample, timed where
-#               the sample ran -- on the worker for a worker, here for a local
-#               slot.
-#   occupancy_s the mean wall from that consumer TAKING the job (`take_sink`)
-#               to its result being in hand (`finished_ns`), both stamped on
-#               the coordinator. That brackets one consumer's cost for one
-#               sample: the work plus that sample's own share of the round
-#               trip and serialization.
+# Everything here runs on a consumer's task, on the dispatch's hot path, so the
+# common case after the decision is one relaxed atomic load and no lock.
+mutable struct _PredictiveGuardState
+    const lock::ReentrantLock
+    const decided::Base.Threads.Atomic{Bool}
+    completed::Int
+    failures::Int
+    worker_n::Int
+    worker_work_s::Float64
+    worker_occupancy_s::Float64
+    local_n::Int
+    local_work_s::Float64
+    local_occupancy_s::Float64
+    verdict::Any
+    closed_locals::Int
+    closed_workers::Int
+end
+
+_PredictiveGuardState() = _PredictiveGuardState(
+    ReentrantLock(), Base.Threads.Atomic{Bool}(false), 0, 0,
+    0, 0.0, 0.0, 0, 0.0, 0.0, nothing, 0, 0)
+
+# Mean work and mean occupancy per class, from what has landed so far.
 #
-#               Measured from a single dispatch-wide start instead, the number
-#               carries the pool's shared setup and the queueing of whoever
-#               was served earlier: on an 8-worker round it read 965 ms for a
-#               38 ms sample, and the guard acted on it.
-#
-# The difference between them is everything a worker pays that a local slot
-# does not, and nothing in `elapsed_s` can see it.
-function _predictive_class_means(samples::Vector{MonteCarloSampleResult}, sink::Vector{Symbol},
-                                 taken::Vector{Float64}, started_ns::UInt64)
-    worker_sum = 0.0; worker_n = 0
-    local_sum = 0.0; local_n = 0
-    worker_occ = 0.0; worker_occ_n = 0
-    local_occ = 0.0; local_occ_n = 0
-    start = Float64(started_ns)
-    for s in samples
-        (1 <= s.index <= length(sink)) || continue
-        cls = sink[s.index]
-        took = (1 <= s.index <= length(taken)) && taken[s.index] > 0.0 ?
-            taken[s.index] : start
-        occ = isfinite(s.finished_ns) ? (s.finished_ns - took) / 1.0e9 : NaN
-        if cls === :worker
-            worker_sum += s.elapsed_s; worker_n += 1
-            if isfinite(occ) && occ > 0.0
-                worker_occ += occ; worker_occ_n += 1
-            end
-        elseif cls === :local
-            local_sum += s.elapsed_s; local_n += 1
-            if isfinite(occ) && occ > 0.0
-                local_occ += occ; local_occ_n += 1
-            end
-        end
+#   work       the sample's `elapsed_s`, timed where the sample ran -- on the
+#              worker for a worker, here for a local slot. Its ratio between
+#              the classes tests the contention the plan predicted.
+#   occupancy  from that consumer TAKING the job (`take_sink`) to its result
+#              being in hand (`finished_ns`), both stamped on the coordinator.
+#              That brackets one consumer's cost for one sample: the work plus
+#              that sample's own share of the round trip and serialization.
+#              Measured from a dispatch-wide start instead, it carries the
+#              pool's shared setup and the queueing of whoever was served
+#              earlier -- on an 8-worker round, 965 ms for a 38 ms sample.
+@inline function _predictive_guard_observe!(g::_PredictiveGuardState,
+                                            sample::MonteCarloSampleResult,
+                                            class::Symbol, taken::Vector{Float64})
+    took = (1 <= sample.index <= length(taken)) && taken[sample.index] > 0.0 ?
+        taken[sample.index] : NaN
+    occ = (isfinite(took) && isfinite(sample.finished_ns)) ?
+        (sample.finished_ns - took) / 1.0e9 : NaN
+    g.completed += 1
+    sample.success || (g.failures += 1)
+    if class === :worker
+        g.worker_n += 1
+        g.worker_work_s += sample.elapsed_s
+        isfinite(occ) && occ > 0.0 && (g.worker_occupancy_s += occ)
+    elseif class === :local
+        g.local_n += 1
+        g.local_work_s += sample.elapsed_s
+        isfinite(occ) && occ > 0.0 && (g.local_occupancy_s += occ)
     end
-    return (worker_mean_s = worker_n > 0 ? worker_sum / worker_n : NaN,
-            local_mean_s = local_n > 0 ? local_sum / local_n : NaN,
-            worker_occupancy_s = worker_occ_n > 0 ? worker_occ / worker_occ_n : NaN,
-            local_occupancy_s = local_occ_n > 0 ? local_occ / local_occ_n : NaN,
-            workers = worker_n, locals = local_n)
+    return nothing
+end
+
+@inline _predictive_guard_mean(total::Float64, n::Int)::Float64 = n > 0 ? total / n : NaN
+
+# Has the dispatch shown enough to decide? Both classes must have delivered at
+# least one sample -- a class with nothing measured cannot be compared -- and
+# one round's worth must be done, so the decision rests on every consumer
+# having been seen rather than on whichever few finished first.
+@inline function _predictive_guard_ready(g::_PredictiveGuardState, plan::PredictivePlan)::Bool
+    g.worker_n >= 1 || return false
+    g.local_n >= 1 || return false
+    return g.completed >= plan.consumers
 end
 
 function _run_campaign_predictive(
@@ -839,65 +854,105 @@ function _run_campaign_predictive(
 
     plan = planning.chosen
     # A static-equivalent plan gives the guard nothing to act on: the only
-    # reduction it can make is to the local slots, which are already zero.
-    # Splitting such a campaign into two dispatches would buy no information
-    # and cost a synchronization barrier -- every consumer waiting on the
-    # round's straggler -- so the static plans run in exactly one dispatch,
-    # which is also what makes them comparable with the pinned static routes.
-    if plan.local_slots <= 0 || n <= plan.consumers
+    # thing it can close is a local slot, and there are none. Such a campaign
+    # runs as a plain dispatch, which is also what makes it comparable with the
+    # pinned static route it is equivalent to.
+    if plan.local_slots <= 0
         result = _predictive_dispatch(f, seeds, plan, tuning; fail_fast=fail_fast)
-        trace && println("[predictive] single-round dispatch=$(round(result.elapsed_s; digits=3))s " *
-                         "n=$(length(result.samples)) failures=$(length(result.failed))")
+        trace && println("[predictive] dispatch=$(round(result.elapsed_s; digits=3))s " *
+                         "n=$(length(result.samples)) failures=$(length(result.failed)) unguarded")
         return MonteCarloResult(result.samples, (time_ns() - started) / 1.0e9, plan.consumers;
                                 route=plan.route, local_slots=plan.local_slots)
     end
 
-    head = seeds[1:plan.consumers]
-    sink = fill(:unset, length(head))
-    taken = zeros(Float64, length(head))
-    round_started_ns = time_ns()
-    first_round = _predictive_dispatch(f, head, plan, tuning; fail_fast=fail_fast,
-                                       class_sink=sink, take_sink=taken, mid_campaign=true)
-    samples = collect(first_round.samples)
-    observed = _predictive_class_means(samples, sink, taken, round_started_ns)
-    rest = seeds[(length(head) + 1):n]
-    verdict = predictive_guard_verdict(
-        plan, config;
-        worker_mean_s=observed.worker_mean_s, local_mean_s=observed.local_mean_s,
-        worker_occupancy_s=observed.worker_occupancy_s,
-        local_occupancy_s=observed.local_occupancy_s,
-        remaining=length(rest), threads=threads,
-        threads_candidate=(:threads in candidates) && threads > 1,
-        constants=constants, failures=length(first_round.failed))
-    final_plan = verdict.replan ?
-        predictive_replan(plan, verdict.local_slots, length(rest), constants;
-                          route=verdict.route, workers=verdict.workers) : plan
-    if trace
-        println("[predictive] guard round1=$(round(first_round.elapsed_s; digits=3))s " *
-                "worker_mean=$(round(observed.worker_mean_s * 1e3; digits=2))ms/$(observed.workers) " *
-                "local_mean=$(round(observed.local_mean_s * 1e3; digits=2))ms/$(observed.locals) " *
-                "predicted_ratio=$(round(plan.heap_slowdown / plan.worker_slowdown; digits=3)) " *
-                "observed/predicted=$(round(verdict.ratio; digits=3))")
-        println("[predictive] guard occupancy worker=$(round(observed.worker_occupancy_s * 1e3; digits=2))ms " *
-                "local=$(round(observed.local_occupancy_s * 1e3; digits=2))ms " *
-                "worker/local=$(round(verdict.occupancy_ratio; digits=3)) " *
-                "remainder continue=$(round(verdict.continue_s; digits=3))s " *
-                "threads=$(round(verdict.threads_s; digits=3))s")
-        println("[predictive] guard verdict=$(verdict.reason) replan=$(verdict.replan) " *
-                "plan=$(plan.route)@w$(plan.workers)+l$(plan.local_slots)" *
-                "->$(final_plan.route)@w$(final_plan.workers)+l$(final_plan.local_slots)")
+    # The guarded dispatch. One dispatch, one queue; the guard rides along on
+    # the completion hook and re-plans by closing consumers, which drop out at
+    # their next take. See `_PredictiveGuardState` and `DispatchAdmission`.
+    taken = zeros(Float64, n)
+    guard = _PredictiveGuardState()
+    admission = DispatchAdmission(plan.workers, plan.local_slots)
+    # The only threads plan reachable without a barrier is the one already
+    # running: closing the pool leaves the `L` local slots consuming the queue.
+    # Widening to `min(remaining, T)` would mean starting consumers mid-flight,
+    # which the guard's no-widening invariant forbids and which is the whole
+    # reason the barrier existed. So the switch is priced at the width it can
+    # actually reach.
+    reachable_threads = plan.local_slots
+    threads_reachable = (:threads in candidates) && threads > 1 && reachable_threads >= 1
+
+    on_complete = (sample, class, ordinal) -> begin
+        guard.decided[] && return nothing
+        lock(guard.lock) do
+            guard.decided[] && return nothing
+            _predictive_guard_observe!(guard, sample, class, taken)
+            _predictive_guard_ready(guard, plan) || return nothing
+            Base.Threads.atomic_xchg!(guard.decided, true)
+            verdict = predictive_guard_verdict(
+                plan, config;
+                worker_mean_s=_predictive_guard_mean(guard.worker_work_s, guard.worker_n),
+                local_mean_s=_predictive_guard_mean(guard.local_work_s, guard.local_n),
+                worker_occupancy_s=_predictive_guard_mean(guard.worker_occupancy_s, guard.worker_n),
+                local_occupancy_s=_predictive_guard_mean(guard.local_occupancy_s, guard.local_n),
+                remaining=max(0, n - guard.completed),
+                threads=reachable_threads,
+                threads_candidate=threads_reachable,
+                constants=constants, failures=guard.failures)
+            guard.verdict = verdict
+            if verdict.replan
+                if verdict.route === :threads
+                    guard.closed_workers = close_dispatch_class!(admission, :worker)
+                else
+                    # Close the highest-numbered slots, so which consumers stop
+                    # is deterministic rather than whichever happened to ask.
+                    for ordinal in plan.local_slots:-1:(verdict.local_slots + 1)
+                        close_dispatch_consumer!(admission, :local, ordinal) &&
+                            (guard.closed_locals += 1)
+                    end
+                end
+            end
+            return nothing
+        end
+        return nothing
     end
-    if !isempty(rest)
-        second = _predictive_dispatch(f, rest, final_plan, tuning; fail_fast=fail_fast)
-        offset = length(head)
-        append!(samples, (_reindexed_sample(s, offset + s.index) for s in second.samples))
-    end
+
+    result = _predictive_dispatch(f, seeds, plan, tuning; fail_fast=fail_fast,
+                                  take_sink=taken, admission=admission,
+                                  on_complete=on_complete)
+    samples = collect(result.samples)
     sort!(samples; by=s -> s.index)
-    # The plan reported is the one the remainder ran under, which is the plan
-    # that produced most of the campaign and the one a reader of the row should
-    # see; the trace above carries the first round's plan and the change.
-    return MonteCarloResult(samples, (time_ns() - started) / 1.0e9, final_plan.consumers;
-                            route=final_plan.route, local_slots=final_plan.local_slots)
+
+    # What the campaign ended up running: the consumers still admitted when the
+    # queue drained. A guard that never fired leaves the chosen plan.
+    open_workers = dispatch_open_count(admission, :worker)
+    open_locals = dispatch_open_count(admission, :local)
+    final_route = open_workers > 0 ? plan.route : :threads
+    final_consumers = max(1, open_workers + open_locals)
+    final_slots = open_workers > 0 ? open_locals : 0
+    if trace
+        verdict = guard.verdict
+        worker_mean = _predictive_guard_mean(guard.worker_work_s, guard.worker_n)
+        local_mean = _predictive_guard_mean(guard.local_work_s, guard.local_n)
+        worker_occ = _predictive_guard_mean(guard.worker_occupancy_s, guard.worker_n)
+        local_occ = _predictive_guard_mean(guard.local_occupancy_s, guard.local_n)
+        println("[predictive] dispatch=$(round(result.elapsed_s; digits=3))s " *
+                "n=$(length(samples)) failures=$(count(s -> !s.success, samples)) " *
+                "decided_after=$(guard.completed)/$(n) samples")
+        println("[predictive] guard worker_mean=$(round(worker_mean * 1e3; digits=2))ms/$(guard.worker_n) " *
+                "local_mean=$(round(local_mean * 1e3; digits=2))ms/$(guard.local_n) " *
+                "predicted_ratio=$(round(plan.heap_slowdown / plan.worker_slowdown; digits=3)) " *
+                "observed/predicted=$(round(verdict === nothing ? NaN : verdict.ratio; digits=3))")
+        println("[predictive] guard occupancy worker=$(round(worker_occ * 1e3; digits=2))ms " *
+                "local=$(round(local_occ * 1e3; digits=2))ms " *
+                "worker/local=$(round(verdict === nothing ? NaN : verdict.occupancy_ratio; digits=3)) " *
+                "rest continue=$(round(verdict === nothing ? NaN : verdict.continue_s; digits=3))s " *
+                "threads=$(round(verdict === nothing ? NaN : verdict.threads_s; digits=3))s")
+        println("[predictive] guard verdict=$(verdict === nothing ? :never_decided : verdict.reason) " *
+                "closed=$(guard.closed_workers)w/$(guard.closed_locals)l " *
+                "plan=$(plan.route)@w$(plan.workers)+l$(plan.local_slots)" *
+                "->$(final_route)@w$(open_workers)+l$(final_slots)")
+    end
+    return MonteCarloResult(samples, (time_ns() - started) / 1.0e9, final_consumers;
+                            route=final_route, local_slots=final_slots)
 end
 
 function _run_campaign_adaptive(

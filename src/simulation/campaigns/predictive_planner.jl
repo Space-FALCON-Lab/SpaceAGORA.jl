@@ -569,10 +569,17 @@ that are left so its makespan and the guard's record describe what is about to
 run.
 
 Two shapes only, and the function refuses anything else: the same route and
-pool with fewer local slots, or the pinned threads plan the guard's second
-direction moves to. Both are moves toward a static-equivalent plan, which is
-the guard's invariant; enforcing it here rather than at the call site means a
-future caller cannot quietly widen through this door.
+pool with fewer local slots, or the threads plan the guard's second direction
+moves to. Both are moves toward a static-equivalent plan, which is the guard's
+invariant; enforcing it here rather than at the call site means a future caller
+cannot quietly widen through this door.
+
+Since the guard became barrier-free the runtime no longer builds a plan for a
+remainder -- it closes consumers inside the one dispatch instead (see
+`DispatchAdmission`) -- so nothing in `src/` calls this. It is kept as the
+executable statement of what the two legal moves are, and as the constructor
+for a post-guard plan that anything reasoning about one should use rather than
+assembling a `PredictivePlan` by hand.
 """
 function predictive_replan(plan::PredictivePlan, local_slots::Integer, n_samples::Integer,
                            constants::Union{Nothing, ParallelCost.MachineConstants};

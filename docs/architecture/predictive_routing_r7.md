@@ -158,10 +158,16 @@ pool class leaves the local slots to finish the campaign. Flags can only be
 closed, never reopened, which is what keeps the guard from becoming an
 optimizer that widens a running campaign.
 
-**When it decides.** On the first completion at which both classes have
-delivered at least one sample AND one round's worth (`consumers` samples) is
-done -- so the decision rests on every consumer having been seen, not on
-whichever few finished first. If the campaign drains before that, the verdict
+**When it decides.** On the first completion at which EVERY consumer has
+reported at least one sample, and at least `consumers` samples are done. Per
+consumer, not per class and not a count of completions: the local slots run in
+this process and return far sooner than a pool worker, and on the workstation's
+P3 shape twenty-four local samples landed before the first worker sample did.
+A rule counting completions decided there, comparing a twenty-four-sample mean
+against a one-sample mean and calling it a round. The price of the stricter
+rule is that the decision lands later, and on a short campaign may not land at
+all; that is the honest answer, since a guard with no fair observation of a
+class has nothing to say about it. If the campaign drains before that, the verdict
 is computed anyway and traced as `never_decided`; there is nothing left to act
 on. The observation runs under a lock on the completing consumer's task, and
 after the decision every later completion early-outs on one atomic load.
@@ -358,10 +364,32 @@ The shipped default is stable across repeats (0.631-0.741 after the cold one)
 and lands on the pinned pool's 0.722. P5 is unchanged, as it must be: no pool
 is affordable there, so the plan is static and the guard never arms.
 
-Both tables above were measured with the two-round guard. The guard is now
-barrier-free (see The guard), which removes the 0.24-0.36 s second dispatch
-those numbers include; the rows are kept because they are what the barrier
-cost, and they are superseded by the single-dispatch measurements below.
+Both tables above were measured with the two-round guard, and are superseded by
+the single-dispatch numbers below; they are kept because they are what the
+barrier cost.
+
+With the barrier-free guard (5 repeats on `independent_1sat_1hr`, 3 on
+`mcgrid_8sat_16mc`; repeat 1 is cold in every row):
+
+| Case | Mode | Repeats | Median |
+|---|---|---|---|
+| `independent_1sat_1hr`, n=64, 8 workers | `predictive`, defaults | 3.293, 0.589, 0.642, 0.663, 0.644 | **0.644** |
+| `independent_1sat_1hr`, n=64, 8 workers | `predictive`, route switch ON | 3.629, 0.538, 0.649, 0.675, 0.890 | 0.675 |
+| `mcgrid_8sat_16mc`, n=16, 1 worker | `predictive` | 3.870, 1.407, 1.380 | 1.407 |
+
+Removing the barrier took the P3 point from 0.767 (two rounds, WS7a-1) through
+0.715 (two rounds without the mid-campaign GC hooks) to 0.644, which is where
+R6's bandit sits (0.647) and inside the spread of the pinned pool (0.722). The
+whole campaign is now one dispatch of 0.46-0.55 s after the cold repeat.
+
+The route switch, on, fired once in five repeats, and that repeat was the
+slowest of them (0.890 against 0.538-0.675). It remains off.
+
+**A caveat that matters more than the ordering.** Repeat-to-repeat spread on
+this case is 0.398-0.756 for identical plans and identical code -- far wider
+than the ~2% median / ~6% p90 identical-code noise quoted for this harness
+elsewhere. Nothing here separates 0.644 from 0.647 or from 0.675, and no
+single-repeat comparison on this case means anything.
 
 Three things to read off it.
 
@@ -396,7 +424,7 @@ That is a v2 item, not a v1 tuning knob.
 [predictive] shape n=... threads=... pool=... local_cap=... candidates=[...] constants=loaded|absent margin=... guard_factor=... local_slots_max=...
 [predictive]   candidate <route>@w<W>+l<L> makespan=... consumers=... s_worker=... s_heap=... [static]
 [predictive] chosen <plan> reason=... gain=...
-[predictive] dispatch=...s n=... failures=... decided_after=<k>/<n> samples
+[predictive] dispatch=...s n=... failures=... decided_after=<k>/<n> samples seen=<a>/<W>w,<b>/<L>l
 [predictive] guard worker_mean=...ms/<n> local_mean=...ms/<n> predicted_ratio=... observed/predicted=...
 [predictive] guard occupancy worker=...ms local=...ms worker/local=... rest continue=...s threads=...s
 [predictive] guard verdict=... closed=<w>w/<l>l plan=<route>@w<W>+l<L>-><route>@w<W>+l<L>

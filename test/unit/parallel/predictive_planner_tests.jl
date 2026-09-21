@@ -570,15 +570,23 @@ end
            worker_occupancy_s = 0.333, local_occupancy_s = 0.050,
            remaining = 53, threads_candidate = true, constants = nothing)
     reachable = SCamp.predictive_guard_verdict(plan, cfg; obs..., threads = plan.local_slots)
-    @test reachable.workers == 3
+    wide = SCamp.predictive_guard_verdict(plan, cfg; obs..., threads = 8)
     # Three slots at 50 ms cannot beat eight workers at 333 ms plus those same
     # three slots, so at the reachable width this verdict does not fire --
     # which is the honest answer, and the optimistic one would not have been.
     @test !reachable.replan
     @test reachable.reason === :threads_no_better
-    # The same observation at a width the caller cannot reach would have.
-    @test SCamp.predictive_guard_verdict(plan, cfg; obs..., threads = 8).reason ===
-        :workers_occupying_more_than_threads
+    @test reachable.threads_s > reachable.continue_s
+    # A verdict that does not move reports the plan it is leaving alone, not a
+    # width it declined to use.
+    @test reachable.workers == plan.workers
+    @test reachable.route === plan.route
+    # The same observation at a width the caller cannot reach would have fired,
+    # and the difference is entirely the pricing: eight consumers against three.
+    @test wide.reason === :workers_occupying_more_than_threads
+    @test wide.workers == 8
+    @test reachable.threads_s > wide.threads_s
+    @test reachable.continue_s == wide.continue_s
 end
 
 @testset "the route switch is off by default, and the evidence is still reported" begin

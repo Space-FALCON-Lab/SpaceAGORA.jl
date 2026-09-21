@@ -750,6 +750,14 @@ end
 mutable struct _PredictiveGuardState
     const lock::ReentrantLock
     const decided::Base.Threads.Atomic{Bool}
+    # Which individual consumers have reported at least one sample. A count of
+    # completions is not the same thing: the local slots run in this process
+    # and return far sooner than a pool worker, so on the workstation's P3
+    # shape twenty-four local samples had landed before the FIRST worker
+    # sample did. Deciding there would have compared a class averaged over
+    # twenty-four samples against a class averaged over one.
+    const worker_seen::Vector{Bool}
+    const local_seen::Vector{Bool}
     completed::Int
     failures::Int
     worker_n::Int
@@ -763,8 +771,9 @@ mutable struct _PredictiveGuardState
     closed_workers::Int
 end
 
-_PredictiveGuardState() = _PredictiveGuardState(
-    ReentrantLock(), Base.Threads.Atomic{Bool}(false), 0, 0,
+_PredictiveGuardState(workers::Integer, locals::Integer) = _PredictiveGuardState(
+    ReentrantLock(), Base.Threads.Atomic{Bool}(false),
+    fill(false, max(0, Int(workers))), fill(false, max(0, Int(locals))), 0, 0,
     0, 0.0, 0.0, 0, 0.0, 0.0, nothing, 0, 0)
 
 # Mean work and mean occupancy per class, from what has landed so far.
@@ -781,7 +790,8 @@ _PredictiveGuardState() = _PredictiveGuardState(
 #              earlier -- on an 8-worker round, 965 ms for a 38 ms sample.
 @inline function _predictive_guard_observe!(g::_PredictiveGuardState,
                                             sample::MonteCarloSampleResult,
-                                            class::Symbol, taken::Vector{Float64})
+                                            class::Symbol, ordinal::Int,
+                                            taken::Vector{Float64})
     took = (1 <= sample.index <= length(taken)) && taken[sample.index] > 0.0 ?
         taken[sample.index] : NaN
     occ = (isfinite(took) && isfinite(sample.finished_ns)) ?
@@ -792,23 +802,33 @@ _PredictiveGuardState() = _PredictiveGuardState(
         g.worker_n += 1
         g.worker_work_s += sample.elapsed_s
         isfinite(occ) && occ > 0.0 && (g.worker_occupancy_s += occ)
+        (1 <= ordinal <= length(g.worker_seen)) && (g.worker_seen[ordinal] = true)
     elseif class === :local
         g.local_n += 1
         g.local_work_s += sample.elapsed_s
         isfinite(occ) && occ > 0.0 && (g.local_occupancy_s += occ)
+        (1 <= ordinal <= length(g.local_seen)) && (g.local_seen[ordinal] = true)
     end
     return nothing
 end
 
 @inline _predictive_guard_mean(total::Float64, n::Int)::Float64 = n > 0 ? total / n : NaN
 
-# Has the dispatch shown enough to decide? Both classes must have delivered at
-# least one sample -- a class with nothing measured cannot be compared -- and
-# one round's worth must be done, so the decision rests on every consumer
-# having been seen rather than on whichever few finished first.
+# Has the dispatch shown enough to decide? EVERY consumer must have reported at
+# least one sample -- that is what "one round's worth" has to mean here, and it
+# is not the same as one round's worth of completions. The local slots run in
+# this process and return far sooner than a pool worker: measured on the
+# workstation's P3 shape, twenty-four local samples landed before the first
+# worker sample did, and a rule counting completions would have compared a
+# twenty-four-sample mean against a one-sample mean and called it a round.
+#
+# The price is that the decision lands later on a shape whose pool workers are
+# slow to first-return, and on a short campaign it may not land at all. That is
+# the honest answer: a guard with no fair observation of a class has nothing to
+# say about it, and the trace reports `never_decided`.
 @inline function _predictive_guard_ready(g::_PredictiveGuardState, plan::PredictivePlan)::Bool
-    g.worker_n >= 1 || return false
-    g.local_n >= 1 || return false
+    all(g.worker_seen) || return false
+    all(g.local_seen) || return false
     return g.completed >= plan.consumers
 end
 
@@ -869,7 +889,7 @@ function _run_campaign_predictive(
     # the completion hook and re-plans by closing consumers, which drop out at
     # their next take. See `_PredictiveGuardState` and `DispatchAdmission`.
     taken = zeros(Float64, n)
-    guard = _PredictiveGuardState()
+    guard = _PredictiveGuardState(plan.workers, plan.local_slots)
     admission = DispatchAdmission(plan.workers, plan.local_slots)
     # The only threads plan reachable without a barrier is the one already
     # running: closing the pool leaves the `L` local slots consuming the queue.
@@ -884,7 +904,7 @@ function _run_campaign_predictive(
         guard.decided[] && return nothing
         lock(guard.lock) do
             guard.decided[] && return nothing
-            _predictive_guard_observe!(guard, sample, class, taken)
+            _predictive_guard_observe!(guard, sample, class, ordinal, taken)
             _predictive_guard_ready(guard, plan) || return nothing
             Base.Threads.atomic_xchg!(guard.decided, true)
             verdict = predictive_guard_verdict(
@@ -936,7 +956,9 @@ function _run_campaign_predictive(
         local_occ = _predictive_guard_mean(guard.local_occupancy_s, guard.local_n)
         println("[predictive] dispatch=$(round(result.elapsed_s; digits=3))s " *
                 "n=$(length(samples)) failures=$(count(s -> !s.success, samples)) " *
-                "decided_after=$(guard.completed)/$(n) samples")
+                "decided_after=$(guard.completed)/$(n) samples " *
+                "seen=$(count(guard.worker_seen))/$(length(guard.worker_seen))w," *
+                "$(count(guard.local_seen))/$(length(guard.local_seen))l")
         println("[predictive] guard worker_mean=$(round(worker_mean * 1e3; digits=2))ms/$(guard.worker_n) " *
                 "local_mean=$(round(local_mean * 1e3; digits=2))ms/$(guard.local_n) " *
                 "predicted_ratio=$(round(plan.heap_slowdown / plan.worker_slowdown; digits=3)) " *
@@ -949,7 +971,8 @@ function _run_campaign_predictive(
         println("[predictive] guard verdict=$(verdict === nothing ? :never_decided : verdict.reason) " *
                 "closed=$(guard.closed_workers)w/$(guard.closed_locals)l " *
                 "plan=$(plan.route)@w$(plan.workers)+l$(plan.local_slots)" *
-                "->$(final_route)@w$(open_workers)+l$(final_slots)")
+                "->$(final_route)@w$(final_route === :threads ? final_consumers : open_workers)" *
+                "+l$(final_slots)")
     end
     return MonteCarloResult(samples, (time_ns() - started) / 1.0e9, final_consumers;
                             route=final_route, local_slots=final_slots)

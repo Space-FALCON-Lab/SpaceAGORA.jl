@@ -187,6 +187,29 @@ function ppc_mode_specs()::Dict{String, PPCModeSpec}
             persistent=true,
             allow_inner_with_outer=true
         ),
+
+        # R7: policy_v2 with SPACEAGORA_CAMPAIGN_PLANNER=predictive. Same
+        # construction as policy_v2 above -- profile_config derives R7 from R6's
+        # settings, so every knob in this block is identical by construction and
+        # the planner switch arrives through ppc_mode_env_pairs' call to
+        # profile_env_pairs(mode.profile). The parity gate checks this block
+        # against R7.
+        "predictive" => PPCModeSpec(
+            name="predictive",
+            profile="R7",
+            backend="auto",
+            outer_active=true,
+            policy_adaptive=true,
+            rhs_batch="auto",
+            density="auto",
+            control="auto",
+            thermal="auto",
+            multibody="auto",
+            effector="auto",
+            scheduler="static",
+            persistent=true,
+            allow_inner_with_outer=true
+        ),
         # Attribution variants of policy_v2, mirroring the full_smart_* set:
         "policy_v2_nocalib" => PPCModeSpec(
             name="policy_v2_nocalib",

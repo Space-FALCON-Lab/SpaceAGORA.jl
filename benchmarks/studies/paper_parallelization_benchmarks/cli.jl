@@ -69,7 +69,8 @@ end
 
 # Which static routes have actually won a launch point in this phase, measured.
 #
-# --lean-modes trims each phase's ladder to serial + these + policy_v2, on the
+# --lean-modes trims each phase's ladder to serial + these + the adaptive arms
+# (policy_v2 and predictive), on the
 # reasoning that the shipped profiles are not what is under test any more. Both
 # laptop routing fixes (254957e7 machine-class gate, 0b333ad0 memory-aware
 # process sizing) are gated behind OuterRouteTuning fields that only R6 sets,
@@ -120,7 +121,8 @@ const PPB_BEST_STATIC_WINNERS = Dict{String, Vector{String}}(
 """
     _ppb_lean_phase(phase) -> PPBPhase
 
-Trim `phase.modes` to serial + its measured best-static winners + policy_v2,
+Trim `phase.modes` to serial + its measured best-static winners + the adaptive
+arms (policy_v2 and predictive),
 preserving the phase's own ordering. serial is kept wherever the phase already
 had it: the harness derives speedup, thread/process efficiency and the
 below-noise-floor flag from the serial median, and a phase that drops it loses
@@ -134,6 +136,9 @@ function _ppb_lean_phase(phase::PPBPhase)::PPBPhase
     keep = Set{String}(winners)
     push!(keep, "serial")
     push!(keep, "policy_v2")
+    # R7 is the arm R6 is being compared against, so a lean ladder that kept
+    # policy_v2 and dropped predictive would drop the comparison itself.
+    push!(keep, "predictive")
     modes = [m for m in phase.modes if m in keep]
     isempty(modes) && return phase
     modes == phase.modes && return phase
@@ -1070,7 +1075,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # same trajectory for a timing comparison between them to mean anything,
         # and 256 spacecraft is the largest rung where checking that is cheap.
         parity_cases = [_ppb_paper_size_case(256)],
-        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
         mc_samples   = [1],
         repeats      = 3,
         warmup       = 1,
@@ -1084,7 +1089,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # baseline is the same number in both tables.
         cases        = [_ppb_paper_size_case(4096)],
         parity_cases = String[],
-        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2"],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
         mc_samples   = [1],
         repeats      = 3,
         warmup       = 1,
@@ -1095,7 +1100,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         label = "Paper — Monte Carlo Resource Ladder, One Spacecraft per Sample",
         cases        = ["independent_1sat_1hr"],
         parity_cases = String[],
-        modes        = ["serial", "outer_threads", "outer_process", "policy_v2"],
+        modes        = ["serial", "outer_threads", "outer_process", "policy_v2", "predictive"],
         # 256 samples, matching B12's campaign size: at 64 the serial baseline is
         # ~2.4 s, under the 3 s measurability floor, so the point would be
         # reported as unmeasurable routing rather than as a scaling result. The
@@ -1118,7 +1123,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # every rung without paying 64 aerobraking arcs per repeat.
         cases        = ["montecarlo_heavy_aerobraking"],
         parity_cases = String[],
-        modes        = ["serial", "outer_threads", "outer_process", "policy_v2"],
+        modes        = ["serial", "outer_threads", "outer_process", "policy_v2", "predictive"],
         mc_samples   = [32],
         repeats      = 5,
         warmup       = 1,
@@ -1133,7 +1138,7 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # many samples of narrow ones.
         cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc"],
         parity_cases = String[],
-        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "policy_v2"],
+        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "policy_v2", "predictive"],
         mc_samples   = [1],
         repeats      = 5,
         warmup       = 1,

@@ -267,12 +267,16 @@ end
     _pool_dispatch_cache_enabled() -> Bool
 
 Whether a process dispatch may reuse the pool's cached closure across
-campaigns. `SPACEAGORA_POOL_DISPATCH_CACHE=0` restores the per-dispatch
-`CachingPool` plus `clear!`, so the two can be measured against each other in
-one build.
+campaigns. Off by default: measured at the P3 point it saves 0.3-0.6 ms per
+worker per dispatch, and it extends the assumption that a campaign function's
+captured state is not mutated -- from within one campaign to across every
+campaign that dispatches it -- which a caller cannot be expected to know.
+`SPACEAGORA_POOL_DISPATCH_CACHE=1` enables it for campaigns whose closure is
+large and immutable between dispatches; `0` (the default) keeps the
+per-dispatch `CachingPool` plus `clear!`.
 """
 @inline function _pool_dispatch_cache_enabled()::Bool
-    return lowercase(strip(get(ENV, "SPACEAGORA_POOL_DISPATCH_CACHE", "1"))) in ("1", "true", "yes", "on")
+    return lowercase(strip(get(ENV, "SPACEAGORA_POOL_DISPATCH_CACHE", "0"))) in ("1", "true", "yes", "on")
 end
 
 """

@@ -1,6 +1,11 @@
 using Test
 using SpaceAGORA
 
+# The cross-campaign closure cache ships OFF (see `_pool_dispatch_cache_enabled`);
+# these tests exercise it ON, and restore the caller's setting afterwards.
+const _PPDC_CACHE_ENV_BEFORE = get(ENV, "SPACEAGORA_POOL_DISPATCH_CACHE", nothing)
+ENV["SPACEAGORA_POOL_DISPATCH_CACHE"] = "1"
+
 # The process dispatch's fixed cost.
 #
 # `CachingPool` keys its worker-side cache on the IDENTITY of the function it
@@ -182,4 +187,10 @@ end
     @test_throws ArgumentError SCamp._run_monte_carlo_mixed(
         x -> x, seeds, spec, [2], 1; ordinal_sink = zeros(Int, 3),
         worker_runner = _in_process_worker)
+end
+
+if _PPDC_CACHE_ENV_BEFORE === nothing
+    delete!(ENV, "SPACEAGORA_POOL_DISPATCH_CACHE")
+else
+    ENV["SPACEAGORA_POOL_DISPATCH_CACHE"] = _PPDC_CACHE_ENV_BEFORE
 end

@@ -530,13 +530,14 @@ worker-side cache on the identity of the function it is handed, so a dispatch
 that built a fresh pool and a fresh wrapper closure missed on every worker; the
 pool now holds both between campaigns, keyed on the campaign function and the
 worker set, and drops them when either changes or when the pool is shut down.
-On this shape it is worth the 0.3-0.6 ms per worker above and nothing more, and
-it is kept because what it removes scales with the size of the closure a
-campaign captures, which 2357 bytes is the small end of. It costs one
-assumption: that a campaign function's captured state is not mutated between
-campaigns that dispatch it, where before the assumption only had to hold within
-one campaign. `SPACEAGORA_POOL_DISPATCH_CACHE=0` restores the per-dispatch
-pool.
+On this shape it is worth the 0.3-0.6 ms per worker above and nothing more.
+What it removes scales with the size of the closure a campaign captures, which
+2357 bytes is the small end of, but it costs one assumption: that a campaign
+function's captured state is not mutated between campaigns that dispatch it,
+where before the assumption only had to hold within one campaign. A caller
+cannot be expected to know that, so the cache ships off:
+`SPACEAGORA_POOL_DISPATCH_CACHE=1` enables it, and the default keeps the
+per-dispatch pool.
 
 ## Tracing
 

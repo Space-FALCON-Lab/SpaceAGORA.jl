@@ -225,11 +225,18 @@ on the median and 6% at p90, so differences below those are not differences.
 | `independent_1sat_1hr`, n=64, 8 workers | `predictive` | 3.454, 0.628, 0.767 | 0.767 | `process@w8+l3` |
 | `independent_1sat_1hr`, n=64, 8 workers | `outer_process` | 1.876, 0.626, 0.722 | 0.722 | pinned pool |
 | `independent_1sat_1hr`, n=64, 8 workers | `outer_threads` | 0.559, 0.427, 0.407 | 0.427 | pinned threads |
+| `independent_1sat_1hr`, n=64, 8 workers | `policy_v2` (R6 bandit) | 3.206, 0.395, 0.647 | 0.647 | `process` + 4 local slots, one dispatch |
+| `independent_1sat_1hr`, n=64, 8 workers | `predictive`, `local_slots_max=0` | 3.715, 0.518, 0.717 | 0.717 | `process@w8+l0`, one dispatch |
 | `independent_1sat_1hr`, n=64, 8 workers | `predictive`, `o_r=0.6` | 2.864, 0.409, 0.404 | 0.409 | `threads@w8` |
 | `mcgrid_8sat_16mc`, n=16, 1 worker | `predictive` | 3.734, 1.323, 1.341 | 1.341 | `threads@w8` |
 | `mcgrid_8sat_16mc`, n=16, 1 worker | `outer_threads` | 1.590, 1.427, 1.427 | 1.427 | pinned threads |
 
-Two things to read off it. On the P5 shape, where no pool is affordable, the
+Three things to read off it.
+
+The static-equivalent plan really is the pinned static route: forced to it
+(`local_slots_max=0`) the planner runs 0.717 against the pinned pool's 0.722,
+which is parity to within the median noise. That is the property the margin
+rule exists to protect, and it holds. On the P5 shape, where no pool is affordable, the
 planner returns the static plan and runs at parity with it (1.341 against
 1.427, inside the noise floor). On the P3 shape it matches the pinned pool
 (0.767 against 0.722, at the edge of the noise floor) but both are behind the
@@ -237,6 +244,17 @@ pinned threads route, because with `o_r = 0` the model cannot see that a pool
 worker costs more than a thread on a 38 ms sample. That is a failure of ONE
 ASSUMED CONSTANT, not of the model: declared at the measured value the same
 planner picks the threads route and reaches 0.409.
+
+Third, the guard round is not free. R6's bandit picks the same route with four
+local slots and dispatches it once (0.647); the planner picks three local slots
+and dispatches twice (0.767). The gap is partly the slot count and partly the
+barrier -- every consumer waits on the round's straggler before the remainder
+goes out -- and on a campaign whose whole wall is under a second the barrier is
+a visible fraction of it. The clean fix is not to split at all: the class means
+the guard needs are available from the `finished_ns` stamps and the class tags
+of the first completions of a SINGLE dispatch, and a re-plan could then change
+what the still-idle consumers do rather than requiring a synchronization point.
+That is a v2 item, not a v1 tuning knob.
 
 ## Tracing
 

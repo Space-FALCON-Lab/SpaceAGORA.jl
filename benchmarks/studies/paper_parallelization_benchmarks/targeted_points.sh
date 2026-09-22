@@ -78,6 +78,16 @@ case "${POINT:?set POINT}" in
     WARMUP=3 run mcgrid_8sat_16mc predictive    4  8 16 p5_8_4x8
     WARMUP=3 run mcgrid_8sat_16mc outer_threads 4  8 16 p5_8_4x8
     WARMUP=3 run mcgrid_8sat_16mc policy_v2     4  8 16 p5_8_4x8 ;;
+  p34_locals) # cold store: the P3/P4 points that decide the locals-only contention term
+    WARMUP=3 run independent_1sat_1hr predictive    32 32 256 p3_32
+    WARMUP=3 run independent_1sat_1hr outer_process 32 32 256 p3_32
+    WARMUP=3 run independent_1sat_1hr policy_v2     32 32 256 p3_32
+    WARMUP=3 run montecarlo_heavy_aerobraking predictive    8  8 32 p4_8
+    WARMUP=3 run montecarlo_heavy_aerobraking outer_process 8  8 32 p4_8
+    WARMUP=3 run montecarlo_heavy_aerobraking policy_v2     8  8 32 p4_8
+    WARMUP=3 run montecarlo_heavy_aerobraking predictive    16 16 32 p4_16
+    WARMUP=3 run montecarlo_heavy_aerobraking outer_process 16 16 32 p4_16
+    WARMUP=3 run montecarlo_heavy_aerobraking policy_v2     16 16 32 p4_16 ;;
   *) echo "unknown POINT=$POINT"; exit 2 ;;
 esac
 echo "[targeted] done -> $OUT"; ls "$OUT"

@@ -1,0 +1,29 @@
+ERROR: LoadError: ArgumentError: Cannot change the epoch of a fixed GRAMAtmosphereModelSurrogate table. Construct and validate a matching surrogate table/model for the requested epoch explicitly; rebuilding the native fallback does not re-epoch the table.
+Stacktrace:
+  [1] with_density_model_epoch(model::GRAMAtmosphereModelSurrogate{GRAMAtmosphereModel}, initial_time::InitialTime)
+    @ SpaceAGORA.SimulationModel.EnvironmentModels ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/src/environment/atmosphere/density_epoch.jl:63
+  [2] _with_density_model_epoch(args::SimulationConfiguration{Earth, GRAMAtmosphereModelSurrogate{GRAMAtmosphereModel}, SpiceEphemeridesModel, MaxwellianHeat{Earth}, Tuple{GravitationalHarmonicsModel{Earth}, AerodynamicCoefficientfM}})
+    @ SpaceAGORA.SimulationEngine ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/src/simulation/engine/execution.jl:300
+  [3] (::SpaceAGORA.SimulationEngine.var"#165#166"{Bool, Bool, Bool, Nothing, Tuple{}, Nothing, Bool})()
+    @ SpaceAGORA.SimulationEngine ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/src/simulation/engine/execution.jl:354
+  [4] (::SpaceAGORA.SimulationModel.ParallelPolicy.var"#with_policy_context##0#with_policy_context##1"{SpaceAGORA.SimulationEngine.var"#165#166"{Bool, Bool, Bool, Nothing, Tuple{}, Nothing, Bool}, UInt64})()
+    @ SpaceAGORA.SimulationModel.ParallelPolicy ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/src/parallel/policy/context.jl:369
+  [5] task_local_storage(body::SpaceAGORA.SimulationModel.ParallelPolicy.var"#with_policy_context##0#with_policy_context##1"{SpaceAGORA.SimulationEngine.var"#165#166"{Bool, Bool, Bool, Nothing, Tuple{}, Nothing, Bool}, UInt64}, key::Symbol, val::SpaceAGORA.SimulationModel.ParallelPolicy.PolicyContext)
+    @ Base ./task.jl:298
+  [6] with_policy_context
+    @ ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/src/parallel/policy/context.jl:367 [inlined]
+  [7] #run_simulation#162
+    @ ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/src/simulation/engine/execution.jl:349 [inlined]
+  [8] run_simulation
+    @ ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/src/SpaceAGORA.jl:34 [inlined]
+  [9] main()
+    @ Main ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/benchmarks/studies/gram_memory_footprint/footprint_worker.jl:162
+ [10] top-level scope
+    @ ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/benchmarks/studies/gram_memory_footprint/footprint_worker.jl:205
+ [11] include(mod::Module, _path::String)
+    @ Base ./Base.jl:306
+ [12] exec_options(opts::Base.JLOptions)
+    @ Base ./client.jl:317
+ [13] _start()
+    @ Base ./client.jl:550
+in expression starting at /home/space-falcon-1/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/benchmarks/studies/gram_memory_footprint/footprint_worker.jl:204

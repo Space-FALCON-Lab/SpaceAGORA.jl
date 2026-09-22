@@ -1,0 +1,6 @@
+Reading MERRA2 data from /home/space-falcon-1/Documents/SpaceAGORA.jl/data/GRAMSuite.jl/GRAM Suite 2.0/Earth/data/MERRA2data//All Mean/MERRA2All_01.bin
+Reading MERRA2 data from /home/space-falcon-1/Documents/SpaceAGORA.jl/data/GRAMSuite.jl/GRAM Suite 2.0/Earth/data/MERRA2data//All Mean/MERRA2All_01.bin
+GMF_RESULT ok=true rss_base_mb=1673.2 rss_built_mb=1673.3 rss_solved_mb=1905.2 rss_retained_mb=1555.6 maxrss_mb=1903.8 vmrss_base_mb=1673.2 vmrss_retained_mb=1555.6 solve_s=33.491 isolate=1 retcode=Success
+Precompiling packages...
+   5744.8 ms  ✓ SpaceAGORAGRAMSuiteExt (serial)
+  1 dependency successfully precompiled in 6 seconds

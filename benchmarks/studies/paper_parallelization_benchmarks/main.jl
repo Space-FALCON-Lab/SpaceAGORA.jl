@@ -23,6 +23,7 @@ function _ppb_active_phases(ppb::PPBConfig)::Vector{PPBPhase}
     ppb.lean_modes && (phases = _ppb_lean_phase.(phases))
     phases = _ppb_cap_worker_counts.(phases, ppb.process_workers)
     phases = _ppb_apply_repeats_floor.(phases, _ppb_min_repeats())
+    phases = _ppb_apply_warmup_floor.(phases, _ppb_min_warmup())
     return phases
 end
 
@@ -59,6 +60,45 @@ function _ppb_apply_repeats_floor(phase::PPBPhase, floor_repeats::Int)::PPBPhase
         mc_samples    = phase.mc_samples,
         repeats       = floor_repeats,
         warmup        = phase.warmup,
+        thread_mode   = phase.thread_mode,
+        worker_ladder = phase.worker_ladder,
+        budget_grid   = phase.budget_grid,
+        budget_grid_fixed = phase.budget_grid_fixed,
+    )
+end
+
+# Raise every phase to at least this many warm-up campaigns (SPACEAGORA_PPB_MIN_WARMUP).
+#
+# Warm-up campaigns run before the clock starts and are excluded from every
+# timed row, so the floor changes what steady state a repeat measures, not what
+# is compared. It exists because one warm-up is not enough for the workers'
+# heaps to reach steady state on allocation-heavy samples: at P4's top budget
+# (32 x 364 MB samples), measured on TRX50 over 33 back-to-back repeats, the
+# first 14 repeats carried a mid-campaign worker collection 9 times for the
+# adaptive route and 5 times for the pinned pool, and the remaining 19 repeats
+# once and once. An 11-repeat median taken inside that burn-in window read
+# 1.33 s against 1.03 s; over 33 repeats the same pair read 1.04 s against
+# 1.01 s.
+function _ppb_min_warmup()::Int
+    raw = strip(get(ENV, "SPACEAGORA_PPB_MIN_WARMUP", ""))
+    isempty(raw) && return 0
+    n = tryparse(Int, raw)
+    (n === nothing || n < 1) && return 0
+    return n
+end
+
+function _ppb_apply_warmup_floor(phase::PPBPhase, floor_warmup::Int)::PPBPhase
+    (floor_warmup <= phase.warmup) && return phase
+    println("[paper-benchmarks] phase $(phase.id): warmup $(phase.warmup) -> $(floor_warmup)")
+    return PPBPhase(
+        id            = phase.id,
+        label         = phase.label,
+        cases         = phase.cases,
+        parity_cases  = phase.parity_cases,
+        modes         = phase.modes,
+        mc_samples    = phase.mc_samples,
+        repeats       = phase.repeats,
+        warmup        = floor_warmup,
         thread_mode   = phase.thread_mode,
         worker_ladder = phase.worker_ladder,
         budget_grid   = phase.budget_grid,

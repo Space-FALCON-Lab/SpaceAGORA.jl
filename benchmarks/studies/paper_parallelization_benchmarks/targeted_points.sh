@@ -71,6 +71,13 @@ case "${POINT:?set POINT}" in
   defectA_w3) # cold store, 11 repeats after 3 warm-ups: is the P4@32 gap the heap burn-in?
     WARMUP=3 run montecarlo_heavy_aerobraking predictive    32 32 32 dAw3
     WARMUP=3 run montecarlo_heavy_aerobraking outer_process 32 32 32 dAw3 ;;
+  p5_8sat_splits) # cold store: the two P5 points R7 lost in the 2026-09-22 cold run (heap model)
+    WARMUP=3 run mcgrid_8sat_16mc predictive    2 16 16 p5_8_2x16
+    WARMUP=3 run mcgrid_8sat_16mc outer_threads 2 16 16 p5_8_2x16
+    WARMUP=3 run mcgrid_8sat_16mc policy_v2     2 16 16 p5_8_2x16
+    WARMUP=3 run mcgrid_8sat_16mc predictive    4  8 16 p5_8_4x8
+    WARMUP=3 run mcgrid_8sat_16mc outer_threads 4  8 16 p5_8_4x8
+    WARMUP=3 run mcgrid_8sat_16mc policy_v2     4  8 16 p5_8_4x8 ;;
   *) echo "unknown POINT=$POINT"; exit 2 ;;
 esac
 echo "[targeted] done -> $OUT"; ls "$OUT"

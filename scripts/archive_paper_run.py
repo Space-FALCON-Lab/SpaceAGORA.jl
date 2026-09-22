@@ -20,8 +20,10 @@ default location is ``DEFAULT_ARCHIVE`` below, overridable per invocation with
 ``run_id`` is ``<machine>_<harness>_<store>_<YYYYMMDD_HHMMSS>``:
 
 * ``machine``  -- ``trx50``, ``workstation`` or ``macbook``
-* ``harness``  -- ``ppb`` (benchmarks/studies/paper_parallelization_benchmarks)
-                  or ``ps`` (benchmarks/studies/paper_scenarios)
+* ``harness``  -- ``ppb`` (benchmarks/studies/paper_parallelization_benchmarks),
+                  ``ps`` (benchmarks/studies/paper_scenarios) or ``targeted``
+                  (that first harness's ``targeted_points.sh``, which measures
+                  one point per job and writes one CSV per mode)
 * ``store``    -- calibration-store state: ``cold``, ``converged``, ``mixed``
                   or ``na`` for harnesses that do not use the store
 * stamp        -- from the run directory name, else from the run's timestamps
@@ -40,8 +42,9 @@ Usage::
 
     python3 scripts/archive_paper_run.py --verify
 
-``--store`` is required for ``ppb`` runs: the calibration store's state is not
-recorded in the CSV and only the person who launched the run knows it.
+``--store`` is required for ``ppb`` and ``targeted`` runs: the calibration
+store's state is not recorded in the CSV and only the person who launched the
+run knows it.
 """
 
 from __future__ import annotations
@@ -110,16 +113,23 @@ PS_CSV_RE = re.compile(r"^s[1-9]_.*\.csv$")
 STAMP_RE = re.compile(r"(\d{8}_\d{6})")
 
 # What the archive records is where a run came from, not the local tooling
-# layout of the working copy it was copied out of.  Hidden per-tool worktree
-# directories are therefore elided from the recorded paths; everything else in
-# the path is kept verbatim.
-AGENT_WORKTREE_RE = re.compile(r"/\.[A-Za-z0-9_.-]+/worktrees/")
-AGENT_WORKTREE_PLACEHOLDER = "/<agent-worktrees>/"
+# layout of the working copy it passed through.  Tool-private directories are
+# therefore elided from the recorded paths; everything else is kept verbatim.
+PATH_ELISIONS = (
+    # A hidden per-tool worktree directory inside a checkout.
+    (re.compile(r"/\.[A-Za-z0-9_.-]+/worktrees/"), "/<agent-worktrees>/"),
+    # A per-session scratch directory under /tmp, which is where a run pulled
+    # back from a benchmark box lands before it is archived.
+    (re.compile(r"^/tmp/[^/]+/[^/]+/[^/]+/scratchpad/"), "/<agent-scratch>/"),
+)
 
 
 def recorded_path(path: str) -> str:
     """The absolute source path as it is written into the archive."""
-    return AGENT_WORKTREE_RE.sub(AGENT_WORKTREE_PLACEHOLDER, os.path.abspath(path))
+    recorded = os.path.abspath(path)
+    for pattern, placeholder in PATH_ELISIONS:
+        recorded = pattern.sub(placeholder, recorded)
+    return recorded
 
 
 INDEX_COLUMNS = [
@@ -148,6 +158,7 @@ MANIFEST_ORDER = [
     "phases",
     "cases",
     "modes",
+    "labels",
     "repeats",
     "thread_counts",
     "process_workers",
@@ -160,6 +171,7 @@ MANIFEST_ORDER = [
     "notes",
     # Derived extras, beyond the required set.
     "simulator_commits",
+    "simulator_commit_reported",
     "n_rows",
     "raw_csv",
     "aggregate_csv",
@@ -241,6 +253,8 @@ def detect_harness(run_dir: str) -> str:
     for name in sorted(os.listdir(run_dir)):
         if PS_CSV_RE.match(name):
             return "ps"
+    if targeted_csvs(run_dir, strict=False):
+        return "targeted"
     # A run directory whose raw CSV was renamed by hand (the `_cold_store`
     # siblings are the known case) still belongs to the ppb harness.
     if find_files(run_dir, "*_raw*.csv"):
@@ -282,6 +296,50 @@ def ps_csvs(run_dir: str) -> list[str]:
     if not hits:
         raise SystemExit(f"no scenario CSVs (s<N>_*.csv) found in {run_dir}")
     return hits
+
+
+def targeted_csvs(run_dir: str, strict: bool = True) -> list[tuple[str, str, str]]:
+    """The ``(path, label, mode)`` triples of a targeted-points run directory.
+
+    ``targeted_points.sh`` runs one measurement point per job and writes one
+    single-case worker CSV per mode, named ``<label>_<mode>.csv``, beside a
+    ``<label>_<mode>.log`` holding that campaign's dispatch trace.  The label
+    is what distinguishes configurations the harness columns cannot: the
+    ``defectA_gc`` point, for instance, writes ``dAgcfull``, ``dAgcincr`` and
+    ``dAgcoff`` for three worker-collection settings whose CSV rows are
+    otherwise identical.  The label is recovered from the file name, since
+    nothing records it inside the file.
+
+    The signature a directory has to match is that every top-level CSV holds
+    exactly one ``mode`` and is named for it.  With ``strict=False`` a
+    directory that does not match returns ``[]`` instead of raising, which is
+    what harness detection needs.
+    """
+    names = [n for n in sorted(os.listdir(run_dir)) if n.endswith(".csv")]
+    if not names:
+        if strict:
+            raise SystemExit(f"no CSVs found in {run_dir}")
+        return []
+
+    found = []
+    for name in names:
+        path = os.path.join(run_dir, name)
+        try:
+            frame = pd.read_csv(path, low_memory=False, usecols=["mode"])
+        except (ValueError, OSError, pd.errors.ParserError):
+            if strict:
+                raise SystemExit(f"{path} has no mode column; it is not a targeted-points CSV")
+            return []
+        modes = sorted(str(m) for m in frame["mode"].dropna().unique())
+        stem = name[: -len(".csv")]
+        if len(modes) != 1 or not stem.endswith("_" + modes[0]):
+            if strict:
+                raise SystemExit(
+                    f"{path} is not named <label>_<mode>.csv for its own mode {modes}"
+                )
+            return []
+        found.append((path, stem[: -len("_" + modes[0])], modes[0]))
+    return found
 
 
 # --------------------------------------------------------------------------
@@ -356,7 +414,8 @@ def commit_fields(frame: pd.DataFrame) -> tuple[str, list[str]]:
 def repeat_counts_ppb(frame: pd.DataFrame) -> list[int]:
     keys = [
         c
-        for c in ("phase_id", "case", "mode", "thread_count", "process_workers", "mc_samples")
+        for c in ("targeted_label", "phase_id", "case", "mode",
+                  "thread_count", "process_workers", "mc_samples")
         if c in frame.columns
     ]
     if not keys:
@@ -458,6 +517,85 @@ def build_manifest_ppb(run_dir: str, raw: str, agg: str | None, store: str,
         "raw_csv": os.path.basename(raw),
         "aggregate_csv": os.path.basename(agg) if agg else UNKNOWN,
         "timestamps_source": ts_source,
+        "host_facts_source": facts.get("source", UNKNOWN),
+    }
+    return manifest, frame
+
+
+def load_targeted_frame(triples: list[tuple[str, str, str]]) -> pd.DataFrame:
+    """One frame over a targeted run's per-mode CSVs, tagged with the label.
+
+    ``targeted_label`` is derived from the file name and exists only in memory;
+    the archived CSVs are copied unchanged.
+    """
+    frames = []
+    for path, label, _mode in triples:
+        part = pd.read_csv(path, low_memory=False)
+        part["targeted_label"] = label
+        frames.append(part)
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def build_manifest_targeted(run_dir: str, triples: list[tuple[str, str, str]], store: str,
+                            machine_override: str | None, notes: str) -> tuple[dict, pd.DataFrame]:
+    frame = load_targeted_frame(triples)
+
+    hostname = UNKNOWN
+    hosts = sorted(str(h) for h in frame.get("machine", pd.Series(dtype=str)).dropna().unique())
+    if len(hosts) == 1:
+        hostname = hosts[0]
+    elif hosts:
+        raise SystemExit(f"{run_dir} mixes hosts {hosts}; it is not one run")
+
+    facts = HOST_FACTS.get(hostname, {})
+    machine = machine_override or facts.get("machine", UNKNOWN)
+
+    cpu_threads = distinct(frame, "cpu_threads")
+    cpu_threads_value = cpu_threads[0] if cpu_threads and len(cpu_threads) == 1 else (
+        cpu_threads if cpu_threads else UNKNOWN
+    )
+
+    commit, commits = commit_fields(frame)
+
+    stamps = sorted(str(t) for t in frame["timestamp_utc"].dropna())
+    if not stamps:
+        raise SystemExit(f"{run_dir} has no timestamp_utc values")
+
+    manifest = {
+        "run_id": "",
+        "machine": machine,
+        "hostname": hostname,
+        "cpu_model": facts.get("cpu_model", UNKNOWN),
+        "physical_cores": facts.get("physical_cores", UNKNOWN),
+        "cpu_threads": cpu_threads_value,
+        "memory_gb": facts.get("memory_gb", UNKNOWN),
+        "harness": "targeted",
+        "simulator_commit": commit,
+        "simulator_commits": commits,
+        "simulator_branch": UNKNOWN,
+        # The targeted harness writes single-case worker files, which carry no
+        # phase_id: a targeted run is one measurement point, not a phase.
+        "phases": distinct_or_unknown(frame, "phase_id"),
+        "cases": distinct_or_unknown(frame, "case"),
+        "modes": distinct_or_unknown(frame, "mode"),
+        "labels": sorted(set(label for _path, label, _mode in triples)),
+        "repeats": repeat_counts_ppb(frame),
+        "thread_counts": distinct_or_unknown(frame, "thread_count"),
+        "process_workers": distinct_or_unknown(frame, "process_workers"),
+        "mc_samples": distinct_or_unknown(frame, "mc_samples"),
+        "calibration_store": store,
+        "launched_utc": stamps[0],
+        "finished_utc": stamps[-1],
+        "source_path": recorded_path(run_dir),
+        "command": command_from_logs(run_dir),
+        "notes": notes or "",
+        "n_rows": int(len(frame)),
+        "raw_csv": ";".join(os.path.basename(p) for p, _l, _m in triples),
+        "aggregate_csv": UNKNOWN,
+        "timestamps_source": (
+            "per-mode worker CSV timestamp_utc column; the harness stamps a "
+            "worker file once, so a run's span is the first to the last file"
+        ),
         "host_facts_source": facts.get("source", UNKNOWN),
     }
     return manifest, frame
@@ -617,6 +755,11 @@ def append_provenance(archive: str, manifest: dict) -> None:
     commit_line = f"- Simulator commit: `{manifest['simulator_commit']}`"
     if manifest["simulator_commit"] == "multiple":
         commit_line += " — " + ", ".join(f"`{c}`" for c in manifest.get("simulator_commits", []))
+    if manifest.get("simulator_commit_reported"):
+        commit_line += (
+            f"; reported by the operator as `{manifest['simulator_commit_reported']}`, "
+            "which the harness did not record"
+        )
     entry = [
         "",
         heading,
@@ -647,9 +790,10 @@ def archive(args) -> int:
     archive_dir = os.path.abspath(args.archive)
 
     harness = args.harness or detect_harness(run_dir)
-    if harness == "ppb" and not args.store:
+    if harness in ("ppb", "targeted") and not args.store:
         raise SystemExit(
-            "--store is required for ppb runs: the calibration store's state is not in the CSV"
+            f"--store is required for {harness} runs: "
+            "the calibration store's state is not in the CSV"
         )
     store = args.store or ("na" if harness == "ps" else None)
     if store not in STORE_STATES:
@@ -659,11 +803,24 @@ def archive(args) -> int:
         raw, agg = ppb_csvs(run_dir, args.raw)
         manifest, frame = build_manifest_ppb(run_dir, raw, agg, store, args.machine, args.notes)
         data_paths = [raw]
+    elif harness == "targeted":
+        triples = targeted_csvs(run_dir)
+        manifest, frame = build_manifest_targeted(
+            run_dir, triples, store, args.machine, args.notes
+        )
+        raw, agg = triples[0][0], None
+        data_paths = [p for p, _l, _m in triples]
     else:
         csv_paths = ps_csvs(run_dir)
         manifest, frame = build_manifest_ps(run_dir, csv_paths, store, args.machine, args.notes)
         raw, agg = csv_paths[0], None
         data_paths = csv_paths
+
+    if args.reported_commit:
+        # A hash the operator knows and the harness did not record.  It is kept
+        # apart from `simulator_commit`, which --verify holds to what the CSVs
+        # themselves say.
+        manifest["simulator_commit_reported"] = args.reported_commit
 
     if manifest["machine"] not in MACHINE_NAMES:
         raise SystemExit(
@@ -756,6 +913,18 @@ def verify(args) -> int:
                 problems.append(f"{name}: {len(hits)} files match {PPB_RAW_GLOB} at the run root")
                 continue
             frame = pd.read_csv(hits[0], low_memory=False)
+        elif manifest.get("harness") == "targeted":
+            triples = targeted_csvs(run_dir, strict=False)
+            if not triples:
+                problems.append(f"{name}: no <label>_<mode>.csv files at the run root")
+                continue
+            frame = load_targeted_frame(triples)
+            labels = sorted(set(label for _p, label, _m in triples))
+            if sorted(str(x) for x in manifest.get("labels", [])) != labels:
+                problems.append(
+                    f"{name}: manifest labels={manifest.get('labels')} "
+                    f"but the run directory holds {labels}"
+                )
         else:
             hits = [
                 os.path.join(run_dir, f)
@@ -816,7 +985,12 @@ def main() -> int:
                         help="override the machine name derived from the hostname")
     parser.add_argument("--store", choices=sorted(STORE_STATES),
                         help="calibration store state; required for ppb runs")
-    parser.add_argument("--harness", choices=("ppb", "ps"), help="override harness detection")
+    parser.add_argument("--harness", choices=("ppb", "ps", "targeted"),
+                        help="override harness detection")
+    parser.add_argument("--reported-commit",
+                        help="a simulator commit the operator knows but the harness did "
+                             "not record; stored as simulator_commit_reported, never as "
+                             "simulator_commit")
     parser.add_argument("--raw", help="the raw CSV, when a run directory holds more than one")
     parser.add_argument("--stamp", help="override the YYYYMMDD_HHMMSS stamp in the run_id")
     parser.add_argument("--notes", default="", help="free text copied into the manifest and PROVENANCE")

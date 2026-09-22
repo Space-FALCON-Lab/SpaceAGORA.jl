@@ -117,15 +117,18 @@ the unit tests drive a plan space the host machine does not have).
   dispatch. DERIVED from R6's measured practice: `mixed_local_slots` keeps
   thread 1 free for the `@async` feeders that keep the pool supplied, so the
   most slots the coordinator can ever offer is `T - 1`.
-- `heap_model` (`SPACEAGORA_PREDICTIVE_HEAP_MODEL`, default `:none`): whether
+- `heap_model` (`SPACEAGORA_PREDICTIVE_HEAP_MODEL`, default `:locals`): whether
   concurrent samples sharing this process's heap are charged a contention term
-  at all. `:none` takes `s_heap = 1` at every width, so plans are ranked by
-  round count; `:usl` charges `k / usl_speedup(usl_alpha_base, usl_beta_alloc,
-  k)` from the machine's calibrated constants. `:none` is the default because
-  the `:usl` mapping was measured and refuted -- see the constants table and
+  at all, and where. `:none` takes `s_heap = 1` at every width, so plans are
+  ranked by round count; `:usl` charges `k / usl_speedup(usl_alpha_base,
+  usl_beta_alloc, k)` from the machine's calibrated constants to every plan
+  that shares this heap; `:locals` charges that term to coordinator local slots
+  in a mixed plan only, never to the threads-route static plan. `:locals` is the
+  default because two full TRX50 runs measured the term right about local slots
+  and wrong about the threads plan -- see the constants table and
   `docs/architecture/predictive_routing_r7.md`. Machine constants are loaded
-  and traced either way; `:none` declines to use them for contention, it does
-  not hide them.
+  and traced under every model; `:none` declines to use them for contention, it
+  does not hide them.
 - `local_thrash` (`SPACEAGORA_PREDICTIVE_LOCAL_THRASH`, default `3.0`,
   ASSUMED): the observed local-slot slowdown, relative to a pool worker, past
   which the guard trims the local slots even though the pool is unharmed. Well

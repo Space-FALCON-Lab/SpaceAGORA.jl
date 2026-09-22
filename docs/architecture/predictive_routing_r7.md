@@ -107,16 +107,67 @@ Per-class sample times:
 
 - **Pool worker**: `s_w = 1 + o_r`, with `o_r` the `remotecall_fetch` round
   trip relative to `t_1`.
-- **Coordinator local slot, or threads-route task**: `s_heap(k) = k /
-  usl_speedup(alpha, beta, k)`, the inverse parallel efficiency of
-  allocation-heavy work on one heap, at `k = L` local slots or `k = W`
+- **Coordinator local slot, or threads-route task**: `s_heap(k)`, the inverse
+  parallel efficiency of work on one heap, at `k = L` local slots or `k = W`
   threads-route tasks. Both use the same term because they are the same thing:
   samples sharing one process's heap and allocator.
 
-With no machine constants, `s_heap(k) = 1` at every width. That is not a claim
-that contention is absent; it is the planner declining to model what it has not
-measured, and the margin rule is what carries the safety in that state. An
-uncalibrated machine therefore ranks plans purely by round count.
+`s_heap` has two models, and the default is to have none.
+
+- `:none` (default): `s_heap(k) = 1` at every width. Plans are ranked purely by
+  round count.
+- `:usl`: `s_heap(k) = k / usl_speedup(usl_alpha_base, usl_beta_alloc, k)` from
+  the machine's calibrated constants.
+
+`SPACEAGORA_PREDICTIVE_HEAP_MODEL` selects between them. On an uncalibrated
+machine the two coincide. On a calibrated one they do not, and the default is
+`:none` because `:usl` was measured and refuted -- see below. Machine constants
+are still loaded and still traced under `:none`; the planner declines to charge
+contention with them, it does not pretend they are absent.
+
+### The USL heap model, measured and refuted
+
+TRX50 cold 11-repeat run, job `20260921-202331-989854`, tree `197c53c39`,
+constants loaded (`usl_alpha_base = 0.156`, `usl_beta_alloc = 0.00605`,
+fingerprint `f48f5e44b83aeac4`). R7 passed 34 of 36 points and failed two, both
+P5 `mcgrid_8sat_16mc`:
+
+| Point | R7 chose | R7 | Pinned threads |
+|---|---|---|---|
+| 2 workers x 16 threads | mixed, ended `w2+l10` (guard-trimmed) | 1.524 s | 0.957 s |
+| 4 workers x 8 threads | mixed, ended `w4+l2` | 1.846 s | 1.382 s |
+
+At those constants `s_heap(16) = 4.8` and `s_heap(8) = 3.0`. That prices the
+pinned-threads static plan at several times one round, so any plan carrying
+pool workers wins the ranking however small the pool -- a two-worker pool beat
+a sixteen-wide threads plan -- and the local-slot count is suppressed along
+with it. The measured threads route at those points is not several times a
+round; it is the fastest thing there.
+
+The same run shows the milder form of it everywhere else, as excess caution
+rather than a failure:
+
+| Point | R7 | R6 |
+|---|---|---|
+| P4 at 8 | mixed `w8+l4`, 3.14 s | mixed `w8+l7`, 2.58 s |
+| P4 at 16 | pure process, 2.29 s | mixed `w16+l15`, 1.87 s |
+| P5 16sat at 4x8 | mixed `w4+l4`, 1.55 s | threads, 1.47 s |
+
+What is refuted is the MAPPING, not the fit. `usl_alpha_base` and
+`usl_beta_alloc` are measured honestly by `scripts/calibrate_machine.jl` on the
+allocation kernel. Applying them to whole campaign samples claimed that a
+sample's contention with its neighbors has the same shape AND a usable
+magnitude -- the contract flagged the shape claim as ASSUMED, and the magnitude
+is what these numbers refute. With `:none` the same shapes rank as
+`threads@16` at 2x16, `threads@8` at 4x8, and mixed with full local slots at
+the P3/P4 mid budgets, which is what was measured to be fastest at each.
+
+Turning `:usl` back on wants a **sample-level contention measurement, not a
+kernel fit**: how much slower one campaign sample runs with `k` of its own kind
+beside it on this heap. That is measurable -- a short probe of the same sample
+at two widths would do it -- and it is a different number from the one
+`calibrate_machine.jl` produces. Until it exists, the planner ranks by round
+count and the margin rule carries the safety.
 
 ## The decision rule
 
@@ -309,9 +360,10 @@ Every number the planner uses, and what kind of number it is.
 | `SPACEAGORA_PREDICTIVE_GUARD_FACTOR` | `1.5` | ASSUMED | Same standing. A local slot running 1.5x slower than predicted relative to a pool worker is outside anything the round-count model explains; the second threshold at 2x that is the "stop entirely" case. |
 | `SPACEAGORA_PREDICTIVE_LOCAL_SLOTS_MAX` | `Threads.nthreads() - 1` | DERIVED | `ParallelProfiles.mixed_local_slots` keeps thread 1 free for the `@async` feeders that keep the pool supplied, so `T - 1` is the most slots the coordinator can offer under R6's own measured practice. |
 | `SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD` (`o_r`) | `0.0` | ASSUMED, and measurably wrong on short samples | The assumption was that a `remotecall_fetch` round trip is milliseconds against samples of 0.03-1 s, so the term sits below any noise floor the planner could measure. The reduced-scale run below refutes that at the bottom of the stated domain: on `independent_1sat_1hr`, 64 samples of ~38 ms, 8 pool workers against 8 coordinator threads, the pool campaign ran 0.722 s against the threads route's 0.427 s for the same per-sample work -- a worker class roughly 1.6x a coordinator thread, not 1.0x. The default stays zero because one point on one machine is not a value to hard-code, and it now has a better answer than a constant: the guard measures the same quantity in the campaign's own first round (see The guard) and moves the remainder to the threads route when the pool is not paying for itself. The field remains for a machine that has measured its own and wants the FIRST round planned correctly too; declaring 0.6 on that point moves the planner to the threads route from the start and to parity with it (0.409 s). |
-| `alpha` in `s_heap` | `MachineConstants.usl_alpha_base` | SOURCED (fit), ASSUMED (mapping) | Fitted per machine by `scripts/calibrate_machine.jl` on the allocation kernel. Applying it to campaign samples claims only that a sample's contention with its neighbors on one heap has the same SHAPE as that kernel's, not the same magnitude. |
-| `beta` in `s_heap` | `MachineConstants.usl_beta_alloc` | SOURCED (fit), ASSUMED (mapping) | As above. |
+| `alpha` in `s_heap` | `MachineConstants.usl_alpha_base` | SOURCED (fit), **REFUTED (mapping)** | Fitted per machine by `scripts/calibrate_machine.jl` on the allocation kernel. Applying it to campaign samples claimed the same shape and a usable magnitude; the magnitude is refuted by the TRX50 run, so it is only consulted under `heap_model = :usl`. |
+| `beta` in `s_heap` | `MachineConstants.usl_beta_alloc` | SOURCED (fit), **REFUTED (mapping)** | As above. |
 | `s_heap` with no constants | `1.0` | DERIVED | "Unknown means no gain" applied to a cost: an unmeasured contention term is not modeled, and the margin rule carries the safety. |
+| `SPACEAGORA_PREDICTIVE_HEAP_MODEL` | `none` | MEASURED-OFF | `:usl` charges the alloc-kernel USL fit as whole-sample contention. Measured on the TRX50 with its own constants it cost two of thirty-six points outright and made the planner systematically over-cautious elsewhere; see The USL heap model, measured and refuted. `:none` reproduces the measured winners at those points. |
 | Static tie-break prefers `:process` | -- | SOURCED | TRX50 cold-11 (`paper_benchmarks_trx50_cold11`): the one-heap threads route never beat the pool by more than 11% and lost to it by 5-60% at W >= 16 on P3/P4. |
 
 ## The measurements the unit tests encode
@@ -544,7 +596,7 @@ per-dispatch pool.
 `SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1` prints, per campaign:
 
 ```
-[predictive] shape n=... threads=... pool=... local_cap=... candidates=[...] constants=loaded|absent margin=... guard_factor=... local_slots_max=...
+[predictive] shape n=... threads=... pool=... local_cap=... candidates=[...] constants=loaded|absent heap_model=none|usl margin=... guard_factor=... local_slots_max=...
 [predictive]   candidate <route>@w<W>+l<L> makespan=... consumers=... s_worker=... s_heap=... [static]
 [predictive] chosen <plan> reason=... gain=...
 [predictive] dispatch=...s n=... failures=... decided_after=<k>/<n> samples seen=<a>/<W>w,<b>/<L>l
@@ -574,6 +626,8 @@ outright), `predicted_gain` (a deviation cleared the margin),
 - A remote round-trip term measured BEFORE the dispatch rather than during it,
   so the FIRST plan is right and not only the plan the guard corrects to. A
   cheap pool probe at plan time would supply it.
+- A sample-level contention measurement, which is what would justify turning
+  the `:usl` heap model back on.
 - Re-measuring the route switch now that its evidence comes from inside the
   dispatch and its width is the one it can reach. Both defects the first
   version had are gone; whether anything is left to gain is unmeasured, which

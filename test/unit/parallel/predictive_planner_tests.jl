@@ -30,11 +30,17 @@ function _constants(; alpha = 0.05, beta_alloc = 0.004)
 end
 
 _cfg(; margin = 0.15, guard_factor = 1.5, local_slots_max = 64, remote_overhead = 0.0,
-     route_switch = true) =
+     route_switch = true, heap_model = :none) =
     SCamp.PredictivePlannerConfig(margin = margin, guard_factor = guard_factor,
                                   local_slots_max = local_slots_max,
                                   remote_overhead = remote_overhead,
-                                  route_switch = route_switch)
+                                  route_switch = route_switch,
+                                  heap_model = heap_model)
+
+# The TRX50's own calibration, from job 20260921-202331-989854 (fingerprint
+# f48f5e44b83aeac4). SOURCED: these are the numbers the machine measured, and
+# the two points below are what the planner did with them.
+_trx50_constants() = _constants(alpha = 0.156, beta_alloc = 0.00605)
 
 # Shorthand for "the plan the planner chose for this shape", with the machine
 # supplied rather than inherited.
@@ -86,6 +92,7 @@ end
         @test c.local_slots_max == max(0, Base.Threads.nthreads() - 1)
         @test c.remote_overhead == 0.0
         @test c.route_switch == false          # built, measured, shipped off
+        @test c.heap_model === :none           # measured and refuted, see below
     end
     withenv("SPACEAGORA_PREDICTIVE_MARGIN" => "0.4",
             "SPACEAGORA_PREDICTIVE_GUARD_FACTOR" => "2.5",
@@ -112,6 +119,16 @@ end
     withenv("SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH" => "maybe") do
         @test_throws ArgumentError SCamp.PredictivePlannerConfig()
     end
+    withenv("SPACEAGORA_PREDICTIVE_HEAP_MODEL" => "usl") do
+        @test SCamp.PredictivePlannerConfig().heap_model === :usl
+    end
+    withenv("SPACEAGORA_PREDICTIVE_HEAP_MODEL" => "NONE") do
+        @test SCamp.PredictivePlannerConfig().heap_model === :none
+    end
+    withenv("SPACEAGORA_PREDICTIVE_HEAP_MODEL" => "amdahl") do
+        @test_throws ArgumentError SCamp.PredictivePlannerConfig()
+    end
+    @test_throws ArgumentError SCamp.PredictivePlannerConfig(heap_model = :usl2)
 end
 
 @testset "a declared remote overhead prices the pool against the threads route" begin
@@ -167,6 +184,80 @@ end
     @test s32 > 1.0
     # Zeroed USL terms are an uncalibrated machine in all but name.
     @test SCamp.predictive_heap_slowdown(_constants(alpha = 0.0, beta_alloc = 0.0), 16) == 1.0
+end
+
+# ── The two TRX50 points the USL heap model got wrong ────────────────────────
+#
+# Cold 11-repeat run, job 20260921-202331-989854, tree 197c53c39, machine
+# constants LOADED (usl_alpha_base = 0.156, usl_beta_alloc = 0.00605). R7
+# passed 34 of 36 points and failed these two, both P5 mcgrid_8sat_16mc:
+#
+#   2 workers x 16 threads   chose mixed, ended w2+l10   1.524 s
+#                            against pinned threads      0.957 s
+#   4 workers x 8 threads    chose mixed, ended w4+l2    1.846 s
+#                            against pinned threads      1.382 s
+#
+# The cause is the contention term, not the ranking: s_heap(16) = 4.8 and
+# s_heap(8) = 3.0 at those constants, which prices the pinned-threads plan at
+# several times one round and hands the ranking to anything with pool workers,
+# however small the pool. The measured threads route is not several times a
+# round. The alloc-kernel USL fit does not transfer to whole samples in
+# magnitude -- the mapping the contract flagged as ASSUMED -- so the heap model
+# is off by default and these points are checked with constants PRESENT.
+
+@testset "P5 mcgrid_8sat_16mc at 2 workers x 16 threads: the pinned threads plan" begin
+    planning = SCamp.predictive_plan(
+        n_samples = 16, threads = 16, process_workers = 2, threads_candidate = true,
+        local_slots_cap = 15, constants = _trx50_constants(),
+        config = _cfg(local_slots_max = 15))
+    # The constants are loaded and reported; the default heap model declines to
+    # charge contention with them.
+    @test planning.constants_loaded
+    @test planning.chosen.route === :threads
+    @test planning.chosen.workers == 16
+    @test planning.chosen.local_slots == 0
+    @test planning.chosen.static_equivalent
+    @test planning.chosen.heap_slowdown == 1.0
+    @test planning.reason === :static_equivalent_best
+end
+
+@testset "P5 mcgrid_8sat_16mc at 4 workers x 8 threads: the pinned threads plan" begin
+    planning = SCamp.predictive_plan(
+        n_samples = 16, threads = 8, process_workers = 4, threads_candidate = true,
+        local_slots_cap = 7, constants = _trx50_constants(),
+        config = _cfg(local_slots_max = 7))
+    @test planning.constants_loaded
+    @test planning.chosen.route === :threads
+    @test planning.chosen.workers == 8
+    @test planning.chosen.local_slots == 0
+    @test planning.chosen.static_equivalent
+    @test planning.reason === :static_equivalent_best
+end
+
+@testset "the usl heap model still produces its old ranking when asked for" begin
+    # Same shape, same constants, the two models. `:none` ranks by round count
+    # and takes the pinned threads plan; `:usl` prices sixteen tasks on one
+    # heap at 4.8x a sample and hands the point to the pool. Both are still
+    # reachable; only the default changed.
+    shape = (n_samples = 16, threads = 16, process_workers = 8,
+             threads_candidate = true, local_slots_cap = 15,
+             constants = _trx50_constants())
+    off = SCamp.predictive_plan(; shape..., config = _cfg(local_slots_max = 15))
+    on  = SCamp.predictive_plan(; shape...,
+                                config = _cfg(local_slots_max = 15, heap_model = :usl))
+    @test off.chosen.route === :threads && off.chosen.workers == 16
+    @test on.chosen.route === :process
+    @test on.constants_loaded && off.constants_loaded
+    # The term itself is unchanged and still steep at these widths; what
+    # changed is whether the planner is handed it.
+    mc = _trx50_constants()
+    @test SCamp.predictive_heap_slowdown(mc, 16) > 4.0
+    @test SCamp.predictive_heap_slowdown(mc, 8) > 2.0
+    threads_off = first(p for p in off.plans if p.route === :threads)
+    threads_on = first(p for p in on.plans if p.route === :threads)
+    @test threads_off.heap_slowdown == 1.0
+    @test threads_on.heap_slowdown == SCamp.predictive_heap_slowdown(mc, 16)
+    @test threads_on.makespan > 4.0 * threads_off.makespan
 end
 
 @testset "the plan space is the three routes and nothing narrower" begin
@@ -549,13 +640,18 @@ end
     obs = (worker_mean_s = 0.05, local_mean_s = 0.05,
            worker_occupancy_s = 0.60, local_occupancy_s = 0.10,
            remaining = 53, threads = 8, threads_candidate = true)
-    flat = SCamp.predictive_guard_verdict(plan, cfg; obs..., constants = nothing)
-    charged = SCamp.predictive_guard_verdict(plan, cfg; obs..., constants = _constants())
+    usl = _cfg(guard_factor = 1.5, heap_model = :usl)
+    flat = SCamp.predictive_guard_verdict(plan, usl; obs..., constants = nothing)
+    charged = SCamp.predictive_guard_verdict(plan, usl; obs..., constants = _constants())
     @test charged.threads_s >= flat.threads_s
     # A machine contended enough can make the move not worth it at all.
-    steep = SCamp.predictive_guard_verdict(plan, cfg; obs...,
+    steep = SCamp.predictive_guard_verdict(plan, usl; obs...,
         constants = _constants(alpha = 0.5, beta_alloc = 0.5))
     @test steep.threads_s > charged.threads_s
+    # Under the default heap model the same constants are not charged at all,
+    # so the guard prices the move exactly as an uncalibrated machine would.
+    @test SCamp.predictive_guard_verdict(plan, cfg; obs...,
+        constants = _constants()).threads_s == flat.threads_s
 end
 
 @testset "the reachable threads width is the local slots already running" begin

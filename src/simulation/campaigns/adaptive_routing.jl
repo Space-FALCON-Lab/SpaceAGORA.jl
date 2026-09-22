@@ -990,6 +990,7 @@ function _run_campaign_predictive(
         println("[predictive] shape n=$(n) threads=$(threads) pool=$(pool_workers) " *
                 "local_cap=$(local_cap) candidates=$(candidates) " *
                 "constants=$(planning.constants_loaded ? "loaded" : "absent") " *
+                "heap_model=$(config.heap_model) " *
                 "margin=$(config.margin) guard_factor=$(config.guard_factor) " *
                 "local_slots_max=$(config.local_slots_max)")
         for p in planning.plans

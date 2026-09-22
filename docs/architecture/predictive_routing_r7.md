@@ -112,20 +112,69 @@ Per-class sample times:
   threads-route tasks. Both use the same term because they are the same thing:
   samples sharing one process's heap and allocator.
 
-`s_heap` has two models, and the default is to have none.
+`s_heap` has three models, and the question they answer is WHERE the calibrated
+term applies, not whether the machine has one.
 
-- `:none` (default): `s_heap(k) = 1` at every width. Plans are ranked purely by
-  round count.
-- `:usl`: `s_heap(k) = k / usl_speedup(usl_alpha_base, usl_beta_alloc, k)` from
-  the machine's calibrated constants.
+- `:locals` (default): the term applies to the coordinator's local slots in a
+  mixed plan, `s_heap(L)`, and nowhere else. The threads-route static plan is
+  priced at `s_heap = 1`.
+- `:none`: nowhere. Plans are ranked purely by round count.
+- `:usl`: everywhere -- local slots and threads-route tasks alike.
 
 `SPACEAGORA_PREDICTIVE_HEAP_MODEL` selects between them. On an uncalibrated
-machine the two coincide. On a calibrated one they do not, and the default is
-`:none` because `:usl` was measured and refuted -- see below. Machine constants
-are still loaded and still traced under `:none`; the planner declines to charge
-contention with them, it does not pretend they are absent.
+machine all three coincide. Machine constants are loaded and traced under every
+model; one that declines to use them does not pretend they are absent.
 
-### The USL heap model, measured and refuted
+The default is `:locals` because that is the split two TRX50 runs measured, and
+the next two sections are those measurements: the term is right about
+coordinator local slots and wrong about the pinned-threads plan.
+
+### Why the term applies to local slots and not to the threads plan
+
+Two cold 11-repeat TRX50 runs of the same P3-P5 grid, one with the term applied
+everywhere and one with it applied nowhere, disagree in opposite directions at
+opposite ends of the grid. The rule that survives both is the `:locals` split.
+
+**It is right about local slots.** P3 `independent_1sat_1hr` at 32 workers x 32
+threads (job `20260922-063133-1886099`, 11 repeats, 3 warm-ups):
+
+| | Median |
+|---|---|
+| pinned process | 0.430 s |
+| R6, mixed `w32+l31` | 0.552 s |
+| R7 with `heap_model=none`, chose `w32+l31`, guard closed every local slot | 0.599 s |
+| R7 with the term applied, chose pure process a priori | 0.433 s |
+
+Thirty-one local slots beside thirty-two `@async` feeders thrash the
+coordinator, and the guard cannot recover what round one already spent: it
+closed every slot and still finished at 1.39x the pinned route, a failure.
+Charged in the PLAN, the same shape never opens them. The term has to be in the
+plan, not in the recovery.
+
+**It is wrong about the threads plan.** All twelve P5 splits pass with
+`heap_model=none`, including the two the everywhere-model lost outright
+(2x16 at 0.92 and 4x8 at 0.96 of the pinned route). The reason is in the next
+section.
+
+**What the split costs, stated plainly.** Charging the local slots makes the
+planner more cautious than R6 at the P4 mid budgets, and two points are worse
+for it while still passing:
+
+| Point | pinned process | R6 | R7 |
+|---|---|---|---|
+| P4 at 8 | 3.800 | 2.563 (`w8+l7`) | 3.071 (`w8` guard-trimmed to `l3`); 3.144 a priori `w8+l4` |
+| P4 at 16 | 2.274 | 1.831 (`w16+l15`) | 2.264 (pure process) |
+| P4 at 32 | 1.008 | 1.896 | 1.098 (pure process) |
+| P3 at 16 | 0.762 | 0.793 (`w16+l15`) | 0.779 (`w16` trimmed to `l6`) |
+
+At P4 at 16 the term forecloses R6's mixed win -- 1.83 against 2.26 -- and at
+P4 at 8 it gives four local slots where seven was faster. Both still pass the
+criterion against the pinned routes, and P4 at 32 is where the caution pays
+(1.098 against R6's 1.896). The trade is deliberate: the two-model disagreement
+above is a failure on one side and a 20% shortfall on the other, and a failure
+is the thing the margin rule exists to prevent.
+
+### The USL heap model applied to the threads plan, measured and refuted
 
 TRX50 cold 11-repeat run, job `20260921-202331-989854`, tree `197c53c39`,
 constants loaded (`usl_alpha_base = 0.156`, `usl_beta_alloc = 0.00605`,
@@ -256,9 +305,37 @@ So the guard has two directions.
 | any sample failed | drop the local slots to zero (`:process@L=0`) |
 | worker occupancy > `guard_factor` x local occupancy, **and** the pinned threads plan predicted (from the observed occupancies) to finish the remainder sooner than continuing | move the remainder to `:threads` at `min(remaining, T)`, budget 1, pool idle -- **only when `route_switch` is on, which it is not by default**; otherwise `route_switch_disabled` and the plan stands |
 | worker occupancy past the factor but threads no faster | keep the plan (`threads_no_better`) |
-| work ratio > `guard_factor` | halve the local slots |
-| work ratio > 2 x `guard_factor` | drop the local slots to zero |
+| workers' STEADY occupancy inflated past `guard_factor` against the work they report (the pool is being starved through the coordinator) | trim the local slots to the contention curve's peak |
+| local slowdown against a worker past `local_thrash` | trim the local slots to the contention curve's peak |
 | otherwise | keep the plan |
+
+Being slower than a pool worker is not by itself a reason to close a local
+slot. A slot at 1.5x a worker still adds two thirds of a worker's throughput,
+and the rule this replaces -- trim whenever the observed/predicted ratio passed
+`guard_factor` -- closed slots that were paying their way: on the TRX50's P4 at
+8 threads it cut seven to three, where R6's seven ran 2.563 s against the
+pinned pool's 3.800 s. Two things make a slot worth closing, and neither is
+"slower": the pool being harmed through the coordinator, and the slots
+thrashing among themselves.
+
+The workers' STEADY occupancy is their cost per sample after their first,
+which is free of the one-time per-worker dispatch cost that would otherwise
+make every dispatch look like a starved one. On a short campaign no steady
+worker observation exists when the guard decides -- the decision fires once
+every consumer has reported ONCE, and a worker's one sample is its first -- so
+the starvation rule simply cannot fire there, which is the conservative way
+round.
+
+A trim is **sized from the curve, not by halving**. Throughput with `W` workers
+and `L` local slots is `W/c_w + L/c_l(L)`; modeling `c_l(L)` as the observation
+scaled along the calibrated shape makes the second term proportional to `L /
+s_heap(L)`, which is `usl_speedup` itself, so the maximizing width is
+`usl_peak_workers = sqrt((1-alpha)/beta)`. The observation sets the level, the
+curve sets the shape, and the argmax depends only on the shape. Two fallbacks,
+both ASSUMED and both narrower than the running plan: a curve whose peak is at
+or beyond the running width contradicts the observation that fired the guard,
+so the width is halved; a machine with no curve has nothing better than halving
+either.
 
 ### The route switch is built, measured, and off
 
@@ -363,7 +440,8 @@ Every number the planner uses, and what kind of number it is.
 | `alpha` in `s_heap` | `MachineConstants.usl_alpha_base` | SOURCED (fit), **REFUTED (mapping)** | Fitted per machine by `scripts/calibrate_machine.jl` on the allocation kernel. Applying it to campaign samples claimed the same shape and a usable magnitude; the magnitude is refuted by the TRX50 run, so it is only consulted under `heap_model = :usl`. |
 | `beta` in `s_heap` | `MachineConstants.usl_beta_alloc` | SOURCED (fit), **REFUTED (mapping)** | As above. |
 | `s_heap` with no constants | `1.0` | DERIVED | "Unknown means no gain" applied to a cost: an unmeasured contention term is not modeled, and the margin rule carries the safety. |
-| `SPACEAGORA_PREDICTIVE_HEAP_MODEL` | `none` | MEASURED-OFF | `:usl` charges the alloc-kernel USL fit as whole-sample contention. Measured on the TRX50 with its own constants it cost two of thirty-six points outright and made the planner systematically over-cautious elsewhere; see The USL heap model, measured and refuted. `:none` reproduces the measured winners at those points. |
+| `SPACEAGORA_PREDICTIVE_LOCAL_THRASH` | `3.0` | ASSUMED | The observed local-slot slowdown, relative to a pool worker, past which the guard trims even though the pool is unharmed. Well above `guard_factor` because a slot at 1.5x a worker still adds two thirds of a worker's throughput; the old rule trimmed there and cost the P4-at-8 point. Nothing measures where the real threshold is. |
+| `SPACEAGORA_PREDICTIVE_HEAP_MODEL` | `locals` | SOURCED (the split), MEASURED-OFF (`:usl`) | Where the calibrated term applies. `:locals` is the split the two TRX50 runs measured -- right about local slots at P3 at 32, wrong about the threads plan at every P5 split. `:usl` | `:usl` charges the alloc-kernel USL fit as whole-sample contention. Measured on the TRX50 with its own constants it cost two of thirty-six points outright and made the planner systematically over-cautious elsewhere; see The USL heap model, measured and refuted. `:none` reproduces the measured winners at those points. |
 | Static tie-break prefers `:process` | -- | SOURCED | TRX50 cold-11 (`paper_benchmarks_trx50_cold11`): the one-heap threads route never beat the pool by more than 11% and lost to it by 5-60% at W >= 16 on P3/P4. |
 
 ## The measurements the unit tests encode
@@ -601,7 +679,7 @@ per-dispatch pool.
 [predictive] chosen <plan> reason=... gain=...
 [predictive] dispatch=...s n=... failures=... decided_after=<k>/<n> samples seen=<a>/<W>w,<b>/<L>l
 [predictive] guard worker_mean=...ms/<n> local_mean=...ms/<n> predicted_ratio=... observed/predicted=...
-[predictive] guard occupancy worker=...ms local=...ms worker/local=... rest continue=...s threads=...s
+[predictive] guard occupancy worker=...ms steady=...ms/<n> local=...ms local_slowdown=... worker_degradation=... worker/local=... rest continue=...s threads=...s
 [predictive] guard verdict=... closed=<w>w/<l>l plan=<route>@w<W>+l<L>-><route>@w<W>+l<L>
 ```
 
@@ -609,7 +687,8 @@ An unguarded (static-equivalent) plan prints one `dispatch=...s ... unguarded`
 line instead.
 
 The guard's `verdict` is one of `observation_matches`, `local_slots_slower`,
-`local_slots_far_slower`, `workers_occupying_more_than_threads`,
+`local_slots_thrashing`, `workers_degraded`,
+`workers_occupying_more_than_threads`,
 `route_switch_disabled`, `threads_no_better`, `sample_failure`,
 `not_observed`, `nothing_to_reduce`, or `never_decided` when the campaign
 drained before both classes had been seen.

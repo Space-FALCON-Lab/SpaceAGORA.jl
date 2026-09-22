@@ -60,6 +60,14 @@ end
     return parsed
 end
 
+@inline function _predictive_env_heap_model(name::AbstractString, fallback::Symbol)::Symbol
+    raw = lowercase(strip(get(ENV, String(name), "")))
+    isempty(raw) && return fallback
+    raw == "none" && return :none
+    raw == "usl" && return :usl
+    throw(ArgumentError("$(name) must be \"none\" or \"usl\"; got \"$(raw)\"."))
+end
+
 @inline function _predictive_env_bool(name::AbstractString, fallback::Bool)::Bool
     raw = lowercase(strip(get(ENV, String(name), "")))
     isempty(raw) && return fallback
@@ -108,6 +116,15 @@ the unit tests drive a plan space the host machine does not have).
   dispatch. DERIVED from R6's measured practice: `mixed_local_slots` keeps
   thread 1 free for the `@async` feeders that keep the pool supplied, so the
   most slots the coordinator can ever offer is `T - 1`.
+- `heap_model` (`SPACEAGORA_PREDICTIVE_HEAP_MODEL`, default `:none`): whether
+  concurrent samples sharing this process's heap are charged a contention term
+  at all. `:none` takes `s_heap = 1` at every width, so plans are ranked by
+  round count; `:usl` charges `k / usl_speedup(usl_alpha_base, usl_beta_alloc,
+  k)` from the machine's calibrated constants. `:none` is the default because
+  the `:usl` mapping was measured and refuted -- see the constants table and
+  `docs/architecture/predictive_routing_r7.md`. Machine constants are loaded
+  and traced either way; `:none` declines to use them for contention, it does
+  not hide them.
 - `route_switch` (`SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH`, default `false`):
   whether the guard may move the remainder of a campaign from the pool to the
   threads route. Built, measured, and shipped OFF: on this repo's workstation
@@ -129,6 +146,7 @@ struct PredictivePlannerConfig
     local_slots_max::Int
     remote_overhead::Float64
     route_switch::Bool
+    heap_model::Symbol
 end
 
 function PredictivePlannerConfig(;
@@ -140,6 +158,8 @@ function PredictivePlannerConfig(;
         "SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD", PREDICTIVE_REMOTE_OVERHEAD),
     route_switch::Bool = _predictive_env_bool(
         "SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH", false),
+    heap_model::Symbol = _predictive_env_heap_model(
+        "SPACEAGORA_PREDICTIVE_HEAP_MODEL", :none),
 )
     margin >= 0.0 || throw(ArgumentError("PredictivePlannerConfig margin must be >= 0; got $(margin)."))
     guard_factor >= 1.0 ||
@@ -148,8 +168,22 @@ function PredictivePlannerConfig(;
         throw(ArgumentError("PredictivePlannerConfig local_slots_max must be >= 0; got $(local_slots_max)."))
     remote_overhead >= 0.0 ||
         throw(ArgumentError("PredictivePlannerConfig remote_overhead must be >= 0; got $(remote_overhead)."))
+    heap_model in (:none, :usl) || throw(ArgumentError(
+        "PredictivePlannerConfig heap_model must be :none or :usl; got :$(heap_model)."))
     return PredictivePlannerConfig(Float64(margin), Float64(guard_factor), Int(local_slots_max),
-                                   Float64(remote_overhead), route_switch)
+                                   Float64(remote_overhead), route_switch, heap_model)
+end
+
+# The constants the CONTENTION term may use, which is not the same question as
+# which constants were loaded. Under the default `:none` model the planner has
+# machine constants in hand and declines to charge contention with them; they
+# are still reported, so a trace says what the machine knows as well as what
+# the planner used.
+@inline function _predictive_contention_constants(
+    config::PredictivePlannerConfig,
+    constants::Union{Nothing, ParallelCost.MachineConstants},
+)
+    return config.heap_model === :usl ? constants : nothing
 end
 
 
@@ -218,6 +252,12 @@ rather than the model deciding alone.
 `nothing` constants give `1.0` at every width: an uncalibrated machine has no
 contention model, so the planner predicts no contention, every plan's makespan
 is its round count, and the margin is what carries the safety.
+
+This function is the `:usl` heap model itself, and it is not on by default.
+`PredictivePlannerConfig.heap_model` decides whether the planner feeds it the
+machine's constants at all; under `:none` it is called with `nothing` even on a
+calibrated machine. The measurement that made `:none` the default is in the
+constants table of `docs/architecture/predictive_routing_r7.md`.
 """
 function predictive_heap_slowdown(constants::Union{Nothing, ParallelCost.MachineConstants}, k::Integer)::Float64
     k <= 1 && return 1.0
@@ -336,22 +376,26 @@ function predictive_plan_candidates(;
     n = max(0, Int(n_samples))
     T = max(1, Int(threads))
     pool = Int(process_workers) >= 2 ? min(Int(process_workers), n) : 0
+    # `constants` says what the machine has measured; `contention` says what
+    # this planner will charge for sharing a heap, which under the default
+    # heap model is nothing. See `_predictive_contention_constants`.
+    contention = _predictive_contention_constants(config, constants)
     plans = PredictivePlan[]
     if n <= 1 || (T <= 1 && pool == 0)
-        push!(plans, _predictive_plan(:none, 1, 0, n, true, constants, config.remote_overhead))
+        push!(plans, _predictive_plan(:none, 1, 0, n, true, contention, config.remote_overhead))
     end
     if n > 1 && T > 1 && threads_candidate
         W = min(n, T)
-        W > 1 && push!(plans, _predictive_plan(:threads, W, 0, n, true, constants, config.remote_overhead))
+        W > 1 && push!(plans, _predictive_plan(:threads, W, 0, n, true, contention, config.remote_overhead))
     end
     if n > 1 && pool >= 2
         lmax = max(0, min(config.local_slots_max, n - pool, Int(local_slots_cap)))
         for L in 0:lmax
-            push!(plans, _predictive_plan(:process, pool, L, n, L == 0, constants, config.remote_overhead))
+            push!(plans, _predictive_plan(:process, pool, L, n, L == 0, contention, config.remote_overhead))
         end
     end
     # A shape with no parallel route at all still has to run.
-    isempty(plans) && push!(plans, _predictive_plan(:none, 1, 0, n, true, constants, config.remote_overhead))
+    isempty(plans) && push!(plans, _predictive_plan(:none, 1, 0, n, true, contention, config.remote_overhead))
     return plans
 end
 
@@ -519,11 +563,12 @@ function predictive_guard_verdict(
     width = min(n_rest, max(1, Int(threads)))
     if occupancy_ok && threads_candidate && width > 1 && n_rest > 0 &&
        occupancy_ratio > config.guard_factor
-        scale = if constants === nothing
+        contention = _predictive_contention_constants(config, constants)
+        scale = if contention === nothing
             1.0
         else
-            predictive_heap_slowdown(constants, width) /
-                max(1.0e-12, predictive_heap_slowdown(constants, plan.local_slots))
+            predictive_heap_slowdown(contention, width) /
+                max(1.0e-12, predictive_heap_slowdown(contention, plan.local_slots))
         end
         threads_unit = local_occupancy_s * max(1.0, scale)
         threads_s = predictive_makespan(n_rest, fill(threads_unit, width))

@@ -199,24 +199,73 @@ end
 # ── Memory ────────────────────────────────────────────────────────────────────
 #
 # What a process worker costs and what the machine can hold. Every campaign
-# worker is a full Julia process with SpaceAGORA, the SPICE kernels and the
-# workload's own state resident, so a pool sized from cores alone can exceed
-# the machine: twelve 2 GB workers on an 18 GB laptop, or -- on a native GRAM
-# constellation whose single-process footprint measured 22 GB at 256
-# spacecraft (2026-09-04, M3 MacBook Pro, atmo256_gram_live_10min) -- any
-# second worker at all. Cores bound the USEFUL width of the process route;
-# memory bounds the AFFORDABLE width, and the smaller of the two is the cap.
+# worker is a full Julia process with SpaceAGORA, the SPICE kernels, the native
+# GRAM image and the workload's own state resident, so a pool sized from cores
+# alone can exceed the machine: twelve 2 GB workers on an 18 GB laptop fit
+# nowhere. Cores bound the USEFUL width of the process route; memory bounds the
+# AFFORDABLE width, and the smaller of the two is the cap.
 #
-# The per-worker estimate is this process's own resident set (a worker loads
-# the same package and builds the same state), never below a 1.5 GB floor,
-# plus a per-spacecraft term for native GRAM. It is read live rather than
-# cached because it grows as the coordinator builds its first workload, which
-# is exactly when the estimate becomes informative.
+# The per-worker estimate is this process's own resident set (a worker loads the
+# same package and builds the same state), never below a floor, plus a
+# per-spacecraft term for native GRAM. It is read live rather than cached
+# because it grows as the coordinator builds its first workload, which is
+# exactly when the estimate becomes informative.
+#
+# Both terms are MEASURED. `benchmarks/studies/gram_memory_footprint` runs one
+# `--threads=1` subprocess per (density path, constellation size) -- the
+# configuration a pool worker is started in -- and records its peak resident
+# set; the committed CSVs under that study's `results/` are what the constants
+# below are read off, and `docs/architecture/gram_memory_footprint.md` carries
+# the fit, the cross-machine check against the paper_scenarios S1/S2 rows, and
+# the before/after routing tables.
 
 const _MEMORY_RESERVE_FRACTION = 0.10
 const _MEMORY_RESERVE_MIN_BYTES = 1 << 30
-const _WORKER_MEMORY_FLOOR_BYTES = 3 * (1 << 29)   # 1.5 GB: SpaceAGORA + SPICE resident
-const _GRAM_SAT_MEMORY_BYTES = 90 * (1 << 20)      # per spacecraft, native GRAM: ~22 GB / 256
+
+# SpaceAGORA + SPICE + the native GRAM image + one solve's fixed working set,
+# with no per-spacecraft term in it. MEASURED at 16 spacecraft, the smallest
+# size the study ran and the one where the per-spacecraft term is far below the
+# reading's own spread: 1903.8 MB (1.86 GiB) peak on the direct native path
+# (gram_point, N=16, space-falcon-1). Rounded up to 2 GB.
+#
+# This raises a floor that was 1.5 GB and had never been measured. It applies to
+# every workload, not only GRAM ones, and it makes the estimate MORE
+# conservative -- a bare worker really does hold close to 1.9 GB, so pricing it
+# at 1.5 GB started workers that did not fit.
+const _WORKER_MEMORY_FLOOR_BYTES = 2 * (1 << 30)
+
+# Per-spacecraft resident memory, by native GRAM calling method.
+#
+# MEASURED. Across 16..4096 spacecraft the three native methods are
+# indistinguishable from each other and from the no-atmosphere control: on a
+# 60 s arc the peak moves by tens of megabytes over a 256-fold change in
+# constellation size. The term that does scale with spacecraft count is the
+# solver's retained trajectory state, and it is the SAME with and without GRAM:
+# the largest slope measured anywhere, across this study and the committed
+# paper_scenarios S1/S2 rows on two machines, is 1.14 MB per spacecraft.
+# 2 MB is that largest measured slope carried up with a safety factor, which is
+# DERIVED, not measured; every path is charged it because the measurement does
+# not separate them. The table exists so that a future per-path measurement
+# changes one line instead of the shape of the model.
+#
+# It replaces a single 90 MB constant that was never measured: it came from a
+# reported 22 GB single-process footprint at 256 spacecraft for which no
+# instrumentation, CSV or log exists anywhere in this repository, and it is
+# about eighty times what the same workload actually costs.
+const _GRAM_SAT_MEMORY_BYTES_BY_PATH = (
+    point = 2 * (1 << 20),
+    freeze_per_step = 2 * (1 << 20),
+    lookahead = 2 * (1 << 20),
+    surrogate = 0,
+)
+
+# The charge for a caller that cannot say which method it is on: the worst
+# native one, never zero.
+const _GRAM_SAT_MEMORY_BYTES = max(
+    _GRAM_SAT_MEMORY_BYTES_BY_PATH.point,
+    _GRAM_SAT_MEMORY_BYTES_BY_PATH.freeze_per_step,
+    _GRAM_SAT_MEMORY_BYTES_BY_PATH.lookahead,
+)
 
 _total_memory_bytes()::Int = Int(Sys.total_memory())
 
@@ -311,6 +360,24 @@ function memory_budget_bytes()::Int
 end
 
 """
+    memory_headroom_bytes() -> Int
+
+Bytes the caps have left to spend: the memory budget less this process's own
+resident set, or what the kernel reports available, whichever is smaller.
+
+`SPACEAGORA_MEMORY_AVAILABLE_GB` replaces the kernel reading. It exists so the
+memory model can be exercised for a machine profile other than the host --
+the before/after tables in `docs/architecture/gram_memory_footprint.md` and the
+unit tests both state a 250 GB machine's headroom on a 60 GB one -- and it is
+the only term of the model that cannot otherwise be supplied from outside.
+"""
+function memory_headroom_bytes()::Int
+    gb = _positive_float_env("SPACEAGORA_MEMORY_AVAILABLE_GB")
+    available = gb > 0.0 ? round(Int, gb * (1 << 30)) : available_memory_bytes()
+    return min(memory_budget_bytes() - process_rss_bytes(), available)
+end
+
+"""
     worker_memory_estimate_bytes(; extra=0) -> Int
 
 Bytes one process worker is expected to hold: `SPACEAGORA_PERF_WORKER_MEMORY_GB`
@@ -324,23 +391,41 @@ function worker_memory_estimate_bytes(; extra::Int=0)::Int
 end
 
 """
-    native_gram_worker_extra_bytes(n_sats) -> Int
+    gram_sat_memory_bytes(path::Symbol) -> Int
 
-Per-worker memory a native GRAM constellation adds on top of the package
-footprint: `SPACEAGORA_GRAM_SAT_MEMORY_MB` (default 90 MB) per spacecraft, from
-the 22 GB single-process footprint measured at 256 spacecraft.
+Per-spacecraft resident memory charged for one native GRAM calling method:
+`:point` (direct native point density), `:freeze_per_step`, `:lookahead` (the
+vacuum-predicted cache) or `:surrogate` (the offline table, which holds no
+per-spacecraft native state and is charged nothing).
+
+An unrecognized name is charged the worst native method rather than nothing, so
+a path this function has not been taught about cannot make a worker look free.
+`SPACEAGORA_GRAM_SAT_MEMORY_MB` overrides every path at once.
 """
-function native_gram_worker_extra_bytes(n_sats::Int)::Int
+function gram_sat_memory_bytes(path::Symbol)::Int
     raw = _topology_env("SPACEAGORA_GRAM_SAT_MEMORY_MB")
-    per = if isempty(raw)
-        _GRAM_SAT_MEMORY_BYTES
-    else
+    if !isempty(raw)
         mb = tryparse(Float64, raw)
         (mb === nothing || mb < 0.0) &&
             throw(ArgumentError("SPACEAGORA_GRAM_SAT_MEMORY_MB must be non-negative, got '$raw'"))
-        round(Int, mb * (1 << 20))
+        return round(Int, mb * (1 << 20))
     end
-    return max(0, n_sats) * per
+    return hasproperty(_GRAM_SAT_MEMORY_BYTES_BY_PATH, path) ?
+        getproperty(_GRAM_SAT_MEMORY_BYTES_BY_PATH, path) : _GRAM_SAT_MEMORY_BYTES
+end
+
+"""
+    native_gram_worker_extra_bytes(n_sats; path=:point) -> Int
+
+Per-worker memory a native GRAM constellation adds on top of the package
+footprint: [`gram_sat_memory_bytes`](@ref) per spacecraft. `path` names the
+calling method; the default is the worst native one, so a caller that does not
+know is charged conservatively.
+
+`SPACEAGORA_GRAM_SAT_MEMORY_MB` overrides the per-spacecraft term.
+"""
+function native_gram_worker_extra_bytes(n_sats::Int; path::Symbol=:point)::Int
+    return max(0, n_sats) * gram_sat_memory_bytes(path)
 end
 
 """
@@ -362,7 +447,7 @@ on 10 of the 12 and took four rounds instead of three (B15/L15 at (12,1),
 """
 function memory_worker_cap(; extra_per_worker::Int=0, resident::Int=0)::Int
     per = max(1, worker_memory_estimate_bytes(extra=extra_per_worker))
-    headroom = min(memory_budget_bytes() - process_rss_bytes(), available_memory_bytes())
+    headroom = memory_headroom_bytes()
     alive = max(0, resident)
     if alive > 0
         extra = max(0, extra_per_worker)
@@ -387,7 +472,7 @@ with none there is nothing measurable to reserve and the cap is unbounded.
 """
 function memory_local_slot_cap(workers::Int; extra_per_worker::Int=0, resident::Int=0)::Int
     extra_per_worker > 0 || return typemax(Int) >> 1
-    headroom = min(memory_budget_bytes() - process_rss_bytes(), available_memory_bytes())
+    headroom = memory_headroom_bytes()
     # Workers already alive are charged their workload term only (see
     # memory_worker_cap); the rest the full estimate.
     alive = clamp(resident, 0, max(0, workers))

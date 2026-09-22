@@ -540,6 +540,27 @@ function ppc_run_adaptive_batch(
     end
     route_state = _ppc_adaptive_route_state()
     state_path = joinpath(tempdir(), "spaceagora_ppc_outer_route_state_$(getpid()).toml")
+    # Warm the path that is about to be timed. The warm-ups above run single
+    # solves on the coordinator and one sample per worker, which is the whole
+    # of a pinned route's machinery but none of an adaptive one's: the campaign
+    # planner, the dispatchers, the pool feeders and the result plumbing were
+    # first compiled inside the first timed repeat, and the workers' heaps
+    # first grew to a campaign's worth of garbage there too. Measured on TRX50
+    # at P4's top budget, an adaptive route's first timed repeat read 5.3 s
+    # against the pinned pool's 3.0 s after the same warm-ups, and its next
+    # five carried the workers' catch-up collections. So each warm-up also
+    # runs one untimed campaign through the runner, exactly as the timed
+    # repeat will.
+    for _ in 1:cfg.warmup
+        withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...,
+                "SPACEAGORA_OUTER_ROUTE_STATE_PATH" => state_path) do
+            try
+                SCamp.run_monte_carlo(sample_fn, sample_jobs; threads=:auto,
+                                      route_features=features, route_state=route_state)
+            catch
+            end
+        end
+    end
     GC.gc()
     batch_started = time()
     r = withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...,

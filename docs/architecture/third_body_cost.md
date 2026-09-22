@@ -250,6 +250,210 @@ order of size:
    would make the per-spacecraft path a buffer read, the same shape as
    `_sample_reusable_solar`.
 
+## The three follow-ups, applied and measured
+
+All three items from the list above were implemented on
+`pv2c-ws10c-thirdbody-engine`. Each was measured on its own: the ladder was run
+back to back before and after each change separately, one thread, same process
+state, N = 256 (best of three) and N = 1024 (best of two), on `space-falcon-1`
+while it was shared with another measurement session -- so every number below is
+a ratio between two runs of the same ladder, never an absolute benchmark.
+
+### What changed
+
+1. `sample_third_body_ephemerides` (`src/simulation/engine/effector_sampling.jl`)
+   builds its position tuple with `map` over `model.body_names` instead of
+   `ntuple` over `length(model.body_names)`. The body-name tuple's length is part
+   of `NBodyGravityModel`'s type, so the mapped construction infers; the
+   `ntuple`-over-a-runtime-`Int` form did not, and allocated the tuple and its
+   boxed closure once per spacecraft per derivative evaluation. Same bodies, same
+   order, same values.
+2. `_rhs_execution_plan_uncached` (`src/simulation/engine/setup.jl`) admits a
+   whole class of stacks to the flat route at `budget <= 1`, not just the
+   single-harmonics one: if every effector is served by a flat-route pre-pass --
+   `_batchable_effector` (n-body, SRP, non-gradient inverse-square) or
+   `_harmonics_prepass_effector` -- and the constellation clears
+   `env.flat_min_sats`, the route is `:flat_constellation_effector_queue` at
+   allotment 1 with the serial effector decision. The new predicate is
+   `_rhs_all_prepass_effectors`, and it dispatches on the same two traits the
+   flat driver itself uses, so it cannot drift from what that driver pre-passes.
+3. `_auto_stiff_smooth_gravity_effector` / `_auto_stiff_smooth_gravity_reject_reason`
+   (`src/simulation/engine/solver_policy.jl`) accept `SolarRadiationPressureModel`
+   as a smooth effector and no longer reject it for declaring `req.solar` -- the
+   solar sample is the Sun position that SRP itself consumes. Any other
+   smooth-gravity effector asking for solar samples still rejects, and
+   `SolverConfig.auto_stiff_gravity_tsit5=false`
+   (`SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5=0`) still disables the whole fast path
+   for a configuration that wants the implicit solver.
+
+### Why the route change is safe at one thread
+
+The flat route at allotment 1 spawns no tasks, and for a pre-pass-only stack it
+does not even build its work queue:
+
+- `_accumulate_dynamic_effectors_flat_slots!` runs the batchable pre-pass and
+  the harmonics pre-pass and returns at `_count_flat_queue_only_effectors(...) == 0`,
+  before `_build_constellation_execution_plan!`.
+- `_accumulate_harmonics_flat_batch!` caps its worker count through
+  `thread_worker_count(active_sats, 1) == 1` and runs the slice inline.
+- `_reduce_flat_effector_slots!` and the final per-satellite assembly
+  (`threaded_foreach(..., plan.allotment)`) both take their serial branch at one
+  worker.
+
+`_rhs_flat_supported(env, ...)` is still required, so the effector set must be
+one the flat route supports at all; `outer_active` needs no separate guard here,
+because the clamp the other branches apply to protect an enclosing outer split
+-- allotment 1 -- is this branch's only allotment.
+
+### Deliverable 1: the type-stable third-body sample
+
+| N | Rung | Wall before | Wall after | Alloc before | Alloc after |
+|---|---|---|---|---|---|
+| 256 | `vacuum` (control) | 0.566 s | 0.583 s | 0.07 GiB | 0.07 GiB |
+| 256 | `nbody` | 3.748 s | 3.367 s | 3.36 GiB | 3.09 GiB |
+| 256 | `srp_nbody` | 29.254 s | 27.323 s | 26.85 GiB | 24.75 GiB |
+| 1024 | `vacuum` (control) | 2.890 s | 2.788 s | 0.30 GiB | 0.30 GiB |
+| 1024 | `nbody` | 18.580 s | 18.497 s | 13.41 GiB | 12.37 GiB |
+| 1024 | `srp_nbody` | 98.493 s | 98.301 s | 72.72 GiB | 67.02 GiB |
+
+The allocation reduction is the measurement that means something: -7.8% of the
+whole solve on every rung that takes the path, at both sizes (3.09/3.36,
+24.75/26.85, 12.37/13.41, 67.02/72.72 -- all 0.921 to 0.922). Divided by the
+work, that is about 0.5 KiB per spacecraft per derivative evaluation at both
+sizes (546 B at N = 256, 526 B at N = 1024, derived from the printed GiB totals
+and `nf` x N). The wall-clock effect is 0.898x on `nbody` and 0.934x on
+`srp_nbody` at N = 256 and inside the noise floor at N = 1024, where the vacuum
+control itself moves 0.965x between the two runs.
+
+**Bit-identity.** The full state history of all three rungs at N = 256 was
+dumped before and after (`variants.jl --dump`) and compared byte for byte:
+
+```
+vacuum:    BYTE-IDENTICAL (4868424 bytes)
+nbody:     BYTE-IDENTICAL (4868424 bytes)
+srp_nbody: BYTE-IDENTICAL (10589232 bytes)
+```
+
+The N = 1024 terminal states agree to all 17 printed digits as well.
+
+### Deliverable 2: the RHS route at a thread budget of one
+
+| N | Rung | Wall before | Wall after | Ratio | Alloc before | Alloc after |
+|---|---|---|---|---|---|---|
+| 256 | `vacuum` (control) | 0.583 s | 0.562 s | 0.96x | 0.07 GiB | 0.07 GiB |
+| 256 | `nbody` | 3.367 s | 1.242 s | 0.37x | 3.09 GiB | 1.26 GiB |
+| 256 | `srp_nbody` | 27.323 s | 6.779 s | 0.25x | 24.75 GiB | 13.89 GiB |
+| 1024 | `vacuum` (control) | 2.788 s | 2.871 s | 1.03x | 0.30 GiB | 0.30 GiB |
+| 1024 | `nbody` | 18.497 s | 4.100 s | 0.22x | 12.37 GiB | 4.95 GiB |
+| 1024 | `srp_nbody` | 98.301 s | 21.741 s | 0.22x | 67.02 GiB | 36.95 GiB |
+
+The vacuum rung is single-harmonics and already took the flat route, which is
+why it is carried here as a control and does not move. Everything else is the
+batched kernel and the shared body samples coming back: 2.7x on `nbody` and
+4.0x on `srp_nbody` at N = 256, 4.5x on both at N = 1024, at an unchanged step
+sequence (`nf`, accepted and rejected steps identical before and after).
+
+**Parity.** The flat route and the per-satellite route reach the same sums by
+different paths, so this is the change where parity had to be shown rather than
+argued. Three independent checks:
+
+```
+dump/cmp, N = 256, before vs after:
+  vacuum:    BYTE-IDENTICAL (4868424 bytes)
+  nbody:     BYTE-IDENTICAL (4868424 bytes)
+  srp_nbody: BYTE-IDENTICAL (10589232 bytes)
+```
+
+- `test/unit/simulation/harmonics_batch_parity_tests.jl` passes unchanged (the
+  batch kernel still reproduces the scalar kernel bit for bit).
+- The `parallelization_performance` harness's trajectory parity, run before and
+  after on `stack32_e2_srp` (harmonics + SRP, 32 spacecraft: a stack the new
+  branch admits) and `stack32_e4_nbody` (which carries aerodynamics and
+  therefore still takes the per-satellite route), serial reference against
+  `full_smart` at two threads, 128 sampled states: `pass=true` with
+  `pos_rel_max = vel_rel_max = 0.0` in both runs.
+
+The N = 1024 terminal states are also identical to all 17 printed digits before
+and after.
+
+### Deliverable 3 (measurement) and deliverable 4: SRP on the explicit solver
+
+| N | Rung | Wall before | Wall after | Ratio |
+|---|---|---|---|---|
+| 256 | `vacuum` (control) | 0.562 s | 0.567 s | 1.01x |
+| 256 | `nbody` (control) | 1.242 s | 1.249 s | 1.01x |
+| 256 | `srp_nbody` | 6.779 s | 0.829 s | 0.12x |
+| 1024 | `vacuum` (control) | 2.871 s | 2.953 s | 1.03x |
+| 1024 | `nbody` (control) | 4.100 s | 4.175 s | 1.02x |
+| 1024 | `srp_nbody` | 21.741 s | 4.451 s | 0.20x |
+
+Only the SRP-carrying rung changes, and it changes because the solver does:
+`nf` falls from 11582 to 2074 at N = 256 (7856 to 2074 at N = 1024) and the
+step sequence becomes the vacuum rung's -- 296 accepted, 0 rejected.
+
+**This one is not bit-identical, by construction:** it is a different
+integrator. The two answers were compared directly on the 256-spacecraft
+`srp_nbody` rung, in one process, with the fast path disabled
+(`SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5=0`, i.e. AutoTsit5 switching to Rodas5P)
+and enabled (Tsit5), at the default 20 s step cap and again at 60 s, because
+`eclipse_area_calc` is a piecewise conical-shadow model and the SRP
+acceleration has a kink at the umbra and penumbra boundaries:
+
+| Step cap | Solver | Wall | `nf` | `njacs` | accepted | rejected |
+|---|---|---|---|---|---|---|
+| 20 s | AutoTsit5(Rodas5P), switched | 7.312 s | 11582 | 639 | 645 | 5 |
+| 20 s | Tsit5 | 0.844 s | 2074 | 0 | 296 | 0 |
+| 60 s | AutoTsit5(Rodas5P), switched | 7.211 s | 11474 | 633 | 638 | 6 |
+| 60 s | Tsit5 | 0.594 s | 1500 | 0 | 214 | 0 |
+
+Maximum difference over all 256 spacecraft's terminal states, explicit against
+implicit:
+
+| Step cap | Position | Velocity |
+|---|---|---|
+| 20 s | 5.33e-10 (relative to the state's norm), 7.61e-08 worst single component | 5.02e-10, 9.76e-08 worst component |
+| 60 s | 1.54e-09 (relative to the norm), 2.90e-07 worst component | 1.46e-09, 2.93e-07 worst component |
+
+The component-wise figure is the larger of the two only because individual
+position and velocity components pass through zero; the norm-relative figure is
+the meaningful one. Tripling the step cap does not trip the shadow kink on this
+case: Tsit5 still takes zero rejected steps at 60 s, while the implicit solver
+takes six. Both comparisons are at `reltol = abstol = 1e-9` in 500-550 km LEO.
+
+### Where the 4096-spacecraft case stands
+
+Cumulatively, on the ladder this file has used throughout (one thread, back to
+back, same process):
+
+| N | Rung | Before all three | After all three | Ratio |
+|---|---|---|---|---|
+| 256 | `srp_nbody` | 29.254 s | 0.829 s | 35.3x faster |
+| 256 | `nbody` | 3.748 s | 1.249 s | 3.0x faster |
+| 1024 | `srp_nbody` | 98.493 s | 4.451 s | 22.1x faster |
+| 1024 | `nbody` | 18.580 s | 4.175 s | 4.4x faster |
+
+The quantity the original observation was about -- `srp_nbody` against `vacuum`
+at the same size and mission -- falls from 51.7x to 1.46x at N = 256 and from
+34.1x to 1.51x at N = 1024. Adding SRP and Sun/Moon third-body gravity to a
+degree-50 constellation now costs about half as much again as the harmonics
+alone, which is what the force model is worth.
+
+With threads the remaining gap is smaller still. Same case, 8 threads, R2
+(`inner_only`), N = 256, after all three changes: `vacuum` 0.294 s, `nbody`
+0.530 s (1.80x), `srp_nbody` 0.556 s (1.89x), against 2.10x and 17.5x for the
+same rungs before this work.
+
+### Still open
+
+The third item on the list above -- giving `_prefill_shared_body_samples!` an
+`rhs_third_body_*` buffer pair so the per-spacecraft path is a buffer read --
+was *not* implemented, and the route change makes it matter less than it did: a
+pre-pass-only stack never calls `sample_third_body_ephemerides` at all now,
+because `_accumulate_nbody_flat_batch!` gathers the body positions once per
+evaluation. It still applies to stacks that keep the per-satellite route, such
+as anything carrying aerodynamics, where the mapped sample of deliverable 1 is
+the only improvement that path has had.
+
 ## Reproducing
 
 ```bash
@@ -270,6 +474,14 @@ julia --project=. --threads=8 benchmarks/studies/third_body_cost/variants.jl \
 # the P6 pair as the calibration runs it, plus a CPU profile
 julia --project=. --threads=1 benchmarks/studies/third_body_cost/attribution.jl \
     --n=256 --mission=5800 --profile
+```
+
+```bash
+# the same rung on the implicit solver, for the explicit-vs-implicit comparison:
+# the env var disables the auto-stiff fast path that now admits SRP
+SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5=0 julia --project=. --threads=1 \
+    benchmarks/studies/third_body_cost/variants.jl \
+    --n=256 --mission=5800 --variants=vacuum,srp_nbody
 ```
 
 `--dump=<prefix>` writes each rung's full state history as raw `Float64` for a

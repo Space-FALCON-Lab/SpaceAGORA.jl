@@ -206,8 +206,16 @@ end
     spice_rhs_memo = p.shared_buffers.spice_rhs_memo
     cache_entry = p.shared_buffers.nbody_ephemeris_cache[]
     perturbation_effectors = SimulationModel.DynamicEffectors.PerturbationEffectors
-    positions_ii = ntuple(length(model.body_names)) do k
-        body_name_spice = SimulationModel.DynamicEffectors._spice_query_name(model.body_names[k])
+    # `map` over the model's own body-name tuple, not `ntuple` over its length:
+    # the length is part of `NBodyGravityModel`'s type, so mapping the tuple
+    # gives the compiler a concrete result type, while `ntuple(f, n::Int)` with
+    # a runtime `n` does not — it boxed the closure and built the tuple
+    # dynamically once per spacecraft per derivative evaluation, which is where
+    # most of this path's allocation went (docs/architecture/third_body_cost.md).
+    # Body order and values are unchanged; `positions_ii[k]` still belongs to
+    # `model.body_names[k]`.
+    positions_ii = map(model.body_names) do body_name
+        body_name_spice = SimulationModel.DynamicEffectors._spice_query_name(body_name)
         pos_primary_body_j2000_m = if cache_entry isa SimulationModel.NBodyEphemerisCache
             cached = SimulationModel.DynamicEffectors._nbody_body_position_from_cache_j2000_m(
                 cache_entry,
@@ -324,7 +332,7 @@ end
     return sample_environment_with_reusable_buffers(req, model, x, p, sat_idx, t)
 end
 
-@inline function _wrench_method_available(effector::SimulationModel.DynamicEffectors.GravitationalHarmonicsModel)::Bool
+@inline function _wrench_method_available(::SimulationModel.DynamicEffectors.GravitationalHarmonicsModel)::Bool
     # The legacy RHS path reuses per-satellite harmonics scratch buffers; the
     # generic wrench hook allocates a scratch workspace per call.
     return false

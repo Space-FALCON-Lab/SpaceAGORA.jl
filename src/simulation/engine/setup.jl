@@ -815,6 +815,24 @@ end
     return false
 end
 
+# Every effector in the stack is served by one of the flat route's serial
+# pre-passes: the batchable kernels (`_accumulate_nbody_flat_batch!`,
+# `_accumulate_srp_flat_batch!`, `_accumulate_invsq_flat_batch!`,
+# `_accumulate_invsq_j2_flat_batch!`) or the harmonics SIMD pre-pass. For such a
+# stack `_accumulate_dynamic_effectors_flat_slots!` returns inside the pre-passes
+# (`_count_flat_queue_only_effectors(...) == 0`) and the per-(satellite, effector)
+# work queue is never built, which is what makes the route safe to take at a
+# thread allotment of one. The predicates are the ones the flat driver itself
+# dispatches on, in dynamics_rhs.jl, so this cannot drift from what that driver
+# actually pre-passes.
+@inline function _rhs_all_prepass_effectors(dynamic_effectors::Tuple)::Bool
+    isempty(dynamic_effectors) && return false
+    @inbounds for effector in dynamic_effectors
+        (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) || return false
+    end
+    return true
+end
+
 # Forces an effector decision to serial, preserving the mode/policy fields for
 # telemetry while making it structurally impossible to enable nested effector
 # threads under satellite_batch.
@@ -1385,6 +1403,44 @@ end
         return (
             mode=:flat_constellation_effector_queue,
             allotment=outer_serialized ? 1 : min(max(1, budget), active_sats),
+            scheduler=:dynamic,
+            dominant_axis=:flat_effector,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
+    end
+
+    # Pre-pass-only stacks reach the batched route at one thread as well.
+    #
+    # The single-harmonics branch above already takes the flat route at
+    # `budget <= 1`, and the reason it is safe there has nothing to do with the
+    # stack having one effector: at allotment 1 the flat route spawns no tasks.
+    # When every effector is pre-passed (harmonics, n-body, SRP, plain
+    # inverse-square), `_accumulate_dynamic_effectors_flat_slots!` finishes
+    # inside the two serial pre-passes and returns before the flat work queue is
+    # built, `_accumulate_harmonics_flat_batch!` runs its slice inline at
+    # `n_workers <= 1`, and the slot reduction and the final per-satellite
+    # assembly both degenerate to serial loops (`thread_worker_count(..., 1) == 1`).
+    # `outer_active` therefore needs no separate guard here the way it does on
+    # the branches that can route a wider allotment.
+    #
+    # What the per-satellite route gives up on such a stack is the batched
+    # coefficient sweep -- each (degree, order) loaded once for a slice of
+    # spacecraft instead of once per spacecraft -- and the shared Sun/third-body
+    # samples that `_accumulate_nbody_flat_batch!` and `_accumulate_srp_flat_batch!`
+    # read once per derivative evaluation. Measured at 3.5x on a 256-spacecraft
+    # degree-50 vacuum rung, where adding any second effector was enough to lose
+    # the batched kernel (docs/architecture/third_body_cost.md).
+    #
+    # `env.flat_min_sats` gates this for the same reason it gates the
+    # single-harmonics branch: below it the batched sweep has too few
+    # spacecraft to pay for the flat route's slot and state buffers.
+    if budget <= 1 && active_sats > 1 && active_sats >= env.flat_min_sats &&
+       _rhs_flat_supported(env, dynamic_effectors) &&
+       _rhs_all_prepass_effectors(dynamic_effectors)
+        return (
+            mode=:flat_constellation_effector_queue,
+            allotment=1,
             scheduler=:dynamic,
             dominant_axis=:flat_effector,
             policy_applied=true,

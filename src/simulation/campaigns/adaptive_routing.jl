@@ -890,6 +890,12 @@ mutable struct _PredictiveGuardState
     worker_n::Int
     worker_work_s::Float64
     worker_occupancy_s::Float64
+    # Occupancy of the worker samples that were NOT that worker's first. A
+    # worker's first sample of a dispatch carries one-time cost the rest do
+    # not, and the guard's "is the pool being harmed" test has to read the
+    # steady number or it reads the dispatch's own start-up every time.
+    worker_steady_n::Int
+    worker_steady_occupancy_s::Float64
     local_n::Int
     local_work_s::Float64
     local_occupancy_s::Float64
@@ -901,7 +907,7 @@ end
 _PredictiveGuardState(workers::Integer, locals::Integer) = _PredictiveGuardState(
     ReentrantLock(), Base.Threads.Atomic{Bool}(false),
     fill(false, max(0, Int(workers))), fill(false, max(0, Int(locals))), 0, 0,
-    0, 0.0, 0.0, 0, 0.0, 0.0, nothing, 0, 0)
+    0, 0.0, 0.0, 0, 0.0, 0, 0.0, 0.0, nothing, 0, 0)
 
 # Mean work and mean occupancy per class, from what has landed so far.
 #
@@ -929,6 +935,13 @@ _PredictiveGuardState(workers::Integer, locals::Integer) = _PredictiveGuardState
         g.worker_n += 1
         g.worker_work_s += sample.elapsed_s
         isfinite(occ) && occ > 0.0 && (g.worker_occupancy_s += occ)
+        # `worker_seen[ordinal]` is still false for this worker's FIRST sample,
+        # which is exactly the one to leave out of the steady figure.
+        known = (1 <= ordinal <= length(g.worker_seen)) && g.worker_seen[ordinal]
+        if known && isfinite(occ) && occ > 0.0
+            g.worker_steady_n += 1
+            g.worker_steady_occupancy_s += occ
+        end
         (1 <= ordinal <= length(g.worker_seen)) && (g.worker_seen[ordinal] = true)
     elseif class === :local
         g.local_n += 1
@@ -1041,6 +1054,8 @@ function _run_campaign_predictive(
                 local_mean_s=_predictive_guard_mean(guard.local_work_s, guard.local_n),
                 worker_occupancy_s=_predictive_guard_mean(guard.worker_occupancy_s, guard.worker_n),
                 local_occupancy_s=_predictive_guard_mean(guard.local_occupancy_s, guard.local_n),
+                worker_steady_occupancy_s=_predictive_guard_mean(
+                    guard.worker_steady_occupancy_s, guard.worker_steady_n),
                 remaining=max(0, n - guard.completed),
                 threads=reachable_threads,
                 threads_candidate=threads_reachable,
@@ -1091,8 +1106,12 @@ function _run_campaign_predictive(
                 "local_mean=$(round(local_mean * 1e3; digits=2))ms/$(guard.local_n) " *
                 "predicted_ratio=$(round(plan.heap_slowdown / plan.worker_slowdown; digits=3)) " *
                 "observed/predicted=$(round(verdict === nothing ? NaN : verdict.ratio; digits=3))")
+        steady_occ = _predictive_guard_mean(guard.worker_steady_occupancy_s, guard.worker_steady_n)
         println("[predictive] guard occupancy worker=$(round(worker_occ * 1e3; digits=2))ms " *
+                "steady=$(round(steady_occ * 1e3; digits=2))ms/$(guard.worker_steady_n) " *
                 "local=$(round(local_occ * 1e3; digits=2))ms " *
+                "local_slowdown=$(round(verdict === nothing ? NaN : verdict.local_slowdown; digits=3)) " *
+                "worker_degradation=$(round(verdict === nothing ? NaN : verdict.worker_degradation; digits=3)) " *
                 "worker/local=$(round(verdict === nothing ? NaN : verdict.occupancy_ratio; digits=3)) " *
                 "rest continue=$(round(verdict === nothing ? NaN : verdict.continue_s; digits=3))s " *
                 "threads=$(round(verdict === nothing ? NaN : verdict.threads_s; digits=3))s")

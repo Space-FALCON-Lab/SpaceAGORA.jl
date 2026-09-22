@@ -64,8 +64,9 @@ end
     raw = lowercase(strip(get(ENV, String(name), "")))
     isempty(raw) && return fallback
     raw == "none" && return :none
+    raw == "locals" && return :locals
     raw == "usl" && return :usl
-    throw(ArgumentError("$(name) must be \"none\" or \"usl\"; got \"$(raw)\"."))
+    throw(ArgumentError("$(name) must be \"none\", \"locals\" or \"usl\"; got \"$(raw)\"."))
 end
 
 @inline function _predictive_env_bool(name::AbstractString, fallback::Bool)::Bool
@@ -125,6 +126,12 @@ the unit tests drive a plan space the host machine does not have).
   `docs/architecture/predictive_routing_r7.md`. Machine constants are loaded
   and traced either way; `:none` declines to use them for contention, it does
   not hide them.
+- `local_thrash` (`SPACEAGORA_PREDICTIVE_LOCAL_THRASH`, default `3.0`,
+  ASSUMED): the observed local-slot slowdown, relative to a pool worker, past
+  which the guard trims the local slots even though the pool is unharmed. Well
+  above `guard_factor`, because a local slot that is merely slower than a
+  worker still adds throughput; only one that is slow enough to be losing more
+  than it adds is worth closing.
 - `route_switch` (`SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH`, default `false`):
   whether the guard may move the remainder of a campaign from the pool to the
   threads route. Built, measured, and shipped OFF: on this repo's workstation
@@ -147,6 +154,7 @@ struct PredictivePlannerConfig
     remote_overhead::Float64
     route_switch::Bool
     heap_model::Symbol
+    local_thrash::Float64
 end
 
 function PredictivePlannerConfig(;
@@ -159,7 +167,9 @@ function PredictivePlannerConfig(;
     route_switch::Bool = _predictive_env_bool(
         "SPACEAGORA_PREDICTIVE_GUARD_ROUTE_SWITCH", false),
     heap_model::Symbol = _predictive_env_heap_model(
-        "SPACEAGORA_PREDICTIVE_HEAP_MODEL", :none),
+        "SPACEAGORA_PREDICTIVE_HEAP_MODEL", :locals),
+    local_thrash::Real = _predictive_env_float(
+        "SPACEAGORA_PREDICTIVE_LOCAL_THRASH", 3.0),
 )
     margin >= 0.0 || throw(ArgumentError("PredictivePlannerConfig margin must be >= 0; got $(margin)."))
     guard_factor >= 1.0 ||
@@ -168,22 +178,32 @@ function PredictivePlannerConfig(;
         throw(ArgumentError("PredictivePlannerConfig local_slots_max must be >= 0; got $(local_slots_max)."))
     remote_overhead >= 0.0 ||
         throw(ArgumentError("PredictivePlannerConfig remote_overhead must be >= 0; got $(remote_overhead)."))
-    heap_model in (:none, :usl) || throw(ArgumentError(
-        "PredictivePlannerConfig heap_model must be :none or :usl; got :$(heap_model)."))
+    heap_model in (:none, :locals, :usl) || throw(ArgumentError(
+        "PredictivePlannerConfig heap_model must be :none, :locals or :usl; got :$(heap_model)."))
+    local_thrash >= 1.0 || throw(ArgumentError(
+        "PredictivePlannerConfig local_thrash must be >= 1; got $(local_thrash)."))
     return PredictivePlannerConfig(Float64(margin), Float64(guard_factor), Int(local_slots_max),
-                                   Float64(remote_overhead), route_switch, heap_model)
+                                   Float64(remote_overhead), route_switch, heap_model,
+                                   Float64(local_thrash))
 end
 
-# The constants the CONTENTION term may use, which is not the same question as
-# which constants were loaded. Under the default `:none` model the planner has
-# machine constants in hand and declines to charge contention with them; they
-# are still reported, so a trace says what the machine knows as well as what
-# the planner used.
+# The constants the CONTENTION term may use FOR THIS ROUTE, which is not the
+# same question as which constants were loaded. The planner can have machine
+# constants in hand and decline to charge contention with them; they are still
+# reported, so a trace says what the machine knows as well as what the planner
+# used.
+#
+# The route argument is the whole of the `:locals` model: coordinator local
+# slots in a mixed plan are charged, threads-route tasks are not, and that
+# asymmetry is measured rather than assumed. See the docs.
 @inline function _predictive_contention_constants(
     config::PredictivePlannerConfig,
     constants::Union{Nothing, ParallelCost.MachineConstants},
+    route::Symbol,
 )
-    return config.heap_model === :usl ? constants : nothing
+    config.heap_model === :usl && return constants
+    config.heap_model === :locals && return route === :process ? constants : nothing
+    return nothing
 end
 
 
@@ -376,26 +396,28 @@ function predictive_plan_candidates(;
     n = max(0, Int(n_samples))
     T = max(1, Int(threads))
     pool = Int(process_workers) >= 2 ? min(Int(process_workers), n) : 0
-    # `constants` says what the machine has measured; `contention` says what
-    # this planner will charge for sharing a heap, which under the default
-    # heap model is nothing. See `_predictive_contention_constants`.
-    contention = _predictive_contention_constants(config, constants)
+    # `constants` says what the machine has measured; these say what this
+    # planner will charge for sharing a heap, which under the default heap
+    # model is the local slots and nothing else. See
+    # `_predictive_contention_constants`.
+    contention_process = _predictive_contention_constants(config, constants, :process)
+    contention_threads = _predictive_contention_constants(config, constants, :threads)
     plans = PredictivePlan[]
     if n <= 1 || (T <= 1 && pool == 0)
-        push!(plans, _predictive_plan(:none, 1, 0, n, true, contention, config.remote_overhead))
+        push!(plans, _predictive_plan(:none, 1, 0, n, true, nothing, config.remote_overhead))
     end
     if n > 1 && T > 1 && threads_candidate
         W = min(n, T)
-        W > 1 && push!(plans, _predictive_plan(:threads, W, 0, n, true, contention, config.remote_overhead))
+        W > 1 && push!(plans, _predictive_plan(:threads, W, 0, n, true, contention_threads, config.remote_overhead))
     end
     if n > 1 && pool >= 2
         lmax = max(0, min(config.local_slots_max, n - pool, Int(local_slots_cap)))
         for L in 0:lmax
-            push!(plans, _predictive_plan(:process, pool, L, n, L == 0, contention, config.remote_overhead))
+            push!(plans, _predictive_plan(:process, pool, L, n, L == 0, contention_process, config.remote_overhead))
         end
     end
     # A shape with no parallel route at all still has to run.
-    isempty(plans) && push!(plans, _predictive_plan(:none, 1, 0, n, true, contention, config.remote_overhead))
+    isempty(plans) && push!(plans, _predictive_plan(:none, 1, 0, n, true, nothing, config.remote_overhead))
     return plans
 end
 
@@ -470,6 +492,47 @@ function predictive_plan(;
 end
 
 """
+    predictive_trim_target(plan, config, constants, local_slowdown) -> Int
+
+How many local slots to keep once the guard has decided to trim.
+
+Not half of them. Halving is a step in a direction, not an answer, and on the
+TRX50's P4 at 8 threads it cut seven slots to three where seven was the faster
+plan (R6 ran `w8+l7` at 2.563 s against the pinned pool's 3.800 s).
+
+With a calibrated contention curve the answer is the curve's own turnover.
+Throughput with `W` workers and `L` local slots is `W/c_w + L/c_l(L)`, and
+modeling `c_l(L)` as the observation scaled along the calibrated shape,
+`c_l(L) = c_obs * s_heap(L) / s_heap(L_0)`, makes the second term proportional
+to `L / s_heap(L)` -- which is `usl_speedup` itself. So the maximizing width is
+[`usl_peak_workers`](@ref), `sqrt((1-alpha)/beta)`, and the observation sets
+the level while the curve sets the shape; the argmax depends only on the shape.
+
+Two fallbacks, both narrower than the plan by construction. A curve whose peak
+is at or beyond the running width says the width is fine, which contradicts the
+observation that made the guard fire -- there the observation wins and the
+width is halved. A machine with no curve at all has nothing better than halving
+either. Both are ASSUMED, and both only ever reduce.
+"""
+function predictive_trim_target(plan::PredictivePlan, config::PredictivePlannerConfig,
+                                constants::Union{Nothing, ParallelCost.MachineConstants},
+                                local_slowdown::Real = NaN)::Int
+    L0 = plan.local_slots
+    L0 > 1 || return 0
+    curve = _predictive_contention_constants(config, constants, :process)
+    if curve !== nothing
+        alpha = max(0.0, curve.usl_alpha_base)
+        beta = max(0.0, curve.usl_beta_alloc)
+        peak = ParallelCost.usl_peak_workers(alpha, beta)
+        if isfinite(peak) && peak >= 1.0
+            target = clamp(round(Int, peak), 0, L0)
+            target < L0 && return target
+        end
+    end
+    return L0 ÷ 2
+end
+
+"""
     predictive_guard_verdict(plan, config; worker_mean_s, local_mean_s,
                              worker_occupancy_s, local_occupancy_s, remaining,
                              threads, threads_candidate, constants,
@@ -535,6 +598,7 @@ function predictive_guard_verdict(
     local_mean_s::Float64,
     worker_occupancy_s::Float64 = NaN,
     local_occupancy_s::Float64 = NaN,
+    worker_steady_occupancy_s::Float64 = NaN,
     remaining::Integer = 0,
     threads::Integer = Base.Threads.nthreads(),
     threads_candidate::Bool = true,
@@ -543,6 +607,7 @@ function predictive_guard_verdict(
 )
     keep = (; replan = false, route = plan.route, workers = plan.workers,
             local_slots = plan.local_slots, ratio = NaN, occupancy_ratio = NaN,
+            local_slowdown = NaN, worker_degradation = NaN,
             continue_s = NaN, threads_s = NaN, reason = :nothing_to_reduce)
     (plan.route === :process && plan.local_slots > 0) || return keep
     if failures > 0
@@ -563,7 +628,10 @@ function predictive_guard_verdict(
     width = min(n_rest, max(1, Int(threads)))
     if occupancy_ok && threads_candidate && width > 1 && n_rest > 0 &&
        occupancy_ratio > config.guard_factor
-        contention = _predictive_contention_constants(config, constants)
+        # The destination is the threads route, so it is priced the way the
+        # threads route is priced under this heap model -- which under
+        # `:locals` means no contention term, hence no widening charge.
+        contention = _predictive_contention_constants(config, constants, :threads)
         scale = if contention === nothing
             1.0
         else
@@ -592,16 +660,47 @@ function predictive_guard_verdict(
                 reason = :threads_no_better)
     end
 
-    # Direction one: were the local slots worth what the model charged them?
-    if ratio > 2.0 * config.guard_factor
-        return (; keep..., replan = true, local_slots = 0, ratio = ratio,
-                occupancy_ratio = occupancy_ratio, reason = :local_slots_far_slower)
-    elseif ratio > config.guard_factor
-        return (; keep..., replan = true, local_slots = plan.local_slots ÷ 2,
+    # Direction one: are the local slots worth keeping?
+    #
+    # Being slower than a pool worker is not a reason to close one. A local
+    # slot at 1.5x a worker still adds two thirds of a worker's throughput, and
+    # the old rule -- trim whenever the observed/predicted ratio passed
+    # `guard_factor` -- closed slots that were paying their way: on the TRX50's
+    # P4 at 8 threads it cut seven to three, where R6's seven ran 2.563 s
+    # against the pinned pool's 3.800 s.
+    #
+    # Two things make a local slot worth closing, and neither is "slower".
+    #
+    #   (a) The pool is being harmed through the coordinator. The local slots
+    #       share this process with the `@async` feeders that keep the workers
+    #       supplied, so enough local work stalls the feeders and the workers
+    #       go idle waiting for jobs. That shows up as the workers' own STEADY
+    #       occupancy -- their cost per sample after their first, which is free
+    #       of the one-time per-worker dispatch cost -- inflating against the
+    #       work they report doing.
+    #
+    #   (b) The local slots are thrashing among themselves, past
+    #       `local_thrash`, which is far enough above `guard_factor` that a
+    #       merely-slower slot is left alone.
+    #
+    # A steady worker observation does not exist yet when the guard decides on
+    # a short campaign -- the decision fires once every consumer has reported
+    # ONCE, and for a worker that one sample is its first. Rule (a) then cannot
+    # fire, and only (b) can, which is the conservative way round.
+    local_slowdown = local_mean_s / worker_mean_s
+    worker_degradation = (isfinite(worker_steady_occupancy_s) && worker_steady_occupancy_s > 0.0) ?
+        (worker_steady_occupancy_s / worker_mean_s) / max(1.0e-12, plan.worker_slowdown) : NaN
+    pool_harmed = isfinite(worker_degradation) && worker_degradation > config.guard_factor
+    locals_thrashing = local_slowdown > config.local_thrash
+    if pool_harmed || locals_thrashing
+        target = predictive_trim_target(plan, config, constants, local_slowdown)
+        target < plan.local_slots && return (; keep..., replan = true, local_slots = target,
                 ratio = ratio, occupancy_ratio = occupancy_ratio,
-                reason = :local_slots_slower)
+                local_slowdown = local_slowdown, worker_degradation = worker_degradation,
+                reason = pool_harmed ? :workers_degraded : :local_slots_thrashing)
     end
     return (; keep..., ratio = ratio, occupancy_ratio = occupancy_ratio,
+            local_slowdown = local_slowdown, worker_degradation = worker_degradation,
             reason = :observation_matches)
 end
 

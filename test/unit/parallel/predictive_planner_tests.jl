@@ -30,17 +30,24 @@ function _constants(; alpha = 0.05, beta_alloc = 0.004)
 end
 
 _cfg(; margin = 0.15, guard_factor = 1.5, local_slots_max = 64, remote_overhead = 0.0,
-     route_switch = true, heap_model = :none) =
+     route_switch = true, heap_model = :locals, local_thrash = 3.0) =
     SCamp.PredictivePlannerConfig(margin = margin, guard_factor = guard_factor,
                                   local_slots_max = local_slots_max,
                                   remote_overhead = remote_overhead,
                                   route_switch = route_switch,
-                                  heap_model = heap_model)
+                                  heap_model = heap_model,
+                                  local_thrash = local_thrash)
 
 # The TRX50's own calibration, from job 20260921-202331-989854 (fingerprint
 # f48f5e44b83aeac4). SOURCED: these are the numbers the machine measured, and
 # the two points below are what the planner did with them.
 _trx50_constants() = _constants(alpha = 0.156, beta_alloc = 0.00605)
+
+# A mixed plan with a known shape, priced the way the planner would price it
+# on an uncalibrated machine.
+_guard_plan(; local_slots = 3, workers = 8, n = 64, remote_overhead = 0.0) =
+    SCamp._predictive_plan(:process, workers, local_slots, n, local_slots == 0,
+                           nothing, remote_overhead)
 
 # Shorthand for "the plan the planner chose for this shape", with the machine
 # supplied rather than inherited.
@@ -92,7 +99,8 @@ end
         @test c.local_slots_max == max(0, Base.Threads.nthreads() - 1)
         @test c.remote_overhead == 0.0
         @test c.route_switch == false          # built, measured, shipped off
-        @test c.heap_model === :none           # measured and refuted, see below
+        @test c.heap_model === :locals         # the measured split, see below
+        @test c.local_thrash == 3.0
     end
     withenv("SPACEAGORA_PREDICTIVE_MARGIN" => "0.4",
             "SPACEAGORA_PREDICTIVE_GUARD_FACTOR" => "2.5",
@@ -125,6 +133,13 @@ end
     withenv("SPACEAGORA_PREDICTIVE_HEAP_MODEL" => "NONE") do
         @test SCamp.PredictivePlannerConfig().heap_model === :none
     end
+    withenv("SPACEAGORA_PREDICTIVE_HEAP_MODEL" => "locals") do
+        @test SCamp.PredictivePlannerConfig().heap_model === :locals
+    end
+    withenv("SPACEAGORA_PREDICTIVE_LOCAL_THRASH" => "4.5") do
+        @test SCamp.PredictivePlannerConfig().local_thrash == 4.5
+    end
+    @test_throws ArgumentError SCamp.PredictivePlannerConfig(local_thrash = 0.5)
     withenv("SPACEAGORA_PREDICTIVE_HEAP_MODEL" => "amdahl") do
         @test_throws ArgumentError SCamp.PredictivePlannerConfig()
     end
@@ -234,6 +249,48 @@ end
     @test planning.reason === :static_equivalent_best
 end
 
+@testset "P3 independent_1sat_1hr at 32 workers x 32 threads: the locals are suppressed" begin
+    # Cold re-run with heap_model=none, job 20260922-063133-1886099: pinned
+    # process 0.430, R6 mixed w32+l31 0.552, R7 (which chose w32+l31 and had
+    # the guard close every local slot) 0.599 -- a fail at 1.39 of the pinned
+    # route. The previous run, with the contention term applied, chose pure
+    # process a priori and ran 0.433, a ratio of 0.96.
+    #
+    # Thirty-one local slots beside thirty-two feeders thrash the coordinator,
+    # and the guard cannot recover what round one already spent. The term has
+    # to be in the plan, not in the recovery.
+    planning = SCamp.predictive_plan(
+        n_samples = 256, threads = 32, process_workers = 32, threads_candidate = true,
+        local_slots_cap = 31, constants = _trx50_constants(),
+        config = _cfg(local_slots_max = 31))
+    @test planning.constants_loaded
+    @test planning.chosen.route === :process
+    @test planning.chosen.workers == 32
+    @test planning.chosen.local_slots < 31        # never the full fan-out again
+    @test planning.chosen.static_equivalent       # here, in fact, none at all
+    # Without the term the same shape takes every slot it is offered, which is
+    # the plan that failed.
+    flat = SCamp.predictive_plan(
+        n_samples = 256, threads = 32, process_workers = 32, threads_candidate = true,
+        local_slots_cap = 31, constants = _trx50_constants(),
+        config = _cfg(local_slots_max = 31, heap_model = :none))
+    @test flat.chosen.local_slots > planning.chosen.local_slots
+end
+
+@testset "P4 montecarlo_heavy_aerobraking at 8 workers x 8 threads: still mixed" begin
+    # Same run: pinned process 3.800, R6 mixed w8+l7 2.563, R7 3.071. The
+    # contention term must not foreclose the mixed plan here -- the local slots
+    # are worth several rounds -- so it is charged and the plan is still mixed.
+    planning = SCamp.predictive_plan(
+        n_samples = 32, threads = 8, process_workers = 8, threads_candidate = true,
+        local_slots_cap = 7, constants = _trx50_constants(),
+        config = _cfg(local_slots_max = 7))
+    @test planning.chosen.route === :process
+    @test planning.chosen.local_slots >= 3
+    @test !planning.chosen.static_equivalent
+    @test planning.reason === :predicted_gain
+end
+
 @testset "the usl heap model still produces its old ranking when asked for" begin
     # Same shape, same constants, the two models. `:none` ranks by round count
     # and takes the pinned threads plan; `:usl` prices sixteen tasks on one
@@ -242,7 +299,8 @@ end
     shape = (n_samples = 16, threads = 16, process_workers = 8,
              threads_candidate = true, local_slots_cap = 15,
              constants = _trx50_constants())
-    off = SCamp.predictive_plan(; shape..., config = _cfg(local_slots_max = 15))
+    off = SCamp.predictive_plan(; shape...,
+                                config = _cfg(local_slots_max = 15, heap_model = :none))
     on  = SCamp.predictive_plan(; shape...,
                                 config = _cfg(local_slots_max = 15, heap_model = :usl))
     @test off.chosen.route === :threads && off.chosen.workers == 16
@@ -253,6 +311,13 @@ end
     mc = _trx50_constants()
     @test SCamp.predictive_heap_slowdown(mc, 16) > 4.0
     @test SCamp.predictive_heap_slowdown(mc, 8) > 2.0
+    # The default model charges the local slots and leaves the threads plan
+    # alone, which is the whole of the difference between it and `:usl`.
+    mid = SCamp.predictive_plan(; shape..., config = _cfg(local_slots_max = 15))
+    threads_mid = first(p for p in mid.plans if p.route === :threads)
+    mixed_mid = first(p for p in mid.plans if p.route === :process && p.local_slots == 8)
+    @test threads_mid.heap_slowdown == 1.0
+    @test mixed_mid.heap_slowdown > 1.0
     threads_off = first(p for p in off.plans if p.route === :threads)
     threads_on = first(p for p in on.plans if p.route === :threads)
     @test threads_off.heap_slowdown == 1.0
@@ -437,16 +502,21 @@ end
     @test !v.replan && v.local_slots == plan.local_slots
     @test v.reason === :observation_matches
     @test isapprox(v.ratio, 1.0; atol = 1e-9)
-    # Local slots twice as slow as predicted: halve them.
+    # Merely slower than a pool worker is NOT a reason to close a slot. This
+    # is the TRX50's P4 at 8 threads: the guard cut seven slots to three where
+    # seven ran 2.563 s against the pinned pool's 3.800 s. Two-and-a-half times
+    # a worker still adds throughput, and the pool is unharmed.
     v2 = SCamp.predictive_guard_verdict(plan, cfg;
-        worker_mean_s = 0.10, local_mean_s = 0.20 * plan.heap_slowdown, failures = 0)
-    @test v2.replan && v2.local_slots == plan.local_slots ÷ 2
-    @test v2.reason === :local_slots_slower
-    # Far past the factor: drop them entirely, which is the static plan.
+        worker_mean_s = 0.10, local_mean_s = 0.25, failures = 0)
+    @test !v2.replan && v2.local_slots == plan.local_slots
+    @test v2.reason === :observation_matches
+    @test isapprox(v2.local_slowdown, 2.5; atol = 1e-9)
+    # Past the thrash threshold it is.
     v3 = SCamp.predictive_guard_verdict(plan, cfg;
-        worker_mean_s = 0.10, local_mean_s = 0.50 * plan.heap_slowdown, failures = 0)
-    @test v3.replan && v3.local_slots == 0
-    @test v3.reason === :local_slots_far_slower
+        worker_mean_s = 0.10, local_mean_s = 0.50, failures = 0)
+    @test v3.replan && v3.local_slots < plan.local_slots
+    @test v3.reason === :local_slots_thrashing
+    @test isapprox(v3.local_slowdown, 5.0; atol = 1e-9)
     # A failure is the strongest signal there is.
     v4 = SCamp.predictive_guard_verdict(plan, cfg;
         worker_mean_s = 0.10, local_mean_s = 0.10, failures = 1)
@@ -459,12 +529,74 @@ end
     v6 = SCamp.predictive_guard_verdict(plan, cfg;
         worker_mean_s = NaN, local_mean_s = 0.1, failures = 0)
     @test !v6.replan && v6.reason === :not_observed
+    # The threshold is a knob, and lowering it restores the old eagerness.
+    eager = _cfg(guard_factor = 1.5, local_thrash = 2.0)
+    @test SCamp.predictive_guard_verdict(plan, eager;
+        worker_mean_s = 0.10, local_mean_s = 0.25, failures = 0).reason ===
+        :local_slots_thrashing
     # A static plan has nothing the guard can reduce.
     static = _chosen(n = 32, threads = 32, pool = 32, local_cap = 31,
                      config = _cfg(local_slots_max = 31))
     v7 = SCamp.predictive_guard_verdict(static, cfg;
         worker_mean_s = 0.1, local_mean_s = 10.0, failures = 3)
     @test !v7.replan && v7.reason === :nothing_to_reduce
+end
+
+@testset "the pool being harmed through the coordinator is the other trigger" begin
+    # The local slots share this process with the @async feeders that keep the
+    # workers supplied. Enough local work stalls the feeders and the workers go
+    # idle -- which shows up as the workers' STEADY occupancy (their cost after
+    # their first sample, free of the dispatch's one-time cost) inflating
+    # against the work they report.
+    cfg = _cfg(guard_factor = 1.5)
+    plan = _guard_plan(local_slots = 7, workers = 8)
+    base = (worker_mean_s = 0.10, local_mean_s = 0.12, failures = 0)   # locals fine
+    # Workers occupying what they work: nothing to answer for.
+    healthy = SCamp.predictive_guard_verdict(plan, cfg; base...,
+        worker_steady_occupancy_s = 0.105)
+    @test !healthy.replan && healthy.reason === :observation_matches
+    @test isapprox(healthy.worker_degradation, 1.05; atol = 1e-9)
+    # Workers occupying three times the work they do, with the local class
+    # looking perfectly healthy: the pool is being starved, and the slots go.
+    harmed = SCamp.predictive_guard_verdict(plan, cfg; base...,
+        worker_steady_occupancy_s = 0.30)
+    @test harmed.replan && harmed.local_slots < plan.local_slots
+    @test harmed.reason === :workers_degraded
+    @test isapprox(harmed.worker_degradation, 3.0; atol = 1e-9)
+    # No steady observation yet -- every worker sample so far is that worker's
+    # first -- so this rule cannot fire, and only thrash can.
+    blind = SCamp.predictive_guard_verdict(plan, cfg; base...)
+    @test !blind.replan && blind.reason === :observation_matches
+    @test isnan(blind.worker_degradation)
+end
+
+@testset "a trim is sized from the contention curve, not by halving" begin
+    # Throughput with W workers and L slots is W/c_w + L/c_l(L); modeling
+    # c_l(L) along the calibrated shape makes the second term proportional to
+    # usl_speedup(L), whose peak is usl_peak_workers. At the TRX50's constants
+    # that is sqrt((1 - 0.156) / 0.00605), a little under twelve.
+    mc = _trx50_constants()
+    cfg = _cfg(guard_factor = 1.5)
+    peak = SpaceAGORA.SimulationModel.ParallelCost.usl_peak_workers(0.156, 0.00605)
+    @test 11.0 < peak < 13.0
+    wide = _guard_plan(local_slots = 31, workers = 32)
+    @test SCamp.predictive_trim_target(wide, cfg, mc) == round(Int, peak)
+    # A plan already narrower than the peak: the curve says the width is fine,
+    # which contradicts the observation that fired the guard, so the
+    # observation wins and the width is halved.
+    narrow = _guard_plan(local_slots = 7, workers = 8)
+    @test SCamp.predictive_trim_target(narrow, cfg, mc) == 3
+    # No curve at all -- no constants, or a model that declines them -- is the
+    # same fallback.
+    @test SCamp.predictive_trim_target(wide, cfg, nothing) == 15
+    @test SCamp.predictive_trim_target(wide, _cfg(heap_model = :none), mc) == 15
+    # One slot cannot be trimmed to anything but none.
+    @test SCamp.predictive_trim_target(_guard_plan(local_slots = 1), cfg, mc) == 0
+    # A real trim on the wide plan lands on the curve's peak, not on sixteen.
+    trimmed = SCamp.predictive_guard_verdict(wide, cfg;
+        worker_mean_s = 0.01, local_mean_s = 0.05, constants = mc, failures = 0)
+    @test trimmed.replan && trimmed.reason === :local_slots_thrashing
+    @test trimmed.local_slots == round(Int, peak)
 end
 
 @testset "a re-plan keeps the route and re-prices the remainder" begin
@@ -516,12 +648,6 @@ end
 # independent_1sat_1hr at 64 samples of ~38 ms over 8 pool workers and 3 local
 # slots, and from the TRX50 cold-11 ratios quoted for W <= 8. They are used as
 # the expected DIRECTION of the decision, never as a fitted target.
-
-# A mixed plan with a known shape, priced the way the planner would price it
-# on an uncalibrated machine.
-_guard_plan(; local_slots = 3, workers = 8, n = 64, remote_overhead = 0.0) =
-    SCamp._predictive_plan(:process, workers, local_slots, n, local_slots == 0,
-                           nothing, remote_overhead)
 
 @testset "workers occupying far more than local slots move the remainder to threads" begin
     cfg = _cfg(guard_factor = 1.5)
@@ -585,13 +711,13 @@ end
 @testset "the two directions coexist, and the route change wins a tie" begin
     cfg = _cfg(guard_factor = 1.5)
     plan = _guard_plan()
-    # Healthy occupancies, slow local work: direction one, as before.
+    # Healthy occupancies, thrashing local work: direction one.
     v1 = SCamp.predictive_guard_verdict(plan, cfg;
         worker_mean_s = 0.05, local_mean_s = 0.20,
         worker_occupancy_s = 0.05, local_occupancy_s = 0.05,
         remaining = 53, threads = 8, threads_candidate = true, constants = nothing)
-    @test v1.replan && v1.route === :process && v1.local_slots == 0
-    @test v1.reason === :local_slots_far_slower
+    @test v1.replan && v1.route === :process && v1.local_slots < plan.local_slots
+    @test v1.reason === :local_slots_thrashing
     # Both qualify: being on the wrong side of the machine outranks holding too
     # many local slots on the right one.
     v2 = SCamp.predictive_guard_verdict(plan, cfg;
@@ -711,7 +837,8 @@ end
                    constants = nothing)
     for cfg in (off, on)
         v2 = SCamp.predictive_guard_verdict(plan, cfg; slow_locals...)
-        @test v2.replan && v2.route === :process && v2.local_slots == 0
+        @test v2.replan && v2.route === :process && v2.local_slots < plan.local_slots
+        @test v2.reason === :local_slots_thrashing
     end
 end
 

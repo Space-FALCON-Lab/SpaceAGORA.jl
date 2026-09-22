@@ -1,0 +1,6 @@
+hostname,cpu_threads,path,n_sats,repeat,mission_s,gravity,isolate,solve_repeats,julia_threads,ok,rss_base_mb,rss_built_mb,rss_solved_mb,rss_retained_mb,maxrss_mb,vmrss_base_mb,vmrss_retained_mb,solve_s,retcode,note
+space-falcon-1,24,gram_surrogate,16,1,60.0,l20,1,1,1,true,1723.0,1723.0,2163.6,2051.5,2185.3,1723.0,2051.5,31.954,Success,
+space-falcon-1,24,gram_surrogate,64,1,60.0,l20,1,1,1,true,1720.9,1721.0,2180.4,2046.2,2224.0,1720.9,2046.2,32.218,Success,
+space-falcon-1,24,gram_surrogate,256,1,60.0,l20,1,1,1,true,1721.9,1722.0,2179.3,2045.3,2223.9,1721.9,2045.3,33.182,Success,
+space-falcon-1,24,gram_surrogate,1024,1,60.0,l20,1,1,1,true,1723.5,1723.6,2180.4,2050.8,2214.2,1723.5,2050.8,34.764,Success,
+space-falcon-1,24,gram_surrogate,4096,1,60.0,l20,1,1,1,true,1751.2,1751.4,2126.3,2054.8,2229.5,1751.2,2054.8,46.664,Success,

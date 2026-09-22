@@ -1,0 +1,5 @@
+GMF_RESULT ok=true rss_base_mb=1723.0 rss_built_mb=1723.0 rss_solved_mb=2163.6 rss_retained_mb=2051.5 maxrss_mb=2185.3 vmrss_base_mb=1723.0 vmrss_retained_mb=2051.5 solve_s=31.954 isolate=1 solve_repeats=1 retcode=Success
+[ Info: GRAM offline surrogate interpolation loaded.
+┌ Info: Loaded GRAM offline surrogate payload.
+│   planet = "earth"
+└   file = "/home/space-falcon-1/Documents/SpaceAGORA.jl/data/GRAMSuite.jl/GRAM Suite 2.0/Earth/earth_surrogate.jls"

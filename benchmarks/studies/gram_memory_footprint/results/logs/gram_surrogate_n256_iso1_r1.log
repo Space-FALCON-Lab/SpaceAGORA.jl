@@ -1,0 +1,18 @@
+GMF_RESULT ok=true rss_base_mb=1665.9 rss_built_mb=1666.1 rss_solved_mb=2156.8 rss_retained_mb=2044.5 maxrss_mb=2173.9 vmrss_base_mb=1665.9 vmrss_retained_mb=2044.5 solve_s=59.389 isolate=1 solve_repeats=1 retcode=Success
+Precompiling packages...
+Info Given SpaceAGORA was explicitly requested, output will be shown live [0K
+[0K┌ Warning: environment_model.density_model=ExponentialAtmosphereModel is set but no effector in dynamics_model.dynamic_effectors consumes the atmosphere (built-in AerodynamicCoefficient* models, or a custom effector declaring environment_requirements(model).atmosphere = true): the atmosphere will affect heating only and NO aerodynamic force will ever be applied. Add an aerodynamic effector if this run is meant to model drag.
+[0K└ @ SpaceAGORA.SimulationEngine ~/Documents/SpaceAGORA.jl/.claude/worktrees/ws10a-gram-memory/src/simulation/engine/setup.jl:96
+  46201.3 ms  ✓ SpaceAGORA
+  1 dependency successfully precompiled in 47 seconds. 503 already precompiled.
+  1 dependency had output during precompilation:
+┌ SpaceAGORA
+│  [Output was shown above]
+└  
+Precompiling packages...
+   5622.8 ms  ✓ SpaceAGORAGRAMSuiteExt (serial)
+  1 dependency successfully precompiled in 6 seconds
+[ Info: GRAM offline surrogate interpolation loaded.
+┌ Info: Loaded GRAM offline surrogate payload.
+│   planet = "earth"
+└   file = "/home/space-falcon-1/Documents/SpaceAGORA.jl/data/GRAMSuite.jl/GRAM Suite 2.0/Earth/earth_surrogate.jls"

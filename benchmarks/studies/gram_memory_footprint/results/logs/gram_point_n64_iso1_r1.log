@@ -1,0 +1,3 @@
+Reading MERRA2 data from /home/space-falcon-1/Documents/SpaceAGORA.jl/data/GRAMSuite.jl/GRAM Suite 2.0/Earth/data/MERRA2data//All Mean/MERRA2All_01.bin
+Reading MERRA2 data from /home/space-falcon-1/Documents/SpaceAGORA.jl/data/GRAMSuite.jl/GRAM Suite 2.0/Earth/data/MERRA2data//All Mean/MERRA2All_01.bin
+GMF_RESULT ok=true rss_base_mb=1415.0 rss_built_mb=1415.1 rss_solved_mb=1889.9 rss_retained_mb=1735.2 maxrss_mb=1889.0 vmrss_base_mb=1415.0 vmrss_retained_mb=1735.2 solve_s=33.878 isolate=1 retcode=Success

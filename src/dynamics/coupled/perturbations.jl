@@ -55,12 +55,60 @@ const _THIRD_BODY_MU = Dict{String, Float64}(
 
 @inline _canonical_spice_name(name::String) = replace(lowercase(strip(name)), ' ' => '_')
 @inline _mu_lookup_name(name::String) = replace(_canonical_spice_name(name), "_barycenter" => "")
-@inline function _spice_query_name(name::String)
+
+@inline function _spice_query_name_uncached(name::String)::String
     key = _canonical_spice_name(name)
     if endswith(key, "_barycenter")
         return key
     end
     return key in _SPICE_FORCE_BARYCENTER_BODIES ? key * "_barycenter" : key
+end
+
+# Canonical SPICE body names are resolved on the RHS hot path: the per-satellite
+# environment sample asks for one per third body per spacecraft per derivative
+# evaluation (simulation/engine/effector_sampling.jl), and `strip`, `lowercase`
+# and `replace` each allocate a fresh short string every time. At 256
+# spacecraft, degree-50 harmonics and a Sun/Moon third body, that name
+# resolution was 741 of the 7606 profile samples taken inside the constellation
+# RHS -- ~10% of the derivative evaluation spent lowercasing "Sun" and "Moon"
+# once per spacecraft -- and 706 of the 1457 sampled allocation events.
+#
+# The names come from a handful of model and planet fields and never change
+# during a run, so the resolved form is interned and the hot path becomes one
+# dictionary read with no allocation.
+#
+# Publication is copy-on-write behind a lock: a reader takes the table by an
+# atomic load and that table is never mutated afterwards, so a reader can never
+# observe a rehash in progress even though the RHS resolves names from many
+# threads. The interned value is exactly the String the uncached expression
+# produces, so every downstream comparison, dictionary key and SPICE query is
+# unchanged.
+mutable struct _SpiceQueryNameIntern
+    @atomic table::Dict{String, String}
+end
+
+const _SPICE_QUERY_NAME_INTERN = _SpiceQueryNameIntern(Dict{String, String}())
+const _SPICE_QUERY_NAME_INTERN_LOCK = ReentrantLock()
+
+@noinline function _intern_spice_query_name(name::String)::String
+    return lock(_SPICE_QUERY_NAME_INTERN_LOCK) do
+        current = @atomic :acquire _SPICE_QUERY_NAME_INTERN.table
+        existing = get(current, name, nothing)
+        existing === nothing || return existing
+        resolved = _spice_query_name_uncached(name)
+        # Copy-on-write: publish a table that no reader is walking.
+        updated = copy(current)
+        updated[name] = resolved
+        @atomic :release _SPICE_QUERY_NAME_INTERN.table = updated
+        return resolved
+    end
+end
+
+@inline function _spice_query_name(name::String)::String
+    table = @atomic :acquire _SPICE_QUERY_NAME_INTERN.table
+    cached = get(table, name, nothing)
+    cached === nothing || return cached
+    return _intern_spice_query_name(name)
 end
 @inline function _resolve_third_body_mu(name::String)::Float64
     key = _mu_lookup_name(name)

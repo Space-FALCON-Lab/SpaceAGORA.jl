@@ -664,19 +664,19 @@ directory with no git remote — nothing in it goes into the paper repository:
 
 ```bash
 python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
-  --archive /home/space-falcon-1/Documents/SpaceAGORA-paper-data/data/raw \
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
   --machine trx50 --store cold      --notes 'P1-P5, 11 repeats, cold store'
 
 python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
-  --archive /home/space-falcon-1/Documents/SpaceAGORA-paper-data/data/raw \
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
   --machine trx50 --store converged --notes 'P1+P5, 11 repeats, converged store'
 
 python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
-  --archive /home/space-falcon-1/Documents/SpaceAGORA-paper-data/data/raw \
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
   --machine trx50 --store cold      --notes 'P6+P6p, 3 repeats, figure F2'
 
 python3 scripts/archive_paper_run.py --verify \
-  --archive /home/space-falcon-1/Documents/SpaceAGORA-paper-data/data/raw
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}"
 ```
 
 `--store` is required for ppb runs and is the one field the CSV cannot supply:

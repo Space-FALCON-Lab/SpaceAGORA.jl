@@ -199,11 +199,12 @@ tbr_bits(v::SVector{3, Float64}) = ntuple(i -> reinterpret(UInt64, v[i]), 3)
                 @test two.allotment == 1
             end
 
-            # One effector outside the pre-passes (aerodynamics is per-satellite
-            # by construction: density depends on each spacecraft's own state)
-            # and the stack goes back to the per-satellite batch, because the
-            # flat queue itself would have to run.
-            mixed = tbr_plan((harmonics, srp, nbody, AerodynamicCoefficientfM()), n_sats)
+            # One effector outside the pre-passes and the stack goes back to
+            # the per-satellite batch, because the flat queue itself would have
+            # to run. The fM aerodynamic model has a pre-pass of its own, so the
+            # effector used here is its per-link-atmosphere variant, which
+            # samples the atmosphere per link and stays on the queue.
+            mixed = tbr_plan((harmonics, srp, nbody, AerodynamicCoefficientfM(per_link_atmosphere=true)), n_sats)
             @test mixed.mode === :satellite_batch
             @test mixed.allotment == 1
 

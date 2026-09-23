@@ -1,0 +1,5 @@
+case,threads,gcthreads,heap_size_hint,median_wall_s,min_wall_s,max_wall_s
+independent_1sat_1hr,8,"","",0.042347,0.039049,0.047926
+independent_1sat_1hr,8,"","4G",0.042385,0.038589,0.056105
+independent_1sat_1hr,8,"2","",0.038160,0.037483,0.041379
+independent_1sat_1hr,8,"2","4G",0.038002,0.037732,0.038629

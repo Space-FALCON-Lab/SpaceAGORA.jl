@@ -9,6 +9,7 @@ using LinearAlgebra
 const DEFAULT_STATION_DIMS_M = (4.0, 2.0, 2.0)
 const DEFAULT_STATION_MASS_KG = 500.0
 const DEFAULT_STATION_REF_AREA_M2 = 8.0
+const DEFAULT_RPO_EPOCH = InitialTime(year=2026, month=1, day=1, hour=0, minute=0, second=0.0)
 
 """
     _rpo_station_settings(; points, n_points, seed, keepout_radius_m, name, dims_m, mass_kg, ref_area_m2)
@@ -74,10 +75,13 @@ The planner always receives the orbit's mean motion (`mean_motion_radps`),
 which the `:manuscript` HyPR mode uses in its HCW fuel proxy.
 `retime_accel_mps2` sets the retiming acceleration (default half the per-axis
 thrust acceleration), `mpc_terminal_weight_scale` sets Qf = scale * Q
-(default 10), `post_reference_hold_s` is the time simulated after the
-reference ends (default 20 s), and `record_control_commands` attaches an
+(default 10), `mpc_horizon` is the LQ-MPC horizon in control steps (default
+12), `post_reference_hold_s` is the time simulated after the reference ends
+(default 20 s), and `record_control_commands` attaches an
 `RPOControlCommandLog` to the controller (read it after
-`run_simulation(args; isolate_state=false)`).
+`run_simulation(args; isolate_state=false)`). `initial_time` is the epoch
+(default 2026-01-01 00:00 UTC). The station starts at a fixed inertial point,
+so the date sets the lighting; the relative motion does not depend on it.
 """
 function build_rpo_cubesat_mpc_demo(;
     mission_time=180.0,
@@ -107,10 +111,13 @@ function build_rpo_cubesat_mpc_demo(;
     pso_iteration_callback=nothing,
     retime_accel_mps2=nothing,
     mpc_terminal_weight_scale::Real=10.0,
+    mpc_horizon::Integer=12,
     post_reference_hold_s::Real=20.0,
     record_control_commands::Bool=false,
+    initial_time::InitialTime=DEFAULT_RPO_EPOCH,
     verbose::Bool=true,
 )
+    mpc_horizon >= 1 || throw(ArgumentError("mpc_horizon must be at least 1."))
     start_rtn = SVector{3, Float64}(start_rtn)
     goal_rtn = SVector{3, Float64}(goal_rtn)
     planet = Earth("", SPICE_PATH)
@@ -305,7 +312,7 @@ function build_rpo_cubesat_mpc_demo(;
         Matrix(Q),
         Matrix(R),
         Qf,
-        12;
+        Int(mpc_horizon);
         u_min=fill(-max_axis_accel_mps2, 3),
         u_max=fill(max_axis_accel_mps2, 3),
     )
@@ -352,14 +359,7 @@ function build_rpo_cubesat_mpc_demo(;
         guidance_model=GuidanceModel(guidance_effectors=(guidance,), guidance_rates=[pso_cfg.retime_dt_s]),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
         control_model=ControlModel(control_effectors=(control,), control_rates=[pso_cfg.retime_dt_s]),
-        initial_time=InitialTime(
-            year=2026,
-            month=1,
-            day=1,
-            hour=0,
-            minute=0,
-            second=0.0,
-        ),
+        initial_time=initial_time,
         integration_tolerances=IntegrationTolerances(
             reltol_orbit=1e-8,
             abstol_orbit=1e-8,
@@ -400,7 +400,7 @@ function build_rpo_cubesat_mpc_demo(;
             Q_diag=collect(diag(Q)),
             R_diag=collect(diag(Matrix(R))),
             Qf_scale=Float64(mpc_terminal_weight_scale),
-            horizon=12,
+            horizon=Int(mpc_horizon),
             dt_s=pso_cfg.retime_dt_s,
             u_limit_mps2=max_axis_accel_mps2,
         ),

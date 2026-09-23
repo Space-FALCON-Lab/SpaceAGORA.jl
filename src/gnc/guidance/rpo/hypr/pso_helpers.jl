@@ -21,6 +21,22 @@ function rpo_pso_warmstart_bounds(warmstart_path, cfg::RPOPSOConfig)
     return SVector{3, Float64}(lo), SVector{3, Float64}(hi)
 end
 
+"""
+    rpo_pso_station_bounds(geometry, cfg; margin_scale=1.0)
+
+Admissible control-point region B of the HyPR manuscript's PSO update
+(Sec. III.C): the axis-aligned bounding box of the station points in the
+target-centred RTN frame, widened on each axis by `station_box_margin_m`
+(R, T, N) times `margin_scale`. Re-exploration passes a scale above one.
+"""
+function rpo_pso_station_bounds(geometry, cfg::RPOPSOConfig; margin_scale::Real=1.0)
+    pts = geometry.station.points_body
+    margin = Float64(margin_scale) .* SVector{3, Float64}(cfg.station_box_margin_m)
+    lo = SVector{3, Float64}(minimum(view(pts, 1, :)), minimum(view(pts, 2, :)), minimum(view(pts, 3, :)))
+    hi = SVector{3, Float64}(maximum(view(pts, 1, :)), maximum(view(pts, 2, :)), maximum(view(pts, 3, :)))
+    return lo .- margin, hi .+ margin
+end
+
 """Convert a flattened PSO particle position into a full start-to-goal waypoint path."""
 function rpo_position_to_path(position, start_rtn, goal_rtn, n_waypoints::Int)
     start = SVector{3, Float64}(start_rtn)

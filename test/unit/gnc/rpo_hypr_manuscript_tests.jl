@@ -34,9 +34,10 @@ end
     n = 0.00113
     dt = 0.1
     mass, isp, g0 = 5.2, 60.0, 9.80665
-    # Constant velocity along T at a fixed radial and cross-track offset: every
-    # finite-difference acceleration is zero, so each u_k is the HCW term
-    # [-3n^2 x - 2n v_y, 0, n^2 z].
+    # Constant velocity along T at a fixed radial and cross-track offset. The
+    # reference is at rest before its first sample and after its last, so the
+    # first term departs from rest (v/Δt along T), the last brakes (-v/Δt), and
+    # every term between is the HCW term [-3n^2 x - 2n v_y, 0, n^2 z].
     x0, z0, v = 3.0, -2.0, 0.2
     M = 101
     r = zeros(3, M)
@@ -45,17 +46,22 @@ end
     end
     proxy = HM_GH.rpo_hcw_fuel_proxy(r, dt, n, mass, isp, g0)
     u_norm = sqrt((3.0 * n^2 * x0 + 2.0 * n * v)^2 + (n^2 * z0)^2)
-    @test proxy.delta_v_eq_mps ≈ (M - 2) * u_norm * dt rtol = 1.0e-12
+    u_departure = norm([-3.0 * n^2 * x0, v / dt, n^2 * z0])
+    u_arrival = norm([-3.0 * n^2 * x0 - 2.0 * n * v, -v / dt, n^2 * z0])
+    @test proxy.delta_v_eq_mps ≈ dt * (u_departure + (M - 2) * u_norm + u_arrival) rtol = 1.0e-12
     @test proxy.J_fuel ≈ mass * proxy.delta_v_eq_mps / (isp * g0) rtol = 1.0e-14
-    # Without orbital motion the same reference needs no control.
-    @test HM_GH.rpo_hcw_fuel_proxy(r, dt, 0.0, mass, isp, g0).delta_v_eq_mps ≈ 0.0 atol = 1.0e-9
-    # Uniform acceleration along R without orbital motion: u_k = a on every step.
+    # Without orbital motion the same reference costs its departure and its braking.
+    @test HM_GH.rpo_hcw_fuel_proxy(r, dt, 0.0, mass, isp, g0).delta_v_eq_mps ≈ 2.0 * v rtol = 1.0e-9
+    # Uniform acceleration from rest along R without orbital motion: a/2 to leave
+    # rest, a on every interior step, and braking from the last velocity.
     a = 0.004
     ra = zeros(3, M)
     for k in 1:M
         ra[1, k] = 0.5 * a * ((k - 1) * dt)^2
     end
-    @test HM_GH.rpo_hcw_fuel_proxy(ra, dt, 0.0, mass, isp, g0).delta_v_eq_mps ≈ (M - 2) * a * dt rtol = 1.0e-9
+    @test HM_GH.rpo_hcw_fuel_proxy(ra, dt, 0.0, mass, isp, g0).delta_v_eq_mps ≈ (2M - 3) * a * dt rtol = 1.0e-9
+    # A single sample needs no control.
+    @test HM_GH.rpo_hcw_fuel_proxy(r[:, 1:1], dt, n, mass, isp, g0).delta_v_eq_mps == 0.0
 end
 
 @testset "RPO HyPR manuscript Eq. 6 threshold" begin
@@ -129,9 +135,9 @@ end
     @test r_ref == ref.r_rtn
     @test v_ref[:, end] == zeros(3)
 
-    # The streamed fuel proxy equals the proxy of the stored reference held at the goal.
+    # The streamed fuel proxy equals the proxy of the stored reference.
     streamed = HM_GH.rpo_profile_hcw_fuel_proxy(ref.profile, dt, cfg.mean_motion_radps, cfg.mass_kg, cfg.isp_s, cfg.g0_mps2)
-    stored = HM_GH.rpo_hcw_fuel_proxy(hcat(ref.r_rtn, ref.r_rtn[:, end]), dt, cfg.mean_motion_radps, cfg.mass_kg, cfg.isp_s, cfg.g0_mps2)
+    stored = HM_GH.rpo_hcw_fuel_proxy(ref.r_rtn, dt, cfg.mean_motion_radps, cfg.mass_kg, cfg.isp_s, cfg.g0_mps2)
     @test streamed.delta_v_eq_mps ≈ stored.delta_v_eq_mps rtol = 1.0e-12
 
     # Acceleration demand: tangential part within the limit, HCW part as computed from the state.
@@ -170,10 +176,11 @@ end
     hard, hard_diag = HM_GH.rpo_manuscript_adaptive_pso_config(base, start, goal, warm(250.0, 10_000))
     @test easy_diag.eta == 0.0
     @test hard_diag.eta ≈ 1.0
-    @test (easy.w_inertia, easy.c1, easy.c2) == (0.4, 1.2, 2.2)
+    @test (easy.w_inertia, easy.c1, easy.c2) == (0.4, 1.8, 1.2)
     @test hard.w_inertia ≈ 0.75
-    @test hard.c1 ≈ 1.8          # equations: c1 grows with eta
-    @test hard.c2 ≈ 1.2          # equations: c2 shrinks with eta
+    @test hard.c1 ≈ 1.2          # cognitive attraction falls with eta
+    @test hard.c2 ≈ 2.2          # social attraction rises with eta
+    @test hard_diag.coefficient_direction === :c1_down_c2_up
     @test (easy.n_waypoints, easy.n_particles, easy.n_iters) == (3, 60, 10)
     @test (hard.n_waypoints, hard.n_particles, hard.n_iters) == (8, 160, 60)
     mid, mid_diag = HM_GH.rpo_manuscript_adaptive_pso_config(base, start, goal, warm(125.0, 0))
@@ -190,16 +197,77 @@ end
     @test HM_SM.RPOPSOConfig().retime_accel_limit_enable === false
     configured = HM_SM.RPOPSOConfig(HM_SM.RPOPSOConfigurator(
         hypr_mode=:manuscript,
+        swarm=HM_SM.RPOPSOSwarmSettings(station_box_margin_m=(1.0, 2.0, 3.0)),
         objective=HM_SM.RPOPSOObjectiveSettings(mean_motion_radps=0.001, fuel_proxy_dt_s=0.5),
         retiming=HM_SM.RPOPSORetimingSettings(accel_limit_enable=true, initial_speed_mps=0.01),
         adaptive=HM_SM.RPOPSOAdaptiveSettings(search_effort_scale=50.0),
+        cull=HM_SM.RPOPSOCullSettings(noise_abs_m=0.4),
     ))
+    @test configured.station_box_margin_m == (1.0, 2.0, 3.0)
+    @test configured.cull_noise_abs_m == 0.4
+    @test HM_SM.rpo_pso_config(configured; pso_station_box_margin=(4, 5, 6)).station_box_margin_m == (4.0, 5.0, 6.0)
+    @test HM_SM.rpo_pso_config(configured; pso_cull_noise_abs=0.1).cull_noise_abs_m == 0.1
+    @test_throws ArgumentError HM_SM.rpo_pso_config(configured; station_box_margin_m=(1.0, -1.0, 1.0))
+    @test_throws ArgumentError HM_SM.rpo_pso_config(configured; station_box_margin_m=(1.0, Inf, 1.0))
+    @test_throws ArgumentError HM_SM.rpo_pso_config(configured; cull_noise_abs_m=-0.1)
     @test configured.hypr_mode === :manuscript
     @test configured.mean_motion_radps == 0.001
     @test HM_GH.rpo_fuel_proxy_dt_s(configured) == 0.5
     @test configured.retime_accel_limit_enable === true
     @test configured.retime_initial_speed_mps == 0.01
     @test configured.adaptive_search_effort_scale == 50.0
+end
+
+@testset "RPO HyPR manuscript search box and culling" begin
+    # B is the station's bounding box widened on each axis (Sec. III.C).
+    points = [-2.0 3.0 0.5; -10.0 4.0 1.0; 1.0 -1.0 6.0]
+    geom = HM_SM.RPOReferenceGeometry(HM_SM.RPOStationGeometry(points; keepout_radius_m=0.5))
+    cfg = _hm_manuscript_cfg(station_box_margin_m=(1.0, 2.0, 3.0))
+    lo, hi = HM_GH.rpo_pso_station_bounds(geom, cfg)
+    @test lo == SVector(-3.0, -12.0, -4.0)
+    @test hi == SVector(4.0, 6.0, 9.0)
+    lo2, hi2 = HM_GH.rpo_pso_station_bounds(geom, cfg; margin_scale=2.0)
+    @test lo2 == SVector(-4.0, -14.0, -7.0)
+    @test hi2 == SVector(5.0, 8.0, 12.0)
+
+    # Culling (Sec. III.D): the worst particles move to q* + d_bez, perturbed by
+    # σ_resp times the index taper in `:manuscript` mode.
+    start, goal = SVector(0.0, 0.0, 0.0), SVector(0.0, 30.0, 0.0)
+    nw, np = 2, 4
+    gbest = [5.0, 10.0, 0.0, 5.0, 20.0, 0.0]
+    lo_rep = fill(-100.0, 3 * nw)
+    hi_rep = fill(100.0, 3 * nw)
+    function culled(cull_cfg)
+        positions = repeat(gbest, 1, np) .+ reshape(collect(1.0:(3 * nw * np)), 3 * nw, np)
+        velocities = zeros(3 * nw, np)
+        pbest = copy(positions)
+        pbest_cost = [1.0, 4.0, 2.0, 3.0]
+        n = HM_GH.rpo_pso_cull_swarm!(positions, velocities, pbest, pbest_cost, lo_rep, hi_rep, gbest,
+            start, goal, nw, cull_cfg, 12, MersenneTwister(5))
+        return n, positions, pbest_cost
+    end
+    # Targets: q* + 0.6 (q_line - q*) + 0.4 (q_loc - q*), with q_loc the
+    # projection of q* on the chord of its neighbours.
+    targets = zeros(3 * nw)
+    for (j, q_line) in ((1, SVector(0.0, 10.0, 0.0)), (2, SVector(0.0, 20.0, 0.0)))
+        q_star = SVector{3}(gbest[(3j - 2):(3j)])
+        prev = j == 1 ? start : SVector{3}(gbest[1:3])
+        next = j == nw ? goal : SVector{3}(gbest[4:6])
+        q_loc = HM_GH.rpo_pso_project_to_segment(q_star, prev, next)
+        targets[(3j - 2):(3j)] .= q_star + 0.6 * (q_line - q_star) + 0.4 * (q_loc - q_star)
+    end
+    exact = _hm_manuscript_cfg(n_particles=np, cull_fraction_max=0.5, cull_start_iter=10, cull_noise_abs_m=0.0)
+    n, positions, costs = culled(exact)
+    @test n == 2
+    @test positions[:, 2] ≈ targets atol = 1.0e-12     # the two worst (costs 4 and 3)
+    @test positions[:, 4] ≈ targets atol = 1.0e-12
+    @test positions[:, 1] != targets                    # the best are kept
+    @test isinf(costs[2]) && isinf(costs[4])
+    noisy = HM_SM.rpo_pso_config(exact; cull_noise_abs_m=0.3)
+    _, positions, _ = culled(noisy)
+    @test 0.0 < maximum(abs.(positions[:, 2] .- targets)) < 6 * 0.3
+    # Before the start iteration nothing is culled.
+    @test culled(HM_SM.rpo_pso_config(exact; cull_start_iter=20))[1] == 0
 end
 
 @testset "RPO HyPR manuscript planner" begin
@@ -224,6 +292,7 @@ end
         rrt_warmstart_shortcut_iters=40,
         rrt_warmstart_box_margin_m=10.0,
         search_margin_m=25.0,
+        station_box_margin_m=(20.0, 40.0, 20.0),
         adaptive_n_waypoints_min=3, adaptive_n_waypoints_max=5,
         adaptive_n_particles_min=8, adaptive_n_particles_max=16,
         adaptive_n_iters_min=3, adaptive_n_iters_max=6,
@@ -247,6 +316,10 @@ end
     @test plan.cost ≈ cfg.w_obs * plan.components.J_obs + cfg.w_fuel * plan.components.J_fuel rtol = 1.0e-12
     @test plan.path[:, 1] == collect(start)
     @test plan.path[:, end] == collect(goal)
+    # The swarm searched the station's box with the prescribed margins.
+    box_lo, box_hi = HM_GH.rpo_pso_station_bounds(geom, plan.config)
+    @test plan.initial_bounds.lo == collect(box_lo)
+    @test plan.initial_bounds.hi == collect(box_hi)
     again = HM_SM.rpo_pso_plan_path(start, goal, geom, cfg; safe_distance_m=1.0, rng=MersenneTwister(741))
     @test again.path == plan.path
     @test again.cost == plan.cost

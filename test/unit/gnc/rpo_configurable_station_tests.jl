@@ -58,6 +58,10 @@ else
     @testset "RPO configurable station" begin
         @testset "defaults reproduce the Gateway scenario" begin
             d0 = build_station_demo()
+            # The MPC horizon and the epoch keep their defaults unless given.
+            @test d0.mpc.horizon == 12
+            @test d0.control.controller.horizon == 12
+            @test d0.args.initial_time == RPOX.InitialTime(year=2026, month=1, day=1, hour=0, minute=0, second=0.0)
             d1 = build_station_demo(;
                 station_points=nothing,
                 station_keepout_radius_m=0.25,
@@ -166,6 +170,15 @@ else
             end
         end
 
+        @testset "MPC horizon and epoch options" begin
+            april = RPOX.InitialTime(year=2026, month=4, day=18, hour=6, minute=30, second=0.0)
+            dh = build_station_demo(; mpc_horizon=5, initial_time=april)
+            @test dh.mpc.horizon == 5
+            @test dh.control.controller.horizon == 5
+            @test dh.args.initial_time == april
+            @test_throws ArgumentError build_station_demo(; mpc_horizon=0)
+        end
+
         @testset "invalid station inputs are refused" begin
             cloud = box_shell_pointcloud((1.0, 0.5, 0.5))
             @test_throws ArgumentError build_station_demo(; station_points=cloud[1:2, :])
@@ -225,9 +238,22 @@ else
             @test full.smoke === false && smoke.smoke === true
             @test full.hypr_mode === :manuscript && smoke.hypr_mode === :manuscript
             @test full.station_dims_m == (20.0, 73.0, 109.0)
-            # No global speed cap: the acceleration-limited retimer keeps the reference trackable.
-            @test full.reference_max_speed_mps === smoke.reference_max_speed_mps === nothing
+            # Sec. III.F's 0.25 m/s global limit, with the acceleration-limited passes.
+            @test full.reference_max_speed_mps == smoke.reference_max_speed_mps == 0.25
             @test full.retime_accel_limit && smoke.retime_accel_limit
+            # Table I's MPC horizon, the search box, culling, the cloud and its margin.
+            @test full.mpc_horizon == 60
+            @test full.station_box_margin_m == (30.0, 100.0, 30.0)
+            @test full.cull == (start_iter=10, fraction=0.25, noise_abs_m=0.3)
+            @test full.n_points == 1_000_000
+            @test full.obstacle_sigmoid_tol_m == 0.5
+            cfg = SM.RPOPSOConfig(D.iss_hypr_configurator(full))
+            @test cfg.station_box_margin_m == full.station_box_margin_m
+            @test (cfg.cull_start_iter, cfg.cull_fraction_max, cfg.cull_noise_abs_m) == (10, 0.25, 0.3)
+            # The epoch becomes the simulation's initial time.
+            t0 = D.iss_initial_time(full.epoch_utc)
+            @test t0 isa RPOX.InitialTime
+            @test string(t0.year, "-", lpad(t0.month, 2, '0'), "-", lpad(t0.day, 2, '0')) == first(full.epoch_utc, 10)
             @test length(full.model_sha256) == 64
             @test length(full.station_model_sha256) == 64
             # Flight-like attitude: truss along N, modules along T, smallest extent along R.

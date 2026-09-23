@@ -1,8 +1,10 @@
 # HyPR relocation around the ISS: the Earth_RPO_CubeSat_MPC example with
-# NASA's ISS display model in a flight-like attitude held in LVLH (truss along
-# N, pressurized modules along T, smallest extent along R), planned by HyPR in
-# its `:manuscript` mode, retimed with an acceleration limit, tracked by LQ-MPC
-# and exported as a standalone viewer page with the plan overlaid on the model.
+# NASA's ISS display model in its +XVV flight attitude held in LVLH (forward
+# along the velocity, truss along the orbit normal, zenith up), planned by HyPR
+# in its `:manuscript` mode, retimed with an acceleration limit, tracked by
+# LQ-MPC and exported as a standalone viewer page with the plan overlaid on the
+# model. The epoch is a date on which the Sun stays above the station's horizon
+# for the whole relocation.
 #
 #   julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
 #
@@ -116,7 +118,7 @@ function iss_hypr_inputs(; smoke::Bool=DEMO_SMOKE)
         model_scale=ISS_SCALE,
         model_rotation_deg=ISS_ROTATION_DEG,
         station_half_extent_m=extents.half_extent_m,
-        implementation="hypr-manuscript-accel-limited-v1",
+        implementation="hypr-manuscript-accel-limited-v2",
         hypr_mode=:manuscript,
         cloud_seed=7,
         station_keepout_radius_m=3.0,
@@ -124,21 +126,36 @@ function iss_hypr_inputs(; smoke::Bool=DEMO_SMOKE)
         station_dims_m=(20.0, 73.0, 109.0),
         station_mass_kg=420_000.0,
         safe_distance_m=2.0,
-        # Eq. 5 and 6 with the weights and sharpness of Table I. The tolerance
-        # covers the cloud's sampling of the surface and the path's sampling.
+        # Eq. 5 and 6 with the weights and sharpness of Table I. τ_tol, the
+        # additional clearance margin, covers the cloud's sampling of the
+        # surface and the path's sampling.
         w_obs=1.0e6,
         w_fuel=1.0,
         obstacle_sigmoid_k=1.0e5,
-        obstacle_sigmoid_tol_m=1.5,
-        # Retiming of Table I, with the acceleration-limited passes and no global cap.
+        obstacle_sigmoid_tol_m=0.5,
+        # Retiming of Table I and Sec. III.F, with the 0.25 m/s global speed
+        # limit and the acceleration-limited passes.
         retime_a_max_mps2=0.00625,
         retime_reaction_time_s=0.25,
         retime_speed_scale=0.5,
-        reference_max_speed_mps=nothing,
+        reference_max_speed_mps=0.25,
         retime_accel_limit=true,
         retime_dt_s=0.1,
+        # LQ-MPC of Table I: Qf = 20 Q and a horizon of 60 steps of 0.1 s.
         mpc_terminal_weight_scale=20.0,
+        mpc_horizon=60,
         search_margin_m=80.0,
+        # Search region B (Sec. III.C): the station's bounding box widened on
+        # R, T and N; the T margin reaches the aft hold.
+        station_box_margin_m=(30.0, 100.0, 30.0),
+        # Culling of Sec. III.D and Table I: from iteration 10, a quarter of the
+        # swarm, perturbation scale σ_resp = 0.3 m.
+        cull=(start_iter=10, fraction=0.25, noise_abs_m=0.3),
+        # Epoch: the station starts at a fixed inertial point, so the date sets
+        # the lighting (on 24 May the Sun stays above the station's horizon for
+        # the whole relocation) and the time of day the ground below it (the
+        # track starts off Ecuador and ends over central Africa).
+        epoch_utc="2026-05-24T13:11:00",
         seed=741,
         smoke=smoke,
     )
@@ -156,7 +173,7 @@ function iss_hypr_inputs(; smoke::Bool=DEMO_SMOKE)
         )
     else
         (
-            n_points=100_000,
+            n_points=1_000_000,
             start_rtn=(0.0, -(t_half + 100.0), 0.0),
             goal_rtn=(0.0, t_half + 30.0, 0.0),
             adaptive_sampling_max_ds_m=4.0,
@@ -180,6 +197,7 @@ function iss_hypr_configurator(inputs)
             n_iters=inputs.ranges.iters[1],
             curve_type=:bezier,
             search_margin_m=inputs.search_margin_m,
+            station_box_margin_m=inputs.station_box_margin_m,
             sample_ds_m=inputs.safe_distance_m,
         ),
         objective=RPOPSOObjectiveSettings(
@@ -208,7 +226,11 @@ function iss_hypr_configurator(inputs)
             max_ds_m=inputs.adaptive_sampling_max_ds_m,
             far_clearance_m=inputs.adaptive_sampling_far_clearance_m,
         ),
-        cull=RPOPSOCullSettings(fraction_max=0.25),
+        cull=RPOPSOCullSettings(
+            fraction_max=inputs.cull.fraction,
+            start_iter=inputs.cull.start_iter,
+            noise_abs_m=inputs.cull.noise_abs_m,
+        ),
         schedule=RPOPSOScheduleSettings(transition_fraction=0.5),
         stagnation=RPOPSOStagnationSettings(stagnation_learning_threshold=10),
         early_stopping=RPOPSOEarlyStoppingSettings(enabled=false),
@@ -246,6 +268,19 @@ _json_roundtrip(x) = JSON.parse(JSON.json(_json_safe(x)))
 
 iss_hypr_outdir(inputs) = joinpath(DEMO_OUT_ROOT, "iss_hypr_" * bytes2hex(sha256(JSON.json(_json_safe(inputs))))[1:10])
 
+"""The run's epoch, `yyyy-mm-ddTHH:MM:SS` in UTC, as the simulation's initial time."""
+function iss_initial_time(epoch_utc::AbstractString)
+    t = DateTime(epoch_utc)
+    return InitialTime(
+        year=Dates.year(t),
+        month=Dates.month(t),
+        day=Dates.day(t),
+        hour=Dates.hour(t),
+        minute=Dates.minute(t),
+        second=Dates.second(t) + Dates.millisecond(t) / 1000,
+    )
+end
+
 """Sample the station model into the point cloud and build the example scenario for it."""
 function iss_hypr_build(inputs, outdir::AbstractString)
     station_model = iss_station_model()
@@ -274,9 +309,12 @@ function iss_hypr_build(inputs, outdir::AbstractString)
         safe_distance_m=inputs.safe_distance_m,
         search_margin_m=inputs.search_margin_m,
         retime_accel_mps2=inputs.retime_a_max_mps2,
+        reference_max_speed_mps=inputs.reference_max_speed_mps,
         mpc_terminal_weight_scale=inputs.mpc_terminal_weight_scale,
+        mpc_horizon=inputs.mpc_horizon,
         post_reference_hold_s=inputs.post_reference_hold_s,
         record_control_commands=true,
+        initial_time=iss_initial_time(inputs.epoch_utc),
         data_rate_s=inputs.data_rate_s,
         verbose=false,
     )
@@ -395,7 +433,7 @@ function iss_hypr_plan_record(demo, inputs)
             "cost" => warm.cost,
         ),
         "coefficients" => Dict("w_inertia" => cfg.w_inertia, "c1" => cfg.c1, "c2" => cfg.c2,
-            "direction" => "equations of Sec. III.A: w and c1 increase with eta, c2 decreases"),
+            "direction" => "Sec. III.A: w and c2 increase with eta, c1 decreases"),
         "t_ref_s" => demo.initial_plan.t_ref_s,
         "r_ref_rtn" => demo.initial_plan.r_ref_rtn,
         "v_ref_rtn" => demo.initial_plan.v_ref_rtn,
@@ -564,7 +602,8 @@ function main()
             planning_seconds=t_plan,
         ))
         station = _json_roundtrip(demo.station)
-        station["cloud_spacing"] = _json_roundtrip(iss_cloud_spacing(station_model, demo.geometry))
+        # Probe the surface at twice the cloud's density for its spacing statistics.
+        station["cloud_spacing"] = _json_roundtrip(iss_cloud_spacing(station_model, demo.geometry; n_dense=max(400_000, 2 * inputs.n_points)))
         station["straight_segment"] = _json_roundtrip(iss_straight_segment_clearance(inputs, demo.geometry))
         station["orbit"] = _json_roundtrip(demo.orbit)
         station["chaser"] = _json_roundtrip(demo.chaser)
@@ -608,6 +647,7 @@ function main()
             "gravity" => "InverseSquaredGravityModel (point mass)",
             "atmosphere" => "NoAtmosphereModel",
             "ephemerides" => "SimpleEphemeridesModel",
+            "epoch_utc" => inputs.epoch_utc,
             "spice_kernels" => relpath(SPICE_PATH, REPO_ROOT),
             "station_attitude" => "body frame = RTN: identity at t = 0 and spin n about the orbit normal",
         ),

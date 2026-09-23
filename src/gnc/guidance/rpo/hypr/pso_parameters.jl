@@ -5,6 +5,7 @@ Base.@kwdef struct RPOPSOSwarmSettings
     n_iters::Int = 55
     spread_scale::Float64 = 0.2
     search_margin_m::Float64 = 10.0
+    station_box_margin_m::NTuple{3, Float64} = (10.0, 10.0, 10.0)
     sample_ds_m::Float64 = 0.05
     curve_type::Symbol = :bezier
 end
@@ -80,6 +81,7 @@ Base.@kwdef struct RPOPSOCullSettings
     fraction_max::Float64 = 0.35
     start_iter::Int = 8
     noise_scale::Float64 = 0.25
+    noise_abs_m::Float64 = 0.3
     arc_velocity_scale::Float64 = 0.12
 end
 
@@ -214,6 +216,7 @@ Base.@kwdef struct RPOPSOConfig
     c2::Float64 = 1.4
     spread_scale::Float64 = 0.2
     search_margin_m::Float64 = 10.0
+    station_box_margin_m::NTuple{3, Float64} = (10.0, 10.0, 10.0)
     sample_ds_m::Float64 = 0.05
     curve_type::Symbol = :bezier
     cost_ref_distance_m::Float64 = 20.0
@@ -272,6 +275,7 @@ Base.@kwdef struct RPOPSOConfig
     cull_fraction_max::Float64 = 0.35
     cull_start_iter::Int = 8
     cull_noise_scale::Float64 = 0.25
+    cull_noise_abs_m::Float64 = 0.3
     cull_arc_velocity_scale::Float64 = 0.12
     schedule_enable::Bool = true
     schedule_w_end_fraction::Float64 = 0.65
@@ -374,6 +378,8 @@ const RPO_PSO_CONFIG_ALIASES = Dict{Symbol, Symbol}(
     :pso_cull_fraction_max => :cull_fraction_max,
     :pso_cull_start_iter => :cull_start_iter,
     :pso_cull_noise_scale => :cull_noise_scale,
+    :pso_cull_noise_abs => :cull_noise_abs_m,
+    :pso_cull_noise_abs_m => :cull_noise_abs_m,
     :pso_cull_arc_velocity_scale => :cull_arc_velocity_scale,
     :pso_schedule_enable => :schedule_enable,
     :pso_schedule_w_end_fraction => :schedule_w_end_fraction,
@@ -396,6 +402,8 @@ const RPO_PSO_CONFIG_ALIASES = Dict{Symbol, Symbol}(
     :pso_safe_distance => :safe_distance_m,
     :pso_goal_collision_margin => :goal_collision_margin_m,
     :pso_search_margin => :search_margin_m,
+    :pso_station_box_margin => :station_box_margin_m,
+    :pso_station_box_margin_m => :station_box_margin_m,
     :pso_spread_scale => :spread_scale,
     :pso_spread_scale_min => :adaptive_spread_scale_min,
     :pso_spread_scale_max => :adaptive_spread_scale_max,
@@ -492,6 +500,7 @@ function RPOPSOConfig(configurator::RPOPSOConfigurator; kwargs...)
         c2=objective.c2,
         spread_scale=swarm.spread_scale,
         search_margin_m=swarm.search_margin_m,
+        station_box_margin_m=swarm.station_box_margin_m,
         sample_ds_m=swarm.sample_ds_m,
         curve_type=swarm.curve_type,
         cost_ref_distance_m=objective.cost_ref_distance_m,
@@ -550,6 +559,7 @@ function RPOPSOConfig(configurator::RPOPSOConfigurator; kwargs...)
         cull_fraction_max=cull.fraction_max,
         cull_start_iter=cull.start_iter,
         cull_noise_scale=cull.noise_scale,
+        cull_noise_abs_m=cull.noise_abs_m,
         cull_arc_velocity_scale=cull.arc_velocity_scale,
         schedule_enable=schedule.enabled,
         schedule_w_end_fraction=schedule.w_end_fraction,
@@ -625,6 +635,8 @@ function validate_rpo_pso_config(cfg::RPOPSOConfig)
     cfg.iteration_runtime_limit_s >= 0.0 ||
         throw(ArgumentError("iteration_runtime_limit_s must be nonnegative."))
     cfg.sample_ds_m > 0.0 || throw(ArgumentError("sample_ds_m must be positive."))
+    all(m -> isfinite(m) && m >= 0.0, cfg.station_box_margin_m) ||
+        throw(ArgumentError("station_box_margin_m must be finite and nonnegative on every axis."))
     cfg.curve_type in (:bezier, :polyline) ||
         throw(ArgumentError("curve_type must be :bezier or :polyline."))
     cfg.obstacle_sigmoid_k > 0.0 || throw(ArgumentError("obstacle_sigmoid_k must be positive."))
@@ -690,6 +702,8 @@ function validate_rpo_pso_config(cfg::RPOPSOConfig)
         throw(ArgumentError("cull_fraction_max must be between 0 and 1."))
     cfg.cull_start_iter >= 0 || throw(ArgumentError("cull_start_iter must be nonnegative."))
     cfg.cull_noise_scale >= 0.0 || throw(ArgumentError("cull_noise_scale must be nonnegative."))
+    isfinite(cfg.cull_noise_abs_m) && cfg.cull_noise_abs_m >= 0.0 ||
+        throw(ArgumentError("cull_noise_abs_m must be finite and nonnegative."))
     cfg.cull_arc_velocity_scale >= 0.0 || throw(ArgumentError("cull_arc_velocity_scale must be nonnegative."))
     cfg.schedule_transition_fraction > 0.0 || throw(ArgumentError("schedule_transition_fraction must be positive."))
     cfg.schedule_w_min >= 0.0 || throw(ArgumentError("schedule_w_min must be nonnegative."))

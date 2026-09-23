@@ -132,19 +132,23 @@ body-frame point cloud (`station_points`, for example from
 `sample_model_pointcloud`) together with `station_keepout_radius_m`,
 `station_name`, `station_dims_m`, `station_mass_kg` and
 `station_ref_area_m2`, and scales the planner with `safe_distance_m`,
-`cost_ref_distance_m`, `search_margin_m` and `sample_ds_m`. Leaving every
-keyword at its default preserves the Gateway dimensions, mass and 8 m²
-reference area, and the returned
-`station` record states what was used.
+`cost_ref_distance_m`, `search_margin_m` and `sample_ds_m`. `mpc_horizon`
+sets the LQ-MPC horizon in control steps and `initial_time` the epoch; the
+station starts at a fixed inertial point, so the date sets the lighting while
+the relative motion does not depend on it. Leaving every keyword at its
+default preserves the Gateway dimensions, mass and 8 m² reference area, and
+the returned `station` record states what was used.
 `scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
 model in its +XVV flight attitude held in LVLH (forward along the velocity,
 truss along the orbit normal with starboard toward -N, zenith up) and relocates the chaser between V-bar hold points on
 opposite sides of the station, exporting a viewer page with the plan
 overlaid. It plans with the `:manuscript` HyPR mode (`hypr_mode`: an
 RRT-Connect warm start sets the exploration score and with it the PSO
-coefficients and counts; the objective is the obstacle sigmoid centred at
-d_safe + τ_tol plus the HCW fuel proxy of each candidate's retimed reference)
-and retimes with `retime_accel_limit_enable`, which bounds the tangential
+coefficients and counts; the swarm searches the station's bounding box
+widened by `station_box_margin_m`; the objective is the obstacle sigmoid
+centred at d_safe + τ_tol plus the HCW fuel proxy of each candidate's
+retimed reference, counted from departure at rest to arrival at rest) and
+retimes with `retime_accel_limit_enable`, which bounds the tangential
 acceleration and starts the reference at the chaser's speed and ends it at
 rest. The default `:legacy` mode keeps the earlier objective and adaptive
 policy. The display model also holds seven disc-shaped meshes that are not

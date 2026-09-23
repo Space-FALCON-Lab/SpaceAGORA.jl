@@ -36,7 +36,15 @@ function rpo_pso_tapered_noise_scale(j::Int, n_waypoints::Int)
     return clamp(edge_distance / max((n_waypoints + 1) / 2, 1.0), 0.25, 1.0)
 end
 
-"""Replace weak PSO particles with corridor-biased random samples while preserving elites."""
+"""
+Replace weak PSO particles with corridor-biased random samples while preserving elites.
+
+For Bézier paths each replaced control point moves toward the straight-line and
+local-chord targets, q* + d_bez, plus Gaussian noise tapered by its index. In
+`:manuscript` mode the noise has the fixed scale σ_resp = `cull_noise_abs_m`
+(Sec. III.D); otherwise it is `cull_noise_scale` times the width of the search
+box on that axis.
+"""
 function rpo_pso_cull_swarm!(
     positions,
     velocities,
@@ -87,8 +95,11 @@ function rpo_pso_cull_swarm!(
             taper = rpo_pso_tapered_noise_scale(j, n_waypoints)
             for axis in 1:3
                 d = 3 * (j - 1) + axis
-                span = max(hi_rep[d] - lo_rep[d], 1.0e-12)
-                noise = cfg.cull_noise_scale * taper * span * randn(rng)
+                noise = if cfg.hypr_mode === :manuscript
+                    cfg.cull_noise_abs_m * taper * randn(rng)
+                else
+                    cfg.cull_noise_scale * taper * max(hi_rep[d] - lo_rep[d], 1.0e-12) * randn(rng)
+                end
                 old_position = positions[d, pidx]
                 positions[d, pidx] = clamp(target[axis] + noise, lo_rep[d], hi_rep[d])
                 velocities[d, pidx] = cfg.cull_arc_velocity_scale * (positions[d, pidx] - old_position)
@@ -229,7 +240,9 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
         # Sec. III.A: the RRT-Connect warm start runs first; its detour and
         # iteration count set η, which sets the coefficients and the counts.
         # The η-derived control-point count is kept (the warm start is fitted
-        # to it) rather than raised to the polyline's vertex count.
+        # to it) rather than raised to the polyline's vertex count. The swarm
+        # searches the station's bounding box with prescribed margins (Sec.
+        # III.C), not the box around the warm start.
         effective_safe_distance = rpo_pso_effective_safe_distance(base_cfg, safe_distance_m)
         warm_cfg = rpo_pso_config(base_cfg; safe_distance_m=effective_safe_distance)
         warmstart_path, warmstart = rpo_pso_rrt_warmstart_path(start, goal, geometry, warm_cfg, effective_safe_distance, rng)
@@ -376,9 +389,15 @@ function rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg::RPOPSOConfig
         current_n_waypoints = max(1, Int(new_n_waypoints))
         current_search_margin = max(0.0, Float64(new_search_margin))
         local_cfg = cfg_for_current()
-        lo, hi = use_warmstart_bounds && seed_points !== nothing ?
-            rpo_pso_warmstart_bounds(seed_points, local_cfg) :
+        lo, hi = if cfg.hypr_mode === :manuscript
+            # Re-exploration widens the station-box margins with the search margin.
+            scale = cfg.search_margin_m > 0.0 ? current_search_margin / cfg.search_margin_m : 1.0
+            rpo_pso_station_bounds(geometry, local_cfg; margin_scale=scale)
+        elseif use_warmstart_bounds && seed_points !== nothing
+            rpo_pso_warmstart_bounds(seed_points, local_cfg)
+        else
             rpo_pso_bounds(start, goal, local_cfg)
+        end
         dim = 3 * current_n_waypoints
         lo_rep = repeat(collect(lo), current_n_waypoints)
         hi_rep = repeat(collect(hi), current_n_waypoints)

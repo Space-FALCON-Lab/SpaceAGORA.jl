@@ -99,12 +99,11 @@ end
 
 Map the exploration score η of the RRT-Connect warm start to the initial PSO
 coefficients and the particle, iteration and control-point counts (Sec.
-III.A). The equations are used as written: w0 = (1-η) w_min + η w_max,
-c1,0 = (1-η) c1,min + η c1,max and c2,0 = (1-η) c2,max + η c2,min, so the
-inertia and cognitive coefficients grow with η and the social coefficient
-shrinks. (The manuscript's prose states the opposite direction for c1 and
-c2.) Counts interpolate linearly between the `adaptive_*_min` and
-`adaptive_*_max` settings and round to the nearest integer. A warm start that
+III.A): w0 = (1-η) w_min + η w_max, c1,0 = (1-η) c1,max + η c1,min and
+c2,0 = (1-η) c2,min + η c2,max, so harder instances get more inertia and
+social attraction and less cognitive attraction. Counts interpolate linearly
+between the `adaptive_*_min` and `adaptive_*_max` settings and round to the
+nearest integer. A warm start that
 is disabled or finds no path counts as the largest detour, D = 1. With
 `adaptive_enable` false the counts and coefficients of `base` are kept and η
 is only reported.
@@ -132,8 +131,8 @@ function rpo_manuscript_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_
         rpo_pso_config(
             base;
             w_inertia=lerp(base.adaptive_w_inertia_min, base.adaptive_w_inertia_max),
-            c1=lerp(base.adaptive_c1_min, base.adaptive_c1_max),
-            c2=lerp(base.adaptive_c2_max, base.adaptive_c2_min),
+            c1=lerp(base.adaptive_c1_max, base.adaptive_c1_min),
+            c2=lerp(base.adaptive_c2_min, base.adaptive_c2_max),
             n_waypoints=round(Int, lerp(base.adaptive_n_waypoints_min, base.adaptive_n_waypoints_max)),
             n_particles=round(Int, lerp(base.adaptive_n_particles_min, base.adaptive_n_particles_max)),
             n_iters=round(Int, lerp(base.adaptive_n_iters_min, base.adaptive_n_iters_max)),
@@ -157,6 +156,6 @@ function rpo_manuscript_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_
         n_particles=cfg.n_particles,
         n_iters=cfg.n_iters,
         n_waypoints=cfg.n_waypoints,
-        coefficient_direction=:equations_c1_up_c2_down,
+        coefficient_direction=:c1_down_c2_up,
     )
 end

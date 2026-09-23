@@ -59,21 +59,24 @@ end
     rpo_hcw_fuel_proxy(positions, dt, mean_motion, mass_kg, isp_s, g0_mps2)
 
 Fuel proxy of Sec. III.B on a reference sampled at the fixed step `dt`
-(3 x M positions in RTN): Δv_eq = Σ_k ||u_k|| Δt over every k with r_{k+2}
-available, u_k from `rpo_hcw_feedforward_accel`, and
-J_fuel = m Δv_eq / (Isp g0). Returns `(J_fuel, delta_v_eq_mps)`.
+(3 x M positions r_1..r_M in RTN) with zero relative velocity at departure
+and arrival: Δv_eq = Σ_k ||u_k|| Δt with u_k from `rpo_hcw_feedforward_accel`
+over the positions held at rest before r_1 and after r_M, so the first term
+is the departure from rest, v_1/Δt, and the last the braking, -v_{M-1}/Δt,
+each with its HCW terms. J_fuel = m Δv_eq / (Isp g0). Returns
+`(J_fuel, delta_v_eq_mps)`.
 """
 function rpo_hcw_fuel_proxy(positions, dt::Real, mean_motion::Real, mass_kg::Real, isp_s::Real, g0_mps2::Real)
     pts = positions
     m = size(pts, 2)
     step = Float64(dt)
     n = Float64(mean_motion)
+    point(k) = SVector{3, Float64}(pts[1, clamp(k, 1, m)], pts[2, clamp(k, 1, m)], pts[3, clamp(k, 1, m)])
     dv = 0.0
-    @inbounds for k in 1:(m - 2)
-        r0 = SVector{3, Float64}(pts[1, k], pts[2, k], pts[3, k])
-        r1 = SVector{3, Float64}(pts[1, k + 1], pts[2, k + 1], pts[3, k + 1])
-        r2 = SVector{3, Float64}(pts[1, k + 2], pts[2, k + 2], pts[3, k + 2])
-        dv += norm(rpo_hcw_feedforward_accel(r0, r1, r2, step, n)) * step
+    if m >= 2
+        @inbounds for k in 0:(m - 1)
+            dv += norm(rpo_hcw_feedforward_accel(point(k), point(k + 1), point(k + 2), step, n)) * step
+        end
     end
     return (J_fuel=Float64(mass_kg) * dv / (Float64(isp_s) * Float64(g0_mps2)), delta_v_eq_mps=dv)
 end
@@ -84,8 +87,9 @@ rpo_fuel_proxy_dt_s(cfg::RPOPSOConfig) = cfg.fuel_proxy_dt_s > 0.0 ? cfg.fuel_pr
 """
 HCW fuel proxy of an acceleration-limited profile, streamed at step `dt`
 without storing the reference: positions r_0..r_K from
-`rpo_retimed_reference_from_profile`, then r_{K+1} = r_K because the
-reference holds the goal at rest, so the last term includes arrival.
+`rpo_retimed_reference_from_profile`, held at rest before r_0 and after r_K,
+so the first term is the departure from rest and the last the arrival, as in
+`rpo_hcw_fuel_proxy` on the stored reference.
 """
 function rpo_profile_hcw_fuel_proxy(profile, dt::Real, mean_motion::Real, mass_kg::Real, isp_s::Real, g0_mps2::Real)
     step = Float64(dt)
@@ -103,7 +107,8 @@ function rpo_profile_hcw_fuel_proxy(profile, dt::Real, mean_motion::Real, mass_k
         j, sq, _, _ = _rpo_profile_state_at_time(profile, step, j)
         r1 = first(_rpo_profile_point_tangent(profile, j, sq))
     end
-    dv = 0.0
+    # Departure from rest: the reference holds r_0 before it starts.
+    dv = K > 0 ? norm(rpo_hcw_feedforward_accel(r0, r0, r1, step, n)) * step : 0.0
     for k in 0:(K - 1)
         r2 = goal
         if k + 2 < K
@@ -265,8 +270,7 @@ function rpo_manuscript_path_cost_components(
         r_ref, _, _ = Logging.with_logger(Logging.NullLogger()) do
             rpo_retime_path(points, geometry, step_cfg; safe_distance_m=safe_distance_m)
         end
-        held = hcat(r_ref, r_ref[:, end])
-        proxy = rpo_hcw_fuel_proxy(held, dt, cfg.mean_motion_radps, cfg.mass_kg, cfg.isp_s, cfg.g0_mps2)
+        proxy = rpo_hcw_fuel_proxy(r_ref, dt, cfg.mean_motion_radps, cfg.mass_kg, cfg.isp_s, cfg.g0_mps2)
         (J_fuel=proxy.J_fuel, delta_v_eq_mps=proxy.delta_v_eq_mps, steps=size(r_ref, 2) - 1, duration_s=(size(r_ref, 2) - 1) * dt)
     end
     return (

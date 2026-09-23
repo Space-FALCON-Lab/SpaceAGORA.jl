@@ -1,0 +1,13 @@
+threads,n_sats,definition,rep,wall_s,retcode,nf,gram_density_acq
+1,256,previous,1,0.685845,Success,163,0
+1,256,current,1,0.266494,Success,163,0
+1,256,previous,2,0.269129,Success,163,0
+1,256,current,2,0.264174,Success,163,0
+1,256,previous,3,0.263408,Success,163,0
+1,256,current,3,0.261022,Success,163,0
+8,256,previous,1,0.082788,Success,163,0
+8,256,current,1,0.078584,Success,163,0
+8,256,previous,2,0.049719,Success,163,0
+8,256,current,2,0.072595,Success,163,0
+8,256,previous,3,0.076349,Success,163,0
+8,256,current,3,0.120421,Success,163,0

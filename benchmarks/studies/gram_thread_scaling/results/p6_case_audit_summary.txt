@@ -1,7 +1,11 @@
+current   aero_256sat_l50_expatm_100s            N=256   below_2000km=  256  in_atmosphere=  256  calling_GRAM=    0
+previous  aero_256sat_l50_expatm_100s            N=256   below_2000km=  256  in_atmosphere=    0  calling_GRAM=    0
 current   aero_256sat_l50_gram_lookahead_100s    N=256   below_2000km=  256  in_atmosphere=  256  calling_GRAM=  256
 previous  aero_256sat_l50_gram_lookahead_100s    N=256   below_2000km=  256  in_atmosphere=    0  calling_GRAM=  256
 current   aero_256sat_l50_gram_process_100s      N=256   below_2000km=  256  in_atmosphere=  256  calling_GRAM=  256
 previous  aero_256sat_l50_gram_process_100s      N=256   below_2000km=  256  in_atmosphere=    0  calling_GRAM=  256
+current   aero_4096sat_l50_expatm_100s           N=4096  below_2000km= 4096  in_atmosphere= 4096  calling_GRAM=    0
+previous  aero_4096sat_l50_expatm_100s           N=4096  below_2000km=  740  in_atmosphere=    0  calling_GRAM=    0
 current   aero_4096sat_l50_gram_lookahead_100s   N=4096  below_2000km= 4096  in_atmosphere= 4096  calling_GRAM= 4096
 previous  aero_4096sat_l50_gram_lookahead_100s   N=4096  below_2000km=  740  in_atmosphere=    0  calling_GRAM=  740
 current   aero_4096sat_l50_gram_process_100s     N=4096  below_2000km= 4096  in_atmosphere= 4096  calling_GRAM= 4096

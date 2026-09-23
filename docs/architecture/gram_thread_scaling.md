@@ -335,13 +335,47 @@ per member on the freeze-per-step path (one per density callback) and exactly
 27 on the look-ahead path (the same 7 plus the 20 knots of each member's
 look-ahead cache), so every member calls GRAM and every member's cache is built.
 
-Trace 4 (`expatm`) was not moved, so trace 4 against trace 5 now differs in
-constellation as well as in density model; trace 5 against trace 6 is still
-single-variable.
+Trace 4 (`aero_<N>sat_l50_expatm_100s`, analytic exponential density) has since
+moved to the same constellation and entry interface (commit `be774d5b6`), so
+traces 4, 5 and 6 now differ only in the density model and its access path. The
+audit covers it too:
 
-**The P6 GRAM rows in archive run `trx50_ppb_cold_20260922_215638` were measured
-on the previous definition and must be re-measured.** The same applies to any
-other run of those two case names before commit `917ab6aa7`.
+| Trace 4 | N | Below 2000 km | `in_atmosphere` |
+|---|---:|---:|---:|
+| previous definition | 256 | 256 | 0 |
+| current definition | 256 | 256 | 256 |
+| previous definition | 4096 | 740 | 0 |
+| current definition | 4096 | 4096 | 4096 |
+
+(Its native-GRAM count is 0 in every row by construction.)
+
+The expectation was that the move would make trace 4 slower, because with every
+member inside the entry interface its density callback would now run for all of
+them. It does not, and the reason is in the code: the above-interface shortcut
+in the RHS (`density_vanishes_above_entry_interface`) is true only for
+`NoAtmosphereModel`, so an exponential atmosphere was already evaluated, and drag
+already applied, for every member at every altitude under the previous
+definition. For trace 4 the entry interface gates only the GRAM look-ahead
+cache, which it does not use. Measured at N = 256, 100 s, old against new,
+alternating (`results/p6_trace4_redefinition*.csv`):
+
+| Threads | Repeats | Previous, min / median (s) | Current, min / median (s) | Ratio of minima |
+|---:|---:|---:|---:|---:|
+| 1 | 3 | 0.263 / 0.269 | 0.261 / 0.264 | 0.99 |
+| 8 | 15 | 0.043 / 0.060 | 0.041 / 0.069 | 0.95 |
+
+Both definitions take the same 163 RHS evaluations. Serially the two are the same
+to 1 %. At 8 threads a solve lasts 40–130 ms and the spread inside each arm is
+larger than any difference between them (a first 3-repeat run gave 1.46 on the
+same comparison), so no difference is resolved there either. What does change is
+the physics: the members now fly at 300–480 km instead of 500–2600 km, so the
+drag they see is larger. The cost does not change.
+
+**The P6 density rows in archive run `trx50_ppb_cold_20260922_215638` — trace 4
+(`expatm`), trace 5 (`gram_lookahead`) and trace 6 (`gram_process`) — were
+measured on the previous definitions and must be re-measured.** The same applies
+to any other run of those case names before commit `917ab6aa7` (traces 5 and 6)
+or `be774d5b6` (trace 4).
 
 #### What the redefinition costs, at N = 256
 

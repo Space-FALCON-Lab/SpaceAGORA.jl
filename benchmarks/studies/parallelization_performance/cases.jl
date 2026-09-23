@@ -1456,9 +1456,15 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         # its members flown one per sample). Only the density model and its
         # access path differ, so the three are single-variable against each
         # other. Trace 4 moved there with traces 5 and 6 for exactly that reason,
-        # although nothing was wrong with it on its own: with every member now
-        # inside the entry interface its density callback and drag run for every
-        # member, which the previous 120 km interface never asked of it.
+        # although nothing was wrong with it on its own. The move does not change
+        # how much work trace 4 does: the above-interface shortcut
+        # (`density_vanishes_above_entry_interface`) is true only for
+        # NoAtmosphereModel, so an exponential atmosphere was already evaluated,
+        # and drag applied, for every member at any altitude, and the only thing
+        # the interface gates here is the GRAM look-ahead cache, which trace 4
+        # does not use. Measured at 256 members: same 163 RHS evaluations, wall
+        # time unchanged within the run-to-run spread (gram_thread_scaling
+        # results/p6_trace4_redefinition*.csv).
         #
         # dt_max_orbit is 5 s for all three, matching the atmo256_* ladder the
         # durations are derived from, rather than the 20 s the vacuum traces use:

@@ -575,6 +575,78 @@ What this says, plainly:
   one scale on the calibrated curve, is what would move it; see Online
   corrections for what the scale can and cannot do.
 
+## The local-slot heap term
+
+Under `:locals` the local slots were priced with the USL fit that
+`calibrate_machine.jl` measures on the allocation kernel. That reuse was
+ASSUMED, and the archived traces refute it: at fifteen local slots it charges
+4.45x where the traces measured 1.52x, and no correction under the rules below
+can close that gap (the prior's share alone keeps it near 2.2x).
+
+The term the planner now charges local slots is fitted from sample-level
+measurements: `s(k) = 1 + c k (k - 1)`, a cost per PAIR of samples sharing the
+heap, with `c` the `local_heap_slope` field of the constants file's
+`[campaign]` table. A linear `1 + c k` was the first candidate and fails: fitted
+to the P4 points it prices 31 slots at 2.1x where P3 measured 6.8x, and the
+planner would put P3 at 32 on 26 local slots, the failure the P3 row of the
+cold P3-P5 run records (1.39x the pinned pool).
+
+The points, all from `trx50_targeted_cold_20260923_140152`, each a first-round
+ratio of work measured inside the samples (local-slot mean over pool-worker
+mean), median over the 11 timed campaigns:
+
+| k | Point | Measured `s(k)` | How | Fitted |
+|---|---|---|---|---|
+| 4 | P4 at 8, R7 `w8+l4` | 1.289 | the guard's own `local_slowdown` | 1.072 |
+| 7 | P4 at 8, R6 `w8+l7` | 1.247 | R6 dispatch trace, mean local `first_work` over mean worker `first_work` | 1.252 |
+| 15 | P4 at 16, R6 `w16+l15` | 1.523 | as above | 2.262 |
+| 31 | P3 at 32, R6 `w32+l31` | 6.754 | as above | 6.590 |
+
+`c` = **0.006011**, least squares of `s - 1` on `k (k - 1)` through the origin
+over the four points (`scripts/extract_campaign_cost_terms.py`). The script
+also inverts each row's blended mean sample time against the pure pool's
+(1.179, 1.384, 1.654 and 9.391 at the four points) as a cross-check; the
+inversion is ill-posed where few samples reach the local slots (P3 at 31 gives
+5.2 or 9.4 depending on the search range) and is not fitted. The two archived
+P3-P5 runs named for this (`trx50_ppb_cold_20260922_103231`,
+`trx50_ppb_converged_20260922_170434`) carry no dispatch traces, only CSV rows,
+and are not used for the fit. Their P4 inversions (1.00 at k = 1 and 3, 1.36 at
+7, 1.72 at 15) agree with the traced points; their P3 inversions (1.18 at 3, 2.0
+at 7, 7.2 at 15) are several times steeper, which is the limit below.
+
+Unmeasured: every `k` other than 4, 7, 15 and 31 on this machine, and every `k`
+on any other machine. A machine whose constants file has no `local_heap_slope`
+falls back to the calibrated USL term (`usl_alpha_base`, `usl_beta_alloc`),
+and one with no constants at all to no term: both are what the planner did
+before, the first of them the conservative side to be wrong on.
+
+Ranking under the refit prior with no corrections (round tail included):
+
+| Point | Plan | Measured (s) | Model | Rank measured / model |
+|---|---|---|---|---|
+| P3 at 32 | `w32+l0` / `w32+l31` | 0.438 / 0.552 | 8.692 / 13.180 | 1, 2 / 1, 2 |
+| P4 at 8 | `w8+l7` / `w8+l4` / `w8+l0` | 2.620 / 3.002 / 3.742 | 3.113 / 3.388 / 4.388 | 1, 2, 3 / 1, 2, 3 |
+| P4 at 16 | `w16+l15` / `w16+l0` | 1.843 / 2.292 | 2.786 / 2.538 | 1, 2 / **2, 1** |
+
+R7 now chooses `w8+l7` at P4 at 8 (the measured best; predicted gain 29%),
+`w32+l0` at P3 at 32 (the best mixed plan, `l15`, is 12.8% ahead, inside the
+margin) and still `w16+l0` at P4 at 16. That last point is what one slope
+cannot do: the two workloads' local slots contend differently at the same
+width, and the least-squares slope sits between them. A slope fitted to the P4
+points alone (0.002688) ranks both P4 points as measured and sends P3 at 32 to
+21 local slots; every slope that ranks all three (0.00323 to 0.00483) is
+chosen by the ranking, not fitted to a measurement, and is not used. A
+workload-dependent term -- the obvious candidate is the coordinator's dispatch
+load, which is seventeen times higher for P3's 50 ms samples than for P4's
+0.85 s ones -- is the next measurement, not an assumption to make here.
+
+`heap_scale` now scales the term's EXCESS, `s = 1 + scale (s_model - 1)`, so
+for the pairwise term it is a scale on the fitted slope; the guard's
+observation maps to it as `(s_observed - 1) / (s_model - 1)`. The P4-at-8
+guard observations sit on the fitted curve at seven slots (1.247 against
+1.252), so they move nothing, and P4 at 16 never runs a mixed plan to observe:
+the corrections cannot repair that point either, by design.
+
 ## Online corrections
 
 Every campaign the guard already measures what the model predicted. The
@@ -728,7 +800,7 @@ Every number the planner uses, and what kind of number it is.
 | `SPACEAGORA_PREDICTIVE_GUARD_FACTOR` | `1.5` | ASSUMED | Same standing. A local slot running 1.5x slower than predicted relative to a pool worker is outside anything the round-count model explains; the second threshold at 2x that is the "stop entirely" case. |
 | `SPACEAGORA_PREDICTIVE_LOCAL_SLOTS_MAX` | `Threads.nthreads() - 1` | DERIVED | `ParallelProfiles.mixed_local_slots` keeps thread 1 free for the `@async` feeders that keep the pool supplied, so `T - 1` is the most slots the coordinator can offer under R6's own measured practice. |
 | `SPACEAGORA_PREDICTIVE_REMOTE_OVERHEAD` (`o_r`) | `0.0` | ASSUMED, and measurably wrong on short samples | The assumption was that a `remotecall_fetch` round trip is milliseconds against samples of 0.03-1 s, so the term sits below any noise floor the planner could measure. The reduced-scale run below refutes that at the bottom of the stated domain: on `independent_1sat_1hr`, 64 samples of ~38 ms, 8 pool workers against 8 coordinator threads, the pool campaign ran 0.722 s against the threads route's 0.427 s for the same per-sample work -- a worker class roughly 1.6x a coordinator thread, not 1.0x. The default stays zero because one point on one machine is not a value to hard-code, and it now has a better answer than a constant: the guard measures the same quantity in the campaign's own first round (see The guard) and moves the remainder to the threads route when the pool is not paying for itself. The field remains for a machine that has measured its own and wants the FIRST round planned correctly too; declaring 0.6 on that point moves the planner to the threads route from the start and to parity with it (0.409 s). |
-| `alpha` in `s_heap` | `MachineConstants.usl_alpha_base` | SOURCED (fit), **REFUTED (mapping)** | Fitted per machine by `scripts/calibrate_machine.jl` on the allocation kernel. Applying it to campaign samples claimed the same shape and a usable magnitude; the magnitude is refuted by the TRX50 run, so it is only consulted under `heap_model = :usl`. |
+| `alpha` in `s_heap` | `MachineConstants.usl_alpha_base` | SOURCED (fit), **REFUTED (mapping)** | Fitted per machine by `scripts/calibrate_machine.jl` on the allocation kernel. Applying it to campaign samples claimed the same shape and a usable magnitude; the magnitude is refuted by two TRX50 runs. Consulted under `heap_model = :usl`, and under `:locals` only as the fallback when the constants file has no `local_heap_slope`. |
 | `beta` in `s_heap` | `MachineConstants.usl_beta_alloc` | SOURCED (fit), **REFUTED (mapping)** | As above. |
 | `s_heap` with no constants | `1.0` | DERIVED | "Unknown means no gain" applied to a cost: an unmeasured contention term is not modeled, and the margin rule carries the safety. |
 | `SPACEAGORA_PREDICTIVE_LOCAL_THRASH` | `3.0` | ASSUMED | The observed local-slot slowdown, relative to a pool worker, past which the guard trims even though the pool is unharmed. Well above `guard_factor` because a slot at 1.5x a worker still adds two thirds of a worker's throughput; the old rule trimmed there and cost the P4-at-8 point. Nothing measures where the real threshold is. |
@@ -747,6 +819,7 @@ Every number the planner uses, and what kind of number it is.
 | Inner-speedup curve applied to the whole sample | -- | ASSUMED | The sweep times the RHS alone; the solver's own work does not speed up with the inner budget. An upper bound, carried by the margin. |
 | Curve measured without `W` samples beside it | -- | ASSUMED | A row's timings come from one solve's sweep; `W` concurrent samples at `b` threads share memory bandwidth the sweep did not. |
 | `SPACEAGORA_PREDICTIVE_INNER_CURVE` | `1` | -- | `0` plans without an inner-speedup curve. |
+| `local_heap_slope` (`[campaign]` table) | absent: the USL term | SOURCED (fit), form DERIVED | 0.006011, least squares of `s - 1` on `k (k - 1)` over the four first-round per-class work ratios of `trx50_targeted_cold_20260923_140152` (k = 4, 7, 15, 31; see The local-slot heap term). The pairwise form is chosen because the linear one fails P3 at 32. Ranks P3 at 32 and P4 at 8 as measured, not P4 at 16. |
 
 ## The measurements the unit tests encode
 
@@ -1025,6 +1098,5 @@ outright), `predicted_gain` (a deviation cleared the margin),
   (an aerobraking grid whose corners run far longer than its center). The
   final-round tail covers the random spread of identically distributed
   samples; a systematic spread is a different thing.
-- A heap slowdown measured per width, not one scale on the calibrated curve:
-  the archived traces put fifteen local slots at 1.53x a worker where the
-  curve says 4.45x, and no single scale fits four slots and fifteen at once.
+- A workload-dependent local-slot term: one pairwise slope ranks P3 at 32 and
+  P4 at 8 as measured but not P4 at 16 (see The local-slot heap term).

@@ -195,37 +195,69 @@ function PredictivePlannerConfig(;
                                    Float64(local_thrash))
 end
 
-# The constants the CONTENTION term may use FOR THIS ROUTE, which is not the
-# same question as which constants were loaded. The planner can have machine
+"""
+    PairwiseHeapTerm(slope)
+
+The `:locals` heap model's measured form: `k` coordinator local slots each run
+`s(k) = 1 + slope * k * (k - 1)` times as long as one alone, a cost that grows
+with the number of PAIRS of samples sharing the heap. `slope` is fitted from
+campaign traces and read from the `local_heap_slope` field of the constants
+file's `[campaign]` table; see `docs/architecture/predictive_routing_r7.md`
+("The local-slot heap term").
+"""
+struct PairwiseHeapTerm
+    slope::Float64
+end
+
+# What a heap term can be: none, the calibrated USL fit, or the fitted
+# pairwise local-slot term.
+const _PredictiveHeapTerm = Union{Nothing, ParallelCost.MachineConstants, PairwiseHeapTerm}
+
+# The heap term the planner charges FOR THIS ROUTE, which is not the same
+# question as which constants were loaded. The planner can have machine
 # constants in hand and decline to charge contention with them; they are still
 # reported, so a trace says what the machine knows as well as what the planner
 # used.
 #
 # The route argument is the whole of the `:locals` model: coordinator local
 # slots in a mixed plan are charged, threads-route tasks are not, and that
-# asymmetry is measured rather than assumed. See the docs.
+# asymmetry is measured rather than assumed. Under `:locals` the local slots
+# are charged the fitted pairwise term when the constants file has one
+# (`local_heap_slope`), and otherwise fall back to the calibrated USL fit -- the
+# mapping the archived traces refute as three times too high at fifteen slots,
+# kept only because it is the conservative side to be wrong on. See the docs.
 @inline function _predictive_contention_constants(
     config::PredictivePlannerConfig,
     constants::Union{Nothing, ParallelCost.MachineConstants},
     route::Symbol,
-)
+    local_heap_slope::Real = NaN,
+)::_PredictiveHeapTerm
     config.heap_model === :usl && return constants
-    config.heap_model === :locals && return route === :process ? constants : nothing
+    if config.heap_model === :locals
+        route === :process || return nothing
+        return (isfinite(local_heap_slope) && local_heap_slope >= 0.0) ?
+            PairwiseHeapTerm(Float64(local_heap_slope)) : constants
+    end
     return nothing
 end
 
 """
-    PredictiveCostTerms(; heap_scale = 1.0, round_tail = 0.0, startup = 0.0)
+    PredictiveCostTerms(; heap_scale = 1.0, round_tail = 0.0, startup = 0.0,
+                        local_heap_slope = NaN)
 
 The cost-model parameters that are not properties of one plan, applied to every
 candidate alike. The default is the model as it was before any of them
 existed, and it prices every plan exactly as that model did.
 
-- `heap_scale`: multiplies the heap slowdown the heap model charges a plan,
-  wherever it charges one; the result is clamped at `1`. It is the parameter
-  the online corrections move when the guard observes the local slots running
-  faster or slower than predicted. It never introduces a contention term where
-  the heap model charges none.
+- `heap_scale`: multiplies the EXCESS of the heap slowdown the heap model
+  charges a plan, `s = 1 + heap_scale * (s_model - 1)`, wherever it charges
+  one. For the pairwise local-slot term that is a scale on its fitted slope. It
+  is the parameter the online corrections move when the guard observes the
+  local slots running faster or slower than predicted, and it never introduces
+  a contention term where the heap model charges none.
+- `local_heap_slope`: the `:locals` model's fitted pairwise slope (see
+  [`PairwiseHeapTerm`](@ref)); `NaN` when the constants file has none, in
+  which case the local slots fall back to the calibrated USL term.
 - `round_tail`: the spread of one sample's time, in sample units, as it shows
   in a FINAL round. Each consumer class (the pool's workers; the consumers on
   this process's heap) finishes its last round of `k` concurrent samples
@@ -244,19 +276,25 @@ struct PredictiveCostTerms
     heap_scale::Float64
     round_tail::Float64
     startup::Float64
-    function PredictiveCostTerms(heap_scale::Real, round_tail::Real, startup::Real)
+    local_heap_slope::Float64
+    function PredictiveCostTerms(heap_scale::Real, round_tail::Real, startup::Real,
+                                 local_heap_slope::Real = NaN)
         (isfinite(heap_scale) && heap_scale > 0.0) || throw(ArgumentError(
             "PredictiveCostTerms heap_scale must be finite and > 0; got $(heap_scale)."))
         (isfinite(round_tail) && round_tail >= 0.0) || throw(ArgumentError(
             "PredictiveCostTerms round_tail must be finite and >= 0; got $(round_tail)."))
         (isfinite(startup) && startup >= 0.0) || throw(ArgumentError(
             "PredictiveCostTerms startup must be finite and >= 0; got $(startup)."))
-        return new(Float64(heap_scale), Float64(round_tail), Float64(startup))
+        (isnan(local_heap_slope) || local_heap_slope >= 0.0) || throw(ArgumentError(
+            "PredictiveCostTerms local_heap_slope must be >= 0 or NaN; got $(local_heap_slope)."))
+        return new(Float64(heap_scale), Float64(round_tail), Float64(startup),
+                   Float64(local_heap_slope))
     end
 end
 
-PredictiveCostTerms(; heap_scale::Real = 1.0, round_tail::Real = 0.0, startup::Real = 0.0) =
-    PredictiveCostTerms(heap_scale, round_tail, startup)
+PredictiveCostTerms(; heap_scale::Real = 1.0, round_tail::Real = 0.0, startup::Real = 0.0,
+                    local_heap_slope::Real = NaN) =
+    PredictiveCostTerms(heap_scale, round_tail, startup, local_heap_slope)
 
 """
     InnerSpeedupCurve(speedup; source = "")
@@ -371,6 +409,11 @@ machine's constants at all; under `:none` it is called with `nothing` even on a
 calibrated machine. The measurement that made `:none` the default is in the
 constants table of `docs/architecture/predictive_routing_r7.md`.
 """
+function predictive_heap_slowdown(term::PairwiseHeapTerm, k::Integer)::Float64
+    k <= 1 && return 1.0
+    return 1.0 + term.slope * Float64(k) * Float64(k - 1)
+end
+
 function predictive_heap_slowdown(constants::Union{Nothing, ParallelCost.MachineConstants}, k::Integer)::Float64
     k <= 1 && return 1.0
     constants === nothing && return 1.0
@@ -477,18 +520,18 @@ end
 # The heap slowdown a plan is charged: the heap model's value, scaled by the
 # correction, never below 1. Where the heap model charges nothing (no
 # constants, or a single consumer) the correction has nothing to scale.
-@inline function _predictive_scaled_heap(constants::Union{Nothing, ParallelCost.MachineConstants},
+@inline function _predictive_scaled_heap(constants::_PredictiveHeapTerm,
                                          k::Integer, heap_scale::Float64)::Float64
     raw = predictive_heap_slowdown(constants, k)
     (constants === nothing || k <= 1) && return raw
-    return max(1.0, heap_scale * raw)
+    return max(1.0, 1.0 + heap_scale * (raw - 1.0))
 end
 
 # `inner_time` is the sample time at the plan's inner budget relative to one
 # thread, `1 / speedup(b)`; it multiplies every consumer on this process's heap
 # and the `:none` consumer, never a pool worker (one thread each).
 function _predictive_slowdowns(route::Symbol, workers::Int, local_slots::Int,
-                               constants::Union{Nothing, ParallelCost.MachineConstants},
+                               constants::_PredictiveHeapTerm,
                                remote_overhead::Float64, heap_scale::Float64 = 1.0,
                                inner_time::Float64 = 1.0)
     worker_s = 1.0 + remote_overhead
@@ -507,7 +550,7 @@ end
 
 function _predictive_plan(route::Symbol, workers::Int, local_slots::Int, n_samples::Int,
                           static_equivalent::Bool,
-                          constants::Union{Nothing, ParallelCost.MachineConstants},
+                          constants::_PredictiveHeapTerm,
                           remote_overhead::Float64 = PREDICTIVE_REMOTE_OVERHEAD;
                           terms::PredictiveCostTerms = PredictiveCostTerms(),
                           inner_budget::Int = 0,
@@ -577,8 +620,10 @@ function predictive_plan_candidates(;
     # planner will charge for sharing a heap, which under the default heap
     # model is the local slots and nothing else. See
     # `_predictive_contention_constants`.
-    contention_process = _predictive_contention_constants(config, constants, :process)
-    contention_threads = _predictive_contention_constants(config, constants, :threads)
+    contention_process = _predictive_contention_constants(config, constants, :process,
+                                                          terms.local_heap_slope)
+    contention_threads = _predictive_contention_constants(config, constants, :threads,
+                                                          terms.local_heap_slope)
     plans = PredictivePlan[]
     if n <= 1 || (T <= 1 && pool == 0)
         push!(plans, _predictive_plan(:none, 1, 0, n, true, nothing, config.remote_overhead))
@@ -766,18 +811,23 @@ either. Both are ASSUMED, and both only ever reduce.
 """
 function predictive_trim_target(plan::PredictivePlan, config::PredictivePlannerConfig,
                                 constants::Union{Nothing, ParallelCost.MachineConstants},
-                                local_slowdown::Real = NaN)::Int
+                                local_slowdown::Real = NaN;
+                                terms::PredictiveCostTerms = PredictiveCostTerms())::Int
     L0 = plan.local_slots
     L0 > 1 || return 0
-    curve = _predictive_contention_constants(config, constants, :process)
-    if curve !== nothing
-        alpha = max(0.0, curve.usl_alpha_base)
-        beta = max(0.0, curve.usl_beta_alloc)
-        peak = ParallelCost.usl_peak_workers(alpha, beta)
-        if isfinite(peak) && peak >= 1.0
-            target = clamp(round(Int, peak), 0, L0)
-            target < L0 && return target
-        end
+    curve = _predictive_contention_constants(config, constants, :process, terms.local_heap_slope)
+    peak = if curve isa PairwiseHeapTerm
+        # Throughput L / (1 + c L (L - 1)) peaks at L = 1 / sqrt(c).
+        c = curve.slope * terms.heap_scale
+        c > 0.0 ? 1.0 / sqrt(c) : Inf
+    elseif curve !== nothing
+        ParallelCost.usl_peak_workers(max(0.0, curve.usl_alpha_base), max(0.0, curve.usl_beta_alloc))
+    else
+        NaN
+    end
+    if isfinite(peak) && peak >= 1.0
+        target = clamp(round(Int, peak), 0, L0)
+        target < L0 && return target
     end
     return L0 ÷ 2
 end
@@ -854,6 +904,7 @@ function predictive_guard_verdict(
     threads_candidate::Bool = true,
     constants::Union{Nothing, ParallelCost.MachineConstants} = nothing,
     failures::Integer = 0,
+    terms::PredictiveCostTerms = PredictiveCostTerms(),
 )
     keep = (; replan = false, route = plan.route, workers = plan.workers,
             local_slots = plan.local_slots, ratio = NaN, occupancy_ratio = NaN,
@@ -943,7 +994,7 @@ function predictive_guard_verdict(
     pool_harmed = isfinite(worker_degradation) && worker_degradation > config.guard_factor
     locals_thrashing = local_slowdown > config.local_thrash
     if pool_harmed || locals_thrashing
-        target = predictive_trim_target(plan, config, constants, local_slowdown)
+        target = predictive_trim_target(plan, config, constants, local_slowdown; terms = terms)
         target < plan.local_slots && return (; keep..., replan = true, local_slots = target,
                 ratio = ratio, occupancy_ratio = occupancy_ratio,
                 local_slowdown = local_slowdown, worker_degradation = worker_degradation,
@@ -1058,6 +1109,8 @@ table of its fingerprinted machine constants file
   [`PredictiveCostTerms`](@ref)`.round_tail`.
 - `pool_startup_s` -- the delay, in seconds, before a cold pool's workers
   return their first sample beyond the work it took.
+- `local_heap_slope` -- the `:locals` heap model's pairwise slope (see
+  [`PairwiseHeapTerm`](@ref)).
 - `source` -- where the two numbers were measured.
 
 Both are measured from campaign dispatch traces, not by
@@ -1070,13 +1123,15 @@ struct PredictiveCampaignConstants
     round_tail::Union{Nothing, Float64}
     pool_startup_s::Union{Nothing, Float64}
     source::String
+    local_heap_slope::Union{Nothing, Float64}
 end
 
 PredictiveCampaignConstants(; round_tail = nothing, pool_startup_s = nothing,
-                            source::AbstractString = "") =
+                            source::AbstractString = "", local_heap_slope = nothing) =
     PredictiveCampaignConstants(round_tail === nothing ? nothing : Float64(round_tail),
                                 pool_startup_s === nothing ? nothing : Float64(pool_startup_s),
-                                String(source))
+                                String(source),
+                                local_heap_slope === nothing ? nothing : Float64(local_heap_slope))
 
 """
     load_predictive_campaign_constants(path = ParallelCost.machine_constants_path())
@@ -1105,7 +1160,8 @@ function load_predictive_campaign_constants(
     end
     source = get(table, "source", "")
     return PredictiveCampaignConstants(field("round_tail"), field("pool_startup_s"),
-                                       source isa AbstractString ? String(source) : "")
+                                       source isa AbstractString ? String(source) : "",
+                                       field("local_heap_slope"))
 end
 
 const _PREDICTIVE_CAMPAIGN_CONSTANTS = Ref{Any}(nothing)
@@ -1461,7 +1517,8 @@ function predictive_cost_terms(corrections::Union{Nothing, CampaignCorrections},
         _sample_time_value(get(corrections.sample_time_s, String(signature), nothing), k, rules)
     startup_s = campaign_constants.pool_startup_s
     startup = (pool_cold && t1 !== nothing && startup_s !== nothing) ? startup_s / t1 : 0.0
-    return (terms = PredictiveCostTerms(heap, max(0.0, tail), startup), sample_time_s = t1)
+    slope = campaign_constants.local_heap_slope === nothing ? NaN : campaign_constants.local_heap_slope
+    return (terms = PredictiveCostTerms(heap, max(0.0, tail), startup, slope), sample_time_s = t1)
 end
 
 """
@@ -1476,9 +1533,10 @@ clock keeps running). Parameters that have gone stale are dropped, which is
 what reverting to the prior means on disk.
 
 - `worker_sample_s`: mean work of the samples the pool workers ran.
-- `heap_scale_observed`: the heap scale that would have predicted the local
-  slots' observed slowdown against a pool worker; only from a guarded plan
-  whose heap model charged a term.
+- `heap_scale_observed`: the scale on the heap term's excess that would have
+  predicted the local slots' observed slowdown against a pool worker,
+  `(s_observed - 1) / (s_model - 1)`; only from a guarded plan whose heap model
+  charged a term.
 - `tail_observed`: the round tail implied by a pure process campaign on a
   warm pool; only folded when the constants file has a prior for it.
 """

@@ -33,8 +33,21 @@ model without the new terms, with the round tail, with the round tail and a
 scaled heap term, and with the round tail and the local slots' slowdown as the
 run's own traces measured it -- and ranked against the measured medians.
 
+`local_heap_slope`, the `:locals` heap model's pairwise slope: `k` local slots
+beside a pool each run `s(k) = 1 + c k (k - 1)` times a pool worker's sample
+time. The points come from the run's mixed campaigns, and every one is a
+first-round, per-class ratio of work measured inside the samples: for an R7
+campaign the guard's own `local_slowdown` (local mean work over worker mean
+work), for an R6 campaign the same ratio from its dispatch trace (mean
+`first_work` of the local slots over that of the workers); the median over the
+timed campaigns. As a cross-check the script also inverts each row's blended
+mean sample time against the pure pool's at the same width (the `s` for which
+the list schedule's class counts give the measured mean), which is ill-posed
+where few samples land on the local slots and is printed, not fitted. `c` is
+the least-squares fit of `s - 1` on `k (k - 1)` through the origin.
+
 With `--write-constants PATH`, the `[campaign]` table of the machine constants
-file at PATH is replaced (or appended) with the two values and their source.
+file at PATH is replaced (or appended) with the values and their source.
 Only do that with a run measured on the machine PATH belongs to.
 
 Usage:
@@ -205,7 +218,8 @@ def observed_heap(run_dir: str) -> dict[tuple[int, int], float]:
     return {k: st.median(v) for k, v in ratios.items()}
 
 
-def rank(run_dir: str, alpha: float, beta: float, tail: float, heap_scale: float):
+def rank(run_dir: str, alpha: float, beta: float, tail: float, heap_scale: float,
+         slope: float | None = None):
     measured_heap = observed_heap(run_dir)
     points: dict[str, dict[tuple, list[float]]] = {}
     for path in sorted(glob.glob(os.path.join(run_dir, "*.csv"))):
@@ -235,18 +249,20 @@ def rank(run_dir: str, alpha: float, beta: float, tail: float, heap_scale: float
     for point, plans in sorted(points.items()):
         print(f"\n{point}")
         print("  plan          measured_s  rank |  model v1  rank |  +tail  rank | +tail,heap x{:.3f}  rank |"
-              " +tail,heap observed  rank".format(heap_scale))
+              " +tail,heap observed  rank | +tail,pairwise fit  rank".format(heap_scale))
         table = []
         for (n, w, l), walls in plans.items():
             h = usl_heap(alpha, beta, l) if l > 0 else 1.0
-            h_c = max(1.0, heap_scale * h) if l > 0 else 1.0
+            h_c = max(1.0, 1.0 + heap_scale * (h - 1.0)) if l > 0 else 1.0
             h_o = measured_heap.get((w, l), float("nan")) if l > 0 else 1.0
+            h_p = 1.0 + (slope or 0.0) * l * (l - 1)
             table.append(((w, l), st.median(walls),
                           plan_makespan(n, w, l, h),
                           plan_makespan(n, w, l, h, tail),
                           plan_makespan(n, w, l, h_c, tail),
                           plan_makespan(n, w, l, h_o, tail) if h_o == h_o else float("nan"),
-                          h_o))
+                          h_o,
+                          plan_makespan(n, w, l, h_p, tail) if slope is not None else float("nan")))
 
         def ranks(col):
             order = sorted(range(len(table)), key=lambda i: round(table[i][col], 9))
@@ -256,17 +272,93 @@ def rank(run_dir: str, alpha: float, beta: float, tail: float, heap_scale: float
             return out
 
         r1, r2, r3, r4, r5 = ranks(1), ranks(2), ranks(3), ranks(4), ranks(5)
-        for i, ((w, l), m, a, b, c, d, h_o) in enumerate(table):
+        r6 = ranks(7)
+        for i, ((w, l), m, a, b, c, d, h_o, p) in enumerate(table):
             print(f"  process@w{w}+l{l:<3} {m:9.3f}  {r1[i]:4d} | {a:8.3f}  {r2[i]:4d} | {b:6.3f}  {r3[i]:4d} |"
-                  f" {c:18.3f}  {r4[i]:4d} | {d:9.3f} (x{h_o:.2f})  {r5[i]:4d}")
+                  f" {c:18.3f}  {r4[i]:4d} | {d:9.3f} (x{h_o:.2f})  {r5[i]:4d} | {p:16.3f}  {r6[i]:4d}")
 
 
-def write_constants(path: str, tail: float, startup_s: float, source: str) -> None:
+def _class_counts(n: int, workers: int, local_slots: int, s: float) -> tuple[int, int]:
+    slow = [1.0] * workers + [s] * local_slots
+    free = [0.0] * (workers + local_slots)
+    taken = [0] * (workers + local_slots)
+    for _ in range(n):
+        j = min(range(len(free)), key=lambda i: (free[i], i))
+        free[j] += slow[j]
+        taken[j] += 1
+    return sum(taken[:workers]), sum(taken[workers:])
+
+
+def invert_local_slowdown(n: int, workers: int, local_slots: int, t_w: float, mean: float) -> float:
+    """The local-slot slowdown that reproduces a mixed campaign's blended mean."""
+    best = (math.inf, 1.0)
+    for i in range(1000, 12001):
+        s_try = i / 1000.0
+        n_w, n_l = _class_counts(n, workers, local_slots, s_try)
+        err = abs(t_w * (n_w + s_try * n_l) / n - mean)
+        if err < best[0]:
+            best = (err, s_try)
+    return best[1]
+
+
+def _trace_class_ratios(lines: list[str]) -> list[float]:
+    """Per campaign: mean local first work over mean worker first work."""
+    out, worker = [], None
+    for line in lines:
+        if "worker first_take=" in line:
+            worker = _array(line, "first_work")
+        elif "local first_take=" in line and worker:
+            local = _array(line, "first_work")
+            if local:
+                out.append(st.mean(local) / st.mean(worker))
+            worker = None
+    return out
+
+
+def heap_points(run_dir: str):
+    """Yield (label, k, s, how, inverted) for every mixed plan the run measured."""
+    for path in sorted(glob.glob(os.path.join(run_dir, "*.csv"))):
+        label = os.path.basename(path)[:-4]
+        rows = _rows(path)
+        if not rows:
+            continue
+        mode = rows[0]["mode"]
+        point = label[: -len(mode) - 1] if label.endswith("_" + mode) else label
+        lines = _log_lines(run_dir, label)
+        plans = _plans_in_log(lines) if mode == "predictive" else _bandit_plans(lines)
+        mixed = [p for p in plans if p[0] == "process" and p[2] > 0]
+        if not mixed or len(set(mixed)) != 1:
+            continue
+        n, w, k = int(rows[0]["mc_samples"]), mixed[-1][1], mixed[-1][2]
+        guard = [float(m.group(1)) for m in
+                 (re.search(r"local_slowdown=([\d.]+)", l) for l in lines) if m]
+        if guard:
+            timed = guard[-len(rows):]
+            s_k, how = st.median(timed), f"R7 guard local_slowdown, median of {len(timed)} timed campaigns"
+        else:
+            ratios = _trace_class_ratios(lines)
+            if not ratios:
+                continue
+            timed = ratios[-len(rows):]
+            s_k, how = st.median(timed), f"R6 trace first-work ratio, median of {len(timed)} timed campaigns"
+        inverted = float("nan")
+        pure = os.path.join(run_dir, f"{point}_outer_process.csv")
+        if os.path.isfile(pure):
+            t_w = st.median(float(r["mean_sample_wall_time_s"]) for r in _rows(pure))
+            kept = [r for r in rows if r["outer_backend_actual"] == "process" and r["success"] == "true"]
+            mean = st.median(float(r["mean_sample_wall_time_s"]) for r in kept)
+            inverted = invert_local_slowdown(n, w, k, t_w, mean)
+        yield label, k, s_k, how, inverted
+
+
+def write_constants(path: str, tail: float, startup_s: float, source: str,
+                    local_heap_slope: float | None = None) -> None:
     with open(path) as fh:
         text = fh.read()
     table = ("[campaign]\n"
              f"round_tail = {tail:.6g}\n"
              f"pool_startup_s = {startup_s:.6g}\n"
+             + (f"local_heap_slope = {local_heap_slope:.6g}\n" if local_heap_slope is not None else "") +
              f"source = \"{source}\"\n")
     pattern = re.compile(r"^\[campaign\]\n(?:(?!\[).*\n?)*", re.MULTILINE)
     text = pattern.sub(table, text) if pattern.search(text) else text.rstrip("\n") + "\n\n" + table
@@ -304,13 +396,26 @@ def main() -> int:
     startup_s = st.median(ms for _, ms in starts) / 1000.0 if starts else 0.0
     print(f"pool_startup_s = {startup_s:.4f}  (median of {len(starts)} cold campaigns)")
 
+    points = list(heap_points(args.run_dir))
+    slope = None
+    for label, k, s_k, how, inverted in points:
+        print(f"  heap point {label:24s} k={k:2d} s={s_k:.3f}  ({how}; blended-mean inversion {inverted:.3f})")
+    fit = [(k, s_k) for _, k, s_k, _, _ in points if k >= 2]
+    if fit:
+        slope = sum((s_k - 1.0) * k * (k - 1) for k, s_k in fit) / sum((k * (k - 1)) ** 2 for k, _ in fit)
+        print(f"local_heap_slope = {slope:.6f}  (least squares of s - 1 on k (k - 1), {len(fit)} points)")
+        for k, s_k in fit:
+            print(f"    k={k:2d} measured {s_k:.3f} fitted {1.0 + slope * k * (k - 1):.3f}")
+
     if args.rank:
-        rank(args.run_dir, args.usl_alpha, args.usl_beta, tail, args.heap_scale)
+        rank(args.run_dir, args.usl_alpha, args.usl_beta, tail, args.heap_scale, slope)
 
     if args.write_constants:
         source = (f"{os.path.basename(os.path.normpath(args.run_dir))}: round_tail = median over "
                   f"{len(tails)} pure-process rows; pool_startup_s = median over {len(starts)} cold campaigns")
-        write_constants(args.write_constants, tail, startup_s, source)
+        if slope is not None:
+            source += f"; local_heap_slope = least squares over {len(fit)} mixed-plan points"
+        write_constants(args.write_constants, tail, startup_s, source, slope)
         print(f"wrote [campaign] to {args.write_constants}")
     return 0
 

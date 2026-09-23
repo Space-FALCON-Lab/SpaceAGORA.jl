@@ -69,9 +69,15 @@ const GTS_REPEATS  = parse(Int, gts_arg(ARGS, "repeats", "1"))
 const GTS_WARMUP_S = parse(Float64, gts_arg(ARGS, "warmup-mission", "5"))
 const GTS_EI_KM    = parse(Float64, gts_arg(ARGS, "ei-km", "600"))
 const GTS_OUT      = gts_arg(ARGS, "out", "")
+# `keplerian=false` plus an entry interface below the constellation is the
+# "GRAM is configured but never reached" case: every satellite is above the
+# interface, so both the locked and the pooled evaluation take the analytic
+# `density_polyfit` branch and neither calls native GRAM. The pool still builds
+# its instances, because `_ensure_gram_isolated_pool!` runs before the gate does.
+const GTS_KEPLERIAN = gts_arg(ARGS, "keplerian", "1") in ("1", "true", "yes", "on")
 
 function gts_solve(n::Int, mission_s::Float64, env)
-    args = gts_build_config(n, mission_s, GTS_EI_KM)
+    args = gts_build_config(n, mission_s, GTS_EI_KM; keplerian=GTS_KEPLERIAN)
     # The counters accumulate for the life of the process, so a run's own
     # occupancy is only readable against a window that starts here.
     RS.reset_native_lock_stats!()

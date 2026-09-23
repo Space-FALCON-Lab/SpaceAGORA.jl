@@ -41,8 +41,11 @@ function gts_density_env(path::String, mission_s::Float64)
     error("Unknown density path '$path'. Use lookahead or freeze.")
 end
 
+# workers < 0 sets nothing and lets the shipped defaults decide, which is how a
+# dump compares "what a user gets" against "the pool explicitly off".
 function gts_pool_env(workers::Int)
-    workers <= 0 && return ["SPACEAGORA_GRAM_ISOLATED_POOL" => "off"]
+    workers < 0 && return Pair{String, String}[]
+    workers == 0 && return ["SPACEAGORA_GRAM_ISOLATED_POOL" => "off"]
     return [
         "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
         "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => string(workers),
@@ -120,7 +123,7 @@ end
 
 # L50 harmonics plus aero, live native GRAM, dt_max_orbit 5 s: the P6 aero
 # trace's force model on the constellation above.
-function gts_build_config(n::Int, mission_s::Float64, ei_km::Float64)
+function gts_build_config(n::Int, mission_s::Float64, ei_km::Float64; keplerian::Bool=true)
     planet = Earth("", PPC_SPICE_PATH)
     args = ppc_build_config(
         planet=planet,
@@ -134,9 +137,18 @@ function gts_build_config(n::Int, mission_s::Float64, ei_km::Float64)
     # The entry interface decides `in_atmosphere`, which is what gates the
     # vacuum-predicted look-ahead cache. Put it above the constellation so every
     # member is inside it from the first step.
+    mission_cfg = keplerian ? args.mission_configuration : MissionConfiguration(
+        mission_type=args.mission_configuration.mission_type,
+        keplerian=false,
+        number_of_orbits=args.mission_configuration.number_of_orbits,
+        mission_time=args.mission_configuration.mission_time,
+        orientation_sim=args.mission_configuration.orientation_sim,
+        num_steps_to_save=args.mission_configuration.num_steps_to_save,
+        data_rate=args.mission_configuration.data_rate
+    )
     return SimulationConfiguration(
         simulation_settings=args.simulation_settings,
-        mission_configuration=args.mission_configuration,
+        mission_configuration=mission_cfg,
         environment_model=EnvironmentModel(
             planet=args.environment_model.planet,
             EI=ei_km,

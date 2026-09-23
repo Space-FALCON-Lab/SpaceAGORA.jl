@@ -85,7 +85,9 @@ end
 function gtsd_env(pool::Int)
     env = gts_density_env(GTSD_DENSITY, GTSD_MISSION)
     append!(env, gts_pool_env(pool))
-    GTSD_CONFIG == "engaged" && append!(env, GTS_WIDTH_ENV)
+    # The width override is for the study's own arms only. A "default" dump
+    # (pool < 0) must see exactly what a user sees, overrides included.
+    GTSD_CONFIG == "engaged" && pool >= 0 && append!(env, GTS_WIDTH_ENV)
     return env
 end
 
@@ -118,7 +120,7 @@ function main()
         SimulationEngine.run_simulation(gtsd_config(min(GTSD_N, 16), 5.0); isolate_state=false)
     end
     locked = gtsd_run("locked", 0)
-    pooled = gtsd_run("pool$(GTSD_POOL)", GTSD_POOL)
+    pooled = gtsd_run(GTSD_POOL < 0 ? "default" : "pool$(GTSD_POOL)", GTSD_POOL)
     println("compare with: cmp $(locked) $(pooled)")
     return nothing
 end

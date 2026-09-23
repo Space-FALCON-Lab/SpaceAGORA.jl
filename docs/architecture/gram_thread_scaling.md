@@ -72,7 +72,126 @@ both off and on.
 
 ## Is the pool faster?
 
-RESULTS_PLACEHOLDER
+At 1024 spacecraft and four threads or more, yes, by up to 1.90x. At 256 it
+loses at every thread count and every width, by as much as a factor of two. The
+axis that decides is how many native GRAM calls a single callback makes, and the
+threshold sits between those two sizes.
+
+All of it on the workstation (12 physical cores, 24 threads), one thread count
+per process, each group solved back to back in one process state with the arms
+alternating across three repeats and the minimum taken. Ratios only:
+locked ÷ pool, so above 1 means the pool is faster. Lock hold and wait are the
+`gram_density` site's, over the locked run. Raw rows in
+`benchmarks/studies/gram_thread_scaling/results/`.
+
+| threads | spacecraft | density path | locked (s) | pool 2 | pool 4 | pool 8 | locked lock hold (s) | locked lock wait (s) | pool 8 acquisitions |
+|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 256 | freeze | 0.42 | 1.00 | 1.00 | 0.99 | 0.16 | 0.00 | 6144 |
+| 1 | 256 | lookahead | 0.66 | 1.01 | 0.99 | 0.99 | 0.33 | 0.00 | 11520 |
+| 1 | 1024 | freeze | 1.81 | 0.99 | 1.01 | 0.99 | 0.55 | 0.00 | 24576 |
+| 1 | 1024 | lookahead | 3.23 | 1.15 | 1.01 | 1.15 | 1.24 | 0.00 | 46080 |
+| 2 | 256 | freeze | 0.31 | 0.90 | 0.91 | 0.84 | 0.16 | 0.00 | 0 |
+| 2 | 256 | lookahead | 0.54 | 0.86 | 0.89 | 0.89 | 0.36 | 0.10 | 5120 |
+| 2 | 1024 | freeze | 1.20 | 0.96 | 0.93 | 1.02 | 0.54 | 0.00 | 0 |
+| 2 | 1024 | lookahead | 2.05 | 1.06 | 0.96 | 0.85 | 1.24 | 0.37 | 20480 |
+| 4 | 256 | freeze | 0.25 | 0.88 | 0.67 | 0.71 | 0.17 | 0.00 | 0 |
+| 4 | 256 | lookahead | 0.51 | 0.92 | 0.81 | 0.80 | 0.36 | 0.33 | 5120 |
+| 4 | 1024 | freeze | 0.83 | 1.37 | 1.65 | 1.41 | 0.55 | 0.00 | 0 |
+| 4 | 1024 | lookahead | 1.76 | 1.17 | 1.29 | 1.10 | 1.35 | 1.34 | 20480 |
+| 8 | 256 | freeze | 0.21 | 0.83 | 0.69 | 0.49 | 0.16 | 0.00 | 0 |
+| 8 | 256 | lookahead | 0.52 | 0.90 | 0.79 | 0.68 | 0.42 | 1.78 | 5120 |
+| 8 | 1024 | freeze | 0.88 | 1.64 | 1.90 | 1.76 | 0.55 | 0.00 | 0 |
+| 8 | 1024 | lookahead | 1.76 | 1.13 | 1.27 | 1.20 | 1.32 | 3.76 | 20480 |
+
+The one-thread block is the null control and reads as one. The pool needs at
+least two workers, so at one thread it declines and both arms are the same code:
+the acquisition counts are identical to the unit, and the ratios come back within
+1 % of unity — except the 1024-spacecraft look-ahead row, whose wall time is
+bimodal between about 2.80 s and 3.23 s in *both* arms. That 15 % spread is the
+resolution floor for that one cell, and nothing smaller should be read out of it.
+
+Above one thread the pool engages, and the acquisition counts say exactly how
+far it reaches. In freeze-per-step the shared lock's `gram_density` count goes to
+zero: every native GRAM call has moved to a per-worker instance behind a
+per-worker lock. In look-ahead mode it falls from 11 520 to 5 120 and from 46 080
+to 20 480 — the callback's share moves, and the look-ahead cache's own knot
+queries stay on the shared lock, because `_build_vacuum_gram_cache!` runs them
+scalar on the shared model.
+
+### The lock was not the problem where the pool helps
+
+The most useful column is the one that is zero. In freeze-per-step the locked
+path's lock *wait* is 0.00 s at every thread count and both sizes, against a hold
+of 0.16–0.55 s. There is no queueing: `getDensityBatch!` evaluates the whole
+batch from the one thread that entered the callback, so the shared lock is taken
+6 144 or 24 576 times and never contended. What the pool buys there is not lock
+relief, it is parallelism over work that was simply serial.
+
+And where the lock *is* contended, the pool does not reach it. In look-ahead mode
+the locked wait grows with the thread count — 0.10, 0.33, 1.78 s at 256
+spacecraft, 0.37, 1.34, 3.76 s at 1024 — and the pooled arms carry the same wait
+or more (up to 4.39 s), because the calls doing the waiting are the look-ahead
+cache's, which the pool never touches. That is the honest reading of the
+look-ahead column: its 1.13–1.29x is the callback's share being parallelized
+while the contended path underneath is unchanged.
+
+### Why 256 loses, and it is not the build cost
+
+Every pooled solve constructs its own instances, so the obvious explanation for
+the 256-spacecraft loss is a fixed build that a 100 s mission cannot amortize.
+The mission-length control says otherwise:
+
+| mission (s) | spacecraft | density path | threads | locked (s) | pool 4 |
+|---:|---:|---|---:|---:|---:|
+| 100 | 256 | freeze | 8 | 0.24 | 0.68 |
+| 100 | 256 | lookahead | 8 | 0.50 | 0.75 |
+| 1000 | 256 | freeze | 8 | 1.64 | 0.80 |
+| 1000 | 256 | lookahead | 8 | 2.08 | 0.88 |
+
+Ten times the mission moves the ratio from 0.68 to 0.80 and from 0.75 to 0.88 —
+better, and still a loss. Meanwhile four times the constellation moves it from
+0.69 to 1.90 at the same thread count. So the governing quantity is the native
+GRAM work inside one callback invocation, not the number of invocations: the
+threaded fan-out has a fixed per-invocation cost, and at 256 spacecraft the
+0.17 s of native GRAM spread across the whole run is not enough to cover it.
+
+### What ships
+
+`SPACEAGORA_GRAM_ISOLATED_POOL` now defaults to `auto` rather than `off`, at a
+threshold of 1024 and a width capped at 4. Each of those three numbers is
+SOURCED from the table above and argued where it is defined, in
+`density_callbacks/config.jl`: 1024 because 256 loses in every cell measured and
+1024 wins at 4 and 8 threads in both density paths; 4 because it is the fastest
+width in all four winning cells and each further instance is another native GRAM
+image resident in the process.
+
+Two changes were needed to make that default mean anything.
+
+The first is the width. The pool asks for its width with `lock_free=true`, which
+routes it past the `:density_callback` source's 16-thread minimum budget — the
+floor described in the next section, which exists because native GRAM is
+serialized on the shared lock and therefore does not apply to workers that each
+hold their own instance. Without this the default would be inert on any machine
+with fewer than 16 threads, including the one it was measured on.
+
+The second is a guard, and it came out of measuring a case the sweep does not
+cover. A constellation that is *configured* with a GRAM atmosphere but never
+reaches it — 1024 spacecraft above the entry interface on a non-keplerian run —
+was **1.83x slower** with the pool on (0.19 s locked against 0.35 s pooled at 8
+threads), because `_ensure_gram_isolated_pool!` builds its four native GRAM
+models before the per-item gate ever runs and then nothing calls them.
+`_gram_isolated_pool_native_count` now counts, in one pass over the staged
+altitudes, how many items would really reach GRAM, and the threshold is applied
+to that rather than to the spacecraft count. With the guard that case is 0.96x,
+within the run-to-run spread, and the 1024-spacecraft in-atmosphere win is
+unchanged at 1.77x and 1.19x.
+
+The defaults are bit-identical to the old ones where they change behavior, which
+is the only claim that matters here: a 1024-spacecraft freeze-per-step run and a
+1024-spacecraft look-ahead run, each dumped with the pool explicitly off and then
+with nothing set at all, are byte for byte the same (1 573 056 bytes each), and
+so is the 64-spacecraft reference case, which the new threshold leaves on the
+locked path.
 
 ## The interlock that makes the pool unreachable below 16 threads
 

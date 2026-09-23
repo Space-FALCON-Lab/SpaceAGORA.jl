@@ -39,9 +39,19 @@ const POOL_GRAM_READY = isfile(POOL_GRAM_LIB) && isdir(POOL_SPICE_PATH)
         @test CB._gram_isolated_pool_enabled(1)
         @test !CB._gram_isolated_pool_enabled(0)
     end
-    # Default is off: the pool is opt-in.
-    withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => nothing) do
-        @test CB._gram_isolated_pool_mode() === :off
+    # The shipped defaults, each SOURCED from
+    # benchmarks/studies/gram_thread_scaling/results/ and argued in the
+    # docstrings in density_callbacks/config.jl. Pinned here because a silent
+    # drift in any of the three would either switch the pool on where it was
+    # measured to lose or off where it was measured to win.
+    withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => nothing,
+            "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => nothing,
+            "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => nothing) do
+        @test CB._gram_isolated_pool_mode() === :auto
+        @test CB._gram_isolated_pool_threshold() == 1024
+        @test CB._gram_isolated_pool_max_workers() == min(4, max(1, Threads.nthreads()))
+        @test CB._gram_isolated_pool_enabled(1024) == (Threads.nthreads() > 1)
+        @test !CB._gram_isolated_pool_enabled(1023)
     end
     withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "auto",
             "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "8") do
@@ -63,6 +73,12 @@ end
     #
     # Asserted on the policy function rather than through a solve so it holds on
     # a host with no GRAM: it is a property of the width decision, not of GRAM.
+    #
+    # The pool now asks for its width with `lock_free=true`, which routes it to
+    # the lock-free source and past this floor -- see the comment above
+    # `_density_callback_thread_decision` in density_callbacks/config.jl. The
+    # floor itself is unchanged and still governs the locked path, so it is still
+    # pinned here.
     @test PP.auto_thread_min_budget(:density_callback) == 16
     withenv("SPACEAGORA_DENSITY_CALLBACK_AUTO_THREAD_MIN_BUDGET" => "2") do
         @test PP.auto_thread_min_budget(:density_callback) == 2
@@ -204,6 +220,29 @@ else
             @test bits(rho_p) == bits(rho_ref)
             @test bits(T_p) == bits(T_ref)
             @test wbits(w_p) == wbits(w_ref)
+        end
+
+        # The guard that keeps the pool from building instances nothing will
+        # use. Every item above 2000 km is answered as vacuum and never reaches
+        # GRAM, so a batch made entirely of those must be declined -- measured,
+        # the speculative build costs 1.83x on a 1024-spacecraft run that never
+        # enters the atmosphere.
+        @test CB._gram_isolated_pool_native_count(hs, p) == n
+        vacuum_hs = fill(2_500_000.0, n)
+        @test CB._gram_isolated_pool_native_count(vacuum_hs, p) == 0
+        mixed_hs = copy(hs)
+        mixed_hs[2:end] .= 2_500_000.0
+        @test CB._gram_isolated_pool_native_count(mixed_hs, p) == 1
+        rho_v, T_v, w_v = alloc()
+        @test !withenv(
+            "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
+            "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => string(workers),
+            "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1"
+        ) do
+            CB._gram_isolated_pool_batch_eval!(
+                rho_v, T_v, w_v, POOL_MODEL, vacuum_hs, lats, lons, ts, true, p;
+                allotment_hint=workers
+            )
         end
 
         # The pooled batch call declines rather than silently running at width

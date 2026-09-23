@@ -6,9 +6,11 @@ that the dynamics stay **bit-identical** to `adb343566` on
 `policy-v2-consistency`. A change that moves any saved state of any trajectory
 by one bit is not shipped, however large the speedup.
 
-Status when this section was written: design only. Every row marked TO BE
-MEASURED is filled from a run of the scripts in `benchmarks/studies/aero_batch/`,
-never from an estimate.
+Status: implemented and measured. Every number below comes from a run of the
+scripts in `benchmarks/studies/aero_batch/` on `space-falcon-1`, with the raw
+rows in `benchmarks/studies/aero_batch/results/`; timings are ratios between
+back-to-back runs on a machine shared with other Julia jobs, never absolute
+benchmarks. Section 7 has the results.
 
 ## 1. The measured problem, and what is and is not sourced
 
@@ -129,20 +131,36 @@ worker, and each worker runs, for each satellite in its slice, exactly:
 
 ```
 state_sample = _rhs_flat_state_sample_from_buffers(shared_buffers, spacecraft, sat_idx, orientation_sim)
-env          = sample_environment_with_reusable_buffers(req, model, sc_view, p, sat_idx, t)
-force, torque = SimulationModel.wrench_caching!(model, state_sample, env, t, p, sat_idx)
+planet_frame = _sample_reusable_planet_frame(req, sc_view, p, sat_idx, t)
+atmosphere   = _sample_reusable_atmosphere(req, sc_view, planet_frame, p, sat_idx, t)
+env          = EnvironmentSample(planet, planet_frame, atmosphere, nothing, nothing)
+force, torque, drag, lift, cross = _aero_pure_wrench(:fm, state_sample, env, nothing, incidence)
+_store_vector_cache!(drag_cache, sat_idx, drag)   # then lift, then cross
 slots[1:6, eff_idx, sat_idx] = (force..., torque...)
 ```
 
-— the same four calls the queue item makes, in the same order, with the same
-arguments. The difference is that `model` is a concrete
-`AerodynamicCoefficientfM` in the pre-pass's signature rather than an element
-pulled at runtime out of a heterogeneous tuple, so `_wrench_method_available`,
-`environment_requirements`, `solver_partition` and the whole
-`sample_environment_with_reusable_buffers` → `wrench_caching!` →
-`_aero_pure_wrench` chain specialize and inline instead of dispatching
-dynamically once per satellite; and that the worker pool is entered once per
-slice instead of once per satellite.
+This is what the queue item's `sample_environment_with_reusable_buffers` →
+`wrench_caching!` chain does for this effector, written out: the environment
+sample for its requirements (planet frame and atmosphere, nothing else), the
+same `_aero_pure_wrench` method with the per-link hook off (the trait
+guarantees it), and the same three cache stores in the same order. Two
+differences, neither arithmetic. `model` is a concrete `AerodynamicCoefficientfM`
+in the signature instead of an element pulled at runtime out of a
+heterogeneous tuple, so nothing dispatches dynamically per spacecraft and the
+worker pool is entered once per slice, not once per spacecraft. And the body
+lives in a separate, concretely typed `@noinline` function
+(`_aero_prepass_satellite!`) with the environment sample built with concrete
+field types; as a closure body calling the generic builder, it boxed the
+Union-typed intermediates and, once, a copy of `ODEParams` per spacecraft.
+
+`_aero_pure_wrench` is called, not inlined. Inlining it into the pre-pass was
+tried and **rejected**: the state histories stayed byte-identical, but the
+parity suite found the drag cache (a recorded output, not state) a last bit
+different on a few spacecraft. StaticArrays' matrix-vector product is written
+with `muladd`, and whether LLVM fuses a `muladd` into an FMA depends on the
+code around it, so the same source can round differently once inlined into a
+new caller. Called, it is the same compiled method instance `wrench_caching!`
+reaches.
 
 Per-satellite independence is what makes the slicing safe: each satellite
 writes only `slots[:, eff_idx, sat_idx]` and its own entries of the drag/lift/
@@ -194,22 +212,25 @@ route the atmosphere is sampled inside each effector's own
 `sample_environment_with_reusable_buffers` call and there is no batch point to
 take. Change B therefore has the same route scope as change A.
 
-### B. One density-model resolution per evaluation instead of per satellite
+### B. One density query per evaluation for a shared analytic atmosphere
 
-`src/simulation/engine/effector_sampling.jl` gains a batched atmosphere
-pre-sample used by `_prefill_environment_samples!`. Per evaluation, once:
-resolve `cb_env`, the uniform density model, `cache_cfg`, `stats_enabled`,
-`target_include_j2` and `caches`; then either
+`src/simulation/engine/effector_sampling.jl` gains
+`_uniform_light_density_model` and `_fill_uniform_light_atmosphere!`, used by
+`_prefill_environment_samples!`. When the constellation shares one light,
+cache-free density model, the pre-sample's loop fills the planet frames only,
+and one `getDensityBatch!` over the just-filled `alt`/`lat`/`lon` buffers
+writes `shared_buffers.densities` / `temperatures` / `winds`, followed by
+`_write_density_time_buffers!`. Otherwise the per-spacecraft sample runs
+exactly as before. (A second, "hoisted per-spacecraft" route was designed but
+not built: the uniform route covers the analytic cases, and every other case
+keeps today's code untouched.)
 
-- the **uniform-light route**: a single `getDensityBatch!` over the
-  already-filled `alt`/`lat`/`lon` component buffers into
-  `shared_buffers.densities` / `temperatures` / `winds`, followed by
-  `_write_density_time_buffers!`; or
-- the **hoisted per-satellite route**: the existing per-satellite call, with
-  the six run-scoped values passed in rather than re-derived inside the loop.
+The uniform route is taken only when all of the following hold:
 
-The uniform-light route is taken only when all of the following hold, and the
-hoisted route (which is a pure hoist, no branch change at all) otherwise:
+- every spacecraft is active (the per-spacecraft path skips inactive ones and
+  leaves their buffers alone; a batch over 1:N would not);
+- GRAM runtime statistics are off (the per-spacecraft path counts calls);
+- the model is not a GRAM grid snapshot;
 
 - every active satellite resolves to the same density model object
   (`_density_batch_model_for_callback` returns non-`nothing`);
@@ -239,6 +260,13 @@ source.
 This change is in the *density sampling path*, not in the density models:
 `src/environment/atmosphere/density_models.jl` is not edited.
 
+One more allocation in the same file, found by the attribution: every
+atmosphere sample evaluated `_uses_j2_gravity_effector(dynamic_effectors)`,
+which iterates the heterogeneous effector tuple and boxed an element per
+spacecraft per sample. `_effectors_use_j2_gravity` peels the tuple instead and
+returns the same Bool. This one is on both routes, which is why the serial
+allocation halves (section 7).
+
 ## 4. Why every operation stays in the same order, with no reassociation and no FMA
 
 The bit-identity argument is deliberately structural rather than numerical.
@@ -255,12 +283,17 @@ Neither change rewrites an expression.
   batch kernel because its inner loops are independent per batch slot with no
   loop-carried reduction; here the per-satellite body contains branches, calls
   to `erf`/`exp`/`atan` and writes through `p`, so an annotation would buy
-  nothing and would be a licence this document would then have to justify.
+  nothing and would be a license this document would then have to justify.
   None is used.
-- **No FMA is introduced.** Julia does not contract `a*b+c` into `fma` unless
-  `@fastmath` or an explicit `muladd`/`fma` is written. Neither appears in
-  either change, and neither change edits an arithmetic expression that could
-  be contracted.
+- **No FMA is introduced, and no arithmetic is inlined into a new caller.**
+  Julia does not contract `a*b+c` into `fma` unless `@fastmath` or an explicit
+  `muladd`/`fma` is written, and neither change writes one. But library code
+  the wrench already calls does: StaticArrays' matrix-vector product uses
+  `muladd`, which LLVM *may* fuse, and whether it does depends on the
+  surrounding code. So "the same source" is not enough; the arithmetic must
+  stay in the same compiled method. That is why `_aero_pure_wrench` is called
+  from the pre-pass rather than inlined into it (inlining it measurably moved
+  a last bit of the drag cache; section 3A).
 - **Accumulation order within a satellite is untouched.** `_aero_pure_wrench`
   still accumulates `force_ii`, `drag_ii`, `lift_ii`, `cross_ii` and
   `torque_body` over `spacecraft.links` in link order with `.+=` into
@@ -303,7 +336,7 @@ body, (d) the flat-queue plumbing (`_evaluate_dynamic_effector`,
 pre-pass, plus the same case's vacuum counterpart as the baseline. Allocation
 per spacecraft per derivative evaluation comes from the run's total
 `@timed` bytes divided by `sol.stats.nf * num_sats`, reported alongside a
-`Profile.Allocs` attribution of the largest sites. TO BE MEASURED.
+`Profile.Allocs` attribution of the largest sites.
 
 **Deliverables 3 and 4, identity and ratios**
 (`benchmarks/studies/aero_batch/variants.jl`): the same script dumps the full
@@ -341,7 +374,7 @@ reference set are covered by the identity argument rather than by
 a dump only if neither change can reach them; if either can, they are dumped
 too, and the final report says which were skipped and why.
 
-## 6. What the parity test checks
+## 6. What the parity test checks (implemented)
 
 `test/unit/dynamics/aero_batch_parity_tests.jl`, standalone (`using
 SpaceAGORA`), in the shape of
@@ -373,3 +406,113 @@ not `≈`:
 
 The dump-and-`cmp` evidence of section 5 remains the primary proof; the unit
 test is the regression guard that keeps it true.
+
+## 7. Results
+
+### Attribution (before the change)
+
+`attribution.jl --n=1024 --mission=100`, base commit, two routes. Shares are of
+one profile's samples, attributed to the innermost phase marker.
+
+Serial (`--mode=serial --threads=1`, i.e. the per-satellite route):
+
+| Phase | Share |
+|---|---|
+| harmonics, per-satellite scalar kernel | 66.6% |
+| density `DiscreteCallback` | 18.2% |
+| stage heat rates | 11.0% |
+| aero effector (dispatch + wrench) | 4.1% |
+| other | 0.2% |
+
+The serial exponential-aero case costs 7.3x the vacuum rung per derivative
+evaluation, and almost none of that is aerodynamics: at one thread the
+`(harmonics, aero)` stack is routed to `:satellite_batch`, so harmonics runs
+the per-satellite scalar kernel instead of the batched pre-pass the vacuum
+rung gets. That is the route issue of section 3A. Allocation: 2471 B per
+spacecraft per evaluation against 255 B for vacuum, 72% of it at
+`getindex(::Tuple)` — runtime indexing of the heterogeneous effector tuple.
+
+At 8 threads (`--mode=inner_only`, the flat route) the time profile is
+dominated by worker-idle samples and is not informative; the allocation
+profile is: 81% at `getindex(::Tuple)`, which is the flat queue's per-item
+`dynamic_effectors[eff_idx]`, exactly what the aero pre-pass removes.
+5094 B per spacecraft per evaluation.
+
+Raw: `results/attribution_1024_*_before.csv`, flat profiles
+`profile_aero_1024sat_l50_expatm_100s_*_before.txt`.
+
+### Bit-identity
+
+"Before" is `adb343566`; "after" is the tip. All pairs compared with `cmp`.
+
+State histories (`variants.jl --dump`), every saved time, every component of
+every spacecraft:
+
+| Case | N | Threads, route | Bytes | `cmp` |
+|---|---|---|---|---|
+| `aero_64sat_l50_expatm_100s` | 64 | 1, satellite | 106704 | identical |
+| `atmo256_exponential_10min` | 256 | 1, satellite | 2065392 | identical |
+| `aero_1024sat_l50_expatm_100s` | 1024 | 1, satellite | 1638600 | identical |
+| `multi_64_high_fidelity` | 64 | 1, satellite | 751032 | identical |
+| `montecarlo_heavy_aerobraking` (Mars) | 1 | 1, satellite | 1619136 | identical |
+| `aero_64sat_l50_expatm_100s` | 64 | 8, flat (forced) | 106704 | identical |
+| `atmo256_exponential_10min` | 256 | 8, flat (forced) | 2065392 | identical |
+| `aero_1024sat_l50_expatm_100s` | 1024 | 8, flat (forced) | 1638600 | identical |
+| `multi_64_high_fidelity` | 64 | 8, flat (forced) | 751032 | identical |
+
+The 8-thread base dump was taken twice and the two copies were identical, so
+the flat route is itself deterministic at 8 threads. At the base commit the
+1-thread satellite-route dump and the 8-thread flat-route dump of each case
+were also byte-identical: the two routes produce the same trajectory, which is
+the evidence for admitting aero to the budget-1 flat route in `setup.jl`.
+
+Derivative, drag/lift/cross caches and density/temperature/wind/sample-time
+buffers (`rhs_dump.jl`, six evaluations per case along a fixed-step path), for
+the four constellation cases above: identical before and after on the flat
+route at 8 threads and on the satellite route at 1 thread.
+
+Not dumped: the look-ahead-cache native GRAM constellation, the harmonics-only
+vacuum and SRP + third-body constellations, and the `mcgrid_8sat_16mc`
+campaign. Neither change reaches them except through the J2 check, whose Bool
+is unchanged: the aero pre-pass requires `AerodynamicCoefficientfM` in the
+stack, and the uniform atmosphere route excludes native GRAM, GRAM grids, the
+look-ahead and track caches, and freeze-per-step. `mcgrid` runs
+`(harmonics, aero)` on an exponential atmosphere, i.e. the same code path as
+the dumped cases.
+
+### Ratios
+
+`variants.jl`, `atmo256_exponential_10min` and
+`aero_1024sat_l50_expatm_600s`, five repeats per process, best of five, in the
+order after, before, after, before. Ratio is before over after.
+
+| Case | N | Threads | Round 1 | Round 2 | Allocation, before / after |
+|---|---|---|---|---|---|
+| `atmo256_exponential_10min` | 256 | 1 | 1.05 | 0.97 | 2.01 |
+| `aero_1024sat_l50_expatm_600s` | 1024 | 1 | 1.01 | 0.92 | 2.02 |
+| `atmo256_exponential_10min` | 256 | 8 | 1.18 | 1.22 | 1.59 |
+| `aero_1024sat_l50_expatm_600s` | 1024 | 8 | 1.36 | 1.33 | 2.06 |
+
+At one thread wall time is unchanged within noise, as the route analysis
+predicts; allocation halves anyway because of the J2 check. At eight threads,
+on the flat route, the 1024-spacecraft case is 1.33-1.36x faster and allocates
+half as much. Raw: `results/ratio_{1,8}t_{before,after}_r{1,2}.csv`.
+
+### Follow-ups outside this change
+
+- `setup.jl`, `_rhs_all_prepass_effectors`: admit `_aero_prepass_effector`,
+  so a serial `(harmonics, aero)` constellation takes the flat route and the
+  harmonics pre-pass. This is the serial win (harmonics scalar is 67% of the
+  serial profile). The byte-identical satellite-route and flat-route dumps
+  above are its evidence; it needs its own before/after dump once applied.
+- `src/parallel/cost/work_counts.jl`: the cost model's mirror of the flat-queue
+  predicates does not know the aero pre-pass, so it counts N aero queue nodes
+  where the queue now does none. Routing input only, not dynamics.
+- `_reduce_flat_effector_slots_range!` indexes the heterogeneous effector
+  tuple at runtime per spacecraft per effector
+  (`_flat_slot_selected(dynamic_effectors[eff_idx], partition)`); after this
+  change it is the largest allocation site left on the flat route (about half
+  of the remaining bytes at 1024 spacecraft, 8 threads). A precomputed Bool
+  mask, as `_prepare_rhs_flat_work_items!` already uses, would remove it
+  without touching the summation order.
+

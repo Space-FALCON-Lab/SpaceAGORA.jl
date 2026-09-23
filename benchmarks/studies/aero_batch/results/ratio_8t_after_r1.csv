@@ -1,0 +1,11 @@
+host,threads,mode,rhs_mode,profile,case,case_name,rep,nsats,wall_s,gc_s,bytes,nf,naccept,nreject,steps,retcode
+space-falcon-1,8,inner_only,auto,full,atmo256,atmo256_exponential_10min,1,256,1.128297,0.169181,2406017424,2132,125,0,126,Success
+space-falcon-1,8,inner_only,auto,full,atmo256,atmo256_exponential_10min,2,256,1.038540,0.138323,2389944208,2132,125,0,126,Success
+space-falcon-1,8,inner_only,auto,full,atmo256,atmo256_exponential_10min,3,256,1.106936,0.211908,2389944080,2132,125,0,126,Success
+space-falcon-1,8,inner_only,auto,full,atmo256,atmo256_exponential_10min,4,256,0.992193,0.115416,2389944192,2132,125,0,126,Success
+space-falcon-1,8,inner_only,auto,full,atmo256,atmo256_exponential_10min,5,256,0.980521,0.109254,2389944080,2132,125,0,126,Success
+space-falcon-1,8,inner_only,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,1,1024,2.602441,0.376867,5626002712,2114,124,0,125,Success
+space-falcon-1,8,inner_only,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,2,1024,2.330073,0.267639,5612254600,2114,124,0,125,Success
+space-falcon-1,8,inner_only,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,3,1024,2.373414,0.271510,5612254536,2114,124,0,125,Success
+space-falcon-1,8,inner_only,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,4,1024,2.484112,0.356846,5612254728,2114,124,0,125,Success
+space-falcon-1,8,inner_only,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,5,1024,2.298919,0.231351,5612254584,2114,124,0,125,Success

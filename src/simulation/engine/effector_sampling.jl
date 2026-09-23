@@ -206,6 +206,14 @@ end
     spice_rhs_memo = p.shared_buffers.spice_rhs_memo
     cache_entry = p.shared_buffers.nbody_ephemeris_cache[]
     perturbation_effectors = SimulationModel.DynamicEffectors.PerturbationEffectors
+    # Pulled out of the closure below, same as `et`/`primary_body_name`/etc.:
+    # referencing `p.shared_buffers...` from inside the do-block instead of a
+    # local would capture the whole `p::ODEParams{...}` (an inlinable immutable
+    # holding the entire SimulationConfiguration), which forces the compiler to
+    # materialize a full boxed copy of `p` once per spacecraft per derivative
+    # evaluation just to build the closure — 2 KB+ that has nothing to do with
+    # the two Float64s this path actually needs.
+    nbody_spkpos_runtime_calls = p.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls
     # `map` over the model's own body-name tuple, not `ntuple` over its length:
     # the length is part of `NBodyGravityModel`'s type, so mapping the tuple
     # gives the compiler a concrete result type, while `ntuple(f, n::Int)` with
@@ -214,36 +222,49 @@ end
     # most of this path's allocation went (docs/architecture/third_body_cost.md).
     # Body order and values are unchanged; `positions_ii[k]` still belongs to
     # `model.body_names[k]`.
-    positions_ii = map(model.body_names) do body_name
-        body_name_spice = SimulationModel.DynamicEffectors._spice_query_name(body_name)
-        pos_primary_body_j2000_m = if cache_entry isa SimulationModel.NBodyEphemerisCache
+    #
+    # The `cache_entry isa ...` branch is taken outside the `map`, not inside
+    # a single shared closure, so each closure below captures `cache_entry`
+    # (or nothing of it) at a concrete, not `Union`, type. A `do`-block that
+    # captured the `Union{Nothing, NBodyEphemerisCache}` local directly forced
+    # `map`'s result to infer as `Tuple{Any, Any}`, boxing both positions on
+    # every call; splitting the branch first lets both arms infer as
+    # `NTuple{N, SVector{3, Float64}}`, so the `if` itself stays allocation-free.
+    positions_ii = if cache_entry isa SimulationModel.NBodyEphemerisCache
+        concrete_cache = cache_entry
+        map(model.body_names) do body_name
+            body_name_spice = SimulationModel.DynamicEffectors._spice_query_name(body_name)
             cached = SimulationModel.DynamicEffectors._nbody_body_position_from_cache_j2000_m(
-                cache_entry,
+                concrete_cache,
                 et,
                 body_name_spice,
                 primary_body_name,
             )
-            cached === nothing ?
+            pos_primary_body_j2000_m = cached === nothing ?
                 perturbation_effectors._nbody_body_position_from_spice_j2000_m(
                     body_name_spice,
                     et,
                     primary_body_name,
                     spice_rhs_memo_enabled,
                     spice_rhs_memo,
-                    p.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls,
+                    nbody_spkpos_runtime_calls,
                 ) :
                 cached
-        else
-            perturbation_effectors._nbody_body_position_from_spice_j2000_m(
+            return SVector{3, Float64}(pos_primary_body_j2000_m)
+        end
+    else
+        map(model.body_names) do body_name
+            body_name_spice = SimulationModel.DynamicEffectors._spice_query_name(body_name)
+            pos_primary_body_j2000_m = perturbation_effectors._nbody_body_position_from_spice_j2000_m(
                 body_name_spice,
                 et,
                 primary_body_name,
                 spice_rhs_memo_enabled,
                 spice_rhs_memo,
-                p.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls,
+                nbody_spkpos_runtime_calls,
             )
+            return SVector{3, Float64}(pos_primary_body_j2000_m)
         end
-        return SVector{3, Float64}(pos_primary_body_j2000_m)
     end
     return ThirdBodyEphemerisSample(model.body_names, positions_ii)
 end

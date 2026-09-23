@@ -1,0 +1,3 @@
+case,threads,mode,naccept,total_alloc_mib,bytes_per_accepted_step,execution_jl_fraction,callbacks_fraction,engine_other_fraction,external_fraction,measured_via
+independent_1sat_1hr,1,serial,250,14.99,62860.4,0.0035,0.2821,0.5147,0.0898,alloc_profile.jl sample_rate=1.0
+montecarlo_heavy_aerobraking,1,serial,22487,365.79,17056.9,0.0000,0.1213,0.5613,0.0028,alloc_profile.jl sample_rate=0.005

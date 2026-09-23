@@ -856,11 +856,36 @@ function _ppc_apply_cpu_pinning(argv::Vector{String}, cpu_pinning::Vector{Int}, 
     return vcat(["taskset", "-c", cpu_list], argv)
 end
 
+# Opt-in GC collector flags for the worker subprocess's own `julia` launch
+# (`--gcthreads`, `--heap-size-hint`), read from env at worker-spawn time --
+# NOT part of PPCConfig, so this stays a change to worker launch flags only,
+# not to the config surface other parts of this study own. Default is both
+# unset, which reproduces the pre-existing argv exactly (no flag added at
+# all, rather than a flag carrying Julia's own default).
+#
+# See docs/architecture/heap_contention.md ("Collector settings") for the
+# grid this was measured against: on a 12-core/24-thread workstation, at 8
+# threads, on the P3/P4 shapes' outer_threads route. Wiring it here
+# (opt-in, off by default) rather than into a shipped default is
+# deliberate -- the grid was measured at a single thread count on one
+# machine, well below the 16+-thread regime where single-heap GC
+# contention actually shows up; see the doc for what to run at wider
+# thread counts.
+function _ppc_worker_gc_flags()::Vector{String}
+    flags = String[]
+    gcthreads = get(ENV, "SPACEAGORA_PPC_WORKER_GCTHREADS", "")
+    isempty(gcthreads) || push!(flags, "--gcthreads=$(gcthreads)")
+    heap_hint = get(ENV, "SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT", "")
+    isempty(heap_hint) || push!(flags, "--heap-size-hint=$(heap_hint)")
+    return flags
+end
+
 function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int, repeat::Int, seed::Int, mc_samples::Int, outfile::String, parity::Bool, repeats::Int=1)
     julia_bin = Base.julia_cmd().exec[1]
     argv = String[
         julia_bin,
         "--threads=$(threads)",
+        _ppc_worker_gc_flags()...,
         "--project=$(PPC_REPO_ROOT)",
         PPC_LAUNCHER,
         cfg.profile,

@@ -475,12 +475,20 @@ end
 # BIT-IDENTICAL to `_harmonics_scalar_force_ii` by construction. Two properties
 # make that true and both are load-bearing:
 #
-#   1. No `@turbo`, `@fastmath` or `@simd`. Those license reassociation and FMA
-#      contraction, which is what made the previous batched kernel round
-#      differently from the scalar one. Plain `@inbounds` loops leave every
-#      floating-point operation where the scalar kernel puts it; LLVM can still
-#      vectorise the batch loops, because their iterations are independent and
-#      proving that needs no fast-math.
+#   1. No `@turbo` or `@fastmath`, and `@simd ivdep` only on the three
+#      per-degree batch loops (`b = 1:B`), never across `l` or `j`. `@turbo`
+#      and `@fastmath` license reassociation and FMA contraction, which is
+#      what made the previous batched kernel round differently from the
+#      scalar one; `@simd ivdep` licenses neither on its own, it only tells
+#      LLVM the iterations don't alias. That is true here regardless of batch
+#      size: each `b` writes only its own workspace slot and reads no other
+#      iteration's, so there is no loop-carried dependency to reorder and no
+#      reduction for the annotation to reassociate — the per-satellite
+#      floating-point operations stay exactly where the scalar kernel puts
+#      them. Plain `@inbounds` on the other loops leaves LLVM to prove
+#      vectorisability on its own, which it does above a batch-size threshold
+#      only; `@simd ivdep` makes the same vectorisation unconditional (see
+#      `git log -1 cd212833aa`).
 #   2. The nesting is degree, then order, then batch. For any one satellite the
 #      sum1..sum4 accumulations therefore run in exactly the scalar kernel's
 #      sequence. Hoisting the batch loop outwards, or reducing across the batch,

@@ -159,6 +159,7 @@ function rhd_signature(n::Int, effectors, density_model)
         "eff=$(SimulationEngine._rhs_calib_effector_token(effectors))",
         "dens=$(string(nameof(typeof(density_model))))",
         "outer=$(SimulationModel.ParallelPolicy.outer_parallel_active() ? "1" : "0")",
+        "code=$(SimulationEngine._RHS_CALIB_CODE_TOKEN)",
     ], "|")
 end
 

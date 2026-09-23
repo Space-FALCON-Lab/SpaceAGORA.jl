@@ -208,13 +208,13 @@ target_workstation() {
 
   step 4 "P3 and P5, 11 repeats"
   if [ "$EXECUTE" = "1" ]; then
-    SPACEAGORA_PPB_MIN_REPEATS=11 OPENBLAS_NUM_THREADS=1 GKSwstype=100 \
+    SPACEAGORA_PPB_MIN_REPEATS=11 SPACEAGORA_CAMPAIGN_CORRECTIONS=off OPENBLAS_NUM_THREADS=1 GKSwstype=100 \
       julia --project="$REPO_ROOT" "$PPB" \
         --phases=P3,P5 --threads="${threads}" --process-workers="${workers}"
     rc=$?
     [ $rc -eq 0 ] || { echo "[figure-runs] P3/P5 failed with exit ${rc}" >&2; exit "$rc"; }
   else
-    cmd "SPACEAGORA_PPB_MIN_REPEATS=11 OPENBLAS_NUM_THREADS=1 GKSwstype=100 julia --project=. $PPB --phases=P3,P5 --threads=${threads} --process-workers=${workers}"
+    cmd "SPACEAGORA_PPB_MIN_REPEATS=11 SPACEAGORA_CAMPAIGN_CORRECTIONS=off OPENBLAS_NUM_THREADS=1 GKSwstype=100 julia --project=. $PPB --phases=P3,P5 --threads=${threads} --process-workers=${workers}"
   fi
 
   step 5 "archive the run"

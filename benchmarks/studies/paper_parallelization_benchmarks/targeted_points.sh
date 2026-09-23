@@ -26,6 +26,9 @@
 # check below only warns.
 set -euo pipefail
 export SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1
+# Every point here starts from a cold store: the planner's online corrections
+# stay off so a cold row measures the constants file alone.
+export SPACEAGORA_CAMPAIGN_CORRECTIONS="${SPACEAGORA_CAMPAIGN_CORRECTIONS:-off}"
 if ! ls output/parallel_policy_state/cost_constants_*.toml >/dev/null 2>&1; then
   echo "[targeted] WARNING: no output/parallel_policy_state/cost_constants_*.toml -- the" \
        "predictive rows will run without machine calibration. Run" \

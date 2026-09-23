@@ -191,6 +191,7 @@ end
             "SPACEAGORA_EFFECTOR_FLAT_MIN_SATS"=>"2",
             "SPACEAGORA_EFFECTOR_FLAT_MIN_THREAD_BUDGET"=>"2",
             "SPACEAGORA_EFFECTOR_FLAT_WORK_NS_THRESHOLD"=>"1",
+            "SPACEAGORA_HARMONICS_FLAT_MIN_SATS_PER_WORKER"=>"1",
             "SPACEAGORA_RHS_FLAT_WORK_PER_WORKER_NS_THRESHOLD"=>"1") do
             serial=run_recorded(args;execution_mode="serial",return_runtime=true)
             flat=run_recorded(args;execution_mode="flat",return_runtime=true)

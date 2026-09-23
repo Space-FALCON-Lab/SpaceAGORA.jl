@@ -1,4 +1,4 @@
-# WS11a: what every candidate RHS plan costs, size by size, against the plan the
+# What every candidate RHS plan costs, size by size, against the plan the
 # heuristic picks.
 #
 # The pinned parallel routes run whatever `_rhs_execution_plan_uncached`

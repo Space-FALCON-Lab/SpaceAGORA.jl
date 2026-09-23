@@ -1,4 +1,4 @@
-# RHS heuristic defaults (WS11a)
+# RHS heuristic defaults
 
 What the default RHS execution plan costs against every plan the calibration
 sweep would consider, size by size, on one machine at one thread budget.

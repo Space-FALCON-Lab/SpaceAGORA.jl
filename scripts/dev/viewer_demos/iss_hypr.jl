@@ -44,10 +44,13 @@ const DEMO_SMOKE = get(ENV, "SPACEAGORA_DEMO_SMOKE", "0") == "1"
 const PLAN_ONLY = get(ENV, "SPACEAGORA_ISS_HYPR_PLAN_ONLY", "0") == "1"
 const ISS_MODEL = joinpath(REPO_ROOT, "data", "models", "iss_nasa_3d_resources_b.glb")
 const ISS_SCALE = 2.4                           # meters per model unit; truss near 109 m
-# The model's own axes run along the station's height (x), the pressurized
-# modules (y) and the truss (z), so the identity holds the truss along N and
-# the modules along T, with the smallest extent along R.
-const ISS_ROTATION_DEG = (0.0, 0.0, 0.0)
+# The ISS flies +XVV: body +X (forward, toward Harmony) along the velocity,
+# +Y (starboard truss) and +Z (nadir). The model's own axes run along the
+# station's height (x, positive toward nadir: the S0 truss sits on the Lab's
+# zenith side at negative x), the modules (y, positive forward) and the truss
+# (z, positive toward starboard, the Columbus side). A half turn about y puts
+# the truss on the zenith side, starboard along -N and forward along +T.
+const ISS_ROTATION_DEG = (0.0, 180.0, 0.0)
 # Disc-shaped meshes about 37 m beyond the arrays, apart from the station.
 const ISS_EXCLUDED_NODES = ("bendedtru1", "bendedtru2", "bendedtru3", "bendedtrus", "pCylinder1", "pCylinder2", "pCylinder8")
 const STATION_ID = 201                          # the example's station spacecraft id

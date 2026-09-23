@@ -137,8 +137,8 @@ keyword at its default preserves the Gateway dimensions, mass and 8 m²
 reference area, and the returned
 `station` record states what was used.
 `scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
-model in a flight-like attitude held in LVLH (truss along N, pressurized
-modules along T) and relocates the chaser between V-bar hold points on
+model in its +XVV flight attitude held in LVLH (forward along the velocity,
+truss along the orbit normal with starboard toward -N, zenith up) and relocates the chaser between V-bar hold points on
 opposite sides of the station, exporting a viewer page with the plan
 overlaid. It plans with the `:manuscript` HyPR mode (`hypr_mode`: an
 RRT-Connect warm start sets the exploration score and with it the PSO

@@ -915,6 +915,58 @@ end
     )
 end
 
+# Satellites per worker the DEFAULT plan requires before it opens a flat
+# worker team at the full thread budget.
+#
+# Not the same quantity as `_rhs_harmonics_batch_min_sats_per_worker` above,
+# though the routing used to borrow it. That one is a SIMD slice floor: it sizes
+# the harmonics pre-pass's per-worker slice and caps the kernel's worker count
+# for ANY plan, including one the calibration sweep measured and pinned. This
+# one only decides what the heuristic picks when nothing was calibrated, and it
+# answers a different question -- not "is the slice wide enough for a SIMD
+# iteration" but "is there enough work per RHS call to pay for the flat route".
+#
+# The flat route's cost is a fixed charge per RHS call, not a per-worker one:
+# on the 8-thread ladder every narrower flat plan is SLOWER than flat@8 at the
+# same size (128 spacecraft: flat@8 1.24x behind the best plan, flat@4 1.32x,
+# flat@2 1.68x). So this gates the route, not its width -- below the floor the
+# default takes the satellite batch, above it the flat route at the width it
+# always had.
+#
+# Default 64, SOURCED from two measurements
+# (docs/architecture/rhs_heuristic_defaults.md):
+#   - benchmarks/studies/rhs_heuristic_defaults, 8 threads, 3 repeats, L50
+#     vacuum: the satellite batch is the best plan at 16 satellites per worker
+#     (128 spacecraft) and below, flat@8 the best at 64 per worker (512) and
+#     above; at 32 per worker (256) flat@8 is best and the batch 1.18x behind.
+#     The L50 + aerodynamics stack puts the same crossover between 32 per worker
+#     (batch best, flat 1.33x behind) and 128 (flat best, batch 1.07x behind).
+#   - the archived TRX50 P1 cold run (trx50_ppb_cold_20260922_002429), 32
+#     threads: flat@32 is 2.5x behind the satellite batch at 32 per worker
+#     (1024 spacecraft) and the best plan at 128 per worker (4096).
+# Any floor in (32, 64] fits every point in both; 64 is the smallest
+# satellites-per-worker at which the flat route was measured to be the best
+# plan, and the one value that misses a measured flat win by the least (the
+# 8-thread 256-spacecraft point, 1.18x, is the only point in the data where the
+# new default is not within the repeat spread of the best plan).
+@inline function _rhs_harmonics_flat_min_sats_per_worker()::Int
+    return SimulationModel.ParallelPolicy.parse_thread_threshold_env(
+        "SPACEAGORA_HARMONICS_FLAT_MIN_SATS_PER_WORKER", 64
+    )
+end
+
+# The default's route test: does the constellation give every worker of a
+# full-budget flat team at least the floor's worth of satellites.
+#
+# The spin-barrier dispatch (SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER, opt-in)
+# exists to make exactly this per-call charge small, so the floor is not
+# applied under it and that path keeps its previous behavior. ASSUMED, not
+# measured here: the ladder above ran the default channel dispatch only.
+@inline function _rhs_flat_default_admits(env::SimulationModel.RhsPlanEnvConfig, active_sats::Int, budget::Int)::Bool
+    env.harmonics_batch_spin_barrier && return true
+    return active_sats >= max(1, env.harmonics_flat_min_sats_per_worker) * max(1, budget)
+end
+
 # Unlike _dynamic_effector_thread_decision and the density/control/thermal
 # callback paths, the harmonics-batch flat-constellation route did not
 # previously consult outer_parallel_active() at all -- it fires on every
@@ -965,6 +1017,7 @@ function _snapshot_rhs_plan_env_config()::SimulationModel.RhsPlanEnvConfig
         _rhs_flat_min_thread_budget(),
         _rhs_harmonics_batch_enabled(),
         _rhs_harmonics_batch_min_sats_per_worker(),
+        _rhs_harmonics_flat_min_sats_per_worker(),
         SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled(),
         _harmonics_batch_allow_with_outer(),
         _rhs_effector_cost_min_samples(),
@@ -1373,7 +1426,9 @@ end
                 effector_decision=_with_serial_effector_decision(effector_decision),
             )
         end
-        if budget <= 1 || viable_workers >= 2
+        # At a budget of one the flat route spawns no tasks, so the width floor
+        # has nothing to gate; it is taken for the batched coefficient sweep.
+        if budget <= 1 || (viable_workers >= 2 && _rhs_flat_default_admits(env, active_sats, budget))
             return (
                 mode=:flat_constellation_effector_queue,
                 allotment=min(max(1, budget), viable_workers),
@@ -1383,6 +1438,17 @@ end
                 effector_decision=_with_serial_effector_decision(effector_decision),
             )
         end
+        # Below the floor the satellite batch, returned here rather than left to
+        # fall through: the generic flat branch below would otherwise re-admit
+        # the same full-width flat plan on its own work estimate.
+        return (
+            mode=:satellite_batch,
+            allotment=1,
+            scheduler=:static,
+            dominant_axis=:satellite,
+            policy_applied=true,
+            effector_decision=_with_serial_effector_decision(effector_decision),
+        )
     end
 
     # Single inverse-square (J2-)gravity fast path: the effector body is a few
@@ -1492,9 +1558,21 @@ end
         estimated_total_work_ns   >= env.flat_work_ns_threshold &&
         estimated_work_per_worker >= env.flat_work_per_worker_ns_threshold
 
+    # The same per-call floor as the single-harmonics branch, for stacks the
+    # ladder measured: harmonics plus aerodynamics crosses over between 32 and
+    # 128 satellites per worker, as harmonics alone does. Stacks with a batched
+    # pre-pass kernel (n-body, SRP, inverse-square) are exempt: the flat route
+    # shares their ephemeris samples across the constellation, which the
+    # satellite batch cannot, and nothing here measured them above one thread.
+    # Under an enclosing outer split this branch already clamps to one worker
+    # and the ladder measured single simulations only, so the floor is not
+    # applied there either, and campaign routing is unchanged.
+    flat_floor_ok = (outer_active && !env.harmonics_batch_allow_with_outer) ||
+        _has_any_batchable_effector(dynamic_effectors) ||
+        _rhs_flat_default_admits(env, active_sats, budget)
     if active_sats >= env.flat_min_sats &&
        (n_effectors >= env.flat_min_effectors || _rhs_flat_has_batch_privileged_effector(dynamic_effectors)) &&
-       many_heavy_effectors
+       many_heavy_effectors && flat_floor_ok
         # Same nested-outer-split hazard as the harmonics-batch/single-invsq
         # routes above, same allotment-clamp resolution.
         outer_serialized = outer_active && !env.harmonics_batch_allow_with_outer

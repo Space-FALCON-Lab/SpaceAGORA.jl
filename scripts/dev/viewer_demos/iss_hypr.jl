@@ -507,6 +507,7 @@ end
 iss_config_record(cfg) = Dict(String(name) => _json_safe(getfield(cfg, name)) for name in fieldnames(typeof(cfg)))
 
 function main()
+    git_state = iss_git_state()          # the checkout this process loaded
     inputs = iss_hypr_inputs()
     outdir = iss_hypr_outdir(inputs)
     prefix = joinpath(outdir, "simulation_results")
@@ -617,7 +618,7 @@ function main()
             "viewer_html" => _file_record(html),
         ),
         "software" => Dict("julia" => string(VERSION), "julia_threads" => Threads.nthreads(),
-            "spaceagora" => string(pkgversion(SpaceAGORA)), "git" => _json_roundtrip(iss_git_state())),
+            "spaceagora" => string(pkgversion(SpaceAGORA)), "git" => _json_roundtrip(git_state)),
         "seeds" => Dict("planner" => inputs.seed, "cloud" => inputs.cloud_seed,
             "particles" => "one MersenneTwister per particle, drawn from the planner stream after the warm start"),
         "written_at" => Dates.format(Dates.now(Dates.UTC), "yyyy-mm-ddTHH:MM:SS") * "Z",

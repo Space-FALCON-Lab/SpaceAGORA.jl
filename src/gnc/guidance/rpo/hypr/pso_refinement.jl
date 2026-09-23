@@ -56,7 +56,11 @@ function rpo_refinement_segment_is_safe(a, b, geometry, cfg::RPOPSOConfig; safe_
     else
         rpo_refinement_segment_samples(a, b, ds)
     end
-    required_clearance = Float64(safe_distance_m) + cfg.refinement_straight_clearance_margin_m
+    # In `:manuscript` mode a chord must keep the Eq. 6 threshold, d_safe + τ_tol.
+    threshold = cfg.hypr_mode === :manuscript ?
+        rpo_obstacle_sigmoid_threshold(safe_distance_m, cfg.obstacle_sigmoid_tol_m, :manuscript) :
+        Float64(safe_distance_m)
+    required_clearance = threshold + cfg.refinement_straight_clearance_margin_m
     stats = rpo_clearance_stats_from_samples(
         samples,
         geometry,

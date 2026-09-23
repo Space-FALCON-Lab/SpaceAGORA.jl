@@ -5,6 +5,7 @@ Base.@kwdef struct RPOPSOSwarmSettings
     n_iters::Int = 55
     spread_scale::Float64 = 0.2
     search_margin_m::Float64 = 10.0
+    station_box_margin_m::NTuple{3, Float64} = (10.0, 10.0, 10.0)
     sample_ds_m::Float64 = 0.05
     curve_type::Symbol = :bezier
 end
@@ -24,6 +25,11 @@ Base.@kwdef struct RPOPSOObjectiveSettings
     tf_s::Float64 = 120.0
     isp_s::Float64 = 60.0
     g0_mps2::Float64 = 9.80665
+    # Used only when `hypr_mode == :manuscript`: the target's mean motion in the
+    # HCW feedforward of the fuel proxy, and the fixed step at which each
+    # candidate's retimed reference is evaluated (0 means `retiming.dt_s`).
+    mean_motion_radps::Float64 = 0.0
+    fuel_proxy_dt_s::Float64 = 0.0
 end
 
 """Grouped settings for adaptive PSO search-margin and waypoint-count selection."""
@@ -53,6 +59,10 @@ Base.@kwdef struct RPOPSOAdaptiveSettings
     c2_max::Float64 = 2.2
     spread_scale_min::Float64 = 0.05
     spread_scale_max::Float64 = 0.5
+    # Exploration score of the `:manuscript` mode: detour denominator floor and
+    # the search-effort scale N_s in S(N) = 1 - exp(-N / N_s).
+    detour_eps_m::Float64 = 1.0e-6
+    search_effort_scale::Float64 = 100.0
 end
 
 """Adaptive collision-sampling controls tied to clearance and curvature."""
@@ -71,6 +81,7 @@ Base.@kwdef struct RPOPSOCullSettings
     fraction_max::Float64 = 0.35
     start_iter::Int = 8
     noise_scale::Float64 = 0.25
+    noise_abs_m::Float64 = 0.3
     arc_velocity_scale::Float64 = 0.12
 end
 
@@ -163,6 +174,10 @@ Base.@kwdef struct RPOPSORetimingSettings
     min_speed_mps::Float64 = 0.0
     max_speed_mps::Float64 = Inf
     max_steps::Int = 100_000
+    # Forward and backward tangential-acceleration passes after the pointwise
+    # speed limits, starting at `initial_speed_mps` and ending at rest.
+    accel_limit_enable::Bool = false
+    initial_speed_mps::Float64 = 0.0
 end
 
 """Hierarchical RPO PSO configuration assembled from grouped setting structs."""
@@ -182,6 +197,7 @@ Base.@kwdef struct RPOPSOConfigurator
     retiming::RPOPSORetimingSettings = RPOPSORetimingSettings()
     safe_distance_m::Float64 = 0.0
     goal_collision_margin_m::Float64 = 0.0
+    hypr_mode::Symbol = :legacy
 end
 
 """Flattened RPO HYPR/PSO configuration consumed by the planner hot path."""
@@ -200,6 +216,7 @@ Base.@kwdef struct RPOPSOConfig
     c2::Float64 = 1.4
     spread_scale::Float64 = 0.2
     search_margin_m::Float64 = 10.0
+    station_box_margin_m::NTuple{3, Float64} = (10.0, 10.0, 10.0)
     sample_ds_m::Float64 = 0.05
     curve_type::Symbol = :bezier
     cost_ref_distance_m::Float64 = 20.0
@@ -207,6 +224,9 @@ Base.@kwdef struct RPOPSOConfig
     tf_s::Float64 = 120.0
     isp_s::Float64 = 60.0
     g0_mps2::Float64 = 9.80665
+    hypr_mode::Symbol = :legacy
+    mean_motion_radps::Float64 = 0.0
+    fuel_proxy_dt_s::Float64 = 0.0
     retime_dt_s::Float64 = 1.0
     retime_reaction_time_s::Float64 = 0.25
     retime_a_max_mps2::Float64 = 0.02
@@ -214,6 +234,8 @@ Base.@kwdef struct RPOPSOConfig
     retime_min_speed_mps::Float64 = 0.0
     retime_max_speed_mps::Float64 = Inf
     retime_max_steps::Int = 100_000
+    retime_accel_limit_enable::Bool = false
+    retime_initial_speed_mps::Float64 = 0.0
     safe_distance_m::Float64 = 0.0
     goal_collision_margin_m::Float64 = 0.0
     adaptive_enable::Bool = true
@@ -241,6 +263,8 @@ Base.@kwdef struct RPOPSOConfig
     adaptive_c2_max::Float64 = 2.2
     adaptive_spread_scale_min::Float64 = 0.05
     adaptive_spread_scale_max::Float64 = 0.5
+    adaptive_detour_eps_m::Float64 = 1.0e-6
+    adaptive_search_effort_scale::Float64 = 100.0
     adaptive_sampling_enable::Bool = true
     adaptive_sampling_max_ds_m::Float64 = 0.50
     adaptive_sampling_far_clearance_m::Float64 = 1.0
@@ -251,6 +275,7 @@ Base.@kwdef struct RPOPSOConfig
     cull_fraction_max::Float64 = 0.35
     cull_start_iter::Int = 8
     cull_noise_scale::Float64 = 0.25
+    cull_noise_abs_m::Float64 = 0.3
     cull_arc_velocity_scale::Float64 = 0.12
     schedule_enable::Bool = true
     schedule_w_end_fraction::Float64 = 0.65
@@ -353,6 +378,8 @@ const RPO_PSO_CONFIG_ALIASES = Dict{Symbol, Symbol}(
     :pso_cull_fraction_max => :cull_fraction_max,
     :pso_cull_start_iter => :cull_start_iter,
     :pso_cull_noise_scale => :cull_noise_scale,
+    :pso_cull_noise_abs => :cull_noise_abs_m,
+    :pso_cull_noise_abs_m => :cull_noise_abs_m,
     :pso_cull_arc_velocity_scale => :cull_arc_velocity_scale,
     :pso_schedule_enable => :schedule_enable,
     :pso_schedule_w_end_fraction => :schedule_w_end_fraction,
@@ -375,6 +402,8 @@ const RPO_PSO_CONFIG_ALIASES = Dict{Symbol, Symbol}(
     :pso_safe_distance => :safe_distance_m,
     :pso_goal_collision_margin => :goal_collision_margin_m,
     :pso_search_margin => :search_margin_m,
+    :pso_station_box_margin => :station_box_margin_m,
+    :pso_station_box_margin_m => :station_box_margin_m,
     :pso_spread_scale => :spread_scale,
     :pso_spread_scale_min => :adaptive_spread_scale_min,
     :pso_spread_scale_max => :adaptive_spread_scale_max,
@@ -471,6 +500,7 @@ function RPOPSOConfig(configurator::RPOPSOConfigurator; kwargs...)
         c2=objective.c2,
         spread_scale=swarm.spread_scale,
         search_margin_m=swarm.search_margin_m,
+        station_box_margin_m=swarm.station_box_margin_m,
         sample_ds_m=swarm.sample_ds_m,
         curve_type=swarm.curve_type,
         cost_ref_distance_m=objective.cost_ref_distance_m,
@@ -478,6 +508,9 @@ function RPOPSOConfig(configurator::RPOPSOConfigurator; kwargs...)
         tf_s=objective.tf_s,
         isp_s=objective.isp_s,
         g0_mps2=objective.g0_mps2,
+        hypr_mode=configurator.hypr_mode,
+        mean_motion_radps=objective.mean_motion_radps,
+        fuel_proxy_dt_s=objective.fuel_proxy_dt_s,
         retime_dt_s=retiming.dt_s,
         retime_reaction_time_s=retiming.reaction_time_s,
         retime_a_max_mps2=retiming.a_max_mps2,
@@ -485,6 +518,8 @@ function RPOPSOConfig(configurator::RPOPSOConfigurator; kwargs...)
         retime_min_speed_mps=retiming.min_speed_mps,
         retime_max_speed_mps=retiming.max_speed_mps,
         retime_max_steps=retiming.max_steps,
+        retime_accel_limit_enable=retiming.accel_limit_enable,
+        retime_initial_speed_mps=retiming.initial_speed_mps,
         safe_distance_m=configurator.safe_distance_m,
         goal_collision_margin_m=configurator.goal_collision_margin_m,
         adaptive_enable=adaptive.enabled,
@@ -512,6 +547,8 @@ function RPOPSOConfig(configurator::RPOPSOConfigurator; kwargs...)
         adaptive_c2_max=adaptive.c2_max,
         adaptive_spread_scale_min=adaptive.spread_scale_min,
         adaptive_spread_scale_max=adaptive.spread_scale_max,
+        adaptive_detour_eps_m=adaptive.detour_eps_m,
+        adaptive_search_effort_scale=adaptive.search_effort_scale,
         adaptive_sampling_enable=adaptive_sampling.enabled,
         adaptive_sampling_max_ds_m=adaptive_sampling.max_ds_m,
         adaptive_sampling_far_clearance_m=adaptive_sampling.far_clearance_m,
@@ -522,6 +559,7 @@ function RPOPSOConfig(configurator::RPOPSOConfigurator; kwargs...)
         cull_fraction_max=cull.fraction_max,
         cull_start_iter=cull.start_iter,
         cull_noise_scale=cull.noise_scale,
+        cull_noise_abs_m=cull.noise_abs_m,
         cull_arc_velocity_scale=cull.arc_velocity_scale,
         schedule_enable=schedule.enabled,
         schedule_w_end_fraction=schedule.w_end_fraction,
@@ -597,6 +635,8 @@ function validate_rpo_pso_config(cfg::RPOPSOConfig)
     cfg.iteration_runtime_limit_s >= 0.0 ||
         throw(ArgumentError("iteration_runtime_limit_s must be nonnegative."))
     cfg.sample_ds_m > 0.0 || throw(ArgumentError("sample_ds_m must be positive."))
+    all(m -> isfinite(m) && m >= 0.0, cfg.station_box_margin_m) ||
+        throw(ArgumentError("station_box_margin_m must be finite and nonnegative on every axis."))
     cfg.curve_type in (:bezier, :polyline) ||
         throw(ArgumentError("curve_type must be :bezier or :polyline."))
     cfg.obstacle_sigmoid_k > 0.0 || throw(ArgumentError("obstacle_sigmoid_k must be positive."))
@@ -606,6 +646,11 @@ function validate_rpo_pso_config(cfg::RPOPSOConfig)
     cfg.tf_s > 0.0 || throw(ArgumentError("tf_s must be positive."))
     cfg.isp_s > 0.0 || throw(ArgumentError("isp_s must be positive."))
     cfg.g0_mps2 > 0.0 || throw(ArgumentError("g0_mps2 must be positive."))
+    cfg.hypr_mode in (:legacy, :manuscript) ||
+        throw(ArgumentError("hypr_mode must be :legacy or :manuscript."))
+    isfinite(cfg.mean_motion_radps) && cfg.mean_motion_radps >= 0.0 ||
+        throw(ArgumentError("mean_motion_radps must be finite and nonnegative."))
+    cfg.fuel_proxy_dt_s >= 0.0 || throw(ArgumentError("fuel_proxy_dt_s must be nonnegative."))
     cfg.retime_dt_s > 0.0 || throw(ArgumentError("retime_dt_s must be positive."))
     cfg.retime_a_max_mps2 > 0.0 || throw(ArgumentError("retime_a_max_mps2 must be positive."))
     cfg.retime_speed_scale > 0.0 || throw(ArgumentError("retime_speed_scale must be positive."))
@@ -613,6 +658,8 @@ function validate_rpo_pso_config(cfg::RPOPSOConfig)
     cfg.retime_max_speed_mps >= cfg.retime_min_speed_mps ||
         throw(ArgumentError("retime_max_speed_mps must be at least retime_min_speed_mps."))
     cfg.retime_max_steps > 0 || throw(ArgumentError("retime_max_steps must be positive."))
+    isfinite(cfg.retime_initial_speed_mps) && cfg.retime_initial_speed_mps >= 0.0 ||
+        throw(ArgumentError("retime_initial_speed_mps must be finite and nonnegative."))
     cfg.safe_distance_m >= 0.0 || throw(ArgumentError("safe_distance_m must be nonnegative."))
     cfg.goal_collision_margin_m >= 0.0 || throw(ArgumentError("goal_collision_margin_m must be nonnegative."))
     0.0 <= cfg.adaptive_complexity_weight || throw(ArgumentError("adaptive_complexity_weight must be nonnegative."))
@@ -638,6 +685,9 @@ function validate_rpo_pso_config(cfg::RPOPSOConfig)
         throw(ArgumentError("adaptive_c2_min must be at most adaptive_c2_max."))
     cfg.adaptive_spread_scale_min <= cfg.adaptive_spread_scale_max ||
         throw(ArgumentError("adaptive_spread_scale_min must be at most adaptive_spread_scale_max."))
+    cfg.adaptive_detour_eps_m > 0.0 || throw(ArgumentError("adaptive_detour_eps_m must be positive."))
+    cfg.adaptive_search_effort_scale > 0.0 ||
+        throw(ArgumentError("adaptive_search_effort_scale must be positive."))
     cfg.adaptive_sampling_max_ds_m > 0.0 ||
         throw(ArgumentError("adaptive_sampling_max_ds_m must be positive."))
     cfg.adaptive_sampling_far_clearance_m > 0.0 ||
@@ -652,6 +702,8 @@ function validate_rpo_pso_config(cfg::RPOPSOConfig)
         throw(ArgumentError("cull_fraction_max must be between 0 and 1."))
     cfg.cull_start_iter >= 0 || throw(ArgumentError("cull_start_iter must be nonnegative."))
     cfg.cull_noise_scale >= 0.0 || throw(ArgumentError("cull_noise_scale must be nonnegative."))
+    isfinite(cfg.cull_noise_abs_m) && cfg.cull_noise_abs_m >= 0.0 ||
+        throw(ArgumentError("cull_noise_abs_m must be finite and nonnegative."))
     cfg.cull_arc_velocity_scale >= 0.0 || throw(ArgumentError("cull_arc_velocity_scale must be nonnegative."))
     cfg.schedule_transition_fraction > 0.0 || throw(ArgumentError("schedule_transition_fraction must be positive."))
     cfg.schedule_w_min >= 0.0 || throw(ArgumentError("schedule_w_min must be nonnegative."))

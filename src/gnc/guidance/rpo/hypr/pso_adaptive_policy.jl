@@ -74,3 +74,88 @@ function rpo_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_rtn, geomet
     )
     return validate_rpo_pso_config(cfg), (distance_m=dist, complexity=complexity, explore=explore, enabled=true)
 end
+
+"""
+    rpo_manuscript_exploration_score(path_length_m, direct_distance_m, iterations; detour_eps_m=1e-6, effort_scale=100.0)
+
+Exploration score of Sec. III.A of the HyPR manuscript:
+D = clip[0,1](L_RRT / max(||r_f - r_0||, ε_d) - 1), S(N) = 1 - exp(-N / N_s)
+and η = (2D + S(N)) / 3.
+"""
+function rpo_manuscript_exploration_score(
+    path_length_m::Real,
+    direct_distance_m::Real,
+    iterations::Integer;
+    detour_eps_m::Real=1.0e-6,
+    effort_scale::Real=100.0,
+)
+    D = clamp(Float64(path_length_m) / max(Float64(direct_distance_m), Float64(detour_eps_m)) - 1.0, 0.0, 1.0)
+    S = 1.0 - exp(-Float64(iterations) / Float64(effort_scale))
+    return (eta=(2.0 * D + S) / 3.0, detour_score=D, search_effort_score=S)
+end
+
+"""
+    rpo_manuscript_adaptive_pso_config(base, start_rtn, goal_rtn, warmstart)
+
+Map the exploration score η of the RRT-Connect warm start to the initial PSO
+coefficients and the particle, iteration and control-point counts (Sec.
+III.A): w0 = (1-η) w_min + η w_max, c1,0 = (1-η) c1,max + η c1,min and
+c2,0 = (1-η) c2,min + η c2,max, so harder instances get more inertia and
+social attraction and less cognitive attraction. Counts interpolate linearly
+between the `adaptive_*_min` and `adaptive_*_max` settings and round to the
+nearest integer. A warm start that
+is disabled or finds no path counts as the largest detour, D = 1. With
+`adaptive_enable` false the counts and coefficients of `base` are kept and η
+is only reported.
+"""
+function rpo_manuscript_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_rtn, warmstart)
+    direct = norm(SVector{3, Float64}(goal_rtn) - SVector{3, Float64}(start_rtn))
+    iterations = Int(warmstart.iterations)
+    found = Bool(warmstart.path_found)
+    length_m = found ? Float64(warmstart.path_length_m) : NaN
+    score = if found
+        rpo_manuscript_exploration_score(
+            length_m,
+            direct,
+            iterations;
+            detour_eps_m=base.adaptive_detour_eps_m,
+            effort_scale=base.adaptive_search_effort_scale,
+        )
+    else
+        S = 1.0 - exp(-Float64(iterations) / base.adaptive_search_effort_scale)
+        (eta=(2.0 + S) / 3.0, detour_score=1.0, search_effort_score=S)
+    end
+    η = score.eta
+    lerp(lo, hi) = (1.0 - η) * Float64(lo) + η * Float64(hi)
+    cfg = if base.adaptive_enable
+        rpo_pso_config(
+            base;
+            w_inertia=lerp(base.adaptive_w_inertia_min, base.adaptive_w_inertia_max),
+            c1=lerp(base.adaptive_c1_max, base.adaptive_c1_min),
+            c2=lerp(base.adaptive_c2_min, base.adaptive_c2_max),
+            n_waypoints=round(Int, lerp(base.adaptive_n_waypoints_min, base.adaptive_n_waypoints_max)),
+            n_particles=round(Int, lerp(base.adaptive_n_particles_min, base.adaptive_n_particles_max)),
+            n_iters=round(Int, lerp(base.adaptive_n_iters_min, base.adaptive_n_iters_max)),
+        )
+    else
+        validate_rpo_pso_config(base)
+    end
+    return cfg, (
+        enabled=base.adaptive_enable,
+        mode=:manuscript,
+        eta=η,
+        detour_score=score.detour_score,
+        search_effort_score=score.search_effort_score,
+        rrt_path_found=found,
+        rrt_iterations=iterations,
+        rrt_path_length_m=length_m,
+        direct_distance_m=direct,
+        w_inertia=cfg.w_inertia,
+        c1=cfg.c1,
+        c2=cfg.c2,
+        n_particles=cfg.n_particles,
+        n_iters=cfg.n_iters,
+        n_waypoints=cfg.n_waypoints,
+        coefficient_direction=:c1_down_c2_up,
+    )
+end

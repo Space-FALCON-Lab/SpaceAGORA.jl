@@ -22,6 +22,7 @@ module GuidanceHooks
     using ..Kinematics
     using ..HYPRUtils
     using Base.Threads: @threads, maxthreadid, threadid
+    using Logging: Logging
     using Random
     using AstroTime
     using SPICE

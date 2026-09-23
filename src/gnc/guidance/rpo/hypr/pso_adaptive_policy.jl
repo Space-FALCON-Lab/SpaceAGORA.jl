@@ -105,8 +105,9 @@ inertia and cognitive coefficients grow with η and the social coefficient
 shrinks. (The manuscript's prose states the opposite direction for c1 and
 c2.) Counts interpolate linearly between the `adaptive_*_min` and
 `adaptive_*_max` settings and round to the nearest integer. A warm start that
-found no path counts as the largest detour, D = 1. With `adaptive_enable`
-false the counts and coefficients of `base` are kept and η is only reported.
+is disabled or finds no path counts as the largest detour, D = 1. With
+`adaptive_enable` false the counts and coefficients of `base` are kept and η
+is only reported.
 """
 function rpo_manuscript_adaptive_pso_config(base::RPOPSOConfig, start_rtn, goal_rtn, warmstart)
     direct = norm(SVector{3, Float64}(goal_rtn) - SVector{3, Float64}(start_rtn))

@@ -612,6 +612,20 @@ function save_machine_constants(mc::MachineConstants, path::AbstractString = mac
         ),
     )
     path_s = String(path)
+    # The `[campaign]` table holds costs measured from campaign traces, not by
+    # this calibration (the predictive planner's pool terms; see
+    # scripts/extract_campaign_cost_terms.py). Re-calibrating must not erase
+    # them, so an existing table is carried across the rewrite.
+    if isfile(path_s)
+        previous = try
+            TOML.parsefile(path_s)
+        catch
+            nothing
+        end
+        if previous !== nothing && get(previous, "campaign", nothing) isa AbstractDict
+            payload["campaign"] = previous["campaign"]
+        end
+    end
     mkpath(dirname(path_s))
     tmp = path_s * ".tmp"
     open(tmp, "w") do io

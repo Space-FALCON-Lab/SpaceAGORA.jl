@@ -1226,7 +1226,7 @@ function _run_campaign_predictive(
                 remaining=max(0, n - guard.completed),
                 threads=reachable_threads,
                 threads_candidate=threads_reachable,
-                constants=constants, failures=guard.failures)
+                constants=constants, failures=guard.failures, terms=terms)
             guard.verdict = verdict
             if verdict.replan
                 if verdict.route === :threads
@@ -1264,12 +1264,13 @@ function _run_campaign_predictive(
         # The heap scale that would have predicted what the guard saw. Only a
         # plan whose heap model charged a term says anything about the term.
         raw_heap = predictive_heap_slowdown(
-            _predictive_contention_constants(config, constants, :process), plan.local_slots)
+            _predictive_contention_constants(config, constants, :process, terms.local_heap_slope),
+            plan.local_slots)
         # Local slots on more than one thread carry the curve's factor as well,
         # which the heap term does not model; they say nothing about it.
         heap_observed = (verdict !== nothing && isfinite(verdict.ratio) && raw_heap > 1.0 &&
                          plan.inner_thread_budget <= 1) ?
-            verdict.ratio * plan.heap_slowdown / raw_heap : NaN
+            max(0.0, verdict.ratio * plan.heap_slowdown - 1.0) / (raw_heap - 1.0) : NaN
         final_key = final_route === :threads ? "threads@w$(final_consumers)+l0" :
             "$(final_route)@w$(open_workers)+l$(final_slots)"
         _predictive_fold_and_save!(corrections, rules, campaign_constants;

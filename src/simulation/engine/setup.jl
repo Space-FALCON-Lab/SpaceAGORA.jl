@@ -818,7 +818,9 @@ end
 # Every effector in the stack is served by one of the flat route's serial
 # pre-passes: the batchable kernels (`_accumulate_nbody_flat_batch!`,
 # `_accumulate_srp_flat_batch!`, `_accumulate_invsq_flat_batch!`,
-# `_accumulate_invsq_j2_flat_batch!`) or the harmonics SIMD pre-pass. For such a
+# `_accumulate_invsq_j2_flat_batch!`), the harmonics SIMD pre-pass, or the
+# aerodynamic pre-pass (`_accumulate_aero_flat_batch!`, fM model without
+# per-link atmosphere). For such a
 # stack `_accumulate_dynamic_effectors_flat_slots!` returns inside the pre-passes
 # (`_count_flat_queue_only_effectors(...) == 0`) and the per-(satellite, effector)
 # work queue is never built, which is what makes the route safe to take at a
@@ -828,7 +830,8 @@ end
 @inline function _rhs_all_prepass_effectors(dynamic_effectors::Tuple)::Bool
     isempty(dynamic_effectors) && return false
     @inbounds for effector in dynamic_effectors
-        (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) || return false
+        (_batchable_effector(effector) || _harmonics_prepass_effector(effector) ||
+         _aero_prepass_effector(effector)) || return false
     end
     return true
 end

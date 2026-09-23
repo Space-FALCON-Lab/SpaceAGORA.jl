@@ -57,6 +57,13 @@ end
     return PlanetFrameSample(l_pi, pos_pp, vel_pp, alt, lat, lon)
 end
 
+# The same answer as SimulationCallbacks._uses_j2_gravity_effector, by peeling
+# the effector tuple instead of iterating it: iterating a heterogeneous tuple
+# yields an abstract element and boxed it once per spacecraft per sample.
+@inline _effectors_use_j2_gravity(::Tuple{})::Bool = false
+@inline _effectors_use_j2_gravity(effs::Tuple)::Bool =
+    first(effs) isa SimulationModel.InverseSquaredJ2GravityModel || _effectors_use_j2_gravity(Base.tail(effs))
+
 @inline function _sample_atmosphere_from_planet_frame(
     x,
     planet_frame::PlanetFrameSample,
@@ -87,7 +94,7 @@ end
     cache_cfg = cb_env.gram_track_cache
     stats_enabled = cb_env.gram_runtime_stats_enabled
     target_include_j2 = cb_env.gram_track_cache_target_use_j2 &&
-        callbacks._uses_j2_gravity_effector(p.args.dynamics_model.dynamic_effectors)
+        _effectors_use_j2_gravity(p.args.dynamics_model.dynamic_effectors)
     caches = p.shared_buffers.gram_density_cache
     pos_ii, vel_ii = _extract_sample_pos_vel(x)
     current_mass_kg = _extract_sample_mass_kg(x)
@@ -111,6 +118,90 @@ end
         callbacks._write_density_buffers!(p, sat_idx, rho, T, wind_vec, t)
     end
     return AtmosphereSample(rho, T, wind_vec)
+end
+
+
+# ── Uniform-light atmosphere batch (flat-route pre-sample) ───────────────────
+#
+# The flat route's atmosphere pre-sample used to resolve, per spacecraft, the
+# callback env snapshot, the spacecraft's density model (a read from an
+# abstract-eltype vector, so everything downstream dispatched dynamically) and
+# the GRAM cache settings, and then call the scalar density model once per
+# spacecraft. When every spacecraft shares one density model and nothing about
+# the query depends on per-spacecraft cache state, the whole constellation is
+# answered by one `getDensityBatch!` call over the planet-frame altitude,
+# latitude and longitude buffers the same pre-sample has just filled.
+#
+# Returns that shared model, or `nothing` when any condition fails and the
+# per-spacecraft path must run unchanged:
+# - every spacecraft is active (the per-spacecraft path skips inactive ones and
+#   leaves their buffers alone; a batch over 1:N would not);
+# - every spacecraft resolves to the same density model object, exactly as
+#   `_density_model_for_sat` would resolve it;
+# - the model is not native GRAM (`density_model_work_is_heavy`) and not a GRAM
+#   grid snapshot -- their locking and threading are not this path's to change;
+# - neither freeze-per-step nor the vacuum GRAM look-ahead cache nor the GRAM
+#   track cache is on, since each of those makes the value depend on
+#   per-spacecraft cache state rather than on the current position;
+# - GRAM runtime statistics are off (the per-spacecraft path counts calls);
+# - every output buffer is at least N long, the same guard
+#   `_write_density_buffers!` applies per spacecraft.
+#
+# Bit-identity rests on `getDensityBatch!`'s method for the model evaluating the
+# same expressions as the scalar `getDensity` the per-spacecraft path calls; the
+# built-in analytic models' batch methods are the scalar expressions verbatim,
+# and every other model falls back to calling the scalar method per element.
+# test/unit/dynamics/aero_batch_parity_tests.jl asserts it bit for bit.
+function _uniform_light_density_model(p, num_sats::Int)
+    num_sats >= 1 || return nothing
+    callbacks = SimulationModel.SimulationCallbacks
+    cb_env = callbacks._callback_env_config(p)
+    cb_env.density_freeze_per_step && return nothing
+    cb_env.vacuum_gram_cache_enabled && return nothing
+    cb_env.gram_runtime_stats_enabled && return nothing
+    sb = p.shared_buffers
+    (length(sb.densities) >= num_sats && length(sb.temperatures) >= num_sats &&
+     length(sb.winds) >= num_sats && length(sb.density_sample_t) >= num_sats) || return nothing
+    length(p.is_active) >= num_sats || return nothing
+    @inbounds for i in 1:num_sats
+        p.is_active[i] || return nothing
+    end
+    model = callbacks._density_batch_model_for_callback(
+        sb.density_models, p.args.environment_model.density_model, num_sats,
+    )
+    model === nothing && return nothing
+    callbacks.density_model_work_is_heavy(model) && return nothing
+    model isa SimulationModel.EnvironmentModels.GRAMGridAtmosphereModel && return nothing
+    callbacks._gram_track_cache_enabled(cb_env.gram_track_cache, model) && return nothing
+    return model
+end
+
+# One density query for the whole constellation, written where the
+# per-spacecraft path would have written it.
+function _fill_uniform_light_atmosphere!(
+    p,
+    t::Float64,
+    num_sats::Int,
+    model,
+    alts::AbstractVector{Float64},
+    lats::AbstractVector{Float64},
+    lons::AbstractVector{Float64},
+)::Nothing
+    sb = p.shared_buffers
+    SimulationModel.getDensityBatch!(
+        view(sb.densities, 1:num_sats),
+        view(sb.temperatures, 1:num_sats),
+        view(sb.winds, 1:num_sats),
+        model,
+        view(alts, 1:num_sats),
+        view(lats, 1:num_sats),
+        view(lons, 1:num_sats),
+        t,
+        true,
+        p,
+    )
+    SimulationModel.SimulationCallbacks._write_density_time_buffers!(p, num_sats, t)
+    return nothing
 end
 
 @inline function sample_atmosphere(x, p, sat_idx::Int, t::Float64; write_buffers::Bool=true)::AtmosphereSample

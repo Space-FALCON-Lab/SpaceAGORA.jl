@@ -516,7 +516,8 @@ end
     effector = first(effs)
     keep = _flat_partition_selected(effector, partition) &&
         # Effectors resolved by pre-passes already wrote into totals.
-        !(partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)))
+        !(partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector) ||
+                                    _aero_prepass_effector(effector)))
     return (keep, _flat_selection_mask(Base.tail(effs), partition)...)
 end
 
@@ -852,9 +853,26 @@ end
 @inline function _count_flat_queue_only_effectors(effectors::Tuple)::Int
     count = 0
     @inbounds for e in effectors
-        _batchable_effector(e) || _harmonics_prepass_effector(e) || (count += 1)
+        _batchable_effector(e) || _harmonics_prepass_effector(e) || _aero_prepass_effector(e) || (count += 1)
     end
     return count
+end
+
+# Aerodynamics has its own pre-pass too. Unlike the batchable kernels it needs
+# the per-satellite planet frame and atmosphere sample, which the flat route
+# has already prefilled into typed buffers by the time the pre-passes run, so it
+# reads those instead of position buffers. Per-link atmosphere sampling stays on
+# the queue: it issues a density query per link and carries a `maxlog=1`
+# warning whose firing order would become worker-dependent in a slice.
+@inline _aero_prepass_effector(::Any)::Bool = false
+@inline _aero_prepass_effector(effector::SimulationModel.AerodynamicCoefficientfM)::Bool =
+    !SimulationModel.DynamicEffectors.AerodynamicEffectors._per_link_enabled(effector)
+
+@inline function _has_any_aero_prepass_effector(effectors::Tuple)::Bool
+    @inbounds for e in effectors
+        _aero_prepass_effector(e) && return true
+    end
+    return false
 end
 
 # NBody batch pre-pass: third-body positions are read from the SpiceRhsMemo (or
@@ -1150,6 +1168,180 @@ function _accumulate_harmonics_flat_batch!(
     return nothing
 end
 
+# One spacecraft of the aero pre-pass. Kept a separate, concretely typed
+# function rather than a closure body so every argument arrives with its own
+# type and nothing is re-boxed per spacecraft.
+#
+# It is `sample_environment_with_reusable_buffers(req, ...)` followed by
+# `wrench_caching!(model, state_sample, env, t, p, sat_idx)`, spelled out:
+# - the environment sample is built for this effector's requirements (planet
+#   frame and atmosphere; no solar, no third bodies) with concrete field types,
+#   where the generic builder branches on the runtime `req` and allocates its
+#   Union-typed intermediates;
+# - the wrench is `_aero_pure_wrench(:fm, ...)` with the per-link hook off,
+#   which is what `wrench_caching!` passes when `_per_link_enabled(model)` is
+#   false (the pre-pass trait guarantees it), called, not inlined (see the
+#   note at the call);
+# - drag, lift and cross are stored in that order through the same
+#   `_store_vector_cache!` that `_store_aero_caches!` calls.
+@noinline function _aero_prepass_satellite!(
+    slots::Array{Float64, 3},
+    eff_idx::Int,
+    model::SimulationModel.AerodynamicCoefficientfM,
+    req,
+    planet,
+    sc_state,
+    p,
+    shared_buffers,
+    spacecraft,
+    orientation_sim::Bool,
+    drag_cache::Vector{SVector{3, Float64}},
+    lift_cache::Vector{SVector{3, Float64}},
+    cross_cache::Vector{SVector{3, Float64}},
+    sat_idx::Int,
+    t::Float64,
+)::Nothing
+    aero_effectors = SimulationModel.DynamicEffectors.AerodynamicEffectors
+    @views sc_view = sc_state[sat_idx]
+    state_sample = _rhs_flat_state_sample_from_buffers(shared_buffers, spacecraft, sat_idx, orientation_sim)
+    planet_frame = _sample_reusable_planet_frame(req, sc_view, p, sat_idx, t)::PlanetFrameSample
+    atmosphere = _sample_reusable_atmosphere(req, sc_view, planet_frame, p, sat_idx, t)::AtmosphereSample
+    env = EnvironmentSample(planet, planet_frame, atmosphere, nothing, nothing)
+    # Deliberately NOT inlined. Inlined here, the drag cache came out a last
+    # bit different from the per-satellite route's on a few spacecraft (the
+    # derivative happened to agree): StaticArrays' matrix-vector product is
+    # written with `muladd`, and whether LLVM fuses a `muladd` into an FMA
+    # depends on the code around it. As a call it is the same compiled method
+    # instance `wrench_caching!` reaches, so it rounds exactly as before.
+    force, torque, drag_ii, lift_ii, cross_ii = aero_effectors._aero_pure_wrench(
+        :fm, state_sample, env, nothing, model.fixed_attitude_incidence,
+    )
+    aero_effectors._store_vector_cache!(drag_cache, sat_idx, drag_ii)
+    aero_effectors._store_vector_cache!(lift_cache, sat_idx, lift_ii)
+    aero_effectors._store_vector_cache!(cross_cache, sat_idx, cross_ii)
+    @inbounds begin
+        slots[1, eff_idx, sat_idx] = force[1]
+        slots[2, eff_idx, sat_idx] = force[2]
+        slots[3, eff_idx, sat_idx] = force[3]
+        slots[4, eff_idx, sat_idx] = torque[1]
+        slots[5, eff_idx, sat_idx] = torque[2]
+        slots[6, eff_idx, sat_idx] = torque[3]
+    end
+    return nothing
+end
+
+# Aerodynamic pre-pass: the fM wrench for every active satellite, in contiguous
+# worker slices, instead of one flat-queue item per satellite.
+#
+# Each satellite runs exactly the calls a queue item makes for this effector
+# (`_evaluate_dynamic_effector` -> `sample_environment_with_reusable_buffers`
+# -> `wrench_caching!`), with the same arguments, and writes only its own
+# `slots[:, eff_idx, sat_idx]` and its own drag/lift/cross save-cache entries.
+# No arithmetic is rewritten -- `_aero_pure_wrench` is called unmodified -- and
+# no value is shared between satellites, so neither the slicing nor the worker
+# count can change a result; the slot reduction afterwards is unchanged.
+#
+# What the queue paid and this does not: per satellite, a runtime index into
+# the heterogeneous effector tuple (an abstract-typed value), a `hasmethod`
+# probe on it, the `@noinline` dynamic dispatch into
+# `_evaluate_dynamic_effector`, and one trip through the worker pool. Here the
+# effector is concretely typed in the signature, so the whole chain specializes,
+# and the pool is entered once per slice.
+function _accumulate_aero_flat_batch!(
+    sc_state,
+    p,
+    t::Float64,
+    model::SimulationModel.AerodynamicCoefficientfM,
+    plan;
+    eff_idx::Int,
+)::Nothing
+    num_sats = length(sc_state)
+    slots = p.shared_buffers.rhs_flat_effector_partials[]
+    work_items = p.shared_buffers.rhs_flat_work_items[]
+    if length(work_items) < num_sats
+        resize!(work_items, num_sats)
+    end
+    count_items = 0
+    @inbounds for sat_idx in 1:num_sats
+        p.is_active[sat_idx] || continue
+        count_items += 1
+        work_items[count_items] = sat_idx
+    end
+    count_items <= 0 && return nothing
+    # Assigned once, so the closures below capture a plain Int; capturing the
+    # loop-updated `count_items` would box it.
+    n_items = count_items
+
+    spacecraft = p.args.dynamics_model.spacecraft
+    orientation_sim = p.args.mission_configuration.orientation_sim
+    shared_buffers = p.shared_buffers
+    req = SimulationModel.environment_requirements(model)
+    req.planet_frame && req.atmosphere && !req.solar && isempty(req.third_body_names) ||
+        throw(ArgumentError("aero pre-pass expects planet-frame and atmosphere requirements only"))
+    planet = p.args.environment_model.planet
+    drag_cache = p.save_cache.drag_cache
+    lift_cache = p.save_cache.lift_cache
+    cross_cache = p.save_cache.cross_cache
+
+    needs_timing = plan.policy_applied
+    started_ns = needs_timing ? time_ns() : UInt64(0)
+
+    workers = SimulationModel.ParallelPolicy.thread_worker_count(n_items, plan.allotment)
+    n_workers = max(1, min(workers, n_items))
+    batch_size = cld(n_items, n_workers)
+    run_slice! = (item_start, item_end) -> begin
+        @inbounds for item_idx in item_start:item_end
+            _aero_prepass_satellite!(
+                slots, eff_idx, model, req, planet, sc_state, p, shared_buffers,
+                spacecraft, orientation_sim, drag_cache, lift_cache, cross_cache,
+                work_items[item_idx], t,
+            )
+        end
+        return nothing
+    end
+    if n_workers <= 1
+        run_slice!(1, n_items)
+    else
+        SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(
+            :rhs_aero_batch,
+            n_workers,
+            plan.allotment;
+            scheduler=_dispatch_scheduler(p, plan),
+        ) do _worker_id, w
+            item_start = (w - 1) * batch_size + 1
+            item_end = min(w * batch_size, n_items)
+            item_start > n_items && return nothing
+            run_slice!(item_start, item_end)
+            return nothing
+        end
+    end
+    if needs_timing
+        elapsed_ns = Int64(time_ns() - started_ns)
+        _update_effector_cost_model!(p.shared_buffers, max(1, n_items), elapsed_ns, plan.allotment)
+        SimulationModel.ParallelPolicy.record_policy_observation!(
+            :dynamic_effectors;
+            mode=:flat_constellation_effector_queue,
+            num_items=max(1, n_items),
+            use_threads=n_workers > 1,
+            elapsed_ns=elapsed_ns,
+            env=_policy_env_config(p),
+            ctx=SimulationModel.ParallelPolicy.policy_context_hint(p),
+        )
+    end
+    return nothing
+end
+
+# Peel the effector tuple so the pre-pass is always called with a concretely
+# typed model and its true effector index.
+@inline _accumulate_aero_prepass_effectors!(sc_state, p, t::Float64, ::Tuple{}, plan, eff_idx::Int)::Nothing = nothing
+@inline function _accumulate_aero_prepass_effectors!(sc_state, p, t::Float64, effs::Tuple, plan, eff_idx::Int)::Nothing
+    effector = first(effs)
+    if _aero_prepass_effector(effector)
+        _accumulate_aero_flat_batch!(sc_state, p, t, effector, plan; eff_idx=eff_idx)
+    end
+    return _accumulate_aero_prepass_effectors!(sc_state, p, t, Base.tail(effs), plan, eff_idx + 1)
+end
+
 @inline function _flat_slot_selected(effector, partition::Union{Nothing, Symbol})::Bool
     partition === nothing && return true
     return _effector_in_partition(effector, partition)
@@ -1299,6 +1491,17 @@ function _accumulate_dynamic_effectors_flat_slots!(
         _count_non_batchable_effectors(dynamic_effectors) == 0 && return nothing
     end
 
+    # ── Aerodynamic pre-pass ──────────────────────────────────────────────────
+    # Runs before the harmonics block because that block returns once nothing is
+    # left for the queue, which, with aero pre-passed, is the common case.
+    if partition === nothing && _has_any_aero_prepass_effector(dynamic_effectors)
+        _accumulate_aero_prepass_effectors!(sc_state, p, t, dynamic_effectors, plan, 1)
+        if !_has_any_harmonics_effector(dynamic_effectors) &&
+           _count_flat_queue_only_effectors(dynamic_effectors) == 0
+            return nothing
+        end
+    end
+
     # ── Harmonics SIMD pre-pass ───────────────────────────────────────────────
     # Run the harmonics pre-pass (one compiled kernel per satellite) first,
     # writing directly into the already-zeroed totals matrix.  Skips scratch
@@ -1358,7 +1561,8 @@ function _accumulate_dynamic_effectors_flat_slots!(
                 sat_idx = _constellation_node_sat_idx(item, exec_plan.n_effectors)
                 eff_idx = _constellation_node_eff_idx(item, exec_plan.n_effectors)
                 effector = dynamic_effectors[eff_idx]
-                partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue
+                partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector) ||
+                                                  _aero_prepass_effector(effector)) && continue
                 @views sc_view = sc_state[sat_idx]
                 state_sample = _wrench_method_available(effector) ?
                     _rhs_flat_state_sample_from_buffers(p.shared_buffers, spacecraft, sat_idx, orientation_sim) :
@@ -1384,7 +1588,8 @@ function _accumulate_dynamic_effectors_flat_slots!(
             sat_idx = _constellation_node_sat_idx(item, exec_plan.n_effectors)
             eff_idx = _constellation_node_eff_idx(item, exec_plan.n_effectors)
             effector = dynamic_effectors[eff_idx]
-            partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && return nothing
+            partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector) ||
+                                      _aero_prepass_effector(effector)) && return nothing
             @views sc_view = sc_state[sat_idx]
             state_sample = _wrench_method_available(effector) ?
                 _rhs_flat_state_sample_from_buffers(p.shared_buffers, spacecraft, sat_idx, orientation_sim) :
@@ -1706,6 +1911,12 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
     # available together, at the true stage state. Nothing is frozen or reused.
     batch_atmosphere = atmosphere &&
         SimulationModel.SimulationCallbacks._rhs_density_service_candidate(p, num_sats)
+    # Analytic atmospheres shared by the whole constellation take one batched
+    # density query after the planet frames are in (see
+    # _uniform_light_density_model); everything else keeps the per-spacecraft
+    # sample inside the loop.
+    uniform_model = (atmosphere && !batch_atmosphere) ? _uniform_light_density_model(p, num_sats) : nothing
+    per_sat_atmosphere = atmosphere && !batch_atmosphere && uniform_model === nothing
 
     SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, worker_allotment) do _, sat_idx
         if p.is_active[sat_idx]
@@ -1718,10 +1929,14 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
                 planet_lat[sat_idx] = planet_frame.lat_rad
                 planet_lon[sat_idx] = planet_frame.lon_rad
             end
-            if atmosphere && !batch_atmosphere
+            if per_sat_atmosphere
                 _sample_atmosphere_from_planet_frame(sc_view, planet_frame, p, sat_idx, t; write_buffers=true)
             end
         end
+    end
+
+    if uniform_model !== nothing
+        _fill_uniform_light_atmosphere!(p, t, num_sats, uniform_model, planet_alt, planet_lat, planet_lon)
     end
 
     if batch_atmosphere

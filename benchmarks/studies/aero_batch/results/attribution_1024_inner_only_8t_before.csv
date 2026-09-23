@@ -1,0 +1,5 @@
+host,threads,mode,rhs_mode,case,rep,nsats,wall_s,gc_s,bytes,nf,naccept,nreject,steps,retcode
+space-falcon-1,8,inner_only,auto,aero_1024sat_l50_expatm_100s,1,1024,0.725096,0.203380,1638033776,314,24,0,25,Success
+space-falcon-1,8,inner_only,auto,aero_1024sat_l50_expatm_100s,2,1024,0.495359,0.083050,1621968176,314,24,0,25,Success
+space-falcon-1,8,inner_only,auto,gravity_1024sat_l50_vacuum_100s,1,1024,0.041601,0.006533,28008488,79,11,0,12,Success
+space-falcon-1,8,inner_only,auto,gravity_1024sat_l50_vacuum_100s,2,1024,0.033238,0.000000,28008488,79,11,0,12,Success

@@ -113,7 +113,7 @@ function main()
     @printf("config=%s n=%d mission=%.0fs density=%s pool=%d threads=%d\n",
             GTSD_CONFIG, GTSD_N, GTSD_MISSION, GTSD_DENSITY, GTSD_POOL, Threads.nthreads())
     # A warm-up solve first: the dumps must not differ because one of them paid
-    # the first native GRAM initialisation and the other did not.
+    # the first native GRAM initialization and the other did not.
     withenv(gtsd_env(0)...) do
         SimulationEngine.run_simulation(gtsd_config(min(GTSD_N, 16), 5.0); isolate_state=false)
     end

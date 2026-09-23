@@ -9,9 +9,12 @@
 # Two density paths, the two the P6/S2 traces use and for the reasons given in
 # parallelization_performance/cases.jl (`_ppc_p6_gram_density_env!`):
 #
-#   lookahead  the vacuum-predicted track cache, horizon past the end of the
-#              mission and deviation past anything the mission can reach, so
-#              only the initial build runs (a rebuild mid-run hangs the job).
+#   lookahead  the vacuum-predicted look-ahead cache (density_callbacks/
+#              vacuum_predicted_gram.jl), horizon past the end of the mission and
+#              deviation past anything the mission can reach, so only the initial
+#              build runs (a rebuild mid-run hangs the job). Not to be confused
+#              with the GRAM track cache in callbacks/gram_track_cache/, which is
+#              a different mechanism behind a different env var.
 #   freeze     direct native GRAM with density frozen per accepted step.
 #
 # Every (size, density path) group is solved back to back in one process, in one
@@ -100,7 +103,7 @@ function main()
 
     rows = String[]
     # One warm-up solve per process, at the smallest size and a short mission:
-    # the first solve pays compilation and the first native GRAM initialisation,
+    # the first solve pays compilation and the first native GRAM initialization,
     # and charging that to whichever configuration happens to run first would
     # put the whole difference between locked and pooled inside the noise.
     print("warm-up ... "); flush(stdout)
@@ -114,7 +117,11 @@ function main()
 
     for n in GTS_SIZES, path in GTS_DENSITY
         group = Dict{Int, Vector{Float64}}()
-        for pool in GTS_POOL, rep in 1:GTS_REPEATS
+        # Repeat outermost, arm innermost: the arms alternate, so any drift over
+        # the group (cache state, thermal, a neighboring process) lands on all
+        # of them instead of on whichever ran last. The reported ratio is taken
+        # from each arm's minimum, which is the least contaminated repeat.
+        for rep in 1:GTS_REPEATS, pool in GTS_POOL
             env = vcat(gts_density_env(path, GTS_MISSION), gts_pool_env(pool), GTS_WIDTH_ENV)
             r = gts_solve(n, GTS_MISSION, env)
             push!(get!(group, pool, Float64[]), r.wall_s)

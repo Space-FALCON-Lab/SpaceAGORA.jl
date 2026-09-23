@@ -114,7 +114,7 @@ end
     # the gain clears the margin: 16 workers + 15 slots, R6's plan, 1.859 s
     # against the pure pool's 2.302 s.
     measured = SCamp.predictive_heap_slowdown(_constants(), 15)
-    scaled = SCamp.PredictiveCostTerms(heap_scale = 1.53 / measured, round_tail = TRX50_TAIL)
+    scaled = SCamp.PredictiveCostTerms(heap_scale = (1.53 - 1) / (measured - 1), round_tail = TRX50_TAIL)
     mixed = _plan(n = 32, threads = 16, terms = scaled)
     @test mixed.chosen.route === :process
     @test mixed.chosen.local_slots == 15
@@ -334,9 +334,10 @@ end
     PCost.save_machine_constants(_constants(), path)
     @test SCamp.load_predictive_campaign_constants(path).round_tail === nothing
     open(path, "a") do io
-        println(io, "\n[campaign]\nround_tail = 0.2261\npool_startup_s = 0.8146\nsource = \"archived run\"")
+        println(io, "\n[campaign]\nround_tail = 0.2261\npool_startup_s = 0.8146\nlocal_heap_slope = 0.006011\nsource = \"archived run\"")
     end
     loaded = SCamp.load_predictive_campaign_constants(path)
+    @test loaded.local_heap_slope == 0.006011
     @test loaded.round_tail == 0.2261
     @test loaded.pool_startup_s == 0.8146
     @test loaded.source == "archived run"
@@ -346,4 +347,66 @@ end
     @test again.pool_startup_s == 0.8146
     @test PCost.load_machine_constants(path).usl_alpha_base == 0.2
     @test SCamp.load_predictive_campaign_constants(joinpath(dir, "absent.toml")).pool_startup_s === nothing
+end
+
+# The `:locals` model's fitted pairwise term, s(k) = 1 + c k (k - 1), with c
+# fitted by scripts/extract_campaign_cost_terms.py on the archived gate run:
+# least squares over the four measured mixed-plan points (k = 4, 7, 15, 31).
+const TRX50_LOCAL_SLOPE = 0.006011
+
+@testset "the pairwise local-slot term replaces the USL mapping when fitted" begin
+    cfg = _cfg(threads = 16)
+    term = SCamp._predictive_contention_constants(cfg, _constants(), :process, TRX50_LOCAL_SLOPE)
+    @test term isa SCamp.PairwiseHeapTerm
+    @test SCamp.predictive_heap_slowdown(term, 1) == 1.0
+    @test SCamp.predictive_heap_slowdown(term, 15) ≈ 1 + TRX50_LOCAL_SLOPE * 210
+    # Without a fitted slope the local slots fall back to the calibrated USL term.
+    @test SCamp._predictive_contention_constants(cfg, _constants(), :process, NaN) isa PCost.MachineConstants
+    # The threads route is never charged under :locals, and :usl ignores the slope.
+    @test SCamp._predictive_contention_constants(cfg, _constants(), :threads, TRX50_LOCAL_SLOPE) === nothing
+    usl = _cfg(threads = 16, heap_model = :usl)
+    @test SCamp._predictive_contention_constants(usl, _constants(), :process, TRX50_LOCAL_SLOPE) isa PCost.MachineConstants
+    # The trim target follows the fitted curve's peak, 1 / sqrt(c).
+    terms = SCamp.PredictiveCostTerms(local_heap_slope = TRX50_LOCAL_SLOPE)
+    plan = SCamp._predictive_plan(:process, 8, 15, 64, false, term)
+    @test SCamp.predictive_trim_target(plan, cfg, _constants(); terms = terms) ==
+          clamp(round(Int, 1 / sqrt(TRX50_LOCAL_SLOPE)), 0, 15)
+end
+
+@testset "under the refit prior, P3 at 32 and P4 at 8 rank and choose as measured" begin
+    terms = SCamp.PredictiveCostTerms(round_tail = TRX50_TAIL, local_heap_slope = TRX50_LOCAL_SLOPE)
+    p3 = _plan(n = 256, threads = 32, terms = terms)
+    @test _find(p3, 0).makespan < _find(p3, 31).makespan      # measured 0.438 < 0.552 s
+    @test p3.chosen.route === :process && p3.chosen.local_slots == 0
+    p8 = _plan(n = 32, threads = 8, terms = terms)
+    # measured w8+l7 2.620 < w8+l4 3.002 < w8+l0 3.742 s
+    @test _find(p8, 7).makespan < _find(p8, 4).makespan < _find(p8, 0).makespan
+    @test p8.chosen.local_slots == 7
+    @test p8.reason === :predicted_gain
+    # P4 at 16 is the point the one-slope fit does not reproduce: it prices
+    # fifteen slots at 2.26x where the traces measured 1.52x, so the pure pool
+    # ranks first and the planner stays static, as it did before the refit.
+    p16 = _plan(n = 32, threads = 16, terms = terms)
+    @test _find(p16, 0).makespan < _find(p16, 15).makespan
+    @test p16.chosen.local_slots == 0
+end
+
+@testset "a correction scales the fitted slope by bounded steps" begin
+    rules = _rules()
+    consts = SCamp.PredictiveCampaignConstants(round_tail = TRX50_TAIL, local_heap_slope = TRX50_LOCAL_SLOPE)
+    c = SCamp.CampaignCorrections("fp", "token")
+    previous = 1.0
+    for _ in 1:12
+        SCamp.predictive_fold_campaign!(c, rules, consts; signature = "p4", shape_key = "p4@8",
+                                        final_plan = "process@w8+l7", heap_scale_observed = 0.8)
+        priced = SCamp.predictive_cost_terms(c, consts, rules; signature = "p4", pool_cold = false)
+        @test priced.terms.local_heap_slope == TRX50_LOCAL_SLOPE
+        scale = priced.terms.heap_scale
+        @test previous - scale <= rules.step + 1e-12
+        @test scale >= 0.25 + 0.75 * 0.8 - 1e-12
+        previous = scale
+        term = SCamp.PairwiseHeapTerm(TRX50_LOCAL_SLOPE)
+        @test SCamp._predictive_scaled_heap(term, 7, scale) ≈ 1 + scale * TRX50_LOCAL_SLOPE * 42
+    end
+    @test previous ≈ 0.85
 end

@@ -1,4 +1,4 @@
-# WS11e deliverable 1: where the time goes in an exponential-atmosphere aero
+# Attribution: where the time goes in an exponential-atmosphere aero
 # constellation, and how much it allocates per spacecraft per derivative
 # evaluation.
 #

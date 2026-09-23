@@ -1,7 +1,7 @@
-# Aerodynamics and density at constellation scale (WS11e)
+# Aerodynamics and density at constellation scale
 
 Design record for batching the aerodynamic effector and the RHS-side
-atmosphere pre-sample over a constellation, under the WS11 hard requirement
+atmosphere pre-sample over a constellation, under the hard requirement
 that the dynamics stay **bit-identical** to `adb343566` on
 `policy-v2-consistency`. A change that moves any saved state of any trajectory
 by one bit is not shipped, however large the speedup.
@@ -28,7 +28,7 @@ before that run has happened.
 
 ASSUMED, and named so it can be checked: that the split at 1024 spacecraft
 resembles the split at 4096. The attribution runs at 1024 because that is the
-size the WS11e contract names and the size this workstation can hold; the
+size the reference case set uses and the size this workstation can hold; the
 4096 number above is quoted only as the origin of the task.
 
 ## 2. Current per-spacecraft evaluation and its order of operations
@@ -154,8 +154,8 @@ Not batched, and left on the queue:
   density query per link and carry a `maxlog=1` warning whose firing order
   would otherwise become worker-dependent;
 - `AerodynamicCoefficientConstant`, `AerodynamicCoefficientNoBallisticFlight`
-  and `AerodynamicCoefficientMeshSurrogate`, which are out of this
-  workstream's scope;
+  and `AerodynamicCoefficientMeshSurrogate`, which are left for
+  later;
 - the IMEX-partitioned call (`partition !== nothing`), like every other
   pre-pass.
 
@@ -180,9 +180,8 @@ Consequently:
 - At one thread it does not, and the 1-thread ratio is expected to be 1.00
   unless `_rhs_all_prepass_effectors` also learns the aero trait.
 
-That is a one-line change in `setup.jl`, which this workstream does not own.
-It goes in the final report as an exact unapplied diff rather than in the
-branch, for two reasons beyond ownership. It changes the *route* a serial aero
+That is a one-line change in `setup.jl`, and it is deliberately kept out of
+this change, for two reasons. It changes the *route* a serial aero
 constellation takes, which is a different claim from "the batch reproduces the
 queue" and needs its own before/after dump; and conflating the two would make
 a single ratio unreadable. The parity test's route-equivalence check (section
@@ -215,7 +214,7 @@ hoisted route (which is a pure hoist, no branch change at all) otherwise:
 - every active satellite resolves to the same density model object
   (`_density_batch_model_for_callback` returns non-`nothing`);
 - `!density_model_work_is_heavy(model)` — i.e. not native GRAM. GRAM's
-  locking belongs to WS11b and is not touched here, and serializing native
+  locking is not touched here, and serializing native
   GRAM into a one-thread `getDensityBatch!` would be a regression rather than
   a win;
 - `!cb_env.density_freeze_per_step` and `!cb_env.vacuum_gram_cache_enabled` —
@@ -238,7 +237,7 @@ asserts on a sweep of altitudes rather than on the author's reading of the
 source.
 
 This change is in the *density sampling path*, not in the density models:
-`src/environment/atmosphere/density_models.jl` is WS11b's and is not edited.
+`src/environment/atmosphere/density_models.jl` is not edited.
 
 ## 4. Why every operation stays in the same order, with no reassociation and no FMA
 
@@ -289,7 +288,7 @@ density modes, and the IMEX partition all keep today's path.
 
 ## 5. What is measured, and how
 
-All measurement rules come from the WS11 common contract: explicit
+Measurement rules: explicit
 `--threads`, at most 8, one Julia process at a time, `uptime` and a `julia`
 process check before any timing, and ratios between two runs in one process
 state — never absolute benchmarks.
@@ -313,9 +312,9 @@ at 1 thread so the two dumps are comparable by construction:
 
 | Case | N | Why |
 |---|---|---|
-| `aero_64sat_l50_expatm_100s` | 64 | the WS11 common contract's 64-spacecraft exponential aero constellation |
+| `aero_64sat_l50_expatm_100s` | 64 | the 64-spacecraft exponential aero reference constellation |
 | `atmo256_exponential_10min` | 256 | the catalog's registered 256-spacecraft exponential rung |
-| `aero_1024sat_l50_expatm_100s` | 1024 | the contract's 1024-spacecraft exponential case |
+| `aero_1024sat_l50_expatm_100s` | 1024 | the 1024-spacecraft exponential case |
 | `montecarlo_heavy_aerobraking` | 1 | Mars, exponential atmosphere, inverse-square gravity — the single-spacecraft path, which must be untouched |
 | `multi_64_high_fidelity` | 64 | harmonics + SRP + aero, i.e. aero next to a *batchable* effector in the same tuple |
 
@@ -338,7 +337,7 @@ flat route the pre-passes live on). They are different code and neither
 substitutes for the other.
 
 The GRAM look-ahead constellation and the `mcgrid_8sat_16mc` campaign from the
-WS11 common reference set are covered by the identity argument rather than by
+reference set are covered by the identity argument rather than by
 a dump only if neither change can reach them; if either can, they are dumped
 too, and the final report says which were skipped and why.
 

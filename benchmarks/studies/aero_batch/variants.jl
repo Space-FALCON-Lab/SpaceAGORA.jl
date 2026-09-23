@@ -1,9 +1,9 @@
-# WS11e identity-and-ratio driver for the aerodynamic / density constellation
+# Identity-and-ratio driver for the aerodynamic / density constellation
 # cases.
 #
 # Two jobs, one script, deliberately modeled on
-# benchmarks/studies/third_body_cost/variants.jl, whose `--dump` output an
-# earlier workstream compared with `cmp` byte for byte:
+# benchmarks/studies/third_body_cost/variants.jl, whose `--dump` output has
+# already been compared with `cmp` byte for byte:
 #
 #   1. `--dump=<prefix>` writes the FULL state history of each case (every
 #      saved time, then every component of every spacecraft at that time) as
@@ -17,7 +17,7 @@
 # builders, so the constellation geometry, tolerances, step cap and mission are
 # the catalog's and not this script's. The `aero_<N>sat_l50_expatm_<S>s` builder
 # branch accepts any N by regex even though the catalog only registers 16 and
-# 4096, which is how the 64/256/1024 rungs this workstream needs are reached.
+# 4096, which is how the 64/256/1024 rungs are reached.
 #
 # Usage (one Julia process at a time; check `uptime` first):
 #   julia --project=. --threads=1 benchmarks/studies/aero_batch/variants.jl \
@@ -50,7 +50,7 @@ ab_arg(args, key, default) = begin
 end
 ab_flag(args, key)::Bool = any(a -> a == "--$key", args)
 
-# Short names for the cases this workstream owns, mapped to the catalog case
+# Short names for the aero/density reference cases, mapped to the catalog case
 # name the builder understands. The mission lengths are the catalog's own
 # (100 s for the P6 density ladder, 10 min for the B10 atmosphere ladder);
 # nothing here invents a duration.

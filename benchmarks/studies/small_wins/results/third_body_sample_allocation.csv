@@ -1,0 +1,3 @@
+variant,bytes_per_call,measured_via
+before_ws10c_tip_adb343566,4272.0,benchmarks/studies/small_wins/third_body_sample_allocation.jl (checked out at adb343566)
+after_this_change,192.0,benchmarks/studies/small_wins/third_body_sample_allocation.jl

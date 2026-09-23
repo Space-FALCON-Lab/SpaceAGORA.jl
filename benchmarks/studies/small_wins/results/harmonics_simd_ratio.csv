@@ -1,0 +1,4 @@
+case,n_sats,threads,mode,wall_before_s,wall_after_s,ratio_before_over_after,dump_bytes_identical
+gravity_256sat_l50_vacuum_5800s,256,1,serial,0.768,0.596,1.289,4868424
+gravity_4096sat_l50_vacuum_5800s,4096,1,serial,15.396,14.216,1.083,77859144
+gravity_4096sat_l50_vacuum_5800s,4096,8,inner_only,4.201,3.487,1.205,not_dumped_at_8thr

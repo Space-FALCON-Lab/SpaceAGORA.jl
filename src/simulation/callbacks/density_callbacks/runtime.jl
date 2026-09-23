@@ -321,8 +321,16 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
             # own dispatch, so its width comes from a heavy-work decision rather
             # than from `decision`, which now describes the kinematics pre-fill
             # above and collapses to 1 on a light model.
+            # lock_free: the pool's workers each hold their own GRAM instance
+            # behind their own lock, so the `:density_callback` source's
+            # 16-thread floor -- which exists because native GRAM is serialized
+            # on the shared lock -- does not apply to them. Without this the
+            # width is pinned to 1 below 16 threads and the pooled call declines,
+            # whatever SPACEAGORA_GRAM_ISOLATED_POOL says.
             pool_allotment = use_gram_isolated_pool ?
-                _density_callback_thread_decision(p, args, num_sats; heavy_work=true).allotment :
+                _density_callback_thread_decision(
+                    p, args, num_sats; heavy_work=true, lock_free=true
+                ).allotment :
                 decision.allotment
             pooled = use_gram_isolated_pool && _gram_isolated_pool_batch_eval!(
                 p.shared_buffers.densities,

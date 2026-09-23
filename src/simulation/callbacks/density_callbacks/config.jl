@@ -73,16 +73,57 @@ end
     return num_sats >= _density_batch_threshold()
 end
 
+"""
+    _gram_isolated_pool_mode() -> Symbol
+
+Whether the density callback's batch route spreads native GRAM across per-worker
+instances instead of evaluating it serially behind the process-wide lock.
+
+Default `auto`, which means on above [`_gram_isolated_pool_threshold`](@ref)
+native-GRAM items. It was `off` until the pool was measured
+(`docs/architecture/gram_thread_scaling.md`, and
+`benchmarks/studies/gram_thread_scaling/results/`): the pool is bit-identical to
+the locked path, and at 1024 spacecraft it is 1.90x faster at 8 threads and
+1.65x at 4. Below the threshold it loses, which is why `auto` and not `on`.
+"""
 @inline function _gram_isolated_pool_mode()::Symbol
-    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_GRAM_ISOLATED_POOL"; default="off")
+    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_GRAM_ISOLATED_POOL"; default="auto")
 end
 
+"""
+    _gram_isolated_pool_threshold() -> Int
+
+How many items must really reach native GRAM before the pool is worth building.
+
+1024, SOURCED from `benchmarks/studies/gram_thread_scaling/results/gram_pool_scaling_*`:
+at 256 spacecraft the pool is slower than the locked path at every thread count
+and every width measured, down to 0.49x at 8 threads and width 8; at 1024 it is
+faster at 4 and 8 threads in both density paths. The mission-length control in
+the same directory shows the 256 loss is not the pool's build cost waiting to be
+amortized -- ten times the mission moves it from 0.68x only to 0.80x -- so the
+axis that decides is the number of native GRAM calls per callback, not the
+length of the run.
+"""
 @inline function _gram_isolated_pool_threshold()::Int
-    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD", 4)
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD", 1024)
 end
 
+"""
+    _gram_isolated_pool_max_workers() -> Int
+
+The most native GRAM instances the pool will build.
+
+Capped at 4, SOURCED from the same CSVs: four is the fastest width measured in
+all four winning cells -- 1.90x against 1.76x at width 8 and 1.64x at width 2
+(8 threads, freeze-per-step), 1.65x against 1.41x and 1.37x (4 threads), and the
+same ordering in both look-ahead rows. Each further instance is also a further
+native GRAM image resident in the process, so the cap is the cheap side of the
+trade in memory as well as in time.
+"""
 @inline function _gram_isolated_pool_max_workers()::Int
-    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS", max(1, Threads.nthreads()))
+    return ParallelPolicy.parse_thread_threshold_env(
+        "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS", min(4, max(1, Threads.nthreads()))
+    )
 end
 
 @inline function _gram_isolated_pool_enabled(num_items::Int)::Bool
@@ -318,11 +359,22 @@ end
     return _density_callback_thread_decision(nothing, args, num_sats; heavy_work=heavy_work)
 end
 
+# `lock_free` is for one caller: the isolated GRAM pool's width
+# (density_callbacks/runtime.jl). The `:density_callback` source carries a
+# 16-thread minimum budget that exists, by its own comment below, because native
+# GRAM is serialized behind the process-wide lock and oversubscribing it wastes
+# cycles fighting for that lock. The pool is the thing that takes GRAM off that
+# lock -- each worker holds its own instance behind its own lock -- so holding it
+# to that floor is circular, and on any process with fewer than 16 threads it
+# pins the pool's width to 1, fails the pooled call's own `workers > 1` guard,
+# and silently returns the run to the locked path. `:density_callback_lockfree`
+# is the source that already exists for exactly this distinction.
 @inline function _density_callback_thread_decision(
     p,
     args::SimulationConfiguration,
     num_sats::Int;
-    heavy_work::Bool=true
+    heavy_work::Bool=true,
+    lock_free::Bool=false
 )
     env = _callback_env_config(p)
     penv = _policy_env_config(p)
@@ -354,7 +406,8 @@ end
     # has no such cost, so it gets the general default floor instead via a
     # separate source category, rather than being held to the same 16-thread gate
     # for no reason (see PARALLELIZATION_CURRENT_STATE.md / Finding 1).
-    source = model isa EnvironmentModels.GRAMAtmosphereModel ? :density_callback : :density_callback_lockfree
+    source = (model isa EnvironmentModels.GRAMAtmosphereModel && !lock_free) ?
+        :density_callback : :density_callback_lockfree
     # heavy_only is passed unconditionally: the guard only bites when the caller
     # says the per-satellite body is light, and `:on` overrides it either way.
     # See density_model_work_is_heavy for what "light" costs here.

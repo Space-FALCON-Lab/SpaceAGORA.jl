@@ -256,6 +256,69 @@ end
     return nothing
 end
 
+"""
+    _results_thin_stride()::Int
+
+Opt-in results thinning stride, read from `SPACEAGORA_RESULTS_THIN_STRIDE`
+(default `"1"`, meaning no thinning). Any value `<= 1` or unparseable is
+treated as `1`. See `_thin_results_segment` for what a stride of `k` keeps.
+"""
+@inline function _results_thin_stride()::Int
+    raw = strip(_engine_env_get("SPACEAGORA_RESULTS_THIN_STRIDE", "1"))
+    parsed = tryparse(Int, raw)
+    (parsed === nothing || parsed < 1) ? 1 : parsed
+end
+
+"""
+    _results_final_only()::Bool
+
+Opt-in "final state only" results thinning, read from
+`SPACEAGORA_RESULTS_FINAL_ONLY` (default `"0"`/off). Takes priority over
+`_results_thin_stride` when both are set.
+"""
+@inline function _results_final_only()::Bool
+    lowercase(strip(_engine_env_get("SPACEAGORA_RESULTS_FINAL_ONLY", "0"))) in ("1", "true", "yes")
+end
+
+"""
+    _thin_results_segment(times, data)
+
+Opt-in state thinning for the *written results output* (CSV / results
+bundle), NOT for the returned `ODESolution` -- `run_simulation`'s
+`return_solution=true` path is unaffected by either setting.
+
+With both settings at their default (off), this is the identity: the exact
+`times`/`data` vectors already built by the caller are returned unchanged,
+so the default output is byte-identical to before this function existed.
+
+With `SPACEAGORA_RESULTS_FINAL_ONLY=1`, only the last saved state is kept.
+Otherwise, with `SPACEAGORA_RESULTS_THIN_STRIDE=k` (k > 1), every k-th saved
+state is kept, always including the final state (a checkpointed or
+callback-driven save cadence need not land exactly on a multiple of k, and a
+results file that silently dropped the mission-end value would be a
+correctness hazard for anything reading it).
+
+Every element of the returned vectors is an element of the input vectors --
+no state is recomputed or copied element-wise -- so a retained state is
+always byte-identical to what the default (unthinned) path would have
+written for that same saved time.
+"""
+@inline function _thin_results_segment(
+    times::Vector{Float64},
+    data::Vector{SimulationModel.SaveData},
+)::Tuple{Vector{Float64}, Vector{SimulationModel.SaveData}}
+    isempty(times) && return (times, data)
+    if _results_final_only()
+        return ([times[end]], [data[end]])
+    end
+    stride = _results_thin_stride()
+    stride <= 1 && return (times, data)
+    n = length(times)
+    idxs = collect(1:stride:n)
+    idxs[end] == n || push!(idxs, n)
+    return (times[idxs], data[idxs])
+end
+
 function _save_simulation_results_if_enabled!(
     args,
     solver_mode::Symbol,
@@ -278,6 +341,10 @@ function _save_simulation_results_if_enabled!(
     else
         checkpoint_active ? checkpoint_saved_data : saved_values.saveval
     end
+    results_times, results_data = _thin_results_segment(
+        convert(Vector{Float64}, results_times),
+        convert(Vector{SimulationModel.SaveData}, results_data),
+    )
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = _write_results_csv!(results_df, args)
     if _typed_save_bundle_enabled()

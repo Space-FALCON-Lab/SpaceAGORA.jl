@@ -14,7 +14,7 @@
 # hook. Each plan gets its own one-row TOML store, the path is handed to the
 # engine with SPACEAGORA_RHS_CALIBRATION_PATH, and
 # SPACEAGORA_RHS_CALIBRATE_MIN_SOLVE_S is raised past any solve length here so
-# the cached verdict is honoured rather than re-swept (`_rhs_calib_cached_verdict`).
+# the cached verdict is honored rather than re-swept (`_rhs_calib_cached_verdict`).
 # The `heuristic` row instead runs SPACEAGORA_RHS_CALIBRATE=off, which is exactly
 # what the pinned routes in the paper harness run.
 #
@@ -71,7 +71,7 @@ const RHD_PINDIR = mktempdir(; prefix="rhd_pins_")
 # SOURCED for 16/64/256/1024/4096 from PPC_L50_ISO_MISSION_S
 # (benchmarks/studies/parallelization_performance/cases.jl), so those rungs are
 # the same workload the archived P1 runs measured. DERIVED for 32/128/512 as the
-# geometric mean of the two neighbouring sourced rungs, which keeps the ladder's
+# geometric mean of the two neighboring sourced rungs, which keeps the ladder's
 # own shape (its duration falls with N) without inventing a new one.
 const RHD_MISSION_S = Dict{Int, Float64}(
     1 => 4150000.0,
@@ -172,7 +172,7 @@ function rhd_write_pin(path::String, sig::String, plan)
             "scheduler" => plan.scheduler,
             "elapsed_mean_ns" => 1.0,
             # Non-zero so the solve-length gate reads "measured"; tiny so the
-            # verdict is honoured rather than re-swept. See the header.
+            # verdict is honored rather than re-swept. See the header.
             "solve_ns" => 1.0,
             "heuristic_votes" => 0,
             "sweep_ns" => 1.0,
@@ -198,7 +198,7 @@ function rhd_env_pairs(plan, sig::String, n::Int)
         push!(pairs, "SPACEAGORA_RHS_CALIBRATE" => "auto")
         push!(pairs, "SPACEAGORA_RHS_CALIBRATION_PATH" => path)
         # Every solve here is shorter than this, so the cached verdict is always
-        # honoured and the sweep never runs.
+        # honored and the sweep never runs.
         push!(pairs, "SPACEAGORA_RHS_CALIBRATE_MIN_SOLVE_S" => "1.0e9")
     end
     return pairs

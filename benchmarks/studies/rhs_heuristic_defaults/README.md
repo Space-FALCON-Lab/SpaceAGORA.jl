@@ -42,7 +42,7 @@ Through the production calibration cache, not a private hook: each plan gets a
 one-row TOML store, handed to the engine with
 `SPACEAGORA_RHS_CALIBRATION_PATH`, with
 `SPACEAGORA_RHS_CALIBRATE_MIN_SOLVE_S` raised past any solve length here so the
-cached verdict is honoured rather than re-swept. The `heuristic` row runs
+cached verdict is honored rather than re-swept. The `heuristic` row runs
 `SPACEAGORA_RHS_CALIBRATE=off` instead, which is exactly what the pinned routes
 in the paper harness run. Every row records the plan the engine reported having
 applied (`applied_source`/`applied_mode`/`applied_allotment`/`applied_scheduler`),

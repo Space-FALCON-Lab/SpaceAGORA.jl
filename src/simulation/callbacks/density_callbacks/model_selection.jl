@@ -201,6 +201,39 @@ function _warm_gram_pool_model!(
     return nothing
 end
 
+"""
+    _gram_isolated_pool_native_count(hs, p) -> Int
+
+How many of the staged altitudes would actually reach native GRAM.
+
+`_gram_isolated_pool_density_state` answers two of them without touching GRAM at
+all: above 2000 km it returns vacuum, and above the entry interface on a
+non-keplerian run it returns the analytic `density_polyfit`. The pool exists to
+spread native GRAM calls; if there are none to spread, building it is pure loss,
+and the loss is not small. Measured on this workstation, 1024 spacecraft all
+above a 120 km entry interface on a non-keplerian run at 8 threads: 0.19 s
+locked against 0.35 s pooled, a factor of 1.83, all of it the four native GRAM
+constructions that `_ensure_gram_isolated_pool!` performs before the per-item
+gate ever runs.
+
+One pass over the staged altitudes, on the thread that is about to dispatch, is
+enough to see that coming. Nothing it decides changes a returned value: both
+arms compute the same vacuum and polyfit results for those items, and the pool
+has been proved bit-identical to the locked path for the rest.
+"""
+@inline function _gram_isolated_pool_native_count(hs::AbstractVector{<:Real}, p)::Int
+    EI = p.args.environment_model.EI * 1e3
+    keplerian = p.args.mission_configuration.keplerian
+    count = 0
+    @inbounds for i in eachindex(hs)
+        h = Float64(hs[i])
+        h > 2000.0e3 && continue
+        (!(h - EI <= 0.0) && !keplerian) && continue
+        count += 1
+    end
+    return count
+end
+
 @inline function _gram_isolated_pool_batch_eval!(
     rhos::AbstractVector{Float64},
     Ts::AbstractVector{Float64},
@@ -241,6 +274,11 @@ function _gram_isolated_pool_batch_eval!(
     if el_time isa AbstractVector{<:Real}
         length(el_time) == n || return false
     end
+
+    # The threshold is about how much native GRAM work there is, not how many
+    # spacecraft there are, so it is applied to the items that would really call
+    # GRAM. See `_gram_isolated_pool_native_count`.
+    _gram_isolated_pool_enabled(env, _gram_isolated_pool_native_count(hs, p)) || return false
 
     max_allotment = min(max(1, allotment_hint), env.gram_isolated_pool_max_workers)
     workers = ParallelPolicy.thread_worker_count(n, max_allotment)

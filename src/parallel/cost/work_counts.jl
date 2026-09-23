@@ -158,7 +158,8 @@ end
 # Flat-queue node predicates, mirrored from SimulationEngine.
 #
 # SOURCE OF TRUTH: `_batchable_effector` / `_harmonics_prepass_effector` /
-# `_count_flat_queue_only_effectors` in src/simulation/engine/dynamics_rhs.jl.
+# `_aero_prepass_effector` / `_count_flat_queue_only_effectors` in
+# src/simulation/engine/dynamics_rhs.jl.
 # They are duplicated here rather than called because ParallelCost is included
 # from core/simulation_model.jl, which the engine is built on top of -- calling
 # upward would invert the dependency.
@@ -176,13 +177,20 @@ end
 @inline _cost_harmonics_prepass_effector(::Any)::Bool = false
 @inline _cost_harmonics_prepass_effector(::GravitationalHarmonicsModel)::Bool = true
 
+# The fM aerodynamic model has its own flat-route pre-pass unless it samples
+# the atmosphere per link, in which case it stays on the queue.
+@inline _cost_aero_prepass_effector(::Any)::Bool = false
+@inline _cost_aero_prepass_effector(e::AerodynamicCoefficientfM)::Bool =
+    !DynamicEffectors.AerodynamicEffectors._per_link_enabled(e)
+
 """
     flat_queue_node_effector(effector; partition_active = false) -> Bool
 
 Whether an effector produces flat-queue work items.
 
 Effectors resolved by a pre-pass -- the batchable ones that write straight into
-`totals` from position buffers, and harmonics with its own per-satellite pre-pass -- have
+`totals` from position buffers, harmonics with its own per-satellite pre-pass,
+and the fM aerodynamic model with its own -- have
 already written their contribution by the time the queue runs, and the queue
 skips them. Counting them as nodes overstates `queue_nodes` by a factor of
 (total effectors)/(queue-only effectors), which for a vacuum harmonics-only
@@ -195,7 +203,8 @@ through the queue, which is what the `partition === nothing` guard in
 """
 @inline function flat_queue_node_effector(effector; partition_active::Bool = false)::Bool
     partition_active && return true
-    return !(_cost_batchable_effector(effector) || _cost_harmonics_prepass_effector(effector))
+    return !(_cost_batchable_effector(effector) || _cost_harmonics_prepass_effector(effector) ||
+             _cost_aero_prepass_effector(effector))
 end
 
 """

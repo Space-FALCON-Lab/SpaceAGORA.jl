@@ -180,7 +180,7 @@ Not batched, and left on the queue:
 Nothing in `_aero_pure_wrench` changes in change A. The arithmetic is the same
 function, called the same number of times, with the same inputs.
 
-#### Which route a run is actually on, and the one line outside these files
+#### Which route a run is actually on, and the serial admission
 
 Change A only takes effect where the flat constellation queue is taken, and a
 serial aero constellation is not on it. `_rhs_execution_plan`
@@ -191,19 +191,26 @@ predicate lists the batchable kernels and the harmonics pre-pass, so a
 and routes to `:satellite_batch`. A forced `SPACEAGORA_RHS_EXECUTION_MODE=flat`
 does not override it either: that branch has the same `budget <= 1` fallback.
 
-Consequently:
+The batch was therefore first shipped on its own, with 1-thread ratios of
+1.00 as predicted (section 7), and the route admission followed as a separate
+change with its own proof: `_rhs_all_prepass_effectors` now also accepts
+`_aero_prepass_effector`, so at budget 1 the auto route sends a
+`(harmonics, aero)` constellation to the flat queue, where the queue is never
+built, the harmonics coefficient sweep is batched and the atmosphere is sampled
+once per evaluation. Kept separate because it changes the *route* a serial
+aero constellation takes, which is a different claim from "the batch
+reproduces the queue". Three things about it:
 
-- At a multi-thread budget (the 8-thread measurements, and every constellation
-  run that the router sends to the flat queue) change A applies.
-- At one thread it does not, and the 1-thread ratio is expected to be 1.00
-  unless `_rhs_all_prepass_effectors` also learns the aero trait.
-
-That is a one-line change in `setup.jl`, and it is deliberately kept out of
-this change, for two reasons. It changes the *route* a serial aero
-constellation takes, which is a different claim from "the batch reproduces the
-queue" and needs its own before/after dump; and conflating the two would make
-a single ratio unreadable. The parity test's route-equivalence check (section
-6, item 5) is the evidence that would support it.
+- The budget-1 branch is gated by `flat_min_sats` (24 by default) only. The
+  64-spacecraft-per-worker floor of `_rhs_flat_default_admits` is applied in
+  the single-harmonics branch when `viable_workers >= 2` and in the generic
+  multi-thread flat branch, both of which a budget-1 plan never reaches; at an
+  allotment of one the flat route spawns no workers, so there is nothing for
+  the floor to amortize.
+- An explicit `SPACEAGORA_RHS_EXECUTION_MODE=flat` request at budget 1 still
+  falls back to the per-satellite batch; only the auto route admits it.
+- A per-link-atmosphere fM model is not a pre-pass effector, so a stack
+  carrying one stays on the per-satellite batch at budget 1.
 
 The same is true of the RHS-side atmosphere pre-sample that change B batches:
 `_prefill_environment_samples!` is called only from
@@ -498,21 +505,76 @@ predicts; allocation halves anyway because of the J2 check. At eight threads,
 on the flat route, the 1024-spacecraft case is 1.33-1.36x faster and allocates
 half as much. Raw: `results/ratio_{1,8}t_{before,after}_r{1,2}.csv`.
 
-### Follow-ups outside this change
+### Follow-up changes
 
-- `setup.jl`, `_rhs_all_prepass_effectors`: admit `_aero_prepass_effector`,
-  so a serial `(harmonics, aero)` constellation takes the flat route and the
-  harmonics pre-pass. This is the serial win (harmonics scalar is 67% of the
-  serial profile). The byte-identical satellite-route and flat-route dumps
-  above are its evidence; it needs its own before/after dump once applied.
-- `src/parallel/cost/work_counts.jl`: the cost model's mirror of the flat-queue
-  predicates does not know the aero pre-pass, so it counts N aero queue nodes
-  where the queue now does none. Routing input only, not dynamics.
-- `_reduce_flat_effector_slots_range!` indexes the heterogeneous effector
-  tuple at runtime per spacecraft per effector
-  (`_flat_slot_selected(dynamic_effectors[eff_idx], partition)`); after this
-  change it is the largest allocation site left on the flat route (about half
-  of the remaining bytes at 1024 spacecraft, 8 threads). A precomputed Bool
-  mask, as `_prepare_rhs_flat_work_items!` already uses, would remove it
-  without touching the summation order.
+Three changes followed the batch, each proved against the commit before it.
+Note that the catalog's P6 density cases (`aero_<N>sat_l50_expatm_<S>s`) were
+moved onto a shared constellation geometry between the batch and these
+changes, so their dumps below are not comparable with the table above; each
+before/after pair uses the same catalog.
+
+**Serial route admission** (`setup.jl`, section 3A). State histories at 1
+thread:
+
+| Case | N | Bytes | `cmp` |
+|---|---|---|---|
+| `aero_64sat_l50_expatm_100s` | 64 | 106704 | identical |
+| `aero_256sat_l50_expatm_100s` | 256 | 458976 | identical |
+| `aero_1024sat_l50_expatm_100s` | 1024 | 1704144 | identical |
+| `atmo256_exponential_10min` | 256 | 2065392 | identical |
+| `montecarlo_heavy_aerobraking` (Mars) | 1 | 1619136 | identical |
+
+The recorded results tables (every save field, including drag/lift/cross,
+heat rate, winds and the visualization density column), dumped by
+`outputs_dump.jl` for the 64 and 256 aero cases and `atmo256`, are
+byte-identical too. `rhs_dump.jl` on the 256 and 1024 cases shows the
+derivative and the drag/lift/cross caches identical and the shared density
+buffers different: the per-satellite route never writes them inside an RHS
+call (they keep their initial values between density-callback firings), the
+flat route writes the current stage's sample. No output reads them between
+those points — the density callback rewrites them before every save, which is
+why the recorded density column does not move — and the integrated state does
+not depend on them.
+
+Serial ratio, `variants.jl --mode=serial --threads=1`, best of five, rounds
+ordered after, before, after, before; ratio is before over after:
+
+| Case | N | Round 1 | Round 2 | Allocation, before / after |
+|---|---|---|---|---|
+| `aero_256sat_l50_expatm_600s` | 256 | 2.26 | 2.43 | 0.62 |
+| `atmo256_exponential_10min` | 256 | 2.30 | 2.43 | 0.62 |
+| `aero_1024sat_l50_expatm_600s` | 1024 | 2.68 | 2.79 | 0.63 |
+
+Step counts are unchanged (same `nf`). The serial run allocates about 1.6x
+more after the admission: the flat route's slot, state and planet-frame
+buffers and its per-call planning replace the per-satellite loop's stack
+temporaries. It is still 2.3-2.8x faster.
+Raw: `results/serial_route_1t_{before,after}_r{1,2}.csv`.
+
+**Cost-model mirror** (`src/parallel/cost/work_counts.jl`):
+`flat_queue_node_effector` now knows the aero pre-pass (and its per-link
+exclusion), so `constellation_work_counts` stops charging N aero queue nodes
+the queue no longer builds. Routing input only; no dynamics path reads it.
+
+**Slot-reduction mask** (`dynamics_rhs.jl`): `_reduce_flat_effector_slots_range!`
+evaluates `_flat_slot_selected` once per effector into an `NTuple{N, Bool}`
+instead of indexing the heterogeneous effector tuple once per spacecraft per
+effector; loops, statements and summation order unchanged. State histories of
+the 1024 and 256 aero cases and `multi_64_high_fidelity` at 8 threads (forced
+flat) and of the 1024 and 256 cases at 1 thread, and `rhs_dump.jl` outputs of
+the 1024 case and `multi_64_high_fidelity` at 8 threads, are byte-identical to
+the commit before. With the flat route forced at a fixed budget of 8, per
+derivative evaluation at 1024 spacecraft, allocation falls from 2322 to 1121 B
+per spacecraft and the evaluation from 5241 to 4790-4926 us (one process each,
+back to back); on `atmo256` from 3570 to 2370 B. A whole 600 s solve of the
+1024 case at 8 threads in `inner_only` mode: best of three 2.342 s against
+2.480 s (1.06x), allocation 1.79 GiB against 5.27 GiB.
+Raw: `results/mask_8t_{before,after}.csv`.
+
+Whole-solve allocation at 8 threads under `inner_only` depends on the plan
+the run's calibration chose, and varies between processes: one pair of 100 s
+solves in the mask dumps showed the opposite order (0.297 GiB with the old
+reduction, 0.805 GiB with the mask). The fixed-budget per-evaluation numbers
+above are the controlled comparison; the whole-solve 8-thread allocation
+ratios in the table earlier in this section should be read with this in mind.
 

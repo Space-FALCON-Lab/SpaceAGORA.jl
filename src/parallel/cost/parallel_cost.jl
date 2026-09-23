@@ -11,6 +11,8 @@ using ..DynamicEffectors: ConstantGravityModel, InverseSquaredGravityModel
 using ..DynamicEffectors: InverseSquaredJ2GravityModel
 using ..DynamicEffectors: NBodyGravityModel, GravitationalHarmonicsModel
 using ..DynamicEffectors: SolarRadiationPressureModel
+using ..DynamicEffectors: AerodynamicCoefficientfM
+import ..DynamicEffectors
 
 export WorkCounts, MachineConstants, RateCurve, rate_at, effector_cost_terms
 export constellation_work_counts, model_in_cost_domain, flat_queue_node_effector

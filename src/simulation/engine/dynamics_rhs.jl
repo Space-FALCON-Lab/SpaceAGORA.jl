@@ -1347,6 +1347,16 @@ end
     return _effector_in_partition(effector, partition)
 end
 
+# Which effectors' slots count toward the totals, resolved once per call by
+# peeling the effector tuple. Indexing the heterogeneous tuple at a runtime
+# `eff_idx` instead -- once per satellite per effector -- infers to the Union of
+# its element types and allocated each time; NTuple{N, Bool} is homogeneous.
+# The same predicate, evaluated per effector rather than per (satellite,
+# effector), so the mask is exactly the per-item answer.
+@inline _flat_slot_mask(::Tuple{}, partition)::Tuple{} = ()
+@inline _flat_slot_mask(effs::Tuple, partition) =
+    (_flat_slot_selected(first(effs), partition), _flat_slot_mask(Base.tail(effs), partition)...)
+
 # Sum the per-effector slots of satellites lo:hi into totals, in effector
 # order, starting from zero: the same statements as the serial loop
 # (`forces .+= force`), so the flat route reproduces its bits.
@@ -1360,12 +1370,13 @@ function _reduce_flat_effector_slots_range!(
     hi::Int,
 )::Nothing
     n_effectors = length(dynamic_effectors)
+    selected = _flat_slot_mask(dynamic_effectors, partition)
     @inbounds for sat_idx in lo:hi
         is_active[sat_idx] || continue
         f1 = 0.0; f2 = 0.0; f3 = 0.0
         q1 = 0.0; q2 = 0.0; q3 = 0.0
         for eff_idx in 1:n_effectors
-            _flat_slot_selected(dynamic_effectors[eff_idx], partition) || continue
+            selected[eff_idx] || continue
             f1 += slots[1, eff_idx, sat_idx]
             f2 += slots[2, eff_idx, sat_idx]
             f3 += slots[3, eff_idx, sat_idx]

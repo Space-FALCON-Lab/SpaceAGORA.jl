@@ -11,17 +11,14 @@ module AeroBatchParityTests
 # comparison below is `===` on the raw Float64 (or on its bit pattern), never
 # `≈` and never a tolerance.
 #
-# THREADS. The flat constellation queue is only reachable at an inner thread
-# budget above one -- `effective_inner_thread_budget` clamps the budget to the
-# process's thread pool, and both the auto route and an explicit
-# SPACEAGORA_RHS_EXECUTION_MODE=flat request fall back to `:satellite_batch`
-# at budget 1 unless every effector is served by a pre-pass. A
-# (gravity, aero) stack is not. The route-comparison testsets below therefore
-# need a multi-threaded test process; on a single-threaded one they assert
-# that the route really is unavailable (rather than passing silently) and the
-# density-model testsets, which are thread-independent, still run. Run this
-# file with `julia --project=. --threads=4 test/unit/dynamics/aero_batch_parity_tests.jl`
-# to exercise the route comparison.
+# THREADS. At an inner thread budget of one the flat constellation queue is
+# admitted only when every effector is served by a pre-pass; the aerodynamic
+# pre-pass counts, so the (gravity, aero) stack below takes the flat route in
+# any process and the route comparison always runs. The worker-count sweep
+# needs more than one thread and is skipped, visibly, on a single-threaded
+# process. Run this file with
+# `julia --project=. --threads=4 test/unit/dynamics/aero_batch_parity_tests.jl`
+# to exercise every testset.
 
 using Test
 using StaticArrays
@@ -67,10 +64,13 @@ function abp_configuration(
     incidence::Symbol=:max_drag,
     with_panel::Bool=false,
     density_model=EM_ABP.ExponentialAtmosphereModel(planet),
+    per_link_atmosphere::Bool=false,
 )
     effectors = (
         InverseSquaredJ2GravityModel(),
-        AerodynamicCoefficientfM(fixed_attitude_incidence=incidence),
+        AerodynamicCoefficientfM(
+            fixed_attitude_incidence=incidence, per_link_atmosphere=per_link_atmosphere,
+        ),
     )
     return SimulationConfiguration(
         simulation_settings=SimulationSettings(
@@ -179,31 +179,33 @@ const ABP_MULTITHREADED = Threads.nthreads() > 1
 
 @testset "the flat route reproduces the per-satellite route bit for bit" begin
     planet = Earth()
-    if !ABP_MULTITHREADED
-        # Not a skip dressed as a pass: assert the documented reason the
-        # comparison cannot run here, so a future change that makes the flat
-        # route reachable at one thread fails this and gets the comparison
-        # turned back on.
-        args = abp_configuration(planet, 32)
-        flat = abp_derivative(args, "flat", 1, 0.0)
-        @test flat.mode === :satellite_batch
-        @info "aero_batch_parity: single-threaded process, flat-route comparison not run (see this file's header)"
-    else
-        for incidence in (:max_drag, :attitude, :tumbling_average),
-            with_panel in (false, true),
-            n_sats in (9, 32)
+    # Budget 1 is the serial admission of the flat route, which only the auto
+    # route makes (an explicit flat request at budget 1 still falls back to the
+    # per-satellite batch); the wider budget is the threaded one, forced. Both
+    # must reproduce the per-satellite route.
+    budgets = unique((1, min(4, Threads.nthreads())))
+    for incidence in (:max_drag, :attitude, :tumbling_average),
+        with_panel in (false, true),
+        n_sats in (9, 32),
+        budget in budgets
 
-            args = abp_configuration(planet, n_sats; incidence=incidence, with_panel=with_panel)
-            serial = abp_derivative(args, "satellite", 1, 0.0)
-            flat = abp_derivative(args, "flat", min(4, Threads.nthreads()), 0.0)
-            @test serial.mode === :satellite_batch
-            @test flat.mode === :flat_constellation_effector_queue
-            @test abp_count_mismatches(serial.data, flat.data) == 0
-            @test abp_count_vec_mismatches(serial.drag, flat.drag) == 0
-            @test abp_count_vec_mismatches(serial.lift, flat.lift) == 0
-            @test abp_count_vec_mismatches(serial.cross, flat.cross) == 0
-        end
+        args = abp_configuration(planet, n_sats; incidence=incidence, with_panel=with_panel)
+        serial = abp_derivative(args, "satellite", 1, 0.0)
+        flat = abp_derivative(args, budget == 1 ? "auto" : "flat", budget, 0.0)
+        @test serial.mode === :satellite_batch
+        @test flat.mode === :flat_constellation_effector_queue
+        @test abp_count_mismatches(serial.data, flat.data) == 0
+        @test abp_count_vec_mismatches(serial.drag, flat.drag) == 0
+        @test abp_count_vec_mismatches(serial.lift, flat.lift) == 0
+        @test abp_count_vec_mismatches(serial.cross, flat.cross) == 0
     end
+
+    # The auto route at budget 1 admits the flat queue for this stack, and a
+    # per-link-atmosphere model, which stays on the queue, keeps it out.
+    auto = abp_derivative(abp_configuration(planet, 32), "auto", 1, 0.0)
+    @test auto.mode === :flat_constellation_effector_queue
+    per_link = abp_derivative(abp_configuration(planet, 32; per_link_atmosphere=true), "auto", 1, 0.0)
+    @test per_link.mode === :satellite_batch
 end
 
 @testset "the flat route's answer does not depend on the worker count" begin

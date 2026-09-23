@@ -1,0 +1,16 @@
+host,threads,mode,rhs_mode,profile,case,case_name,rep,nsats,wall_s,gc_s,bytes,nf,naccept,nreject,steps,retcode
+space-falcon-1,1,serial,auto,full,aero_256sat_l50_expatm_600s,aero_256sat_l50_expatm_600s,1,256,4.848371,0.435674,698928152,2186,128,0,129,Success
+space-falcon-1,1,serial,auto,full,aero_256sat_l50_expatm_600s,aero_256sat_l50_expatm_600s,2,256,4.323824,0.036817,682854680,2186,128,0,129,Success
+space-falcon-1,1,serial,auto,full,aero_256sat_l50_expatm_600s,aero_256sat_l50_expatm_600s,3,256,4.313954,0.035092,682854856,2186,128,0,129,Success
+space-falcon-1,1,serial,auto,full,aero_256sat_l50_expatm_600s,aero_256sat_l50_expatm_600s,4,256,4.320184,0.035781,682854680,2186,128,0,129,Success
+space-falcon-1,1,serial,auto,full,aero_256sat_l50_expatm_600s,aero_256sat_l50_expatm_600s,5,256,4.383939,0.035697,682854680,2186,128,0,129,Success
+space-falcon-1,1,serial,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,1,1024,21.277025,0.572871,2658362992,2132,125,0,126,Success
+space-falcon-1,1,serial,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,2,1024,20.784804,0.552683,2644614752,2132,125,0,126,Success
+space-falcon-1,1,serial,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,3,1024,21.889813,0.553998,2644614736,2132,125,0,126,Success
+space-falcon-1,1,serial,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,4,1024,21.653428,0.556834,2644614768,2132,125,0,126,Success
+space-falcon-1,1,serial,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,5,1024,22.115702,0.122198,2644614976,2132,125,0,126,Success
+space-falcon-1,1,serial,auto,full,atmo256,atmo256_exponential_10min,1,256,4.223592,0.038010,666127808,2132,125,0,126,Success
+space-falcon-1,1,serial,auto,full,atmo256,atmo256_exponential_10min,2,256,4.195512,0.033934,666127808,2132,125,0,126,Success
+space-falcon-1,1,serial,auto,full,atmo256,atmo256_exponential_10min,3,256,4.214915,0.031276,666127808,2132,125,0,126,Success
+space-falcon-1,1,serial,auto,full,atmo256,atmo256_exponential_10min,4,256,4.295413,0.031004,666128112,2132,125,0,126,Success
+space-falcon-1,1,serial,auto,full,atmo256,atmo256_exponential_10min,5,256,4.348154,0.034555,666127840,2132,125,0,126,Success

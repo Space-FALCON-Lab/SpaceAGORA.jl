@@ -1,0 +1,4 @@
+host,threads,mode,rhs_mode,profile,case,case_name,rep,nsats,wall_s,gc_s,bytes,nf,naccept,nreject,steps,retcode
+space-falcon-1,8,inner_only,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,1,1024,2.480186,0.154829,1937284656,2132,125,0,126,Success
+space-falcon-1,8,inner_only,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,2,1024,2.342476,0.214301,1921200464,2132,125,0,126,Success
+space-falcon-1,8,inner_only,auto,full,aero_1024sat_l50_expatm_600s,aero_1024sat_l50_expatm_600s,3,1024,2.394066,0.217775,1921200480,2132,125,0,126,Success

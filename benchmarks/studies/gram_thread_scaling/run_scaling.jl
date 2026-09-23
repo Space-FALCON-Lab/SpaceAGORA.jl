@@ -17,6 +17,14 @@
 #              a different mechanism behind a different env var.
 #   freeze     direct native GRAM with density frozen per accepted step.
 #
+# What the pooled arm's wall time includes, and must: every solve builds its own
+# pool. `run_simulation` allocates fresh `ODEParams` and
+# `_initialize_gram_isolated_pool_buffers!` empties the instance vector
+# (simulation/engine/execution.jl), so `_ensure_gram_isolated_pool!` constructs
+# `workers` native GRAM models on the first callback of every run. That is a
+# fixed per-solve cost a short mission cannot amortize, and it is a real cost of
+# using the pool, so it is inside the measured region rather than warmed away.
+#
 # Every (size, density path) group is solved back to back in one process, in one
 # process state, locked first and then each pool width. Only ratios within a
 # group are meaningful; the absolute seconds are recorded so a group can be

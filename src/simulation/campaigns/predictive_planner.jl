@@ -31,6 +31,7 @@
 # unchanged, bit for bit.
 
 using ..SimulationModel: ParallelCost
+import ..SimulationEngine
 import TOML
 
 """
@@ -258,6 +259,44 @@ PredictiveCostTerms(; heap_scale::Real = 1.0, round_tail::Real = 0.0, startup::R
     PredictiveCostTerms(heap_scale, round_tail, startup)
 
 """
+    InnerSpeedupCurve(speedup; source = "")
+
+How much faster one sample runs on `b` threads than on one: `speedup[b]` for
+`b = 1, ..., length(speedup)`, with `speedup[1] == 1` and never decreasing.
+Read from the RHS calibration store's per-candidate timings
+(`SimulationEngine.rhs_inner_speedup_curve`); past the widest measured width it
+stays at its last value, since nothing measured says more.
+
+It is the RHS evaluation's speedup, applied to the whole sample. That is
+ASSUMED: a sample also spends time outside the RHS (the solver's own linear
+algebra, callbacks, output), which does not speed up, so the curve is an upper
+bound on the sample's speedup and the margin rule carries the difference.
+"""
+struct InnerSpeedupCurve
+    speedup::Vector{Float64}
+    source::String
+    function InnerSpeedupCurve(speedup::AbstractVector{<:Real}, source::AbstractString)
+        isempty(speedup) && throw(ArgumentError("InnerSpeedupCurve needs at least one width."))
+        v = Float64.(collect(speedup))
+        all(x -> isfinite(x) && x > 0.0, v) || throw(ArgumentError(
+            "InnerSpeedupCurve speedups must be finite and positive; got $(v)."))
+        # b = 1 is the reference; a wider budget can always run the narrower
+        # plan, so the curve never falls.
+        v[1] = 1.0
+        for b in 2:length(v)
+            v[b] = max(v[b], v[b - 1])
+        end
+        return new(v, String(source))
+    end
+end
+
+InnerSpeedupCurve(speedup::AbstractVector{<:Real}; source::AbstractString = "") =
+    InnerSpeedupCurve(speedup, source)
+
+@inline inner_speedup(c::InnerSpeedupCurve, b::Integer)::Float64 =
+    c.speedup[clamp(Int(b), 1, length(c.speedup))]
+
+"""
     PredictivePlan
 
 One candidate campaign plan and its predicted cost.
@@ -268,8 +307,11 @@ One candidate campaign plan and its predicted cost.
 - `local_slots` -- coordinator samples running beside the pool (mixed
   dispatch); zero for every route but `:process`.
 - `consumers` -- `workers + local_slots`, i.e. how many samples are in flight.
-- `inner_thread_budget` -- threads one sample may use. Always `1` when
-  `consumers > 1` (see the module docs for why v1 never splits inward).
+- `inner_thread_budget` -- threads one sample may use: `1` for every
+  concurrent plan unless an inner-speedup curve is known, in which case the
+  planner also offers plans whose samples run on `b > 1` threads (threads-route
+  tasks, the local slots of a mixed plan, or the one consumer of `:none`). The
+  pool's workers always run one thread each.
 - `static_equivalent` -- true when this plan is what a pinned static route
   would have run: `:threads@min(n,T)`, `:process@L=0`, or `:none`.
 - `makespan` -- predicted campaign time in units of one uncontended sample.
@@ -442,52 +484,62 @@ end
     return max(1.0, heap_scale * raw)
 end
 
+# `inner_time` is the sample time at the plan's inner budget relative to one
+# thread, `1 / speedup(b)`; it multiplies every consumer on this process's heap
+# and the `:none` consumer, never a pool worker (one thread each).
 function _predictive_slowdowns(route::Symbol, workers::Int, local_slots::Int,
                                constants::Union{Nothing, ParallelCost.MachineConstants},
-                               remote_overhead::Float64, heap_scale::Float64 = 1.0)
+                               remote_overhead::Float64, heap_scale::Float64 = 1.0,
+                               inner_time::Float64 = 1.0)
     worker_s = 1.0 + remote_overhead
     if route === :process
-        heap_s = _predictive_scaled_heap(constants, local_slots, heap_scale)
+        heap_s = _predictive_scaled_heap(constants, local_slots, heap_scale) * inner_time
         return (vcat(fill(worker_s, workers), fill(heap_s, local_slots)), worker_s, heap_s)
     elseif route === :threads
         # Threads-route tasks and mixed-dispatch local slots are the same
         # thing: samples sharing one process's heap and allocator. That is why
         # both are priced with `predictive_heap_slowdown`.
-        heap_s = _predictive_scaled_heap(constants, workers, heap_scale)
+        heap_s = _predictive_scaled_heap(constants, workers, heap_scale) * inner_time
         return (fill(heap_s, workers), 1.0, heap_s)
     end
-    return ([1.0], 1.0, 1.0)
+    return ([inner_time], 1.0, inner_time)
 end
 
 function _predictive_plan(route::Symbol, workers::Int, local_slots::Int, n_samples::Int,
                           static_equivalent::Bool,
                           constants::Union{Nothing, ParallelCost.MachineConstants},
                           remote_overhead::Float64 = PREDICTIVE_REMOTE_OVERHEAD;
-                          terms::PredictiveCostTerms = PredictiveCostTerms())::PredictivePlan
+                          terms::PredictiveCostTerms = PredictiveCostTerms(),
+                          inner_budget::Int = 0,
+                          inner_time::Float64 = 1.0)::PredictivePlan
     slowdowns, worker_s, heap_s = _predictive_slowdowns(route, workers, local_slots, constants,
-                                                        remote_overhead, terms.heap_scale)
+                                                        remote_overhead, terms.heap_scale,
+                                                        inner_time)
     consumers = route === :process ? workers + local_slots : workers
     pool = route === :process ? workers : 0
+    # `0` is the planner's spelling of "no budget declared" for the serial
+    # plan; everything concurrent declares one, `1` unless a curve priced more.
+    budget = inner_budget > 0 ? inner_budget : (consumers > 1 ? 1 : 0)
     return PredictivePlan(
         route, workers, local_slots, consumers,
-        consumers > 1 ? 1 : 0,
+        budget,
         static_equivalent,
         predictive_plan_makespan(n_samples, pool, slowdowns, terms),
         worker_s, heap_s,
     )
 end
 
-# `inner_thread_budget = 0` above is the planner's spelling of "this plan does
-# not declare a budget" for the serial plan, which must leave the sample the
-# whole pool. Everything concurrent declares 1.
+# `inner_thread_budget = 0` is the planner's spelling of "this plan does not
+# declare a budget" for the serial plan, which must leave the sample the whole
+# pool. Everything concurrent declares its budget, 1 unless a curve priced more.
 @inline function _predictive_declared_budget(plan::PredictivePlan)::Int
-    return plan.consumers > 1 ? 1 : max(1, plan.inner_thread_budget)
+    return max(1, plan.inner_thread_budget)
 end
 
 """
     predictive_plan_candidates(; n_samples, threads, process_workers,
                                threads_candidate, local_slots_cap, constants,
-                               config, terms) -> Vector{PredictivePlan}
+                               config, terms, inner_curve) -> Vector{PredictivePlan}
 
 The v1 plan space, deliberately small:
 
@@ -516,6 +568,7 @@ function predictive_plan_candidates(;
     constants::Union{Nothing, ParallelCost.MachineConstants},
     config::PredictivePlannerConfig,
     terms::PredictiveCostTerms = PredictiveCostTerms(),
+    inner_curve::Union{Nothing, InnerSpeedupCurve} = nothing,
 )::Vector{PredictivePlan}
     n = max(0, Int(n_samples))
     T = max(1, Int(threads))
@@ -544,7 +597,68 @@ function predictive_plan_candidates(;
     end
     # A shape with no parallel route at all still has to run.
     isempty(plans) && push!(plans, _predictive_plan(:none, 1, 0, n, true, nothing, config.remote_overhead))
+    inner_curve === nothing ||
+        _predictive_inner_candidates!(plans, n, T, pool, threads_candidate, local_slots_cap,
+                                      contention_process, contention_threads, config, terms,
+                                      inner_curve)
     return plans
+end
+
+# Plans whose samples run on b > 1 threads, offered only when a measured
+# inner-speedup curve says what b buys. All of them are deviations from the
+# static plan: whatever a curve predicts, spending it has to clear the margin.
+#
+#   threads@W, b = fld(T, W), for W = fld(T, b), b = 2, 4, 8, ... and for
+#     W = min(n, T) itself (the pinned outer_threads split);
+#   none, b = T: one sample at a time on the whole pool;
+#   process@W_p + L with the local slots at b threads, L * b <= T - 1 (thread 1
+#     stays free for the feeders, as for every mixed plan).
+#
+# The pool's workers are one-thread processes and are never given b > 1.
+function _predictive_inner_candidates!(plans::Vector{PredictivePlan}, n::Int, T::Int, pool::Int,
+                                       threads_candidate::Bool, local_slots_cap::Integer,
+                                       contention_process, contention_threads,
+                                       config::PredictivePlannerConfig,
+                                       terms::PredictiveCostTerms,
+                                       curve::InnerSpeedupCurve)::Nothing
+    (n > 0 && T > 1) || return nothing
+    time_at(b) = 1.0 / inner_speedup(curve, b)
+    budgets = Int[]
+    b = 2
+    while b <= T
+        push!(budgets, b)
+        b *= 2
+    end
+    if n > 1 && threads_candidate
+        widths = Int[]
+        for b in budgets
+            W = fld(T, b)
+            W >= 2 && W <= min(n, T) && push!(widths, W)
+        end
+        full = min(n, T)
+        fld(T, full) >= 2 && push!(widths, full)
+        for W in sort!(unique!(widths))
+            bW = fld(T, W)
+            push!(plans, _predictive_plan(:threads, W, 0, n, false, contention_threads,
+                                          config.remote_overhead; terms = terms,
+                                          inner_budget = bW, inner_time = time_at(bW)))
+        end
+    end
+    # A static serial plan already runs its one sample on the whole pool.
+    any(p -> p.route === :none, plans) ||
+        push!(plans, _predictive_plan(:none, 1, 0, n, false, nothing, config.remote_overhead;
+                                      terms = terms, inner_budget = T, inner_time = time_at(T)))
+    if n > 1 && pool >= 2
+        for b in budgets
+            lmax = max(0, min(config.local_slots_max, n - pool, Int(local_slots_cap), fld(T - 1, b)))
+            for L in 1:lmax
+                push!(plans, _predictive_plan(:process, pool, L, n, false, contention_process,
+                                              config.remote_overhead; terms = terms,
+                                              inner_budget = b, inner_time = time_at(b)))
+            end
+        end
+    end
+    return nothing
 end
 
 # Ranking order. Makespan first; then static-equivalent plans ahead of
@@ -565,17 +679,20 @@ end
 
 @inline function _predictive_sort_key(p::PredictivePlan)
     return (round(p.makespan; sigdigits = 12), p.static_equivalent ? 0 : 1,
-            _predictive_route_rank(p.route), p.local_slots)
+            _predictive_route_rank(p.route), p.local_slots, max(1, p.inner_thread_budget))
 end
 
 """
     predictive_plan(; n_samples, threads, process_workers, threads_candidate,
-                    local_slots_cap, constants, config, terms) -> PredictivePlanning
+                    local_slots_cap, constants, config, terms,
+                    inner_curve) -> PredictivePlanning
 
 Rank the plan space and choose one.
 
 `terms` carries the parameters shared by every candidate (see
 [`PredictiveCostTerms`](@ref)); the default reproduces the model without them.
+`inner_curve` (see [`InnerSpeedupCurve`](@ref)) adds plans whose samples run on
+more than one thread; without one the plan space is v1's.
 The decision rule below is the same whatever `terms` holds: the terms change
 the prices, never the rule that turns prices into a plan.
 
@@ -596,11 +713,12 @@ function predictive_plan(;
     constants::Union{Nothing, ParallelCost.MachineConstants} = nothing,
     config::PredictivePlannerConfig = PredictivePlannerConfig(),
     terms::PredictiveCostTerms = PredictiveCostTerms(),
+    inner_curve::Union{Nothing, InnerSpeedupCurve} = nothing,
 )::PredictivePlanning
     plans = predictive_plan_candidates(
         n_samples = n_samples, threads = threads, process_workers = process_workers,
         threads_candidate = threads_candidate, local_slots_cap = local_slots_cap,
-        constants = constants, config = config, terms = terms)
+        constants = constants, config = config, terms = terms, inner_curve = inner_curve)
     sort!(plans; by = _predictive_sort_key)
     best = first(plans)
     static_idx = findfirst(p -> p.static_equivalent, plans)
@@ -1151,21 +1269,12 @@ CampaignCorrections(fingerprint::AbstractString, code_token::AbstractString) =
 """
     campaign_corrections_code_token() -> String
 
-The code version a corrections file is valid for. It is the RHS calibration
-store's code token when the engine defines one, so a change to the RHS
-execution that invalidates the store invalidates the corrections with it:
-sample times and contention measured against the old code do not describe the
-new one.
+The code version a corrections file is valid for: the RHS calibration store's
+code token, so a change to the RHS execution that invalidates the store
+invalidates the corrections with it. Sample times and contention measured
+against the old code do not describe the new one.
 """
-function campaign_corrections_code_token()::String
-    root = parentmodule(@__MODULE__)
-    if isdefined(root, :SimulationEngine)
-        engine = getfield(root, :SimulationEngine)
-        isdefined(engine, :_RHS_CALIB_CODE_TOKEN) &&
-            return string(getfield(engine, :_RHS_CALIB_CODE_TOKEN))
-    end
-    return "untokened"
-end
+campaign_corrections_code_token()::String = string(SimulationEngine._RHS_CALIB_CODE_TOKEN)
 
 """
     campaign_corrections_mode() -> Symbol
@@ -1404,18 +1513,45 @@ end
 
 # ── The leash ────────────────────────────────────────────────────────────────
 
+# The leash for a plan without local slots whose samples run on b > 1 threads:
+# one step on this shape's budget ladder -- the distinct inner budgets its
+# threads-route and serial plans offer, 1 included -- from the previous plan's
+# budget toward the chosen one. A previous mixed plan counts as budget 1.
+function _predictive_leash_width(planning::PredictivePlanning, chosen::PredictivePlan, prev)
+    budget_of(p) = max(1, p.inner_thread_budget)
+    cands = filter(p -> p.local_slots == 0 && p.route !== :process, planning.plans)
+    ladder = sort!(unique!(vcat(1, [budget_of(p) for p in cands])))
+    b_prev = prev[3] == 0 ? prev[4] : 1
+    i_prev = something(findfirst(==(b_prev), ladder), 1)
+    i_chosen = something(findfirst(==(budget_of(chosen)), ladder), length(ladder))
+    abs(i_chosen - i_prev) <= 1 && return (chosen, :within_leash)
+    b_step = ladder[i_prev + sign(i_chosen - i_prev)]
+    step = findfirst(p -> budget_of(p) == b_step && !p.static_equivalent, cands)
+    here = findfirst(p -> budget_of(p) == ladder[i_prev] &&
+                          (ladder[i_prev] > 1 || p.static_equivalent), cands)
+    from = here === nothing ? planning.best_static : cands[here]
+    if step !== nothing && (from === nothing || cands[step].makespan <= from.makespan)
+        return (cands[step], :leashed)
+    end
+    return (from === nothing ? chosen : from, :leash_held)
+end
+
 """
     predictive_plan_key(plan) -> String
 
-`"<route>@w<workers>+l<local_slots>"`, the spelling the trace and the
-corrections file use for a plan.
+`"<route>@w<workers>+l<local_slots>"`, with `"+b<budget>"` appended when the
+plan's samples run on more than one thread; the spelling the corrections file
+uses for a plan.
 """
-predictive_plan_key(p::PredictivePlan)::String = "$(p.route)@w$(p.workers)+l$(p.local_slots)"
+predictive_plan_key(p::PredictivePlan)::String =
+    "$(p.route)@w$(p.workers)+l$(p.local_slots)" *
+    (p.inner_thread_budget > 1 ? "+b$(p.inner_thread_budget)" : "")
 
 function _predictive_parse_plan_key(key::AbstractString)
-    m = match(r"^(none|threads|process)@w(\d+)\+l(\d+)$", key)
+    m = match(r"^(none|threads|process)@w(\d+)\+l(\d+)(?:\+b(\d+))?$", key)
     m === nothing && return nothing
-    return (Symbol(m.captures[1]), parse(Int, m.captures[2]), parse(Int, m.captures[3]))
+    budget = m.captures[4] === nothing ? 1 : parse(Int, m.captures[4])
+    return (Symbol(m.captures[1]), parse(Int, m.captures[2]), parse(Int, m.captures[3]), budget)
 end
 
 """
@@ -1447,12 +1583,22 @@ function predictive_leash(planning::PredictivePlanning,
     chosen.static_equivalent && return (chosen, :static)
     prev = _predictive_parse_plan_key(previous)
     prev === nothing && return (chosen, :no_previous)
-    same_family = prev[1] === chosen.route && prev[2] == chosen.workers
+    chosen_budget = max(1, chosen.inner_thread_budget)
+    if chosen.local_slots == 0
+        # A threads-route or serial plan with more than one thread per sample:
+        # its steps are widths on the budget ladder, not local slots.
+        return _predictive_leash_width(planning, chosen, prev)
+    end
+    same_family = prev[1] === chosen.route && prev[2] == chosen.workers && prev[4] == chosen_budget
     prev_slots = same_family ? prev[3] : 0
     abs(chosen.local_slots - prev_slots) <= 1 && return (chosen, :within_leash)
     step_slots = prev_slots + sign(chosen.local_slots - prev_slots)
-    at(L) = findfirst(p -> p.route === chosen.route && p.workers == chosen.workers &&
-                           p.local_slots == L, planning.plans)
+    at(L) = L == 0 ?
+        findfirst(p -> p.route === chosen.route && p.workers == chosen.workers &&
+                       p.local_slots == 0 && p.static_equivalent, planning.plans) :
+        findfirst(p -> p.route === chosen.route && p.workers == chosen.workers &&
+                       p.local_slots == L && max(1, p.inner_thread_budget) == chosen_budget,
+                  planning.plans)
     step_idx = at(step_slots)
     prev_idx = at(prev_slots)
     from = prev_idx === nothing ? planning.best_static : planning.plans[prev_idx]
@@ -1463,7 +1609,9 @@ function predictive_leash(planning::PredictivePlanning,
 end
 
 function _predictive_plan_line(p::PredictivePlan)::String
-    return "$(p.route)@w$(p.workers)+l$(p.local_slots) makespan=$(round(p.makespan; digits=3)) " *
+    return "$(p.route)@w$(p.workers)+l$(p.local_slots)" *
+           (p.inner_thread_budget > 1 ? " budget=$(p.inner_thread_budget)" : "") *
+           " makespan=$(round(p.makespan; digits=3)) " *
            "consumers=$(p.consumers) s_worker=$(round(p.worker_slowdown; digits=3)) " *
            "s_heap=$(round(p.heap_slowdown; digits=3))" * (p.static_equivalent ? " static" : "")
 end

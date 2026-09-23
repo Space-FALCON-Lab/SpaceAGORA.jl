@@ -215,7 +215,7 @@ function campaign_route_features(
     end
     control_effector_count = length(args.control_model.control_effectors)
     density_family = _campaign_density_family(args.environment_model.density_model)
-    return OuterRouteFeatures(
+    features = OuterRouteFeatures(
         category="montecarlo",
         n_sats=Int(n_sats),
         n_links=n_links,
@@ -230,6 +230,43 @@ function campaign_route_features(
         dynamic_effector_count=length(args.dynamics_model.dynamic_effectors),
         montecarlo_samples=Int(samples)
     )
+    _register_campaign_rhs_stem!(features, args)
+    return features
+end
+
+# Which RHS calibration stem a campaign workload's samples will be calibrated
+# under, keyed by the workload signature the planner sees.
+#
+# The campaign planner gets an opaque sample function and the campaign's
+# features; it never sees a sample's configuration, so it cannot compute the
+# stem the RHS store keys that sample's timings on. The features are built from
+# a configuration here, and this is the one place both are in hand. The
+# predictive planner reads the stem back to find the workload's inner-speedup
+# curve in the store (see `_predictive_inner_curve`). One entry per workload
+# signature, last writer wins; a process that never builds features from a
+# configuration simply has no curves, and the planner then assumes no inner
+# gain.
+const _CAMPAIGN_RHS_STEMS = Dict{String, String}()
+const _CAMPAIGN_RHS_STEMS_LOCK = ReentrantLock()
+
+function _register_campaign_rhs_stem!(features::OuterRouteFeatures, args)::Nothing
+    stem = try
+        SimulationEngine.rhs_calibration_signature_stem(args)
+    catch
+        return nothing
+    end
+    key = outer_route_signature(features)
+    lock(_CAMPAIGN_RHS_STEMS_LOCK) do
+        _CAMPAIGN_RHS_STEMS[key] = stem
+    end
+    return nothing
+end
+
+function _campaign_rhs_stem(features::OuterRouteFeatures)::Union{Nothing, String}
+    key = outer_route_signature(features)
+    return lock(_CAMPAIGN_RHS_STEMS_LOCK) do
+        get(_CAMPAIGN_RHS_STEMS, key, nothing)
+    end
 end
 
 function _campaign_route_tuning()::OuterRouteTuning
@@ -838,10 +875,12 @@ end
 # The inner budget is declared as an environment CEILING around the whole
 # dispatch rather than passed down the plan: `outer_split_env_pairs`, which the
 # mixed dispatch calls for itself, would otherwise hand each local slot
-# `fld(T, L)` threads. R7 v1 gives every concurrent sample one thread (see the
-# module docs), and `capped_inner_thread_budget` treats an inherited budget of
-# 1 as a ceiling it need not lower, so this leaves the bandit's own use of that
-# function untouched.
+# `fld(T, L)` threads. The ceiling is the plan's budget -- 1 unless a measured
+# inner-speedup curve priced more -- and `capped_inner_thread_budget` treats an
+# inherited budget at or below the split's share as a ceiling it need not
+# lower, so this leaves the bandit's own use of that function untouched. A
+# plan's budget never exceeds its share (`W * b <= T`, `L * b <= T - 1`), which
+# is the same cap the split applies.
 function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::OuterRouteTuning;
                               fail_fast::Bool, class_sink::Union{Nothing, Vector{Symbol}}=nothing,
                               take_sink::Union{Nothing, Vector{Float64}}=nothing,
@@ -859,7 +898,7 @@ function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::Ou
         return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
                                             take_sink=take_sink, admission=admission,
                                             on_complete=on_complete)
-    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "1") do
+    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(_predictive_declared_budget(plan))) do
         _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
                                      take_sink=take_sink, admission=admission,
                                      on_complete=on_complete)
@@ -1048,6 +1087,23 @@ function _predictive_fold_and_save!(corrections::CampaignCorrections, rules, cam
     return nothing
 end
 
+# The workload's inner-speedup curve from the RHS calibration store, or
+# `nothing` when no configuration registered a stem for it, when the store has
+# no timings for that stem, or when `SPACEAGORA_PREDICTIVE_INNER_CURVE=0`.
+function _predictive_inner_curve(features::OuterRouteFeatures)::Union{Nothing, InnerSpeedupCurve}
+    _predictive_env_bool("SPACEAGORA_PREDICTIVE_INNER_CURVE", true) || return nothing
+    stem = _campaign_rhs_stem(features)
+    stem === nothing && return nothing
+    speedup = try
+        SimulationEngine.rhs_inner_speedup_curve(stem)
+    catch err
+        @debug "Inner-speedup curve could not be read; planning without one." exception = err
+        nothing
+    end
+    speedup === nothing && return nothing
+    return InnerSpeedupCurve(speedup; source = stem)
+end
+
 function _run_campaign_predictive(
     f, seeds::Vector, features::OuterRouteFeatures, tuning::OuterRouteTuning; fail_fast::Bool
 )::MonteCarloResult
@@ -1082,10 +1138,11 @@ function _run_campaign_predictive(
     priced = predictive_cost_terms(corrections, campaign_constants, rules;
                                    signature=signature, pool_cold=pool_cold)
     terms = priced.terms
+    inner_curve = _predictive_inner_curve(features)
     planning = predictive_plan(
         n_samples=n, threads=threads, process_workers=pool_workers,
         threads_candidate=(:threads in candidates), local_slots_cap=local_cap,
-        constants=constants, config=config, terms=terms)
+        constants=constants, config=config, terms=terms, inner_curve=inner_curve)
     plan, leash = corrections === nothing ? (planning.chosen, :off) :
         predictive_leash(planning, get(corrections.last_plan, shape_key, nothing))
     trace = _dispatch_trace_enabled()
@@ -1101,7 +1158,8 @@ function _run_campaign_predictive(
                 "startup=$(round(terms.startup; digits=4)) pool_cold=$(pool_cold) " *
                 "sample_time_s=$(priced.sample_time_s === nothing ? "unknown" : round(priced.sample_time_s; digits=4)) " *
                 "corrections=$(corrections === nothing ? "none" : campaign_corrections_mode()) " *
-                "campaigns=$(corrections === nothing ? 0 : corrections.campaigns)")
+                "campaigns=$(corrections === nothing ? 0 : corrections.campaigns) " *
+                "inner_curve=$(inner_curve === nothing ? "none" : join(round.(inner_curve.speedup; digits=2), ","))")
         for p in planning.plans
             println("[predictive]   candidate $(_predictive_plan_line(p))")
         end
@@ -1207,7 +1265,10 @@ function _run_campaign_predictive(
         # plan whose heap model charged a term says anything about the term.
         raw_heap = predictive_heap_slowdown(
             _predictive_contention_constants(config, constants, :process), plan.local_slots)
-        heap_observed = (verdict !== nothing && isfinite(verdict.ratio) && raw_heap > 1.0) ?
+        # Local slots on more than one thread carry the curve's factor as well,
+        # which the heap term does not model; they say nothing about it.
+        heap_observed = (verdict !== nothing && isfinite(verdict.ratio) && raw_heap > 1.0 &&
+                         plan.inner_thread_budget <= 1) ?
             verdict.ratio * plan.heap_slowdown / raw_heap : NaN
         final_key = final_route === :threads ? "threads@w$(final_consumers)+l0" :
             "$(final_route)@w$(open_workers)+l$(final_slots)"

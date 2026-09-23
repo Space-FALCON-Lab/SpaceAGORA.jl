@@ -1,4 +1,5 @@
-# P6 trace 5 before and after its redefinition, back to back in one process.
+# P6 trace 5 (or, with --trace=4, trace 4) before and after its redefinition,
+# back to back in one process.
 #
 # `aero_<N>sat_l50_gram_lookahead_100s` used to be built on `ppc_constellation`
 # with a 120 km entry interface; it is now built on
@@ -35,12 +36,19 @@ r5_arg(key, default) = begin
 end
 const R5_N = parse(Int, r5_arg("n", "256"))
 const R5_REPEATS = parse(Int, r5_arg("repeats", "3"))
-const R5_OUT = r5_arg("out", joinpath(GTS_DIR, "results", "p6_trace5_redefinition.csv"))
-const R5_CASE = "aero_$(R5_N)sat_l50_gram_lookahead_100s"
+const R5_OUT_DEFAULT = joinpath(GTS_DIR, "results", "p6_trace5_redefinition.csv")
+const R5_TRACE = parse(Int, r5_arg("trace", "5"))
+R5_TRACE in (4, 5) || error("--trace must be 4 or 5")
+const R5_CASE = R5_TRACE == 5 ? "aero_$(R5_N)sat_l50_gram_lookahead_100s" :
+                                "aero_$(R5_N)sat_l50_expatm_100s"
 const R5_MISSION = 100.0
+const R5_OUT = r5_arg("out", R5_TRACE == 5 ? R5_OUT_DEFAULT :
+                             joinpath(GTS_DIR, "results", "p6_trace4_redefinition.csv"))
 
-# The harness's own look-ahead settings for this case, from _ppc_p6_gram_density_env!.
-const R5_ENV = [
+# The harness's own look-ahead settings for trace 5, from
+# _ppc_p6_gram_density_env!. Trace 4 is analytic and reads none of them; they are
+# left unset for it, as the harness leaves them.
+const R5_ENV = R5_TRACE == 4 ? Pair{String, String}[] : [
     "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "0",
     "SPACEAGORA_VACUUM_GRAM_CACHE" => "1",
     "SPACEAGORA_VACUUM_GRAM_CACHE_NPOINTS" => "20",
@@ -56,7 +64,9 @@ function previous_config()
         planet=planet, spacecraft=ppc_constellation(planet, R5_N), mission_time_s=R5_MISSION,
         orientation_sim=false,
         dynamic_effectors=(ppc_harmonics_model(planet, 50), AerodynamicCoefficientfM()),
-        density_model=ppc_gram_atmosphere_model("earth"), dt_max_orbit=5.0
+        density_model=R5_TRACE == 4 ? ExponentialAtmosphereModel(planet) :
+                                      ppc_gram_atmosphere_model("earth"),
+        dt_max_orbit=5.0
     )
 end
 

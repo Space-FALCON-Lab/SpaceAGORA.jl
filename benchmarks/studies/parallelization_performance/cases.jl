@@ -264,7 +264,7 @@ function ppc_constellation(
     return sats
 end
 
-# ── The P6 native-GRAM constellation (traces 5 and 6) ────────────────────────
+# ── The P6 density-trace constellation (traces 4, 5 and 6) ───────────────────
 #
 # NOT `ppc_constellation`, and the difference is the whole reason these exist.
 # `ppc_constellation` puts member i at 540 + 2(i-1) km apoapsis with the default
@@ -285,8 +285,12 @@ end
 # the band, so every member is inside the atmosphere from the first step.
 #
 # No member crosses the interface during the 100 s mission, so the drag-state
-# callback never switches tolerances or the step cap: the run keeps the
-# dt_max_orbit = 5 s the other P6 density traces use.
+# callback never switches tolerances or the step cap: the run keeps its
+# dt_max_orbit = 5 s.
+#
+# Trace 4 (analytic exponential density) flies the same constellation with the
+# same interface, so traces 4, 5 and 6 differ only in the density model and its
+# access path.
 
 # DERIVED: the band tops out at 480 km apoapsis altitude, `in_atmosphere` is set
 # from `altitude <= EI`, and 600 km is the round number above that ceiling.
@@ -1447,12 +1451,20 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         #                   which is the only arrangement the process route can
         #                   actually spread (see below).
         #
-        # CAVEAT, since the GRAM traces moved to ppc_p6_gram_constellation: trace 4
-        # (expatm) is still on ppc_constellation, so trace 4 against trace 5 now
-        # differs in constellation as well as in density model, and is no longer
-        # single-variable. Trace 5 against trace 6 still is. Moving trace 4 as
-        # well would restore it; that was left for whoever owns the figure to
-        # decide, because it changes a trace that was not wrong.
+        # All three share one constellation and one entry interface:
+        # ppc_p6_gram_constellation with ei_km = PPC_P6_GRAM_EI_KM (trace 6 as
+        # its members flown one per sample). Only the density model and its
+        # access path differ, so the three are single-variable against each
+        # other. Trace 4 moved there with traces 5 and 6 for exactly that reason,
+        # although nothing was wrong with it on its own. The move does not change
+        # how much work trace 4 does: the above-interface shortcut
+        # (`density_vanishes_above_entry_interface`) is true only for
+        # NoAtmosphereModel, so an exponential atmosphere was already evaluated,
+        # and drag applied, for every member at any altitude, and the only thing
+        # the interface gates here is the GRAM look-ahead cache, which trace 4
+        # does not use. Measured at 256 members: same 163 RHS evaluations, wall
+        # time unchanged within the run-to-run spread (gram_thread_scaling
+        # results/p6_trace4_redefinition*.csv).
         #
         # dt_max_orbit is 5 s for all three, matching the atmo256_* ladder the
         # durations are derived from, rather than the 20 s the vacuum traces use:
@@ -1491,12 +1503,13 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         if aero_variant == "expatm"
             return ppc_build_config(
                 planet=planet,
-                spacecraft=ppc_constellation(planet, aero_n),
+                spacecraft=ppc_p6_gram_constellation(planet, aero_n),
                 mission_time_s=aero_time,
                 orientation_sim=false,
                 dynamic_effectors=aero_effectors,
                 density_model=ExponentialAtmosphereModel(planet),
-                dt_max_orbit=5.0
+                dt_max_orbit=5.0,
+                ei_km=PPC_P6_GRAM_EI_KM
             )
         elseif aero_variant == "gram_lookahead"
             # On the P6 GRAM constellation, not ppc_constellation: see
@@ -1710,8 +1723,9 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
              "atmosphere, 5800 s mission (P6 trace 3: one serialised native " *
              "library, SPICE, on an otherwise parallel RHS)")
         add!("aero_$(p6_n)sat_l50_expatm_100s", "p6_density_ladder",
-             "$(p6_n) spacecraft, L50 harmonics + aero, analytic exponential " *
-             "density, 100 s mission (P6 trace 4)")
+             "$(p6_n) spacecraft in a 300-480 km band, entry interface 600 km (the " *
+             "constellation and interface of traces 5 and 6), L50 harmonics + aero, " *
+             "analytic exponential density, 100 s mission (P6 trace 4)")
         add!("aero_$(p6_n)sat_l50_gram_lookahead_100s", "p6_density_ladder",
              "$(p6_n) spacecraft in a 300-480 km band, entry interface 600 km (every " *
              "member inside the atmosphere and below the 2000 km GRAM cut-off), " *

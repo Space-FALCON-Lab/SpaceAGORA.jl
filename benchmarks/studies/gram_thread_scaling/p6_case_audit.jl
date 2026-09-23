@@ -1,14 +1,16 @@
 # Does every member of the P6 native-GRAM traces actually call native GRAM, and is
 # every one of them inside the atmosphere so the look-ahead cache builds?
 #
-# Audits the two harness cases exactly as the harness builds them
+# Audits the three P6 density-trace cases exactly as the harness builds them
 # (`ppc_single_config` in parallelization_performance/cases.jl):
 #
+#   aero_<N>sat_l50_expatm_100s           P6 trace 4, analytic exponential
+#                                         density on the same constellation
 #   aero_<N>sat_l50_gram_lookahead_100s   P6 trace 5, one N-member constellation
 #   aero_<N>sat_l50_gram_process_100s     P6 trace 6, N one-spacecraft samples
 #                                         (sample k built with mc_index = k)
 #
-# and, for contrast, the definition both used before (`ppc_constellation`,
+# and, for contrast, the definition all three used before (`ppc_constellation`,
 # entry interface 120 km), rebuilt here from the same helpers.
 #
 # Part A, per member, at t = 0:
@@ -65,13 +67,14 @@ const AUDIT_OUT = audit_arg("out", joinpath(GTS_DIR, "results", "p6_case_audit.c
 # profile="full" so the case builders use the mission length in the case name.
 const AUDIT_CFG = PPCConfig(profile="full")
 
-function previous_definition(n::Int; sample::Union{Nothing, Int}=nothing)
+function previous_definition(n::Int; sample::Union{Nothing, Int}=nothing, expatm::Bool=false)
     planet = Earth("", PPC_SPICE_PATH)
     sc = sample === nothing ? ppc_constellation(planet, n) : [ppc_spacecraft(planet; id=1)]
     return ppc_build_config(
         planet=planet, spacecraft=sc, mission_time_s=100.0, orientation_sim=false,
         dynamic_effectors=(ppc_harmonics_model(planet, 50), AerodynamicCoefficientfM()),
-        density_model=ppc_gram_atmosphere_model("earth"), dt_max_orbit=5.0
+        density_model=expatm ? ExponentialAtmosphereModel(planet) : ppc_gram_atmosphere_model("earth"),
+        dt_max_orbit=5.0
     )
 end
 
@@ -123,6 +126,17 @@ function main()
                                         PPCConfig(profile="test")); isolate_state=false)
 
     for n in AUDIT_SIZES
+        # Trace 4 (analytic exponential density): the constellation and entry
+        # interface it now shares with traces 5 and 6. It never calls native
+        # GRAM, so native_calls is 0 by construction; the columns that matter
+        # for it are below_2000km and in_atmosphere.
+        c4 = "aero_$(n)sat_l50_expatm_100s"
+        for (def, args) in (("current", ppc_single_config(c4, AUDIT_CFG)),
+                            ("previous", previous_definition(n; expatm=true)))
+            st, p = member_states(args)
+            audit!(def, c4, n, [(i, args, p, st[i][1], st[i][2]) for i in eachindex(st)])
+        end
+
         c5 = "aero_$(n)sat_l50_gram_lookahead_100s"
         c6 = "aero_$(n)sat_l50_gram_process_100s"
 

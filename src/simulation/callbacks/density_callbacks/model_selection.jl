@@ -102,7 +102,17 @@ end
     end
     return EnvironmentModels._gram_core_density_state(
         model.core,
-        h,
+        # The same floor the locked scalar path applies before it calls GRAM
+        # (`EM.getDensity(::GRAMAtmosphereModel, ...)` and `EM._gram_point_density`
+        # in ext/SpaceAGORAGRAMSuiteExt.jl, both `max(h, -30.0)`). Without it the
+        # two paths do not merely differ below -30 m: native GRAM raises
+        # "Height below -31 meters. This is an unrecoverable error." and aborts
+        # the solve, so a run that reaches the surface -- an entry or a landing --
+        # completes on the locked path and dies on the pooled one. Measured
+        # directly on this workstation at h = -100 m. At or above -30 m
+        # `max(h, -30.0)` returns `h` itself, so nothing that worked before moves
+        # by a bit.
+        max(h, -30.0),
         lat,
         lon,
         el_time,

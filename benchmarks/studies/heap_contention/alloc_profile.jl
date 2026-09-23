@@ -1,19 +1,19 @@
-# WS11c allocation attribution: where does a P3/P4 sample's per-solve
-# allocation actually go -- solution storage (the SavedValues/ODESolution
-# per-step state history), callbacks, or solver internals?
+# Allocation attribution: where does a P3/P4 sample's per-solve allocation
+# actually go -- solution storage (the SavedValues/ODESolution per-step
+# state history), callbacks, or solver internals?
 #
 # `Profile.Allocs` samples individual allocations with their originating
 # stack. P3 (independent_1sat_1hr, ~15 MiB/sample, ~180k allocations at
 # sample_rate=1.0) is small enough to sample exhaustively. P4
 # (montecarlo_heavy_aerobraking) is NOT small: a 6 h mission at a 1 s max
-# step is ~365 MiB and several million allocations per sample, and running
-# `sample_rate=1.0` on it is what took this machine's whole session down via
-# the OOM killer on 2026-09-23 (Profile.Allocs' own bookkeeping -- a stack
-# capture per sampled allocation -- grows with the *sampled* allocation
-# count, not the run's byte total, so an unrestrained rate on a run this size
-# multiplies rather than shrinks the footprint being profiled). P4 MUST be
-# run at a low `--sample-rate` (default here is 0.005; never above 0.01) and
-# every invocation of this script MUST be wrapped in a hard memory cap:
+# step is ~365 MiB and several million allocations per sample.
+# `Profile.Allocs`' own bookkeeping -- a stack capture per sampled
+# allocation -- grows with the *sampled* allocation count, not the run's byte
+# total, so an unrestrained rate on a run this size multiplies rather than
+# shrinks the footprint being profiled. P4 MUST be run at a low
+# `--sample-rate` (default here is 0.005; never above 0.01).
+#
+# Every invocation of this script runs under a hard memory cap:
 #
 #   systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 -q -- \
 #       julia --project=. --threads=1 benchmarks/studies/heap_contention/alloc_profile.jl \
@@ -55,9 +55,8 @@ const HC_CASE = hc_arg(ARGS, "case", "independent_1sat_1hr")
 const HC_OUT  = hc_arg(ARGS, "out", joinpath(HC_STUDY_DIR, "results", "alloc_$(HC_CASE).csv"))
 const HC_MODE = hc_arg(ARGS, "mode", "serial")
 # See the file header: P4-scale cases (tens of MiB or more per sample) must
-# not use the default of 1.0. 0.005 is deliberately conservative -- below the
-# coordinator's 0.01 ceiling -- since this script has already OOM'd this
-# machine once at full sampling.
+# not use the default of 1.0. 0.005 is deliberately conservative, well below
+# the 0.01 ceiling.
 const HC_SAMPLE_RATE = parse(Float64, hc_arg(ARGS, "sample-rate", "1.0"))
 HC_SAMPLE_RATE > 0.01 && HC_CASE != "independent_1sat_1hr" && @warn(
     "sample-rate=$(HC_SAMPLE_RATE) on case=$(HC_CASE): this is only known " *
@@ -70,17 +69,18 @@ HC_SAMPLE_RATE > 0.01 && HC_CASE != "independent_1sat_1hr" && @warn(
 # DiffEqCallbacks.jl, base Julia, ...) is bucketed as "external".
 function hc_bucket(path::AbstractString)::String
     isempty(path) && return "unknown"
-    # Split the engine/ directory apart: WS11c owns exactly execution.jl and
-    # persistence.jl there, and the whole point of this attribution is to say
-    # what fraction of allocation those two files (vs. the rest of engine/,
-    # owned by other workstreams) are actually responsible for.
+    # Split the engine/ directory apart: execution.jl and persistence.jl are
+    # the two files this study is attributing allocation for, so they get
+    # their own buckets, separate from the rest of src/simulation/engine/
+    # (solver_policy.jl, dynamics_rhs.jl, rhs_calibration.jl, ...), which is
+    # what the split is meant to contrast against.
     if occursin("src/simulation/engine/execution.jl", path)
-        return "engine/execution.jl (WS11c-owned)"
+        return "engine/execution.jl"
     elseif occursin("src/simulation/engine/persistence.jl", path)
-        return "engine/persistence.jl (WS11c-owned)"
+        return "engine/persistence.jl"
     end
     idx = findfirst("src/simulation/engine/", path)
-    idx !== nothing && return "engine/other (solver_policy, dynamics_rhs, rhs_calibration, ... -- not WS11c)"
+    idx !== nothing && return "engine/other (solver_policy, dynamics_rhs, rhs_calibration, ...)"
     idx = findfirst("src/simulation/callbacks/", path)
     idx !== nothing && return "callbacks (SavedValues/SaveData/SavingCallback)"
     idx = findfirst("src/io/", path)

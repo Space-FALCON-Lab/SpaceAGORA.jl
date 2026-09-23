@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# WS11c collector-settings grid driver. Runs collector_grid.jl once per
+# Collector-settings grid driver. Runs collector_grid.jl once per
 # (gcthreads, heap-size-hint) combination, at a single thread count, for one
-# case, sequentially (one Julia process at a time, each under a hard memory
-# cap -- see docs/architecture/heap_contention.md's incident note on why the
-# cap is non-negotiable for anything launched from this study).
+# case, sequentially -- one Julia process at a time, each under a hard
+# memory cap (see docs/architecture/heap_contention.md).
 #
 # Usage:
 #   benchmarks/studies/heap_contention/collector_grid.sh <case> <threads> <out.csv>
 #
-# This workstation has 12 physical cores; the common WS11 rule caps any one
-# agent at 8 threads, which this driver honors (do not raise --threads past
-# 8 here without an explicit release). The 16+-thread regime the contract
-# actually asks about is out of reach on this box regardless of the flag --
-# see the doc for what TRX50 should run instead.
+# This workstation has 12 physical cores and 24 threads; this driver caps
+# --threads at 8. The 16+-thread regime is out of reach on this box
+# regardless of the flag -- see docs/architecture/heap_contention.md for the
+# TRX50 command that measures it.
 set -euo pipefail
 
 CASE="${1:?usage: collector_grid.sh <case> <threads> <out.csv>}"

@@ -1,4 +1,4 @@
-# WS11c collector-settings grid: does varying Julia's `--gcthreads` /
+# Collector-settings grid: does varying Julia's `--gcthreads` /
 # `--heap-size-hint` move the outer_threads (pinned-threads) route's wall
 # time on the P3/P4 shapes? Those two flags are process-launch flags, so this
 # script does NOT set them itself -- the driver (collector_grid.sh) launches

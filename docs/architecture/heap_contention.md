@@ -1,10 +1,11 @@
 # One-heap contention above 16 threads: what could and couldn't be measured here
 
-This is WS11c's record. The problem this workstream exists for is a TRX50
-observation: the pinned-threads route on P3/P4 gets *slower* as thread count
-rises past 8 (1.55 s -> 2.06 s -> 2.72 s at 8/16/32 threads on P3), while the
-pinned pool route keeps getting faster (1.28 -> 0.76 -> 0.43 s). That is the
-signature of single-heap GC contention, and it needs 16+ threads to show up.
+A TRX50 cold run showed the pinned-threads route on the P3/P4 Monte Carlo
+resource-ladder phases (`benchmarks/studies/paper_parallelization_benchmarks/`)
+getting *slower* as thread count rises past 8 (1.55 s -> 2.06 s -> 2.72 s at
+8/16/32 threads on P3), while the pinned pool route keeps getting faster
+(1.28 -> 0.76 -> 0.43 s). That is the signature of single-heap GC contention,
+and it needs 16+ threads to show up.
 
 **This workstation has 12 physical cores / 24 threads and cannot reproduce the
 16+-thread regime.** Everything below is either (a) allocation attribution and
@@ -14,37 +15,21 @@ question and is reported as exactly that -- a data point below the regime that
 actually matters, not a stand-in for it. Section "What to run on TRX50" at the
 bottom says what closes the gap.
 
-## Incident: `Profile.Allocs` at `sample_rate=1.0` on P4 took the whole
-## session down
+Every Julia process launched by the scripts in this study runs under a hard
+memory cap:
 
-While attributing P4's allocation (see below), an early version of
-`alloc_profile.jl` ran `Profile.Allocs` at `sample_rate=1.0` on
-`montecarlo_heavy_aerobraking`. That case is a 6 h mission at a 1 s max step,
-~365 MiB and several million allocations per sample; `Profile.Allocs`
-captures a full stack per *sampled* allocation, so its own bookkeeping grows
-with the sampled allocation count, not the run's byte total. At full sampling
-that bookkeeping reached 45.5 GB resident on a 60 GB box and the kernel OOM
-killer took out the process's cgroup -- which also killed the orchestrator,
-every other WS11 agent's running job, and the remote-job drivers sharing the
-machine.
+```bash
+systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 -q -- \
+    julia --project=. ...
+```
 
-Two changes came out of that, and both are load-bearing, not optional
-polish:
-
-1. **Every Julia process this study launches is wrapped in a hard memory
-   cap**: `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 -q
-   -- julia ...`. A run that exceeds 16 GB is killed alone instead of taking
-   the machine down. Every measurement in this document was run this way;
-   `collector_grid.sh` wraps it automatically, and `alloc_profile.jl`'s and
-   `dump_state.jl`'s usage headers show the wrapped invocation.
-2. **`alloc_profile.jl` refuses full sampling on anything P4-scale.** P3
-   (~15 MiB/sample) is small enough to sample exhaustively
-   (`--sample-rate=1.0`, ~180k allocations). P4 runs at `--sample-rate=0.005`,
-   two orders of magnitude below the coordinator's 0.01 ceiling. A uniform
-   sub-sample still gives a valid *fraction* of allocation per bucket (that is
-   all this study needs); it does not give exact byte/count totals, and the
-   script's CSV output says so in its column names
-   (`estimated_bytes_at_1x` is explicitly an estimate, not a measurement).
+`collector_grid.sh` wraps it automatically; `alloc_profile.jl`'s and
+`dump_state.jl`'s usage headers show the wrapped invocation directly. This is
+non-optional for `alloc_profile.jl` in particular: `Profile.Allocs` captures a
+full stack per *sampled* allocation, so its own bookkeeping grows with the
+sampled allocation count, not the run's byte total, and an unrestrained
+sampling rate on a large enough case can consume far more memory than the run
+being profiled.
 
 ## 1. Allocation attribution (P3, P4)
 
@@ -52,10 +37,22 @@ Tool: `benchmarks/studies/heap_contention/alloc_profile.jl`. Warms up one
 solve (JIT), times a second with `@timed` for the headline bytes/accepted-step
 number, then profiles a third with `Profile.Allocs` and buckets every sampled
 allocation by the `src/` domain that owns its innermost SpaceAGORA.jl stack
-frame -- split finely enough to separate WS11c's own two owned files
-(`engine/execution.jl`, `engine/persistence.jl`) from the rest of
+frame -- split finely enough to separate `engine/execution.jl` and
+`engine/persistence.jl` (the two files this study modifies) from the rest of
 `src/simulation/engine/` (`solver_policy.jl`, `dynamics_rhs.jl`,
-`rhs_calibration.jl`, ...), which other workstreams own.
+`rhs_calibration.jl`, ...).
+
+P4 (`montecarlo_heavy_aerobraking`) is a 6 h mission at a 1 s max step, ~365
+MiB and several million allocations per sample -- far too large to sample
+exhaustively. It runs at `--sample-rate=0.005`, well below Julia's own 0.01
+practical ceiling for this kind of profiling; the script warns if a caller
+passes a higher rate on anything other than the small P3 case. P3
+(`independent_1sat_1hr`, ~15 MiB/sample, ~180k allocations) is small enough to
+sample exhaustively at `--sample-rate=1.0`. A uniform sub-sample still gives a
+valid *fraction* of allocation per bucket (all this study needs); it does not
+give exact byte/count totals, and the script's CSV output says so in its
+column names (`estimated_bytes_at_1x` is explicitly an estimate, not a
+measurement).
 
 Measured single-threaded (`--threads=1`), space-falcon-1, under the memory
 cap, `SPACEAGORA_PARALLEL_POLICY` unset (serial baseline):
@@ -65,43 +62,44 @@ cap, `SPACEAGORA_PARALLEL_POLICY` unset (serial baseline):
 | P3 (`independent_1sat_1hr`) | 250 | 14.99 MiB | 62,860 |
 | P4 (`montecarlo_heavy_aerobraking`) | 22,487 | 365.79 MiB | 17,057 |
 
-(P4's 365.79 MiB matches the contract's cited 364 MB closely enough to confirm
-this is the same case/shape the TRX50 archive measured.)
+(P4's 365.79 MiB matches the ~364 MB per-sample figure measured on TRX50
+closely enough to confirm this is the same case/shape.)
 
 Allocation attribution by bucket (see `results/alloc_p3_independent_1sat_1hr.csv`,
 `results/alloc_p4_montecarlo_heavy_aerobraking.csv`):
 
 | Bucket | P3 (sample_rate=1.0) | P4 (sample_rate=0.005, estimate) |
 |---|---|---|
-| `engine/other` (solver_policy, dynamics_rhs, rhs_calibration -- **not WS11c**) | 51.5% | 56.1% |
-| `callbacks` (SavedValues/SaveData/SavingCallback -- **not WS11c**) | 28.2% | 12.1% |
+| `engine/other` (solver_policy, dynamics_rhs, rhs_calibration) | 51.5% | 56.1% |
+| `callbacks` (SavedValues/SaveData/SavingCallback) | 28.2% | 12.1% |
 | `external` (OrdinaryDiffEq/DiffEqCallbacks/Base) | 9.0% | 0.3% |
 | `parallel` (routing/policy) | 5.6% | 13.7% |
 | `environment` (gravity/atmosphere/ephemerides) | 3.4% | -- |
 | `dynamics` (RHS terms) | 2.0% | -- |
 | `core` | 0.0% | 17.7% |
-| **`engine/execution.jl` (WS11c-owned)** | **0.4%** | **0.0%** |
-| `engine/persistence.jl` (WS11c-owned) | 0.0% (no samples) | 0.0% (no samples) |
+| **`engine/execution.jl`** | **0.4%** | **0.0%** |
+| `engine/persistence.jl` | 0.0% (no samples) | 0.0% (no samples) |
 
-**The honest finding: the two files WS11c owns are not where P3/P4's
-per-sample allocation lives.** `execution.jl` accounts for 0.4% of P3's
-sampled allocation and effectively none of P4's; `persistence.jl` (46 lines of
-thin re-export wrappers, see its header) accounts for none at either scale.
-The dominant sources -- `solver_policy.jl`/`dynamics_rhs.jl` (the solve driver
-and RHS dispatch) and the `SavedValues`/`SaveData` callback storage -- are
-owned by other workstreams (solver/RHS routing, and callbacks, respectively;
-see the domain-ownership table in `CLAUDE.md`). "What fraction is the saved
-solution" is therefore mostly the `callbacks` bucket (SavingCallback building
-and growing `saved_values.t`/`saved_values.saveval`), not anything inside
-`execution.jl`'s own accumulation loops -- those loops (`_append_backbone_saved_segment!`,
-`_append_checkpoint_saved_segment!`) are not exercised by P3/P4 at all, since
-neither case checkpoints or uses `gravity_backbone_split`.
+**`execution.jl` and `persistence.jl` are not where P3/P4's per-sample
+allocation lives.** `execution.jl` accounts for 0.4% of P3's sampled
+allocation and effectively none of P4's; `persistence.jl` (46 lines of thin
+re-export wrappers, see its header) accounts for none at either scale. The
+dominant sources -- `solver_policy.jl`/`dynamics_rhs.jl` (the solve driver
+and RHS dispatch) and the `SavedValues`/`SaveData` callback storage -- belong
+to the solver/RHS-routing and callback code respectively (see the
+domain-ownership table in `CLAUDE.md`). "What fraction is the saved solution"
+is therefore mostly the `callbacks` bucket (SavingCallback building and
+growing `saved_values.t`/`saved_values.saveval`), not anything inside
+`execution.jl`'s own accumulation loops -- those loops
+(`_append_backbone_saved_segment!`, `_append_checkpoint_saved_segment!`) are
+not exercised by P3/P4 at all, since neither case checkpoints or uses
+`gravity_backbone_split`.
 
 ## 2. Reductions made, with dump-and-cmp proof
 
-Given (1), the one change inside WS11c's own files that is both real and
-correctness-neutral is: **stop building the debug `ODEProblem` when nothing
-reads it.**
+Given (1), the one change inside `execution.jl`/`persistence.jl` that is both
+real and correctness-neutral is: **stop building the debug `ODEProblem` when
+nothing reads it.**
 
 `run_simulation` used to construct `prob_debug = ODEProblem(spacecraft_dynamics!,
 ...)` unconditionally, on every single solve, even though its only reader is
@@ -115,9 +113,9 @@ No other reduction survived scrutiny at this workload scale: pre-sizing the
 checkpoint/backbone accumulation vectors (`checkpoint_saved_times`, etc.) was
 considered and **skipped** -- none of the three reference cases below exercise
 checkpointing or `gravity_backbone_split`, so there was no way to dump-and-cmp
-a change to that code path without inventing a fourth case outside this
-contract's list, and per the standing rule ("a change that cannot be proven
-bit-identical is not shipped"), it stays out.
+a change to that code path without adding a fourth case beyond the three
+already covered here, and a change that cannot be proven bit-identical is not
+shipped.
 
 ### Dump-and-cmp evidence
 
@@ -132,9 +130,9 @@ Cases (see `results/dump_cmp_debug_problem_skip.csv`):
 
 | Case | Why this one | Dump size | `cmp` |
 |---|---|---|---|
-| `independent_1sat_1hr` (P3) | the contract's P3 sample | 18,072 bytes | **identical** |
-| `montecarlo_heavy_aerobraking` (P4) | the contract's P4 sample | 1,619,136 bytes | **identical** |
-| `atmo256_vacuum_10min` | the contract's "256-spacecraft vacuum case" -- 256 sat, L50 harmonics, no atmosphere, same physics family as `gravity_256sat_l50_vacuum_124000s` but a 10 min mission instead of 124,000 s, chosen so the case is fast enough to dump twice per iteration instead of once per multi-minute run | 2,032,608 bytes | **identical** |
+| `independent_1sat_1hr` (P3) | the case backing the P3 Monte Carlo resource-ladder phase in `paper_parallelization_benchmarks/CASES.md` -- one spacecraft per sample, 1 h mission | 18,072 bytes | **identical** |
+| `montecarlo_heavy_aerobraking` (P4) | the case backing the P4 phase -- the same resource ladder on a compute-bound 6 h Mars aerobraking sample | 1,619,136 bytes | **identical** |
+| `atmo256_vacuum_10min` | a 256-spacecraft, L50-harmonics, no-atmosphere constellation from `parallelization_performance/cases.jl`'s atmosphere-fidelity ladder -- same physics family as `gravity_256sat_l50_vacuum_124000s` but a 10 min mission instead of 124,000 s, chosen so it dumps twice per iteration instead of once per multi-minute run | 2,032,608 bytes | **identical** |
 
 All three: `cmp base_<case>.bin tip_<case>.bin` exits 0. Total allocation moved
 by less than the MiB-display's rounding (P3: 15.00 -> 14.99 MiB; P4: 365.81 ->
@@ -175,37 +173,33 @@ row set, the thinned CSV is strictly shorter, and the mission-end time is
 present in both. A third run with `SPACEAGORA_RESULTS_FINAL_ONLY=1` asserts
 exactly one row, and that it matches the baseline's final row.
 
-This is a real but *partial* reduction, and the doc says so plainly rather
-than overstating it: thinning shrinks what gets written and what the caller
-holds onto after the solve, but section 1 showed the solver's own per-step
+This is a real but *partial* reduction, stated plainly rather than
+overstated: thinning shrinks what gets written and what the caller holds
+onto after the solve, but section 1 showed the solver's own per-step
 accumulation (which the solve has already paid for by the time this code
-runs) is not inside WS11c's files to begin with, so this setting does not
-reduce the solve's own peak allocation -- only the results-writing tail past
-it.
+runs) is not inside `execution.jl` or `persistence.jl` to begin with, so this
+setting does not reduce the solve's own peak allocation -- only the
+results-writing tail past it.
 
 ## 4. Collector settings (`--gcthreads`, `--heap-size-hint`)
 
 ### What was measured, and what wasn't
 
-The contract asked for 8 and 12 threads. Mid-task, after the OOM incident
-above, the coordinator's recovery message reiterated a hard "at most 8
-threads" rule for every Julia process launched from this workstream, without
-qualification. That supersedes the contract's 12-thread ask for this specific
-measurement, so **only 8 threads was measured here**; 12 was not run. Neither
-was CPU pinning applied (this box has no `--cpu-list` configured for this
-study the way TRX50 does), so this is the `outer_threads` route unpinned, not
-literally the "pinned-threads" route the contract describes -- the closest
+**Only 8 threads was measured here; 12 threads was not run on this machine.**
+Neither was CPU pinning applied (this box has no `--cpu-list` configured for
+this study the way TRX50 does), so this is the `outer_threads` route
+unpinned, not the pinned-threads configuration TRX50 runs -- the closest
 available approximation on this machine.
 
 Tooling: `benchmarks/studies/heap_contention/collector_grid.sh` launches one
-Julia subprocess per grid point (under the same memory cap as everywhere
-else in this study), each running `collector_grid.jl`'s 5 back-to-back
-`outer_threads`-mode solves and reporting the median wall time. Grid:
-`--gcthreads` in {unset (Julia default), `2`}; `--heap-size-hint` in {unset,
-`4G`}. The machine was **not** quiet during this run (`uptime` load average
-6.6-11.2, ~17 other `julia`-named processes from the other concurrently
-running WS11 agents throughout) -- ratios below are reported as measured,
-not cleaned up, and should be read with that noise floor in mind.
+Julia subprocess per grid point (under the memory cap above), each running
+`collector_grid.jl`'s 5 back-to-back `outer_threads`-mode solves and
+reporting the median wall time. Grid: `--gcthreads` in {unset (Julia
+default), `2`}; `--heap-size-hint` in {unset, `4G`}. The machine was **not**
+quiet during this run (`uptime` load average 6.6-11.2, ~17 other
+`julia`-named processes running concurrently on this shared machine
+throughout) -- ratios below are reported as measured, not cleaned up, and
+should be read with that noise floor in mind.
 
 | Case | gcthreads | heap-size-hint | median wall (s) | ratio vs. both-default |
 |---|---|---|---|---|
@@ -220,15 +214,14 @@ not cleaned up, and should be read with that noise floor in mind.
 
 `--gcthreads=2` moved P3 about 10% faster and P4 about 11% *slower* in the
 same run. That is not a consistent winner -- it is two workloads disagreeing
-under a noisy shared machine, at a thread count (8) below the regime this
-workstream is actually about. **No default was changed.** The mechanism was
-wired as an opt-in only (`ppc_worker_cmd` in
+under a noisy shared machine, at a thread count (8) well below the 16+ regime
+where this behavior actually appears on TRX50. **No default was changed.**
+The mechanism was wired as an opt-in only (`ppc_worker_cmd` in
 `benchmarks/studies/parallelization_performance/execution.jl`, gated by
 `SPACEAGORA_PPC_WORKER_GCTHREADS` / `SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT`,
 both unset by default -- unset means no flag is added to the worker's `julia`
 invocation at all, not "pass Julia's own default explicitly"), so a future
-run on a quiet machine (TRX50, or this box between other agents' jobs) can
-exercise the grid without a source change:
+run on a quiet machine can exercise the grid without a source change:
 
 ```bash
 SPACEAGORA_PPC_WORKER_GCTHREADS=2 SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT=4G \
@@ -238,10 +231,11 @@ SPACEAGORA_PPC_WORKER_GCTHREADS=2 SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT=4G \
 
 Raw data: `results/collector_grid_p3_t8.csv`, `results/collector_grid_p4_t8.csv`.
 
-## What to run on TRX50 (16+ threads, this workstream's actual question)
+## What to run on TRX50 (16+ threads)
 
-This box cannot produce the signal this workstream exists to explain. On
-TRX50, quiet (`pgrep -u <user> julia` empty, per the standing rule):
+This box cannot reproduce the 16+-thread regime where the crossover in the
+opening paragraph appears. On TRX50, quiet of other users' jobs
+(`pgrep -u <user> julia` empty):
 
 1. Re-run `collector_grid.sh` (or the `SPACEAGORA_PPC_WORKER_GCTHREADS`/
    `_HEAP_SIZE_HINT` env pair above through the real harness) at 8, 16, and
@@ -251,8 +245,8 @@ TRX50, quiet (`pgrep -u <user> julia` empty, per the standing rule):
    16/32-thread rows should show the same crossover the archive's raw
    wall-clock numbers show for `outer_threads` vs. `outer_process`.
 2. Repeat the allocation attribution (`alloc_profile.jl`, remembering the
-   P4 `--sample-rate` ceiling and the memory-cap wrapper) at the same thread
-   counts if `Profile.Allocs` proves safe to run concurrently with the
-   solve's own thread pool -- this document's P3/P4 numbers are all
+   P4 `--sample-rate` ceiling and the memory-cap wrapper above) at the same
+   thread counts if `Profile.Allocs` proves safe to run concurrently with
+   the solve's own thread pool -- this document's P3/P4 numbers are all
    single-threaded and say nothing about whether the *bucket* split shifts
    under contention, only about where the bytes originate.

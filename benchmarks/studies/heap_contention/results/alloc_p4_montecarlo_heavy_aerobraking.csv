@@ -1,7 +1,7 @@
 case,mode,sample_rate,bucket,sampled_bytes,sampled_count,fraction_of_sampled_total,estimated_bytes_at_1x
-montecarlo_heavy_aerobraking,serial,0.005,"engine/other (solver_policy, dynamics_rhs, rhs_calibration, ... -- not WS11c)",940264,16465,0.5614,188052800
+montecarlo_heavy_aerobraking,serial,0.005,"engine/other (solver_policy, dynamics_rhs, rhs_calibration, ...)",940264,16465,0.5614,188052800
 montecarlo_heavy_aerobraking,serial,0.005,"core",296848,7424,0.1772,59369600
 montecarlo_heavy_aerobraking,serial,0.005,"parallel (routing/policy)",229932,11134,0.1373,45986400
 montecarlo_heavy_aerobraking,serial,0.005,"callbacks (SavedValues/SaveData/SavingCallback)",202240,5675,0.1207,40448000
 montecarlo_heavy_aerobraking,serial,0.005,"external (solver/OrdinaryDiffEq/DiffEqCallbacks/Base)",5576,148,0.0033,1115200
-montecarlo_heavy_aerobraking,serial,0.005,"engine/execution.jl (WS11c-owned)",112,2,0.0001,22400
+montecarlo_heavy_aerobraking,serial,0.005,"engine/execution.jl",112,2,0.0001,22400

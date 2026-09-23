@@ -7,11 +7,11 @@ using DataFrames
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 
-# WS11c: opt-in results thinning (SPACEAGORA_RESULTS_THIN_STRIDE /
+# Opt-in results thinning (SPACEAGORA_RESULTS_THIN_STRIDE /
 # SPACEAGORA_RESULTS_FINAL_ONLY). See docs/architecture/heap_contention.md.
 #
-# The contract this pins: with both settings at their default (off), the
-# written results output is byte-identical to before the feature existed
+# What this pins: with both settings at their default (off), the written
+# results output is byte-identical to before the feature existed
 # (`_thin_results_segment` is the identity). With thinning on, the written
 # set is a STRICT SUBSET of the default set, and every retained row is
 # byte-identical to what the default (unthinned) run would have written for

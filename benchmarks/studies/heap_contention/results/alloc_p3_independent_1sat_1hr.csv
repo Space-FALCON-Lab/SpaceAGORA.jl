@@ -1,9 +1,9 @@
 case,mode,sample_rate,bucket,sampled_bytes,sampled_count,fraction_of_sampled_total,estimated_bytes_at_1x
-independent_1sat_1hr,serial,1.0,"engine/other (solver_policy, dynamics_rhs, rhs_calibration, ... -- not WS11c)",7538984,77554,0.515,7538984
+independent_1sat_1hr,serial,1.0,"engine/other (solver_policy, dynamics_rhs, rhs_calibration, ...)",7538984,77554,0.515,7538984
 independent_1sat_1hr,serial,1.0,"callbacks (SavedValues/SaveData/SavingCallback)",4122976,20994,0.2816,4122976
 independent_1sat_1hr,serial,1.0,"external (solver/OrdinaryDiffEq/DiffEqCallbacks/Base)",1314030,27227,0.0898,1314030
 independent_1sat_1hr,serial,1.0,"parallel (routing/policy)",825578,39960,0.0564,825578
 independent_1sat_1hr,serial,1.0,"environment (gravity/atmosphere/ephemerides)",495270,7107,0.0338,495270
 independent_1sat_1hr,serial,1.0,"dynamics (RHS terms)",285848,8162,0.0195,285848
-independent_1sat_1hr,serial,1.0,"engine/execution.jl (WS11c-owned)",51606,182,0.0035,51606
+independent_1sat_1hr,serial,1.0,"engine/execution.jl",51606,182,0.0035,51606
 independent_1sat_1hr,serial,1.0,"core",4602,169,0.0003,4602

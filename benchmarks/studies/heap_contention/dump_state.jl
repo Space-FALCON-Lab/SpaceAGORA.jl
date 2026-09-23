@@ -1,4 +1,4 @@
-# WS11c bit-identity tool: dump the full state history of one
+# Bit-identity tool: dump the full state history of one
 # parallelization_performance case to a raw binary file, for a byte-for-byte
 # `cmp` between the base commit and a later tip. Same pattern as
 # benchmarks/studies/third_body_cost/variants.jl's `--dump` path (read that

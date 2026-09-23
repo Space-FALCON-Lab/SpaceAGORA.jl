@@ -64,6 +64,12 @@ the same floor. `src/simulation/callbacks/density_callbacks/gram_process_batch.j
 sends unclamped altitudes to the process-backed density service the same way and
 has not been changed here.
 
+The fix cannot move any shipped trajectory, for a reason stronger than the
+dumps: the pool is off by default, and with it off `_gram_isolated_pool_batch_eval!`
+returns before it reaches the clamped line at all. The dumps above were taken
+before and after the change and compared byte for byte anyway, with the pool
+both off and on.
+
 ## Is the pool faster?
 
 RESULTS_PLACEHOLDER

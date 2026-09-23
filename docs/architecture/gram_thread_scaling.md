@@ -131,6 +131,32 @@ Worth stating plainly, because two of the three plausible answers are wrong.
   `_density_model_for_sat(p, sat_idx)`, i.e. the per-satellite instance vector
   (`SPACEAGORA_GRAM_PER_SAT_INSTANCES`), not the pool.
 
+## The pool is not the only instance-isolation mechanism in the tree
+
+Three switches share the same premise — that independent native GRAM instances
+may be called concurrently as long as each single instance is serialized — and
+they apply it in three different places. They are easy to confuse and they do
+not compose the way the names suggest.
+
+* `SPACEAGORA_GRAM_ISOLATED_POOL` builds per-*worker* instances inside the
+  density callback's batch call, and hands each one its own lock explicitly. It
+  therefore ignores `SPACEAGORA_GRAM_LOCK_SCOPE` entirely: the pool's calls
+  never reach `_gram_call_lock`, so they are off the shared lock whatever that
+  variable says.
+* `SPACEAGORA_GRAM_PER_SAT_INSTANCES` builds per-*satellite* instances
+  (`_initialize_density_model_instances!` in `simulation/engine/setup.jl`), and
+  those are what the constellation RHS aero path actually samples through. They
+  are the pool's natural counterpart for the RHS, and they were the path whose
+  fresh clones hit CSPICE concurrently; `setup.jl` now gives them the same
+  single-threaded warm-up the pool build uses.
+* `SPACEAGORA_GRAM_LOCK_SCOPE=model` changes which lock the *scalar* call sites
+  take, from the shared one to the wrapper's own `instance_lock`. On its own it
+  buys nothing, because one shared model still serializes on its own lock; it is
+  only useful in combination with per-satellite or per-sample instances. Its
+  occupancy is also deliberately not recorded in the native-lock counters, so a
+  run using it reads as having almost no GRAM lock time — which is correct but
+  easy to misread as a speedup.
+
 ## Two configuration traps in the existing benchmark cases
 
 Both were found while building this study and both change what the P6/S2 GRAM

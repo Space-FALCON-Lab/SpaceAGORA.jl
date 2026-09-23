@@ -109,7 +109,7 @@ it is a deliberate act rather than a silent one.
 
 ## Which paths the pool can actually reach
 
-Worth stating plainly, because two of the three plausible answers are wrong.
+Worth stating plainly, because three of the four plausible answers are wrong.
 
 * **The density callback's batch route** (`density_callbacks/runtime.jl`) is the
   one place the pool evaluates GRAM. It is taken when the batch route is

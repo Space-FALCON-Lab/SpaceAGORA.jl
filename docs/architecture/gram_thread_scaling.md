@@ -302,6 +302,77 @@ traces are understood to measure.
 `run_scaling_config.jl` builds its own 300–480 km constellation and puts the
 entry interface above it for exactly these two reasons.
 
+### The P6 GRAM traces are redefined; archived P6 GRAM rows must be re-measured
+
+Both traps applied directly to the paper's thread-scaling figure. P6 trace 5
+(`aero_<N>sat_l50_gram_lookahead_100s`) and trace 6
+(`aero_<N>sat_l50_gram_process_100s`) were built on `ppc_constellation` with the
+120 km entry interface. `benchmarks/studies/gram_thread_scaling/p6_case_audit.jl`
+builds both cases exactly as the harness does and counts, per member, whether it
+calls native GRAM and whether it is inside the atmosphere
+(`results/p6_case_audit.csv`):
+
+| Case, N = 4096 | Below 2000 km | `in_atmosphere` | Calling native GRAM |
+|---|---:|---:|---:|
+| trace 5, previous definition | 740 | 0 | 740 |
+| trace 6, previous definition | 4096 | 0 | 4096 |
+| trace 5, current definition | 4096 | 4096 | 4096 |
+| trace 6, current definition | 4096 | 4096 | 4096 |
+
+So the previous trace 5 was mostly not GRAM — 3356 of its 4096 members returned
+vacuum without a native call — and never built the look-ahead cache it is named
+for. The previous trace 6 did call GRAM for every sample, but every sample was
+the same default spacecraft, not trace 5's missions, and none was in the
+atmosphere. At N = 256 every member called GRAM under both definitions; only the
+current one has any member in the atmosphere.
+
+Both cases now use `ppc_p6_gram_constellation` in
+`benchmarks/studies/parallelization_performance/cases.jl`: the 300–480 km band
+above, entry interface `PPC_P6_GRAM_EI_KM` = 600 km, and trace 6's sample *k* is
+member *k* of trace 5's constellation flown alone. The case names are unchanged.
+End to end, trace 5 at 4096 over a 10 s mission makes exactly 7 native GRAM calls
+per member on the freeze-per-step path (one per density callback) and exactly
+27 on the look-ahead path (the same 7 plus the 20 knots of each member's
+look-ahead cache), so every member calls GRAM and every member's cache is built.
+
+Trace 4 (`expatm`) was not moved, so trace 4 against trace 5 now differs in
+constellation as well as in density model; trace 5 against trace 6 is still
+single-variable.
+
+**The P6 GRAM rows in archive run `trx50_ppb_cold_20260922_215638` were measured
+on the previous definition and must be re-measured.** The same applies to any
+other run of those two case names before commit `917ab6aa7`.
+
+#### What the redefinition costs, at N = 256
+
+`p6_trace5_redefinition.jl` runs the current trace 5 and a rebuild of the
+previous one back to back, alternating, under the harness's look-ahead
+environment, at N = 256 and a 100 s mission (`results/p6_trace5_redefinition.csv`,
+minimum of three repeats, both run to `Success` with the same 170 RHS
+evaluations):
+
+| Threads | Previous (s) | Current (s) | Current ÷ previous | Native GRAM calls, previous → current |
+|---:|---:|---:|---:|---:|
+| 1 | 2.56 | 0.66 | 0.26 | 93 440 → 11 520 |
+| 8 | 3.17 | 0.51 | 0.16 | 93 440 → 11 520 |
+
+The expectation going in was that the current definition would be the more
+expensive one, because more of its members reach GRAM. At N = 256 that is wrong,
+and the call counts say why. At 256 every member of the previous constellation
+was already below 2000 km, so every one called GRAM (the audit agrees); but none
+was inside the entry interface, so the look-ahead cache never engaged and the
+right-hand side called native GRAM directly at every stage evaluation — 365 calls
+per member, all on the one global lock, which is also why the previous
+definition got *slower* at 8 threads. The current definition builds each
+member's cache once (20 knots) and reads a spline afterward: 45 calls per member.
+So the previous trace 5 was not a cheap version of the look-ahead path; at this
+size it was the uncached direct-GRAM path under a look-ahead label.
+
+At N = 4096 the direction is not measured. There the previous definition had
+only 740 members calling GRAM at all, which pulls its cost down, while each of
+those still paid the uncached per-stage cost, which pulls it up; which effect
+wins was not run on this workstation.
+
 ## Refresh de-phasing: not available
 
 `benchmarks/studies/paper_scenarios/FABLE_FINDINGS.md` D5 proposes staggering

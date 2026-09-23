@@ -264,6 +264,49 @@ function ppc_constellation(
     return sats
 end
 
+# ── The P6 native-GRAM constellation (traces 5 and 6) ────────────────────────
+#
+# NOT `ppc_constellation`, and the difference is the whole reason these exist.
+# `ppc_constellation` puts member i at 540 + 2(i-1) km apoapsis with the default
+# 120 km entry interface, which made the two P6 GRAM traces measure mostly not
+# GRAM: at 4096 members everything above 2000 km returns vacuum from
+# `getDensity(::GRAMAtmosphereModel, ...)` without a native call, and since every
+# member starts above the entry interface `in_atmosphere` is false for all of
+# them, so the vacuum-predicted look-ahead cache -- the thing trace 5 is named
+# for -- never builds. (Found and measured in
+# benchmarks/studies/gram_thread_scaling; see
+# docs/architecture/gram_thread_scaling.md.)
+#
+# Here every member sits in a 300-480 km band (ASSUMED: a drag-relevant LEO band
+# wholly below the 2000 km GRAM cut-off; it is the band the gram_thread_scaling
+# study measured the isolated pool on), cycling through five (apoapsis,
+# periapsis) pairs, and is spread in right ascension and true anomaly so members
+# do not share a ground track. The entry interface is PPC_P6_GRAM_EI_KM, above
+# the band, so every member is inside the atmosphere from the first step.
+#
+# No member crosses the interface during the 100 s mission, so the drag-state
+# callback never switches tolerances or the step cap: the run keeps the
+# dt_max_orbit = 5 s the other P6 density traces use.
+
+# DERIVED: the band tops out at 480 km apoapsis altitude, `in_atmosphere` is set
+# from `altitude <= EI`, and 600 km is the round number above that ceiling.
+const PPC_P6_GRAM_EI_KM = 600.0
+
+function ppc_p6_gram_member(planet, i::Int, n::Int; id::Int=i)
+    k = mod(i - 1, 5)
+    return ppc_spacecraft(
+        planet;
+        id=id,
+        ra_alt_m=400e3 + 20e3 * k,
+        rp_alt_m=300e3 + 10e3 * k,
+        raan_deg=360.0 * (i - 1) / n,
+        nu_deg=120.0 + 240.0 * (i - 1) / max(1, n),
+    )
+end
+
+ppc_p6_gram_constellation(planet, n::Int) =
+    SpacecraftModel[ppc_p6_gram_member(planet, i, n) for i in 1:n]
+
 function ppc_harmonics_model(planet, degree::Int)
     if isfile(PPC_EARTH_HARMONICS_FILE)
         return GravitationalHarmonicsModel(degree, degree, PPC_EARTH_HARMONICS_FILE, planet)
@@ -287,7 +330,8 @@ function ppc_build_config(;
     abstol_orbit::Float64=1e-9,
     num_steps_to_save::Int=300,
     results::Bool=false,
-    data_rate::Float64=10.0
+    data_rate::Float64=10.0,
+    ei_km::Float64=120.0
 )
     # `results` and `data_rate` are the output-cadence axis (B14).
     #
@@ -324,7 +368,7 @@ function ppc_build_config(;
         ),
         environment_model=EnvironmentModel(
             planet=planet,
-            EI=120.0,
+            EI=ei_km,
             density_model=density_model,
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
             topography=false,
@@ -1403,6 +1447,13 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         #                   which is the only arrangement the process route can
         #                   actually spread (see below).
         #
+        # CAVEAT, since the GRAM traces moved to ppc_p6_gram_constellation: trace 4
+        # (expatm) is still on ppc_constellation, so trace 4 against trace 5 now
+        # differs in constellation as well as in density model, and is no longer
+        # single-variable. Trace 5 against trace 6 still is. Moving trace 4 as
+        # well would restore it; that was left for whoever owns the figure to
+        # decide, because it changes a trace that was not wrong.
+        #
         # dt_max_orbit is 5 s for all three, matching the atmo256_* ladder the
         # durations are derived from, rather than the 20 s the vacuum traces use:
         # the three are single-variable against each other, which is what the
@@ -1448,32 +1499,43 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
                 dt_max_orbit=5.0
             )
         elseif aero_variant == "gram_lookahead"
+            # On the P6 GRAM constellation, not ppc_constellation: see
+            # ppc_p6_gram_constellation for why.
             return ppc_build_config(
                 planet=planet,
-                spacecraft=ppc_constellation(planet, aero_n),
+                spacecraft=ppc_p6_gram_constellation(planet, aero_n),
                 mission_time_s=aero_time,
                 orientation_sim=false,
                 dynamic_effectors=aero_effectors,
                 density_model=ppc_gram_atmosphere_model("earth"),
-                dt_max_orbit=5.0
+                dt_max_orbit=5.0,
+                ei_km=PPC_P6_GRAM_EI_KM
             )
         end
         # gram_process: one spacecraft per sample. The sample count is the
         # constellation size and is carried by default_samples in the catalog, so
-        # a phase asks for this case at mc_samples = aero_n and gets the same
-        # aero_n spacecraft-missions the other five traces propagate together.
-        # Not jittered, for independent_1sat_1hr's reason: a spread in the
-        # initial conditions would give each sample its own step count and show up
-        # as load imbalance on the process route, confounding the very comparison
-        # this trace is in the figure for.
+        # a phase asks for this case at mc_samples = aero_n, and sample k is
+        # member k of trace 5's constellation (ppc_p6_gram_member, same n) flown
+        # alone: the same aero_n spacecraft-missions trace 5 propagates together,
+        # which is what makes the two traces comparable. Indices past aero_n
+        # (warm-up samples) wrap around the constellation.
+        #
+        # This replaces an earlier definition in which every sample was the same
+        # default ppc_spacecraft at 500-550 km with a 120 km entry interface:
+        # identical samples (so no load imbalance), but not trace 5's missions,
+        # and never in the atmosphere. The members now differ in orbit, so their
+        # step counts can differ; that is the real spread of trace 5's
+        # constellation, not jitter added to it.
+        member = mod1(mc_index, aero_n)
         return ppc_build_config(
             planet=planet,
-            spacecraft=[ppc_spacecraft(planet; id=1)],
+            spacecraft=[ppc_p6_gram_member(planet, member, aero_n; id=1)],
             mission_time_s=aero_time,
             orientation_sim=false,
             dynamic_effectors=aero_effectors,
             density_model=ppc_gram_atmosphere_model("earth"),
-            dt_max_orbit=5.0
+            dt_max_orbit=5.0,
+            ei_km=PPC_P6_GRAM_EI_KM
         )
     end
 
@@ -1651,15 +1713,19 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
              "$(p6_n) spacecraft, L50 harmonics + aero, analytic exponential " *
              "density, 100 s mission (P6 trace 4)")
         add!("aero_$(p6_n)sat_l50_gram_lookahead_100s", "p6_density_ladder",
-             "$(p6_n) spacecraft, L50 harmonics + aero, live native GRAM through " *
-             "the vacuum-predicted look-ahead cache, 100 s mission (P6 trace 5)")
+             "$(p6_n) spacecraft in a 300-480 km band, entry interface 600 km (every " *
+             "member inside the atmosphere and below the 2000 km GRAM cut-off), " *
+             "L50 harmonics + aero, live native GRAM through the vacuum-predicted " *
+             "look-ahead cache, 100 s mission (P6 trace 5)")
         # montecarlo, default_samples = the constellation size: the process route
         # spreads samples, never constellation members, so this trace carries its
         # spacecraft as one-spacecraft samples. See the ppc_single_config branch.
         add!("aero_$(p6_n)sat_l50_gram_process_100s", "p6_density_ladder",
-             "$(p6_n) single-spacecraft samples, L50 harmonics + aero, live " *
-             "native GRAM per worker process, 100 s mission (P6 trace 6: the " *
-             "same spacecraft-missions as trace 5 arranged for the process route)",
+             "$(p6_n) single-spacecraft samples, sample k = member k of trace 5's " *
+             "300-480 km constellation with the 600 km entry interface, L50 " *
+             "harmonics + aero, live native GRAM per worker process, 100 s mission " *
+             "(P6 trace 6: the same spacecraft-missions as trace 5 arranged for " *
+             "the process route)",
              montecarlo=true, default_samples=p6_n)
     end
 

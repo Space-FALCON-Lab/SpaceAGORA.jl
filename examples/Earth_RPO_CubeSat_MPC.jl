@@ -69,6 +69,15 @@ and scale the planner with `safe_distance_m`, `cost_ref_distance_m`,
 caps the reference speed without changing the geometric plan. Defaults keep
 the Gateway geometry, mass and reference area; the returned `station` record
 states what was used.
+
+The planner always receives the orbit's mean motion (`mean_motion_radps`),
+which the `:manuscript` HyPR mode uses in its HCW fuel proxy.
+`retime_accel_mps2` sets the retiming acceleration (default half the per-axis
+thrust acceleration), `mpc_terminal_weight_scale` sets Qf = scale * Q
+(default 10), `post_reference_hold_s` is the time simulated after the
+reference ends (default 20 s), and `record_control_commands` attaches an
+`RPOControlCommandLog` to the controller (read it after
+`run_simulation(args; isolate_state=false)`).
 """
 function build_rpo_cubesat_mpc_demo(;
     mission_time=180.0,
@@ -96,6 +105,10 @@ function build_rpo_cubesat_mpc_demo(;
     data_rate_s::Real=10.0,
     pso_iteration_runtime_limit_s=nothing,
     pso_iteration_callback=nothing,
+    retime_accel_mps2=nothing,
+    mpc_terminal_weight_scale::Real=10.0,
+    post_reference_hold_s::Real=20.0,
+    record_control_commands::Bool=false,
     verbose::Bool=true,
 )
     start_rtn = SVector{3, Float64}(start_rtn)
@@ -172,7 +185,9 @@ function build_rpo_cubesat_mpc_demo(;
     )
     chaser_initial_mass_kg = chaser_root.m + chaser.prop_mass
     max_axis_accel_mps2 = minimum(thrusters.max_thrust_n ./ chaser_initial_mass_kg)
-    retime_accel_mps2 = 0.5 * max_axis_accel_mps2
+    retime_accel_mps2 = retime_accel_mps2 === nothing ? 0.5 * max_axis_accel_mps2 : Float64(retime_accel_mps2)
+    isfinite(retime_accel_mps2) && retime_accel_mps2 > 0.0 ||
+        throw(ArgumentError("retime_accel_mps2 must be finite and positive."))
 
     if pso_config !== nothing && pso_configurator !== nothing
         throw(ArgumentError("Pass either pso_config or pso_configurator, not both."))
@@ -232,6 +247,7 @@ function build_rpo_cubesat_mpc_demo(;
             throw(ArgumentError("reference_max_speed_mps must be finite and positive."))
         pso_cfg = rpo_pso_config(pso_cfg; retime_max_speed_mps=speed_limit)
     end
+    pso_cfg = rpo_pso_config(pso_cfg; mean_motion_radps=n)
 
     plan_buffer = RPOPlanBuffer()
     plan_result = rpo_pso_plan_path(
@@ -249,7 +265,7 @@ function build_rpo_cubesat_mpc_demo(;
         plan_result.config;
         safe_distance_m=Float64(safe_distance_m),
     )
-    simulation_time_s = max(Float64(mission_time), t_ref[end] + 20.0)
+    simulation_time_s = max(Float64(mission_time), t_ref[end] + Float64(post_reference_hold_s))
     initial_plan = RPOPlan(
         valid=true,
         t_ref_s=t_ref,
@@ -282,7 +298,7 @@ function build_rpo_cubesat_mpc_demo(;
 
     Q = Diagonal([20.0, 20.0, 20.0, 2.0, 2.0, 2.0])
     R = 0.1I(3)
-    Qf = 10.0 .* Matrix(Q)
+    Qf = Float64(mpc_terminal_weight_scale) .* Matrix(Q)
     controller = init_rpo_lqmpc(
         n,
         pso_cfg.retime_dt_s,
@@ -303,6 +319,7 @@ function build_rpo_cubesat_mpc_demo(;
         attitude_kp=0.02,
         rate_kd=0.08,
         max_rw_torque_nm=0.002,
+        command_log=record_control_commands ? RPOControlCommandLog() : nothing,
     )
 
     args = SimulationConfiguration(
@@ -364,6 +381,29 @@ function build_rpo_cubesat_mpc_demo(;
         initial_plan=initial_plan,
         plan_result=plan_result,
         seed=Int(seed),
+        orbit=(
+            radius_m=orbit_radius,
+            altitude_m=orbit_radius - planet.Rp_e,
+            mu_m3ps2=μ,
+            mean_motion_radps=n,
+        ),
+        chaser=(
+            dry_mass_kg=chaser_root.m,
+            prop_mass_kg=chaser.prop_mass,
+            initial_mass_kg=chaser_initial_mass_kg,
+            max_thrust_n=collect(thrusters.max_thrust_n),
+            isp_s=collect(thrusters.isp_s),
+            max_axis_accel_mps2=max_axis_accel_mps2,
+            dims_m=(0.1, 0.1, 0.3),
+        ),
+        mpc=(
+            Q_diag=collect(diag(Q)),
+            R_diag=collect(diag(Matrix(R))),
+            Qf_scale=Float64(mpc_terminal_weight_scale),
+            horizon=12,
+            dt_s=pso_cfg.retime_dt_s,
+            u_limit_mps2=max_axis_accel_mps2,
+        ),
         station=(
             name=station_spec.name,
             source=station_spec.source,

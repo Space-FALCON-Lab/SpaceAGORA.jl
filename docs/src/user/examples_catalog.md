@@ -137,15 +137,27 @@ keyword at its default preserves the Gateway dimensions, mass and 8 m²
 reference area, and the returned
 `station` record states what was used.
 `scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
-model and exports a viewer page with the planned path overlaid.
-`SPACEAGORA_DEMO_SMOKE=1` runs a short bounded hop instead of the full
-approach, and every run writes an `iss_hypr_provenance.json` sidecar that
-names its inputs and outputs. The ISS demo caps reference speed at 0.1 m/s
-and extends the run to finish the approach. Its station rotates with the circular
-orbit so the saved attitude and the planner's station geometry share the RTN
-frame. The geometric retimer does not guarantee an acceleration profile from
-rest, and LQ-MPC does not impose collision constraints. Check simulated
-clearance as well as planned clearance when changing the scenario.
+model in a flight-like attitude held in LVLH (truss along N, pressurized
+modules along T) and relocates the chaser between V-bar hold points on
+opposite sides of the station, exporting a viewer page with the plan
+overlaid. It plans with the `:manuscript` HyPR mode (`hypr_mode`: an
+RRT-Connect warm start sets the exploration score and with it the PSO
+coefficients and counts; the objective is the obstacle sigmoid centred at
+d_safe + τ_tol plus the HCW fuel proxy of each candidate's retimed reference)
+and retimes with `retime_accel_limit_enable`, which bounds the tangential
+acceleration and starts the reference at the chaser's speed and ends it at
+rest. The default `:legacy` mode keeps the earlier objective and adaptive
+policy. The display model also holds seven disc-shaped meshes that are not
+ISS hardware; the demo writes a copy without them for the point cloud and
+the page. `SPACEAGORA_DEMO_SMOKE=1` runs a short bounded hop instead of the
+full relocation. Every run writes an `iss_hypr_provenance.json` sidecar that
+names its inputs and outputs, a plan record with the warm start, exploration
+score, counts, cost history and reference checks, and the controller's
+per-update log. Its station rotates with the circular orbit so the saved
+attitude and the planner's station geometry share the RTN frame. LQ-MPC does
+not impose collision constraints, and point-cloud clearance is checked at
+samples, not continuously. Check simulated clearance against the station
+mesh as well as planned clearance when changing the scenario.
 
 With a fixed seed and iteration budget, the planner gives the same plan across
 Julia thread counts. Runs using a wall-clock stopping budget can stop at different

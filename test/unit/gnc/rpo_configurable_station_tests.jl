@@ -212,9 +212,20 @@ else
             full = D.iss_hypr_inputs(; smoke=false)
             smoke = D.iss_hypr_inputs(; smoke=true)
             @test full.smoke === false && smoke.smoke === true
-            @test full.station_dims_m == (73.0, 109.0, 20.0)
-            @test full.reference_max_speed_mps == smoke.reference_max_speed_mps == 0.1
+            @test full.hypr_mode === :manuscript && smoke.hypr_mode === :manuscript
+            @test full.station_dims_m == (20.0, 73.0, 109.0)
+            # No global speed cap: the acceleration-limited retimer keeps the reference trackable.
+            @test full.reference_max_speed_mps === smoke.reference_max_speed_mps === nothing
+            @test full.retime_accel_limit && smoke.retime_accel_limit
             @test length(full.model_sha256) == 64
+            @test length(full.station_model_sha256) == 64
+            # Flight-like attitude: truss along N, modules along T, smallest extent along R.
+            half = full.station_half_extent_m
+            @test half[3] > half[2] > half[1]
+            # V-bar relocation: 100 m behind the aft end to 30 m ahead of the forward end.
+            @test full.start_rtn == (0.0, -(half[2] + 100.0), 0.0)
+            @test full.goal_rtn == (0.0, half[2] + 30.0, 0.0)
+            @test length(D.ISS_EXCLUDED_NODES) == 7
             @test D.iss_hypr_outdir(full) == D.iss_hypr_outdir(D.iss_hypr_inputs(; smoke=false))   # same inputs, same directory
             @test D.iss_hypr_outdir(full) != D.iss_hypr_outdir(smoke)                                # different inputs, different directory
             @test startswith(D.iss_hypr_outdir(full), demo_out)
@@ -224,6 +235,7 @@ else
             prefix = joinpath(outdir, "simulation_results")
             sidecar = joinpath(outdir, "iss_hypr_provenance.json")
             planfile = joinpath(outdir, "iss_hypr_plan.json")
+            logfile = joinpath(outdir, "iss_hypr_control_log.csv")
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
             write(sidecar, D.JSON.json(Dict("inputs" => D._json_roundtrip(smoke))))
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # scene, plan and results still missing
@@ -234,10 +246,13 @@ else
             write(prefix * ".feather", "")
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # an empty results bundle is not a run
             Arrow.write(prefix * ".feather", (time=[0.0, 1.0], sc1_mass=[1.0, 1.0]))
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # control log still missing
+            write(logfile, "t_s,x_m\n0.1,1.0\n")
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # missing provenance records
             records = Dict("plan" => D._file_record(planfile),
                 "scene" => D._file_record(prefix * "_scene.json"),
-                "results_feather" => D._file_record(prefix * ".feather"))
+                "results_feather" => D._file_record(prefix * ".feather"),
+                "control_log" => D._file_record(logfile))
             provenance = Dict("inputs" => D._json_roundtrip(smoke), "station" => Dict(),
                 "plan" => Dict(), "cloud_extents_m" => [], "outputs" => records)
             write(sidecar, D.JSON.json(provenance))
@@ -245,7 +260,7 @@ else
             @test !D.iss_hypr_matching_run(sidecar, full, prefix, planfile)
             # Every reusable payload is bound to the successful run, including
             # nonempty corruption that a presence or size check would accept.
-            for path in (prefix * ".feather", prefix * "_scene.json", planfile)
+            for path in (prefix * ".feather", prefix * "_scene.json", planfile, logfile)
                 original = read(path)
                 try
                     rm(path)

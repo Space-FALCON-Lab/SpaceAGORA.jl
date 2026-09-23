@@ -33,7 +33,7 @@ module ControlHooks
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
     export ApolloDescentControlConfig, ApolloDescentControlModel, ApolloDescentControlState, attitude_error_vector
     export RpoLQMPCController, init_rpo_lqmpc, rpo_lqmpc_control
-    export RPOHeldActuation, RPOMPCControlModel
+    export RPOControlCommandLog, RPOHeldActuation, RPOMPCControlModel
     export MagneticMomentumManagerModel
     export RobotArmHeldActuation, RobotArmJointMPCController, RobotArmControlEffector
     export init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview

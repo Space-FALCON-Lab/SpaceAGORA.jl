@@ -181,8 +181,19 @@ else
         @testset "bounded tracking of a short hop beside the default station" begin
             start = SVector{3, Float64}(-8.0, -4.0, 2.0)
             goal = SVector{3, Float64}(-5.5, -2.5, 1.0)
-            dt = build_station_demo(; mission_time=30.0, start_rtn=start, goal_rtn=goal, data_rate_s=1.0)
-            run_simulation(dt.args)
+            dt = build_station_demo(; mission_time=30.0, start_rtn=start, goal_rtn=goal, data_rate_s=1.0, record_control_commands=true)
+            # The controller log is filled on the simulated model itself, so run without the isolating copy.
+            run_simulation(dt.args; isolate_state=false)
+            log = dt.control.command_log
+            @test log !== nothing
+            n_updates = length(log.t_s)
+            @test n_updates >= 250                                  # 0.1 s updates over at least 30 s
+            @test issorted(log.t_s)
+            @test length(log.x_rel_rtn) == length(log.accel_cmd_rtn) == length(log.qp_status) == n_updates
+            @test length(log.thruster_forces_n) == length(log.mass_kg) == length(log.q_chaser) == n_updates
+            @test count(==(:Solved), log.qp_status) > 0
+            @test all(f -> all(0.0 .<= f .<= dt.control.thrusters.max_thrust_n .+ 1.0e-12), log.thruster_forces_n)
+            @test log.mass_kg[end] <= log.mass_kg[1]
             csv = joinpath(dt.args.simulation_settings.results_directory, "simulation_results.csv")
             @test isfile(csv)
             df, actual_rtn, ref_rtn, err = RPOX._rpo_postprocess(csv, dt)

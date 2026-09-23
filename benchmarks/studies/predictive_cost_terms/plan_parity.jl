@@ -16,7 +16,10 @@
 #       --case=mcgrid_8sat_16mc --plans=threads8,process2+3,none --out=<prefix>
 #
 # Plans: `threads<W>` (threads route, W tasks, one thread each), `process<W>+<L>`
-# (W pool workers and L coordinator local slots), `none` (one consumer).
+# (W pool workers and L coordinator local slots), `none` (one consumer on the
+# whole thread pool); a `b<B>` suffix (`threads2b4`, `process2+3b2`) gives
+# each threads-route task or local slot an inner budget of B threads, which is
+# how a campaign is dumped at budget 1 against a wider budget.
 
 using Distributed
 
@@ -46,11 +49,18 @@ const SCamp = SpaceAGORA.SimulationCampaigns
 
 function pcp_plan(spec::String, n::Int)
     spec == "none" && return SCamp._predictive_plan(:none, 1, 0, n, true, nothing)
-    m = match(r"^threads(\d+)$", spec)
-    m !== nothing && return SCamp._predictive_plan(:threads, parse(Int, m[1]), 0, n, true, nothing)
-    m = match(r"^process(\d+)\+(\d+)$", spec)
-    m !== nothing && return SCamp._predictive_plan(:process, parse(Int, m[1]), parse(Int, m[2]), n,
-                                                   parse(Int, m[2]) == 0, nothing)
+    m = match(r"^threads(\d+)(?:b(\d+))?$", spec)
+    if m !== nothing
+        b = m[2] === nothing ? 0 : parse(Int, m[2])
+        return SCamp._predictive_plan(:threads, parse(Int, m[1]), 0, n, b <= 1, nothing;
+                                      inner_budget = b)
+    end
+    m = match(r"^process(\d+)\+(\d+)(?:b(\d+))?$", spec)
+    if m !== nothing
+        b = m[3] === nothing ? 0 : parse(Int, m[3])
+        return SCamp._predictive_plan(:process, parse(Int, m[1]), parse(Int, m[2]), n,
+                                      parse(Int, m[2]) == 0 && b <= 1, nothing; inner_budget = b)
+    end
     error("unknown plan $(spec)")
 end
 
@@ -98,6 +108,7 @@ function main()
             end
         end
         println("plan=$(spec) route=$(r.route) consumers=$(r.threads) local_slots=$(r.local_slots) " *
+                "budget=$(SCamp._predictive_declared_budget(plan)) " *
                 "samples=$(length(samples)) saved_steps=$(steps) bytes=$(filesize(path)) " *
                 "retcodes=$(join(unique(s.value.retcode for s in samples), ",")) wall=$(round(r.elapsed_s; digits=3))s -> $(path)")
         flush(stdout)

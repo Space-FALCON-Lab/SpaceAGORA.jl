@@ -1,0 +1,7 @@
+run,profile,samples,workers,case,arm,coordinator_pid,peak_total_rss_gib,peak_worker_rss_gib_max,coordinator_peak_rss_gib,wall_s,wall_ratio_hint_over_nohint
+n1500_smoke,smoke,1500,4,montecarlo_mars_gram_live,nohint,235122,8.00,1.76,1.37,55.056,
+n1500_smoke,smoke,1500,4,montecarlo_mars_gram_live,hint,239624,8.22,1.81,1.36,55.426,1.0067
+n400_full,full,400,4,montecarlo_mars_gram_live,nohint,252281,8.13,1.80,1.36,53.336,
+n400_full,full,400,4,montecarlo_mars_gram_live,hint,257110,8.15,1.79,1.37,53.717,1.0071
+n4000_full,full,4000,4,montecarlo_mars_gram_live,nohint,262685,8.21,1.77,1.37,95.575,
+n4000_full,full,4000,4,montecarlo_mars_gram_live,hint,268328,8.35,1.84,1.36,91.432,0.9567

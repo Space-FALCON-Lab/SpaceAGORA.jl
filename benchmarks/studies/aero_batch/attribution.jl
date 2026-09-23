@@ -71,11 +71,18 @@ const AB_VACUUM_CASE = "gravity_$(AB_N)sat_l50_vacuum_$(AB_MISSION)s"
 # that is neither harmonics nor aero, not the sum of everything under it.
 #
 # Order in this vector is documentation only; attribution is by stack depth.
+#
+# Markers are matched against the frame's printed signature, not only its name,
+# so `_evaluate_dynamic_effector` is split by the effector type it was
+# specialized for: on the per-satellite route every effector goes through it.
 const AB_MARKERS = [
     ("aero_hart_coefficients",   ("aerodynamic_coefficient_fM",)),
     ("aero_wrench",              ("_aero_pure_wrench", "wrench_caching!")),
     ("aero_prepass",             ("_accumulate_aero_flat_batch!",)),
-    ("flat_queue_dispatch",      ("_evaluate_dynamic_effector",)),
+    ("aero_effector_dispatch",   ("_evaluate_dynamic_effector(effector::AerodynamicCoefficientfM",)),
+    ("harmonics_per_satellite",  ("_evaluate_dynamic_effector(effector::GravitationalHarmonicsModel",)),
+    ("effector_dispatch_other",  ("_evaluate_dynamic_effector",)),
+    ("heat_rates",               ("_compute_stage_heat_rates!",)),
     ("harmonics_prepass",        ("_accumulate_harmonics_flat_batch!", "_harmonics_flat_batch_kernel!")),
     ("flat_reduce",              ("_reduce_flat_effector_slots_range!",)),
     ("flat_effector_slots",      ("_accumulate_dynamic_effectors_flat_slots!", "_accumulate_dynamic_effectors_flat_batch!")),
@@ -112,6 +119,13 @@ function ab_backtraces(data::Vector{UInt})
     return traces
 end
 
+# Printed signature of a frame (specialization included when known), cached,
+# since the same frames recur in every sample.
+const AB_FRAME_LABELS = Dict{Any, String}()
+# `show` on a StackFrame prints `f(arg::Type, ...)` when the specialization is
+# known, which is the form the markers above are written against.
+ab_frame_label(frame) = get!(() -> sprint(show, frame), AB_FRAME_LABELS, frame)
+
 function ab_profile_shares(data::Vector{UInt}, lidict)
     counts = Dict{String, Int}()
     total = 0
@@ -125,7 +139,7 @@ function ab_profile_shares(data::Vector{UInt}, lidict)
             # leaf first; reversed here so the whole scan runs root to leaf and
             # the last marker it sees is the innermost one.
             for frame in Iterators.reverse(frames)
-                m = ab_marker_for(String(frame.func))
+                m = ab_marker_for(ab_frame_label(frame))
                 m === nothing || (bucket = m)   # innermost marker wins
             end
         end
@@ -233,9 +247,14 @@ function main()
         allocs = Profile.Allocs.fetch()
         sites = Dict{String, Tuple{Int, Int}}()
         for a in allocs.allocs
-            frames = a.stacktrace
-            isempty(frames) && continue
-            key = string(frames[1].func, " @ ", basename(String(frames[1].file)), ":", frames[1].line)
+            # The innermost frames belong to the allocator and the profiler;
+            # attribute to the first Julia frame outside Base/Core internals.
+            idx = findfirst(f -> !f.from_c && !(String(f.file) |> x -> occursin("boot.jl", x) ||
+                                               occursin("array.jl", x) || occursin("essentials.jl", x)),
+                            a.stacktrace)
+            idx === nothing && continue
+            frame = a.stacktrace[idx]
+            key = string(frame.func, " @ ", basename(String(frame.file)), ":", frame.line)
             n, b = get(sites, key, (0, 0))
             sites[key] = (n + 1, b + a.size)
         end

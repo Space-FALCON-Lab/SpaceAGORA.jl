@@ -1,0 +1,7 @@
+threads,n_sats,ei_km,density_path,pool_workers,rep,wall_s,gc_s,nf,naccept,gram_density_acq,gram_density_hold_ns,gram_density_wait_ns,gram_cache_acq,gram_cache_hold_ns,gram_cache_wait_ns,total_hold_ns,total_wait_ns
+8,1024,120.0,freeze,0,1,0.192432,0.031314,163,23,0,0,0,0,0,0,974124,0
+8,1024,120.0,freeze,4,1,0.353110,0.036591,163,23,0,0,0,0,0,0,2406846,0
+8,1024,120.0,freeze,0,2,0.317640,0.128089,163,23,0,0,0,0,0,0,1119467,0
+8,1024,120.0,freeze,4,2,0.353826,0.035439,163,23,0,0,0,0,0,0,2490758,0
+8,1024,120.0,freeze,0,3,0.210238,0.034938,163,23,0,0,0,0,0,0,1185229,0
+8,1024,120.0,freeze,4,3,0.352017,0.029253,163,23,0,0,0,0,0,0,2560706,0

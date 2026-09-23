@@ -640,6 +640,40 @@ workload-dependent term -- the obvious candidate is the coordinator's dispatch
 load, which is seventeen times higher for P3's 50 ms samples than for P4's
 0.85 s ones -- is the next measurement, not an assumption to make here.
 
+### A coordinator-load term, fitted and not shipped
+
+The coordinator thread that runs the local slots also dispatches and collects
+every sample, and that load per unit time is the warm-pool per-dispatch cost
+(1.7 ms median, see The final round) over the sample time: `r = 0.0017 /
+t_sample`, about 0.002 for P4 and 0.034 for P3. Four two-parameter forms
+carrying `r` were fitted on the four traced points above, by least squares on
+`s - 1`, with `t_sample` the pure pool's mean sample time at the point's width:
+
+| Form | a | b | Fit at k = 4, 7, 15, 31 (measured 1.289, 1.247, 1.523, 6.754) |
+|---|---|---|---|
+| `1 + a k(k-1) + b k r` | 0.002133 | 3.544 | 1.054, 1.139, 1.547, 6.757 |
+| `1 + a k(k-1) + b k (W+k) r` | 0.002468 | 0.05157 | 1.035, 1.115, 1.563, 6.754 |
+| `1 + a k(k-1) + b k W r` | 0.002461 | 0.1017 | 1.036, 1.115, 1.562, 6.754 |
+| `1 + a k(k-1) (1 + b r)` | 0.002487 | 0.1078 | 1.032, 1.114, 1.564, 6.754 |
+
+Validated without refitting against the inversions from
+`trx50_ppb_cold_20260922_103231` (blended means against the pure pool at the
+same width; ill-posed where few samples reach the local slots, which applies
+least at P3 k = 15, where 30 of 256 samples did): P4 k = 7 measured 1.36,
+predicted 1.11-1.14; P4 k = 15 measured 1.72, predicted 1.55-1.57; P3 k = 3
+measured 1.18, predicted 1.04-1.49; P3 k = 7 measured 2.0, predicted
+1.30-2.17; P3 k = 15 measured 7.2, predicted 2.37-3.43. Every form
+under-predicts P3 at mid widths by two to three times.
+
+With no corrections, every form ranks all three archived points as measured
+and chooses `w8+l7` at P4 at 8 and `w16+l15` at P4 at 16 (predicted gain
+17.7-18.4%). None keeps P3 at 32 static outside the margin: each prices a
+mid-width mixed plan (`l12` to `l17`) 11.5-12.8% ahead of `w32+l0`, so the
+static plan survives only because the margin is 15%, and the cold P3-P5 run
+measured the mixed plans R7 took at that point at up to twice the pure pool's
+time. That fails the acceptance test set for the term, so no coordinator-load
+form ships and the one-slope fit above stands.
+
 `heap_scale` now scales the term's EXCESS, `s = 1 + scale (s_model - 1)`, so
 for the pairwise term it is a scale on the fitted slope; the guard's
 observation maps to it as `(s_observed - 1) / (s_model - 1)`. The P4-at-8

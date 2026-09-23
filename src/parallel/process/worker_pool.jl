@@ -63,8 +63,61 @@ precompilation cost) are reused rather than respawned per campaign.
 """
 campaign_process_pool()::ProcessPool = _CAMPAIGN_PROCESS_POOL
 
-@inline function _process_worker_exeflags(project_path::AbstractString)::Cmd
-    return Cmd(["--threads=1", "--startup-file=no", "--project=$(project_path)"])
+# Default per-worker GC heap-size-hint. DERIVED from a P6p diagnostic on
+# TRX50 (4096 one-satellite native-GRAM samples, process route, job
+# 20260923-111926-55080, memory sampled every 5 s, 200 GB cgroup cap): at the
+# 8-worker rung, during the predictive mode's campaigns, system memory went
+# from 107 GB to 181 GB to 211 GB across three consecutive 10 s samples, with
+# thirteen Julia processes totaling 103/174/203 GB and the largest single
+# process reaching 13/24/30 GB, before the cap killed the job. Nothing handed
+# any worker's collector a size to aim for, so nothing bounded its growth
+# toward the whole machine.
+#
+# The default hint is the machine's total memory split (pool_size + 1) ways
+# -- the pool's `pool_size` workers plus the coordinator process sharing the
+# same machine -- floored and capped so the formula degenerates sensibly at
+# both ends of the pool-size range:
+const _POOL_WORKER_HEAP_HINT_FLOOR_BYTES = 2 * 1024^3    # 2 GiB. ASSUMED: below this a hint would fight a single sample's own working set (GRAM tables, harmonics buffers) rather than bound growth across many samples.
+const _POOL_WORKER_HEAP_HINT_CEIL_BYTES = 64 * 1024^3    # 64 GiB. ASSUMED: comfortably above every per-process peak (<=30 GB) the diagnostic observed, so it only engages for a small pool on a very large machine, where it adds no protection anyway.
+
+@inline function _default_pool_worker_heap_hint_bytes(pool_size::Int)::Int
+    share = Sys.total_memory() ÷ max(1, pool_size + 1)
+    return clamp(share, _POOL_WORKER_HEAP_HINT_FLOOR_BYTES, _POOL_WORKER_HEAP_HINT_CEIL_BYTES)
+end
+
+@inline function _format_heap_size_hint(bytes::Integer)::String
+    # Julia's --heap-size-hint takes a byte count with an optional unit
+    # suffix (K/M/G/T); whole-GiB keeps the flag readable in a process listing.
+    return string(round(bytes / 1024^3; digits=2), "G")
+end
+
+"""
+    _pool_worker_heap_size_hint(pool_size::Int)::Union{Nothing, String}
+
+Resolve the `--heap-size-hint` argument for a process-pool worker, where
+`pool_size` is the pool's target worker count (see
+[`_default_pool_worker_heap_hint_bytes`](@ref) for the derivation).
+
+`SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT` overrides the computed default:
+`"off"` (case-insensitive) disables the hint entirely (returns `nothing`, so
+no `--heap-size-hint` flag is added at all); any other non-empty value is
+passed through verbatim as the flag's argument. Unset (the default) uses the
+derived value.
+"""
+function _pool_worker_heap_size_hint(pool_size::Int)::Union{Nothing, String}
+    raw = strip(get(ENV, "SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT", ""))
+    if !isempty(raw)
+        lowercase(raw) == "off" && return nothing
+        return raw
+    end
+    return _format_heap_size_hint(_default_pool_worker_heap_hint_bytes(pool_size))
+end
+
+@inline function _process_worker_exeflags(project_path::AbstractString, pool_size::Int=1)::Cmd
+    flags = String["--threads=1", "--startup-file=no", "--project=$(project_path)"]
+    hint = _pool_worker_heap_size_hint(pool_size)
+    hint === nothing || push!(flags, "--heap-size-hint=$(hint)")
+    return Cmd(flags)
 end
 
 # Distributed inherits the coordinator's LOAD_PATH unless JULIA_LOAD_PATH is
@@ -80,9 +133,9 @@ function _process_worker_load_path()::String
     return join(["@"; rest], pathsep)
 end
 
-@inline function _spawn_process_workers(n::Int, project_path::AbstractString)::Vector{Int}
+@inline function _spawn_process_workers(n::Int, project_path::AbstractString, pool_size::Int=n)::Vector{Int}
     return addprocs(n;
-        exeflags=_process_worker_exeflags(project_path),
+        exeflags=_process_worker_exeflags(project_path, pool_size),
         env=["JULIA_LOAD_PATH" => _process_worker_load_path()])
 end
 
@@ -241,7 +294,10 @@ function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing)::
     lock(pool.lock) do
         shortfall = desired - length(pool.workers)
         if shortfall > 0
-            new_workers = _spawn_process_workers(shortfall, pool.project_path)
+            # pool_size is `desired` (the pool's target total), not `shortfall`:
+            # the heap-size-hint share is per member of the final pool, not per
+            # newly spawned worker.
+            new_workers = _spawn_process_workers(shortfall, pool.project_path, desired)
             for w in new_workers
                 _bootstrap_process_worker!(w, pool.project_path)
             end

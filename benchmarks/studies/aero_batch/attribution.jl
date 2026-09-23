@@ -15,6 +15,15 @@
 # Usage (one Julia process at a time; check `uptime` first):
 #   julia --project=. --threads=1 benchmarks/studies/aero_batch/attribution.jl \
 #       --n=1024 --mission=100 [--repeats=1] [--csv=<path>] [--no-allocs]
+#
+# ROUTE, and why this script takes `--mode` and `--rhs`. At a thread budget of
+# one, `_rhs_execution_plan` routes a (harmonics, aero) stack to
+# `:satellite_batch`, not to the flat constellation queue: the budget <= 1
+# admission to the flat route requires every effector to be served by a
+# pre-pass, and aerodynamics is not. So a serial run profiles the per-satellite
+# route, which is the right attribution for the serial P6 number, and a
+# multi-thread run (`--mode=inner_only --threads=8`) profiles the flat route,
+# which is where the pre-passes live. Run both; they are different code.
 
 using Printf
 using Profile
@@ -40,6 +49,8 @@ const AB_MISSION  = parse(Int, ab_arg(ARGS, "mission", "100"))
 const AB_REPEATS  = parse(Int, ab_arg(ARGS, "repeats", "1"))
 const AB_CSV      = ab_arg(ARGS, "csv", "")
 const AB_ALLOCS   = !ab_flag(ARGS, "no-allocs")
+const AB_MODE     = ab_arg(ARGS, "mode", "serial")
+const AB_RHS      = ab_arg(ARGS, "rhs", "auto")
 
 # Trace 4 of the P6 density ladder at this spacecraft count, and the vacuum
 # rung the ladder is read against. The `aero_<N>sat_l50_expatm_<S>s` builder
@@ -141,12 +152,16 @@ function ab_solve(case_name::String, profile::String)
 end
 
 function main()
-    mode = ppc_mode_specs()["serial"]
+    mode = ppc_mode_specs()[AB_MODE]
     cfg = PPCConfig(profile="full", solver_mode="auto_stiff")
     envpairs = copy(ppc_mode_env_pairs(mode, cfg; outer_tasks=1))
+    if AB_RHS != "auto"
+        push!(envpairs, "SPACEAGORA_RHS_EXECUTION_MODE" => AB_RHS)
+    end
 
-    @printf("host=%s threads=%d N=%d mission=%ds aero_case=%s vacuum_case=%s\n",
-            gethostname(), Threads.nthreads(), AB_N, AB_MISSION, AB_AERO_CASE, AB_VACUUM_CASE)
+    @printf("host=%s threads=%d mode=%s rhs_mode=%s N=%d mission=%ds aero_case=%s vacuum_case=%s\n",
+            gethostname(), Threads.nthreads(), AB_MODE, AB_RHS,
+            AB_N, AB_MISSION, AB_AERO_CASE, AB_VACUUM_CASE)
     println("load-at-start: ", strip(read(`uptime`, String)))
     flush(stdout)
 
@@ -201,10 +216,11 @@ function main()
     for (bucket, n) in sort(collect(counts); by = kv -> -last(kv))
         @printf("%-26s %7d  %6.2f%%\n", bucket, n, 100 * n / max(1, total))
     end
-    open(joinpath(AB_STUDY_DIR, "profile_$(AB_AERO_CASE).txt"), "w") do io
+    profile_path = joinpath(AB_STUDY_DIR, "profile_$(AB_AERO_CASE)_$(AB_MODE)_$(Threads.nthreads())t.txt")
+    open(profile_path, "w") do io
         Profile.print(IOContext(io, :displaysize => (24, 2000)); format=:flat, C=true, sortedby=:count, mincount=20)
     end
-    println("flat profile written: ", joinpath(AB_STUDY_DIR, "profile_$(AB_AERO_CASE).txt"))
+    println("flat profile written: ", profile_path)
 
     if AB_ALLOCS
         # Allocation attribution. sample_rate below 1 keeps the recorder's own
@@ -234,11 +250,11 @@ function main()
     if !isempty(AB_CSV)
         mkpath(dirname(AB_CSV))
         open(AB_CSV, "w") do io
-            println(io, "host,threads,case,rep,nsats,wall_s,gc_s,bytes,nf,naccept,nreject,steps,retcode")
+            println(io, "host,threads,mode,rhs_mode,case,rep,nsats,wall_s,gc_s,bytes,nf,naccept,nreject,steps,retcode")
             for case in (AB_AERO_CASE, AB_VACUUM_CASE)
                 for (rep, r) in enumerate(rows[case])
-                    @printf(io, "%s,%d,%s,%d,%d,%.6f,%.6f,%d,%d,%d,%d,%d,%s\n",
-                            gethostname(), Threads.nthreads(), case, rep, r.nsats,
+                    @printf(io, "%s,%d,%s,%s,%s,%d,%d,%.6f,%.6f,%d,%d,%d,%d,%d,%s\n",
+                            gethostname(), Threads.nthreads(), AB_MODE, AB_RHS, case, rep, r.nsats,
                             r.wall_s, r.gc_s, r.bytes, r.nf, r.naccept, r.nreject,
                             r.steps, r.retcode)
                 end

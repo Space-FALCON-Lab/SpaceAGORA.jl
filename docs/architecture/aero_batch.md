@@ -162,6 +162,39 @@ Not batched, and left on the queue:
 Nothing in `_aero_pure_wrench` changes in change A. The arithmetic is the same
 function, called the same number of times, with the same inputs.
 
+#### Which route a run is actually on, and the one line outside these files
+
+Change A only takes effect where the flat constellation queue is taken, and a
+serial aero constellation is not on it. `_rhs_execution_plan`
+(`src/simulation/engine/setup.jl`) admits the flat route at a thread budget of
+one only when `_rhs_all_prepass_effectors(dynamic_effectors)` holds, and that
+predicate lists the batchable kernels and the harmonics pre-pass, so a
+`(GravitationalHarmonicsModel, AerodynamicCoefficientfM)` stack fails it today
+and routes to `:satellite_batch`. A forced `SPACEAGORA_RHS_EXECUTION_MODE=flat`
+does not override it either: that branch has the same `budget <= 1` fallback.
+
+Consequently:
+
+- At a multi-thread budget (the 8-thread measurements, and every constellation
+  run that the router sends to the flat queue) change A applies.
+- At one thread it does not, and the 1-thread ratio is expected to be 1.00
+  unless `_rhs_all_prepass_effectors` also learns the aero trait.
+
+That is a one-line change in `setup.jl`, which this workstream does not own.
+It goes in the final report as an exact unapplied diff rather than in the
+branch, for two reasons beyond ownership. It changes the *route* a serial aero
+constellation takes, which is a different claim from "the batch reproduces the
+queue" and needs its own before/after dump; and conflating the two would make
+a single ratio unreadable. The parity test's route-equivalence check (section
+6, item 5) is the evidence that would support it.
+
+The same is true of the RHS-side atmosphere pre-sample that change B batches:
+`_prefill_environment_samples!` is called only from
+`_spacecraft_dynamics_flat_constellation_effector_queue!`. On the per-satellite
+route the atmosphere is sampled inside each effector's own
+`sample_environment_with_reusable_buffers` call and there is no batch point to
+take. Change B therefore has the same route scope as change A.
+
 ### B. One density-model resolution per evaluation instead of per satellite
 
 `src/simulation/engine/effector_sampling.jl` gains a batched atmosphere
@@ -293,7 +326,16 @@ difference at all stops the change.
 Ratios: 256 and 1024 spacecraft, 1 thread and 8 threads, before and after,
 back to back in one process state, reported as before/after ratios with the
 raw seconds in `benchmarks/studies/aero_batch/results/*.csv` (force-added,
-since the repository gitignores `*.csv`).
+since the repository gitignores `*.csv`). The 1-thread rows are reported even
+though the route caveat above predicts 1.00 for them: a 1-thread ratio that is
+*not* 1.00 would mean the change reached a route it was not supposed to reach,
+which is worth knowing.
+
+The attribution profile is taken twice for the same reason — once serial
+(`--mode=serial --threads=1`, the per-satellite route the P6 serial number
+was measured on) and once at 8 threads (`--mode=inner_only --threads=8`, the
+flat route the pre-passes live on). They are different code and neither
+substitutes for the other.
 
 The GRAM look-ahead constellation and the `mcgrid_8sat_16mc` campaign from the
 WS11 common reference set are covered by the identity argument rather than by

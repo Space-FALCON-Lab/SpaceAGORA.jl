@@ -233,6 +233,23 @@ else
             # Flight-like attitude: truss along N, modules along T, smallest extent along R.
             half = full.station_half_extent_m
             @test half[3] > half[2] > half[1]
+            # +XVV signs, from surface samples of the drawn model: the truss sits on the
+            # zenith (+R) side of the Lab, Kibo (port, +N) reaches farther from Harmony than
+            # Columbus (starboard, -N), and the Russian segment makes the aft (-T) end longer.
+            P = D.sample_model_pointcloud(D.iss_station_model(); n_points=100_000, rng=MersenneTwister(3),
+                                          scale=D.ISS_SCALE, rotation_deg=D.ISS_ROTATION_DEG)
+            R, T, N = P[1, :], P[2, :], P[3, :]
+            mid(x) = sort(x)[cld(length(x), 2)]
+            band = 8 .< abs.(N) .< 30                                     # outboard of the modules
+            t_truss = argmax(e -> count(band .& (e .<= T .< e + 1)), -36.0:1.0:35.0) + 0.5
+            core = (abs.(N) .< 2.5) .& (abs.(T .- t_truss) .< 6)           # the Lab under the truss
+            @test mid(R[band .& (abs.(T .- t_truss) .< 2.5)]) > mid(R[core]) + 2
+            # Harmony's side ports lie 7 to 12 m forward of the truss line; the truss and its
+            # radiators end within 3 m of it, so start the window at 5 m.
+            lateral = (t_truss + 5 .< T .< t_truss + 16) .& (3 .< abs.(N) .< 25) .& (abs.(R .- mid(R[core])) .< 4)
+            @test maximum(N[lateral .& (N .> 0)]) > -2 * minimum(N[lateral .& (N .< 0)])
+            spine = abs.(N) .< 2.5
+            @test t_truss - minimum(T[spine]) > maximum(T[spine]) - t_truss
             # V-bar relocation: 100 m behind the aft end to 30 m ahead of the forward end.
             @test full.start_rtn == (0.0, -(half[2] + 100.0), 0.0)
             @test full.goal_rtn == (0.0, half[2] + 30.0, 0.0)

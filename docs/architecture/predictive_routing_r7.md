@@ -9,7 +9,9 @@ the observation contradicts the prediction.
 
 R7 changes nothing inside a sample. The engine-level inner policy (the RHS
 calibration sweep, the callback width rules) is exactly what R6 has. R7 decides
-the campaign-level plan in `_run_campaign_adaptive` and nothing else.
+the campaign-level plan in `_run_campaign_adaptive` -- including, when the
+calibration store has measured it, how many threads each sample gets -- and
+nothing else.
 
 ## Why
 
@@ -68,26 +70,68 @@ at all on a given shape and machine is a feasibility question -- memory, native
 GRAM's thread-safety, the machine class -- and R7 replaces only the cost
 decision that follows it.
 
-Narrower widths are not enumerated, in either route. For the process route the
-workers are one thread each, so a narrower pool only idles cores. For the
-threads route, v1 hands every concurrent sample an inner budget of 1 regardless
-of width, so a narrower split buys nothing to trade against the concurrency it
-gives up.
+Narrower widths at budget 1 are not enumerated, in either route. For the
+process route the workers are one thread each, so a narrower pool only idles
+cores. For the threads route a narrower split at budget 1 buys nothing to trade
+against the concurrency it gives up; narrower threads-route widths appear only
+with a larger inner budget, and only when a measured curve says what that
+budget buys (next section).
 
-### Limitation: every concurrent sample gets one thread
+### Inner thread budgets, when a curve is measured
 
-R7 v1 never assigns an inner thread budget above 1 under an outer split. The
-budget is declared as an environment ceiling around the whole dispatch, which
-`capped_inner_thread_budget` then leaves alone.
+v1 never assigned an inner thread budget above 1 under an outer split: how much
+faster one sample runs on `k` threads is a property of the workload that no
+a-priori model here measures, and "unknown means no gain". The visible cost was
+at `n < T`, where four 1024-spacecraft samples on 32 threads used four.
 
-This is the rule "unknown means no gain" applied honestly: how much faster one
-sample runs on `k` threads is a property of the workload that no a-priori
-model here measures, and assuming a speedup the planner cannot predict is
-exactly the kind of invention this planner exists to avoid. The visible
-consequence is at `n < T` on the threads route, where a pinned `outer_threads`
-run gives each of `n` concurrent samples `fld(T, n)` threads and R7 gives it
-one. Making the inner budget a real decision requires an inner-speedup
-measurement and is the first item of a v2.
+The RHS calibration sweep does measure it, for every shape it sweeps: it times
+satellite_batch at the full budget and at a half and a quarter of it, and the
+flat route at a geometric ladder of widths including 1. The store used to keep
+only the winner. It now keeps every candidate's timing (see The calibration
+store below), and `SimulationEngine.rhs_inner_speedup_curve(stem)` turns them
+into `speedup[b] = t(1) / min(t(w) for w <= b)` for `b` up to the widest width
+measured, over every row of the workload's signature stem whatever budget or
+outer-split flag it was measured under. No one-thread timing, no curve.
+
+When the workload has a curve, the planner adds plans whose samples run on
+`b > 1` threads, every one of them a deviation that has to clear the margin:
+
+| Plan | Consumers | Inner budget |
+|---|---|---|
+| `:threads` at `W = fld(T, b)`, `b = 2, 4, 8, ...`, and at `W = min(n, T)` | `W` tasks | `fld(T, W)` |
+| `:none` | one sample at a time | `T` |
+| `:process` at `W_p` workers plus `L` local slots, `L * b <= T - 1` | `W_p + L` | `b` for the local slots, 1 for the workers |
+
+A sample at budget `b` is priced at `1 / speedup(b)` of a one-thread sample,
+times whatever heap term the plan carries. The pool's workers are one-thread
+processes and are never given more. Without a curve the plan space is exactly
+v1's, and the static plan stays at budget 1 whether or not a curve exists, so a
+flat curve changes nothing: every `b > 1` plan ties with its budget-1 twin and
+the tie goes to the static plan. The budget is declared as the environment
+ceiling around the dispatch, as budget 1 always was, and never exceeds the
+split's own share (`W b <= T`), which is the cap `capped_inner_thread_budget`
+applies.
+
+How the planner finds the curve: it sees an opaque sample function and the
+campaign's features, never a sample's configuration. `campaign_route_features(args;
+samples)` is where a configuration and the features meet, so it records the
+configuration's RHS signature stem under the features' workload signature, and
+the planner reads it back. A campaign whose features were not built from a
+configuration has no curve.
+
+Two things are ASSUMED and named. The curve is the RHS evaluation's speedup
+applied to the whole sample; a sample also spends time outside the RHS (the
+implicit solver's linear algebra, callbacks), so the curve is an upper bound.
+And it is measured one sample at a time (or under whatever split its row was
+swept under), not with `W` samples beside it. The margin carries both.
+
+`SPACEAGORA_PREDICTIVE_INNER_CURVE=0` plans without a curve.
+
+The leash covers these plans too: a plan without local slots steps one rung at
+a time along the shape's own ladder of budgets (the distinct budgets its
+threads-route and serial plans offer, 1 included); a mixed plan with local
+slots at budget `b` steps one slot at a time within that budget, starting from
+one slot when the previous plan was at another budget.
 
 ## The cost model
 
@@ -628,6 +672,52 @@ Float64. This repo's workstation, `--threads=8`, 2 pool workers at one thread:
 | base `adb343566` | `threads@w8` | 7936 | 4126720 | identical |
 | base `adb343566` | `none` | 7936 | 4126720 | identical |
 
+## The calibration store: per-candidate timings and a code token
+
+The RHS calibration store (`output/parallel_policy_state/rhs_calibration_<machine>.toml`)
+is at schema 2. Each `[[calibrations]]` row is what it was -- `mode`,
+`allotment`, `scheduler`, `elapsed_mean_ns`, `solve_ns`, `sweep_ns`,
+`honoured_ns` and the vote counts -- plus a `candidates` table: one entry per
+candidate the sweep measured, with `mode`, `allotment`, `scheduler`, `width`
+(the threads the plan used at the budget it was measured under), `ns` (its
+score from the last round it took part in, its most precise reading), `reps`
+and `round`, and the two entries of the final paired round (`round = 0`): the
+swept winner and the plan the runtime heuristic would have run, marked
+`default = true`, so a reader can see the margin the verdict was formed
+against. Schema-1 rows load as before and simply carry no timings; readers of
+schema 1 ignore the new key. A verdict stored without a sweep keeps the row's
+previous timings, since they describe the shape rather than the verdict.
+
+Every signature now ends in `code=<_RHS_CALIB_CODE_TOKEN>`, a constant in
+`rhs_calibration.jl` bumped by hand whenever the RHS execution changes. A store
+written by older code no longer matches anything and every shape is treated
+as cold: swept again rather than trusted. The converged P1/P5 pass on
+2026-09-22 is why: it replayed a 4096-spacecraft verdict from a 2026-09-18
+store, formed before the harmonics kernel changes, and ran 18-51% behind. The
+token is set to `2026-09-23`, which no store written before it carries --
+including the TRX50 snapshots of 2026-09-18 and 2026-09-22. Old rows stay in
+the file, unmatched. The campaign corrections file is keyed by the same token.
+
+### Trajectories do not depend on the inner budget
+
+The same `plan_parity.jl` dump, `mcgrid_8sat_16mc`, 16 samples, `--threads=8`,
+the predictive-mode environment (RHS calibration on, so samples at `b > 1`
+sweep and run the plans their sweeps choose):
+
+| Plan | Inner budget | Bytes | `cmp` against `threads@w8`, budget 1 |
+|---|---|---|---|
+| `threads@w8` | 1 | 4126720 | -- |
+| `threads@w4` | 2 | 4126720 | identical |
+| `threads@w2` | 4 | 4126720 | identical |
+| `none` (`threads@w1`) | 8 | 4126720 | identical |
+| `process@w2+l3`, local slots at 2 | 2 | 4126720 | identical |
+
+The store that run left behind shows what the sweeps chose between (the
+satellite_batch route at widths 2-8 and the flat route at widths 1-2) and gives
+this shape a flat curve (`speedup = 1` at every width to 8), so the planner
+keeps budget 1 here; the dumps at the wider budgets were run by forcing the
+plan.
+
 ## Constants
 
 Every number the planner uses, and what kind of number it is.
@@ -653,6 +743,10 @@ Every number the planner uses, and what kind of number it is.
 | `SPACEAGORA_CAMPAIGN_CORRECTION_STALE_CAMPAIGNS` | `20` | ASSUMED | Campaigns without an observation after which a correction reverts to its prior. Longer than a harness point's 14 campaigns, so one benchmark point does not expire what the previous one learned. |
 | Leash of one local slot | -- | ASSUMED | The exploration bound: the regret it admits is one slot's share of a campaign per campaign. |
 | `SPACEAGORA_CAMPAIGN_CORRECTIONS` | `on` | -- | `on`, `read` or `off`; see Online corrections. |
+| `_RHS_CALIB_CODE_TOKEN` | `2026-09-23` | -- | Not a measurement: a version label. Bumped by hand on any change to how an RHS evaluation executes; its only requirement is that no earlier store carries it. |
+| Inner-speedup curve applied to the whole sample | -- | ASSUMED | The sweep times the RHS alone; the solver's own work does not speed up with the inner budget. An upper bound, carried by the margin. |
+| Curve measured without `W` samples beside it | -- | ASSUMED | A row's timings come from one solve's sweep; `W` concurrent samples at `b` threads share memory bandwidth the sweep did not. |
+| `SPACEAGORA_PREDICTIVE_INNER_CURVE` | `1` | -- | `0` plans without an inner-speedup curve. |
 
 ## The measurements the unit tests encode
 
@@ -885,8 +979,8 @@ per-dispatch pool.
 
 ```
 [predictive] shape n=... threads=... pool=... local_cap=... candidates=[...] constants=loaded|absent heap_model=none|usl margin=... guard_factor=... local_slots_max=...
-[predictive] terms heap_scale=... round_tail=... startup=... pool_cold=... sample_time_s=...|unknown corrections=on|read|none campaigns=...
-[predictive]   candidate <route>@w<W>+l<L> makespan=... consumers=... s_worker=... s_heap=... [static]
+[predictive] terms heap_scale=... round_tail=... startup=... pool_cold=... sample_time_s=...|unknown corrections=on|read|none campaigns=... inner_curve=none|<speedup at 1,2,...>
+[predictive]   candidate <route>@w<W>+l<L> [budget=<b>] makespan=... consumers=... s_worker=... s_heap=... [static]
 [predictive] chosen <plan> reason=... gain=...
 [predictive] leash leashed|leash_held -> <plan>          (only when the leash changed the plan)
 [predictive] dispatch=...s n=... failures=... decided_after=<k>/<n> samples seen=<a>/<W>w,<b>/<L>l
@@ -916,8 +1010,8 @@ outright), `predicted_gain` (a deviation cleared the margin),
 
 ## What a v2 would add
 
-- An inner-speedup measurement, so the inner thread budget becomes a decision
-  and the narrower widths become worth enumerating.
+- An inner-speedup curve measured with the samples that will run beside it,
+  rather than one sweep's view of one sample (see Inner thread budgets).
 - A remote round-trip term measured BEFORE the dispatch rather than during it,
   so the FIRST plan is right and not only the plan the guard corrects to. A
   cheap pool probe at plan time would supply it.

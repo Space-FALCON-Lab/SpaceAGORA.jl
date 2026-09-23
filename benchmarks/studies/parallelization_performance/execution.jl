@@ -88,15 +88,28 @@ function ppc_process_sample_task(case_name::String, cfg::PPCConfig, mode_name::S
     end
 end
 
+# This is a second, independent worker-spawn path from
+# SpaceAGORA.ParallelProcess.ensure_process_workers! (used via
+# adopt_process_workers! below the outer_process route also touches), with
+# its own hardcoded exeflags -- so the pool-worker heap-size-hint default
+# has to be applied here too, not just in src/parallel/process/worker_pool.jl.
+# It reuses that module's exact formula/constants and its env override
+# (SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT), rather than a third knob, since
+# these are the same kind of worker under the same per-process memory-share
+# reasoning; see docs/architecture/heap_contention.md.
+@inline function _ppc_pool_worker_exeflags(desired::Int)::Cmd
+    exeflags = String["--threads=1", "--startup-file=no", "--project=$(PPC_REPO_ROOT)"]
+    hint = SpaceAGORA.ParallelProcess._pool_worker_heap_size_hint(desired)
+    hint === nothing || push!(exeflags, "--heap-size-hint=$(hint)")
+    return Cmd(exeflags)
+end
+
 function ppc_ensure_process_workers!(n::Int)::Vector{Int}
     desired = max(1, n)
     current_external = max(0, nprocs() - 1)
     if current_external < desired
         add_count = desired - current_external
-        new_workers = addprocs(
-            add_count;
-            exeflags=Cmd(["--threads=1", "--startup-file=no", "--project=$(PPC_REPO_ROOT)"])
-        )
+        new_workers = addprocs(add_count; exeflags=_ppc_pool_worker_exeflags(desired))
         @sync for w in new_workers
             @async remotecall_wait(w, PPC_REPO_ROOT) do repo_root
                 study_dir = joinpath(repo_root, "benchmarks", "studies", "parallelization_performance")
@@ -856,27 +869,46 @@ function _ppc_apply_cpu_pinning(argv::Vector{String}, cpu_pinning::Vector{Int}, 
     return vcat(["taskset", "-c", cpu_list], argv)
 end
 
-# Opt-in GC collector flags for the worker subprocess's own `julia` launch
+# GC collector flags for the worker subprocess's own `julia` launch
 # (`--gcthreads`, `--heap-size-hint`), read from env at worker-spawn time --
 # NOT part of PPCConfig, so this stays a change to worker launch flags only,
-# not to the config surface other parts of this study own. Default is both
-# unset, which reproduces the pre-existing argv exactly (no flag added at
-# all, rather than a flag carrying Julia's own default).
+# not to the config surface other parts of this study own.
 #
-# See docs/architecture/heap_contention.md ("Collector settings") for the
-# grid this was measured against: on a 12-core/24-thread workstation, at 8
-# threads, on the P3/P4 shapes' outer_threads route. Wiring it here
-# (opt-in, off by default) rather than into a shipped default is
-# deliberate -- the grid was measured at a single thread count on one
-# machine, well below the 16+-thread regime where single-heap GC
-# contention actually shows up; see the doc for what to run at wider
-# thread counts.
-function _ppc_worker_gc_flags()::Vector{String}
+# `--gcthreads` is opt-in and unset by default (`SPACEAGORA_PPC_WORKER_GCTHREADS`),
+# reproducing the pre-existing argv exactly when not given. See
+# docs/architecture/heap_contention.md ("Collector settings") for the grid
+# this was measured against: on a 12-core/24-thread workstation, at 8
+# threads, on the P3/P4 shapes' outer_threads route -- well below the
+# 16+-thread regime where single-heap GC contention actually shows up; see
+# the doc for what to run at wider thread counts.
+#
+# `--heap-size-hint` is ON by default (a derived value; see the block
+# comment above `_default_pool_worker_heap_hint_bytes` in
+# src/parallel/process/worker_pool.jl for the diagnostic and the formula).
+# `SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT=off` removes the flag entirely; any
+# other value overrides the computed default and is passed through verbatim.
+function _ppc_worker_gc_flags(cfg::PPCConfig)::Vector{String}
     flags = String[]
     gcthreads = get(ENV, "SPACEAGORA_PPC_WORKER_GCTHREADS", "")
     isempty(gcthreads) || push!(flags, "--gcthreads=$(gcthreads)")
-    heap_hint = get(ENV, "SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT", "")
-    isempty(heap_hint) || push!(flags, "--heap-size-hint=$(heap_hint)")
+
+    heap_hint = strip(get(ENV, "SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT", ""))
+    if !isempty(heap_hint)
+        lowercase(heap_hint) == "off" || push!(flags, "--heap-size-hint=$(heap_hint)")
+    else
+        # Default (env unset): the same derived hint the process pool uses
+        # by default (see src/parallel/process/worker_pool.jl and
+        # docs/architecture/heap_contention.md), reusing its exact formula
+        # and constants rather than a second copy of them. The harness's own
+        # per-point worker subprocess showed the identical unbounded-heap
+        # pattern the pool diagnostic did: a 4096-sample serial point
+        # (process_workers not in play) reached 46 GB by itself with nothing
+        # bounding its collector. `cfg.process_workers` stands in for
+        # "pool_size" here -- it is the concurrent-worker budget this run was
+        # configured with, even for a point that itself runs serially.
+        default_bytes = SpaceAGORA.ParallelProcess._default_pool_worker_heap_hint_bytes(max(cfg.process_workers, 1))
+        push!(flags, "--heap-size-hint=$(SpaceAGORA.ParallelProcess._format_heap_size_hint(default_bytes))")
+    end
     return flags
 end
 
@@ -885,7 +917,7 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
     argv = String[
         julia_bin,
         "--threads=$(threads)",
-        _ppc_worker_gc_flags()...,
+        _ppc_worker_gc_flags(cfg)...,
         "--project=$(PPC_REPO_ROOT)",
         PPC_LAUNCHER,
         cfg.profile,

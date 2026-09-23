@@ -470,9 +470,16 @@ function run_simulation(
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
     p.shared_buffers.solve_segment_end_time[] = mission_end
-    prob_debug_state = solver_mode == :gravity_backbone_split ? initial_conditions : u_start
-    prob_debug = ODEProblem(spacecraft_dynamics!, prob_debug_state, (t_start, mission_end), p, callback=callbacks)
+    # prob_debug exists only to feed the NaN-probe below, which itself only
+    # runs when SPACEAGORA_DEBUG_INITIAL_DERIVATIVE is set. Building it
+    # unconditionally meant every solve -- debug flag on or off -- paid an
+    # ODEProblem allocation whose only reader is a branch almost no run takes.
+    # Nothing outside these two debug branches reads prob_debug, so deferring
+    # its construction into the branch that needs it changes no observable
+    # behavior.
     if p.shared_buffers.debug_initial_derivative[] && solver_mode != :gravity_backbone_split
+        prob_debug_state = solver_mode == :gravity_backbone_split ? initial_conditions : u_start
+        prob_debug = ODEProblem(spacecraft_dynamics!, prob_debug_state, (t_start, mission_end), p, callback=callbacks)
         # 1. Manually evaluate the derivative at the start
         du_test = copy(prob_debug.u0)
         try

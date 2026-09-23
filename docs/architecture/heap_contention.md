@@ -277,17 +277,24 @@ and reused by (2) and (3) rather than copied three times:
 const _POOL_WORKER_HEAP_HINT_FLOOR_BYTES = 2 * 1024^3    # 2 GiB
 const _POOL_WORKER_HEAP_HINT_CEIL_BYTES = 64 * 1024^3    # 64 GiB
 
+const _POOL_WORKER_HEAP_HINT_SHARE_DEFAULT = 0.5           # SPACEAGORA_POOL_WORKER_HEAP_HINT_SHARE
+
 _default_pool_worker_heap_hint_bytes(pool_size) =
-    clamp(Sys.total_memory() ÷ (pool_size + 1), FLOOR, CEIL)
+    clamp(floor(Int, SHARE * Sys.total_memory() / (pool_size + 1)), FLOOR, CEIL)
 ```
 
-DERIVED: total memory split `pool_size + 1` ways -- the pool's workers plus
-the coordinator process sharing the same machine. On TRX50's roughly 250 GB
-total at the diagnostic's 8-worker rung, this formula gives ~27.8 GB per
-worker, close to (and below) the 30 GB single-process peak the diagnostic
-observed right before the kill -- i.e. a hint in the range the collector
-would plausibly have had to respect before the run reached the point where
-it was killed. The floor and cap are ASSUMED, not measured: 2 GiB so the
+DERIVED: a share of total memory split `pool_size + 1` ways -- the pool's
+workers plus the coordinator process sharing the same machine. The share is
+ASSUMED at 0.5: a heap-size hint is a soft target a process can overshoot,
+and hinting every process at its equal split of the whole machine would put
+the pool plus the coordinator at 100 percent of physical memory with nothing
+held back for the native GRAM images, MERRA2 buffers, the OS or another job.
+Half the machine goes to Julia heaps in aggregate; the rest is headroom.
+On TRX50's roughly 250 GB, the formula gives about 13.9 GB per worker at the
+diagnostic's 8-worker rung and about 7.4 GB at 16 workers, in both cases well
+below the 30 GB single-process peak the diagnostic observed right before the
+kill, so the collector is made to collect long before that point. The floor
+and cap are ASSUMED, not measured: 2 GiB so the
 hint never fights a single sample's own working set (GRAM tables, harmonics
 buffers) rather than bounding growth across many samples, and 64 GiB because
 it is comfortably above every per-process peak the diagnostic recorded, so
@@ -357,9 +364,12 @@ introduce -- no run showed a directional, repeatable slowdown.)
 **No difference was measurable, at any of the three scales tried, and that
 has a specific, checkable explanation rather than being a shrug.** The
 computed default hint under this workstation's own `systemd-run
--p MemoryMax=16G` cap is `Sys.total_memory() ÷ (4 + 1)` = 3.2 GiB per worker
+-p MemoryMax=16G` cap was, with the formula as it stood when these runs were
+made (no share factor), `Sys.total_memory() ÷ (4 + 1)` = 3.2 GiB per worker
 (confirmed directly: the hint arm's worker argv carried
-`--heap-size-hint=3.2G`, exactly matching the formula). Every worker's
+`--heap-size-hint=3.2G`, exactly matching that formula). With the share
+factor the same scope gives 8 GiB / 5 = 1.6 GiB, clamped up to the 2 GiB
+floor; the runs were not repeated at that value. Every worker's
 actual peak RSS across all three runs stayed at 1.7-1.84 GiB -- well under
 that 3.2 GiB target -- so the hint never became a binding constraint at any
 sample count tried; there was nothing for it to bound. This is the expected
@@ -373,7 +383,7 @@ only that the mechanism computes and applies the intended flag correctly and
 costs no measurable time when it does not bind.** Confirming the actual
 mitigation needs one of: (a) running this same probe on TRX50 at the
 diagnostic's own scale (8 workers, thousands of samples, predictive mode),
-where the formula's ~27.8 GB/worker hint sits close to the 30 GB peak the
+where the formula's ~13.9 GB/worker hint sits well below the 30 GB peak the
 diagnostic recorded right before the kill; or (b) forcing an artificially
 tight override (e.g. `SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT=500M`) on this
 box to at least confirm Julia's collector visibly respects a hint set below
@@ -402,7 +412,7 @@ opening paragraph appears. On TRX50, quiet of other users' jobs
    P6p diagnostic's own worker count and sample count) under whatever memory
    cap TRX50's own job used, with and without
    `SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT=off`. At that scale the derived
-   hint (~27.8 GB/worker on a ~250 GB machine) sits close to the 30 GB
+   hint (~13.9 GB/worker on a ~250 GB machine) sits well below the 30 GB
    single-process peak the diagnostic recorded right before its cap killed
    the job, which is where section 6's local runs (hint always well above
    the observed peak, so never binding) could not reach.

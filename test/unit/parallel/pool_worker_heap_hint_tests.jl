@@ -9,7 +9,7 @@ using SpaceAGORA
 
 const PWH = SpaceAGORA.ParallelProcess
 
-@testset "_default_pool_worker_heap_hint_bytes: clamped total-memory share" begin
+@testset "_default_pool_worker_heap_hint_bytes: clamped share-of-total-memory" begin
     # Int, not UInt64 -- _default_pool_worker_heap_hint_bytes takes
     # pool_size::Int, and Sys.total_memory() returns UInt64. Note this reads
     # whatever memory limit is visible to this process: under this study's
@@ -19,6 +19,13 @@ const PWH = SpaceAGORA.ParallelProcess
     # not the host's physical total -- which is itself a demonstration that
     # the formula tracks whatever memory budget the process actually has.
     total = Int(Sys.total_memory())
+    # Budget is `share * total`, not `total`: the point of the share
+    # constant is that pool_size workers plus the coordinator, each hinted
+    # at their equal split of `budget`, sum to at most `budget` -- strictly
+    # less than the whole machine at share < 1 -- rather than to `total` the
+    # way `total ÷ (pool_size + 1)` alone would.
+    budget = total * PWH._POOL_WORKER_HEAP_HINT_SHARE_DEFAULT
+    @test budget < total
 
     # Result is always within [floor, ceil], for every pool size tried.
     for pool_size in (0, 1, 2, 8, 32, 10_000)
@@ -29,27 +36,54 @@ const PWH = SpaceAGORA.ParallelProcess
     # A pool_size large enough drives the naive share below the floor;
     # clamped there. (2 GiB is small enough that this is reachable under any
     # plausible total, including the 16 GiB test-scope cap above.)
-    huge_pool = cld(total, PWH._POOL_WORKER_HEAP_HINT_FLOOR_BYTES) + 1000
-    @test PWH._default_pool_worker_heap_hint_bytes(huge_pool) == PWH._POOL_WORKER_HEAP_HINT_FLOOR_BYTES
+    huge_pool = cld(budget, PWH._POOL_WORKER_HEAP_HINT_FLOOR_BYTES) + 1000
+    @test PWH._default_pool_worker_heap_hint_bytes(round(Int, huge_pool)) == PWH._POOL_WORKER_HEAP_HINT_FLOOR_BYTES
 
     # A pool_size small enough drives the naive share above the ceiling;
-    # clamped there. Only reachable when this process's visible total memory
-    # exceeds the 64 GiB ceiling -- not the case under this study's own 16 GiB
-    # test cap, so this only exercises on a larger host/uncapped run.
-    if total > PWH._POOL_WORKER_HEAP_HINT_CEIL_BYTES
+    # clamped there. Only reachable when this process's visible budget
+    # (share * total) exceeds the 64 GiB ceiling -- not the case under this
+    # study's own 16 GiB test cap (budget = 8 GiB there), so this only
+    # exercises on a larger host/uncapped run.
+    if budget > PWH._POOL_WORKER_HEAP_HINT_CEIL_BYTES
         @test PWH._default_pool_worker_heap_hint_bytes(0) == PWH._POOL_WORKER_HEAP_HINT_CEIL_BYTES
     end
 
     # A pool_size chosen to land the raw share inside [floor, ceil] agrees
-    # with the formula exactly (no clamping engaged).
-    mid_pool = max(1, cld(total, (PWH._POOL_WORKER_HEAP_HINT_FLOOR_BYTES + PWH._POOL_WORKER_HEAP_HINT_CEIL_BYTES) ÷ 2) - 1)
-    expected = total ÷ (mid_pool + 1)
+    # with the formula exactly (no clamping engaged), and the aggregate
+    # across that pool plus the coordinator is at most `budget`.
+    mid_point = (PWH._POOL_WORKER_HEAP_HINT_FLOOR_BYTES + PWH._POOL_WORKER_HEAP_HINT_CEIL_BYTES) / 2
+    mid_pool = max(1, round(Int, budget / mid_point) - 1)
+    expected = floor(Int, budget / (mid_pool + 1))
     if PWH._POOL_WORKER_HEAP_HINT_FLOOR_BYTES <= expected <= PWH._POOL_WORKER_HEAP_HINT_CEIL_BYTES
         @test PWH._default_pool_worker_heap_hint_bytes(mid_pool) == expected
+        @test expected * (mid_pool + 1) <= budget
     end
 
     # Monotone: a larger pool never gets a larger per-worker share.
     @test PWH._default_pool_worker_heap_hint_bytes(8) <= PWH._default_pool_worker_heap_hint_bytes(1)
+end
+
+@testset "_pool_worker_heap_hint_share: default / env override" begin
+    withenv("SPACEAGORA_POOL_WORKER_HEAP_HINT_SHARE" => nothing) do
+        @test PWH._pool_worker_heap_hint_share() == PWH._POOL_WORKER_HEAP_HINT_SHARE_DEFAULT
+    end
+    withenv("SPACEAGORA_POOL_WORKER_HEAP_HINT_SHARE" => "0.25") do
+        @test PWH._pool_worker_heap_hint_share() == 0.25
+        # Halving the share halves the unclamped per-worker hint.
+        total = Int(Sys.total_memory())
+        pool_size = max(1, cld(total, PWH._POOL_WORKER_HEAP_HINT_CEIL_BYTES) + 1)  # avoid the ceiling clamp
+        quarter_share = PWH._default_pool_worker_heap_hint_bytes(pool_size)
+        withenv("SPACEAGORA_POOL_WORKER_HEAP_HINT_SHARE" => "0.5") do
+            half_share = PWH._default_pool_worker_heap_hint_bytes(pool_size)
+            @test quarter_share <= half_share
+        end
+    end
+    withenv("SPACEAGORA_POOL_WORKER_HEAP_HINT_SHARE" => "0") do
+        @test PWH._pool_worker_heap_hint_share() == PWH._POOL_WORKER_HEAP_HINT_SHARE_DEFAULT  # <= 0 falls back
+    end
+    withenv("SPACEAGORA_POOL_WORKER_HEAP_HINT_SHARE" => "not-a-number") do
+        @test PWH._pool_worker_heap_hint_share() == PWH._POOL_WORKER_HEAP_HINT_SHARE_DEFAULT  # unparseable falls back
+    end
 end
 
 @testset "_format_heap_size_hint" begin

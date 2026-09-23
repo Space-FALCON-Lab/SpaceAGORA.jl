@@ -73,16 +73,40 @@ campaign_process_pool()::ProcessPool = _CAMPAIGN_PROCESS_POOL
 # any worker's collector a size to aim for, so nothing bounded its growth
 # toward the whole machine.
 #
-# The default hint is the machine's total memory split (pool_size + 1) ways
-# -- the pool's `pool_size` workers plus the coordinator process sharing the
-# same machine -- floored and capped so the formula degenerates sensibly at
-# both ends of the pool-size range:
+# The default hint is a SHARE of the machine's total memory split
+# (pool_size + 1) ways -- the pool's `pool_size` workers plus the coordinator
+# process sharing the same machine -- floored and capped so the formula
+# degenerates sensibly at both ends of the pool-size range.
+#
+# The share matters on its own, separately from the per-process split: a
+# heap-size-hint is a soft target a process can overshoot, and
+# total_memory ÷ (pool_size + 1) alone hints every process at its exact
+# equal share of the WHOLE machine, so the pool plus the coordinator are
+# together hinted at 100% of physical memory with nothing held back for the
+# native GRAM images, MERRA2 buffers, the OS, or another job sharing the
+# machine. At TRX50's ~250 GB and 16 workers that was 17 processes hinted at
+# 14.7 GiB each -- 250 GiB in aggregate, none of it headroom.
 const _POOL_WORKER_HEAP_HINT_FLOOR_BYTES = 2 * 1024^3    # 2 GiB. ASSUMED: below this a hint would fight a single sample's own working set (GRAM tables, harmonics buffers) rather than bound growth across many samples.
 const _POOL_WORKER_HEAP_HINT_CEIL_BYTES = 64 * 1024^3    # 64 GiB. ASSUMED: comfortably above every per-process peak (<=30 GB) the diagnostic observed, so it only engages for a small pool on a very large machine, where it adds no protection anyway.
+# ASSUMED: half the machine's memory is budgeted for Julia worker heaps in
+# aggregate; the other half is headroom for native images, the OS, and
+# anything else sharing the machine. Overridable, not re-derived per host,
+# since how much headroom a given machine needs is a deployment choice this
+# formula cannot see (concurrent non-Julia jobs, native library footprint,
+# page cache pressure, ...).
+const _POOL_WORKER_HEAP_HINT_SHARE_DEFAULT = 0.5
+
+@inline function _pool_worker_heap_hint_share()::Float64
+    raw = strip(get(ENV, "SPACEAGORA_POOL_WORKER_HEAP_HINT_SHARE", ""))
+    isempty(raw) && return _POOL_WORKER_HEAP_HINT_SHARE_DEFAULT
+    parsed = tryparse(Float64, raw)
+    (parsed === nothing || parsed <= 0.0) ? _POOL_WORKER_HEAP_HINT_SHARE_DEFAULT : parsed
+end
 
 @inline function _default_pool_worker_heap_hint_bytes(pool_size::Int)::Int
-    share = Sys.total_memory() ÷ max(1, pool_size + 1)
-    return clamp(share, _POOL_WORKER_HEAP_HINT_FLOOR_BYTES, _POOL_WORKER_HEAP_HINT_CEIL_BYTES)
+    budget = Float64(Sys.total_memory()) * _pool_worker_heap_hint_share()
+    per_worker = floor(Int, budget / max(1, pool_size + 1))
+    return clamp(per_worker, _POOL_WORKER_HEAP_HINT_FLOOR_BYTES, _POOL_WORKER_HEAP_HINT_CEIL_BYTES)
 end
 
 @inline function _format_heap_size_hint(bytes::Integer)::String

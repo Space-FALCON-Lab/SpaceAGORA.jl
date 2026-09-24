@@ -62,9 +62,9 @@ const PPC_GRAM_LIVE_CASES = (
     # (aero_<N>sat_l50_gram_lookahead_<S>s and aero_<N>sat_l50_gram_process_<S>s)
     # the same way the ladders above do, so new sizes and durations do not need
     # adding here. The process trace needs it on the coordinator as well as on
-    # the pool workers: ppc_ensure_process_workers! loads GRAMSuite on every
-    # Distributed worker unconditionally, but the coordinator builds the probe
-    # config for route resolution and the warm-up solves itself.
+    # the pool workers: the coordinator builds the probe config for route
+    # resolution and the warm-up solves itself, and ppc_ensure_process_workers!
+    # loads GRAMSuite on a Distributed worker only when the coordinator has it.
     "l50_gram_",
 )
 any(a -> any(c -> occursin(c, a), PPC_GRAM_LIVE_CASES), ARGS) && ppc_ensure_gramsuite_loaded!()

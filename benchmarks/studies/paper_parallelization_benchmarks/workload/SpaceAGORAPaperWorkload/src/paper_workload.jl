@@ -1,7 +1,7 @@
 """
     SpaceAGORAPaperWorkload
 
-Precompile workload for the paper benchmark harness (the P1-P6p phases of
+Precompile workload for the paper benchmark harness (the P1-P7 phases of
 `benchmarks/studies/paper_parallelization_benchmarks`). Loading it changes no
 behavior: at precompile time it runs every (case, mode) point those phases name,
 at the case's real constellation size and under the mode's route environment,

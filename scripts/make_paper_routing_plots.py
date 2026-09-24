@@ -34,7 +34,7 @@ from matplotlib.ticker import LogLocator, NullFormatter, ScalarFormatter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_paper_routing_tables import (  # noqa: E402
     ADAPTIVE_MODES, DEFAULT_ADAPTIVE, NOISE_FLOOR_S, PHASE_AXIS, PHASE_TITLE,
-    STATIC_PARALLEL, add_adaptive_argument, load, phase_rows,
+    STATIC_PARALLEL, TABLE_PHASES, add_adaptive_argument, load, phase_rows,
 )
 from make_paper_routing_tables import set_adaptive as _tables_set_adaptive  # noqa: E402
 
@@ -67,6 +67,14 @@ ROUTE_LABEL = {
 # reference. P1's axis is problem size, where it is not.
 IDEAL_REF = {"P2", "P3", "P4"}
 
+# Phases whose axis is a sequence of categories rather than a quantity: P5's
+# splits of one budget and P7's force models.
+CATEGORICAL_AXIS = {"P5", "P7"}
+
+# Phases drawn as one figure with every case on the axis, rather than one figure
+# per case: P1's axis is the case's spacecraft count, P7's is its force model.
+ONE_FIGURE = {"P1", "P7"}
+
 
 def machine_of(df) -> str:
     if "machine" in df.columns:
@@ -81,7 +89,7 @@ def _xmap(rows, phase):
     numeric one: 1x32/2x16/4x8 are equally spaced choices of how to divide one
     budget, so placing them at their worker counts both crowds the left end and
     implies a magnitude relation the axis does not have."""
-    if phase == "P5":
+    if phase in CATEGORICAL_AXIS:
         return {r["order"]: i for i, r in enumerate(rows)}
     return {r["order"]: r["order"] for r in rows}
 
@@ -136,7 +144,7 @@ def _panel(ax, rows, *, value_fn, ylabel, logy, phase, ideal=False):
         ax.tick_params(axis="y", labelsize=8)
         lo, hi = ax.get_ylim()
         ax.set_ylim(lo * 0.82, hi * 1.18)
-    if phase == "P5":
+    if phase in CATEGORICAL_AXIS:
         ax.set_xticks(xs); ax.set_xticklabels(labels, fontsize=8)
         ax.set_xlim(min(xs) - 0.35, max(xs) + 0.35)
     else:
@@ -149,7 +157,7 @@ def _panel(ax, rows, *, value_fn, ylabel, logy, phase, ideal=False):
     for r in rows:
         if r["serial_s"] and r["serial_s"] < NOISE_FLOOR_S:
             x = xm[r["order"]]
-            half = 0.3 if phase == "P5" else x * 0.08
+            half = 0.3 if phase in CATEGORICAL_AXIS else x * 0.08
             ax.axvspan(x - half, x + half, color="#f0d0d0", alpha=0.35, zorder=0)
 
 
@@ -240,7 +248,7 @@ def summary_figure(frames, out_dir, formats):
     every measured point. 1.0 is parity with an oracle that already knew the
     right route; below it the adaptive route is faster than any pinned route
     measured there."""
-    phases = ["P1", "P2", "P3", "P4", "P5"]
+    phases = TABLE_PHASES
     # An empty panel is worse than no panel: it reads as "the router scored
     # nothing" rather than "this run does not contain that mode".
     if not any(r.get("adaptive_s") and r.get("best_static_s")
@@ -286,7 +294,7 @@ def summary_figure(frames, out_dir, formats):
     ax.set_xticks(range(len(phases)))
     short = {"P1": "constellation size", "P2": "thread budget",
              "P3": "MC ladder (cheap)", "P4": "MC ladder (heavy)",
-             "P5": "worker/thread split"}
+             "P5": "worker/thread split", "P7": "1 spacecraft, 1 orbit"}
     ax.set_xticklabels([f"{p}\n{short[p]}" for p in phases], fontsize=8.5)
     ax.set_ylabel(f"{ADAPTIVE_LABEL} time / best static route time")
     ax.grid(alpha=0.25, lw=0.6, axis="y")
@@ -350,7 +358,7 @@ def distribution_figure(frames, out_dir, formats, noise=None, calib_cut=0.6):
 
     per_phase, excluded = {}, []
     for _, df in frames:
-        for ph in ["P1", "P2", "P3", "P4", "P5"]:
+        for ph in TABLE_PHASES:
             for r in phase_rows(df, ph):
                 if r.get("adaptive_s") and r.get("best_static_s"):
                     x = r["adaptive_s"] / r["best_static_s"]
@@ -390,8 +398,8 @@ def distribution_figure(frames, out_dir, formats, noise=None, calib_cut=0.6):
                 f"{len(excluded)} calibration artifacts excluded (finding 2)",
                 transform=ax.transAxes, fontsize=7.8, color="#444444", va="top")
 
-    for ph, c in zip(["P1", "P2", "P3", "P4", "P5"],
-                     ["#888888", "#5b8c5a", "#1f6fb4", C_R6, "#8452a1"]):
+    for ph, c in zip(TABLE_PHASES,
+                     ["#888888", "#5b8c5a", "#1f6fb4", C_R6, "#8452a1", "#b07d2b"]):
         if ph not in per_phase:
             continue
         v = np.sort(np.array(per_phase[ph]))
@@ -548,12 +556,12 @@ def main():
         frames.append((name, df))
 
     written = []
-    for phase in ["P1", "P2", "P3", "P4", "P5"]:
+    for phase in TABLE_PHASES:
         cases = set()
         for _, df in frames:
             cases |= {r["case"] for r in phase_rows(df, phase)}
-        # P1 puts every case on one axis; the others are one figure per workload.
-        groups = [None] if phase == "P1" else sorted(cases)
+        # P1 and P7 put every case on one axis; the others are one figure per workload.
+        groups = [None] if phase in ONE_FIGURE else sorted(cases)
         for case in groups:
             per_machine = []
             for name, df in frames:

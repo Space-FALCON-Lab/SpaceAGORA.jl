@@ -16,8 +16,8 @@
 #                 mode including predictive (R7) and policy_v2 (R6), 11 repeats,
 #                 from a cold calibration store. Runs here, now.
 #   trx50         the full benchmark-box sequence (calibration, targeted points,
-#                 the cold 11-repeat P1-P5, the converged P1/P5, P6/P6p, and the
-#                 archive call after each). Every step is a
+#                 the cold 11-repeat P1-P5, the converged P1/P5, P6/P6p, the
+#                 archive call after each, then P7 with its own archive call). Every step is a
 #                 scripts/remote/spaceagora-remote push; this target PRINTS them
 #                 and, with --execute, offers each one in order for confirmation.
 #   calibrate-p6  re-derive P6's per-trace mission lengths on the host it runs
@@ -288,6 +288,14 @@ target_trx50() {
   say ""
   say "And check the archive reads back:"
   cmd "python3 ${ARCHIVE} --verify --archive ${PAPER_DATA_RAW}"
+
+  step 7 "P7, one spacecraft on short missions, 11 repeats (cold store)"
+  say "Added after the six steps above and independent of them. P1's modes and"
+  say "thread axis; the phase declares its own 11 repeats."
+  offer "P7 cold, 11 repeats" \
+    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P7 --threads=1,2,4,8,16,32 --process-workers=32"
+  say "Pull it as in step 6, then archive it:"
+  cmd "python3 ${ARCHIVE} output/performance/paper_benchmarks/<stamp> --archive ${PAPER_DATA_RAW} --machine trx50 --store cold      --notes 'P7, one spacecraft short missions, 11 repeats, cold store'"
 }
 
 # ── calibrate-p6: re-derive the per-trace mission lengths ────────────────────

@@ -351,6 +351,30 @@ _ppb_p6_nbody_case(n::Int=PPB_P6_N_SAT) = "gravity_$(n)sat_l50_srp_nbody_vacuum_
 _ppb_p6_aero_case(variant::String, n::Int=PPB_P6_N_SAT) =
     "aero_$(n)sat_l50_$(variant)_$(PPB_P6_AERO_MISSION_S)s"
 
+# ── P7: one spacecraft, short missions ───────────────────────────────────────
+#
+# The only one-spacecraft, one-simulation point in P1-P6 is P1's bottom rung, a
+# 4 150 000 s pure-gravity mission sized to clear the 3 s floor, and there every
+# route resolved to serial execution. P7 is the other end: one spacecraft, about
+# one orbit, the full thread budget, so a route's fixed setup (planning, the
+# campaign machinery, calibration probes) is a large share of the wall time and
+# the table reads as "what does choosing a route cost when there is nothing to
+# parallelize". Its serial baselines are under the floor by design; the absolute
+# difference from serial in seconds is the result, not the speedup ratio.
+#
+# Three rows, one force model each, iso-mission (PPC_P7_MISSION_S, derived in
+# cases.jl from the orbit P1's spacecraft flies): P1's degree-50 vacuum physics,
+# P6 trace 3's degree 50 + SRP + third body, and P6 trace 4's degree 50 +
+# exponential-atmosphere aero on an orbit inside the atmosphere. The case
+# catalog's P7 block says why the aero row keeps this duration instead of trace
+# 4's 100 s.
+const PPB_P7_MISSION_S = PPC_P7_MISSION_S
+const PPB_P7_CASES = [
+    "gravity_1sat_l50_vacuum_$(PPB_P7_MISSION_S)s",
+    "gravity_1sat_l50_srp_nbody_vacuum_$(PPB_P7_MISSION_S)s",
+    "aero_1sat_l50_expatm_$(PPB_P7_MISSION_S)s",
+]
+
 # ── Phase catalog ─────────────────────────────────────────────────────────────
 
 const PAPER_BENCHMARK_PHASES = PPBPhase[
@@ -1257,6 +1281,26 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # PPBPhase.budget_grid_fixed.
         budget_grid  = [(w, 1) for w in _ppb_paper_budget_ladder()],
         budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P7",
+        label = "Paper — Single Satellite, Short Missions",
+        # See the P7 block above the phase catalog.
+        cases        = PPB_P7_CASES,
+        # No parity case: P1 carries the P-series parity check, and these force
+        # models are parity-checked at their own sizes by B10 and B11.
+        parity_cases = String[],
+        # P1's modes and thread axis exactly, so a P7 row and P1's one-spacecraft
+        # row are the same comparison at a different amount of work.
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        # Eleven here rather than P1's three raised by SPACEAGORA_PPB_MIN_REPEATS:
+        # a sub-second point is the one most exposed to scheduler noise, and the
+        # phase should not depend on the launcher remembering the floor. The
+        # floor only raises a count, so it leaves this one alone.
+        repeats      = 11,
+        warmup       = 1,
+        thread_mode  = :max_only,
     ),
 ]
 

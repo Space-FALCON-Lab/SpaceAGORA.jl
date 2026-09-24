@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the paper's routing comparison tables from a P-series benchmark run.
 
-Reads one or more `paper_benchmarks_aggregated_*.csv` files (the P1-P5 phases in
+Reads one or more `paper_benchmarks_aggregated_*.csv` files (the P1-P5 and P7 phases in
 benchmarks/studies/paper_parallelization_benchmarks) and writes, per machine and
 per phase, a table of
 
@@ -73,12 +73,16 @@ PHASE_TITLE = {
     "P3": "Monte Carlo resource ladder, one spacecraft per sample",
     "P4": "Monte Carlo resource ladder, compute-bound samples",
     "P5": "Monte Carlo over constellations, worker/thread split at a fixed budget",
+    "P7": "One spacecraft, one orbit, at the full thread budget",
 }
+
+# The phases these tables are built for, in the order they are written out.
+TABLE_PHASES = ["P1", "P2", "P3", "P4", "P5", "P7"]
 
 # Phases whose axis is derived from the case name itself (P1's spacecraft count)
 # put every case in ONE table, one row per axis value; phases that measure
 # several distinct workloads over the same axis get one table each.
-GROUP_BY_CASE = {"P1": False, "P2": True, "P3": True, "P4": True, "P5": True}
+GROUP_BY_CASE = {"P1": False, "P2": True, "P3": True, "P4": True, "P5": True, "P7": False}
 
 # Below this serial baseline the harness treats a point as unreportable router
 # performance -- dispatch overhead and machine noise are the same size as the
@@ -93,7 +97,20 @@ PHASE_AXIS = {
     "P3": ("process_workers", "budget"),
     "P4": ("process_workers", "budget"),
     "P5": ("split", "workers x threads"),
+    "P7": ("stack", "force model"),
 }
+
+# P7's rows are its force models, read from the case name
+# (gravity_1sat_l50_vacuum_<S>s -> l50_vacuum) and ordered lightest first.
+P7_STACK_ORDER = ["l50_vacuum", "l50_srp_nbody_vacuum", "l50_expatm"]
+
+
+def _stack_from_case(case: str) -> str:
+    return re.sub(r"^(gravity|aero)_\d+sat_", "", re.sub(r"_\d+s$", "", str(case)))
+
+
+def _stack_order(stack: str) -> int:
+    return P7_STACK_ORDER.index(stack) if stack in P7_STACK_ORDER else len(P7_STACK_ORDER)
 
 
 def _mission_s_from_case(case: str):
@@ -141,6 +158,10 @@ def axis_values(df: pd.DataFrame, phase: str) -> pd.DataFrame:
         df = df.copy()
         df["n_sat"] = [_n_sat_from_case(c) for c in df.case]
         df["_order"] = df.n_sat
+    elif col == "stack":
+        df = df.copy()
+        df["stack"] = [_stack_from_case(c) for c in df.case]
+        df["_order"] = [_stack_order(st) for st in df["stack"]]
     else:
         df = df.copy()
         df["_order"] = df[col].astype(int)
@@ -299,7 +320,14 @@ def latex_table(phase: str, rows: list[dict], machine: str) -> str:
         "The best static route is the fastest pinned parallel route measured at "
         "that point, named in the route column."
     )
-    if show_mission:
+    if phase == "P7":
+        caption += (
+            " Every row is one spacecraft over the same mission, one two-body "
+            "revolution of the orbit P1's one-spacecraft rung flies, so the serial "
+            "baselines are under the 3~s measurability floor by design: the "
+            "difference from serial in seconds is the route's fixed cost at this size."
+        )
+    elif show_mission:
         caption += (
             " The ladder holds the total work fixed rather than the mission "
             "length, so that every rung's serial baseline is measurable; the "
@@ -414,7 +442,7 @@ def main() -> int:
                     "run, so its column is empty")
             print(f"{machine}: {note}")
             md_parts.append(f"\n_{note}._\n")
-        for phase in ["P1", "P2", "P3", "P4", "P5"]:
+        for phase in TABLE_PHASES:
             rows = phase_rows(df, phase)
             if not rows:
                 continue
@@ -436,7 +464,7 @@ def main() -> int:
             "measurement as one taken after the store has converged. The static "
             "routes hold no such state and act as the control.\n"
         )
-        for phase in ["P1", "P2", "P3", "P4", "P5"]:
+        for phase in TABLE_PHASES:
             section = warmth_table(cold_df, warm_df, phase)
             section and md_parts.append(section + "\n")
 

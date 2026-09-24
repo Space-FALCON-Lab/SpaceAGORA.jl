@@ -555,9 +555,11 @@ bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh tr
 bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh trx50 --execute  # offer each step in turn
 ```
 
-Six steps, ordered, non-overlapping. The ordering is load-bearing: the
+Seven steps, ordered, non-overlapping. The ordering is load-bearing: the
 calibration is itself a timed measurement, the targeted points gate the
 eleven-hour run, and the converged arm consumes the store the cold arm produced.
+Step 7, P7, was added after the other six and is independent of them; it runs
+last so that it never delays or disturbs the figures already planned.
 
 Three facts about the interface that are easy to get wrong, all confirmed by
 reading `scripts/remote/spaceagora-remote`:
@@ -737,6 +739,36 @@ A benchmark run lands in a gitignored `output/` directory inside a worktree, so
 a reboot, a `git clean` or a deleted worktree takes it with it. Archive each run
 as soon as it is pulled, not at the end of the campaign.
 
+### Step 7 — P7, one spacecraft on short missions
+
+P1's modes and thread axis on three one-spacecraft cases over one orbit
+(`CASES.md`, "P7"), from a cold store as step 3 is, 11 repeats declared in the
+phase:
+
+```bash
+ssh trx50 'mv ~/spaceagora_remote/policy_state ~/spaceagora_remote/policy_state_bak_$(date -u +%Y%m%d_%H%M%S); mkdir -p ~/spaceagora_remote/policy_state' \
+  && scripts/remote/spaceagora-remote push --remote trx50 --threads 1,2,4,8,16,32 --process-workers 32 \
+       -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+          --phases=P7 --threads=1,2,4,8,16,32 --process-workers=32
+```
+
+`--threads` is the same list step 3 passes; P7's `:max_only` axis runs only its
+maximum, 32, which is how P1 gets its one thread count too.
+
+**Duration: about 13 min plus the timed repeats.** DERIVED — 18 points (three
+cases, six modes, one thread count) at the 42 s per-point fixed cost in the
+ledger below. The repeats themselves are sub-second solves on this box by
+construction, but what a route's setup adds to each one has not been measured
+there, which is the phase's question.
+
+Pull as in step 6, then:
+
+```bash
+python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
+  --machine trx50 --store cold      --notes 'P7, one spacecraft short missions, 11 repeats, cold store'
+```
+
 ---
 
 ## Provenance ledger
@@ -766,6 +798,8 @@ Every number in this document, and what it rests on.
 | P6 / P6p duration | ~2h10m / ~4h20m | DERIVED | 42 s per point + 4 × the predicted solves |
 | P5 on the workstation | 1h53m29s at 5 repeats | SOURCED | `paper_benchmarks/20260915_181642/paper_benchmarks_report_20260915_181642.md` |
 | Workstation arm duration | 5–7 h | DERIVED | P5 doubled for 11 repeats, plus an unmeasured P3 bounded below by the box's 1h3m43s |
+| P7 mission | 5 702 s | DERIVED | two-body period of P1's spacecraft's orbit, a = 6 898 136.6 m, μ = 3.98600436233e14 m³/s² (built-in Earth), 5 701.76 s rounded; `PPC_P7_MISSION_S` |
+| P7 duration | ~13 min + repeats | DERIVED | 18 points × the 42 s per-point fixed cost above |
 
 ## What is not settled
 

@@ -14,6 +14,27 @@ using Sockets
 using StaticArrays
 using Statistics
 
+# Startup trace: with SPACEAGORA_PPC_STARTUP_TRACE=1 a worker prints one line
+# per startup milestone (files loaded, first solve returned, first timed repeat
+# started), stamped with wall-clock time(), which is how the precompile
+# workload's validation (paper_parallelization_benchmarks/workload/
+# validate_workload.jl) splits a point's startup into import and compilation.
+# Each label is printed once per process. Off by default; one ENV read when on.
+const _PPC_STARTUP_TRACED = Set{String}()
+const _PPC_STARTUP_TRACE_LOCK = ReentrantLock()
+function ppc_startup_trace(label::String)
+    get(ENV, "SPACEAGORA_PPC_STARTUP_TRACE", "") == "1" || return nothing
+    first_time = lock(_PPC_STARTUP_TRACE_LOCK) do
+        label in _PPC_STARTUP_TRACED && return false
+        push!(_PPC_STARTUP_TRACED, label)
+        return true
+    end
+    first_time || return nothing
+    println("PPC_STARTUP_TRACE $(label) $(getpid()) $(Distributed.myid()) $(time())")
+    flush(stdout)
+    return nothing
+end
+
 # The paper harness's precompile workload
 # (benchmarks/studies/paper_parallelization_benchmarks/workload). The controller
 # sets SPACEAGORA_PPC_WORKLOAD=1 on a worker it launches with the workload's

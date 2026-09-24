@@ -3,12 +3,29 @@ function ppc_solve_once(args, cfg::PPCConfig)
     # Calling the config-taking API here would reapply those values by mutating
     # process-global ENV for every solve, which is unsafe when samples run on
     # multiple threads.
-    return SimulationEngine.run_simulation(
+    result = SimulationEngine.run_simulation(
         args;
         isolate_state=false,
         return_solution=true,
         return_solver_metadata=true
     )
+    ppc_startup_trace("first_solve")
+    return result
+end
+
+# SPACEAGORA_PPC_DUMP_STATE_DIR=<dir>: write each successful sample's step times
+# and final state, as raw Float64, to <dir>. For byte-for-byte comparison of two
+# runs of the same point (the precompile workload's validation compares a run
+# with the workload against one without). Off by default.
+function _ppc_dump_state(case_name::String, sample_idx::Int, sample_seed::Int, sol)
+    dir = get(ENV, "SPACEAGORA_PPC_DUMP_STATE_DIR", "")
+    isempty(dir) && return nothing
+    mkpath(dir)
+    open(joinpath(dir, "state_$(case_name)_i$(sample_idx)_s$(sample_seed).bin"), "w") do io
+        write(io, Float64.(sol.t))
+        isempty(sol.u) || write(io, Float64[x for x in sol.u[end]])
+    end
+    return nothing
 end
 
 @inline function ppc_solve_success(sol)::Bool
@@ -43,6 +60,7 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
     end
     if timed.value.ok && timed.value.result !== nothing
         sol = timed.value.result.solution
+        _ppc_dump_state(case_name, sample_idx, sample_seed, sol)
         return (
             success=true,
             retcode=string(sol.retcode),
@@ -141,6 +159,7 @@ function ppc_ensure_process_workers!(n::Int)::Vector{Int}
                 # itself uses `@eval import GRAMSuite` rather than a plain
                 # `import`.
                 @eval ppc_ensure_gramsuite_loaded!()
+                @eval ppc_startup_trace("loaded")
                 nothing
             end
         end
@@ -330,6 +349,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         end
     end
     GC.gc()
+    ppc_startup_trace("timed_start")
     batch_started = time()
     results = Vector{Any}(undef, sample_count)
     actual_backend = "serial"
@@ -575,6 +595,7 @@ function ppc_run_adaptive_batch(
         end
     end
     GC.gc()
+    ppc_startup_trace("timed_start")
     batch_started = time()
     r = withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...,
                 "SPACEAGORA_OUTER_ROUTE_STATE_PATH" => state_path) do

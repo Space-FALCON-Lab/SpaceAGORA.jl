@@ -55,6 +55,78 @@ function __init__()
     # serialize against the same process-wide lock as every other CSPICE-
     # touching call, not just against other GRAM construction calls.
     GRAMSuite._GRAM_DEFAULT_LOCK_HOOK[] = GRAM_LOCK
+    EM._COLLECT_UNREFERENCED_GRAM_ATMOSPHERES_FN[] = _collect_unreferenced_native_atmospheres!
+end
+
+# ---------------------------------------------------------------------------
+# Native atmosphere accounting
+#
+# Every native GRAM atmosphere is freed by the wrapper's finalizer
+# (GRAM Suite 2.0/Julia/types.jl, `Atmosphere`), i.e. only once the Julia
+# collector has found it unreferenced -- and the collector decides when to run
+# from the Julia heap alone, which a native atmosphere barely touches (its
+# wrapper is two words; for Earth the native side is about 106 MB resident,
+# measured). A process that builds one per run therefore holds every
+# atmosphere it has discarded until the Julia heap happens to grow enough to
+# trigger a collection. On a one-spacecraft-per-sample process-pool worker that
+# was about 106 MB of resident memory per sample, with no collection at all in
+# 147 samples under a 7.4 GB --heap-size-hint (docs/architecture/
+# gram_thread_scaling.md, "Pool-worker memory growth").
+#
+# The counts below are exact: one per native atmosphere constructed through
+# this extension, one per such atmosphere finalized. `run_simulation` calls
+# `_collect_unreferenced_native_atmospheres!` after each run, which runs a full
+# collection once `limit` more atmospheres are alive than were alive right after
+# the previous collection it ran. Atmospheres still referenced survive it and
+# move the baseline up, so a process that legitimately keeps many alive pays at
+# most one collection per `limit` new ones. Collecting only changes when the
+# native memory is released, never what any run computes.
+# ---------------------------------------------------------------------------
+
+const _NATIVE_ATMOSPHERES_CREATED = Threads.Atomic{Int}(0)
+const _NATIVE_ATMOSPHERES_FINALIZED = Threads.Atomic{Int}(0)
+const _NATIVE_ATMOSPHERES_BASELINE = Threads.Atomic{Int}(0)
+const _NATIVE_COLLECT_IN_PROGRESS = Threads.Atomic{Bool}(false)
+
+# DERIVED default: at the measured ~106 MB resident per Earth atmosphere, 8
+# unreferenced atmospheres bound the excess at under 1 GB per process. The
+# budget itself (about 1 GB) is ASSUMED; SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT
+# overrides it, and 0 or "off" disables the collection.
+const _NATIVE_COLLECT_LIMIT_DEFAULT = 8
+
+function _native_collect_limit()::Int
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT", "")))
+    isempty(raw) && return _NATIVE_COLLECT_LIMIT_DEFAULT
+    raw == "off" && return 0
+    parsed = tryparse(Int, raw)
+    return parsed === nothing || parsed < 0 ? _NATIVE_COLLECT_LIMIT_DEFAULT : parsed
+end
+
+_native_atmospheres_live()::Int = _NATIVE_ATMOSPHERES_CREATED[] - _NATIVE_ATMOSPHERES_FINALIZED[]
+
+function _track_native_atmosphere!(core)
+    atmosphere = getfield(core, :gram_atmosphere)
+    ismutable(atmosphere) || return nothing
+    Threads.atomic_add!(_NATIVE_ATMOSPHERES_CREATED, 1)
+    # Counts only; the wrapper's own finalizer still frees the native object.
+    finalizer(_ -> Threads.atomic_add!(_NATIVE_ATMOSPHERES_FINALIZED, 1), atmosphere)
+    return nothing
+end
+
+function _collect_unreferenced_native_atmospheres!()::Bool
+    limit = _native_collect_limit()
+    limit > 0 || return false
+    _native_atmospheres_live() - _NATIVE_ATMOSPHERES_BASELINE[] >= limit || return false
+    # One collection at a time; a caller that finds one running skips it.
+    Threads.atomic_cas!(_NATIVE_COLLECT_IN_PROGRESS, false, true) && return false
+    try
+        _native_atmospheres_live() - _NATIVE_ATMOSPHERES_BASELINE[] >= limit || return false
+        GC.gc(true)
+        _NATIVE_ATMOSPHERES_BASELINE[] = _native_atmospheres_live()
+        return true
+    finally
+        _NATIVE_COLLECT_IN_PROGRESS[] = false
+    end
 end
 
 # ---------------------------------------------------------------------------
@@ -263,6 +335,7 @@ function EM.GRAMAtmosphereModel(; kwargs...)
     # In particular, mutable option values must not alias either one.
     recipe = deepcopy(Dict{Symbol, Any}(kwargs))
     core = GRAMSuite.GRAMAtmosphereModel(; deepcopy(recipe)...)
+    _track_native_atmosphere!(core)
     # Preserve what construction resolved, even if the working directory or
     # path-discovery environment changes before copying or process transfer.
     recipe[:gram_root_directory] = String(core.gram_root)
@@ -323,8 +396,13 @@ function Base.deepcopy_internal(model::EM.GRAMAtmosphereModel, stackdict::IdDict
         recipe = model.constructor_kwargs
         # Raw-core wrappers retain their previous fallback; no recipe is
         # inferred from the subset of settings exposed by the core.
-        recipe === nothing ? EM.GRAMAtmosphereModel(deepcopy(model.core)) :
+        if recipe === nothing
+            core = deepcopy(model.core)
+            _track_native_atmosphere!(core)
+            EM.GRAMAtmosphereModel(core)
+        else
             EM.GRAMAtmosphereModel(; recipe...)
+        end
     end
     stackdict[model] = copied
     return copied

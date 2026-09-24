@@ -100,11 +100,19 @@ occursin("partition === nothing && _has_any_batchable_effector(dynamic_effectors
 occursin("_count_non_batchable_effectors(dynamic_effectors) == 0 && return nothing", dynamics_src) ||
     error("Early exit for all-batchable effector set is missing from dynamics_rhs.jl")
 
-# Flat queue workers must skip batchable AND harmonics effectors to prevent double-counting.
-occursin("partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && return nothing", dynamics_src) ||
-    error("Non-packet flat queue worker is missing combined batchable+harmonics skip guard in dynamics_rhs.jl")
-occursin("partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue", dynamics_src) ||
-    error("Packet flat queue worker is missing combined batchable+harmonics skip guard in dynamics_rhs.jl")
+# Flat queue workers must skip every effector a pre-pass already wrote into
+# totals -- batchable kernels, the harmonics SIMD pre-pass and the aerodynamic
+# pre-pass -- or the constellation double-counts it. Matched with whitespace
+# collapsed, since the guard spans lines.
+const _RHS_GATE_COLLAPSED = replace(dynamics_src, r"\s+" => " ")
+const _RHS_GATE_PREPASS_SKIP = "partition === nothing && (_batchable_effector(effector) || _harmonics_prepass_effector(effector) || _aero_prepass_effector(effector))"
+occursin(_RHS_GATE_PREPASS_SKIP * " && return nothing", _RHS_GATE_COLLAPSED) ||
+    error("Non-packet flat queue worker is missing the combined pre-pass skip guard (batchable, harmonics, aero) in dynamics_rhs.jl")
+occursin(_RHS_GATE_PREPASS_SKIP * " && continue", _RHS_GATE_COLLAPSED) ||
+    error("Packet flat queue worker is missing the combined pre-pass skip guard (batchable, harmonics, aero) in dynamics_rhs.jl")
+# The queue's per-effector selection mask must apply the same skip.
+occursin("!(" * _RHS_GATE_PREPASS_SKIP * ")", _RHS_GATE_COLLAPSED) ||
+    error("Flat queue selection mask does not skip pre-pass effectors (batchable, harmonics, aero) in dynamics_rhs.jl")
 
 # needs_state_sample must be true whenever batchable effectors are present so that
 # pos_buffers/mass_buffers are prefilled before the batchable pre-pass runs.
@@ -150,9 +158,11 @@ occursin("_accumulate_harmonics_flat_batch!(sc_state, p, t, effector, plan; eff_
 occursin("_reduce_flat_effector_slots!(", dynamics_src) ||
     error("Flat driver does not reduce the per-effector slots in effector order in dynamics_rhs.jl")
 
-# _prepare_rhs_flat_work_items! must exclude pre-pass effectors from the work list.
-occursin("_batchable_effector(effector) || _harmonics_prepass_effector(effector)) && continue", dynamics_src) ||
-    error("_prepare_rhs_flat_work_items! does not exclude pre-pass effectors in dynamics_rhs.jl")
+# _prepare_rhs_flat_work_items! must exclude pre-pass effectors from the work
+# list: it builds the list from the selection mask checked in the pre-pass skip
+# section above.
+occursin("selected = _flat_selection_mask(dynamic_effectors, partition)", dynamics_src) ||
+    error("_prepare_rhs_flat_work_items! does not build its work list from _flat_selection_mask in dynamics_rhs.jl")
 
 # ── §8: PolicyTelemetry proposed / dispatched / discarded counters ──────────
 occursin("policy_threading_proposed_total::Int64", types_src) ||

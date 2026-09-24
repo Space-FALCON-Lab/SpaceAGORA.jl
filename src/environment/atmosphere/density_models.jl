@@ -482,6 +482,18 @@ const _CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN = Ref{Function}(
 clear_gram_static_grid_cache!() = _CLEAR_GRAM_STATIC_GRID_CACHE_FN[]()
 clear_gram_offline_surrogate_cache!() = _CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN[]()
 
+# Native GRAM atmospheres are freed by a finalizer, and the Julia collector
+# paces itself on the Julia heap alone, so it cannot see how much native memory
+# an unreferenced atmosphere is holding (about 106 MB resident for Earth). A
+# process that builds one per run -- an epoch-realigned model, a deepcopied
+# isolated configuration -- therefore accumulates them faster than the collector
+# gets around to finalizing them. `run_simulation` calls this after every run;
+# the extension runs a full collection once enough more native atmospheres are
+# alive than right after the last one it ran (SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT).
+# Returns whether it collected. A no-op without the extension.
+const _COLLECT_UNREFERENCED_GRAM_ATMOSPHERES_FN = Ref{Function}(() -> false)
+collect_unreferenced_gram_atmospheres!()::Bool = _COLLECT_UNREFERENCED_GRAM_ATMOSPHERES_FN[]()
+
 function _gram_core_density_state(
     _core,
     _h::Float64,

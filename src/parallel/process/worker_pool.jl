@@ -179,6 +179,7 @@ end
 # resolve against.
 function _bootstrap_process_worker!(worker::Int, project_path::String)::Nothing
     Distributed.remotecall_eval(Main, [worker], :(using SpaceAGORA))
+    _preload_worker_packages!(worker)
     # GRAMSuite is a weak/optional dependency (only in [weakdeps]/[extras]),
     # so plain `using GRAMSuite` doesn't resolve even on the coordinator
     # without first pushing its vendored path onto LOAD_PATH (see
@@ -204,6 +205,44 @@ function _bootstrap_process_worker!(worker::Int, project_path::String)::Nothing
         @warn "Process worker $(worker) could not load GRAMSuite; campaigns using a GRAM density model will fail on this worker." exception=(err, catch_backtrace())
     end
     _furnish_default_spice_kernels!(worker)
+    return nothing
+end
+
+# Packages named in SPACEAGORA_PROCESS_WORKER_PRELOAD (comma-separated), each
+# loaded into a new worker's Main right after SpaceAGORA. For a package whose
+# only purpose is its precompiled code -- the paper benchmark harness's
+# precompile workload (benchmarks/studies/paper_parallelization_benchmarks/
+# workload) is one -- loading it is what makes a fresh worker's first sample
+# skip compilation. The worker resolves the name through its own load path,
+# which `_process_worker_load_path` builds from the coordinator's. Only a name
+# that is already precompiled for the worker's environment is loaded: a stale
+# image would otherwise be rebuilt inside the worker, in the middle of a
+# campaign, once per worker. Best-effort, like the GRAMSuite load below.
+function _process_worker_preload_names()::Vector{String}
+    raw = strip(get(ENV, "SPACEAGORA_PROCESS_WORKER_PRELOAD", ""))
+    isempty(raw) && return String[]
+    return String[strip(s) for s in split(raw, ",") if !isempty(strip(s))]
+end
+
+function _preload_worker_packages!(worker::Int)::Nothing
+    for name in _process_worker_preload_names()
+        Base.isidentifier(name) || continue
+        try
+            loaded = Distributed.remotecall_eval(Main, worker, quote
+                let id = Base.identify_package($name)
+                    if id !== nothing && Base.isprecompiled(id)
+                        Base.require(id)
+                        true
+                    else
+                        false
+                    end
+                end
+            end)
+            loaded || @warn "Process worker $(worker) skipped preloading $(name): not found or not precompiled for this environment."
+        catch err
+            @warn "Process worker $(worker) could not preload $(name)." exception=(err, catch_backtrace())
+        end
+    end
     return nothing
 end
 

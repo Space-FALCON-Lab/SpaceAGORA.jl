@@ -62,9 +62,9 @@ const PPC_GRAM_LIVE_CASES = (
     # (aero_<N>sat_l50_gram_lookahead_<S>s and aero_<N>sat_l50_gram_process_<S>s)
     # the same way the ladders above do, so new sizes and durations do not need
     # adding here. The process trace needs it on the coordinator as well as on
-    # the pool workers: ppc_ensure_process_workers! loads GRAMSuite on every
-    # Distributed worker unconditionally, but the coordinator builds the probe
-    # config for route resolution and the warm-up solves itself.
+    # the pool workers: the coordinator builds the probe config for route
+    # resolution and the warm-up solves itself, and ppc_ensure_process_workers!
+    # loads GRAMSuite on a Distributed worker only when the coordinator has it.
     "l50_gram_",
 )
 any(a -> any(c -> occursin(c, a), PPC_GRAM_LIVE_CASES), ARGS) && ppc_ensure_gramsuite_loaded!()
@@ -159,13 +159,31 @@ const _PPC_GRAM_MODEL_CACHE_LOCK = ReentrantLock()
 # just via a race instead of a second sequential call. Locking around the
 # whole check-and-construct makes population itself serialize (matching the
 # type's own instance_lock intent for concurrent *use*).
+#
+# The cached model is built at the harness's own epoch (ppc_initial_time, the
+# initial_time every ppc_build_config case flies), not at GRAMSuite's default
+# construction epoch. `run_simulation` aligns a GRAM model to the run's
+# initial_time before it runs (`with_density_model_epoch`), and a model built at
+# any other epoch is rebuilt there: a fresh native atmosphere, and for Earth a
+# fresh MERRA2 read, per run. On a process-pool worker running one-spacecraft
+# samples (P6 trace 6) that rebuild was about 90% of each sample's wall time,
+# and each rebuilt native atmosphere is freed only when the Julia collector
+# finalizes it -- which it has no reason to do soon, since the native memory is
+# invisible to it -- so a worker's resident memory grew by about 106 MB per
+# sample until the machine ran out. Built at the run's epoch, the alignment
+# returns this same object and nothing is rebuilt. Trajectories are
+# byte-identical either way (gram_thread_scaling/results/worker_growth_*; see
+# docs/architecture/gram_thread_scaling.md, "Pool-worker memory growth").
 function ppc_gram_atmosphere_model(planet_name::String)
     lock(_PPC_GRAM_MODEL_CACHE_LOCK) do
         get!(_PPC_GRAM_MODEL_CACHE, planet_name) do
-            GRAMAtmosphereModel(planet_name=planet_name)
+            GRAMAtmosphereModel(planet_name=planet_name, initial_time=ppc_initial_time())
         end
     end
 end
+
+# The epoch every harness case starts at (ppc_build_config's initial_time).
+ppc_initial_time() = InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
 
 const PPC_SPICE_PATH = joinpath(PPC_REPO_ROOT, "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
 # Spacecraft count => simulated mission seconds for the iso-work L50 ladder.
@@ -382,7 +400,7 @@ function ppc_build_config(;
         guidance_model=GuidanceModel(guidance_effectors=guidance_effectors, guidance_rates=guidance_rates),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
         control_model=ControlModel(control_effectors=control_effectors, control_rates=control_rates),
-        initial_time=InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        initial_time=ppc_initial_time(),
         integration_tolerances=IntegrationTolerances(
             reltol_orbit=reltol_orbit,
             abstol_orbit=abstol_orbit,

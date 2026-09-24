@@ -498,6 +498,49 @@ overnight slot, and do not schedule anything else on the machine during it.
 
 ---
 
+## Precompile workload
+
+Every point is a fresh Julia process, and a campaign point's pool workers are
+too; each compiles its solver specializations before it can time anything.
+`workload/` builds a package image holding them for every P1-P6p point except
+the two native-GRAM traces, and the harness loads it into every worker when
+asked. It is off by default: with the image loaded the timed repeats measured 1 to 4
+percent slower on four of five points (table below), so it is off by default, and the default for
+benchmark timing is the configuration the archived runs used. `workload/README.md` has the details; in short:
+
+- **Build**: `bash benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh`
+  (3 m 40 s and 9.3 GB peak on the workstation, MEASURED). Rebuild after any
+  change to `src/` or to the harness files; a stale image is never used.
+- **Use**: opt-in. `SPACEAGORA_PPB_WORKLOAD=auto` uses a current image and
+  falls back without one; `SPACEAGORA_PPB_WORKLOAD=1` makes a missing or stale
+  image an error. The controller prints `precompile_workload=<env>` or
+  `precompile_workload=off` at the start of each run. Remote jobs build it once
+  per job only when asked (`spaceagora-remote push --workload auto|on|off`,
+  default `off`).
+- **Default**: off (`SPACEAGORA_PPB_WORKLOAD=0`). Rows measured with and without
+  the image are not comparable and must not share a figure.
+
+Measured on the workstation (MEASURED, medians over three alternating launches
+per variant, `workload/results/space-falcon-1_20260924/workload_validation.csv`):
+
+| Point (threads x workers) | Worker wall, stock / workload | Timed median shift |
+|---|---|---|
+| P1 1 spacecraft, serial, 8 threads | 76.5 / 47.1 s (1.6x) | +0.7% |
+| P2 4096 spacecraft, inner_only, 8 threads | 49.2 / 25.3 s (1.9x) | +4.6% (launch spread -9.5% to +14.1%) |
+| P3 outer_process, 256 samples, 4 x 4 | 151.8 / 42.9 s (3.5x) | +3.6% |
+| P3 policy_v2, 256 samples, 4 x 4 | 150.1 / 41.0 s (3.7x) | +3.9% |
+| P5 mcgrid_16sat_8mc, outer_inner_static, 4 x 2 | 78.3 / 28.8 s (2.7x) | +1.9% |
+
+Final states and step times are byte-identical with and without the image. The
+timed repeats run 1-4% slower with it (same allocations, same GC; the time is in
+the samples' compute), so **a run's rows are comparable only with rows measured
+the same way**: do not compare a run that used the workload against one that did
+not, including the archived runs cited below, which did not. Set
+`SPACEAGORA_PPB_WORKLOAD=0` for a run that must line up with them. The
+durations quoted below were measured without it.
+
+---
+
 ## The benchmark-box sequence
 
 ```bash

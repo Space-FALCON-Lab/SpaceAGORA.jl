@@ -413,6 +413,7 @@ function run_simulation(
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
+    try
     return SimulationModel.ParallelPolicy.with_policy_context() do
     # `visualization=true` (or SPACEAGORA_VISUALIZATION=1, so an unmodified
     # example script can opt in) turns the scene sidecar on for this run and
@@ -905,5 +906,13 @@ function run_simulation(
     end
     return_solution && return last_sol
     return nothing
+    end
+    finally
+        # A GRAM model this run realigned or deep-copied owns a native
+        # atmosphere that only the collector's finalizer frees, and the
+        # collector cannot see its size. Collect once enough of them have been
+        # discarded (see collect_unreferenced_gram_atmospheres!). Changes when
+        # native memory is released, not what the run computed.
+        SimulationModel.EnvironmentModels.collect_unreferenced_gram_atmospheres!()
     end
 end

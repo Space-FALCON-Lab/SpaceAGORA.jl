@@ -57,6 +57,9 @@ PHASE_AXIS_COL = {
     "P2": ("thread_count", "threads"),
     "P3": ("process_workers", "process_workers"),
     "P4": ("process_workers", "process_workers"),
+    # P7's rows are distinguished by case (the force model), which is already a
+    # point key; the axis column carries the one thread count it runs at.
+    "P7": ("thread_count", "threads"),
 }
 
 
@@ -79,7 +82,7 @@ def axis_for(row) -> tuple[str, object]:
         col, _ = PHASE_AXIS_COL[phase]
         val = row[col]
         return str(int(val)), int(val)
-    # Generic fallback for any phase outside P1-P5: show the full config so
+    # Generic fallback for any phase outside P1-P5 and P7: show the full config so
     # nothing is silently dropped, ordered by (threads, workers, mc_samples).
     tc, pw, mc = int(row["thread_count"]), int(row["process_workers"]), int(row["mc_samples"])
     return f"tc={tc},pw={pw},mc={mc}", (tc, pw, mc)

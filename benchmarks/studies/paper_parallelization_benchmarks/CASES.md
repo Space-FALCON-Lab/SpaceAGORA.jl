@@ -544,6 +544,51 @@ run there:
 bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh calibrate-p6 --execute
 ```
 
+## P7 — one spacecraft, short missions
+
+P1's one-spacecraft rung is a 4 150 000 s pure-gravity mission, sized so its
+serial baseline clears the 3 s floor, and every route resolved to serial
+execution there. P7 measures the opposite end: one spacecraft over about one
+orbit, at the full thread budget, where a route's fixed setup (planning, the
+campaign machinery, calibration probes) is a large share of the run. Its serial
+baselines are under the floor by design; what the phase reports is each route's
+wall time against serial in seconds, not a speedup.
+
+| Row | Physics | Case | Mission | `dt_max` |
+|---|---|---|---:|---:|
+| 1 | degree 50, vacuum (P1's physics and spacecraft) | `gravity_1sat_l50_vacuum_5702s` | 5 702 s | 20 s |
+| 2 | + SRP + Sun/Moon third body (P6 trace 3) | `gravity_1sat_l50_srp_nbody_vacuum_5702s` | 5 702 s | 20 s |
+| 3 | degree 50 + exponential-atmosphere aero (P6 trace 4) | `aero_1sat_l50_expatm_5702s` | 5 702 s | 5 s |
+
+**The mission is derived, not calibrated.** It is the two-body period of the
+initial osculating orbit of P1's spacecraft (member 1 of `ppc_constellation`,
+500 km periapsis and 540 km apoapsis altitude):
+a = 6 378 136.6 m + 520 000 m = 6 898 136.6 m, and with the built-in Earth's
+μ = 3.98600436233e14 m³/s², T = 2π √(a³/μ) = 5 701.76 s, rounded to 5 702 s
+because the case name carries an integer. `PPC_P7_MISSION_S` in `cases.jl`
+computes it from the same altitudes and constants at load time, so the case
+names follow the orbit if it changes; the workload coverage gate pins that. The
+degree-50 field moves the real revolution time off the two-body value by a
+relative amount of order J2 (Rp_e/a)², about 1e-3.
+
+**The aero row flies a different orbit and keeps the same duration.** P1's
+spacecraft at 500–540 km with the default 120 km entry interface would be outside
+the atmosphere, so row 3 flies member 1 of the P6 density constellation (300 km
+periapsis, 400 km apoapsis, 600 km interface), inside the atmosphere from the
+first step as trace 4 is. It keeps 5 702 s rather than trace 4's 100 s: 100 s
+was sized to lift a 4096-spacecraft constellation above the floor and means
+nothing at one spacecraft, and a shared duration makes the three rows
+iso-mission. 5 702 s is slightly more than one revolution of that lower orbit,
+whose own two-body period is 5 492 s by the same formula.
+
+Modes and thread axis are P1's: `serial`, `outer_threads`, `inner_only`,
+`outer_inner_static`, `policy_v2`, `predictive`, one sample, at the maximum of
+the thread ladder (`thread_mode = :max_only`). Eleven repeats are declared in
+the phase itself rather than left to `SPACEAGORA_PPB_MIN_REPEATS` (which only
+raises a count), one warm-up. No parity case: P1 carries the P-series parity
+check. `make_paper_routing_tables.py` and `make_paper_routing_plots.py` put the
+three rows in one table and one figure with the force model on the axis.
+
 ## Underlying case families (`parallelization_performance/cases.jl`)
 
 The phases above draw from a shared case catalog, grouped into families:
@@ -602,6 +647,10 @@ The phases above draw from a shared case catalog, grouped into families:
   entries exist for the `--profile=test` smoke path only** — that profile pins the
   mission at 10 s and so ignores the duration in the name, and those rows are not
   sized rungs and must never be quoted as measurements.
+- **`p7_short_1sat`** — `gravity_1sat_l50_vacuum_{S}s`,
+  `gravity_1sat_l50_srp_nbody_vacuum_{S}s`, `aero_1sat_l50_expatm_{S}s` with
+  S = `PPC_P7_MISSION_S` (5 702 s). The P1 and P6 patterns at one spacecraft,
+  built by the same `ppc_single_config` branches. P7.
 
 ### Measured case costs (space-falcon-1, serial, post-warm-up)
 

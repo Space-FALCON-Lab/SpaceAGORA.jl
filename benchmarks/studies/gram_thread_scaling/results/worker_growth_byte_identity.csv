@@ -1,0 +1,7 @@
+arm,code,model,order,gc,samples,identical_to_reference,differ,concatenated_md5
+rebuild_gc1,before,default_epoch (rebuilt per sample),forward,full collection every sample,400,400,0,38ba869b8059669dbf30f24abe8d1f9d
+rebuild_nogc,before,default_epoch (rebuilt per sample),forward,none forced,100,100,0,1791cd0bbc78090a14886c441ed5e9b4
+reuse_fwd,before,run_epoch (one model reused),forward,none forced,400,400,0,38ba869b8059669dbf30f24abe8d1f9d
+reuse_rev,before,run_epoch (one model reused),reverse,none forced,400,400,0,38ba869b8059669dbf30f24abe8d1f9d
+after_harness,after,harness (built at harness epoch),forward,none forced,400,400,0,38ba869b8059669dbf30f24abe8d1f9d
+after_rebuild_limit8,after,default_epoch (rebuilt per sample),forward,native collect limit 8,400,400,0,38ba869b8059669dbf30f24abe8d1f9d

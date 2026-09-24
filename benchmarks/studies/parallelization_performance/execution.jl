@@ -912,7 +912,100 @@ function _ppc_worker_gc_flags(cfg::PPCConfig)::Vector{String}
     return flags
 end
 
-function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int, repeat::Int, seed::Int, mc_samples::Int, outfile::String, parity::Bool, repeats::Int=1)
+# ── Precompile workload ──────────────────────────────────────────────────────
+#
+# Every point is a fresh Julia process, and so is every process-pool worker, so
+# each one pays package loading plus compilation of the solver specializations
+# it is about to run before it can time anything. The paper harness's precompile
+# workload (benchmarks/studies/paper_parallelization_benchmarks/workload, built
+# with its build_workload.sh) holds those specializations in a package image;
+# a worker that loads it skips most of that compilation. See the README there
+# for what it covers and the measured effect.
+#
+# The workload's environment is STACKED behind the repository project rather
+# than replacing it: a worker keeps --project=<repo>, so it loads the same
+# SpaceAGORA image, resolves every other package the same way and has the same
+# active project (which the runtime's process pool and state paths key on) as a
+# worker launched without the workload. The environment only adds the workload
+# package, found second on JULIA_LOAD_PATH.
+#
+#   SPACEAGORA_PPB_WORKLOAD      auto (default): use the image when it is built
+#                                and current, otherwise warn and run without it;
+#                                0/off: never use it; 1/on: fail if it is not
+#                                built and current.
+#   SPACEAGORA_PPB_WORKLOAD_ENV  the workload environment (default
+#                                output/paper_workload/env in this checkout).
+
+ppc_workload_default_env() = joinpath(PPC_REPO_ROOT, "output", "paper_workload", "env")
+
+# Cases a worker runs without the workload: the native-GRAM cases, which the
+# workload leaves out (see ppb_workload_excluded in the workload's points.jl).
+ppc_workload_skips_case(case::AbstractString) = any(c -> occursin(c, case), PPC_GRAM_LIVE_CASES)
+
+# The worker's load path: the controller's, with the workload environment
+# inserted right after the active project.
+function ppc_workload_load_path(env::AbstractString)::String
+    pathsep = Sys.iswindows() ? ";" : ":"
+    raw = strip(get(ENV, "JULIA_LOAD_PATH", ""))
+    entries = isempty(raw) ? ["@", "@v#.#", "@stdlib"] : String.(split(raw, pathsep))
+    # A trailing empty entry in JULIA_LOAD_PATH means "append the defaults".
+    if !isempty(entries) && isempty(last(entries))
+        entries = vcat(entries[1:end-1], ["@", "@v#.#", "@stdlib"])
+    end
+    entries = unique(filter(!=(String(env)), entries))
+    at = findfirst(==("@"), entries)
+    at === nothing ? pushfirst!(entries, String(env)) : insert!(entries, at + 1, String(env))
+    return join(entries, pathsep)
+end
+
+const _PPC_WORKLOAD_ENV_CHECKED = Dict{String, Bool}()
+
+"""
+    ppc_workload_env() -> Union{Nothing, String}
+
+The workload environment the controller should launch workers with, or `nothing`
+to launch them without it. Checked once per controller process and environment
+path, in a subprocess started exactly the way a worker is (same project, same
+stacked load path), by asking whether the workload package's image is current
+for it -- which also fails when SpaceAGORA or any other dependency has changed
+since the image was built.
+"""
+function ppc_workload_env()::Union{Nothing, String}
+    setting = lowercase(strip(get(ENV, "SPACEAGORA_PPB_WORKLOAD", "auto")))
+    setting in ("0", "off", "false", "no") && return nothing
+    required = setting in ("1", "on", "true", "yes")
+    env_raw = strip(get(ENV, "SPACEAGORA_PPB_WORKLOAD_ENV", ""))
+    env = abspath(isempty(env_raw) ? ppc_workload_default_env() : String(env_raw))
+    fresh = get!(_PPC_WORKLOAD_ENV_CHECKED, env) do
+        isfile(joinpath(env, "Project.toml")) || return false
+        julia_bin = Base.julia_cmd().exec[1]
+        probe = "exit(let id = Base.identify_package(\"$(PPC_WORKLOAD_PACKAGE)\"); " *
+                "id !== nothing && Base.isprecompiled(id) end ? 0 : 3)"
+        cmd = addenv(`$(julia_bin) --startup-file=no --project=$(PPC_REPO_ROOT) -e $(probe)`,
+                     "JULIA_LOAD_PATH" => ppc_workload_load_path(env))
+        return success(pipeline(cmd; stdout=devnull, stderr=devnull))
+    end
+    fresh && return env
+    msg = "Precompile workload image not built or not current for $(env); " *
+          "build it with benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh"
+    required && throw(ErrorException(msg * " (SPACEAGORA_PPB_WORKLOAD=$(setting))."))
+    setting == "auto" && isfile(joinpath(env, "Project.toml")) && @warn msg * "; running without it."
+    return nothing
+end
+
+# Environment a worker for `case` is launched with when the workload is in use.
+function ppc_workload_worker_env(workload_env::Union{Nothing, String}, case::AbstractString)
+    (workload_env === nothing || ppc_workload_skips_case(case)) && return Pair{String, String}[]
+    return [
+        "JULIA_LOAD_PATH" => ppc_workload_load_path(workload_env),
+        "SPACEAGORA_PPC_WORKLOAD" => "1",
+        # The runtime's own process pool, should a campaign grow one here.
+        "SPACEAGORA_PROCESS_WORKER_PRELOAD" => PPC_WORKLOAD_PACKAGE,
+    ]
+end
+
+function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int, repeat::Int, seed::Int, mc_samples::Int, outfile::String, parity::Bool, repeats::Int=1,
+                        workload_env::Union{Nothing, String}=nothing)
     julia_bin = Base.julia_cmd().exec[1]
     argv = String[
         julia_bin,
@@ -941,7 +1034,9 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
         "--outfile=$(outfile)",
         "--parity=$(parity ? 1 : 0)"
     ]
-    return Cmd(_ppc_apply_cpu_pinning(argv, cfg.cpu_pinning, threads))
+    cmd = Cmd(_ppc_apply_cpu_pinning(argv, cfg.cpu_pinning, threads))
+    extra = ppc_workload_worker_env(workload_env, case)
+    return isempty(extra) ? cmd : addenv(cmd, extra...)
 end
 
 # Resume support: a worker's outfile is considered already done only if it
@@ -987,12 +1082,14 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     # ppc_assert_machine_quiet! -- this is the check whose absence let an entire
     # 115-point run be collected against another user's 26-hour job.
     ppc_assert_machine_quiet!()
+    workload_env = ppc_workload_env()
     println("[parallelization-performance] profile=$(cfg.profile) outdir=$(outdir)")
     println("[parallelization-performance] load=$(round(ppc_load_average(); digits=2)) " *
             "headroom=$(round(100 * ppc_load_headroom(); digits=0))% " *
             "cores=$(_ppc_physical_core_count())")
     println("[parallelization-performance] cases=$(join(cases, ","))")
     println("[parallelization-performance] modes=$(join(cfg.modes, ","))")
+    println("[parallelization-performance] precompile_workload=$(workload_env === nothing ? "off" : workload_env)")
 
     perf_paths = String[]
     for case in cases
@@ -1036,7 +1133,8 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                     seed=cfg.seed + 1,
                     mc_samples=mc_count,
                     outfile=outfile,
-                    parity=false
+                    parity=false,
+                    workload_env=workload_env
                 )
                 println("[run] $(case) mode=$(mode) threads=$(thread_count) repeats=$(cfg.repeats) mc=$(mc_count)")
                 run(cmd)
@@ -1063,7 +1161,8 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                 seed=cfg.seed,
                 mc_samples=1,
                 outfile=outfile,
-                parity=true
+                parity=true,
+                workload_env=workload_env
             )
             println("[parity] $(case) mode=$(mode) threads=$(thread_count)")
             run(cmd)

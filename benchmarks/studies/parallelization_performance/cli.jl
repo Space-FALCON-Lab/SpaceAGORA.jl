@@ -14,6 +14,26 @@ using Sockets
 using StaticArrays
 using Statistics
 
+# The paper harness's precompile workload
+# (benchmarks/studies/paper_parallelization_benchmarks/workload). The controller
+# sets SPACEAGORA_PPC_WORKLOAD=1 on a worker it launches with the workload's
+# environment on JULIA_LOAD_PATH (see ppc_workload_env in execution.jl), and
+# Distributed pool workers inherit both. Loading the package only brings its
+# precompiled specializations into this process; it defines nothing the harness
+# calls. Only an image that is already built and current is loaded -- a stale
+# one would otherwise be rebuilt here, inside a benchmark point. Skipped when
+# this file is included by the workload package itself.
+const PPC_WORKLOAD_PACKAGE = "SpaceAGORAPaperWorkload"
+if @__MODULE__() === Main && get(ENV, "SPACEAGORA_PPC_WORKLOAD", "") == "1"
+    let id = Base.identify_package(PPC_WORKLOAD_PACKAGE)
+        if id !== nothing && Base.isprecompiled(id)
+            Base.require(id)
+        else
+            @warn "SPACEAGORA_PPC_WORKLOAD=1 but $(PPC_WORKLOAD_PACKAGE) is not built for this environment; running without it."
+        end
+    end
+end
+
 Base.@kwdef struct PPCConfig
     profile::String = "smoke"
     outdir::String = PPC_DEFAULT_OUTDIR

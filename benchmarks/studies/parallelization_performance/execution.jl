@@ -957,10 +957,12 @@ end
 # worker launched without the workload. The environment only adds the workload
 # package, found second on JULIA_LOAD_PATH.
 #
-#   SPACEAGORA_PPB_WORKLOAD      auto (default): use the image when it is built
-#                                and current, otherwise warn and run without it;
-#                                0/off: never use it; 1/on: fail if it is not
-#                                built and current.
+#   SPACEAGORA_PPB_WORKLOAD      0/off (default): never use it; auto: use the
+#                                image when it is built and current, otherwise
+#                                warn and run without it; 1/on: fail if it is
+#                                not built and current. Off by default because
+#                                the image shifts timed repeats by a few percent
+#                                (code placement; see the workload README).
 #   SPACEAGORA_PPB_WORKLOAD_ENV  the workload environment (default
 #                                output/paper_workload/env in this checkout).
 

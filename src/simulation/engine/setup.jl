@@ -1535,8 +1535,20 @@ end
         )
     end
 
-    # Flat queue requires a minimum thread budget to amortise channel/worker overhead.
-    if budget < env.flat_min_thread_budget
+    # Flat queue requires a minimum thread budget to amortize channel/worker overhead.
+    #
+    # A pre-pass-only stack is exempt, for the reason the budget-one branch
+    # above takes the flat route: its effectors are all served by the flat
+    # route's pre-passes, so the per-(satellite, effector) queue whose overhead
+    # this floor exists for is never built. Without the exemption budgets 2 and
+    # 3 were the only ones at which such a stack lost the batched kernels --
+    # budget 1 takes the branch above, budget 4 and up the generic branch below
+    # -- and on the 4096-spacecraft P6 traces that made two threads slower than
+    # one (docs/architecture/rhs_heuristic_defaults.md, "Budgets below the flat
+    # queue's thread floor"). The stack still has to pass the generic branch's
+    # own admission (work estimate, satellites-per-worker floor), exactly as it
+    # does at budget 4.
+    if budget < env.flat_min_thread_budget && !_rhs_all_prepass_effectors(dynamic_effectors)
         return (
             mode=:satellite_batch,
             allotment=1,

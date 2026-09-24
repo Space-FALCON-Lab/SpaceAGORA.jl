@@ -74,4 +74,30 @@ end
     @test phase_sizes == Set(size_of(p.case) for p in points)
 end
 
+# The workload stays opt-in: with the image loaded the timed repeats move by a
+# few percent, by an amount that depends on the build of the image (code
+# placement; workload/README.md, "Why the timed repeats move"). Pin that the
+# harness and the remote runner both default to off, as the README says, so the
+# default cannot be flipped without the documentation and this gate changing too.
+@testset "paper precompile workload is off by default" begin
+    Base.include(PPBW_SANDBOX, joinpath(PPBW_STUDIES, "parallelization_performance", "execution.jl"))
+    withenv("SPACEAGORA_PPB_WORKLOAD" => nothing) do
+        @test Base.invokelatest(PPBW_SANDBOX.ppc_workload_env) === nothing
+    end
+    withenv("SPACEAGORA_PPB_WORKLOAD" => "0") do
+        @test Base.invokelatest(PPBW_SANDBOX.ppc_workload_env) === nothing
+    end
+    # Asking for it with no image built is an error, never a silent fallback.
+    withenv("SPACEAGORA_PPB_WORKLOAD" => "1",
+            "SPACEAGORA_PPB_WORKLOAD_ENV" => joinpath(mktempdir(), "no_workload_env")) do
+        @test_throws ErrorException Base.invokelatest(PPBW_SANDBOX.ppc_workload_env)
+    end
+    # The unset case above returns nothing under auto too when no current image
+    # happens to exist, so pin the default value itself as well.
+    execution = read(joinpath(PPBW_STUDIES, "parallelization_performance", "execution.jl"), String)
+    @test occursin("get(ENV, \"SPACEAGORA_PPB_WORKLOAD\", \"0\")", execution)
+    remote = read(joinpath(REPO_ROOT, "scripts", "remote", "spaceagora-remote"), String)
+    @test occursin(r"\bworkload=\"off\"", remote)
+end
+
 println("ppb_workload_coverage_gate_ok")

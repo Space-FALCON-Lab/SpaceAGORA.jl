@@ -505,8 +505,15 @@ too; each compiles its solver specializations before it can time anything.
 `workload/` builds a package image holding them for every P1-P6p point except
 the two native-GRAM traces, and the harness loads it into every worker when
 asked. It is off by default: with the image loaded the timed repeats measured 1 to 4
-percent slower on four of five points (table below), so it is off by default, and the default for
-benchmark timing is the configuration the archived runs used. `workload/README.md` has the details; in short:
+percent slower on four of five points (table below), and the default for
+benchmark timing is the configuration the archived runs used. The cause is code
+placement: the image holds the same compiled specializations as a stock worker
+builds, but loaded from the image the right-hand side's hot functions sit up to
+50 MiB apart instead of within 0.5 MiB, and the shift that follows changes from
+one build of the image to the next (P3 outer_process: +3.6%, -1.9% and +0.2% on
+three builds; P1: +0.7%, +1.0% and +3.7%). It is not the CPU target or the
+compile flags, which match. No fix keeps the startup saving, so it stays opt-in
+(`workload/README.md`, "Why the timed repeats move"). In short:
 
 - **Build**: `bash benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh`
   (3 m 40 s and 9.3 GB peak on the workstation, MEASURED). Rebuild after any

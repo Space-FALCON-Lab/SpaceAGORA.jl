@@ -7,9 +7,11 @@ and then compiles the solver and right-hand-side specializations of the case it
 is about to run before it can time anything. This directory builds a package
 image that already holds those specializations, and the harness loads it into
 every worker when asked (`SPACEAGORA_PPB_WORKLOAD=auto` or `1`).
-It is off by default: with the image loaded the timed repeats measured 1 to 4
-percent slower on four of five points (table below), and the default for
-benchmark timing is the configuration the archived runs used.
+It is off by default: with the image loaded the timed repeats move by a few
+percent, usually slower, because the image places the hot code differently from
+code a worker compiles itself; the size of the shift depends on the build of the
+image ("Why the timed repeats move" below). The default for benchmark timing is
+the configuration the archived runs used.
 
 ## What it covers
 
@@ -221,7 +223,7 @@ coordinator and on the pool workers).
 
 ### Timed repeats run slightly slower
 
-The timed medians are not unchanged. Median timed wall, stock / workload,
+The timed medians are not unchanged. First build of the image: Median timed wall, stock / workload,
 medians over the three launches, and the per-launch shift (MEASURED):
 
 | Point | Timed median stock / workload | Shift per launch pair |
@@ -233,13 +235,82 @@ medians over the three launches, and the per-launch shift (MEASURED):
 | P5 outer_inner_static | 2.69 / 2.74 s | +1.2%, +2.0%, +2.0% |
 
 Allocations are identical and GC time is the same within noise; the extra time
-is in the samples' own compute (the rows' `sample_wall_time_sum_s`). The likely
-cause, NOT verified here, is that code loaded from a package image reaches other
-functions and constants through relocation slots where freshly compiled code
-embeds them directly. Whatever the cause, it applies to every timed repeat of a
-run that uses the image: do not put rows measured with the workload and rows
-measured without it in the same comparison. The route-to-route comparisons
-within one run all carry it, at 1-4% on the points measured here.
+is in the samples' own compute (the rows' `sample_wall_time_sum_s`). The cause is
+below. It applies to every timed repeat of a run that uses the image: do not put
+rows measured with the workload and rows measured without it in the same
+comparison. The route-to-route comparisons within one run all carry it.
+
+### Why the timed repeats move
+
+The image changes where the hot code sits in memory, not what the code computes
+or how it is compiled. The shift that follows is a property of each build of the
+image: it differs between builds of identical sources, and no build tried was
+free of it on every point. No fix was found that keeps the startup saving, so the
+workload stays opt-in. Everything in this section is MEASURED on the workstation
+above, one Julia process at a time (raw values in
+`results/space-falcon-1_20260924_layout/`, probe script `image_layout_probe.jl`).
+
+**Where the code lives.** A worker's right-hand side runs the same
+MethodInstances with and without the image (identical `specTypes` for
+`spacecraft_dynamics!`, `_spacecraft_dynamics_dispatch!`,
+`_evaluate_dynamic_effector`, `calcForceTorque` and `_harmonics_scalar_force_ii`
+on the P1 types). A stock worker compiles them itself, one after another, and
+they land 0.53 MiB apart. With the image they are loaded from its 250 MB shared
+object, where they sit up to 50.25 MiB apart among 21 specializations of those
+five functions for the other points (`code_addresses.csv`). The FunctionWrappers
+entry adapter the solver calls the RHS through also comes from the image then
+(`jlcapi_CallWrapper`).
+
+**What it costs, isolated.** Timing the P1 right-hand side alone (the solver's ODE
+function at a fixed state, 2000 calls per round, 15 rounds per launch): stock
+4327-4505 ns over 7 launches (median 4420 ns), with the image 4487-4545 ns over
+10 launches of two builds (median 4505 ns), +1.9%. Within one launch the rounds
+agree to about 1%; the stock launches spread more than the image launches do,
+because a JIT-compiled layout is not the same from launch to launch either.
+Profiling 200,000 of those calls, the extra samples are mostly in
+`_harmonics_scalar_force_ii` (5921 and 6096 samples stock, 6280 and 6316 with the
+image). Yet the same kernel timed on its own, outside the RHS, is not slower
+from the image (2968 and 2962 ns, against 3034 and 2972 ns stock): its cost
+depends on the code around it, which is what a layout effect looks like.
+
+**What it is not.**
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| CPU target or compile flags differ | image header vs the worker's JIT target and `CacheFlags` | identical: `znver5` with the same feature list; opt level 2, inlining on, bounds checks default, debug level 1 |
+| Image-style code generation (relocation slots instead of embedded constants) | stock worker with `--image-codegen`, P1 RHS | 4356 and 4335 ns, against stock 4352 and 4421 ns in the same session: no slowdown |
+| The image's data section placement | image worker with `--permalloc-pkgimg=yes` | 4612 and 4562 ns, against 4498 and 4525 ns without: no recovery |
+| Different specializations or inlining | `specTypes` of the hot code in both processes; disassembly of the kernel | same MethodInstances; the kernel disassembles to 1374 and 1379 instructions up to its last sampled address (register allocation and address loads differ) |
+| Invalidation or new dispatch from loading the package | methods the harness files define on other modules' functions | none; the harness only defines its own types and functions |
+
+**Build to build.** Three builds, the harness's validation driver, three
+alternating launch pairs each; timed median shift, workload against stock:
+
+| Point | First build (commit `0281c23d4`) | Build 1 (`fd0453d36`) | Build 2 (`fd0453d36`, rebuilt) |
+|---|---|---|---|
+| P1 1 sat, serial | +0.7% (-0.2, +2.2, +1.3) | +1.0% (+1.5, +0.4, +0.0) | +3.7% (+0.9, +4.1, +3.9) |
+| P2 4096 sat, inner_only | +4.6% (+2.0, -9.5, +14.1) | -0.5% (-7.8, +15.7, -5.1) | not run |
+| P3 outer_process | +3.6% (+4.3, +3.7, +2.3) | -1.9% (-1.2, -1.7, -2.4) | +0.2% (+1.7, +0.4, -1.4) |
+| P3 policy_v2 | +3.9% (+2.7, +4.3, +3.2) | +1.0% (+1.0, +0.7, -1.8) | not run |
+| P5 outer_inner_static | +1.9% (+1.2, +2.0, +2.0) | +1.2% (-6.3, +0.6, +1.9) | not run |
+
+Across the three runs the stock median of P3 outer_process moved by 1.0%
+(2.456, 2.481, 2.479 s) and the image's by 4.6% (2.544, 2.433, 2.483 s). Builds 1 and 2 differ only in the build, not the
+sources, and still disagree on P1 by 2.7 points and on P3 outer_process by 2.1.
+Every run's final states and step times were byte-identical to stock, and first
+timed repeats started 2.4x (P1) to 4.9x (P3 outer_process) sooner, as before.
+
+**Why there is no fix here.** The flags already match, so rebuilding with the
+workers' target changes nothing. Where a function lands in the shared object is
+decided by the package-image build, not by anything the workload can set.
+Leaving the hot solver and RHS specializations out of the image would mean
+compiling them in the worker again, and that compilation is the startup cost the
+image exists to remove (the P1 worker's first timed repeat starts 49.7 s after
+launch stock and 20.9 s with the image); Julia 1.12 caches a specialization's inference and its
+native code together, and no supported way was found to keep one without the
+other. So the rule for making it the default (faster startup without slowing
+the timed benchmark) is not met: P1 was slower with every build (+0.7, +1.0,
++3.7%), and whether any other point is slower depends on the build.
 
 ### Precompile cost (this workstation)
 

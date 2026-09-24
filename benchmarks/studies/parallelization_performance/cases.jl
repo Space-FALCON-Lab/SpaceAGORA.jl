@@ -259,6 +259,11 @@ function ppc_spacecraft(
     return SpacecraftModel(Joint[], links, root, true, dry_mass, prop_mass, root.inertia, 0, 0, ic, id)
 end
 
+# (apoapsis, periapsis) altitude in meters of member i of `ppc_constellation`.
+# Named so the P7 mission length below can be derived from the same orbit the
+# constellation builder flies, rather than from a copy of these numbers.
+ppc_constellation_member_alts_m(i::Int) = (540e3 + 2e3 * (i - 1), 500e3 + 1e3 * (i - 1))
+
 function ppc_constellation(
     planet,
     n::Int;
@@ -268,11 +273,12 @@ function ppc_constellation(
 )
     sats = SpacecraftModel[]
     for i in 1:n
+        ra_alt_m, rp_alt_m = ppc_constellation_member_alts_m(i)
         push!(sats, ppc_spacecraft(
             planet;
             id=i,
-            ra_alt_m=540e3 + 2e3 * (i - 1),
-            rp_alt_m=500e3 + 1e3 * (i - 1),
+            ra_alt_m=ra_alt_m,
+            rp_alt_m=rp_alt_m,
             nu_deg=120.0 + 240.0 * (i - 1) / max(1, n),
             with_panel=with_panel,
             panel_count=panel_count,
@@ -328,6 +334,30 @@ end
 
 ppc_p6_gram_constellation(planet, n::Int) =
     SpacecraftModel[ppc_p6_gram_member(planet, i, n) for i in 1:n]
+
+# ── P7: one spacecraft, short missions ───────────────────────────────────────
+#
+# P1's one-spacecraft rung flies 4 150 000 s so its serial baseline clears the
+# 3 s measurability floor, and every route resolved to serial execution there.
+# P7 asks the opposite question: with little work to do and the full thread
+# budget available, what does each route's fixed setup (planning, campaign
+# machinery, calibration probes) cost against serial? A short mission is the
+# point of the phase, so its serial baselines sit under the floor by design.
+#
+# The mission is one revolution of the spacecraft P1's one-spacecraft rung flies
+# (member 1 of `ppc_constellation`), taken as the two-body period of its initial
+# osculating orbit, T = 2π sqrt(a^3 / μ) with a = Rp_e + (h_a + h_p) / 2, using
+# the built-in Earth's equatorial radius and μ -- the same two numbers
+# `ppc_spacecraft` converts those altitudes with (`Earth("", path)` returns the
+# built-in constants with SPICE kernels loaded; it does not replace them).
+# Rounded to the nearest second because the case name carries the duration as
+# an integer. The degree-50 field moves the actual revolution time off the
+# two-body value by a relative amount of order J2 (Rp_e/a)^2, about 1e-3; the
+# phase needs "about one orbit", not a closed orbit.
+ppc_keplerian_period_s(planet, ra_alt_m::Real, rp_alt_m::Real) =
+    2π * sqrt((planet.Rp_e + (ra_alt_m + rp_alt_m) / 2)^3 / planet.μ)
+
+const PPC_P7_MISSION_S = round(Int, ppc_keplerian_period_s(Earth(), ppc_constellation_member_alts_m(1)...))
 
 function ppc_harmonics_model(planet, degree::Int)
     if isfile(PPC_EARTH_HARMONICS_FILE)
@@ -1760,6 +1790,42 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
              "the process route)",
              montecarlo=true, default_samples=p6_n)
     end
+
+    # ── P7: one spacecraft, short missions ───────────────────────────────────
+    #
+    # The three rows of the P7 table, all one spacecraft over PPC_P7_MISSION_S
+    # (one revolution of P1's one-spacecraft orbit; see the constant). The names
+    # are the P1 and P6 patterns at N = 1, so they build through the same
+    # ppc_single_config branches as the P1 rung and P6 traces 3 and 4 with no
+    # branch of their own:
+    #
+    #   gravity_1sat_l50_vacuum_<S>s          P1's physics and spacecraft
+    #   gravity_1sat_l50_srp_nbody_vacuum_<S>s  + SRP + Sun/Moon third body (P6 trace 3)
+    #   aero_1sat_l50_expatm_<S>s             degree 50 + exponential-atmosphere
+    #                                          aero on member 1 of the P6 density
+    #                                          constellation (P6 trace 4)
+    #
+    # The aero row cannot fly P1's spacecraft: at 500-540 km with the default
+    # 120 km entry interface it would sit outside the atmosphere, so it flies the
+    # P6 density constellation's member 1 (300-400 km, 600 km interface) and is
+    # inside the atmosphere from the first step, as trace 4 is. It keeps the
+    # vacuum rows' duration rather than trace 4's 100 s: 100 s was sized to put a
+    # 4096-spacecraft constellation above the floor and has no meaning at one
+    # spacecraft, and a shared duration makes the three rows iso-mission, so the
+    # table's rows differ by force model (and, for the aero row, by orbit and its
+    # 5 s step cap) rather than also by mission length. That is slightly more than
+    # one revolution of the lower orbit, whose own two-body period is shorter.
+    p7_s = PPC_P7_MISSION_S
+    add!("gravity_1sat_l50_vacuum_$(p7_s)s", "p7_short_1sat",
+         "1 spacecraft (P1's), L50 harmonics, no atmosphere, $(p7_s) s mission " *
+         "(one two-body revolution; P7 row 1)")
+    add!("gravity_1sat_l50_srp_nbody_vacuum_$(p7_s)s", "p7_short_1sat",
+         "1 spacecraft (P1's), L50 harmonics + SRP + Sun/Moon third body, no " *
+         "atmosphere, $(p7_s) s mission (P7 row 2: P6 trace 3's force model)")
+    add!("aero_1sat_l50_expatm_$(p7_s)s", "p7_short_1sat",
+         "1 spacecraft at 300-400 km, entry interface 600 km (member 1 of the P6 " *
+         "density constellation), L50 harmonics + aero, analytic exponential " *
+         "density, $(p7_s) s mission (P7 row 3: P6 trace 4's physics)")
 
     return cases
 end

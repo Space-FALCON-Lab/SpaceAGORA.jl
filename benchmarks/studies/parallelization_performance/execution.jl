@@ -999,7 +999,7 @@ for it -- which also fails when SpaceAGORA or any other dependency has changed
 since the image was built.
 """
 function ppc_workload_env()::Union{Nothing, String}
-    setting = lowercase(strip(get(ENV, "SPACEAGORA_PPB_WORKLOAD", "auto")))
+    setting = lowercase(strip(get(ENV, "SPACEAGORA_PPB_WORKLOAD", "0")))
     setting in ("0", "off", "false", "no") && return nothing
     required = setting in ("1", "on", "true", "yes")
     env_raw = strip(get(ENV, "SPACEAGORA_PPB_WORKLOAD_ENV", ""))

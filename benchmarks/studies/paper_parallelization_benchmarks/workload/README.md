@@ -6,7 +6,10 @@ every process-pool worker a Monte Carlo point starts. Each one loads the package
 and then compiles the solver and right-hand-side specializations of the case it
 is about to run before it can time anything. This directory builds a package
 image that already holds those specializations, and the harness loads it into
-every worker by default.
+every worker when asked (`SPACEAGORA_PPB_WORKLOAD=auto` or `1`).
+It is off by default: with the image loaded the timed repeats measured 1 to 4
+percent slower on four of five points (table below), and the default for
+benchmark timing is the configuration the archived runs used.
 
 ## What it covers
 
@@ -121,15 +124,15 @@ without the workload; the environment only adds the workload package, second on
   load path already carries the workload environment (`_process_worker_load_path`
   copies the coordinator's).
 
-Turning it off: `SPACEAGORA_PPB_WORKLOAD=0` (or `off`). `SPACEAGORA_PPB_WORKLOAD=1`
-(or `on`) makes a missing or stale image an error instead of a warning; the
-default, `auto`, uses the image when it is current and otherwise runs without it.
+Turning it on: `SPACEAGORA_PPB_WORKLOAD=auto` uses the image when it is current
+and otherwise runs without it; `SPACEAGORA_PPB_WORKLOAD=1` (or `on`) makes a
+missing or stale image an error. The default, `0`, never loads it.
 The controller prints `precompile_workload=<env>` or `precompile_workload=off`
 at the start of every run.
 
 Remote jobs: `scripts/remote/spaceagora-remote push` builds the image once per
-job, after `Pkg.instantiate()` and before the command, when the command runs the
-paper harness (`--workload auto|on|off`; the log is `workload_build.log` in the
+job, after `Pkg.instantiate()` and before the command, when asked
+(`--workload auto|on|off`, default `off`; `auto` builds it when the command runs the paper harness; the log is `workload_build.log` in the
 job directory and the exit code `WORKLOAD_BUILD_EXIT` in `job.meta`). The
 package name starts with `SpaceAGORA`, so the runner's per-job purge of
 `shared_depot/compiled/v*/SpaceAGORA*` removes it together with SpaceAGORA's

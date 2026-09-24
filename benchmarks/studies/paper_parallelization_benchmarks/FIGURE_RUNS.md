@@ -503,18 +503,22 @@ overnight slot, and do not schedule anything else on the machine during it.
 Every point is a fresh Julia process, and a campaign point's pool workers are
 too; each compiles its solver specializations before it can time anything.
 `workload/` builds a package image holding them for every P1-P6p point except
-the two native-GRAM traces, and the harness loads it into every worker when it
-is built and current. `workload/README.md` has the details; in short:
+the two native-GRAM traces, and the harness loads it into every worker when
+asked. It is off by default: with the image loaded the timed repeats measured 1 to 4
+percent slower on four of five points (table below), so it is off by default, and the default for
+benchmark timing is the configuration the archived runs used. `workload/README.md` has the details; in short:
 
 - **Build**: `bash benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh`
   (3 m 40 s and 9.3 GB peak on the workstation, MEASURED). Rebuild after any
   change to `src/` or to the harness files; a stale image is never used.
-- **Use**: automatic. The controller prints `precompile_workload=<env>` at the
-  start of each run when the image is in use, `precompile_workload=off`
-  otherwise. Remote jobs build it once per job before the harness starts
-  (`spaceagora-remote push --workload auto|on|off`, default `auto`).
-- **Off**: `SPACEAGORA_PPB_WORKLOAD=0`. `SPACEAGORA_PPB_WORKLOAD=1` makes a
-  missing or stale image an error instead of a fallback.
+- **Use**: opt-in. `SPACEAGORA_PPB_WORKLOAD=auto` uses a current image and
+  falls back without one; `SPACEAGORA_PPB_WORKLOAD=1` makes a missing or stale
+  image an error. The controller prints `precompile_workload=<env>` or
+  `precompile_workload=off` at the start of each run. Remote jobs build it once
+  per job only when asked (`spaceagora-remote push --workload auto|on|off`,
+  default `off`).
+- **Default**: off (`SPACEAGORA_PPB_WORKLOAD=0`). Rows measured with and without
+  the image are not comparable and must not share a figure.
 
 Measured on the workstation (MEASURED, medians over three alternating launches
 per variant, `workload/results/space-falcon-1_20260924/workload_validation.csv`):

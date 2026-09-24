@@ -46,9 +46,9 @@ Usage:
                         For B6 specifically (mc_samples=[1,8]), pass 8.
   --workload MODE      Paper-harness precompile workload (see
                         benchmarks/studies/paper_parallelization_benchmarks/
-                        workload/README.md). auto (default) builds it before
-                        the job when the command runs the paper harness; on
-                        builds it for any command; off skips it. The harness
+                        workload/README.md). off (default) skips it; auto
+                        builds it before the job when the command runs the
+                        paper harness; on builds it for any command. The harness
                         itself uses the image only when it is current.
   spaceagora-remote seed-data [--remote NAME]
   spaceagora-remote list       [--remote NAME]
@@ -161,7 +161,7 @@ new_job_id() {
 }
 
 cmd_push() {
-  local remote="" threads="" ram="" process_workers="" workload="auto" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
+  local remote="" threads="" ram="" process_workers="" workload="off" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --remote) remote="$2"; shift 2 ;;
@@ -311,6 +311,8 @@ EOF
 # (SPACEAGORA_PPB_WORKLOAD_MEMORY_MAX, default 16G) when systemd provides one.
 bash benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh all > "$job_dir/workload_build.log" 2>&1
 echo "WORKLOAD_BUILD_EXIT=\$?" >> "$job_dir/job.meta"
+# Asked for, so used: the harness default is off. auto falls back without a current image.
+export SPACEAGORA_PPB_WORKLOAD="\${SPACEAGORA_PPB_WORKLOAD:-auto}"
 EOF
   else
     cat >> "$run_sh" <<EOF

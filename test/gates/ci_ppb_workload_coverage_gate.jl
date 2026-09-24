@@ -1,5 +1,5 @@
 # The paper harness's precompile workload must cover every (case, mode) the
-# paper phases (P1-P6p) run, at the size each case names.
+# paper phases (P1-P7) run, at the size each case names.
 #
 # The workload's point list (benchmarks/studies/paper_parallelization_benchmarks/
 # workload/SpaceAGORAPaperWorkload/src/points.jl) is derived from
@@ -33,7 +33,7 @@ end
     phases = Base.invokelatest(S.ppb_workload_phases)
     ids = [p.id for p in phases]
     # The paper figure phases exist and are what the workload reads.
-    @test issubset(["P1", "P2", "P3", "P4", "P5", "P6", "P6p"], ids)
+    @test issubset(["P1", "P2", "P3", "P4", "P5", "P6", "P6p", "P7"], ids)
     @test all(id -> startswith(id, "P"), ids)
 
     points = Base.invokelatest(S.ppb_workload_points)
@@ -72,6 +72,29 @@ end
     size_of(case) = (m = match(r"_([0-9]+)sat_", case); m === nothing ? 1 : parse(Int, m.captures[1]))
     phase_sizes = Set(size_of(c) for ph in phases for c in ph.cases if !excluded(c))
     @test phase_sizes == Set(size_of(p.case) for p in points)
+end
+
+# P7 is P1's comparison on one spacecraft over one orbit: the same modes and
+# thread axis as P1, one satellite per case, one mission length shared by every
+# row and equal to the two-body period of P1's spacecraft's orbit.
+@testset "P7 short single-satellite phase" begin
+    S = PPBW_SANDBOX
+    by_id = Dict(p.id => p for p in S.PAPER_BENCHMARK_PHASES)
+    p1, p7 = by_id["P1"], by_id["P7"]
+    @test p7.modes == p1.modes
+    @test p7.thread_mode == p1.thread_mode == :max_only
+    @test p7.mc_samples == [1]
+    @test p7.repeats == 11
+    @test p7.warmup == p1.warmup
+    catalog = Base.invokelatest(S.ppc_case_catalog)
+    @test length(p7.cases) == 3
+    @test all(c -> haskey(catalog, c) && !catalog[c].montecarlo, p7.cases)
+    @test all(c -> occursin(r"_1sat_", c), p7.cases)
+    @test all(c -> endswith(c, "_$(S.PPC_P7_MISSION_S)s"), p7.cases)
+    ra, rp = Base.invokelatest(S.ppc_constellation_member_alts_m, 1)
+    earth = S.Earth()
+    a = earth.Rp_e + (ra + rp) / 2
+    @test S.PPC_P7_MISSION_S == round(Int, 2π * sqrt(a^3 / earth.μ))
 end
 
 # The workload stays opt-in: with the image loaded the timed repeats move by a

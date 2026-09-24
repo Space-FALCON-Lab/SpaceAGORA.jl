@@ -17,7 +17,7 @@ the configuration the archived runs used.
 
 `SpaceAGORAPaperWorkload/src/points.jl` derives the point list from the harness's
 own definitions: every case of every P phase (`PAPER_BENCHMARK_PHASES` in
-`../cli.jl`, P1 through P6p) under every mode the phase runs it with, plus the
+`../cli.jl`, P1 through P7) under every mode the phase runs it with, plus the
 phase's parity points. Each case is built by `ppc_single_config` at the size its
 name says (ComponentArrays puts the satellite count into the state vector's type,
 so each size is its own specialization), under the mode's route environment
@@ -31,7 +31,8 @@ P-phase (case, mode) is ever missing.
 The workload runs each point on the harness's `test` profile, whose mission is
 10 s for every P-phase case (ASSUMED: long enough to take several steps at every
 case's step cap, short enough that the 4096-spacecraft cases stay cheap; only the
-types matter). At the time of writing that is 72 points.
+types matter). At the time of writing that is 90 points: 72 for P1-P6p and 18
+for P7's three cases under its six modes.
 
 What it leaves out, and why:
 

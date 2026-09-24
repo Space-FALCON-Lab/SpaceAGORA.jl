@@ -263,6 +263,82 @@ the same order on every route. Proven, not assumed, with full state histories
   `test/unit/simulation/third_body_route_parity_tests.jl` (84 pass) pass at the
   tip.
 
+## Budgets below the flat queue's thread floor
+
+The generic flat branch sits behind a thread-budget floor,
+`SPACEAGORA_EFFECTOR_FLAT_MIN_THREAD_BUDGET` (default 4, from
+`SPACEAGORA_AUTO_THREAD_MIN_BUDGET`), which exists to amortize the
+per-(satellite, effector) queue's channel and worker overhead. Below it the
+heuristic returned the satellite batch for every multi-effector stack. A stack
+whose effectors are all pre-passed (`_rhs_all_prepass_effectors`: harmonics,
+n-body, SRP, inverse-square, fM aerodynamics without per-link atmosphere) never
+builds that queue, and at budget 1 it already takes the flat route through the
+pre-pass admission. So budgets 2 and 3 were the only ones at which such a stack
+lost the batched kernels, and the loss is larger than what two threads buy
+back. The fix exempts pre-pass-only stacks from the floor; they then pass
+through the generic branch's own admission (work estimate, satellites-per-worker
+floor) exactly as they do at budget 4. A stack with any effector outside the
+pre-passes keeps the floor.
+
+Plan chosen by the heuristic, `inner_only` mode (`R2`), 4096 spacecraft, all
+three P6 traces (MEASURED: `_rhs_execution_plan` printed on this workstation;
+the budget-2 row is also what `test/unit/simulation/rhs_heuristic_defaults_tests.jl`
+now pins):
+
+| budget | before | after |
+|---|---|---|
+| 1 | flat@1 | flat@1 |
+| 2 | satellite_batch | flat@2 |
+| 3 | satellite_batch | flat@3 |
+| 4, 8 | flat@budget | flat@budget |
+
+Why the batch loses (MEASURED, one solve each, workstation, SRP + n-body trace):
+the satellite batch forced at one thread took 64.3 s against the flat route's
+14.9 s, 4.3x; at two threads the batch took 34.1 s, a 1.9x thread speedup on a
+route 4.3x slower, hence slower than one thread. The exponential-atmosphere
+trace: 15.0 s forced batch against 4.4 s flat at one thread. The archived TRX50
+P6 run `trx50_ppb_cold_20260924_081017` shows the same shape (`inner_only`
+medians 13.75 / 36.97 / 5.07 s at 1 / 2 / 4 threads for SRP + n-body), and its
+`predictive` rows at two threads whose calibration sweep pinned flat@2 ran 8.9
+and 9.6 s against 35.1 s for the heuristic row (MEASURED, from the archive CSV).
+That TRX50 took the same heuristic plans is DERIVED, not observed: the archive
+records only calibrated plans, and the routing is a deterministic function of
+the stack, the spacecraft count and the budget.
+
+Before/after on this workstation (12 cores, `inner_only`, full mission, median
+of 3, back to back per point, seconds; MEASURED, CSV:
+`benchmarks/studies/rhs_heuristic_defaults/results/below_thread_floor_space-falcon-1.csv`):
+
+| case | threads | before | after | before/after |
+|---|---|---|---|---|
+| srp_nbody 5800 s | 1 | 13.42 | 13.48 | 1.00 |
+| | 2 | 32.95 | 8.01 | 4.11 |
+| | 4 | 5.03 | 5.20 | 0.97 |
+| | 8 | 4.03 | 4.17 | 0.97 |
+| expatm 100 s | 1 | 4.56 | 4.69 | 0.97 |
+| | 2 | 8.42 | 3.03 | 2.78 |
+| | 4 | 1.99 | 1.93 | 1.03 |
+| | 8 | 1.45 | 1.46 | 1.00 |
+| gram_lookahead 100 s | 1 | 11.17 | 11.08 | 1.01 |
+| | 2 | 13.51 | 8.99 | 1.50 |
+| | 4 | 6.34 | 6.37 | 1.00 |
+| | 8 | 5.76 | 6.07 | 0.95 |
+
+At 1, 4 and 8 threads the plan is unchanged, so those ratios are the
+repeat-to-repeat spread, not an effect. Budget 3 was not timed; that it
+improves the same way is ASSUMED from the budget-2 mechanism.
+
+Bit-identity (MEASURED): full state histories dumped with
+`benchmarks/studies/aero_batch/variants.jl --dump` at 1, 2, 4 and 8 threads,
+before and after, are byte identical under `cmp` for each case: the eight
+files per case (two commits, four thread counts) share one MD5
+(`183567fc27a9...` SRP + n-body, 77,859,144 bytes; `09a60253e5f6...` expatm,
+6,815,952 bytes; `6837bf3d8581...` GRAM look-ahead, 6,553,800 bytes). This agrees with the earlier record above that every route is byte
+identical on the vacuum and aerodynamic stacks; the dumps here extend it to the
+SRP + n-body and GRAM look-ahead stacks at 4096 spacecraft. A forced
+satellite-batch solve at one thread and a forced flat solve at two threads were
+also byte identical to the default solve.
+
 ## Open
 
 - The single inverse-square branch sizes a flat team as `min(budget,

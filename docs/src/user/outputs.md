@@ -59,6 +59,11 @@ change, so:
   `AGORA_Mars_RAAN_Scenario.jl` to `output/mars_raan_scenario/`, and the RPO,
   robot-arm and cloth demos to their own `output/<demo>/` directories; running
   one of them twice overwrites its previous results;
+- `odyssey_surrogate.jl` runs in its own environment and writes its own files:
+  the comparison writes to `odyssey_surrogate_results/` in the current
+  directory unless you pass `--output=DIR`, refuses an existing directory, and
+  prints the absolute path when it finishes (see the
+  [Odyssey walkthrough](../tutorials/odyssey_surrogate.md));
 - for your own scripts, pass `results_directory=` to `make_example_config` or
   set it on `SimulationSettings`.
 

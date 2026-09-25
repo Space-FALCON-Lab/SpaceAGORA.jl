@@ -120,17 +120,33 @@ function _preset_artifact(entry, artifacts_file; offline)
         get(d, "url", "") in entry["distribution"]["urls"], downloads) ||
         _preset_error("Artifact download identities differ from the catalog for '$name'.")
     hash = Base.SHA1(tree)
+    installed = false
     if !Artifacts.artifact_exists(hash)
         offline && _preset_error("Preset $(entry["id"])@$(entry["version"]) is not installed and offline=true. Fetch this exact preset on a connected machine with assets fetch --preset $(entry["id"]) --version $(entry["version"]), then retry offline.")
+        label = "$(entry["id"])@$(entry["version"])"
+        @info "Installing atmosphere preset $label ($(round(entry["payload"]["bytes"] / 1e6; digits=1)) MB grid) into the Julia artifact store from $(join((d["url"] for d in downloads), ", "))"
+        # Pkg first asks its package server, which does not host this artifact, and
+        # then uses the Artifacts.toml URL. Its "Downloading"/"Failure" status lines
+        # go to this buffer instead of the terminal and are reported only on failure.
+        pkg_output = IOBuffer()
         try
-            Pkg.Artifacts.ensure_artifact_installed(name, String(artifacts_file); pkg_uuid=_SURROGATE_PACKAGE_UUID)
+            Pkg.Artifacts.ensure_artifact_installed(name, String(artifacts_file); pkg_uuid=_SURROGATE_PACKAGE_UUID, io=pkg_output)
         catch err
             err isa InterruptException && rethrow()
-            _preset_error("Could not install preset $(entry["id"])@$(entry["version"]): $(sprint(showerror, err)). No native fallback is available.")
+            _preset_error("Could not install preset $label. No native fallback is available.\n$(_pkg_failure_detail(err, pkg_output))")
         end
+        installed = true
     end
-    return Artifacts.artifact_path(hash), tree
+    return Artifacts.artifact_path(hash), tree, installed
 end
+function _pkg_failure_detail(err, pkg_output)
+    detail = rstrip(sprint(showerror, err))
+    output = rstrip(String(take!(pkg_output)))
+    return isempty(output) ? detail : "$detail\nPkg output:\n$output"
+end
+
+# The keywords of resolve_surrogate_preset, which surrogate_preset_model forwards.
+const _PRESET_RESOLUTION_KEYWORDS = (:version, :planet, :file, :offline, :allow_unreleased, :catalog_file, :artifacts_file)
 
 """
     resolve_surrogate_preset(id; version, planet="Mars", file="", offline=false,
@@ -143,6 +159,7 @@ An unreleased preset is available only with both an explicit file and
 `allow_unreleased=true`; this marks local development, not public acceptance.
 `catalog_file` and `artifacts_file` are advanced trusted-catalog overrides.
 Resolution performs no native GRAM initialization and never selects native fallback.
+A first installation logs its source and, once verified, its location.
 """
 function resolve_surrogate_preset(id::AbstractString; version::AbstractString,
     planet::AbstractString="Mars", file::AbstractString="", offline::Bool=false,
@@ -156,15 +173,16 @@ function resolve_surrogate_preset(id::AbstractString; version::AbstractString,
     explicit = !isempty(strip(file))
     released = entry["release_enabled"]
     released || (allow_unreleased && explicit) || _preset_error("Preset '$id@$version' is not published. Public retrieval is disabled until its distribution identities are recorded; local development requires an explicit file and allow_unreleased=true.")
-    source = "explicit_file"; tree = ""
+    source = "explicit_file"; tree = ""; installed = false
     resolved = if explicit
         abspath(expanduser(file))
     else
-        directory, tree = _preset_artifact(entry, artifacts_file; offline)
+        directory, tree, installed = _preset_artifact(entry, artifacts_file; offline)
         source = "julia_artifact"
         joinpath(directory, entry["payload"]["file"])
     end
     _verify_preset_file(resolved, entry["payload"])
+    installed && @info "Installed atmosphere preset $id@$version in $(dirname(resolved)); the archive and grid SHA256 checksums match the catalog."
     provenance = Dict{String,Any}(
         "backend" => "gram_grid_surrogate", "preset_id" => String(id), "preset_version" => String(version),
         "planet" => key, "source_sha256" => entry["payload"]["sha256"], "payload_bytes" => entry["payload"]["bytes"],
@@ -214,8 +232,23 @@ Build the existing `GRAMGridAtmosphereModel` from a verified named preset. Load
 axes before use. Stored winds and the frozen-time behavior are unchanged. Queries
 outside the declared altitude/latitude domain fail; the longitude axis is periodic.
 Use `atmosphere_provenance(model)` to retain the selected contract in run outputs.
+Without `GRAMSuite` loaded it raises an `ArgumentError` before resolving anything.
+Accepts the keywords of `resolve_surrogate_preset` only. A named preset fixes its
+domain policy, so grid options such as `above_grid` raise an `ArgumentError`;
+construct the generic `GRAMGridAtmosphereModel` directly for another policy.
 """
 function surrogate_preset_model(id::AbstractString; kwargs...)
+    unsupported = [key for key in keys(kwargs) if key ∉ _PRESET_RESOLUTION_KEYWORDS]
+    isempty(unsupported) || _preset_error("surrogate_preset_model does not accept the keyword(s) $(join(unsupported, ", ")). " *
+        "A named preset fixes its domain policy: queries outside its stored altitude and latitude domain fail. " *
+        "For another policy, such as above_grid=:vacuum, construct the generic GRAMGridAtmosphereModel directly, " *
+        "for example with surrogate_file=resolve_surrogate_preset(id; version).file; that model carries no named preset contract. " *
+        "Accepted keywords: $(join(_PRESET_RESOLUTION_KEYWORDS, ", ")).")
+    # The keyword constructor comes from the GRAMSuite extension; without it the
+    # call below fails with a MethodError naming keywords the user never passed.
+    hasmethod(GRAMGridAtmosphereModel, Tuple{}) || _preset_error("surrogate_preset_model needs the public GRAMSuite " *
+        "Julia package, which provides the grid atmosphere: run `import GRAMSuite` first (the Odyssey example " *
+        "environment installs it). No native GRAM installation is used.")
     resolved = resolve_surrogate_preset(id; kwargs...)
     model = GRAMGridAtmosphereModel(; planet=resolved.planet, surrogate_file=resolved.file,
         expected_sha256=resolved.expected_sha256, above_grid=:error)

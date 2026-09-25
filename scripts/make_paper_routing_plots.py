@@ -68,12 +68,13 @@ ROUTE_LABEL = {
 IDEAL_REF = {"P2", "P3", "P4"}
 
 # Phases whose axis is a sequence of categories rather than a quantity: P5's
-# splits of one budget and P7's force models.
-CATEGORICAL_AXIS = {"P5", "P7"}
+# splits of one budget, P5f's workloads and P7's force models.
+CATEGORICAL_AXIS = {"P5", "P5f", "P7"}
 
 # Phases drawn as one figure with every case on the axis, rather than one figure
-# per case: P1's axis is the case's spacecraft count, P7's is its force model.
-ONE_FIGURE = {"P1", "P7"}
+# per case: P1's axis is the case's spacecraft count, P5f's is its workload (one
+# point each), P7's is its force model.
+ONE_FIGURE = {"P1", "P5f", "P7"}
 
 
 def machine_of(df) -> str:
@@ -294,7 +295,8 @@ def summary_figure(frames, out_dir, formats):
     ax.set_xticks(range(len(phases)))
     short = {"P1": "constellation size", "P2": "thread budget",
              "P3": "MC ladder (cheap)", "P4": "MC ladder (heavy)",
-             "P5": "worker/thread split", "P7": "1 spacecraft, 1 orbit"}
+             "P5": "worker/thread split", "P5f": "full machine, no split",
+             "P7": "1 spacecraft, 1 orbit"}
     ax.set_xticklabels([f"{p}\n{short[p]}" for p in phases], fontsize=8.5)
     ax.set_ylabel(f"{ADAPTIVE_LABEL} time / best static route time")
     ax.grid(alpha=0.25, lw=0.6, axis="y")
@@ -399,7 +401,7 @@ def distribution_figure(frames, out_dir, formats, noise=None, calib_cut=0.6):
                 transform=ax.transAxes, fontsize=7.8, color="#444444", va="top")
 
     for ph, c in zip(TABLE_PHASES,
-                     ["#888888", "#5b8c5a", "#1f6fb4", C_R6, "#8452a1", "#b07d2b"]):
+                     ["#888888", "#5b8c5a", "#1f6fb4", C_R6, "#8452a1", "#2a9d8f", "#b07d2b"]):
         if ph not in per_phase:
             continue
         v = np.sort(np.array(per_phase[ph]))
@@ -560,7 +562,7 @@ def main():
         cases = set()
         for _, df in frames:
             cases |= {r["case"] for r in phase_rows(df, phase)}
-        # P1 and P7 put every case on one axis; the others are one figure per workload.
+        # P1, P5f and P7 put every case on one axis; the others are one figure per workload.
         groups = [None] if phase in ONE_FIGURE else sorted(cases)
         for case in groups:
             per_machine = []

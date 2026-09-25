@@ -15,8 +15,11 @@ julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/se
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 ```
 
-When the comparison finishes, it prints the absolute path of its results
-directory and the files it wrote there. "Inspect the result" below describes them.
+Each command-line run starts a new Julia process, which compiles the example
+before its first passage; expect a pause of a few minutes. An interactive
+session compiles once and reuses the code for later runs. When the comparison
+finishes, it prints the absolute path of its results directory and the files it
+wrote there. "Inspect the result" below describes them.
 
 For a notebook or an interactive session, select that same environment before
 including the example: start Julia from the repository root with
@@ -28,15 +31,17 @@ including the example: start Julia from the repository root with
 include("examples/odyssey_surrogate.jl")
 using .OdysseySurrogateExample
 
-comparison = OdysseySurrogateExample.compare_panel_caps();
+comparison = OdysseySurrogateExample.compare_panel_caps(output_dir="output/odyssey_notebook");
 ```
 
-The trailing semicolon keeps the REPL from printing the returned tables.
+The trailing semicolon keeps the REPL from printing the returned tables. Give
+each run a new directory; the examples on this page use directories under
+`output/`, which git ignores.
 
 The preset resolver installs the identified atmosphere once, and the scenario helper supplies the four identified public SPICE kernels and Mars gravity coefficients. Each first installation prints one line naming its source and one confirming that its SHA256 checksums match. The files, about 224 MB in total (a 47 MB grid and 176 MB of kernels and coefficients), are stored in the `artifacts/` folder of your Julia depot, by default `~/.julia/artifacts`. Subsequent runs reuse installed files. An offline run requires these assets to be installed already:
 
 ```sh
-julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --offline --output=odyssey_offline_results
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --offline --output=output/odyssey_offline
 ```
 
 Each invocation needs a new output directory: an existing one is refused, so earlier results are never overwritten. Pass `--output=DIR` on the command line, or `output_dir="DIR"` in Julia. A missing or incompatible asset produces an error. It does not start native GRAM or substitute another atmosphere.
@@ -51,7 +56,7 @@ For a single run, change `panel_cap_deg`:
 ```julia
 run = OdysseySurrogateExample.run_case(
     panel_cap_deg=45.0,
-    output_dir="odyssey_cap_45_results",
+    output_dir="output/odyssey_cap_45",
 );
 ```
 
@@ -65,18 +70,19 @@ line. `--help` lists all options:
 
 ```sh
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --help
-julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --cap=60 --output=odyssey_cap_60_results
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --cap=60 --output=output/odyssey_cap_60
 ```
 
 The second command runs the 90-degree baseline and a 60-degree variant. It
 writes `cap_90_deg/`, `cap_60_deg/` and `comparison.toml` in
-`odyssey_cap_60_results/`. `--baseline-cap=DEG` changes the baseline. Both caps
-must be in (0, 90] degrees and must differ. The same comparison from Julia:
+`output/odyssey_cap_60/`. `--baseline-cap=DEG` changes the baseline. Both caps
+must be in (0, 90] degrees and must differ. The same comparison from Julia,
+in its own directory:
 
 ```julia
 comparison = OdysseySurrogateExample.compare_panel_caps(
     variant_cap_deg=60.0,
-    output_dir="odyssey_cap_60_results",
+    output_dir="output/odyssey_cap_60_julia",
 );
 ```
 
@@ -101,7 +107,9 @@ The Cartesian states are Mars-centred J2000 inertial position in metres and
 velocity in m/s: the columns `x_m`, `y_m`, `z_m`, `vx_m_s`, `vy_m_s` and
 `vz_m_s` in `trajectory.csv`, and `initial_state_m_m_s` and
 `common_state_m_m_s` in `summary.toml`. This is the frame of the SPICE initial
-state, and each `summary.toml` records it as `state_frame`.
+state, and each `summary.toml` records it as `state_frame`. In the same table,
+`height_km` is ellipsoidal height, `latitude_deg` geodetic latitude and
+`longitude_deg` east longitude, the conventions of the preset's domain.
 
 Each run stops at its outbound 250 km ellipsoidal-height crossing, so
 `solver_retcode = "Terminated"` in `summary.toml` is the normal result. The common-time comparison avoids confusing a control effect with a difference in the exit event's timing. The example's small nonzero effect checks establish that the selected setting is active. They are not accuracy tolerances or release requirements.
@@ -114,12 +122,24 @@ postprocessing pattern.
 Runtime in each summary covers the simulation and its sample recording. It excludes package loading and initial asset resolution. The first run may include compilation, so the two wall times are not a fair algorithm-performance comparison.
 
 To query the frozen atmosphere directly, for example along your own trajectory,
-build the model with
-`SpaceAGORA.surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0")`
-and call `SpaceAGORA.getDensity(model, h, lat, lon, t, wind)`. It returns
-density, temperature and the wind vector. [Atmosphere Models](../user/atmosphere_models.md#Fixed-GRAM-grid-snapshot)
-gives the units and domain policy, and [Extensibility](../extensibility.md) the
-full interface.
+load both packages in the example environment, build the model and call
+`getDensity`:
+
+```julia
+using SpaceAGORA
+import GRAMSuite  # the public wrapper that provides the grid atmosphere
+
+model = surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0")
+rho, temperature, wind = SpaceAGORA.getDensity(model, 150e3, deg2rad(60.0), deg2rad(30.0), 0.0, true)
+```
+
+The arguments are ellipsoidal height in metres, geodetic latitude and east
+longitude in radians, elapsed time in seconds and a `Bool` wind flag. This
+frozen snapshot ignores the elapsed time, and the flag does not remove its
+stored winds. The call returns density in kg/m³, temperature in kelvin and the
+east, north and up wind components in m/s. [Atmosphere Models](../user/atmosphere_models.md#Fixed-GRAM-grid-snapshot)
+gives the domain policy, and [Extensibility](../extensibility.md) the full
+interface.
 
 ## Atmospheric and scenario assumptions
 

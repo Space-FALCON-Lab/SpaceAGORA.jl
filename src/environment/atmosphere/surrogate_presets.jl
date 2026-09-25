@@ -232,6 +232,7 @@ Build the existing `GRAMGridAtmosphereModel` from a verified named preset. Load
 axes before use. Stored winds and the frozen-time behavior are unchanged. Queries
 outside the declared altitude/latitude domain fail; the longitude axis is periodic.
 Use `atmosphere_provenance(model)` to retain the selected contract in run outputs.
+Without `GRAMSuite` loaded it raises an `ArgumentError` before resolving anything.
 Accepts the keywords of `resolve_surrogate_preset` only. A named preset fixes its
 domain policy, so grid options such as `above_grid` raise an `ArgumentError`;
 construct the generic `GRAMGridAtmosphereModel` directly for another policy.
@@ -243,6 +244,11 @@ function surrogate_preset_model(id::AbstractString; kwargs...)
         "For another policy, such as above_grid=:vacuum, construct the generic GRAMGridAtmosphereModel directly, " *
         "for example with surrogate_file=resolve_surrogate_preset(id; version).file; that model carries no named preset contract. " *
         "Accepted keywords: $(join(_PRESET_RESOLUTION_KEYWORDS, ", ")).")
+    # The keyword constructor comes from the GRAMSuite extension; without it the
+    # call below fails with a MethodError naming keywords the user never passed.
+    hasmethod(GRAMGridAtmosphereModel, Tuple{}) || _preset_error("surrogate_preset_model needs the public GRAMSuite " *
+        "Julia package, which provides the grid atmosphere: run `import GRAMSuite` first (the Odyssey example " *
+        "environment installs it). No native GRAM installation is used.")
     resolved = resolve_surrogate_preset(id; kwargs...)
     model = GRAMGridAtmosphereModel(; planet=resolved.planet, surrogate_file=resolved.file,
         expected_sha256=resolved.expected_sha256, above_grid=:error)

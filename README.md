@@ -60,7 +60,8 @@ external assets remain user-provided.
 ## Guidance and control with a surrogate atmosphere
 
 The bounded Mars Odyssey P20 preset supplies a reproducible frozen atmosphere
-without native GRAM. From a normal clone, install the pinned public packages and
+without native GRAM. From a normal clone, set up the example's own environment,
+which pins the public GRAMSuite wrapper and resolves the other packages, and
 run the active solar-panel control comparison:
 
 ```sh
@@ -78,7 +79,9 @@ Native GRAM remains an optional advanced backend for atmosphere studies.
 
 ## Asset model
 
-SpaceAGORA supports two common setup modes:
+SpaceAGORA supports two common setup modes. A third, native-free route supplies
+a named frozen atmosphere through its own example environment; see "Guidance and
+control with a surrogate atmosphere" above.
 
 ### 1. Baseline no-GRAM mode
 

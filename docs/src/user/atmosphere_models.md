@@ -206,7 +206,7 @@ loading a file cannot recover them or establish physical accuracy.
 
 The default policy rejects altitude and latitude outside the grid. Longitude is
 periodic. Explicit `above_grid=:vacuum` returns zero density and wind above the
-ceiling, with `vacuum_temperature` in kelvin; lower-bound extrapolation remains
+ceiling, with temperature `vacuum_temperature` (default 200 K); lower-bound extrapolation remains
 an error. `above_grid` is an option of the generic `GRAMGridAtmosphereModel`
 only. A named preset fixes the default policy, and `surrogate_preset_model`
 rejects grid options with an `ArgumentError`. To apply another policy to a

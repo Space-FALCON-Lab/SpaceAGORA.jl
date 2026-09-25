@@ -62,6 +62,16 @@ end
     @test occursin("3643c9116b75c511", text)
 end
 
+@testset "Named preset without GRAMSuite fails clearly before resolution" begin
+    project = dirname(Base.active_project())
+    code = """
+        using SpaceAGORA
+        err = try surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0", offline=true); nothing catch e; e end
+        print(err isa ArgumentError && occursin("import GRAMSuite", err.msg) && !isdefined(Main, :GRAMSuite))
+        """
+    @test read(`$(Base.julia_cmd()) --startup-file=no --project=$project -e $code`, String) == "true"
+end
+
 # Top-level include, so the testset below runs in a world that sees the example's methods.
 include(joinpath(@__DIR__, "..", "examples", "odyssey_surrogate.jl"))
 

@@ -126,10 +126,10 @@ end
     @test all(((c, m),) -> (c, m) in have, [(c, m) for c in p5f.cases for m in p5f.modes])
     # A derived phase keeps the field (the preview/lean/floor copies go through
     # _ppb_phase_with), and --preview keeps a host-sized split grid whole.
-    preview = Base.invokelatest(S._ppb_preview_phase, p5f)
-    @test preview.full_budget_modes == p5f.full_budget_modes
-    @test preview.budget_grid == p5f.budget_grid
-    @test preview.repeats == S.PPB_PREVIEW_REPEATS
+    copy = Base.invokelatest(S._ppb_phase_with, p5f; repeats = 2)
+    @test copy.full_budget_modes == p5f.full_budget_modes
+    @test copy.repeats == 2 && copy.budget_grid == p5f.budget_grid
+    @test Base.invokelatest(S._ppb_preview_budget_grid, p5f) == p5f.budget_grid
 end
 
 # The workload stays opt-in: with the image loaded the timed repeats move by a

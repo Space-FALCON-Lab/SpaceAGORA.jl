@@ -51,20 +51,7 @@ end
 function _ppb_apply_repeats_floor(phase::PPBPhase, floor_repeats::Int)::PPBPhase
     (floor_repeats <= phase.repeats) && return phase
     println("[paper-benchmarks] phase $(phase.id): repeats $(phase.repeats) -> $(floor_repeats)")
-    return PPBPhase(
-        id            = phase.id,
-        label         = phase.label,
-        cases         = phase.cases,
-        parity_cases  = phase.parity_cases,
-        modes         = phase.modes,
-        mc_samples    = phase.mc_samples,
-        repeats       = floor_repeats,
-        warmup        = phase.warmup,
-        thread_mode   = phase.thread_mode,
-        worker_ladder = phase.worker_ladder,
-        budget_grid   = phase.budget_grid,
-        budget_grid_fixed = phase.budget_grid_fixed,
-    )
+    return _ppb_phase_with(phase; repeats = floor_repeats)
 end
 
 # Raise every phase to at least this many warm-up campaigns (SPACEAGORA_PPB_MIN_WARMUP).
@@ -90,20 +77,7 @@ end
 function _ppb_apply_warmup_floor(phase::PPBPhase, floor_warmup::Int)::PPBPhase
     (floor_warmup <= phase.warmup) && return phase
     println("[paper-benchmarks] phase $(phase.id): warmup $(phase.warmup) -> $(floor_warmup)")
-    return PPBPhase(
-        id            = phase.id,
-        label         = phase.label,
-        cases         = phase.cases,
-        parity_cases  = phase.parity_cases,
-        modes         = phase.modes,
-        mc_samples    = phase.mc_samples,
-        repeats       = phase.repeats,
-        warmup        = floor_warmup,
-        thread_mode   = phase.thread_mode,
-        worker_ladder = phase.worker_ladder,
-        budget_grid   = phase.budget_grid,
-        budget_grid_fixed = phase.budget_grid_fixed,
-    )
+    return _ppb_phase_with(phase; warmup = floor_warmup)
 end
 
 # No phase may request more concurrent worker PROCESSES than the run was given.
@@ -138,14 +112,7 @@ function _ppb_cap_worker_counts(phase::PPBPhase, max_workers::Int)::PPBPhase
     if grid != phase.budget_grid
         println("[paper-benchmarks] phase $(phase.id): budget grid capped at $(max_workers) -> $(grid)")
     end
-    return PPBPhase(
-        id = phase.id, label = phase.label, cases = phase.cases,
-        parity_cases = phase.parity_cases, modes = phase.modes,
-        mc_samples = phase.mc_samples, repeats = phase.repeats,
-        warmup = phase.warmup, thread_mode = phase.thread_mode,
-        worker_ladder = ladder, budget_grid = grid,
-        budget_grid_fixed = phase.budget_grid_fixed,
-    )
+    return _ppb_phase_with(phase; worker_ladder = ladder, budget_grid = grid)
 end
 
 # Rescales a phase's fixed-budget split grid to the machine actually running it.
@@ -219,8 +186,10 @@ function _ppb_build_ppc_config(
     outdir::String;
     process_workers::Int = ppb.process_workers,
     threads::Union{Nothing, Vector{Int}} = nothing,
+    preview_worker_cap::Bool = true,
 )::PPCConfig
-    effective_workers = ppb.preview ? min(process_workers, PPB_PREVIEW_MAX_WORKERS) : process_workers
+    effective_workers = (ppb.preview && preview_worker_cap) ?
+        min(process_workers, PPB_PREVIEW_MAX_WORKERS) : process_workers
     return PPCConfig(
         profile         = "full",
         outdir          = outdir,
@@ -271,6 +240,56 @@ function _ppb_dry_print(
     println("[dry-run]   repeats         = $(phase.repeats), warmup = $(phase.warmup)")
 end
 
+# The budget a phase's full-budget modes are handed: the largest total any
+# split of its grid spends, which for a split grid is the one budget every
+# split divides. `nothing` for a phase with no grid.
+function _ppb_full_budget(grid::Vector{Tuple{Int, Int}})::Union{Nothing, Int}
+    isempty(grid) && return nothing
+    return maximum(w * t for (w, t) in grid)
+end
+
+# One controller run of the full-budget modes: --threads and --process-workers
+# both set to the budget, which is how a user hands a campaign the whole
+# machine -- a Julia process with every core as threads, and a pool cap
+# (SPACEAGORA_PERF_PROCS, from --process-workers) equal to the same core count,
+# which on a V2 profile is also the default cap when it is unset
+# (usable_core_budget, memory permitting). No split is imposed: the campaign
+# runner and its planner choose threads, pool workers, local slots and each
+# sample's inner budget themselves. The pool is still capped by
+# --process-workers, the run's memory limit, exactly as the splits are.
+#
+# The row's `adaptive_allocation` column records what the campaign ran. The
+# dispatch trace (SPACEAGORA_CAMPAIGN_DISPATCH_TRACE) is switched on for this
+# run unless the launcher set it, so the job log also carries the planner's
+# candidates, its inner-speedup curve and the reason for its choice; it prints
+# a few lines per campaign, before the dispatch.
+function _ppb_run_full_budget!(
+    errors::Vector{String}, phase::PPBPhase, ppb::PPBConfig, phase_dir::String,
+    grid::Vector{Tuple{Int, Int}}; on_run_complete=nothing,
+)
+    budget = _ppb_full_budget(grid)
+    budget === nothing && return nothing
+    workers = min(budget, ppb.process_workers)
+    sub_dir = joinpath(phase_dir, "full_w$(lpad(workers, 2, '0'))_t$(lpad(budget, 2, '0'))")
+    if ppb.dry_run
+        println("[dry-run] phase=$(phase.id) — full budget, no split: workers=$(workers), threads=$(budget)")
+        _ppb_dry_print(phase, ppb, sub_dir; process_workers=workers, threads=[budget])
+        return nothing
+    end
+    trace = strip(get(ENV, "SPACEAGORA_CAMPAIGN_DISPATCH_TRACE", ""))
+    try
+        mkpath(sub_dir)
+        cfg = _ppb_build_ppc_config(phase, ppb, sub_dir; process_workers=workers,
+                                    threads=[budget], preview_worker_cap=false)
+        withenv("SPACEAGORA_CAMPAIGN_DISPATCH_TRACE" => (isempty(trace) ? "1" : trace)) do
+            ppc_run_controller(cfg; on_run_complete)
+        end
+    catch err
+        push!(errors, "full budget workers=$(workers) threads=$(budget): $(sprint(showerror, err))")
+    end
+    return nothing
+end
+
 function _ppb_run_phase(
     phase::PPBPhase, ppb::PPBConfig, phase_dir::String;
     on_run_complete::Union{Nothing, Function}=nothing,
@@ -291,24 +310,37 @@ function _ppb_run_phase(
         # is. Nothing else in the harness tests hybrid splits: B4 and B8 both pin
         # thread_mode=:single and vary workers alone.
         grid = _ppb_budget_grid(phase, ppb)
-        runs = length(grid)
+        # Under --preview a host-sized split grid is kept whole, and so are its
+        # worker counts; see _ppb_preview_budget_grid.
+        worker_cap = !_ppb_preview_keeps_grid(phase)
+        # Modes the phase hands the whole budget run once, after the splits;
+        # the splits run everything else. See PPBPhase.full_budget_modes.
+        split_phase = _ppb_phase_with(phase; modes = _ppb_split_modes(phase))
+        full_modes = _ppb_full_budget_modes(phase)
+        runs = (isempty(split_phase.modes) ? 0 : length(grid)) + (isempty(full_modes) ? 0 : 1)
         for (w, t) in grid
+            isempty(split_phase.modes) && break
             sub_dir = joinpath(phase_dir, "split_w$(lpad(w, 2, '0'))_t$(lpad(t, 2, '0'))")
             if ppb.dry_run
                 budget_note = phase.budget_grid_fixed ? "per-route budget $(w)" : "budget $(w * t)"
                 println("[dry-run] phase=$(phase.id) — workers=$(w) x threads=$(t) ($(budget_note))")
-                _ppb_dry_print(phase, ppb, sub_dir; process_workers=w, threads=[t])
+                _ppb_dry_print(split_phase, ppb, sub_dir; process_workers=w, threads=[t])
             else
                 try
                     mkpath(sub_dir)
                     cfg = _ppb_build_ppc_config(
-                        phase, ppb, sub_dir; process_workers=w, threads=[t]
+                        split_phase, ppb, sub_dir; process_workers=w, threads=[t],
+                        preview_worker_cap=worker_cap,
                     )
                     ppc_run_controller(cfg; on_run_complete)
                 catch err
                     push!(errors, "workers=$(w) threads=$(t): $(sprint(showerror, err))")
                 end
             end
+        end
+        if !isempty(full_modes)
+            _ppb_run_full_budget!(errors, _ppb_phase_with(phase; modes = full_modes), ppb,
+                                  phase_dir, grid; on_run_complete)
         end
     elseif isempty(phase.worker_ladder)
         # Single run — no process-worker sweep.

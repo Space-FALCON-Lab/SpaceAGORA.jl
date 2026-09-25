@@ -1,5 +1,5 @@
 # The paper harness's precompile workload must cover every (case, mode) the
-# paper phases (P1-P7) run, at the size each case names.
+# paper phases (P1-P7, including P5f and P6p) run, at the size each case names.
 #
 # The workload's point list (benchmarks/studies/paper_parallelization_benchmarks/
 # workload/SpaceAGORAPaperWorkload/src/points.jl) is derived from
@@ -33,7 +33,7 @@ end
     phases = Base.invokelatest(S.ppb_workload_phases)
     ids = [p.id for p in phases]
     # The paper figure phases exist and are what the workload reads.
-    @test issubset(["P1", "P2", "P3", "P4", "P5", "P6", "P6p", "P7"], ids)
+    @test issubset(["P1", "P2", "P3", "P4", "P5", "P5f", "P6", "P6p", "P7"], ids)
     @test all(id -> startswith(id, "P"), ids)
 
     points = Base.invokelatest(S.ppb_workload_points)
@@ -95,6 +95,41 @@ end
     earth = S.Earth()
     a = earth.Rp_e + (ra + rp) / 2
     @test S.PPC_P7_MISSION_S == round(Int, 2π * sqrt(a^3 / earth.μ))
+end
+
+# P5f is P5's two workloads with the static routes at every split of the same
+# budget, and the adaptive route run once at the full budget with no split
+# imposed. Pin that shape, and that the workload covers the full-budget mode:
+# it is listed in `modes` (what the workload and --lean-modes read), and the
+# per-split runs take everything else.
+@testset "P5f full-machine phase" begin
+    S = PPBW_SANDBOX
+    by_id = Dict(p.id => p for p in S.PAPER_BENCHMARK_PHASES)
+    p5, p5f = by_id["P5"], by_id["P5f"]
+    @test p5f.cases == p5.cases
+    @test p5f.budget_grid == p5.budget_grid
+    @test p5f.budget_grid_fixed
+    @test Base.invokelatest(S._ppb_is_split_grid, p5f.budget_grid)
+    @test p5f.mc_samples == p5.mc_samples
+    @test p5f.warmup == p5.warmup
+    @test p5f.repeats == 11
+    @test p5f.full_budget_modes == ["predictive"]
+    @test !("policy_v2" in p5f.modes)
+    @test issubset(p5f.full_budget_modes, p5f.modes)
+    @test Base.invokelatest(S._ppb_split_modes, p5f) ==
+        ["serial", "outer_threads", "outer_process", "outer_inner_static"]
+    @test Base.invokelatest(S._ppb_split_modes, p5f) == filter(m -> m != "policy_v2" && m != "predictive", p5.modes)
+    # Every other phase runs every mode per split, as before.
+    @test all(p -> isempty(p.full_budget_modes), filter(p -> p.id != "P5f", S.PAPER_BENCHMARK_PHASES))
+    points = Base.invokelatest(S.ppb_workload_points)
+    have = Set((p.case, p.mode) for p in points)
+    @test all(((c, m),) -> (c, m) in have, [(c, m) for c in p5f.cases for m in p5f.modes])
+    # A derived phase keeps the field (the preview/lean/floor copies go through
+    # _ppb_phase_with), and --preview keeps a host-sized split grid whole.
+    preview = Base.invokelatest(S._ppb_preview_phase, p5f)
+    @test preview.full_budget_modes == p5f.full_budget_modes
+    @test preview.budget_grid == p5f.budget_grid
+    @test preview.repeats == S.PPB_PREVIEW_REPEATS
 end
 
 # The workload stays opt-in: with the image loaded the timed repeats move by a

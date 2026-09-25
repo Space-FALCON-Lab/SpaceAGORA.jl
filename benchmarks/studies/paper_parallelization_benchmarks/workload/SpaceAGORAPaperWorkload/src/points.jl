@@ -31,7 +31,7 @@ struct PPBWorkloadPoint
     samples::Int
 end
 
-# The paper figures' phases: P1-P7, including P6p.
+# The paper figures' phases: P1-P7, including P5f and P6p.
 ppb_workload_phase_ids() = [p.id for p in PAPER_BENCHMARK_PHASES if occursin(r"^P[0-9]", p.id)]
 
 ppb_workload_phases() = [p for p in PAPER_BENCHMARK_PHASES if p.id in ppb_workload_phase_ids()]

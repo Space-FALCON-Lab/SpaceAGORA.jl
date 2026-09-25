@@ -34,9 +34,16 @@ Pkg.activate(env)
 Pkg.develop([PackageSpec(path=repo), PackageSpec(path=workload_pkg)]; preserve=Pkg.PRESERVE_ALL)
 Pkg.instantiate()
 
-# Every package in the new manifest must carry the repository manifest's version.
+# Every registered package in the new manifest must carry the repository
+# manifest's version. Standard libraries are left out: their versions are the
+# ones the running Julia ships, so a host on another 1.12 patch release (TRX50
+# runs 1.12.5, the manifest was written by 1.12.1) moves Pkg, Downloads and
+# their jlls in any environment it resolves, the repository's own included.
+is_stdlib_entry(entry) = haskey(entry, "uuid") &&
+    Pkg.Types.is_stdlib(Base.UUID(entry["uuid"]))
 parse_versions(path) = Dict(name => get(first(entries), "version", "stdlib/path")
-                            for (name, entries) in Pkg.TOML.parsefile(path)["deps"])
+                            for (name, entries) in Pkg.TOML.parsefile(path)["deps"]
+                            if !is_stdlib_entry(first(entries)))
 repo_v = parse_versions(joinpath(repo, "Manifest.toml"))
 env_v = parse_versions(joinpath(env, "Manifest.toml"))
 moved = [(n, repo_v[n], env_v[n]) for n in keys(repo_v) if haskey(env_v, n) && env_v[n] != repo_v[n]]

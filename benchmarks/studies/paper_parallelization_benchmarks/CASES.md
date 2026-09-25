@@ -630,6 +630,35 @@ full-budget run also switches `SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1` on unless
 the launcher set it, so the job log carries each campaign's candidates, the
 inner-speedup curve the planner read and the reason for its choice.
 
+**Can R7 give a sample more than one thread?** Only when the planner has an
+inner-speedup curve for the workload (`_predictive_inner_candidates!` in
+`src/simulation/campaigns/predictive_planner.jl`); without one every concurrent
+plan runs its samples at budget 1. The curve (`rhs_inner_speedup_curve`,
+`src/simulation/engine/rhs_calibration.jl`) is assembled from RHS calibration
+store rows that match the workload's signature stem: machine, spacecraft
+bucket, effector set, density model and the code token
+(`_RHS_CALIB_CODE_TOKEN`, currently `2026-09-23`), whatever budget or
+outer-split flag they were written under, and that carry per-candidate
+timings (store schema 2) including a width-1 timing and at least one wider
+one. Those timings are written only by a calibration sweep, which runs only in
+a solve whose inner budget is above 1 under an adaptive mode
+(`SPACEAGORA_RHS_CALIBRATE=auto`; the static modes set it off), so static rows
+never contribute. In this harness the adaptive point's own warm-up solve runs
+on the coordinator with no inner budget declared, i.e. at the whole pool, and
+sweeps; so even from a cold store the timed campaigns see a curve, and a
+converged store adds the rows of earlier adaptive runs of the same stem.
+`SPACEAGORA_PREDICTIVE_INNER_CURVE=0` disables it. With a curve, the plan space
+gains `threads@W` at `b = fld(T, W)`, one sample on the whole pool, and mixed
+local slots at `b` threads, each of which must beat the best static plan by
+the 15% margin. On TRX50 at budget 32 the static plans leave cores idle
+(8 samples on 32 cores), so a curve with speedup of about 1.18 at 4 threads
+would be enough, by round count alone, for `threads@8+b4` to win; on the
+12-core workstation every b > 1 plan needs more rounds and so a speedup the
+RHS does not have. In the 2026-09-25 TRX50 preview smoke (cold store) the
+curve was read and b > 1 candidates were offered, but the curve was flat
+(1.00 up to width 15, 1.01 beyond), so R7 chose the static-equivalent pool
+plan in both cases.
+
 **The criterion rule.** `scripts/check_policy_criterion.py` scores a P5f
 adaptive row against every static route at every split whose total equals its
 budget, with the bias correction every other point gets: the mean of those

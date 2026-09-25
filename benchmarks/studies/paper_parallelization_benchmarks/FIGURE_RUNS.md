@@ -555,11 +555,12 @@ bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh tr
 bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh trx50 --execute  # offer each step in turn
 ```
 
-Seven steps, ordered, non-overlapping. The ordering is load-bearing: the
+Nine steps, ordered, non-overlapping. The ordering is load-bearing: the
 calibration is itself a timed measurement, the targeted points gate the
 eleven-hour run, and the converged arm consumes the store the cold arm produced.
-Step 7, P7, was added after the other six and is independent of them; it runs
-last so that it never delays or disturbs the figures already planned.
+Step 7, P7, and steps 8 and 9, P5f, were added after the other six and are
+independent of them; they run last so that they never delay or disturb the
+figures already planned.
 
 Three facts about the interface that are easy to get wrong, all confirmed by
 reading `scripts/remote/spaceagora-remote`:
@@ -769,6 +770,95 @@ python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp>
   --machine trx50 --store cold      --notes 'P7, one spacecraft short missions, 11 repeats, cold store'
 ```
 
+### Steps 8 and 9 — P5f, the full-machine Monte Carlo phase
+
+P5's two workloads with the static routes at every split of 32 and `predictive`
+(R7) once per case at `--threads=32 --process-workers=32`, no split imposed
+(`CASES.md`, "P5f"). Eleven repeats are declared in the phase. Step 8 is from a
+cold store; step 9 restores the same converged snapshot step 4 does, so P5f's
+converged arm and P5's are measured from one store state (see "What is not
+settled" about that snapshot):
+
+```bash
+# step 8, cold store
+ssh trx50 'mv ~/spaceagora_remote/policy_state ~/spaceagora_remote/policy_state_bak_$(date -u +%Y%m%d_%H%M%S); mkdir -p ~/spaceagora_remote/policy_state' \
+  && scripts/remote/spaceagora-remote push --remote trx50 --threads 1,2,4,8,16,32 --process-workers 32 \
+       -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+          --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32
+
+# step 9, converged store
+ssh trx50 'rm -rf ~/spaceagora_remote/policy_state && cp -a ~/spaceagora_remote/policy_state_converged_20260918 ~/spaceagora_remote/policy_state' \
+  && scripts/remote/spaceagora-remote push --remote trx50 --threads 1,2,4,8,16,32 --process-workers 32 \
+       -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+          --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32
+```
+
+`--threads` does not set P5f's axis (the splits pin their own thread counts, and
+the full-budget run uses the budget); it is passed for the same command shape as
+the other steps.
+
+**Duration: about 1h25m per arm plus the two full-budget points.** DERIVED from
+the step 3 run's raw CSV: P5's `serial`, `outer_threads`, `outer_process` and
+`outer_inner_static` rows, the 48 points P5f repeats, summed to 2797 s of timed
+repeats at 11 each; one warm-up per point makes that about 3050 s, and the 42 s
+per-point fixed cost adds 2016 s. The same run's `policy_v2` rows took 15 863 s
+of timed repeats, which is why P5 as a whole took 6h44m and P5f should not. The
+two `predictive` points at the full budget have never been run on this box and
+are not in the estimate.
+
+Pull as in step 6, then archive each arm with the store it ran under:
+
+```bash
+python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
+  --machine trx50 --store cold      --notes 'P5f, full machine, 11 repeats, cold store'
+python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
+  --machine trx50 --store converged --notes 'P5f, full machine, 11 repeats, converged store'
+```
+
+Score the adaptive rows with
+`python3 scripts/check_policy_criterion.py <run dir> --adaptive predictive`,
+which for P5f compares each full-budget row with the best static route over
+every split of the same budget.
+
+## P5f on the workstation
+
+```bash
+bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh workstation-p5f            # describe
+bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh workstation-p5f --execute  # cold arm
+P5F_CONVERGED_STORE=output/parallel_policy_state_backup_<stamp> \
+  bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh workstation-p5f --execute  # cold, then converged
+```
+
+The cold arm handles the store exactly as the F4 arm does: calibrate at 12
+threads, move `output/parallel_policy_state/` aside to a dated backup, calibrate
+again into the empty store, then
+
+```bash
+OPENBLAS_NUM_THREADS=1 GKSwstype=100 julia --project=. \
+  benchmarks/studies/paper_parallelization_benchmarks.jl \
+  --phases=P5f --threads=1,2,4,8,12 --process-workers=12
+```
+
+The static routes run at the six splits of 12 and `predictive` once per case at
+`--threads=12 --process-workers=12`. The converged arm needs a store that has
+already run these workloads under an adaptive mode on this machine, which is
+what the F4 arm (P3+P5, every mode) leaves behind; `P5F_CONVERGED_STORE` names
+it, typically the dated backup the cold arm's `cold_store` step just moved
+aside. The target moves the cold arm's store aside in turn, copies the named
+store in, and runs the same command again. Without `P5F_CONVERGED_STORE` the
+converged arm is described and skipped. Archive each arm with `--machine
+workstation` and the matching `--store`.
+
+**Duration: about 2 h per arm plus the two full-budget points.** DERIVED from
+the workstation's P5 run of 2026-09-15 (5 repeats, the report cited in the
+ledger): the 48 points P5f repeats took 1370 s of timed repeats, 274 s per
+repeat across them, so 12 campaigns each (11 repeats and one warm-up) is about
+3290 s; the phase's 6809 s over 60 points less its timed repeats and warm-ups
+leaves 83 s of fixed cost per point, 3980 s over 48. The `--preview` smoke of
+2026-09-25 is not an estimate of either: it runs two repeats.
+
 ---
 
 ## Provenance ledger
@@ -800,6 +890,12 @@ Every number in this document, and what it rests on.
 | Workstation arm duration | 5–7 h | DERIVED | P5 doubled for 11 repeats, plus an unmeasured P3 bounded below by the box's 1h3m43s |
 | P7 mission | 5 702 s | DERIVED | two-body period of P1's spacecraft's orbit, a = 6 898 136.6 m, μ = 3.98600436233e14 m³/s² (built-in Earth), 5 701.76 s rounded; `PPC_P7_MISSION_S` |
 | P7 duration | ~13 min + repeats | DERIVED | 18 points × the 42 s per-point fixed cost above |
+| P5f static points, benchmark box | 2797 s timed at 11 repeats | SOURCED | `paper_benchmarks_trx50_cold11/20260918_162845/paper_benchmarks_raw_20260918_162845.csv`, P5, modes serial/outer_threads/outer_process/outer_inner_static, `wall_time_s` summed |
+| P5 `policy_v2` timed repeats, benchmark box | 15 863 s | SOURCED | same CSV, P5, `policy_v2` |
+| P5f duration, benchmark box | ~1h25m + 2 adaptive points | DERIVED | 2797 s × 12/11 + 48 × 42 s |
+| P5f static points, workstation | 1370 s timed at 5 repeats | SOURCED | `paper_benchmarks/20260915_181642/paper_benchmarks_raw_20260915_181642.csv`, P5, same four modes |
+| Per-point fixed cost, workstation P5 | 83 s | DERIVED | (6809 s − 1512 s × 6/5) ÷ 60 points |
+| P5f duration, workstation | ~2 h + 2 adaptive points | DERIVED | 1370 s ÷ 5 × 12 + 48 × 83 s |
 
 ## What is not settled
 

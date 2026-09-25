@@ -17,9 +17,15 @@
 #                 from a cold calibration store. Runs here, now.
 #   trx50         the full benchmark-box sequence (calibration, targeted points,
 #                 the cold 11-repeat P1-P5, the converged P1/P5, P6/P6p, the
-#                 archive call after each, then P7 with its own archive call). Every step is a
+#                 archive call after each, then P7 with its own archive call, then
+#                 P5f from a cold and from the converged store). Every step is a
 #                 scripts/remote/spaceagora-remote push; this target PRINTS them
 #                 and, with --execute, offers each one in order for confirmation.
+#   workstation-p5f
+#                 P5f on this box: the static routes at every split of the
+#                 budget and predictive (R7) once at the full budget, 11 repeats,
+#                 from a cold store, then again from a converged one when
+#                 P5F_CONVERGED_STORE names it. Runs here, now.
 #   calibrate-p6  re-derive P6's per-trace mission lengths on the host it runs
 #                 on, the way calibrate_iso_ladder.sh does for PPC_L50_ISO_MISSION_S.
 #                 This is itself a timed measurement: benchmark box, idle, alone.
@@ -59,13 +65,13 @@ EXECUTE=0
 for arg in "$@"; do
   case "$arg" in
     --execute) EXECUTE=1 ;;
-    -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,45p' "${BASH_SOURCE[0]}"; exit 0 ;;
     -*) echo "error: unknown option '$arg'" >&2; exit 2 ;;
     *)  TARGET="$arg" ;;
   esac
 done
 if [ -z "$TARGET" ]; then
-  echo "error: no target. Use 'workstation', 'trx50' or 'calibrate-p6'." >&2
+  echo "error: no target. Use 'workstation', 'workstation-p5f', 'trx50' or 'calibrate-p6'." >&2
   exit 2
 fi
 
@@ -296,6 +302,85 @@ target_trx50() {
     "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P7 --threads=1,2,4,8,16,32 --process-workers=32"
   say "Pull it as in step 6, then archive it:"
   cmd "python3 ${ARCHIVE} output/performance/paper_benchmarks/<stamp> --archive ${PAPER_DATA_RAW} --machine trx50 --store cold      --notes 'P7, one spacecraft short missions, 11 repeats, cold store'"
+
+  step 8 "P5f, the full-machine Monte Carlo phase, 11 repeats (cold store)"
+  say "Independent of steps 1-7. The static routes at every split of 32, and"
+  say "predictive once per case at --threads=32 --process-workers=32 with no split"
+  say "imposed; the phase declares its own 11 repeats."
+  offer "P5f cold, 11 repeats" \
+    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32"
+  say "Pull it as in step 6, then archive it:"
+  cmd "python3 ${ARCHIVE} output/performance/paper_benchmarks/<stamp> --archive ${PAPER_DATA_RAW} --machine trx50 --store cold      --notes 'P5f, full machine, 11 repeats, cold store'"
+
+  step 9 "P5f again from the converged store"
+  say "The same snapshot step 4 restores, so P5f's converged arm and P5's are"
+  say "measured from one store state."
+  offer "P5f converged, 11 repeats" \
+    "ssh ${REMOTE} 'rm -rf ${REMOTE_BASE}/policy_state && cp -a ${REMOTE_BASE}/policy_state_converged_20260918 ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32"
+  say "Pull it as in step 6, then archive it:"
+  cmd "python3 ${ARCHIVE} output/performance/paper_benchmarks/<stamp> --archive ${PAPER_DATA_RAW} --machine trx50 --store converged --notes 'P5f, full machine, 11 repeats, converged store'"
+}
+
+# ── workstation-p5f: P5f on this box, cold then converged ────────────────────
+#
+# The cold arm follows the workstation target's store handling exactly
+# (calibrate, move the store aside, re-calibrate into the empty one). The
+# converged arm needs a store that has already seen these workloads under an
+# adaptive mode, which is the one the workstation's F4 arm (P3+P5, every mode)
+# leaves behind; name it with P5F_CONVERGED_STORE, e.g. the
+# output/parallel_policy_state_backup_<stamp> this target's own cold_store step
+# moved aside. Without it the converged arm is described and skipped.
+target_workstation_p5f() {
+  local cores threads workers
+  cores="$(physical_cores)"
+  threads="1"
+  local b=1
+  while [ $((b * 2)) -lt "$cores" ]; do b=$((b * 2)); threads="${threads},${b}"; done
+  [ "$b" -eq "$cores" ] || threads="${threads},${cores}"
+  workers="$cores"
+  local ppb_cmd="julia --project=${REPO_ROOT} ${PPB} --phases=P5f --threads=${threads} --process-workers=${workers}"
+
+  say "target       = workstation-p5f ($(hostname))"
+  say "phase        = P5f (static routes per split; predictive at the full budget)"
+  say "threads      = ${threads}"
+  say "workers      = ${workers}"
+  say "repeats      = 11 (declared by the phase)"
+  say "stores       = cold, then P5F_CONVERGED_STORE=${P5F_CONVERGED_STORE:-<unset>}"
+
+  require_quiet
+
+  step 1 "machine calibration for the predictive planner (R7)"
+  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibrate_machine.jl"
+
+  step 2 "cold calibration store"
+  cold_store
+
+  step 3 "re-calibrate into the now-empty store"
+  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibrate_machine.jl"
+
+  step 4 "P5f, cold store"
+  run env OPENBLAS_NUM_THREADS=1 GKSwstype=100 ${ppb_cmd}
+
+  step 5 "archive the cold run"
+  cmd "python3 ${ARCHIVE} output/performance/paper_benchmarks/<stamp> --archive ${PAPER_DATA_RAW} --machine workstation --store cold --notes 'P5f, full machine, 11 repeats, cold store'"
+
+  step 6 "P5f, converged store"
+  if [ -z "${P5F_CONVERGED_STORE:-}" ]; then
+    say "P5F_CONVERGED_STORE is not set; skipping. Set it to a store that has run"
+    say "P5's adaptive modes on this machine and re-run this target."
+    return 0
+  fi
+  if [ ! -d "${P5F_CONVERGED_STORE}" ]; then
+    echo "[figure-runs] P5F_CONVERGED_STORE is not a directory: ${P5F_CONVERGED_STORE}" >&2
+    exit 4
+  fi
+  require_quiet
+  cold_store
+  run cp -a "${P5F_CONVERGED_STORE}/." "${STORE_DIR}/"
+  run env OPENBLAS_NUM_THREADS=1 GKSwstype=100 ${ppb_cmd}
+
+  step 7 "archive the converged run"
+  cmd "python3 ${ARCHIVE} output/performance/paper_benchmarks/<stamp> --archive ${PAPER_DATA_RAW} --machine workstation --store converged --notes 'P5f, full machine, 11 repeats, converged store'"
 }
 
 # ── calibrate-p6: re-derive the per-trace mission lengths ────────────────────
@@ -382,7 +467,8 @@ target_calibrate_p6() {
 
 case "$TARGET" in
   workstation)  target_workstation ;;
+  workstation-p5f) target_workstation_p5f ;;
   trx50)        target_trx50 ;;
   calibrate-p6) target_calibrate_p6 ;;
-  *) echo "error: unknown target '$TARGET' (workstation | trx50 | calibrate-p6)" >&2; exit 2 ;;
+  *) echo "error: unknown target '$TARGET' (workstation | workstation-p5f | trx50 | calibrate-p6)" >&2; exit 2 ;;
 esac

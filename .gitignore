@@ -149,6 +149,9 @@ viewer/dev_data.js
 
 # Reproducible public Odyssey example environment resolves on each platform.
 examples/odyssey_surrogate_env/Manifest.toml
+# Default result folders of examples/odyssey_surrogate.jl run from the repository root.
+/odyssey_surrogate_results/
+/odyssey_surrogate_[0-9]*/
 
 # Optional CYGNSS development Python environment
 .venv-cygnss/

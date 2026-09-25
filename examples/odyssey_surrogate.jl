@@ -1,7 +1,8 @@
 """
 Odyssey P20 panel-control exercise with one named frozen atmosphere.
 
-Run this file for the 90-degree/30-degree comparison. Include it to use
+Run this file for the 90-degree/30-degree comparison; `--help` lists the options
+for other caps and the output directory. Include it to use
 `OdysseySurrogateExample.run_case` or `compare_panel_caps` from a notebook.
 """
 module OdysseySurrogateExample
@@ -18,11 +19,27 @@ const PRESET = "odyssey_p20_frozen_v1"
 const VERSION = "1.0.0"
 const ENTRY_UTC = "2001-11-07T11:45:45.690115Z"
 const COMMON_TIME_S = 600.0
+# Frame of the recorded states: the initial state is spkezr(..., "J2000", ..., "499").
+const STATE_FRAME = "Mars-centred J2000 inertial (SPICE frame J2000, origin NAIF 499 Mars); position in m, velocity in m/s"
 
-function validate_panel_cap(panel_cap_deg)
+function validate_panel_cap(panel_cap_deg, name="panel_cap_deg")
     cap = Float64(panel_cap_deg)
-    isfinite(cap) && 0 < cap <= 90 || throw(ArgumentError("panel_cap_deg must be finite and in (0, 90]."))
+    isfinite(cap) && 0 < cap <= 90 || throw(ArgumentError("$name must be finite and in (0, 90]."))
     return cap
+end
+
+function require_new_directory(directory)
+    ispath(directory) && throw(ArgumentError("Choose a new output directory: $(abspath(directory)) already exists. " *
+        "Pass --output=DIR on the command line, or output_dir=\"DIR\" in Julia; results are never overwritten."))
+    return directory
+end
+
+cap_directory(cap) = "cap_$(isinteger(cap) ? Int(cap) : cap)_deg"
+
+function print_results(directory, files)
+    println("Results in ", abspath(directory), ":")
+    foreach(file -> println("  ", file), files)
+    flush(stdout)
 end
 
 native_gram_loaded() = any(path -> occursin("libgram", lowercase(path)), Libdl.dllist())
@@ -146,12 +163,15 @@ Run one bounded P20 passage. `panel_cap_deg` changes the active panel controller
 The thermal threshold is infinite: this exercise tests commanded panel incidence,
 not closed-loop thermal protection or mission accuracy. `assets` is normally
 resolved by `odyssey_surrogate_assets`; explicit values support controlled tests.
+`output_dir` must not exist yet; it defaults to `odyssey_surrogate_<panel_cap_deg>`
+in the current directory. The run writes `trajectory.csv` and `summary.toml` there,
+prints their absolute location and returns `(; summary, rows, common, endpoint)`.
 """
 function run_case(; panel_cap_deg=90.0, grid_file="", offline=false,
         output_dir=joinpath(pwd(), "odyssey_surrogate_$(panel_cap_deg)"),
         assets=nothing, allow_unreleased=false)
     validate_panel_cap(panel_cap_deg)
-    ispath(output_dir) && throw(ArgumentError("Choose a new output directory: $output_dir"))
+    require_new_directory(output_dir)
     model = SpaceAGORA.surrogate_preset_model(PRESET; version=VERSION, planet="Mars",
         file=grid_file, offline=offline, allow_unreleased=allow_unreleased)
     assets === nothing && (assets = SpaceAGORA.odyssey_surrogate_assets(; offline=offline))
@@ -203,7 +223,7 @@ function run_case(; panel_cap_deg=90.0, grid_file="", offline=false,
     summary = Dict{String,Any}("status"=>"completed_native_free_control_exercise", "panel_cap_deg"=>Float64(panel_cap_deg),
         "start_et_tdb_s"=>setup.start_et, "requested_start_utc"=>ENTRY_UTC, "start_utc"=>SP.et2utc(setup.start_et,"ISOC",9),
         "wall_s"=>wall_s, "solver_retcode"=>string(sol.retcode), "solver"=>"Tsit5", "exit_elapsed_s"=>Float64(sol.t[end]),
-        "initial_state_m_m_s"=>setup.initial_state, "native_gram_loaded"=>false,
+        "initial_state_m_m_s"=>setup.initial_state, "state_frame"=>STATE_FRAME, "native_gram_loaded"=>false,
         "atmosphere"=>SpaceAGORA.atmosphere_provenance(model), "scenario_assets"=>assets.provenance,
         "panel_cap_active"=>true, "thermal_feedback_tested"=>false,
         "comparison_time_s"=>COMMON_TIME_S,
@@ -216,14 +236,28 @@ function run_case(; panel_cap_deg=90.0, grid_file="", offline=false,
     open(joinpath(output_dir, "summary.toml"), "w") do io; TOML.print(io, summary); end
     @printf("Panel cap %g degrees: passage %.3f s, maximum sampled drag %.6f N, run %.2f s.\n",
         panel_cap_deg, sol.t[end], summary["maximum_recorded_drag_N"], wall_s)
-    flush(stdout)
+    print_results(output_dir, ("trajectory.csv", "summary.toml"))
     return (; summary, rows, common, endpoint)
 end
 
-function compare_panel_caps(; output_dir=joinpath(pwd(), "odyssey_surrogate_results"), kwargs...)
-    ispath(output_dir) && throw(ArgumentError("Choose a new output directory: $output_dir"))
-    first = run_case(; panel_cap_deg=90.0, output_dir=joinpath(output_dir,"cap_90_deg"), kwargs...)
-    second = run_case(; panel_cap_deg=30.0, output_dir=joinpath(output_dir,"cap_30_deg"), kwargs...)
+"""
+    compare_panel_caps(; output_dir, baseline_cap_deg=90, variant_cap_deg=30, kwargs...)
+
+Run `run_case` for the baseline and the variant cap in the `cap_<cap>_deg`
+subdirectories of `output_dir`, which must not exist yet (default
+`odyssey_surrogate_results` in the current directory). Writes `comparison.toml`
+with both caps and the state and panel heat-load differences at 600 s. Other
+keywords go to `run_case`. Returns `(; first, second, comparison)`, where `first`
+is the baseline run and `second` the variant run.
+"""
+function compare_panel_caps(; output_dir=joinpath(pwd(), "odyssey_surrogate_results"),
+        baseline_cap_deg=90.0, variant_cap_deg=30.0, kwargs...)
+    baseline = validate_panel_cap(baseline_cap_deg, "baseline_cap_deg")
+    variant = validate_panel_cap(variant_cap_deg, "variant_cap_deg")
+    baseline != variant || throw(ArgumentError("The baseline and variant caps must differ; both are $(baseline) degrees."))
+    require_new_directory(output_dir)
+    first = run_case(; panel_cap_deg=baseline, output_dir=joinpath(output_dir,cap_directory(baseline)), kwargs...)
+    second = run_case(; panel_cap_deg=variant, output_dir=joinpath(output_dir,cap_directory(variant)), kwargs...)
     a = first.summary["common_state_m_m_s"]; b = second.summary["common_state_m_m_s"]
     position_difference = norm(a[1:3]-b[1:3])
     velocity_difference = norm(a[4:6]-b[4:6])
@@ -231,30 +265,70 @@ function compare_panel_caps(; output_dir=joinpath(pwd(), "odyssey_surrogate_resu
     position_difference > 1e-3 && velocity_difference > 1e-6 && heat_difference > 1e-6 ||
         error("The active panel-cap change did not produce a measurable trajectory and heating effect.")
     comparison = Dict("comparison_time_s"=>COMMON_TIME_S, "position_difference_m"=>position_difference,
+        "baseline_cap_deg"=>baseline, "variant_cap_deg"=>variant,
         "velocity_difference_m_s"=>velocity_difference, "panel_heat_load_difference_norm_J_cm2"=>heat_difference,
         "effect_assertions_passed"=>true, "native_gram_loaded"=>native_gram_loaded(),
         "interpretation"=>"Different active panel commands under the same atmosphere; this is not an accuracy tolerance.")
     open(joinpath(output_dir,"comparison.toml"),"w") do io; TOML.print(io, comparison); end
     @printf("At %.0f s: position difference %.3f m, velocity difference %.6f m/s.\n", COMMON_TIME_S, position_difference, velocity_difference)
+    print_results(output_dir, [[joinpath(cap_directory(cap), file) for cap in (baseline, variant)
+        for file in ("trajectory.csv", "summary.toml")]; "comparison.toml"])
     return (; first, second, comparison)
 end
 
-function main(argv=ARGS)
-    argv == ["--help"] && return println("julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl [--offline] [--output=NEW_DIRECTORY]\nRuns the active 90-degree/30-degree panel-cap comparison with the named frozen Odyssey preset.")
+const USAGE = """
+    Usage: julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl [options]
+
+    Runs the active panel-cap comparison with the named frozen Odyssey preset: one
+    passage with the baseline cap and one with the variant cap, compared at 600 s.
+
+    Options:
+      --cap=DEG           variant panel-angle cap in degrees, in (0, 90] (default 30)
+      --baseline-cap=DEG  baseline panel-angle cap in degrees, in (0, 90] (default 90)
+      --output=DIR        new results directory (default odyssey_surrogate_results
+                          in the current directory); an existing one is refused
+      --offline           use installed assets only; fail instead of downloading
+      --help              print this message"""
+
+function cap_option(option, text)
+    cap = tryparse(Float64, text)
+    cap === nothing && throw(ArgumentError("$option needs a panel-angle cap in degrees, for example $option=60."))
+    return validate_panel_cap(cap, option)
+end
+
+"""
+    parse_arguments(argv)
+
+Return the `compare_panel_caps` keywords selected by command-line options, or
+`nothing` for `--help`. Invalid options throw `ArgumentError` before any run.
+"""
+function parse_arguments(argv)
+    "--help" in argv && return nothing
     offline = false; output = joinpath(pwd(), "odyssey_surrogate_results")
+    baseline = 90.0; variant = 30.0
     seen = Set{String}()
     for arg in argv
-        key = first(split(arg,'=';limit=2))
+        key = first(split(arg,'=';limit=2)); value = last(split(arg,'=';limit=2))
         key in seen && throw(ArgumentError("Repeated option $key")); push!(seen,key)
         if arg == "--offline"
             offline = true
         elseif startswith(arg,"--output=")
-            output = last(split(arg,'=';limit=2)); isempty(output) && throw(ArgumentError("--output needs a directory."))
+            output = value; isempty(output) && throw(ArgumentError("--output needs a directory."))
+        elseif startswith(arg,"--cap=")
+            variant = cap_option(key, value)
+        elseif startswith(arg,"--baseline-cap=")
+            baseline = cap_option(key, value)
         else
             throw(ArgumentError("Unknown option $arg; use --help."))
         end
     end
-    compare_panel_caps(; output_dir=output, offline=offline)
+    return (; output_dir=output, offline, baseline_cap_deg=baseline, variant_cap_deg=variant)
+end
+
+function main(argv=ARGS)
+    options = parse_arguments(argv)
+    options === nothing && return println(USAGE)
+    compare_panel_caps(; options...)
 end
 
 end # module

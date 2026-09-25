@@ -41,10 +41,12 @@ end
     @test comparison["comparison_time_s"] == 600.0
     @test comparison["position_difference_m"] > 0
     @test comparison["panel_heat_load_difference_norm_J_cm2"] > 0
+    @test comparison["baseline_cap_deg"] == 90.0 && comparison["variant_cap_deg"] == 30.0
     for cap in (90, 30)
         summary = TOML.parsefile(joinpath(directory, "cap_$(cap)_deg", "summary.toml"))
         @test summary["panel_cap_active"]
         @test !summary["thermal_feedback_tested"]
+        @test startswith(summary["state_frame"], "Mars-centred J2000 inertial")
         @test summary["atmosphere"]["preset_version"] == "1.0.0"
         @test summary["atmosphere"]["source_sha256"] == "3643c9116b75c511d20edee2866e2b5ba06baaeba9e693c4f3ad1055a7820e8c"
         @test summary["scenario_assets"]["version"] == "1.0.0"
@@ -58,4 +60,31 @@ end
     text = read(command, String)
     @test occursin("Validated odyssey_p20_frozen_v1@1.0.0", text)
     @test occursin("3643c9116b75c511", text)
+end
+
+# Top-level include, so the testset below runs in a world that sees the example's methods.
+include(joinpath(@__DIR__, "..", "examples", "odyssey_surrogate.jl"))
+
+@testset "Odyssey example options fail before any run" begin
+    E = OdysseySurrogateExample
+    @test E.parse_arguments(["--offline", "--help"]) === nothing
+    defaults = E.parse_arguments(String[])
+    @test (defaults.baseline_cap_deg, defaults.variant_cap_deg, defaults.offline) == (90.0, 30.0, false)
+    @test defaults.output_dir == joinpath(pwd(), "odyssey_surrogate_results")
+    @test E.parse_arguments(["--cap=60", "--baseline-cap=85", "--output=new", "--offline"]) ==
+        (; output_dir="new", offline=true, baseline_cap_deg=85.0, variant_cap_deg=60.0)
+    for argv in (["--cap=0"], ["--cap=90.5"], ["--cap=NaN"], ["--cap=Inf"], ["--cap=sixty"], ["--cap="],
+            ["--baseline-cap=-1"], ["--cap=60", "--cap=45"], ["--output="], ["--caps=60"])
+        @test_throws ArgumentError E.parse_arguments(argv)
+    end
+    @test E.cap_directory(90.0) == "cap_90_deg" && E.cap_directory(22.5) == "cap_22.5_deg"
+    mktempdir() do directory
+        unused = joinpath(directory, "unused")
+        @test_throws ArgumentError E.compare_panel_caps(; output_dir=unused, variant_cap_deg=95)
+        @test_throws ArgumentError E.compare_panel_caps(; output_dir=unused, baseline_cap_deg=60, variant_cap_deg=60.0)
+        @test_throws ArgumentError E.run_case(; panel_cap_deg=0, output_dir=unused)
+        @test !ispath(unused)
+        existing = try E.compare_panel_caps(; output_dir=directory) catch err err end
+        @test existing isa ArgumentError && occursin("--output=DIR", existing.msg)
+    end
 end

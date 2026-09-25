@@ -19,7 +19,7 @@ Cross-platform command conventions used below:
 
 ## Installation
 
-Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs:
+SpaceAGORA requires Julia 1.12. Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs:
 
 ```text
 GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
@@ -71,7 +71,8 @@ julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 Only the selected grid and public scenario assets download on first use. Their
 checksums are verified before simulation. The example compares 90-degree and
 30-degree panel-angle limits and saves the actual commands, trajectory, heating
-and atmosphere provenance. See the [Odyssey walkthrough](docs/src/tutorials/odyssey_surrogate.md)
+and atmosphere provenance in `odyssey_surrogate_results/`, or the directory given
+with `--output=DIR`; it prints that location when it finishes. See the [Odyssey walkthrough](docs/src/tutorials/odyssey_surrogate.md)
 for the supported domain, frozen epoch, offline use and changing the controller.
 Native GRAM remains an optional advanced backend for atmosphere studies.
 

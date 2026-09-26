@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the paper's routing comparison tables from a P-series benchmark run.
 
-Reads one or more `paper_benchmarks_aggregated_*.csv` files (the P1-P5 and P7 phases in
+Reads one or more `paper_benchmarks_aggregated_*.csv` files (the P1-P5, P5f and P7 phases in
 benchmarks/studies/paper_parallelization_benchmarks) and writes, per machine and
 per phase, a table of
 
@@ -73,16 +73,19 @@ PHASE_TITLE = {
     "P3": "Monte Carlo resource ladder, one spacecraft per sample",
     "P4": "Monte Carlo resource ladder, compute-bound samples",
     "P5": "Monte Carlo over constellations, worker/thread split at a fixed budget",
+    "P5f": "Monte Carlo over constellations, the adaptive route handed the full budget "
+           "against the best static route over every worker/thread split",
     "P7": "One spacecraft, one orbit, at the full thread budget",
 }
 
 # The phases these tables are built for, in the order they are written out.
-TABLE_PHASES = ["P1", "P2", "P3", "P4", "P5", "P7"]
+TABLE_PHASES = ["P1", "P2", "P3", "P4", "P5", "P5f", "P7"]
 
 # Phases whose axis is derived from the case name itself (P1's spacecraft count)
 # put every case in ONE table, one row per axis value; phases that measure
 # several distinct workloads over the same axis get one table each.
-GROUP_BY_CASE = {"P1": False, "P2": True, "P3": True, "P4": True, "P5": True, "P7": False}
+GROUP_BY_CASE = {"P1": False, "P2": True, "P3": True, "P4": True, "P5": True,
+                 "P5f": False, "P7": False}
 
 # Below this serial baseline the harness treats a point as unreportable router
 # performance -- dispatch overhead and machine noise are the same size as the
@@ -97,8 +100,15 @@ PHASE_AXIS = {
     "P3": ("process_workers", "budget"),
     "P4": ("process_workers", "budget"),
     "P5": ("split", "workers x threads"),
+    "P5f": ("workload", "workload"),
     "P7": ("stack", "force model"),
 }
+
+# P5f has one row per workload rather than one per axis point: its adaptive
+# route runs once, at the full budget with no split imposed, and is compared
+# with the fastest static route over every split of that budget, which the
+# route column names with its split.
+FULL_BUDGET_PHASES = {"P5f"}
 
 # P7's rows are its force models, read from the case name
 # (gravity_1sat_l50_vacuum_<S>s -> l50_vacuum) and ordered lightest first.
@@ -168,11 +178,56 @@ def axis_values(df: pd.DataFrame, phase: str) -> pd.DataFrame:
     return df
 
 
+def _workload_label(case: str) -> str:
+    """mcgrid_16sat_8mc -> '16 sc x 8 samples'."""
+    m = re.match(r"^mcgrid_(\d+)sat_(\d+)mc$", str(case))
+    return f"{m.group(1)} sc x {m.group(2)} samples" if m else str(case)
+
+
+def full_budget_rows(sub: pd.DataFrame) -> list[dict]:
+    """One record per case of a full-budget phase (P5f).
+
+    The adaptive time is the adaptive route's median at the full budget (it
+    runs nowhere else); the best static time is the fastest static route at
+    any split whose total equals that budget, named with its split; serial is
+    the median of the serial medians, which do not depend on the split."""
+    out = []
+    for case, grp in sub.groupby("case"):
+        grp = grp.dropna(subset=["wall_time_median_s"])
+        adaptive = grp[grp["mode"] == ADAPTIVE]
+        statics = grp[grp["mode"].isin(STATIC_PARALLEL)]
+        split_total = statics.process_workers.astype(int) * statics.thread_count.astype(int)
+        budget = (int(adaptive.thread_count.max()) if len(adaptive)
+                  else (int(split_total.max()) if len(statics) else 0))
+        statics = statics[split_total == budget]
+        best = statics.loc[statics.wall_time_median_s.idxmin()] if len(statics) else None
+        all_static = {}
+        for mode, mgrp in statics.groupby("mode"):
+            all_static[mode] = float(mgrp.wall_time_median_s.min())
+        serial = grp[grp["mode"] == "serial"].wall_time_median_s
+        out.append({
+            "case": case,
+            "mission_s": None,
+            "axis": _workload_label(case),
+            "order": _n_sat_from_case(case),
+            "serial_s": float(serial.median()) if len(serial) else None,
+            "best_static_mode": (f"{best['mode']} {int(best.process_workers)}x{int(best.thread_count)}"
+                                 if best is not None else None),
+            "best_static_s": float(best.wall_time_median_s) if best is not None else None,
+            "adaptive_s": float(adaptive.wall_time_median_s.min()) if len(adaptive) else None,
+            "all_static": all_static,
+        })
+    out.sort(key=lambda r: (r["order"], r["case"]))
+    return out
+
+
 def phase_rows(df: pd.DataFrame, phase: str) -> list[dict]:
     """One record per (case, axis point): serial, best static, adaptive."""
     sub = df[df.phase_id == phase]
     if sub.empty:
         return []
+    if phase in FULL_BUDGET_PHASES:
+        return full_budget_rows(sub)
     sub = axis_values(sub, phase)
     axis_col, _ = PHASE_AXIS[phase]
     out = []
@@ -320,7 +375,15 @@ def latex_table(phase: str, rows: list[dict], machine: str) -> str:
         "The best static route is the fastest pinned parallel route measured at "
         "that point, named in the route column."
     )
-    if phase == "P7":
+    if phase == "P5f":
+        caption += (
+            f" {ADAPTIVE_LABEL} runs once per workload with the whole budget as "
+            "both its thread count and its process-pool cap and no split imposed; "
+            "the best static route is the fastest pinned route over every "
+            "worker/thread split of the same budget, and the route column names "
+            "the split it ran at."
+        )
+    elif phase == "P7":
         caption += (
             " Every row is one spacecraft over the same mission, one two-body "
             "revolution of the orbit P1's one-spacecraft rung flies, so the serial "

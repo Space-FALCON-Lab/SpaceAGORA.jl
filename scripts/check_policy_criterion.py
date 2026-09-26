@@ -24,6 +24,20 @@ Usage:
         [--label NAME ...] [--adaptive policy_v2|predictive|both] \
         [--tolerance 0.10] [--equiv-band 0.03] [--markdown]
 
+P5f (the full-machine phase) is scored by its own rule, because its adaptive
+rows are not at any static point: the adaptive mode runs once per case at the
+full budget (threads = process workers = the budget) and chooses its own
+split, while the static routes run at every split of that budget. So the
+baseline for a P5f adaptive row is taken over every pinned static route AT
+EVERY SPLIT of the same budget (process_workers x thread_count equal to the
+adaptive row's thread count), with the same bias correction as any other
+point: if every one of those (route, split) medians lies within
+`--equiv-band` of the fastest, their mean, otherwise the fastest. The rest of
+the criterion (tolerance, failed campaigns) is unchanged. The axis cell names
+the adaptive row's budget and the allocation it recorded
+(`adaptive_allocation`), and the baseline-kind cell names the (route, split)
+the baseline came from.
+
 Each RUN_DIR is searched recursively for `paper_benchmarks_raw_*.csv`; every
 match found under it is loaded. --label assigns a display name to each
 RUN_DIR by position (repeatable); the default label is the directory
@@ -48,6 +62,11 @@ ADAPTIVE_MODES = {"policy_v2": "R6", "predictive": "R7"}
 DEFAULT_ADAPTIVE = "policy_v2"
 
 POINT_KEYS = ["phase_id", "case", "thread_count", "process_workers", "mc_samples"]
+
+# Phases whose adaptive mode runs once at the full budget with no split imposed,
+# scored against the best static route over every split of that budget (see the
+# module docstring and `evaluate_full_budget`).
+FULL_BUDGET_PHASES = {"P5f"}
 
 # Phases whose axis is a single already-present column; P1's axis (spacecraft
 # count) is parsed out of the case name instead, and P5's ("workers x
@@ -156,12 +175,7 @@ def evaluate_point(key: tuple, grp: pd.DataFrame, tolerance: float, equiv_band: 
     row0 = grp.iloc[0]
     axis, order = axis_for(row0)
 
-    if adapt["n_failed"] > 0:
-        verdict, reason = "FAIL", f"failed campaigns: {adapt['n_failed']}/{adapt['n']}"
-    elif ratio > 1.0 + tolerance:
-        verdict, reason = "FAIL", f"ratio {ratio:.3f}"
-    else:
-        verdict, reason = "PASS", ""
+    verdict, reason = _verdict(adapt, ratio, tolerance)
 
     return {
         "phase": row0["phase_id"],
@@ -179,12 +193,83 @@ def evaluate_point(key: tuple, grp: pd.DataFrame, tolerance: float, equiv_band: 
     }
 
 
+def _verdict(adapt: dict, ratio: float, tolerance: float) -> tuple[str, str]:
+    if adapt["n_failed"] > 0:
+        return "FAIL", f"failed campaigns: {adapt['n_failed']}/{adapt['n']}"
+    if ratio > 1.0 + tolerance:
+        return "FAIL", f"ratio {ratio:.3f}"
+    return "PASS", ""
+
+
+def evaluate_full_budget(grp: pd.DataFrame, tolerance: float, equiv_band: float,
+                         adaptive: str) -> list[dict]:
+    """Score one (phase, case, mc_samples) group of a full-budget phase.
+
+    One record per full-budget configuration the adaptive mode ran at (normally
+    exactly one). Its baseline is the bias-corrected best over every pinned
+    static route at every split whose total (process_workers x thread_count)
+    equals that configuration's budget (its thread_count)."""
+    out = []
+    arows = grp[grp["mode"] == adaptive]
+    if arows.empty:
+        return out
+    statics = grp[grp["mode"].isin(STATIC_PARALLEL)].copy()
+    statics["_budget"] = statics["process_workers"].astype(int) * statics["thread_count"].astype(int)
+    for (pw, tc), agrp in arows.groupby(["process_workers", "thread_count"]):
+        budget = int(tc)
+        pool = statics[statics["_budget"] == budget]
+        if pool.empty:
+            continue
+        medians = {
+            (m, int(w), int(t)): float(g.wall_time_s.median())
+            for (m, w, t), g in pool.groupby(["mode", "process_workers", "thread_count"])
+        }
+        best_key = min(medians, key=medians.get)
+        lo, hi = medians[best_key], max(medians.values())
+        if lo > 0 and (hi / lo - 1.0) <= equiv_band:
+            baseline = sum(medians.values()) / len(medians)
+            kind = f"mean of {len(medians)} (route, split)"
+        else:
+            baseline = lo
+            kind = f"min: {best_key[0]} {best_key[1]}x{best_key[2]}"
+        adapt = mode_stats(agrp)[adaptive]
+        ratio = adapt["median"] / baseline if baseline else float("inf")
+        verdict, reason = _verdict(adapt, ratio, tolerance)
+        alloc = ""
+        if "adaptive_allocation" in agrp.columns:
+            vals = sorted({str(v) for v in agrp["adaptive_allocation"].dropna() if str(v)})
+            alloc = f" [{'|'.join(vals)}]" if vals else ""
+        row0 = agrp.iloc[0]
+        out.append({
+            "phase": row0["phase_id"],
+            "case": row0["case"],
+            "axis": f"full {int(pw)}x{budget}{alloc}",
+            "_order": budget,
+            "adaptive_median": adapt["median"],
+            "baseline": baseline,
+            "baseline_kind": kind,
+            "ratio": ratio,
+            "n_failed": adapt["n_failed"],
+            "n": adapt["n"],
+            "verdict": verdict,
+            "reason": reason,
+        })
+    return out
+
+
 def evaluate_run(df: pd.DataFrame, tolerance: float, equiv_band: float,
                  adaptive: str) -> list[dict]:
     label = ADAPTIVE_MODES.get(adaptive, adaptive)
     results = []
     skipped_no_static = 0
     skipped_no_adaptive = 0
+    full = df["phase_id"].isin(FULL_BUDGET_PHASES)
+    for _, grp in df[full].groupby(["phase_id", "case", "mc_samples"], dropna=False):
+        recs = evaluate_full_budget(grp, tolerance, equiv_band, adaptive)
+        if not recs:
+            skipped_no_adaptive += 1
+        results.extend(recs)
+    df = df[~full]
     for key, grp in df.groupby(POINT_KEYS, dropna=False):
         rec = evaluate_point(key, grp, tolerance, equiv_band, adaptive)
         if rec is None:

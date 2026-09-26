@@ -589,6 +589,92 @@ raises a count), one warm-up. No parity case: P1 carries the P-series parity
 check. `make_paper_routing_tables.py` and `make_paper_routing_plots.py` put the
 three rows in one table and one figure with the force model on the axis.
 
+## P5f — Monte Carlo over constellations, full machine
+
+P5 runs every mode once per split of the budget, `predictive` and `policy_v2`
+included, so its adaptive arms were always told the split and chose only a route
+inside it. P5f asks the question a user of the whole machine has: handed every
+core and no split, does R7 (`predictive`) land within the 10% criterion of the
+best static allocation, that is, the fastest static route at the fastest split?
+
+| | P5 | P5f |
+|---|---|---|
+| Cases | `mcgrid_16sat_8mc`, `mcgrid_8sat_16mc` | the same |
+| Static modes (`serial`, `outer_threads`, `outer_process`, `outer_inner_static`) | every split of the budget | every split of the budget, exactly as P5 |
+| `predictive` (R7) | every split | once per case, full budget, no split |
+| `policy_v2` (R6) | every split | not run |
+| Repeats / warm-up | 5 declared (11 by `SPACEAGORA_PPB_MIN_REPEATS`) / 1 | 11 declared / 1 |
+
+The phase lists `predictive` in `modes` (so the precompile workload and
+`--lean-modes` see it) and in `full_budget_modes`; the per-split runs take the
+other modes, and the full-budget modes run once more after the splits, in
+`P5f/full_w<B>_t<B>/`. `B` is the grid's budget, `PPB_PAPER_BUDGET` (12 on the
+workstation, 32 on TRX50), and the run is launched with `--threads=B
+--process-workers=B`: a Julia process with every core as threads and a
+process-pool cap (`SPACEAGORA_PERF_PROCS`) equal to the same count, which on the
+V2 profiles is also the cap an unset environment gets (`usable_core_budget`,
+memory permitting). The pool is still capped by the run's `--process-workers`,
+as the splits are. From there the campaign runner and the R7 planner choose the
+route, pool width, local slots and each sample's inner thread budget
+themselves.
+
+**What the adaptive row records.** Every row now carries
+`adaptive_allocation`, empty for the pinned modes and
+`<route>:w<W>+l<L>:b<B>` for an adaptive campaign: the route it ran, `W`
+consumers apart from local slots (thread tasks, or pool worker processes), `L`
+coordinator local slots beside a pool, and the largest inner thread budget any
+sample ran under, read inside the sample (`ppc_adaptive_allocation` in
+`parallelization_performance/execution.jl`). It is read from what ran, not from
+the plan, so a guard that closed consumers mid-campaign shows what remained. The
+full-budget run also switches `SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1` on unless
+the launcher set it, so the job log carries each campaign's candidates, the
+inner-speedup curve the planner read and the reason for its choice.
+
+**Can R7 give a sample more than one thread?** Only when the planner has an
+inner-speedup curve for the workload (`_predictive_inner_candidates!` in
+`src/simulation/campaigns/predictive_planner.jl`); without one every concurrent
+plan runs its samples at budget 1. The curve (`rhs_inner_speedup_curve`,
+`src/simulation/engine/rhs_calibration.jl`) is assembled from RHS calibration
+store rows that match the workload's signature stem: machine, spacecraft
+bucket, effector set, density model and the code token
+(`_RHS_CALIB_CODE_TOKEN`, currently `2026-09-23`), whatever budget or
+outer-split flag they were written under, and that carry per-candidate
+timings (store schema 2) including a width-1 timing and at least one wider
+one. Those timings are written only by a calibration sweep, which runs only in
+a solve whose inner budget is above 1 under an adaptive mode
+(`SPACEAGORA_RHS_CALIBRATE=auto`; the static modes set it off), so static rows
+never contribute. In this harness the adaptive point's own warm-up solve runs
+on the coordinator with no inner budget declared, i.e. at the whole pool, and
+sweeps; so even from a cold store the timed campaigns see a curve, and a
+converged store adds the rows of earlier adaptive runs of the same stem.
+`SPACEAGORA_PREDICTIVE_INNER_CURVE=0` disables it. With a curve, the plan space
+gains `threads@W` at `b = fld(T, W)`, one sample on the whole pool, and mixed
+local slots at `b` threads, each of which must beat the best static plan by
+the 15% margin. On TRX50 at budget 32 the static plans leave cores idle
+(8 samples on 32 cores), so a curve with speedup of about 1.18 at 4 threads
+would be enough, by round count alone, for `threads@8+b4` to win; on the
+12-core workstation every b > 1 plan needs more rounds and so a speedup the
+RHS does not have. In the 2026-09-25 TRX50 preview smoke (cold store) the
+curve was read and b > 1 candidates were offered, but the curve was flat
+(1.00 up to width 15, 1.01 beyond), so R7 chose the static-equivalent pool
+plan in both cases.
+
+**The criterion rule.** `scripts/check_policy_criterion.py` scores a P5f
+adaptive row against every static route at every split whose total equals its
+budget, with the bias correction every other point gets: the mean of those
+(route, split) medians when all of them lie within `--equiv-band` of the
+fastest, otherwise the fastest. Tolerance and the failed-campaign rule are
+unchanged. `make_paper_routing_tables.py` writes one row per workload with the
+winning static route and its split; the plot script draws the two workloads on
+one categorical axis.
+
+Run it on its own, cold or converged (see `FIGURE_RUNS.md`):
+
+```bash
+julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+    --phases=P5f --threads=1,2,4,8,12 --process-workers=12
+```
+
 ## Underlying case families (`parallelization_performance/cases.jl`)
 
 The phases above draw from a shared case catalog, grouped into families:
@@ -800,3 +886,11 @@ combination of outer-loop backend and inner-loop/callback parallelism:
 spacecraft, MC samples at 16, process workers at 4, and repeats at 2, so the
 same phase structure can be smoke-tested on a laptop before committing to a
 full run on the benchmark machine.
+
+One exception: a host-sized split grid (`budget_grid_fixed` with every entry one
+split of the same budget, which is P5 and P5f) is kept whole under `--preview`,
+and its runs are not held to the 4-worker cap. The cap and the `w * t <= 4`
+filter exist to fit a grid declared against a 32-core box onto a laptop; this
+grid is already the host's own budget, and on any host above 4 cores the filter
+emptied it, so the phase ran as one unsplit run that measured none of its axis.
+`--process-workers` still caps it, as it does outside preview.

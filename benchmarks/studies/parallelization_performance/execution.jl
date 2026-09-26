@@ -48,7 +48,20 @@ function ppc_terminal_metrics(sol)
     )
 end
 
+# The inner thread budget this sample runs under, as the engine will resolve it
+# (SPACEAGORA_INNER_THREAD_BUDGET clamped to the thread pool, or the whole pool
+# when unset). Read at the start of the sample, which is where a campaign
+# runner's declared per-sample budget is in force; 0 if it cannot be read.
+function _ppc_sample_inner_budget()::Int
+    try
+        return Int(SpaceAGORA.SimulationModel.ParallelPolicy.effective_inner_thread_budget())
+    catch
+        return 0
+    end
+end
+
 function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int, sample_seed::Int)
+    inner_budget = _ppc_sample_inner_budget()
     args = ppc_single_config(case_name, cfg; seed=sample_seed, mc_index=sample_idx)
     timed = @timed begin
         try
@@ -70,6 +83,7 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
             terminal=ppc_terminal_metrics(sol),
             error_type="",
             error_message="",
+            inner_thread_budget=inner_budget,
             # Taken from the solve's own return value rather than by calling
             # policy_telemetry_snapshot() out here. _active_policy_context()
             # resolves through task-local storage first, and the engine runs the
@@ -92,6 +106,7 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
         terminal=(terminal_time_s=missing, pos_norm_m=missing, vel_norm_mps=missing, mass_kg=missing),
         error_type=retcode,
         error_message=errmsg,
+        inner_thread_budget=inner_budget,
         policy=nothing
     )
 end
@@ -418,6 +433,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         # every backend-conditional pair (the inner budget among them).
         mode=mode,
         env_extra=Pair{String, String}[],
+        adaptive_allocation="",
         policy=ppc_policy_columns(
             isempty(results) ? nothing :
                 (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
@@ -627,6 +643,7 @@ function ppc_run_adaptive_batch(
     scope = r.local_slots > 0 ?
         "adaptive_mixed_w$(r.threads - r.local_slots)_l$(r.local_slots)_sample_batch" :
         "adaptive_$(r.route)_sample_batch"
+    allocation = ppc_adaptive_allocation(r, results)
     return (
         results=results,
         batch_wall_time_s=batch_wall,
@@ -635,11 +652,32 @@ function ppc_run_adaptive_batch(
         outer_tasks=r.threads,
         mode=mode,
         env_extra=env_extra,
+        adaptive_allocation=allocation,
         policy=ppc_policy_columns(
             isempty(results) ? nothing :
                 (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
         )
     )
+end
+
+"""
+    ppc_adaptive_allocation(r, results) -> String
+
+What an adaptive campaign actually ran, as one string for the row's
+`adaptive_allocation` column: `<route>:w<W>+l<L>:b<B>` with `W` the concurrent
+consumers apart from the coordinator's local slots (thread tasks for the
+threads route, pool worker processes for the process route, 1 for none), `L`
+the local slots that ran beside a pool, and `B` the largest inner thread budget
+any sample ran under (pool workers are one-thread processes, so a pool sample
+reports 1). Read from the runner's own result and from the samples, not from
+the plan, so a guard that closed consumers mid-campaign shows what remained.
+"""
+function ppc_adaptive_allocation(r, results)::String
+    local_slots = max(0, Int(r.local_slots))
+    workers = max(1, Int(r.threads) - local_slots)
+    budgets = [Int(get(x, :inner_thread_budget, 0)) for x in results if x isa NamedTuple]
+    b = isempty(budgets) ? 0 : maximum(budgets)
+    return "$(r.route):w$(workers)+l$(local_slots):b$(b)"
 end
 
 # What the router actually decided during the timed batch.
@@ -772,6 +810,8 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         sample_gc_time_sum_s=sample_gc_sum,
         sample_alloc_mb_sum=sample_alloc_mb,
         execution_scope=batch.execution_scope,
+        # Empty for the pinned modes; see ppc_adaptive_allocation.
+        adaptive_allocation=batch.adaptive_allocation,
         outer_backend_actual=batch.actual_backend,
         outer_tasks=samples,
         throughput_samples_per_s=throughput,

@@ -7,7 +7,8 @@
 #   SPACEAGORA_PPB_PHASES           — comma-separated phase subset, e.g. B1,B2
 #                                     default: every phase in the catalog
 #                                     (B1–B15, the light L8–L15 set, and the
-#                                     paper figure phases P1–P5, P6, P6p and P7)
+#                                     paper figure phases P1–P5, P5f, P6, P6p
+#                                     and P7)
 #   SPACEAGORA_PPB_THREADS          — comma-separated thread ladder override
 #                                     default: auto-scaled to the machine's
 #                                     PHYSICAL core count (not Sys.CPU_THREADS —

@@ -1,4 +1,4 @@
 # Exact wrapper revisions used by update_gramsuite_submodule.sh.
 # regular is the public wrapper; dev also supplies the licensed native assets.
-regular 12eb2ee722881247970d38bbc2bb1ffa3a921523
+regular a883ac271cee616cb9e5e3e878abcec503bc153a
 dev 26ff851a6d5337cf8d87162f5adc2bece70048dd

@@ -193,3 +193,5 @@ These commands do not build or initialize native GRAM. Normal Odyssey example
 startup performs preset retrieval itself, so the commands above are optional
 inspection/prefetch tools. The unqualified `assets check` remains an inventory
 of repository-local asset roots and catalogs, not proof that a grid is valid.
+The printed `runtime_wrapper_revision` is the GRAMSuite revision used when the
+preset was generated; the environment's own pin is in its `Project.toml`.

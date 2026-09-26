@@ -15,6 +15,10 @@ julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/se
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 ```
 
+After pulling a newer SpaceAGORA, run the setup script again. It moves the
+environment to the GRAMSuite revision the checkout now pins, which a plain
+`Pkg.instantiate()` of an earlier setup would not do.
+
 Each command-line run starts a new Julia process, which compiles the example
 before its first passage; expect a pause of a few minutes. An interactive
 session compiles once and reuses the code for later runs. When the comparison
@@ -110,6 +114,13 @@ velocity in m/s: the columns `x_m`, `y_m`, `z_m`, `vx_m_s`, `vy_m_s` and
 state, and each `summary.toml` records it as `state_frame`. In the same table,
 `height_km` is ellipsoidal height, `latitude_deg` geodetic latitude and
 `longitude_deg` east longitude, the conventions of the preset's domain.
+
+The atmosphere provenance in `summary.toml` describes how the published preset
+was made. Its `generation_provenance.runtime_wrapper_revision` is the GRAMSuite
+revision used to generate and publish the grid, not necessarily the one running
+now. The revision your session runs is pinned in
+`examples/odyssey_surrogate_env/Project.toml` and recorded in that folder's
+`Manifest.toml`.
 
 Each run stops at its outbound 250 km ellipsoidal-height crossing, so
 `solver_retcode = "Terminated"` in `summary.toml` is the normal result. The common-time comparison avoids confusing a control effect with a difference in the exit event's timing. The example's small nonzero effect checks establish that the selected setting is active. They are not accuracy tolerances or release requirements.

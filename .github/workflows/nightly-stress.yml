@@ -40,10 +40,6 @@ concurrency:
   group: nightly-stress-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# TEMPORARY (CI experiment): trace which GRAMSuite files each job touches.
-env:
-  SPACEAGORA_CI_GRAM_TRACE: "1"
-
 jobs:
   # Everything the PR tier does not already run, minus the telemetry regression
   # (which has its own matrix job below so the three scenarios run in parallel).

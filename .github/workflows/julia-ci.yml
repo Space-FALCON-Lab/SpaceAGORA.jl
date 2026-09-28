@@ -18,10 +18,6 @@ concurrency:
 # ruleset (`tests`, `coverage-quality-gate`, `example-suite-smoke`, ...) are the
 # aggregators that check every shard ran every item exactly once
 # (.github/scripts/ci_shard_verify.py).
-# TEMPORARY (CI experiment): trace which GRAMSuite files each job touches.
-env:
-  SPACEAGORA_CI_GRAM_TRACE: "1"
-
 jobs:
   plan:
     runs-on: ubuntu-latest

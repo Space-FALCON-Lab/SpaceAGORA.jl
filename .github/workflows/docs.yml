@@ -12,10 +12,6 @@ permissions:
   pull-requests: read
   statuses: write
 
-# TEMPORARY (CI experiment): trace which GRAMSuite files each job touches.
-env:
-  SPACEAGORA_CI_GRAM_TRACE: "1"
-
 jobs:
   docs:
     runs-on: ubuntu-latest

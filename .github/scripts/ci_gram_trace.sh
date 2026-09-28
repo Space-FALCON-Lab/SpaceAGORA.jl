@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# TEMPORARY diagnostic: which files under data/GRAMSuite.jl a CI job touches.
-# Prints paths only, never file contents.
+# Opt-in diagnostic (SPACEAGORA_CI_GRAM_TRACE=1 in a workflow's env): which
+# files under data/GRAMSuite.jl a CI job touches, for maintaining the sparse
+# profiles in .github/gramsuite-sparse/. Prints paths and sizes only, never file
+# contents. Look for `gram_read[...]` (tracked files read) and
+# `gram_probe[...] MISSING` (paths probed that the checkout lacks) in the logs.
 #
 #   start   install bpftrace and trace path syscalls system-wide
 #   mark    after the checkout: set every tracked file's atime to the epoch, so

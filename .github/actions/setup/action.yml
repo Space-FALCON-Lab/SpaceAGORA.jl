@@ -61,7 +61,8 @@ runs:
           df -h /
         fi
 
-    # TEMPORARY (CI experiment): record which GRAMSuite files the job touches.
+    # Opt-in (workflow env SPACEAGORA_CI_GRAM_TRACE=1): record which GRAMSuite
+    # files the job reads or probes, to re-derive .github/gramsuite-sparse/.
     - name: GRAMSuite access trace
       if: env.SPACEAGORA_CI_GRAM_TRACE == '1' && inputs.gram != 'none'
       uses: pyTooling/Actions/with-post-step@42e17fae05f224e5ac3d79d021a4e3577878efe5

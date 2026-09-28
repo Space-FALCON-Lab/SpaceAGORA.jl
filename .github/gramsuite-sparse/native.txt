@@ -10,6 +10,10 @@
 # grids (2.5 GB), the planetary surrogate files, the documentation and the
 # Windows/MSVS/Python trees. All twelve monthly means are kept (1.2 GB) so a
 # scenario in another month still finds its file.
+# Checked on runs 36496054864/36496054960: with this profile no job probed a
+# path the checkout lacked but the full tree has, and the coverage totals and
+# failing tests matched the full-checkout run exactly.
+# Re-measure with SPACEAGORA_CI_GRAM_TRACE=1 (.github/scripts/ci_gram_trace.sh).
 # Every pattern without a wildcard must exist after the checkout.
 /*
 !/*/

@@ -2,6 +2,10 @@
 # the contract gates, the AI review gate, the docs build. Git sparse-checkout
 # patterns (non-cone), relative to data/GRAMSuite.jl; paths only, never data.
 # Measured on run 36488347445 (2026-09-28): these jobs read no GRAMSuite file.
+# Checked on runs 36496054864/36496054960: with this profile no job probed a
+# path the checkout lacked but the full tree has, and the coverage totals and
+# failing tests matched the full-checkout run exactly.
+# Re-measure with SPACEAGORA_CI_GRAM_TRACE=1 (.github/scripts/ci_gram_trace.sh).
 # Every pattern without a wildcard must exist after the checkout, or the
 # retrieval fails (.github/scripts/update_gramsuite_submodule.sh).
 /*

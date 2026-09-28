@@ -101,6 +101,7 @@ withenv("SPACEAGORA_COST_CONSTANTS_PATH" => CF_CONSTANTS,
         put!(b.release, nothing)
         fetch(b.task)
         @test cf_snapshot() == before
+        @test CF_SE._engine_active_overrides_ref[] === nothing
 
         a = cf_start(cf_flag_entry)
         b = cf_start(cf_engine_entry)
@@ -111,6 +112,9 @@ withenv("SPACEAGORA_COST_CONSTANTS_PATH" => CF_CONSTANTS,
         @test fetch(b.task) == CF_FLAG_ENV
         @test CF_SE._parallel_flag_env_depth() == 0
         @test cf_snapshot() == before
+        # Neither order leaves an engine-config override set active.
+        @test CF_SE._engine_active_overrides_ref[] === nothing
+        @test CF_SE._engine_active_config_ref[] === nothing
     end
 
     @testset "an env_overrides entry that differs from the flag still wins, and is restored" begin

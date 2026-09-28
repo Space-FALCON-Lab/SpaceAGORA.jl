@@ -19,6 +19,11 @@ end
 @inline _env_bool(v::Bool) = v ? "1" : "0"
 const _engine_active_config_ref = Ref{Union{Nothing, SimulationEngineConfig}}(nothing)
 const _engine_active_overrides_ref = Ref{Union{Nothing, Dict{String, String}}}(nothing)
+# True only in the task (and the tasks it spawns) running inside
+# `_with_engine_env_overrides`. The two Refs above are process-global, so
+# another task's engine-config scope is visible through them too; this says
+# whether the override set belongs to the current call chain.
+const _IN_ENGINE_ENV_SCOPE = ScopedValue(false)
 
 function _parse_bool(raw, default::Bool)
     raw === nothing && return default
@@ -355,8 +360,9 @@ function _with_engine_env_overrides(
     previous_overrides = _engine_active_overrides_ref[]
     _engine_active_config_ref[] = config
     _engine_active_overrides_ref[] = overrides
+    f_in_scope = () -> with(f, _IN_ENGINE_ENV_SCOPE => true)
     isempty(overrides) && return try
-        f()
+        f_in_scope()
     finally
         _engine_active_config_ref[] = previous_config
         _engine_active_overrides_ref[] = previous_overrides
@@ -379,7 +385,7 @@ function _with_engine_env_overrides(
                 previous[k] = haskey(ENV, k) ? ENV[k] : nothing
                 ENV[k] = String(v)
             end
-            return f()
+            return f_in_scope()
         finally
             for (k, old) in previous
                 if old === nothing
@@ -459,10 +465,13 @@ function _with_parallel_flag(f::Function, flag::Bool)
     _parallel_flag_applies(flag) || return (flag ? with(f, _PARALLEL_FLAG_RESOLVED => true) : f())
     _parallel_flag_prepare!()
     pairs = _parallel_profiles_module().parallel_flag_env_pairs()
-    previous_overrides = _engine_active_overrides_ref[]
+    # Inside a SimulationEngineConfig scope of this call chain the engine's own
+    # reads go to the override set, so it must carry the flag's values too. An
+    # override set some other task installed is not this call's to change or
+    # restore: doing so let a flagged run that finished second put the other
+    # task's overrides back after that task had cleared them.
+    previous_overrides = _IN_ENGINE_ENV_SCOPE[] ? _engine_active_overrides_ref[] : nothing
     if previous_overrides !== nothing
-        # Inside a SimulationEngineConfig scope the engine's own reads go to
-        # the override set, so it must carry the flag's values too.
         merged = copy(previous_overrides)
         for (k, v) in pairs
             merged[k] = v
@@ -474,7 +483,7 @@ function _with_parallel_flag(f::Function, flag::Bool)
             with(f, _PARALLEL_FLAG_RESOLVED => true)
         end
     finally
-        _engine_active_overrides_ref[] = previous_overrides
+        previous_overrides === nothing || (_engine_active_overrides_ref[] = previous_overrides)
     end
 end
 

@@ -58,12 +58,30 @@ Requirements and behavior:
   24-thread workstation) and
   stores them in
   `output/parallel_policy_state/cost_constants_<fingerprint>.toml` under
-  the working directory. Later runs reuse the file; an existing file is
-  never re-measured. To redo the measurement, delete the file or run
+  the working directory. Later runs reuse the file. It is re-measured only
+  when a session with more Julia threads than the one that measured it
+  runs with the flag, since the measured speedups stop at that thread
+  count. Processes that start together in one working directory measure
+  once: the others wait for the file (a `.lock` file beside it marks the
+  measurement in progress). To redo the measurement, delete the file or run
   `julia --project=. --threads=<T> scripts/calibrate_machine.jl`.
 - The flag's settings apply for the duration of the call only. Nothing is
   left in the process environment afterwards, including when the run
-  throws.
+  throws or when several flagged runs overlap on different tasks. While any
+  flagged run is active, the flag's settings are visible to every task in
+  the process, since they live in the process environment.
+- `run_monte_carlo(...; parallel=true)` only sees your function, so it
+  does not send samples to process workers unless you describe the
+  workload with `route_features` (see
+  [Internal and benchmark controls](#internal-and-benchmark-controls)).
+  A process worker is a separate Julia process: a function defined in your
+  script, anything it reaches in your script's `Main`, and SPICE kernels
+  you furnished yourself exist there only if you load them there. Pass
+  `route_features` only once the workers are prepared. A constellation
+  ensemble derives its features from its configuration and can use
+  process workers; a configuration that holds types or functions defined
+  in your script needs the same preparation, or `parallel=false` with a
+  fixed `threads=N`.
 - The flag picks the worker count itself, so `parallel=true` together with
   an integer `threads=` is an `ArgumentError`. Every member of a campaign
   must carry the same flag.

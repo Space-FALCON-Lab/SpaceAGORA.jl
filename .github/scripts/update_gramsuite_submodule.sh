@@ -59,7 +59,9 @@ if [[ "${FETCHED}" != "${REVISION}" ]]; then
   echo "Fetched GRAMSuite commit does not equal the ${MODE} pin" >&2
   exit 1
 fi
-with_credentials -C "${SUBMODULE_PATH}" checkout --detach "${REVISION}"
+# The dev tree is ~23 GB compressed; writing it out is the slow part of this
+# script, so let Git inflate and write files on every core.
+with_credentials -C "${SUBMODULE_PATH}" -c checkout.workers=0 checkout --detach "${REVISION}"
 OBSERVED="$(git -C "${SUBMODULE_PATH}" rev-parse --verify HEAD)"
 if [[ "${OBSERVED}" != "${REVISION}" ]]; then
   echo "Checked-out GRAMSuite commit does not equal the ${MODE} pin" >&2

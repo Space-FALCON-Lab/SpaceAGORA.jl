@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 # Layout: `plan` splits the test suite and the example smoke into shards and
-# `depot` makes sure the shared caches exist; everything else starts after
-# those two (under a minute when the caches hit). The shard matrices are
+# `depot` makes sure the shared depot cache exists; everything else starts after
+# those two (under a minute when the cache hits). The shard matrices are
 # generated, one `include` entry per job, and the jobs named in the `tests`
 # ruleset (`tests`, `coverage-quality-gate`, `example-suite-smoke`, ...) are the
 # aggregators that check every shard ran every item exactly once
@@ -39,12 +39,18 @@ jobs:
         id: plan
         run: python3 .github/scripts/ci_shard_plan.py
 
-  # Fills the two caches every other job restores: the Julia depot (keyed on
-  # the Julia build and the manifests) and the pinned GRAMSuite checkout (keyed
-  # on the pin). When both exist it only looks them up.
+  # Fills the Julia depot cache every other job restores (keyed on the Julia
+  # build and the manifests). When it exists this only looks it up.
   depot:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # Hosted runners come with different CPUs, and a package image built for
+      # one CPU is rejected on another: in the first sharded run a third of the
+      # jobs restored the depot and still recompiled all ~460 dependencies. Build
+      # the shared images for the same generic targets Julia's own system image
+      # uses; each job still compiles SpaceAGORA itself for its own CPU.
+      JULIA_CPU_TARGET: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -63,23 +69,11 @@ jobs:
           key: ${{ steps.keys.outputs.depot-key }}
           lookup-only: true
 
-      - name: Look up GRAMSuite cache
-        id: has-gram
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            data/GRAMSuite.jl
-            .git/modules/GRAMSuite.jl
-          key: ${{ steps.keys.outputs.gram-key }}
-          lookup-only: true
-
       - name: Setup
-        if: steps.has-depot.outputs.cache-hit != 'true' || steps.has-gram.outputs.cache-hit != 'true'
+        if: steps.has-depot.outputs.cache-hit != 'true'
         uses: ./.github/actions/setup
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-          save-gram: "true"
-          precompile: "false"
 
       # Every environment a job instantiates. The grid suite's environment is
       # seeded with the root manifest so it resolves to the same package
@@ -89,7 +83,6 @@ jobs:
       - name: Build shared depot
         if: steps.has-depot.outputs.cache-hit != 'true'
         run: |
-          julia --startup-file=no --project=. -e 'using Pkg; Pkg.precompile()'
           cp Manifest.toml test/grid_atmosphere/Manifest.toml
           julia --startup-file=no test/grid_atmosphere/setup.jl
           julia --startup-file=no --project=test/grid_atmosphere -e 'using Pkg; Pkg.precompile()'

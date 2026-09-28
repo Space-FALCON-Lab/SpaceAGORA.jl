@@ -1,34 +1,28 @@
 # Shard counts and measured costs for Julia CI (.github/workflows/julia-ci.yml).
 #
 # .github/scripts/ci_shard_plan.py splits the test items and the examples
-# across `shards` jobs by these weights, in minutes of the test step on a
-# hosted runner. Weights only balance the shards; an item missing here still
-# runs, at its kind's default_weight. After a run, ci_shard_verify.py prints
-# every item's measured time for updating this file.
+# across `shards` jobs by these weights, in minutes on a hosted runner. Weights
+# only balance the shards; an item missing here still runs, at its kind's
+# default_weight. The tests, coverage-quality-gate and example-suite-smoke jobs
+# print every item's measured minutes (ci_shard_verify.py) for updating this
+# file.
 #
 # Item kinds: suite:NN (test/suites), probe:FILE (09_probe_drivers.jl's list),
 # unit:PATH (test/unit/runtests.jl includes), plus the workflow steps "grid"
 # (native-free grid adapter suite) and "depwarn" (Earth thruster depwarn smoke).
+#
+# Measured on run 36468727261 (2026-09-28). A unit file's time includes the
+# Julia start-up of its shard's unit process when it was the first one there.
+# Suites 02, 04 and 05 failed part-way in that run, so they keep their longer
+# timings from the unsharded run 36216067512.
 
 [tests.plain]
 shards = 8
 workflow_items = ["grid", "depwarn"]
-# Extra Julia start-up for the one unit-suite process a shard with unit files runs.
-unit_process_overhead = 0.8
+# Extra start-up of the one unit-suite process a shard with unit files runs;
+# charging it keeps the unit files on fewer shards.
+unit_process_overhead = 1.0
 default_weight = { suite = 3.0, probe = 1.2, unit = 0.35, other = 1.0 }
-
-[tests.plain.weights]
-"suite:01" = 2.6
-"suite:02" = 2.5
-"suite:03" = 4.8
-"suite:04" = 9.1
-"suite:05" = 5.3
-"suite:06" = 0.1
-"suite:07" = 1.3
-"suite:08" = 0.3
-"suite:10" = 2.9
-grid = 2.0
-depwarn = 1.0
 
 [tests.coverage]
 shards = 12
@@ -36,55 +30,278 @@ workflow_items = ["grid"]
 unit_process_overhead = 1.5
 default_weight = { suite = 4.0, probe = 1.9, unit = 0.5, other = 1.0 }
 
-[tests.coverage.weights]
-"suite:01" = 5.2
-"suite:02" = 5.2
-"suite:03" = 6.7
-"suite:04" = 12.5
-"suite:05" = 6.3
-"suite:06" = 0.1
-"suite:07" = 1.8
-"suite:08" = 0.5
-"suite:10" = 5.8
-grid = 3.0
-
 [examples]
-shards = 4
+shards = 5
 default_weight = { other = 1.2 }
 
+[tests.plain.weights]
+"suite:01" = 3.18
+"suite:02" = 2.96
+"suite:03" = 7.74
+"suite:04" = 9.10
+"suite:05" = 5.30
+"suite:06" = 0.07
+"suite:07" = 1.82
+"suite:08" = 0.41
+"suite:10" = 3.73
+"probe:aero_torque_probes.jl" = 3.11
+"probe:aerobraking_study_frame_probes.jl" = 0.39
+"probe:allocator_assets_probes.jl" = 0.29
+"probe:campaign_process_route_probes.jl" = 0.84
+"probe:configuration_copy_probes.jl" = 1.60
+"probe:density_selection_probes.jl" = 0.58
+"probe:eddy_damping_probes.jl" = 3.44
+"probe:ei_partition_drag_probes.jl" = 7.20
+"probe:flat_route_parity_probes.jl" = 1.77
+"probe:fm_incidence_probes.jl" = 2.60
+"probe:hypr_search_probes.jl" = 0.40
+"probe:initial_condition_altitude_probes.jl" = 0.24
+"probe:kinematics_probes.jl" = 0.21
+"probe:legacy_roots_callers_probes.jl" = 0.09
+"probe:parallel_policy_probes.jl" = 0.41
+"probe:process_pool_probes.jl" = 1.11
+"probe:reference_system_probes.jl" = 0.32
+"probe:robot_arm_hypr_probes.jl" = 0.41
+"probe:rpo_nav_probes.jl" = 0.52
+"probe:rpo_planning_probes.jl" = 0.48
+"probe:shared_math_ownership_probes.jl" = 0.26
+"probe:state_anchor_probes.jl" = 2.84
+"probe:thermal_incidence_probes.jl" = 3.23
+"probe:thruster_guidance_probes.jl" = 0.26
+"unit:dynamics/aero_batch_parity_tests.jl" = 1.00
+"unit:dynamics/harmonics_kernel_identity_tests.jl" = 1.41
+"unit:dynamics/mesh_aero_tests.jl" = 6.35
+"unit:dynamics/mesh_aero_threading_tests.jl" = 1.88
+"unit:dynamics/reaction_wheel_momentum_tests.jl" = 1.25
+"unit:dynamics/third_body_cost_tests.jl" = 0.06
+"unit:environment/epoch_conversion_tests.jl" = 0.02
+"unit:environment/gram_isolated_pool_tests.jl" = 0.02
+"unit:environment/gram_native_collect_tests.jl" = 1.36
+"unit:environment/gravity_gradient_torque_tests.jl" = 2.02
+"unit:environment/plume_surface_interaction_tests.jl" = 2.25
+"unit:environment/sun_direction_tests.jl" = 0.02
+"unit:environment/terrain_models_tests.jl" = 0.06
+"unit:example_imports_tests.jl" = 0.16
+"unit:gnc/apollo11_landing_tests.jl" = 0.07
+"unit:gnc/apollo_descent_tests.jl" = 0.98
+"unit:gnc/rpo_configurable_station_tests.jl" = 1.21
+"unit:gnc/rpo_ownership_reproducibility_tests.jl" = 0.32
+"unit:io/results_assembly_tests.jl" = 0.71
+"unit:mission/cygnss_command_replay_tests.jl" = 0.92
+"unit:mission/cygnss_ics_tests.jl" = 0.04
+"unit:mission/cygnss_slew_tests.jl" = 0.03
+"unit:mission/cygnss_tracks_tests.jl" = 0.10
+"unit:parallel/contention_inputs_tests.jl" = 0.02
+"unit:parallel/cost_machine_calibration_tests.jl" = 0.02
+"unit:parallel/cost_robust_timing_tests.jl" = 0.02
+"unit:parallel/cost_work_counts_tests.jl" = 0.13
+"unit:parallel/density_callback_light_work_tests.jl" = 0.17
+"unit:parallel/density_service_recipe_tests.jl" = 0.10
+"unit:parallel/gram_memory_model_tests.jl" = 0.18
+"unit:parallel/inner_speedup_curve_tests.jl" = 0.03
+"unit:parallel/lock_width_cap_tests.jl" = 0.02
+"unit:parallel/machine_topology_tests.jl" = 0.20
+"unit:parallel/mc_route_tie_tests.jl" = 0.02
+"unit:parallel/mixed_dispatch_tests.jl" = 0.02
+"unit:parallel/native_lock_stats_tests.jl" = 0.16
+"unit:parallel/nested_effector_guard_tests.jl" = 0.51
+"unit:parallel/nested_inner_threading_tests.jl" = 0.02
+"unit:parallel/one_thread_and_multibody_tests.jl" = 0.02
+"unit:parallel/outer_route_persistence_tests.jl" = 0.15
+"unit:parallel/outer_split_budget_cap_tests.jl" = 0.05
+"unit:parallel/outer_split_budget_tests.jl" = 0.02
+"unit:parallel/parallel_flag_tests.jl" = 2.19
+"unit:parallel/policy_v2_tests.jl" = 0.12
+"unit:parallel/pool_worker_heap_hint_tests.jl" = 0.05
+"unit:parallel/predictive_campaign_tests.jl" = 0.20
+"unit:parallel/predictive_corrections_tests.jl" = 0.03
+"unit:parallel/predictive_planner_tests.jl" = 0.04
+"unit:parallel/process_pool_dispatch_cost_tests.jl" = 0.03
+"unit:parallel/process_worker_load_path_tests.jl" = 0.09
+"unit:parallel/process_worker_preload_tests.jl" = 0.09
+"unit:parallel/resident_worker_cap_tests.jl" = 0.02
+"unit:parallel/rhs_batch_budget_tests.jl" = 0.02
+"unit:parallel/rhs_reverify_budget_tests.jl" = 0.03
+"unit:parallel/rhs_reverify_unconfirmed_tests.jl" = 0.02
+"unit:parallel/rhs_store_path_tests.jl" = 0.02
+"unit:parallel/steady_credit_tests.jl" = 0.02
+"unit:parallel/streaming_trial_tests.jl" = 0.17
+"unit:parallel/thermal_callback_light_work_tests.jl" = 0.17
+"unit:parallel/usl_tests.jl" = 0.02
+"unit:robotics/runtests.jl" = 0.30
+"unit:rpo_port_tests.jl" = 1.36
+"unit:simulation/density_epoch_tests.jl" = 1.20
+"unit:simulation/harmonics_batch_parity_tests.jl" = 0.13
+"unit:simulation/jac_prototype_tests.jl" = 0.07
+"unit:simulation/metadata_only_return_tests.jl" = 0.67
+"unit:simulation/rhs_direct_assembly_tests.jl" = 0.20
+"unit:simulation/rhs_heuristic_defaults_tests.jl" = 0.18
+"unit:simulation/solution_storage_tests.jl" = 0.92
+"unit:simulation/third_body_route_parity_tests.jl" = 0.23
+"unit:simulation/touchdown_tests.jl" = 0.95
+"unit:simulation/trajectory_recorder_tests.jl" = 2.35
+"unit:visualization/arm_tests.jl" = 2.27
+"unit:visualization/articulation_tests.jl" = 1.66
+"unit:visualization/atmosphere_tests.jl" = 0.06
+"unit:visualization/demo_options_tests.jl" = 0.02
+"unit:visualization/ensemble_tests.jl" = 1.03
+"unit:visualization/mission_demo_tests.jl" = 0.80
+"unit:visualization/scene_visualization_tests.jl" = 0.86
+"unit:visualization/terrain_export_tests.jl" = 0.15
+"unit:visualization/viewer_bundle_tests.jl" = 1.61
+grid = 1.0
+depwarn = 1.0
+
+[tests.coverage.weights]
+"suite:01" = 4.98
+"suite:02" = 5.20
+"suite:03" = 9.16
+"suite:04" = 12.50
+"suite:05" = 6.30
+"suite:06" = 0.11
+"suite:07" = 2.71
+"suite:08" = 0.61
+"suite:10" = 6.07
+"probe:aero_torque_probes.jl" = 3.36
+"probe:aerobraking_study_frame_probes.jl" = 0.66
+"probe:allocator_assets_probes.jl" = 0.40
+"probe:campaign_process_route_probes.jl" = 1.45
+"probe:configuration_copy_probes.jl" = 2.80
+"probe:density_selection_probes.jl" = 0.60
+"probe:eddy_damping_probes.jl" = 4.58
+"probe:ei_partition_drag_probes.jl" = 9.04
+"probe:flat_route_parity_probes.jl" = 2.96
+"probe:fm_incidence_probes.jl" = 3.87
+"probe:hypr_search_probes.jl" = 0.48
+"probe:initial_condition_altitude_probes.jl" = 0.32
+"probe:kinematics_probes.jl" = 0.33
+"probe:legacy_roots_callers_probes.jl" = 0.12
+"probe:parallel_policy_probes.jl" = 0.65
+"probe:process_pool_probes.jl" = 1.65
+"probe:reference_system_probes.jl" = 0.40
+"probe:robot_arm_hypr_probes.jl" = 0.69
+"probe:rpo_nav_probes.jl" = 0.60
+"probe:rpo_planning_probes.jl" = 0.48
+"probe:shared_math_ownership_probes.jl" = 0.38
+"probe:state_anchor_probes.jl" = 4.01
+"probe:thermal_incidence_probes.jl" = 4.74
+"probe:thruster_guidance_probes.jl" = 0.39
+"unit:dynamics/aero_batch_parity_tests.jl" = 1.21
+"unit:dynamics/harmonics_kernel_identity_tests.jl" = 2.36
+"unit:dynamics/mesh_aero_tests.jl" = 7.09
+"unit:dynamics/mesh_aero_threading_tests.jl" = 2.17
+"unit:dynamics/reaction_wheel_momentum_tests.jl" = 1.29
+"unit:dynamics/third_body_cost_tests.jl" = 0.10
+"unit:environment/epoch_conversion_tests.jl" = 0.02
+"unit:environment/gram_isolated_pool_tests.jl" = 0.23
+"unit:environment/gram_native_collect_tests.jl" = 2.53
+"unit:environment/gravity_gradient_torque_tests.jl" = 2.69
+"unit:environment/plume_surface_interaction_tests.jl" = 2.34
+"unit:environment/sun_direction_tests.jl" = 0.02
+"unit:environment/terrain_models_tests.jl" = 0.07
+"unit:example_imports_tests.jl" = 0.24
+"unit:gnc/apollo11_landing_tests.jl" = 0.11
+"unit:gnc/apollo_descent_tests.jl" = 1.11
+"unit:gnc/rpo_configurable_station_tests.jl" = 2.63
+"unit:gnc/rpo_ownership_reproducibility_tests.jl" = 0.04
+"unit:io/results_assembly_tests.jl" = 0.74
+"unit:mission/cygnss_command_replay_tests.jl" = 1.14
+"unit:mission/cygnss_ics_tests.jl" = 0.05
+"unit:mission/cygnss_slew_tests.jl" = 0.03
+"unit:mission/cygnss_tracks_tests.jl" = 0.10
+"unit:parallel/contention_inputs_tests.jl" = 0.24
+"unit:parallel/cost_machine_calibration_tests.jl" = 0.04
+"unit:parallel/cost_robust_timing_tests.jl" = 0.28
+"unit:parallel/cost_work_counts_tests.jl" = 0.29
+"unit:parallel/density_callback_light_work_tests.jl" = 0.12
+"unit:parallel/density_service_recipe_tests.jl" = 0.12
+"unit:parallel/gram_memory_model_tests.jl" = 0.25
+"unit:parallel/inner_speedup_curve_tests.jl" = 0.05
+"unit:parallel/lock_width_cap_tests.jl" = 0.24
+"unit:parallel/machine_topology_tests.jl" = 0.23
+"unit:parallel/mc_route_tie_tests.jl" = 0.08
+"unit:parallel/mixed_dispatch_tests.jl" = 0.02
+"unit:parallel/native_lock_stats_tests.jl" = 0.02
+"unit:parallel/nested_effector_guard_tests.jl" = 0.56
+"unit:parallel/nested_inner_threading_tests.jl" = 0.04
+"unit:parallel/one_thread_and_multibody_tests.jl" = 0.02
+"unit:parallel/outer_route_persistence_tests.jl" = 0.08
+"unit:parallel/outer_split_budget_cap_tests.jl" = 0.34
+"unit:parallel/outer_split_budget_tests.jl" = 0.02
+"unit:parallel/parallel_flag_tests.jl" = 11.89
+"unit:parallel/policy_v2_tests.jl" = 0.39
+"unit:parallel/pool_worker_heap_hint_tests.jl" = 0.25
+"unit:parallel/predictive_campaign_tests.jl" = 0.49
+"unit:parallel/predictive_corrections_tests.jl" = 0.05
+"unit:parallel/predictive_planner_tests.jl" = 0.09
+"unit:parallel/process_pool_dispatch_cost_tests.jl" = 0.04
+"unit:parallel/process_worker_load_path_tests.jl" = 0.11
+"unit:parallel/process_worker_preload_tests.jl" = 0.09
+"unit:parallel/resident_worker_cap_tests.jl" = 0.02
+"unit:parallel/rhs_batch_budget_tests.jl" = 0.02
+"unit:parallel/rhs_reverify_budget_tests.jl" = 0.03
+"unit:parallel/rhs_reverify_unconfirmed_tests.jl" = 0.02
+"unit:parallel/rhs_store_path_tests.jl" = 0.02
+"unit:parallel/steady_credit_tests.jl" = 0.02
+"unit:parallel/streaming_trial_tests.jl" = 0.02
+"unit:parallel/thermal_callback_light_work_tests.jl" = 0.20
+"unit:parallel/usl_tests.jl" = 0.26
+"unit:robotics/runtests.jl" = 0.32
+"unit:rpo_port_tests.jl" = 1.77
+"unit:simulation/density_epoch_tests.jl" = 1.71
+"unit:simulation/harmonics_batch_parity_tests.jl" = 0.12
+"unit:simulation/jac_prototype_tests.jl" = 0.07
+"unit:simulation/metadata_only_return_tests.jl" = 1.02
+"unit:simulation/rhs_direct_assembly_tests.jl" = 0.28
+"unit:simulation/rhs_heuristic_defaults_tests.jl" = 0.56
+"unit:simulation/solution_storage_tests.jl" = 1.67
+"unit:simulation/third_body_route_parity_tests.jl" = 0.54
+"unit:simulation/touchdown_tests.jl" = 1.63
+"unit:simulation/trajectory_recorder_tests.jl" = 3.98
+"unit:visualization/arm_tests.jl" = 2.53
+"unit:visualization/articulation_tests.jl" = 2.32
+"unit:visualization/atmosphere_tests.jl" = 0.08
+"unit:visualization/demo_options_tests.jl" = 0.02
+"unit:visualization/ensemble_tests.jl" = 1.19
+"unit:visualization/mission_demo_tests.jl" = 1.15
+"unit:visualization/scene_visualization_tests.jl" = 1.57
+"unit:visualization/terrain_export_tests.jl" = 0.25
+"unit:visualization/viewer_bundle_tests.jl" = 2.43
+grid = 1.5
+
 [examples.weights]
-"AGORA_Basic_GRAMEarth.jl" = 1.6
-"AGORA_Basic_Quickstart.jl" = 1.2
-"AGORA_Earth.jl" = 1.1
-"AGORA_Earth_Aerobraking.jl" = 3.0
-"AGORA_Earth_Control_Test.jl" = 1.2
-"AGORA_Earth_GG_Test.jl" = 1.2
-"AGORA_Earth_MonteCarlo.jl" = 0.9
-"AGORA_Earth_NoGRAM.jl" = 1.1
-"AGORA_Earth_SRP_Test.jl" = 1.2
-"AGORA_Earth_const_torque.jl" = 1.1
-"AGORA_Keplerian.jl" = 1.1
-"AGORA_LOFTID.jl" = 1.6
-"AGORA_Magellan.jl" = 1.5
-"AGORA_Mars_NoGRAM.jl" = 1.1
-"AGORA_Mars_RAAN_Scenario.jl" = 2.5
-"AGORA_Odyssey.jl" = 2.6
-"AGORA_Odyssey_Control_Test.jl" = 1.1
-"AGORA_Odyssey_Energy_Depletion_Control_Test.jl" = 2.8
-"AGORA_Titan.jl" = 1.1
-"AGORA_Titan_Control_Test.jl" = 1.2
-"AGORA_Vex.jl" = 2.3
-"AGORA_Vex_Control_Test.jl" = 1.6
-"CYGNSS_test.jl" = 1.1
-"Earth_Momentum_Manager_Test.jl" = 1.2
-"Earth_Navigation.jl" = 1.7
-"Earth_RPO_CubeSat_MPC.jl" = 1.7
-"Earth_RPO_CubeSat_MPC_Batch.jl" = 1.8
-"Earth_RPO_CubeSat_MPC_PlannerComparison.jl" = 1.0
-"Earth_RPO_CubeSat_MPC_Replanning.jl" = 1.2
-"Earth_RW_Test.jl" = 1.1
-"Earth_Thruster_Test.jl" = 1.0
-"Earth_Torque_Free_Test.jl" = 1.1
-"GRIFEX_test.jl" = 1.6
-"Robot_Arm_Planner_Cloth_Demo.jl" = 0.8
-"Solar_Panel_Cloth_Deployment_Demo.jl" = 0.6
+"AGORA_Basic_GRAMEarth.jl" = 1.77
+"AGORA_Basic_Quickstart.jl" = 1.22
+"AGORA_Earth.jl" = 1.10
+"AGORA_Earth_Aerobraking.jl" = 3.30
+"AGORA_Earth_Control_Test.jl" = 1.27
+"AGORA_Earth_GG_Test.jl" = 1.20
+"AGORA_Earth_MonteCarlo.jl" = 0.90
+"AGORA_Earth_NoGRAM.jl" = 1.15
+"AGORA_Earth_SRP_Test.jl" = 1.20
+"AGORA_Earth_const_torque.jl" = 1.23
+"AGORA_Keplerian.jl" = 1.10
+"AGORA_LOFTID.jl" = 1.60
+"AGORA_Magellan.jl" = 1.67
+"AGORA_Mars_NoGRAM.jl" = 1.10
+"AGORA_Mars_RAAN_Scenario.jl" = 2.50
+"AGORA_Odyssey.jl" = 2.78
+"AGORA_Odyssey_Control_Test.jl" = 1.18
+"AGORA_Odyssey_Energy_Depletion_Control_Test.jl" = 2.80
+"AGORA_Titan.jl" = 1.15
+"AGORA_Titan_Control_Test.jl" = 1.22
+"AGORA_Vex.jl" = 2.30
+"AGORA_Vex_Control_Test.jl" = 1.70
+"CYGNSS_test.jl" = 1.10
+"Earth_Momentum_Manager_Test.jl" = 1.25
+"Earth_Navigation.jl" = 1.70
+"Earth_RPO_CubeSat_MPC.jl" = 1.77
+"Earth_RPO_CubeSat_MPC_Batch.jl" = 1.80
+"Earth_RPO_CubeSat_MPC_PlannerComparison.jl" = 1.00
+"Earth_RPO_CubeSat_MPC_Replanning.jl" = 1.20
+"Earth_RW_Test.jl" = 1.10
+"Earth_Thruster_Test.jl" = 1.00
+"Earth_Torque_Free_Test.jl" = 1.17
+"GRIFEX_test.jl" = 1.60
+"Robot_Arm_Planner_Cloth_Demo.jl" = 0.87
+"Solar_Panel_Cloth_Deployment_Demo.jl" = 0.62

@@ -2,7 +2,9 @@ name: SpaceAGORA CI setup
 description: >
   Shared setup for the Julia CI jobs: disk space, the pinned GRAMSuite
   checkout, Julia, the shared depot, and optionally the native GRAM library.
-  The `depot` job fills both caches; every other job only restores them.
+  The `depot` job fills the depot cache; every other job only restores it.
+  (The GRAMSuite checkout is ~23 GB compressed, over the repository's 10 GB
+  cache limit, so it is fetched in every job that needs it.)
 inputs:
   gram:
     description: "none, source (pinned GRAMSuite checkout) or native (checkout plus native libGRAM)"
@@ -16,9 +18,6 @@ inputs:
   precompile:
     description: Precompile the root environment (the package itself is always rebuilt per commit).
     default: "true"
-  save-gram:
-    description: Save the GRAMSuite checkout cache when it missed (the depot job only).
-    default: "false"
   token:
     description: Token that can read the private dev GRAMSuite repository.
     required: true
@@ -30,10 +29,6 @@ outputs:
   depot-hit:
     description: "true when the depot was restored from its exact key."
     value: ${{ steps.depot.outputs.cache-hit }}
-  gram-key:
-    value: ${{ steps.keys.outputs.gram-key }}
-  gram-hit:
-    value: ${{ steps.gram.outputs.cache-hit }}
 runs:
   using: composite
   steps:
@@ -45,7 +40,7 @@ runs:
       shell: bash
       run: |
         avail_gb=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
-        echo "free on /: ${avail_gb} GB"
+        echo "free on /: ${avail_gb} GB; $(grep -m1 "model name" /proc/cpuinfo)"
         if [ "${avail_gb}" -lt 40 ]; then
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
             /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/.ghcup \
@@ -61,38 +56,6 @@ runs:
       id: keys
       uses: ./.github/actions/cache-keys
 
-    # The dev GRAMSuite checkout is ~3 GB and its checkout alone took 1.5-7
-    # minutes per job. Restore it (work tree plus its absorbed git directory)
-    # from the pin-keyed cache; the retrieval script below then only verifies
-    # the pinned revision instead of downloading it.
-    - name: Restore pinned GRAMSuite checkout
-      id: gram
-      if: inputs.gram != 'none'
-      uses: actions/cache/restore@v4
-      with:
-        path: |
-          data/GRAMSuite.jl
-          .git/modules/GRAMSuite.jl
-        key: ${{ steps.keys.outputs.gram-key }}
-
-    - name: Load pinned dev GRAMSuite revision
-      if: inputs.gram != 'none'
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.token }}
-      run: bash .github/scripts/update_gramsuite_submodule.sh dev
-
-    # Saved before anything instantiates or builds inside the checkout, so the
-    # cached tree is exactly the pinned revision.
-    - name: Save pinned GRAMSuite checkout
-      if: inputs.gram != 'none' && inputs.save-gram == 'true' && steps.gram.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: |
-          data/GRAMSuite.jl
-          .git/modules/GRAMSuite.jl
-        key: ${{ steps.keys.outputs.gram-key }}
-
     - name: Restore shared Julia depot
       id: depot
       if: inputs.depot == 'true'
@@ -102,26 +65,34 @@ runs:
         key: ${{ steps.keys.outputs.depot-key }}
         restore-keys: ${{ steps.keys.outputs.depot-prefix }}
 
-    # The native build is C/C++ and does not touch Julia, so it runs in the
-    # background while the Julia environment instantiates and precompiles.
-    - name: Start native GRAM build
-      if: inputs.gram == 'native'
+    # Retrieving the pinned GRAMSuite (2-4 min; the dev tree is ~23 GB
+    # compressed, over the repository's 10 GB cache limit) and building native
+    # GRAM (2 min) need no Julia, and the root environment does not need
+    # GRAMSuite, so both run in the background while Julia instantiates and
+    # precompiles SpaceAGORA (3-4 min). Detached from the step's output pipe,
+    # or the step would wait for them.
+    - name: Start GRAMSuite retrieval (and native GRAM build)
+      if: inputs.gram != 'none'
       shell: bash
-      # Detached from the step's output pipe, or the step would wait for it.
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GRAM_NATIVE: ${{ inputs.gram == 'native' && '1' || '0' }}
       run: |
-        setsid bash -c './scripts/ensure_gram_native.sh --clean > "$RUNNER_TEMP/gram-build.log" 2>&1;
-          echo $? > "$RUNNER_TEMP/gram-build.status"' > /dev/null 2>&1 < /dev/null &
+        setsid -w bash -c '
+          set -e
+          bash .github/scripts/update_gramsuite_submodule.sh dev
+          if [ "$GRAM_NATIVE" = 1 ]; then ./scripts/ensure_gram_native.sh --clean; fi
+        ' > "$RUNNER_TEMP/gram-setup.log" 2>&1 < /dev/null &
+        echo $! > "$RUNNER_TEMP/gram-setup.pid"
 
-    - name: Instantiate vendored GRAMSuite
-      if: inputs.gram != 'none' && inputs.gramsuite-smoke == 'true'
-      shell: bash
-      run: |
-        julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
-        julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
-
+    # Instantiate precompiles on its own whenever it installed something, which
+    # after a restore means rebuilding SpaceAGORA for this commit (3-4 min).
+    # Jobs that only read the sources (contracts, docs) skip that.
     - name: Instantiate
       if: inputs.depot == 'true'
       shell: bash
+      env:
+        JULIA_PKG_PRECOMPILE_AUTO: ${{ inputs.precompile == 'true' && '1' || '0' }}
       run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
     # Instantiate does not rebuild SpaceAGORA's package image when nothing was
@@ -132,10 +103,19 @@ runs:
       shell: bash
       run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.precompile()'
 
-    - name: Wait for native GRAM build
-      if: inputs.gram == 'native'
+    - name: Wait for GRAMSuite (and native GRAM)
+      if: inputs.gram != 'none'
       shell: bash
       run: |
-        while [ ! -f "$RUNNER_TEMP/gram-build.status" ]; do sleep 2; done
-        cat "$RUNNER_TEMP/gram-build.log"
-        exit "$(cat "$RUNNER_TEMP/gram-build.status")"
+        pid=$(cat "$RUNNER_TEMP/gram-setup.pid")
+        while kill -0 "$pid" 2> /dev/null; do sleep 2; done
+        cat "$RUNNER_TEMP/gram-setup.log"
+        grep -q '^GRAMSuite dev revision: ' "$RUNNER_TEMP/gram-setup.log"
+        if [ "${{ inputs.gram }}" = native ]; then grep -q '^Native GRAM library ready:' "$RUNNER_TEMP/gram-setup.log"; fi
+
+    - name: Instantiate vendored GRAMSuite
+      if: inputs.gram != 'none' && inputs.gramsuite-smoke == 'true'
+      shell: bash
+      run: |
+        julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+        julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'

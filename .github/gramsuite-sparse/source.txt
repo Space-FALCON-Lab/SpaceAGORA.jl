@@ -1,0 +1,15 @@
+# GRAMSuite paths for jobs that load GRAMSuite and SPICE but never build or
+# call native GRAM: the plain test shards, threaded smoke, README smoke,
+# clean-depot smoke. Git sparse-checkout patterns (non-cone), relative to
+# data/GRAMSuite.jl; paths only, never data.
+# Measured on run 36488347445 (2026-09-28): these jobs read 9-27 files (the
+# wrapper, lsk/pck/tf kernels, de430 and three satellite kernels, 125-207 MB).
+# The whole SPICE tree but the mission kernels is kept so a test that loads
+# another planetary kernel still finds it.
+# Every pattern without a wildcard must exist after the checkout.
+/*
+!/*/
+/src/
+/GRAM Suite 2.0/Julia/
+/GRAM Suite 2.0/SPICE/
+!/GRAM Suite 2.0/SPICE/spk/missions/

@@ -42,6 +42,9 @@ jobs:
       - name: Shard plan, matrix shape and verifier self-test
         run: python3 -B .github/scripts/test_ci_shards.py
 
+      - name: Sparse GRAMSuite retrieval regression
+        run: python3 -B .github/scripts/test_gramsuite_sparse.py
+
       - name: Plan shards
         id: plan
         run: python3 .github/scripts/ci_shard_plan.py
@@ -621,6 +624,7 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
         with:
+          gram: wrapper
           gramsuite-smoke: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
@@ -676,6 +680,7 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
         with:
+          gram: wrapper
           gramsuite-smoke: "false"
           depot: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}

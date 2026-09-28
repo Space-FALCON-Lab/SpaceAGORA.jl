@@ -1,0 +1,10 @@
+# GRAMSuite paths for jobs that only need the Julia wrapper to exist and load:
+# the contract gates, the AI review gate, the docs build. Git sparse-checkout
+# patterns (non-cone), relative to data/GRAMSuite.jl; paths only, never data.
+# Measured on run 36488347445 (2026-09-28): these jobs read no GRAMSuite file.
+# Every pattern without a wildcard must exist after the checkout, or the
+# retrieval fails (.github/scripts/update_gramsuite_submodule.sh).
+/*
+!/*/
+/src/
+/GRAM Suite 2.0/Julia/

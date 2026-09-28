@@ -1,0 +1,34 @@
+# GRAMSuite paths for jobs that build and call native GRAM: the coverage shards,
+# example shards, example regression, telemetry (quick and full), nightly
+# stress. Git sparse-checkout patterns (non-cone), relative to
+# data/GRAMSuite.jl; paths only, never data.
+# Measured on runs 36488347445 and 36488347487 (2026-09-28): at most 466 files
+# (400 MB) of the 5316 (17.8 GB) are read, namely the build tree (Build/,
+# common/, each planet's source, include, unittest and examples), the SPICE
+# kernels, Mars/data, Earth/data/modeldata and two MERRA-2 monthly means.
+# Left out, all unread: the hourly MERRA-2 files (9.7 GB), the offline static
+# grids (2.5 GB), the planetary surrogate files, the documentation and the
+# Windows/MSVS/Python trees. All twelve monthly means are kept (1.2 GB) so a
+# scenario in another month still finds its file.
+# Every pattern without a wildcard must exist after the checkout.
+/*
+!/*/
+/src/
+/GRAM Suite 2.0/*
+!/GRAM Suite 2.0/*/
+/GRAM Suite 2.0/Julia/
+/GRAM Suite 2.0/SPICE/
+/GRAM Suite 2.0/Build/
+/GRAM Suite 2.0/common/
+/GRAM Suite 2.0/GRAM/
+/GRAM Suite 2.0/simulation/GRAM/
+!/GRAM Suite 2.0/simulation/GRAM/static_grids/
+/GRAM Suite 2.0/Earth/
+/GRAM Suite 2.0/Mars/
+/GRAM Suite 2.0/Venus/
+/GRAM Suite 2.0/Jupiter/
+/GRAM Suite 2.0/Titan/
+/GRAM Suite 2.0/Uranus/
+/GRAM Suite 2.0/Neptune/
+!/GRAM Suite 2.0/Earth/data/MERRA2data/*Z/
+!/GRAM Suite 2.0/*/*_surrogate.jls

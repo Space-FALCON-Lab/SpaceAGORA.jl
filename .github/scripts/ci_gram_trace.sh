@@ -30,13 +30,13 @@ tracepoint:syscalls:sys_enter_newlstat,
 tracepoint:syscalls:sys_enter_execve
 { printf("%s\t%s\n", comm, str(args.filename)); }
 EOF
-  sudo BPFTRACE_STRLEN=200 BPFTRACE_MAX_STRLEN=512 setsid bpftrace "$T/probe.bt" > "$T/bt.log" 2> "$T/bt.err" < /dev/null &
+  sudo BPFTRACE_MAX_STRLEN=200 setsid bpftrace "$T/probe.bt" > "$T/bt.log" 2> "$T/bt.err" < /dev/null &
   echo $! > "$T/bt.pid"
   sleep 3
   echo "gram_trace: bpftrace started ($(wc -l < "$T/bt.log") lines so far); $(head -c 300 "$T/bt.err")"
   ;;
 mark)
-  git -C "$G" ls-files -z | (cd "$G" && xargs -0 touch -a -h -d @0) 2>/dev/null
+  git -C "$G" ls-files -z | (cd "$G" && xargs -0 touch -c -a -h -d @0) 2>/dev/null
   echo "gram_trace: atimes reset on $(git -C "$G" ls-files | wc -l) tracked files; mount: $(findmnt -no OPTIONS /)"
   ;;
 report)

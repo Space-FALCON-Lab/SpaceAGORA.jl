@@ -7,7 +7,10 @@ description: >
   cache limit, so it is fetched in every job that needs it.)
 inputs:
   gram:
-    description: "none, source (pinned GRAMSuite checkout) or native (checkout plus native libGRAM)"
+    description: >-
+      none, or the GRAMSuite sparse profile to fetch (.github/gramsuite-sparse/):
+      wrapper (Julia wrapper only), source (wrapper and SPICE kernels) or
+      native (the build tree and GRAM data too; also builds native libGRAM)
     default: source
   gramsuite-smoke:
     description: Instantiate the vendored GRAMSuite environment and load it.
@@ -79,8 +82,9 @@ runs:
         key: ${{ steps.keys.outputs.depot-key }}
         restore-keys: ${{ steps.keys.outputs.depot-prefix }}
 
-    # Retrieving the pinned GRAMSuite (2-4 min; the dev tree is ~23 GB
-    # compressed, over the repository's 10 GB cache limit) and building native
+    # Retrieving the pinned GRAMSuite (only the profile's paths: the full dev
+    # tree is 15 GB packed, and it must never enter a cache or an artifact of
+    # this public repository, so it is fetched every time) and building native
     # GRAM (2 min) need no Julia, and the root environment does not need
     # GRAMSuite, so both run in the background while Julia instantiates and
     # precompiles SpaceAGORA (3-4 min). Detached from the step's output pipe,
@@ -92,6 +96,7 @@ runs:
         GH_TOKEN: ${{ inputs.token }}
         GRAM_NATIVE: ${{ inputs.gram == 'native' && '1' || '0' }}
         GRAM_REGULAR_FALLBACK: ${{ inputs.regular-fallback }}
+        GRAMSUITE_SPARSE_PROFILE: ${{ inputs.gram }}
       run: |
         setsid -w bash -c '
           set -e

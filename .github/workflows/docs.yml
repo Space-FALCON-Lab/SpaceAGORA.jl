@@ -37,6 +37,7 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
         with:
+          gram: wrapper
           regular-fallback: "true"
           gramsuite-smoke: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}

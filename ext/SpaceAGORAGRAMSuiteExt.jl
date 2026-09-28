@@ -105,6 +105,9 @@ end
 _native_atmospheres_live()::Int = _NATIVE_ATMOSPHERES_CREATED[] - _NATIVE_ATMOSPHERES_FINALIZED[]
 
 function _track_native_atmosphere!(core)
+    # A raw-core wrapper may hold a core that owns no native atmosphere (a
+    # stand-in core, or one from an older GRAMSuite); there is nothing to count.
+    hasfield(typeof(core), :gram_atmosphere) || return nothing
     atmosphere = getfield(core, :gram_atmosphere)
     ismutable(atmosphere) || return nothing
     Threads.atomic_add!(_NATIVE_ATMOSPHERES_CREATED, 1)

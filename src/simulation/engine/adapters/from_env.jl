@@ -348,7 +348,9 @@ function _with_engine_env_overrides(
     f::Function;
     parallel_flag::Bool=config.solver.parallel
 )
-    overrides = _engine_env_overrides(config; parallel_flag=parallel_flag)
+    # Resolved once, so the override set and the overlay below agree.
+    flag_applies = _parallel_flag_applies(parallel_flag)
+    overrides = _engine_env_overrides(config; parallel_flag=flag_applies)
     previous_config = _engine_active_config_ref[]
     previous_overrides = _engine_active_overrides_ref[]
     _engine_active_config_ref[] = config
@@ -360,22 +362,38 @@ function _with_engine_env_overrides(
         _engine_active_overrides_ref[] = previous_overrides
     end
 
-    previous = Dict{String, Union{Nothing, String}}()
-    for (k, v) in overrides
-        previous[k] = haskey(ENV, k) ? ENV[k] : nothing
-        ENV[k] = String(v)
+    # The flag's own variables go through the process-wide reference-counted
+    # overlay (`_with_parallel_flag_env`), so concurrent flagged runs cannot
+    # leave them behind; only the rest of the override set is written per call.
+    # A caller's `env_overrides` entry that differs from the flag's value still
+    # wins, as it did before, by being written per call on top of the overlay.
+    flag_pairs = flag_applies ? _parallel_profiles_module().parallel_flag_env_pairs() : Pair{String, String}[]
+    flag_values = Dict{String, String}(flag_pairs)
+    # The per-call writes are undone inside the overlay, before its own exit,
+    # so a key both write is restored in the reverse order it was set.
+    body = () -> begin
+        previous = Dict{String, Union{Nothing, String}}()
+        try
+            for (k, v) in overrides
+                get(flag_values, k, nothing) == v && continue
+                previous[k] = haskey(ENV, k) ? ENV[k] : nothing
+                ENV[k] = String(v)
+            end
+            return f()
+        finally
+            for (k, old) in previous
+                if old === nothing
+                    delete!(ENV, k)
+                else
+                    ENV[k] = old
+                end
+            end
+        end
     end
 
     try
-        return f()
+        return flag_applies ? _with_parallel_flag_env(body, flag_pairs) : body()
     finally
-        for (k, old) in previous
-            if old === nothing
-                delete!(ENV, k)
-            else
-                ENV[k] = old
-            end
-        end
         _engine_active_config_ref[] = previous_config
         _engine_active_overrides_ref[] = previous_overrides
     end
@@ -452,10 +470,70 @@ function _with_parallel_flag(f::Function, flag::Bool)
         _engine_active_overrides_ref[] = merged
     end
     try
-        return withenv(pairs...) do
+        return _with_parallel_flag_env(pairs) do
             with(f, _PARALLEL_FLAG_RESOLVED => true)
         end
     finally
         _engine_active_overrides_ref[] = previous_overrides
+    end
+end
+
+# ── The flag's process-wide environment overlay ──────────────────────────────
+#
+# `ENV` is process-global, so a per-call save/restore (`withenv`) is only
+# correct when calls nest. Two flagged runs started from different tasks at
+# the same time do not nest: A saves "unset" and applies the profile, B saves
+# A's values as its "previous", A restores "unset", B restores the profile --
+# and the profile outlives both runs. The overlay is therefore reference
+# counted: the first entry saves the previous values and applies the pairs,
+# later entries only count, and the last exit restores what the first entry
+# saved, whatever order the calls finish in and whether or not they threw.
+# The pairs are the same on every entry (`parallel_flag_env_pairs` applies
+# the profile with `preserve_existing=false`), so a later entry needs nothing
+# the first did not already set. While any flagged run is active every task in
+# the process sees the flag's environment; that is the existing contract of an
+# ENV-scoped setting, not something this overlay adds.
+const _PARALLEL_FLAG_ENV_LOCK = ReentrantLock()
+const _PARALLEL_FLAG_ENV_DEPTH = Ref{Int}(0)
+const _PARALLEL_FLAG_ENV_SAVED = Dict{String, Union{Nothing, String}}()
+
+_parallel_flag_env_depth()::Int = lock(() -> _PARALLEL_FLAG_ENV_DEPTH[], _PARALLEL_FLAG_ENV_LOCK)
+
+function _restore_parallel_flag_env!()::Nothing
+    for (k, old) in _PARALLEL_FLAG_ENV_SAVED
+        if old === nothing
+            delete!(ENV, k)
+        else
+            ENV[k] = old
+        end
+    end
+    empty!(_PARALLEL_FLAG_ENV_SAVED)
+    return nothing
+end
+
+function _with_parallel_flag_env(f::Function, pairs)
+    lock(_PARALLEL_FLAG_ENV_LOCK) do
+        if _PARALLEL_FLAG_ENV_DEPTH[] == 0
+            empty!(_PARALLEL_FLAG_ENV_SAVED)
+            try
+                for (k, v) in pairs
+                    haskey(_PARALLEL_FLAG_ENV_SAVED, k) ||
+                        (_PARALLEL_FLAG_ENV_SAVED[k] = haskey(ENV, k) ? ENV[k] : nothing)
+                    ENV[k] = String(v)
+                end
+            catch
+                _restore_parallel_flag_env!()
+                rethrow()
+            end
+        end
+        _PARALLEL_FLAG_ENV_DEPTH[] += 1
+    end
+    try
+        return f()
+    finally
+        lock(_PARALLEL_FLAG_ENV_LOCK) do
+            _PARALLEL_FLAG_ENV_DEPTH[] -= 1
+            _PARALLEL_FLAG_ENV_DEPTH[] == 0 && _restore_parallel_flag_env!()
+        end
     end
 end

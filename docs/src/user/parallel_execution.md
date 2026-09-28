@@ -390,13 +390,17 @@ Under the switch:
   size. The router does not spend campaigns trying the other route; it
   switches only on history it already holds.
 - The process pool is sized by memory as well as cores. Each worker is priced
-  at the coordinator's own resident set (never under 1.5 GB) plus 90 MB per
+  at the coordinator's own resident set (never under 2 GB) plus 2 MB per
   spacecraft for native GRAM, against the machine's memory (or its cgroup
   limit) less a reserve and less what the coordinator already holds; the
   route is offered only when at least two workers fit, and the split ladder
   stops at the number that fit. `SPACEAGORA_MEMORY_BUDGET_GB`,
   `SPACEAGORA_PERF_WORKER_MEMORY_GB` and `SPACEAGORA_GRAM_SAT_MEMORY_MB`
-  override the three terms.
+  override the three terms. The per-spacecraft figure was measured on
+  missions of at most 1800 s that did not return their solutions
+  (`docs/architecture/gram_memory_footprint.md`); for longer missions, denser
+  saving, or samples that return their solutions it may be too low, so
+  measure a worker and set the overrides on a tight memory budget.
 - The outer split width is learned by racing the candidate widths inside the
   first campaign of a new workload, with at least three samples per worker
   per width. A campaign too small to race takes the widest split. Widths are

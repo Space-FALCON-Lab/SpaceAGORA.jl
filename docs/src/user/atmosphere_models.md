@@ -311,7 +311,10 @@ questions:
   interpolation error;
 - native GRAM run with actual time along the trajectory adds the error of
   freezing the atmosphere. The Odyssey preset's release limits are judged
-  against this second reference.
+  against this second reference, and they were validated along P20 passages
+  inside the preset's envelope. At arbitrary points away from those passages,
+  pointwise differences can be larger, particularly near the 260 km ceiling at
+  high northern latitudes.
 
 `atmosphere_provenance(model)` lists how the preset was generated: planet,
 frozen UTC instant, Mars-GRAM configuration and input identities. Check each

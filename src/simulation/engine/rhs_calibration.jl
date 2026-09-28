@@ -463,12 +463,7 @@ function _rhs_calib_save!()::Nothing
             "calibrations"   => rows,
         )
         try
-            mkpath(dirname(path))
-            tmp = path * ".tmp"
-            open(tmp, "w") do io
-                TOML.print(io, payload)
-            end
-            mv(tmp, path; force=true)
+            RuntimeServices.write_file_atomically(io -> TOML.print(io, payload), path)
         catch e
             @warn "RHS calibration: failed to save to $(path)" exception=e
         end

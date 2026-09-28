@@ -32,6 +32,7 @@
 
 using ..SimulationModel: ParallelCost
 import ..SimulationEngine
+import ..RuntimeServices
 import TOML
 
 """
@@ -1447,12 +1448,7 @@ function save_campaign_corrections(c::CampaignCorrections, path::AbstractString)
     c.heap_scale === nothing || (payload["heap_scale"] = _correction_to_toml(c.heap_scale))
     c.round_tail === nothing || (payload["round_tail"] = _correction_to_toml(c.round_tail))
     path_s = String(path)
-    mkpath(dirname(path_s))
-    tmp = path_s * ".tmp"
-    open(tmp, "w") do io
-        TOML.print(io, payload)
-    end
-    mv(tmp, path_s; force = true)
+    RuntimeServices.write_file_atomically(io -> TOML.print(io, payload), path_s)
     return path_s
 end
 

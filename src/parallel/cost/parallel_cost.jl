@@ -2,6 +2,7 @@ module ParallelCost
 
 using TOML
 using SHA
+import ...RuntimeServices
 
 using ..EnvironmentModels
 using ..ParallelPolicy

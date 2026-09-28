@@ -135,6 +135,7 @@ function calibrate_machine(; k::Int = 15, verbose::Bool = false)::MachineConstan
         llc_bytes = usl.llc_bytes,
         fingerprint = machine_fingerprint(),
         schema_version = CALIBRATION_SCHEMA_VERSION,
+        measured_threads = Threads.nthreads(),
     )
 end
 
@@ -584,6 +585,7 @@ function save_machine_constants(mc::MachineConstants, path::AbstractString = mac
     payload = Dict{String, Any}(
         "schema_version" => mc.schema_version,
         "fingerprint" => mc.fingerprint,
+        "measured_threads" => mc.measured_threads,
         "ns_per_scalar_item" => mc.ns_per_scalar_item,
         "ns_per_queue_node" => mc.ns_per_queue_node,
         "dispatch_pool_ns_base" => mc.dispatch_pool_ns_base,
@@ -626,12 +628,7 @@ function save_machine_constants(mc::MachineConstants, path::AbstractString = mac
             payload["campaign"] = previous["campaign"]
         end
     end
-    mkpath(dirname(path_s))
-    tmp = path_s * ".tmp"
-    open(tmp, "w") do io
-        TOML.print(io, payload)
-    end
-    mv(tmp, path_s; force = true)
+    RuntimeServices.write_file_atomically(io -> TOML.print(io, payload), path_s)
     Threads.atomic_add!(_MACHINE_CONSTANTS_GENERATION, 1)
     return path_s
 end
@@ -656,21 +653,44 @@ const _ENSURE_CONSTANTS_LOCK = ReentrantLock()
 
 """
     ensure_machine_constants!(; path = machine_constants_path(),
-                              calibrate = calibrate_machine) -> Symbol
+                              calibrate = calibrate_machine,
+                              threads = Threads.nthreads(),
+                              lock_wait_s = 120.0, lock_stale_s = 900.0) -> Symbol
 
 Make sure this machine's cost constants exist, calibrating them once if not.
 This is what `SolverConfig(parallel=true)` calls before its first run, so the
 predictive planner never runs without machine constants merely because nobody
 ran `scripts/calibrate_machine.jl`.
 
-Returns `:present` when `path` already holds constants of the current schema
-(nothing is measured -- a current file is never recalibrated), `:calibrated`
-when it did not and `calibrate()` was run and saved there (the same measurement
-and the same fingerprinted path as the script), or `:checked` when this process
-has already settled `path`, or `:failed` when the calibration threw (it is
-logged and not retried in this process; the planner then runs without
-constants, as it did before calibration was automatic). The check runs once
-per path per process.
+Returns
+  - `:present` when `path` already holds current constants (nothing is
+    measured);
+  - `:calibrated` when it did not and `calibrate()` was run and saved there
+    (the same measurement and the same fingerprinted path as the script);
+  - `:checked` when this process has already settled `path`;
+  - `:failed` when the calibration threw (it is logged and not retried in this
+    process; the planner then runs with whatever constants the file holds, or
+    none, as it did before calibration was automatic);
+  - `:deferred` when another process held the calibration lock for longer than
+    `lock_wait_s` (this process does not measure while that one does; it uses
+    whatever the file holds when the wait ends).
+The check runs once per path per process.
+
+Constants are current when the file has the current schema and was measured
+with at least `threads` Julia threads. The speedup ladders, the USL fit and the
+dispatch widths only reach the thread count of the session that measured them,
+so a file written by a one-thread session is re-measured the first time a wider
+session runs with the flag; a file measured wider serves a narrower session as
+is, and is never overwritten by it. A file that predates the recorded thread
+count (`measured_threads == 0`) is treated as current, so constants written by
+`scripts/calibrate_machine.jl` before this check existed are not re-measured.
+
+Several processes started together in one working directory (a job array,
+parallel test runners) share the fingerprinted path. Only one of them measures:
+the others wait on the advisory lock file `path * ".lock"` and then read what
+it saved, so the saved constants are not inflated by the processes contending
+with each other. A lock older than `lock_stale_s` is taken to be left by a
+process that died and is removed.
 
 Measured on the 24-thread reference workstation: 4.6 s for the first call in a
 session (compilation included) and 1.9 s warm, which is why it runs
@@ -679,28 +699,90 @@ automatically rather than asking the user to run the script.
 function ensure_machine_constants!(;
     path::AbstractString = machine_constants_path(),
     calibrate = calibrate_machine,
+    threads::Integer = Threads.nthreads(),
+    lock_wait_s::Real = 120.0,
+    lock_stale_s::Real = 900.0,
 )::Symbol
     path_s = normpath(String(path))
     lock(_ENSURE_CONSTANTS_LOCK) do
         path_s in _ENSURED_CONSTANTS_PATHS && return :checked
-        if load_machine_constants(path_s) !== nothing
-            push!(_ENSURED_CONSTANTS_PATHS, path_s)
-            return :present
+        _constants_current(load_machine_constants(path_s), threads) &&
+            return _settle_constants_path!(path_s, :present)
+        lock_path = path_s * ".lock"
+        if !_acquire_calibration_lock(lock_path, lock_stale_s)
+            # Another process is measuring. Measuring alongside it would bake
+            # the contention into both results; wait for its file instead.
+            deadline = time() + Float64(lock_wait_s)
+            while isfile(lock_path) && time() < deadline
+                sleep(0.25)
+            end
+            _constants_current(load_machine_constants(path_s), threads) &&
+                return _settle_constants_path!(path_s, :present)
+            _acquire_calibration_lock(lock_path, lock_stale_s) ||
+                return _settle_constants_path!(path_s, :deferred)
         end
-        @info "Measuring this machine's parallel cost constants once (a few seconds); later runs reuse them." path = path_s
-        push!(_ENSURED_CONSTANTS_PATHS, path_s)
         try
-            save_machine_constants(calibrate(), path_s)
+            # The process that held the lock may have saved while this one
+            # was deciding to take it.
+            _constants_current(load_machine_constants(path_s), threads) &&
+                return _settle_constants_path!(path_s, :present)
+            @info "Measuring this machine's parallel cost constants once (a few seconds); later runs reuse them." path = path_s threads = Int(threads)
+            push!(_ENSURED_CONSTANTS_PATHS, path_s)
+            try
+                save_machine_constants(calibrate(), path_s)
+            catch err
+                err isa InterruptException && rethrow()
+                # A run the user asked for must not fail because a measurement
+                # the planner can do without did; it then predicts without
+                # contention, exactly as it did before calibration was automatic.
+                @warn "Machine calibration failed; the parallel planner will run without machine constants." exception = (err, catch_backtrace())
+                return :failed
+            end
+            return :calibrated
+        finally
+            rm(lock_path; force = true)
+        end
+    end
+end
+
+function _settle_constants_path!(path_s::String, outcome::Symbol)::Symbol
+    push!(_ENSURED_CONSTANTS_PATHS, path_s)
+    return outcome
+end
+
+_constants_current(mc::Nothing, threads::Integer)::Bool = false
+_constants_current(mc::MachineConstants, threads::Integer)::Bool =
+    mc.measured_threads == 0 || mc.measured_threads >= threads
+
+# Create `lock_path` exclusively (O_CREAT|O_EXCL), holding this process's id.
+# False when another process holds it; a lock older than `stale_s` seconds is
+# removed first (its owner died before its `finally` ran). Any other failure
+# (a read-only or missing directory) returns true: the lock is advisory, and
+# the save that follows reports the real problem through the `:failed` path,
+# exactly as it did before there was a lock.
+function _acquire_calibration_lock(lock_path::String, stale_s::Real)::Bool
+    flags = Base.Filesystem.JL_O_CREAT | Base.Filesystem.JL_O_EXCL | Base.Filesystem.JL_O_WRONLY
+    for _ in 1:2
+        try
+            mkpath(dirname(lock_path))
+            io = Base.Filesystem.open(lock_path, flags, 0o644)
+            try
+                write(io, string(gethostname(), " ", getpid(), "\n"))
+            finally
+                close(io)
+            end
+            return true
         catch err
             err isa InterruptException && rethrow()
-            # A run the user asked for must not fail because a measurement
-            # the planner can do without did; it then predicts without
-            # contention, exactly as it did before calibration was automatic.
-            @warn "Machine calibration failed; the parallel planner will run without machine constants." exception = (err, catch_backtrace())
-            return :failed
+            (err isa Base.IOError && err.code == Base.UV_EEXIST) || return true
+            age = time() - mtime(lock_path)   # mtime is 0 once the file is gone
+            if isfile(lock_path) && age <= stale_s
+                return false
+            end
+            isfile(lock_path) && rm(lock_path; force = true)
         end
-        return :calibrated
     end
+    return false
 end
 
 """
@@ -745,6 +827,7 @@ function load_machine_constants(path::AbstractString = machine_constants_path())
             reference_mem_ns = Float64(parsed["reference_mem_ns"]),
             fingerprint = String(get(parsed, "fingerprint", "")),
             schema_version = CALIBRATION_SCHEMA_VERSION,
+            measured_threads = Int(get(parsed, "measured_threads", 0)),
         )
     catch
         return nothing

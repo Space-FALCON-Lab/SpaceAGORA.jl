@@ -187,6 +187,12 @@ function default_save_fields(args::SimulationConfiguration)
     if args.mission_configuration.orientation_sim
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
     end
+    if args.interlink_model !== nothing
+        push!(fields, SaveField(:laser_dv,
+            (u, t, integrator) -> [SVector{3, Float64}(current.laser_dv) for current in u.sc]; per_satellite=true))
+        push!(fields, SaveField(:laser_delta_sma,
+            (u, t, integrator) -> [current.laser_delta_sma for current in u.sc]; per_satellite=true))
+    end
     return fields
 end
 

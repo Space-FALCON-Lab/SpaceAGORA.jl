@@ -11,7 +11,7 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "thruster_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
-    include(joinpath(@__DIR__, "force_torque_models", "laser_link_effectors.jl"))
+    include(joinpath(@__DIR__, "force_torque_models", "laser_force_effectors.jl"))
 
     # Gravity helpers still rely on perturbation calculations for legacy aerobraking paths.
     @eval GravityEffectors using ..PerturbationEffectors
@@ -36,10 +36,7 @@ module DynamicEffectors
     using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using .RobotArmReactionEffectors: RobotArmReactionEffector
-    using .LaserLinkEffectors: LaserThrusterParams, LaserCommunicationParams, LaserPowerTransferParams
-    using .LaserLinkEffectors: LaserLinkModel, build_LaserLinkModel, laser_link_scheduler_callback
-    using .LaserLinkEffectors: choose_active_links!
-    using .LaserLinkEffectors: LaserImpulseTracker, laser_impulse_callback
+    using .LaserForceEffectors: laser_force_on_spacecraft
 
     export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     export NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel
@@ -53,8 +50,5 @@ module DynamicEffectors
     export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
     export RobotArmReactionEffector
-    export LaserThrusterParams, LaserCommunicationParams, LaserPowerTransferParams
-    export LaserLinkModel, build_LaserLinkModel, laser_link_scheduler_callback
-    export choose_active_links!
-    export LaserImpulseTracker, laser_impulse_callback
+    export laser_force_on_spacecraft
 end

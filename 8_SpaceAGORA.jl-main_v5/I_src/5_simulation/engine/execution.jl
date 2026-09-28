@@ -190,6 +190,17 @@ function run_simulation(
     # (which respects any active SimulationEngineConfig overrides via _engine_env_get).
     solver_cfg = isnothing(args.solver_config) ? _solver_config_from_env() : args.solver_config
     solver_mode = solver_cfg.solver_mode
+    if args.interlink_model !== nothing
+        args.interlink_model.link_type === :laser || throw(ArgumentError("Radio force physics is not implemented."))
+        solver_mode in (:gravity_backbone_split, :split_imex, :multirate) &&
+            throw(ArgumentError("Interlinks require a full-state solver such as :tsit5; $solver_mode is not supported."))
+        empty!(args.interlink_model.history)
+        for connection in values(args.interlink_model.linkgraph)
+            connection.state.available = false
+            connection.state.active = false
+            connection.state.score = 0.0
+        end
+    end
 
     # 4.2. Validate the physical setup
     # Typed pipeline is SI-native (meters, seconds, kilograms). The
@@ -251,6 +262,9 @@ function run_simulation(
         save_fields=save_fields_resolved,
         extra_callbacks=extra_callbacks
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
+    if args.interlink_model !== nothing
+        callbacks = CallbackSet(callbacks, SimulationModel.interlink_scheduler_callback())
+    end
     ephemerides_model = args.environment_model.ephemerides_model
     et_start = SimulationModel.ephemerides_time_seconds(args.initial_time, ephemerides_model)
     p.shared_buffers.et_start[] = et_start
@@ -339,6 +353,7 @@ function run_simulation(
     end
     jac_prototype = (
         solver_mode ∉ (:gravity_backbone_split, :split_imex, :multirate) &&
+        args.interlink_model === nothing &&
         u_start isa ComponentVector &&
         length(u_start.sc) > 1
     ) ? _build_block_diagonal_jac_prototype(u_start) : nothing

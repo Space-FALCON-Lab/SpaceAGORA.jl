@@ -82,21 +82,20 @@ using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDeple
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
 using .SimulationModel: ApoapsisTargetPeriapsisRaiseGuidanceModel
-using .SimulationModel: constellation_struct, build_constellation, activate_link!, deactivate_link!, reset_active_links!
 
 ## 2.6. Telemetry Verification
-using .TelemetryVerification: VerificationRequest, VerificationResult
-using .TelemetryVerification: run_verification, run_verification_cli, run_study
+# using .TelemetryVerification: VerificationRequest, VerificationResult
+# using .TelemetryVerification: run_verification, run_verification_cli, run_study
 
 ## 2.7. RPO Station Assets
-using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+# using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 
 ## 2.8. RPO Visualization
-using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
+# using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
 
 ## 2.9. SpaceAGORA CLI
-using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
-using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
+# using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport
+# using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 
 
 ## 3. Attach description of each function / model to the SpaceAGORA module's bindings
@@ -231,11 +230,11 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.calcControlMassFlowRate) calcControlMassFlowRate
 
 # 3.4. RPO Station Assets
-@doc (@doc RPOStationAssets.station_geometry_path) station_geometry_path
-@doc (@doc RPOStationAssets.station_cad_path) station_cad_path
-@doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
-@doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
-@doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
+# @doc (@doc RPOStationAssets.station_geometry_path) station_geometry_path
+# @doc (@doc RPOStationAssets.station_cad_path) station_cad_path
+# @doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
+# @doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
+# @doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
 
 # 3.5. Parallel Profiles
 @doc (@doc ParallelProfiles.ParallelProfile) ParallelProfile
@@ -263,18 +262,18 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc ParallelProcess.shutdown_process_pool!) shutdown_process_pool!
 
 # 3.7. Telemetry Verification
-@doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest
-@doc (@doc TelemetryVerification.VerificationResult) VerificationResult
-@doc (@doc TelemetryVerification.run_verification) run_verification
-@doc (@doc TelemetryVerification.run_verification_cli) run_verification_cli
-@doc (@doc TelemetryVerification.run_study) run_study
+# @doc (@doc TelemetryVerification.VerificationRequest) VerificationRequest
+# @doc (@doc TelemetryVerification.VerificationResult) VerificationResult
+# @doc (@doc TelemetryVerification.run_verification) run_verification
+# @doc (@doc TelemetryVerification.run_verification_cli) run_verification_cli
+# @doc (@doc TelemetryVerification.run_study) run_study
 
 # 3.8. SpaceAGORA CLI
-@doc (@doc SpaceAGORACLI.AssetCheckItem) AssetCheckItem
-@doc (@doc SpaceAGORACLI.AssetCheckReport) AssetCheckReport
-@doc (@doc SpaceAGORACLI.check_assets) check_assets
-@doc (@doc SpaceAGORACLI.render_asset_report) render_asset_report
-@doc (@doc SpaceAGORACLI.run_cli) run_cli
+# @doc (@doc SpaceAGORACLI.AssetCheckItem) AssetCheckItem
+# @doc (@doc SpaceAGORACLI.AssetCheckReport) AssetCheckReport
+# @doc (@doc SpaceAGORACLI.check_assets) check_assets
+# @doc (@doc SpaceAGORACLI.render_asset_report) render_asset_report
+# @doc (@doc SpaceAGORACLI.run_cli) run_cli
 
 
 ## 4. Declare exports
@@ -320,12 +319,7 @@ export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosp
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-export constellation_struct, build_constellation, activate_link!, deactivate_link!, reset_active_links!
 export calcForceTorque, wrench, environment_requirements, solver_partition
-export LaserThrusterParams, LaserCommunicationParams, LaserPowerTransferParams
-export LaserLinkModel, build_LaserLinkModel, laser_link_scheduler_callback
-export choose_active_links!
-export LaserImpulseTracker, laser_impulse_callback
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export getDensity, getDensityBatch!
@@ -334,10 +328,11 @@ export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
-export VerificationRequest, VerificationResult
-export run_verification, run_verification_cli, run_study, run_simulation
-export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
-export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
+# export VerificationRequest, VerificationResult
+# export run_verification, run_verification_cli, run_study
+export run_simulation
+# export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+# export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 
 # ## 5. Precompile Workload

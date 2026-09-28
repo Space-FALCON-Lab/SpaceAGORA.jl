@@ -3,6 +3,8 @@ module SimConfig
     export SolverConfig
     using ..AbstractTypes: AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractEphemeridesModel
     using ..SpacecraftModels: DynamicsModel, GuidanceModel, ControlModel, NavigationModel
+    using ..InterLinkModels: InterLinkModel
+    using ..SchedulingPolicies: SchedulingPolicyModel
     using ..EphemeridesModels: SpiceEphemeridesModel
     using ..Planets: Earth
 
@@ -246,6 +248,8 @@ module SimConfig
         initial_time::InitialTime # Initial time for the simulation
         integration_tolerances::IntegrationTolerances = IntegrationTolerances() # Tolerances for the numerical integrator
         solver_config::Union{Nothing, SolverConfig} = nothing # nothing = read from env at run time
+        interlink_model::Union{Nothing, InterLinkModel} = nothing
+        scheduling_policy_model::SchedulingPolicyModel = SchedulingPolicyModel()
     end # struct SimulationConfiguration
     
 end # module SimConfig

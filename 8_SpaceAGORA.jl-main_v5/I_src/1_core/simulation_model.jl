@@ -32,6 +32,10 @@ include(joinpath(@__DIR__, "..", "1.2_vehicle", "spacecraft", "components.jl"))
 @reexport using .Components
 include(joinpath(@__DIR__, "..", "1.2_vehicle", "spacecraft", "model.jl"))
 @reexport using .SpacecraftModels
+include(joinpath(@__DIR__, "..", "1.4_satellite_interlink", "inter_link_models.jl"))
+@reexport using .InterLinkModels
+include(joinpath(@__DIR__, "..", "1.4_satellite_interlink", "scheduling_policies.jl"))
+@reexport using .SchedulingPolicies
 include(joinpath(@__DIR__, "..", "1.2_vehicle", "spacecraft", "assembly.jl"))
 @reexport using .Assembly
 include(joinpath(@__DIR__, "..", "1.2_vehicle", "kinematics", "kinematics.jl"))
@@ -72,11 +76,6 @@ include(joinpath(@__DIR__, "..", "1_core", "state", "no_gram_presets.jl"))
 
 ## 9. Parallel: Shared Policy
 include(joinpath(@__DIR__, "..", "4_parallel", "policy", "parallel_policy.jl"))
-
-## 10. Simulation: Constellation Types
-# Included here (before force_torque_models.jl) so LaserLinkEffectors can reference constellation_struct.
-include(joinpath(@__DIR__, "..", "5_simulation", "constellation.jl"))
-@reexport using .Constellations
 
 ## 11. Dynamics: Multibody, Rotational, Translational, and Coupled
 include(joinpath(@__DIR__, "..", "1.3_dynamics", "multibody_cloth", "cloth_multibody.jl"))

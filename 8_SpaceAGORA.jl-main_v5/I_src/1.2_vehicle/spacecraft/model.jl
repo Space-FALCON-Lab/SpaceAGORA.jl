@@ -383,6 +383,9 @@ mutable struct SpacecraftModel
     n_thrusters::Int64 # Number of thrusters in the spacecraft model
     initial_condition::AbstractInitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
     id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
+    n_terminal::Int64
+    battery_energy_index::Float64
+    tempurature_index::Float64
 end
 
 function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link{0}(root=true),
@@ -392,7 +395,13 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
                             n_reaction_wheels::Int64=0,
                             n_thrusters::Int64=0,
                             initial_condition::AbstractInitialCondition=InitialCondition(),
-                            id::Int64=1)
+                            id::Int64=1,
+                            n_terminal::Int64=1,
+                            battery_energy_index::Real=100.0,
+                            tempurature_index::Real=100.0)
+    n_terminal >= 0 || throw(ArgumentError("n_terminal must be nonnegative."))
+    0 <= battery_energy_index <= 100 || throw(ArgumentError("battery_energy_index must be in [0, 100]."))
+    0 <= tempurature_index <= 100 || throw(ArgumentError("tempurature_index must be in [0, 100]."))
     joints_vec = Vector{Joint}(joints)
     links_vec = Vector{Link}(links)
 
@@ -405,7 +414,7 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
         dry_mass += link.m
     end
 
-    return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id)
+    return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id, n_terminal, Float64(battery_energy_index), Float64(tempurature_index))
 end
 
 """

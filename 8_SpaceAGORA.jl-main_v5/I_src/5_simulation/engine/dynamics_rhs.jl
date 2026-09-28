@@ -1731,6 +1731,23 @@ end
     return nothing
 end
 
+function _apply_interlink_rhs!(derivative, state, parameters)
+    model = parameters.args.interlink_model
+    model === nothing && return nothing
+    mu = parameters.args.environment_model.planet.μ
+    for satellite in eachindex(state.sc)
+        parameters.is_active[satellite] || continue
+        current = state.sc[satellite]
+        current_derivative = derivative.sc[satellite]
+        force = SimulationModel.laser_force_on_spacecraft(model, state, satellite)
+        acceleration = force / current.mass
+        current_derivative.vel .+= acceleration
+        current_derivative.laser_dv .= acceleration
+        current_derivative.laser_delta_sma = SimulationModel.semimajor_axis_rate(current, force, mu)
+    end
+    return nothing
+end
+
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     sc_state = u.sc
     sc_du = du.sc
@@ -1741,7 +1758,8 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     p.shared_buffers.current_time[] = t
     plan = _rhs_execution_plan(p.args, p, dynamic_effectors, length(spacecraft))
     if plan.mode == :flat_constellation_effector_queue
-        return _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:full)
+        _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:full)
+        return _apply_interlink_rhs!(du, u, p)
     end
     effector_decision = plan.effector_decision
     use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
@@ -1844,6 +1862,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
             end
         end
     end
+    _apply_interlink_rhs!(du, u, p)
 end # function spacecraft_dynamics!
 
 function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t::Float64)
@@ -2330,6 +2349,9 @@ function build_initial_conditions(args)::ComponentVector
         end
         n_rw = args.mission_configuration.orientation_sim ? sc.root.rw_assembly.n_wheels : 0
         base_shape = n_rw > 0 ? merge(base_shape, (h_wheels = zeros(n_rw),)) : base_shape
+        if args.interlink_model !== nothing
+            base_shape = merge(base_shape, (laser_dv = zeros(3), laser_delta_sma = 0.0))
+        end
         coupling = _robot_arm_coupling(args, i, 0.0)
         coupling === nothing && return base_shape
         return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan))

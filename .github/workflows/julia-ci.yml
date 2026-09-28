@@ -305,8 +305,10 @@ jobs:
           fi
 
       # The gate sums hit counts per (file, line) over every .cov file, so the
-      # union of the shards is exactly what one unsharded run would report.
+      # union of the shards is exactly what one unsharded run would report. It
+      # also runs when a shard failed, for the numbers; the job fails either way.
       - name: Merge coverage from every shard
+        if: always()
         run: |
           for archive in shard-reports/*/coverage.tgz; do
             tar -xzmf "$archive"
@@ -314,11 +316,13 @@ jobs:
           echo "coverage files: $(find src -name '*.cov' | wc -l)"
 
       - name: Setup Julia
+        if: always()
         uses: julia-actions/setup-julia@v2
         with:
           version: "1.12"
 
       - name: Coverage quality gate
+        if: always()
         run: julia --startup-file=no --project=. test/gates/ci_coverage_quality_gate.jl
 
   example-shards:

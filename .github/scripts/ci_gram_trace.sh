@@ -16,21 +16,16 @@ mkdir -p "$T"
 case "${1:-}" in
 start)
   sudo apt-get install -y -qq bpftrace > "$T/apt.log" 2>&1 || { echo "gram_trace: bpftrace unavailable"; exit 0; }
-  cat > "$T/probe.bt" <<'EOF'
-tracepoint:syscalls:sys_enter_openat,
-tracepoint:syscalls:sys_enter_newfstatat,
-tracepoint:syscalls:sys_enter_statx,
-tracepoint:syscalls:sys_enter_faccessat,
-tracepoint:syscalls:sys_enter_faccessat2
-{ printf("%s\t%s\n", comm, str(args.filename)); }
-tracepoint:syscalls:sys_enter_readlinkat
-{ printf("%s\t%s\n", comm, str(args.path)); }
-tracepoint:syscalls:sys_enter_access,
-tracepoint:syscalls:sys_enter_newstat,
-tracepoint:syscalls:sys_enter_newlstat,
-tracepoint:syscalls:sys_enter_execve
-{ printf("%s\t%s\n", comm, str(args.filename)); }
-EOF
+  # Build one probe per syscall from its own argument name (filename,
+  # pathname or path), so a kernel that names one differently only loses that
+  # probe instead of the whole trace.
+  : > "$T/probe.bt"
+  for sc in openat open newfstatat statx faccessat faccessat2 access newstat newlstat readlinkat readlink execve; do
+    field=$(sudo bpftrace -lv "tracepoint:syscalls:sys_enter_${sc}" 2>/dev/null \
+      | grep -oE 'char \* ?(filename|pathname|path);?[[:space:]]*$' | head -1 | sed -E 's/.*[* ]([a-z]+);?[[:space:]]*$/\1/')
+    [ -n "$field" ] && printf 'tracepoint:syscalls:sys_enter_%s { printf("%%s\\t%%s\\n", comm, str(args.%s)); }\n' "$sc" "$field" >> "$T/probe.bt"
+  done
+  echo "gram_trace: probes: $(grep -o 'sys_enter_[a-z0-9]*' "$T/probe.bt" | tr '\n' ' ')"
   sudo BPFTRACE_MAX_STRLEN=200 setsid bpftrace "$T/probe.bt" > "$T/bt.log" 2> "$T/bt.err" < /dev/null &
   echo $! > "$T/bt.pid"
   sleep 3

@@ -1,0 +1,90 @@
+# Shard counts and measured costs for Julia CI (.github/workflows/julia-ci.yml).
+#
+# .github/scripts/ci_shard_plan.py splits the test items and the examples
+# across `shards` jobs by these weights, in minutes of the test step on a
+# hosted runner. Weights only balance the shards; an item missing here still
+# runs, at its kind's default_weight. After a run, ci_shard_verify.py prints
+# every item's measured time for updating this file.
+#
+# Item kinds: suite:NN (test/suites), probe:FILE (09_probe_drivers.jl's list),
+# unit:PATH (test/unit/runtests.jl includes), plus the workflow steps "grid"
+# (native-free grid adapter suite) and "depwarn" (Earth thruster depwarn smoke).
+
+[tests.plain]
+shards = 8
+workflow_items = ["grid", "depwarn"]
+# Extra Julia start-up for the one unit-suite process a shard with unit files runs.
+unit_process_overhead = 0.8
+default_weight = { suite = 3.0, probe = 1.2, unit = 0.35, other = 1.0 }
+
+[tests.plain.weights]
+"suite:01" = 2.6
+"suite:02" = 2.5
+"suite:03" = 4.8
+"suite:04" = 9.1
+"suite:05" = 5.3
+"suite:06" = 0.1
+"suite:07" = 1.3
+"suite:08" = 0.3
+"suite:10" = 2.9
+grid = 2.0
+depwarn = 1.0
+
+[tests.coverage]
+shards = 12
+workflow_items = ["grid"]
+unit_process_overhead = 1.5
+default_weight = { suite = 4.0, probe = 1.9, unit = 0.5, other = 1.0 }
+
+[tests.coverage.weights]
+"suite:01" = 5.2
+"suite:02" = 5.2
+"suite:03" = 6.7
+"suite:04" = 12.5
+"suite:05" = 6.3
+"suite:06" = 0.1
+"suite:07" = 1.8
+"suite:08" = 0.5
+"suite:10" = 5.8
+grid = 3.0
+
+[examples]
+shards = 4
+default_weight = { other = 1.2 }
+
+[examples.weights]
+"AGORA_Basic_GRAMEarth.jl" = 1.6
+"AGORA_Basic_Quickstart.jl" = 1.2
+"AGORA_Earth.jl" = 1.1
+"AGORA_Earth_Aerobraking.jl" = 3.0
+"AGORA_Earth_Control_Test.jl" = 1.2
+"AGORA_Earth_GG_Test.jl" = 1.2
+"AGORA_Earth_MonteCarlo.jl" = 0.9
+"AGORA_Earth_NoGRAM.jl" = 1.1
+"AGORA_Earth_SRP_Test.jl" = 1.2
+"AGORA_Earth_const_torque.jl" = 1.1
+"AGORA_Keplerian.jl" = 1.1
+"AGORA_LOFTID.jl" = 1.6
+"AGORA_Magellan.jl" = 1.5
+"AGORA_Mars_NoGRAM.jl" = 1.1
+"AGORA_Mars_RAAN_Scenario.jl" = 2.5
+"AGORA_Odyssey.jl" = 2.6
+"AGORA_Odyssey_Control_Test.jl" = 1.1
+"AGORA_Odyssey_Energy_Depletion_Control_Test.jl" = 2.8
+"AGORA_Titan.jl" = 1.1
+"AGORA_Titan_Control_Test.jl" = 1.2
+"AGORA_Vex.jl" = 2.3
+"AGORA_Vex_Control_Test.jl" = 1.6
+"CYGNSS_test.jl" = 1.1
+"Earth_Momentum_Manager_Test.jl" = 1.2
+"Earth_Navigation.jl" = 1.7
+"Earth_RPO_CubeSat_MPC.jl" = 1.7
+"Earth_RPO_CubeSat_MPC_Batch.jl" = 1.8
+"Earth_RPO_CubeSat_MPC_PlannerComparison.jl" = 1.0
+"Earth_RPO_CubeSat_MPC_Replanning.jl" = 1.2
+"Earth_RW_Test.jl" = 1.1
+"Earth_Thruster_Test.jl" = 1.0
+"Earth_Torque_Free_Test.jl" = 1.1
+"GRIFEX_test.jl" = 1.6
+"Robot_Arm_Planner_Cloth_Demo.jl" = 0.8
+"Solar_Panel_Cloth_Deployment_Demo.jl" = 0.6

@@ -1,0 +1,141 @@
+name: SpaceAGORA CI setup
+description: >
+  Shared setup for the Julia CI jobs: disk space, the pinned GRAMSuite
+  checkout, Julia, the shared depot, and optionally the native GRAM library.
+  The `depot` job fills both caches; every other job only restores them.
+inputs:
+  gram:
+    description: "none, source (pinned GRAMSuite checkout) or native (checkout plus native libGRAM)"
+    default: source
+  gramsuite-smoke:
+    description: Instantiate the vendored GRAMSuite environment and load it.
+    default: "true"
+  depot:
+    description: Restore the shared Julia depot and instantiate the root environment.
+    default: "true"
+  precompile:
+    description: Precompile the root environment (the package itself is always rebuilt per commit).
+    default: "true"
+  save-gram:
+    description: Save the GRAMSuite checkout cache when it missed (the depot job only).
+    default: "false"
+  token:
+    description: Token that can read the private dev GRAMSuite repository.
+    required: true
+outputs:
+  julia-version:
+    value: ${{ steps.keys.outputs.julia-version }}
+  depot-key:
+    value: ${{ steps.keys.outputs.depot-key }}
+  depot-hit:
+    description: "true when the depot was restored from its exact key."
+    value: ${{ steps.depot.outputs.cache-hit }}
+  gram-key:
+    value: ${{ steps.keys.outputs.gram-key }}
+  gram-hit:
+    value: ${{ steps.gram.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    # Jobs used to crash with ENOSPC on runners with ~14 GB free (the runner
+    # worker died writing its own logs). Current images have far more, and
+    # removing the unused toolchains cost 3-7 minutes per job, so only do it
+    # when the disk is actually short.
+    - name: Free runner disk space if short
+      shell: bash
+      run: |
+        avail_gb=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+        echo "free on /: ${avail_gb} GB"
+        if [ "${avail_gb}" -lt 40 ]; then
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/.ghcup \
+            /usr/local/share/powershell /usr/local/lib/node_modules \
+            /usr/lib/google-cloud-sdk /usr/lib/jvm /opt/az /opt/microsoft \
+            /opt/pipx /usr/share/miniconda /usr/local/share/chromium \
+            /usr/local/share/boost
+          sudo docker image prune --all --force > /dev/null 2>&1 || true
+          df -h /
+        fi
+
+    - name: Setup Julia and cache keys
+      id: keys
+      uses: ./.github/actions/cache-keys
+
+    # The dev GRAMSuite checkout is ~3 GB and its checkout alone took 1.5-7
+    # minutes per job. Restore it (work tree plus its absorbed git directory)
+    # from the pin-keyed cache; the retrieval script below then only verifies
+    # the pinned revision instead of downloading it.
+    - name: Restore pinned GRAMSuite checkout
+      id: gram
+      if: inputs.gram != 'none'
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          data/GRAMSuite.jl
+          .git/modules/GRAMSuite.jl
+        key: ${{ steps.keys.outputs.gram-key }}
+
+    - name: Load pinned dev GRAMSuite revision
+      if: inputs.gram != 'none'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: bash .github/scripts/update_gramsuite_submodule.sh dev
+
+    # Saved before anything instantiates or builds inside the checkout, so the
+    # cached tree is exactly the pinned revision.
+    - name: Save pinned GRAMSuite checkout
+      if: inputs.gram != 'none' && inputs.save-gram == 'true' && steps.gram.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          data/GRAMSuite.jl
+          .git/modules/GRAMSuite.jl
+        key: ${{ steps.keys.outputs.gram-key }}
+
+    - name: Restore shared Julia depot
+      id: depot
+      if: inputs.depot == 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/.julia
+        key: ${{ steps.keys.outputs.depot-key }}
+        restore-keys: ${{ steps.keys.outputs.depot-prefix }}
+
+    # The native build is C/C++ and does not touch Julia, so it runs in the
+    # background while the Julia environment instantiates and precompiles.
+    - name: Start native GRAM build
+      if: inputs.gram == 'native'
+      shell: bash
+      # Detached from the step's output pipe, or the step would wait for it.
+      run: |
+        setsid bash -c './scripts/ensure_gram_native.sh --clean > "$RUNNER_TEMP/gram-build.log" 2>&1;
+          echo $? > "$RUNNER_TEMP/gram-build.status"' > /dev/null 2>&1 < /dev/null &
+
+    - name: Instantiate vendored GRAMSuite
+      if: inputs.gram != 'none' && inputs.gramsuite-smoke == 'true'
+      shell: bash
+      run: |
+        julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
+        julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
+
+    - name: Instantiate
+      if: inputs.depot == 'true'
+      shell: bash
+      run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+
+    # Instantiate does not rebuild SpaceAGORA's package image when nothing was
+    # installed, and jobs that run with --compiled-modules=existing would then
+    # load the package from source in every example process.
+    - name: Precompile
+      if: inputs.depot == 'true' && inputs.precompile == 'true'
+      shell: bash
+      run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.precompile()'
+
+    - name: Wait for native GRAM build
+      if: inputs.gram == 'native'
+      shell: bash
+      run: |
+        while [ ! -f "$RUNNER_TEMP/gram-build.status" ]; do sleep 2; done
+        cat "$RUNNER_TEMP/gram-build.log"
+        exit "$(cat "$RUNNER_TEMP/gram-build.status")"

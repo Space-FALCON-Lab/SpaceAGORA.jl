@@ -1,0 +1,43 @@
+name: SpaceAGORA cache keys
+description: >
+  Installs Julia and computes the keys of the two caches every Julia CI job
+  shares: the Julia depot and the pinned GRAMSuite checkout.
+inputs:
+  julia-version:
+    description: Julia version for setup-julia.
+    default: "1.12"
+outputs:
+  julia-version:
+    description: Exact Julia version installed.
+    value: ${{ steps.julia.outputs.julia-version }}
+  depot-key:
+    description: Cache key of the depot for this Julia build and these manifests.
+    value: ${{ steps.keys.outputs.depot }}
+  depot-prefix:
+    description: Key prefix for a partial restore (same Julia build, older manifests).
+    value: ${{ steps.keys.outputs.depot-prefix }}
+  gram-key:
+    description: Cache key of the pinned GRAMSuite checkout.
+    value: ${{ steps.keys.outputs.gram }}
+runs:
+  using: composite
+  steps:
+    - name: Setup Julia
+      id: julia
+      uses: julia-actions/setup-julia@v2
+      with:
+        version: ${{ inputs.julia-version }}
+
+    # Package images are only valid for the exact Julia build, so the patch
+    # version is part of the key. The manifests decide which packages exist;
+    # the GRAMSuite pin decides the vendored wrapper's environment.
+    - name: Compute cache keys
+      id: keys
+      shell: bash
+      run: |
+        prefix="julia-depot-v1-${RUNNER_OS}-${{ steps.julia.outputs.julia-version }}-"
+        {
+          echo "depot-prefix=${prefix}"
+          echo "depot=${prefix}${{ hashFiles('Project.toml', 'Manifest.toml', 'test/grid_atmosphere/Project.toml', 'scripts/dev/Project.toml', 'scripts/dev/Manifest.toml', '.github/gramsuite-revisions') }}"
+          echo "gram=gramsuite-checkout-v1-${{ hashFiles('.github/gramsuite-revisions') }}"
+        } >> "$GITHUB_OUTPUT"

@@ -785,6 +785,10 @@ end
         const ParallelProfiles = Main.SpaceAGORA.ParallelProfiles
         const simulation_engine_config_from_env = Main.SimulationEngine.simulation_engine_config_from_env
         const run_simulation = Main.SimulationEngine.run_simulation
+        # The campaign warmups call the public Monte Carlo entry and reset the
+        # campaign caches they populate, as the package module sees them.
+        const SimulationCampaigns = Main.SpaceAGORA.SimulationCampaigns
+        const run_monte_carlo = Main.SpaceAGORA.run_monte_carlo
 
         macro setup_workload(ex)
             return esc(ex)
@@ -799,6 +803,8 @@ end
 
     @test isdefined(precompile_probe, :_run_spaceagora_precompile_workload)
     @test isdefined(precompile_probe, :_spaceagora_precompile_args)
+    @test isdefined(precompile_probe, :_warm_predictive_campaign)
+    @test isdefined(precompile_probe, :_warm_mixed_dispatch_campaign)
 end
 
 @testset "Effector Sampling Helper Branch Probes" begin

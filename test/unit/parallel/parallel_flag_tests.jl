@@ -347,4 +347,16 @@ end
     end
 end
 
+@testset "the profile machinery is internal, not exported" begin
+    exported = Set(names(SpaceAGORA))
+    for sym in (:ParallelProfile, :ParallelProfileConfig, :parse_parallel_profile,
+                :parallel_profile_name, :profile_config, :profile_env_pairs, :with_parallel_profile,
+                :OuterRouteFeatures, :OuterRouteTuning, :OuterRouteState,
+                :campaign_route_features, :campaign_outer_route_state)
+        @test !(sym in exported)
+    end
+    @test isdefined(SpaceAGORA.ParallelProfiles, :with_parallel_profile)
+    @test :SolverConfig in exported
+end
+
 end # withenv(PF_ISOLATION...)

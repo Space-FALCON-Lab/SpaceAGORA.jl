@@ -39,7 +39,7 @@ end
 const _SPACEAGORA_PRECOMPILE_ENV = Dict("SPACEAGORA_PARALLEL_PROFILE" => "R2", "SPACEAGORA_SAVE_BUNDLE" => "0", "SPACEAGORA_WARN_DEPRECATED_CONFIG" => "0")
 
 function _run_spaceagora_precompile_workload(; workspace::AbstractString=tempdir())
-    parse_parallel_profile("R2")
+    ParallelProfiles.parse_parallel_profile("R2")
     engine_config = simulation_engine_config_from_env(_SPACEAGORA_PRECOMPILE_ENV)
     args = _spaceagora_precompile_args()
     mktempdir(workspace) do tmp
@@ -81,8 +81,8 @@ function _warm_predictive_campaign()::Nothing
         run_monte_carlo(
             sample, seeds;
             threads=:auto,
-            route_state=OuterRouteState(),
-            route_tuning=OuterRouteTuning(process_max_workers=1),
+            route_state=ParallelProfiles.OuterRouteState(),
+            route_tuning=ParallelProfiles.OuterRouteTuning(process_max_workers=1),
         )
     end
     return nothing
@@ -95,8 +95,8 @@ function _warm_mixed_dispatch_campaign()::Nothing
         run_monte_carlo(
             sample, seeds;
             threads=:auto,
-            route_state=OuterRouteState(),
-            route_tuning=OuterRouteTuning(process_max_workers=1),
+            route_state=ParallelProfiles.OuterRouteState(),
+            route_tuning=ParallelProfiles.OuterRouteTuning(process_max_workers=1),
         )
     end
     return nothing

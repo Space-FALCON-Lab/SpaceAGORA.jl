@@ -782,7 +782,7 @@ end
     Core.eval(precompile_probe, quote
         const SimulationModel = Main.SimulationModel
         const TelemetryVerification = Main.TelemetryVerification
-        const parse_parallel_profile = Main.SpaceAGORA.parse_parallel_profile
+        const ParallelProfiles = Main.SpaceAGORA.ParallelProfiles
         const simulation_engine_config_from_env = Main.SimulationEngine.simulation_engine_config_from_env
         const run_simulation = Main.SimulationEngine.run_simulation
 

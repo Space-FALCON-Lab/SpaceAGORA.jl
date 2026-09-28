@@ -460,8 +460,13 @@ include(joinpath(@__DIR__, "precompile_workload.jl"))
 # closure itself still specialises on first call. The body lives in
 # `SimulationCampaigns._warm_campaign_dispatchers` so the test suite can run
 # the same code at run time.
-@compile_workload begin
-	SimulationCampaigns._warm_campaign_dispatchers()
+@setup_workload begin
+	@compile_workload begin
+		SimulationCampaigns._warm_campaign_dispatchers()
+	end
+	# Runs after the workload above, which the reset in precompile_workload.jl
+	# does not follow; see `_reset_process_local_state!`.
+	_reset_process_local_state!()
 end
 
 ## 6. Runtime Initialization
@@ -470,6 +475,9 @@ end
 # time would serialize a closure from an earlier world age. __init__ runs on
 # every load of the cached image, which is what this needs.
 function __init__()
+	# Nothing measured about the precompiling host may stand in for this one
+	# (see `_reset_process_local_state!` in precompile_workload.jl).
+	_reset_process_local_state!()
 	try
 		SimulationModel.SimulationCallbacks._install_density_service_hooks!()
 	catch err

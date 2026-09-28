@@ -334,5 +334,13 @@ end
 end # module
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    OdysseySurrogateExample.main()
+    try
+        OdysseySurrogateExample.main()
+    catch err
+        # Invalid options, an existing output directory and similar input errors
+        # print one clear line; any other error keeps its stack trace.
+        err isa ArgumentError || rethrow()
+        println(stderr, "ERROR: ", err.msg)
+        exit(1)
+    end
 end

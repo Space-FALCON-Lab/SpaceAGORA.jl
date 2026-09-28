@@ -481,13 +481,20 @@ function _rhs_calib_signature_terms(sig::AbstractString)::Dict{String, String}
 end
 
 """
-    rhs_inner_speedup_curve(stem) -> Union{Nothing, Vector{Float64}}
+    rhs_inner_speedup_curve(stem; outer = nothing) -> Union{Nothing, Vector{Float64}}
 
 How much faster one RHS evaluation of the workload with this signature stem
 (see [`rhs_calibration_signature_stem`](@ref)) runs on `b` threads than on one,
 for `b = 1, 2, ..., B`, from the per-candidate timings the calibration sweep
-recorded in the store, over every row that shares the stem whatever its budget
-or outer-split flag.
+recorded in the store, over every row that shares the stem whatever its budget.
+
+`outer = true` (or `false`) keeps only the rows measured under (or outside) an
+enclosing outer split, `nothing` pools both. The two are different runtimes,
+not two samples of one: under an outer split the RHS heuristic clamps the flat
+routes to one thread and effector threading is off, so only a plan the sweep
+pinned there reaches `b` threads, and a single-simulation (`outer=0`) timing
+says nothing about what a sample inside a threaded split will get. A caller
+pricing a plan must ask for the rows that match how that plan's samples run.
 
 `curve[b] = t(1) / min(t(w) for w <= b)`, with `t(w)` the fastest recorded
 timing of any plan running `w` threads: a sample on `b` threads can run any plan
@@ -499,9 +506,11 @@ candidate ladder has no serial rung) or nothing wider than one thread: without
 a measurement there is no curve, and the planner then assumes no inner gain.
 Rows written by older code do not match, since the stem carries the code token.
 """
-function rhs_inner_speedup_curve(stem::AbstractString)::Union{Nothing, Vector{Float64}}
+function rhs_inner_speedup_curve(stem::AbstractString;
+                                 outer::Union{Nothing, Bool} = nothing)::Union{Nothing, Vector{Float64}}
     want = _rhs_calib_signature_terms(stem)
     isempty(want) && return nothing
+    outer === nothing || (want["outer"] = outer ? "1" : "0")
     _rhs_calib_load!()
     best = Dict{Int, Float64}()
     lock(_rhs_calib_lock) do

@@ -9,14 +9,18 @@ end
 
 """Return physical-time Cartesian velocity from KS position and derivative."""
 function ks_velocity(u, u_prime)
+    radius = dot(u, u)
+    radius > eps(Float64) || throw(ArgumentError("KS velocity is undefined at the origin."))
+    return _ks_velocity_with_radius(u, u_prime, radius)
+end
+
+@inline function _ks_velocity_with_radius(u, u_prime, radius)
     u1, u2, u3, u4 = u
     up1, up2, up3, up4 = u_prime
-    r = dot(u, u)
-    r > eps(Float64) || throw(ArgumentError("KS velocity is undefined at the origin."))
     return SVector(
-        (2 / r) * (u1 * up1 - u2 * up2 - u3 * up3 + u4 * up4),
-        (2 / r) * (u2 * up1 + u1 * up2 - u4 * up3 - u3 * up4),
-        (2 / r) * (u3 * up1 + u4 * up2 + u1 * up3 + u2 * up4),
+        (2 / radius) * (u1 * up1 - u2 * up2 - u3 * up3 + u4 * up4),
+        (2 / radius) * (u2 * up1 + u1 * up2 - u4 * up3 - u3 * up4),
+        (2 / radius) * (u3 * up1 + u4 * up2 + u1 * up3 + u2 * up4),
     )
 end
 
@@ -45,30 +49,10 @@ function _ks_derivative_from_velocity(velocity, u)
     ]
 end
 
-function _ks_L(p)
-    return @SMatrix [
-        p[1] -p[2] -p[3] p[4]
-        p[2] p[1] -p[4] -p[3]
-        p[3] p[4] p[1] p[2]
-        p[4] -p[3] p[2] -p[1]
-    ]
-end
-
 function _ks_lambda(p)
     return @SMatrix [
         p[1] -p[2] -p[3] p[4]
         p[2] p[1] -p[4] -p[3]
         p[3] p[4] p[1] p[2]
-    ]
-end
-
-function _ks_phi(omega, delta_s)
-    I4 = Matrix(I, 4, 4)
-    if abs(omega) <= eps(Float64)
-        return [I4 delta_s * I4; zeros(4, 4) I4]
-    end
-    return [
-        cos(omega * delta_s) * I4 (sin(omega * delta_s) / omega) * I4
-        (-omega * sin(omega * delta_s) * I4) cos(omega * delta_s) * I4
     ]
 end

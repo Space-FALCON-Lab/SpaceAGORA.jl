@@ -1,11 +1,4 @@
-#=
-"""
-    Condensed prediction form.
-
-    The QP is written in terms of area increments over the horizon. The output
-    perturbation is deltaY = H*deltaU + Mx*deltaX0.
-"""
-=#
+# Condensed prediction model: δY = HδU + MxδX₀.
 function condensed_form(A_hist, B_hist, C_hist, D_hist)
     N  = length(C_hist)
     nx = size(A_hist[1], 1)

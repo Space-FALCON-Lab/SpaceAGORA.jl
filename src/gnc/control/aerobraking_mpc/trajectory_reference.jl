@@ -1,12 +1,4 @@
-#=
-"""
-    Reference trajectory construction.
-
-    The reference coasts to the inbound atmospheric cutoff and then propagates
-    through the pass with drag. The fictitious time step is the KS propagation
-    step used by the source-code formulation.
-"""
-=#
+# Construct the nominal KS trajectory from atmospheric entry through exit.
 Base.@kwdef struct AerobrakingMPCReferenceConfig
     h_cut_m::Float64
     delta_s::Float64 = 10.0e-7
@@ -24,18 +16,13 @@ function _radial_velocity_from_ks_state(state)
     return dot(cart.position_ii_m, cart.velocity_ii_m) / norm(cart.position_ii_m)
 end
 
-function _default_nominal_area(config::Union{Nothing, AerobrakingMPCConfig})
-    config === nothing && return 0.0
-    return config.bus_reference_area_m2 + config.controllable_area_m2
-end
-
 function build_reference_drag_pass(
     params::AerobrakingMPCParams,
     position_ii_m,
     velocity_ii_m;
-    config::Union{Nothing, AerobrakingMPCConfig}=nothing,
+    config::AerobrakingMPCConfig,
     reference::AerobrakingMPCReferenceConfig,
-    nominal_area_m2::Real=_default_nominal_area(config),
+    nominal_area_m2::Real=config.bus_reference_area_m2 + config.controllable_area_m2,
     density::Function=(altitude_m, elapsed_time_s) -> 0.0,
 )
     area = Float64(nominal_area_m2)
@@ -44,14 +31,11 @@ function build_reference_drag_pass(
     reached = h_prev <= reference.h_cut_m && _radial_velocity_from_ks_state(state) < 0.0
 
     for _ in 1:(reached ? 0 : reference.max_coast_steps)
-        next_state = ks_rk4_step(
+        next_state = ks_implicit_midpoint_step(
             state,
             params,
             area,
-            reference.delta_s;
-            config=config,
-            density_kg_m3=0.0,
-            use_drag=false,
+            reference.delta_s,
         )
         h_next = _altitude_from_ks_state(next_state, params)
         vr_next = _radial_velocity_from_ks_state(next_state)
@@ -71,14 +55,14 @@ function build_reference_drag_pass(
     exited = false
     for _ in 1:reference.max_pass_steps
         h_now = _altitude_from_ks_state(state, params)
-        ρ = density(h_now, state[10])
-        next_state = ks_rk4_step(
+        next_state = ks_implicit_midpoint_step(
             state,
             params,
             area,
             reference.delta_s;
-            config=config,
-            density_kg_m3=ρ,
+            density_kg_m3=density,
+            drag_coefficient=config.drag_coefficient,
+            mass_kg=config.mass_kg,
             use_drag=true,
         )
         h_next = _altitude_from_ks_state(next_state, params)

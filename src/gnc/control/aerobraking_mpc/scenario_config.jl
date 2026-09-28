@@ -1,12 +1,4 @@
-#=
-"""
-    SpaceAGORA case setup.
-
-    This file reads planet constants, spacecraft mass, exposed area bounds, and
-    density calls from SpaceAGORA objects. Limits and tuning are passed in by
-    the example file.
-"""
-=#
+# Construct MPC parameters from the active SpaceAGORA simulation objects.
 @inline _mpc_scenario_args(obj) = hasproperty(obj, :args) ? getproperty(obj, :args) : obj
 
 @inline function _maybe_property(obj, name::Symbol, default=nothing)
@@ -139,67 +131,4 @@ function mpc_config_from_spaceagora(
         osqp_max_iter=Int(osqp_max_iter),
     )
     return cfg
-end
-
-function _spaceagora_density_getter(density_getter)
-    density_getter !== nothing && return density_getter
-    if isdefined(Main, :SpaceAGORA)
-        if isdefined(Main.SpaceAGORA, :getDensity)
-            return Main.SpaceAGORA.getDensity
-        end
-        if isdefined(Main.SpaceAGORA, :SimulationModel) &&
-                isdefined(Main.SpaceAGORA.SimulationModel, :getDensity)
-            return Main.SpaceAGORA.SimulationModel.getDensity
-        end
-    end
-    throw(ArgumentError("SpaceAGORA.getDensity is not loaded; pass density_getter explicitly."))
-end
-
-function density_and_gradient_from_spaceagora(
-    density_model,
-    altitude_m::Real,
-    latitude::Real,
-    longitude::Real,
-    elapsed_time_s::Real,
-    wind::Bool,
-    p;
-    dh_m::Real=10.0,
-    density_getter=nothing,
-)
-    getter = _spaceagora_density_getter(density_getter)
-    h = Float64(altitude_m)
-    rho, temperature, wind_vec = getter(density_model, h, Float64(latitude), Float64(longitude), Float64(elapsed_time_s), wind, p)
-    step = max(abs(Float64(dh_m)), 1.0)
-    rho_plus = getter(density_model, h + step, Float64(latitude), Float64(longitude), Float64(elapsed_time_s), wind, p)[1]
-    rho_minus = getter(density_model, h - step, Float64(latitude), Float64(longitude), Float64(elapsed_time_s), wind, p)[1]
-    return (
-        rho=Float64(rho),
-        drho_dh=(Float64(rho_plus) - Float64(rho_minus)) / (2.0 * step),
-        temperature=Float64(temperature),
-        wind=wind_vec,
-    )
-end
-
-function density_function_from_spaceagora(
-    obj;
-    latitude::Real=0.0,
-    longitude::Real=0.0,
-    wind::Bool=false,
-    density_getter=nothing,
-)
-    args = _mpc_scenario_args(obj)
-    density_context = hasproperty(obj, :args) ? obj : args
-    density_model = args.environment_model.density_model
-    getter = _spaceagora_density_getter(density_getter)
-    return (altitude_m, elapsed_time_s) -> Float64(
-        getter(
-            density_model,
-            Float64(altitude_m),
-            Float64(latitude),
-            Float64(longitude),
-            Float64(elapsed_time_s),
-            wind,
-            density_context,
-        )[1],
-    )
 end

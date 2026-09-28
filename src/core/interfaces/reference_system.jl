@@ -148,6 +148,18 @@ function orbitalelemtorv(oe, planet)
     return orbitalelemtorv(SVector{7, Float64}([a, e, i, Ω, ω, ν, 0.0]), planet)
 end
 
+"""
+    orbital_elements_to_cartesian(initial_condition, planet)
+
+Convert a classical `InitialCondition` to inertial Cartesian position (m) and
+velocity (m/s), using the same conversion as the simulation initializer.
+`InitialCondition` stores its angular elements in radians; its public
+constructor accepts degrees. This is a general orbital-state conversion,
+independent of the KS or MPC dynamics.
+"""
+orbital_elements_to_cartesian(initial_condition, planet) =
+    orbitalelemtorv(initial_condition, planet)
+
 
 @inline function _wrap_2pi(θ::Float64)::Float64
     θw = mod(θ, 2pi)

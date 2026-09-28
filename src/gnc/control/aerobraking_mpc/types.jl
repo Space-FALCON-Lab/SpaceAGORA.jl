@@ -1,12 +1,4 @@
-#=
-"""
-    Main data types for the aerobraking MPC.
-
-    The controller configuration does not carry mission limits or tuning
-    defaults. Those values must be supplied by the example or user script so
-    there is no hidden behind-the-scenes control case.
-"""
-=#
+# Core aerobraking MPC modes, configuration, problem, solution, and runtime state.
 abstract type AerobrakingMPCMode end
 
 struct TargetEnergyMode <: AerobrakingMPCMode end

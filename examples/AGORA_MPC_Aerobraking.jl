@@ -1,11 +1,4 @@
-#=
-"""
-    Aerobraking MPC example.
-
-    All case-specific values are set here: mode, constraints, limits, weights,
-    solver tolerances, spacecraft geometry, and reference settings.
-"""
-=#
+# Single-pass aerobraking MPC example with explicit scenario and solver settings.
 include(joinpath(pwd(), "examples", "common.jl"))
 
 using CSV
@@ -43,7 +36,7 @@ mpc_control_dt_s = 0.5
 mpc_solve_interval_s = smoke_mode ? 60.0 : 10.0
 build_reference_on_tick = true
 qp_max_nodes = smoke_mode ? 40 : 120
-reference_cutoff_altitude_m = 300.0e3
+reference_cutoff_altitude_m = 160.0e3
 reference_delta_s = 1.7e-7
 reference_max_coast_steps = 2_000_000
 reference_max_pass_steps = 20_000
@@ -89,7 +82,7 @@ base_args = make_example_config(
     orientation_sim=false,
     keplerian=false,
     EI_km=160.0,
-    results_directory=joinpath(REPO_ROOT, "output", "mpc_aerobraking_external"),
+    results_directory=joinpath(REPO_ROOT, "output", "mpc_mars_single_pass_implicit_midpoint"),
 )
 
 constraints = mpc_constraints(:heat_rate, :drag, :slew)
@@ -137,6 +130,7 @@ mpc_control = AerobrakingMPCControlModel(
     prediction_latitude_rad=prediction_latitude_rad,
     prediction_longitude_rad=prediction_longitude_rad,
     prediction_wind=prediction_wind,
+    solve_trigger_altitude_m=reference_cutoff_altitude_m,
 )
 
 args = SimulationConfiguration(

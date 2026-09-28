@@ -1,11 +1,4 @@
-#=
-"""
-    Exposed area to AOA relation.
-
-    The controller variable is exposed area. The panel command is recovered
-    from A(theta) = S_bus + S_SP sin(theta), with theta in [0, pi/2].
-"""
-=#
+# Map exposed area to panel angle using A(θ) = S_bus + S_SP sin(θ).
 function commanded_area_fraction(config::AerobrakingMPCConfig, area_m2::Real)
     denom = max(config.controllable_area_m2, eps(Float64))
     return clamp((Float64(area_m2) - config.bus_reference_area_m2) / denom, 0.0, 1.0)

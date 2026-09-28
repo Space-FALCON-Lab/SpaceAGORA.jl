@@ -1,56 +1,125 @@
-#=
-"""
-    Full Earth aerobraking campaign using the SpaceAGORA MPC controller.
-
-    The operational case uses the same spacecraft, epoch, orbit, environment,
-    and perturbations as AGORA_Earth_Aerobraking.jl.  It begins in constrained
-    maximum-energy-depletion mode, calculates the one-pass reachable terminal
-    energy bracket at each inbound interface, and switches permanently to
-    target-energy MPC when the requested energy enters that bracket.
-
-    Every mission choice, constraint, limit, weight, cadence, and switch rule
-    is declared in this file. SPACEAGORA_EXAMPLE_SMOKE=1 moves only the true
-    anomaly near the first passage and shortens the run for integration tests.
-"""
-=#
+# Planet-selectable aerobraking campaign with maximum-depletion and
+# energy-targeting MPC.
+# Set SPACEAGORA_MPC_PLANET to earth, mars, or venus.
+# SPACEAGORA_EXAMPLE_SMOKE=1 selects a shortened integration-test scenario.
 include(joinpath(@__DIR__, "common.jl"))
 
 using CSV
 using DataFrames
 
 # ---------------------------------------------------------------------------
-# User-selected mission and environment
+# Mission and environment configuration
 # ---------------------------------------------------------------------------
 smoke_mode = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
-no_gram_validation = get(ENV, "SPACEAGORA_CAMPAIGN_NO_GRAM", "0") == "1"
-no_gram_validation || setup_gram_example!()
+planet_name = Symbol(lowercase(get(ENV, "SPACEAGORA_MPC_PLANET", "earth")))
+planet_name in (:earth, :mars, :venus) || throw(ArgumentError(
+    "SPACEAGORA_MPC_PLANET must be earth, mars, or venus; got $(repr(planet_name))."))
 
-planet = Earth("", SPICE_PATH)
-initial_time = InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+planet_settings = if planet_name === :earth
+    (
+        planet=Earth("", SPICE_PATH),
+        initial_time=InitialTime(year=2020, month=1, day=1),
+        periapsis_altitude_m=125.0e3,
+        initial_apoapsis_altitude_m=60_500.0e3,
+        target_apoapsis_altitude_km="10000.0",
+        inclination_deg=45.0,
+        raan_deg=0.0,
+        argument_of_periapsis_deg=0.0,
+        interface_altitude_km=300.0,
+        bus_dims=(2.05, 2.05, 2.8),
+        panel_area_m2=5.70,
+        bus_mass_kg=620.0,
+        panel_mass_each_kg=10.0,
+        panel_offset_y_m=2.05 / 2.0 + 5.70 / 4.0,
+        prop_mass_kg=200.0,
+        bus_ram_face=:legacy,
+        heat_rate_limit_w_cm2=20.0,
+        heat_load_limit_j_cm2=30.0,
+        drag_limit_n=500.0,
+        gravity_file="EarthGGM05C.csv",
+        gravity_degree=50,
+        third_bodies=("Sun", "Moon"),
+    )
+elseif planet_name === :mars
+    (
+        planet=Mars("", SPICE_PATH),
+        initial_time=InitialTime(year=2020, month=1, day=1),
+        periapsis_altitude_m=100.0e3,
+        initial_apoapsis_altitude_m=6_000.0e3,
+        target_apoapsis_altitude_km="1500.0",
+        inclination_deg=93.6,
+        raan_deg=0.0,
+        argument_of_periapsis_deg=0.0,
+        interface_altitude_km=160.0,
+        bus_dims=(1.87, 2.0, 2.0),
+        panel_area_m2=7.26,
+        bus_mass_kg=441.0,
+        prop_mass_kg=200.0,
+        bus_ram_face=:legacy,
+        panel_mass_each_kg=10.0,
+        panel_offset_y_m=1.0 + 7.26 / 4.0,
+        heat_rate_limit_w_cm2=0.15,
+        heat_load_limit_j_cm2=30.0,
+        drag_limit_n=12.1,
+        gravity_file="Mars50c.csv",
+        gravity_degree=50,
+        third_bodies=("Sun",),
+    )
+else
+    (
+        planet=Venus("", SPICE_PATH),
+        initial_time=InitialTime(year=2014, month=5, day=19),
+        periapsis_altitude_m=136.0e3,
+        initial_apoapsis_altitude_m=72_649.0e3 - Venus().Rp_e,
+        target_apoapsis_altitude_km="10000.0",
+        inclination_deg=89.876,
+        raan_deg=104.115,
+        argument_of_periapsis_deg=75.505,
+        interface_altitude_km=200.0,
+        bus_dims=(1.0, 2.0, 2.87),
+        prop_mass_kg=0.0,
+        bus_ram_face=:frontal,
+        panel_area_m2=5.70,
+        bus_mass_kg=630.0,
+        panel_mass_each_kg=10.0,
+        panel_offset_y_m=2.425,
+        heat_rate_limit_w_cm2=0.29,
+        heat_load_limit_j_cm2=10.0,
+        drag_limit_n=7.55,
+        gravity_file="MGNP180U.csv",
+        gravity_degree=50,
+        third_bodies=("Sun",),
+    )
+end
+
+planet = planet_settings.planet
+initial_time = planet_settings.initial_time
 ephemerides_model = SpiceEphemeridesModel()
-density_model = no_gram_validation ? ExponentialAtmosphereModel(planet) :
-    GRAMAtmosphereModel(planet_name="earth")
+density_model = PolynomialFitAtmosphereModel(planet)
 
-periapsis_altitude_m = 125.0e3
-initial_apoapsis_altitude_m = 60_500.0e3
-target_apoapsis_altitude_m = 10_000.0e3
-campaign_orbits = smoke_mode ? 1 : 50
+periapsis_altitude_m = planet_settings.periapsis_altitude_m
+initial_apoapsis_altitude_m = planet_settings.initial_apoapsis_altitude_m
+target_apoapsis_altitude_m = 1.0e3 * parse(Float64, get(
+    ENV, "SPACEAGORA_CAMPAIGN_TARGET_APOAPSIS_KM",
+    planet_settings.target_apoapsis_altitude_km))
+campaign_orbits = parse(Int, get(ENV, "SPACEAGORA_CAMPAIGN_ORBITS",
+    smoke_mode ? "1" : "50"))
 minimum_depletion_passes = smoke_mode ? 1 : 2
-environment_interface_altitude_km = 225.0
-mpc_inbound_solve_altitude_m = 300.0e3
+environment_interface_altitude_km = planet_settings.interface_altitude_km
+mpc_inbound_solve_altitude_m = 1.0e3 * environment_interface_altitude_km
 
-# The target is planet-specific specific orbital energy, not an Earth constant.
 target_periapsis_radius_m = planet.Rp_e + periapsis_altitude_m
 target_apoapsis_radius_m = planet.Rp_e + target_apoapsis_altitude_m
-target_energy_mj_kg = -planet.μ / (target_apoapsis_radius_m + target_periapsis_radius_m) / 1.0e6
+target_energy_mj_kg = -planet.μ /
+    (target_apoapsis_radius_m + target_periapsis_radius_m) / 1.0e6
 
 # ---------------------------------------------------------------------------
-# User-selected constraints, actuator limits, and QP tuning
+# Constraint, actuator, and QP configuration
 # ---------------------------------------------------------------------------
 active_constraints = mpc_constraints(:heat_rate, :drag)
-limit_heat_rate_w_cm2 = 20.0
-limit_heat_load_j_cm2 = 30.0       # inactive unless :heat_load is selected above
-limit_drag_n = 400.0
+limit_heat_rate_w_cm2 = planet_settings.heat_rate_limit_w_cm2
+limit_heat_load_j_cm2 = planet_settings.heat_load_limit_j_cm2
+limit_drag_n = planet_settings.drag_limit_n
 limit_area_slew_m2_s = 0.20
 drag_coefficient = 2.2
 
@@ -85,33 +154,37 @@ ENV["SPACEAGORA_SOLVER_MODE"] = get(ENV, "SPACEAGORA_SOLVER_MODE", "split_imex")
 ENV["SPACEAGORA_SPLIT_IMEX_SOLVER"] = get(ENV, "SPACEAGORA_SPLIT_IMEX_SOLVER", "kencarp4")
 ENV["SPACEAGORA_VACUUM_GRAM_CACHE"] = get(ENV, "SPACEAGORA_VACUUM_GRAM_CACHE", "1")
 
-# Same operational initial condition and vehicle as AGORA_Earth_Aerobraking.jl.
 spacecraft = make_three_body_spacecraft(
-    bus_dims=(2.05, 2.05, 2.8),
-    panel_dims=(0.01, 5.7 / 2.0, 1.0),
-    bus_mass=620.0,
-    panel_mass_each=10.0,
-    panel_offset_y=2.05 / 2.0 + 5.7 / 4.0,
+    bus_dims=planet_settings.bus_dims,
+    panel_dims=(0.01, planet_settings.panel_area_m2 / 2.0, 1.0),
+    bus_mass=planet_settings.bus_mass_kg,
+    panel_mass_each=planet_settings.panel_mass_each_kg,
+    panel_offset_y=planet_settings.panel_offset_y_m,
+    bus_ram_face=planet_settings.bus_ram_face,
     ic=InitialCondition(
         planet;
         ra=initial_apoapsis_altitude_m,
         hp=periapsis_altitude_m,
-        i=45.0,
-        ω=0.0,
-        Ω=0.0,
+        i=planet_settings.inclination_deg,
+        ω=planet_settings.argument_of_periapsis_deg,
+        Ω=planet_settings.raan_deg,
         ν=smoke_mode ? 345.0 : 180.0,
         initial_time=initial_time,
         ephemerides_model=ephemerides_model,
     ),
-    prop_mass=200.0,
+    prop_mass=planet_settings.prop_mass_kg,
     id=1,
 )
 
-earth_harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+harmonics_file = joinpath(
+    REPO_ROOT, "data", "Gravity_harmonics_data", planet_settings.gravity_file)
 dynamic_effectors = (
-    NBodyGravityModel(body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet),
-    GravitationalHarmonicsModel(50, 50, earth_harmonics_file, planet),
-    SolarRadiationPressureModel(spacecraft.root.reflection_coefficient, spacecraft.root.ref_area),
+    NBodyGravityModel(body_names=planet_settings.third_bodies,
+        primary_body_name=planet.name, planet=planet),
+    GravitationalHarmonicsModel(planet_settings.gravity_degree,
+        planet_settings.gravity_degree, harmonics_file, planet),
+    SolarRadiationPressureModel(spacecraft.root.reflection_coefficient,
+        spacecraft.root.ref_area),
     AerodynamicCoefficientfM(),
 )
 
@@ -129,7 +202,8 @@ base_args = make_example_config(
     keplerian=false,
     EI_km=environment_interface_altitude_km,
     verbose=true,
-    results_directory=joinpath(REPO_ROOT, "output", "earth_mpc_aerobraking_campaign"),
+    results_directory=joinpath(
+        REPO_ROOT, "output", "mpc_$(planet_name)_campaign"),
 )
 
 function campaign_mpc_config(mode; area_weight, area_slew_weight, slack_weight)
@@ -235,6 +309,7 @@ args = SimulationConfiguration(
 
 println("campaign_settings = ", (
     planet=typeof(planet),
+    density_model=typeof(density_model),
     initial_apoapsis_altitude_km=initial_apoapsis_altitude_m / 1e3,
     periapsis_altitude_km=periapsis_altitude_m / 1e3,
     target_apoapsis_altitude_km=target_apoapsis_altitude_m / 1e3,

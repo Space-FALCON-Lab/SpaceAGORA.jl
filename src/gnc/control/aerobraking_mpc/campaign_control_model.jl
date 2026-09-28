@@ -1,14 +1,4 @@
-#=
-"""
-    Multi-pass aerobraking MPC campaign supervisor.
-
-    The supervisor runs maximum-energy-depletion MPC for complete atmospheric
-    passes. Before each subsequent pass it predicts the reachable terminal
-    energy interval between minimum exposed area and the constrained MED plan.
-    Once the user target lies in that interval, it switches permanently to the
-    terminal-energy MPC controller.
-"""
-=#
+# Supervise the transition from maximum depletion to terminal-energy targeting.
 Base.@kwdef mutable struct AerobrakingMPCCampaignState
     phase::Symbol = :maximum_energy_depletion
     completed_passes::Int = 0

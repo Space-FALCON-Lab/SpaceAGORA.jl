@@ -1,11 +1,4 @@
-#=
-"""
-    Runtime SpaceAGORA control hook.
-
-    This hook solves or reuses the MPC area plan, applies active limits, and
-    rotates the selected solar-panel links during run_simulation.
-"""
-=#
+# Runtime control hook for MPC planning, constraint enforcement, and panel actuation.
 Base.@kwdef mutable struct AerobrakingMPCControlModel <: AbstractControlEffectorModel
     config::AerobrakingMPCConfig
     state::AerobrakingMPCState = AerobrakingMPCState()
@@ -23,6 +16,7 @@ Base.@kwdef mutable struct AerobrakingMPCControlModel <: AbstractControlEffector
     prediction_longitude_rad::Float64
     prediction_wind::Bool
     solve_trigger_altitude_m::Union{Nothing, Float64} = nothing
+    heat_rate_model::Symbol = :spaceagora_thermal
 end
 
 function _mpc_control_sat_state(u, i::Int)
@@ -78,17 +72,20 @@ function _mpc_interpolated_plan_area(model::AerobrakingMPCControlModel, t::Float
 end
 
 function _mpc_relative_speed(pos, vel, params::AerobrakingMPCParams)
-    return norm(vel - _ks_skew_rotation(params) * pos)
+    return norm(vel - ks_rotation_cross_matrix(params) * pos)
 end
 
-function _mpc_runtime_atmosphere(model::AerobrakingMPCControlModel, p, altitude_m::Float64, t::Float64)
+function _mpc_runtime_atmosphere(model::AerobrakingMPCControlModel, p,
+    pos::SVector{3, Float64}, t::Float64)
     density_model = p.args.environment_model.density_model
     wind = p.args.environment_model.wind
+    altitude_m, latitude_rad, longitude_rad =
+        rtolatlong(pos, p.args.environment_model.planet)
     rho, temperature, _ = getDensity(
         density_model,
         altitude_m,
-        model.prediction_latitude_rad,
-        model.prediction_longitude_rad,
+        latitude_rad,
+        longitude_rad,
         t,
         model.prediction_wind && wind,
         p,
@@ -96,7 +93,15 @@ function _mpc_runtime_atmosphere(model::AerobrakingMPCControlModel, p, altitude_
     return max(0.0, Float64(rho)), max(Float64(temperature), eps(Float64))
 end
 
-function _mpc_heat_rate_w_cm2(p, speed::Float64, density::Float64, temperature::Float64, alpha::Float64)
+function _mpc_heat_rate_w_cm2(model::AerobrakingMPCControlModel, p,
+    speed::Float64, density::Float64, temperature::Float64, alpha::Float64)
+    if model.heat_rate_model === :kinetic_energy_flux
+        panel_fraction = sin(clamp(alpha, 0.0, pi / 2))
+        return max(0.0, 0.5 * density * speed^3 * panel_fraction / 1.0e4)
+    end
+    model.heat_rate_model === :spaceagora_thermal || throw(ArgumentError(
+        "Unsupported MPC runtime heat-rate model $(repr(model.heat_rate_model)). " *
+        "Use :spaceagora_thermal or :kinetic_energy_flux."))
     planet = p.args.environment_model.planet
     sound_speed = sqrt(max(0.0, planet.γ * planet.R * temperature))
     if !(isfinite(speed) && isfinite(sound_speed) && speed > 0.0 && sound_speed > 0.0 && density > 0.0)
@@ -126,15 +131,18 @@ function _mpc_alpha_for_heat_rate_limit(
     limit_w_cm2::Float64,
 )
     min_alpha = model.min_alpha_rad
-    q_min = _mpc_heat_rate_w_cm2(p, speed, density, temperature, min_alpha)
-    q_max = _mpc_heat_rate_w_cm2(p, speed, density, temperature, desired_alpha)
+    q_min = _mpc_heat_rate_w_cm2(
+        model, p, speed, density, temperature, min_alpha)
+    q_max = _mpc_heat_rate_w_cm2(
+        model, p, speed, density, temperature, desired_alpha)
     q_max <= limit_w_cm2 && return desired_alpha
     q_min >= limit_w_cm2 && return min_alpha
     lo = min_alpha
     hi = desired_alpha
     for _ in 1:48
         mid = 0.5 * (lo + hi)
-        q_mid = _mpc_heat_rate_w_cm2(p, speed, density, temperature, mid)
+        q_mid = _mpc_heat_rate_w_cm2(
+            model, p, speed, density, temperature, mid)
         if q_mid <= limit_w_cm2
             lo = mid
         else
@@ -161,8 +169,7 @@ function _mpc_area_command_from_constraints!(
     area_limit = max_area
     active_limit = :none
 
-    altitude_m = norm(pos) - params.Re
-    density, temperature = _mpc_runtime_atmosphere(model, p, altitude_m, t)
+    density, temperature = _mpc_runtime_atmosphere(model, p, pos, t)
     speed = _mpc_relative_speed(pos, vel, params)
     dynamic_pressure = 0.5 * density * speed^2
     desired_alpha = alpha_from_commanded_area(
@@ -257,7 +264,8 @@ function _mpc_area_command_from_constraints!(
         min_alpha_rad=model.min_alpha_rad,
         max_alpha_rad=model.max_alpha_rad,
     )
-    heat_rate = _mpc_heat_rate_w_cm2(p, speed, density, temperature, alpha)
+    heat_rate = _mpc_heat_rate_w_cm2(
+        model, p, speed, density, temperature, alpha)
     drag = dynamic_pressure * config.drag_coefficient * commanded_area
 
     state.held_commanded_area_m2 = commanded_area

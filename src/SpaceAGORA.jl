@@ -23,6 +23,7 @@ using .ParallelProfiles: default_outer_route, outer_route_candidates, select_out
 using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
+using .SimulationEngine: orbital_elements_to_cartesian
 import .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 using .SimulationCampaigns: run_constellation_ensemble
@@ -59,20 +60,23 @@ using .SimulationModel: RobotArmHeldActuation, RobotArmJointMPCController, Robot
 using .SimulationModel: init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview
 using .SimulationModel: robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
+using .SimulationModel: PolynomialFitAtmosphereModel
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
+using .SimulationModel: AerodynamicCommandedAreaDragModel
 using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
-using .SimulationModel: getDensity, getDensityBatch!
+using .SimulationModel: getDensity, getDensityBatch!, density_altitude_derivative
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
-using .SimulationModel: KSPropagationParams, ks_position, ks_velocity
+using .SimulationModel: KSPropagationParams, ks_position, ks_velocity, ks_rotation_cross_matrix
 using .SimulationModel: ks_energy_parameter, specific_energy_from_ks
 using .SimulationModel: cartesian_to_ks_state, ks_state_to_cartesian
-using .SimulationModel: ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs, ks_rk4_step
-using .SimulationModel: ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si
-using .SimulationModel: ks_rhs_jacobian, ks_step_jacobian
+using .SimulationModel: ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs!, ks_rhs
+using .SimulationModel: ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si, ks_density_value_gradient
+using .SimulationModel: ks_rhs_jacobians, ks_rhs_jacobian
+using .SimulationModel: ks_implicit_midpoint_step, ks_implicit_midpoint_linearization, ks_step_jacobian
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
@@ -84,10 +88,13 @@ using .SimulationModel: AerobrakingMPCCampaignState, AerobrakingMPCCampaignContr
 using .SimulationModel: mpc_constraints, constraint_active, constraint_names, apply_constraints
 using .SimulationModel: mpc_params_from_spaceagora, mpc_prediction_gravity_model
 using .SimulationModel: spacecraft_mass_kg, spacecraft_reference_areas, mpc_config_from_spaceagora
-using .SimulationModel: density_and_gradient_from_spaceagora, density_function_from_spaceagora
+using .SimulationModel: density_function_from_spaceagora
 using .SimulationModel: build_reference_drag_pass, build_mpc_problem, solve_mpc_qp
 using .SimulationModel: objective_kind, objective_label, commanded_area_fraction
 using .SimulationModel: alpha_from_commanded_area, commanded_area_from_alpha, apply_commanded_area!
+using .SimulationModel: interpolate_mpc_plan, interpolate_mpc_history
+using .SimulationModel: evaluate_cartesian_mpc_outputs, evaluate_ks_mpc_outputs
+using .SimulationModel: cumulative_mpc_heat_load, propagate_ks_mpc_plan
 using .SimulationModel: mpc_control_save_fields
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
@@ -458,6 +465,7 @@ export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapsh
 export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
+export orbital_elements_to_cartesian
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
@@ -490,20 +498,23 @@ export RobotArmHeldActuation, RobotArmJointMPCController, RobotArmControlEffecto
 export init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview
 export robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
+export PolynomialFitAtmosphereModel
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
 export calcForceTorque, wrench, environment_requirements, solver_partition
+export AerodynamicCommandedAreaDragModel
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
-export getDensity, getDensityBatch!
+export getDensity, getDensityBatch!, density_altitude_derivative
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
-export KSPropagationParams, ks_position, ks_velocity
+export KSPropagationParams, ks_position, ks_velocity, ks_rotation_cross_matrix
 export ks_energy_parameter, specific_energy_from_ks
 export cartesian_to_ks_state, ks_state_to_cartesian
-export ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs, ks_rk4_step
-export ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si
-export ks_rhs_jacobian, ks_step_jacobian
+export ks_j2_acceleration_si, ks_drag_acceleration_si, ks_rhs!, ks_rhs
+export ks_kinematics_jacobians, ks_j2_acceleration_jacobian_si, ks_density_value_gradient
+export ks_rhs_jacobians, ks_rhs_jacobian
+export ks_implicit_midpoint_step, ks_implicit_midpoint_linearization, ks_step_jacobian
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
@@ -515,10 +526,13 @@ export AerobrakingMPCCampaignState, AerobrakingMPCCampaignControlModel, mpc_camp
 export mpc_constraints, constraint_active, constraint_names, apply_constraints
 export mpc_params_from_spaceagora, mpc_prediction_gravity_model
 export spacecraft_mass_kg, spacecraft_reference_areas, mpc_config_from_spaceagora
-export density_and_gradient_from_spaceagora, density_function_from_spaceagora
+export density_function_from_spaceagora
 export build_reference_drag_pass, build_mpc_problem, solve_mpc_qp
 export objective_kind, objective_label, commanded_area_fraction
 export alpha_from_commanded_area, commanded_area_from_alpha, apply_commanded_area!
+export interpolate_mpc_plan, interpolate_mpc_history
+export evaluate_cartesian_mpc_outputs, evaluate_ks_mpc_outputs
+export cumulative_mpc_heat_load, propagate_ks_mpc_plan
 export mpc_control_save_fields
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult

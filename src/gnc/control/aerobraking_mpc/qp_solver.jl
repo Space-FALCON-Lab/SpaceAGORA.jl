@@ -1,12 +1,4 @@
-#=
-"""
-    Condensed QP solved with OSQP.
-
-    The solver follows the ET and MED logic from the supplied source codes. The
-    user gives heat limits in SpaceAGORA output units; the QP converts them to
-    the internal linearized-output units before building constraints.
-"""
-=#
+# Condensed OSQP formulation for energy targeting and maximum depletion.
 const _WCM2_TO_WM2 = 1.0e4
 const _JCM2_TO_JM2 = 1.0e4
 
@@ -180,10 +172,14 @@ function solve_mpc_qp(problem::AerobrakingMPCProblem, config::AerobrakingMPCConf
         S_qdot = build_output_selector(N, ny; yidx=3)
         Wrow = Δt_nodes' * S_qdot
         H_Q = vec(Wrow * H)
-        rhs_Q = config.heat_load_max_j_cm2 * _JCM2_TO_JM2 - (Wrow * yoff)[1]
+        heat_load_limit = config.heat_load_max_j_cm2 * _JCM2_TO_JM2
+        rhs_Q = heat_load_limit - (Wrow * yoff)[1]
         A = zeros(1, nz)
-        A[1, 1:nU] .= H_Q
-        _append_constraint_rows!(rows, lower, upper, A, [-Inf], [rhs_Q])
+        # Normalize the accumulated-load row so OSQP's absolute feasibility
+        # tolerance remains meaningful when heat-load and slew limits coexist.
+        A[1, 1:nU] .= H_Q ./ heat_load_limit
+        _append_constraint_rows!(
+            rows, lower, upper, A, [-Inf], [rhs_Q / heat_load_limit])
     end
 
     if config.use_constraints && config.use_drag_constraint

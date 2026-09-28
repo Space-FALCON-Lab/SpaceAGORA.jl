@@ -59,6 +59,17 @@ end
 end
 
 """
+Aerodynamic drag model driven by articulated exposed area with a constant drag
+coefficient. Uncontrolled links contribute their full reference area;
+controlled links contribute `ref_area*sin(alpha)`. This matches the exposed
+area and force law used by the KS aerobraking MPC.
+"""
+Base.@kwdef struct AerodynamicCommandedAreaDragModel <: AbstractForceTorqueModel
+    drag_coefficient::Float64 = 2.2
+    controlled_link_indices::Tuple{Vararg{Int}} = (2, 3)
+end
+
+"""
 Free-molecular aerodynamics from the Hart et al. closed forms (rectangular
 prism, doi 10.2514/1.A33606), evaluated per link and summed.
 
@@ -217,9 +228,11 @@ function collect_and_reset_link_wrenches!(bodies)
 end
 
 @inline environment_requirements(::AerodynamicCoefficientConstant) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
+@inline environment_requirements(::AerodynamicCommandedAreaDragModel) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
 @inline environment_requirements(::AerodynamicCoefficientfM) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
 @inline environment_requirements(::AerodynamicCoefficientNoBallisticFlight) = EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
 @inline solver_partition(::AerodynamicCoefficientConstant) = :implicit
+@inline solver_partition(::AerodynamicCommandedAreaDragModel) = :implicit
 @inline solver_partition(::AerodynamicCoefficientfM) = :implicit
 @inline solver_partition(::AerodynamicCoefficientNoBallisticFlight) = :implicit
 
@@ -492,6 +505,45 @@ function _aero_pure_wrench(
     )
 end
 
+@inline function _commanded_area_drag_wrench(
+    model::AerodynamicCommandedAreaDragModel,
+    x::StateSample,
+    env::EnvironmentSample,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    x.spacecraft === nothing && throw(ArgumentError(
+        "Commanded-area drag requires StateSample.spacecraft."))
+    planet_frame = env.planet_frame
+    atmosphere = env.atmosphere
+    planet_frame === nothing && throw(ArgumentError(
+        "Commanded-area drag requires env.planet_frame."))
+    atmosphere === nothing && throw(ArgumentError(
+        "Commanded-area drag requires env.atmosphere."))
+    rho = atmosphere.rho_kg_m3
+    (!isfinite(rho) || rho <= eps(Float64)) && return _AERO_ZERO3, _AERO_ZERO3
+
+    uD, uN, uE = latlongtoNED((
+        planet_frame.alt_m, planet_frame.lat_rad, planet_frame.lon_rad))
+    wE, wN, wU = atmosphere.wind_pp
+    wind_pp = wN * uN + wE * uE - wU * uD
+    relative_velocity_pp = planet_frame.vel_pp - wind_pp
+    speed = norm(relative_velocity_pp)
+    speed <= eps(Float64) && return _AERO_ZERO3, _AERO_ZERO3
+
+    controlled = model.controlled_link_indices
+    area_m2 = 0.0
+    @inbounds for (index, link) in pairs(x.spacecraft.links)
+        if index in controlled
+            area_m2 += link.ref_area * sin(clamp(Float64(link.α), 0.0, pi / 2))
+        else
+            area_m2 += link.ref_area
+        end
+    end
+    drag_pp = -0.5 * rho * speed * model.drag_coefficient * area_m2 *
+        relative_velocity_pp
+    drag_ii = planet_frame.l_pi' * drag_pp
+    return SVector{3, Float64}(drag_ii), _AERO_ZERO3
+end
+
 # Direct (uncached) per-link density query used by `link_atmosphere_fn`. Bypasses the
 # satellite-level GRAM tracking/extrapolation cache in
 # SimulationCallbacks._density_state_from_kinematics! deliberately: that cache is keyed
@@ -512,6 +564,15 @@ end
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     force, torque, _, _, _ = _aero_pure_wrench(:constant, x, env)
     return force, torque
+end
+
+@inline function wrench(
+    model::AerodynamicCommandedAreaDragModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    return _commanded_area_drag_wrench(model, x, env)
 end
 
 @inline function wrench(
@@ -546,6 +607,19 @@ end
         (pos_pp_body -> _aero_link_atmosphere_query(p, sat_idx, t, pos_pp_body, env.planet)) : nothing
     force, torque, drag_ii, lift_ii, cross_ii = _aero_pure_wrench(:constant, x, env, link_atmosphere_fn)
     _store_aero_caches!(p, sat_idx, drag_ii, lift_ii, cross_ii)
+    return force, torque
+end
+
+@inline function wrench_caching!(
+    model::AerodynamicCommandedAreaDragModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+    p::ODEParams,
+    sat_idx::Int,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    force, torque = _commanded_area_drag_wrench(model, x, env)
+    _store_aero_caches!(p, sat_idx, force, _AERO_ZERO3, _AERO_ZERO3)
     return force, torque
 end
 

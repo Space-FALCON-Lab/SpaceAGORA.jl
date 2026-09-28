@@ -43,9 +43,12 @@ using SpaceAGORA
     @test specific_energy_from_ks(state[9]) ≈ specific_energy rtol=3.0 * eps(Float64) atol=0.0
     @test ks_state_to_cartesian(state).specific_energy_j_kg ≈
         specific_energy rtol=3.0 * eps(Float64) atol=0.0
-    next_state = ks_rk4_step(state, params, 0.0, 1.0e-7)
+    next_state = ks_implicit_midpoint_step(state, params, 0.0, 1.0e-7)
     @test all(isfinite, next_state)
     @test next_state[10] > state[10]
+    inplace_rhs = similar(state)
+    @test ks_rhs!(inplace_rhs, state, params) === inplace_rhs
+    @test inplace_rhs ≈ ks_rhs(state, params) rtol=0.0 atol=0.0
 
     drag = ks_drag_acceleration_si(
         circular_position,
@@ -81,7 +84,7 @@ using SpaceAGORA
     )
 end
 
-@testset "h_KS=-ε convention preserves the former physical trajectory" begin
+@testset "h_KS=-ε convention preserves the physical trajectory" begin
     params = KSPropagationParams(
         Re=6.378137e6,
         μ=3.986004418e14,
@@ -100,16 +103,15 @@ end
     u_prime = new_state[5:8]
     radius = dot(u, u)
     acceleration = ks_j2_acceleration_si(ks_position(u), params)
-    acceleration4 = [acceleration[1], acceleration[2], acceleration[3], 0.0]
+
     expected_u_prime_derivative = -0.5 .* new_state[9] .* u .+
-        0.5 .* radius .* (transpose(ks_dynamics._ks_L(u)) * acceleration4)
+        0.5 .* radius .* (ks_dynamics._ks_perturbation_matrix(u) * acceleration)
     @test new_rhs[5:8] ≈ expected_u_prime_derivative rtol=2.0e-14 atol=2.0e-10
     @test new_rhs[9] ≈ -radius * dot(ks_velocity(u, u_prime), acceleration)
     @test sqrt(new_state[9] / 2.0) == sqrt(old_state[9] / 4.0)
     rhs_jacobian = ks_rhs_jacobian(
         new_state,
-        params;
-        relative_step=1.0e-4,
+        params,
     )
     @test rhs_jacobian[1:4, 5:8] ≈ Matrix{Float64}(I, 4, 4) rtol=1.0e-9 atol=1.0e-12
     @test rhs_jacobian[5:8, 9] ≈ -0.5 .* u rtol=1.0e-8 atol=1.0e-8
@@ -124,24 +126,27 @@ end
         rvec = ks_position(u)
         vvec = ks_velocity(u, u_prime)
         acceleration = ks_j2_acceleration_si(rvec, params)
-        acceleration4 = [acceleration[1], acceleration[2], acceleration[3], 0.0]
         du_prime = -0.25 .* h_old .* u .+
-            0.5 .* radius .* (transpose(ks_dynamics._ks_L(u)) * acceleration4)
+            0.5 .* radius .* (ks_dynamics._ks_perturbation_matrix(u) * acceleration)
         dh_old = -2.0 * radius * dot(vvec, acceleration)
         return vcat(u_prime, du_prime, dh_old, radius)
     end
 
-    function old_convention_step(state, delta_s)
-        k1 = old_convention_rhs(state)
-        k2 = old_convention_rhs(state .+ 0.5 .* delta_s .* k1)
-        k3 = old_convention_rhs(state .+ 0.5 .* delta_s .* k2)
-        k4 = old_convention_rhs(state .+ delta_s .* k3)
-        return state .+ (delta_s / 6.0) .* (k1 .+ 2.0 .* k2 .+ 2.0 .* k3 .+ k4)
+    function old_convention_midpoint_step(state, delta_s)
+        next_state = state .+ delta_s .* old_convention_rhs(state)
+        for _ in 1:12
+            updated = state .+ delta_s .* old_convention_rhs(
+                0.5 .* (state .+ next_state))
+            norm(updated - next_state) <= 1.0e-13 *
+                max(norm(updated), 1.0) && return updated
+            next_state = updated
+        end
+        return next_state
     end
 
     for _ in 1:100
-        new_state = ks_rk4_step(new_state, params, 0.0, 1.0e-7)
-        old_state = old_convention_step(old_state, 1.0e-7)
+        new_state = ks_implicit_midpoint_step(new_state, params, 0.0, 1.0e-7)
+        old_state = old_convention_midpoint_step(old_state, 1.0e-7)
     end
     @test new_state[1:8] ≈ old_state[1:8] rtol=2.0e-14 atol=2.0e-12
     @test new_state[10] ≈ old_state[10] rtol=2.0e-14 atol=2.0e-12

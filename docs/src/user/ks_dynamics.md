@@ -21,7 +21,7 @@ params = KSPropagationParams(
     Ω=norm(planet.ω),
 )
 state = cartesian_to_ks_state(position_ii_m, velocity_ii_m, params)
-state_next = ks_rk4_step(state, params, area_m2, delta_s;
+state_next = ks_implicit_midpoint_step(state, params, area_m2, delta_s;
     density_kg_m3=density,
     drag_coefficient=cd,
     mass_kg=mass,
@@ -31,7 +31,7 @@ cartesian = ks_state_to_cartesian(state_next)
 ```
 
 The ten-element state is `[u₁,u₂,u₃,u₄,u₁′,u₂′,u₃′,u₄′,h_KS,t]`. It uses the
-paper convention
+energy convention
 
 ```math
 h_{KS}=-\varepsilon, \qquad \omega_{KS}^{2}=\frac{h_{KS}}{2},
@@ -51,10 +51,11 @@ must not be passed directly to the current dynamics implementation. Regenerate t
 
 Public functions are `ks_position`, `ks_velocity`,
 `cartesian_to_ks_state`, `ks_state_to_cartesian`,
-`ks_j2_acceleration_si`, `ks_drag_acceleration_si`, `ks_rhs`, and
-`ks_rk4_step`. The reusable variational interface includes
+`ks_j2_acceleration_si`, `ks_drag_acceleration_si`, `ks_rotation_cross_matrix`,
+`ks_density_value_gradient`, `ks_rhs`, and `ks_implicit_midpoint_step`. The reusable variational interface includes
 `ks_kinematics_jacobians`, `ks_j2_acceleration_jacobian_si`,
-`ks_rhs_jacobian`, and `ks_step_jacobian`.
+`ks_rhs_jacobians`, `ks_rhs_jacobian`,
+`ks_implicit_midpoint_linearization`, and `ks_step_jacobian`.
 
 The current force model supports inverse-square central gravity through the KS
 energy parameter, plus optional J2 and atmospheric drag perturbations. Generic
@@ -65,7 +66,7 @@ linearization because those definitions depend on the controller configuration.
 ## Linearization convention
 
 For the nonlinear state `x=[p;q;h_KS;t]`, the reusable Jacobian is formed from
-the paper-convention equations
+the KS equations
 
 ```math
 \begin{aligned}
@@ -78,8 +79,9 @@ t' &= R.
 
 In particular, `∂q′/∂h_KS=-p/2`, `∂p′/∂q=I`, and
 `∂t′/∂p=2pᵀ`. `ks_rhs_jacobian` linearizes the continuous
-fictitious-time equations, while `ks_step_jacobian` differentiates the complete
-nonlinear RK4 step.
+fictitious-time equations. `ks_step_jacobian` returns the implicit-midpoint
+tangent map `(I-Δs F/2)\(I+Δs F/2)` evaluated at the converged
+nonlinear midpoint.
 
 Writing `g(p,q,A)=G_KS(p)a_p` and `ℓ(p,q,A)=-R vᵀa_p`, the continuous
 nine-state control linearization has the block structure
@@ -101,7 +103,9 @@ the energy component of the area-input column must all be retained.
 
 The MPC prediction state is `δx=[δp;δq;δh_KS]`; physical time is supplied
 by the known reference horizon. Its discrete `A` and area-input `B` matrices are
-computed from the same nonlinear RK4 map, including density variation at the
-RK stages. The energy-output row is exactly `E=-h_KS` in J/kg, or
-`E_MJ/kg=-h_KS/1e6`. This replaces the former frozen-energy eight-state
+computed from the same converged nonlinear implicit-midpoint step. The state
+and input maps share one factorization of `I-Δs F/2`, and the force Jacobian
+includes J2, atmospheric rotation, drag, and density variation. The
+energy-output row is exactly `E=-h_KS` in J/kg, or
+`E_MJ/kg=-h_KS/1e6`. This supersedes the frozen-energy eight-state
 approximation.

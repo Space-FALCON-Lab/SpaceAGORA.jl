@@ -12,7 +12,7 @@ module ControlHooks
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
-    using ..EnvironmentModels: getDensity
+    using ..EnvironmentModels: getDensity, density_altitude_derivative
     using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
     using ..ReferenceSystems
     using ..LinearAlgebra
@@ -20,9 +20,10 @@ module ControlHooks
     using ..Kinematics
     using ..DynamicsKS: KSPropagationParams
     using ..DynamicsKS: ks_energy_parameter, specific_energy_from_ks
-    using ..DynamicsKS: cartesian_to_ks_state, ks_state_to_cartesian
-    using ..DynamicsKS: ks_rk4_step, ks_step_jacobian, ks_kinematics_jacobians
-    using ..DynamicsKS: _ks_lambda, _ks_skew_rotation
+    using ..DynamicsKS: ks_position, ks_velocity, cartesian_to_ks_state, ks_state_to_cartesian
+    using ..DynamicsKS: ks_implicit_midpoint_step, ks_implicit_midpoint_linearization
+    using ..DynamicsKS: ks_step_jacobian, ks_kinematics_jacobians, ks_density_value_gradient
+    using ..DynamicsKS: ks_rotation_cross_matrix
     using SparseArrays
     using OSQP
 
@@ -38,10 +39,13 @@ module ControlHooks
     export mpc_constraints, constraint_active, constraint_names, apply_constraints
     export mpc_params_from_spaceagora, mpc_prediction_gravity_model
     export spacecraft_mass_kg, spacecraft_reference_areas, mpc_config_from_spaceagora
-    export density_and_gradient_from_spaceagora, density_function_from_spaceagora
+    export density_function_from_spaceagora
     export build_reference_drag_pass, build_mpc_problem, solve_mpc_qp
     export objective_kind, objective_label, commanded_area_fraction
     export alpha_from_commanded_area, commanded_area_from_alpha, apply_commanded_area!
+    export interpolate_mpc_plan, interpolate_mpc_history
+    export evaluate_cartesian_mpc_outputs, evaluate_ks_mpc_outputs
+    export cumulative_mpc_heat_load, propagate_ks_mpc_plan
     export mpc_control_save_fields
     export RpoLQMPCController, init_rpo_lqmpc, rpo_lqmpc_control
     export RPOHeldActuation, RPOMPCControlModel

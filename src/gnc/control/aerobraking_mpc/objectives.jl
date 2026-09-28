@@ -1,11 +1,4 @@
-#=
-"""
-    Objective metadata and solution outputs.
-
-    ET and MED use the same condensed matrices. This file keeps the mode labels
-    and the solved trajectory outputs in one place.
-"""
-=#
+# Objective definitions shared by energy targeting and maximum depletion.
 objective_kind(::TargetEnergyMode) = :target_energy
 objective_kind(::MaxEnergyDepletionMode) = :max_energy_depletion
 

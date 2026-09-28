@@ -12,6 +12,7 @@ module AerodynamicEffectors
     import ..DynamicEffectors: calcForceTorque, wrench, wrench_caching!, environment_requirements, solver_partition
 
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
+    export AerodynamicCommandedAreaDragModel
 
     include(joinpath(@__DIR__, "..", "..", "..", "core", "interfaces", "reference_system.jl"))
     include(joinpath(@__DIR__, "..", "aerodynamic_wrench_models.jl"))

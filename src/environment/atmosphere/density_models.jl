@@ -499,19 +499,57 @@ end
     return clamp(h_m, model.valid_min_altitude_m, model.valid_max_altitude_m) * 1e-3
 end
 
-@inline function _polyfit_log_density(model::PolynomialFitAtmosphereModel, h_m::Float64)::Float64
+@inline function _polyfit_log_density_and_slope(
+    model::PolynomialFitAtmosphereModel, h_m::Float64)
     coeffs = model.polyfit_coeffs
-    isempty(coeffs) && return 0.0
+    isempty(coeffs) && return 0.0, 0.0
     h_km = _polyfit_eval_altitude_km(model, h_m)
     exponent = coeffs[1]
+    slope_per_km = 0.0
     @inbounds for j in 2:length(coeffs)
+        slope_per_km = muladd(slope_per_km, h_km, exponent)
         exponent = muladd(exponent, h_km, coeffs[j])
     end
-    return clamp(exponent, _POLYFIT_LOG_DENSITY_MIN, _POLYFIT_LOG_DENSITY_MAX)
+    bounded_exponent = clamp(exponent,
+        _POLYFIT_LOG_DENSITY_MIN, _POLYFIT_LOG_DENSITY_MAX)
+    derivative_active = model.valid_min_altitude_m <= h_m <=
+        model.valid_max_altitude_m && exponent == bounded_exponent
+    return bounded_exponent, derivative_active ? slope_per_km : 0.0
+end
+
+@inline function _polyfit_log_density(
+    model::PolynomialFitAtmosphereModel, h_m::Float64)::Float64
+    return first(_polyfit_log_density_and_slope(model, h_m))
 end
 
 @inline function _polyfit_density(model::PolynomialFitAtmosphereModel, h_m::Float64)::Float64
     return exp(_polyfit_log_density(model, h_m))
+end
+
+density_altitude_derivative(::NoAtmosphereModel, ::Real) = 0.0
+density_altitude_derivative(::ConstantDensityModel, ::Real) = 0.0
+
+function density_altitude_derivative(
+    model::ExponentialAtmosphereModel, altitude_m::Real)
+    density = _exponential_density(model.ρ_ref, model.h_ref, model.H,
+        Float64(altitude_m))
+    return -density / model.H
+end
+
+function density_altitude_derivative(
+    model::PiecewiseExponentialAtmosphereModel, altitude_m::Real)
+    h = Float64(altitude_m)
+    layer = _piecewise_layer_index(model, h)
+    density = _exponential_density(model.ρ_refs[layer],
+        model.h_refs[layer], model.Hs[layer], h)
+    return -density / model.Hs[layer]
+end
+
+function density_altitude_derivative(
+    model::PolynomialFitAtmosphereModel, altitude_m::Real)
+    log_density, slope_per_km = _polyfit_log_density_and_slope(
+        model, Float64(altitude_m))
+    return 1.0e-3 * exp(log_density) * slope_per_km
 end
 
 @inline function _nrlmsise_eval_datetime(initial_time, el_time::Float64)::DateTime

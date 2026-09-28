@@ -18,6 +18,7 @@ module DynamicEffectors
     using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel
     using .GravityEffectors: aerobraking_gravity_force_ii
     using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
+    using .AerodynamicEffectors: AerodynamicCommandedAreaDragModel
     using .AerodynamicEffectors: _parse_bool_env, _multibody_outer_parallel_hint, collect_and_reset_link_wrenches!
     using .AerodynamicEffectors: _multibody_parallel_mode, _multibody_thread_threshold, _multibody_max_threads
     using .AerodynamicEffectors: _threadid_capacity, _multibody_use_threads, _multibody_thread_decision
@@ -43,6 +44,7 @@ module DynamicEffectors
     export EddyCurrentDampingModel, eddy_damping_torque
     export LVLHCascadeAttitudeControlModel
     export AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight
+    export AerodynamicCommandedAreaDragModel
     export calcForceTorque
     export wrench, wrench_caching!, environment_requirements, solver_partition
     export BaseThrusterModel

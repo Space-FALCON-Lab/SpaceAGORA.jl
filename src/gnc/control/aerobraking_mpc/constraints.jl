@@ -1,12 +1,4 @@
-#=
-"""
-    MPC constraint selection.
-
-    The active constraints must be stated by the user or example file. This
-    avoids a default case where a limit is active only because it was hidden in
-    the source code.
-"""
-=#
+# Active path and actuator constraints are explicit scenario inputs.
 Base.@kwdef struct AerobrakingMPCConstraintSet
     heat_rate::Bool
     heat_load::Bool

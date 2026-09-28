@@ -1,23 +1,5 @@
-#=
-"""
-    Linearized KS model for MPC prediction.
-
-    The output rows are altitude, drag, heat rate, and specific energy. The
-    spacecraft mass, area, planet constants, and density model come from the
-    user-selected SpaceAGORA case.
-"""
-=#
-@inline function _density_with_gradient(density::Function, altitude_m::Real, elapsed_time_s::Real; dh_m::Real=10.0)
-    h = Float64(altitude_m)
-    t = Float64(elapsed_time_s)
-    step = max(abs(Float64(dh_m)), 1.0)
-    ρ = max(0.0, Float64(density(h, t)))
-    ρp = max(0.0, Float64(density(h + step, t)))
-    ρm = max(0.0, Float64(density(h - step, t)))
-    return ρ, (ρp - ρm) / (2.0 * step)
-end
-
-function linearized_ks_dynamics(
+# Aerobraking MPC prediction matrices and nominal outputs.
+function aerobraking_mpc_step_matrices(
     state::AbstractVector,
     params::AerobrakingMPCParams,
     config::AerobrakingMPCConfig;
@@ -31,63 +13,37 @@ function linearized_ks_dynamics(
     h_ks = X0[9]
     elapsed_time_s = length(X0) >= 10 ? X0[10] : 0.0
 
-    r_vec = _ks_lambda(p) * p
+    r_vec = ks_position(p)
     r_norm = norm(r_vec)
-    v_vec = (2.0 / r_norm) * _ks_lambda(p) * p_prime
+    v_vec = ks_velocity(p, p_prime)
     area = Float64(area_m2)
 
-    Ωx = _ks_skew_rotation(params)
+    Ωx = ks_rotation_cross_matrix(params)
     Vrel = v_vec - Ωx * r_vec
     Vn = sqrt(dot(Vrel, Vrel)) + eps(Float64)
-    ρ, _ = _density_with_gradient(density, r_norm - params.Re, elapsed_time_s)
+    ρ, dρ_dr = ks_density_value_gradient(
+        density, r_vec, elapsed_time_s, params; gradient_step_m=10.0)
 
     Jr_u, Jv_u, Jv_w, _, _, _ = ks_kinematics_jacobians(p, p_prime)
 
-    # Nine-state discrete variational model: δx = [δp; δp′; δh_KS].
-    # Differentiate the same nonlinear RK4 map used by the reference propagator.
-    # This retains every paper-convention coupling, including
-    # ∂q′/∂h_KS=-p/2, h_KS′=-R*vᵀ*a_p, and density variation at RK stages.
     step_s = Float64(Δs)
-    A_k = ks_step_jacobian(
+    midpoint = ks_implicit_midpoint_linearization(
         X0,
         params,
         area,
         step_s;
-        config=config,
         density_kg_m3=density,
+        drag_coefficient=config.drag_coefficient,
+        mass_kg=config.mass_kg,
         use_drag=true,
-        relative_step=1.0e-4,
-    )[1:9, 1:9]
-
-    area_step = max(1.0e-3, 1.0e-4 * max(abs(area), 1.0))
-    function propagated_state(area_value)
-        return ks_rk4_step(
-            X0,
-            params,
-            area_value,
-            step_s;
-            config=config,
-            density_kg_m3=density,
-            use_drag=true,
-        )[1:9]
-    end
-    B_k = reshape(
-        (
-            -propagated_state(area + 2.0 * area_step) +
-            8.0 * propagated_state(area + area_step) -
-            8.0 * propagated_state(area - area_step) +
-            propagated_state(area - 2.0 * area_step)
-        ) ./ (12.0 * area_step),
-        9,
-        1,
     )
+    A_k = midpoint.transition[1:9, 1:9]
+    B_k = midpoint.input_transition[1:9, :]
 
     rhat = r_vec / (r_norm + eps(Float64))
     Ch_u = transpose(rhat) * Jr_u
     Ch_w = zeros(1, 4)
 
-    _, dρ_dh = _density_with_gradient(density, r_norm - params.Re, elapsed_time_s)
-    dρ_dr = dρ_dh * rhat
     Cq_r = (0.5 * Vn^2) * transpose(dρ_dr) + ρ * transpose(Vrel) * (-Ωx)
     Cq_v = ρ * transpose(Vrel)
     Cdrag_u = (config.drag_coefficient * area) .* (Cq_r * Jr_u + Cq_v * Jv_u)
@@ -157,7 +113,7 @@ function build_mpc_problem(
         r_sund_k = max(sum(abs2, Xbar[k, 1:4]), eps(Float64))
         Δs_k = Δt_k / r_sund_k
         state_k = vcat(Xbar[k, :], t[k])
-        Ak, Bk, Ck, Dk, yk = linearized_ks_dynamics(
+        Ak, Bk, Ck, Dk, yk = aerobraking_mpc_step_matrices(
             state_k,
             params,
             config;

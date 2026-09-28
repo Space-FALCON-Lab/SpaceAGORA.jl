@@ -680,33 +680,3 @@ jobs:
           SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
           SPACEAGORA_BASE_REF: ${{ github.base_ref }}
         run: julia --startup-file=no --project=. test/gates/ci_ai_review_artifact_gate.jl
-
-  # TEMPORARY diagnostic (CI experiment): does gram_isolated_pool_tests.jl fail
-  # with native GRAM on its own, and does it pass after the unit files that
-  # precede it in test/unit/runtests.jl?
-  diag-gram-pool:
-    needs: depot
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      JULIA_NUM_THREADS: "4"
-      SPACEAGORA_CI_SHARD_REPORT_DIR: ${{ github.workspace }}/diag
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-      - uses: ./.github/actions/setup
-        with:
-          gram: native
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-      - name: Standalone, uninstrumented
-        if: ${{ !cancelled() }}
-        run: julia --startup-file=no --project=. --threads=4 test/unit/environment/gram_isolated_pool_tests.jl
-      - name: Standalone, coverage
-        if: ${{ !cancelled() }}
-        run: julia --startup-file=no --project=. --code-coverage=user --threads=4 test/unit/environment/gram_isolated_pool_tests.jl
-      - name: After its unit-runner predecessors, coverage
-        if: ${{ !cancelled() }}
-        env:
-          SPACEAGORA_CI_SHARD_ITEMS: unit:example_imports_tests.jl unit:rpo_port_tests.jl unit:gnc/rpo_ownership_reproducibility_tests.jl unit:gnc/rpo_configurable_station_tests.jl unit:parallel/machine_topology_tests.jl unit:parallel/native_lock_stats_tests.jl unit:parallel/contention_inputs_tests.jl unit:parallel/usl_tests.jl unit:parallel/streaming_trial_tests.jl unit:parallel/lock_width_cap_tests.jl unit:parallel/cost_work_counts_tests.jl unit:parallel/cost_robust_timing_tests.jl unit:parallel/cost_machine_calibration_tests.jl unit:parallel/outer_route_persistence_tests.jl unit:parallel/policy_v2_tests.jl unit:parallel/predictive_planner_tests.jl unit:parallel/predictive_campaign_tests.jl unit:parallel/parallel_flag_tests.jl unit:parallel/process_pool_dispatch_cost_tests.jl unit:parallel/gram_memory_model_tests.jl unit:dynamics/third_body_cost_tests.jl unit:dynamics/harmonics_kernel_identity_tests.jl unit:environment/gram_isolated_pool_tests.jl
-        run: julia --startup-file=no --project=. --code-coverage=user --threads=4 .github/scripts/ci_unit_shard.jl

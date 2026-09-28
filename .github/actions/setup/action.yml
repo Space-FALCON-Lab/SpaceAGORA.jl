@@ -83,8 +83,13 @@ runs:
       run: |
         setsid -w bash -c '
           set -e
+          echo "$(date -u +%T) retrieving GRAMSuite"
           bash .github/scripts/update_gramsuite_submodule.sh dev
-          if [ "$GRAM_NATIVE" = 1 ]; then ./scripts/ensure_gram_native.sh --clean; fi
+          if [ "$GRAM_NATIVE" = 1 ]; then
+            echo "$(date -u +%T) building native GRAM"
+            ./scripts/ensure_gram_native.sh --clean
+          fi
+          echo "$(date -u +%T) done"
         ' > "$RUNNER_TEMP/gram-setup.log" 2>&1 < /dev/null &
         echo $! > "$RUNNER_TEMP/gram-setup.pid"
 

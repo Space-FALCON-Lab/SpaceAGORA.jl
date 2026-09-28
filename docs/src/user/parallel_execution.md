@@ -561,16 +561,20 @@ end
 result = run_constellation_ensemble(args; threads=:auto, return_solution=true)
 ```
 
-`campaign_route_features` describes the campaign shape (sample count,
-per-sample satellite count, density-model family, mission length); the
-`SimulationConfiguration` method derives those fields for you. After every
-campaign the runner records per-sample success and amortized wall-clock
-feedback via `record_outer_route_feedback!`, so repeated campaigns with the
-same shape first explore the feasible allocations and then converge to the
-fastest one. History accumulates in the process-global
-`campaign_outer_route_state()`; inspect it with `outer_route_stats_snapshot`,
-reset it with `reset_outer_route_state!`, or pass an isolated `OuterRouteState`
-via `route_state` (useful for tests and one-off studies).
+`SpaceAGORA.SimulationCampaigns.campaign_route_features` describes the
+campaign shape (sample count, per-sample satellite count, density-model
+family, mission length); the `SimulationConfiguration` method derives those
+fields for you. After every campaign the runner records per-sample success and
+amortized wall-clock feedback via
+`SpaceAGORA.ParallelProfiles.record_outer_route_feedback!`, so repeated
+campaigns with the same shape first explore the feasible allocations and then
+converge to the fastest one. History accumulates in the process-global
+`SpaceAGORA.SimulationCampaigns.campaign_outer_route_state()`; inspect it with
+`SpaceAGORA.ParallelProfiles.outer_route_stats_snapshot`, reset it with
+`SpaceAGORA.ParallelProfiles.reset_outer_route_state!`, or pass an isolated
+`SpaceAGORA.ParallelProfiles.OuterRouteState()` via `route_state` (useful for
+tests and one-off studies). These names are internal: they are not exported
+and may change without notice.
 
 While the adaptive route runs threaded workers, the runner sets
 `SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and — unless you exported one yourself —

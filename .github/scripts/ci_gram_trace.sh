@@ -21,9 +21,10 @@ tracepoint:syscalls:sys_enter_openat,
 tracepoint:syscalls:sys_enter_newfstatat,
 tracepoint:syscalls:sys_enter_statx,
 tracepoint:syscalls:sys_enter_faccessat,
-tracepoint:syscalls:sys_enter_faccessat2,
-tracepoint:syscalls:sys_enter_readlinkat
+tracepoint:syscalls:sys_enter_faccessat2
 { printf("%s\t%s\n", comm, str(args.filename)); }
+tracepoint:syscalls:sys_enter_readlinkat
+{ printf("%s\t%s\n", comm, str(args.path)); }
 tracepoint:syscalls:sys_enter_access,
 tracepoint:syscalls:sys_enter_newstat,
 tracepoint:syscalls:sys_enter_newlstat,

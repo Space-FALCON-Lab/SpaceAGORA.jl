@@ -12,6 +12,10 @@ permissions:
   pull-requests: read
   statuses: write
 
+# TEMPORARY (CI experiment): trace which GRAMSuite files each job touches.
+env:
+  SPACEAGORA_CI_GRAM_TRACE: "1"
+
 jobs:
   docs:
     runs-on: ubuntu-latest
@@ -28,24 +32,14 @@ jobs:
       # Prefer the dev tree: the public GRAMSuite's LFS bandwidth is easily
       # exhausted by CI (persistent 502s on the batch endpoint), while the
       # dev repo stores its data without LFS. Fall back to the public tree
-      # when the read token cannot reach the dev repo.
-      - name: Load pinned GRAMSuite revision
-        env:
-          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: |
-          bash .github/scripts/update_gramsuite_submodule.sh dev \
-            || bash .github/scripts/update_gramsuite_submodule.sh regular
-
-      - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+      # when the read token cannot reach the dev repo. Setup restores the depot
+      # cache that Julia CI's `depot` job fills and never saves one of its own.
+      - name: Setup
+        uses: ./.github/actions/setup
         with:
-          version: "1.12"
-
-      - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
-
-      - name: Instantiate environment
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+          regular-fallback: "true"
+          gramsuite-smoke: "false"
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Build and deploy docs
         run: julia --project=. docs/make.jl

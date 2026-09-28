@@ -21,6 +21,9 @@ inputs:
   precompile:
     description: Precompile the root environment (the package itself is always rebuilt per commit).
     default: "true"
+  regular-fallback:
+    description: Fall back to the public GRAMSuite when the token cannot reach the dev repository.
+    default: "false"
   token:
     description: Token that can read the private dev GRAMSuite repository.
     required: true
@@ -55,6 +58,14 @@ runs:
           df -h /
         fi
 
+    # TEMPORARY (CI experiment): record which GRAMSuite files the job touches.
+    - name: GRAMSuite access trace
+      if: env.SPACEAGORA_CI_GRAM_TRACE == '1' && inputs.gram != 'none'
+      uses: pyTooling/Actions/with-post-step@42e17fae05f224e5ac3d79d021a4e3577878efe5
+      with:
+        main: bash .github/scripts/ci_gram_trace.sh start
+        post: bash .github/scripts/ci_gram_trace.sh report
+
     - name: Setup Julia and cache keys
       id: keys
       uses: ./.github/actions/cache-keys
@@ -80,11 +91,18 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.token }}
         GRAM_NATIVE: ${{ inputs.gram == 'native' && '1' || '0' }}
+        GRAM_REGULAR_FALLBACK: ${{ inputs.regular-fallback }}
       run: |
         setsid -w bash -c '
           set -e
           echo "$(date -u +%T) retrieving GRAMSuite"
-          bash .github/scripts/update_gramsuite_submodule.sh dev
+          if [ "$GRAM_REGULAR_FALLBACK" = true ]; then
+            bash .github/scripts/update_gramsuite_submodule.sh dev \
+              || bash .github/scripts/update_gramsuite_submodule.sh regular
+          else
+            bash .github/scripts/update_gramsuite_submodule.sh dev
+          fi
+          if [ "${SPACEAGORA_CI_GRAM_TRACE:-0}" = 1 ]; then bash .github/scripts/ci_gram_trace.sh mark; fi
           if [ "$GRAM_NATIVE" = 1 ]; then
             echo "$(date -u +%T) building native GRAM"
             ./scripts/ensure_gram_native.sh --clean
@@ -118,7 +136,7 @@ runs:
         pid=$(cat "$RUNNER_TEMP/gram-setup.pid")
         while kill -0 "$pid" 2> /dev/null; do sleep 2; done
         cat "$RUNNER_TEMP/gram-setup.log"
-        grep -q '^GRAMSuite dev revision: ' "$RUNNER_TEMP/gram-setup.log"
+        grep -q '^GRAMSuite \(dev\|regular\) revision: ' "$RUNNER_TEMP/gram-setup.log"
         if [ "${{ inputs.gram }}" = native ]; then grep -q '^Native GRAM library ready:' "$RUNNER_TEMP/gram-setup.log"; fi
 
     - name: Instantiate vendored GRAMSuite

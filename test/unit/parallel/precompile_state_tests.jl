@@ -19,9 +19,11 @@ const PS_SNAPSHOT_SCRIPT = raw"""
 using SpaceAGORA
 
 # Values that differ between two snapshots by design, not by leftover state:
-# the native-lock window's start time (reset to "now") and write/generation
-# counters that only ever count up.
-const PS_VOLATILE = Set(["_NATIVE_LOCK_RESET_NS", "_ATOMIC_WRITE_COUNTER",
+# the native-lock window's start time (reset to "now"), the per-acquisition
+# scratch the tracked lock overwrites on every entry before reading it, and
+# write/generation counters that only ever count up.
+const PS_VOLATILE = Set(["_NATIVE_LOCK_RESET_NS", "_native_lock_entry_ns",
+                         "_native_lock_entry_wait_ns", "_ATOMIC_WRITE_COUNTER",
                          "_MACHINE_CONSTANTS_GENERATION"])
 
 function ps_describe(v)

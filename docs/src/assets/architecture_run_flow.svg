@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
   "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg role="img" aria-labelledby="figure-title figure-desc" xmlns:xlink="http://www.w3.org/1999/xlink" width="518.740157pt" height="538.582677pt" viewBox="0 0 518.740157 538.582677" xmlns="http://www.w3.org/2000/svg" version="1.1">
-<title id="figure-title">Runtime architecture of SpaceAGORA</title><desc id="figure-desc">Scenario configuration and engine setup feed a repeated solver loop. Environment, individual multicomponent spacecraft and GNC feed the dynamics. Callbacks update commands and save state. The spacecraft collection belongs to the scenario; no general mission scheduler is implied.</desc>
+<svg role="img" aria-labelledby="title desc" xmlns:xlink="http://www.w3.org/1999/xlink" width="864pt" height="936pt" viewBox="0 0 864 936" xmlns="http://www.w3.org/2000/svg" version="1.1">
+<title id="title">SpaceAGORA simulation architecture</title><desc id="desc">Current source owners from configuration through engine setup, environment, spacecraft and GNC, repeated right-hand-side and solver evaluations, and outputs. The figure describes existing source locations, not proposed folder moves.</desc>
  <metadata>
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-09-20T17:14:59.876832</dc:date>
+    <dc:date>2026-09-28T14:17:48.953470</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -22,259 +22,307 @@
  </defs>
  <g id="figure_1">
   <g id="patch_1">
-   <path d="M 0 538.582677
-L 518.740157 538.582677
-L 518.740157 0
+   <path d="M 0 936
+L 864 936
+L 864 0
 L 0 0
 z
 " style="fill: #ffffff"/>
   </g>
   <g id="axes_1">
    <g id="patch_2">
-    <path d="M 79.370079 102.047244
-L 439.370079 102.047244
-L 439.370079 36.850394
-L 79.370079 36.850394
+    <path d="M 167 99
+L 697 99
+L 697 199
+L 167 199
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #f2f7fc; stroke: #8cbde7; stroke-linejoin: miter"/>
    </g>
    <g id="patch_3">
-    <path d="M 259.370079 102.047244
-L 259.370079 120.939435
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
-    <path d="M 260.970079 117.739435
-L 259.370079 120.939435
-L 257.770079 117.739435
+    <path d="M 432 199
+L 432 219.770163
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 434.2 215.370163
+L 432 219.770163
+L 429.8 215.370163
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_4">
-    <path d="M 79.370079 187.086614
-L 439.370079 187.086614
-L 439.370079 121.889764
-L 79.370079 121.889764
+    <path d="M 167 221
+L 697 221
+L 697 304
+L 167 304
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #f2f7fc; stroke: #8cbde7; stroke-linejoin: miter"/>
    </g>
    <g id="patch_5">
-    <path d="M 259.370079 187.086614
-L 259.370079 205.978805
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
-    <path d="M 260.970079 202.778805
-L 259.370079 205.978805
-L 257.770079 202.778805
+    <path d="M 432 304
+L 432 326
+L 149 326
+L 149 342.770163
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 151.2 338.370163
+L 149 342.770163
+L 146.8 338.370163
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_6">
-    <path d="M 8.503937 450.708661
-L 510.23622 450.708661
-L 510.23622 206.929134
-L 8.503937 206.929134
+    <path d="M 432 304
+L 432 326
+L 432 326
+L 432 342.770163
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 434.2 338.370163
+L 432 342.770163
+L 429.8 338.370163
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #fafcff; stroke: #2f5f7f; stroke-width: 0.7; stroke-linejoin: miter"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_7">
-    <path d="M 22.677165 314.645669
-L 167.244094 314.645669
-L 167.244094 238.110236
-L 22.677165 238.110236
+    <path d="M 432 304
+L 432 326
+L 715 326
+L 715 342.770163
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 717.2 338.370163
+L 715 342.770163
+L 712.8 338.370163
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #ffffff; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_8">
-    <path d="M 94.96063 314.645669
-L 94.96063 333.53786
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
-    <path d="M 96.56063 330.33786
-L 94.96063 333.53786
-L 93.36063 330.33786
+    <path d="M 24 344
+L 274 344
+L 274 470
+L 24 470
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #f2f7fc; stroke: #8cbde7; stroke-linejoin: miter"/>
    </g>
    <g id="patch_9">
-    <path d="M 187.086614 314.645669
-L 331.653543 314.645669
-L 331.653543 238.110236
-L 187.086614 238.110236
+    <path d="M 307 344
+L 557 344
+L 557 470
+L 307 470
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #ffffff; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #f2f7fc; stroke: #8cbde7; stroke-linejoin: miter"/>
    </g>
    <g id="patch_10">
-    <path d="M 259.370079 314.645669
-L 259.370079 333.53786
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
-    <path d="M 260.970079 330.33786
-L 259.370079 333.53786
-L 257.770079 330.33786
+    <path d="M 590 344
+L 840 344
+L 840 470
+L 590 470
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #f2f7fc; stroke: #8cbde7; stroke-linejoin: miter"/>
    </g>
    <g id="patch_11">
-    <path d="M 351.496063 314.645669
-L 496.062992 314.645669
-L 496.062992 238.110236
-L 351.496063 238.110236
+    <path d="M 149 470
+L 149 492
+L 432 492
+L 432 511.770163
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 434.2 507.370163
+L 432 511.770163
+L 429.8 507.370163
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #ffffff; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_12">
-    <path d="M 423.779528 314.645669
-L 423.779528 333.53786
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
-    <path d="M 425.379528 330.33786
-L 423.779528 333.53786
-L 422.179528 330.33786
+    <path d="M 432 470
+L 432 492
+L 432 492
+L 432 511.770163
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 434.2 507.370163
+L 432 511.770163
+L 429.8 507.370163
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_13">
-    <path d="M 65.19685 379.84252
-L 453.543307 379.84252
-L 453.543307 334.488189
-L 65.19685 334.488189
+    <path d="M 715 470
+L 715 492
+L 432 492
+L 432 511.770163
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 434.2 507.370163
+L 432 511.770163
+L 429.8 507.370163
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_14">
-    <path d="M 259.370079 379.84252
-L 259.370079 393.065419
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
-    <path d="M 260.970079 389.865419
-L 259.370079 393.065419
-L 257.770079 389.865419
+    <path d="M 167 513
+L 697 513
+L 697 616
+L 167 616
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #f2f7fc; stroke: #8cbde7; stroke-linejoin: miter"/>
    </g>
    <g id="patch_15">
-    <path d="M 65.19685 439.370079
-L 453.543307 439.370079
-L 453.543307 394.015748
-L 65.19685 394.015748
+    <path d="M 432 616
+L 432 636.770163
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 434.2 632.370163
+L 432 636.770163
+L 429.8 632.370163
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_16">
-    <path d="M 65.19685 416.692913
-L 36.850394 416.692913
-L 36.850394 357.165354
-L 64.246522 357.165354
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
-    <path d="M 61.046522 355.565354
-L 64.246522 357.165354
-L 61.046522 358.765354
+    <path d="M 167 638
+L 697 638
+L 697 727
+L 167 727
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #f2f7fc; stroke: #8cbde7; stroke-linejoin: miter"/>
    </g>
    <g id="patch_17">
-    <path d="M 453.543307 416.692913
-L 501.732283 416.692913
-L 501.732283 232.440945
-L 423.779528 232.440945
-L 423.779528 237.159907
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
-    <path d="M 425.379528 233.959907
-L 423.779528 237.159907
-L 422.179528 233.959907
+    <path d="M 167 682
+L 106 682
+L 106 565
+L 165.770163 565
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 161.370163 562.8
+L 165.770163 565
+L 161.370163 567.2
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_18">
-    <path d="M 259.370079 439.370079
-L 259.370079 469.600852
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
-    <path d="M 260.970079 466.400852
-L 259.370079 469.600852
-L 257.770079 466.400852
+    <path d="M 432 727
+L 432 748.770163
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
+    <path d="M 434.2 744.370163
+L 432 748.770163
+L 429.8 744.370163
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 0.85; stroke-linecap: round"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #2f5f7f; stroke: #2f5f7f; stroke-width: 1.1; stroke-linecap: round"/>
    </g>
    <g id="patch_19">
-    <path d="M 79.370079 530.07874
-L 439.370079 530.07874
-L 439.370079 470.551181
-L 79.370079 470.551181
+    <path d="M 167 750
+L 697 750
+L 697 841
+L 167 841
 z
-" clip-path="url(#pdb74d257ff)" style="fill: #f2f7fc; stroke: #2f5f7f; stroke-width: 0.9; stroke-linejoin: miter"/>
+" clip-path="url(#p778ede7b2d)" style="fill: #f2f7fc; stroke: #8cbde7; stroke-linejoin: miter"/>
    </g>
    <g id="line2d_1">
-    <path d="M 11.338583 31.181102
-L 507.401575 31.181102
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #8cbde7; stroke-linecap: square"/>
+    <path d="M 25 77
+L 839 77
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #8cbde7; stroke-width: 1.5; stroke-linecap: square"/>
    </g>
    <g id="line2d_2">
-    <path d="M 11.338583 31.181102
-L 48.188976 31.181102
-" clip-path="url(#pdb74d257ff)" style="fill: none; stroke: #ffcb05; stroke-width: 2.5; stroke-linecap: square"/>
+    <path d="M 25 77
+L 72 77
+" clip-path="url(#p778ede7b2d)" style="fill: none; stroke: #ffcb05; stroke-width: 3; stroke-linecap: square"/>
    </g>
    <g id="text_1">
-    <text style="fill: #1f3f59; font: 700 12px 'Arial'; text-anchor: start" x="11.338583" y="20.191624" transform="rotate(-0 11.338583 20.191624)">SpaceAGORA simulation architecture</text>
+    <text style="fill: #1f3f59; font: 700 22px 'Arial'; text-anchor: start" x="25" y="38.015313" transform="rotate(-0 25 38.015313)">SpaceAGORA simulation architecture</text>
    </g>
    <g id="text_2">
-    <text style="fill: #1f3f59; font: 700 10.5px 'Arial'; text-anchor: middle" x="259.370079" y="56.575143" transform="rotate(-0 259.370079 56.575143)">Scenario configuration</text>
+    <text style="fill: #1f3f59; font: 11px 'Arial'; text-anchor: start" x="25" y="62.007656" transform="rotate(-0 25 62.007656)">Existing source owners at main 884307fd; arrows show runtime flow.</text>
    </g>
    <g id="text_3">
-    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(145.315157 79.050687)">Environment + spacecraft collection + initial conditions</text>
-    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(165.646641 90.275012)">GNC models, solver and stopping conditions</text>
+    <text style="fill: #1f3f59; font: 700 15px 'Arial'; text-anchor: middle" x="432" y="119.919531" transform="rotate(-0 432 119.919531)">Scenario configuration</text>
    </g>
    <g id="text_4">
-    <text style="fill: #1f3f59; font: 700 10.5px 'Arial'; text-anchor: middle" x="259.370079" y="141.550528" transform="rotate(-0 259.370079 141.550528)">Engine setup</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(268.928437 141.735625)">Environment, spacecraft collection / constellation, initial state,</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(333.96375 155.040156)">GNC models, solver and run settings</text>
    </g>
    <g id="text_5">
-    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(151.211837 164.032167)">Validate models; isolate state; assemble initial state</text>
-    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(179.459493 175.256491)">Allocate buffers and register callbacks</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="432" y="179.643672" transform="rotate(-0 432 179.643672)">src/core/state/simulation_configuration.jl</text>
    </g>
    <g id="text_6">
-    <text style="fill: #1f3f59; font: 700 9.5px 'Arial'; text-anchor: start" x="22.677165" y="223.56494" transform="rotate(-0 22.677165 223.56494)">Repeated solve loop</text>
+    <text style="fill: #1f3f59; font: 700 15px 'Arial'; text-anchor: middle" x="432" y="241.736719" transform="rotate(-0 432 241.736719)">Engine setup</text>
    </g>
    <g id="text_7">
-    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="94.96063" y="257.710298" transform="rotate(-0 94.96063 257.710298)">Environment</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'; text-anchor: middle" x="432" y="263.735625" transform="rotate(-0 432 263.735625)">Prepare runtime state, buffers and callbacks</text>
    </g>
    <g id="text_8">
-    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(61.328755 286.165018)">Frames + gravity</text>
-    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(52.817427 296.755979)">Atmosphere + terrain</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="432" y="284.643672" transform="rotate(-0 432 284.643672)">src/simulation/engine/</text>
    </g>
    <g id="text_9">
-    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="259.370079" y="257.771235" transform="rotate(-0 259.370079 257.771235)">Each spacecraft</text>
+    <text style="fill: #1f3f59; font: 700 15px 'Arial'; text-anchor: middle" x="149" y="364.736719" transform="rotate(-0 149 364.736719)">Environment</text>
    </g>
    <g id="text_10">
-    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(207.853516 286.038245)">Links, joints, mass, inertia</text>
-    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(201.596407 296.777284)">Rigid / articulated / compliant</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(75.75125 386.589375)">Atmosphere, gravity, terrain</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(102.63875 399.851719)">and ephemerides</text>
    </g>
    <g id="text_11">
-    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="423.779528" y="257.710298" transform="rotate(-0 423.779528 257.710298)">GNC models</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="149" y="450.515703" transform="rotate(-0 149 450.515703)">src/environment/</text>
    </g>
    <g id="text_12">
-    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(379.124762 286.165018)">Navigation + guidance</text>
-    <text style="fill: #1f3f59; font: 9px 'Arial'" transform="translate(386.017496 296.755979)">Control commands</text>
+    <text style="fill: #1f3f59; font: 700 15px 'Arial'; text-anchor: middle" x="432" y="364.919531" transform="rotate(-0 432 364.919531)">Spacecraft</text>
    </g>
    <g id="text_13">
-    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="259.370079" y="352.164936" transform="rotate(-0 259.370079 352.164936)">Evaluate forces, torques and state derivatives</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(346.305938 386.589375)">Structure, kinematics, actuators,</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(348.966563 399.711094)">thermal and robotic assemblies</text>
    </g>
    <g id="text_14">
-    <text style="fill: #1f3f59; font: 9.2px 'Arial'; text-anchor: middle" x="259.370079" y="369.469989" transform="rotate(-0 259.370079 369.469989)">Orbital, attitude and supported internal dynamics</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="432" y="450.515703" transform="rotate(-0 432 450.515703)">src/vehicle/</text>
    </g>
    <g id="text_15">
-    <text style="fill: #1f3f59; font: 700 10px 'Arial'; text-anchor: middle" x="259.370079" y="410.781164" transform="rotate(-0 259.370079 410.781164)">Advance state and execute callbacks</text>
+    <text style="fill: #1f3f59; font: 700 15px 'Arial'; text-anchor: middle" x="715" y="364.736719" transform="rotate(-0 715 364.736719)">GNC</text>
    </g>
    <g id="text_16">
-    <text style="fill: #1f3f59; font: 9.2px 'Arial'; text-anchor: middle" x="259.370079" y="429.048579" transform="rotate(-0 259.370079 429.048579)">Scheduled updates, saved values and event detection</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(627.61375 386.589375)">Navigation, guidance and control</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(621.623125 399.851719)">hooks and current implementations</text>
    </g>
    <g id="text_17">
-    <text style="fill: #1f3f59; font: 8.5px 'Arial'; text-anchor: middle" x="331.653543" y="462.827304" transform="rotate(-0 331.653543 462.827304)">run ends</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="715" y="450.643672" transform="rotate(-0 715 450.643672)">src/gnc/</text>
    </g>
    <g id="text_18">
-    <text style="fill: #1f3f59; font: 700 10.5px 'Arial'; text-anchor: middle" x="259.370079" y="490.280852" transform="rotate(-0 259.370079 490.280852)">Recorded outputs + optional viewer</text>
+    <text style="fill: #1f3f59; font: 700 15px 'Arial'; text-anchor: middle" x="432" y="533.736719" transform="rotate(-0 432 533.736719)">Right-hand side: system state derivatives</text>
    </g>
    <g id="text_19">
-    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(164.056133 511.278488)">Saved state, diagnostics, manifest and scene</text>
-    <text style="fill: #1f3f59; font: 9.5px 'Arial'" transform="translate(156.139219 522.61414)">Reference comparisons use the resulting outputs</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(316.280625 555.589375)">Forces, torques, orbital and attitude motion,</text>
+    <text style="fill: #1f3f59; font: 12px 'Arial'" transform="translate(317.94375 568.893906)">and supported compliant/internal dynamics</text>
+   </g>
+   <g id="text_20">
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="432" y="596.643672" transform="rotate(-0 432 596.643672)">src/dynamics/ + src/simulation/engine/dynamics_rhs.jl</text>
+   </g>
+   <g id="text_21">
+    <text style="fill: #1f3f59; font: 700 15px 'Arial'; text-anchor: middle" x="432" y="658.736719" transform="rotate(-0 432 658.736719)">Solver and callbacks</text>
+   </g>
+   <g id="text_22">
+    <text style="fill: #1f3f59; font: 12px 'Arial'; text-anchor: middle" x="432" y="680.589375" transform="rotate(-0 432 680.589375)">Integrate state; apply scheduled updates, events and saving</text>
+   </g>
+   <g id="text_23">
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="432" y="707.643672" transform="rotate(-0 432 707.643672)">src/simulation/engine/ + src/simulation/callbacks/</text>
+   </g>
+   <g id="text_24">
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'" transform="translate(75.145391 596.515703)">Trial /</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'" transform="translate(63.049062 607.997207)">updated</text>
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'" transform="translate(78.237969 619.478711)">state</text>
+   </g>
+   <g id="text_25">
+    <text style="fill: #1f3f59; font: 700 15px 'Arial'; text-anchor: middle" x="432" y="770.919531" transform="rotate(-0 432 770.919531)">Outputs and optional viewer</text>
+   </g>
+   <g id="text_26">
+    <text style="fill: #1f3f59; font: 12px 'Arial'; text-anchor: middle" x="432" y="792.589375" transform="rotate(-0 432 792.589375)">Write results, analyze them and render the exported scene</text>
+   </g>
+   <g id="text_27">
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: middle" x="432" y="821.643672" transform="rotate(-0 432 821.643672)">src/io/ + src/analysis/ + viewer/</text>
+   </g>
+   <g id="text_28">
+    <text style="fill: #1f3f59; font: 700 12px 'Arial'; text-anchor: start" x="25" y="866.735625" transform="rotate(-0 25 866.735625)">Supporting owners</text>
+   </g>
+   <g id="text_29">
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="887.643672" transform="rotate(-0 25 887.643672)">core/  shared contracts and mathematics   |   parallel/  execution routing   |   assets/  data lookup</text>
+   </g>
+   <g id="text_30">
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="906.643672" transform="rotate(-0 25 906.643672)">cli/  entry points   |   simulation/campaigns/  independent runs   |   ext/  optional integration</text>
+   </g>
+   <g id="text_31">
+    <text style="fill: #1f3f59; font: 10.5px 'Arial'; text-anchor: start" x="25" y="925.643672" transform="rotate(-0 25 925.643672)">Magnetic and radiation interactions currently share dynamics/coupled/perturbations.jl.</text>
    </g>
   </g>
  </g>
  <defs>
-  <clipPath id="pdb74d257ff">
-   <rect x="0" y="0" width="518.740157" height="538.582677"/>
+  <clipPath id="p778ede7b2d">
+   <rect x="0" y="0" width="864" height="936"/>
   </clipPath>
  </defs>
 </svg>

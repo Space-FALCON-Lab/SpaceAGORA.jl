@@ -58,6 +58,10 @@ else
     @testset "RPO configurable station" begin
         @testset "defaults reproduce the Gateway scenario" begin
             d0 = build_station_demo()
+            # The MPC horizon and the epoch keep their defaults unless given.
+            @test d0.mpc.horizon == 12
+            @test d0.control.controller.horizon == 12
+            @test d0.args.initial_time == RPOX.InitialTime(year=2026, month=1, day=1, hour=0, minute=0, second=0.0)
             d1 = build_station_demo(;
                 station_points=nothing,
                 station_keepout_radius_m=0.25,
@@ -166,6 +170,15 @@ else
             end
         end
 
+        @testset "MPC horizon and epoch options" begin
+            april = RPOX.InitialTime(year=2026, month=4, day=18, hour=6, minute=30, second=0.0)
+            dh = build_station_demo(; mpc_horizon=5, initial_time=april)
+            @test dh.mpc.horizon == 5
+            @test dh.control.controller.horizon == 5
+            @test dh.args.initial_time == april
+            @test_throws ArgumentError build_station_demo(; mpc_horizon=0)
+        end
+
         @testset "invalid station inputs are refused" begin
             cloud = box_shell_pointcloud((1.0, 0.5, 0.5))
             @test_throws ArgumentError build_station_demo(; station_points=cloud[1:2, :])
@@ -181,8 +194,19 @@ else
         @testset "bounded tracking of a short hop beside the default station" begin
             start = SVector{3, Float64}(-8.0, -4.0, 2.0)
             goal = SVector{3, Float64}(-5.5, -2.5, 1.0)
-            dt = build_station_demo(; mission_time=30.0, start_rtn=start, goal_rtn=goal, data_rate_s=1.0)
-            run_simulation(dt.args)
+            dt = build_station_demo(; mission_time=30.0, start_rtn=start, goal_rtn=goal, data_rate_s=1.0, record_control_commands=true)
+            # The controller log is filled on the simulated model itself, so run without the isolating copy.
+            run_simulation(dt.args; isolate_state=false)
+            log = dt.control.command_log
+            @test log !== nothing
+            n_updates = length(log.t_s)
+            @test n_updates >= 250                                  # 0.1 s updates over at least 30 s
+            @test issorted(log.t_s)
+            @test length(log.x_rel_rtn) == length(log.accel_cmd_rtn) == length(log.qp_status) == n_updates
+            @test length(log.thruster_forces_n) == length(log.mass_kg) == length(log.q_chaser) == n_updates
+            @test count(==(:Solved), log.qp_status) > 0
+            @test all(f -> all(0.0 .<= f .<= dt.control.thrusters.max_thrust_n .+ 1.0e-12), log.thruster_forces_n)
+            @test log.mass_kg[end] <= log.mass_kg[1]
             csv = joinpath(dt.args.simulation_settings.results_directory, "simulation_results.csv")
             @test isfile(csv)
             df, actual_rtn, ref_rtn, err = RPOX._rpo_postprocess(csv, dt)
@@ -212,9 +236,50 @@ else
             full = D.iss_hypr_inputs(; smoke=false)
             smoke = D.iss_hypr_inputs(; smoke=true)
             @test full.smoke === false && smoke.smoke === true
-            @test full.station_dims_m == (73.0, 109.0, 20.0)
-            @test full.reference_max_speed_mps == smoke.reference_max_speed_mps == 0.1
+            @test full.hypr_mode === :manuscript && smoke.hypr_mode === :manuscript
+            @test full.station_dims_m == (20.0, 73.0, 109.0)
+            # Sec. III.F's 0.25 m/s global limit, with the acceleration-limited passes.
+            @test full.reference_max_speed_mps == smoke.reference_max_speed_mps == 0.25
+            @test full.retime_accel_limit && smoke.retime_accel_limit
+            # Table I's MPC horizon, the search box, culling, the cloud and its margin.
+            @test full.mpc_horizon == 60
+            @test full.station_box_margin_m == (30.0, 100.0, 30.0)
+            @test full.cull == (start_iter=10, fraction=0.25, noise_abs_m=0.3)
+            @test full.n_points == 1_000_000
+            @test full.obstacle_sigmoid_tol_m == 0.5
+            cfg = SM.RPOPSOConfig(D.iss_hypr_configurator(full))
+            @test cfg.station_box_margin_m == full.station_box_margin_m
+            @test (cfg.cull_start_iter, cfg.cull_fraction_max, cfg.cull_noise_abs_m) == (10, 0.25, 0.3)
+            # The epoch becomes the simulation's initial time.
+            t0 = D.iss_initial_time(full.epoch_utc)
+            @test t0 isa RPOX.InitialTime
+            @test string(t0.year, "-", lpad(t0.month, 2, '0'), "-", lpad(t0.day, 2, '0')) == first(full.epoch_utc, 10)
             @test length(full.model_sha256) == 64
+            @test length(full.station_model_sha256) == 64
+            # Flight-like attitude: truss along N, modules along T, smallest extent along R.
+            half = full.station_half_extent_m
+            @test half[3] > half[2] > half[1]
+            # +XVV signs, from surface samples of the drawn model: the truss sits on the
+            # zenith (+R) side of the Lab, Kibo (port, +N) reaches farther from Harmony than
+            # Columbus (starboard, -N), and the Russian segment makes the aft (-T) end longer.
+            P = D.sample_model_pointcloud(D.iss_station_model(); n_points=100_000, rng=MersenneTwister(3),
+                                          scale=D.ISS_SCALE, rotation_deg=D.ISS_ROTATION_DEG)
+            R, T, N = P[1, :], P[2, :], P[3, :]
+            mid(x) = sort(x)[cld(length(x), 2)]
+            band = 8 .< abs.(N) .< 30                                     # outboard of the modules
+            t_truss = argmax(e -> count(band .& (e .<= T .< e + 1)), -36.0:1.0:35.0) + 0.5
+            core = (abs.(N) .< 2.5) .& (abs.(T .- t_truss) .< 6)           # the Lab under the truss
+            @test mid(R[band .& (abs.(T .- t_truss) .< 2.5)]) > mid(R[core]) + 2
+            # Harmony's side ports lie 7 to 12 m forward of the truss line; the truss and its
+            # radiators end within 3 m of it, so start the window at 5 m.
+            lateral = (t_truss + 5 .< T .< t_truss + 16) .& (3 .< abs.(N) .< 25) .& (abs.(R .- mid(R[core])) .< 4)
+            @test maximum(N[lateral .& (N .> 0)]) > -2 * minimum(N[lateral .& (N .< 0)])
+            spine = abs.(N) .< 2.5
+            @test t_truss - minimum(T[spine]) > maximum(T[spine]) - t_truss
+            # V-bar relocation: 100 m behind the aft end to 30 m ahead of the forward end.
+            @test full.start_rtn == (0.0, -(half[2] + 100.0), 0.0)
+            @test full.goal_rtn == (0.0, half[2] + 30.0, 0.0)
+            @test length(D.ISS_EXCLUDED_NODES) == 7
             @test D.iss_hypr_outdir(full) == D.iss_hypr_outdir(D.iss_hypr_inputs(; smoke=false))   # same inputs, same directory
             @test D.iss_hypr_outdir(full) != D.iss_hypr_outdir(smoke)                                # different inputs, different directory
             @test startswith(D.iss_hypr_outdir(full), demo_out)
@@ -224,6 +289,7 @@ else
             prefix = joinpath(outdir, "simulation_results")
             sidecar = joinpath(outdir, "iss_hypr_provenance.json")
             planfile = joinpath(outdir, "iss_hypr_plan.json")
+            logfile = joinpath(outdir, "iss_hypr_control_log.csv")
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)
             write(sidecar, D.JSON.json(Dict("inputs" => D._json_roundtrip(smoke))))
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # scene, plan and results still missing
@@ -234,10 +300,13 @@ else
             write(prefix * ".feather", "")
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # an empty results bundle is not a run
             Arrow.write(prefix * ".feather", (time=[0.0, 1.0], sc1_mass=[1.0, 1.0]))
+            @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # control log still missing
+            write(logfile, "t_s,x_m\n0.1,1.0\n")
             @test !D.iss_hypr_matching_run(sidecar, smoke, prefix, planfile)       # missing provenance records
             records = Dict("plan" => D._file_record(planfile),
                 "scene" => D._file_record(prefix * "_scene.json"),
-                "results_feather" => D._file_record(prefix * ".feather"))
+                "results_feather" => D._file_record(prefix * ".feather"),
+                "control_log" => D._file_record(logfile))
             provenance = Dict("inputs" => D._json_roundtrip(smoke), "station" => Dict(),
                 "plan" => Dict(), "cloud_extents_m" => [], "outputs" => records)
             write(sidecar, D.JSON.json(provenance))
@@ -245,7 +314,7 @@ else
             @test !D.iss_hypr_matching_run(sidecar, full, prefix, planfile)
             # Every reusable payload is bound to the successful run, including
             # nonempty corruption that a presence or size check would accept.
-            for path in (prefix * ".feather", prefix * "_scene.json", planfile)
+            for path in (prefix * ".feather", prefix * "_scene.json", planfile, logfile)
                 original = read(path)
                 try
                     rm(path)

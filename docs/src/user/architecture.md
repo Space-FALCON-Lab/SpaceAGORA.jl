@@ -7,11 +7,12 @@ operation, and where your own code belongs.
 This page is for students and new contributors who can already run an example
 and now need to find their way around the repository. It describes the code as
 it is at commit
-[`5ca4d327`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/5ca4d3274ee2b2b55ef41d1580aba9b4a66161f9)
+[`884307fd`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/884307fdc9476bc88753965b7d6603b69682ad0e)
 of `main` (browse that tree at
-[github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5ca4d327](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5ca4d3274ee2b2b55ef41d1580aba9b4a66161f9));
-every path below is relative to the repository root at that commit. Proposed
-integrations and cleanup changes are explicitly labelled.
+[github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/884307fd](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/884307fdc9476bc88753965b7d6603b69682ad0e));
+every path below is relative to the repository root at that commit. This is a
+map of existing code, not an approved target layout. Suggested cleanup is
+labelled separately; folder moves and optional algorithm extraction have not landed.
 
 Shortest successful command:
 
@@ -56,8 +57,8 @@ joints, root body, mass properties, actuators and initial conditions.
 can represent a single vehicle, a servicing pair or a constellation; it
 does not by itself allocate tasks or provide a communication network.
 
-The cloth-style lumped multibody capability belongs to this physical
-foundation. `src/dynamics/multibody_cloth/cloth_multibody.jl` defines bodies
+The compliant multibody capability belongs to this physical
+foundation. The current folder name retains its historical cloth terminology. `src/dynamics/multibody_cloth/cloth_multibody.jl` defines bodies
 with mass and inertia, compliant connections with translational and rotational
 stiffness and damping, and topology builders. The coupled robot-arm path in
 `cloth_robot_arm_dynamics.jl` supplies internal-state initialization and
@@ -70,6 +71,11 @@ For example, an arm attached to a station belongs to the station's assembly.
 A free-flying inspector is another spacecraft. Their task assignment and
 coordination belong at the mission level, above individual vehicle construction.
 The source-owner table below distinguishes vehicle construction from dynamics.
+Robot hardware, compliant equations, planning and control are currently spread
+across `src/vehicle/robotics/`, `src/dynamics/multibody_cloth/`,
+`src/gnc/robotics/` and `src/gnc/control/robot_arm_control.jl`. Their future
+package and folder boundaries remain under review; this page does not propose
+a new `control/robotics/` owner.
 
 Use a joint simulation when spacecraft interact. The independent
 `run_constellation_ensemble` route in
@@ -180,7 +186,7 @@ than copy it.
 | `src/core/` | Abstract types, configuration structs, reference frames, geodesy, quaternions, runtime types | configuration creation and copying: `core/state/simulation_configuration.jl`; frames: `core/interfaces/reference_system.jl`; quaternions: `core/numerics/quaternion_utils.jl` |
 | `src/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields, terrain grids | density sampling: `environment/atmosphere/density_models.jl`; terrain queries: `environment/terrain/terrain_models.jl` |
 | `src/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, thrusters, thermal models, kinematics, robotics | vehicle boundary per the [topology contract](../generated/contracts/architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/thruster/thruster_hooks.jl` owns thruster hooks |
-| `src/dynamics/` | Translational and rotational equations, the coupled force/torque wrapper and its models, cloth multibody dynamics | effector evaluation: `dynamics/coupled/force_torque_models.jl` |
+| `src/dynamics/` | Translational and rotational equations, the coupled force/torque wrapper and its models, compliant multibody dynamics (currently under `multibody_cloth/`) | effector evaluation: `dynamics/coupled/force_torque_models.jl` |
 | `src/gnc/` | Guidance, navigation and control hooks and the algorithms behind them | the three hook files named above; shared bridge helpers in `gnc/internal/` |
 | `src/mission/` | Aerobraking policy types and strategy selection | `mission/operations/aerobraking_policy/` |
 | `src/simulation/` | The engine (configuration types, setup, RHS, solver policy, execution, checkpoints, persistence), callbacks, campaigns, runtime locks | simulation setup and solve: `simulation/engine/`; callbacks: `simulation/callbacks/`; Monte Carlo and ensembles: `simulation/campaigns/`; shared locks: `simulation/runtime_services.jl` |
@@ -201,11 +207,14 @@ than copy it.
 
 ## Where your code belongs
 
-Ask two questions: will other scenarios reuse it, and is it tested against a
-contract? Reusable, tested capabilities go into the package; research-specific
-algorithms stay outside it until they are.
+Distinguish a shared interface or execution mechanism from a particular
+algorithm that uses it. Reuse and tests are necessary for core contributions,
+but do not by themselves require an algorithm to become a mandatory dependency.
+The current tree still includes concrete research algorithms; this page maps
+their present locations rather than treating those locations as permanent boundaries.
 
-**Put it in `src/` when** it is a general capability with a clear owner
+**Propose a core contribution in `src/` when** it is a shared contract, execution
+mechanism, physical model or agreed baseline implementation with a clear owner
 folder above, it implements one of the stable hooks (`wrench`, `getDensity`,
 guidance, navigation or control hooks, callbacks), it has unit tests under
 `test/unit/`, and any new root export is registered in
@@ -220,9 +229,15 @@ the package API, and never include package internals by relative path. A new
 example is also the right place to demonstrate a new model before a tutorial
 page exists.
 
-**Put it in `benchmarks/studies/` or a research repository when** it is a
-study driver, a parameter sweep, a comparison against another tool or an
-algorithm you are still changing week to week. Keep its failure and retry
+**Put a specialized algorithm in its own package or research repository when**
+it implements the supported interfaces but is not required for ordinary runs.
+Its integration should use the public API, with a small package extension only
+where conditional integration is needed. The algorithm source belongs in its
+own package, not copied into `ext/`. No HYPR or EDG package extraction is claimed
+to be complete here.
+
+**Put a study in `benchmarks/studies/` or a research repository when** it is a
+study driver, a parameter sweep or a comparison against another tool. Keep its failure and retry
 policy explicit in the script. Results, plots and reports belong in the
 private results repository, not in this public tree.
 
@@ -250,35 +265,9 @@ internals from examples. These checks do not prove every ownership or data
 decision is correct. Keep restricted inputs and private research outputs out
 of the public repository; review their provenance separately.
 
-## Proposed mission-autonomy integration
-
-The next figure places the implemented simulator in a broader workflow. Solid
-boxes identify implemented components; dashed boxes and connections identify
-proposed common integration or operational capability. Individual GNC algorithms
-already provide closed-loop behavior. A reusable mission executive, shared
-task/resource model and operational digital twin are not claimed to be complete.
-
-![Mission design supplies scenarios to SpaceAGORA. A proposed autonomy and scheduling layer sends actions and receives observations. Reference comparisons support validation; human oversight, learning and live operations require further integration.](../assets/mission_autonomy_workflow.svg)
-
-[Download the vector mission-workflow figure (PDF).](../assets/mission_autonomy_workflow.pdf)
-
-A mission executive would select tasks, assign vehicles and update targets or
-modes through an explicit execution interface. It would receive timestamped
-observations and task outcomes. One mission decision may span many numerical
-integration steps. Constraint checks, action rejection and fallback behavior
-must be explicit; a learning reward is not a replacement for those checks.
-
-Research-specific schedulers, planners and learned policies can then share
-that interface without copying the propagation engine. A Gym-style adapter
-is one possible boundary, not an existing package API. The existing
-`src/mission/` owner contains aerobraking policy code. Resource, network and
-estimator scaffolds under `experimental/` are not loaded by the package and
-do not establish a working general mission-management system. CPU scheduling
-under `src/parallel/` remains separate from mission task scheduling.
-
 ## Remaining cleanup
 
-Status at commit `5ca4d327`. Each item states what is confirmed, what is
+Status at commit `884307fd`. Each item states what is confirmed, what is
 deliberate, and who is expected to act; the last sub-list is a proposal, not a
 description of the current code.
 
@@ -312,7 +301,7 @@ description of the current code.
 
 **Further review and ownership decisions:**
 
-- Robotics and cloth contain repeated quaternion helpers. Distinguish raw from
+- Robotics and compliant multibody code contain repeated quaternion helpers. Distinguish raw from
   normalized multiplication and check rotation conventions before deciding
   which definitions can share an owner. Their current duplication is not yet
   established as intentional or necessary.

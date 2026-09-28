@@ -18,6 +18,7 @@ bounded Odyssey P20 exercise. Return explicit `kernels`, `gravity` paths and a
 `provenance` record. Only this lazy artifact is fetched; native GRAM is unused.
 With `offline=true`, an absent artifact fails before simulation starts. Every
 payload is checked against its SHA256 even when Julia artifact overrides apply.
+A first installation logs its source and, once verified, its location.
 """
 function odyssey_surrogate_assets(; offline::Bool=false)
     manifest = TOML.parsefile(_MANIFEST)
@@ -26,16 +27,28 @@ function odyssey_surrogate_assets(; offline::Bool=false)
     meta === nothing && throw(ArgumentError("Odyssey scenario artifact binding is missing."))
     tree = meta["git-tree-sha1"]
     hash = Base.SHA1(tree)
+    label = "$(manifest["id"])@$(manifest["version"])"
+    installed = false
     if !Artifacts.artifact_exists(hash)
         offline && throw(ArgumentError(
             "Odyssey scenario assets are not installed. Run odyssey_surrogate_assets() " *
             "once on a connected machine, then retry with offline=true."))
+        megabytes = round(sum(entry["bytes"] for entry in manifest["files"]) / 1e6; digits=1)
+        @info "Installing Odyssey scenario assets $label (SPICE kernels and Mars gravity coefficients, $megabytes MB) into the Julia artifact store from $(join((d["url"] for d in get(meta, "download", Any[])), ", "))"
+        # Pkg first asks its package server, which does not host this artifact, and
+        # then uses the Artifacts.toml URL. Its "Downloading"/"Failure" status lines
+        # go to this buffer instead of the terminal and are reported only on failure.
+        pkg_output = IOBuffer()
         try
-            Pkg.Artifacts.ensure_artifact_installed(name, _ARTIFACTS; pkg_uuid=_PACKAGE_UUID)
+            Pkg.Artifacts.ensure_artifact_installed(name, _ARTIFACTS; pkg_uuid=_PACKAGE_UUID, io=pkg_output)
         catch err
             err isa InterruptException && rethrow()
-            throw(ArgumentError("Could not retrieve Odyssey scenario assets. Check connectivity and cache permissions, then retry. " * sprint(showerror, err)))
+            detail = rstrip(sprint(showerror, err))
+            output = rstrip(String(take!(pkg_output)))
+            isempty(output) || (detail *= "\nPkg output:\n" * output)
+            throw(ArgumentError("Could not retrieve Odyssey scenario assets. Check connectivity and cache permissions, then retry.\n" * detail))
         end
+        installed = true
     end
     root = Artifacts.artifact_path(hash)
     verified = Dict{String,String}()
@@ -50,6 +63,7 @@ function odyssey_surrogate_assets(; offline::Bool=false)
         verified[entry["name"]] = path
         push!(identities, Dict("name" => entry["name"], "sha256" => digest, "source" => entry["source"]))
     end
+    installed && @info "Installed Odyssey scenario assets $label in $root; SHA256 checksums of all $(length(identities)) files match data/odyssey_surrogate_assets.toml."
     kernels = [verified[name] for name in manifest["kernel_order"]]
     provenance = Dict{String,Any}("id" => manifest["id"], "version" => manifest["version"],
         "git_tree_sha1" => tree, "files" => identities)

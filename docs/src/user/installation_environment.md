@@ -38,6 +38,20 @@ Use it for:
 - benchmark launchers
 - CLI commands
 
+### `examples/odyssey_surrogate_env/`
+
+The Odyssey surrogate example has its own environment. It adds the public
+`GRAMSuite` Julia wrapper, which provides the native-free grid atmosphere, and
+uses the current SpaceAGORA checkout. Its setup script instantiates it, and the
+resolved manifest stays local:
+
+```text
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
+```
+
+See the [Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
+
 ### `docs/`
 
 The docs build uses its own project:
@@ -52,6 +66,8 @@ julia --project=. docs/make.jl
 Generated reports and builds stay local. Common ignored output roots are:
 
 - `output/`
+- `odyssey_surrogate_results/` and `odyssey_surrogate_<cap>/`, the Odyssey
+  surrogate example's defaults when run from the repository root
 - `docs/build/`
 - `docs/site/`
 - `docs/src/generated/`

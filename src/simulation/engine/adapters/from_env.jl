@@ -1,5 +1,20 @@
-import ..ParallelProfiles
 using Base.ScopedValues: ScopedValue, with
+
+# The routing layer's ParallelProfiles module, found in this module's ancestry
+# at call time rather than imported: SimulationEngine is also included on its
+# own (the include-order contract suite loads it into a sandbox without the
+# routing layer), and only the paths that apply a profile need it. Same lookup
+# ParallelCost uses for cgroup_cpu_quota.
+function _parallel_profiles_module()::Module
+    mod = @__MODULE__
+    while true
+        isdefined(mod, :ParallelProfiles) && return getproperty(mod, :ParallelProfiles)
+        parent = parentmodule(mod)
+        parent === mod && break
+        mod = parent
+    end
+    error("ParallelProfiles not found in module ancestry for SimulationEngine.")
+end
 
 @inline _env_bool(v::Bool) = v ? "1" : "0"
 const _engine_active_config_ref = Ref{Union{Nothing, SimulationEngineConfig}}(nothing)
@@ -258,7 +273,7 @@ function _parallel_config_env_pairs(parallel::ParallelConfig)::Vector{Pair{Strin
         "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => parallel.thermal_callback_parallel_mode,
     ]
     isempty(strip(parallel.profile)) && return fixed
-    pairs = ParallelProfiles.profile_env_pairs(
+    pairs = _parallel_profiles_module().profile_env_pairs(
         parallel.profile;
         preserve_existing=false,
         outer_parallel_active=parallel.outer_parallel_active
@@ -308,14 +323,14 @@ function _engine_env_overrides(
     if _parallel_flag_applies(parallel_flag)
         prof = strip(config.parallel.profile)
         if !isempty(prof) &&
-           ParallelProfiles.parse_parallel_profile(prof) != ParallelProfiles.PARALLEL_FLAG_PROFILE
+           _parallel_profiles_module().parse_parallel_profile(prof) != _parallel_profiles_module().PARALLEL_FLAG_PROFILE
             throw(ArgumentError(
                 "SolverConfig(parallel=true) selects the parallel settings itself; " *
                 "it cannot be combined with ParallelConfig(profile=\"$(prof)\"). " *
                 "Set one or the other."
             ))
         end
-        for (k, v) in ParallelProfiles.parallel_flag_env_pairs()
+        for (k, v) in _parallel_profiles_module().parallel_flag_env_pairs()
             overrides[k] = v
         end
     end
@@ -395,7 +410,7 @@ split's own environment exactly as it did before the flag existed.
 @inline function _parallel_flag_applies(flag::Bool)::Bool
     flag || return false
     _PARALLEL_FLAG_RESOLVED[] && return false
-    return !ParallelProfiles.parallel_flag_nested()
+    return !_parallel_profiles_module().parallel_flag_nested()
 end
 
 """
@@ -425,7 +440,7 @@ active engine-config override set) afterwards; otherwise just call `f()`.
 function _with_parallel_flag(f::Function, flag::Bool)
     _parallel_flag_applies(flag) || return (flag ? with(f, _PARALLEL_FLAG_RESOLVED => true) : f())
     _parallel_flag_prepare!()
-    pairs = ParallelProfiles.parallel_flag_env_pairs()
+    pairs = _parallel_profiles_module().parallel_flag_env_pairs()
     previous_overrides = _engine_active_overrides_ref[]
     if previous_overrides !== nothing
         # Inside a SimulationEngineConfig scope the engine's own reads go to

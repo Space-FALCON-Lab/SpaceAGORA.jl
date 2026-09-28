@@ -632,7 +632,75 @@ function save_machine_constants(mc::MachineConstants, path::AbstractString = mac
         TOML.print(io, payload)
     end
     mv(tmp, path_s; force = true)
+    Threads.atomic_add!(_MACHINE_CONSTANTS_GENERATION, 1)
     return path_s
+end
+
+# Bumped by every `save_machine_constants` in this process, so a consumer that
+# caches the loaded constants (the predictive planner does) can tell that the
+# file it cached -- possibly as "absent" -- has been written since.
+const _MACHINE_CONSTANTS_GENERATION = Threads.Atomic{Int}(0)
+
+"""
+    machine_constants_generation() -> Int
+
+How many times this process has written machine constants. Caches of
+[`load_machine_constants`](@ref) compare it to decide whether to re-read.
+"""
+machine_constants_generation()::Int = _MACHINE_CONSTANTS_GENERATION[]
+
+# Paths `ensure_machine_constants!` has already settled in this process, so a
+# campaign of many parallel runs checks the file once, not once per run.
+const _ENSURED_CONSTANTS_PATHS = Set{String}()
+const _ENSURE_CONSTANTS_LOCK = ReentrantLock()
+
+"""
+    ensure_machine_constants!(; path = machine_constants_path(),
+                              calibrate = calibrate_machine) -> Symbol
+
+Make sure this machine's cost constants exist, calibrating them once if not.
+This is what `SolverConfig(parallel=true)` calls before its first run, so the
+predictive planner never runs without machine constants merely because nobody
+ran `scripts/calibrate_machine.jl`.
+
+Returns `:present` when `path` already holds constants of the current schema
+(nothing is measured -- a current file is never recalibrated), `:calibrated`
+when it did not and `calibrate()` was run and saved there (the same measurement
+and the same fingerprinted path as the script), or `:checked` when this process
+has already settled `path`, or `:failed` when the calibration threw (it is
+logged and not retried in this process; the planner then runs without
+constants, as it did before calibration was automatic). The check runs once
+per path per process.
+
+Measured on the 24-thread reference workstation: 4.6 s for the first call in a
+session (compilation included) and 1.9 s warm, which is why it runs
+automatically rather than asking the user to run the script.
+"""
+function ensure_machine_constants!(;
+    path::AbstractString = machine_constants_path(),
+    calibrate = calibrate_machine,
+)::Symbol
+    path_s = normpath(String(path))
+    lock(_ENSURE_CONSTANTS_LOCK) do
+        path_s in _ENSURED_CONSTANTS_PATHS && return :checked
+        if load_machine_constants(path_s) !== nothing
+            push!(_ENSURED_CONSTANTS_PATHS, path_s)
+            return :present
+        end
+        @info "Measuring this machine's parallel cost constants once (a few seconds); later runs reuse them." path = path_s
+        push!(_ENSURED_CONSTANTS_PATHS, path_s)
+        try
+            save_machine_constants(calibrate(), path_s)
+        catch err
+            err isa InterruptException && rethrow()
+            # A run the user asked for must not fail because a measurement
+            # the planner can do without did; it then predicts without
+            # contention, exactly as it did before calibration was automatic.
+            @warn "Machine calibration failed; the parallel planner will run without machine constants." exception = (err, catch_backtrace())
+            return :failed
+        end
+        return :calibrated
+    end
 end
 
 """

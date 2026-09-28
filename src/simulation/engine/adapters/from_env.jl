@@ -1,3 +1,21 @@
+using Base.ScopedValues: ScopedValue, with
+
+# The routing layer's ParallelProfiles module, found in this module's ancestry
+# at call time rather than imported: SimulationEngine is also included on its
+# own (the include-order contract suite loads it into a sandbox without the
+# routing layer), and only the paths that apply a profile need it. Same lookup
+# ParallelCost uses for cgroup_cpu_quota.
+function _parallel_profiles_module()::Module
+    mod = @__MODULE__
+    while true
+        isdefined(mod, :ParallelProfiles) && return getproperty(mod, :ParallelProfiles)
+        parent = parentmodule(mod)
+        parent === mod && break
+        mod = parent
+    end
+    error("ParallelProfiles not found in module ancestry for SimulationEngine.")
+end
+
 @inline _env_bool(v::Bool) = v ? "1" : "0"
 const _engine_active_config_ref = Ref{Union{Nothing, SimulationEngineConfig}}(nothing)
 const _engine_active_overrides_ref = Ref{Union{Nothing, Dict{String, String}}}(nothing)
@@ -233,7 +251,49 @@ end
     return haskey(ENV, name)
 end
 
-function _engine_env_overrides(config::SimulationEngineConfig)::Dict{String, String}
+const _PARALLEL_CONFIG_DEFAULTS = ParallelConfig()
+
+# The SPACEAGORA_* pairs a ParallelConfig contributes.
+#
+# Without a profile this is exactly the fixed set it always wrote. With one,
+# the profile is expanded the way `with_parallel_profile` would with
+# `preserve_existing=false` -- the whole bundle, not just
+# SPACEAGORA_PARALLEL_PROFILE, which nothing downstream expands on its own --
+# and a field then overrides the profile only where it was set to something
+# other than its default, so the defaults no longer clobber the profile's
+# adaptive policy and callback modes.
+function _parallel_config_env_pairs(parallel::ParallelConfig)::Vector{Pair{String, String}}
+    fixed = Pair{String, String}[
+        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => _env_bool(parallel.outer_parallel_active),
+        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => _env_bool(parallel.parallel_policy_adaptive),
+        "SPACEAGORA_EFFECTOR_PARALLEL" => parallel.effector_parallel_mode,
+        "SPACEAGORA_RHS_BATCH_PARALLEL" => parallel.rhs_batch_parallel_mode,
+        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => parallel.density_callback_parallel_mode,
+        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => parallel.control_callback_parallel_mode,
+        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => parallel.thermal_callback_parallel_mode,
+    ]
+    isempty(strip(parallel.profile)) && return fixed
+    pairs = _parallel_profiles_module().profile_env_pairs(
+        parallel.profile;
+        preserve_existing=false,
+        outer_parallel_active=parallel.outer_parallel_active
+    )
+    defaults = _PARALLEL_CONFIG_DEFAULTS
+    explicit = Pair{String, String}[]
+    parallel.parallel_policy_adaptive != defaults.parallel_policy_adaptive &&
+        push!(explicit, fixed[2])
+    for (i, field) in enumerate((:effector_parallel_mode, :rhs_batch_parallel_mode,
+                                 :density_callback_parallel_mode, :control_callback_parallel_mode,
+                                 :thermal_callback_parallel_mode))
+        getfield(parallel, field) != getfield(defaults, field) && push!(explicit, fixed[2 + i])
+    end
+    return vcat(pairs, explicit)
+end
+
+function _engine_env_overrides(
+    config::SimulationEngineConfig;
+    parallel_flag::Bool=config.solver.parallel
+)::Dict{String, String}
     overrides = Dict{String, String}(
         "SPACEAGORA_WARN_NORMALIZE" => _env_bool(config.runtime_policy.warn_normalize),
         "SPACEAGORA_ALLOW_TYPED_NORMALIZE" => _env_bool(config.runtime_policy.allow_typed_normalize),
@@ -244,13 +304,6 @@ function _engine_env_overrides(config::SimulationEngineConfig)::Dict{String, Str
         "SPACEAGORA_SPICE_RHS_MEMO" => _env_bool(config.runtime_policy.spice_rhs_memo),
         "SPACEAGORA_SAVE_BUNDLE" => _env_bool(config.artifacts.save_bundle),
         "SPACEAGORA_WARN_DEPRECATED_CONFIG" => _env_bool(config.artifacts.warn_deprecated_config),
-        "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => _env_bool(config.parallel.outer_parallel_active),
-        "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => _env_bool(config.parallel.parallel_policy_adaptive),
-        "SPACEAGORA_EFFECTOR_PARALLEL" => config.parallel.effector_parallel_mode,
-        "SPACEAGORA_RHS_BATCH_PARALLEL" => config.parallel.rhs_batch_parallel_mode,
-        "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => config.parallel.density_callback_parallel_mode,
-        "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => config.parallel.control_callback_parallel_mode,
-        "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => config.parallel.thermal_callback_parallel_mode,
         "SPACEAGORA_SOLVER_MODE" => string(config.solver.solver_mode),
         "SPACEAGORA_SPLIT_IMEX_SOLVER" => string(config.solver.split_imex_solver),
         "SPACEAGORA_MULTIRATE_FAST_SUBSTEPS" => string(config.solver.multirate_fast_substeps),
@@ -260,7 +313,27 @@ function _engine_env_overrides(config::SimulationEngineConfig)::Dict{String, Str
         "SPACEAGORA_AUTO_STIFF_SWITCH_MAX" => string(config.solver.auto_stiff_switch_max),
     )
 
-    !isempty(config.parallel.profile) && (overrides["SPACEAGORA_PARALLEL_PROFILE"] = config.parallel.profile)
+    for (k, v) in _parallel_config_env_pairs(config.parallel)
+        overrides[k] = v
+    end
+    # SolverConfig(parallel=true) on the engine config: the flag's profile
+    # replaces whatever routing the ParallelConfig described. A nested call
+    # (inside an enclosing outer split or an already-resolved parallel run)
+    # contributes nothing; see `_parallel_flag_applies`.
+    if _parallel_flag_applies(parallel_flag)
+        prof = strip(config.parallel.profile)
+        if !isempty(prof) &&
+           _parallel_profiles_module().parse_parallel_profile(prof) != _parallel_profiles_module().PARALLEL_FLAG_PROFILE
+            throw(ArgumentError(
+                "SolverConfig(parallel=true) selects the parallel settings itself; " *
+                "it cannot be combined with ParallelConfig(profile=\"$(prof)\"). " *
+                "Set one or the other."
+            ))
+        end
+        for (k, v) in _parallel_profiles_module().parallel_flag_env_pairs()
+            overrides[k] = v
+        end
+    end
     !(config.solver.maxiters === nothing) && (overrides["SPACEAGORA_SOLVER_MAXITERS"] = string(config.solver.maxiters))
     !(config.solver.symplectic_dt_s === nothing) && (overrides["SPACEAGORA_SYMPLECTIC_DT_S"] = string(config.solver.symplectic_dt_s))
     !(config.solver.gravity_backbone_dt_s === nothing) && (overrides["SPACEAGORA_GRAVITY_BACKBONE_DT_S"] = string(config.solver.gravity_backbone_dt_s))
@@ -270,8 +343,12 @@ function _engine_env_overrides(config::SimulationEngineConfig)::Dict{String, Str
     return overrides
 end
 
-function _with_engine_env_overrides(config::SimulationEngineConfig, f::Function)
-    overrides = _engine_env_overrides(config)
+function _with_engine_env_overrides(
+    config::SimulationEngineConfig,
+    f::Function;
+    parallel_flag::Bool=config.solver.parallel
+)
+    overrides = _engine_env_overrides(config; parallel_flag=parallel_flag)
     previous_config = _engine_active_config_ref[]
     previous_overrides = _engine_active_overrides_ref[]
     _engine_active_config_ref[] = config
@@ -304,5 +381,81 @@ function _with_engine_env_overrides(config::SimulationEngineConfig, f::Function)
     end
 end
 
-@inline _with_engine_env_overrides(f::Function, config::SimulationEngineConfig) =
-    _with_engine_env_overrides(config, f)
+@inline _with_engine_env_overrides(f::Function, config::SimulationEngineConfig; kwargs...) =
+    _with_engine_env_overrides(config, f; kwargs...)
+
+# ── SolverConfig(parallel=true) ──────────────────────────────────────────────
+#
+# The flag's whole effect is an environment scope: the profile it names
+# (ParallelProfiles.PARALLEL_FLAG_PROFILE) applied around one run or campaign
+# and restored afterwards, exception or not. It lives here because this file is
+# the engine's only sanctioned reader and writer of ENV.
+
+# True inside a run or campaign whose flag has already been resolved, so a
+# member run of a parallel campaign, or the typed run inside an engine-config
+# scope, does not apply it (or calibrate) a second time. Scoped, so it follows
+# the tasks a campaign spawns and nothing else.
+const _PARALLEL_FLAG_RESOLVED = ScopedValue(false)
+const _PARALLEL_FLAG_ONE_THREAD_NOTED = Base.Threads.Atomic{Bool}(false)
+
+"""
+    _parallel_flag_applies(flag) -> Bool
+
+Whether `SolverConfig(parallel=flag)` should apply its profile here: the flag is
+set, no enclosing run or campaign has resolved it already, and this is not a
+nested call inside an enclosing outer split (a threaded split's
+`SPACEAGORA_OUTER_PARALLEL_ACTIVE`, or a process-pool worker), which keeps the
+split's own environment exactly as it did before the flag existed.
+"""
+@inline function _parallel_flag_applies(flag::Bool)::Bool
+    flag || return false
+    _PARALLEL_FLAG_RESOLVED[] && return false
+    return !_parallel_profiles_module().parallel_flag_nested()
+end
+
+"""
+    _parallel_flag_prepare!()
+
+One-time work before the first parallel run: create this machine's cost
+constants if they are missing (never when a current file exists), and say once
+when Julia has a single thread, since the flag then has only the process pool
+to use.
+"""
+function _parallel_flag_prepare!()::Nothing
+    SimulationModel.ParallelCost.ensure_machine_constants!()
+    if Base.Threads.nthreads() == 1 && !Base.Threads.atomic_xchg!(_PARALLEL_FLAG_ONE_THREAD_NOTED, true)
+        @info "SolverConfig(parallel=true) with a single Julia thread: only process-worker " *
+              "campaign routes are available. Start Julia with `--threads=auto` to use threads."
+    end
+    return nothing
+end
+
+"""
+    _with_parallel_flag(f, flag::Bool)
+
+Run `f()` under the parallel flag's environment when
+[`_parallel_flag_applies`](@ref)`(flag)`, restoring every variable (and any
+active engine-config override set) afterwards; otherwise just call `f()`.
+"""
+function _with_parallel_flag(f::Function, flag::Bool)
+    _parallel_flag_applies(flag) || return (flag ? with(f, _PARALLEL_FLAG_RESOLVED => true) : f())
+    _parallel_flag_prepare!()
+    pairs = _parallel_profiles_module().parallel_flag_env_pairs()
+    previous_overrides = _engine_active_overrides_ref[]
+    if previous_overrides !== nothing
+        # Inside a SimulationEngineConfig scope the engine's own reads go to
+        # the override set, so it must carry the flag's values too.
+        merged = copy(previous_overrides)
+        for (k, v) in pairs
+            merged[k] = v
+        end
+        _engine_active_overrides_ref[] = merged
+    end
+    try
+        return withenv(pairs...) do
+            with(f, _PARALLEL_FLAG_RESOLVED => true)
+        end
+    finally
+        _engine_active_overrides_ref[] = previous_overrides
+    end
+end

@@ -413,6 +413,17 @@ function run_simulation(
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
+    # SolverConfig(parallel=true): re-enter under the flag's scoped environment
+    # (see `_with_parallel_flag`). Inside it the flag reads as resolved, so this
+    # branch is taken once; with the flag off nothing here runs.
+    if args.solver_config !== nothing && _parallel_flag_applies(args.solver_config.parallel)
+        return _with_parallel_flag(true) do
+            run_simulation(args; isolate_state=isolate_state, return_solution=return_solution,
+                           return_solver_metadata=return_solver_metadata, save_fields=save_fields,
+                           extra_callbacks=extra_callbacks, solver_cache=solver_cache,
+                           visualization=visualization)
+        end
+    end
     try
     return SimulationModel.ParallelPolicy.with_policy_context() do
     # `visualization=true` (or SPACEAGORA_VISUALIZATION=1, so an unmodified

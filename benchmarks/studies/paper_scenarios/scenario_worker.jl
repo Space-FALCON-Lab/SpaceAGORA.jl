@@ -158,7 +158,7 @@ function ps_constellation_workload()
     run_once = if isempty(PS_PROFILE)
         solve
     else
-        () -> SpaceAGORA.with_parallel_profile(solve, PS_PROFILE)
+        () -> SpaceAGORA.ParallelProfiles.with_parallel_profile(solve, PS_PROFILE)
     end
     return run_once, "constellation n_sats=$(PS_N_SATS) gravity=$(PS_GRAVITY) density=$(PS_DENSITY) profile=$(PS_PROFILE) spice=$(PS_SPICE_AVAILABLE)"
 end

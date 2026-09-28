@@ -90,7 +90,7 @@ function run_campaign()
             end
         else
             ensure_process_workers_with_sample_logic!(OUTER_WORKERS)
-            tuning = SpaceAGORA.OuterRouteTuning(
+            tuning = SpaceAGORA.ParallelProfiles.OuterRouteTuning(
                 mc_process_min_samples=1,
                 mc_process_min_mission_s=0.0,
                 process_max_workers=OUTER_WORKERS,
@@ -98,10 +98,10 @@ function run_campaign()
             SpaceAGORA.run_monte_carlo(
                 1:N_SAMPLES;
                 threads=:auto,
-                route_features=SpaceAGORA.campaign_route_features(
+                route_features=SpaceAGORA.SimulationCampaigns.campaign_route_features(
                     samples=N_SAMPLES, n_sats=N_SATS_PER_SAMPLE, density_family=mode, mission_time_s=MISSION_TIME_S
                 ),
-                route_state=SpaceAGORA.OuterRouteState(),
+                route_state=SpaceAGORA.ParallelProfiles.OuterRouteState(),
                 route_tuning=tuning
             ) do seed
                 args = build_sample_config(mode, seed)

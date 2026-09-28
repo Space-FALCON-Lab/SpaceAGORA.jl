@@ -1056,6 +1056,10 @@ end
 const _PREDICTIVE_CONSTANTS = Ref{Any}(nothing)
 const _PREDICTIVE_CONSTANTS_LOADED = Ref(false)
 const _PREDICTIVE_CONSTANTS_LOCK = ReentrantLock()
+# `ParallelCost.machine_constants_generation()` when the cache was filled. A
+# file written since (the automatic calibration `SolverConfig(parallel=true)`
+# runs on a machine without one) invalidates a cached `nothing`.
+const _PREDICTIVE_CONSTANTS_GENERATION = Ref(-1)
 
 """
     predictive_machine_constants() -> Union{Nothing, ParallelCost.MachineConstants}
@@ -1067,6 +1071,12 @@ or one written by an older schema). Cached for the life of the process; call
 """
 function predictive_machine_constants()
     lock(_PREDICTIVE_CONSTANTS_LOCK) do
+        generation = ParallelCost.machine_constants_generation()
+        if _PREDICTIVE_CONSTANTS_GENERATION[] != generation
+            _PREDICTIVE_CONSTANTS_LOADED[] = false
+            _PREDICTIVE_CAMPAIGN_CONSTANTS[] = nothing
+            _PREDICTIVE_CONSTANTS_GENERATION[] = generation
+        end
         if !_PREDICTIVE_CONSTANTS_LOADED[]
             _PREDICTIVE_CONSTANTS_LOADED[] = true
             _PREDICTIVE_CONSTANTS[] = try

@@ -272,7 +272,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
 
         config = SimulationEngine.SimulationEngineConfig(
             parallel=SimulationEngine.ParallelConfig(
-                profile="R9",
+                profile="R2",
                 outer_parallel_active=true,
                 parallel_policy_adaptive=true,
                 effector_parallel_mode="on",
@@ -310,7 +310,15 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             )
         )
         overrides = SimulationEngine._engine_env_overrides(config)
-        @test overrides["SPACEAGORA_PARALLEL_PROFILE"] == "R9"
+        # A profile is expanded (not just named), and explicit non-default
+        # fields still override it. An unknown profile name is an error; it
+        # used to be written through unparsed and silently do nothing.
+        @test overrides["SPACEAGORA_PARALLEL_PROFILE"] == "R2"
+        @test overrides["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "none"
+        @test overrides["SPACEAGORA_EFFECTOR_PARALLEL"] == "on"
+        @test overrides["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "manual"
+        @test_throws ArgumentError SimulationEngine._engine_env_overrides(SimulationEngine.SimulationEngineConfig(
+            parallel=SimulationEngine.ParallelConfig(profile="R9")))
         @test overrides["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "1"
         @test overrides["SPACEAGORA_PARALLEL_POLICY_ADAPTIVE"] == "1"
         @test overrides["SPACEAGORA_WARN_NORMALIZE"] == "0"
@@ -774,7 +782,7 @@ end
     Core.eval(precompile_probe, quote
         const SimulationModel = Main.SimulationModel
         const TelemetryVerification = Main.TelemetryVerification
-        const parse_parallel_profile = Main.SpaceAGORA.parse_parallel_profile
+        const ParallelProfiles = Main.SpaceAGORA.ParallelProfiles
         const simulation_engine_config_from_env = Main.SimulationEngine.simulation_engine_config_from_env
         const run_simulation = Main.SimulationEngine.run_simulation
 

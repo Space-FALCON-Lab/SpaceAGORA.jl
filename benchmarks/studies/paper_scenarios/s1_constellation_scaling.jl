@@ -89,7 +89,7 @@ function main()
     end
     ps_write_csv(joinpath(out_dir, "s1_constellation_scaling$(VARIANT_SUFFIX).csv"), rows, [
         "hostname", "cpu_threads", "scenario", "n_sats", "mode", "julia_threads", "mission_s",
-        "gravity", "density", "ok", "median_s", "min_s", "max_s", "times_s", "maxrss_mb", "workers_rss_mb",
+        "gravity", "density", "spice", "ok", "median_s", "min_s", "max_s", "times_s", "maxrss_mb", "workers_rss_mb",
     ])
 end
 

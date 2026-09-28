@@ -304,8 +304,7 @@ end
 function _planet_frame(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64}, t::Float64)
     et = ctx.et0_s + t
     l_pi = SM.planet_frame_lpi(ctx.planet, et, _EPHEMERIDES_MODEL)
-    pos_pp = SVector{3, Float64}(l_pi * pos)
-    vel_pp = SVector{3, Float64}(l_pi * (vel - cross(_planet_omega(ctx.planet), pos)))
+    pos_pp, vel_pp = SM.SimulationCallbacks._planet_relative_state(pos, vel, ctx.planet, l_pi)
     r = norm(pos_pp)
     alt = r - ctx.planet.Rp_e
     lat = asin(clamp(pos_pp[3] / r, -1.0, 1.0))

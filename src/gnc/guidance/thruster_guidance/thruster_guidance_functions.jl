@@ -44,42 +44,14 @@ function _osculating_elements_and_periapsis_direction(pos::SVector{3, Float64}, 
     return (; a, e, true_anomaly, periapsis_direction)
 end
 
-@inline function _oblate_altitude_from_radius(radius::Float64, u_pp::SVector{3, Float64}, planet)::Float64
-    x = radius * u_pp[1]
-    y = radius * u_pp[2]
-    z = radius * u_pp[3]
+@inline _oblate_altitude_from_radius(radius::Float64, u_pp::SVector{3, Float64}, planet)::Float64 =
+    geodetic_altitude(radius, u_pp, planet)
 
-    f = (planet.Rp_e - planet.Rp_p) / planet.Rp_e
-    e2 = 1.0 - (1.0 - f)^2
-    ep2 = e2 / (1.0 - e2)
-    p_xy = sqrt(x^2 + y^2)
-    θ = atan(z * planet.Rp_e, p_xy * planet.Rp_p)
-    lat = atan(z + ep2 * planet.Rp_p * sin(θ)^3, p_xy - e2 * planet.Rp_e * cos(θ)^3)
-    N = planet.Rp_e / sqrt(1.0 - e2 * sin(lat)^2)
-    return p_xy * cos(lat) + (z + e2 * N * sin(lat)) * sin(lat) - N
-end
+@inline _oblate_surface_radius(u_pp::SVector{3, Float64}, planet)::Float64 =
+    ellipsoid_surface_radius(u_pp, planet)
 
-@inline function _oblate_surface_radius(u_pp::SVector{3, Float64}, planet)::Float64
-    return inv(sqrt((u_pp[1]^2 + u_pp[2]^2) / planet.Rp_e^2 + u_pp[3]^2 / planet.Rp_p^2))
-end
-
-function _radius_for_oblate_altitude(target_altitude_m::Float64, u_pp::SVector{3, Float64}, planet)::Float64
-    target_altitude_m >= 0.0 || return NaN
-    lo = _oblate_surface_radius(u_pp, planet)
-    hi = lo + target_altitude_m + abs(planet.Rp_e - planet.Rp_p) + 1.0
-    while _oblate_altitude_from_radius(hi, u_pp, planet) < target_altitude_m
-        hi += max(target_altitude_m, abs(planet.Rp_e - planet.Rp_p), 1.0)
-    end
-    for _ in 1:80
-        mid = 0.5 * (lo + hi)
-        if _oblate_altitude_from_radius(mid, u_pp, planet) < target_altitude_m
-            lo = mid
-        else
-            hi = mid
-        end
-    end
-    return 0.5 * (lo + hi)
-end
+_radius_for_oblate_altitude(target_altitude_m::Float64, u_pp::SVector{3, Float64}, planet)::Float64 =
+    radius_for_geodetic_altitude(target_altitude_m, u_pp, planet)
 
 @inline _flight_ratio_scale(r_a_flight_m::Float64, r_a_sim_m::Float64)::Float64 =
     (isfinite(r_a_flight_m) && r_a_flight_m > 0.0 &&

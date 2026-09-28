@@ -1,0 +1,189 @@
+# Local viewer demonstrations
+
+Run these scripts from the repository with its Julia environment instantiated.
+The four basic demonstrations below use analytic ephemerides and either no
+atmosphere or an exponential model.
+Native GRAM, SPICE kernels and private telemetry are not required. The ISS display
+uses the tracked NASA model in `data/models/`; it is display geometry, not the
+physical mass or aerodynamic mesh.
+
+| Script | Default simulated time | What it demonstrates |
+| --- | --- | --- |
+| `iss_demo.jl` | 11,120 s | A J2 orbit with the NASA ISS display model |
+| `arm_demo.jl` | 60 s | Planned, controlled robot-arm motion on an orbiting bus |
+| `earth_4day.jl` | Four days | A long, eccentric Earth trajectory |
+| `odyssey_two_orbits.jl` | Two initial Keplerian periods | Mars energy-depletion control with an exponential atmosphere |
+
+For a short first run:
+
+```sh
+julia --project=. scripts/dev/viewer_demos/iss_demo.jl --duration-s 60 --output-dir output/iss-first-run
+```
+
+All four scripts accept `--duration-s` and `--output-dir` with space-separated
+values, as in the command above. These scripts do not accept the `--key=value`
+spelling used by the main CLI. Without an explicit
+output directory, they use `output/viewer_demos/<script-name>`; the environment
+variable `SPACEAGORA_VIEWER_DEMO_OUT` changes that parent directory. An existing
+nonempty output directory is rejected, so a new run cannot erase earlier work.
+Choose a new directory for another run.
+
+Each run writes simulation results, its scene description and a self-contained HTML
+page into that directory, then prints the HTML path. Open the HTML after the
+simulation finishes. The viewer replays saved results. A short run checks the
+setup and export, but does not demonstrate a full orbit, aerobraking passage or
+completed robot-arm maneuver. The Mars scenario is a demonstration of the
+analytic model and controller, not a fit to flight telemetry; its printed minimum
+altitude is the minimum among saved samples.
+
+The Odyssey demonstration explicitly uses Tsit5 and budgets solver steps for its
+0.1-second controller over the requested duration, with a margin for rejected
+steps. This changes the iteration ceiling, not the integration tolerances.
+
+## Rendezvous around the ISS
+
+`iss_hypr.jl` plans and flies a CubeSat approach around a point cloud sampled from
+the tracked ISS display model. It needs the starter SPICE kernels in the
+GRAMSuite asset directory, but does not use native GRAM or private telemetry.
+The station model and controller are a demonstration, not an ISS flight model.
+
+Start with the short hop:
+
+```sh
+SPACEAGORA_DEMO_SMOKE=1 julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
+```
+
+Run the complete approach by omitting the environment variable:
+
+```sh
+julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
+```
+
+The script prints the HTML path under `output/viewer_demos/iss_hypr_<inputs digest>/`.
+`SPACEAGORA_VIEWER_DEMO_OUT` changes the parent directory. The saved plan and
+provenance sit beside the results. A repeated invocation with matching inputs
+reuses the recorded simulation and plan only when the plan, scene and Feather
+results match the hashes in the provenance. Missing, empty or changed files
+trigger a fresh run, as do older outputs without a recorded Feather hash.
+Reused runs display the plan that produced their trajectory. The smoke hop
+checks the pipeline and does not demonstrate the complete approach.
+
+Open the printed HTML, click the marker beside the station label and press **F** to
+follow it. The blue dashed line is the reference the chaser followed, and the
+yellow line connects the planner's waypoints. The reference is expressed in
+the station's local orbital frame. Playback shows saved simulation states.
+
+Seeded plans with fixed iteration budgets are reproducible across thread counts.
+Wall-clock stopping budgets can end at different iterations. The new particle
+random streams change seeded plans from older versions; use the plan recorded
+with each run when checking tracking and clearance.
+
+The ISS demonstration caps reference speed at 0.1 m/s so the simulated chaser
+can track the approach with its configured thrusters. The run automatically
+extends beyond its requested duration when the reference needs longer. The geometric retimer
+does not enforce a full acceleration profile from rest, and the LQ-MPC
+controller does not impose collision constraints. Check the simulated path
+and clearance as well as the planned path when changing the scenario.
+
+The station body rotates with the circular orbit so its body-frame point
+cloud stays aligned with the planner's RTN frame and the saved 3D attitude.
+This setup assumes the example's circular equatorial orbit and principal-axis
+rotation; it does not model arbitrary tumbling-station rendezvous.
+
+## Mission demonstrations and SPICE comparisons
+
+`apollo11_lunar_orbit.jl`, `magellan_aerobraking.jl`, `odyssey_aerobraking.jl`, and
+`cassini_titan_flyby.jl [TA|T5|all]` retain the PR121 mission cases. The first
+three default to two modeled orbits; each Cassini case defaults to five hours
+starting 2.5 hours before the searched closest approach. All accept
+`--duration-s <positive seconds>` and `--output-dir <fresh directory>` for a
+bounded run. Existing nonempty outputs are refused, never reused or removed.
+`SPACEAGORA_DEMO_FORCE` no longer overrides that protection.
+
+These drivers use the tracked mission display models in `data/models/` and
+require existing SPICE kernels (`SPACEAGORA_SPICE_PATH`). Magellan, Odyssey and
+Cassini require installed native GRAM support; each wrapper is constructed explicitly
+at the simulation's initial epoch. This does not validate native time-system,
+coordinate, datum or climatology assumptions. Mission navigation SPKs are fetched
+from NAIF only when missing, into `SPACEAGORA_MISSION_SPK_DIR` or the configured
+SPICE tree's `spk/missions` directory. Native GRAM itself is never downloaded.
+
+Odyssey requests TES mapping year 2 with `mars_map_year=2`. In the tested native
+wrapper, that request alone does not apply the year selection to the native
+model; a later parameter-setting call is needed. This example preserves its
+existing numerical configuration, so do not interpret it as a validated
+year-2 atmosphere. An explicitly applied profile and its effect on the
+trajectory need separate validation.
+
+References are central-body-relative, geometric J2000 SPICE states in SI units
+at the saved simulation times. Missing SPK coverage is reported and omitted.
+The target is a one-based spacecraft index, not its public id. Separation is a
+sampled model comparison, not mission reconstruction accuracy. Apollo uses an
+illustrative parking orbit with SPICE orientation, not a flown LM reference.
+Without integrated attitude these examples use the viewer's velocity-aligned
+pose; a displayed NASA model is not a reconstructed attitude history.
+
+Titan's static zero-tide 5x5 field uses fully normalized coefficients, a
+2,575,000 m reference radius and GM 8,978,126,919,238.97 m^3/s^2 from NASA PGDA
+product 91. No time-varying body tide is implied. Odyssey's optional
+`SPACEAGORA_DEMO_ODYSSEY_ATMOSPHERE=accelerometer` requires a separately supplied
+local density table; it is not silently substituted for GRAM.
+`SPACEAGORA_DEMO_MAGELLAN_ANTENNA=forward|aft` controls the model pose.
+`SPACEAGORA_DEMO_MESH_AERO=1` enables SpaceAGORA's built-in mesh aerodynamic model
+and fits the selected geometry afresh; it does not reuse a stale mesh fit.
+
+The canonical output is standalone `simulation_results_viewer.html`. Optional
+`SPACEAGORA_DEMO_CDN=1` invokes the separate `build_cdn_page.py` tool when present.
+That network-dependent sharing feature remains separate from these drivers.
+`check_odyssey.jl [results_directory]` inspects saved articulation and altitude
+from the basic energy-depletion Odyssey demonstration without propagating it.
+Without an argument, it reads the `odyssey_two_orbits` results directory under
+the configured viewer-demo output parent.
+
+### Apollo 11 powered descent
+
+`apollo11_landing.jl [--duration-s S] [--output-dir DIR]` flies the lunar
+module from powered descent initiation to touchdown over a local terrain
+bundle: quadratic descent guidance, RCS attitude control, the terrain-contact
+touchdown event and the descent-engine plume model, with the seventeen thruster
+levels and the plume diagnostics saved as columns and the terrain embedded in
+the page. It needs the site bundle written by `scripts/dev/terrain/fetch_moon_site.py`
+(with `--nac-half-deg 0.03` at Apollo 11, or `SPACEAGORA_TERRAIN_SITE`), the tracked lunar module model, the LP165P
+coefficients and the SPICE starter assets; no atmosphere or native GRAM. The
+touchdown event ends the run, so `--duration-s` is only a cap. See the
+[Lunar Landing](../../../docs/src/user/lunar_landing.md) guide. This is a
+demonstration of the merged descent models on a documented case, not a
+reconstruction of the flown trajectory or a flight-accuracy claim.
+
+### Mission time and reference alignment
+
+The event searches retain their estimated SPICE epoch. Each run converts its
+start to the simulator's millisecond clock before sampling the initial state;
+the saved scene and SPICE reference use that same epoch. Differences later in
+the run measure the selected simulation against the navigation reconstruction,
+not an initial sub-millisecond timestamp mismatch. This does not validate the
+atmosphere's native time or coordinate conventions. Apollo's lunar orbit remains
+a nominal example, not a reconstruction from an Apollo flight kernel.
+
+Full-duration validation checks that these examples run and that their clocks,
+initial states and reference tables agree. It does not establish flight accuracy.
+For example, the default native-GRAM Odyssey run reaches about 552 km separation
+from its navigation reference over 34.6 hours, with the second periapsis about
+120 seconds late. Quantitative reconstruction requires further model validation.
+
+### Leap-second start times
+
+Mission starts inside a UTC leap second, or close enough to round into it at the
+simulator's millisecond resolution, are rejected with an explicit error. Choose
+a start outside that leap second. Ordinary minute, day and calendar rollovers
+remain supported. This guard applies to the mission helpers; it does not add
+leap-second calendar fields to the general `InitialTime` API.
+
+## CYGNSS research tools
+
+Use the [reconstruction record](../../../docs/spaceagora_cygnss_reconstruction_record.md)
+for the separate development environment, seven-spacecraft Earthdata fetch,
+private-input access, and the distinction between the wheels-only diagnostic
+and recorded-command reconstruction. Generated flight pages remain private.
+The wheels-only physical-adequacy check is currently failing, even when the
+demo completes. Do not report execution success as physical acceptance.

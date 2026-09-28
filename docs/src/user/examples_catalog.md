@@ -28,10 +28,10 @@ quickstart:
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
-If the quickstart already works and you want a fuller no-GRAM run, use:
+To run the same no-GRAM scenario without generating plots, use:
 
 ```text
-julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
 ```
 
 If you prefer the CLI wrapper:
@@ -48,22 +48,50 @@ the CSV, Feather, and manifest files under `output/`.
 ### First no-GRAM run
 
 Use this path when you want something runnable without GRAM, SPICE, or licensed
-assets:
+assets. These three run on a fresh clone with nothing but `Pkg.instantiate()`:
 
 ```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
-julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
+julia --project=. examples/AGORA_Earth_MonteCarlo.jl
 ```
 
-Related scripts:
+### Guidance and control with a frozen atmosphere
 
-- `AGORA_Earth_NoGRAM.jl`
-- `AGORA_Keplerian.jl`
-- `AGORA_Earth_MonteCarlo.jl`
+`odyssey_surrogate.jl` runs Mars Odyssey's P20 aerobraking passage with a named,
+checksum-verified frozen atmosphere and compares two solar-panel angle caps. It
+uses its own environment, which installs the public `GRAMSuite` Julia wrapper;
+native GRAM and the GRAMSuite submodule are not needed. The first run downloads
+the grid and the public scenario assets.
+
+```text
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
+julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
+```
+
+The [Odyssey walkthrough](../tutorials/odyssey_surrogate.md) covers its options,
+outputs and supported domain.
+
+### Runs that need the SPICE kernels but not GRAM
+
+`Earth_Thruster_Test.jl` and `AGORA_Keplerian.jl` use no atmosphere but build
+their planet with `Earth("", SPICE_PATH)` / `Mars("", SPICE_PATH)`, which loads
+the SPICE kernels shipped in the `data/GRAMSuite.jl` submodule. On a fresh clone
+they stop with "Required SPICE kernel not found: .../GRAM Suite 2.0/SPICE/...".
+Initialise the submodule first ([GRAMSuite Setup](gramsuite_setup.md)); the
+native GRAM library is not needed for these two.
+
+```text
+julia --project=. examples/Earth_Thruster_Test.jl
+julia --project=. examples/AGORA_Keplerian.jl
+```
 
 ### GRAM-backed atmosphere run
 
-Use this path only after [GRAMSuite Setup](gramsuite_setup.md) succeeds:
+Use this path only after [GRAMSuite Setup](gramsuite_setup.md) succeeds. The
+scripts call `setup_gram_example!()`, which loads the vendored `GRAMSuite`
+package; without the submodule they stop with "GRAM-backed examples require
+loading `GRAMSuite`", and that includes the `--smoke` form below.
 
 ```text
 julia --project=. examples/AGORA_Basic_GRAMEarth.jl
@@ -75,20 +103,20 @@ For a longer Earth aerobraking case, start in smoke mode:
 julia --project=. src/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```
 
-For the multi-pass MPC campaign (planet polyfit atmosphere), use:
+For the multi-pass MPC campaign using a planet polyfit atmosphere:
 
 ```text
 julia --project=. examples/AGORA_MPC_Aerobraking_Campaign.jl
 ```
 
-Select Earth, Mars, or Venus with `SPACEAGORA_MPC_PLANET`. For example:
+Select Earth, Mars, or Venus with `SPACEAGORA_MPC_PLANET`:
 
 ```text
 SPACEAGORA_MPC_PLANET=venus julia --project=. examples/AGORA_MPC_Aerobraking_Campaign.jl
 SPACEAGORA_MPC_PLANET=venus julia --project=. examples/AGORA_MPC_MED_Constraint_Cases.jl
 ```
 
-For a portable single-pass controller check without the native GRAM library:
+For a shortened Mars campaign:
 
 ```text
 SPACEAGORA_MPC_PLANET=mars SPACEAGORA_EXAMPLE_SMOKE=1 SPACEAGORA_SOLVER_MODE=tsit5 \
@@ -128,11 +156,61 @@ surface rather than a full mission case:
 
 ### RPO and robotics
 
-Start with one RPO case:
+The RPO examples need the SPICE kernels from the `data/GRAMSuite.jl` submodule
+([GRAMSuite Setup](gramsuite_setup.md)); they do not need the native GRAM
+library. Start with one RPO case:
 
 ```text
 julia --project=. examples/Earth_RPO_CubeSat_MPC.jl
 ```
+
+By default that script builds the Gateway-core scenario. Its
+`build_rpo_cubesat_mpc_demo` also accepts another station as a 3 x N
+body-frame point cloud (`station_points`, for example from
+`sample_model_pointcloud`) together with `station_keepout_radius_m`,
+`station_name`, `station_dims_m`, `station_mass_kg` and
+`station_ref_area_m2`, and scales the planner with `safe_distance_m`,
+`cost_ref_distance_m`, `search_margin_m` and `sample_ds_m`. `mpc_horizon`
+sets the LQ-MPC horizon in control steps and `initial_time` the epoch; the
+station starts at a fixed inertial point, so the date sets the lighting while
+the relative motion does not depend on it. Leaving every keyword at its
+default preserves the Gateway dimensions, mass and 8 m² reference area, and
+the returned `station` record states what was used.
+`scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
+model in its +XVV flight attitude held in LVLH (forward along the velocity,
+truss along the orbit normal with starboard toward -N, zenith up) and relocates the chaser between V-bar hold points on
+opposite sides of the station, exporting a viewer page with the plan
+overlaid. It plans with the `:manuscript` HyPR mode (`hypr_mode`: an
+RRT-Connect warm start sets the exploration score and with it the PSO
+coefficients and counts; the swarm searches the station's bounding box
+widened by `station_box_margin_m`; the objective is the obstacle sigmoid
+centred at d_safe + τ_tol plus the HCW fuel proxy of each candidate's
+retimed reference, counted from departure at rest to arrival at rest) and
+retimes with `retime_accel_limit_enable`, which bounds the tangential
+acceleration and starts the reference at the chaser's speed and ends it at
+rest. The default `:legacy` mode keeps the earlier objective and adaptive
+policy. The display model also holds seven disc-shaped meshes that are not
+ISS hardware; the demo writes a copy without them for the point cloud and
+the page. `SPACEAGORA_DEMO_SMOKE=1` runs a short bounded hop instead of the
+full relocation. Every run writes an `iss_hypr_provenance.json` sidecar that
+names its inputs and outputs, a plan record with the warm start, exploration
+score, counts, cost history and reference checks, and the controller's
+per-update log. Its station rotates with the circular orbit so the saved
+attitude and the planner's station geometry share the RTN frame. LQ-MPC does
+not impose collision constraints, and point-cloud clearance is checked at
+samples, not continuously. Check simulated clearance against the station
+mesh as well as planned clearance when changing the scenario.
+
+With a fixed seed and iteration budget, the planner gives the same plan across
+Julia thread counts. Runs using a wall-clock stopping budget can stop at different
+iterations. The particle-based random streams introduced with this demo change
+seeded plans from earlier versions; compare tracking against the plan saved by
+the run, rather than a newly generated plan.
+
+The default simulation copy owns its own MPC solver workspace. Its stored primal
+warm start is copied, while the solver's internal caches are rebuilt. A copied
+controller is therefore safe to use after the original is released, but is not
+an exact checkpoint of an optimization already in progress.
 
 For a planner-comparison smoke run:
 
@@ -163,7 +241,9 @@ Related scripts:
 
 | Group | Scripts |
 |---|---|
-| First runs | `AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, `AGORA_Earth_MonteCarlo.jl` |
+| First runs (no assets) | `AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl` |
+| First runs (SPICE kernels from the GRAMSuite submodule) | `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl` |
+| Frozen-atmosphere guidance and control (own environment) | `odyssey_surrogate.jl` |
 | GRAM and missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_MPC_Aerobraking_Campaign.jl`, `AGORA_MPC_MED_Constraint_Cases.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl`, `AGORA_Mars_NoGRAM.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` |
 | Controls and torques | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` |
 | RPO and robotics | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl`, `Robot_Arm_Planner_Cloth_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl` |

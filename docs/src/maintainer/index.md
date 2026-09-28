@@ -38,7 +38,8 @@ pages.
 
 ## Generated and mirrored content
 
-The generated Public API page is built from `docs/public_api_symbols.jl`.
+The generated Public API, Terrain API, Mesh Aerodynamics API and Visualization API pages share one
+`docs/public_api_symbols.jl` registry.
 
 The contract pages shown in the docs site are mirrored from the hand-written
 sources under:

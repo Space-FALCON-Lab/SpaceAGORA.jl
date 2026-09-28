@@ -1,0 +1,16 @@
+pid=405761 case=multi_16_gram_live mode=serial threads=1
+t=0s rss_mb=0
+t=5s rss_mb=1119
+t=10s rss_mb=1473
+t=15s rss_mb=1422
+t=20s rss_mb=1608
+t=25s rss_mb=1630
+t=30s rss_mb=1635
+t=35s rss_mb=1878
+t=40s rss_mb=1882
+t=45s rss_mb=1882
+t=50s rss_mb=1843
+t=55s rss_mb=1988
+t=60s rss_mb=1994
+t=65s rss_mb=1986
+exit=0 elapsed=70s

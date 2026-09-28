@@ -35,6 +35,20 @@ end
     return default
 end
 
+# Compiled once, never inlined, called by every route: the flat pre-pass and
+# the per-satellite wrench must not each get their own codegen of the same
+# arithmetic (StaticArrays products use `muladd`, whose fusion is decided per
+# compilation context).
+@noinline function _inverse_squared_force_ii(pos_ii::SVector{3, Float64}, mass::Float64, planet)::SVector{3, Float64}
+    return mass * _inverse_squared_gravity_accel(pos_ii, planet)
+end
+
+@noinline function _inverse_squared_j2_force_ii(pos_ii::SVector{3, Float64}, mass::Float64, l_pi::SMatrix{3, 3, Float64, 9}, planet)::SVector{3, Float64}
+    pos_pp = SVector{3, Float64}(l_pi * pos_ii)
+    gravity_pp = _inverse_squared_j2_gravity_accel(pos_pp, planet)
+    return mass * (l_pi' * gravity_pp)
+end
+
 @inline function _inverse_squared_gravity_accel(pos_ii::SVector{3, Float64}, planet)::SVector{3, Float64}
     r = norm(pos_ii)
     μ = Float64(planet.μ)
@@ -196,8 +210,7 @@ end
     env::EnvironmentSample,
     t::Float64,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    gravity_ii = _inverse_squared_gravity_accel(x.pos_ii, env.planet)
-    force_ii = x.mass_kg * gravity_ii
+    force_ii = _inverse_squared_force_ii(x.pos_ii, x.mass_kg, env.planet)
     torque_body = _gravity_gradient_torque_body(model, x, env.planet)
     return force_ii, torque_body
 end
@@ -228,8 +241,7 @@ end
     env::EnvironmentSample,
     t::Float64,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    gravity_ii = _inverse_squared_gravity_accel(x.pos_ii, env.planet)
-    force_ii = x.mass_kg * gravity_ii
+    force_ii = _inverse_squared_force_ii(x.pos_ii, x.mass_kg, env.planet)
     torque_body = _gravity_gradient_torque_body(model, x, env.planet)
     return force_ii, torque_body
 end
@@ -264,9 +276,7 @@ end
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     planet_frame = env.planet_frame
     planet_frame === nothing && throw(ArgumentError("InverseSquaredJ2GravityModel wrench requires env.planet_frame."))
-    gravity_pp = _inverse_squared_j2_gravity_accel(planet_frame.pos_pp, env.planet)
-    gravity_ii = planet_frame.l_pi' * gravity_pp
-    force_ii = x.mass_kg * gravity_ii
+    force_ii = _inverse_squared_j2_force_ii(x.pos_ii, x.mass_kg, planet_frame.l_pi, env.planet)
     torque_body = _gravity_gradient_torque_body(model, x, env.planet)
     return force_ii, torque_body
 end
@@ -307,4 +317,43 @@ function gravity_gradient(J::SMatrix{3,3,Float64}, rVec::SVector{3,Float64}, μ:
     end
     r_hat = rVec / r
     return 3*μ/r^3 * cross(r_hat, J * r_hat)
+end
+
+"""
+    GravityGradientTorqueModel(; gravity_gradient=true)
+
+Central-field gravity-gradient torque as a separate effector, with zero
+translational force. The body-frame torque is `3μ/r³ (r̂_body × J r̂_body)`,
+using the spacecraft inertia `J`, planet parameter `μ`, and body-frame radial
+unit vector. This reuses the same calculation as `gravity_gradient=true` on
+an analytic gravity model; it does not include nonspherical-field corrections.
+
+Use with `orientation_sim=true`. The state-sample hook returns zero torque
+when the attitude or spacecraft model is absent. The optional
+`gravity_gradient=false` setting disables the torque.
+
+Pair this with a gravity force model, including `GravitationalHarmonicsModel`,
+without adding another gravitational force. Do not also enable
+`gravity_gradient=true` on an analytic gravity effector in the same run:
+that would count the central-field torque twice.
+"""
+@kwdef struct GravityGradientTorqueModel <: AbstractForceTorqueModel
+    # Match the existing analytic-gravity option so both hooks reuse its owner.
+    gravity_gradient::Bool = true
+end
+
+function calcForceTorque(model::GravityGradientTorqueModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
+    torque_body = _gravity_gradient_torque_body(model, pos_ii, x, param, i)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
+end
+
+@inline function wrench(
+    model::GravityGradientTorqueModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    torque_body = _gravity_gradient_torque_body(model, x, env.planet)
+    return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
 end

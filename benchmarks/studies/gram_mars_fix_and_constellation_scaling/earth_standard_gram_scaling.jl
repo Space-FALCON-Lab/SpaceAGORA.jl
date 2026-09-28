@@ -34,7 +34,7 @@ function build_constellation_config()
 
     spacecraft = SpacecraftModel[]
     for i in 1:N_SATS
-        root = Link{0}(root=true, m=500.0, ref_area=12.0)
+        root = Link(root=true, m=500.0, ref_area=12.0)
         jitter = 50.0 * (i - 1) / N_SATS
         ic = InitialCondition(
             ra=planet.Rp_e + ALT_M + jitter,

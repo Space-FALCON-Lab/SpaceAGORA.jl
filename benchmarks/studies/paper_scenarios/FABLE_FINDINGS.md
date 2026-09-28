@@ -1,8 +1,8 @@
 # Fable Findings — Performance Review of the Parallelization Hot Paths
 
 Findings from a full read of the parallelization-relevant source (July 2026,
-by Claude Fable during the paper_scenarios suite build). Part 1 lists the fixes
-that were implemented and verified alongside this suite; Part 2 documents the
+during the paper_scenarios suite build). Part 1 lists the fixes that were
+implemented and verified alongside this suite; Part 2 documents the
 deferred opportunities — each with location, mechanism, and a suggested approach —
 for future reference. Line numbers are as of the commit introducing this file.
 

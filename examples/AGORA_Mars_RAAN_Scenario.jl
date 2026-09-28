@@ -112,18 +112,9 @@ function _make_mars_raan_scenario(raan_deg::Float64, results_directory::String)
         results_directory=results_directory
     )
 
-    return SimulationConfiguration(
-        file_paths=base_args.file_paths,
-        simulation_settings=base_args.simulation_settings,
-        mission_configuration=base_args.mission_configuration,
-        environment_model=base_args.environment_model,
-        dynamics_model=base_args.dynamics_model,
+    return SM.SimConfig._with_configuration(base_args;
         guidance_model=GuidanceModel(guidance_effectors=(guidance_effector,), guidance_rates=[30.0]),
-        navigation_model=base_args.navigation_model,
         control_model=ControlModel(control_effectors=(thruster,), control_rates=[10.0]),
-        initial_time=base_args.initial_time,
-        integration_tolerances=base_args.integration_tolerances,
-        solver_config=base_args.solver_config
     )
 end
 
@@ -185,7 +176,7 @@ function _save_mars_raan_ground_track_plot(args::SimulationConfiguration)
         longitude_deg,
         latitude_deg;
         zcolor=altitude_km,
-        colorbar_title="Altitude (km)",
+        colorbar_title="Geodetic Altitude (km)",
         xlabel="Longitude (deg)",
         ylabel="Latitude (deg)",
         label=false,
@@ -218,8 +209,8 @@ function _save_mars_raan_apoapsis_periapsis_plot(args::SimulationConfiguration)
         peri_orbit,
         peri_altitude_km;
         xlabel="Orbit Number",
-        ylabel="Periapsis Altitude (km)",
-        label="Periapsis",
+        ylabel="Geodetic Periapsis Estimate (km)",
+        label="Periapsis estimate",
         linewidth=2.5,
         marker=:circle,
         color=:dodgerblue,
@@ -231,7 +222,7 @@ function _save_mars_raan_apoapsis_periapsis_plot(args::SimulationConfiguration)
         apo_axis,
         extrema.apo.orbit,
         extrema.apo.altitude_km;
-        ylabel="Apoapsis Altitude (km)",
+        ylabel="Geodetic Apoapsis Estimate (km)",
         label=false,
         linewidth=2.5,
         marker=:diamond,
@@ -241,7 +232,7 @@ function _save_mars_raan_apoapsis_periapsis_plot(args::SimulationConfiguration)
         p,
         [NaN],
         [NaN];
-        label="Apoapsis",
+        label="Apoapsis estimate",
         linewidth=2.5,
         marker=:diamond,
         color=:crimson

@@ -124,6 +124,14 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     gravity_harmonics_degree::Int = 0
     gravity_harmonics_order::Int = 0
     gravity_harmonics_file::String = ""
+    # Explicit override for the central-body GM (m^3/s^2) used by the harmonics
+    # model, bypassing both the file's declared `gm_m3s2` header and the
+    # generic `planet.μ` fallback. Used when a scenario must match a specific
+    # reference tool's own GM convention for a body (e.g. GMAT's vs. STK's own
+    # J0 defaults, which do not always agree with each other -- see
+    # spaceagora_j0_gm_parity_investigation.md). `nothing` preserves the
+    # existing degree/file-driven behavior.
+    gravity_harmonics_gm_override_m3s2::Union{Nothing, Float64} = nothing
     nbody_bodies::Vector{String} = String[]
     srp_enabled::Bool = false
     srp_cr::Float64 = 1.3
@@ -148,6 +156,24 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     maneuver_isp_s::Float64 = 0.0
     maneuver_guidance_rate_s::Float64 = 30.0
     maneuver_control_rate_s::Float64 = 10.0
+    # Campaign-to-epoch orbit numbering offset of the maneuver block (0 when
+    # there is none); the state anchors use it to reset the orbit counter.
+    maneuver_orbit_number_offset::Int = 0
+    # Scheduled state anchors: at each elapsed time the simulated state is
+    # replaced by the supplied J2000 planet-centred state (m, m/s), the same
+    # convention as initial_state_j2000_m. The Odyssey replay anchors to the
+    # NAV reconstruction after each trim burn, so the graded arc is a sequence
+    # of open-loop segments between burns instead of one 340-orbit
+    # propagation whose end region amplifies rounding into kilometres.
+    # burn_orbit_numbers is the mission P-numbering of the burn each anchor
+    # follows; with the maneuver offset it gives the orbit counter the anchor
+    # resets to (B - offset + 1: the value between the burn's apoapsis and the
+    # next), so the burn replay stays keyed to the anchored trajectory even
+    # when the propagated one had drifted across an apoapsis crossing.
+    state_anchors_enabled::Bool = false
+    state_anchor_burn_orbit_numbers::Vector{Int64} = Int64[]
+    state_anchor_elapsed_s::Vector{Float64} = Float64[]
+    state_anchor_states_j2000_m::Vector{NTuple{6, Float64}} = NTuple{6, Float64}[]
     atmosphere_truth::AtmosphereTruthConfig = AtmosphereTruthConfig()
     calibration::CalibrationConfig = CalibrationConfig()
     EI_km::Float64
@@ -196,6 +222,14 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     gravity_harmonics_degree::Int = 0
     gravity_harmonics_order::Int = 0
     gravity_harmonics_file::String = ""
+    # Explicit override for the central-body GM (m^3/s^2) used by the harmonics
+    # model, bypassing both the file's declared `gm_m3s2` header and the
+    # generic `planet.μ` fallback. Used when a scenario must match a specific
+    # reference tool's own GM convention for a body (e.g. GMAT's vs. STK's own
+    # J0 defaults, which do not always agree with each other -- see
+    # spaceagora_j0_gm_parity_investigation.md). `nothing` preserves the
+    # existing degree/file-driven behavior.
+    gravity_harmonics_gm_override_m3s2::Union{Nothing, Float64} = nothing
     nbody_bodies::Vector{String} = String[]
     srp_enabled::Bool = false
     srp_cr::Float64 = 1.3
@@ -233,6 +267,17 @@ Base.@kwdef struct StudyConfig
     manifest_path::String
     enforce::Bool
     generate_plots::Bool
+    scenarios::Vector{String} = String[]   # empty = every scenario in the manifest
+end
+
+"""
+    _parse_scenario_list(raw) -> Vector{String}
+
+Split a comma-separated scenario selection (`"odyssey,vex"`) into trimmed,
+lower-cased names; blanks are dropped and an empty string selects everything.
+"""
+@inline function _parse_scenario_list(raw::AbstractString)::Vector{String}
+    return String[lowercase(strip(tok)) for tok in split(String(raw), ',') if !isempty(strip(tok))]
 end
 
 """
@@ -249,6 +294,11 @@ Base.@kwdef struct VerificationRequest
     manifest_path::String = abspath(get(ENV, "SPACEAGORA_TELEMETRY_MANIFEST", DEFAULT_MANIFEST_PATH))
     enforce::Bool = false
     generate_plots::Bool = _safe_parse_bool(get(ENV, "SPACEAGORA_TELEMETRY_PLOTS", "1"), true)
+    # Empty = every scenario in the manifest. The SPACEAGORA_TELEMETRY_SCENARIOS
+    # environment filter is applied by the CLI path only (parse_cli), so a
+    # request built in code, such as the initial-condition fit's, is never
+    # narrowed by an environment variable it did not ask for.
+    scenarios::Vector{String} = String[]
 end
 
 """

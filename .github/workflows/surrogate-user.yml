@@ -1,0 +1,47 @@
+name: Public surrogate workflow
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: surrogate-user-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-free-odyssey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      JULIA_NUM_THREADS: "4"
+      JULIA_LOAD_PATH: "@:@stdlib"
+      GIT_TERMINAL_PROMPT: "0"
+      GIT_LFS_SKIP_SMUDGE: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          lfs: false
+          persist-credentials: false
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+      - name: Use empty package and data cache
+        run: echo "JULIA_DEPOT_PATH=${RUNNER_TEMP}/surrogate-clean-depot" >> "$GITHUB_ENV"
+      - name: Install public pinned packages
+        run: julia --startup-file=no --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
+      - name: Preset resolution and failure regressions
+        run: julia --startup-file=no --project=examples/odyssey_surrogate_env test/surrogate_presets_tests.jl
+      - name: Public preset and active control exercise
+        run: julia --startup-file=no --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --output=output/odyssey-surrogate
+      - name: Verify provenance and native absence
+        run: julia --startup-file=no --project=examples/odyssey_surrogate_env test/surrogate_workflow_tests.jl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: odyssey-surrogate-results
+          path: output/odyssey-surrogate

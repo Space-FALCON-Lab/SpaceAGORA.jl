@@ -3,7 +3,6 @@ using Dates
 using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
-using Quaternions
 using Serialization
 using StaticArrays
 using ComponentArrays
@@ -13,7 +12,8 @@ using Random
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 
 const SM = SimulationModel

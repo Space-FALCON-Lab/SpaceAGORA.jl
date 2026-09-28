@@ -45,13 +45,16 @@ function _ic_fit_run(
     open(manifest_path, "w") do io
         TOML.print(io, m)
     end
+    # The fit targets one scenario; ask for exactly that one so the other
+    # manifest scenarios are neither propagated nor able to filter it out.
     req = VerificationRequest(
         profile=profile,
         out_summary=joinpath(workdir, "icfit_summary_$(label).csv"),
         out_errors=joinpath(workdir, "icfit_errors_$(label).csv"),
         manifest_path=manifest_path,
         enforce=false,
-        generate_plots=false
+        generate_plots=false,
+        scenarios=[String(scen["name"])]
     )
     result = run_verification(req)
     return (

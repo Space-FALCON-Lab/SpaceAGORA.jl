@@ -36,20 +36,31 @@ end
 end
 
 """
-    ReactionWheelAssembly{N}
+    ReactionWheelAssembly
 
 A struct to hold the parameters and state of a
-reaction wheel assembly with N wheels.
+reaction wheel assembly. The wheel count is a runtime field, not a type
+parameter; see the note on the struct for why.
 """
-@kwdef mutable struct ReactionWheelAssembly{N}
+# Deliberately NOT parameterised on the wheel count. The parameter existed only
+# to size J_rw/h_wheels statically, but it propagated outward as Link{N_RW},
+# which made `Link` an abstract UnionAll and therefore made
+# SpacecraftModel.links::Vector{Link} and .root::Link abstract fields. Every
+# read of a link field in the RHS was then a dynamic lookup that boxed a
+# Float64: measured at ~835 bytes allocated per satellite per RHS call, which
+# accounted for essentially all of the 1.53 GB a 10000-satellite run allocated,
+# and a 35.7x slowdown on field access in isolation. The wheel arrays are
+# touched once per satellite per attitude step; the link fields are touched
+# constantly, so the static sizing was being bought at far too high a price.
+@kwdef mutable struct ReactionWheelAssembly
     # --- Parameters (Fixed) ---
-    n_wheels::Int = N # Number of reaction wheels in the assembly
+    n_wheels::Int = 0 # Number of reaction wheels in the assembly
 
     "Jacobian mapping wheel angular velocity to body angular momentum"
-    J_rw::SMatrix{3, N, Float64} = SMatrix{3, N, Float64}(LinearAlgebra.I) # Default to identity mapping
+    J_rw::Matrix{Float64} = zeros(Float64, 3, 0)
 
     "Precomputed pseudo-inverse of J_rw, mapping a desired body torque/momentum onto per-wheel values"
-    J_rw_pinv::SMatrix{N, 3, Float64} = SMatrix{N, 3, Float64}(pinv(Matrix(J_rw)))
+    J_rw_pinv::Matrix{Float64} = Matrix{Float64}(pinv(J_rw))
 
     "Maximum torque (Nm) *each* wheel can produce"
     max_wheel_torque::Float64 = 0.1
@@ -62,10 +73,10 @@ reaction wheel assembly with N wheels.
 
     # --- State (Mutable) ---
     "Angular momentum (h) of each wheel"
-    h_wheels::MVector{N, Float64} = MVector{N, Float64}(zeros(N))
-    
+    h_wheels::Vector{Float64} = zeros(Float64, n_wheels)
+
     "Derivative of wheel angular momentum (h_dot)"
-    h_dot_wheels::MVector{N, Float64} = MVector{N, Float64}(zeros(N))
+    h_dot_wheels::Vector{Float64} = zeros(Float64, n_wheels)
     
     "Net torque (τ) applied to the body *by* the RW assembly"
     tau_body_net::MVector{3, Float64} = MVector{3, Float64}(zeros(3))

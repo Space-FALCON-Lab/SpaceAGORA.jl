@@ -32,6 +32,17 @@ function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float
         thruster_forces_n=thruster_forces,
         rw_torque_body=rw_torque_body,
     )
+    log = model.command_log
+    if log !== nothing
+        push!(log.t_s, t)
+        push!(log.x_rel_rtn, SVector{6, Float64}(x_rel))
+        push!(log.accel_cmd_rtn, a_rtn)
+        push!(log.qp_status, model.controller.qp_results.info.status)
+        push!(log.force_body_desired_n, force_body_des)
+        push!(log.thruster_forces_n, thruster_forces)
+        push!(log.mass_kg, mass)
+        push!(log.q_chaser, q)
+    end
     return nothing
 end
 
@@ -45,6 +56,23 @@ end
 function calcReactionWheelTorque(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
     i == model.chaser_idx || return nothing
     return model.held.rw_torque_body
+end
+
+"""
+    control_thruster_levels(model::RPOMPCControlModel, i)
+
+The held six-axis thruster command as firing levels: each jet's commanded
+thrust over its rating. The chaser's remaining thrusters, if the vehicle
+carries more than the six the allocator drives, stay idle.
+"""
+function control_thruster_levels(model::RPOMPCControlModel, i::Int)
+    i == model.chaser_idx || return nothing
+    levels = zeros(6)
+    @inbounds for j in 1:6
+        rating = model.thrusters.max_thrust_n[j]
+        rating > 0.0 && (levels[j] = clamp(model.held.thruster_forces_n[j] / rating, 0.0, 1.0))
+    end
+    return levels
 end
 
 """Return propellant mass flow for a control effector."""

@@ -5,9 +5,18 @@
 #   SPACEAGORA_PPB_OUTDIR           — output root directory
 #                                     default: <repo>/output/performance/paper_benchmarks
 #   SPACEAGORA_PPB_PHASES           — comma-separated phase subset, e.g. B1,B2
-#                                     default: all phases (B1–B5)
+#                                     default: all phases (B1–B8)
 #   SPACEAGORA_PPB_THREADS          — comma-separated thread ladder override
-#                                     default: auto-scaled to Sys.CPU_THREADS
+#                                     default: auto-scaled to the machine's
+#                                     PHYSICAL core count (not Sys.CPU_THREADS —
+#                                     the RHS is SIMD/FP-bound and regresses hard
+#                                     once SMT siblings are oversubscribed, so a
+#                                     ladder topped out at logical CPUs makes its
+#                                     own last rung the worst point on the curve)
+#   SPACEAGORA_PPC_PHYSICAL_CORES   — override physical-core detection, e.g. when
+#                                     the run is confined to part of the machine
+#                                     via taskset/cgroups
+#                                     default: unset (detected from /proc/cpuinfo)
 #   SPACEAGORA_PPB_PROCESS_WORKERS  — max process workers for MC phases (B4)
 #                                     default: 32
 #   SPACEAGORA_PPB_MC_SAMPLES_MAX   — caps each phase's Monte Carlo sample
@@ -35,6 +44,17 @@
 #                                     workers at 4, and repeats at 2.
 #                                     Thread ladder still auto-scales to local CPU count.
 #                                     default: 0
+#   SPACEAGORA_PPB_RESUME           — path to an existing run directory (e.g.
+#                                     <outdir>/20260819_195133) to resume into,
+#                                     instead of starting a fresh timestamped
+#                                     run. Any (case, mode, thread_count,
+#                                     mc_samples, repeat) worker CSV already on
+#                                     disk under <resume>/<phase>/worker_rows/
+#                                     with a successful row is skipped rather
+#                                     than re-run — use this to pick a crashed
+#                                     or killed run back up without redoing
+#                                     everything that already finished.
+#                                     default: unset (fresh run)
 #
 # Additional arguments are forwarded to the Julia script.
 #
@@ -55,12 +75,17 @@
 # and is equivalent to SPACEAGORA_PPB_PHASES=B4:
 #   bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh B4
 #
-# Note: B6 ("Cross-Machine Validation") was removed from the phase catalog
-# and is no longer a valid phase id.
+# Note: an older B6 ("Cross-Machine Validation") was removed from the phase
+# catalog; the current B6 ("Expanded Router Evaluation") is a later, unrelated
+# addition and is a valid phase id.
 #
 # Example — cap B4's MC samples at 64 (runs 1,4,16,64 instead of up to 1024),
 # leaving everything else (N_sat, workers, repeats) at full scale:
 #   SPACEAGORA_PPB_MC_SAMPLES_MAX=64 bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh B4
+#
+# Example — resume a crashed run instead of starting over:
+#   SPACEAGORA_PPB_PHASES=B6 SPACEAGORA_PPB_RESUME=output/performance/paper_benchmarks/20260819_195133 \
+#     bash benchmarks/studies/paper_parallelization_benchmarks/protocol.sh
 
 set -euo pipefail
 

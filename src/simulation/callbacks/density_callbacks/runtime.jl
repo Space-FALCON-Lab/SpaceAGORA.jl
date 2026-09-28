@@ -1,7 +1,4 @@
 @inline function _extract_pos_vel(x)
-    if hasproperty(x, :pos) && hasproperty(x, :vel)
-        return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
-    end
     return SVector{3, Float64}(x[1], x[2], x[3]), SVector{3, Float64}(x[4], x[5], x[6])
 end
 
@@ -98,7 +95,9 @@ function _density_state_from_kinematics!(
     # Vacuum-predicted GRAM density cache: interpolate from a pre-built spline on
     # log(ρ) along the drag-free trajectory.  Only active inside the atmosphere
     # (in_atmosphere flag) to avoid wasteful builds during coast arcs.
-    if env.vacuum_gram_cache_enabled
+    # Grid snapshots enforce their spatial domain at every current coordinate;
+    # a trajectory spline must not substitute a previously sampled atmosphere.
+    if env.vacuum_gram_cache_enabled && !(density_model isa EnvironmentModels.GRAMGridAtmosphereModel)
         in_atm = sat_idx <= length(p.shared_buffers.in_atmosphere) &&
                  p.shared_buffers.in_atmosphere[sat_idx]
         if in_atm
@@ -215,8 +214,6 @@ end
 function get_density_callback(num_sats::Int, args::SimulationConfiguration)
     return get_density_callback(num_sats, args.dynamics_model.dynamic_effectors, args)
 end
-
-@inline _density_callback_et(p, t::Float64) = p.shared_buffers.et_start[] + t
 
 function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationConfiguration)
     # GRAM knobs are read from the run-scoped env snapshot at invocation time
@@ -352,10 +349,16 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 mode=decision.mode,
                 num_items=num_sats,
                 use_threads=use_threads,
-                elapsed_ns=(time_ns() - started_ns)
+                elapsed_ns=(time_ns() - started_ns),
+                env=_policy_env_config(p),
+                ctx=ParallelPolicy.policy_context_hint(p)
             )
         end
     end
 
-    return DiscreteCallback(condition, affect!, initialize=(cb, u, t, integrator) -> affect!(integrator))
+    # Housekeeping, not an event: the affect refreshes the density samples in
+    # p and never touches u, so the before/after saves of the DiscreteCallback
+    # default would only append two more copies of every accepted step.
+    return DiscreteCallback(condition, affect!; initialize=(cb, u, t, integrator) -> affect!(integrator),
+        save_positions=(false, false))
 end

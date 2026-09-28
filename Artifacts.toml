@@ -1,0 +1,15 @@
+[odyssey_p20_frozen_v1_1_0_0]
+git-tree-sha1 = "6542c3e8157d0a97e9e7efad52b7464dd522e98c"
+lazy = true
+
+    [[odyssey_p20_frozen_v1_1_0_0.download]]
+    sha256 = "75b2396446c12dd4ac3a698f3f04c19eef5e13bdaa9699ba0ad7ec3cc97a27bd"
+    url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-odyssey-p20-1.0.0/odyssey_p20_frozen_v1-1.0.0.tar.gz"
+
+[odyssey_p20_scenario_v1_1_0_0]
+git-tree-sha1 = "aabd31a51b962fc4773b561b2918c3b91e15a948"
+lazy = true
+
+    [[odyssey_p20_scenario_v1_1_0_0.download]]
+    sha256 = "1e612bf0dd760cde026f23bfec4202e2a6de8b687e28f28de1cc25e622c71582"
+    url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-odyssey-p20-1.0.0/odyssey_p20_scenario_v1-1.0.0.tar.gz"

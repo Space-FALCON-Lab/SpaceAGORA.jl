@@ -64,23 +64,15 @@ base_args = make_example_config(
 )
 
 control_model = ControlModel(control_effectors=(BodyRateDamperModel(0.05),), control_rates=[1.0])
-args = SimulationConfiguration(
-    file_paths=base_args.file_paths,
-    simulation_settings=base_args.simulation_settings,
-    mission_configuration=base_args.mission_configuration,
-    environment_model=base_args.environment_model,
-    dynamics_model=base_args.dynamics_model,
-    guidance_model=base_args.guidance_model,
-    navigation_model=base_args.navigation_model,
+args = SM.SimConfig._with_configuration(base_args;
     control_model=control_model,
-    initial_time=base_args.initial_time,
     integration_tolerances=IntegrationTolerances(
         reltol_orbit=1e-9,
         abstol_orbit=1e-9,
         reltol_quaternion=1e-9,
         abstol_quaternion=1e-9,
         dt_max_orbit=5.0
-    )
+    ),
 )
 
 run_and_report(args)

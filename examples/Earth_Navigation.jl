@@ -7,7 +7,6 @@ using LinearAlgebra
 using Random
 using CSV
 using DataFrames
-const RuntimeServices = SpaceAGORA.RuntimeServices
 const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
 const MISSION_TIME_SEC = 4800
 const THRESHOLD_DISTANCE_KM = 500.0 
@@ -1614,7 +1613,7 @@ function make_translational_spacecraft(
     mass_kg::Float64=220.0,
     area_m2::Float64=2.0
 )::SpacecraftModel
-    root = Link{0}(root=true, m=mass_kg, ref_area=area_m2, dims=MVector{3, Float64}(1.0, 1.0, 1.0))
+    root = Link(root=true, m=mass_kg, ref_area=area_m2, dims=MVector{3, Float64}(1.0, 1.0, 1.0))
     ν_deg = mean_to_true_anomaly_deg(mean_anomaly_deg, e)
     ic = InitialCondition(a_m, e, i_deg, aop_deg, raan_deg, ν_deg)
     return SpacecraftModel(

@@ -70,6 +70,13 @@ If you want copy-paste commands for common tasks:
 
 - go to [Recipes](user/recipes.md)
 
+If you want to add a force or torque of your own, read the state the solver
+integrates, or stop a run when a condition is met:
+
+- go to [Adding a Force or Torque of Your Own](user/custom_effector.md),
+  [The Integrated State](user/integrated_state.md) and
+  [Stopping a Simulation on a Condition](user/stop_conditions.md)
+
 If a command failed and you need a diagnostic page:
 
 - go to [Troubleshooting](user/troubleshooting.md)

@@ -6,11 +6,11 @@ using Random
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 
-include(joinpath(REPO_ROOT, "src", "simulation", "engine", "simulation_engine.jl"))
-const run_simulation = SimulationEngine.run_simulation
+const SimulationEngine = SpaceAGORA.SimulationEngine
 const build_initial_conditions = SimulationEngine.build_initial_conditions
 const ODEParams = SimulationModel.ODEParams
 
@@ -19,7 +19,7 @@ const PE = SimulationModel.DynamicEffectors.PerturbationEffectors
 
 # ── builders ─────────────────────────────────────────────────────────────────
 function make_magnet_spacecraft(; q0, w0, m_dipole=1.0)
-    root = Link{0}(root=true, m=4.0,
+    root = Link(root=true, m=4.0,
         dims=MVector{3, Float64}(0.1, 0.1, 0.3), ref_area=0.03)
     push!(root.magnets, Magnet(m=MVector{3, Float64}(0.0, 0.0, m_dipole)))
     ra = EARTH.Rp_e + 520e3

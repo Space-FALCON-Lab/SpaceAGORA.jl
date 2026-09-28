@@ -34,6 +34,9 @@ julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --outp
 
 ## Run an aerobraking example in smoke mode
 
+Needs the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](gramsuite_setup.md)):
+the script loads GRAM even in smoke mode.
+
 ```text
 julia --project=. src/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```
@@ -78,6 +81,8 @@ julia --project=. src/cli/main.jl assets manifest
 
 ```text
 julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
+# one scenario only (also honoured as SPACEAGORA_TELEMETRY_SCENARIOS=odyssey)
+julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true --scenarios=odyssey
 ```
 
 ## Run the telemetry verification CLI path

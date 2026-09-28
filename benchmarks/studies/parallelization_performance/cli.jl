@@ -27,6 +27,12 @@ Base.@kwdef struct PPCConfig
     solver_mode::String = "auto_stiff"
     process_workers::Int = 2
     mc_samples::Vector{Int} = Int[]
+    # True when mc_samples came from --mc-samples or SPACEAGORA_PPC_MC_SAMPLES
+    # rather than from the profile's default ladder. Only the joint_routing
+    # family consults it: those cases carry their own sample count (a rung is
+    # N spacecraft x S samples and the pair is what holds its total work fixed),
+    # so they use it unless the caller asked for something specific.
+    mc_samples_explicit::Bool = false
     parity_samples::Int = 128
     cpu_pinning::Vector{Int} = Int[]
     worker::Bool = false
@@ -34,10 +40,30 @@ Base.@kwdef struct PPCConfig
     worker_mode::String = ""
     worker_threads::Int = 1
     worker_repeat::Int = 1
+    # How many timed repeats the worker runs inside its own process, starting at
+    # worker_repeat. One Julia subprocess spends ~80 s on startup plus JIT of the
+    # RHS/solver stack before it can time anything (measured: 79 s per row for a
+    # case whose solve is 0.016 s), so launching a fresh subprocess per repeat
+    # spends that cost N times to collect N samples of the same point. Running the
+    # repeats in one process pays it once. The repeats stay independently timed
+    # and all of them are post-warm-up, which is what the measurement requires;
+    # what changes is only that repeats 2..N inherit a process that has already
+    # warmed its caches -- if anything a better model of steady state than repeat
+    # 1, which is the sample every previous run of this harness relied on.
+    worker_repeats::Int = 1
     worker_seed::Int = 20260615
     worker_mc_samples::Int = 1
     worker_outfile::String = ""
     worker_parity::Bool = false
+end
+
+# Copy of `cfg` with the named fields replaced. Base.@kwdef gives a keyword
+# constructor but not an update-an-existing-instance one, and the worker needs a
+# per-repeat variant of its config (repeat index and seed) without restating the
+# other two dozen fields.
+function _ppc_with(cfg::PPCConfig; kwargs...)
+    overrides = Dict{Symbol, Any}(kwargs)
+    return PPCConfig(; (f => get(overrides, f, getfield(cfg, f)) for f in fieldnames(PPCConfig))...)
 end
 
 @inline function _ppc_bool(raw::AbstractString)::Bool
@@ -101,7 +127,52 @@ function _ppc_parse_cpu_list(raw::AbstractString)::Vector{Int}
     return unique(cpus)
 end
 
-function _ppc_full_thread_ladder(cpu_threads::Int=Sys.CPU_THREADS)::Vector{Int}
+# Physical (not logical) core count. Julia's Sys.CPU_THREADS counts SMT
+# siblings, and the RHS hot path is FP/SIMD-bound spherical-harmonics work that
+# gains nothing from SMT while contending for the same execution ports: on this
+# repo's 12-core/24-thread reference box every constellation workload measured
+# regressed 1.5-2x going from 16 to 24 Julia threads, and on a 64-core/128-thread
+# box the ladder's own top rung would therefore be its *worst* data point. The
+# ladder below is built from this instead of Sys.CPU_THREADS so "max threads"
+# means "one thread per physical core".
+#
+# Override with SPACEAGORA_PPC_PHYSICAL_CORES when the detection is wrong or the
+# run is confined to a subset of the machine (e.g. under taskset/cgroups).
+function _ppc_physical_core_count()::Int
+    override = strip(get(ENV, "SPACEAGORA_PPC_PHYSICAL_CORES", ""))
+    if !isempty(override)
+        parsed = tryparse(Int, override)
+        parsed !== nothing && parsed > 0 && return parsed
+        @warn "Ignoring non-positive/unparseable SPACEAGORA_PPC_PHYSICAL_CORES." value=override
+    end
+    if Sys.islinux()
+        try
+            # /proc/cpuinfo lists one stanza per logical CPU; a physical core is
+            # a unique (physical id, core id) pair, so SMT siblings collapse.
+            cores = Set{Tuple{String, String}}()
+            package = ""
+            core = ""
+            for line in eachline("/proc/cpuinfo")
+                if startswith(line, "physical id")
+                    package = strip(split(line, ":", limit=2)[2])
+                elseif startswith(line, "core id")
+                    core = strip(split(line, ":", limit=2)[2])
+                elseif isempty(strip(line)) && !isempty(core)
+                    push!(cores, (package, core))
+                    package = ""
+                    core = ""
+                end
+            end
+            isempty(core) || push!(cores, (package, core))
+            isempty(cores) || return length(cores)
+        catch err
+            @warn "Physical-core detection failed; falling back to Sys.CPU_THREADS." reason=sprint(showerror, err)
+        end
+    end
+    return max(1, Sys.CPU_THREADS)
+end
+
+function _ppc_full_thread_ladder(cpu_threads::Int=_ppc_physical_core_count())::Vector{Int}
     max_threads = max(1, cpu_threads)
     if max_threads < 7
         return collect(1:max_threads)
@@ -200,7 +271,15 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     parity_cases = _ppc_csv(get(ENV, "SPACEAGORA_PPC_PARITY_CASES", ""))
     threads = _ppc_int_csv(get(ENV, "SPACEAGORA_PPC_THREADS", ""))
     repeats = parse(Int, get(ENV, "SPACEAGORA_PPC_REPEATS", "0"))
-    warmup = parse(Int, get(ENV, "SPACEAGORA_PPC_WARMUP", "0"))
+    # -1 (not 0) is the "unset" sentinel: the fallback below is `warmup < 0`, so
+    # defaulting this to 0 silently pinned every worker at zero warm-up runs and
+    # made the profile defaults (`full` => 1) dead code. With no warm-up the
+    # timed run IS the first run, so every reported wall time was dominated by
+    # Julia's JIT compilation of the RHS/solver stack rather than by the
+    # simulation: measured 21.4 s first solve vs 0.017 s steady-state solve for
+    # gravity_16sat_l20_vacuum, i.e. >99.9% compilation. 0 remains selectable
+    # explicitly via --warmup=0 / SPACEAGORA_PPC_WARMUP=0.
+    warmup = parse(Int, get(ENV, "SPACEAGORA_PPC_WARMUP", "-1"))
     seed = parse(Int, get(ENV, "SPACEAGORA_PPC_SEED", "20260615"))
     solver_mode = lowercase(strip(get(ENV, "SPACEAGORA_PPC_SOLVER_MODE", "auto_stiff")))
     process_workers = parse(Int, get(ENV, "SPACEAGORA_PPC_PROCESS_WORKERS", "2"))
@@ -212,6 +291,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     worker_mode = ""
     worker_threads = 1
     worker_repeat = 1
+    worker_repeats = 1
     worker_seed = seed
     worker_mc_samples = 1
     worker_outfile = ""
@@ -258,6 +338,8 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
             worker_threads = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--repeat=")
             worker_repeat = parse(Int, _ppc_arg_value(arg))
+        elseif startswith(arg, "--worker-repeats=")
+            worker_repeats = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--worker-seed=")
             worker_seed = parse(Int, _ppc_arg_value(arg))
         elseif startswith(arg, "--worker-mc-samples=")
@@ -278,6 +360,9 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
     isempty(threads) && (threads = defaults.threads)
     repeats <= 0 && (repeats = defaults.repeats)
     warmup < 0 && (warmup = defaults.warmup)
+    # Record this before the default ladder fills the gap: afterwards the two
+    # cases are indistinguishable.
+    mc_samples_explicit = !isempty(mc_samples)
     isempty(mc_samples) && (mc_samples = defaults.mc_samples)
     parity_samples <= 0 && (parity_samples = defaults.parity_samples)
     process_workers = max(1, process_workers)
@@ -295,6 +380,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
         solver_mode=solver_mode,
         process_workers=process_workers,
         mc_samples=mc_samples,
+        mc_samples_explicit=mc_samples_explicit,
         parity_samples=parity_samples,
         cpu_pinning=cpu_pinning,
         worker=worker,
@@ -302,6 +388,7 @@ function parse_parallelization_performance_cli(args::Vector{String}=ARGS)::PPCCo
         worker_mode=worker_mode,
         worker_threads=worker_threads,
         worker_repeat=worker_repeat,
+        worker_repeats=worker_repeats,
         worker_seed=worker_seed,
         worker_mc_samples=worker_mc_samples,
         worker_outfile=worker_outfile,

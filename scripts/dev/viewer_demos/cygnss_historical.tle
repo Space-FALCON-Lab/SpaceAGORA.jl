@@ -1,0 +1,73 @@
+# CYGNSS historical two-line element sets, retrieved from the Internet Archive's
+# snapshots of CelesTrak's General Perturbations service.
+#
+# Why the Internet Archive: CelesTrak's own historical archive
+# (https://celestrak.org/NORAD/archives/) covers 1980 to 2004 and refers any other
+# date to a Special Data Request; Space-Track's gp_history class does serve
+# arbitrary past epochs but requires a registered account, and there are no
+# Space-Track credentials on this machine. CelesTrak's live endpoint serves only
+# the newest element set per object. The Wayback Machine's captures of the live
+# endpoint are therefore the reachable public record of what the catalog held near
+# the telemetry window of 2025-06-06 .. 2025-06-09.
+#
+# Two captures bracket the 2025-06-06T00:00:00Z common epoch. Both are recorded
+# here so the choice between them can be re-measured rather than asserted; see
+# build_cygnss_ics.jl, which scores each against the FM1 and FM4 flight telemetry.
+#
+# Retrieved 2026-09-16.
+#
+# Block A source:
+#   http://web.archive.org/web/20250528012741id_/https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle
+#   capture timestamp 2025-05-28T01:27:41Z, element epochs 2025-05-25 .. 2025-05-27
+# Block B source:
+#   http://web.archive.org/web/20250612182926id_/https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle
+#   capture timestamp 2025-06-12T18:29:26Z, element epochs 2025-06-11 .. 2025-06-12
+#
+# CYGFM06 (NORAD 41889, 2016-078F) appears in neither capture: CelesTrak's SATCAT
+# records it decayed on 2024-06-13. See the JSON file's notes.
+
+BLOCK A active 20250528012741
+CYGFM05
+1 41884U 16078A   25145.74728010  .00012064  00000+0  29157-3 0  9992
+2 41884  34.9611 271.3733 0009311 108.1456 252.0278 15.40268185468796
+CYGFM04
+1 41885U 16078B   25147.66897365  .00011536  00000+0  26147-3 0  9995
+2 41885  34.9358 238.3544 0008865 151.0559 209.0653 15.42199950469281
+CYGFM02
+1 41886U 16078C   25145.67533973  .00013083  00000+0  28867-3 0  9997
+2 41886  34.9450 251.6584 0010297 125.2950 234.8735 15.42966369468920
+CYGFM01
+1 41887U 16078D   25145.73781532  .00011893  00000+0  28390-3 0  9999
+2 41887  34.9446 275.0066 0008843  94.3991 265.7738 15.40645890468620
+CYGFM08
+1 41888U 16078E   25145.73210352  .00012414  00000+0  28736-3 0  9991
+2 41888  34.9473 259.9959 0010878 119.8251 240.3551 15.41539625468830
+CYGFM07
+1 41890U 16078G   25145.68118247  .00012538  00000+0  28506-3 0  9990
+2 41890  34.9488 250.4341 0009045 138.2890 221.8521 15.42095342468833
+CYGFM03
+1 41891U 16078H   25147.62678478  .00011619  00000+0  26592-3 0  9996
+2 41891  34.9439 239.4233 0008150 142.3249 217.8042 15.41916142469267
+
+BLOCK B weather 20250612182926
+CYGFM05
+1 41884U 16078A   25163.17995724  .00010730  00000+0  25569-3 0  9998
+2 41884  34.9590 158.7223 0010896 267.2975  92.6497 15.40691111471487
+CYGFM04
+1 41885U 16078B   25163.20276754  .00011985  00000+0  26772-3 0  9998
+2 41885  34.9346 137.6478 0010018 287.5631  72.3994 15.42614507471680
+CYGFM02
+1 41886U 16078C   25162.62437861  .00009831  00000+0  21370-3 0  9998
+2 41886  34.9433 141.6578 0011788 278.1316  81.8066 15.43432534471544
+CYGFM01
+1 41887U 16078D   25163.16614371  .00010756  00000+0  25307-3 0  9994
+2 41887  34.9426 162.2950 0010540 255.8116 104.1433 15.41076835471436
+CYGFM08
+1 41888U 16078E   25163.34443297  .00011784  00000+0  26854-3 0  9992
+2 41888  34.9452 145.9413 0012324 279.4632  80.4695 15.41995174471583
+CYGFM07
+1 41890U 16078G   25163.22239412  .00012423  00000+0  27793-3 0  9998
+2 41890  34.9476 136.7454 0010311 293.3847  66.5788 15.42560638471696
+CYGFM03
+1 41891U 16078H   25163.16348996  .00011853  00000+0  26742-3 0  9999
+2 41891  34.9428 138.7512 0009550 279.1454  80.8185 15.42324870471663

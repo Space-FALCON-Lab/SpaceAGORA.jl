@@ -217,7 +217,7 @@ function _gram_track_cache_refresh!(
             )
 
             trajectory = if EnvironmentModels._gram_use_global_lock()
-                lock(GRAM_LOCK) do
+                lock(tracked_lock(:gram_cache)) do
                     gen_track()
                 end
             else

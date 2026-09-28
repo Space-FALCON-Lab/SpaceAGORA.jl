@@ -5,11 +5,12 @@ using StaticArrays
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+using SpaceAGORA
+const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 
 if !isdefined(@__MODULE__, :RPOStationAssets)
-    include(joinpath(REPO_ROOT, "src", "assets", "rpo_station_assets.jl"))
+    const RPOStationAssets = SpaceAGORA.RPOStationAssets
 end
 
 const SM = SimulationModel

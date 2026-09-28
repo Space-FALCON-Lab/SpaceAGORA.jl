@@ -3,6 +3,7 @@ module SimulationCampaigns
 using ..ParallelProfiles
 using ..ParallelProfiles: OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 using ..ParallelProfiles: select_outer_route!, record_outer_route_feedback!
+using ..ParallelProfiles: save_outer_route_state, load_outer_route_state!
 using ..ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!
 import Distributed
 using Distributed: remotecall_fetch, CachingPool
@@ -10,13 +11,17 @@ using Distributed: remotecall_fetch, CachingPool
 include(joinpath(@__DIR__, "monte_carlo.jl"))
 include(joinpath(@__DIR__, "adaptive_routing.jl"))
 include(joinpath(@__DIR__, "constellation_ensemble.jl"))
+include(joinpath(@__DIR__, "monte_carlo_visualization.jl"))
 
 export MonteCarloSpec
 export MonteCarloSampleResult
 export MonteCarloResult
 export run_monte_carlo
 export run_constellation_ensemble
+export run_monte_carlo_visualization
 export campaign_route_features
+export campaign_route_state_path, save_campaign_route_state
+export ensure_campaign_route_state_loaded!, reset_campaign_route_state_persistence!
 export campaign_outer_route_state
 
 end # module SimulationCampaigns

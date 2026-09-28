@@ -1,3 +1,10 @@
+# gravity_harmonics_source_metadata_v1
+# source_model: Mars-50c (Mars, degree/order 50x50)
+# reference_radius_m: 3394200.0
+# gm_m3s2: 4.28283703710000e13
+# normalization: fully_normalized
+# citation: Konopliv, A.S., Sjogren, W.L. (1995), "The JPL Mars gravity field, Mars50c, based upon Viking and Mariner 9 Doppler tracking data," JPL Publication 95-5, Jet Propulsion Laboratory, Pasadena, CA.
+# origin: GMAT R2022a data/gravity/mars/Mars50c.cof POTFIELD header line ("POTFIELD 50 50 0 4.28283703710000e+13 3.39420000000000e+06"); coefficient values below verified byte-for-byte against this file's RECOEF rows. NOTE: this reference radius/GM differ from GMM2B.csv above -- Mars-50c and GMM-2B are different published gravity solutions, not the same model in different truncations.
 degree,order,C,S
 0, 0, 0.0,0.0
 1,0,0.0,0.0

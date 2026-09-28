@@ -44,17 +44,9 @@ function _example_smoke_args(args::SM.SimulationConfiguration)
         save_csv=keep_results
     )
 
-    return SM.SimulationConfiguration(
-        file_paths=args.file_paths,
+    return SM.SimConfig._with_configuration(args;
         simulation_settings=ss_smoke,
         mission_configuration=mc_smoke,
-        environment_model=args.environment_model,
-        dynamics_model=args.dynamics_model,
-        guidance_model=args.guidance_model,
-        navigation_model=args.navigation_model,
-        control_model=args.control_model,
-        initial_time=args.initial_time,
-        integration_tolerances=args.integration_tolerances
     )
 end
 
@@ -97,9 +89,9 @@ function make_three_body_spacecraft(;
     # attitude keys under any other incidence mode.
     _link_q(q) = q === nothing ?
         MVector{4, Float64}(0.0, 0.0, 0.0, 1.0) : MVector{4, Float64}(q...)
-    main_bus = SM.Link{0}(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_ref_area, reflection_coefficient=reflection_coefficient, q=_link_q(bus_attitude_q))
-    left_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient, q=_link_q(panel_attitude_q_left))
-    right_panel = SM.Link{0}(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient, q=_link_q(panel_attitude_q_right))
+    main_bus = SM.Link(root=true, m=bus_mass, dims=MVector{3, Float64}(bus_dims...), ref_area=bus_ref_area, reflection_coefficient=reflection_coefficient, q=_link_q(bus_attitude_q))
+    left_panel = SM.Link(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, -panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient, q=_link_q(panel_attitude_q_left))
+    right_panel = SM.Link(root=false, m=panel_mass_each, dims=MVector{3, Float64}(panel_dims...), ref_area=panel_dims[2] * panel_dims[3], r=MVector{3, Float64}(0.0, panel_offset_y, 0.0), reflection_coefficient=reflection_coefficient, q=_link_q(panel_attitude_q_right))
 
     return SM.SpacecraftModel(
         SM.Joint[],

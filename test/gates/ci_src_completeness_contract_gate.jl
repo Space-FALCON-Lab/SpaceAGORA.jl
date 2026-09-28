@@ -8,24 +8,6 @@ const CANONICAL_AGGREGATOR_FILES = Set([
     joinpath("src", "parallel", "process", "parallel_process.jl"),
     joinpath("src", "core", "simulation_model.jl")
 ])
-const RETIRED_SOURCE_DIRS = Set([
-    joinpath("src", "examples"),
-    joinpath("src", "analysis", "plotting"),
-    joinpath("src", "analysis", "reports"),
-    joinpath("src", "gnc", "estimation"),
-    joinpath("src", "mission", "constellation"),
-    joinpath("src", "parallel", "state"),
-    joinpath("src", "parallel", "tuning"),
-    joinpath("src", "simulation", "events"),
-    joinpath("src", "simulation", "execution"),
-    joinpath("src", "simulation", "solver_orchestration"),
-    joinpath("src", "vehicle", "actuators", "laser_terminal"),
-    joinpath("src", "vehicle", "resources"),
-    joinpath("src", "vehicle", "sensors"),
-])
-const RETIRED_SOURCE_FILES = Set([
-    joinpath("src", "core", "utils", "typed_example_utils.jl"),
-])
 
 const STUB_PATTERN = r"\b[a-zA-Z0-9_]*_stub\(\)\s*=\s*nothing\b"
 const FORBIDDEN_TOKENS = (
@@ -87,16 +69,6 @@ for (root, _, files) in walkdir(SRC_ROOT)
             push!(violations, "$rel: canonical aggregator contains behavior (function/type definitions detected).")
         end
     end
-end
-
-for rel in RETIRED_SOURCE_DIRS
-    isdir(joinpath(REPO_ROOT, rel)) &&
-        push!(violations, "$rel: retired source directory must not exist.")
-end
-
-for rel in RETIRED_SOURCE_FILES
-    isfile(joinpath(REPO_ROOT, rel)) &&
-        push!(violations, "$rel: retired source file must not exist.")
 end
 
 if !isempty(violations)

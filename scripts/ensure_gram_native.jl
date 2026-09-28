@@ -26,6 +26,7 @@ function normalize_gram_root(path::AbstractString)
 end
 
 function build_command(build_helper::AbstractString, clean::Bool, gram_root::AbstractString)
+    args = clean ? ["--clean", gram_root] : [gram_root]
     if Sys.iswindows()
         cmd_helper = replace(build_helper, '/' => '\\')
         return Cmd(["cmd", "/C", cmd_helper, args...])
@@ -72,7 +73,11 @@ function main(args::Vector{String})
         return 0
     end
 
-    println("Native GRAM library missing for this host. Building now...")
+    if clean
+        println("Clean rebuild requested. Building now...")
+    else
+        println("Native GRAM library missing for this host. Building now...")
+    end
     run(build_command(build_helper, clean, gram_root))
 
     isfile(expected_lib) || error("Build completed but expected native library is still missing: $expected_lib")
@@ -85,6 +90,7 @@ end
 try
     exit(main(copy(ARGS)))
 catch err
-    println(stderr, err)
+    showerror(stderr, err)
+    println(stderr)
     exit(1)
 end

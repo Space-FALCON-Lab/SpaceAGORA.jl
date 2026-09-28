@@ -46,7 +46,7 @@ function second_time_switch_recalc_with_integration(ip, m, position, args, t, he
     # println("time_switch: ", typeof(time_switch))
 
     try
-        time_switch = fzero(ts -> func(ts), [t, b], Roots.Brent())
+        time_switch = Roots.find_zero(ts -> func(ts), [t, b], Roots.Brent())
     catch
         nothing
     end
@@ -160,7 +160,7 @@ function second_time_switch_recalc(ip, m, position, args, t, heat_rate_control, 
     b = t + 200
 
     try
-        time_switch_2 = fzero(k -> func(k), [t, b], Roots.Brent())
+        time_switch_2 = Roots.find_zero(k -> func(k), [t, b], Roots.Brent())
     catch
         nothing
     end

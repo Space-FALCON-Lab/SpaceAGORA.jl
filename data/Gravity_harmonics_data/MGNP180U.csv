@@ -1,3 +1,10 @@
+# gravity_harmonics_source_metadata_v1
+# source_model: MGNP180U (Venus, degree/order up to 180 in selected regions; GMAT distribution truncated to 70x70)
+# reference_radius_m: 6051000.0
+# gm_m3s2: 3.24858592079000e14
+# normalization: fully_normalized
+# citation: Konopliv, A.S., Banerdt, W.B., Sjogren, W.L. (1999), "Venus gravity: 180th degree and order model," Icarus, 139, 3-18, doi:10.1006/icar.1999.6086.
+# origin: GMAT R2022a data/gravity/venus/MGNP180U.cof POTFIELD header line ("POTFIELD 70 70 0 3.24858592079000e+14 6.05100000000000e+06"); coefficient values below verified byte-for-byte against this file's RECOEF rows.
 degree,order,C,S,C_uncertainty,S_uncertainty
     0,    0,  .0000000000000000E+00,  .0000000000000000E+00,  .0000000000000000E+00,  .0000000000000000E+00
     1,    0,  .0000000000000000E+00,  .0000000000000000E+00,  .0000000000000000E+00,  .0000000000000000E+00             

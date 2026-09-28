@@ -1,3 +1,0 @@
-# CondaPkg.toml
-[deps]
-python = "=3.12"   # or ">=3.8,<3.11"

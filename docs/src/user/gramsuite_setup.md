@@ -115,26 +115,68 @@ scripts expect that exact folder name.
 
 ## Build or verify the native GRAM library
 
-If the platform-native GRAM shared library is missing, build it from the repo
-root with:
+SpaceAGORA loads GRAM through a native shared library, `libGRAM`. A library
+copied from another machine may not work on this host, even when its filename
+has the expected extension.
+
+### Build prerequisites
+
+Use the compiler and CSPICE archive appropriate for your licensed GRAM
+distribution and host architecture. The Unix build helper uses GNU Make:
+`make` on Linux and `gmake` on macOS. On macOS, install it with
+`brew install make` if needed. Windows uses the supplied `build_gram.cmd`
+helper; follow the Windows prerequisites for your GRAM distribution.
+
+The wrapper checkout alone is not a complete native build environment. Copy
+the licensed source and runtime files first, as described above. The Unix
+helper expects `Build/setup_cspice.sh` and the GRAM makefiles in that tree.
+
+### Build the shared library
+
+From the SpaceAGORA repository root, run:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If the copied build metadata came from a different machine or absolute path,
+After validating the GRAM root and build-helper path, this command skips the
+build if `Build/lib/libGRAM.<ext>` already exists. It does not inspect the
+binary's architecture or test whether it can load.
+Otherwise it invokes the build helper inside the selected GRAM tree:
+`simulation/GRAM/build_gram.sh` on Unix or `simulation/GRAM/build_gram.cmd`
+on Windows.
+
+The Unix helper prepares CSPICE through `Build/setup_cspice.sh`, runs
+`make shared` using the host's make command, and writes `gram.env` and
+`.gram-build-manifest` beside the helper. Those files contain local build paths
+and should not be committed or copied as installation instructions for another
+machine. Prefer the helper to running plain `make`: SpaceAGORA needs the shared
+library that the `shared` target produces.
+
+The expected result is:
+
+```text
+data/GRAMSuite.jl/GRAM Suite 2.0/Build/lib/libGRAM.so
+```
+
+The filename ends in `.dylib` on macOS and `.dll` on Windows. There is no fixed
+build time; it depends on the host and the supplied GRAM sources.
+
+### Rebuild a copied or stale library
+
+If the GRAM tree was copied from another machine with `Build/lib` populated,
 force a clean rebuild:
 
 ```text
 julia --project=. scripts/ensure_gram_native.jl --clean
 ```
 
-This step should produce the native `libGRAM` artifact under the platform
-appropriate subpath inside:
-
-```text
-data/GRAMSuite.jl/GRAM Suite 2.0/Build/lib
-```
+The same command is useful when a stale local build is suspected after moving
+the checkout. The Unix helper checks its stored host and root path when it
+runs, but the Julia wrapper skips that helper whenever the expected library
+already exists and `--clean` was not requested. Do not treat the
+`Native GRAM library already present for this host` message as a compatibility
+check.
 
 ## Verify the asset layout
 
@@ -150,7 +192,8 @@ For a GRAM-ready machine, the report should show these as available:
 - `spice_directory`
 
 If either is still missing, re-check the final directory names and nesting
-under `data/GRAMSuite.jl`.
+under `data/GRAMSuite.jl`. This report checks asset presence, not whether the
+native library can load; verify that with the GRAM-backed run below.
 
 ## First GRAM-backed run
 
@@ -197,11 +240,33 @@ Run:
 julia --project=. scripts/ensure_gram_native.jl
 ```
 
-If needed, retry with:
+If the command reports that the library is present but the example still
+cannot load it, a binary copied from another host is one possible cause. Try
+the clean rebuild described above. If it still fails, keep the complete build
+or load error so the missing dependency or incompatible binary can be checked.
+
+### The build reports `gmake not found` on macOS
+
+Install GNU Make, then rerun the build command:
 
 ```text
-julia --project=. scripts/ensure_gram_native.jl --clean
+brew install make
 ```
+
+### The native build files are missing
+
+If the build cannot find `Build/setup_cspice.sh` or the GRAM makefiles, check
+that the licensed GRAM delivery was copied to the expected location. Having
+the Julia wrapper and SPICE kernels alone is not enough to compile `libGRAM`.
+
+### The GRAM package extension fails to load
+
+Treat an `Error during loading of extension SpaceAGORAGRAMSuiteExt` message as
+an incomplete setup even if the script continues. Keep the complete error and
+the SpaceAGORA and GRAMSuite revision identifiers. Check that the two revisions
+are supported together before using the run's results; a failed extension can
+leave atmosphere or ephemeris hooks unavailable. Updating GRAMSuite to an
+arbitrary branch tip does not establish compatibility.
 
 ### Git LFS reports `no space left on device`
 

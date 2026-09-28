@@ -85,6 +85,50 @@ mutable struct RpoLQMPCController
     u_max::Vector{Float64}
 end
 
+"""Build the native QP workspace owned by one RPO controller."""
+function _rpo_lqmpc_workspace(H, G, W)
+    model = OSQP.Model()
+    OSQP.setup!(
+        model;
+        P=triu(2.0 .* H),
+        q=zeros(size(H, 1)),
+        A=G,
+        l=fill(-Inf, size(G, 1)),
+        u=W,
+        verbose=false,
+        polish=false,
+        warm_start=true,
+        eps_abs=1.0e-4,
+        eps_rel=1.0e-4,
+        max_iter=1000,
+    )
+    return model
+end
+
+"""
+Copy controller state into an independently owned native solver workspace.
+
+The stored primal warm start is preserved. Native factorization, dual-iterate
+and diagnostic caches are rebuilt; this is not a solver-checkpoint operation.
+"""
+function Base.deepcopy_internal(ctrl::RpoLQMPCController, dict::IdDict)
+    haskey(dict, ctrl) && return dict[ctrl]
+    Ad = Base.deepcopy_internal(ctrl.Ad, dict)
+    Bd = Base.deepcopy_internal(ctrl.Bd, dict)
+    H = Base.deepcopy_internal(ctrl.H, dict)
+    E = Base.deepcopy_internal(ctrl.E, dict)
+    F = Base.deepcopy_internal(ctrl.F, dict)
+    G = Base.deepcopy_internal(ctrl.G, dict)
+    W = Base.deepcopy_internal(ctrl.W, dict)
+    U_prev = Base.deepcopy_internal(ctrl.U_prev, dict)
+    u_min = Base.deepcopy_internal(ctrl.u_min, dict)
+    u_max = Base.deepcopy_internal(ctrl.u_max, dict)
+    copied = RpoLQMPCController(Ad, Bd, ctrl.horizon, H, E, F, G, W,
+        _rpo_lqmpc_workspace(H, G, W), OSQP.Results(), U_prev, u_min, u_max)
+    dict[ctrl] = copied
+    return copied
+end
+
 """Initialize RPO LQ-MPC prediction, cost, and gain matrices."""
 function init_rpo_lqmpc(n, dt, Q, R, Qf, horizon; u_min=nothing, u_max=nothing)
     A, B = rpo_hcw_continuous_mats(n)
@@ -102,23 +146,10 @@ function init_rpo_lqmpc(n, dt, Q, R, Qf, horizon; u_min=nothing, u_max=nothing)
     F = Bbar' * Qbar
     G = sparse(vcat(Matrix{Float64}(I, nu * horizon, nu * horizon), -Matrix{Float64}(I, nu * horizon, nu * horizon)))
     W = vcat(repeat(u_max, horizon), -repeat(u_min, horizon))
-    model = OSQP.Model()
     nU = nu * horizon
-    OSQP.setup!(
-        model;
-        P=triu(2.0 .* sparse(H)),
-        q=zeros(nU),
-        A=G,
-        l=fill(-Inf, size(G, 1)),
-        u=W,
-        verbose=false,
-        polish=false,
-        warm_start=true,
-        eps_abs=1.0e-4,
-        eps_rel=1.0e-4,
-        max_iter=1000,
-    )
-    return RpoLQMPCController(Ad, Bd, horizon, sparse(H), E, F, G, W, model, OSQP.Results(), zeros(nU), u_min, u_max)
+    sparse_H = sparse(H)
+    model = _rpo_lqmpc_workspace(sparse_H, G, W)
+    return RpoLQMPCController(Ad, Bd, horizon, sparse_H, E, F, G, W, model, OSQP.Results(), zeros(nU), u_min, u_max)
 end
 
 """Build an RPO plan preview over an MPC horizon."""
@@ -127,7 +158,11 @@ function rpo_ref_preview(plan::RPOPlan, t_elapsed_s::Real, dt::Real, horizon::In
     out = zeros(nx, horizon + 1)
     n_ref = size(plan.r_ref_rtn, 2)
     n_ref == 0 && return out
-    start_idx = clamp(Int(floor(Float64(t_elapsed_s) / max(Float64(dt), 1.0e-9))) + 1, 1, n_ref)
+    # Updates fall on multiples of dt, but t/dt can land just below an integer
+    # in floating point (16.2 / 0.1 = 161.99999999999997); flooring that would
+    # hand the tracker the previous sample, a reference one step behind.
+    steps = Float64(t_elapsed_s) / max(Float64(dt), 1.0e-9)
+    start_idx = clamp(Int(floor(steps + 1.0e-6)) + 1, 1, n_ref)
     for j in 0:horizon
         idx = min(start_idx + j, n_ref)
         out[1:3, j + 1] .= plan.r_ref_rtn[:, idx]

@@ -131,7 +131,11 @@ function control_solarpanels_targeting_num_int(energy_f, param, time_0, in_cond)
         return (energy_fin - energy_f) / 1e6
     end
 
-    t_switch = find_zero(ts -> func_targeting_num_int(ts), [0, 600], Roots.Brent(), verbose=log_enabled, rtol=1e-5)
+    tracks = log_enabled ? Roots.Tracks() : Roots.NullTracks()
+    t_switch = Roots.find_zero(ts -> func_targeting_num_int(ts), [0, 600], Roots.Brent(); tracks=tracks, rtol=1e-5)
+    if log_enabled
+        display(tracks)
+    end
 
     return t_switch 
 end
@@ -157,7 +161,11 @@ function control_solarpanels_targeting_heatload(energy_f, param, OE)
         return (energy_fin - energy_f) / 1e6
     end
 
-    v_E_fin = find_zero(v_E -> func_targeting_heatload(v_E), [1, 1000], Roots.Brent(), verbose=log_enabled, rtol=1e-8)
+    tracks = log_enabled ? Roots.Tracks() : Roots.NullTracks()
+    v_E_fin = Roots.find_zero(v_E -> func_targeting_heatload(v_E), [1, 1000], Roots.Brent(); tracks=tracks, rtol=1e-8)
+    if log_enabled
+        display(tracks)
+    end
 
     return v_E_fin
 end
@@ -315,7 +323,7 @@ function control_solarpanels_targeting_closed_form(energy_target, ip, m, positio
     # println("delta_E_min: ", delta_E_min)
 
     # if delta_E_max * delta_E_min < 0
-    nu_E_root = fzero(nu_E -> func_e(nu_E, m, args, coeff, position, heat_rate_control, approx_sol, energy_target), [1, 100], Roots.Brent())
+    nu_E_root = Roots.find_zero(nu_E -> func_e(nu_E, m, args, coeff, position, heat_rate_control, approx_sol, energy_target), [1, 100], Roots.Brent())
     # elseif delta_E_max < 0.0
     #     return [0.0, 0.0]
     # elseif delta_E_min > 0.0

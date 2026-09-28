@@ -694,8 +694,8 @@ function _save_apoapsis_periapsis_plot(args::SimulationConfiguration, planet, od
         peri_events.orbit,
         peri_events.altitude_km;
         xlabel="Orbit Number",
-        ylabel="Periapsis Altitude (km)",
-        label="Simulation Periapsis",
+        ylabel="Geodetic Periapsis Estimate (km)",
+        label="Simulation periapsis estimate",
         linewidth=2.5,
         marker=:circle,
         color=:dodgerblue,
@@ -741,7 +741,7 @@ function _save_apoapsis_periapsis_plot(args::SimulationConfiguration, planet, od
         apo_axis,
         extrema.apo.orbit,
         extrema.apo.altitude_km;
-        ylabel="Apoapsis Altitude (km)",
+        ylabel="Geodetic Apoapsis Estimate (km)",
         label=false,
         linewidth=2.5,
         marker=:diamond,
@@ -751,7 +751,7 @@ function _save_apoapsis_periapsis_plot(args::SimulationConfiguration, planet, od
         p,
         [NaN],
         [NaN];
-        label="Simulation Apoapsis",
+        label="Simulation apoapsis estimate",
         linewidth=2.5,
         marker=:diamond,
         color=:crimson

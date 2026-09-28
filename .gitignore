@@ -153,3 +153,12 @@ examples/odyssey_surrogate_env/Manifest.toml
 
 # Optional CYGNSS development Python environment
 .venv-cygnss/
+
+# Benchmark study outputs stay local; the studies' docs describe how to regenerate them.
+benchmarks/studies/aero_batch/results/
+benchmarks/studies/gram_memory_footprint/results/
+benchmarks/studies/gram_thread_scaling/results/
+benchmarks/studies/heap_contention/results/
+benchmarks/studies/paper_parallelization_benchmarks/workload/results/
+benchmarks/studies/rhs_heuristic_defaults/results/
+benchmarks/studies/small_wins/results/

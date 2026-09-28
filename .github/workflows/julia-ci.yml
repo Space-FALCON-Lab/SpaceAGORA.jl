@@ -35,6 +35,9 @@ jobs:
       - name: Pinned GRAMSuite retrieval regression
         run: python3 test/scripts/test_gramsuite_retrieval.py
 
+      - name: Shard plan, matrix shape and verifier self-test
+        run: python3 -B .github/scripts/test_ci_shards.py
+
       - name: Plan shards
         id: plan
         run: python3 .github/scripts/ci_shard_plan.py
@@ -119,6 +122,7 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup
+        id: setup
         uses: ./.github/actions/setup
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
@@ -129,7 +133,8 @@ jobs:
           julia --startup-file=no --project=. test/runtests.jl
 
       - name: Native-free GRAM grid adapter
-        if: matrix.grid
+        # Independent of the suite: runs even when the suite step failed.
+        if: matrix.grid && !cancelled() && steps.setup.outcome == 'success'
         timeout-minutes: 15
         run: |
           cp Manifest.toml test/grid_atmosphere/Manifest.toml
@@ -138,7 +143,8 @@ jobs:
           touch "$SPACEAGORA_CI_SHARD_REPORT_DIR/grid.done"
 
       - name: Depwarn smoke (Earth thruster example)
-        if: matrix.depwarn
+        # Independent of the suite: runs even when the suite step failed.
+        if: matrix.depwarn && !cancelled() && steps.setup.outcome == 'success'
         run: |
           julia --startup-file=no --compiled-modules=existing --depwarn=error --project=. examples/Earth_Thruster_Test.jl
           touch "$SPACEAGORA_CI_SHARD_REPORT_DIR/depwarn.done"
@@ -209,6 +215,7 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Setup
+        id: setup
         uses: ./.github/actions/setup
         with:
           gram: native
@@ -220,7 +227,8 @@ jobs:
           julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
 
       - name: Cover grid adapter and named presets without native GRAM
-        if: matrix.grid
+        # Independent of the suite: runs even when the suite step failed.
+        if: matrix.grid && !cancelled() && steps.setup.outcome == 'success'
         timeout-minutes: 15
         run: |
           cp Manifest.toml test/grid_atmosphere/Manifest.toml
@@ -402,14 +410,14 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       # No shared depot here: resolving and compiling from nothing is the point.
-      - name: Setup (GRAMSuite checkout, vendored GRAMSuite in the clean depot)
+      # Setup instantiates the root environment and then the vendored GRAMSuite
+      # in the clean depot, the root one while the GRAMSuite checkout downloads.
+      - name: Setup (instantiate in clean depot)
         uses: ./.github/actions/setup
         with:
           depot: "false"
+          instantiate: "true"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-
-      - name: Instantiate in clean depot
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Clean-depot student entrypoint smoke
         run: julia --startup-file=no --depwarn=error --project=. test/smoke/ci_clean_depot_smoke.jl
@@ -516,10 +524,22 @@ jobs:
       - name: Example regression
         run: julia --startup-file=no --project=. test/integration/examples/runtests.jl
 
-  telemetry-quick-regression:
+  # The quick telemetry regression grades each manifest scenario independently
+  # (the nightly full profile already runs one job per scenario). earth_gmat
+  # alone takes as long as the other two together, so it gets its own shard.
+  telemetry-shards:
+    name: telemetry quick (${{ matrix.scenarios }})
     needs: depot
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: earth
+            scenarios: earth_gmat
+          - shard: mars-venus
+            scenarios: odyssey,vex
     env:
       JULIA_NUM_THREADS: "4"
     steps:
@@ -535,17 +555,50 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Telemetry quick regression (GRAM deterministic)
-        run: julia --startup-file=no --depwarn=error --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
+        run: >-
+          julia --startup-file=no --depwarn=error --project=.
+          benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --enforce=true
+          --scenarios=${{ matrix.scenarios }}
+          --out-summary=output/telemetry_quick_${{ matrix.shard }}_summary.csv
+          --out-errors=output/telemetry_quick_${{ matrix.shard }}_errors.csv
 
       - name: Upload telemetry quick artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: telemetry-quick-${{ github.run_id }}
+          name: telemetry-quick-${{ matrix.shard }}-${{ github.run_id }}
           path: |
-            output/telemetry_orbit_accuracy_summary.csv
-            output/telemetry_orbit_accuracy_errors.csv
+            output/telemetry_quick_${{ matrix.shard }}_summary.csv
+            output/telemetry_quick_${{ matrix.shard }}_errors.csv
           if-no-files-found: warn
+
+  telemetry-quick-regression:
+    if: always()
+    needs: telemetry-shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      - name: Download telemetry summaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: telemetry-quick-*
+          path: telemetry-summaries
+
+      - name: Every scenario graded once
+        run: python3 .github/scripts/ci_telemetry_verify.py telemetry-summaries
+
+      - name: Enforce telemetry shard success
+        run: |
+          echo "telemetry-shards result=${{ needs.telemetry-shards.result }}"
+          if [ "${{ needs.telemetry-shards.result }}" != "success" ]; then
+            echo "Telemetry shards failed or were cancelled."
+            exit 1
+          fi
 
   p1-findings-gate:
     needs: depot
@@ -561,9 +614,10 @@ jobs:
         uses: ./.github/actions/setup
         with:
           gramsuite-smoke: "false"
-          precompile: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # The contract gates load SpaceAGORA; compiling it in Setup overlaps the
+      # compile with the GRAMSuite retrieval instead of following it.
       - name: Contract suite
         run: julia --startup-file=no --project=. test/contracts/pr_runtests.jl
 
@@ -626,3 +680,33 @@ jobs:
           SPACEAGORA_PR_NUMBER: ${{ github.event.pull_request.number }}
           SPACEAGORA_BASE_REF: ${{ github.base_ref }}
         run: julia --startup-file=no --project=. test/gates/ci_ai_review_artifact_gate.jl
+
+  # TEMPORARY diagnostic (CI experiment): does gram_isolated_pool_tests.jl fail
+  # with native GRAM on its own, and does it pass after the unit files that
+  # precede it in test/unit/runtests.jl?
+  diag-gram-pool:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      JULIA_NUM_THREADS: "4"
+      SPACEAGORA_CI_SHARD_REPORT_DIR: ${{ github.workspace }}/diag
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+      - uses: ./.github/actions/setup
+        with:
+          gram: native
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+      - name: Standalone, uninstrumented
+        if: ${{ !cancelled() }}
+        run: julia --startup-file=no --project=. --threads=4 test/unit/environment/gram_isolated_pool_tests.jl
+      - name: Standalone, coverage
+        if: ${{ !cancelled() }}
+        run: julia --startup-file=no --project=. --code-coverage=user --threads=4 test/unit/environment/gram_isolated_pool_tests.jl
+      - name: After its unit-runner predecessors, coverage
+        if: ${{ !cancelled() }}
+        env:
+          SPACEAGORA_CI_SHARD_ITEMS: unit:example_imports_tests.jl unit:rpo_port_tests.jl unit:gnc/rpo_ownership_reproducibility_tests.jl unit:gnc/rpo_configurable_station_tests.jl unit:parallel/machine_topology_tests.jl unit:parallel/native_lock_stats_tests.jl unit:parallel/contention_inputs_tests.jl unit:parallel/usl_tests.jl unit:parallel/streaming_trial_tests.jl unit:parallel/lock_width_cap_tests.jl unit:parallel/cost_work_counts_tests.jl unit:parallel/cost_robust_timing_tests.jl unit:parallel/cost_machine_calibration_tests.jl unit:parallel/outer_route_persistence_tests.jl unit:parallel/policy_v2_tests.jl unit:parallel/predictive_planner_tests.jl unit:parallel/predictive_campaign_tests.jl unit:parallel/parallel_flag_tests.jl unit:parallel/process_pool_dispatch_cost_tests.jl unit:parallel/gram_memory_model_tests.jl unit:dynamics/third_body_cost_tests.jl unit:dynamics/harmonics_kernel_identity_tests.jl unit:environment/gram_isolated_pool_tests.jl
+        run: julia --startup-file=no --project=. --code-coverage=user --threads=4 .github/scripts/ci_unit_shard.jl

@@ -13,8 +13,11 @@ inputs:
     description: Instantiate the vendored GRAMSuite environment and load it.
     default: "true"
   depot:
-    description: Restore the shared Julia depot and instantiate the root environment.
+    description: Restore the shared Julia depot.
     default: "true"
+  instantiate:
+    description: Instantiate the root environment (defaults to the value of `depot`).
+    default: ""
   precompile:
     description: Precompile the root environment (the package itself is always rebuilt per commit).
     default: "true"
@@ -89,7 +92,7 @@ runs:
     # after a restore means rebuilding SpaceAGORA for this commit (3-4 min).
     # Jobs that only read the sources (contracts, docs) skip that.
     - name: Instantiate
-      if: inputs.depot == 'true'
+      if: inputs.instantiate == 'true' || (inputs.instantiate == '' && inputs.depot == 'true')
       shell: bash
       env:
         JULIA_PKG_PRECOMPILE_AUTO: ${{ inputs.precompile == 'true' && '1' || '0' }}
@@ -99,7 +102,7 @@ runs:
     # installed, and jobs that run with --compiled-modules=existing would then
     # load the package from source in every example process.
     - name: Precompile
-      if: inputs.depot == 'true' && inputs.precompile == 'true'
+      if: (inputs.instantiate == 'true' || (inputs.instantiate == '' && inputs.depot == 'true')) && inputs.precompile == 'true'
       shell: bash
       run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.precompile()'
 

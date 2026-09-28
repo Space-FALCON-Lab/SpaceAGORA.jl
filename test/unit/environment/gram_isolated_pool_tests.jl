@@ -165,94 +165,102 @@ else
     end
 
     @testset "isolated pool is bit-identical to the locked path" begin
-        n = 64
-        _, p = pool_params(n)
-        hs = Vector{Float64}(undef, n)
-        lats = Vector{Float64}(undef, n)
-        lons = Vector{Float64}(undef, n)
-        ts = Vector{Float64}(undef, n)
-        for i in 1:n
-            x = (i - 1) / (n - 1)
-            hs[i] = 150.0e3 + x * 550.0e3
-            lats[i] = -0.5pi + pi * mod(x * sqrt(2.0), 1.0)
-            lons[i] = -pi + 2pi * mod(x * sqrt(3.0), 1.0)
-            ts[i] = x * 100.0
-        end
-
-        alloc() = (zeros(Float64, n), zeros(Float64, n),
-                   [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n])
-        rho_ref, T_ref, w_ref = alloc()
-        EM.getDensityBatch!(rho_ref, T_ref, w_ref, POOL_MODEL, hs, lats, lons, ts, true, p)
-        @test count(!iszero, rho_ref) == n
-
-        # `==` on Float64 calls -0.0 equal to 0.0 and every NaN unequal to
-        # itself, so the comparison is on the bits.
-        bits(v) = reinterpret.(UInt64, v)
-        wbits(v) = vcat((reinterpret.(UInt64, collect(x)) for x in v)...)
-
-        workers = max(2, min(4, Threads.nthreads()))
-        models, locks = CB._ensure_gram_isolated_pool!(p, POOL_MODEL, workers)
-        for k in eachindex(models)
-            rho_k, T_k, w_k = alloc()
+        # Bit identity is a property of deterministic winds only. GRAM's
+        # perturbed winds are a random walk over each instance's own call
+        # history, so two instances -- or one instance queried twice -- need
+        # not agree, and the GRAMSuite revision CI pins defaults to them. The
+        # comparison is made with nominal winds, as gram_density_service_probes.jl
+        # does for the same reason.
+        withenv("SPACEAGORA_GRAM_WIND_MODE" => "nominal") do
+            n = 64
+            _, p = pool_params(n)
+            hs = Vector{Float64}(undef, n)
+            lats = Vector{Float64}(undef, n)
+            lons = Vector{Float64}(undef, n)
+            ts = Vector{Float64}(undef, n)
             for i in 1:n
-                rho_k[i], T_k[i], w_k[i] = CB._gram_isolated_pool_density_state(
-                    models[k], hs[i], lats[i], lons[i], ts[i], true, p, locks[k]
-                )
+                x = (i - 1) / (n - 1)
+                hs[i] = 150.0e3 + x * 550.0e3
+                lats[i] = -0.5pi + pi * mod(x * sqrt(2.0), 1.0)
+                lons[i] = -pi + 2pi * mod(x * sqrt(3.0), 1.0)
+                ts[i] = x * 100.0
             end
-            @test bits(rho_k) == bits(rho_ref)
-            @test bits(T_k) == bits(T_ref)
-            @test wbits(w_k) == wbits(w_ref)
-        end
 
-        if Threads.nthreads() > 1
-            rho_p, T_p, w_p = alloc()
-            pooled = withenv(
+            alloc() = (zeros(Float64, n), zeros(Float64, n),
+                       [SVector{3, Float64}(0.0, 0.0, 0.0) for _ in 1:n])
+            rho_ref, T_ref, w_ref = alloc()
+            EM.getDensityBatch!(rho_ref, T_ref, w_ref, POOL_MODEL, hs, lats, lons, ts, true, p)
+            @test count(!iszero, rho_ref) == n
+
+            # `==` on Float64 calls -0.0 equal to 0.0 and every NaN unequal to
+            # itself, so the comparison is on the bits.
+            bits(v) = reinterpret.(UInt64, v)
+            wbits(v) = vcat((reinterpret.(UInt64, collect(x)) for x in v)...)
+
+            workers = max(2, min(4, Threads.nthreads()))
+            models, locks = CB._ensure_gram_isolated_pool!(p, POOL_MODEL, workers)
+            for k in eachindex(models)
+                rho_k, T_k, w_k = alloc()
+                for i in 1:n
+                    rho_k[i], T_k[i], w_k[i] = CB._gram_isolated_pool_density_state(
+                        models[k], hs[i], lats[i], lons[i], ts[i], true, p, locks[k]
+                    )
+                end
+                @test bits(rho_k) == bits(rho_ref)
+                @test bits(T_k) == bits(T_ref)
+                @test wbits(w_k) == wbits(w_ref)
+            end
+
+            if Threads.nthreads() > 1
+                rho_p, T_p, w_p = alloc()
+                pooled = withenv(
+                    "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
+                    "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => string(workers),
+                    "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1"
+                ) do
+                    CB._gram_isolated_pool_batch_eval!(
+                        rho_p, T_p, w_p, POOL_MODEL, hs, lats, lons, ts, true, p;
+                        allotment_hint=workers
+                    )
+                end
+                @test pooled
+                @test bits(rho_p) == bits(rho_ref)
+                @test bits(T_p) == bits(T_ref)
+                @test wbits(w_p) == wbits(w_ref)
+            end
+
+            # The guard that keeps the pool from building instances nothing will
+            # use. Every item above 2000 km is answered as vacuum and never reaches
+            # GRAM, so a batch made entirely of those must be declined -- measured,
+            # the speculative build costs 1.83x on a 1024-spacecraft run that never
+            # enters the atmosphere.
+            @test CB._gram_isolated_pool_native_count(hs, p) == n
+            vacuum_hs = fill(2_500_000.0, n)
+            @test CB._gram_isolated_pool_native_count(vacuum_hs, p) == 0
+            mixed_hs = copy(hs)
+            mixed_hs[2:end] .= 2_500_000.0
+            @test CB._gram_isolated_pool_native_count(mixed_hs, p) == 1
+            rho_v, T_v, w_v = alloc()
+            @test !withenv(
                 "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
                 "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => string(workers),
                 "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1"
             ) do
                 CB._gram_isolated_pool_batch_eval!(
-                    rho_p, T_p, w_p, POOL_MODEL, hs, lats, lons, ts, true, p;
+                    rho_v, T_v, w_v, POOL_MODEL, vacuum_hs, lats, lons, ts, true, p;
                     allotment_hint=workers
                 )
             end
-            @test pooled
-            @test bits(rho_p) == bits(rho_ref)
-            @test bits(T_p) == bits(T_ref)
-            @test wbits(w_p) == wbits(w_ref)
-        end
 
-        # The guard that keeps the pool from building instances nothing will
-        # use. Every item above 2000 km is answered as vacuum and never reaches
-        # GRAM, so a batch made entirely of those must be declined -- measured,
-        # the speculative build costs 1.83x on a 1024-spacecraft run that never
-        # enters the atmosphere.
-        @test CB._gram_isolated_pool_native_count(hs, p) == n
-        vacuum_hs = fill(2_500_000.0, n)
-        @test CB._gram_isolated_pool_native_count(vacuum_hs, p) == 0
-        mixed_hs = copy(hs)
-        mixed_hs[2:end] .= 2_500_000.0
-        @test CB._gram_isolated_pool_native_count(mixed_hs, p) == 1
-        rho_v, T_v, w_v = alloc()
-        @test !withenv(
-            "SPACEAGORA_GRAM_ISOLATED_POOL" => "on",
-            "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => string(workers),
-            "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1"
-        ) do
-            CB._gram_isolated_pool_batch_eval!(
-                rho_v, T_v, w_v, POOL_MODEL, vacuum_hs, lats, lons, ts, true, p;
-                allotment_hint=workers
-            )
-        end
-
-        # The pooled batch call declines rather than silently running at width
-        # one, which is what lets the caller fall through to the locked path.
-        rho_d, T_d, w_d = alloc()
-        @test !withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "off") do
-            CB._gram_isolated_pool_batch_eval!(
-                rho_d, T_d, w_d, POOL_MODEL, hs, lats, lons, ts, true, p;
-                allotment_hint=workers
-            )
+            # The pooled batch call declines rather than silently running at width
+            # one, which is what lets the caller fall through to the locked path.
+            rho_d, T_d, w_d = alloc()
+            @test !withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "off") do
+                CB._gram_isolated_pool_batch_eval!(
+                    rho_d, T_d, w_d, POOL_MODEL, hs, lats, lons, ts, true, p;
+                    allotment_hint=workers
+                )
+            end
         end
     end
 end

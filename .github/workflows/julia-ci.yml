@@ -28,7 +28,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
@@ -118,7 +121,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
@@ -170,7 +176,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
@@ -225,7 +234,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Viewer JavaScript regressions
         run: node test/unit/visualization/viewer_channels_models_tests.mjs
@@ -317,7 +329,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
@@ -377,7 +392,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
@@ -435,7 +453,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
@@ -521,7 +542,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
@@ -587,7 +611,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first
       # (threaded-smoke has hit ENOSPC on stock ubuntu-latest runners).
@@ -640,7 +667,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -670,7 +700,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
           fetch-depth: 0
 
       # The dev GRAMSuite submodule checkout is ~3 GB; reclaim space first

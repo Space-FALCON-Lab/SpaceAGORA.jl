@@ -193,8 +193,12 @@ function rpo_bezier_speed_estimate(points, work, point, t::Float64)
     return norm(p2 - point) / abs(t2 - t)
 end
 
-"""Sample a Bezier path with adaptive spacing tied to local clearance and speed."""
-function rpo_sample_path_bezier_adaptive(
+"""
+Adaptive Bezier sampling that also returns each sample's curve parameter and
+the clearance computed while choosing the step from that sample (`NaN` for the
+last sample, which no step starts from).
+"""
+function rpo_sample_path_bezier_adaptive_with_params(
     points,
     geometry,
     cfg::RPOPSOConfig;
@@ -202,20 +206,24 @@ function rpo_sample_path_bezier_adaptive(
     base_ds_m::Real=cfg.sample_ds_m,
 )
     pts = Matrix{Float64}(points)
-    size(pts, 2) <= 1 && return pts
+    size(pts, 2) <= 1 && return pts, zeros(size(pts, 2)), fill(NaN, size(pts, 2))
     min_ds = rpo_adaptive_sampling_min_ds_m(base_ds_m, geometry, cfg; safe_distance_m=safe_distance_m)
     max_ds = max(cfg.adaptive_sampling_max_ds_m, min_ds)
     length_ref = max(rpo_path_length(pts), norm(pts[:, end] - pts[:, 1]), min_ds)
     samples = Vector{Vector{Float64}}()
+    params = Float64[]
+    clearances = Float64[]
     work = similar(pts)
     point = zeros(3)
     t = 0.0
     rpo_bezier_point!(point, work, pts, t)
     push!(samples, copy(point))
+    push!(params, t)
     max_steps = max(2, Int(ceil(length_ref / min_ds)) + 2)
     steps = 0
     while t < 1.0 - 1.0e-12 && steps < max_steps
         clearance = rpo_clearance_distance_to_station(point, geometry)
+        push!(clearances, clearance)
         ds = rpo_adaptive_sampling_step_m(
             clearance,
             min_ds,
@@ -237,12 +245,16 @@ function rpo_sample_path_bezier_adaptive(
         t += dt
         point .= candidate
         push!(samples, copy(point))
+        push!(params, t)
         steps += 1
     end
     if t < 1.0
+        push!(clearances, NaN)
         rpo_bezier_point!(point, work, pts, 1.0)
         push!(samples, copy(point))
+        push!(params, 1.0)
     end
+    push!(clearances, NaN)
 
     out = zeros(3, length(samples))
     @inbounds for (j, q) in enumerate(samples)
@@ -250,7 +262,26 @@ function rpo_sample_path_bezier_adaptive(
     end
     out[:, 1] .= pts[:, 1]
     out[:, end] .= pts[:, end]
-    return out
+    params[end] = 1.0
+    return out, params, clearances
+end
+
+"""Sample a Bezier path with adaptive spacing tied to local clearance and speed."""
+function rpo_sample_path_bezier_adaptive(
+    points,
+    geometry,
+    cfg::RPOPSOConfig;
+    safe_distance_m::Real=0.0,
+    base_ds_m::Real=cfg.sample_ds_m,
+)
+    samples, _, _ = rpo_sample_path_bezier_adaptive_with_params(
+        points,
+        geometry,
+        cfg;
+        safe_distance_m=safe_distance_m,
+        base_ds_m=base_ds_m,
+    )
+    return samples
 end
 
 """Sample an RPO candidate path using the configured curve representation and spacing policy."""
@@ -258,6 +289,38 @@ function rpo_sample_path(points, ds::Real; curve_type::Symbol=:bezier)
     curve_type == :bezier && return rpo_sample_path_bezier(points, ds)
     curve_type == :polyline && return rpo_sample_path_polyline(points, ds)
     throw(ArgumentError("Unsupported RPO path curve_type=$(curve_type). Use :bezier or :polyline."))
+end
+
+"""
+Sample a candidate path as `rpo_sample_path` does and also return, for a Bezier
+curve, each sample's curve parameter (empty for a polyline, whose samples are
+the curve) and any clearance already computed per sample (`NaN` where none was).
+"""
+function rpo_sample_path_with_params(
+    points,
+    cfg::RPOPSOConfig,
+    geometry;
+    safe_distance_m::Real=cfg.safe_distance_m,
+    base_ds_m::Real=cfg.sample_ds_m,
+    curve_type::Symbol=cfg.curve_type,
+)
+    if curve_type == :bezier
+        if cfg.adaptive_sampling_enable
+            return rpo_sample_path_bezier_adaptive_with_params(
+                points,
+                geometry,
+                cfg;
+                safe_distance_m=safe_distance_m,
+                base_ds_m=base_ds_m,
+            )
+        end
+        samples = rpo_sample_path_bezier(points, base_ds_m)
+        n = size(samples, 2)
+        params = n <= 1 ? zeros(n) : collect(range(0.0, 1.0; length=n))
+        return samples, params, fill(NaN, n)
+    end
+    samples = rpo_sample_path(points, cfg, geometry; safe_distance_m=safe_distance_m, base_ds_m=base_ds_m, curve_type=curve_type)
+    return samples, Float64[], fill(NaN, size(samples, 2))
 end
 
 """Sample an RPO candidate path using the configured curve representation and spacing policy."""

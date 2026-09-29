@@ -70,29 +70,29 @@ const RS = SpaceAGORA.RuntimeServices
     end
 
     @testset "wait time is recorded under contention" begin
-        if Threads.nthreads() < 2
-            @test_skip "needs at least two threads"
-        else
-            RS.reset_native_lock_stats!()
-            holder = Threads.@spawn RS.with_native_lock(:gram_density) do
-                sleep(0.25)
-            end
-            sleep(0.05)
-            waiter = Threads.@spawn RS.with_native_lock(:gram_density) do
+        RS.reset_native_lock_stats!()
+        # Run the waiter immediately while this task owns the lock. yield(t)
+        # returns after t blocks, so contention does not depend on CI scheduling
+        # or on a fixed sleep covering another thread's startup latency.
+        waiter = Task() do
+            RS.with_native_lock(:gram_density) do
                 nothing
             end
-            wait(holder)
-            wait(waiter)
-            snap = RS.native_lock_stats_snapshot()
-            @test snap.acquisitions == 2
-            @test snap.contended == 1
-            @test snap.wait_ns > 0
-            # The waiter blocked for most of the holder's span, so the ratio has
-            # to be a substantial fraction of one. This is the quantity that
-            # reports over-width, so a zero here would be a silent failure of
-            # the whole mechanism.
-            @test snap.wait_hold_ratio > 0.3
         end
+        RS.with_native_lock(:gram_density) do
+            yield(waiter)
+            @test !istaskdone(waiter)
+        end
+        wait(waiter)
+        snap = RS.native_lock_stats_snapshot()
+        @test snap.acquisitions == 2
+        @test snap.contended == 1
+        @test snap.wait_ns > 0
+        @test snap.hold_ns > 0
+        # The metric is measured waiting divided by measured holding. Its
+        # magnitude is a workload result, not a minimum scheduler guarantee.
+        @test snap.wait_hold_ratio > 0
+        @test snap.wait_hold_ratio ≈ snap.wait_ns / snap.hold_ns
     end
 
     @testset "duty cycle" begin

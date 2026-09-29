@@ -321,8 +321,11 @@ end
 
             wind_requested = EM._environment_wind_enabled(p)
             @test wind_requested == wind
+            # Without constructor kwargs the isolated pool deep-copies the raw
+            # core; with them the GRAMSuite extension would build native clones.
+            pool_model = EM.GRAMAtmosphereModel(WindHistoryCore(true, 0))
             rhos, Ts, ws = fill(-1.0, n), fill(-2.0, n), fill(WF_ZERO, n)
-            pooled = CB._gram_isolated_pool_batch_eval!(rhos, Ts, ws, model,
+            pooled = CB._gram_isolated_pool_batch_eval!(rhos, Ts, ws, pool_model,
                 fill(150.0e3, n), zeros(n), zeros(n), 0.0, wind_requested, p;
                 allotment_hint=2)
             @test pooled == (!wind && Threads.nthreads() > 1)

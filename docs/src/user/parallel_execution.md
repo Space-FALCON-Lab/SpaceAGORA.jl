@@ -225,7 +225,12 @@ every RHS evaluation — freeze-per-step is what keeps the solve tractable.
 `0`/`off`. Under `auto` it is on exactly when the run's density model is native
 GRAM with perturbed winds (the pinned wrapper's default) and
 `environment_model.wind` is true, and off otherwise; set it to `1` to freeze
-nominal-wind GRAM as well:
+nominal-wind GRAM as well. A `GRAMAtmosphereModelSurrogate` counts as native
+GRAM here only when it has a configured `point_fallback_below_m`, below which
+it queries native GRAM point by point. The default Earth, Mars and Venus
+surrogates have none, so a surrogate run answered from its grid keeps
+per-stage sampling and a threaded density callback; a query outside the grid,
+which falls back to native GRAM on a warn-once path, does not change that.
 
 ```bash
 export SPACEAGORA_DENSITY_FREEZE_PER_STEP=1
@@ -246,8 +251,33 @@ multi-stage adaptive method). This is a standard, small approximation for a
 LEO trajectory: altitude — the dominant driver of the smooth mean density —
 changes negligibly over one integration step, so freezing density for the
 step's duration costs little accuracy while removing the noise that the
-solver was reacting to. It has no effect on the vacuum-predicted-cache path,
-which is already smooth by construction.
+solver was reacting to.
+
+Measured accuracy of the freeze on a longer, drag-dominated case: one 1000 kg,
+12 m² spacecraft on an Earth orbit with a 118 km periapsis and a 2000 km
+apoapsis, three orbits (19,149 s, three drag passes lowering the apoapsis by
+about 47 km), native Earth-GRAM, default `dt_max_atmosphere` of 1 s, one
+thread. Against per-stage sampling (`0`) with the same seed, the `auto` freeze
+moved the final apoapsis by 75 m and 105 m (seeds 1001 and 1002), the final
+periapsis by under 2 m, the heat load by 0.35% and 0.48%, and the final
+position by 0.8 km and 1.3 km (along track). The pure step-hold error, measured
+with nominal winds (`1` against `0`), was 87 m in apoapsis and 0.19% in heat
+load. For scale, changing the seed under per-stage sampling moved the apoapsis
+by 214 m, the heat load by 0.74% and the final position by 1.8 km, so the
+freeze's error is about half the run-to-run spread of the perturbations
+themselves. The frozen runs took 0.36–0.60 s against 2.7 s per stage. GRAM-backed
+results produced with perturbed winds before the `auto` default are not
+reproduced bit for bit under it; set `0` to return to per-stage sampling.
+
+A freeze in effect takes precedence over the vacuum-predicted cache
+(`SPACEAGORA_VACUUM_GRAM_CACHE=1`): the RHS then reads the once-per-step
+sample rather than interpolating the look-ahead spline at every stage, and
+only the per-step density callback can consult or rebuild the spline. This is
+deliberate. A cache rebuild is a burst of native queries, and rebuilds issued
+from threaded RHS stages would advance GRAM's perturbed-wind walk in
+thread-scheduling order. Under `auto` this applies only to runs whose winds are
+history-dependent (below); with nominal winds, or with `0`, the RHS
+interpolates the spline per stage as before.
 
 ### Reproducible perturbed winds
 
@@ -256,10 +286,16 @@ native query of an atmosphere instance, so the winds a query returns depend on
 every earlier query on that instance. Three rules make a run's perturbed winds
 depend only on its inputs:
 
-- Each run reseeds its GRAM models with their configured `seed` immediately
-  before the solve, after every pre-solve probe (RHS calibration, contention
-  probe, callback-width calibration). Repeated identical runs in one process,
-  with or without `isolate_state`, and runs in separate processes agree.
+- Each such run reseeds its GRAM models (the configured model, per-satellite
+  instances and isolated-pool instances) with their configured `seed`
+  immediately before the solve, after every pre-solve probe (RHS calibration,
+  contention probe, callback-width calibration), and clears the GRAM track and
+  look-ahead caches. Reseeding puts native GRAM back into its first-update
+  state, whose one-time initialization is not safe to run concurrently on
+  several instances, so each reseeded model is then warmed with one serial
+  query before the solve starts. Repeated identical runs in one process, with
+  or without `isolate_state`, and runs in separate processes agree. Runs
+  without history-dependent winds are not reseeded.
 - With perturbed winds, the `auto` freeze-per-step setting above makes the
   per-step density callback the only place the solve queries native GRAM, and
   that callback then evaluates spacecraft serially in index order whatever

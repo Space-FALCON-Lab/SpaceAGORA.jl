@@ -2,6 +2,7 @@ module ParallelPolicy
 
 using Base.Threads
 using TOML
+import ...RuntimeServices
 using ..ConfigTypes: PolicyDecisionEnvConfig, AbstractPolicyContext
 
 export parse_bool_env, parse_parallel_mode_env, parse_thread_threshold_env

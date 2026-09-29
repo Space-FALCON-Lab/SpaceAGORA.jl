@@ -206,8 +206,24 @@ loading a file cannot recover them or establish physical accuracy.
 
 The default policy rejects altitude and latitude outside the grid. Longitude is
 periodic. Explicit `above_grid=:vacuum` returns zero density and wind above the
-ceiling, with `vacuum_temperature` in kelvin; lower-bound extrapolation remains
-an error. The adapter does not apply the native model's entry-interface
+ceiling, with temperature `vacuum_temperature` (default 200 K); lower-bound extrapolation remains
+an error. `above_grid` is an option of the generic `GRAMGridAtmosphereModel`
+only. A named preset fixes the default policy, and `surrogate_preset_model`
+rejects grid options with an `ArgumentError`. To apply another policy to a
+preset's grid, construct the generic model from the resolved file; it then
+carries no named-preset contract:
+
+```julia
+preset = resolve_surrogate_preset("odyssey_p20_frozen_v1"; version="1.0.0")
+density_model = GRAMGridAtmosphereModel(
+    planet="Mars",
+    surrogate_file=preset.file,
+    expected_sha256=preset.expected_sha256,
+    above_grid=:vacuum,
+)
+```
+
+Queries below the grid floor fail under every policy. The adapter does not apply the native model's entry-interface
 polynomial, fixed 2000 km cutoff, or lower-altitude clamp.
 
 The grid model bypasses `SPACEAGORA_VACUUM_GRAM_CACHE` and

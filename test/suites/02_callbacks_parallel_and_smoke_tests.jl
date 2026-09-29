@@ -1876,7 +1876,7 @@ end
 
             parsed = TOML.parsefile(calib_path)
             @test haskey(parsed, "calibrations")
-            @test parsed["schema_version"] == 1
+            @test parsed["schema_version"] == SimulationEngine._RHS_CALIB_STORE_SCHEMA == 2
             rows = parsed["calibrations"]
             @test any(r -> get(r, "signature", "") == sig_disk, rows)
             disk_row = only(filter(r -> get(r, "signature", "") == sig_disk, rows))

@@ -304,7 +304,12 @@ function rpo_rrt_star_add_node!(
     return new_idx
 end
 
-"""Plan an RPO path with bidirectional RRT-Connect."""
+"""
+Plan an RPO path with bidirectional RRT-Connect.
+
+The connected tree path is shortcut at random (`settings.shortcut_iters`) and,
+with `post_refine` (the default), passed through the HyPR post-refinement.
+"""
 function rpo_rrt_connect_plan_path(
     start_rtn,
     goal_rtn,
@@ -314,6 +319,7 @@ function rpo_rrt_connect_plan_path(
     settings::RPORRTConnectSettings=RPORRTConnectSettings(),
     max_runtime_s::Real=Inf,
     rng=Random.default_rng(),
+    post_refine::Bool=true,
 )
     local_cfg = rpo_pso_config(cfg; curve_type=:polyline)
     start = SVector{3, Float64}(start_rtn)
@@ -396,7 +402,11 @@ function rpo_rrt_connect_plan_path(
     shortcut_path = found_path === nothing ?
         raw_path :
         rpo_rrt_shortcut_path(raw_path, geometry, settings; safe_distance_m=safe_distance_m, rng=rng)
-    refined, refined_cost, improved = rpo_post_refine_path(shortcut_path, geometry, local_cfg; safe_distance_m=safe_distance_m)
+    refined, refined_cost, improved = if post_refine
+        rpo_post_refine_path(shortcut_path, geometry, local_cfg; safe_distance_m=safe_distance_m)
+    else
+        shortcut_path, rpo_path_cost(shortcut_path, geometry, local_cfg; safe_distance_m=safe_distance_m), false
+    end
     raw_components = rpo_normalized_path_cost_components(raw_path, geometry, local_cfg; safe_distance_m=safe_distance_m)
     refined_components = rpo_normalized_path_cost_components(refined, geometry, local_cfg; safe_distance_m=safe_distance_m)
     return (

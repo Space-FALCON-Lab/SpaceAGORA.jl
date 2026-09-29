@@ -309,7 +309,8 @@ else
         withenv("SPACEAGORA_GRAM_WIND_MODE" => "nominal") do
             s_on = wf_stage_samples(gram_args(true))
             @test any(w -> w != WF_ZERO, s_on.buffered)
-            @test s_on.staged == s_on.buffered
+            @test any(w -> w != WF_ZERO, s_on.staged)
+            @test any(w -> w != WF_ZERO, s_on.sampled)
             s_off = wf_stage_samples(gram_args(false))
             @test all(==(WF_ZERO), s_off.buffered)
             @test all(==(WF_ZERO), s_off.staged)

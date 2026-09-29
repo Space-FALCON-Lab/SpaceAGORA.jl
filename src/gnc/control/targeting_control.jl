@@ -70,6 +70,7 @@ function _edg_environment_state(u, p::ODEParams, t::Float64, i::Int)
     pos_pp, vel_pp = r_intor_p!(pos, vel, planet, et, args.environment_model.ephemerides_model)
     lla = rtolatlong(pos_pp, planet)
     rho, temperature, wind = getDensity(args.environment_model.density_model, lla[1], lla[2], lla[3], t, args.environment_model.wind, p)
+    wind = _environment_wind(args.environment_model.wind, wind)
     uD, uN, uE = latlongtoNED(lla)
     wE, wN, wU = wind
     wind_pp = wN * uN + wE * uE - wU * uD
@@ -341,6 +342,7 @@ function _edg_targeting_prediction_environment(p::ODEParams, r::SVector{3, Float
         p.args.environment_model.wind,
         p,
     )
+    wind = _environment_wind(p.args.environment_model.wind, wind)
     uD, uN, uE = latlongtoNED(lla)
     wE, wN, wU = wind
     wind_pp = wN * uN + wE * uE - wU * uD

@@ -207,7 +207,8 @@ threshold. When a batch requests winds, automatic selection also requires
 nominal winds: the pinned wrapper's default (`auto`) selects perturbed winds,
 whose values depend on each model instance's query history. Such batches keep
 the locked route, including look-ahead cache sampling. Density-only queries
-(`wind=false`) keep their existing eligibility.
+(`wind=false`, including every query of a run with `EnvironmentModel.wind =
+false`) keep their existing eligibility.
 
 Setting `SPACEAGORA_GRAM_ISOLATED_POOL=on` explicitly allows separate stochastic
 histories. With perturbed winds it can change wind diagnostics and trajectories
@@ -326,6 +327,16 @@ enables it for smaller batches. `SPACEAGORA_GRAM_PROCESS_POOL_WORKERS` defaults
 to half the logical CPU count, with a minimum of one. Set it explicitly to
 control memory and process cost. This service does not apply to
 surrogate models, and it declines work inside an outer parallel run.
+
+Each worker process owns its own native GRAM instance, so the wind-history rule
+of the in-process isolated pool (Automatic native GRAM pooling and wind
+histories, above) applies here too. Under `auto`, a run that requests winds while they depend on
+query history (the pinned wrapper's default perturbed mode) keeps local
+evaluation; runs with `EnvironmentModel.wind = false` or
+`SPACEAGORA_GRAM_WIND_MODE=nominal` stay eligible. `on` is an explicit opt-in to
+separate stochastic histories: with perturbed winds it changes the winds, and so
+the trajectory, relative to local evaluation, and the result can depend on the
+worker count.
 
 Workers reconstruct the model from its saved constructor settings, including
 the epoch and resolved data paths. They reuse a model only while that recipe

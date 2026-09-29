@@ -634,7 +634,10 @@ end
     end
     alt, lat, lon = rtolatlong(pos_pp_link, planet)
     density_model = SimulationModel.SimulationCallbacks._density_model_for_sat(p, sat_idx)
-    return SimulationModel.getDensity(density_model, alt, lat, lon, t, true, p)
+    EM = SimulationModel.EnvironmentModels
+    wind_requested = EM._environment_wind_enabled(p)
+    rho, T, wind_vec = SimulationModel.getDensity(density_model, alt, lat, lon, t, wind_requested, p)
+    return rho, T, EM._environment_wind(wind_requested, wind_vec)
 end
 
 @inline function wrench(

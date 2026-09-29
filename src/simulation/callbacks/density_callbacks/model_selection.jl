@@ -235,6 +235,32 @@ The automatic route separately excludes history-dependent wind requests.
     return count
 end
 
+"""
+    _gram_pool_declines_history_dependent_winds(mode, wind, density_model) -> Bool
+
+The wind-history rule shared by both native-GRAM pools (the in-process isolated
+pool and the process-backed density service). Each pool runs separate native
+instances, and GRAM's perturbed winds are a random walk over each instance's own
+call history, so pooled winds cannot reproduce the single locked instance's.
+
+- `:auto` declines a batch that requests winds (`wind=true`) when
+  `EnvironmentModels._gram_core_wind_is_history_dependent(core)` holds.
+  Density-only batches (`wind=false`, e.g. `EnvironmentModel.wind = false`)
+  and nominal-wind batches stay eligible.
+- `:on` never declines on this ground: an explicit opt-in accepts separate
+  stochastic histories, and wind results can then depend on pool width.
+- `:off` is not a pool mode that reaches this check; it returns `false`.
+"""
+@inline function _gram_pool_declines_history_dependent_winds(
+    mode::Symbol,
+    wind::Bool,
+    density_model::EnvironmentModels.GRAMAtmosphereModel,
+)::Bool
+    mode === :auto || return false
+    wind || return false
+    return EnvironmentModels._gram_core_wind_is_history_dependent(density_model.core)
+end
+
 @inline function _gram_isolated_pool_batch_eval!(
     rhos::AbstractVector{Float64},
     Ts::AbstractVector{Float64},
@@ -270,10 +296,9 @@ function _gram_isolated_pool_batch_eval!(
     # Separate instances advance separate wind histories. Under automatic
     # routing, decline before constructing/warming clones or writing outputs.
     # Both the accepted-step and look-ahead callers then use the locked batch.
-    if env.gram_isolated_pool_mode === :auto && wind &&
-       EnvironmentModels._gram_core_wind_is_history_dependent(density_model.core)
-        return false
-    end
+    _gram_pool_declines_history_dependent_winds(
+        env.gram_isolated_pool_mode, wind, density_model
+    ) && return false
     length(rhos) == n || return false
     length(Ts) == n || return false
     length(winds) == n || return false

@@ -16,6 +16,19 @@ if [[ ! "${REVISION}" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 SUBMODULE_PATH="data/GRAMSuite.jl"
+
+# Optional sparse retrieval: GRAMSUITE_SPARSE_PROFILE names a path manifest in
+# .github/gramsuite-sparse/ (sparse-checkout patterns, paths only). The fetch
+# then downloads the commit's trees but only the blobs those patterns select.
+PROFILE="${GRAMSUITE_SPARSE_PROFILE:-}"
+PATTERNS=""
+if [[ -n "${PROFILE}" ]]; then
+  PATTERNS=".github/gramsuite-sparse/${PROFILE}.txt"
+  if [[ ! "${PROFILE}" =~ ^[a-z0-9_-]+$ || ! -f "${PATTERNS}" ]]; then
+    echo "Unknown GRAMSuite sparse profile: ${PROFILE}" >&2
+    exit 1
+  fi
+fi
 if [[ "${MODE}" == "dev" ]]; then
   URL="https://github.com/Space-FALCON-Lab/dev-GRAMSuite.jl.git"
 else
@@ -50,19 +63,56 @@ if ! git -C "${SUBMODULE_PATH}" diff --quiet ||
 fi
 git -C "${SUBMODULE_PATH}" config remote.origin.url "${URL}"
 
+FILTER=()
+if [[ -n "${PROFILE}" ]]; then
+  # A partial clone: blobs outside the patterns are never downloaded, and the
+  # ones inside are fetched on demand at checkout.
+  git -C "${SUBMODULE_PATH}" config core.repositoryformatversion 1
+  git -C "${SUBMODULE_PATH}" config extensions.partialClone origin
+  git -C "${SUBMODULE_PATH}" config remote.origin.promisor true
+  git -C "${SUBMODULE_PATH}" config remote.origin.partialclonefilter blob:none
+  git -C "${SUBMODULE_PATH}" config core.sparseCheckout true
+  git -C "${SUBMODULE_PATH}" config core.sparseCheckoutCone false
+  GIT_DIR_PATH="$(git -C "${SUBMODULE_PATH}" rev-parse --absolute-git-dir)"
+  mkdir -p "${GIT_DIR_PATH}/info"
+  grep -v '^[[:space:]]*\(#\|$\)' "${PATTERNS}" > "${GIT_DIR_PATH}/info/sparse-checkout"
+  FILTER=(--filter=blob:none)
+fi
+
 # No branch, remote HEAD, or fallback can replace this exact commit. Avoid
 # tags and nested submodules so their moving refs cannot affect retrieval.
 with_credentials -C "${SUBMODULE_PATH}" -c protocol.version=2 fetch \
-  --depth=1 --no-tags --recurse-submodules=no origin "${REVISION}"
+  --depth=1 --no-tags --recurse-submodules=no "${FILTER[@]}" origin "${REVISION}"
 FETCHED="$(git -C "${SUBMODULE_PATH}" rev-parse --verify 'FETCH_HEAD^{commit}')"
 if [[ "${FETCHED}" != "${REVISION}" ]]; then
   echo "Fetched GRAMSuite commit does not equal the ${MODE} pin" >&2
   exit 1
 fi
-with_credentials -C "${SUBMODULE_PATH}" checkout --detach "${REVISION}"
+# The full dev tree is ~15 GB packed and 18 GB checked out; writing it out is
+# the slow part of this script, so let Git inflate and write files on every
+# core.
+with_credentials -C "${SUBMODULE_PATH}" -c checkout.workers=0 checkout --detach "${REVISION}"
 OBSERVED="$(git -C "${SUBMODULE_PATH}" rev-parse --verify HEAD)"
 if [[ "${OBSERVED}" != "${REVISION}" ]]; then
   echo "Checked-out GRAMSuite commit does not equal the ${MODE} pin" >&2
   exit 1
+fi
+if [[ -n "${PROFILE}" ]]; then
+  # A path the profile names but the pinned revision lacks (renamed, moved)
+  # must fail here, not make a later test skip. Wildcard and negated patterns
+  # are not checked.
+  missing=0
+  while IFS= read -r pattern; do
+    [[ -z "${pattern}" || "${pattern}" == \#* || "${pattern}" == \!* || "${pattern}" == *\** ]] && continue
+    rel="${pattern#/}"
+    if [[ ! -e "${SUBMODULE_PATH}/${rel%/}" ]]; then
+      echo "GRAMSuite sparse profile ${PROFILE}: required path missing: ${rel}" >&2
+      missing=1
+    fi
+  done < "${PATTERNS}"
+  [[ "${missing}" -eq 0 ]] || exit 1
+  printf 'GRAMSuite sparse profile %s: %s files, %s bytes checked out\n' "${PROFILE}" \
+    "$(git -C "${SUBMODULE_PATH}" ls-files -t | grep -c '^H')" \
+    "$(cd "${SUBMODULE_PATH}" && git ls-files -t -z | tr '\0' '\n' | sed -n 's/^H //p' | tr '\n' '\0' | xargs -0 stat -c %s | awk '{s+=$1} END {print s+0}')"
 fi
 printf 'GRAMSuite %s revision: %s\n' "${MODE}" "${OBSERVED}"

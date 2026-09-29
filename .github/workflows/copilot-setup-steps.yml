@@ -54,6 +54,10 @@ jobs:
       # the other CI workflows.
       - name: Cache Julia packages and compiled artifacts
         uses: julia-actions/cache@v2
+        with:
+          # The private GRAMSuite's compiled images carry its source text, and a
+          # cache saved from main can be restored by fork pull requests.
+          cache-compiled: "false"
 
       # Resolve and download all declared Julia dependencies.
       - name: Instantiate Julia environment

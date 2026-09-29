@@ -93,7 +93,11 @@ jobs:
           julia --startup-file=no test/grid_atmosphere/setup.jl
           julia --startup-file=no --project=test/grid_atmosphere -e 'using Pkg; Pkg.precompile()'
           julia --startup-file=no --project=scripts/dev -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
-          rm -rf ~/.julia/compiled/v*/SpaceAGORA ~/.julia/compiled/v*/SpaceAGORAGRAMSuiteExt
+          # GRAMSuite comes from a private repository and its compiled images carry
+          # its source text; the shared cache is readable by fork pull requests, so
+          # only public packages may be saved. Each job compiles GRAMSuite itself.
+          rm -rf ~/.julia/compiled/v*/SpaceAGORA ~/.julia/compiled/v*/SpaceAGORAGRAMSuiteExt ~/.julia/compiled/v*/GRAMSuite*
+          if ls -d ~/.julia/compiled/v*/*GRAMSuite* >/dev/null 2>&1; then echo "GRAMSuite images left in the depot" >&2; exit 1; fi
           du -sh ~/.julia/* || true
 
       - name: Save shared depot

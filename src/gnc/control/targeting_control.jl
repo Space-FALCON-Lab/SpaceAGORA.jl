@@ -74,7 +74,12 @@ function _edg_environment_state(u, p::ODEParams, t::Float64, i::Int)
     uD, uN, uE = latlongtoNED(lla)
     wE, wN, wU = wind
     wind_pp = wN * uN + wE * uE - wU * uD
-    vel_pp_rw = vel_pp + wind_pp
+    # `wind` is the air's own velocity relative to the rotating planet in local
+    # east/north/up components (GRAM ewWind/nsWind/verticalWind, "Eastward
+    # Wind" positive toward east), and `vel_pp` is the spacecraft's velocity
+    # relative to the rotating planet, so the airspeed is their difference. The
+    # aerodynamic wrench and the T-EDG predictor use the same convention.
+    vel_pp_rw = vel_pp - wind_pp
     speed = norm(vel_pp_rw)
     sound_speed = sqrt(max(0.0, planet.γ * planet.R * temperature))
     molecular_speed_ratio = sound_speed > 0.0 ? sqrt(0.5 * planet.γ) * speed / sound_speed : 0.0
@@ -346,7 +351,9 @@ function _edg_targeting_prediction_environment(p::ODEParams, r::SVector{3, Float
     uD, uN, uE = latlongtoNED(lla)
     wE, wN, wU = wind
     wind_pp = wN * uN + wE * uE - wU * uD
-    vel_pp_rw = vel_pp + wind_pp
+    # Airspeed: spacecraft velocity minus the air's velocity (see
+    # `_edg_environment_state`).
+    vel_pp_rw = vel_pp - wind_pp
     speed = norm(vel_pp_rw)
     sound_speed = sqrt(max(0.0, planet.γ * planet.R * temperature))
     speed_ratio = sound_speed > 0.0 ? sqrt(0.5 * planet.γ) * speed / sound_speed : 0.0

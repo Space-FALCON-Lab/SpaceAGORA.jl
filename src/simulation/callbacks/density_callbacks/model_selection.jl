@@ -218,8 +218,9 @@ gate ever runs.
 
 One pass over the staged altitudes, on the thread that is about to dispatch, is
 enough to see that coming. Nothing it decides changes a returned value: both
-arms compute the same vacuum and polyfit results for those items, and the pool
-has been proved bit-identical to the locked path for the rest.
+arms compute the same vacuum and polyfit results for those items. Nominal-wind
+comparisons found bit identity for the remaining items.
+The automatic route separately excludes history-dependent wind requests.
 """
 @inline function _gram_isolated_pool_native_count(hs::AbstractVector{<:Real}, p)::Int
     EI = p.args.environment_model.EI * 1e3
@@ -266,6 +267,13 @@ function _gram_isolated_pool_batch_eval!(
     n = length(hs)
     env = _callback_env_config(p)
     _gram_isolated_pool_enabled(env, n) || return false
+    # Separate instances advance separate wind histories. Under automatic
+    # routing, decline before constructing/warming clones or writing outputs.
+    # Both the accepted-step and look-ahead callers then use the locked batch.
+    if env.gram_isolated_pool_mode === :auto && wind &&
+       EnvironmentModels._gram_core_wind_is_history_dependent(density_model.core)
+        return false
+    end
     length(rhos) == n || return false
     length(Ts) == n || return false
     length(winds) == n || return false

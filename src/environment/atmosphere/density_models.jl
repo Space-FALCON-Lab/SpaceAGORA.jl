@@ -494,6 +494,11 @@ clear_gram_offline_surrogate_cache!() = _CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN[]
 const _COLLECT_UNREFERENCED_GRAM_ATMOSPHERES_FN = Ref{Function}(() -> false)
 collect_unreferenced_gram_atmospheres!()::Bool = _COLLECT_UNREFERENCED_GRAM_ATMOSPHERES_FN[]()
 
+# Unknown raw cores are conservatively treated as history-dependent. The
+# GRAMSuite extension owns the actual wind-mode policy; do not duplicate its
+# environment parsing here or infer determinism from the wrapper type.
+@inline _gram_core_wind_is_history_dependent(_core)::Bool = true
+
 function _gram_core_density_state(
     _core,
     _h::Float64,

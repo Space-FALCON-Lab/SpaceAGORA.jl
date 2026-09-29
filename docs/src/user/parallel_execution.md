@@ -200,6 +200,20 @@ measured the workload — the default `global` scope is always safe. Process-bas
 campaigns (separate workers via `addprocs`) do not need this: each process has
 its own lock already.
 
+### Automatic native GRAM pooling and wind histories
+
+The isolated pool is selected automatically only above its native-query
+threshold. When a batch requests winds, automatic selection also requires
+nominal winds: the pinned wrapper's default (`auto`) selects perturbed winds,
+whose values depend on each model instance's query history. Such batches keep
+the locked route, including look-ahead cache sampling. Density-only queries
+(`wind=false`) keep their existing eligibility.
+
+Setting `SPACEAGORA_GRAM_ISOLATED_POOL=on` explicitly allows separate stochastic
+histories. With perturbed winds it can change wind diagnostics and trajectories
+as pool width or thread count changes. Routing never switches the requested
+wind mode or seed to obtain a speedup.
+
 ### Real GRAM without the vacuum-predicted cache
 
 `SPACEAGORA_VACUUM_GRAM_CACHE` (the drag-free trajectory spline described

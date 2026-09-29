@@ -476,6 +476,9 @@ end
 # _gram_core_density_state — used by the isolated-pool callback path
 # ---------------------------------------------------------------------------
 
+@inline EM._gram_core_wind_is_history_dependent(::GRAMSuite.GRAMAtmosphereModel)::Bool =
+    GRAMSuite._gram_wind_mode() !== :nominal
+
 function EM._gram_core_density_state(
     core::GRAMSuite.GRAMAtmosphereModel,
     h::Float64,

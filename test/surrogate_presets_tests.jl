@@ -12,7 +12,7 @@ preset_sha(path) = open(io->bytes2hex(sha256(io)),path)
     @test any(x->x["id"]=="odyssey_p20_frozen_v1" && x["version"]=="1.0.0",SpaceAGORA.available_surrogate_presets())
     mktempdir() do dir
         file=joinpath(dir,"fixture.jls"); catalog_file=joinpath(dir,"catalog.toml"); artifacts_file=joinpath(dir,"Artifacts.toml")
-        catalog=deepcopy(catalog_template); entry=only(catalog["presets"])
+        catalog=deepcopy(catalog_template); entry=only(filter(p->p["id"]=="odyssey_p20_frozen_v1",catalog["presets"])); catalog["presets"]=[entry]
         entry["id"]="synthetic_preset";entry["release_enabled"]=false;entry["artifact_name"]="synthetic_preset_1_0_0"
         entry["axes"]=Dict("altitude"=>Dict("start"=>100.,"step"=>160.,"count"=>2),"latitude"=>Dict("start"=>40.,"step"=>50.,"count"=>2),"longitude"=>Dict("start"=>0.,"step"=>180.,"count"=>2))
         payload=deepcopy(entry["required_metadata"])
@@ -138,5 +138,47 @@ preset_sha(path) = open(io->bytes2hex(sha256(io)),path)
             end
         end
         @test !any(x->occursin("libgram",lowercase(basename(x))),Libdl.dllist())
+    end
+end
+
+@testset "Named presets with explicit non-uniform axis nodes" begin
+    catalog_template = TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
+    @test any(x->x["id"]=="mars_global_upper_p20_frozen_v1" && x["version"]=="1.0.0" && x["release_enabled"],SpaceAGORA.available_surrogate_presets())
+    shipped=only(filter(p->p["id"]=="mars_global_upper_p20_frozen_v1",catalog_template["presets"]))
+    @test length(shipped["axes"]["altitude"]["nodes"])==253 && length(shipped["axes"]["latitude"]["nodes"])==229
+    @test all(>(0),diff(shipped["axes"]["latitude"]["nodes"])) && shipped["axes"]["longitude"]["count"]==144
+    mktempdir() do dir
+        file=joinpath(dir,"fixture.jls"); catalog_file=joinpath(dir,"catalog.toml"); artifacts_file=joinpath(dir,"Artifacts.toml")
+        catalog=deepcopy(catalog_template); entry=deepcopy(shipped); catalog["presets"]=[entry]
+        entry["id"]="synthetic_nodes";entry["release_enabled"]=false;entry["artifact_name"]="synthetic_nodes_1_0_0"
+        alt=[80.,95.5,365.]; lat=[-90.,-82.36,0.,90.]
+        entry["axes"]=Dict("altitude"=>Dict("nodes"=>alt),"latitude"=>Dict("nodes"=>lat),"longitude"=>Dict("start"=>0.,"step"=>180.,"count"=>2))
+        payload=deepcopy(entry["required_metadata"])
+        payload["grid"]=Dict("alt_km"=>copy(alt),"lat_deg"=>copy(lat),"lon_deg"=>[0.,180.])
+        payload["fields"]=Dict(k=>fill(v,3,4,2) for (k,v) in zip(("density_kgm3","temperature_K","wind_ew_ms","wind_ns_ms","wind_up_ms"),(1e-8,180.,2.,3.,4.)))
+        function save_payload!()
+            serialize(file,payload);entry["payload"]["sha256"]=preset_sha(file);entry["payload"]["bytes"]=filesize(file);preset_write_toml(catalog_file,catalog)
+        end
+        save_payload!();preset_write_toml(artifacts_file,Dict())
+        opts=(version="1.0.0",catalog_file=catalog_file,artifacts_file=artifacts_file,file=file,allow_unreleased=true)
+        model=SpaceAGORA.surrogate_preset_model("synthetic_nodes";opts...)
+        @test SpaceAGORA.getDensity(model,90000.,deg2rad(-85.),deg2rad(90.),0.,true)[1]≈1e-8
+        @test_throws DomainError SpaceAGORA.getDensity(model,79999.,deg2rad(10.),0.,0.,true)
+        @test_throws DomainError SpaceAGORA.getDensity(model,365001.,deg2rad(10.),0.,0.,true)
+        # A payload whose nodes differ from the declared nodes is rejected.
+        payload["grid"]["lat_deg"][2]=-82.35;save_payload!()
+        @test_throws ArgumentError SpaceAGORA.surrogate_preset_model("synthetic_nodes";opts...)
+        payload["grid"]["lat_deg"][2]=-82.36;save_payload!()
+        @test SpaceAGORA.surrogate_preset_model("synthetic_nodes";opts...) isa SpaceAGORA.GRAMGridAtmosphereModel
+        # Invalid node declarations fail when the catalog is read.
+        for (axis,bad) in (("altitude",Dict("nodes"=>[80.,80.,365.])),("altitude",Dict("nodes"=>[365.,80.])),("altitude",Dict("nodes"=>[80.])),
+                           ("altitude",Dict("nodes"=>[80.,365.],"step"=>1.)),("latitude",Dict("nodes"=>[-90.,NaN,90.])),
+                           ("longitude",Dict("nodes"=>[0.,180.])))
+            broken=deepcopy(catalog);only(broken["presets"])["axes"][axis]=bad;preset_write_toml(catalog_file,broken)
+            @test_throws ArgumentError SpaceAGORA.available_surrogate_presets(;catalog_file)
+        end
+        # The declared domain must equal the first and last nodes.
+        broken=deepcopy(catalog);only(broken["presets"])["domain"]["height_m"]=[80000.,366000.];preset_write_toml(catalog_file,broken)
+        @test_throws ArgumentError SpaceAGORA.available_surrogate_presets(;catalog_file)
     end
 end

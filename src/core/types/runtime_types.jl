@@ -672,11 +672,14 @@ export RhsEffectorDecision, RhsExecutionPlan
         # True when the run's density model returns values that depend on the
         # order of earlier queries on the same instance (native GRAM with
         # perturbed winds; see EnvironmentModels.density_model_history_dependent).
-        # Density and control callbacks then evaluate their satellites serially
-        # in index order, and SPACEAGORA_DENSITY_FREEZE_PER_STEP=auto (the
-        # default) resolves `density_freeze_per_step` to true, so that the only
-        # native queries in a solve are the ordered once-per-step ones. False
-        # in a snapshot taken without a run (no model to inspect).
+        # The density callback then evaluates its satellites serially in index
+        # order, and SPACEAGORA_DENSITY_FREEZE_PER_STEP=auto (the default)
+        # resolves `density_freeze_per_step` to true, so that the dynamics'
+        # native queries are the ordered once-per-step ones. The control
+        # callback has no such guard: a control model that queries the density
+        # model itself (E-EDG) stays ordered because it is not declared
+        # thread-safe, and SPACEAGORA_CONTROL_ASSUME_THREADSAFE would lift
+        # that. False in a snapshot taken without a run (no model to inspect).
         density_history_dependent::Bool
     end
 

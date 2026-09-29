@@ -346,9 +346,16 @@ end
 #
 # The effect was that the first run in a process got different perturbed winds
 # from every later run with identical inputs. Updating one throwaway atmosphere
-# per process before any model is used loads the tables. The durable fix
-# belongs in GRAM: call initializeData() at the top of
-# MAP::getWindStandardDeviations, as its sibling getters already do.
+# per process before any model is used loads the tables.
+#
+# The pinned dev GRAMSuite now carries the upstream fix (initializeData() at the
+# top of MAP::getWindStandardDeviations), and the warm-up is kept anyway:
+# - native GRAM built from sources without that fix (the public wrapper, or a
+#   native tree built before the pin moved) still has the defect;
+# - GRAM's lazy statics are guarded by an unsynchronized `initialized` flag, so
+#   loading them once, under the setup lock, keeps concurrent first updates on
+#   separate instances (isolated-pool workers, SPACEAGORA_GRAM_LOCK_SCOPE=model)
+#   from racing on them.
 #
 # Only Earth is warmed: it is the only body where this read-before-load was
 # found (Mars and Venus first-instance values match later instances).

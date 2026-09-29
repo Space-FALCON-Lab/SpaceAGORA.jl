@@ -50,7 +50,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Load pinned dev GRAMSuite revision
@@ -136,7 +139,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Load pinned dev GRAMSuite revision

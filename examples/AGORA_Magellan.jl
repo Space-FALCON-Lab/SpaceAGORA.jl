@@ -2,23 +2,7 @@ include(joinpath(@__DIR__, "common.jl"))
 using SPICE
 using StaticArrays
 
-
-struct ConstantDensityModel <: AbstractDensityModel
-    rho::Float64
-    temp::Float64
-end
-
-function SimulationModel.EnvironmentModels.getDensity(
-    model::ConstantDensityModel,
-    h::Float64,
-    lat::Float64,
-    lon::Float64,
-    el_time::Float64,
-    wind::Bool,
-    p
-)
-    return model.rho, model.temp, SVector{3, Float64}(0.0, 0.0, 0.0)
-end
+# ConstantDensityModel is provided by SimulationModel through common.jl.
 
 planet = Venus("", SPICE_PATH)
 

@@ -1506,7 +1506,7 @@
             coeff_gfc_path = joinpath(tmp, "harmonics_reference.gfc")
             write_icgem_from_harmonics_model(coeff_gfc_path, model_full; model_name="SpaceAGORA_Test_Harmonics")
             ref_model = SatelliteToolboxGravityModels.GravityModels.load(SatelliteToolboxGravityModels.IcgemFile, coeff_gfc_path)
-            @test SatelliteToolboxGravityModels.GravityModels.coefficient_norm(ref_model) == :full
+            @test SatelliteToolboxGravityModels.GravityModels.coefficient_norm(ref_model) == Val(:full)
 
             args_harmonics_compare = build_config(
                 spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),

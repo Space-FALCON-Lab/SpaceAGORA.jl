@@ -10,6 +10,9 @@ using ComponentArrays
 using DiffEqBase
 using DiffEqCallbacks
 using OrdinaryDiffEq
+using OrdinaryDiffEqHighOrderRK: DP8
+using OrdinaryDiffEqSDIRK: KenCarp4, KenCarp47, KenCarp58
+using OrdinaryDiffEqSymplecticRK: KahanLi8
 # Suite 01 reaches SatelliteToolboxAtmosphericModels directly; it used to arrive here as a
 # leaked import of the raw-included reference_system.jl.
 using SatelliteToolboxAtmosphericModels

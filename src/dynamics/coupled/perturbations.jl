@@ -2103,10 +2103,10 @@ share one unit contract.
     alt_m::Float64,
 )::SVector{3, Float64}
     if model.field_model === :igrf
-        # show_warnings=false: the library's reduced-accuracy warning for
+        # show_warnings=Val(false): the library's reduced-accuracy warning for
         # epochs past 2030 has no maxlog and this runs once per RHS call;
         # the model constructors emit it once instead.
-        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic); show_warnings=false)
+        B_ned_nT = igrf(model.igrf_year, alt_m, lat_rad, lon_rad, Val(:geodetic); show_warnings=Val(false))
         B_pp_nT = ned_to_ecef(B_ned_nT, lat_rad, lon_rad, alt_m)
         return SVector{3, Float64}(l_pi' * B_pp_nT) .* 1e-9
     end

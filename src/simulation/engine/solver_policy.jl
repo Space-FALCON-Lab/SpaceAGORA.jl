@@ -226,7 +226,30 @@ end
 # representative constellation run), so the solve is what counts and KLU wins
 # it. Measuring factorize+solve as a unit is what makes block LU look 3.4x
 # faster; that ratio does not survive contact with the integrator's actual mix.
-@inline _sparse_linsolve_or_default(sparse_jac::Bool) = sparse_jac ? KLUFactorization() : nothing
+# OrdinaryDiffEq forwards its componentwise ODE tolerances to LinearSolve at
+# initialization, but LinearSolve 5 stores scalar linear-system tolerances.
+# Adapt that boundary on an owned type: keep the ODE's tolerance arrays intact,
+# retain the existing dense/default or sparse/KLU backend, and return its real
+# cache so reinitialization and subsequent solves use the normal library path.
+struct _ComponentToleranceLinearSolver{A} <: SciMLBase.AbstractLinearAlgorithm
+    algorithm::A
+end
+
+LinearSolve.needs_concrete_A(::_ComponentToleranceLinearSolver) = true
+
+_linear_system_tolerance(tol::Number) = tol
+_linear_system_tolerance(tol::AbstractArray) = minimum(tol)
+
+function SciMLBase.init(prob::SciMLBase.LinearProblem, alg::_ComponentToleranceLinearSolver;
+                        reltol=LinearSolve.default_tol(real(eltype(prob.b))),
+                        abstol=LinearSolve.default_tol(real(eltype(prob.b))), kwargs...)
+    return SciMLBase.init(prob, alg.algorithm;
+        reltol=_linear_system_tolerance(reltol),
+        abstol=_linear_system_tolerance(abstol), kwargs...)
+end
+
+@inline _sparse_linsolve_or_default(sparse_jac::Bool) =
+    _ComponentToleranceLinearSolver(sparse_jac ? KLUFactorization() : nothing)
 
 """Return whether a problem component function carries a sparse Jacobian prototype."""
 @inline function _has_sparse_jac_prototype(f)::Bool
@@ -349,7 +372,11 @@ end
     return raw in ("1", "true", "yes", "on")
 end
 
-@inline function _solve_with_explicit_solver(prob, cfg::SolverConfig, args, alg, reltol_tol, abstol_tol;
+# Keep the solver choice behind a dispatch boundary. Inferring every algorithm
+# into the policy caller causes excessive compilation with OrdinaryDiffEq 7.
+# The selected integrator still specializes normally inside the solver library.
+@noinline Base.@nospecializeinfer function _solve_with_explicit_solver(
+    @nospecialize(prob), cfg::SolverConfig, @nospecialize(args), @nospecialize(alg), reltol_tol, abstol_tol;
     dtmax_override::Union{Nothing, Float64}=nothing,
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     needs_full_solution::Bool=true)

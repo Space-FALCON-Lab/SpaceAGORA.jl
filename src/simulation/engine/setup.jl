@@ -4,6 +4,11 @@ using StaticArrays
 using LoopVectorization
 using ComponentArrays
 using OrdinaryDiffEq
+using OrdinaryDiffEqHighOrderRK: DP8
+using OrdinaryDiffEqSDIRK: KenCarp4, KenCarp47, KenCarp58
+using OrdinaryDiffEqSymplecticRK: KahanLi8
+import SciMLBase
+import LinearSolve
 using DiffEqCallbacks
 using CSV
 using DataFrames

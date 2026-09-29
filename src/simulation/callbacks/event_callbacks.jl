@@ -1,5 +1,31 @@
 const IMPACT_ALTITUDE_M = 50_000.0
 
+# DiffEqBase 7.21+ delivers all simultaneous events in one signed mask:
+# +1 is an upcrossing, -1 is a downcrossing, and 0 did not trigger. Keep the
+# per-spacecraft effects and their direction filters in one shared adapter.
+function _directional_vector_callback(condition!, up!, down!, num_sats::Int; kwargs...)
+    function affect_events!(integrator, events)
+        handled = false
+        for idx in eachindex(events)
+            direction = events[idx]
+            if direction > 0 && up! !== nothing
+                up!(integrator, idx)
+                handled = true
+            elseif direction < 0 && down! !== nothing
+                down!(integrator, idx)
+                handled = true
+            end
+        end
+        # The new vector API locates either direction. An ignored crossing
+        # does not change state or require rebuilding derivatives/caches.
+        if !handled && applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
+            DiffEqBase.derivative_discontinuity!(integrator, false)
+        end
+        return nothing
+    end
+    return VectorContinuousCallback(condition!, affect_events!, num_sats; kwargs...)
+end
+
 function get_impact_callback(num_sats::Int; excluded_spacecraft=nothing)
     function condition!(out, u, t, integrator)
         p = integrator.p
@@ -32,7 +58,7 @@ function get_impact_callback(num_sats::Int; excluded_spacecraft=nothing)
         end
     end
 
-    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
+    return _directional_vector_callback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
 # Terrain coordinates are planetocentric; geodetic latitude would sample a
@@ -122,7 +148,7 @@ function get_touchdown_callback(specs)
         end
         return nothing
     end
-    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats;
+    return _directional_vector_callback(condition!, nothing, affect_downcrossing!, num_sats;
                                     initialize=initialize!)
 end
 
@@ -170,7 +196,7 @@ function get_orbit_end_callback(num_sats::Int)
         end
     end
 
-    return VectorContinuousCallback(condition!, affect!, nothing, num_sats)
+    return _directional_vector_callback(condition!, affect!, nothing, num_sats)
 end
 
 function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
@@ -224,7 +250,7 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
         return nothing
     end
 
-    return VectorContinuousCallback(condition!, nothing, affect_downcrossing!, num_sats)
+    return _directional_vector_callback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
 function get_drag_state_callback(num_sats::Int)
@@ -279,7 +305,7 @@ function get_drag_state_callback(num_sats::Int)
         integrator.opts.abstol = abstol_new
     end
 
-    return VectorContinuousCallback(condition!, affect_upcrossing!, affect_downcrossing!, num_sats)
+    return _directional_vector_callback(condition!, affect_upcrossing!, affect_downcrossing!, num_sats)
 end
 
 function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfiguration)

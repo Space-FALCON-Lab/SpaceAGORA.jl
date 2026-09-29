@@ -219,7 +219,12 @@ wind mode or seed to obtain a speedup.
 `SPACEAGORA_VACUUM_GRAM_CACHE` (the drag-free trajectory spline described
 above) is the supported way to query real, per-satellite GRAM density at
 constellation scale. If it is disabled — direct, uncached GRAM queries at
-every RHS evaluation — also set:
+every RHS evaluation — freeze-per-step is what keeps the solve tractable.
+`SPACEAGORA_DENSITY_FREEZE_PER_STEP` takes `auto` (the default), `1`/`on` or
+`0`/`off`. Under `auto` it is on exactly when the run's density model is native
+GRAM with perturbed winds (the pinned wrapper's default) and
+`environment_model.wind` is true, and off otherwise; set it to `1` to freeze
+nominal-wind GRAM as well:
 
 ```bash
 export SPACEAGORA_DENSITY_FREEZE_PER_STEP=1
@@ -242,6 +247,31 @@ changes negligibly over one integration step, so freezing density for the
 step's duration costs little accuracy while removing the noise that the
 solver was reacting to. It has no effect on the vacuum-predicted-cache path,
 which is already smooth by construction.
+
+### Reproducible perturbed winds
+
+GRAM's perturbed winds are a correlated random walk that advances on every
+native query of an atmosphere instance, so the winds a query returns depend on
+every earlier query on that instance. Three rules make a run's perturbed winds
+depend only on its inputs:
+
+- Each run reseeds its GRAM models with their configured `seed` immediately
+  before the solve, after every pre-solve probe (RHS calibration, contention
+  probe, callback-width calibration). Repeated identical runs in one process,
+  with or without `isolate_state`, and runs in separate processes agree.
+- With perturbed winds, the `auto` freeze-per-step setting above makes the
+  per-step density callback the only place the solve queries native GRAM, and
+  that callback then evaluates spacecraft serially in index order whatever
+  `SPACEAGORA_DENSITY_CALLBACK_PARALLEL` says. Per-stage RHS queries, which
+  would otherwise advance the walk in thread-scheduling order and in a number
+  that depends on the solver route, read that sample instead. Results are then
+  independent of the thread count.
+- Native Earth-GRAM loads part of its wind-variability tables lazily and reads
+  them before loading them on the first atmosphere update in a process; the
+  GRAMSuite extension loads them once per process before a model is used.
+
+Setting `SPACEAGORA_DENSITY_FREEZE_PER_STEP=0` restores per-stage sampling for
+perturbed winds, and with it the dependence on thread scheduling.
 
 ## Constellation ensembles
 

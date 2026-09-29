@@ -1129,7 +1129,7 @@ function _initialize_runtime_env_config!(p)
     p.shared_buffers.policy_context[] = (penv !== nothing && penv.policy_v2) ?
         SimulationModel.ParallelPolicy._active_policy_context() : nothing
     p.shared_buffers.rhs_env_config[] = _snapshot_rhs_plan_env_config()
-    p.shared_buffers.callback_env_config[] = SimulationModel.SimulationCallbacks._snapshot_callback_env_config()
+    p.shared_buffers.callback_env_config[] = SimulationModel.SimulationCallbacks._snapshot_callback_env_config(p.args)
     return nothing
 end
 

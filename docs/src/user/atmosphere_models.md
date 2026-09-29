@@ -174,6 +174,26 @@ density_model = NRLMSISE00AtmosphereModel(index_provider=my_provider)
 
 For a named, automatically retrieved atmosphere, start with the [Odyssey surrogate workflow](../tutorials/odyssey_surrogate.md). Use `surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0")` after loading `GRAMSuite`; retrieval and verification occur once before the solver.
 
+Two named presets are published. Both are frozen at the Odyssey P20 instant, 2001-11-07T11:51:04.794789Z:
+
+| Preset | Domain | Validated use |
+| --- | --- | --- |
+| `odyssey_p20_frozen_v1` 1.0.0 | 100 to 260 km, 40 to 90 degrees north | Odyssey P20 passages within the tutorial's envelope |
+| `mars_global_upper_p20_frozen_v1` 1.0.0 | 80 to 365 km, all latitudes and longitudes | Pointwise within 225 s of the frozen instant; propagated passes with periapsis from 80 to 130 km |
+
+The global preset was validated against native Mars-GRAM under the lab's release
+limits for pointwise density and wind error and per-pass drag and heating; its
+archive README lists them. Its height and latitude spacing is not uniform: nodes
+are added where Mars-GRAM has structure, the catalog lists every node, and
+`surrogate_preset_model` checks them against the grid. Heights below 80 km are
+not covered, because terrain over the Tharsis summits shapes the native
+atmosphere there; such queries fail.
+
+```julia
+import GRAMSuite
+density_model = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0")
+```
+
 `GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
 kernel to SpaceAGORA. It needs the Julia wrapper with its native-free grid API
 and a trusted serialized grid payload. Construction and density evaluation use

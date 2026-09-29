@@ -307,8 +307,6 @@ end
                 "SPACEAGORA_GRAM_PROCESS_POOL" => "auto",
                 "SPACEAGORA_GRAM_PROCESS_POOL_THRESHOLD" => "1",
                 "SPACEAGORA_GRAM_ISOLATED_POOL" => "auto",
-                "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1",
-                "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2",
                 "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing,
                 "SPACEAGORA_VACUUM_GRAM_CACHE" => nothing,
                 "SPACEAGORA_GRAM_TRACK_CACHE" => "off") do
@@ -319,18 +317,15 @@ end
             @test cfg.density_freeze_per_step == wind
             @test CB._rhs_density_service_candidate(p, n) == !wind
 
+            # The isolated pool's callers pass the run's wind flag to the
+            # shared guard (`gram_isolated_pool_tests.jl` covers the batch
+            # evaluator itself; its persistent workers cannot see a core type
+            # defined after they started, so it is not driven from here).
             wind_requested = EM._environment_wind_enabled(p)
             @test wind_requested == wind
-            # Without constructor kwargs the isolated pool deep-copies the raw
-            # core; with them the GRAMSuite extension would build native clones.
-            pool_model = EM.GRAMAtmosphereModel(WindHistoryCore(true, 0))
-            rhos, Ts, ws = fill(-1.0, n), fill(-2.0, n), fill(WF_ZERO, n)
-            pooled = CB._gram_isolated_pool_batch_eval!(rhos, Ts, ws, pool_model,
-                fill(150.0e3, n), zeros(n), zeros(n), 0.0, wind_requested, p;
-                allotment_hint=2)
-            @test pooled == (!wind && Threads.nthreads() > 1)
-            @test isempty(p.shared_buffers.gram_isolated_pool_models) == !pooled
-            pooled && @test rhos == fill(1.0e-9, n)
+            @test cfg.gram_isolated_pool_mode === :auto
+            @test CB._gram_pool_declines_history_dependent_winds(
+                cfg.gram_isolated_pool_mode, wind_requested, model) == wind
         end
     end
 end

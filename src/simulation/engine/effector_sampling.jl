@@ -197,9 +197,10 @@ function _fill_uniform_light_atmosphere!(
         view(lats, 1:num_sats),
         view(lons, 1:num_sats),
         t,
-        true,
+        SimulationModel.EnvironmentModels._environment_wind_enabled(p),
         p,
     )
+    SimulationModel.EnvironmentModels._zero_environment_winds!(p, view(sb.winds, 1:num_sats))
     SimulationModel.SimulationCallbacks._write_density_time_buffers!(p, num_sats, t)
     return nothing
 end

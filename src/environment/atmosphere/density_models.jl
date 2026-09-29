@@ -499,6 +499,53 @@ collect_unreferenced_gram_atmospheres!()::Bool = _COLLECT_UNREFERENCED_GRAM_ATMO
 # environment parsing here or infer determinism from the wrapper type.
 @inline _gram_core_wind_is_history_dependent(_core)::Bool = true
 
+"""
+    _environment_wind_enabled(p) -> Bool
+
+Whether the run's `EnvironmentModel.wind` asks for atmospheric winds. With
+`wind = false` a simulation treats the atmosphere as co-rotating with the
+planet: every density query it makes passes `wind=false`, and the wind it hands
+to aerodynamics, guidance and the saved `wind` field is zero
+(`_environment_wind`).
+
+The masking is needed because a model's own `wind` argument is not a zero-wind
+switch for every model. For native GRAM the pinned wrapper returns *nominal*
+(mean) winds when `wind=false` and the mode selected by
+`SPACEAGORA_GRAM_WIND_MODE` otherwise; grid snapshots return their stored winds
+either way. The analytic models return zero wind regardless.
+
+A parameter object without the field (a test double) keeps the historical
+behavior of requesting winds.
+"""
+@inline function _environment_wind_enabled(p)::Bool
+    env = p.args.environment_model
+    return hasproperty(env, :wind) ? Bool(getproperty(env, :wind)) : true
+end
+
+"""
+    _environment_wind(p, wind_vec) -> SVector{3, Float64}
+    _environment_wind(enabled::Bool, wind_vec) -> SVector{3, Float64}
+
+`wind_vec` when the run's winds are enabled, otherwise zero. See
+`_environment_wind_enabled`.
+"""
+@inline _environment_wind(enabled::Bool, wind_vec)::SVector{3, Float64} =
+    enabled ? wind_vec : SVector{3, Float64}(0.0, 0.0, 0.0)
+@inline _environment_wind(p, wind_vec)::SVector{3, Float64} =
+    _environment_wind(_environment_wind_enabled(p), wind_vec)
+
+"""
+    _zero_environment_winds!(p, winds) -> winds
+
+Zero every entry of `winds` when the run's winds are disabled; a no-op
+otherwise. Used after batch density queries that write a whole wind buffer.
+"""
+@inline function _zero_environment_winds!(p, winds::AbstractVector{SVector{3, Float64}})
+    _environment_wind_enabled(p) && return winds
+    fill!(winds, SVector{3, Float64}(0.0, 0.0, 0.0))
+    return winds
+end
+
 function _gram_core_density_state(
     _core,
     _h::Float64,

@@ -32,6 +32,7 @@
 
 using ..SimulationModel: ParallelCost
 import ..SimulationEngine
+import ..RuntimeServices
 import TOML
 
 """
@@ -309,6 +310,14 @@ It is the RHS evaluation's speedup, applied to the whole sample. That is
 ASSUMED: a sample also spends time outside the RHS (the solver's own linear
 algebra, callbacks, output), which does not speed up, so the curve is an upper
 bound on the sample's speedup and the margin rule carries the difference.
+
+A campaign prices its plans with two curves, because its samples run in two
+different runtimes: the threads plans and the mixed plans' local slots run
+under an outer split (`SPACEAGORA_OUTER_PARALLEL_ACTIVE=1`), where the RHS
+heuristic serializes the flat routes and effector threading is off, and the
+serial plan on the whole pool does not. Each is read only from the store rows
+measured the same way (`rhs_inner_speedup_curve(stem; outer = ...)`); see
+`predictive_plan`'s `inner_curve_unsplit`.
 """
 struct InnerSpeedupCurve
     speedup::Vector{Float64}
@@ -612,6 +621,7 @@ function predictive_plan_candidates(;
     config::PredictivePlannerConfig,
     terms::PredictiveCostTerms = PredictiveCostTerms(),
     inner_curve::Union{Nothing, InnerSpeedupCurve} = nothing,
+    inner_curve_unsplit::Union{Nothing, InnerSpeedupCurve} = inner_curve,
 )::Vector{PredictivePlan}
     n = max(0, Int(n_samples))
     T = max(1, Int(threads))
@@ -642,10 +652,10 @@ function predictive_plan_candidates(;
     end
     # A shape with no parallel route at all still has to run.
     isempty(plans) && push!(plans, _predictive_plan(:none, 1, 0, n, true, nothing, config.remote_overhead))
-    inner_curve === nothing ||
+    (inner_curve === nothing && inner_curve_unsplit === nothing) ||
         _predictive_inner_candidates!(plans, n, T, pool, threads_candidate, local_slots_cap,
                                       contention_process, contention_threads, config, terms,
-                                      inner_curve)
+                                      inner_curve, inner_curve_unsplit)
     return plans
 end
 
@@ -660,12 +670,19 @@ end
 #     stays free for the feeders, as for every mixed plan).
 #
 # The pool's workers are one-thread processes and are never given b > 1.
+#
+# `curve` prices the plans whose samples run under an outer split (threads@W
+# and the mixed local slots); `unsplit` prices the serial plan on the whole
+# pool, which runs without one. Either may be `nothing`, and then the plans it
+# would price are not offered: a plan is never priced from measurements taken
+# in the other runtime.
 function _predictive_inner_candidates!(plans::Vector{PredictivePlan}, n::Int, T::Int, pool::Int,
                                        threads_candidate::Bool, local_slots_cap::Integer,
                                        contention_process, contention_threads,
                                        config::PredictivePlannerConfig,
                                        terms::PredictiveCostTerms,
-                                       curve::InnerSpeedupCurve)::Nothing
+                                       curve::Union{Nothing, InnerSpeedupCurve},
+                                       unsplit::Union{Nothing, InnerSpeedupCurve} = curve)::Nothing
     (n > 0 && T > 1) || return nothing
     time_at(b) = 1.0 / inner_speedup(curve, b)
     budgets = Int[]
@@ -674,7 +691,7 @@ function _predictive_inner_candidates!(plans::Vector{PredictivePlan}, n::Int, T:
         push!(budgets, b)
         b *= 2
     end
-    if n > 1 && threads_candidate
+    if curve !== nothing && n > 1 && threads_candidate
         widths = Int[]
         for b in budgets
             W = fld(T, b)
@@ -690,10 +707,11 @@ function _predictive_inner_candidates!(plans::Vector{PredictivePlan}, n::Int, T:
         end
     end
     # A static serial plan already runs its one sample on the whole pool.
-    any(p -> p.route === :none, plans) ||
+    unsplit === nothing || any(p -> p.route === :none, plans) ||
         push!(plans, _predictive_plan(:none, 1, 0, n, false, nothing, config.remote_overhead;
-                                      terms = terms, inner_budget = T, inner_time = time_at(T)))
-    if n > 1 && pool >= 2
+                                      terms = terms, inner_budget = T,
+                                      inner_time = 1.0 / inner_speedup(unsplit, T)))
+    if curve !== nothing && n > 1 && pool >= 2
         for b in budgets
             lmax = max(0, min(config.local_slots_max, n - pool, Int(local_slots_cap), fld(T - 1, b)))
             for L in 1:lmax
@@ -737,7 +755,11 @@ Rank the plan space and choose one.
 `terms` carries the parameters shared by every candidate (see
 [`PredictiveCostTerms`](@ref)); the default reproduces the model without them.
 `inner_curve` (see [`InnerSpeedupCurve`](@ref)) adds plans whose samples run on
-more than one thread; without one the plan space is v1's.
+more than one thread under an outer split (threads@W with `b > 1`, mixed plans
+with `b`-thread local slots); `inner_curve_unsplit`, which defaults to the same
+curve, adds the serial plan on the whole pool. A campaign passes each from the
+store rows measured the same way, so either can be `nothing` on its own; with
+neither the plan space is v1's.
 The decision rule below is the same whatever `terms` holds: the terms change
 the prices, never the rule that turns prices into a plan.
 
@@ -759,11 +781,13 @@ function predictive_plan(;
     config::PredictivePlannerConfig = PredictivePlannerConfig(),
     terms::PredictiveCostTerms = PredictiveCostTerms(),
     inner_curve::Union{Nothing, InnerSpeedupCurve} = nothing,
+    inner_curve_unsplit::Union{Nothing, InnerSpeedupCurve} = inner_curve,
 )::PredictivePlanning
     plans = predictive_plan_candidates(
         n_samples = n_samples, threads = threads, process_workers = process_workers,
         threads_candidate = threads_candidate, local_slots_cap = local_slots_cap,
-        constants = constants, config = config, terms = terms, inner_curve = inner_curve)
+        constants = constants, config = config, terms = terms, inner_curve = inner_curve,
+        inner_curve_unsplit = inner_curve_unsplit)
     sort!(plans; by = _predictive_sort_key)
     best = first(plans)
     static_idx = findfirst(p -> p.static_equivalent, plans)
@@ -1447,12 +1471,7 @@ function save_campaign_corrections(c::CampaignCorrections, path::AbstractString)
     c.heap_scale === nothing || (payload["heap_scale"] = _correction_to_toml(c.heap_scale))
     c.round_tail === nothing || (payload["round_tail"] = _correction_to_toml(c.round_tail))
     path_s = String(path)
-    mkpath(dirname(path_s))
-    tmp = path_s * ".tmp"
-    open(tmp, "w") do io
-        TOML.print(io, payload)
-    end
-    mv(tmp, path_s; force = true)
+    RuntimeServices.write_file_atomically(io -> TOML.print(io, payload), path_s)
     return path_s
 end
 

@@ -917,9 +917,35 @@ function run_monte_carlo(
 )
     threads = _campaign_threads(threads, parallel, "run_monte_carlo")
     parallel && return SimulationEngine._with_parallel_flag(true) do
-        _run_monte_carlo_keyword(f, seeds, threads, fail_fast, route_features, route_state, route_tuning)
+        tuning = _monte_carlo_flag_tuning(route_features, route_tuning)
+        _run_monte_carlo_keyword(f, seeds, threads, fail_fast, route_features, route_state, tuning)
     end
     return _run_monte_carlo_keyword(f, seeds, threads, fail_fast, route_features, route_state, route_tuning)
+end
+
+"""
+    _monte_carlo_flag_tuning(route_features, route_tuning) -> Union{Nothing, OuterRouteTuning}
+
+The route tuning `run_monte_carlo(...; parallel=true)` plans with. Without
+`route_features` the planner knows nothing about the sample function: not its
+density model (so the native-GRAM routing guards cannot apply), not its
+spacecraft count (so the memory cap cannot charge it), and not whether it can
+run in a worker process at all. A sample function defined in a script's `Main`,
+helpers and state it reaches there, and SPICE kernels the script furnished
+exist only in this process, and a process-route sample that needs them fails.
+So without features the process route is withheld (the tuning's
+`process_max_workers` is 1) and the planner chooses among the in-process
+routes; a caller that describes the workload with `route_features` (and has
+prepared the workers) gets the process route back as a candidate.
+"""
+function _monte_carlo_flag_tuning(route_features::Union{Nothing, OuterRouteFeatures},
+                                  route_tuning::Union{Nothing, OuterRouteTuning})::Union{Nothing, OuterRouteTuning}
+    route_features === nothing || return route_tuning
+    base = route_tuning === nothing ? _campaign_route_tuning() : route_tuning
+    fields = NamedTuple{fieldnames(OuterRouteTuning)}(
+        ntuple(i -> getfield(base, i), fieldcount(OuterRouteTuning))
+    )
+    return OuterRouteTuning(; fields..., process_max_workers=1)
 end
 
 """

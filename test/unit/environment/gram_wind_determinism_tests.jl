@@ -30,6 +30,7 @@ using Serialization
 const SM = SpaceAGORA.SimulationModel
 const EM = SM.EnvironmentModels
 const CB = SM.SimulationCallbacks
+const SE = SpaceAGORA.SimulationEngine
 
 const WD_REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const WD_GRAM_ROOT = joinpath(WD_REPO, "data", "GRAMSuite.jl")
@@ -87,6 +88,80 @@ EM._gram_core_wind_is_history_dependent(core::WindHistoryCore) = core.history
     end
 end
 
+@testset "a surrogate is history-dependent only when it can reach native GRAM" begin
+    planet = SM.make_no_gram_planet(:earth)
+    history_base = EM.GRAMAtmosphereModel(WindHistoryCore(true))
+    # No point-fallback altitude (the Earth, Mars and Venus default): in-grid
+    # queries are table lookups, so the run is not history-dependent.
+    grid_only = EM.GRAMAtmosphereModelSurrogate(history_base, "", nothing)
+    with_fallback = EM.GRAMAtmosphereModelSurrogate(history_base, "", 60.0e3)
+    nominal_fallback = EM.GRAMAtmosphereModelSurrogate(
+        EM.GRAMAtmosphereModel(WindHistoryCore(false)), "", 60.0e3)
+    @test !EM.density_model_history_dependent(grid_only)
+    @test EM.density_model_history_dependent(with_fallback)
+    @test !EM.density_model_history_dependent(nominal_fallback)
+
+    env(model) = SM.EnvironmentModel(planet=planet, EI=300.0, density_model=model,
+        thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
+        topography=false, wind=true, ephemerides_model=SM.SimpleEphemeridesModel())
+    withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing) do
+        grid_args = (environment_model=env(grid_only),)
+        @test !CB._run_density_history_dependent(grid_args)
+        cfg = CB._snapshot_callback_env_config(grid_args)
+        @test !cfg.density_history_dependent
+        @test !cfg.density_freeze_per_step
+        fallback_args = (environment_model=env(with_fallback),)
+        @test CB._run_density_history_dependent(fallback_args)
+        @test CB._snapshot_callback_env_config(fallback_args).density_freeze_per_step
+    end
+    # The pure-grid surrogate is lock-free and keeps its threaded callback (the
+    # decision itself is checked in the next testset).
+    @test CB.density_model_threadsafe(grid_only)
+end
+
+# Counts resets; stands in for native GRAM in the pre-solve reset's gating.
+mutable struct CountingHistoryModel <: SM.AbstractDensityModel
+    history::Bool
+    resets::Int
+end
+EM.density_model_history_dependent(m::CountingHistoryModel) = m.history
+EM.reset_density_model_history!(m::CountingHistoryModel) = (m.resets += 1; true)
+
+@testset "the pre-solve reset only touches history-dependent runs" begin
+    planet = SM.make_no_gram_planet(:earth)
+    function reset_params(main, per_sat, pool; wind=true)
+        env = SM.EnvironmentModel(planet=planet, EI=300.0, density_model=main,
+            thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
+            topography=false, wind=wind, ephemerides_model=SM.SimpleEphemeridesModel())
+        sb = (density_models=Any[per_sat...], gram_isolated_pool_models=Any[pool...],
+              gram_density_cache=Any[:stale, :stale], vacuum_gram_caches=Any[:stale])
+        return (args=(environment_model=env,), shared_buffers=sb)
+    end
+    fresh(history=true) = CountingHistoryModel(history, 0)
+
+    main, per_sat, pool = fresh(), [fresh(), fresh()], [fresh(), fresh(false)]
+    p = reset_params(main, per_sat, pool)
+    SE._reset_density_model_histories!(p)
+    @test main.resets == 1
+    @test all(m -> m.resets == 1, per_sat)
+    @test pool[1].resets == 1
+    @test pool[2].resets == 0   # its history does not matter
+    @test all(isnothing, p.shared_buffers.gram_density_cache)
+    @test all(isnothing, p.shared_buffers.vacuum_gram_caches)
+
+    # Winds off: no query history reaches the dynamics, nothing is reseeded.
+    main, per_sat, pool = fresh(), [fresh()], [fresh()]
+    p = reset_params(main, per_sat, pool; wind=false)
+    SE._reset_density_model_histories!(p)
+    @test main.resets == 0 && per_sat[1].resets == 0 && pool[1].resets == 0
+    @test p.shared_buffers.gram_density_cache == [:stale, :stale]
+
+    # A history-free configured model: the run is not history-dependent.
+    main, per_sat = fresh(false), [fresh()]
+    SE._reset_density_model_histories!(reset_params(main, per_sat, CountingHistoryModel[]))
+    @test per_sat[1].resets == 0
+end
+
 @testset "history-dependent runs evaluate the density callback serially" begin
     planet = SM.make_no_gram_planet(:earth)
     function params(density_model; wind=true)
@@ -108,7 +183,7 @@ end
         i=53.0, ω=0.0, Ω=10.0, ν=0.0)
     spacecraft = SM.SpacecraftModel(SM.Joint[], [root], root, true, 500.0,
         0.0, root.inertia, 0, 0, ic, 1)
-    cfg_args = SM.SimulationConfiguration(
+    config_for(model) = SM.SimulationConfiguration(
         simulation_settings=SM.SimulationSettings(results=false, verbose=false,
             generate_plots=false, normalize=false, save_csv=false),
         mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime,
@@ -119,6 +194,7 @@ end
         navigation_model=SM.NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
         control_model=SM.ControlModel(control_effectors=(), control_rates=Float64[]),
         initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0))
+    cfg_args = config_for(model)
     withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on") do
         for history in (true, false)
             sb = (callback_env_config=Ref(CB._snapshot_callback_env_config(; history_dependent=history)),
@@ -134,6 +210,94 @@ end
                 @test decision.allotment == 4
             end
         end
+    end
+
+    # A pure-grid surrogate over the same history-dependent core: not frozen,
+    # and its callback threads on the lock-free route as before the freeze
+    # default existed.
+    grid_only = EM.GRAMAtmosphereModelSurrogate(model, "", nothing)
+    grid_cfg = config_for(grid_only)
+    withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on",
+            "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing) do
+        snapshot = CB._snapshot_callback_env_config(grid_cfg)
+        @test !snapshot.density_history_dependent
+        @test !snapshot.density_freeze_per_step
+        sb = (callback_env_config=Ref(snapshot), density_callback_width=Ref(0))
+        decision = CB._density_callback_thread_decision((shared_buffers=sb,), grid_cfg, 64)
+        @test decision.use_threads == (Threads.nthreads() > 1)
+    end
+end
+
+# Runs `script` in a fresh child at each thread count and returns the
+# deserialized results. A failed child's stderr is printed, not discarded.
+function run_children(script::String, thread_counts; env_overrides=Pair{String, Any}[])
+    results = Dict{Int, Any}()
+    mktempdir() do dir
+        script_path = joinpath(dir, "child.jl")
+        write(script_path, script)
+        for threads in thread_counts
+            out = joinpath(dir, "t$(threads).jls")
+            log = joinpath(dir, "t$(threads).log")
+            cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(WD_REPO) -t $(threads) $(script_path) $(out)`
+            env = copy(ENV)
+            delete!(env, "JULIA_NUM_THREADS")
+            for (k, v) in env_overrides
+                v === nothing ? delete!(env, k) : (env[k] = v)
+            end
+            ok = success(pipeline(setenv(cmd, env); stdout=log, stderr=log))
+            @test ok
+            if ok
+                results[threads] = deserialize(out)
+            else
+                @error "Child at $(threads) threads failed" output = read(log, String)
+            end
+        end
+    end
+    return results
+end
+
+const WD_PROBE_FILE = joinpath(WD_REPO, "test", "helpers", "order_probe_density_case.jl")
+
+# The threaded paths, forced on. At 4 threads and a handful of spacecraft the
+# automatic policy keeps the density callback, the RHS atmosphere prefill and
+# the per-spacecraft RHS loop serial, so a thread-count comparison under it
+# would prove nothing about thread order.
+const WD_FORCED_THREADING = [
+    "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on",
+    "SPACEAGORA_RHS_BATCH_PARALLEL" => "on",
+    "SPACEAGORA_RHS_BATCH_THREAD_THRESHOLD" => "2",
+    "SPACEAGORA_EFFECTOR_PARALLEL" => "on",
+]
+
+@testset "history-dependent results do not depend on the thread count (order probe)" begin
+    # A pure-Julia history-dependent model (every query shifts later values),
+    # so this runs without native GRAM. Under the default `auto` freeze the
+    # result must be identical at 1 and 4 threads with the threaded paths
+    # forced on. The negative control (freeze off) must differ, and must have
+    # queried from several threads, which shows the comparison can fail.
+    script = """
+    using SpaceAGORA, StaticArrays, Serialization
+    const SM = SpaceAGORA.SimulationModel
+    const EM = SM.EnvironmentModels
+    const CB = SM.SimulationCallbacks
+    include($(repr(WD_PROBE_FILE)))
+    args = order_probe_args()
+    runs = [order_probe_final(args) for _ in 1:2]
+    free = withenv(() -> order_probe_final(args), "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "0")
+    serialize(ARGS[1], (runs=runs, free=free, threads=Threads.nthreads()))
+    """
+    results = run_children(script, (1, 4); env_overrides=[WD_FORCED_THREADING...,
+        "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing])
+    if length(results) == 2
+        one, four = results[1], results[4]
+        @test one.threads == 1 && four.threads == 4
+        for r in (one, four)
+            @test r.runs[1].u == r.runs[2].u
+        end
+        @test one.runs[1].u == four.runs[1].u
+        @test one.runs[1].t == four.runs[1].t
+        @test length(four.free.threads) > 1
+        @test one.free.u != four.free.u
     end
 end
 
@@ -161,6 +325,34 @@ function native_testsets()
         @test isequal(q(used), reference)
         # A raw-core wrapper has no recorded seed and is left alone.
         @test !EM.reset_density_model_history!(EM.GRAMAtmosphereModel(WindHistoryCore(true)))
+    end
+
+    withenv("SPACEAGORA_GRAM_WIND_MODE" => "perturbed") do
+        @testset "the pre-solve reset leaves every native model initialized" begin
+            # Reseeding marks native GRAM uninitialized; the next update would
+            # re-run the one-time initialization that reaches CSPICE, which is
+            # unsafe on several instances at once. The reset therefore warms
+            # every reseeded model again. Observable: each model's next queries
+            # equal a fresh model's after the warm query (initialization
+            # already taken), not a fresh model's own first queries.
+            warmed() = (m = wind_case_model(); CB._warm_gram_pool_model!(m, m); m)
+            main = wind_case_model()
+            per_sat = [warmed() for _ in 1:2]
+            pool = [warmed() for _ in 1:3]
+            path = [(150.0e3 - 50.0k, 0.3 + 1e-3k, -1.2 + 2e-3k, 0.5k) for k in 0:10]
+            q(m) = [EM._gram_point_density(m, x..., true) for x in path]
+            foreach(q, (main, per_sat..., pool...))  # advance every walk
+            p = (args=wind_case_args(main),
+                 shared_buffers=(density_models=Any[per_sat...], gram_isolated_pool_models=pool,
+                                 gram_density_cache=Any[nothing], vacuum_gram_caches=Any[nothing]))
+            SE._reset_density_model_histories!(p)
+            after_warm = q(warmed())
+            first_update = q(wind_case_model())
+            @test !isequal(after_warm, first_update)
+            for m in (main, per_sat..., pool...)
+                @test isequal(q(m), after_warm)
+            end
+        end
     end
 
     withenv("SPACEAGORA_GRAM_WIND_MODE" => "perturbed",
@@ -194,52 +386,94 @@ function native_testsets()
         end
     end
 
+    child_prelude = """
+    using SpaceAGORA, Serialization
+    const SM = SpaceAGORA.SimulationModel
+    const EM = SM.EnvironmentModels
+    const CB = SM.SimulationCallbacks
+    const SE = SpaceAGORA.SimulationEngine
+    const WD_SPICE_PATH = $(repr(WD_SPICE_PATH))
+    Base.find_package("GRAMSuite") === nothing && pushfirst!(LOAD_PATH, $(repr(WD_GRAM_ROOT)))
+    import GRAMSuite
+    include($(repr(WD_CASE_FILE)))
+    SM.Earth("", WD_SPICE_PATH)
+    """
+
     @testset "perturbed winds do not depend on the thread count" begin
         # Children at 1 and 4 threads. Each also checks the first atmosphere in
         # its own fresh process, where the static-table defect showed.
-        script = """
-        using SpaceAGORA, Serialization
-        const SM = SpaceAGORA.SimulationModel
-        const EM = SM.EnvironmentModels
-        const WD_SPICE_PATH = $(repr(WD_SPICE_PATH))
-        Base.find_package("GRAMSuite") === nothing && pushfirst!(LOAD_PATH, $(repr(WD_GRAM_ROOT)))
-        import GRAMSuite
-        include($(repr(WD_CASE_FILE)))
-        SM.Earth("", WD_SPICE_PATH)
+        #
+        # The threaded paths are forced on (WD_FORCED_THREADING). The negative
+        # control lives in the order-probe testset above: per-stage perturbed
+        # GRAM with several spacecraft does not finish in test time.
+        script = child_prelude * """
         first_winds = wind_case_first_native_winds(wind_case_model())
         second_winds = wind_case_first_native_winds(wind_case_model())
-        args = wind_case_args(wind_case_model(); n=4)
+        args = wind_case_args(wind_case_model(); n=8, mission_time=40.0)
         runs = [wind_case_final(args) for _ in 1:2]
         serialize(ARGS[1], (first_winds=first_winds, second_winds=second_winds, runs=runs,
                             threads=Threads.nthreads()))
         """
-        mktempdir() do dir
-            script_path = joinpath(dir, "child.jl")
-            write(script_path, script)
-            results = Dict{Int, Any}()
-            for threads in (1, 4)
-                out = joinpath(dir, "t$(threads).jls")
-                cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(WD_REPO) -t $(threads) $(script_path) $(out)`
-                env = copy(ENV)
-                env["SPACEAGORA_GRAM_WIND_MODE"] = "perturbed"
-                delete!(env, "SPACEAGORA_DENSITY_FREEZE_PER_STEP")
-                delete!(env, "JULIA_NUM_THREADS")
-                ok = success(pipeline(setenv(cmd, env); stdout=devnull, stderr=devnull))
-                @test ok
-                ok && (results[threads] = deserialize(out))
+        results = run_children(script, (1, 4); env_overrides=[WD_FORCED_THREADING...,
+            "SPACEAGORA_GRAM_WIND_MODE" => "perturbed",
+            "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing])
+        if length(results) == 2
+            one, four = results[1], results[4]
+            @test one.threads == 1 && four.threads == 4
+            for r in (one, four)
+                @test all(isfinite, r.first_winds)
+                @test isequal(r.first_winds, r.second_winds)
+                @test r.runs[1].u == r.runs[2].u
             end
-            if length(results) == 2
-                one, four = results[1], results[4]
-                @test one.threads == 1 && four.threads == 4
-                for r in (one, four)
-                    @test all(isfinite, r.first_winds)
-                    @test isequal(r.first_winds, r.second_winds)
-                    @test r.runs[1].u == r.runs[2].u
+            @test isequal(one.first_winds, four.first_winds)
+            @test one.runs[1].u == four.runs[1].u
+            @test one.runs[1].t == four.runs[1].t
+        end
+    end
+
+    @testset "reseeded pool models are safe to update concurrently" begin
+        # Eight warmed pool-style instances, reset through the pre-solve reset
+        # and then updated concurrently, one thread per instance and each
+        # under its own lock, as the isolated pool does. Without the re-warm,
+        # every instance's first update after the reseed re-enters GRAM's
+        # CSPICE initialization concurrently. The child must survive, and the
+        # threaded rounds must equal a serial one.
+        script = child_prelude * """
+        warmed() = (m = wind_case_model(); CB._warm_gram_pool_model!(m, m); m)
+        pool = [warmed() for _ in 1:8]
+        p = (args=wind_case_args(pool[1]),
+             shared_buffers=(density_models=Any[], gram_isolated_pool_models=pool,
+                             gram_density_cache=Any[], vacuum_gram_caches=Any[]))
+        point(k, j) = (140.0e3 + 1.0e3 * k, 0.1 * k, 0.2 * k + 0.01 * j, 1.0 * j)
+        function one_round(threaded::Bool)
+            SE._reset_density_model_histories!(p)
+            out = Matrix{Any}(undef, 8, 4)
+            function body(k)
+                m = pool[k]
+                for j in 1:4
+                    out[k, j] = EM._gram_core_density_state(m.core, point(k, j)..., true,
+                        m.instance_lock, 200.0)
                 end
-                @test isequal(one.first_winds, four.first_winds)
-                @test one.runs[1].u == four.runs[1].u
-                @test one.runs[1].t == four.runs[1].t
             end
+            if threaded
+                Threads.@threads :static for k in 1:8
+                    body(k)
+                end
+            else
+                foreach(body, 1:8)
+            end
+            return out
+        end
+        serial = one_round(false)
+        threaded = [one_round(true) for _ in 1:10]
+        serialize(ARGS[1], (serial=serial, threaded=threaded, threads=Threads.nthreads()))
+        """
+        results = run_children(script, (4,);
+            env_overrides=["SPACEAGORA_GRAM_WIND_MODE" => "perturbed"])
+        if haskey(results, 4)
+            r = results[4]
+            @test r.threads == 4
+            @test all(round -> isequal(round, r.serial), r.threaded)
         end
     end
 end

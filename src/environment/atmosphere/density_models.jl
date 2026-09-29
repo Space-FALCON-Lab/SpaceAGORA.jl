@@ -515,9 +515,16 @@ query stream. The default is `false`.
 density_model_history_dependent(::Any)::Bool = false
 density_model_history_dependent(model::GRAMAtmosphereModel)::Bool =
     _gram_core_wind_is_history_dependent(model.core)
-# A surrogate answers from its fixed table, but below its fallback altitude it
-# queries the native base model point by point, which carries the same history.
+# A surrogate answers in-grid queries from its fixed table, with no native call.
+# It reaches its native base model routinely only below a configured
+# `point_fallback_below_m`, and it is history-dependent only then (and only if
+# the base model is). The default surrogates of Earth, Mars and Venus configure
+# no fallback altitude. A query outside the table's grid also falls back to
+# native GRAM, but that is an exceptional, warn-once path, and is not treated as
+# making the run history-dependent: such a run keeps per-stage sampling and a
+# threaded callback, as before the freeze default existed.
 density_model_history_dependent(model::GRAMAtmosphereModelSurrogate)::Bool =
+    model.point_fallback_below_m !== nothing &&
     density_model_history_dependent(model.base_model)
 
 """
@@ -528,9 +535,13 @@ construction, so that the next query starts a fresh random walk from the
 configured seed. Returns whether a reset was applied. The default is a no-op
 returning `false`; the GRAMSuite extension implements it for native GRAM.
 
-`run_simulation` calls this on the run's density models immediately before the
-solve, after every pre-solve probe, so that a run's perturbed winds do not
-depend on what earlier runs or calibration passes queried on the same instance.
+`run_simulation` calls this on a history-dependent run's density models
+immediately before the solve, after every pre-solve probe, so that a run's
+perturbed winds do not depend on what earlier runs or calibration passes
+queried on the same instance. A reseeded native model is back in its
+first-update state, whose one-time initialization must not run concurrently on
+several instances, so the caller warms each reseeded native model serially
+afterwards (`SimulationEngine._reset_density_model_histories!`).
 """
 reset_density_model_history!(::Any)::Bool = false
 reset_density_model_history!(model::GRAMAtmosphereModelSurrogate)::Bool =

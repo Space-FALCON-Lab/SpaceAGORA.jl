@@ -179,6 +179,14 @@ end
         _run_spaceagora_precompile_workload()
         _warm_predictive_campaign()
         _warm_mixed_dispatch_campaign()
+        # The Monte Carlo dispatchers compile on their first campaign in a
+        # process: the job channel, the feeders and local consumers of the mixed
+        # dispatcher, the sample wrapper, the steady-cost estimator. Measured on
+        # the paper harness (L12, independent_1sat_1hr, 64 samples), the first
+        # pool campaign cost 3.1-3.2 s against 1.8-2.2 s for the static pool
+        # path's own cold start on both machines, and 0.2-0.6 s warm. Run on a
+        # trivial sample; the user's sample closure still specializes on first call.
+        SimulationCampaigns._warm_campaign_dispatchers()
     end
     # MANDATORY whenever a workload above touches a SPICE-backed planet, and
     # cheap insurance when none does. `_FURNISHED_KERNELS` and the planet

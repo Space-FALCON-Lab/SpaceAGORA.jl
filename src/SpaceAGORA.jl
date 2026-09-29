@@ -449,26 +449,6 @@ export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_
 using PrecompileTools: @compile_workload, @setup_workload
 include(joinpath(@__DIR__, "precompile_workload.jl"))
 
-# The Monte Carlo dispatchers compile on their first campaign in a process --
-# the job channel, the feeders and local consumers of the mixed dispatcher, the
-# sample wrapper, the steady-cost estimator. Measured on the paper harness
-# (L12, independent_1sat_1hr, 64 samples): the runner's first pool campaign
-# cost 3.1-3.2 s against 1.8-2.2 s for the static pool path's own cold start
-# on both machines, and 0.2-0.6 s warm. A production process pays that once;
-# the harness pays it on the first repeat of every point. Exercised with a
-# trivial sample so the generic machinery is in the pkgimage; the user's sample
-# closure itself still specialises on first call. The body lives in
-# `SimulationCampaigns._warm_campaign_dispatchers` so the test suite can run
-# the same code at run time.
-@setup_workload begin
-	@compile_workload begin
-		SimulationCampaigns._warm_campaign_dispatchers()
-	end
-	# Runs after the workload above, which the reset in precompile_workload.jl
-	# does not follow; see `_reset_process_local_state!`.
-	_reset_process_local_state!()
-end
-
 ## 6. Runtime Initialization
 # Runtime wiring that must not be baked into the precompiled image: these Refs
 # hold closures over EnvironmentModels functions, so assigning them at include

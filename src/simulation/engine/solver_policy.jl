@@ -283,7 +283,9 @@ end
 @inline function _split_imex_solver_spec(cfg::SolverConfig, sparse_jac::Bool=false)
     mode = cfg.split_imex_solver
     ls = _sparse_linsolve_or_default(sparse_jac)
-    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff(), linsolve=ls),  label="KenCarp4")
+    # KenCarp4 reuse defaults lose accuracy in nonlinear atmospheric passes
+    # with capped steps. Keep other algorithms on their established policies.
+    mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff(), linsolve=ls, nlsolve=NLNewton(always_new=true)),  label="KenCarp4")
     mode === :kencarp47 && return (alg=KenCarp47(autodiff=AutoFiniteDiff(), linsolve=ls), label="KenCarp47")
     mode === :kencarp58 && return (alg=KenCarp58(autodiff=AutoFiniteDiff(), linsolve=ls), label="KenCarp58")
     throw(ArgumentError(

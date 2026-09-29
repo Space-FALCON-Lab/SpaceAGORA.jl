@@ -921,7 +921,7 @@ version = "0.73.26"
 
 [[deps.GRAMSuite]]
 deps = ["LinearAlgebra", "SHA", "Serialization", "StaticArrays"]
-path = "../../../../../../.julia/dev/SpaceAGORA.jl/data/GRAMSuite.jl"
+path = "../../../data/GRAMSuite.jl"
 uuid = "b50455af-6a46-4eae-bf92-8039261dd674"
 version = "0.1.0"
 

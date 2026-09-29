@@ -80,11 +80,16 @@ Whether the density callback's batch route spreads native GRAM across per-worker
 instances instead of evaluating it serially behind the process-wide lock.
 
 Default `auto`, which means on above [`_gram_isolated_pool_threshold`](@ref)
-native-GRAM items. It was `off` until the pool was measured
-(`docs/architecture/gram_thread_scaling.md`, and
-`benchmarks/studies/gram_thread_scaling/results/`): the pool is bit-identical to
-the locked path, and at 1024 spacecraft it is 1.90x faster at 8 threads and
-1.65x at 4. Below the threshold it loses, which is why `auto` and not `on`.
+native-GRAM items, except when requested winds depend on instance query history.
+The batch evaluator then retains the locked route. The pinned wrapper's default
+wind mode is perturbed; nominal winds must be selected explicitly for wind
+queries to use the automatic pool. Calls with `wind=false` remain eligible.
+
+The nominal-wind measurements in `docs/architecture/gram_thread_scaling.md` and
+`benchmarks/studies/gram_thread_scaling/results/` found bit identity and speedups
+of 1.90x at 8 threads and 1.65x at 4 for 1024 spacecraft. These claims do not
+cover perturbed winds. Explicit `on` permits independent stochastic histories;
+its wind results can depend on pool width and thread count.
 """
 @inline function _gram_isolated_pool_mode()::Symbol
     return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_GRAM_ISOLATED_POOL"; default="auto")

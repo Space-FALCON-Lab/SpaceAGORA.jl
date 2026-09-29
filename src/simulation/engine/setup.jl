@@ -1733,17 +1733,52 @@ end
 # walk; how many they issue depends on the calibration store, the thread count
 # and whether an earlier run already cached a verdict. Resetting here makes the
 # solve's perturbed winds start from the configured seed whatever ran before.
-# A no-op for every model without query-history state.
+#
+# Only a run whose query history reaches the dynamics is reset (winds on and a
+# history-dependent model, `_run_density_history_dependent`); for every other
+# run this is a no-op, because reseeding buys it nothing and costs the warm-up
+# below.
+#
+# Reseeding native Earth-GRAM (`setSeed`) marks the atmosphere as not yet
+# initialized, so its next update re-runs the one-time initialization branch
+# that reaches CSPICE -- the branch whose concurrent execution across instances
+# aborts the process with SPICE(BADSUBSCRIPT), and which
+# `_warm_gram_pool_model!` exists to take serially. Every reseeded native model
+# (the configured one, each per-satellite instance and each isolated-pool
+# model) is therefore warmed again right here, on this task, under the
+# process-wide GRAM lock, before the solve can touch it from a worker thread.
+# Pool and per-satellite instances were built as "fresh copy + that same warm
+# query", so a reseeded and re-warmed instance is again exactly that.
+#
+# The GRAM track caches and look-ahead caches hold values sampled before the
+# reset (e.g. by a calibration probe at t0); they are cleared so the solve's
+# first samples come from the reseeded walk.
 function _reset_density_model_histories!(p)::Nothing
-    EM = SimulationModel.EnvironmentModels
-    EM.reset_density_model_history!(p.args.environment_model.density_model)
+    CB = SimulationModel.SimulationCallbacks
+    CB._run_density_history_dependent(p.args) || return nothing
+    _reset_and_rewarm_density_model!(p.args.environment_model.density_model)
     for model in p.shared_buffers.density_models
-        EM.reset_density_model_history!(model)
+        _reset_and_rewarm_density_model!(model)
     end
     for model in p.shared_buffers.gram_isolated_pool_models
-        EM.reset_density_model_history!(model)
+        _reset_and_rewarm_density_model!(model)
     end
+    fill!(p.shared_buffers.gram_density_cache, nothing)
+    fill!(p.shared_buffers.vacuum_gram_caches, nothing)
     return nothing
+end
+
+# Reseed one model if its history matters, then drive its one-time native
+# initialization serially. Returns whether it was reseeded.
+function _reset_and_rewarm_density_model!(model)::Bool
+    EM = SimulationModel.EnvironmentModels
+    EM.density_model_history_dependent(model) || return false
+    EM.reset_density_model_history!(model) || return false
+    native = model isa EM.GRAMAtmosphereModelSurrogate ? model.base_model : model
+    if native isa EM.GRAMAtmosphereModel
+        SimulationModel.SimulationCallbacks._rewarm_reseeded_gram_model!(native)
+    end
+    return true
 end
 
 # in_atmosphere[] otherwise defaults to false for every satellite (runtime_types.jl)

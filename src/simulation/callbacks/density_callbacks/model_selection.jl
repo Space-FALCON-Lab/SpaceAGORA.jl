@@ -202,6 +202,25 @@ function _warm_gram_pool_model!(
 end
 
 """
+    _rewarm_reseeded_gram_model!(model)
+
+Warm `model` again after its native perturbation model was reseeded
+(`EnvironmentModels.reset_density_model_history!`). GRAM's `setSeed` marks the
+atmosphere uninitialized, so without this the next update re-takes the one-time
+initialization branch that reaches CSPICE, and pool workers or per-satellite
+instances taking it concurrently reintroduce the abort that
+[`_warm_gram_pool_model!`](@ref) prevents. The same warm query is issued, so a
+reseeded pool or per-satellite instance is again identical to a freshly built
+one. It runs under the process-wide GRAM lock as well as the instance's own.
+"""
+function _rewarm_reseeded_gram_model!(model::EnvironmentModels.GRAMAtmosphereModel)
+    lock(tracked_lock(:gram_density)) do
+        _warm_gram_pool_model!(model, model)
+    end
+    return nothing
+end
+
+"""
     _gram_isolated_pool_native_count(hs, p) -> Int
 
 How many of the staged altitudes would actually reach native GRAM.

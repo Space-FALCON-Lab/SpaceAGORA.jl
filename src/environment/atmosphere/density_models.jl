@@ -499,6 +499,43 @@ collect_unreferenced_gram_atmospheres!()::Bool = _COLLECT_UNREFERENCED_GRAM_ATMO
 # environment parsing here or infer determinism from the wrapper type.
 @inline _gram_core_wind_is_history_dependent(_core)::Bool = true
 
+"""
+    density_model_history_dependent(model) -> Bool
+
+Whether the values `model` returns depend on the order and number of earlier
+queries on the same instance, not only on the query itself. True for a native
+GRAM model whose requested winds are perturbed: GRAM advances a correlated
+random walk on every native update, so each query changes what the next one
+returns. Density and temperature come from the mean state and do not.
+
+Callers that may issue queries in a scheduling-dependent order (threaded RHS
+evaluation or threaded callbacks) use this to fall back to a single, ordered
+query stream. The default is `false`.
+"""
+density_model_history_dependent(::Any)::Bool = false
+density_model_history_dependent(model::GRAMAtmosphereModel)::Bool =
+    _gram_core_wind_is_history_dependent(model.core)
+# A surrogate answers from its fixed table, but below its fallback altitude it
+# queries the native base model point by point, which carries the same history.
+density_model_history_dependent(model::GRAMAtmosphereModelSurrogate)::Bool =
+    density_model_history_dependent(model.base_model)
+
+"""
+    reset_density_model_history!(model) -> Bool
+
+Return a history-dependent density model to the state it had right after
+construction, so that the next query starts a fresh random walk from the
+configured seed. Returns whether a reset was applied. The default is a no-op
+returning `false`; the GRAMSuite extension implements it for native GRAM.
+
+`run_simulation` calls this on the run's density models immediately before the
+solve, after every pre-solve probe, so that a run's perturbed winds do not
+depend on what earlier runs or calibration passes queried on the same instance.
+"""
+reset_density_model_history!(::Any)::Bool = false
+reset_density_model_history!(model::GRAMAtmosphereModelSurrogate)::Bool =
+    reset_density_model_history!(model.base_model)
+
 function _gram_core_density_state(
     _core,
     _h::Float64,

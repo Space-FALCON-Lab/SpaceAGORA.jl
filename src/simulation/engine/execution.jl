@@ -700,6 +700,11 @@ function run_simulation(
             build_rhs_width_trial(p, args.dynamics_model.dynamic_effectors)
     end
 
+    # Every pre-solve probe is done; start history-dependent density models
+    # (GRAM perturbed winds) from their seed so the solve does not inherit
+    # whatever those probes, or an earlier run on the same instance, queried.
+    _reset_density_model_histories!(p)
+
     # Skip per-step solution/dense storage when nothing reads the trajectory.
     # gravity_backbone_split backfills save data from interior solution points,
     # so it keeps full storage.  Explicit SPACEAGORA_SOLVER_SAVE_* env settings

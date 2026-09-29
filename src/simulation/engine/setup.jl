@@ -1726,6 +1726,26 @@ function _initialize_density_model_instances!(p)
     return nothing
 end
 
+# Called once per run, immediately before the solve and after every pre-solve
+# probe (RHS calibration sweep, contention probe, callback width calibration,
+# per-satellite instance warm-up). Those probes query the run's density models,
+# and on a native GRAM model with perturbed winds each query advances a random
+# walk; how many they issue depends on the calibration store, the thread count
+# and whether an earlier run already cached a verdict. Resetting here makes the
+# solve's perturbed winds start from the configured seed whatever ran before.
+# A no-op for every model without query-history state.
+function _reset_density_model_histories!(p)::Nothing
+    EM = SimulationModel.EnvironmentModels
+    EM.reset_density_model_history!(p.args.environment_model.density_model)
+    for model in p.shared_buffers.density_models
+        EM.reset_density_model_history!(model)
+    end
+    for model in p.shared_buffers.gram_isolated_pool_models
+        EM.reset_density_model_history!(model)
+    end
+    return nothing
+end
+
 # in_atmosphere[] otherwise defaults to false for every satellite (runtime_types.jl)
 # and is only ever flipped by the up/down-crossing event callback in
 # event_callbacks.jl. A satellite whose initial orbit never crosses EI --

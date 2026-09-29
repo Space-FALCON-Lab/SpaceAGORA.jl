@@ -394,8 +394,10 @@ layouts, schedule activities or introduce additional collection validation.
 
 Execution policy remains in `src/simulation/engine/config/`: `SimulationEngineConfig`
 composes parallel, solver, runtime-policy and artifact settings. It uses the same
-`SolverConfig` definition, not a second solver type. Configuration file parsing stays
-in `src/io/config/`. These are distinct responsibilities from assembling a scenario.
+`SolverConfig` definition, not a second solver type. Output and checkpoint path
+derivation stays in `src/io/config/`; solver environment settings are parsed in
+`src/simulation/engine/adapters/from_env.jl`. These are distinct responsibilities
+from assembling a scenario.
 
 `_with_configuration` makes a shallow update and preserves unspecified references.
 Runtime state isolation remains the engine's responsibility. Moving the definitions

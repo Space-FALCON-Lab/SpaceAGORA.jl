@@ -120,6 +120,11 @@ end
         # default case and silently disagree here.
         SM.InverseSquaredGravityModel(gravity_gradient=true),
         SM.InverseSquaredJ2GravityModel(gravity_gradient=true),
+        # The fM aerodynamic model has a pre-pass; with per-link atmosphere it
+        # stays on the queue, so both variants must be checked for the same
+        # reason as the gravity-gradient ones above.
+        SM.AerodynamicCoefficientfM(),
+        SM.AerodynamicCoefficientfM(per_link_atmosphere=true),
     ]
     if isfile(harm_file)
         push!(effectors, SM.GravitationalHarmonicsModel(4, 4, harm_file, E))
@@ -128,13 +133,25 @@ end
     for e in effectors
         @test PC._cost_batchable_effector(e) == SE._batchable_effector(e)
         @test PC._cost_harmonics_prepass_effector(e) == SE._harmonics_prepass_effector(e)
+        @test PC._cost_aero_prepass_effector(e) == SE._aero_prepass_effector(e)
     end
+    @test PC._cost_aero_prepass_effector(SM.AerodynamicCoefficientfM())
+    @test !PC._cost_aero_prepass_effector(SM.AerodynamicCoefficientfM(per_link_atmosphere=true))
 
     # The mirrored node predicate must reproduce the engine's queue-only count.
     tup = Tuple(effectors)
     expected = SE._count_flat_queue_only_effectors(tup)
     got = count(e -> PC.flat_queue_node_effector(e), effectors)
     @test got == expected
+
+    # A (gravity, aero) stack: both are pre-passed, so the queue builds no
+    # nodes, and the mirror must say so rather than counting N aero nodes.
+    aero_stack = (SM.InverseSquaredJ2GravityModel(), SM.AerodynamicCoefficientfM())
+    @test SE._count_flat_queue_only_effectors(aero_stack) == 0
+    @test count(e -> PC.flat_queue_node_effector(e), aero_stack) == 0
+    per_link_stack = (SM.InverseSquaredJ2GravityModel(), SM.AerodynamicCoefficientfM(per_link_atmosphere=true))
+    @test SE._count_flat_queue_only_effectors(per_link_stack) == 1
+    @test count(e -> PC.flat_queue_node_effector(e), per_link_stack) == 1
 
     # And a solver partition puts every effector back on the queue.
     @test all(e -> PC.flat_queue_node_effector(e; partition_active=true), effectors)

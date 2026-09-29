@@ -9,6 +9,7 @@ import Distributed
 using Distributed: remotecall_fetch, CachingPool
 
 include(joinpath(@__DIR__, "monte_carlo.jl"))
+include(joinpath(@__DIR__, "predictive_planner.jl"))
 include(joinpath(@__DIR__, "adaptive_routing.jl"))
 include(joinpath(@__DIR__, "constellation_ensemble.jl"))
 include(joinpath(@__DIR__, "monte_carlo_visualization.jl"))
@@ -23,5 +24,7 @@ export campaign_route_features
 export campaign_route_state_path, save_campaign_route_state
 export ensure_campaign_route_state_loaded!, reset_campaign_route_state_persistence!
 export campaign_outer_route_state
+export campaign_planner_mode, PredictivePlannerConfig
+export PredictivePlan, PredictivePlanning, predictive_plan
 
 end # module SimulationCampaigns

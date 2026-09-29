@@ -49,13 +49,14 @@ reason to point workers at a different environment.
 
 For library-level campaigns (`run_monte_carlo`, `run_constellation_ensemble`),
 process-worker parallelism does not require any of the manual `addprocs` or
-scheduler setup below. Passing `threads=:auto` lets the adaptive outer-route
-bandit choose the `:process` route itself for workload shapes where it wins,
+scheduler setup below. The parallel flag (`SolverConfig(parallel=true)` on the
+configuration, or `parallel=true` on `run_monte_carlo`) lets the campaign
+planner choose the `:process` route itself for workload shapes where it wins,
 and auto-bootstraps a `Distributed` worker pool through
 `SpaceAGORA.ParallelProcess`:
 
 ```julia
-result = run_monte_carlo(1:100; threads=:auto) do seed
+result = run_monte_carlo(1:100; parallel=true) do seed
     run_simulation(make_config_for_seed(seed); return_solution=true)
 end
 ```

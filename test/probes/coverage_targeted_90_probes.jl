@@ -272,7 +272,7 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
 
         config = SimulationEngine.SimulationEngineConfig(
             parallel=SimulationEngine.ParallelConfig(
-                profile="R9",
+                profile="R2",
                 outer_parallel_active=true,
                 parallel_policy_adaptive=true,
                 effector_parallel_mode="on",
@@ -310,7 +310,15 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             )
         )
         overrides = SimulationEngine._engine_env_overrides(config)
-        @test overrides["SPACEAGORA_PARALLEL_PROFILE"] == "R9"
+        # A profile is expanded (not just named), and explicit non-default
+        # fields still override it. An unknown profile name is an error; it
+        # used to be written through unparsed and silently do nothing.
+        @test overrides["SPACEAGORA_PARALLEL_PROFILE"] == "R2"
+        @test overrides["SPACEAGORA_PERF_PARALLEL_BACKEND"] == "none"
+        @test overrides["SPACEAGORA_EFFECTOR_PARALLEL"] == "on"
+        @test overrides["SPACEAGORA_THERMAL_CALLBACK_PARALLEL"] == "manual"
+        @test_throws ArgumentError SimulationEngine._engine_env_overrides(SimulationEngine.SimulationEngineConfig(
+            parallel=SimulationEngine.ParallelConfig(profile="R9")))
         @test overrides["SPACEAGORA_OUTER_PARALLEL_ACTIVE"] == "1"
         @test overrides["SPACEAGORA_PARALLEL_POLICY_ADAPTIVE"] == "1"
         @test overrides["SPACEAGORA_WARN_NORMALIZE"] == "0"
@@ -770,16 +778,35 @@ end
 end
 
 @testset "Precompile Workload Probe" begin
+    # The setup block ends by clearing every module-level cache the workload
+    # filled, since a pkgimage would otherwise serialize them. Mark each one
+    # loaded beforehand so the block has to clear it; the workload itself then
+    # runs against those caches as they stand.
+    campaigns = Main.SpaceAGORA.SimulationCampaigns
+    planets = Main.SimulationModel.Planets
+    campaigns._CAMPAIGN_ROUTE_STATE_LOADED[] = true
+    campaigns._PREDICTIVE_CONSTANTS_LOADED[] = true
+    push!(planets._FURNISHED_KERNELS, "/nonexistent/stale_kernel.tls")
+
     precompile_probe = Module(:PrecompileCoverageProbe)
     Core.eval(precompile_probe, quote
         const SimulationModel = Main.SimulationModel
         const TelemetryVerification = Main.TelemetryVerification
-        const parse_parallel_profile = Main.SpaceAGORA.parse_parallel_profile
+        const ParallelProfiles = Main.SpaceAGORA.ParallelProfiles
         const simulation_engine_config_from_env = Main.SimulationEngine.simulation_engine_config_from_env
         const run_simulation = Main.SimulationEngine.run_simulation
+        # The campaign warmups call the public Monte Carlo entry and reset the
+        # campaign caches they populate, as the package module sees them.
+        const SimulationCampaigns = Main.SpaceAGORA.SimulationCampaigns
+        # The state reset at the end of the setup block also reaches these.
+        const SimulationEngine = Main.SimulationEngine
+        const RuntimeServices = Main.SpaceAGORA.RuntimeServices
+        const run_monte_carlo = Main.SpaceAGORA.run_monte_carlo
 
+        # Run the setup block as a compiled closure: statements evaluated as
+        # top-level code are not recorded by --code-coverage.
         macro setup_workload(ex)
-            return esc(ex)
+            return esc(:((() -> $ex)()))
         end
 
         macro compile_workload(ex)
@@ -791,6 +818,12 @@ end
 
     @test isdefined(precompile_probe, :_run_spaceagora_precompile_workload)
     @test isdefined(precompile_probe, :_spaceagora_precompile_args)
+    @test isdefined(precompile_probe, :_warm_predictive_campaign)
+    @test isdefined(precompile_probe, :_warm_mixed_dispatch_campaign)
+    @test !campaigns._CAMPAIGN_ROUTE_STATE_LOADED[]
+    @test !campaigns._PREDICTIVE_CONSTANTS_LOADED[]
+    @test campaigns._PREDICTIVE_CONSTANTS[] === nothing
+    @test isempty(planets._FURNISHED_KERNELS)
 end
 
 @testset "Effector Sampling Helper Branch Probes" begin

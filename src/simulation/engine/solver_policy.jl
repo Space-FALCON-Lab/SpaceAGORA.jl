@@ -110,11 +110,25 @@ end
 
 @inline _auto_stiff_smooth_gravity_tsit5_enabled(cfg::SolverConfig)::Bool = cfg.auto_stiff_gravity_tsit5
 
+# Solar radiation pressure belongs here with the gravity models: its
+# acceleration is a smooth function of position everywhere except at the umbra
+# and penumbra boundaries of the conical shadow model (`eclipse_area_calc`),
+# where the shadow fraction has a kink rather than a discontinuity. An explicit
+# integrator crosses that with step rejections at worst, which is cheaper than
+# what excluding it costs -- a 256-spacecraft harmonics + SRP + third-body
+# constellation was committing AutoTsit5 to Rodas5P and paying 5.58x the
+# derivative evaluations plus the whole Rosenbrock W path for dynamics that are
+# not stiff (docs/architecture/third_body_cost.md). A configuration that does
+# need the implicit solver still gets it by setting
+# `SolverConfig.auto_stiff_gravity_tsit5=false`
+# (`SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5=0`), which disables this whole fast
+# path.
 @inline function _auto_stiff_smooth_gravity_effector(effector)::Bool
     return effector isa SimulationModel.InverseSquaredGravityModel ||
            effector isa SimulationModel.InverseSquaredJ2GravityModel ||
            effector isa SimulationModel.GravitationalHarmonicsModel ||
-           effector isa SimulationModel.NBodyGravityModel
+           effector isa SimulationModel.NBodyGravityModel ||
+           effector isa SimulationModel.SolarRadiationPressureModel
 end
 
 @inline function _auto_stiff_smooth_gravity_reject_reason(cfg::SolverConfig, args)::Union{Nothing, String}
@@ -130,7 +144,12 @@ end
         _auto_stiff_smooth_gravity_effector(effector) || return "$(nameof(typeof(effector))) is not a supported smooth-gravity effector."
         req = SimulationModel.environment_requirements(effector)
         req.atmosphere && return "$(nameof(typeof(effector))) requires atmosphere samples."
-        req.solar && return "$(nameof(typeof(effector))) requires solar samples."
+        # The solar sample is the Sun's position, which SRP is the effector
+        # that consumes it: rejecting on `req.solar` would re-disqualify the
+        # effector this list just admitted. Any other smooth-gravity effector
+        # asking for solar samples is still unexpected here and still rejects.
+        req.solar && !(effector isa SimulationModel.SolarRadiationPressureModel) &&
+            return "$(nameof(typeof(effector))) requires solar samples."
     end
     return nothing
 end

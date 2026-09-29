@@ -1,15 +1,12 @@
 # Parallel Execution
 
-Use this page when you want to speed up multi-satellite campaigns or
-performance-sensitive studies by enabling parallel execution.
-
-This page is for users who already have a working single-satellite simulation
-and want to scale it up or understand the available parallel controls.
+Use this page when you want a simulation, a Monte Carlo campaign or a
+constellation ensemble to use more than one core.
 
 Shortest successful command:
 
 ```text
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=. --threads=auto examples/AGORA_Earth_MonteCarlo.jl
 ```
 
 What to read next:
@@ -17,81 +14,278 @@ What to read next:
 - [Distributed and HPC](../distributed_hpc.md)
 - [Simulation Configuration](simulation_configuration.md)
 
-## Runtime Controls
+## Turning on parallel execution
 
-SpaceAGORA's parallel runtime is controlled by route and policy settings. The
-important axes are:
+Parallel execution is one switch in the solver setup:
+`SolverConfig(parallel=true)`. With it set, SpaceAGORA decides how to use
+the threads Julia was started with. A single run threads its callbacks,
+effectors and right-hand side where its adaptive policy predicts a gain; a
+campaign lets the predictive planner choose serial, threaded or
+process-worker execution for the campaign's shape before the first sample
+runs. Nothing else needs configuring.
 
-| Axis | Values | Purpose |
-|---|---|---|
-| Outer route | `none`, `threads`, `process`, `auto` | Chooses whether campaign or constellation work runs serially, on Julia threads, or on process workers |
-| Callback and effector modes | `off`, `auto`, `on` | Controls density, control, thermal, multibody, and dynamic-effector inner parallelism |
-| RHS execution mode | `auto`, `serial`, `satellite`, `per_satellite`, `flat` | Chooses the dominant RHS threading strategy for a simulation |
-| Inner scheduler | `static`, `dynamic` | Chooses fixed worker assignment or dynamic work stealing |
-| Adaptive policy | `0`, `1` | Allows measured runtime feedback to adjust worker counts and route choices |
-| Persistent hints | `0`, `1` | Reuses measured policy choices across repeated runs when state persistence is enabled |
+A single simulation:
 
-For a machine with many cores running a multi-satellite campaign, start with
-`auto` outer routing, `auto` inner modes, and the default `auto` RHS execution
-mode. Enable adaptive policy and persistent hints for repeated performance
-studies after validating correctness against a forced serial run.
+```julia
+using SpaceAGORA
 
-## Parallel profiles
+args = SimulationConfiguration(
+    # ... the usual fields ...
+    solver_config=SolverConfig(parallel=true),
+)
+run_simulation(args)
+```
 
-A profile is a named bundle of the routing and policy settings above, applied
-through `with_parallel_profile` or `SPACEAGORA_PARALLEL_PROFILE`:
+A campaign. A constellation ensemble reads the flag from the configuration
+it is given; `run_monte_carlo` takes it as a keyword, since it only sees your
+function:
 
-| Profile | Outer route | Inner modes | What it adds |
-|---|---|---|---|
-| `R0` | serial | off | The true serial baseline; nothing is threaded, at any thread count |
-| `R1_a` | threads | off | Outer parallelism only, on Julia threads |
-| `R1_b` | process | off | Outer parallelism only, on worker processes |
-| `R2` | serial | auto | Inner parallelism only |
-| `R3` | auto | auto | Heuristic outer route with static inner widths |
-| `R4` | auto, adaptive | auto | The outer-route bandit and pre-solve RHS plan calibration |
-| `R5` | auto, adaptive | auto | R4 plus persistent hints and the measured-reward width chooser |
-| `R6` | auto, adaptive | auto | R5 plus `SPACEAGORA_PARALLEL_POLICY_V2` |
+```julia
+result = run_constellation_ensemble(args; return_solution=true)
 
-`R6` is the recommended profile for both single constellations and Monte
-Carlo campaigns. Everything it changes sits behind one switch,
-`SPACEAGORA_PARALLEL_POLICY_V2`, so that with the switch off it is exactly
-`R5`; the switch is what a paired comparison between the two measures.
-Under the switch:
+result = run_monte_carlo(1:100; parallel=true) do seed
+    run_simulation(make_config_for_seed(seed))
+end
+```
 
-- A Monte Carlo campaign routes to whichever outer axis has more cores:
-  process workers when the pool can match or exceed the thread count
-  (`SPACEAGORA_PERF_PROCS` caps the pool), threads otherwise, on any machine
-  size. The router does not spend campaigns trying the other route; it
-  switches only on history it already holds.
-- The process pool is sized by memory as well as cores. Each worker is priced
-  at the coordinator's own resident set (never under 1.5 GB) plus 90 MB per
-  spacecraft for native GRAM, against the machine's memory (or its cgroup
-  limit) less a reserve and less what the coordinator already holds; the
-  route is offered only when at least two workers fit, and the split ladder
-  stops at the number that fit. `SPACEAGORA_MEMORY_BUDGET_GB`,
-  `SPACEAGORA_PERF_WORKER_MEMORY_GB` and `SPACEAGORA_GRAM_SAT_MEMORY_MB`
-  override the three terms.
-- The outer split width is learned by racing the candidate widths inside the
-  first campaign of a new workload, with at least three samples per worker
-  per width. A campaign too small to race takes the widest split. Widths are
-  never explored one per campaign.
-- A cached "the heuristic won" verdict from RHS plan calibration is honoured
-  on long solves instead of re-running the sweep in every process.
-- Callback and effector widths take the static `min(items, budget)`. The
-  density callback additionally gets a short pre-solve width sweep, and a
-  narrower width is pinned only if it beats the static one by the calibration
-  margin.
-- The coordinator collects garbage before dispatching a campaign, so a
-  threaded campaign's heap does not stall the next campaign's process
-  dispatch.
+Requirements and behavior:
 
-Measured on the reference 12-core machine, `R6` matches the fastest fixed
-route on every constellation and Monte Carlo case in the paper harness and
-beats `R5` by 20 to 70 percent where `R5`'s Monte Carlo route or its
-eight-thread re-sweep was wrong. Measure it with
-`scripts/paired_profile_probe.jl` and `scripts/paired_campaign_probe.jl
---src-runner --profile=full`, not with the block-ordered benchmark harness,
-whose resolution is about eight points.
+- Start Julia with threads, for example `julia --threads=auto`. With a
+  single thread the flag can only use process workers for campaigns, and
+  says so once.
+- The first parallel run on a machine measures the machine's cost
+  constants once (measured at 4.6 s, 1.9 s once compiled, on a
+  24-thread workstation) and
+  stores them in
+  `output/parallel_policy_state/cost_constants_<fingerprint>.toml` under
+  the working directory. Later runs reuse the file. It is re-measured only
+  when a session with more Julia threads than the one that measured it
+  runs with the flag, since the measured speedups stop at that thread
+  count. Processes that start together in one working directory measure
+  once: the others wait for the file (a `.lock` file beside it marks the
+  measurement in progress). To redo the measurement, delete the file or run
+  `julia --project=. --threads=<T> scripts/calibrate_machine.jl`.
+- The flag's settings apply for the duration of the call only. Nothing is
+  left in the process environment afterwards, including when the run
+  throws or when several flagged runs overlap on different tasks. While any
+  flagged run is active, the flag's settings are visible to every task in
+  the process, since they live in the process environment.
+- `run_monte_carlo(...; parallel=true)` only sees your function, so it
+  does not send samples to process workers unless you describe the
+  workload with `route_features` (see
+  [Internal and benchmark controls](#internal-and-benchmark-controls)).
+  A process worker is a separate Julia process: a function defined in your
+  script, anything it reaches in your script's `Main`, and SPICE kernels
+  you furnished yourself exist there only if you load them there. Pass
+  `route_features` only once the workers are prepared. A constellation
+  ensemble derives its features from its configuration and can use
+  process workers; a configuration that holds types or functions defined
+  in your script needs the same preparation, or `parallel=false` with a
+  fixed `threads=N`.
+- The flag picks the worker count itself, so `parallel=true` together with
+  an integer `threads=` is an `ArgumentError`. Every member of a campaign
+  must carry the same flag.
+- With `parallel=false` (the default) nothing changes: a single run behaves
+  exactly as before, and campaigns are serial unless you give a fixed
+  `threads=N` (see below).
+- A run or campaign started inside another campaign's worker keeps the
+  enclosing campaign's thread budget rather than claiming the machine
+  again.
+
+Parallel runs are not bit-for-bit reproducible across thread counts in
+every configuration (see
+[Internal and benchmark controls](#internal-and-benchmark-controls) for the
+route that is). Validate a study against a run with the flag off before
+relying on it.
+
+## Monte Carlo campaigns
+
+Use `run_monte_carlo` when you want to run many independent simulations from
+an example script or study without copying benchmark-specific orchestration
+code. The runner applies parallelism across Monte Carlo samples: each worker
+task calls your function with one seed. `parallel=true` (above) lets the
+planner choose; this section describes a fixed worker count instead.
+
+Start Julia with the number of threads you want available:
+
+```bash
+julia --project=. --threads=8 examples/AGORA_Earth_MonteCarlo.jl
+```
+
+Then cap the campaign runner to that same thread count, or a smaller count:
+
+```julia
+using SpaceAGORA
+
+result = run_monte_carlo(1:100; threads=8) do seed
+    args = make_config_for_seed(seed)
+    run_simulation(args; return_solution=true)
+end
+
+println("successful samples: $(length(result.successful))")
+println("failed samples: $(length(result.failed))")
+```
+
+`threads` does not create new Julia threads at runtime. If the script requests
+more Monte Carlo threads than Julia was launched with, the runner throws a
+clear `ArgumentError`.
+
+For reusable scripts, build a spec explicitly:
+
+```julia
+spec = MonteCarloSpec(seeds=1001:1100, threads=8, fail_fast=false)
+
+result = run_monte_carlo(spec) do seed
+    args = make_config_for_seed(seed)
+    run_simulation(args)
+end
+```
+
+By default, failed samples are captured in `result.failed` and do not stop the
+rest of the campaign. Set `fail_fast=true` when you want the runner to rethrow
+on the first failed sample instead.
+
+### Process-backend outer parallelism
+
+When the campaign planner picks `:process` (or when you want to control it
+directly), campaigns dispatch to `SpaceAGORA.ParallelProcess`, a small
+`Distributed`-based worker pool built for this purpose:
+
+```julia
+pool = campaign_process_pool()
+worker_ids = ensure_process_workers!(pool, 8)
+```
+
+- `campaign_process_pool()` returns the process-global `ProcessPool` that
+  parallel campaigns already share; reusing it avoids repaying the
+  one-time `SpaceAGORA`/`GRAMSuite` worker precompilation cost on every call.
+- `ensure_process_workers!(pool, n; warmup_fn=nothing)` grows the pool to at
+  least `n` workers (spawning only the shortfall via `addprocs`), bootstraps
+  each new worker with `SpaceAGORA`, `GRAMSuite` (best-effort), and the
+  default SPICE kernel set, and returns the current worker ids. Pass
+  `warmup_fn` — a zero-argument closure that mirrors the real per-sample call
+  — to also pay a new worker's full JIT/specialization cost once up front
+  (measured at roughly 70 s cold vs. a fraction of a second warm) instead of
+  inside the first real, timed dispatch.
+- `shutdown_process_pool!(pool)` removes every worker via `rmprocs` and
+  clears the pool; mainly useful for tests, since campaign code otherwise
+  leaves the process-global pool warm across calls by design.
+
+Each process worker is started with `--threads=1`, so it does not share the
+coordinator's Julia thread pool: inner thread-based parallelism inside a
+worker's own `run_simulation` call is unaffected by how many process workers
+are active. A campaign built on a non-default SPICE kernel directory, or a
+non-Earth-primary mission whose kernels aren't in the shared default set,
+must still furnish its own kernels on the pool's workers (for example via
+`remotecall_wait` on `ensure_process_workers!`'s return value) before
+dispatching.
+
+### GRAM atmosphere models in threaded campaigns
+
+Native GRAM calls are serialized through a single process-wide lock by default,
+so threaded Monte Carlo samples that all query GRAM contend on one lock no
+matter how many threads are available. When every sample builds its own
+`GRAMAtmosphereModel` (or receives its own `deepcopy`), set:
+
+```bash
+export SPACEAGORA_GRAM_LOCK_SCOPE=model
+```
+
+so each model instance serializes only against itself and samples evaluate
+concurrently. This relies on the same instance-isolation premise as the
+isolated-pool batch path (`SPACEAGORA_GRAM_ISOLATED_POOL`): distinct GRAM model
+instances may run concurrently as long as any single instance is serialized. Do
+not enable it if several threads share one model instance and you have not
+measured the workload — the default `global` scope is always safe. Process-based
+campaigns (separate workers via `addprocs`) do not need this: each process has
+its own lock already.
+
+### Automatic native GRAM pooling and wind histories
+
+The isolated pool is selected automatically only above its native-query
+threshold. When a batch requests winds, automatic selection also requires
+nominal winds: the pinned wrapper's default (`auto`) selects perturbed winds,
+whose values depend on each model instance's query history. Such batches keep
+the locked route, including look-ahead cache sampling. Density-only queries
+(`wind=false`) keep their existing eligibility.
+
+Setting `SPACEAGORA_GRAM_ISOLATED_POOL=on` explicitly allows separate stochastic
+histories. With perturbed winds it can change wind diagnostics and trajectories
+as pool width or thread count changes. Routing never switches the requested
+wind mode or seed to obtain a speedup.
+
+### Real GRAM without the vacuum-predicted cache
+
+`SPACEAGORA_VACUUM_GRAM_CACHE` (the drag-free trajectory spline described
+above) is the supported way to query real, per-satellite GRAM density at
+constellation scale. If it is disabled — direct, uncached GRAM queries at
+every RHS evaluation — also set:
+
+```bash
+export SPACEAGORA_DENSITY_FREEZE_PER_STEP=1
+```
+
+Real GRAM's perturbation/turbulence model adds small-scale noise on top of the
+smooth mean density profile. An adaptive ODE solver's step-size controller
+reacts to that per-call noise as if it were stiffness and collapses `dt`:
+measured on a 2-satellite, 1-second mission, disabling the vacuum cache
+without this flag produced 12+ million GRAM calls, 2.4 million solver steps,
+and a 604 s wall time; with the flag, the same scenario took 35.7 s (14 calls,
+37 steps) — matching the vacuum-cache path's own timing. `run_simulation`
+already fires a `DiscreteCallback` once per accepted solver step that samples
+density into `shared_buffers`; this flag makes the RHS-side atmosphere read
+trust that once-per-step sample for every stage evaluation within the step
+instead of demanding an exact-time match (which almost never holds for a
+multi-stage adaptive method). This is a standard, small approximation for a
+LEO trajectory: altitude — the dominant driver of the smooth mean density —
+changes negligibly over one integration step, so freezing density for the
+step's duration costs little accuracy while removing the noise that the
+solver was reacting to. It has no effect on the vacuum-predicted-cache path,
+which is already smooth by construction.
+
+## Constellation ensembles
+
+For multi-satellite configurations whose members do not interact (no
+inter-satellite links, no coordinated GNC), `run_constellation_ensemble` splits
+the constellation into independent single-satellite propagations and applies
+Monte Carlo-style outer parallelism across satellites:
+
+```julia
+# Planner-chosen, from the configuration's SolverConfig(parallel=true):
+result = run_constellation_ensemble(args; return_solution=true)
+# Or a fixed worker count, with the flag off:
+result = run_constellation_ensemble(args; threads=8, return_solution=true)
+solutions = [s.value for s in result.successful]
+```
+
+Compared to propagating the constellation as one coupled state vector, this
+dispatches each satellite to a worker once for its entire propagation (instead
+of paying per-timestep thread dispatch across satellites) and lets each
+satellite keep its own adaptive step size (instead of forcing every satellite
+to the global minimum step).
+
+Current limitation: with in-process worker threads (the `:threads` outer
+route), per-step environment-variable configuration reads in the RHS and
+callback plumbing serialize concurrent members (Julia `ENV` access is
+process-global), which can erase the outer-parallel gain for light dynamics.
+
+The `:process` outer route avoids this: each satellite is dispatched to its
+own OS process with its own `ENV`, GRAM lock, and thread pool, so members
+never contend on process-global state. With `SolverConfig(parallel=true)` the
+planner picks `:process` itself for workload shapes where it wins,
+auto-bootstrapping a `Distributed` worker pool via `ensure_process_workers!` —
+no manual `addprocs` call or cluster setup is required for this
+library-level path. See
+[Process-backend outer parallelism](#process-backend-outer-parallelism)
+below. Multi-node/scheduler launches for benchmark and study scripts are a
+separate, explicit-`addprocs` path — see
+[Distributed and HPC](../distributed_hpc.md).
+
+The runner refuses configurations with guidance, navigation, or control
+effectors, because effectors that coordinate satellites cannot act across
+ensemble members. If every configured effector acts on a single satellite only,
+opt in with `allow_gnc_effectors=true`. Keep the monolithic `run_simulation`
+path for genuinely coupled constellations (RPO, formation control).
 
 ## Optional native GRAM density workers
 
@@ -133,7 +327,144 @@ Compare your results against local evaluation before using it for a study.
 Per-satellite model instances and stateful interpolation caches retain their
 existing exclusions. No speedup is guaranteed for small batches.
 
-## Using environment variables
+## When not to use parallelism
+
+- **Debugging**: leave the flag off (and `threads` unset) to eliminate
+  concurrency as a source of non-determinism.
+- **Single-satellite no-GRAM runs**: inner parallelism often adds overhead that
+  exceeds the benefit for simple orbit-only scenarios. Start serial and
+  measure.
+- **Correctness validation**: run the same scenario with the flag off and on
+  before relying on the parallel result.
+
+## HPC and process worker setup
+
+For multi-node or process-worker execution, see [Distributed and HPC](../distributed_hpc.md)
+for guidance on the `SPACEAGORA_PERF_PROCS`, `SPACEAGORA_PERF_WORKER_PROJECT`,
+and `SPACEAGORA_PERF_MACHINE_LABEL` environment variables.
+
+## Internal and benchmark controls
+
+Everything below is the machinery `SolverConfig(parallel=true)` drives, kept
+for the paper benchmark harness (which needs fixed routes and older profiles
+to reproduce its measurements) and for diagnosing performance. It is not the
+supported way to parallelize and may change without notice. The profile
+functions are not exported; reach them as `SpaceAGORA.ParallelProfiles.<name>`.
+
+### Runtime Controls
+
+SpaceAGORA's parallel runtime is controlled by route and policy settings. The
+important axes are:
+
+| Axis | Values | Purpose |
+|---|---|---|
+| Outer route | `none`, `threads`, `process`, `auto` | Chooses whether campaign or constellation work runs serially, on Julia threads, or on process workers |
+| Callback and effector modes | `off`, `auto`, `on` | Controls density, control, thermal, multibody, and dynamic-effector inner parallelism |
+| RHS execution mode | `auto`, `serial`, `satellite`, `per_satellite`, `flat` | Chooses the dominant RHS threading strategy for a simulation |
+| Inner scheduler | `static`, `dynamic` | Chooses fixed worker assignment or dynamic work stealing |
+| Adaptive policy | `0`, `1` | Allows measured runtime feedback to adjust worker counts and route choices |
+| Persistent hints | `0`, `1` | Reuses measured policy choices across repeated runs when state persistence is enabled |
+
+For a machine with many cores running a multi-satellite campaign, start with
+`auto` outer routing, `auto` inner modes, and the default `auto` RHS execution
+mode. Enable adaptive policy and persistent hints for repeated performance
+studies after validating correctness against a forced serial run.
+
+### Parallel profiles
+
+A profile is a named bundle of the routing and policy settings above.
+`SolverConfig(parallel=true)` runs under `R7`. Apply a profile explicitly with
+`SpaceAGORA.ParallelProfiles.with_parallel_profile(f, "R6")` or with
+`ParallelConfig(profile="R6")` in a `SimulationEngineConfig`; both expand
+the whole bundle. Setting `SPACEAGORA_PARALLEL_PROFILE` on its own does
+**not** apply a profile: only the two routes above expand it, and alone it
+merely names the persisted policy state files (and, for `R0`, forces a serial
+right-hand side).
+
+| Profile | Outer route | Inner modes | What it adds |
+|---|---|---|---|
+| `R0` | serial | off | The true serial baseline; nothing is threaded, at any thread count |
+| `R1_a` | threads | off | Outer parallelism only, on Julia threads |
+| `R1_b` | process | off | Outer parallelism only, on worker processes |
+| `R2` | serial | auto | Inner parallelism only |
+| `R3` | auto | auto | Heuristic outer route with static inner widths |
+| `R4` | auto, adaptive | auto | The outer-route bandit and pre-solve RHS plan calibration |
+| `R5` | auto, adaptive | auto | R4 plus persistent hints and the measured-reward width chooser |
+| `R6` | auto, adaptive | auto | R5 plus `SPACEAGORA_PARALLEL_POLICY_V2` |
+| `R7` | auto, adaptive | auto | R6 plus `SPACEAGORA_CAMPAIGN_PLANNER=predictive` |
+
+`R6` is the bandit-planner counterpart of `R7`. Everything it changes sits behind one switch,
+`SPACEAGORA_PARALLEL_POLICY_V2`, so that with the switch off it is exactly
+`R5`; the switch is what a paired comparison between the two measures.
+Under the switch:
+
+- A Monte Carlo campaign routes to whichever outer axis has more cores:
+  process workers when the pool can match or exceed the thread count
+  (`SPACEAGORA_PERF_PROCS` caps the pool), threads otherwise, on any machine
+  size. The router does not spend campaigns trying the other route; it
+  switches only on history it already holds.
+- The process pool is sized by memory as well as cores. Each worker is priced
+  at the coordinator's own resident set (never under 2 GB) plus 2 MB per
+  spacecraft for native GRAM, against the machine's memory (or its cgroup
+  limit) less a reserve and less what the coordinator already holds; the
+  route is offered only when at least two workers fit, and the split ladder
+  stops at the number that fit. `SPACEAGORA_MEMORY_BUDGET_GB`,
+  `SPACEAGORA_PERF_WORKER_MEMORY_GB` and `SPACEAGORA_GRAM_SAT_MEMORY_MB`
+  override the three terms. The per-spacecraft figure was measured on
+  missions of at most 1800 s that did not return their solutions
+  (`docs/architecture/gram_memory_footprint.md`); for longer missions, denser
+  saving, or samples that return their solutions it may be too low, so
+  measure a worker and set the overrides on a tight memory budget.
+- The outer split width is learned by racing the candidate widths inside the
+  first campaign of a new workload, with at least three samples per worker
+  per width. A campaign too small to race takes the widest split. Widths are
+  never explored one per campaign.
+- A cached "the heuristic won" verdict from RHS plan calibration is honoured
+  on long solves instead of re-running the sweep in every process.
+- Callback and effector widths take the static `min(items, budget)`. The
+  density callback additionally gets a short pre-solve width sweep, and a
+  narrower width is pinned only if it beats the static one by the calibration
+  margin.
+- The coordinator collects garbage before dispatching a campaign, so a
+  threaded campaign's heap does not stall the next campaign's process
+  dispatch.
+
+Measured on the reference 12-core machine, `R6` matches the fastest fixed
+route on every constellation and Monte Carlo case in the paper harness and
+beats `R5` by 20 to 70 percent where `R5`'s Monte Carlo route or its
+eight-thread re-sweep was wrong. Measure it with
+`scripts/paired_profile_probe.jl` and `scripts/paired_campaign_probe.jl
+--src-runner --profile=full`, not with the block-ordered benchmark harness,
+whose resolution is about eight points.
+
+`R7` is `R6` with the campaign route chosen by a predictive planner instead of
+the bandit. The planner scores the candidate routes for the campaign in front
+of it -- its sample count, spacecraft count, force model and mission length --
+against per-machine calibration constants, and dispatches the route it prices
+as cheapest. Nothing is explored inside a campaign: the choice is made before
+the first sample runs and held for all of them, and a first round that the
+planner cannot price confidently falls back to the guarded default rather than
+guessing. Everything else is exactly `R6`, and the single switch
+`SPACEAGORA_CAMPAIGN_PLANNER` (`bandit`, the default, or `predictive`) is the
+only difference between them, so a paired run of the two measures the planner
+and nothing else.
+
+The calibration constants are created automatically on the first
+`parallel=true` run, or explicitly with
+
+```bash
+julia --project=. --threads=<T> scripts/calibrate_machine.jl
+```
+
+which is run once per machine, at the thread count you intend to simulate at,
+and writes `output/parallel_policy_state/cost_constants_<fingerprint>.toml`.
+Every later run on that machine reads the file instead of measuring anything
+itself. `R7` applied without the flag (through a profile) does not calibrate;
+it then prices the routes with no model of contention, so run the script
+before comparing `R7` against `R6` on a new machine. The comparison itself is still pending on the benchmark machine, so
+no relative figure is quoted here.
+
+### Environment variables
 
 For CLI runs or scripted batch execution, set the controls before launching:
 
@@ -244,62 +575,17 @@ and the before/after saves of continuous events; the per-step housekeeping
 callbacks (planet frame, density and thermal samples, quaternion projection)
 add no saves of their own.
 
-## Monte Carlo campaigns
-
-Use `run_monte_carlo` when you want to run many independent simulations from
-an example script or study without copying benchmark-specific orchestration
-code. The runner applies parallelism across Monte Carlo samples: each worker
-task calls your function with one seed.
-
-Start Julia with the number of threads you want available:
-
-```bash
-julia --project=. --threads=8 examples/AGORA_Earth_MonteCarlo.jl
-```
-
-Then cap the campaign runner to that same thread count, or a smaller count:
-
-```julia
-using SpaceAGORA
-
-result = run_monte_carlo(1:100; threads=8) do seed
-    args = make_config_for_seed(seed)
-    run_simulation(args; return_solution=true)
-end
-
-println("successful samples: $(length(result.successful))")
-println("failed samples: $(length(result.failed))")
-```
-
-`threads` does not create new Julia threads at runtime. If the script requests
-more Monte Carlo threads than Julia was launched with, the runner throws a
-clear `ArgumentError`.
-
-For reusable scripts, build a spec explicitly:
-
-```julia
-spec = MonteCarloSpec(seeds=1001:1100, threads=8, fail_fast=false)
-
-result = run_monte_carlo(spec) do seed
-    args = make_config_for_seed(seed)
-    run_simulation(args)
-end
-```
-
-By default, failed samples are captured in `result.failed` and do not stop the
-rest of the campaign. Set `fail_fast=true` when you want the runner to rethrow
-on the first failed sample instead.
-
 ### Adaptive campaign routing (`threads=:auto`)
 
-Instead of hardcoding a worker count, both campaign runners accept
-`threads=:auto` and delegate the serial-versus-threaded decision to the
-outer-route bandit (`select_outer_route!`), which keeps empirical runtime
-statistics per workload signature:
+`parallel=true` passes `threads=:auto` to the campaign runners under `R7`.
+Passed directly, without the flag, `threads=:auto` uses whichever campaign
+planner the environment selects (`SPACEAGORA_CAMPAIGN_PLANNER`, default the
+outer-route bandit `SpaceAGORA.ParallelProfiles.select_outer_route!`, which
+keeps empirical runtime statistics per workload signature):
 
 ```julia
 result = run_monte_carlo(1:100; threads=:auto,
-                         route_features=campaign_route_features(
+                         route_features=SpaceAGORA.SimulationCampaigns.campaign_route_features(
                              samples=100, n_sats=1,
                              density_family="exponential",
                              mission_time_s=5400.0
@@ -311,16 +597,20 @@ end
 result = run_constellation_ensemble(args; threads=:auto, return_solution=true)
 ```
 
-`campaign_route_features` describes the campaign shape (sample count,
-per-sample satellite count, density-model family, mission length); the
-`SimulationConfiguration` method derives those fields for you. After every
-campaign the runner records per-sample success and amortized wall-clock
-feedback via `record_outer_route_feedback!`, so repeated campaigns with the
-same shape first explore the feasible allocations and then converge to the
-fastest one. History accumulates in the process-global
-`campaign_outer_route_state()`; inspect it with `outer_route_stats_snapshot`,
-reset it with `reset_outer_route_state!`, or pass an isolated `OuterRouteState`
-via `route_state` (useful for tests and one-off studies).
+`SpaceAGORA.SimulationCampaigns.campaign_route_features` describes the
+campaign shape (sample count, per-sample satellite count, density-model
+family, mission length); the `SimulationConfiguration` method derives those
+fields for you. After every campaign the runner records per-sample success and
+amortized wall-clock feedback via
+`SpaceAGORA.ParallelProfiles.record_outer_route_feedback!`, so repeated
+campaigns with the same shape first explore the feasible allocations and then
+converge to the fastest one. History accumulates in the process-global
+`SpaceAGORA.SimulationCampaigns.campaign_outer_route_state()`; inspect it with
+`SpaceAGORA.ParallelProfiles.outer_route_stats_snapshot`, reset it with
+`SpaceAGORA.ParallelProfiles.reset_outer_route_state!`, or pass an isolated
+`SpaceAGORA.ParallelProfiles.OuterRouteState()` via `route_state` (useful for
+tests and one-off studies). These names are internal: they are not exported
+and may change without notice.
 
 While the adaptive route runs threaded workers, the runner sets
 `SPACEAGORA_OUTER_PARALLEL_ACTIVE=1` and — unless you exported one yourself —
@@ -342,145 +632,7 @@ if you have measured that splitting the thread budget between outer workers
 and the harmonics batch is actually faster for your workload; the default is
 the safe choice.
 
-### Process-backend outer parallelism
-
-When the outer-route bandit picks `:process` (or when you want to control it
-directly), campaigns dispatch to `SpaceAGORA.ParallelProcess`, a small
-`Distributed`-based worker pool built for this purpose:
-
-```julia
-pool = campaign_process_pool()
-worker_ids = ensure_process_workers!(pool, 8)
-```
-
-- `campaign_process_pool()` returns the process-global `ProcessPool` that
-  `threads=:auto` campaigns already share; reusing it avoids repaying the
-  one-time `SpaceAGORA`/`GRAMSuite` worker precompilation cost on every call.
-- `ensure_process_workers!(pool, n; warmup_fn=nothing)` grows the pool to at
-  least `n` workers (spawning only the shortfall via `addprocs`), bootstraps
-  each new worker with `SpaceAGORA`, `GRAMSuite` (best-effort), and the
-  default SPICE kernel set, and returns the current worker ids. Pass
-  `warmup_fn` — a zero-argument closure that mirrors the real per-sample call
-  — to also pay a new worker's full JIT/specialization cost once up front
-  (measured at roughly 70 s cold vs. a fraction of a second warm) instead of
-  inside the first real, timed dispatch.
-- `shutdown_process_pool!(pool)` removes every worker via `rmprocs` and
-  clears the pool; mainly useful for tests, since campaign code otherwise
-  leaves the process-global pool warm across calls by design.
-
-Each process worker is started with `--threads=1`, so it does not share the
-coordinator's Julia thread pool: inner thread-based parallelism inside a
-worker's own `run_simulation` call is unaffected by how many process workers
-are active. A campaign built on a non-default SPICE kernel directory, or a
-non-Earth-primary mission whose kernels aren't in the shared default set,
-must still furnish its own kernels on the pool's workers (for example via
-`remotecall_wait` on `ensure_process_workers!`'s return value) before
-dispatching.
-
-### GRAM atmosphere models in threaded campaigns
-
-Native GRAM calls are serialized through a single process-wide lock by default,
-so threaded Monte Carlo samples that all query GRAM contend on one lock no
-matter how many threads are available. When every sample builds its own
-`GRAMAtmosphereModel` (or receives its own `deepcopy`), set:
-
-```bash
-export SPACEAGORA_GRAM_LOCK_SCOPE=model
-```
-
-so each model instance serializes only against itself and samples evaluate
-concurrently. This relies on the same instance-isolation premise as the
-isolated-pool batch path (`SPACEAGORA_GRAM_ISOLATED_POOL`): distinct GRAM model
-instances may run concurrently as long as any single instance is serialized. Do
-not enable it if several threads share one model instance and you have not
-measured the workload — the default `global` scope is always safe. Process-based
-campaigns (separate workers via `addprocs`) do not need this: each process has
-its own lock already.
-
-### Real GRAM without the vacuum-predicted cache
-
-`SPACEAGORA_VACUUM_GRAM_CACHE` (the drag-free trajectory spline described
-above) is the supported way to query real, per-satellite GRAM density at
-constellation scale. If it is disabled — direct, uncached GRAM queries at
-every RHS evaluation — also set:
-
-```bash
-export SPACEAGORA_DENSITY_FREEZE_PER_STEP=1
-```
-
-Real GRAM's perturbation/turbulence model adds small-scale noise on top of the
-smooth mean density profile. An adaptive ODE solver's step-size controller
-reacts to that per-call noise as if it were stiffness and collapses `dt`:
-measured on a 2-satellite, 1-second mission, disabling the vacuum cache
-without this flag produced 12+ million GRAM calls, 2.4 million solver steps,
-and a 604 s wall time; with the flag, the same scenario took 35.7 s (14 calls,
-37 steps) — matching the vacuum-cache path's own timing. `run_simulation`
-already fires a `DiscreteCallback` once per accepted solver step that samples
-density into `shared_buffers`; this flag makes the RHS-side atmosphere read
-trust that once-per-step sample for every stage evaluation within the step
-instead of demanding an exact-time match (which almost never holds for a
-multi-stage adaptive method). This is a standard, small approximation for a
-LEO trajectory: altitude — the dominant driver of the smooth mean density —
-changes negligibly over one integration step, so freezing density for the
-step's duration costs little accuracy while removing the noise that the
-solver was reacting to. It has no effect on the vacuum-predicted-cache path,
-which is already smooth by construction.
-
-## Constellation ensembles
-
-For multi-satellite configurations whose members do not interact (no
-inter-satellite links, no coordinated GNC), `run_constellation_ensemble` splits
-the constellation into independent single-satellite propagations and applies
-Monte Carlo-style outer parallelism across satellites:
-
-```julia
-result = run_constellation_ensemble(args; threads=8, return_solution=true)
-solutions = [s.value for s in result.successful]
-```
-
-Compared to propagating the constellation as one coupled state vector, this
-dispatches each satellite to a worker once for its entire propagation (instead
-of paying per-timestep thread dispatch across satellites) and lets each
-satellite keep its own adaptive step size (instead of forcing every satellite
-to the global minimum step).
-
-Current limitation: with in-process worker threads (the `:threads` outer
-route), per-step environment-variable configuration reads in the RHS and
-callback plumbing serialize concurrent members (Julia `ENV` access is
-process-global), which can erase the outer-parallel gain for light dynamics.
-
-The `:process` outer route avoids this: each satellite is dispatched to its
-own OS process with its own `ENV`, GRAM lock, and thread pool, so members
-never contend on process-global state. Pass `threads=:auto` and the
-outer-route bandit (`select_outer_route!`) will pick `:process` itself for
-workload shapes where it wins, auto-bootstrapping a `Distributed` worker pool
-via `ensure_process_workers!` — no manual `addprocs` call or cluster setup is
-required for this library-level path. See
-[Process-backend outer parallelism](#process-backend-outer-parallelism)
-below. Multi-node/scheduler launches for benchmark and study scripts are a
-separate, explicit-`addprocs` path — see
-[Distributed and HPC](../distributed_hpc.md).
-
-The runner refuses configurations with guidance, navigation, or control
-effectors, because effectors that coordinate satellites cannot act across
-ensemble members. If every configured effector acts on a single satellite only,
-opt in with `allow_gnc_effectors=true`. Keep the monolithic `run_simulation`
-path for genuinely coupled constellations (RPO, formation control).
-
-## Auditing Active Controls
-
-For reproducible studies, record the `SPACEAGORA_*` controls that define the
-route and inner-policy behavior:
-
-```julia
-for key in sort(collect(keys(ENV)))
-    if startswith(key, "SPACEAGORA_")
-        println("$key = $(ENV[key])")
-    end
-end
-```
-
-## Persistent Performance Hints
+### Persistent Performance Hints
 
 Persistent performance hints let the adaptive inner scheduler record wall-clock
 measurements and reuse them across repeated calls. This reduces calibration
@@ -516,23 +668,20 @@ export SPACEAGORA_PARALLEL_POLICY_MEASURED_REWARD=1
 Use `SPACEAGORA_PARALLEL_POLICY_STATE_RESET=1` to discard accumulated hints
 and restart calibration.
 
-## When not to use parallelism
+### Auditing Active Controls
 
-- **Debugging**: force the serial baseline settings above to eliminate
-  concurrency as a source of non-determinism.
-- **Single-satellite no-GRAM runs**: inner parallelism often adds overhead that
-  exceeds the benefit for simple orbit-only scenarios. Start serial and
-  measure.
-- **Correctness validation**: run the same scenario with forced serial settings
-  and your target parallel controls before relying on the parallel result.
+For reproducible studies, record the `SPACEAGORA_*` controls that define the
+route and inner-policy behavior:
 
-## HPC and process worker setup
+```julia
+for key in sort(collect(keys(ENV)))
+    if startswith(key, "SPACEAGORA_")
+        println("$key = $(ENV[key])")
+    end
+end
+```
 
-For multi-node or process-worker execution, see [Distributed and HPC](../distributed_hpc.md)
-for guidance on the `SPACEAGORA_PERF_PROCS`, `SPACEAGORA_PERF_WORKER_PROJECT`,
-and `SPACEAGORA_PERF_MACHINE_LABEL` environment variables.
-
-## Optional direct derivative assembly
+### Optional direct derivative assembly
 
 For a performance experiment on a translational constellation in vacuum, you
 can enable direct writes into the derivative buffer:

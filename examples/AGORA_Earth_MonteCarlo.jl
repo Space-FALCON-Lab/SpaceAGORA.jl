@@ -12,6 +12,11 @@ end
 const MC_SMOKE = get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") == "1"
 const MC_SAMPLES = _mc_int_env("SPACEAGORA_MC_SAMPLES", MC_SMOKE ? 1 : 8)
 const MC_THREADS = _mc_int_env("SPACEAGORA_MC_THREADS", min(Threads.nthreads(), MC_SAMPLES))
+# Parallel execution is one flag: `run_monte_carlo(...; parallel=true)` lets the
+# campaign planner choose serial, threaded or process-worker execution instead
+# of the fixed MC_THREADS worker count below. Set SPACEAGORA_MC_PARALLEL=1 to
+# use it (start Julia with `--threads=auto`); the default keeps the fixed count.
+const MC_PARALLEL = get(ENV, "SPACEAGORA_MC_PARALLEL", "0") == "1"
 
 function _mc_mission_time_s(default_time_s::Float64)::Float64
     !MC_SMOKE && return default_time_s
@@ -65,9 +70,11 @@ function make_config_for_seed(seed::Int)
 end
 
 seeds = collect(1:MC_SAMPLES)
-println("Running $(length(seeds)) Monte Carlo samples with $(MC_THREADS) worker task(s)")
+campaign_kwargs = MC_PARALLEL ? (; parallel=true) : (; threads=MC_THREADS)
+println("Running $(length(seeds)) Monte Carlo samples ",
+        MC_PARALLEL ? "with the parallel flag" : "with $(MC_THREADS) worker task(s)")
 
-result = run_monte_carlo(seeds; threads=MC_THREADS) do seed
+result = run_monte_carlo(seeds; campaign_kwargs...) do seed
     run_simulation(make_config_for_seed(seed))
     return (; seed)
 end

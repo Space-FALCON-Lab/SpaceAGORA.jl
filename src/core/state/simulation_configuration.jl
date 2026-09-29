@@ -75,6 +75,31 @@ module SimConfig
     `split_imex` uses the atmosphere-implicit IMEX partition. `multirate` keeps the
     control-focused split path. `gravity_backbone_split` is a fixed-step symplectic
     gravity-backbone mode; it is not a fully symplectic whole-system solve.
+
+    # Parallel execution
+
+    `parallel = true` is the one switch for parallel execution. It lets SpaceAGORA
+    choose how to use the threads Julia was started with, for this run only:
+
+    - a single `run_simulation` call threads its callbacks, effectors and
+      right-hand side where the adaptive inner policy predicts a gain;
+    - `run_constellation_ensemble` (whose members carry this configuration) and
+      `run_monte_carlo(...; parallel=true)` let the predictive campaign planner
+      choose between serial, threaded and process-worker execution before the
+      first sample runs.
+
+    Start Julia with threads (`julia --threads=auto`) for the flag to have
+    anything to use. On the first parallel run on a machine SpaceAGORA measures
+    the machine's cost constants once (a few seconds) and stores them under
+    `output/parallel_policy_state/`; later runs reuse them. Settings are scoped
+    to the call: nothing is left behind in the process environment afterwards.
+    With `parallel = false` (the default) behavior is unchanged: runs and
+    campaigns are serial unless a thread count is given explicitly.
+
+    ```julia
+    args = SimulationConfiguration(...; solver_config=SolverConfig(parallel=true))
+    run_simulation(args)
+    ```
     """
     Base.@kwdef struct SolverConfig
         solver_mode::Symbol = :tsit5
@@ -88,6 +113,7 @@ module SimConfig
         multirate_fast_solver::Symbol = :auto_stiff
         auto_stiff_gravity_tsit5::Bool = true
         auto_stiff_switch_max::Int = 50
+        parallel::Bool = false
     end
 
     # 2.2. Initial Time

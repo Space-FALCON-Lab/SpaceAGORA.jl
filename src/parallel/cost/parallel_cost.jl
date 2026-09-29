@@ -2,6 +2,7 @@ module ParallelCost
 
 using TOML
 using SHA
+import ...RuntimeServices
 
 using ..EnvironmentModels
 using ..ParallelPolicy
@@ -11,6 +12,8 @@ using ..DynamicEffectors: ConstantGravityModel, InverseSquaredGravityModel
 using ..DynamicEffectors: InverseSquaredJ2GravityModel
 using ..DynamicEffectors: NBodyGravityModel, GravitationalHarmonicsModel
 using ..DynamicEffectors: SolarRadiationPressureModel
+using ..DynamicEffectors: AerodynamicCoefficientfM
+import ..DynamicEffectors
 
 export WorkCounts, MachineConstants, RateCurve, rate_at, effector_cost_terms
 export constellation_work_counts, model_in_cost_domain, flat_queue_node_effector
@@ -19,6 +22,7 @@ export ContentionInputs, alloc_bytes_per_second, lock_duty_cycle, lock_wait_hold
 export PlanCandidate, PlanPrediction, predict_plan_ns, plan_candidates, select_plan
 export calibrate_machine, machine_fingerprint, machine_constants_path
 export save_machine_constants, load_machine_constants, constants_are_current
+export ensure_machine_constants!, machine_constants_generation
 export timed_min, paired_compare, PairedComparison
 export StreamingPairedTrial, next_arm, observe!, trial_active, trial_verdict
 export trial_rounds, trial_speedups

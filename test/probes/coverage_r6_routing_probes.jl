@@ -507,6 +507,11 @@ end
     @test _R6_SC._campaign_density_family(surrogate) == "gram_surrogate"
     @test _R6_SC._campaign_density_family(ExponentialAtmosphereModel(EARTH)) == "exponential"
     @test _R6_SC._campaign_density_family(NoAtmosphereModel()) == "none"
+    # Each shipped model family has its own route-signature label, so campaigns
+    # on different atmospheres never share route statistics.
+    @test _R6_SC._campaign_density_family(_R6_ENV.GRAMAtmosphereModel(Ref{Any}(nothing))) == "gram_point"
+    @test _R6_SC._campaign_density_family(_R6_ENV.PolynomialFitAtmosphereModel([0.0, -1.0])) == "polyfit"
+    @test _R6_SC._campaign_density_family(_R6_ENV.NRLMSISE00AtmosphereModel()) == "nrlmsise00"
     @test _R6_SC._campaign_density_family(_R6CovDensityModel()) == "_r6covdensitymodel"
 end
 

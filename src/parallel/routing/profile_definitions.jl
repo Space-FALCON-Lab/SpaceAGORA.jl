@@ -17,6 +17,10 @@ configure outer-routing and inner callback/RHS policy.
     # side by side under the paired probe and the benchmark harness, and so
     # either can be deleted cleanly once the comparison is settled.
     R6
+    # R6 plus SPACEAGORA_CAMPAIGN_PLANNER=predictive. The same relationship R6
+    # has to R5: every other knob is identical, so a paired run of R6 against
+    # R7 measures the campaign planner and nothing else.
+    R7
 end
 
 # Backward-compatible alias for historical profile naming.
@@ -43,8 +47,11 @@ Base.@kwdef struct ParallelProfileConfig
     adaptive_measured_reward::Bool = false
     persistent_hints::Bool = false
     persistent_state_persist::Bool = false
-    # SPACEAGORA_PARALLEL_POLICY_V2; true only for R6.
+    # SPACEAGORA_PARALLEL_POLICY_V2; true for R6 and R7.
     policy_v2::Bool = false
+    # SPACEAGORA_CAMPAIGN_PLANNER: which planner chooses the campaign route.
+    # "bandit" is the shipped behavior of R5 and R6; "predictive" is R7.
+    campaign_planner::String = "bandit"
 end
 
 """
@@ -67,8 +74,10 @@ Return the canonical string label for a `ParallelProfile`.
         return "R4"
     elseif profile == R5
         return "R5"
+    elseif profile == R6
+        return "R6"
     end
-    return "R6"
+    return "R7"
 end
 
 @inline function _normalize_profile_token(raw::AbstractString)::String
@@ -111,9 +120,11 @@ function parse_parallel_profile(raw::AbstractString)::ParallelProfile
         return R5
     elseif token in ("r6", "r6_policy_v2", "policy_v2")
         return R6
+    elseif token in ("r7", "r7_predictive", "predictive")
+        return R7
     end
     throw(ArgumentError(
-        "Unsupported parallel profile '$raw'. Use one of: R0, R1_a, R1_b, R2, R3, R4, R5, R6."
+        "Unsupported parallel profile '$raw'. Use one of: R0, R1_a, R1_b, R2, R3, R4, R5, R6, R7."
     ))
 end
 
@@ -207,12 +218,13 @@ function profile_config(profile_in)::ParallelProfileConfig
             effector_mode="auto"
         )
     end
-    # R5 and R6 share every setting below; R6 differs only in policy_v2. That
-    # is deliberate -- the comparison R6 exists for is "the shipped algorithm
-    # against the revised one, everything else equal".
+    # R5, R6 and R7 share every setting below; R6 differs only in policy_v2 and
+    # R7 only in campaign_planner. That is deliberate -- the comparison each of
+    # them exists for is "the shipped algorithm against the revised one,
+    # everything else equal".
     return ParallelProfileConfig(
         profile=profile,
-        label=(profile == R6 ? "r6_policy_v2" : "r5"),
+        label=(profile == R7 ? "r7_predictive" : (profile == R6 ? "r6_policy_v2" : "r5")),
         outer_backend=:auto,
         inner_adaptive=true,
         outer_route_adaptive=true,
@@ -259,6 +271,7 @@ function profile_config(profile_in)::ParallelProfileConfig
         adaptive_measured_reward=true,
         persistent_hints=true,
         persistent_state_persist=true,
-        policy_v2=(profile == R6)
+        policy_v2=(profile == R6 || profile == R7),
+        campaign_planner=(profile == R7 ? "predictive" : "bandit")
     )
 end

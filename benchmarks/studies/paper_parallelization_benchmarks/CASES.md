@@ -376,6 +376,305 @@ controller run that re-executes the whole mode × sample × repeat grid, and
 the batch in-process at `thread_mode = :single`), so their cost is paid seven
 times over. 64 samples across 64 workers is already exactly one dispatch round.
 
+## Paper routing figures (P1–P5)
+
+The four comparisons the parallelization paper reports, each one a table of
+**R6 (`policy_v2`) against the serial baseline and against the best static
+route** at the same point, with raw medians and the ratio to serial:
+
+| Phase | Axis | Cases | Modes |
+|---|---|---|---|
+| P1 | constellation size at a fixed budget | the iso-work `gravity_{N}sat_l50_vacuum_{S}s` ladder, N = 1…4096 | serial, outer_threads, inner_only, outer_inner_static, policy_v2 |
+| P2 | thread budget at a fixed size | that ladder's 4096 rung | same as P1 |
+| P3 | Monte Carlo resource ladder, 1 spacecraft/sample | `independent_1sat_1hr`, 256 samples | serial, outer_threads, outer_process, policy_v2 |
+| P4 | the same ladder, compute-bound samples | `montecarlo_heavy_aerobraking`, 32 samples | same as P3 |
+| P5 | worker/thread split of one fixed budget | `mcgrid_16sat_8mc`, `mcgrid_8sat_16mc` | serial, outer_threads, outer_process, outer_inner_static, policy_v2 |
+
+Every ladder and grid is derived from the host's physical core count (capped at
+`PPB_ROUTER_LADDER_MAX_THREADS`, override with `SPACEAGORA_PPB_PAPER_BUDGET`),
+because the same five phases run on each paper machine: 12 cores gives a
+`[1, 2, 4, 8, 12]` budget ladder and the six splits of 12, while 64 cores gives
+`[1, 2, 4, 8, 16, 32]` and the six splits of 32.
+
+**Every point is above the measurability floor, and P1 pays for that with an
+iso-work ladder.** A constellation-size ladder at one fixed mission length is
+unmeasurable at its small end: one spacecraft over an hour of L50 vacuum is
+~10 ms of solve, five of the six rungs sit under the harness's 3 s floor, and
+what those points measure is dispatch overhead and scheduler noise. So the
+mission length moves with N instead — `PPC_L50_ISO_MISSION_S` in `cases.jl`
+carries one duration per rung, calibrated by measurement on the 12-core
+reference box, and the case name carries the duration:
+
+| N | mission | serial baseline |
+|---:|---:|---:|
+| 1 | 4 150 000 s (1153 h) | 8.95 s |
+| 16 | 514 000 s (143 h) | 11.18 s |
+| 64 | 415 000 s (115 h) | 11.85 s |
+| 256 | 124 000 s (34 h) | 12.77 s |
+| 1024 | 24 600 s (6.8 h) | 12.27 s |
+| 4096 | 5 800 s (1.6 h) | 12.53 s |
+
+A row is therefore "the same quantity of propagation spread over N spacecraft",
+and the speedup column isolates how much of a fixed workload each route
+parallelises at that width, rather than mixing that in with the workload growing
+by a factor of 4096 down the column. The mission length is a table column
+because the rows are no longer the same mission. Recalibrate the table on a new
+machine with `bash calibrate_iso_ladder.sh` in this directory, which runs each
+registered rung once in `serial` mode and prints the duration that would put it
+at the target (~10 min, wants an idle machine). Scaling is linear in mission
+length to within a few percent *above* the floor; a rung measuring well under
+3 s is extrapolating from mostly fixed per-solve cost and will land short, which
+is why the first calibration of this ladder aimed at ~10 s rather than 3.
+
+P3 clears the floor by campaign size rather than duration: 256 samples, matching
+B12, where 64 leaves the serial baseline at ~2.4 s.
+
+**P3/P4 sweep the budget; P5 sweeps the split.** A P3 grid entry is `(b, b)`:
+`b` worker processes *and* `b` threads, so each route gets `b` units of the
+resource it actually spends and the routes are comparable at every rung — the
+question is how a campaign scales as the budget grows, and which route the
+router picks at each size. B13's grid holds the total fixed and varies where it
+is spent, which is the right axis only once the samples themselves carry
+constellations (P5) and both levels of parallelism are live at once. Phases
+sized this way set `budget_grid_fixed`, which exempts them from the rescale in
+`_ppb_budget_grid` and the `w * t <= max_workers` filter in
+`_ppb_cap_worker_counts`; both exist to fit a grid *declared* against a 32-core
+reference box onto a smaller machine, and applied to an already host-sized grid
+they would replace it with divisor pairs of the worker cap.
+
+Serial is in every P phase's mode list, at every grid entry. It is
+budget-independent, so those runs are redundant as measurements — but the
+aggregation joins the serial baseline on
+`(phase_id, case, mc_samples, process_workers)`, and a point with no serial row
+at its own worker count gets no `speedup` and no ratio column at all. That is
+why L15 reports `serial_median_s = 0`.
+
+Run and tabulate:
+
+```bash
+# 12-core machine (~5 h)
+julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+    --phases=P1,P2,P3,P4,P5 --threads=1,2,4,8,12 --process-workers=12
+
+# tables (markdown + LaTeX) from one or more runs
+python3 scripts/make_paper_routing_tables.py \
+    output/performance/paper_benchmarks/<stamp> --out output/paper_routing_tables
+```
+
+## Figure F2 (P6, P6p) — thread scaling across force models and density paths
+
+One constellation size, six traces, the thread ladder `1, 2, 4, 8, 16, 32`: what
+happens to constellation thread scaling as the force model and the density path
+get heavier. Trace 2 is P1/P2's own 4096 rung, reused rather than duplicated, so
+the figure and those tables share a serial baseline.
+
+| # | Trace | Case | Mission | `dt_max` | Phase |
+|---|---|---|---|---:|---|
+| 1 | degree 20 harmonics, vacuum | `gravity_4096sat_l20_vacuum_19700s` | 19 700 s | 20 s | P6 |
+| 2 | degree 50 harmonics, vacuum | `gravity_4096sat_l50_vacuum_5800s` | 5 800 s | 20 s | P6 |
+| 3 | + SRP + Sun/Moon third body | `gravity_4096sat_l50_srp_nbody_vacuum_5800s` | 5 800 s | 20 s | P6 |
+| 4 | + analytic exponential atmosphere | `aero_4096sat_l50_expatm_100s` | 100 s | 5 s | P6 |
+| 5 | + native GRAM, look-ahead cache | `aero_4096sat_l50_gram_lookahead_100s` | 100 s | 5 s | P6 |
+| 6 | + native GRAM, process route | `aero_4096sat_l50_gram_process_100s` | 100 s | 5 s | P6p |
+
+Modes: P6 runs `serial` (the speedup denominator, at the bottom rung only),
+`inner_only` (R2 — one simulation, the split inside the RHS across satellites,
+which is what this figure is about) and `predictive` (R7, the adaptive arm).
+P6p runs `serial`, `outer_process` and `predictive` over a worker ladder with
+threads pinned at 1. Three repeats, one warm-up, cold store.
+
+**Two phases, one figure.** A phase declares one mode ladder for all of its
+cases and the six traces do not share one. Traces 1–5 are single simulations of
+4096 spacecraft, and `outer_process` is a no-op on them: the harness only ever
+spreads *samples* across processes
+(`uses_process_pool = sample_count > 1 && mode.backend == "process"`,
+`execution.jl`), so a one-sample constellation case under the process route
+degenerates to one in-process solve and contributes six identical rows per case.
+Trace 6 is the same 4096 spacecraft-missions arranged as 4096 one-spacecraft
+samples — the only arrangement the process route can spread, and the same
+arrangement `paper_scenarios` S2 uses for its `process_members` mode — and
+running *that* under `inner_only` would be 4096 sequential solves with the pool
+idle. The satellites in this catalog exert no force on one another, so the two
+arrangements do the same total physics; what differs is where the parallelism
+can go and how many native GRAM images the machine must hold at once, which is
+the trade the figure exists to show. Always run and archive P6 and P6p together.
+
+**The density path is selected by environment, not by configuration.** Which of
+the two ways of reading one shared native `GRAMAtmosphereModel` a run uses lives
+in `SPACEAGORA_*` env read at density-callback assembly time, so neither the
+case builder nor the phase can express it. `_ppc_p6_gram_density_env!` in
+`cases.jl` sets it from the `--case=` argument at include time, the same way
+`ppc_ensure_gramsuite_loaded!` decides whether to load GRAMSuite. The values are
+S2's: the look-ahead trace puts the cache horizon past the end of the mission and
+the deviation threshold past anything the mission can reach, so only the
+initial (proven-safe) build ever runs — a workaround for the native
+cache-rebuild hang with two or more satellites, not a tuning choice — and the
+process trace freezes density per accepted step, without which per-RK-stage
+perturbation noise collapses the adaptive step size.
+
+**Mission length is per trace, and it is a prediction.** A single duration across
+stacks this different puts the light traces under the 3 s measurability floor and
+the GRAM traces into the hours, so each trace is sized against trace 2's measured
+serial baseline instead, exactly as `PPC_L50_ISO_MISSION_S` sizes the
+constellation-count ladder, and the duration is a column of the figure's table.
+The derivations, and the CSV behind each number, are in `FIGURE_RUNS.md`;
+the short version, all against trace 2's measured TRX50 serial baseline of
+**11.86 s**
+(`paper_benchmarks_trx50_cold11/20260918_162845`, phase P2, 11 repeats):
+
+| Trace | Mission | Predicted serial baseline on the TRX50 | Derived from |
+|---|---:|---:|---|
+| 1 | 19 700 s | 7.0–11.9 s | S1's degree-50/degree-20 serial ratio at 4096 spacecraft (3.39), bracketed against the batched kernel's term-count ratio (5.74) |
+| 2 | 5 800 s | 11.86 s (measured) | — |
+| 3 | 5 800 s | 13–15 s | ≥ trace 2 by construction; `atmo256_gram_live_nbody`/`atmo256_gram_live` puts the third body at +10% |
+| 4 | 100 s | 12.9 s | `atmo256_exponential_10min` serial 4.854 s, scaled ×16 in spacecraft and ×100/600 in duration |
+| 5 | 100 s | 112 s | `atmo256_gram_live_10min` serial 42.06 s, same scaling |
+| 6 | 100 s | ~356 s over 4096 samples | S2 `process_members`, 87 ms per one-spacecraft sample |
+
+Trace 5 is nine times trace 2's baseline and dominates P6's wall clock. That is
+deliberate and is the shortest mission at which the GRAM traces are still
+simulations rather than measurements of per-solve setup: sizing trace 5 to
+11.86 s the way the others are sized would demand a 10 s mission at 4096
+spacecraft.
+
+Recalibrate on a host these were not derived for before quoting anything from a
+run there:
+
+```bash
+bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh calibrate-p6 --execute
+```
+
+## P7 — one spacecraft, short missions
+
+P1's one-spacecraft rung is a 4 150 000 s pure-gravity mission, sized so its
+serial baseline clears the 3 s floor, and every route resolved to serial
+execution there. P7 measures the opposite end: one spacecraft over about one
+orbit, at the full thread budget, where a route's fixed setup (planning, the
+campaign machinery, calibration probes) is a large share of the run. Its serial
+baselines are under the floor by design; what the phase reports is each route's
+wall time against serial in seconds, not a speedup.
+
+| Row | Physics | Case | Mission | `dt_max` |
+|---|---|---|---:|---:|
+| 1 | degree 50, vacuum (P1's physics and spacecraft) | `gravity_1sat_l50_vacuum_5702s` | 5 702 s | 20 s |
+| 2 | + SRP + Sun/Moon third body (P6 trace 3) | `gravity_1sat_l50_srp_nbody_vacuum_5702s` | 5 702 s | 20 s |
+| 3 | degree 50 + exponential-atmosphere aero (P6 trace 4) | `aero_1sat_l50_expatm_5702s` | 5 702 s | 5 s |
+
+**The mission is derived, not calibrated.** It is the two-body period of the
+initial osculating orbit of P1's spacecraft (member 1 of `ppc_constellation`,
+500 km periapsis and 540 km apoapsis altitude):
+a = 6 378 136.6 m + 520 000 m = 6 898 136.6 m, and with the built-in Earth's
+μ = 3.98600436233e14 m³/s², T = 2π √(a³/μ) = 5 701.76 s, rounded to 5 702 s
+because the case name carries an integer. `PPC_P7_MISSION_S` in `cases.jl`
+computes it from the same altitudes and constants at load time, so the case
+names follow the orbit if it changes; the workload coverage gate pins that. The
+degree-50 field moves the real revolution time off the two-body value by a
+relative amount of order J2 (Rp_e/a)², about 1e-3.
+
+**The aero row flies a different orbit and keeps the same duration.** P1's
+spacecraft at 500–540 km with the default 120 km entry interface would be outside
+the atmosphere, so row 3 flies member 1 of the P6 density constellation (300 km
+periapsis, 400 km apoapsis, 600 km interface), inside the atmosphere from the
+first step as trace 4 is. It keeps 5 702 s rather than trace 4's 100 s: 100 s
+was sized to lift a 4096-spacecraft constellation above the floor and means
+nothing at one spacecraft, and a shared duration makes the three rows
+iso-mission. 5 702 s is slightly more than one revolution of that lower orbit,
+whose own two-body period is 5 492 s by the same formula.
+
+Modes and thread axis are P1's: `serial`, `outer_threads`, `inner_only`,
+`outer_inner_static`, `policy_v2`, `predictive`, one sample, at the maximum of
+the thread ladder (`thread_mode = :max_only`). Eleven repeats are declared in
+the phase itself rather than left to `SPACEAGORA_PPB_MIN_REPEATS` (which only
+raises a count), one warm-up. No parity case: P1 carries the P-series parity
+check. `make_paper_routing_tables.py` and `make_paper_routing_plots.py` put the
+three rows in one table and one figure with the force model on the axis.
+
+## P5f — Monte Carlo over constellations, full machine
+
+P5 runs every mode once per split of the budget, `predictive` and `policy_v2`
+included, so its adaptive arms were always told the split and chose only a route
+inside it. P5f asks the question a user of the whole machine has: handed every
+core and no split, does R7 (`predictive`) land within the 10% criterion of the
+best static allocation, that is, the fastest static route at the fastest split?
+
+| | P5 | P5f |
+|---|---|---|
+| Cases | `mcgrid_16sat_8mc`, `mcgrid_8sat_16mc` | the same |
+| Static modes (`serial`, `outer_threads`, `outer_process`, `outer_inner_static`) | every split of the budget | every split of the budget, exactly as P5 |
+| `predictive` (R7) | every split | once per case, full budget, no split |
+| `policy_v2` (R6) | every split | not run |
+| Repeats / warm-up | 5 declared (11 by `SPACEAGORA_PPB_MIN_REPEATS`) / 1 | 11 declared / 1 |
+
+The phase lists `predictive` in `modes` (so the precompile workload and
+`--lean-modes` see it) and in `full_budget_modes`; the per-split runs take the
+other modes, and the full-budget modes run once more after the splits, in
+`P5f/full_w<B>_t<B>/`. `B` is the grid's budget, `PPB_PAPER_BUDGET` (12 on the
+workstation, 32 on TRX50), and the run is launched with `--threads=B
+--process-workers=B`: a Julia process with every core as threads and a
+process-pool cap (`SPACEAGORA_PERF_PROCS`) equal to the same count, which on the
+V2 profiles is also the cap an unset environment gets (`usable_core_budget`,
+memory permitting). The pool is still capped by the run's `--process-workers`,
+as the splits are. From there the campaign runner and the R7 planner choose the
+route, pool width, local slots and each sample's inner thread budget
+themselves.
+
+**What the adaptive row records.** Every row now carries
+`adaptive_allocation`, empty for the pinned modes and
+`<route>:w<W>+l<L>:b<B>` for an adaptive campaign: the route it ran, `W`
+consumers apart from local slots (thread tasks, or pool worker processes), `L`
+coordinator local slots beside a pool, and the largest inner thread budget any
+sample ran under, read inside the sample (`ppc_adaptive_allocation` in
+`parallelization_performance/execution.jl`). It is read from what ran, not from
+the plan, so a guard that closed consumers mid-campaign shows what remained. The
+full-budget run also switches `SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1` on unless
+the launcher set it, so the job log carries each campaign's candidates, the
+inner-speedup curve the planner read and the reason for its choice.
+
+**Can R7 give a sample more than one thread?** Only when the planner has an
+inner-speedup curve for the workload (`_predictive_inner_candidates!` in
+`src/simulation/campaigns/predictive_planner.jl`); without one every concurrent
+plan runs its samples at budget 1. The curve (`rhs_inner_speedup_curve`,
+`src/simulation/engine/rhs_calibration.jl`) is assembled from RHS calibration
+store rows that match the workload's signature stem: machine, spacecraft
+bucket, effector set, density model and the code token
+(`_RHS_CALIB_CODE_TOKEN`, currently `2026-09-23`), whatever budget or
+outer-split flag they were written under, and that carry per-candidate
+timings (store schema 2) including a width-1 timing and at least one wider
+one. Those timings are written only by a calibration sweep, which runs only in
+a solve whose inner budget is above 1 under an adaptive mode
+(`SPACEAGORA_RHS_CALIBRATE=auto`; the static modes set it off), so static rows
+never contribute. In this harness the adaptive point's own warm-up solve runs
+on the coordinator with no inner budget declared, i.e. at the whole pool, and
+sweeps; so even from a cold store the timed campaigns see a curve, and a
+converged store adds the rows of earlier adaptive runs of the same stem.
+`SPACEAGORA_PREDICTIVE_INNER_CURVE=0` disables it. With a curve, the plan space
+gains `threads@W` at `b = fld(T, W)`, one sample on the whole pool, and mixed
+local slots at `b` threads, each of which must beat the best static plan by
+the 15% margin. On TRX50 at budget 32 the static plans leave cores idle
+(8 samples on 32 cores), so a curve with speedup of about 1.18 at 4 threads
+would be enough, by round count alone, for `threads@8+b4` to win; on the
+12-core workstation every b > 1 plan needs more rounds and so a speedup the
+RHS does not have. In the 2026-09-25 TRX50 preview smoke (cold store) the
+curve was read and b > 1 candidates were offered, but the curve was flat
+(1.00 up to width 15, 1.01 beyond), so R7 chose the static-equivalent pool
+plan in both cases.
+
+**The criterion rule.** `scripts/check_policy_criterion.py` scores a P5f
+adaptive row against every static route at every split whose total equals its
+budget, with the bias correction every other point gets: the mean of those
+(route, split) medians when all of them lie within `--equiv-band` of the
+fastest, otherwise the fastest. Tolerance and the failed-campaign rule are
+unchanged. `make_paper_routing_tables.py` writes one row per workload with the
+winning static route and its split; the plot script draws the two workloads on
+one categorical axis.
+
+Run it on its own, cold or converged (see `FIGURE_RUNS.md`):
+
+```bash
+julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+    --phases=P5f --threads=1,2,4,8,12 --process-workers=12
+```
+
 ## Underlying case families (`parallelization_performance/cases.jl`)
 
 The phases above draw from a shared case catalog, grouped into families:
@@ -419,6 +718,25 @@ The phases above draw from a shared case catalog, grouped into families:
 - **`duration_cadence`** — `gravity_16sat_l20_vacuum_longmission`,
   `gravity_1024sat_l50_vacuum_15min`, `cadence_1024sat_{none,10s,1s}`. Mission
   length and trajectory-output volume. B14.
+- **`p6_force_ladder`** — `gravity_{N}sat_l20_vacuum_19700s`,
+  `gravity_{N}sat_l50_srp_nbody_vacuum_5800s`. Traces 1 and 3 of figure F2:
+  the vacuum force model made lighter (degree 20) and heavier (SRP plus
+  Sun/Moon third body, which puts CSPICE under `SPICE_LOCK` in the middle of an
+  otherwise perfectly parallel RHS). P6.
+- **`p6_density_ladder`** — `aero_{N}sat_l50_{expatm,gram_lookahead,gram_process}_100s`.
+  Traces 4–6 of the same figure: the `atmo256_*` ladder's design (fixed
+  spacecraft count, mission and harmonic degree; only the density model varies)
+  at the figure's constellation size. `gram_process` is a Monte Carlo case with
+  `default_samples` equal to the constellation size — one spacecraft per sample —
+  because the process route spreads samples and never constellation members.
+  P6 and P6p. Registered at N = 4096 (the figure) and N = 16; **the 16-spacecraft
+  entries exist for the `--profile=test` smoke path only** — that profile pins the
+  mission at 10 s and so ignores the duration in the name, and those rows are not
+  sized rungs and must never be quoted as measurements.
+- **`p7_short_1sat`** — `gravity_1sat_l50_vacuum_{S}s`,
+  `gravity_1sat_l50_srp_nbody_vacuum_{S}s`, `aero_1sat_l50_expatm_{S}s` with
+  S = `PPC_P7_MISSION_S` (5 702 s). The P1 and P6 patterns at one spacecraft,
+  built by the same `ppc_single_config` branches. P7.
 
 ### Measured case costs (space-falcon-1, serial, post-warm-up)
 
@@ -568,3 +886,11 @@ combination of outer-loop backend and inner-loop/callback parallelism:
 spacecraft, MC samples at 16, process workers at 4, and repeats at 2, so the
 same phase structure can be smoke-tested on a laptop before committing to a
 full run on the benchmark machine.
+
+One exception: a host-sized split grid (`budget_grid_fixed` with every entry one
+split of the same budget, which is P5 and P5f) is kept whole under `--preview`,
+and its runs are not held to the 4-worker cap. The cap and the `w * t <= 4`
+filter exist to fit a grid declared against a 32-core box onto a laptop; this
+grid is already the host's own budget, and on any host above 4 cores the filter
+emptied it, so the phase ran as one unsplit run that measured none of its axis.
+`--process-workers` still caps it, as it does outside preview.

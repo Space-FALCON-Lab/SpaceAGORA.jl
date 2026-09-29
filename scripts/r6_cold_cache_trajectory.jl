@@ -46,6 +46,7 @@ const _MODE_PROFILE = Dict(
     "outer_inner_adaptive" => "R4",
     "full_smart" => "R5",
     "policy_v2" => "R6",
+    "predictive" => "R7",
 )
 
 # Same derivation as scripts/paired_profile_probe.jl: the shipped profile
@@ -55,7 +56,7 @@ function mode_env(name::String)::Dict{String, String}
     profile = _MODE_PROFILE[name]
     pairs = SpaceAGORA.ParallelProfiles.profile_env_pairs(profile; preserve_existing=false)
     envd = Dict{String, String}(String(k) => String(v) for (k, v) in pairs)
-    adaptive = profile in ("R4", "R5", "R6")
+    adaptive = profile in ("R4", "R5", "R6", "R7")
     envd["SPACEAGORA_RHS_CALIBRATE"] = adaptive ? "auto" : "off"
     return merge(_COMMON, envd)
 end

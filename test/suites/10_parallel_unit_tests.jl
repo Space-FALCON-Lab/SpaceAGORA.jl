@@ -15,6 +15,7 @@
         "lock_width_cap_tests.jl",
         "mixed_dispatch_tests.jl",
         "native_lock_stats_tests.jl",
+        "nested_inner_threading_tests.jl",
         "one_thread_and_multibody_tests.jl",
         "outer_route_persistence_tests.jl",
         "outer_split_budget_tests.jl",

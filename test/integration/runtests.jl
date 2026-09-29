@@ -873,13 +873,27 @@ end
 const GUIDANCE_SANDBOX = GuidanceSandbox
 
 
-include(joinpath(REPO_ROOT, "test", "suites", "01_contract_and_api_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "02_callbacks_parallel_and_smoke_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "03_persistence_units_and_rotational_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "04_solver_env_and_regression_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "05_thruster_control_and_quality_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "06_monolith_split_runtime_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "07_no_gram_onboarding_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "08_cli_and_assets_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "09_probe_drivers.jl"))
-include(joinpath(REPO_ROOT, "test", "suites", "10_parallel_unit_tests.jl"))
+const _ALL_SUITES = [
+    "01_contract_and_api_tests.jl",
+    "02_callbacks_parallel_and_smoke_tests.jl",
+    "03_persistence_units_and_rotational_tests.jl",
+    "04_solver_env_and_regression_tests.jl",
+    "05_thruster_control_and_quality_tests.jl",
+    "06_monolith_split_runtime_tests.jl",
+    "07_no_gram_onboarding_tests.jl",
+    "08_cli_and_assets_tests.jl",
+    "09_probe_drivers.jl",
+    "10_parallel_unit_tests.jl",
+]
+
+# Julia CI shards this entrypoint across parallel jobs: SPACEAGORA_CI_SHARD_ITEMS
+# names the suites, probes and unit files one job runs (see
+# .github/scripts/ci_shard_hooks.jl). Unset, every suite runs here in order.
+if haskey(ENV, "SPACEAGORA_CI_SHARD_ITEMS")
+    include(joinpath(REPO_ROOT, ".github", "scripts", "ci_shard_hooks.jl"))
+    CIShard.run_integration(_ALL_SUITES)
+else
+    for _suite in _ALL_SUITES
+        include(joinpath(REPO_ROOT, "test", "suites", _suite))
+    end
+end

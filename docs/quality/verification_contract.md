@@ -42,6 +42,11 @@ Telemetry threshold failures are blocking in this cleanup track.
 
 ## Coverage Policy
 Coverage enforcement is implemented by `test/gates/ci_coverage_quality_gate.jl`.
+Lines inside PrecompileTools `@setup_workload` / `@compile_workload` macro calls
+run only while the package precompiles, never under `--code-coverage=user`, so
+the gate drops them from the executable-line count (found by parsing each source
+file; a file that fails to parse fails the gate) and prints each affected file
+as a `precompile_only_excluded` line; functions called from those blocks still count.
 
 Main thresholds:
 1. Main overall coverage: `>= 90.0%`

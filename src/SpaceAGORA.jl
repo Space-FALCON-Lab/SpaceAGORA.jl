@@ -18,11 +18,9 @@ include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
 
 ## 2. Bring needed names from package modules into the scope of SpaceAGORA.jl
 # 2.1. Parallel Profiles
-using .ParallelProfiles: ParallelProfile, ParallelProfileConfig
-using .ParallelProfiles: parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
-using .ParallelProfiles: OuterRouteFeatures, OuterRouteTuning, OuterRouteState
-using .ParallelProfiles: reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
-using .ParallelProfiles: default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
+# The R0-R7 profiles and the outer-route bandit are internal and benchmark
+# machinery, reachable qualified as `SpaceAGORA.ParallelProfiles.<name>`. The
+# supported way to parallelize is `SolverConfig(parallel=true)`.
 
 # 2.2. Parallel Process
 using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
@@ -37,7 +35,6 @@ run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kw
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 using .SimulationCampaigns: run_constellation_ensemble
 using .SimulationCampaigns: run_monte_carlo_visualization
-using .SimulationCampaigns: campaign_route_features, campaign_outer_route_state
 
 ## 2.5. Simulation Model
 using .SimulationModel: StateAnchor, get_state_anchor_callback
@@ -151,8 +148,6 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationCampaigns.MonteCarloResult) MonteCarloResult
 @doc (@doc SimulationCampaigns.run_monte_carlo) run_monte_carlo
 @doc (@doc SimulationCampaigns.run_constellation_ensemble) run_constellation_ensemble
-@doc (@doc SimulationCampaigns.campaign_route_features) campaign_route_features
-@doc (@doc SimulationCampaigns.campaign_outer_route_state) campaign_outer_route_state
 
 # 3.3. Simulation Model
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionConfig) AerobrakingEnergyDepletionConfig
@@ -356,25 +351,6 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.SceneVisualization.export_ensemble_visualization) export_ensemble_visualization
 @doc (@doc SimulationCampaigns.run_monte_carlo_visualization) run_monte_carlo_visualization
 
-# 3.5. Parallel Profiles
-@doc (@doc ParallelProfiles.ParallelProfile) ParallelProfile
-@doc (@doc ParallelProfiles.ParallelProfileConfig) ParallelProfileConfig
-@doc (@doc ParallelProfiles.parse_parallel_profile) parse_parallel_profile
-@doc (@doc ParallelProfiles.parallel_profile_name) parallel_profile_name
-@doc (@doc ParallelProfiles.profile_config) profile_config
-@doc (@doc ParallelProfiles.profile_env_pairs) profile_env_pairs
-@doc (@doc ParallelProfiles.with_parallel_profile) with_parallel_profile
-@doc (@doc ParallelProfiles.OuterRouteFeatures) OuterRouteFeatures
-@doc (@doc ParallelProfiles.OuterRouteTuning) OuterRouteTuning
-@doc (@doc ParallelProfiles.OuterRouteState) OuterRouteState
-@doc (@doc ParallelProfiles.reset_outer_route_state!) reset_outer_route_state!
-@doc (@doc ParallelProfiles.outer_route_signature) outer_route_signature
-@doc (@doc ParallelProfiles.outer_route_stats_snapshot) outer_route_stats_snapshot
-@doc (@doc ParallelProfiles.default_outer_route) default_outer_route
-@doc (@doc ParallelProfiles.outer_route_candidates) outer_route_candidates
-@doc (@doc ParallelProfiles.select_outer_route!) select_outer_route!
-@doc (@doc ParallelProfiles.record_outer_route_feedback!) record_outer_route_feedback!
-
 # 3.6. Parallel Process
 @doc (@doc ParallelProcess.ProcessPool) ProcessPool
 @doc (@doc ParallelProcess.campaign_process_pool) campaign_process_pool
@@ -398,18 +374,12 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 
 
 ## 4. Declare exports
-export ParallelProfile, ParallelProfileConfig
-export parse_parallel_profile, parallel_profile_name, profile_config, profile_env_pairs, with_parallel_profile
-export OuterRouteFeatures, OuterRouteTuning, OuterRouteState
-export reset_outer_route_state!, outer_route_signature, outer_route_stats_snapshot
-export default_outer_route, outer_route_candidates, select_outer_route!, record_outer_route_feedback!
 export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
 export run_constellation_ensemble
-export campaign_route_features, campaign_outer_route_state
 export StateAnchor, get_state_anchor_callback
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
@@ -479,27 +449,15 @@ export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_
 using PrecompileTools: @compile_workload, @setup_workload
 include(joinpath(@__DIR__, "precompile_workload.jl"))
 
-# The Monte Carlo dispatchers compile on their first campaign in a process --
-# the job channel, the feeders and local consumers of the mixed dispatcher, the
-# sample wrapper, the steady-cost estimator. Measured on the paper harness
-# (L12, independent_1sat_1hr, 64 samples): the runner's first pool campaign
-# cost 3.1-3.2 s against 1.8-2.2 s for the static pool path's own cold start
-# on both machines, and 0.2-0.6 s warm. A production process pays that once;
-# the harness pays it on the first repeat of every point. Exercised with a
-# trivial sample so the generic machinery is in the pkgimage; the user's sample
-# closure itself still specialises on first call. The body lives in
-# `SimulationCampaigns._warm_campaign_dispatchers` so the test suite can run
-# the same code at run time.
-@compile_workload begin
-	SimulationCampaigns._warm_campaign_dispatchers()
-end
-
 ## 6. Runtime Initialization
 # Runtime wiring that must not be baked into the precompiled image: these Refs
 # hold closures over EnvironmentModels functions, so assigning them at include
 # time would serialize a closure from an earlier world age. __init__ runs on
 # every load of the cached image, which is what this needs.
 function __init__()
+	# Nothing measured about the precompiling host may stand in for this one
+	# (see `_reset_process_local_state!` in precompile_workload.jl).
+	_reset_process_local_state!()
 	try
 		SimulationModel.SimulationCallbacks._install_density_service_hooks!()
 	catch err

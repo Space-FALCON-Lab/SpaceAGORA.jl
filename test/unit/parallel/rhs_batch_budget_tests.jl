@@ -22,8 +22,15 @@ const PPol = SpaceAGORA.SimulationModel.ParallelPolicy
               SE._rhs_batch_workers(nothing) > 1
     end
     withenv("SPACEAGORA_INNER_THREAD_BUDGET" => "3") do
-        @test SE._rhs_batch_workers(nothing) == min(3, cores)
-        @test SE._rhs_batch_minbatch(nothing, 32) == cld(32, min(3, cores))
+        # effective_inner_thread_budget() caps the requested "3" at
+        # Threads.nthreads() (see env_config.jl) before _rhs_batch_workers
+        # caps it again at physical cores -- on a host with fewer than 3
+        # threads there is no way to reach a 3-wide batch, so the expected
+        # value must include that same nthreads cap rather than assuming
+        # it never binds.
+        expected = max(1, min(cores, PPol.effective_inner_thread_budget()))
+        @test SE._rhs_batch_workers(nothing) == expected
+        @test SE._rhs_batch_minbatch(nothing, 32) == cld(32, expected)
     end
 end
 

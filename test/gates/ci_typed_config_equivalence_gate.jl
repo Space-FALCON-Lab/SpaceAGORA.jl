@@ -22,6 +22,14 @@ const SE = SpaceAGORA.SimulationEngine
         artifacts=SE.ArtifactConfig(save_bundle=false, warn_deprecated_config=false)
     )
 
+    # The profile is expanded (the whole R5 bundle, not just its name), and the
+    # explicitly set fields still win over it.
+    overrides = SE._engine_env_overrides(cfg)
+    @test overrides["SPACEAGORA_PARALLEL_PROFILE"] == "R5"
+    @test overrides["SPACEAGORA_PARALLEL_POLICY_ADAPTIVE"] == "1"
+    @test overrides["SPACEAGORA_EFFECTOR_PARALLEL"] == "on"
+    @test overrides["SPACEAGORA_RHS_BATCH_PARALLEL"] == "off"
+
     SE._with_engine_env_overrides(cfg, () -> begin
         @test SE._solver_policy_mode() == :rodas5p
         @test SE._solver_maxiters() == 12345

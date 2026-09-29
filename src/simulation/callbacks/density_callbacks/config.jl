@@ -73,16 +73,62 @@ end
     return num_sats >= _density_batch_threshold()
 end
 
+"""
+    _gram_isolated_pool_mode() -> Symbol
+
+Whether the density callback's batch route spreads native GRAM across per-worker
+instances instead of evaluating it serially behind the process-wide lock.
+
+Default `auto`, which means on above [`_gram_isolated_pool_threshold`](@ref)
+native-GRAM items, except when requested winds depend on instance query history.
+The batch evaluator then retains the locked route. The pinned wrapper's default
+wind mode is perturbed; nominal winds must be selected explicitly for wind
+queries to use the automatic pool. Calls with `wind=false` remain eligible.
+
+The nominal-wind measurements in `docs/architecture/gram_thread_scaling.md` and
+`benchmarks/studies/gram_thread_scaling/results/` found bit identity and speedups
+of 1.90x at 8 threads and 1.65x at 4 for 1024 spacecraft. These claims do not
+cover perturbed winds. Explicit `on` permits independent stochastic histories;
+its wind results can depend on pool width and thread count.
+"""
 @inline function _gram_isolated_pool_mode()::Symbol
-    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_GRAM_ISOLATED_POOL"; default="off")
+    return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_GRAM_ISOLATED_POOL"; default="auto")
 end
 
+"""
+    _gram_isolated_pool_threshold() -> Int
+
+How many items must really reach native GRAM before the pool is worth building.
+
+1024, SOURCED from `benchmarks/studies/gram_thread_scaling/results/gram_pool_scaling_*`:
+at 256 spacecraft the pool is slower than the locked path at every thread count
+and every width measured, down to 0.49x at 8 threads and width 8; at 1024 it is
+faster at 4 and 8 threads in both density paths. The mission-length control in
+the same directory shows the 256 loss is not the pool's build cost waiting to be
+amortized -- ten times the mission moves it from 0.68x only to 0.80x -- so the
+axis that decides is the number of native GRAM calls per callback, not the
+length of the run.
+"""
 @inline function _gram_isolated_pool_threshold()::Int
-    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD", 4)
+    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD", 1024)
 end
 
+"""
+    _gram_isolated_pool_max_workers() -> Int
+
+The most native GRAM instances the pool will build.
+
+Capped at 4, SOURCED from the same CSVs: four is the fastest width measured in
+all four winning cells -- 1.90x against 1.76x at width 8 and 1.64x at width 2
+(8 threads, freeze-per-step), 1.65x against 1.41x and 1.37x (4 threads), and the
+same ordering in both look-ahead rows. Each further instance is also a further
+native GRAM image resident in the process, so the cap is the cheap side of the
+trade in memory as well as in time.
+"""
 @inline function _gram_isolated_pool_max_workers()::Int
-    return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS", max(1, Threads.nthreads()))
+    return ParallelPolicy.parse_thread_threshold_env(
+        "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS", min(4, max(1, Threads.nthreads()))
+    )
 end
 
 @inline function _gram_isolated_pool_enabled(num_items::Int)::Bool
@@ -130,6 +176,58 @@ end
 
 @inline function _callback_outer_parallel_hint()::Bool
     return ParallelPolicy.outer_parallel_active()
+end
+
+# Per-satellite cost class for the density callback's thread decision.
+#
+# `thread_policy_decision` already carries a light-work guard -- `heavy_only`
+# with `heavy_work` false pins `use_threads` to false -- and the effector policy
+# has used it from the start, for exactly this reason: a dispatch that costs
+# more than the work it hands out makes the callback slower, not faster. The
+# density callback never passed it. Its decision asked only "are there enough
+# satellites", so eight spacecraft on an analytic atmosphere threaded a loop
+# whose body is a 3x3 rotation, a lat/lon conversion and one `exp`, once per
+# accepted step, through a persistent-pool round trip per worker.
+#
+# Heavy means the per-satellite body can reach a native GRAM evaluation or a
+# GRAM track-cache/surrogate lookup -- tens of microseconds and up, which is
+# what the threaded path was built for and where it is measured to win. Every
+# closed-form atmosphere is light. So is the batch pre-fill loop whatever the
+# model is: that loop only stages altitude/latitude/longitude and the density
+# evaluation itself happens afterwards, on one thread, inside
+# `getDensityBatch!`.
+#
+# `SPACEAGORA_DENSITY_CALLBACK_PARALLEL=on` is unaffected -- an explicit `on`
+# forces threads ahead of the guard -- so a caller that wants the dispatch
+# measured on light work can still ask for it.
+@inline density_model_work_is_heavy(::AbstractDensityModel)::Bool = false
+@inline density_model_work_is_heavy(::EnvironmentModels.GRAMAtmosphereModel)::Bool = true
+@inline density_model_work_is_heavy(::EnvironmentModels.GRAMAtmosphereModelSurrogate)::Bool = true
+
+"""
+    _density_callback_work_is_heavy(p, num_sats) -> Bool
+
+True when at least one satellite's density evaluation is expensive enough to be
+worth a threaded dispatch.  Reads the per-satellite model vector when the run
+installed one and the configured model otherwise, and treats a run with the
+vacuum-predicted GRAM cache enabled as heavy: that path rebuilds a spline over
+the look-ahead trajectory inside the callback body.
+"""
+@inline function _density_callback_work_is_heavy(p, num_sats::Int)::Bool
+    env = _callback_env_config(p)
+    env.vacuum_gram_cache_enabled && return true
+    if p !== nothing && hasproperty(p, :shared_buffers)
+        models = p.shared_buffers.density_models
+        if !isempty(models)
+            limit = min(num_sats, length(models))
+            @inbounds for i in 1:limit
+                density_model_work_is_heavy(models[i]) && return true
+            end
+            num_sats <= length(models) && return false
+        end
+    end
+    p === nothing && return false
+    return density_model_work_is_heavy(p.args.environment_model.density_model)
 end
 
 # Extend this for custom user density models as needed:
@@ -251,11 +349,38 @@ end
     return Threads.nthreads() > 1 && num_items >= env.gram_isolated_pool_threshold
 end
 
-@inline function _density_callback_thread_decision(args::SimulationConfiguration, num_sats::Int)
-    return _density_callback_thread_decision(nothing, args, num_sats)
+# `heavy_work` defaults to true because the cost of the loop body is a property
+# of the call site, not of this function: the callback's batch route stages
+# kinematics only, its per-satellite route runs a full density evaluation, and
+# the RHS-side atmosphere pre-fill (dynamics_rhs.jl) samples density inline. A
+# caller that knows its body is light says so; the default answers the older,
+# narrower question -- would the policy thread this if the work were worth
+# threading -- and so leaves every existing call site's behavior unchanged.
+@inline function _density_callback_thread_decision(
+    args::SimulationConfiguration,
+    num_sats::Int;
+    heavy_work::Bool=true
+)
+    return _density_callback_thread_decision(nothing, args, num_sats; heavy_work=heavy_work)
 end
 
-@inline function _density_callback_thread_decision(p, args::SimulationConfiguration, num_sats::Int)
+# `lock_free` is for one caller: the isolated GRAM pool's width
+# (density_callbacks/runtime.jl). The `:density_callback` source carries a
+# 16-thread minimum budget that exists, by its own comment below, because native
+# GRAM is serialized behind the process-wide lock and oversubscribing it wastes
+# cycles fighting for that lock. The pool is the thing that takes GRAM off that
+# lock -- each worker holds its own instance behind its own lock -- so holding it
+# to that floor is circular, and on any process with fewer than 16 threads it
+# pins the pool's width to 1, fails the pooled call's own `workers > 1` guard,
+# and silently returns the run to the locked path. `:density_callback_lockfree`
+# is the source that already exists for exactly this distinction.
+@inline function _density_callback_thread_decision(
+    p,
+    args::SimulationConfiguration,
+    num_sats::Int;
+    heavy_work::Bool=true,
+    lock_free::Bool=false
+)
     env = _callback_env_config(p)
     penv = _policy_env_config(p)
     mode = env.density_parallel_mode
@@ -286,13 +411,19 @@ end
     # has no such cost, so it gets the general default floor instead via a
     # separate source category, rather than being held to the same 16-thread gate
     # for no reason (see PARALLELIZATION_CURRENT_STATE.md / Finding 1).
-    source = model isa EnvironmentModels.GRAMAtmosphereModel ? :density_callback : :density_callback_lockfree
+    source = (model isa EnvironmentModels.GRAMAtmosphereModel && !lock_free) ?
+        :density_callback : :density_callback_lockfree
+    # heavy_only is passed unconditionally: the guard only bites when the caller
+    # says the per-satellite body is light, and `:on` overrides it either way.
+    # See density_model_work_is_heavy for what "light" costs here.
     policy = ParallelPolicy.thread_policy_decision(
         num_sats;
         mode=mode,
         threshold=env.density_thread_threshold,
         outer_active=outer_active,
         allow_with_outer=allow_with_outer,
+        heavy_only=true,
+        heavy_work=heavy_work,
         source=source,
         env=penv
     )
@@ -339,11 +470,28 @@ end
     return _control_callback_thread_decision(control_model, num_sats).use_threads
 end
 
-@inline function _thermal_callback_thread_decision(num_sats::Int)
-    return _thermal_callback_thread_decision(nothing, num_sats)
+# `heavy_work` is a keyword with the same contract as the density version, and
+# for the same reason: the thermal callback's per-satellite body reads its
+# density from `shared_buffers` rather than evaluating a model
+# (`_compute_stage_heat_rates!` is called with `use_buffered_density=true`), so
+# what it costs is one `sample_planet_frame` plus one `getHeatRate` per link --
+# light for a single-link spacecraft.
+#
+# Measured on the same 8-spacecraft one-hour shape at 24 threads, alternating
+# arms in one process: density and thermal both off, 0.61-0.67 s; density auto
+# and thermal off, 0.57-0.62 s; thermal auto, 1.14-2.04 s whichever way density
+# is set. All twelve runs produced identical final states. So after the density
+# guard the thermal callback is what is left of this shape's inner-threading
+# cost, and `get_thermal_callback`'s dispatch is the call site that would have
+# to pass its own classification here -- one keyword at
+# src/simulation/callbacks/thermal_callbacks.jl:82, in a file this change does
+# not own. The default stays `true` so that call site's behavior is unchanged
+# until someone measures what link count makes the dispatch worth paying for.
+@inline function _thermal_callback_thread_decision(num_sats::Int; heavy_work::Bool=true)
+    return _thermal_callback_thread_decision(nothing, num_sats; heavy_work=heavy_work)
 end
 
-@inline function _thermal_callback_thread_decision(p, num_sats::Int)
+@inline function _thermal_callback_thread_decision(p, num_sats::Int; heavy_work::Bool=true)
     env = _callback_env_config(p)
     penv = _policy_env_config(p)
     mode = env.thermal_parallel_mode
@@ -355,6 +503,8 @@ end
         threshold=env.thermal_thread_threshold,
         outer_active=outer_active,
         allow_with_outer=allow_with_outer,
+        heavy_only=true,
+        heavy_work=heavy_work,
         source=:thermal_callback,
         env=penv
     )

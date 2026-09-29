@@ -697,6 +697,9 @@ export RhsEffectorDecision, RhsExecutionPlan
         flat_min_thread_budget::Int
         harmonics_batch_enabled::Bool
         harmonics_batch_min_sats_per_worker::Int
+        # Routing only: satellites per worker before the default plan opens a
+        # flat worker team (setup.jl, _rhs_harmonics_flat_min_sats_per_worker).
+        harmonics_flat_min_sats_per_worker::Int
         harmonics_batch_spin_barrier::Bool
         harmonics_batch_allow_with_outer::Bool
         rhs_effector_cost_min_samples::Int

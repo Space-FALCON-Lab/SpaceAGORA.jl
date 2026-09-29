@@ -27,7 +27,7 @@ spaceagora-remote — sync SpaceAGORA.jl to a remote box and run a job there.
 
 Usage:
   spaceagora-remote push [--remote NAME] [--threads N] [--ram SIZE]
-                          [--process-workers N]
+                          [--process-workers N] [--workload auto|on|off]
                           [--attach] [--sync-data] [--poll-interval SEC]
                           -- <command> [args...]
 
@@ -44,6 +44,12 @@ Usage:
                         scratch every time) with no throughput benefit, and
                         can make outer_process look far slower than serial.
                         For B6 specifically (mc_samples=[1,8]), pass 8.
+  --workload MODE      Paper-harness precompile workload (see
+                        benchmarks/studies/paper_parallelization_benchmarks/
+                        workload/README.md). off (default) skips it; auto
+                        builds it before the job when the command runs the
+                        paper harness; on builds it for any command. The harness
+                        itself uses the image only when it is current.
   spaceagora-remote seed-data [--remote NAME]
   spaceagora-remote list       [--remote NAME]
   spaceagora-remote status     [--remote NAME] <job-id>
@@ -155,13 +161,14 @@ new_job_id() {
 }
 
 cmd_push() {
-  local remote="" threads="" ram="" process_workers="" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
+  local remote="" threads="" ram="" process_workers="" workload="off" attach=0 sync_data_flag=0 poll_interval="$DEFAULT_POLL_INTERVAL"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --remote) remote="$2"; shift 2 ;;
       --threads) threads="$2"; shift 2 ;;
       --ram) ram="$2"; shift 2 ;;
       --process-workers) process_workers="$2"; shift 2 ;;
+      --workload) workload="$2"; shift 2 ;;
       --attach) attach=1; shift ;;
       --sync-data) sync_data_flag=1; shift ;;
       --poll-interval) poll_interval="$2"; shift 2 ;;
@@ -194,6 +201,13 @@ cmd_push() {
 
   local cmd_str
   cmd_str="$(printf '%q ' "$@")"
+  local build_workload=0
+  case "$workload" in
+    on) build_workload=1 ;;
+    off) build_workload=0 ;;
+    auto) [[ "$cmd_str" == *paper_parallelization_benchmarks* ]] && build_workload=1 ;;
+    *) echo "error: --workload must be auto, on or off" >&2; exit 1 ;;
+  esac
   local run_sh
   run_sh="$(mktemp)"
   cat > "$run_sh" <<EOF
@@ -279,6 +293,33 @@ if [ \$INSTANTIATE_EXIT -ne 0 ]; then
   echo "EXIT_CODE=\$INSTANTIATE_EXIT" >> "$job_dir/job.meta"
   exit \$INSTANTIATE_EXIT
 fi
+EOF
+  if [[ $build_workload -eq 1 ]]; then
+    cat >> "$run_sh" <<EOF
+# Build the paper harness's precompile workload, once, before the harness
+# starts, so no benchmark point compiles its solver specializations itself
+# (benchmarks/studies/paper_parallelization_benchmarks/workload/README.md).
+#
+# Invalidation is by construction, not by bookkeeping: the package is named
+# SpaceAGORAPaperWorkload, so the purge above removes its image along with
+# SpaceAGORA's; its environment lives under this release's own output/; and the
+# image records the build of SpaceAGORA it was compiled against, so Julia
+# refuses it against any other build. The harness probes that once per run,
+# and every worker again before loading the image, and runs without it (with a
+# warning) when it is not current -- which is also what happens if this step
+# fails, so a failure here costs time, never correctness. The build runs in a memory-capped scope
+# (SPACEAGORA_PPB_WORKLOAD_MEMORY_MAX, default 16G) when systemd provides one.
+bash benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh all > "$job_dir/workload_build.log" 2>&1
+echo "WORKLOAD_BUILD_EXIT=\$?" >> "$job_dir/job.meta"
+# Asked for, so used: the harness default is off. auto falls back without a current image.
+export SPACEAGORA_PPB_WORKLOAD="\${SPACEAGORA_PPB_WORKLOAD:-auto}"
+EOF
+  else
+    cat >> "$run_sh" <<EOF
+export SPACEAGORA_PPB_WORKLOAD=0
+EOF
+  fi
+  cat >> "$run_sh" <<EOF
 $cmd_str > "$job_dir/job.log" 2>&1
 EXIT_CODE=\$?
 echo "END=\$(date -Iseconds)" >> "$job_dir/job.meta"
@@ -297,6 +338,7 @@ EOF
     echo "THREADS=${threads:-unset}"
     echo "RAM_HINT=${ram:-unset}"
     echo "PROCESS_WORKERS=${process_workers:-unset}"
+    echo "WORKLOAD=$workload build=$build_workload"
   } | rsh "cat > '$job_dir/job.meta'"
 
   echo "==> launching (tmux session: $session)"

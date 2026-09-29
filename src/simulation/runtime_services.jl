@@ -346,4 +346,38 @@ function native_lock_duty_cycle(elapsed_ns::Real, workers::Integer = 1)::Float64
     return clamp(snap.hold_ns / elapsed, 0.0, 1.0)
 end
 
+# ── Atomic file replacement ──────────────────────────────────────────────────
+
+const _ATOMIC_WRITE_COUNTER = Threads.Atomic{UInt64}(0)
+
+"""
+    write_file_atomically(write_fn, path) -> String
+
+Write `path` by calling `write_fn(io)` on a temporary file next to it and
+renaming that file over `path`, so a reader sees either the old content or the
+new, never a partial file. The temporary name carries the host, the process id
+and a per-process counter: the persisted policy state (machine constants,
+campaign corrections, RHS calibrations, persistent hints) is shared by every
+process started in one working directory, and a fixed `path * ".tmp"` let two
+writers interleave into one file or rename it out from under each other. The
+last rename wins; callers that need more than last-writer-wins must merge
+before writing. On failure the temporary file is removed and the error
+rethrown.
+"""
+function write_file_atomically(write_fn::Function, path::AbstractString)::String
+    path_s = String(path)
+    dir = dirname(path_s)
+    isempty(dir) || mkpath(dir)
+    n = Threads.atomic_add!(_ATOMIC_WRITE_COUNTER, UInt64(1))
+    tmp = string(path_s, ".", gethostname(), ".", getpid(), ".", n, ".tmp")
+    try
+        open(write_fn, tmp, "w")
+        mv(tmp, path_s; force = true)
+    catch
+        rm(tmp; force = true)
+        rethrow()
+    end
+    return path_s
+end
+
 end # module RuntimeServices

@@ -183,6 +183,58 @@ end
 # ever one, and a readable cache file is worth more than four bytes.
 _rhs_calib_density_token(density_model)::String = string(nameof(typeof(density_model)))
 
+# The version of the RHS execution the store's verdicts and timings describe.
+#
+# BUMP THIS BY HAND whenever a change alters how an RHS evaluation executes or
+# what it costs: a new route, a changed kernel, a changed default plan, a
+# changed worker floor. Every stored signature carries it, so a store written by
+# older code simply stops matching and every shape is treated as cold -- swept
+# again rather than trusted. The signature's `v<N>` prefix is for changes to the
+# signature's own meaning; this is for changes to the code the verdicts were
+# measured on, which until now had no way to expire them. Measured cost of not
+# having it: the converged P1/P5 pass on 2026-09-22 replayed a 4096-spacecraft
+# verdict from a 2026-09-18 store, formed before the harmonics kernel changes,
+# and ran 18-51% behind the plan a fresh sweep would have chosen.
+#
+# Any value never used before invalidates everything written before it; the
+# date of the change is a convenient one. `2026-09-23` post-dates every store
+# written by earlier code, including the TRX50 snapshots of 2026-09-18 and
+# 2026-09-22 and the default plan's 64-spacecraft-per-worker flat floor.
+const _RHS_CALIB_CODE_TOKEN = "2026-09-23"
+
+# The part of a signature that identifies the WORKLOAD on this machine and
+# code, without the two terms that describe how it is being run (`budget`,
+# `outer`). Rows that share a stem are the same shape measured under different
+# thread budgets, which is what an inner-speedup curve is assembled from.
+function _rhs_calib_signature_stem_terms(active_sats::Int, dynamic_effectors, density_model)::Vector{String}
+    n_eff       = length(dynamic_effectors)
+    has_harmonics = n_eff == 1 &&
+        dynamic_effectors[1] isa SimulationModel.GravitationalHarmonicsModel
+    return [
+        "machine=$(_calib_machine_label())",
+        "sats=$(_calib_sat_bucket(active_sats))",
+        "effs=$(n_eff)",
+        "harm=$(has_harmonics ? "1" : "0")",
+        "eff=$(_rhs_calib_effector_token(dynamic_effectors))",
+        "dens=$(_rhs_calib_density_token(density_model))",
+        "code=$(_RHS_CALIB_CODE_TOKEN)",
+    ]
+end
+
+"""
+    rhs_calibration_signature_stem(args) -> String
+
+The calibration store's signature stem for a simulation configuration: every
+signature term except the thread budget and the outer-split flag, sorted and
+joined with `|`. What [`rhs_inner_speedup_curve`](@ref) matches rows on.
+"""
+function rhs_calibration_signature_stem(args)::String
+    n = length(args.dynamics_model.spacecraft)
+    terms = _rhs_calib_signature_stem_terms(n, args.dynamics_model.dynamic_effectors,
+                                            args.environment_model.density_model)
+    return join(sort!(terms), "|")
+end
+
 function _rhs_calib_signature(p, dynamic_effectors, density_model)::String
     budget      = SimulationModel.ParallelPolicy.effective_inner_thread_budget()
     active_sats = count(identity, p.is_active)
@@ -258,6 +310,8 @@ function _rhs_calib_signature(p, dynamic_effectors, density_model)::String
         "eff=$(_rhs_calib_effector_token(dynamic_effectors))",
         "dens=$(_rhs_calib_density_token(density_model))",
         "outer=$(outer_active ? "1" : "0")",
+        # Last, so every term before it reads as it always has.
+        "code=$(_RHS_CALIB_CODE_TOKEN)",
     ], "|")
 end
 
@@ -272,6 +326,53 @@ function _rhs_calib_path()::String
         pwd(), "output", "parallel_policy_state",
         "rhs_calibration_$(_calib_machine_label()).toml"
     ))
+end
+
+# The store file's schema. 1: one row per signature with the verdict and the
+# winner's time. 2: the same row plus `candidates`, the sweep's per-candidate
+# timings (see `_rhs_sweep_timing_record`). Rows of either schema load; a
+# schema-1 row simply has no timings.
+const _RHS_CALIB_STORE_SCHEMA = 2
+
+# One recorded candidate timing. `width` is the thread count the plan used at
+# the budget it was measured under (a satellite_batch allotment of 1 means the
+# whole budget); `reps` is how many timed calls the score came from and `round`
+# which round produced it, 0 for the sweep's final paired round; `default`
+# marks the plan the runtime heuristic would have run, so a reader can see the
+# margin the verdict was formed against.
+function _rhs_sweep_timing_record(plan, ns::Float64, reps::Int, round::Int, is_default::Bool)::Dict{String, Any}
+    return Dict{String, Any}(
+        "mode"      => String(plan.mode),
+        "allotment" => Int(plan.allotment),
+        "scheduler" => String(plan.scheduler),
+        "width"     => _rhs_plan_width(plan),
+        "ns"        => ns,
+        "reps"      => reps,
+        "round"     => round,
+        "default"   => is_default,
+    )
+end
+
+function _rhs_calib_candidates_from_toml(raw)::Vector{Dict{String, Any}}
+    out = Dict{String, Any}[]
+    raw isa AbstractVector || return out
+    for c in raw
+        c isa AbstractDict || continue
+        ns = get(c, "ns", nothing)
+        width = get(c, "width", nothing)
+        (ns isa Real && isfinite(ns) && ns > 0 && width isa Integer && width >= 1) || continue
+        push!(out, Dict{String, Any}(
+            "mode"      => String(get(c, "mode", "")),
+            "allotment" => Int(get(c, "allotment", 1)),
+            "scheduler" => String(get(c, "scheduler", "auto")),
+            "width"     => Int(width),
+            "ns"        => Float64(ns),
+            "reps"      => Int(get(c, "reps", 0)),
+            "round"     => Int(get(c, "round", 0)),
+            "default"   => get(c, "default", false) === true,
+        ))
+    end
+    return out
 end
 
 function _rhs_calib_load!()::Nothing
@@ -308,6 +409,8 @@ function _rhs_calib_load!()::Nothing
                 "honoured_ns"    => Float64(get(row, "honoured_ns", 0.0)),
                 "plan_votes"     => Int(get(row, "plan_votes", 0)),
             )
+            timings = _rhs_calib_candidates_from_toml(get(row, "candidates", nothing))
+            isempty(timings) || (entry["candidates"] = timings)
             _rhs_calib_cache[sig] = entry
         end
         return nothing
@@ -349,24 +452,92 @@ function _rhs_calib_save!()::Nothing
                 # re-verified sooner (_rhs_calib_reverify_due).
                 "plan_votes"      => Int(get(e, "plan_votes", 0)),
             )
+            # Schema 2: what the sweep measured for every candidate, not only
+            # the winner's time. Readers of schema 1 ignore the key.
+            timings = get(e, "candidates", nothing)
+            (timings isa AbstractVector && !isempty(timings)) && (row["candidates"] = timings)
             push!(rows, row)
         end
         payload = Dict{String, Any}(
-            "schema_version" => 1,
+            "schema_version" => _RHS_CALIB_STORE_SCHEMA,
             "calibrations"   => rows,
         )
         try
-            mkpath(dirname(path))
-            tmp = path * ".tmp"
-            open(tmp, "w") do io
-                TOML.print(io, payload)
-            end
-            mv(tmp, path; force=true)
+            RuntimeServices.write_file_atomically(io -> TOML.print(io, payload), path)
         catch e
             @warn "RHS calibration: failed to save to $(path)" exception=e
         end
         return nothing
     end
+end
+
+function _rhs_calib_signature_terms(sig::AbstractString)::Dict{String, String}
+    terms = Dict{String, String}()
+    for part in split(sig, '|')
+        kv = split(part, '='; limit = 2)
+        length(kv) == 2 && (terms[String(kv[1])] = String(kv[2]))
+    end
+    return terms
+end
+
+"""
+    rhs_inner_speedup_curve(stem; outer = nothing) -> Union{Nothing, Vector{Float64}}
+
+How much faster one RHS evaluation of the workload with this signature stem
+(see [`rhs_calibration_signature_stem`](@ref)) runs on `b` threads than on one,
+for `b = 1, 2, ..., B`, from the per-candidate timings the calibration sweep
+recorded in the store, over every row that shares the stem whatever its budget.
+
+`outer = true` (or `false`) keeps only the rows measured under (or outside) an
+enclosing outer split, `nothing` pools both. The two are different runtimes,
+not two samples of one: under an outer split the RHS heuristic clamps the flat
+routes to one thread and effector threading is off, so only a plan the sweep
+pinned there reaches `b` threads, and a single-simulation (`outer=0`) timing
+says nothing about what a sample inside a threaded split will get. A caller
+pricing a plan must ask for the rows that match how that plan's samples run.
+
+`curve[b] = t(1) / min(t(w) for w <= b)`, with `t(w)` the fastest recorded
+timing of any plan running `w` threads: a sample on `b` threads can run any plan
+up to that width, and the calibration exists to find the fastest one. `B` is the
+widest width recorded; nothing is extrapolated past it.
+
+`nothing` when no row has a one-thread timing to measure against (a shape whose
+candidate ladder has no serial rung) or nothing wider than one thread: without
+a measurement there is no curve, and the planner then assumes no inner gain.
+Rows written by older code do not match, since the stem carries the code token.
+"""
+function rhs_inner_speedup_curve(stem::AbstractString;
+                                 outer::Union{Nothing, Bool} = nothing)::Union{Nothing, Vector{Float64}}
+    want = _rhs_calib_signature_terms(stem)
+    isempty(want) && return nothing
+    outer === nothing || (want["outer"] = outer ? "1" : "0")
+    _rhs_calib_load!()
+    best = Dict{Int, Float64}()
+    lock(_rhs_calib_lock) do
+        for (sig, entry) in _rhs_calib_cache
+            startswith(sig, _IDENTIFY_SIGNATURE_PREFIX) && continue
+            timings = get(entry, "candidates", nothing)
+            timings isa AbstractVector || continue
+            have = _rhs_calib_signature_terms(sig)
+            all(kv -> get(have, kv.first, nothing) == kv.second, want) || continue
+            for t in timings
+                w = Int(get(t, "width", 0))
+                ns = Float64(get(t, "ns", Inf))
+                (w >= 1 && isfinite(ns) && ns > 0.0) || continue
+                best[w] = min(get(best, w, Inf), ns)
+            end
+        end
+    end
+    haskey(best, 1) || return nothing
+    widest = maximum(keys(best))
+    widest >= 2 || return nothing
+    curve = Vector{Float64}(undef, widest)
+    fastest = best[1]
+    for b in 1:widest
+        haskey(best, b) && (fastest = min(fastest, best[b]))
+        curve[b] = best[1] / fastest
+    end
+    return curve
 end
 
 # Three outcomes, not two: `nothing` is a MISS (sweep), a NamedTuple is a plan to
@@ -388,7 +559,21 @@ function _rhs_calib_lookup(sig::String)::Union{Nothing, Symbol, NamedTuple}
     return nothing
 end
 
-function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; sweep_ns::Float64 = 0.0)::Nothing
+# A verdict's per-candidate timings: the new sweep's when it recorded any,
+# otherwise whatever the previous row carried -- the timings are a measurement
+# of the shape, not of the verdict, and a verdict formed without a sweep (a
+# test's direct store, a flip) does not make them less true.
+@inline function _rhs_calib_carry_timings!(entry::Dict{String, Any}, prev, timings)::Nothing
+    if timings isa AbstractVector && !isempty(timings)
+        entry["candidates"] = collect(timings)
+    elseif prev !== nothing && haskey(prev, "candidates")
+        entry["candidates"] = prev["candidates"]
+    end
+    return nothing
+end
+
+function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; sweep_ns::Float64 = 0.0,
+                                     timings = nothing)::Nothing
     _rhs_calib_load!()
     lock(_rhs_calib_lock) do
         prev = get(_rhs_calib_cache, sig, nothing)
@@ -409,6 +594,7 @@ function _rhs_calib_store_heuristic!(sig::String, heuristic_ns::Float64 = 0.0; s
             "honoured_ns"     => 0.0,
         )
         prev !== nothing && haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
+        _rhs_calib_carry_timings!(entry, prev, timings)
         _rhs_calib_cache[sig] = entry
     end
     return nothing
@@ -425,8 +611,21 @@ function _rhs_calib_heuristic_votes(sig::String)::Int
     end
 end
 
-# How many consecutive heuristic verdicts a signature needs before a long
-# solve honours the cached verdict instead of re-sweeping (V2 only).
+# How many consecutive heuristic verdicts count as a reproduced verdict for
+# this signature (V2 only).
+#
+# This threshold used to decide whether a long solve honored the cached
+# heuristic verdict at all, and a verdict that reached it was then honored
+# permanently. The permanence was a measured defect (see
+# _rhs_calib_cached_verdict) and is gone: every cached verdict on a long solve
+# is now honored on the amortized re-verification budget instead, so the count
+# is a record of how often the sweep has agreed with itself, not an exemption
+# from re-testing. The count itself is still written, carried through a pin and
+# read back (_rhs_calib_heuristic_votes); this THRESHOLD, and with it
+# SPACEAGORA_RHS_CALIBRATE_HEURISTIC_VOTES, no longer changes any routing
+# decision and is left in place only because the calibration probes read it.
+# Delete both when a use for a reproduction threshold either returns or does
+# not.
 @inline function _rhs_calibrate_heuristic_votes_needed()::Int
     n = try
         parse(Int, strip(_engine_env_get("SPACEAGORA_RHS_CALIBRATE_HEURISTIC_VOTES", "3")))
@@ -436,7 +635,8 @@ end
     return max(1, n)
 end
 
-function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns::Float64 = 0.0)::Nothing
+function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns::Float64 = 0.0,
+                           timings = nothing)::Nothing
     # Settle the lazy one-time disk load first: otherwise a later first lookup
     # would load persisted entries over fresher in-process stores.
     _rhs_calib_load!()
@@ -467,6 +667,7 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
                 "plan_votes"      => 0,
             )
             haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
+            _rhs_calib_carry_timings!(entry, prev, timings)
             _rhs_calib_cache[sig] = entry
             return nothing
         end
@@ -485,6 +686,7 @@ function _rhs_calib_store!(sig::String, plan, elapsed_mean_ns::Float64; sweep_ns
         # dropping it here put every freshly pinned plan back into "never
         # measured", i.e. the sweep regime, until the next solve re-measured it.
         prev !== nothing && haskey(prev, "solve_ns") && (entry["solve_ns"] = prev["solve_ns"])
+        _rhs_calib_carry_timings!(entry, prev, timings)
         _rhs_calib_cache[sig] = entry
     end
     return nothing
@@ -763,8 +965,28 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
         end
     end
 
+    # What every candidate measured, kept for the store (schema 2): each
+    # candidate's score from the LAST round it took part in, i.e. its most
+    # precise reading, with that round's rep count. The sixth return value.
+    recorded = Dict{Any, Tuple{Float64, Int, Int}}()
+    final_recorded = Tuple{Any, Float64, Bool}[]
+    is_default(c) = heuristic !== nothing && c.mode === heuristic.mode &&
+                    c.allotment == heuristic.allotment && c.scheduler === heuristic.scheduler
+    timings() = begin
+        out = Dict{String, Any}[]
+        for c in candidates
+            r = get(recorded, c, nothing)
+            r === nothing && continue
+            push!(out, _rhs_sweep_timing_record(c, r[1], r[2], r[3], is_default(c)))
+        end
+        for (c, ns, dflt) in final_recorded
+            isfinite(ns) && push!(out, _rhs_sweep_timing_record(c, ns, max(2, n_timed), 0, dflt))
+        end
+        out
+    end
+
     # Nothing to compare: only the baseline candidate exists.
-    length(candidates) <= 1 && return nothing, 0.0, :aborted, 0.0, nothing
+    length(candidates) <= 1 && return nothing, 0.0, :aborted, 0.0, nothing, Dict{String, Any}[]
 
     du = zero(u0)
 
@@ -801,7 +1023,7 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
     catch e
         @warn "RHS calibration: warm-up failed; skipping calibration." exception=e
         p.shared_buffers.rhs_plan_override[] = nothing
-        return nothing, 0.0, :aborted, 0.0, nothing
+        return nothing, 0.0, :aborted, 0.0, nothing, Dict{String, Any}[]
     finally
         p.shared_buffers.rhs_plan_override[] = nothing
     end
@@ -908,7 +1130,10 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
         empty!(scores)
         total_calls += _measure_round!(survivors, reps, scores)
         viable = [c for c in survivors if isfinite(get(scores, c, Inf))]
-        isempty(viable) && return nothing, 0.0, :aborted, 0.0, nothing
+        isempty(viable) && return nothing, 0.0, :aborted, 0.0, nothing, Dict{String, Any}[]
+        for c in viable
+            recorded[c] = (scores[c], reps, round_index)
+        end
 
         if verbose
             for candidate in sort(viable; by = c -> scores[c])
@@ -1056,13 +1281,15 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
             verbose && println("  → heuristic retained (swept winner is the heuristic's own plan)")
             # No rival: nothing was compared, so there is no evidence to store
             # and a later confirm has nothing to re-run. Signalled by the zeros.
-            return nothing, 0.0, :heuristic, 0.0, nothing
+            return nothing, 0.0, :heuristic, 0.0, nothing, timings()
         end
         final_reps = max(2, n_timed)
         final_scores = Dict{Any, Float64}()
         total_calls += _measure_round!(Any[best_plan, heuristic], final_reps, final_scores)
         best_final  = get(final_scores, best_plan, best_elapsed)
         heuristic_ns = get(final_scores, heuristic, Inf)
+        push!(final_recorded, (best_plan, best_final, false))
+        push!(final_recorded, (heuristic, heuristic_ns, true))
         margin = _rhs_calibrate_override_margin()
         # An unmeasurable heuristic must not win by default: `Inf` here means the
         # floor could not be evaluated, and retaining it would hand the solve a
@@ -1079,7 +1306,7 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
             # caching. The :aborted returns above are failures to measure and
             # must stay uncached, or one transient error would permanently
             # suppress calibration for that signature.
-            return nothing, heuristic_ns, :heuristic, best_final, best_plan
+            return nothing, heuristic_ns, :heuristic, best_final, best_plan, timings()
         end
         # Carry the paired measurement forward: it is the one taken on the same
         # footing as the number it beat, so it is what should be cached.
@@ -1094,7 +1321,7 @@ function _run_rhs_sweep!(p, u0, dynamic_effectors, verbose::Bool, args = nothing
                 "$(total_calls) timed calls)")
     end
 
-    return best_plan, best_elapsed, :pinned, heuristic_ns, heuristic
+    return best_plan, best_elapsed, :pinned, heuristic_ns, heuristic, timings()
 end
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -1246,6 +1473,15 @@ const _RHS_PLAN_VOTES_TO_HONOUR = 2
 # `share` on any machine. A verdict whose sweep cost was never measured
 # (sweep_ns = 0: written by an older store, or by the in-run width trial) is
 # re-verified as before, which is the conservative reading.
+#
+# This applies to a cached heuristic verdict exactly as it does to a pinned
+# plan: the heuristic entry accumulates honoured_ns the same way (the solve
+# that replays it is charged to it in _rhs_calib_record_solve_time!), and a
+# reproduced heuristic verdict is no longer exempt from the budget. The one
+# asymmetry left is the vote clause below, which is a plan rule only: a plan
+# pinned by a single sweep re-verifies on the next long solve, whereas a
+# heuristic verdict -- which pins nothing and is the no-regret floor the sweep
+# falls back to -- runs on the budget from its first vote.
 function _rhs_calib_reverify_due(sig::String)::Bool
     _rhs_calib_load!()
     entry = lock(_rhs_calib_lock) do
@@ -1334,32 +1570,46 @@ function _rhs_calib_cached_verdict(sig::String, honour_heuristic_verdict::Bool)
     (long_solve && !honour_heuristic_verdict) && return nothing
     cached = _rhs_calib_lookup(sig)
     cached === nothing && return nothing
-    # V2 on a long solve: a pinned plan, and a heuristic verdict that has not
-    # yet reproduced, are honoured until the re-verification budget is spent
-    # (_rhs_calib_reverify_due); a reproduced heuristic verdict is honoured
-    # outright, below.
-    if long_solve && honour_heuristic_verdict &&
-       (cached !== :heuristic || _rhs_calib_heuristic_votes(sig) < _rhs_calibrate_heuristic_votes_needed())
+    # V2 on a long solve: EVERY cached verdict -- a pinned plan, and a
+    # heuristic verdict whether or not it has reproduced -- is honored only
+    # until its re-verification budget is spent (_rhs_calib_reverify_due).
+    #
+    # A heuristic verdict that had reproduced `heuristic_votes` times used to
+    # graduate out of that budget and be honored for good, with no path back to
+    # a sweep. That was the largest single routing loss in the 2026-09-15
+    # routing-figure run (finding 8): on gravity_1024sat_l50_vacuum_24600s at
+    # 32 threads a converged store held R6 on rhs_plan_source=cache,
+    # rhs_plan_mode=heuristic at ~5.0 s across all 11 repeats, while a fresh
+    # store found sweep/satellite_batch@1 at ~1.99 s -- 2.5x faster, and faster
+    # than every pinned static route measured in that point (4.86-5.32 s).
+    # Reproduction says the sweep agreed with itself several times on one
+    # machine in one state; it does not say the ranking cannot move when the
+    # thread budget, the machine's load or the shape itself does, and with no
+    # re-test nothing could ever discover that it had.
+    #
+    # The budget is what makes the re-test affordable, and it is the same
+    # arithmetic a pinned plan already uses: the verdict is honored until the
+    # solve time charged to it reaches sweep_ns / share, so re-verification
+    # costs at most `share` of solve time whether the verdict holds or not.
+    # (The coin-flip concern that motivated the vote count is answered by that
+    # bound rather than by permanence: on a shape whose verdict flips -- e.g.
+    # interact_256sat_1hr, satellite_batch three to four sweeps in five -- the
+    # re-test now recovers the other side instead of replaying the losing one
+    # for the life of the store.)
+    #
+    # A re-test is not a reset. The re-sweep writes back through
+    # _rhs_calib_store_heuristic! / _rhs_calib_store! exactly as a first sweep
+    # does, so a heuristic verdict that is still best returns with one more
+    # vote, a freshly measured sweep_ns and honoured_ns = 0 -- the next window
+    # is as long as this one was, and the re-test amortizes instead of being
+    # paid every campaign. heuristic_votes still records how often the verdict
+    # has reproduced (and still survives a pin); it no longer exempts it.
+    long_solve && honour_heuristic_verdict &&
         return _rhs_calib_reverify_due(sig) ? nothing : cached
-    end
-    if cached === :heuristic
-        # On a long solve, only a REPRODUCIBLE heuristic verdict is honoured.
-        #
-        # The sweep's verdict is not stable on every workload: on
-        # interact_256sat_1hr it pins satellite_batch three to four times in
-        # five and otherwise retains the heuristic, a 17-point regret swing
-        # documented in the sweep record. Honouring the first heuristic verdict
-        # to land pinned the losing side of that coin flip for good -- measured
-        # in the paper run at eight threads: R6 replayed a cached heuristic
-        # verdict at 3.61 s while six R4/R5 sweeps in the same point pinned
-        # satellite_batch at 3.09 s. Requiring several consecutive heuristic
-        # verdicts keeps the re-sweep where the verdict flips and skips it
-        # where it does not (gravity_4096: heuristic 13 of 16 sweeps).
-        (long_solve && _rhs_calib_heuristic_votes(sig) < _rhs_calibrate_heuristic_votes_needed()) &&
-            return nothing
-        return :heuristic
-    end
-    return long_solve ? nothing : cached
+    # Short solve: any cached verdict is honored, as shipped. (A long solve
+    # returned above either way: without V2 at the solve-cost gate, with V2 on
+    # the budget.)
+    return cached
 end
 
 function _calibrate_rhs_plan_if_needed!(p, u0, args)
@@ -1435,7 +1685,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     # computes them and they are the natural place to hang outcome feedback off
     # when phase 6 lands.
     sweep_started = time_ns()
-    best_plan, best_elapsed, verdict, _rival_ns, _rival_plan =
+    best_plan, best_elapsed, verdict, _rival_ns, _rival_plan, sweep_timings =
         _run_rhs_sweep!(p, u0, dynamic_effectors, verbose, args)
     sweep_ns = Float64(time_ns() - sweep_started)
     # The solve is timed from here, not from before the sweep: the gate reads
@@ -1450,7 +1700,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
             SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
                 :sweep, :heuristic, 0, :none
             )
-            _rhs_calib_store_heuristic!(sig, best_elapsed; sweep_ns=sweep_ns)
+            _rhs_calib_store_heuristic!(sig, best_elapsed; sweep_ns=sweep_ns, timings=sweep_timings)
             _rhs_calib_save!()
         end
         return
@@ -1462,7 +1712,7 @@ function _calibrate_rhs_plan_if_needed!(p, u0, args)
     SimulationModel.ParallelPolicy.record_rhs_plan_selection!(
         :sweep, best_plan.mode, best_plan.allotment, best_plan.scheduler
     )
-    _rhs_calib_store!(sig, best_plan, best_elapsed; sweep_ns=sweep_ns)
+    _rhs_calib_store!(sig, best_plan, best_elapsed; sweep_ns=sweep_ns, timings=sweep_timings)
     _rhs_calib_save!()
 
     return nothing

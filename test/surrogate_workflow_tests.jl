@@ -98,3 +98,5 @@ include(joinpath(@__DIR__, "..", "examples", "odyssey_surrogate.jl"))
         @test existing isa ArgumentError && occursin("--output=DIR", existing.msg)
     end
 end
+
+include("odyssey_surrogate_cli_tests.jl")

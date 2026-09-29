@@ -310,17 +310,19 @@ questions:
 - native GRAM evaluated at the preset's frozen instant isolates the grid's
   interpolation error;
 - native GRAM run with actual time along the trajectory adds the error of
-  freezing the atmosphere. The Odyssey preset's release limits are judged
-  against this second reference, and they were validated along P20 passages
-  inside the preset's envelope. At arbitrary points away from those passages,
-  pointwise differences can be larger, particularly near the 260 km ceiling at
+  freezing the atmosphere. The Odyssey preset has accepted diagnostic and
+  propagation comparisons along bounded P20 passages against this second
+  reference. These comparisons are evidence, not numerical release limits:
+  the catalog leaves application accuracy requirements unset. At arbitrary
+  points away from those passages, pointwise differences can be larger,
+  particularly near the 260 km ceiling at
   high northern latitudes.
 
 `atmosphere_provenance(model)` lists how the preset was generated: planet,
 frozen UTC instant, Mars-GRAM configuration and input identities. Check each
 setting against the native model you build. A plain `GRAMAtmosphereModel` is not
-automatically configured the same way, and the preset's own release validation
-used a dedicated matched native adapter. Compare pointwise density, temperature
+automatically configured the same way, and the Odyssey preset's diagnostic
+comparisons used a dedicated matched native adapter. Compare pointwise density, temperature
 and wind along the native trajectory, and the per-pass quantities your
 algorithm depends on, such as drag delta-v, heat load and peak heat rate.
 

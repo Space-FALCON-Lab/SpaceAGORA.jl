@@ -798,6 +798,9 @@ end
         # The campaign warmups call the public Monte Carlo entry and reset the
         # campaign caches they populate, as the package module sees them.
         const SimulationCampaigns = Main.SpaceAGORA.SimulationCampaigns
+        # The state reset at the end of the setup block also reaches these.
+        const SimulationEngine = Main.SimulationEngine
+        const RuntimeServices = Main.SpaceAGORA.RuntimeServices
         const run_monte_carlo = Main.SpaceAGORA.run_monte_carlo
 
         # Run the setup block as a compiled closure: statements evaluated as

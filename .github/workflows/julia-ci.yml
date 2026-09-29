@@ -30,7 +30,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Pinned GRAMSuite retrieval regression
         run: python3 test/scripts/test_gramsuite_retrieval.py
@@ -61,7 +64,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Cache keys
         id: keys
@@ -126,7 +132,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Setup
         id: setup
@@ -177,7 +186,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Download shard reports
         uses: actions/download-artifact@v4
@@ -219,7 +231,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Setup
         id: setup
@@ -290,7 +305,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Download shard reports
         uses: actions/download-artifact@v4
@@ -349,7 +367,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Setup
         uses: ./.github/actions/setup
@@ -381,7 +402,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Download shard reports
         uses: actions/download-artifact@v4
@@ -418,7 +442,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       # No shared depot here: resolving and compiling from nothing is the point.
       # Setup instantiates the root environment and then the vendored GRAMSuite
@@ -443,7 +470,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Setup
         uses: ./.github/actions/setup
@@ -463,7 +493,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Viewer JavaScript regressions
         run: node test/unit/visualization/viewer_channels_models_tests.mjs
@@ -524,7 +557,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Setup
         uses: ./.github/actions/setup
@@ -557,7 +593,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Setup
         uses: ./.github/actions/setup
@@ -592,7 +631,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Download telemetry summaries
         uses: actions/download-artifact@v4
@@ -619,7 +661,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Setup
         uses: ./.github/actions/setup
@@ -647,7 +692,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
 
       - name: Setup (runtime environment)
         uses: ./.github/actions/setup
@@ -674,7 +722,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Setup

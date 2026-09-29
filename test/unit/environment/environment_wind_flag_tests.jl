@@ -292,6 +292,46 @@ end
     end
 end
 
+# The two fixes compose: a history-dependent GRAM model in a run with
+# `wind = false` is not history-dependent for that run, so the run-scoped
+# snapshot (the one `setup.jl` installs) leaves the `auto` per-step freeze off,
+# and both pools stay eligible under `auto`. With winds on, all three flip.
+@testset "wind=false lifts the freeze and the pool guard for a history-dependent model" begin
+    n = 4
+    for wind in (false, true)
+        model = EM.GRAMAtmosphereModel(WindHistoryCore(true, 0), ReentrantLock(),
+            Dict{Symbol, Any}(:planet_name => "earth"))
+        args = wf_config(model; wind=wind, n_sats=n)
+        p = SM.ODEParams(n_sats=n, args=args)
+        withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing,
+                "SPACEAGORA_GRAM_PROCESS_POOL" => "auto",
+                "SPACEAGORA_GRAM_PROCESS_POOL_THRESHOLD" => "1",
+                "SPACEAGORA_GRAM_ISOLATED_POOL" => "auto",
+                "SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD" => "1",
+                "SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS" => "2",
+                "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing,
+                "SPACEAGORA_VACUUM_GRAM_CACHE" => nothing,
+                "SPACEAGORA_GRAM_TRACK_CACHE" => "off") do
+            cfg = CB._snapshot_callback_env_config(args)
+            p.shared_buffers.callback_env_config[] = cfg
+            @test EM.density_model_history_dependent(model)
+            @test cfg.density_history_dependent == wind
+            @test cfg.density_freeze_per_step == wind
+            @test CB._rhs_density_service_candidate(p, n) == !wind
+
+            wind_requested = EM._environment_wind_enabled(p)
+            @test wind_requested == wind
+            rhos, Ts, ws = fill(-1.0, n), fill(-2.0, n), fill(WF_ZERO, n)
+            pooled = CB._gram_isolated_pool_batch_eval!(rhos, Ts, ws, model,
+                fill(150.0e3, n), zeros(n), zeros(n), 0.0, wind_requested, p;
+                allotment_hint=2)
+            @test pooled == (!wind && Threads.nthreads() > 1)
+            @test isempty(p.shared_buffers.gram_isolated_pool_models) == !pooled
+            pooled && @test rhos == fill(1.0e-9, n)
+        end
+    end
+end
+
 if !WF_GRAM_READY
     if NativeProbeReporting.native_probe_required()
         error("Native GRAM wind-flag tests are required but no libGRAM was found at $(WF_GRAM_LIB)")

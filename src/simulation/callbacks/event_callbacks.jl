@@ -255,10 +255,10 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
     return _directional_vector_callback(condition!, nothing, affect_downcrossing!, num_sats)
 end
 
-# Older vector-callback implementations may report only one member of an
-# exactly simultaneous crossing. Reconcile all flags from the event state;
-# within root-finding roundoff, radial motion identifies the outgoing phase.
-function _refresh_crossing_atmosphere_flags!(integrator, crossing_idx::Int, inside::Bool)
+# Reconcile the whole simultaneous-event mask once. Delivered directions are
+# authoritative even when large elapsed times put a root outside the geometric
+# roundoff band. Undelivered members retain the geometric/radial convention.
+function _refresh_crossing_atmosphere_flags!(integrator, events)
     p = integrator.p
     engine = _simulation_engine_module()
     boundary = p.args.environment_model.planet.Rp_e + p.args.environment_model.EI * 1e3
@@ -271,10 +271,10 @@ function _refresh_crossing_atmosphere_flags!(integrator, crossing_idx::Int, insi
         else
             height < 0.0
         end
-        i == crossing_idx && (now_inside = inside)
+        events[i] != 0 && (now_inside = events[i] < 0)
         # An exit invalidates a vacuum prediction even if this member's own
         # callback was omitted from a simultaneous event by the solver library.
-        if !now_inside && (i == crossing_idx || p.shared_buffers.in_atmosphere[i]) &&
+        if !now_inside && (events[i] > 0 || p.shared_buffers.in_atmosphere[i]) &&
            i <= length(p.shared_buffers.vacuum_gram_caches)
             cache = p.shared_buffers.vacuum_gram_caches[i]
             cache === nothing || (cache.valid = false)
@@ -292,26 +292,30 @@ function get_drag_state_callback(num_sats::Int)
             out[i] = alt - integrator.p.args.environment_model.EI*1e3 # Positive when above the atmosphere, negative when in the atmosphere
         end
     end
-    function affect_upcrossing!(integrator, idx::Int64)
-        p = integrator.p
-        if callback_verbose(integrator)
-            println("Switching to space integration at time $(integrator.t) seconds!")
+    function affect_events!(integrator, events)
+        if all(iszero, events)
+            if applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
+                DiffEqBase.derivative_discontinuity!(integrator, false)
+            end
+            return nothing
         end
-        _refresh_crossing_atmosphere_flags!(integrator, idx, false)
+        _refresh_crossing_atmosphere_flags!(integrator, events)
         _apply_active_phase_solver_settings!(integrator)
-        schedule_event_driven_thruster_controls!(integrator, idx)
+        for idx in eachindex(events)
+            direction = events[idx]
+            if direction > 0
+                if callback_verbose(integrator)
+                    println("Switching to space integration at time $(integrator.t) seconds!")
+                end
+                schedule_event_driven_thruster_controls!(integrator, idx)
+            elseif direction < 0 && callback_verbose(integrator)
+                println("Switching to atmosphere integration at time $(integrator.t) seconds!")
+            end
+        end
+        return nothing
     end
 
-    function affect_downcrossing!(integrator, idx::Int64)
-        p = integrator.p
-        if callback_verbose(integrator)
-            println("Switching to atmosphere integration at time $(integrator.t) seconds!")
-        end
-        _refresh_crossing_atmosphere_flags!(integrator, idx, true)
-        _apply_active_phase_solver_settings!(integrator)
-    end
-
-    return _directional_vector_callback(condition!, affect_upcrossing!, affect_downcrossing!, num_sats)
+    return VectorContinuousCallback(condition!, affect_events!, num_sats)
 end
 
 function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfiguration)

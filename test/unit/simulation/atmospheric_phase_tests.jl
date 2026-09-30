@@ -49,6 +49,13 @@ function check_phases(records)
     end
 end
 
+mutable struct PhaseMaskOpts
+    dtmax::Float64
+    reltol::Any
+    abstol::Any
+    adaptive::Bool
+end
+
 @testset "Atmospheric phase lifecycle" begin
 @testset "Atmospheric settings from initial and active state" begin
     cache=SE.SolverIntegratorCache(); records=NamedTuple[]
@@ -190,6 +197,62 @@ end
     plain=ODEProblem((du,u,p,t)->(du .= -u),[1.0],(0.0,2.0))
     sol=SE._solve_with_explicit_solver(plain,c,a,Tsit5(),1e-8,1e-8)
     @test sol.u[end][1] ≈ exp(-2) rtol=1e-7
+end
+
+# Exercise the installed mask handler at root positions outside the geometric
+# roundoff band. Each delivered event must remain authoritative for its member.
+@testset "Simultaneous atmospheric masks preserve every event" begin
+    n = 4
+    a = cfg([member(i; ν=-130.0, rp=200_000.0) for i in 1:n]; T=10.0, tol=distinct)
+    boundary = planet.Rp_e + a.environment_model.EI * 1e3
+    for events in (Int8[-1, -1, 0, 0], Int8[1, 1, 0, 0],
+                   Int8[-1, 1, 0, 0], Int8[1, -1, 0, 0])
+        p = SM.ODEParams(n_sats=n, args=a)
+        u = SE.build_initial_conditions(a)
+        # Contradict delivered directions by more than the geometric band;
+        # the two undelivered members must still be reconciled geometrically.
+        heights = [events[1] < 0 ? 1e-6 : -1e-6,
+                   events[2] < 0 ? 1e-6 : -1e-6, -100.0, 100.0]
+        p.shared_buffers.in_atmosphere .= [events[1] > 0, events[2] > 0, false, true]
+        for i in 1:n
+            u.sc[i].pos .= (boundary + heights[i], 0.0, 0.0)
+            u.sc[i].vel .= (events[i] < 0 ? -100.0 : 100.0, 0.0, 0.0)
+            CB._vacuum_gram_cache_for_sat!(p.shared_buffers.vacuum_gram_caches, i).valid = true
+        end
+        rt, at = SE._build_solver_tolerances(u, a)
+        integrator = (p=p, u=u, t=3e7, opts=PhaseMaskOpts(20.0, rt, at, true))
+        CB.get_drag_state_callback(n).affect!(integrator, events)
+        expected = [events[1] < 0, events[2] < 0, true, false]
+        @test p.shared_buffers.in_atmosphere == expected
+        @test [c.valid for c in p.shared_buffers.vacuum_gram_caches] == expected
+        @test all(==(3e7), p.shared_buffers.in_atmosphere_sample_t)
+        @test integrator.opts.dtmax == distinct.dt_max_atmosphere
+    end
+end
+
+@testset "Identical members cross together at a large checkpoint epoch" begin
+    for n in (2, 3)
+        mktempdir() do dir
+            epoch = 3e7
+            a = cfg([member(i; ν=-130.0, rp=200_000.0) for i in 1:n];
+                T=epoch + 4000.0, tol=distinct, dir=dir, resume=true)
+            settings = a.simulation_settings
+            fields = NamedTuple{fieldnames(typeof(settings))}(
+                Tuple(getfield(settings, k) for k in fieldnames(typeof(settings))))
+            a = SC._with_configuration(a; simulation_settings=SM.SimulationSettings(;
+                merge(fields, (results=false,))...))
+            SE._write_checkpoint!(a, epoch, SE.build_initial_conditions(a), "tsit5")
+            records = NamedTuple[]
+            sol = run_simulation(a; return_solution=true,
+                extra_callbacks=(trace_callback(records),))
+            @test string(sol.retcode) == "Success"
+            @test sol.t[end] == epoch + 4000.0
+            @test any(r -> all(r.inside), records)
+            @test !any(first(records).inside) && !any(last(records).inside)
+            @test all(r -> all(==(r.inside[1]), r.inside), records)
+            check_phases(records)
+        end
+    end
 end
 end
 end

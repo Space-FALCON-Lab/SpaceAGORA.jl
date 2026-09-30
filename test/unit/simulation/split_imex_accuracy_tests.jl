@@ -81,7 +81,14 @@ end
         mission = SM.SimConfig.MissionConfiguration(mission_type=SM.MissionTime,
             keplerian=false, number_of_orbits=1, mission_time=600.0,
             orientation_sim=false, num_steps_to_save=1000, data_rate=5.0)
-        return SM.SimConfig._with_configuration(args; mission_configuration=mission)
+        # Use the library-default atmospheric cap, not the example's 0.2 s
+        # cap, which hides the old KenCarp4 nonlinear-policy regression.
+        tolerances = args.integration_tolerances
+        fields = NamedTuple{fieldnames(typeof(tolerances))}(
+            Tuple(getfield(tolerances, k) for k in fieldnames(typeof(tolerances))))
+        tolerances = SM.IntegrationTolerances(; merge(fields, (dt_max_atmosphere=1.0,))...)
+        return SM.SimConfig._with_configuration(args; mission_configuration=mission,
+            integration_tolerances=tolerances)
     end
     mktempdir() do directory
         ref = SpaceAGORA.run_simulation(configuration(:dp8, directory); return_solution=true)

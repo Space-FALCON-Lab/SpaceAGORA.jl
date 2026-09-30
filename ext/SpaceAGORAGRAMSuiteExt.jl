@@ -14,6 +14,7 @@ const GRAM_LOCK = SpaceAGORA.RuntimeServices.GRAM_LOCK
 const RS = SpaceAGORA.RuntimeServices
 
 include("gram_grid_atmosphere.jl")
+include("gram_near_surface_atmosphere.jl")
 
 # Attributed views of the one shared native lock. Same critical section, same
 # mutual exclusion; the site only decides which occupancy counter the time lands

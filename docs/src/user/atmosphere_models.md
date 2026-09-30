@@ -27,6 +27,7 @@ What to read next:
 | `PiecewiseExponentialAtmosphereModel(...)` | Low–medium | None | Multi-layer; better altitude-shape fit |
 | `NRLMSISE00AtmosphereModel(...)` | Medium | None (fixed indices) or internet (live indices) | Standard empirical model; ~0–1000 km |
 | `GRAMGridAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its grid API and a trusted grid payload | Native-free evaluation within documented grid coverage |
+| `GRAMNearSurfaceAtmosphereModel(...)` | Fixed snapshot | GRAMSuite with its near-surface API and a trusted near-surface payload | Native-free Mars density and temperature from 5 m above the surface to 75 km; no winds |
 | `GRAMAtmosphereModel(...)` | High | Licensed NASA GRAM | Requires GRAM asset setup |
 
 For GRAM setup, see [GRAMSuite Setup](gramsuite_setup.md).
@@ -174,26 +175,64 @@ density_model = NRLMSISE00AtmosphereModel(index_provider=my_provider)
 
 For a named, automatically retrieved atmosphere, start with the [Odyssey surrogate workflow](../tutorials/odyssey_surrogate.md). Use `surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0")` after loading `GRAMSuite`; retrieval and verification occur once before the solver.
 
-Two named presets are published. Both are frozen at the Odyssey P20 instant, 2001-11-07T11:51:04.794789Z:
+Three named presets are published. All are frozen at the Odyssey P20 instant, 2001-11-07T11:51:04.794789Z:
 
 | Preset | Domain | Validated use |
 | --- | --- | --- |
 | `odyssey_p20_frozen_v1` 1.0.0 | 100 to 260 km, 40 to 90 degrees north | Odyssey P20 passages within the tutorial's envelope |
 | `mars_global_upper_p20_frozen_v1` 1.0.0 | 80 to 365 km, all latitudes and longitudes | Pointwise within 225 s of the frozen instant; propagated passes with periapsis from 80 to 130 km |
+| `mars_global_near_surface_p20_frozen_v1` 1.0.0 | 5 m above the local surface to 75 km areoid height, planetocentric latitudes within 85 degrees, surface below 9 km; density, temperature and pressure, no winds | Pointwise at the frozen instant |
 
 The global preset was validated against native Mars-GRAM under the lab's release
 limits for pointwise density and wind error and per-pass drag and heating; its
 archive README lists them. Its height and latitude spacing is not uniform: nodes
 are added where Mars-GRAM has structure, the catalog lists every node, and
 `surrogate_preset_model` checks them against the grid. Heights below 80 km are
-not covered, because terrain over the Tharsis summits shapes the native
-atmosphere there; such queries fail.
+not covered by this grid, because terrain over the Tharsis summits shapes the native
+atmosphere there; such queries fail. The near-surface preset below covers heights up to 75 km.
 
 ```julia
 using SpaceAGORA
 import GRAMSuite
 density_model = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0")
 ```
+
+### Near-surface Mars preset
+
+`mars_global_near_surface_p20_frozen_v1` covers the lower atmosphere down to the ground. It is not a grid: it follows
+native Mars-GRAM's own near-surface rule, driven by the local terrain.
+- **Regime.** The first exposed table level comes from the query's own MOLA surface height. It selects the regime: level interpolation above it, and a surface-layer law from 30 m up to it and from 5 m to 30 m.
+- **Components.** They are stored on a 1.5-degree lattice and interpolated bilinearly.
+- **Model.** `surrogate_preset_model` returns a `GRAMNearSurfaceAtmosphereModel`.
+- **Outputs.** `getDensity` returns density, temperature and a zero wind vector. The preset stores no winds, so a simulation using it has no atmospheric wind.
+- **Pressure and status.** `GRAMSuite.near_surface_state(model.core, lat_deg, lon_deg, h_m)` returns pressure, the regime and the status of the surface-layer model used.
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+density_model = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.0.0")
+rho, T, wind = getDensity(density_model, 250.0, deg2rad(-4.5), deg2rad(137.4), 0.0, true)
+```
+
+**Refusals.** Queries fail with a `DomainError` naming the reason when any of these holds:
+- planetocentric latitude beyond 85 degrees;
+- surface height of 9 km or more (volcano flanks);
+- less than 5 m above the surface;
+- above 75 km areoid height;
+- a needed component is unavailable at that position.
+
+**Coverage.** Within 85 degrees:
+- about 98% of the area is served down to 5 m with a qualified surface-layer model;
+- about 1.7% is served with a provisional model, flagged in each result's status;
+- the rest is refused at the lowest heights or on volcano flanks.
+
+The archive's support map lists the cells.
+
+**Validation.** The preset was validated pointwise against native Mars-GRAM at the frozen instant under the lab's release limits, separately for qualified-model areas, provisional-model areas and all served queries.
+
+**Other limits.**
+- The 75 to 80 km interval lies between this preset and the upper one, and neither covers it.
+- The payload's terrain component holds Mars-GRAM's MOLA terrain values at its lattice nodes. Credit NASA MOLA as the archive README states.
 
 `GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
 kernel to SpaceAGORA. It needs the Julia wrapper with its native-free grid API

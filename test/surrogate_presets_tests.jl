@@ -182,3 +182,94 @@ end
         @test_throws ArgumentError SpaceAGORA.available_surrogate_presets(;catalog_file)
     end
 end
+
+@testset "Named near-surface presets" begin
+    catalog_template = TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
+    shipped=only(filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1",catalog_template["presets"]))
+    @test shipped["kind"]=="gram_near_surface_scalars" && shipped["release_enabled"] && !haskey(shipped,"axes")
+    @test shipped["atmosphere"]["winds_available"]===false && shipped["domain"]["top_areoid_height_m"]==75000.0
+    @test any(x->x["id"]=="mars_global_near_surface_p20_frozen_v1" && x["version"]=="1.0.0",SpaceAGORA.available_surrogate_presets())
+    mktempdir() do dir
+        file=joinpath(dir,"fixture.jls"); catalog_file=joinpath(dir,"catalog.toml"); artifacts_file=joinpath(dir,"Artifacts.toml")
+        catalog=deepcopy(catalog_template); entry=deepcopy(shipped); catalog["presets"]=[entry]
+        entry["id"]="synthetic_near_surface";entry["release_enabled"]=false;entry["artifact_name"]="synthetic_near_surface_1_0_0"
+        # Synthetic analytic payload on the shipped lattice (not Mars data): flat 0.5 km terrain, linear level states.
+        payload=deepcopy(entry["required_metadata"]); lev=payload["levels_km"]; g=payload["lattice"]
+        nl,ni,nj=length(lev),g["nlat"],g["nlon"]
+        payload["radii_km"]=(payload["generation_config"]["equatorial_radius_km"],payload["generation_config"]["polar_radius_km"])
+        payload["terrain"]=Dict{String,Any}("lat0_deg"=>-86.25,"lon0_deg"=>0.488,"step_deg"=>0.5,
+            "surface_height_km"=>fill(0.5,346,720),"areoid_radius_km"=>fill(3390.0,346,720))
+        payload["level_T_K"]=[220.0-2lev[a] for a in 1:nl, i in 1:ni, j in 1:nj]
+        payload["level_R"]=fill(191.0,nl,ni,nj); payload["level_lnp"]=[log(700.0)-lev[a]/11 for a in 1:nl, i in 1:ni, j in 1:nj]
+        payload["level_source"]=ones(UInt8,nl,ni,nj); payload["surface_T30_K"]=fill(214.0,ni,nj); payload["surface_T5_K"]=fill(216.0,ni,nj)
+        keys_=[(b,c) for b in -12:11 for c in 0:39]; n=length(keys_)
+        payload["q_models"]=Dict{String,Any}("band"=>first.(keys_),"cell"=>last.(keys_),"L"=>fill(1,n),"order"=>fill(1,n),
+            "phic_center"=>[7.5b+3.75 for (b,_) in keys_],"lam_center"=>[9.0c+4.5 for (_,c) in keys_],
+            "coef"=>hcat(fill(20.0,n),zeros(n,5)),"n_points"=>fill(1,n),"status"=>fill("qualified",n))
+        function save_payload!()
+            serialize(file,payload);entry["payload"]["sha256"]=preset_sha(file);entry["payload"]["bytes"]=filesize(file);preset_write_toml(catalog_file,catalog)
+        end
+        save_payload!();preset_write_toml(artifacts_file,Dict())
+        opts=(version="1.0.0",catalog_file=catalog_file,artifacts_file=artifacts_file,file=file,allow_unreleased=true)
+        # Invalid near-surface declarations fail when the catalog is read.
+        for breakit in (e->e["kind"]="gram_mystery", e->e["axes"]=deepcopy(only(filter(p->haskey(p,"axes"),catalog_template["presets"][1:1]))["axes"]),
+                        e->e["domain"]["top_areoid_height_m"]=80000.0, e->e["domain"]["outside"]="clamp",
+                        e->e["atmosphere"]["winds_available"]=true, e->e["domain"]["minimum_clearance_m"]=NaN,
+                        e->e["required_metadata"]["format"]="spaceagora_gram_static_grid_v1")
+            broken=deepcopy(catalog);breakit(only(broken["presets"]));preset_write_toml(catalog_file,broken)
+            @test_throws ArgumentError SpaceAGORA.available_surrogate_presets(;catalog_file)
+        end
+        preset_write_toml(catalog_file,catalog)
+        # The model needs a GRAMSuite with the near-surface API. With an older GRAMSuite (for example a CI job pinned to a
+        # revision without it), the named preset must fail with a clear error, and the model checks are reported skipped.
+        if !isdefined(GRAMSuite, :GRAMNearSurfaceAtmosphereModel)
+            missing_api=try SpaceAGORA.surrogate_preset_model("synthetic_near_surface";opts...) catch err err end
+            @test missing_api isa ArgumentError && occursin("near-surface API",missing_api.msg)
+            @test_skip "near-surface model checks need a GRAMSuite with GRAMNearSurfaceAtmosphereModel"
+            return
+        end
+        model=SpaceAGORA.surrogate_preset_model("synthetic_near_surface";opts...)
+        @test model isa SpaceAGORA.GRAMNearSurfaceAtmosphereModel
+        @test model isa PRESET_ENV._NativeFreeSnapshotModel
+        @test SpaceAGORA.SimulationModel.SimulationCallbacks.density_model_threadsafe(model)
+        # 3 km above the ellipsoid at 10 N is well inside the synthetic domain (areoid 3390 km, terrain 0.5 km)
+        rho,T,wind=SpaceAGORA.getDensity(model,3000.,deg2rad(10.),deg2rad(40.),0.,true)
+        @test (rho,T,wind)==GRAMSuite.density_state(model.core,3000.,deg2rad(10.),deg2rad(40.),0.,true)
+        @test wind==zeros(3) && rho>0 && T>0
+        @test SpaceAGORA.getDensity(model,3000.,deg2rad(10.),deg2rad(40.),1e9,false)==(rho,T,wind)
+        s=GRAMSuite.near_surface_state(model.core,10.,40.,3000.)
+        @test s.density_kgm3===rho && s.pressure_Pa>0
+        @test_throws DomainError SpaceAGORA.getDensity(model,90000.,deg2rad(10.),deg2rad(40.),0.,true)
+        @test_throws DomainError SpaceAGORA.getDensity(model,3000.,deg2rad(86.),deg2rad(40.),0.,true)
+        @test_throws DomainError SpaceAGORA.getDensity(model,-20000.,deg2rad(10.),deg2rad(40.),0.,true)
+        provenance=SpaceAGORA.atmosphere_provenance(model)
+        @test provenance["backend"]=="gram_near_surface_surrogate" && provenance["preset_kind"]=="gram_near_surface_scalars"
+        @test provenance["domain"]["minimum_clearance_m"]==5.0 && provenance["atmosphere"]["wind_returned"]=="zero_vector"
+        raw=SpaceAGORA.GRAMNearSurfaceAtmosphereModel(planet="Mars",surrogate_file=file)
+        @test SpaceAGORA.atmosphere_provenance(raw)["preset_status"]=="user_supplied_payload_without_named_preset_contract"
+        policy_error=try SpaceAGORA.surrogate_preset_model("synthetic_near_surface";opts...,above_grid=:vacuum) catch err err end
+        @test policy_error isa ArgumentError && occursin("above_grid",policy_error.msg)
+        # Payload metadata that differs from the catalog contract is rejected after its identity is re-pinned.
+        for mutate in (p->p["support"]["top_areoid_km"]=70.0, p->p["generation_config"]["mars_map_year"]=1,
+                       p->p["format"]="unknown", p->p["planet"]="earth", p->p["epoch_utc"]="2001-11-07T11:51:05Z",
+                       p->p["distribution"]["preset_id"]="another")
+            original=deepcopy(payload);mutate(payload);save_payload!()
+            @test_throws ArgumentError SpaceAGORA.surrogate_preset_model("synthetic_near_surface";opts...)
+            payload=original;save_payload!()
+        end
+        # The released path installs a lazy artifact and builds the near-surface model from it.
+        Artifacts.with_artifacts_directory(joinpath(dir,"artifact_store")) do
+            hash=Pkg.Artifacts.create_artifact() do target; cp(file,joinpath(target,"mars_near_surface.jls"));end
+            archive=joinpath(dir,"fixture.tar.gz");archive_sha=Pkg.Artifacts.archive_artifact(hash,archive)
+            entry["release_enabled"]=true
+            entry["distribution"]=Dict("status"=>"synthetic_test_only","git_tree_sha1"=>string(hash),"archive_sha256"=>archive_sha,"urls"=>["file://"*archive])
+            Pkg.Artifacts.bind_artifact!(artifacts_file,entry["artifact_name"],hash;lazy=true,download_info=[("file://"*archive,archive_sha)],force=true)
+            preset_write_toml(catalog_file,catalog)
+            installed=SpaceAGORA.surrogate_preset_model("synthetic_near_surface";version="1.0.0",catalog_file,artifacts_file,offline=true)
+            @test installed isa SpaceAGORA.GRAMNearSurfaceAtmosphereModel
+            @test SpaceAGORA.atmosphere_provenance(installed)["resolution"]=="julia_artifact"
+            @test SpaceAGORA.getDensity(installed,3000.,deg2rad(10.),deg2rad(40.),0.,true)==(rho,T,wind)
+        end
+        @test !any(x->occursin("libgram",lowercase(basename(x))),Libdl.dllist())
+    end
+end

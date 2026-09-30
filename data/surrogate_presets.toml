@@ -1,4 +1,4 @@
-catalog_revision = "odyssey-p20-1.0.0+mars-global-upper-p20-1.0.0"
+catalog_revision = "odyssey-p20-1.0.0+mars-global-upper-p20-1.0.0+mars-global-near-surface-p20-1.0.0"
 schema_version = 1
 
 [[presets]]
@@ -350,3 +350,132 @@ version = "1.0.0"
     changed_date_selects_new_atmosphere = false
     evidence = "Prospective validation against native Mars-GRAM under the Space-FALCON Lab release limits: pointwise within 225 s of the frozen instant, and propagated passes with periapsis from 80 to 130 km"
     stored_domain_is_uniform_accuracy_claim = false
+
+[[presets]]
+artifact_name = "mars_global_near_surface_p20_frozen_v1_1_0_0"
+description = "Mars global near-surface atmosphere (density, temperature, pressure; no winds), 5 m above the surface to 75 km, frozen at the Odyssey P20 instant"
+id = "mars_global_near_surface_p20_frozen_v1"
+kind = "gram_near_surface_scalars"
+planet = "mars"
+release_enabled = true
+version = "1.0.0"
+
+    [presets.atmosphere]
+    api_units = ["m", "rad", "rad"]
+    epoch_utc = "2001-11-07T11:51:04.794789Z"
+    equatorial_radius_m = 3396190.0
+    fields = ["density_kgm3", "temperature_K", "pressure_Pa"]
+    height = "ellipsoidal"
+    latitude = "geodetic"
+    longitude = "east_positive_periodic"
+    mode = "frozen_mean_snapshot"
+    polar_radius_m = 3376200.0
+    pressure_available = true
+    query_elapsed_time_applied = false
+    surface_layer_model_status = "reported by GRAMSuite.near_surface_state for results below the first table level: qualified or provisional"
+    wind_returned = "zero_vector"
+    winds_available = false
+
+    [presets.distribution]
+    archive_sha256 = "019dd3d424db78bfe51a2f21685afec7ebd16d7cd53701bae0c6e6964a9378f7"
+    git_tree_sha1 = "e9a432723c8b71f1cf46a6f54c899e5a0305914b"
+    status = "public_versioned_snapshot"
+    urls = ["https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-mars-global-near-surface-p20-1.0.0/mars_global_near_surface_p20_frozen_v1-1.0.0.tar.gz"]
+
+    [presets.domain]
+    longitude_period_deg = 360.0
+    minimum_clearance_m = 5.0
+    outside = "error"
+    planetocentric_latitude_max_deg = 85.0
+    support_map = "support/support_map.json and support/support_map_cells.csv in the artifact"
+    surface_height_refused_at_or_above_m = 9000.0
+    top_areoid_height_m = 75000.0
+
+    [presets.generation_provenance]
+    builder_filename = "generator/build_payload.jl"
+    builder_sha256 = "53d0d36977329ad46a0ca06f5dac6c6a65ea271f6f948a3b45cd2f38ab717347"
+    distribution_changes = "Metadata only: the status line was updated and a distribution record added. Every array, every surface-layer model and every other metadata entry is identical to the validated payload."
+    evaluator_changes_since_validation = "Two fixes for measure-zero edge cases: the terrain column wraps for longitudes just below the terrain lattice origin, and a query just below a band or cell edge whose own surface-layer model is missing uses the neighbour across that edge. The runtime evaluation functions are byte-identical to the reference evaluator, which gives bit-identical results to the validated evaluator at every validation point, at every support-map probe and at 2,000,000 random queries."
+    generation_inputs = "generation_inputs.json"
+    native_library_bytes = 4114304
+    native_library_sha256 = "19c5715b1d18c9b4f8afa315fb77466091cb240e7954bc84e8e4ab540e76e3f4"
+    native_model_input_data_included = true
+    native_model_input_data_note = "Terrain component only: Mars-GRAM's MOLA surface height and areoid radius at its 0.5-degree terrain lattice nodes (346 x 720 values each), which equal the MOLA terrain input distributed with GRAM at those nodes. Credit NASA MOLA (see README.md). No other GRAM input data is included."
+    native_model_version_identity = "MarsGRAM 2021b, GRAMLib 2023b, GRAM Suite 2.0 (native getter); pinned library and input hashes in generation_inputs.json"
+    native_software_included = false
+    numerical_release_limits = "Validated before release against native Mars-GRAM under the Space-FALCON Lab release limits; see README.md"
+    original_generation_julia = "1.12.3"
+    packaging_adds_scientific_validation = false
+    payload = "mars_near_surface.jls"
+    payload_bytes = 24779816
+    payload_created_at_utc = "2026-09-29T17:26:06.104"
+    payload_format = "spaceagora_mars_near_surface_scalars_v1"
+    payload_modified_for_distribution = true
+    payload_sha256 = "2aac32187cef1f4fbdb3498155e69b7f3512155753d35aa083f492e457080966"
+    preset_id = "mars_global_near_surface_p20_frozen_v1"
+    publisher = "Space-FALCON Lab"
+    recipe = "recipe.toml"
+    reference_evaluator_sha256 = "8b462384525bbfc61c06118356857241df4ef8c5c431dfb387542b4a1b847a86"
+    runtime_evaluator = "GRAMSuite.jl src/mars_near_surface_scalars.jl, used through GRAMNearSurfaceAtmosphereModel"
+    runtime_evaluator_sha256 = "edbde7df8e9184de50bb59d84932353e0404a8f0954259a620724758c6628f96"
+    schema = "spaceagora_public_near_surface_provenance_v1"
+    serialization = "Julia.Serialization"
+    support_map = "support/support_map.json"
+    validated_evaluator_sha256 = "6bcf1faf6f727bd9499238493bd301f1c60a25b1c5e4b7c579da2aacb12ab8fe"
+    validated_payload_sha256 = "5a2da29e4f5ff0398642686001fb360605dd65a99de14ab541706d464d9f8e01"
+    version = "1.0.0"
+
+    [presets.payload]
+    bytes = 24779816
+    file = "mars_near_surface.jls"
+    format = "spaceagora_mars_near_surface_scalars_v1"
+    sha256 = "2aac32187cef1f4fbdb3498155e69b7f3512155753d35aa083f492e457080966"
+
+    [presets.required_metadata]
+    elapsed_time_s = 0.0
+    epoch_utc = "2001-11-07T11:51:04.794789Z"
+    format = "spaceagora_mars_near_surface_scalars_v1"
+    levels_km = [-5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0]
+    planet = "mars"
+    status = "released: preset mars_global_near_surface_p20_frozen_v1 1.0.0 (release validation passed 2026-09-30)"
+
+        [presets.required_metadata.distribution]
+        preset_id = "mars_global_near_surface_p20_frozen_v1"
+        publisher = "Space-FALCON Lab"
+        validated_payload_sha256 = "5a2da29e4f5ff0398642686001fb360605dd65a99de14ab541706d464d9f8e01"
+        version = "1.0.0"
+
+        [presets.required_metadata.generation_config]
+        equatorial_radius_km = 3396.19
+        is_planetocentric = false
+        mars_dust_mode = "native-default"
+        mars_map_year = 2
+        mars_min_max = 1
+        mars_mola_heights = false
+        perturbation_action = false
+        perturbation_scales = [0.0, 0.0, 0.0, 0.0]
+        polar_radius_km = 3376.2
+        seed = 1001
+        start_time_frame = 0
+        start_time_scale = 1
+
+        [presets.required_metadata.lattice]
+        lat0_deg = -85.5
+        nlat = 115
+        nlon = 240
+        step_deg = 1.5
+
+        [presets.required_metadata.support]
+        min_clearance_km = 0.005
+        phic_max_deg = 85.0
+        top_areoid_km = 75.0
+        zs_refuse_km = 9.0
+
+    [presets.support]
+    algorithm_changes_inherit_reference_accuracy = false
+    application_accuracy_requirements = "unset; choose for the intended study"
+    changed_date_selects_new_atmosphere = false
+    evidence = "Prospective validation against native Mars-GRAM at the frozen instant under the Space-FALCON Lab release limits, with separate verdicts for qualified-model areas, provisional-model areas and all served queries"
+    provisional_surface_layer_models = "served and flagged in each surface-layer result's status"
+    stored_domain_is_uniform_accuracy_claim = false
+    winds = "not provided; getDensity returns a zero wind vector"

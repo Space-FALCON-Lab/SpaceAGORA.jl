@@ -959,10 +959,26 @@ end
     @test buffered_state.wind == SVector{3, Float64}(4.0, 5.0, 6.0)
     @test isfinite(buffered_state.alt)
 
+    # The helper's environment has `wind=false`, so a written wind is stored as zero.
     _TARGET_CALLBACKS._write_density_buffers!(p_density, 1, 2.5, 333.0, SVector{3, Float64}(7.0, 8.0, 9.0))
     @test p_density.shared_buffers.densities[1] == 2.5
     @test p_density.shared_buffers.temperatures[1] == 333.0
-    @test p_density.shared_buffers.winds[1] == SVector{3, Float64}(7.0, 8.0, 9.0)
+    @test p_density.shared_buffers.winds[1] == SVector{3, Float64}(0.0, 0.0, 0.0)
+
+    args_density_wind = build_config_multi(
+        spacecraft=[make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3, ν_deg=170.0)],
+        density_model=NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(InverseSquaredGravityModel(),),
+        ephemerides_model=SimpleEphemeridesModel(),
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        wind=true
+    )
+    p_density_wind = ODEParams(n_sats=1, args=args_density_wind)
+    _TARGET_CALLBACKS._write_density_buffers!(p_density_wind, 1, 2.5, 333.0, SVector{3, Float64}(7.0, 8.0, 9.0))
+    @test p_density_wind.shared_buffers.winds[1] == SVector{3, Float64}(7.0, 8.0, 9.0)
 
     surrogate_density = _TARGET_ENV.GRAMAtmosphereModel(CoverageGramTrajectoryBase())
     empty!(p_density.shared_buffers.density_models)

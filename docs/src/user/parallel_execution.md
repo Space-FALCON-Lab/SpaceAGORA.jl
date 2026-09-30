@@ -247,27 +247,33 @@ already fires a `DiscreteCallback` once per accepted solver step that samples
 density into `shared_buffers`; this flag makes the RHS-side atmosphere read
 trust that once-per-step sample for every stage evaluation within the step
 instead of demanding an exact-time match (which almost never holds for a
-multi-stage adaptive method). This is a standard, small approximation for a
-LEO trajectory: altitude — the dominant driver of the smooth mean density —
-changes negligibly over one integration step, so freezing density for the
-step's duration costs little accuracy while removing the noise that the
-solver was reacting to.
+multi-stage adaptive method).
 
-Measured accuracy of the freeze on a longer, drag-dominated case: one 1000 kg,
-12 m² spacecraft on an Earth orbit with a 118 km periapsis and a 2000 km
-apoapsis, three orbits (19,149 s, three drag passes lowering the apoapsis by
-about 47 km), native Earth-GRAM, default `dt_max_atmosphere` of 1 s, one
-thread. Against per-stage sampling (`0`) with the same seed, the `auto` freeze
-moved the final apoapsis by 75 m and 105 m (seeds 1001 and 1002), the final
-periapsis by under 2 m, the heat load by 0.35% and 0.48%, and the final
-position by 0.8 km and 1.3 km (along track). The pure step-hold error, measured
-with nominal winds (`1` against `0`), was 87 m in apoapsis and 0.19% in heat
-load. For scale, changing the seed under per-stage sampling moved the apoapsis
-by 214 m, the heat load by 0.74% and the final position by 1.8 km, so the
-freeze's error is about half the run-to-run spread of the perturbations
-themselves. The frozen runs took 0.36–0.60 s against 2.7 s per stage. GRAM-backed
-results produced with perturbed winds before the `auto` default are not
-reproduced bit for bit under it; set `0` to return to per-stage sampling.
+Holding an atmosphere sample over a step introduces an additional numerical
+approximation. The adaptive solver's local error estimate does not measure
+that sampling error, so tightening its tolerances alone does not establish
+accuracy. Check the outputs needed by the application while reducing the
+sampling timestep limits.
+
+`dt_max_atmosphere` applies from startup when any active spacecraft is inside
+`EnvironmentModel.EI`, and remains active until every active spacecraft is
+outside. Outside that boundary, `dt_max_orbit` controls the maximum step.
+A frozen sample is still held outside the boundary, so refining only the
+atmospheric cap may leave an error contribution from the orbital cap.
+Check the actual step sizes and refine both limits when needed.
+
+With nominal winds, a per-stage reference and step refinement can separate the
+hold approximation from integration error. With perturbed winds, changing the
+number or order of native queries changes the random-wind sequence, even at
+the same seed. A same-seed frozen/per-stage comparison therefore includes both
+effects; the spread between a few seeds is not an accuracy acceptance limit.
+Establish application-specific position, velocity, apsis and thermal limits
+before accepting a sampling policy. Earlier one-off measurements do not
+establish those limits for a different phase policy or mission configuration.
+
+GRAM-backed results produced with perturbed winds before the `auto` default
+are not reproduced bit for bit under it. Set
+`SPACEAGORA_DENSITY_FREEZE_PER_STEP=0` to select per-stage sampling.
 
 A freeze in effect takes precedence over the vacuum-predicted cache
 (`SPACEAGORA_VACUUM_GRAM_CACHE=1`): the RHS then reads the once-per-step

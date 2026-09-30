@@ -123,7 +123,7 @@ function _mars_state(planet, alt_m, rhat)
     ω_ii = norm(planet.ω) * pole
     return r_ii, ω_ii
 end
-# Explicit configuration with a bounded solver step (dt_max 0.05 s): the drag/lift/cross
+# Bound both orbital and atmospheric steps to 0.05 s: the drag/lift/cross
 # caches hold the last RHS-stage value, so bounding the step keeps the recorded force
 # within a fraction of a scale height of the saved state during a fast descent.
 function _config(planet, sc, effectors, mission_s, orientation)
@@ -141,7 +141,7 @@ function _config(planet, sc, effectors, mission_s, orientation)
         initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
         integration_tolerances=SM.IntegrationTolerances(reltol_orbit=1e-10, abstol_orbit=1e-10,
             reltol_quaternion=1e-11, abstol_quaternion=1e-12, reltol_angular_rate=1e-11, abstol_angular_rate=1e-12,
-            dt_max_orbit=0.05),
+            dt_max_orbit=0.05, dt_max_atmosphere=0.05),
         solver_config=SM.SolverConfig(solver_mode=:tsit5))
 end
 

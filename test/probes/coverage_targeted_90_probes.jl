@@ -174,6 +174,14 @@ Base.getindex(args::CoverageIndexArgs, name::Symbol) = args.values[name]
             SimulationEngine._engine_active_overrides_ref[] = Dict{String, String}("SPACEAGORA_UNIT_TEST_KEY" => "override_value")
             @test SimulationEngine._engine_env_get("SPACEAGORA_UNIT_TEST_KEY", "fallback") == "override_value"
             @test SimulationEngine._engine_env_get("SPACEAGORA_MISSING_KEY", "fallback") == "fallback"
+            # The density-without-drag switch is outside the canonical override set, so the
+            # process environment still controls it inside an active override scope.
+            withenv("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO" => "0") do
+                @test !SimulationEngine._density_without_aero_warning_enabled()
+            end
+            withenv("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO" => nothing) do
+                @test SimulationEngine._density_without_aero_warning_enabled()
+            end
         finally
             SimulationEngine._engine_active_overrides_ref[] = prev_overrides
         end

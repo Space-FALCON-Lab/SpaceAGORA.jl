@@ -17,6 +17,24 @@ function _preset_planet(planet::AbstractString)
         _preset_error("Unknown surrogate planet '$planet'. Choose an explicit catalog preset and supported planet.")
     return key
 end
+# A catalog axis is uniform (start, step, count) or an explicit, strictly increasing
+# node list (nodes), in km or degrees. Longitude stays uniform so its periodic seam
+# check keeps its meaning.
+function _preset_axis_nodes(spec)
+    if haskey(spec, "nodes")
+        !any(key -> haskey(spec, key), ("start", "step", "count")) ||
+            _preset_error("A preset axis gives either explicit nodes or start/step/count, not both.")
+        nodes = spec["nodes"]
+        nodes isa Vector && length(nodes) >= 2 && all(x -> x isa Real && !(x isa Bool) && isfinite(x), nodes) &&
+            all(>(0), diff(Float64.(nodes))) || _preset_error("Invalid preset axis nodes: they must be at least two finite, strictly increasing values.")
+        return Float64.(nodes)
+    end
+    spec["count"] isa Integer && !(spec["count"] isa Bool) && spec["count"] >= 2 || _preset_error("Invalid preset axis count.")
+    all(x -> x isa Real && !(x isa Bool) && isfinite(x), (spec["start"], spec["step"])) && spec["step"] > 0 || _preset_error("Invalid preset axis spacing.")
+    return collect(range(Float64(spec["start"]); step=Float64(spec["step"]), length=spec["count"]))
+end
+_preset_axis_bounds(spec) = haskey(spec, "nodes") ? [first(spec["nodes"]), last(spec["nodes"])] :
+    [spec["start"], spec["start"] + (spec["count"]-1)*spec["step"]]
 function _preset_catalog(path)
     isfile(path) || _preset_error("Surrogate preset catalog is missing: $path")
     bytes = read(path)
@@ -46,12 +64,9 @@ function _preset_catalog(path)
         required = entry["required_metadata"]; generation = required["generation_config"]
         _preset_planet(required["planet"]) == _preset_planet(entry["planet"]) || _preset_error("Preset metadata planet is inconsistent.")
         payload["format"] == required["format"] || _preset_error("Preset payload format is inconsistent.")
-        for axis in ("altitude", "latitude", "longitude")
-            spec = axes[axis]
-            spec["count"] isa Integer && !(spec["count"] isa Bool) && spec["count"] >= 2 || _preset_error("Invalid preset axis count.")
-            all(x -> x isa Real && !(x isa Bool) && isfinite(x), (spec["start"], spec["step"])) && spec["step"] > 0 || _preset_error("Invalid preset axis spacing.")
-        end
-        bounds(axis, scale) = [axes[axis]["start"], axes[axis]["start"] + (axes[axis]["count"]-1)*axes[axis]["step"]] .* scale
+        foreach(axis -> _preset_axis_nodes(axes[axis]), ("altitude", "latitude", "longitude"))
+        haskey(axes["longitude"], "nodes") && _preset_error("Preset longitude must use start/step/count so the periodic seam is explicit.")
+        bounds(axis, scale) = _preset_axis_bounds(axes[axis]) .* scale
         bounds("altitude",1000) == domain["height_m"] || _preset_error("Preset altitude domain differs from its axis.")
         bounds("latitude",1) == domain["latitude_deg"] || _preset_error("Preset latitude domain differs from its axis.")
         axes["longitude"]["start"] == 0 && axes["longitude"]["count"]*axes["longitude"]["step"] == 360 && domain["longitude_period_deg"] == 360 || _preset_error("Preset longitude must cover one periodic revolution without a duplicate seam.")
@@ -216,8 +231,7 @@ function _validate_preset_model(model, resolution)
     grid = core.surrogate; axes = entry["axes"]
     grid.planet_name == resolution.planet || _preset_error("Grid planet differs from the requested preset.")
     for (name, actual, scale) in (("altitude",grid.alt_nodes_m,1000.0), ("latitude",grid.lat_nodes_rad,pi/180), ("longitude",grid.lon_nodes_rad,pi/180))
-        spec = axes[name]
-        expected = collect(range(Float64(spec["start"]); step=Float64(spec["step"]), length=spec["count"])) .* scale
+        expected = _preset_axis_nodes(axes[name]) .* scale
         length(actual)==length(expected) && all(isapprox.(actual,expected;rtol=8eps(Float64),atol=0.0)) ||
             _preset_error("Preset $name grid axis differs from its declared domain and spacing.")
     end

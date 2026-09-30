@@ -133,6 +133,32 @@ function _callback_tolerances_for_phase(template_reltol, template_abstol, args::
     return reltol_new, abstol_new
 end
 
+# An integrator advances every active spacecraft with one cap/tolerance set.
+# Keep the atmospheric phase until the last active member leaves it.
+@inline function _active_atmospheric_phase(p)::Bool
+    return any(i -> p.is_active[i] && p.shared_buffers.in_atmosphere[i], eachindex(p.is_active))
+end
+
+function _active_phase_solver_settings(p, reltol, abstol)
+    inside = _active_atmospheric_phase(p)
+    tol = p.args.integration_tolerances
+    cap = inside ? tol.dt_max_atmosphere : tol.dt_max_orbit
+    reltol, abstol = _callback_tolerances_for_phase(reltol, abstol, p.args, inside)
+    return cap, reltol, abstol
+end
+
+function _apply_active_phase_solver_settings!(integrator)
+    p = integrator.p
+    _requires_density_callback(p.args.dynamics_model.dynamic_effectors, p.args) || return nothing
+    # Fixed-step symplectic/backbone drivers retain their prescribed step.
+    hasproperty(integrator.opts, :adaptive) && !integrator.opts.adaptive && return nothing
+    cap, reltol, abstol = _active_phase_solver_settings(p, integrator.opts.reltol, integrator.opts.abstol)
+    integrator.opts.dtmax = cap
+    integrator.opts.reltol = reltol
+    integrator.opts.abstol = abstol
+    return nothing
+end
+
 @inline _append_callback(callbacks::Tuple, callback) = (callbacks..., callback)
 @inline _append_callback(callbacks::Tuple, ::Nothing) = callbacks
 @inline _append_callbacks(callbacks::Tuple, extra::Tuple) = (callbacks..., extra...)

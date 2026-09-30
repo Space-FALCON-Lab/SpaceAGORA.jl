@@ -537,6 +537,7 @@ function run_simulation(
             end
             t_start = ckpt.t
             u_start = ckpt.u
+            _initialize_in_atmosphere_flags!(p, u_start)
             if args.simulation_settings.verbose
                 println("Resuming simulation from checkpoint at t=$(round(t_start, digits=6)) s")
             end
@@ -765,12 +766,12 @@ function run_simulation(
                     solver_cache === nothing || (solver_cache.integrator = nothing)
                 end
             end
+            _initialize_in_atmosphere_flags!(p, u_cursor)
             prob = _build_typed_solver_problem(u_cursor, (t_cursor, t_next), p, callbacks, solver_mode, jac_prototype)
             seg_sol, solve_meta = try
-                # Every segment resolves the same dtmax and save options, so the
-                # cache hits from the second segment on and each one reuses the
-                # integrator instead of rebuilding its cache, jac config, W and
-                # symbolic factorization. Safe here because the segment state is
+                # Segments with the same initial phase and save options reuse
+                # the cached integrator; a phase change rebuilds it. Reuse avoids
+                # rebuilding its cache, jac config, W and symbolic factorization. Safe here because the segment state is
                 # deepcopied into u_cursor below and _save_snapshot's getters
                 # materialise values (fresh SVectors), so nothing retains a
                 # reference into the integrator's own state buffer.

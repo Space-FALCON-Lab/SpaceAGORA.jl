@@ -1739,8 +1739,7 @@ end
 # instead of leaving every satellite to default to the "above the atmosphere"
 # state regardless of where it actually starts.
 function _initialize_in_atmosphere_flags!(p, initial_conditions)::Nothing
-    sc_state = initial_conditions.sc
-    n = length(sc_state)
+    n = length(p.is_active)
     length(p.shared_buffers.in_atmosphere) == n || resize!(p.shared_buffers.in_atmosphere, n)
     planet = p.args.environment_model.planet
     ei_m = p.args.environment_model.EI * 1e3

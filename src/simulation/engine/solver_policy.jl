@@ -398,23 +398,23 @@ end
 # when the original callback layout and vector lengths are unchanged.
 function _callbacks_for_cached_integrator(integrator, callbacks)
     previous = integrator.opts.callback
-    if previous.continuous_callbacks isa AbstractVector && previous.discrete_callbacks isa AbstractVector
-        original = get(integrator.sol.prob.kwargs, :callback, CallbackSet())
-        for field in (:continuous_callbacks, :discrete_callbacks)
-            old_callbacks = getproperty(original, field)
-            new_callbacks = getproperty(callbacks, field)
-            length(old_callbacks) == length(new_callbacks) || return nothing
-            for (old, new) in zip(old_callbacks, new_callbacks)
-                typeof(old) === typeof(new) || return nothing
-                hasproperty(new, :len) && old.len != new.len && return nothing
-                # Discontinuity bracketing retains the original condition.
-                # Reuse it only when that condition is the identical object.
-                if hasproperty(new, :maybe_discontinuity)
-                    old.maybe_discontinuity == new.maybe_discontinuity || return nothing
-                    new.maybe_discontinuity && old.condition !== new.condition && return nothing
-                end
+    original = get(integrator.sol.prob.kwargs, :callback, CallbackSet())
+    for field in (:continuous_callbacks, :discrete_callbacks)
+        old_callbacks = getproperty(original, field)
+        new_callbacks = getproperty(callbacks, field)
+        length(old_callbacks) == length(new_callbacks) || return nothing
+        for (old, new) in zip(old_callbacks, new_callbacks)
+            typeof(old) === typeof(new) || return nothing
+            hasproperty(new, :len) && old.len != new.len && return nothing
+            # Discontinuity bracketing retains the original condition.
+            # Reuse it only when that condition is the identical object.
+            if hasproperty(new, :maybe_discontinuity)
+                old.maybe_discontinuity == new.maybe_discontinuity || return nothing
+                new.maybe_discontinuity && old.condition !== new.condition && return nothing
             end
         end
+    end
+    if previous.continuous_callbacks isa AbstractVector && previous.discrete_callbacks isa AbstractVector
         return CallbackSet(collect(Any, callbacks.continuous_callbacks),
             collect(Any, callbacks.discrete_callbacks))
     end

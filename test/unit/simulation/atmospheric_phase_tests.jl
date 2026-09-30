@@ -137,6 +137,20 @@ end
     run_simulation(orbit();solver_cache=traced_cache,return_solution=true,
         extra_callbacks=(trace_callback(after),additional))
     @test traced_cache.integrator !== traced_old
+
+    # A changed root condition with the same closure type must also rebuild,
+    # because newer solver libraries retain conditions in bracketing caches.
+    root_at(target, times)=ContinuousCallback((u,t,i)->t-target,
+        i->push!(times,Float64(i.t));save_positions=(false,false))
+    root_cache=SE.SolverIntegratorCache(); early=Float64[]; later=Float64[]
+    run_simulation(orbit();solver_cache=root_cache,return_solution=true,
+        extra_callbacks=(root_at(200.0,early),))
+    first_root_integrator=root_cache.integrator
+    run_simulation(orbit();solver_cache=root_cache,return_solution=true,
+        extra_callbacks=(root_at(300.0,later),))
+    @test root_cache.integrator !== first_root_integrator
+    @test only(early) ≈ 200.0
+    @test only(later) ≈ 300.0
 end
 
 @testset "Checkpoint segments and atmospheric resume" begin

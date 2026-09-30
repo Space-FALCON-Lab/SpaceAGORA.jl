@@ -522,7 +522,7 @@ density_model_history_dependent(model::GRAMAtmosphereModel)::Bool =
 # no fallback altitude. A query outside the table's grid also falls back to
 # native GRAM, but that is an exceptional, warn-once path, and is not treated as
 # making the run history-dependent: such a run keeps per-stage sampling and a
-# threaded callback, as before the freeze default existed.
+# threaded callback, independent of the explicit freeze policy.
 density_model_history_dependent(model::GRAMAtmosphereModelSurrogate)::Bool =
     model.point_fallback_below_m !== nothing &&
     density_model_history_dependent(model.base_model)

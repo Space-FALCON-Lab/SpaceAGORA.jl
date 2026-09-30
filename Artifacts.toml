@@ -29,3 +29,11 @@ lazy = true
     [[mars_global_near_surface_p20_frozen_v1_1_0_0.download]]
     sha256 = "f0fa4a4cd05b747cef77f723bdb2a1a9697d8b824ee8b6159095c0bcb9212b37"
     url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-mars-global-near-surface-p20-1.0.0/mars_global_near_surface_p20_frozen_v1-1.0.0.tar.gz"
+
+[mars_global_near_surface_p20_frozen_v1_1_1_0]
+git-tree-sha1 = "19bd3b55915f05b4e437510d1d66dc751852fb07"
+lazy = true
+
+    [[mars_global_near_surface_p20_frozen_v1_1_1_0.download]]
+    sha256 = "3b3a7832cab9941d75104f7e797686c53d5d45b3bf1af33bdcbc2add6d3e0f15"
+    url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-mars-global-near-surface-p20-1.1.0/mars_global_near_surface_p20_frozen_v1-1.1.0.tar.gz"

@@ -182,6 +182,7 @@ Three named presets are published. All are frozen at the Odyssey P20 instant, 20
 | `odyssey_p20_frozen_v1` 1.0.0 | 100 to 260 km, 40 to 90 degrees north | Odyssey P20 passages within the tutorial's envelope |
 | `mars_global_upper_p20_frozen_v1` 1.0.0 | 80 to 365 km, all latitudes and longitudes | Pointwise within 225 s of the frozen instant; propagated passes with periapsis from 80 to 130 km |
 | `mars_global_near_surface_p20_frozen_v1` 1.0.0 | 5 m above the local surface to 75 km areoid height, planetocentric latitudes within 85 degrees, surface below 9 km; density, temperature and pressure, no winds | Pointwise at the frozen instant |
+| `mars_global_near_surface_p20_frozen_v1` 1.1.0 | As 1.0.0, up to 81 km areoid height, above the global upper preset's floor everywhere | Pointwise at the frozen instant |
 
 The global preset was validated against native Mars-GRAM under the lab's release
 limits for pointwise density and wind error and per-pass drag and heating; its
@@ -189,7 +190,7 @@ archive README lists them. Its height and latitude spacing is not uniform: nodes
 are added where Mars-GRAM has structure, the catalog lists every node, and
 `surrogate_preset_model` checks them against the grid. Heights below 80 km are
 not covered by this grid, because terrain over the Tharsis summits shapes the native
-atmosphere there; such queries fail. The near-surface preset below covers heights up to 75 km.
+atmosphere there; such queries fail. The near-surface preset below covers heights up to 75 km (1.0.0) or 81 km (1.1.0).
 
 ```julia
 using SpaceAGORA
@@ -210,15 +211,23 @@ native Mars-GRAM's own near-surface rule, driven by the local terrain.
 ```julia
 using SpaceAGORA
 import GRAMSuite
-density_model = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.0.0")
+density_model = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.1.0")
 rho, T, wind = getDensity(density_model, 250.0, deg2rad(-4.5), deg2rad(137.4), 0.0, true)
 ```
+
+**Versions.** Both published versions stay available.
+- **1.0.0** is unchanged.
+- **1.1.0** adds two table levels, at 80.0323 and 85.0323 km areoid height. They sit where Mars-GRAM places the first
+  two levels of its upper table at this instant.
+- **Top.** 1.1.0 raises the top from 75 to 81 km. Between 75 km and the first added level, native joins its lower
+  and upper tables, and the preset follows the same rule.
+- **Below 75 km,** 1.1.0 gives the same results as 1.0.0.
 
 **Refusals.** Queries fail with a `DomainError` naming the reason when any of these holds:
 - planetocentric latitude beyond 85 degrees;
 - surface height of 9 km or more (volcano flanks);
 - less than 5 m above the surface;
-- above 75 km areoid height;
+- above the version's top: 75 km areoid height in 1.0.0, 81 km in 1.1.0;
 - a needed component is unavailable at that position.
 
 **Coverage.** Within 85 degrees:
@@ -226,12 +235,17 @@ rho, T, wind = getDensity(density_model, 250.0, deg2rad(-4.5), deg2rad(137.4), 0
 - about 1.7% is served with a provisional model, flagged in each result's status;
 - the rest is refused at the lowest heights or on volcano flanks.
 
+From 75 to 81 km (1.1.0), every location with a surface below 9 km is served.
+
 The archive's support map lists the cells.
 
-**Validation.** The preset was validated pointwise against native Mars-GRAM at the frozen instant under the lab's release limits, separately for qualified-model areas, provisional-model areas and all served queries.
+**Validation.** The preset was validated pointwise against native Mars-GRAM at the frozen instant, under the lab's release limits.
+- **1.0.0:** separately for qualified-model areas, provisional-model areas and all served queries.
+- **1.1.0:** the heights it adds were validated with every point's expected outcome specified in advance. The 1.0.0 validation carries over below 75 km, where results are unchanged.
 
 **Other limits.**
-- The 75 to 80 km interval lies between this preset and the upper one, and neither covers it.
+- **1.0.0 gap.** In 1.0.0, the 75 to 80 km interval lies between this preset and the upper one, and neither covers it.
+- **1.1.0 overlap.** 1.1.0 reaches 81 km areoid height, above the upper preset's 80 km ellipsoidal floor everywhere, so both presets are defined between that floor and 81 km. A model that hands over between them is not yet provided.
 - The payload's terrain component holds Mars-GRAM's MOLA terrain values at its lattice nodes. Credit NASA MOLA as the archive README states.
 
 `GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation

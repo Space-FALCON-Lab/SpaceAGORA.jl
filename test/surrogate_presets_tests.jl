@@ -185,7 +185,7 @@ end
 
 @testset "Named near-surface presets" begin
     catalog_template = TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
-    shipped=only(filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1",catalog_template["presets"]))
+    shipped=only(filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1" && p["version"]=="1.0.0",catalog_template["presets"]))
     @test shipped["kind"]=="gram_near_surface_scalars" && shipped["release_enabled"] && !haskey(shipped,"axes")
     @test shipped["atmosphere"]["winds_available"]===false && shipped["domain"]["top_areoid_height_m"]==75000.0
     @test any(x->x["id"]=="mars_global_near_surface_p20_frozen_v1" && x["version"]=="1.0.0",SpaceAGORA.available_surrogate_presets())
@@ -276,5 +276,75 @@ end
             @test SpaceAGORA.getDensity(installed,3000.,deg2rad(10.),deg2rad(40.),0.,true)==(rho,T,wind)
         end
         @test !any(x->occursin("libgram",lowercase(basename(x))),Libdl.dllist())
+    end
+end
+
+@testset "Named near-surface preset versions" begin
+    catalog_template = TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
+    near=filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1",catalog_template["presets"])
+    @test sort([p["version"] for p in near])==["1.0.0","1.1.0"]
+    v100=only(filter(p->p["version"]=="1.0.0",near)); v110=only(filter(p->p["version"]=="1.1.0",near))
+    listed=SpaceAGORA.available_surrogate_presets()
+    @test all(v->any(x->x["id"]=="mars_global_near_surface_p20_frozen_v1" && x["version"]==v,listed),("1.0.0","1.1.0"))
+    # 1.0.0 keeps its published identities; 1.1.0 extends it to 81 km with two added levels and has its own identities.
+    @test v100["domain"]["top_areoid_height_m"]==75000.0 && length(v100["required_metadata"]["levels_km"])==29
+    @test v100["distribution"]["archive_sha256"]=="f0fa4a4cd05b747cef77f723bdb2a1a9697d8b824ee8b6159095c0bcb9212b37"
+    @test v110["kind"]=="gram_near_surface_scalars" && v110["release_enabled"] && !haskey(v110,"axes")
+    @test v110["atmosphere"]["winds_available"]===false && v110["atmosphere"]["wind_returned"]=="zero_vector"
+    @test v110["domain"]["top_areoid_height_m"]==81000.0 && v110["required_metadata"]["support"]["top_areoid_km"]==81.0
+    lev0,lev1=v100["required_metadata"]["levels_km"],v110["required_metadata"]["levels_km"]
+    @test lev1[1:length(lev0)]==lev0 && lev1[end-1:end]==[80.03231545290365,85.03231545290365]
+    for k in ("lattice","generation_config","epoch_utc","format","planet")
+        @test v110["required_metadata"][k]==v100["required_metadata"][k]
+    end
+    @test v110["artifact_name"]=="mars_global_near_surface_p20_frozen_v1_1_1_0" && v110["artifact_name"]!=v100["artifact_name"]
+    @test v110["payload"]["sha256"]=="5abb86083c0d9e824bf7a2f31203426834bb9c1f98bbafa332693cf0cc05a6e9"
+    @test v110["distribution"]["archive_sha256"]=="3b3a7832cab9941d75104f7e797686c53d5d45b3bf1af33bdcbc2add6d3e0f15"
+    @test v110["distribution"]["git_tree_sha1"]=="19bd3b55915f05b4e437510d1d66dc751852fb07"
+    @test all(u->occursin("/surrogate-mars-global-near-surface-p20-1.1.0/",u),v110["distribution"]["urls"])
+    @test v110["generation_provenance"]["runtime_evaluator_sha256"]=="1aa2c8f7244d7459208f301cdd7dd39f4f05723559ef91a4d4a0ac3941d8afb5"
+    # Each version's Artifacts.toml binding matches its catalog entry.
+    bindings=TOML.parsefile(PRESET_ENV._SURROGATE_ARTIFACTS)
+    for e in (v100,v110)
+        b=bindings[e["artifact_name"]]; d=only(b["download"])
+        @test b["git-tree-sha1"]==e["distribution"]["git_tree_sha1"] && b["lazy"]===true
+        @test d["sha256"]==e["distribution"]["archive_sha256"] && d["url"] in e["distribution"]["urls"]
+    end
+    mktempdir() do dir
+        file=joinpath(dir,"fixture.jls"); catalog_file=joinpath(dir,"catalog.toml"); artifacts_file=joinpath(dir,"Artifacts.toml")
+        catalog=deepcopy(catalog_template); new=deepcopy(v110); old=deepcopy(v100); catalog["presets"]=[new,old]
+        for (e,v) in ((new,"1_1_0"),(old,"1_0_0"))
+            e["id"]="synthetic_near_surface";e["release_enabled"]=false;e["artifact_name"]="synthetic_near_surface_"*v
+        end
+        # Synthetic analytic payload to the 1.1.0 contract (not Mars data): flat 0.5 km terrain, linear level states.
+        payload=deepcopy(new["required_metadata"]); lev=payload["levels_km"]; g=payload["lattice"]
+        nl,ni,nj=length(lev),g["nlat"],g["nlon"]
+        payload["radii_km"]=(payload["generation_config"]["equatorial_radius_km"],payload["generation_config"]["polar_radius_km"])
+        payload["terrain"]=Dict{String,Any}("lat0_deg"=>-86.25,"lon0_deg"=>0.488,"step_deg"=>0.5,
+            "surface_height_km"=>fill(0.5,346,720),"areoid_radius_km"=>fill(3390.0,346,720))
+        payload["level_T_K"]=[220.0-2lev[a] for a in 1:nl, i in 1:ni, j in 1:nj]
+        payload["level_R"]=fill(191.0,nl,ni,nj); payload["level_lnp"]=[log(700.0)-lev[a]/11 for a in 1:nl, i in 1:ni, j in 1:nj]
+        payload["level_source"]=ones(UInt8,nl,ni,nj); payload["surface_T30_K"]=fill(214.0,ni,nj); payload["surface_T5_K"]=fill(216.0,ni,nj)
+        keys_=[(b,c) for b in -12:11 for c in 0:39]; n=length(keys_)
+        payload["q_models"]=Dict{String,Any}("band"=>first.(keys_),"cell"=>last.(keys_),"L"=>fill(1,n),"order"=>fill(1,n),
+            "phic_center"=>[7.5b+3.75 for (b,_) in keys_],"lam_center"=>[9.0c+4.5 for (_,c) in keys_],
+            "coef"=>hcat(fill(20.0,n),zeros(n,5)),"n_points"=>fill(1,n),"status"=>fill("qualified",n))
+        serialize(file,payload)
+        for e in (new,old); e["payload"]["sha256"]=preset_sha(file); e["payload"]["bytes"]=filesize(file); end
+        preset_write_toml(catalog_file,catalog); preset_write_toml(artifacts_file,Dict())
+        opts(v)=(version=v,catalog_file=catalog_file,artifacts_file=artifacts_file,file=file,allow_unreleased=true)
+        if !isdefined(GRAMSuite, :GRAMNearSurfaceAtmosphereModel)
+            @test_skip "near-surface version checks need a GRAMSuite with GRAMNearSurfaceAtmosphereModel"
+            return
+        end
+        # The 1.1.0 contract serves between the old 75 km top and 81 km, and refuses above 81 km.
+        model=SpaceAGORA.surrogate_preset_model("synthetic_near_surface";opts("1.1.0")...)
+        @test model isa SpaceAGORA.GRAMNearSurfaceAtmosphereModel
+        s=GRAMSuite.near_surface_state(model.core,10.,40.,72000.)
+        @test 75.0<s.areoid_height_km<81.0 && SpaceAGORA.getDensity(model,72000.,deg2rad(10.),deg2rad(40.),0.,true)[1]===s.density_kgm3
+        @test_throws DomainError SpaceAGORA.getDensity(model,80000.,deg2rad(10.),deg2rad(40.),0.,true)
+        @test SpaceAGORA.atmosphere_provenance(model)["preset_version"]=="1.1.0"
+        # The same payload does not satisfy the 1.0.0 contract (levels, top and distribution version differ).
+        @test_throws ArgumentError SpaceAGORA.surrogate_preset_model("synthetic_near_surface";opts("1.0.0")...)
     end
 end

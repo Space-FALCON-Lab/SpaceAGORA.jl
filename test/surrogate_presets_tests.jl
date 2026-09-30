@@ -220,6 +220,11 @@ end
             @test_throws ArgumentError SpaceAGORA.available_surrogate_presets(;catalog_file)
         end
         preset_write_toml(catalog_file,catalog)
+        # The wrapper's bypass membership and thread-safety trait do not need GRAMSuite's near-surface API, so they are
+        # checked on a stub core in every environment.
+        wrapper=SpaceAGORA.GRAMNearSurfaceAtmosphereModel(:stub_core)
+        @test wrapper isa PRESET_ENV._NativeFreeSnapshotModel && wrapper.core===:stub_core
+        @test SpaceAGORA.SimulationModel.SimulationCallbacks.density_model_threadsafe(wrapper)
         # The model needs a GRAMSuite with the near-surface API. With an older GRAMSuite (for example a CI job pinned to a
         # revision without it), the named preset must fail with a clear error, and the model checks are reported skipped.
         if !isdefined(GRAMSuite, :GRAMNearSurfaceAtmosphereModel)

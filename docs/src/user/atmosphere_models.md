@@ -180,13 +180,26 @@ Three named presets are published. All are frozen at the Odyssey P20 instant, 20
 | Preset | Domain | Validated use |
 | --- | --- | --- |
 | `odyssey_p20_frozen_v1` 1.0.0 | 100 to 260 km, 40 to 90 degrees north | Odyssey P20 passages within the tutorial's envelope |
-| `mars_global_upper_p20_frozen_v1` 1.0.0 | 80 to 365 km, all latitudes and longitudes | Pointwise within 225 s of the frozen instant; propagated passes with periapsis from 80 to 130 km |
+| `mars_global_upper_p20_frozen_v1` 1.0.0 | 80 to 365 km, all latitudes and longitudes | Pointwise within 225 s of the frozen instant, down to 80 km; propagated passes designed for periapsis from 85 to 130 km (see below) |
 | `mars_global_near_surface_p20_frozen_v1` 1.0.0 | 5 m above the local surface to 75 km areoid height, planetocentric latitudes within 85 degrees, surface below 9 km; density, temperature and pressure, no winds | Pointwise at the frozen instant |
 | `mars_global_near_surface_p20_frozen_v1` 1.1.0 | As 1.0.0, up to 81 km areoid height, above the global upper preset's floor everywhere | Pointwise at the frozen instant |
 
 The global preset was validated against native Mars-GRAM under the lab's release
 limits for pointwise density and wind error and per-pass drag and heating; its
-archive README lists them. Its height and latitude spacing is not uniform: nodes
+archive README lists them. The three kinds of check reach different heights:
+
+- pointwise checks cover the whole domain, down to its 80 km boundary;
+- propagated passes were designed for periapsis from 85 to 130 km, and the
+  lowest altitude they reached was 84.56 km;
+- fixed-path arcs, which follow prescribed paths without trajectory feedback,
+  reach 80.25 km and check drag and heating proxies along the path.
+
+No propagated pass went below 84.56 km. Between 80 and 84.56 km, the evidence
+for per-pass drag and heating is the pointwise checks and the fixed-path arcs.
+The archive README gives the pass range as periapsis from 80 to 130 km; this
+section states the coverage precisely.
+
+The grid's height and latitude spacing is not uniform: nodes
 are added where Mars-GRAM has structure, the catalog lists every node, and
 `surrogate_preset_model` checks them against the grid. Heights below 80 km are
 not covered by this grid, because terrain over the Tharsis summits shapes the native

@@ -130,9 +130,9 @@ function _density_state_from_kinematics_unmasked!(
     # Vacuum-predicted GRAM density cache: interpolate from a pre-built spline on
     # log(ρ) along the drag-free trajectory.  Only active inside the atmosphere
     # (in_atmosphere flag) to avoid wasteful builds during coast arcs.
-    # Grid snapshots enforce their spatial domain at every current coordinate;
-    # a trajectory spline must not substitute a previously sampled atmosphere.
-    if env.vacuum_gram_cache_enabled && !(density_model isa EnvironmentModels.GRAMGridAtmosphereModel)
+    # Native-free snapshots (grid and near-surface) enforce their spatial domain at every current
+    # coordinate; a trajectory spline must not substitute a previously sampled atmosphere.
+    if env.vacuum_gram_cache_enabled && !(density_model isa EnvironmentModels._NativeFreeSnapshotModel)
         in_atm = sat_idx <= length(p.shared_buffers.in_atmosphere) &&
                  p.shared_buffers.in_atmosphere[sat_idx]
         if in_atm

@@ -190,6 +190,7 @@ not covered, because terrain over the Tharsis summits shapes the native
 atmosphere there; such queries fail.
 
 ```julia
+using SpaceAGORA
 import GRAMSuite
 density_model = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0")
 ```

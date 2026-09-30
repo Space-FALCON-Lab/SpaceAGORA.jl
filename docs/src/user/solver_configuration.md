@@ -100,6 +100,23 @@ Maximum step during the atmosphere-coupled phase (default 1 s). This is the
 most important step limit for entry and aerobraking accuracy. For steep entries
 or when aerodynamic forces are changing rapidly, reduce to `0.1` or `0.5` s.
 
+For adaptive atmospheric propagation, the integrator uses the atmospheric
+cap and tolerances whenever any active spacecraft is inside the configured
+atmospheric boundary. It selects these settings at startup, checkpoint restart
+and integrator reuse, then updates them on crossings and spacecraft deactivation.
+Explicit per-component mass, heat-load and attitude tolerance overrides are preserved.
+
+Explicit multirate subsolve overrides restore their supplied cap and tolerances
+at every subsolve. Installed crossing callbacks can apply phase settings within
+that subsolve. Previously, a crossing inside a reused subsolve carried its phase
+settings into later subsolves, so physical multirate runs with atmospheric
+crossings change.
+
+Fixed-step symplectic and gravity-backbone drivers are exempt from adaptive
+phase updates. This exemption does not establish support for atmospheric
+gravity-backbone runs: the density callback currently requires the ordinary
+spacecraft state layout.
+
 ## Practical recipes
 
 **Faster long orbit runs (reduced accuracy):**

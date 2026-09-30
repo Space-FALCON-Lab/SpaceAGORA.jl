@@ -24,7 +24,9 @@ end
         p.shared_buffers.temperatures[sat_idx] = T
     end
     if sat_idx <= length(p.shared_buffers.winds)
-        p.shared_buffers.winds[sat_idx] = wind_vec
+        # `EnvironmentModel.wind = false` stores zero wind whatever the query
+        # returned (a native GRAM query with wind=false returns nominal winds).
+        p.shared_buffers.winds[sat_idx] = EnvironmentModels._environment_wind(p, wind_vec)
     end
     if sat_idx <= length(p.shared_buffers.density_sample_t)
         p.shared_buffers.density_sample_t[sat_idx] = t
@@ -75,7 +77,40 @@ end
     return merge(kin, (rho=atmosphere.rho_kg_m3, T=atmosphere.temperature_k, wind=atmosphere.wind_pp))
 end
 
+"""
+    _density_state_from_kinematics!(p, sat_idx, pos_ii, vel_ii, mass_kg, alt, lat, lon, t,
+                                    density_model, cache_cfg, stats_enabled,
+                                    target_include_j2, caches) -> (rho, T, wind)
+
+One spacecraft's atmosphere sample, through whichever GRAM cache is active.
+The returned wind is zero when the run's `EnvironmentModel.wind` is `false`
+(see `EnvironmentModels._environment_wind_enabled`), including values served
+from a track or look-ahead cache.
+"""
 function _density_state_from_kinematics!(
+    p,
+    sat_idx::Int,
+    pos_ii::SVector{3, Float64},
+    vel_ii::SVector{3, Float64},
+    current_mass_kg::Float64,
+    alt::Float64,
+    lat::Float64,
+    lon::Float64,
+    t::Float64,
+    density_model,
+    cache_cfg,
+    stats_enabled::Bool,
+    target_include_j2::Bool,
+    caches::Vector{Union{Nothing, GramTrackCache}}
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    rho, T, wind_vec = _density_state_from_kinematics_unmasked!(
+        p, sat_idx, pos_ii, vel_ii, current_mass_kg, alt, lat, lon, t,
+        density_model, cache_cfg, stats_enabled, target_include_j2, caches,
+    )
+    return rho, T, EnvironmentModels._environment_wind(p, wind_vec)
+end
+
+function _density_state_from_kinematics_unmasked!(
     p,
     sat_idx::Int,
     pos_ii::SVector{3, Float64},
@@ -200,7 +235,7 @@ function _density_state_from_kinematics!(
             s.direct_calls += 1
         end)
     end
-    return getDensity(density_model, alt, lat, lon, t, true, p)
+    return getDensity(density_model, alt, lat, lon, t, EnvironmentModels._environment_wind_enabled(p), p)
 end
 
 function _stage_environment_state(x, p, sat_idx::Int, t::Float64; write_buffers::Bool=true)
@@ -332,6 +367,10 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                     p, args, num_sats; heavy_work=true, lock_free=true
                 ).allotment :
                 decision.allotment
+            # `EnvironmentModel.wind = false` requests no winds (which also keeps
+            # the isolated pool's wind-history guard out of the way) and zeroes
+            # whatever wind the model still returns.
+            wind_requested = EnvironmentModels._environment_wind_enabled(p)
             pooled = use_gram_isolated_pool && _gram_isolated_pool_batch_eval!(
                 p.shared_buffers.densities,
                 p.shared_buffers.temperatures,
@@ -341,7 +380,7 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                 lats,
                 lons,
                 Float64(integrator.t),
-                true,
+                wind_requested,
                 p;
                 allotment_hint=pool_allotment
             )
@@ -355,10 +394,11 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                     lats,
                     lons,
                     Float64(integrator.t),
-                    true,
+                    wind_requested,
                     p
                 )
             end
+            EnvironmentModels._zero_environment_winds!(p, p.shared_buffers.winds)
             _write_density_time_buffers!(p, num_sats, Float64(integrator.t))
         elseif use_threads
             ParallelPolicy.threaded_foreach_persistent(:density_callback, num_sats, decision.allotment) do i

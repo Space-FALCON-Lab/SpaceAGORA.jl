@@ -163,8 +163,8 @@ are building a custom effector and need to control partitioning explicitly.
 `solver_mode = :split_imex` retains `:kencarp4` as its default algorithm.
 KenCarp4 explicitly refreshes the Newton Jacobian on each nonlinear iteration using
 `NLNewton(always_new=true)`. This avoids the accuracy loss observed with
-library Jacobian-reuse defaults in nonlinear atmospheric propagation with
-capped timesteps. Componentwise integration tolerances and the dense or
+library Jacobian-reuse defaults in the tested nonlinear atmospheric trajectories.
+Componentwise integration tolerances and the dense or
 sparse linear-solver choice are preserved.
 
 This policy changes split-IMEX KenCarp4 numerical results relative to the earlier
@@ -172,4 +172,5 @@ library-default policy. It does not establish a general endpoint-error bound:
 strongly cancelling split problems retain a separately documented accuracy
 limitation. Validate the chosen method and tolerances for the intended
 trajectory. KenCarp47, KenCarp58 and other solver modes retain their existing
-nonlinear-solver policy.
+nonlinear-solver policy. Refreshing Jacobians and their factorizations adds work;
+the runtime cost for large constellations has not been measured.

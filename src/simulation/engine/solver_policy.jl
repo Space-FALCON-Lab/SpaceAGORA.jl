@@ -284,7 +284,7 @@ end
     mode = cfg.split_imex_solver
     ls = _sparse_linsolve_or_default(sparse_jac)
     # KenCarp4 reuse defaults lose accuracy in nonlinear atmospheric passes
-    # with capped steps. Keep other algorithms on their established policies.
+    # across tested trajectories. Keep other algorithms on their established policies.
     mode === :kencarp4  && return (alg=KenCarp4(autodiff=AutoFiniteDiff(), linsolve=ls, nlsolve=NLNewton(always_new=true)),  label="KenCarp4")
     mode === :kencarp47 && return (alg=KenCarp47(autodiff=AutoFiniteDiff(), linsolve=ls), label="KenCarp47")
     mode === :kencarp58 && return (alg=KenCarp58(autodiff=AutoFiniteDiff(), linsolve=ls), label="KenCarp58")

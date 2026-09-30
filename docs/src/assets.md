@@ -212,7 +212,12 @@ Julia artifacts handle concurrent installation; a corrupt managed artifact or
 override must be repaired explicitly. User-supplied files are never replaced.
 
 A named version fixes the atmosphere's epoch and domain. Changing the simulation
-date does not evolve the grid. Only the bounded P20 preset is currently listed;
-other planets and epochs require separately generated and validated presets.
+date does not evolve the grid. Two presets are listed, both frozen at the P20
+instant: the bounded Odyssey preset, and `mars_global_upper_p20_frozen_v1`, a
+global Mars grid from 80 to 365 km (see
+[atmosphere models](user/atmosphere_models.md)). The same `fetch` and `check`
+commands take `--preset=mars_global_upper_p20_frozen_v1 --version=1.0.0`; its
+archive is larger, about 230 MB. Other planets and epochs require separately
+generated and validated presets.
 The ordinary results-bundle manifest includes an `atmosphere` section identifying
 the backend, preset/version, payload/catalog hashes and frozen-domain contract.

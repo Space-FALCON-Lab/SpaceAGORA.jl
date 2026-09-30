@@ -93,7 +93,7 @@ include(joinpath(@__DIR__, "..", "vehicle", "structure", "structure_models.jl"))
 @reexport using .Structure
 
 # --- Config types ---
-include(joinpath(@__DIR__, "..", "core", "state", "simulation_configuration.jl"))
+include(joinpath(@__DIR__, "..", "simulation", "config", "configuration.jl"))
 @reexport using .SimConfig
 
 # --- Physical Models ---

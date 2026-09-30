@@ -42,9 +42,14 @@ function _run_spaceagora_precompile_workload(; workspace::AbstractString=tempdir
     ParallelProfiles.parse_parallel_profile("R2")
     engine_config = simulation_engine_config_from_env(_SPACEAGORA_PRECOMPILE_ENV)
     args = _spaceagora_precompile_args()
-    mktempdir(workspace) do tmp
-        cd(tmp) do
-            run_simulation(engine_config, args; return_solution=true)
+    # The workload propagates without aerodynamics on purpose. Silence the
+    # density-without-drag diagnostic for it, or every installation prints that
+    # warning while precompiling; ordinary runs still warn.
+    withenv("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO" => "0") do
+        mktempdir(workspace) do tmp
+            cd(tmp) do
+                run_simulation(engine_config, args; return_solution=true)
+            end
         end
     end
 end

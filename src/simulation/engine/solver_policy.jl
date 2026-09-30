@@ -403,6 +403,15 @@ end
     needs_full_solution::Bool=true)
     maxiters = _solver_maxiters(cfg)
     dtmax_use = isnothing(dtmax_override) ? args.integration_tolerances.dt_max_orbit : dtmax_override
+    # Plain manufactured ODEs have no spacecraft phase. Explicit subsolve caps
+    # retain their supplied tolerances and initial cap (multirate contract).
+    # As before, an installed crossing callback can subsequently change them.
+    refresh_callbacks = dtmax_override === nothing && prob.p isa SimulationModel.ODEParams
+    if refresh_callbacks &&
+       SimulationModel.SimulationCallbacks._requires_density_callback(args.dynamics_model.dynamic_effectors, args)
+        dtmax_use, reltol_tol, abstol_tol =
+            SimulationModel.SimulationCallbacks._active_phase_solver_settings(prob.p, reltol_tol, abstol_tol)
+    end
     dtmax_use > 0.0 || throw(ArgumentError("Solver dtmax must be > 0.0, got $dtmax_use."))
     # When nothing reads the trajectory (return_solution=false, results=false, no
     # solver metadata), skip per-step solution/dense storage — it is the dominant
@@ -419,17 +428,35 @@ end
     save_start = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_START", true)
     save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
 
+    callbacks = refresh_callbacks ? get(prob.kwargs, :callback, CallbackSet()) : nothing
+    callback_type_matches = !refresh_callbacks || solver_cache === nothing ||
+        solver_cache.integrator === nothing ||
+        typeof(solver_cache.integrator.opts.callback) === typeof(callbacks)
+
     # Reuse the cached integrator only when it was init'ed with the same save
     # options this call resolved; otherwise fall through and re-init the cache.
-    if solver_cache !== nothing && solver_cache.integrator !== nothing &&
+    if solver_cache !== nothing && solver_cache.integrator !== nothing && callback_type_matches &&
        _solver_cache_options_match(solver_cache, save_everystep, save_on, save_start, save_end, dtmax_use)
         integ = solver_cache.integrator
         integ.p = prob.p
-        SciMLBase.reinit!(integ, prob.u0;
-            t0=Float64(first(prob.tspan)),
-            tf=Float64(last(prob.tspan)),
-            erase_sol=true,
-            reinit_callbacks=false)
+        # Crossing callbacks mutate these options. Restore this run's settings
+        # before reinit! selects its initial step from the new state/tolerances.
+        integ.opts.dtmax = dtmax_use
+        integ.opts.reltol = reltol_tol
+        integ.opts.abstol = abstol_tol
+        if refresh_callbacks
+            # Refresh captured run state and initialize housekeeping before the
+            # initial-step estimate, in the same order as a fresh integrator.
+            integ.opts.callback = callbacks
+            SciMLBase.reinit!(integ, prob.u0;
+                t0=Float64(first(prob.tspan)), tf=Float64(last(prob.tspan)),
+                erase_sol=true, reset_dt=false, reinit_callbacks=true)
+            SciMLBase.auto_dt_reset!(integ)
+        else
+            SciMLBase.reinit!(integ, prob.u0;
+                t0=Float64(first(prob.tspan)), tf=Float64(last(prob.tspan)),
+                erase_sol=true, reinit_callbacks=false)
+        end
         return DiffEqBase.solve!(integ)
     end
 

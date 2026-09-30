@@ -174,6 +174,27 @@ density_model = NRLMSISE00AtmosphereModel(index_provider=my_provider)
 
 For a named, automatically retrieved atmosphere, start with the [Odyssey surrogate workflow](../tutorials/odyssey_surrogate.md). Use `surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0")` after loading `GRAMSuite`; retrieval and verification occur once before the solver.
 
+Two named presets are published. Both are frozen at the Odyssey P20 instant, 2001-11-07T11:51:04.794789Z:
+
+| Preset | Domain | Validated use |
+| --- | --- | --- |
+| `odyssey_p20_frozen_v1` 1.0.0 | 100 to 260 km, 40 to 90 degrees north | Odyssey P20 passages within the tutorial's envelope |
+| `mars_global_upper_p20_frozen_v1` 1.0.0 | 80 to 365 km, all latitudes and longitudes | Pointwise within 225 s of the frozen instant; propagated passes with periapsis from 80 to 130 km |
+
+The global preset was validated against native Mars-GRAM under the lab's release
+limits for pointwise density and wind error and per-pass drag and heating; its
+archive README lists them. Its height and latitude spacing is not uniform: nodes
+are added where Mars-GRAM has structure, the catalog lists every node, and
+`surrogate_preset_model` checks them against the grid. Heights below 80 km are
+not covered, because terrain over the Tharsis summits shapes the native
+atmosphere there; such queries fail.
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+density_model = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0")
+```
+
 `GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
 kernel to SpaceAGORA. It needs the Julia wrapper with its native-free grid API
 and a trusted serialized grid payload. Construction and density evaluation use
@@ -298,3 +319,51 @@ systems, validate atmospheric coordinate or datum conventions, certify cached
 or surrogate data, or carry over a native random stream that was advanced or a
 handle that was edited by hand before the run. The existing native cache and
 environment policies apply to the rebuilt model as to any other.
+
+### Compare a surrogate with native GRAM
+
+To see how a surrogate differs from native GRAM in your own scenario, run the
+same case twice and change only the density model: once with the named preset,
+and once with a `GRAMAtmosphereModel` (native GRAM must be installed; see
+[GRAMSuite Setup](gramsuite_setup.md)). Two native references answer different
+questions:
+
+- native GRAM evaluated at the preset's frozen instant isolates the grid's
+  interpolation error;
+- native GRAM run with actual time along the trajectory adds the error of
+  freezing the atmosphere. The Odyssey preset has accepted diagnostic and
+  propagation comparisons along bounded P20 passages against this second
+  reference. These comparisons are evidence, not numerical release limits:
+  the catalog leaves application accuracy requirements unset. At arbitrary
+  points away from those passages, pointwise differences can be larger,
+  particularly near the 260 km ceiling at
+  high northern latitudes.
+
+`atmosphere_provenance(model)` lists how the preset was generated: planet,
+frozen UTC instant, Mars-GRAM configuration and input identities. Check each
+setting against the native model you build. A plain `GRAMAtmosphereModel` is not
+automatically configured the same way, and the Odyssey preset's diagnostic
+comparisons used a dedicated matched native adapter. Compare pointwise density, temperature
+and wind along the native trajectory, and the per-pass quantities your
+algorithm depends on, such as drag delta-v, heat load and peak heat rate.
+
+### Prepare another frozen snapshot
+
+A named preset covers one planet, one frozen instant and one bounded domain. For
+another scenario, generate a new frozen grid with GRAMSuite's recorded-recipe
+generator, following its
+[grid generation guide](https://github.com/Space-FALCON-Lab/GRAMSuite.jl/blob/main/docs/grid_generation.md).
+The guide starts with a native-free dry run of the recipe and needs native GRAM
+only for the final generation. Validate the new grid against native GRAM for the
+intended scenario before relying on it, then load it with the generic model:
+
+```julia
+density_model = GRAMGridAtmosphereModel(
+    planet="Mars",
+    surrogate_file="/path/to/new_grid.jls",
+    expected_sha256="<sha256 of the file>",
+)
+```
+
+A grid loaded this way carries no named-preset contract: its domain, epoch and
+accuracy are whatever your own generation and validation established.

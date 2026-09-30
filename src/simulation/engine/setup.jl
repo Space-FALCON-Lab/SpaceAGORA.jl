@@ -68,7 +68,10 @@ function _validate_thermal_model_support!(args)
     return nothing
 end
 
-@inline _density_without_aero_warning_enabled() = _engine_env_get("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO", "1") == "1"
+# Not part of the canonical override set: honour the process environment inside an
+# active SimulationEngineConfig scope too, so the documented switch works in every run.
+@inline _density_without_aero_warning_enabled() =
+    _engine_env_get_with_env_fallback("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO", "1") == "1"
 
 # An effector consumes the atmosphere either as one of the built-in aero types
 # or by declaring environment_requirements(model).atmosphere = true (the public
@@ -1741,8 +1744,7 @@ end
 # instead of leaving every satellite to default to the "above the atmosphere"
 # state regardless of where it actually starts.
 function _initialize_in_atmosphere_flags!(p, initial_conditions)::Nothing
-    sc_state = initial_conditions.sc
-    n = length(sc_state)
+    n = length(p.is_active)
     length(p.shared_buffers.in_atmosphere) == n || resize!(p.shared_buffers.in_atmosphere, n)
     planet = p.args.environment_model.planet
     ei_m = p.args.environment_model.EI * 1e3

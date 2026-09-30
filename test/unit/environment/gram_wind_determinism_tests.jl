@@ -14,10 +14,10 @@ module GramWindDeterminismTests
 #   probes and earlier runs on the same instance leave no trace.
 # - With several threads, per-stage RHS density queries and the threaded
 #   density callback advanced the shared walk in scheduling order. With
-#   history-dependent winds the run now samples the atmosphere once per
-#   accepted step, serially in spacecraft order
-#   (SPACEAGORA_DENSITY_FREEZE_PER_STEP=auto), so the result is independent of
-#   the thread count.
+#   history-dependent winds, explicitly selecting
+#   SPACEAGORA_DENSITY_FREEZE_PER_STEP=auto samples once per accepted step in
+#   spacecraft order, making these dynamics independent of the thread count.
+#   Per-stage sampling remains the default and retains its query-order effects.
 #
 # The native-free testsets run everywhere. The native ones need libGRAM and its
 # SPICE kernels; they skip without them unless
@@ -67,7 +67,7 @@ EM._gram_core_wind_is_history_dependent(core::WindHistoryCore) = core.history
     # Nothing to reset without the extension's native implementation.
     @test !EM.reset_density_model_history!(SM.ExponentialAtmosphereModel(planet))
 
-    for (raw, mode) in ((nothing, :auto), ("auto", :auto), ("", :auto), ("1", :on),
+    for (raw, mode) in ((nothing, :off), ("auto", :auto), ("", :off), ("  ", :off), ("1", :on),
                         ("on", :on), ("0", :off), ("off", :off))
         withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => raw) do
             @test CB._density_freeze_per_step_mode() === mode
@@ -104,7 +104,7 @@ end
     env(model) = SM.EnvironmentModel(planet=planet, EI=300.0, density_model=model,
         thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         topography=false, wind=true, ephemerides_model=SM.SimpleEphemeridesModel())
-    withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing) do
+    withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "auto") do
         grid_args = (environment_model=env(grid_only),)
         @test !CB._run_density_history_dependent(grid_args)
         cfg = CB._snapshot_callback_env_config(grid_args)
@@ -214,7 +214,7 @@ end
 
     # A pure-grid surrogate over the same history-dependent core: not frozen,
     # and its callback threads on the lock-free route as before the freeze
-    # default existed.
+    # opt-in existed.
     grid_only = EM.GRAMAtmosphereModelSurrogate(model, "", nothing)
     grid_cfg = config_for(grid_only)
     withenv("SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "on",
@@ -269,9 +269,9 @@ const WD_FORCED_THREADING = [
     "SPACEAGORA_EFFECTOR_PARALLEL" => "on",
 ]
 
-@testset "history-dependent results do not depend on the thread count (order probe)" begin
+@testset "opted-in history-dependent results do not depend on the thread count (order probe)" begin
     # A pure-Julia history-dependent model (every query shifts later values),
-    # so this runs without native GRAM. Under the default `auto` freeze the
+    # so this runs without native GRAM. Under the explicit `auto` opt-in the
     # result must be identical at 1 and 4 threads with the threaded paths
     # forced on. The negative control (freeze off) must differ, and must have
     # queried from several threads, which shows the comparison can fail.
@@ -284,10 +284,11 @@ const WD_FORCED_THREADING = [
     args = order_probe_args()
     runs = [order_probe_final(args) for _ in 1:2]
     free = withenv(() -> order_probe_final(args), "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "0")
-    serialize(ARGS[1], (runs=runs, free=free, threads=Threads.nthreads()))
+    default = withenv(() -> order_probe_final(args), "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing)
+    serialize(ARGS[1], (runs=runs, free=free, default=default, threads=Threads.nthreads()))
     """
     results = run_children(script, (1, 4); env_overrides=[WD_FORCED_THREADING...,
-        "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing])
+        "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "auto"])
     if length(results) == 2
         one, four = results[1], results[4]
         @test one.threads == 1 && four.threads == 4
@@ -298,6 +299,10 @@ const WD_FORCED_THREADING = [
         @test one.runs[1].t == four.runs[1].t
         @test length(four.free.threads) > 1
         @test one.free.u != four.free.u
+        # One thread fixes query order, so only the sampling selection differs.
+        @test one.default.u == one.free.u
+        @test one.default.t == one.free.t
+        @test one.default.u != one.runs[1].u
     end
 end
 
@@ -356,8 +361,8 @@ function native_testsets()
     end
 
     withenv("SPACEAGORA_GRAM_WIND_MODE" => "perturbed",
-            "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing) do
-        @testset "identical runs in one process are identical from the first" begin
+            "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "auto") do
+        @testset "opted-in identical runs are identical from the first" begin
             args = wind_case_args(wind_case_model())
             @test CB._snapshot_callback_env_config(args).density_freeze_per_step
             runs = [wind_case_final(args) for _ in 1:3]
@@ -368,6 +373,30 @@ function native_testsets()
             [EM._gram_point_density(model, 140.0e3, 0.1k, 0.2k, 1.0k, true) for k in 1:25]
             @test wind_case_final(args; isolate_state=false).u == runs[1].u
             @test wind_case_final(args; isolate_state=false).u == runs[1].u
+        end
+    end
+
+    @testset "native perturbed winds keep per-stage sampling unless opted in" begin
+        withenv("SPACEAGORA_GRAM_WIND_MODE" => "perturbed",
+                "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing) do
+            args = wind_case_args(wind_case_model(); n=1, mission_time=20.0)
+            cfg = CB._snapshot_callback_env_config(args)
+            @test cfg.density_history_dependent
+            @test !cfg.density_freeze_per_step
+            default = wind_case_final(args)
+            for raw in ("", "0")
+                other = withenv(() -> wind_case_final(args),
+                    "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => raw)
+                @test default.u == other.u
+                @test default.t == other.t
+            end
+            automatic = withenv(() -> wind_case_final(args),
+                "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "auto")
+            forced = withenv(() -> wind_case_final(args),
+                "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "1")
+            @test automatic.u == forced.u
+            @test automatic.t == forced.t
+            @test default.u != automatic.u
         end
     end
 
@@ -399,7 +428,7 @@ function native_testsets()
     SM.Earth("", WD_SPICE_PATH)
     """
 
-    @testset "perturbed winds do not depend on the thread count" begin
+    @testset "opted-in perturbed winds do not depend on the thread count" begin
         # Children at 1 and 4 threads. Each also checks the first atmosphere in
         # its own fresh process, where the static-table defect showed.
         #
@@ -416,7 +445,7 @@ function native_testsets()
         """
         results = run_children(script, (1, 4); env_overrides=[WD_FORCED_THREADING...,
             "SPACEAGORA_GRAM_WIND_MODE" => "perturbed",
-            "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing])
+            "SPACEAGORA_DENSITY_FREEZE_PER_STEP" => "auto"])
         if length(results) == 2
             one, four = results[1], results[4]
             @test one.threads == 1 && four.threads == 4

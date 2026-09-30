@@ -18,15 +18,15 @@ end
 
 # See CallbackEnvConfig.density_freeze_per_step docstring for the rationale.
 #
-# `auto` (the default) freezes exactly when the run's density model is
-# history-dependent (native GRAM with perturbed winds): per-stage RHS queries
-# would then advance GRAM's random walk in an order that follows thread
-# scheduling, and in a number that follows the solver route, so the perturbed
-# winds, and the trajectory, would depend on the thread count. Every other
-# model keeps per-stage sampling. `on`/`off` force either behavior.
+# Per-stage sampling is the default. Freezing is an explicit numerical-policy
+# choice: `auto` freezes only history-dependent models (native GRAM with
+# perturbed winds), while `on` freezes every model. Frozen, ordered samples
+# avoid thread-scheduling dependence in the dynamics' native queries, but
+# their accuracy must be checked against the application's requirements.
 @inline function _density_freeze_per_step_mode()::Symbol
-    raw = lowercase(strip(get(ENV, "SPACEAGORA_DENSITY_FREEZE_PER_STEP", "auto")))
-    raw in ("", "auto") && return :auto
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_DENSITY_FREEZE_PER_STEP", "off")))
+    isempty(raw) && return :off
+    raw == "auto" && return :auto
     return _parse_bool_env("SPACEAGORA_DENSITY_FREEZE_PER_STEP", false) ? :on : :off
 end
 

@@ -294,16 +294,17 @@ end
 
 # The two fixes compose: a history-dependent GRAM model in a run with
 # `wind = false` is not history-dependent for that run, so the run-scoped
-# snapshot (the one `setup.jl` installs) leaves the `auto` per-step freeze off,
-# and both pools stay eligible under `auto`. With winds on, all three flip.
+# snapshot (the one `setup.jl` installs) leaves the explicit `auto` freeze off,
+# and both pools stay eligible under `auto`. Winds on engage both pool guards;
+# freezing additionally requires an explicit sampling opt-in.
 @testset "wind=false lifts the freeze and the pool guard for a history-dependent model" begin
     n = 4
-    for wind in (false, true)
+    for wind in (false, true), freeze in (nothing, "auto")
         model = EM.GRAMAtmosphereModel(WindHistoryCore(true, 0), ReentrantLock(),
             Dict{Symbol, Any}(:planet_name => "earth"))
         args = wf_config(model; wind=wind, n_sats=n)
         p = SM.ODEParams(n_sats=n, args=args)
-        withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => nothing,
+        withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP" => freeze,
                 "SPACEAGORA_GRAM_PROCESS_POOL" => "auto",
                 "SPACEAGORA_GRAM_PROCESS_POOL_THRESHOLD" => "1",
                 "SPACEAGORA_GRAM_ISOLATED_POOL" => "auto",
@@ -314,7 +315,7 @@ end
             p.shared_buffers.callback_env_config[] = cfg
             @test EM.density_model_history_dependent(model)
             @test cfg.density_history_dependent == wind
-            @test cfg.density_freeze_per_step == wind
+            @test cfg.density_freeze_per_step == (wind && freeze == "auto")
             @test CB._rhs_density_service_candidate(p, n) == !wind
 
             # The isolated pool's callers pass the run's wind flag to the

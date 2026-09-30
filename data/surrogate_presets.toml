@@ -12,13 +12,13 @@ version = "1.0.0"
     [presets.atmosphere]
     api_units = ["m", "rad", "rad"]
     epoch_utc = "2001-11-07T11:51:04.794789Z"
-    equatorial_radius_m = 3.39619e6
+    equatorial_radius_m = 3396190.0
     fields = ["density_kgm3", "temperature_K", "wind_ew_ms", "wind_ns_ms", "wind_up_ms"]
     height = "ellipsoidal"
     latitude = "geodetic"
     longitude = "east_positive_periodic"
     mode = "frozen_mean_snapshot"
-    polar_radius_m = 3.3762e6
+    polar_radius_m = 3376200.0
     pole_policy = "Requested longitude-label ENU components; no unique physical pole-vector claim."
     pressure_available = false
     query_elapsed_time_applied = false
@@ -377,8 +377,8 @@ version = "1.0.0"
     winds_available = false
 
     [presets.distribution]
-    archive_sha256 = "019dd3d424db78bfe51a2f21685afec7ebd16d7cd53701bae0c6e6964a9378f7"
-    git_tree_sha1 = "e9a432723c8b71f1cf46a6f54c899e5a0305914b"
+    archive_sha256 = "f0fa4a4cd05b747cef77f723bdb2a1a9697d8b824ee8b6159095c0bcb9212b37"
+    git_tree_sha1 = "51b5aae21b42515d45b9e7aba821c28aca7389a5"
     status = "public_versioned_snapshot"
     urls = ["https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-mars-global-near-surface-p20-1.0.0/mars_global_near_surface_p20_frozen_v1-1.0.0.tar.gz"]
 
@@ -395,7 +395,7 @@ version = "1.0.0"
     builder_filename = "generator/build_payload.jl"
     builder_sha256 = "53d0d36977329ad46a0ca06f5dac6c6a65ea271f6f948a3b45cd2f38ab717347"
     distribution_changes = "Metadata only: the status line was updated and a distribution record added. Every array, every surface-layer model and every other metadata entry is identical to the validated payload."
-    evaluator_changes_since_validation = "Two fixes for measure-zero edge cases: the terrain column wraps for longitudes just below the terrain lattice origin, and a query just below a band or cell edge whose own surface-layer model is missing uses the neighbour across that edge. The runtime evaluation functions are byte-identical to the reference evaluator, which gives bit-identical results to the validated evaluator at every validation point, at every support-map probe and at 2,000,000 random queries."
+    evaluator_changes_since_validation = "Two fixes for measure-zero edge cases: the terrain column wraps for longitudes just below the terrain lattice origin, and a query just below a band or cell edge whose own surface-layer model is missing uses the neighbour across that edge. The runtime evaluation functions are byte-identical to the reference evaluator, which gives bit-identical results to the validated evaluator at every validation point, at every support-map probe and at 2,000,000 random queries. The runtime constructor also rejects infinite component values, missing terrain-derived first levels, and an advertised top above stored coverage; NaN sentinels and every query calculation are unchanged."
     generation_inputs = "generation_inputs.json"
     native_library_bytes = 4114304
     native_library_sha256 = "19c5715b1d18c9b4f8afa315fb77466091cb240e7954bc84e8e4ab540e76e3f4"
@@ -417,7 +417,7 @@ version = "1.0.0"
     recipe = "recipe.toml"
     reference_evaluator_sha256 = "8b462384525bbfc61c06118356857241df4ef8c5c431dfb387542b4a1b847a86"
     runtime_evaluator = "GRAMSuite.jl src/mars_near_surface_scalars.jl, used through GRAMNearSurfaceAtmosphereModel"
-    runtime_evaluator_sha256 = "edbde7df8e9184de50bb59d84932353e0404a8f0954259a620724758c6628f96"
+    runtime_evaluator_sha256 = "4c16e0c2136b720a9aa5cf123c7dfaf22eb46f6f780461364d59d8179d93c7fe"
     schema = "spaceagora_public_near_surface_provenance_v1"
     serialization = "Julia.Serialization"
     support_map = "support/support_map.json"

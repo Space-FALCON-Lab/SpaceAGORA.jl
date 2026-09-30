@@ -407,9 +407,12 @@ function _callbacks_for_cached_integrator(integrator, callbacks)
             for (old, new) in zip(old_callbacks, new_callbacks)
                 typeof(old) === typeof(new) || return nothing
                 hasproperty(new, :len) && old.len != new.len && return nothing
-                # Discontinuity bracketing caches can retain a callback object.
-                hasproperty(new, :maybe_discontinuity) &&
-                    (old.maybe_discontinuity || new.maybe_discontinuity) && return nothing
+                # Discontinuity bracketing retains the original condition.
+                # Reuse it only when that condition is the identical object.
+                if hasproperty(new, :maybe_discontinuity)
+                    old.maybe_discontinuity == new.maybe_discontinuity || return nothing
+                    new.maybe_discontinuity && old.condition !== new.condition && return nothing
+                end
             end
         end
         return CallbackSet(collect(Any, callbacks.continuous_callbacks),

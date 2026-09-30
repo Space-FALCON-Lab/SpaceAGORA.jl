@@ -105,7 +105,7 @@ end
     out = zeros(2)
     callback.condition(out, sol.u[end], sol.t[end], integrator)
     @test out == [1.0, 1.0]
-    callback.affect_neg!(integrator, 2)
+    callback.affect!(integrator, Int8[0, -1])
     @test length(used.events) == 1
 end
 

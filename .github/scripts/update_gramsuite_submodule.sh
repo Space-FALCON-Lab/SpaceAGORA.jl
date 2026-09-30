@@ -81,8 +81,11 @@ fi
 
 # No branch, remote HEAD, or fallback can replace this exact commit. Avoid
 # tags and nested submodules so their moving refs cannot affect retrieval.
+# FILTER is empty without a sparse profile; bash before 4.4 (macOS's default
+# 3.2) rejects "${FILTER[@]}" of an empty array under set -u, so expand it only
+# when set.
 with_credentials -C "${SUBMODULE_PATH}" -c protocol.version=2 fetch \
-  --depth=1 --no-tags --recurse-submodules=no "${FILTER[@]}" origin "${REVISION}"
+  --depth=1 --no-tags --recurse-submodules=no ${FILTER[@]+"${FILTER[@]}"} origin "${REVISION}"
 FETCHED="$(git -C "${SUBMODULE_PATH}" rev-parse --verify 'FETCH_HEAD^{commit}')"
 if [[ "${FETCHED}" != "${REVISION}" ]]; then
   echo "Fetched GRAMSuite commit does not equal the ${MODE} pin" >&2

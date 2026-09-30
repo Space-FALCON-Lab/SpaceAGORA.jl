@@ -680,14 +680,12 @@ jobs:
 
   documentation-release-gate:
     needs: depot
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       JULIA_NUM_THREADS: "4"
-      # No GITHUB_TOKEN here: this job is a build/strictness gate only.
-      # Without credentials Documenter's deploydocs skips deployment, which
-      # belongs to the Documentation workflow (docs.yml); with the read-only
-      # token it attempts the gh-pages push on main and fails with 403.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -705,7 +703,11 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Build docs
-        run: julia --project=. docs/make.jl
+        env:
+          # Authenticate GitHub link checks with the existing read-only job token.
+          # Publishing remains the separate Documentation workflow's responsibility.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: julia --project=. docs/make.jl --no-deploy
 
       - name: Public API surface gate
         run: julia --startup-file=no --project=. test/gates/ci_public_api_surface_gate.jl

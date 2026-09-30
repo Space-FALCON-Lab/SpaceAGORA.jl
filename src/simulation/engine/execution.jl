@@ -171,8 +171,10 @@ end
 # it to 228. The silent no-op is the whole reason this helper exists rather than
 # a `jac_prototype=` keyword at the SplitODEProblem call sites.
 @inline function _split_component_function(f, jac_prototype::Union{Nothing, SparseMatrixCSC{Float64, Int}})
+    # Preserve the explicit sparse wrapper's v6 specialization. Unwrapped
+    # problems continue to follow the solver library's normal defaults.
     jac_prototype === nothing && return f
-    return ODEFunction(f; jac_prototype=jac_prototype)
+    return ODEFunction{true, SciMLBase.FullSpecialize}(f; jac_prototype=jac_prototype)
 end
 
 @inline function _build_typed_solver_problem(u0, tspan, p, callbacks, solver_mode::Symbol,
@@ -208,7 +210,7 @@ end
         )
     end
     if jac_prototype !== nothing
-        f = ODEFunction(spacecraft_dynamics!; jac_prototype=jac_prototype)
+        f = ODEFunction{true, SciMLBase.FullSpecialize}(spacecraft_dynamics!; jac_prototype=jac_prototype)
         return ODEProblem(f, u0, tspan, p; callback=callbacks)
     end
     return ODEProblem(spacecraft_dynamics!, u0, tspan, p, callback=callbacks)

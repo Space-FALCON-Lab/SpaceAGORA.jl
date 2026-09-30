@@ -219,9 +219,12 @@ if !isempty(missing_public_api)
     error("Public API documentation is incomplete. See $(PUBLIC_API_REPORT) for the missing exports report.")
 end
 
-deploydocs(
-    repo = "github.com/Space-FALCON-Lab/SpaceAGORA.jl.git",
-    devbranch = "main",
-    versions = nothing,
-    push_preview = false,
-)
+# CI's strict build needs a GitHub token for link checks, but must not publish.
+if !("--no-deploy" in ARGS)
+    deploydocs(
+        repo = "github.com/Space-FALCON-Lab/SpaceAGORA.jl.git",
+        devbranch = "main",
+        versions = nothing,
+        push_preview = false,
+    )
+end

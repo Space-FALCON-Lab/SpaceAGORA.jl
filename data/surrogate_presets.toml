@@ -12,13 +12,13 @@ version = "1.0.0"
     [presets.atmosphere]
     api_units = ["m", "rad", "rad"]
     epoch_utc = "2001-11-07T11:51:04.794789Z"
-    equatorial_radius_m = 3396190.0
+    equatorial_radius_m = 3.39619e6
     fields = ["density_kgm3", "temperature_K", "wind_ew_ms", "wind_ns_ms", "wind_up_ms"]
     height = "ellipsoidal"
     latitude = "geodetic"
     longitude = "east_positive_periodic"
     mode = "frozen_mean_snapshot"
-    polar_radius_m = 3376200.0
+    polar_radius_m = 3.3762e6
     pole_policy = "Requested longitude-label ENU components; no unique physical pole-vector claim."
     pressure_available = false
     query_elapsed_time_applied = false

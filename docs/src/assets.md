@@ -195,7 +195,10 @@ julia --project=. scripts/assets/check_assets.jl
 For the supported Odyssey guidance/control exercise, use the
 [public surrogate workflow](tutorials/odyssey_surrogate.md). Its dedicated
 `examples/odyssey_surrogate_env` environment retrieves a pinned public GRAMSuite
-wrapper; native GRAM and private repositories are unnecessary.
+wrapper; native GRAM and private repositories are unnecessary. The published
+preset grids are CC BY 4.0: cite the preset by name and version and credit NASA's
+GRAM Suite (Mars-GRAM). Scenario assets keep their original NAIF and gravity-data
+terms.
 
 ```sh
 julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets list

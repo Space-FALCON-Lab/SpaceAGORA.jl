@@ -63,7 +63,10 @@ function _validate_thermal_model_support!(args)
     return nothing
 end
 
-@inline _density_without_aero_warning_enabled() = _engine_env_get("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO", "1") == "1"
+# Not part of the canonical override set: honour the process environment inside an
+# active SimulationEngineConfig scope too, so the documented switch works in every run.
+@inline _density_without_aero_warning_enabled() =
+    _engine_env_get_with_env_fallback("SPACEAGORA_WARN_DENSITY_WITHOUT_AERO", "1") == "1"
 
 # An effector consumes the atmosphere either as one of the built-in aero types
 # or by declaring environment_requirements(model).atmosphere = true (the public

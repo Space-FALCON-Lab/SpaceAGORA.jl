@@ -121,6 +121,22 @@ end
     @test cache.integrator.opts.dtmax == 20.0
     @test reused.t == fresh.t
     @test reused.u == fresh.u
+
+    # Reuse must refresh closures that capture the current caller's output.
+    traced_cache=SE.SolverIntegratorCache(); before=NamedTuple[]; after=NamedTuple[]
+    run_simulation(orbit();solver_cache=traced_cache,return_solution=true,
+        extra_callbacks=(trace_callback(before),))
+    traced_old=traced_cache.integrator; old_count=length(before)
+    run_simulation(orbit();solver_cache=traced_cache,return_solution=true,
+        extra_callbacks=(trace_callback(after),))
+    @test traced_cache.integrator === traced_old
+    @test length(before) == old_count
+    @test !isempty(after) && first(after).t == 0.0
+    # An event-layout change requires a fresh callback cache.
+    additional=DiscreteCallback((u,t,i)->false, i->nothing)
+    run_simulation(orbit();solver_cache=traced_cache,return_solution=true,
+        extra_callbacks=(trace_callback(after),additional))
+    @test traced_cache.integrator !== traced_old
 end
 
 @testset "Checkpoint segments and atmospheric resume" begin

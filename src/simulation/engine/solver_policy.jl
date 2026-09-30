@@ -393,6 +393,31 @@ end
     return raw in ("1", "true", "yes", "on")
 end
 
+# Newer libraries store automatically specialized callbacks in erased vectors.
+# Rebuild that container from this run's closures, but reuse its event cache only
+# when the original callback layout and vector lengths are unchanged.
+function _callbacks_for_cached_integrator(integrator, callbacks)
+    previous = integrator.opts.callback
+    if previous.continuous_callbacks isa AbstractVector && previous.discrete_callbacks isa AbstractVector
+        original = get(integrator.sol.prob.kwargs, :callback, CallbackSet())
+        for field in (:continuous_callbacks, :discrete_callbacks)
+            old_callbacks = getproperty(original, field)
+            new_callbacks = getproperty(callbacks, field)
+            length(old_callbacks) == length(new_callbacks) || return nothing
+            for (old, new) in zip(old_callbacks, new_callbacks)
+                typeof(old) === typeof(new) || return nothing
+                hasproperty(new, :len) && old.len != new.len && return nothing
+                # Discontinuity bracketing caches can retain a callback object.
+                hasproperty(new, :maybe_discontinuity) &&
+                    (old.maybe_discontinuity || new.maybe_discontinuity) && return nothing
+            end
+        end
+        return CallbackSet(collect(Any, callbacks.continuous_callbacks),
+            collect(Any, callbacks.discrete_callbacks))
+    end
+    return callbacks
+end
+
 # Keep the solver choice behind a dispatch boundary. Inferring every algorithm
 # into the policy caller causes excessive compilation with OrdinaryDiffEq 7.
 # The selected integrator still specializes normally inside the solver library.
@@ -429,6 +454,9 @@ end
     save_end = _solver_bool_env("SPACEAGORA_SOLVER_SAVE_END", true)
 
     callbacks = refresh_callbacks ? get(prob.kwargs, :callback, CallbackSet()) : nothing
+    if refresh_callbacks && solver_cache !== nothing && solver_cache.integrator !== nothing
+        callbacks = _callbacks_for_cached_integrator(solver_cache.integrator, callbacks)
+    end
     callback_type_matches = !refresh_callbacks || solver_cache === nothing ||
         solver_cache.integrator === nothing ||
         typeof(solver_cache.integrator.opts.callback) === typeof(callbacks)

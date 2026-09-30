@@ -207,7 +207,8 @@ threshold. When a batch requests winds, automatic selection also requires
 nominal winds: the pinned wrapper's default (`auto`) selects perturbed winds,
 whose values depend on each model instance's query history. Such batches keep
 the locked route, including look-ahead cache sampling. Density-only queries
-(`wind=false`) keep their existing eligibility.
+(`wind=false`, including every query of a run with `EnvironmentModel.wind =
+false`) keep their existing eligibility.
 
 Setting `SPACEAGORA_GRAM_ISOLATED_POOL=on` explicitly allows separate stochastic
 histories. With perturbed winds it can change wind diagnostics and trajectories
@@ -217,31 +218,104 @@ wind mode or seed to obtain a speedup.
 ### Real GRAM without the vacuum-predicted cache
 
 `SPACEAGORA_VACUUM_GRAM_CACHE` (the drag-free trajectory spline described
-above) is the supported way to query real, per-satellite GRAM density at
-constellation scale. If it is disabled — direct, uncached GRAM queries at
-every RHS evaluation — also set:
+above) supports per-satellite GRAM queries at constellation scale. Direct,
+uncached native queries can be expensive when an adaptive solver reacts to
+query-dependent perturbations. Frozen sampling is an explicit alternative;
+its accuracy must be checked for the application.
+
+`SPACEAGORA_DENSITY_FREEZE_PER_STEP` defaults to `off`. An unset or empty
+value, `0`, or `off` keeps per-stage sampling. Set `auto` explicitly to freeze
+only when the run's density model has history-dependent winds and
+`environment_model.wind` is true. Set `1` or `on` to freeze every density model,
+including nominal-wind GRAM. Neither opt-in is selected automatically.
+
+Under explicit `auto`, a `GRAMAtmosphereModelSurrogate` counts as native
+GRAM only when it has a configured `point_fallback_below_m`, below which it
+queries native GRAM point by point. The default Earth, Mars and Venus
+surrogates have none, so a surrogate run answered from its grid keeps
+per-stage sampling and a threaded density callback. A query outside the grid,
+which falls back to native GRAM on a warn-once path, does not change that.
 
 ```bash
-export SPACEAGORA_DENSITY_FREEZE_PER_STEP=1
+# Explicitly choose frozen sampling for history-dependent winds.
+export SPACEAGORA_DENSITY_FREEZE_PER_STEP=auto
 ```
 
-Real GRAM's perturbation/turbulence model adds small-scale noise on top of the
-smooth mean density profile. An adaptive ODE solver's step-size controller
-reacts to that per-call noise as if it were stiffness and collapses `dt`:
-measured on a 2-satellite, 1-second mission, disabling the vacuum cache
-without this flag produced 12+ million GRAM calls, 2.4 million solver steps,
-and a 604 s wall time; with the flag, the same scenario took 35.7 s (14 calls,
-37 steps) — matching the vacuum-cache path's own timing. `run_simulation`
-already fires a `DiscreteCallback` once per accepted solver step that samples
-density into `shared_buffers`; this flag makes the RHS-side atmosphere read
-trust that once-per-step sample for every stage evaluation within the step
-instead of demanding an exact-time match (which almost never holds for a
-multi-stage adaptive method). This is a standard, small approximation for a
-LEO trajectory: altitude — the dominant driver of the smooth mean density —
-changes negligibly over one integration step, so freezing density for the
-step's duration costs little accuracy while removing the noise that the
-solver was reacting to. It has no effect on the vacuum-predicted-cache path,
-which is already smooth by construction.
+`run_simulation` fires a density callback once per accepted solver step.
+With freezing enabled, the RHS uses that sample at every stage of the step
+instead of requesting atmosphere values at each stage time.
+
+Holding an atmosphere sample over a step introduces an additional numerical
+approximation. The adaptive solver's local error estimate does not measure
+that sampling error, so tightening its tolerances alone does not establish
+accuracy. Check the outputs needed by the application while reducing the
+sampling timestep limits.
+
+`dt_max_atmosphere` applies from startup when any active spacecraft is inside
+`EnvironmentModel.EI`, and remains active until every active spacecraft is
+outside. Outside that boundary, `dt_max_orbit` controls the maximum step.
+A frozen sample is still held outside the boundary, so refining only the
+atmospheric cap may leave an error contribution from the orbital cap.
+Check the actual step sizes and refine both limits when needed.
+
+With nominal winds, a per-stage reference and step refinement can separate the
+hold approximation from integration error. With perturbed winds, changing the
+number or order of native queries changes the random-wind sequence, even at
+the same seed. A same-seed frozen/per-stage comparison therefore includes both
+effects; the spread between a few seeds is not an accuracy acceptance limit.
+Establish application-specific position, velocity, apsis and thermal limits
+before accepting a sampling policy. Earlier one-off measurements do not
+establish those limits for a different phase policy or mission configuration.
+
+The default retains per-stage sampling. Explicitly enabling freezing can
+change GRAM-backed trajectories and thermal outputs, even at the same seed.
+Set `SPACEAGORA_DENSITY_FREEZE_PER_STEP=0` to select per-stage sampling again.
+
+A freeze in effect takes precedence over the vacuum-predicted cache
+(`SPACEAGORA_VACUUM_GRAM_CACHE=1`): the RHS then reads the once-per-step
+sample rather than interpolating the look-ahead spline at every stage, and
+only the per-step density callback can consult or rebuild the spline. This is
+deliberate. A cache rebuild is a burst of native queries, and rebuilds issued
+from threaded RHS stages would advance GRAM's perturbed-wind walk in
+thread-scheduling order. Under explicit `auto` this applies only to runs whose winds are
+history-dependent (below); with nominal winds, or with `0`, the RHS
+interpolates the spline per stage as before.
+
+### Reproducible perturbed winds
+
+GRAM's perturbed winds are a correlated random walk that advances on every
+native query of an atmosphere instance, so the winds a query returns depend on
+every earlier query on that instance. Initialization and the explicit sampling
+choice affect reproducibility:
+
+- Each such run reseeds its GRAM models (the configured model, per-satellite
+  instances and isolated-pool instances) with their configured `seed`
+  immediately before the solve, after every pre-solve probe (RHS calibration,
+  contention probe, callback-width calibration), and clears the GRAM track and
+  look-ahead caches. Reseeding puts native GRAM back into its first-update
+  state, whose one-time initialization is not safe to run concurrently on
+  several instances, so each reseeded model is then warmed with one serial
+  query before the solve starts. This removes dependence on earlier probes
+  and previous runs, but does not by itself fix a query order that changes
+  with thread scheduling. Runs without history-dependent winds are not
+  reseeded.
+- With perturbed winds, explicitly selecting `auto` or `1` makes the
+  per-step density callback supply the dynamics' native atmosphere samples, and
+  that callback then evaluates spacecraft serially in index order whatever
+  `SPACEAGORA_DENSITY_CALLBACK_PARALLEL` says. Per-stage RHS queries, which
+  would otherwise advance the walk in thread-scheduling order and in a number
+  that depends on the solver route, read that sample instead. Results are then
+  independent of the thread count.
+- Native Earth-GRAM loads part of its wind-variability tables lazily and reads
+  them before loading them on the first atmosphere update in a process; the
+  GRAMSuite extension loads them once per process before a model is used.
+
+Per-stage sampling, including the default, retains query-history and
+thread-scheduling dependence for perturbed winds and can be slow. The
+one/four-thread regression guarantees cover the explicit frozen dynamics
+route. Custom guidance or control code that issues additional native queries
+must preserve their order too; an assumption of thread safety does not
+establish stochastic reproducibility.
 
 ## Constellation ensembles
 
@@ -296,6 +370,16 @@ enables it for smaller batches. `SPACEAGORA_GRAM_PROCESS_POOL_WORKERS` defaults
 to half the logical CPU count, with a minimum of one. Set it explicitly to
 control memory and process cost. This service does not apply to
 surrogate models, and it declines work inside an outer parallel run.
+
+Each worker process owns its own native GRAM instance, so the wind-history rule
+of the in-process isolated pool (Automatic native GRAM pooling and wind
+histories, above) applies here too. Under `auto`, a run that requests winds while they depend on
+query history (the pinned wrapper's default perturbed mode) keeps local
+evaluation; runs with `EnvironmentModel.wind = false` or
+`SPACEAGORA_GRAM_WIND_MODE=nominal` stay eligible. `on` is an explicit opt-in to
+separate stochastic histories: with perturbed winds it changes the winds, and so
+the trajectory, relative to local evaluation, and the result can depend on the
+worker count.
 
 Workers reconstruct the model from its saved constructor settings, including
 the epoch and resolved data paths. They reuse a model only while that recipe

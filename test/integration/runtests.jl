@@ -726,7 +726,8 @@ function build_config_multi(;
     tolerances::IntegrationTolerances=IntegrationTolerances(),
     initial_time::SimulationModel.InitialTime=SimulationModel.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
     ephemerides_model=SpiceEphemeridesModel(),
-    planet=EARTH
+    planet=EARTH,
+    wind::Bool=false
 )
     environment_model = EnvironmentModel(
         planet=planet,
@@ -735,7 +736,7 @@ function build_config_multi(;
         ephemerides_model=ephemerides_model,
         thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         topography=false,
-        wind=false
+        wind=wind
     )
 
     return SimulationConfiguration(

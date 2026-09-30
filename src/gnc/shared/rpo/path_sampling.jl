@@ -1,3 +1,5 @@
+# Sampling shared by RPO search, comparison planners, retiming and replanning.
+# Existing RPOPSOConfig arguments remain compatibility contracts.
 """Return the Euclidean length of an RPO waypoint path."""
 function rpo_path_length(points)
     return hypr_path_length(points)

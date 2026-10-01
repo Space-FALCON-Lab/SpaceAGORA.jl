@@ -24,5 +24,6 @@ struct GRAMNearSurfaceAtmosphereModel{C} <: AbstractDensityModel
 end
 
 # Native-free snapshots that must see every current coordinate (their domain checks and spatial variation make a
-# trajectory spline or a per-step frozen sample unsafe): fixed grids and near-surface payloads.
-const _NativeFreeSnapshotModel = Union{GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel}
+# trajectory spline or a per-step frozen sample unsafe): fixed grids and near-surface payloads. `CombinedAtmosphereModel`
+# joins two of them; `_NativeFreeSnapshotModel` (defined with it) covers the components and their combinations.
+const _NativeFreeSnapshotComponent = Union{GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel}

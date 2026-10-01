@@ -9,6 +9,7 @@ point-mass term is applied separately).
 |---|---|---|
 | `EarthGGM05C.csv` | Earth | GGM05C |
 | `egm96.csv` | Earth | EGM96 |
+| `EGM96_GMAT_L50.csv` | Earth | EGM96 as distributed with GMAT R2025a (`data/gravity/earth/EGM96.cof`), degree/order 50, with that file's GM and radius. Used only for the real-GMAT parity references (`test/gmat_scenario_matrix.jl`, target `:gmat`). Differs from `egm96.csv` only in C(2,0) (tide system). |
 | `Mars50c.csv` | Mars | Mars50c |
 | `GMM2B.csv` | Mars | GMM-2B |
 | `MGNP180U.csv` | Venus | MGNP180U |

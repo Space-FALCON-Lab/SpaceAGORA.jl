@@ -194,9 +194,11 @@ archive README lists them. The three kinds of check reach different heights:
 - fixed-path arcs, which follow prescribed paths without trajectory feedback,
   reach 80.25 km and check drag and heating proxies along the path.
 
-No propagated pass went below 84.56 km. Between 80 and 84.56 km, the evidence
-for per-pass drag and heating is the pointwise checks and the fixed-path arcs.
-The archive README gives the pass range as periapsis from 80 to 130 km; this
+No complete propagated pass was validated below 84.56 km. Below that altitude,
+the retained evidence consists of pointwise density and wind checks down to
+80 km and fixed-path drag and heating proxies down to 80.25 km. These checks do
+not establish propagated-pass accuracy across the 80 to 84.56 km interval. The
+archive README gives the pass range as periapsis from 80 to 130 km; this
 section states the coverage precisely.
 
 The grid's height and latitude spacing is not uniform: nodes

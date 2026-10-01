@@ -348,7 +348,7 @@ version = "1.0.0"
     algorithm_changes_inherit_reference_accuracy = false
     application_accuracy_requirements = "unset; choose for the intended study"
     changed_date_selects_new_atmosphere = false
-    evidence = "Prospective validation against native Mars-GRAM under the Space-FALCON Lab release limits: pointwise within 225 s of the frozen instant down to the 80 km boundary; propagated passes designed for periapsis from 85 to 130 km, lowest altitude reached 84.56 km; fixed-path arcs down to 80.25 km"
+    evidence = "Prospective validation against native Mars-GRAM under the Space-FALCON Lab release limits: pointwise within 225 s of the frozen instant down to the 80 km boundary; propagated passes designed for periapsis from 85 to 130 km, lowest altitude reached 84.56 km; fixed-path drag and heating proxies down to 80.25 km"
     stored_domain_is_uniform_accuracy_claim = false
 
 [[presets]]

@@ -70,6 +70,10 @@ path_lon(i) = deg2rad(mod(10.0 + 0.9 * (i - 1), 360.0))
 path_t(i) = 5.0 * (i - 1)
 
 point_rows = NamedTuple[]
+# The runner furnishes SPICE kernels when it builds the planet for a solve
+# (_make_orbit_args -> _planet_from_name); the point queries below bypass that,
+# so do it here first or GRAM's ephemeris lookup has no leapseconds kernel.
+TV._planet_from_name("mars")
 for v in VARIANTS
     cfg = variant_cfg(v.seed, v.scales)
     @assert cfg.atmosphere_truth.gram_seed == v.seed

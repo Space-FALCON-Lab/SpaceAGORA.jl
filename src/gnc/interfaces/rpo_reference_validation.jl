@@ -1,3 +1,7 @@
+# Subtract before scaling so large finite limits cannot overflow. The allowance
+# has no absolute floor and cannot be widened to absorb a physical excess.
+_limit_exceeded(value, limit, rtol) = value > limit && value - limit > rtol * limit
+
 """
     validate_rpo_result(request, result; clearance_at=nothing, time_s=request.time_s)
 
@@ -8,8 +12,10 @@ station/chaser approximation. Missing queries fail closed. Unexpected query
 exceptions propagate, rather than being mislabeled as infeasibility.
 
 Clearance is sampled on the reference polyline, independently of any diagnostic
-control polygon. Speed is sampled velocity norm; acceleration is a finite
-difference of velocity. These are reference checks, not physical tracking proof.
+control polygon. Speed checks cover declared velocity norms AND displacement
+between position samples per controller interval, reported separately. Acceleration
+is the norm of a velocity-vector finite difference, including changes in direction.
+These are reference checks, not physical tracking or derivative-consistency proof.
 """
 function validate_rpo_result(request::RPOPlanningRequest, result::RPOPlanningResult;
                              clearance_at=nothing, time_s=request.time_s)
@@ -48,14 +54,20 @@ function validate_rpo_result(request::RPOPlanningRequest, result::RPOPlanningRes
     goal_error = norm(positions[:, end] .- request.goal_rtn_m)
     max(start_error, goal_error) <= settings.endpoint_atol_m ||
         return _reject(:endpoint_mismatch; start_error_m=start_error, goal_error_m=goal_error)
-    speed = maximum(norm, eachcol(velocities))
+    declared_speed = maximum(norm, eachcol(velocities))
+    implied_speed = maximum(norm((positions[:, i] - positions[:, i-1]) / request.reference_dt_s) for i in 2:n)
+    speed = max(declared_speed, implied_speed)
     acceleration = maximum(norm((velocities[:, i] - velocities[:, i-1]) / request.reference_dt_s) for i in 2:n)
     isfinite(speed) && isfinite(acceleration) || return _reject(:nonfinite_reference_metrics)
     constraints = request.constraints
-    constraints.max_speed_mps !== nothing && speed > constraints.max_speed_mps &&
-        return _reject(:speed_limit; max_speed_mps=speed)
-    constraints.max_acceleration_mps2 !== nothing && acceleration > constraints.max_acceleration_mps2 &&
-        return _reject(:acceleration_limit; max_acceleration_mps2=acceleration)
+    roundoff = settings.limit_roundoff_rtol
+    constraints.max_speed_mps !== nothing && _limit_exceeded(speed, constraints.max_speed_mps, roundoff) &&
+        return _reject(:speed_limit; max_speed_mps=speed,
+            max_declared_speed_mps=declared_speed, max_implied_speed_mps=implied_speed,
+            limit_roundoff_rtol=roundoff)
+    constraints.max_acceleration_mps2 !== nothing && _limit_exceeded(acceleration, constraints.max_acceleration_mps2, roundoff) &&
+        return _reject(:acceleration_limit; max_acceleration_mps2=acceleration,
+            limit_roundoff_rtol=roundoff)
     clearance_at === nothing && return _reject(:clearance_not_checked)
     # Bound the complete validation work before calling the query. Never accept
     # a prefix of a reference when its remaining checks exceed the work cap.
@@ -86,7 +98,9 @@ function validate_rpo_result(request::RPOPlanningRequest, result::RPOPlanningRes
     end
     return RPOValidationResult(true, :validated,
         (start_error_m=start_error, goal_error_m=goal_error, max_speed_mps=speed,
-         max_acceleration_mps2=acceleration, min_clearance_m=minimum_clearance,
+         max_declared_speed_mps=declared_speed, max_implied_speed_mps=implied_speed,
+         max_acceleration_mps2=acceleration, limit_roundoff_rtol=roundoff,
+         min_clearance_m=minimum_clearance,
          clearance_samples=sample_count, clearance_sample_ds_m=settings.clearance_sample_ds_m,
          geometry_revision=request.geometry_revision, clearance_method=:sampled_reference_polyline))
 end

@@ -8,10 +8,13 @@ const P = SpaceAGORA.RPOPlannerInterfaces
 
 fingerprint(a::AbstractArray{Float64}) = (shape=size(a), sha256=bytes2hex(sha256(reinterpret(UInt8,vec(a)))))
 fingerprint(x::Float64) = string(reinterpret(UInt64,x);base=16,pad=16)
-function fixture(mode, accel, seed)
-    geometry=S.RPOReferenceGeometry(S.RPOStationGeometry(
+function fixture_geometry()
+    return S.RPOReferenceGeometry(S.RPOStationGeometry(
         reshape([0.,0.,50.],3,1);keepout_radius_m=0.25);
         chaser=S.RPOCubeSatGeometry(dims_m=(0.1,0.1,0.3)))
+end
+function fixture(mode, accel, seed)
+    geometry=fixture_geometry()
     config=S.RPOPSOConfig(hypr_mode=mode, n_waypoints=2,n_particles=8,n_iters=3,
         adaptive_enable=false, adaptive_n_waypoints_min=2,adaptive_n_waypoints_max=2,
         adaptive_n_particles_min=8,adaptive_n_particles_max=8,
@@ -47,6 +50,27 @@ snapshots=[]
         @test first[2][1]==0
         @test first[3][:,1]≈[3.,0.,0.]
         @test first[3][:,end]≈[5.,1.,0.]
+        # Validate the unmodified reference against physical request limits.
+        # Tangential retiming limits do not guarantee total-vector acceleration.
+        req=P.RPOPlanningRequest(request_id=seed,chaser_id=101,target_id=201,epoch="fixture",
+            time_s=0.,x_rtn=(3.,0.,0.,0.,0.,0.),target_state_ii=(7e6,0.,0.,0.,7500.,0.),
+            goal_rtn_m=(5.,1.,0.),geometry=fixture_geometry(),geometry_revision="fixture-v1",
+            constraints=P.RPOPlanningConstraints(clearance_m=0.2,max_speed_mps=0.5,
+                max_acceleration_mps2=accel ? 0.1 : nothing),
+            reference_dt_s=0.1,preview_horizon_steps=2,valid_until_s=first[2][end]+1.)
+        ref=P.RPOReference(t_ref_s=first[2],r_ref_rtn_m=first[3],v_ref_rtn_mps=first[4],
+            origin_time_s=0.,valid_until_s=req.valid_until_s,chaser_id=101,target_id=201,
+            geometry_revision="fixture-v1")
+        out=P.RPOPlanningResult(request_id=seed,status=:candidate,termination=:completed,reference=ref)
+        checked=P.validate_rpo_result(req,out;clearance_at=(point,g)->S.rpo_clearance_distance_to_station(SVector{3}(point),g))
+        if seed==742
+            @test !checked.accepted && checked.reason===:acceleration_limit
+            @test checked.metrics.max_acceleration_mps2 > 0.1*(1.0 + 1e-8)
+        else
+            @test checked.accepted
+            @test checked.metrics.max_declared_speed_mps <= 0.5*(1.0 + 128eps(Float64))
+            @test checked.metrics.max_implied_speed_mps <= 0.5*(1.0 + 128eps(Float64))
+        end
         push!(snapshots,(mode=mode,acceleration_limited=accel,seed=seed,
             path=fingerprint(a.path),cost=fingerprint(a.cost),history=fingerprint(a.cost_history),
             t=fingerprint(first[2]),r=fingerprint(first[3]),v=fingerprint(first[4]),

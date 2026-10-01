@@ -130,6 +130,53 @@ end
     end
 end
 
+@testset "Position-implied speed and bounded numerical roundoff" begin
+    limits=P.RPOPlanningConstraints(clearance_m=0.1,max_speed_mps=1.,max_acceleration_mps2=1.)
+    teleport_request=request(goal_rtn_m=(103.,0.,0.),constraints=limits)
+    teleport=reference(t_ref_s=[0.,1.],r_ref_rtn_m=[3. 103.;0. 0.;0. 0.],v_ref_rtn_mps=zeros(3,2))
+    checked=validate(teleport_request,candidate(teleport))
+    @test !checked.accepted && checked.reason===:speed_limit
+    @test checked.metrics.max_declared_speed_mps==0.
+    @test checked.metrics.max_implied_speed_mps==100.
+    @test checked.metrics.max_speed_mps==100.
+    # Both measurements survive successful validation too; neither replaces the other.
+    checked=validate(request(constraints=limits),candidate(reference(v_ref_rtn_mps=zeros(3,3))))
+    @test checked.accepted
+    @test checked.metrics.max_declared_speed_mps==0.
+    @test checked.metrics.max_implied_speed_mps==checked.metrics.max_speed_mps==1.
+    checked=validate(request(constraints=limits),candidate(reference(v_ref_rtn_mps=[2. 2. 2.;0. 0. 0.;0. 0. 0.])))
+    @test checked.reason===:speed_limit
+    @test checked.metrics.max_declared_speed_mps==2.
+    @test checked.metrics.max_implied_speed_mps==1.
+    # The allowance scales with the enabled limit, not an arbitrary SI-unit floor.
+    for scale in (1e-12,0.1,1.,1e150)
+        r=request(goal_rtn_m=(3.,0.,0.),constraints=P.RPOPlanningConstraints(clearance_m=0.1,max_speed_mps=scale))
+        stationary=repeat([3.,0.,0.],1,3)
+        function declared(multiplier)
+            vel=repeat([scale*multiplier,0.,0.],1,3)
+            return candidate(reference(r_ref_rtn_m=stationary,v_ref_rtn_mps=vel))
+        end
+        @test validate(r,declared(1.)).accepted
+        @test validate(r,declared(1.0 + 8eps(Float64))).accepted
+        @test validate(r,declared(1.0 + 1e-12)).reason===:speed_limit
+        exact=request(goal_rtn_m=(3.,0.,0.),constraints=r.constraints,
+            validation=P.RPOValidationSettings(limit_roundoff_rtol=0.))
+        @test validate(exact,declared(1.0 + 8eps(Float64))).reason===:speed_limit
+    end
+    r=request(goal_rtn_m=(3.,0.,0.),constraints=P.RPOPlanningConstraints(clearance_m=0.1,max_acceleration_mps2=0.1))
+    stationary=repeat([3.,0.,0.],1,3)
+    for (accel,accepted) in ((0.1*(1.0 + 8eps(Float64)),true),(0.10000004817916151,false))
+        ref=reference(r_ref_rtn_m=stationary,v_ref_rtn_mps=[0. accel accel;0. 0. 0.;0. 0. 0.])
+        checked=validate(r,candidate(ref))
+        @test checked.accepted==accepted
+        @test checked.metrics.max_acceleration_mps2==accel
+        @test checked.metrics.limit_roundoff_rtol==128eps(Float64)
+    end
+    for bad in (-1.,NaN,Inf,1e-12)
+        @test_throws ArgumentError P.RPOValidationSettings(limit_roundoff_rtol=bad)
+    end
+end
+
 struct MissingPlanner <: P.AbstractRPOPlanner end
 struct DeclaredPlanner <: P.AbstractRPOPlanner end
 P.planner_capabilities(::DeclaredPlanner)=P.RPOPlannerCapabilities(state_sources=(:truth,),frames=(:target_rtn,))

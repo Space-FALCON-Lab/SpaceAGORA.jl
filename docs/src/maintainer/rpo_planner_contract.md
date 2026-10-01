@@ -28,7 +28,11 @@ immutable tuples. The lifecycle must retain its validation request and pass a
 separate deep copy to the planner. A Julia struct does not make its contained
 arrays immutable. `RPOReference` copies its arrays, and `RPOPlanningResult`
 copies its reference and diagnostics. These boundaries prevent input-array
-aliasing; they are not a sandbox for arbitrary plugin code.
+aliasing; they are not a sandbox for arbitrary plugin code. Integration must also
+copy the result into lifecycle-owned storage before validation and install that
+same validated copy. Later edits through a planner-held handle must not alter the
+active reference. Mutation tests for both boundaries remain lifecycle acceptance
+requirements.
 
 References use uniformly spaced relative times beginning at zero, with 3 by N
 position and velocity matrices. Their origin is simulation time. The existing
@@ -45,7 +49,8 @@ It never installs a reference or advances a random stream. Checks include:
 
 - request, spacecraft, frame and geometry-revision identity;
 - finite values, dimensions, origin and uniform timing;
-- position endpoints, sampled speed and velocity-difference acceleration;
+- position endpoints, declared and position-implied speed, and velocity-vector
+  difference acceleration;
 - reference lifetime, including every requested controller-preview time;
 - clearance sampled along the reference polyline, including points between
   stored reference knots.
@@ -62,6 +67,28 @@ with clearance sampling at most every 0.05 m and at most 100,000 samples. These
 are explicit validation settings, not newly accepted physical mission limits.
 The time tolerance must remain smaller than half a sample interval. A caller
 must prospectively select the settings appropriate to its fixture.
+
+The speed limit checks both `max_declared_speed_mps` (velocity norms) and
+`max_implied_speed_mps` (successive position displacements divided by the control
+interval). `max_speed_mps` is their maximum. A reference that moves 100 m in
+one second cannot pass a 1 m/s limit by declaring zero velocity. This does not
+require the two velocity representations to be exact derivatives of each other.
+
+Speed and acceleration comparisons allow only a bounded floating-point allowance:
+`limit_roundoff_rtol` defaults to `128eps(Float64)` (about 2.84e-14), can be reduced
+to zero for exact comparisons, and cannot exceed that ceiling. There is no
+absolute allowance in SI units. An excess is rejected when it exceeds this
+fraction of the enabled limit; measured values and the allowance are recorded.
+This is a conservative software comparison rule, not an error bound for arbitrary
+planner calculations or permission to loosen physical acceptance limits.
+
+Common acceleration is the norm of successive velocity-vector differences per
+control interval, including changes of direction. HYPR's tangential retiming
+limit has a different meaning. The adapter must select and report any planning
+headroom prospectively and still validate the returned reference against the
+unchanged common limit. Increasing numerical tolerance to hide this distinction
+is not permitted. The existing seed-742 fixture remains rejected at 0.1 m/s²;
+its measured 0.10000004817916151 m/s² is beyond the roundoff allowance.
 
 Only candidates terminated by completion or an iteration limit are eligible
 by default. Wall-clock-budget candidates additionally require
@@ -94,7 +121,9 @@ unchanged in this contract-only change.
 standalone module and tests rejection cases and ownership. It can run with
 `--project=@stdlib`. `rpo_planner_compatibility_tests.jl` captures repeated
 seeded legacy/manuscript HYPR calls and both existing retiming policies using
-the complete package. Both are included in the unit driver and therefore in
+the complete package, and validates each real reference against its physical
+request limits. Two rounding-only cases pass; the tangential/total acceleration
+mismatch remains an explicit rejection. Both are included in the unit driver and therefore in
 the PR shard plan. Compatibility fingerprints are compared on the same Julia
 and dependency environment; they are not portable golden values across
 versions or platforms.

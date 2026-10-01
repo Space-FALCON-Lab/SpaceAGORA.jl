@@ -41,25 +41,35 @@ struct RPOPlanningConstraints
     end
 end
 
+const _RPO_MAX_LIMIT_ROUNDOFF_RTOL = 128 * eps(Float64)
+
 """
 Prospective software validation settings. Clearance is sampled on the reference
 polyline at spacing at most `clearance_sample_ds_m`, including endpoints. This
 is not continuous collision certification. The work cap rejects, never skips,
-checks that would exceed `max_clearance_samples`.
+checks that would exceed `max_clearance_samples`. Speed/acceleration comparisons
+allow at most `128eps(Float64)` relative roundoff, with no absolute floor. Set
+`limit_roundoff_rtol=0` for exact comparisons. Physical planning margin belongs
+in the adapter, not in this bounded software allowance.
 """
 struct RPOValidationSettings
     endpoint_atol_m::Float64
     time_atol_s::Float64
+    limit_roundoff_rtol::Float64
     clearance_sample_ds_m::Float64
     max_clearance_samples::Int
     allow_time_budget_candidate::Bool
     function RPOValidationSettings(; endpoint_atol_m=1e-9, time_atol_s=1e-10,
+                                   limit_roundoff_rtol=_RPO_MAX_LIMIT_ROUNDOFF_RTOL,
                                    clearance_sample_ds_m=0.05,
                                    max_clearance_samples::Integer=100_000,
                                    allow_time_budget_candidate::Bool=false)
         max_clearance_samples >= 2 || throw(ArgumentError("At least two clearance samples are required."))
+        roundoff = _nonnegative(limit_roundoff_rtol, "limit_roundoff_rtol")
+        roundoff <= _RPO_MAX_LIMIT_ROUNDOFF_RTOL ||
+            throw(ArgumentError("Limit roundoff tolerance cannot exceed 128eps(Float64)."))
         new(_nonnegative(endpoint_atol_m, "endpoint_atol_m"),
-            _nonnegative(time_atol_s, "time_atol_s"),
+            _nonnegative(time_atol_s, "time_atol_s"), roundoff,
             _positive(clearance_sample_ds_m, "clearance_sample_ds_m"),
             Int(max_clearance_samples), allow_time_budget_candidate)
     end

@@ -242,4 +242,5 @@ function rpo_reference_is_current(request::RPOPlanningRequest, reference::RPORef
 end
 
 include("rpo_reference_validation.jl")
+include("rpo_planning_headroom.jl")
 end

@@ -6,12 +6,15 @@ It loads using Julia standard libraries without HYPR configuration. The module
 is intentionally not exported as a stable package API while the integrated
 planner pilot is being developed.
 
-This change does not connect the contract to simulation callbacks, replace
-`RPOGuidanceModel`, install an adapter, or make HYPR optional. Existing planner,
-retiming and controller calculations continue through their existing route.
+Internal opt-in direct and HYPR adapters now produce this contract. They do not
+connect it to simulation callbacks, replace `RPOGuidanceModel`, or make HYPR
+optional. Existing planner, retiming and controller calculations continue
+through their existing route.
 
 ```@docs
 SpaceAGORA.RPOPlannerInterfaces
+SpaceAGORA.DirectRPOPlanning
+SpaceAGORA.HYPRRPOPlanning
 ```
 
 ## Data and ownership
@@ -128,9 +131,91 @@ the PR shard plan. Compatibility fingerprints are compared on the same Julia
 and dependency environment; they are not portable golden values across
 versions or platforms.
 
-Next, add adapters preserving HYPR's returned effective settings, followed by
+The adapters below preserve HYPR's returned effective settings. Next, add
 an opt-in lifecycle, supported external constructor and run-report accessor.
 Their acceptance must include callback ordering, initialization, failure,
 expiry, multiple controlled spacecraft and repeated/concurrent runs. Publish
 top-level names only with the corresponding public API inventory, docstrings
 and external example. Optional package extraction follows that pilot.
+
+
+## Adapter planning headroom
+
+`RPOPlanningHeadroom(fraction=0.01)` prospectively reserves one percent of each
+enabled request speed/acceleration limit for the new adapters. It changes the
+planning target, never the physical request or the shared validator. The fraction
+must be strictly between zero and one and is recorded with the result. A configured
+HYPR cap that is already lower is preserved.
+
+The adapters estimate output resolution using `32eps(Float64)*position_scale/dt`
+for implied speed and `32eps(Float64)*velocity_scale/dt` for acceleration. Each
+estimate must fit within one quarter of its reserved physical-limit budget.
+They check request scales before planning and actual output scales before
+returning a reference. Inadequate resolution yields
+`:insufficient_reference_precision`; it never increases validation tolerance.
+These conservative screening estimates are not a proof for arbitrary floating
+point algorithms. Large coordinates or very small time steps may require a
+better representation or different sampling, not permission to exceed a limit.
+
+The fixed `128eps(Float64)` validator allowance does not cover arbitrary
+finite-difference storage error. The earlier rounding-only fixtures pass at their
+fixture scale. The adapter reserve covers a wider tested range of distances and
+steps while retaining strict validation, including exact comparisons when the
+caller selects zero allowance.
+
+One percent is a declared pilot policy, not a guarantee of total-vector
+acceleration. HYPR's tangential acceleration and curvature constraints can still
+produce a larger vector difference. The adapter rejects a reference that fails
+the unchanged physical checks; it does not retry with relaxed tolerances or choose
+a larger reserve after seeing a failure. Replacing this policy requires a new
+prospective setting and its own validation.
+
+## Internal planner implementations
+
+`SpaceAGORA.DirectRPOPlanning.DirectRPOPlanner` builds a straight segment with
+`s(q)=3q²-2q³`, sampled uniformly through the first grid time at or beyond its
+chosen duration. Its analytic maxima are `1.5*distance/duration` for speed and
+`6*distance/duration²` for acceleration; endpoints are at rest. The duration is
+chosen from the reduced limits, rounded up to the request grid, and bounded by
+`max_reference_samples` and request lifetime before allocation. A stationary
+request receives two identical samples. This reference does not impose the
+request's initial velocity as a boundary condition.
+
+The baseline requires an assembly-owned analytic
+`segment_clearance_at(start, goal, geometry)` query. It explicitly refuses missing
+queries, nonfinite clearance and blocked segments. This checks a direct segment
+against the declared geometry approximation, not an exact vehicle mesh or a
+search for an alternate route. Independently validate the result with the trusted
+point-clearance query before installing it.
+
+`SpaceAGORA.HYPRRPOPlanning.HYPRRPOPlanner` copies its HYPR configuration, then
+maps request clearance and sampling interval explicitly. Request limits with
+headroom cap configured retiming limits. Conflicting configured minimum/initial
+speeds reject. A requested acceleration limit requires the configured
+acceleration-limited retimer; the adapter does not silently select another
+retiming algorithm. `rrt_on_replan=true` explicitly enables the existing RRT warm
+start for a `:replan` request.
+
+The optimizer receives the caller's RNG and mapped configuration. Its returned
+effective configuration, including adaptive changes, is retained and used for
+retiming. For acceleration-limited retiming the adapter calls the same profile
+construction and evaluation helpers, checking the profile duration before uniform
+array allocation. Legacy retiming retains its configured step cap. The adapter
+then applies the unchanged validator and returns `:failed/:reference_rejected`
+with the validation record if the output fails. Optimizer exceptions propagate.
+A `:candidate` is still subject to lifecycle-owned validation before installation.
+
+Diagnostics distinguish requested, mapped and optimizer-returned configurations;
+include the planning budget, path representation, deterministic cost/history and
+termination. Matched-input parity means comparing direct HYPR calls with the
+adapter's mapped settings. The opt-in reserve can change reference timing from a
+legacy call that uses unreduced limits. The old route and its fingerprints remain
+unchanged.
+
+Both planners support truth observations in target RTN and use the common
+`initialize_planner`, `plan_rpo!` and capability interface. Neither advertises
+retiming or restart in this packet. A separate test implementation loads through
+the same extension methods. Contract and baseline tests run using standard
+libraries with no HYPR source. This is not yet optional-package installation or
+the external public pilot: callback integration, lifecycle ownership/expiry,
+restart refusal at run preparation and public assembly remain the next packet.

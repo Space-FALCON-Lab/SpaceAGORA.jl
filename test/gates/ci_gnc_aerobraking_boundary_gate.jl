@@ -31,6 +31,9 @@ end
 
 for root_rel in (
     joinpath("src", "gnc", "guidance"),
+    joinpath("src", "gnc", "shared"),
+    joinpath("src", "gnc", "hypr"),
+    joinpath("src", "gnc", "rrt"),
     joinpath("src", "gnc", "control"),
 )
     root = joinpath(REPO_ROOT, root_rel)

@@ -1,3 +1,5 @@
+# RPO path metrics shared by HYPR, comparison objectives and reference checks.
+# Existing RPOPSOConfig arguments remain compatibility contracts.
 """Compute path-length and distance references used to normalize RPO cost terms."""
 function rpo_path_cost_normalization_refs(points, cfg::RPOPSOConfig)
     pts = Matrix{Float64}(points)
@@ -80,9 +82,6 @@ function rpo_hcw_fuel_proxy(positions, dt::Real, mean_motion::Real, mass_kg::Rea
     end
     return (J_fuel=Float64(mass_kg) * dv / (Float64(isp_s) * Float64(g0_mps2)), delta_v_eq_mps=dv)
 end
-
-"""Fixed step at which `:manuscript` mode evaluates each candidate's retimed reference."""
-rpo_fuel_proxy_dt_s(cfg::RPOPSOConfig) = cfg.fuel_proxy_dt_s > 0.0 ? cfg.fuel_proxy_dt_s : cfg.retime_dt_s
 
 """
 HCW fuel proxy of an acceleration-limited profile, streamed at step `dt`
@@ -184,196 +183,62 @@ end
 end
 
 """
-Objective components of the `:manuscript` mode for one candidate: Eq. 5,
-J = w_obs J_obs + w_fuel J_fuel, with J_obs from Eq. 6 (sigmoid centred at
-d_safe + τ_tol) over the adaptive samples and J_fuel the HCW fuel proxy of
-Sec. III.B on the candidate's retimed reference at `rpo_fuel_proxy_dt_s`.
-The candidate is retimed by the same retimer as the final reference; with
-`retime_accel_limit_enable` the samples used for J_obs are reused for it.
-There is no length term: `J_len` and the normalized values are reported only.
-A violation is a sample below the Eq. 6 threshold; `keepout_violation_count`
-counts samples inside the keep-out surface itself.
+    rpo_reference_accel_demand(ref, mean_motion)
+
+Acceleration an acceleration-limited reference (`rpo_retimed_reference`) asks
+of the actuators at each sample: the tangential acceleration along the curve,
+the centripetal term v²κ toward the centre of curvature, and the HCW terms,
+u = r̈ - [3n² x + 2n ẏ, -2n ẋ, -n² z]. Returns per-sample magnitudes
+`tangential_mps2`, `centripetal_mps2` and `hcw_mps2`, and `u_rtn` (3 x K).
+A polyline has no curvature between its vertices, so its centripetal term is
+zero here.
 """
-function rpo_manuscript_path_cost_components(
-    points,
-    geometry,
-    cfg::RPOPSOConfig;
-    safe_distance_m::Real=0.0,
-    cost_cutoff::Real=Inf,
-)
-    samples, params, clearances = rpo_sample_path_with_params(
-        points,
-        cfg,
-        geometry;
-        safe_distance_m=safe_distance_m,
-        base_ds_m=rpo_hypr_sampling_density_m(cfg, safe_distance_m),
-        curve_type=cfg.curve_type,
-    )
-    threshold = rpo_obstacle_sigmoid_threshold(safe_distance_m, cfg.obstacle_sigmoid_tol_m, :manuscript)
-    k = Float64(cfg.obstacle_sigmoid_k)
-    w_obs = Float64(cfg.w_obs)
-    cutoff = Float64(cost_cutoff)
-    min_clearance = Inf
-    violation_count = 0
-    keepout_violation_count = 0
-    J_obs = 0.0
-    cut = false
-    @inbounds for j in 1:size(samples, 2)
-        c = clearances[j]
-        if isnan(c)
-            c = rpo_clearance_distance_to_station(SVector{3, Float64}(samples[1, j], samples[2, j], samples[3, j]), geometry)
-            clearances[j] = c
+function rpo_reference_accel_demand(ref, mean_motion::Real)
+    profile = ref.profile
+    K = length(ref.t_s)
+    n = Float64(mean_motion)
+    u_rtn = zeros(3, K)
+    tangential = zeros(K)
+    centripetal = zeros(K)
+    hcw = zeros(K)
+    ns = length(profile.s)
+    j = 1
+    @inbounds for k in 1:K
+        speed = ref.speed_mps[k]
+        a_t = ref.accel_tangential_mps2[k]
+        x, y, z = ref.r_rtn[1, k], ref.r_rtn[2, k], ref.r_rtn[3, k]
+        vx, vy, vz = ref.v_rtn[1, k], ref.v_rtn[2, k], ref.v_rtn[3, k]
+        tangent = SVector{3, Float64}(0.0, 0.0, 0.0)
+        κvec = SVector{3, Float64}(0.0, 0.0, 0.0)
+        if ns >= 2
+            sq = ref.s_m[k]
+            while j < ns - 1 && profile.s[j + 1] < sq
+                j += 1
+            end
+            if profile.bezier
+                uq = _rpo_profile_param(profile, j, sq)
+                d1 = _rpo_curve_d1(profile.curve, uq)
+                d1n = norm(d1)
+                if d1n > 1.0e-12
+                    tangent = d1 / d1n
+                    if size(profile.curve.d2, 2) > 0
+                        d2 = _rpo_curve_d2(profile.curve, uq)
+                        κvec = (d2 - dot(d2, tangent) * tangent) / d1n^2
+                    end
+                end
+            else
+                _, tangent = _rpo_profile_point_tangent(profile, j, sq)
+            end
         end
-        min_clearance = min(min_clearance, c)
-        J_obs += rpo_obstacle_sigmoid_penalty(c, threshold, k)
-        c < threshold && (violation_count += 1)
-        c < 0.0 && (keepout_violation_count += 1)
-        if w_obs > 0.0 && isfinite(cutoff) && w_obs * J_obs > cutoff
-            cut = true
-            break
-        end
+        acc = a_t * tangent + speed^2 * κvec
+        g = SVector{3, Float64}(3.0 * n * n * x + 2.0 * n * vy, -2.0 * n * vx, -n * n * z)
+        u = acc - g
+        u_rtn[1, k] = u[1]
+        u_rtn[2, k] = u[2]
+        u_rtn[3, k] = u[3]
+        tangential[k] = abs(a_t)
+        centripetal[k] = speed^2 * norm(κvec)
+        hcw[k] = norm(g)
     end
-    refs = rpo_path_cost_normalization_refs(points, cfg)
-    J_len = rpo_path_length(samples)
-    if cut
-        return (
-            total=Inf,
-            J_len=J_len,
-            J_len_norm=J_len / refs.len_ref,
-            J_obs=J_obs,
-            J_fuel=0.0,
-            J_fuel_norm=0.0,
-            min_clearance=min_clearance,
-            violation_count=violation_count,
-            len_ref=refs.len_ref,
-            fuel_ref=refs.fuel_ref,
-            keepout_violation_count=keepout_violation_count,
-            delta_v_eq_mps=0.0,
-            reference_duration_s=0.0,
-        )
-    end
-    dt = rpo_fuel_proxy_dt_s(cfg)
-    fuel = if cfg.retime_accel_limit_enable
-        profile = rpo_retime_profile(
-            RPORetimeCurve(points, cfg.curve_type),
-            samples,
-            params,
-            clearances,
-            geometry,
-            cfg;
-            safe_distance_m=safe_distance_m,
-            warn=false,
-        )
-        rpo_profile_hcw_fuel_proxy(profile, dt, cfg.mean_motion_radps, cfg.mass_kg, cfg.isp_s, cfg.g0_mps2)
-    else
-        step_cfg = dt == cfg.retime_dt_s ? cfg : rpo_pso_config(cfg; retime_dt_s=dt)
-        r_ref, _, _ = Logging.with_logger(Logging.NullLogger()) do
-            rpo_retime_path(points, geometry, step_cfg; safe_distance_m=safe_distance_m)
-        end
-        proxy = rpo_hcw_fuel_proxy(r_ref, dt, cfg.mean_motion_radps, cfg.mass_kg, cfg.isp_s, cfg.g0_mps2)
-        (J_fuel=proxy.J_fuel, delta_v_eq_mps=proxy.delta_v_eq_mps, steps=size(r_ref, 2) - 1, duration_s=(size(r_ref, 2) - 1) * dt)
-    end
-    return (
-        total=w_obs * J_obs + Float64(cfg.w_fuel) * fuel.J_fuel,
-        J_len=J_len,
-        J_len_norm=J_len / refs.len_ref,
-        J_obs=J_obs,
-        J_fuel=fuel.J_fuel,
-        J_fuel_norm=fuel.J_fuel / refs.fuel_ref,
-        min_clearance=min_clearance,
-        violation_count=violation_count,
-        len_ref=refs.len_ref,
-        fuel_ref=refs.fuel_ref,
-        keepout_violation_count=keepout_violation_count,
-        delta_v_eq_mps=fuel.delta_v_eq_mps,
-        reference_duration_s=fuel.duration_s,
-    )
-end
-
-"""Compute normalized RPO objective components for a candidate path."""
-function rpo_normalized_path_cost_components(
-    points,
-    geometry,
-    cfg::RPOPSOConfig;
-    safe_distance_m::Real=0.0,
-    cost_cutoff::Real=Inf,
-)
-    if cfg.hypr_mode === :manuscript
-        return rpo_manuscript_path_cost_components(
-            points,
-            geometry,
-            cfg;
-            safe_distance_m=safe_distance_m,
-            cost_cutoff=cost_cutoff,
-        )
-    end
-    samples = rpo_sample_path(
-        points,
-        cfg,
-        geometry;
-        safe_distance_m=safe_distance_m,
-        base_ds_m=rpo_hypr_sampling_density_m(cfg, safe_distance_m),
-        curve_type=cfg.curve_type,
-    )
-    stats = rpo_clearance_stats_from_samples(
-        samples,
-        geometry,
-        safe_distance_m;
-        cost_cutoff=cost_cutoff,
-        w_obs=cfg.w_obs,
-        obstacle_sigmoid_k=cfg.obstacle_sigmoid_k,
-        obstacle_sigmoid_tol_m=cfg.obstacle_sigmoid_tol_m,
-    )
-    J_obs = stats.obstacle_score
-    if stats.cutoff_exceeded
-        return (
-            total=Inf,
-            J_len=0.0,
-            J_len_norm=0.0,
-            J_obs=J_obs,
-            J_fuel=0.0,
-            J_fuel_norm=0.0,
-            min_clearance=stats.min_clearance,
-            violation_count=stats.violation_count,
-            len_ref=0.0,
-            fuel_ref=0.0,
-        )
-    end
-    refs = rpo_path_cost_normalization_refs(points, cfg)
-    J_len = rpo_path_length(samples)
-    J_len_norm = J_len / refs.len_ref
-    partial_cost = cfg.w_obs * J_obs + cfg.w_len * J_len_norm^2
-    if isfinite(cost_cutoff) && partial_cost > Float64(cost_cutoff)
-        return (
-            total=Inf,
-            J_len=J_len,
-            J_len_norm=J_len_norm,
-            J_obs=J_obs,
-            J_fuel=0.0,
-            J_fuel_norm=0.0,
-            min_clearance=stats.min_clearance,
-            violation_count=stats.violation_count,
-            len_ref=refs.len_ref,
-            fuel_ref=refs.fuel_ref,
-        )
-    end
-    J_fuel = rpo_fuel_proxy_from_samples(samples, cfg)
-    J_fuel_norm = J_fuel / refs.fuel_ref
-    return (
-        total=cfg.w_len * J_len_norm^2 + cfg.w_obs * J_obs + cfg.w_fuel * J_fuel_norm^2,
-        J_len=J_len,
-        J_len_norm=J_len_norm,
-        J_obs=J_obs,
-        J_fuel=J_fuel,
-        J_fuel_norm=J_fuel_norm,
-        min_clearance=stats.min_clearance,
-        violation_count=stats.violation_count,
-        len_ref=refs.len_ref,
-        fuel_ref=refs.fuel_ref,
-    )
-end
-
-"""Return the scalar RPO path objective, optionally cutting off expensive candidates early."""
-function rpo_path_cost(points, geometry, cfg::RPOPSOConfig; safe_distance_m::Real=0.0, cost_cutoff::Real=Inf)
-    return rpo_normalized_path_cost_components(points, geometry, cfg; safe_distance_m=safe_distance_m, cost_cutoff=cost_cutoff).total
+    return (tangential_mps2=tangential, centripetal_mps2=centripetal, hcw_mps2=hcw, u_rtn=u_rtn)
 end

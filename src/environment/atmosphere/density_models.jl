@@ -529,6 +529,14 @@ end
 function _gram_last_density_state(model)
     _gram_not_loaded_error("GRAM density state read")
 end
+#   _gram_walk_reseed!(model, seed) -> reseed the instance's random generator.
+#   _gram_recipe_seed(model) -> the seed the instance was constructed with.
+function _gram_walk_reseed!(model, seed::Int)
+    _gram_not_loaded_error("GRAM perturbation walk reseed")
+end
+function _gram_recipe_seed(model)
+    _gram_not_loaded_error("GRAM recipe seed")
+end
 
 @inline function _exponential_density(ρ_ref::Float64, h_ref::Float64, H::Float64, h::Float64)::Float64
     return ρ_ref * exp((h_ref - h) / H)

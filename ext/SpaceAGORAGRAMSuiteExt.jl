@@ -550,6 +550,17 @@ function EM._gram_walk_sample(
     end
 end
 
+function EM._gram_walk_reseed!(model::EM.GRAMAtmosphereModel, seed::Int)::Nothing
+    GRAMSuite._with_gram_lock(_gram_call_lock(model)) do
+        set_seed! = Base.invokelatest(getproperty, model.core.gram, Symbol("set_seed!"))
+        Base.invokelatest(set_seed!, model.core.gram_atmosphere, seed)
+    end
+    return nothing
+end
+
+EM._gram_recipe_seed(model::EM.GRAMAtmosphereModel)::Int =
+    model.constructor_kwargs === nothing ? 1001 : Int(get(model.constructor_kwargs, :seed, 1001))
+
 function EM._gram_last_density_state(model::EM.GRAMAtmosphereModel)::NTuple{4, Float64}
     return GRAMSuite._with_gram_lock(_gram_call_lock(model)) do
         _gram_density_state_tuple(model.core)

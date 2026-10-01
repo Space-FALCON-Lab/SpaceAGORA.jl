@@ -556,6 +556,8 @@ export RhsEffectorDecision, RhsExecutionPlan
         pass_dt_s::Float64                    # B: knot spacing, s
         pass_max_s::Float64                   # B: prediction horizon cap, s
         log_path::String                      # diagnostics CSV path ("" = no log)
+        reseed::Bool                          # reseed each walk instance at every atmospheric entry
+        base_seeds::Vector{Int}               # per-spacecraft recipe seed the per-pass seeds derive from
         walk_models::Vector{Any}              # per-spacecraft walk instance (A/B); empty for naive
         walk_calls::Vector{Int}               # walk-instance GRAM calls per spacecraft
         held_r::Vector{Float64}               # A: factor held since the last accepted step

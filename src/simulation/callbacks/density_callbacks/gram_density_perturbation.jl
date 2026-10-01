@@ -37,6 +37,17 @@
 #   SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_DT_S   B knot spacing, s (default 1.0)
 #   SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_MAX_S  B prediction cap, s (default 7200)
 #   SPACEAGORA_GRAM_DENSITY_PERTURBATION_LOG    diagnostics CSV path (default: none)
+#   SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED  0 (default) | 1
+#       Reseed each walk instance at every atmospheric entry (both modes) with
+#       _gram_pass_seed(recipe seed, pass index). GRAM draws fresh random numbers
+#       on EVERY query (minRelativeStepSize = 0), so without this one extra or
+#       missing draw anywhere -- a different accepted-step count (A) or one knot
+#       more in a predicted pass (B) -- shifts the random stream of every later
+#       pass. With it, pass k's draws depend only on (seed, k) and on what is
+#       sampled within pass k. Physically nothing is lost: the walk's carried
+#       correlation between passes is exp(-displacement / scale) over hours and
+#       thousands of km against GRAM's <= 600 km horizontal and 8 km vertical
+#       scales, i.e. already ~0.
 #
 # With the mode off nothing is installed: the SharedBuffers slot stays `nothing`
 # and every density path returns exactly what it did before.
@@ -58,6 +69,13 @@ end
     return v
 end
 
+@inline _gram_density_perturbation_pass_reseed()::Bool =
+    _parse_bool_env("SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED", false)
+
+# Deterministic per-pass seed inside GRAM's documented seed range (1 .. 2^24-1).
+@inline _gram_pass_seed(base::Int, pass::Int)::Int =
+    1 + Int(mod(Int128(base) * 1_000_003 + Int128(pass) * 7_919, 16_777_215))
+
 @inline function _gram_density_perturbation_pass_max_s()::Float64
     v = _parse_float_env("SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_MAX_S", 7200.0)
     (isfinite(v) && v > 0.0) || throw(ArgumentError("SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_MAX_S must be > 0, got $v"))
@@ -66,9 +84,9 @@ end
 
 function _new_gram_density_perturbation_state(mode::Symbol, num_sats::Int, ei_m::Float64,
                                               pass_dt_s::Float64, pass_max_s::Float64,
-                                              log_path::String)::GramDensityPerturbationState
+                                              log_path::String, reseed::Bool=false)::GramDensityPerturbationState
     return GramDensityPerturbationState(
-        mode, ei_m, pass_dt_s, pass_max_s, log_path,
+        mode, ei_m, pass_dt_s, pass_max_s, log_path, reseed, zeros(Int, num_sats),
         Any[nothing for _ in 1:num_sats],
         zeros(Int, num_sats),
         ones(Float64, num_sats),
@@ -199,6 +217,8 @@ function _write_gram_perturbation_log(st::GramDensityPerturbationState)::Nothing
         println(io, "mode = \"", st.mode, "\"")
         println(io, "ei_m = ", repr(st.ei_m))
         println(io, "pass_dt_s = ", repr(st.pass_dt_s))
+        println(io, "reseed = ", st.reseed)
+        println(io, "base_seeds = ", st.base_seeds)
         println(io, "walk_calls = ", st.walk_calls)
         println(io, "pass_count = ", st.pass_count)
         println(io, "log_rows = ", length(st.log_kind))
@@ -221,6 +241,7 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
     pass_dt = _gram_density_perturbation_pass_dt_s()
     pass_max = _gram_density_perturbation_pass_max_s()
     log_path = String(strip(get(ENV, "SPACEAGORA_GRAM_DENSITY_PERTURBATION_LOG", "")))
+    reseed = _gram_density_perturbation_pass_reseed()
     ei_m = Float64(args.environment_model.EI) * 1e3
 
     function invalidate!(p, i::Int)
@@ -234,6 +255,9 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
         in_atm = kin.alt <= st.ei_m
         entered = in_atm && !st.in_atm_prev[i]
         entered && (st.pass_count[i] += 1)
+        if entered && st.reseed && (st.mode === :step || st.mode === :pass)
+            EnvironmentModels._gram_walk_reseed!(st.walk_models[i], _gram_pass_seed(st.base_seeds[i], st.pass_count[i]))
+        end
         if st.mode === :step
             r_new = 1.0
             if in_atm
@@ -277,7 +301,7 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
         p = integrator.p
         # A fresh state on every initialization: a solver-policy re-solve from
         # the start then replays a fresh walk instead of continuing a used one.
-        st = _new_gram_density_perturbation_state(mode, num_sats, ei_m, pass_dt, pass_max, log_path)
+        st = _new_gram_density_perturbation_state(mode, num_sats, ei_m, pass_dt, pass_max, log_path, reseed)
         if mode === :step || mode === :pass
             for i in 1:num_sats
                 model = _density_model_for_sat(p, i)
@@ -286,6 +310,7 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
                     "for spacecraft $i; got $(typeof(model))."
                 ))
                 st.walk_models[i] = EnvironmentModels._gram_walk_clone(model)
+                st.base_seeds[i] = EnvironmentModels._gram_recipe_seed(model)
             end
         end
         state_ref[] = st

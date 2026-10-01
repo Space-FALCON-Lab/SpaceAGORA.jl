@@ -73,11 +73,13 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     using ..FrameTransforms
     # Shared planning functions and algorithm implementations retain this module.
+    include(joinpath(@__DIR__, "..", "shared", "rpo", "sampling_settings.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "pso_parameters.jl"))
     include(joinpath(@__DIR__, "..", "shared", "rpo", "path_geometry.jl"))
     include(joinpath(@__DIR__, "..", "shared", "rpo", "profile_evaluation.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "path_retiming.jl"))
     include(joinpath(@__DIR__, "..", "shared", "rpo", "path_sampling.jl"))
+    include(joinpath(@__DIR__, "..", "hypr", "sampling_adapters.jl"))
     include(joinpath(@__DIR__, "..", "shared", "rpo", "path_metrics.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "path_costs.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "pso_adaptive_policy.jl"))

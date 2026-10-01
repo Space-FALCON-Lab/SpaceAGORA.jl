@@ -45,6 +45,7 @@ const TIGHT = parse_bool_flag(get(OPTS, "tight", "false"))
 const DT_MAX_ATM = get(OPTS, "dt-max-atm", "")
 const MAXITERS = haskey(OPTS, "maxiters") ? parse(Int, OPTS["maxiters"]) : nothing
 const PASS_DT = get(OPTS, "pass-dt", "1.0")
+const RESEED = get(OPTS, "reseed", "0")
 const WRITE_LOG = parse_bool_flag(get(OPTS, "log", "true"))
 const OUT = abspath(joinpath(OPTS["out"], TAG))
 mkpath(OUT)
@@ -100,6 +101,7 @@ function main()
         "SPACEAGORA_GRAM_DENSITY_PERTURBATION" => MODE,
         "SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_DT_S" => PASS_DT,
         "SPACEAGORA_GRAM_DENSITY_PERTURBATION_LOG" => log_path,
+        "SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED" => RESEED,
     ]
     started = now(UTC)
     result = nothing
@@ -146,7 +148,7 @@ function main()
         "reltol_orbit" => tol.reltol_orbit, "abstol_orbit" => tol.abstol_orbit,
         "reltol_atmosphere" => tol.reltol_atmosphere, "abstol_atmosphere" => tol.abstol_atmosphere,
         "dt_max_orbit" => tol.dt_max_orbit, "dt_max_atmosphere" => tol.dt_max_atmosphere,
-        "solver_mode" => solver_mode, "maxiters" => maxiters, "pass_dt_s" => PASS_DT,
+        "solver_mode" => solver_mode, "maxiters" => maxiters, "pass_dt_s" => PASS_DT, "reseed" => RESEED,
         "wall_s" => wall_s, "started_utc" => string(started), "finished_utc" => string(finished),
         "retcode" => result === nothing ? "ERROR" : string(result.solution.retcode),
         "error" => err_text,

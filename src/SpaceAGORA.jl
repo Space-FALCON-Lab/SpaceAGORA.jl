@@ -3,6 +3,8 @@ __precompile__(true)
 module SpaceAGORA
 
 ## 1. Include package modules
+# Internal contract only; runtime guidance still uses its existing path.
+include(joinpath(@__DIR__, "gnc", "interfaces", "rpo_planner.jl"))
 include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "parallel", "process", "parallel_process.jl"))
 include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))

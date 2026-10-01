@@ -83,7 +83,7 @@ for t, (s, ex) in runs.items():
 runs_df = pd.DataFrame(rows)
 for t in tags:
     if t.endswith("_rep"):
-        runs_df.loc[runs_df.tag == t, "bit_identical_to_base"] = results_equal(t, t[:-4])
+        runs_df.loc[runs_df.tag == t, "bit_identical_to_base"] = str(results_equal(t, t[:-4]))
 runs_df.to_csv(os.path.join(out, "runs.csv"), index=False)
 pd.DataFrame(orbit_rows).to_csv(os.path.join(out, "per_orbit.csv"), index=False)
 
@@ -124,7 +124,7 @@ def final_apo(t):
 def peri_series(t):
     ex = runs[t][1]
     return ex[ex.event == "peri"].altitude_km.to_numpy()
-for base in ("nominal", "A_s11", "B_s11"):
+for base in sorted({t for t in tags if not t.endswith(("_tight", "_dt01", "_rep"))}):
     for suf in ("_tight", "_dt01", "_rep"):
         v = base + suf
         if v not in runs or runs[v][1] is None or runs[base][1] is None:

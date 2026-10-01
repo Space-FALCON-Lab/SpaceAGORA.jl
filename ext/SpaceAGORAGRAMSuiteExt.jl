@@ -507,6 +507,56 @@ end
 end
 
 # ---------------------------------------------------------------------------
+# Perturbed-density access (opt-in SPACEAGORA_GRAM_DENSITY_PERTURBATION modes)
+# ---------------------------------------------------------------------------
+#
+# GRAM's seeded perturbation is a correlated random walk advanced by every
+# set_position!/update! on an instance. The mean density the RHS uses comes from
+# DynamicsStateC.density; the walk's value is only in DensityStateC
+# (perturbedDensity, densityStandardDeviation), read here through the existing
+# get_density_state binding. Nothing in data/GRAMSuite.jl is changed.
+
+@inline function _gram_density_state_tuple(core)
+    get_density_state = Base.invokelatest(getproperty, core.gram, :get_density_state)
+    ds = Base.invokelatest(get_density_state, core.gram_atmosphere)
+    return (
+        Float64(ds.perturbedDensity),
+        Float64(ds.density),
+        Float64(ds.densityStandardDeviation),
+        Float64(ds.relativeStepSize),
+    )
+end
+
+function EM._gram_walk_clone(model::EM.GRAMAtmosphereModel)
+    model.constructor_kwargs === nothing && throw(ArgumentError(
+        "A GRAM perturbation walk instance needs the mean model's constructor recipe; " *
+        "this GRAMAtmosphereModel was built without one."
+    ))
+    return EM.GRAMAtmosphereModel(; deepcopy(model.constructor_kwargs)...)
+end
+
+function EM._gram_walk_sample(
+    model::EM.GRAMAtmosphereModel,
+    h::Float64,
+    lat::Float64,
+    lon::Float64,
+    el_time::Float64
+)::NTuple{4, Float64}
+    # Query and read under one lock acquisition so no other caller can move this
+    # instance between the update and the read.
+    return GRAMSuite._with_gram_lock(_gram_call_lock(model)) do
+        GRAMSuite._gram_density_state_native(model.core, max(h, -30.0), lat, lon, el_time, false)
+        _gram_density_state_tuple(model.core)
+    end
+end
+
+function EM._gram_last_density_state(model::EM.GRAMAtmosphereModel)::NTuple{4, Float64}
+    return GRAMSuite._with_gram_lock(_gram_call_lock(model)) do
+        _gram_density_state_tuple(model.core)
+    end
+end
+
+# ---------------------------------------------------------------------------
 # getDensity
 # ---------------------------------------------------------------------------
 

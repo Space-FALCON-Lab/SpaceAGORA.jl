@@ -622,7 +622,10 @@ end
 @inline function _aero_link_atmosphere_query(p, sat_idx::Int, t::Float64, pos_pp_link::SVector{3, Float64}, planet)
     alt, lat, lon = rtolatlong(pos_pp_link, planet)
     density_model = SimulationModel.SimulationCallbacks._density_model_for_sat(p, sat_idx)
-    return SimulationModel.getDensity(density_model, alt, lat, lon, t, true, p)
+    rho, T, wind = SimulationModel.getDensity(density_model, alt, lat, lon, t, true, p)
+    # Same opt-in GRAM perturbation factor as the satellite-level path; returns
+    # (rho, T, wind) unchanged when no mode is installed.
+    return SimulationModel.SimulationCallbacks._apply_gram_density_perturbation(p, sat_idx, t, alt, rho, T, wind)
 end
 
 @inline function wrench(

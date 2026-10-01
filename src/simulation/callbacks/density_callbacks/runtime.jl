@@ -75,7 +75,7 @@ end
     return merge(kin, (rho=atmosphere.rho_kg_m3, T=atmosphere.temperature_k, wind=atmosphere.wind_pp))
 end
 
-function _density_state_from_kinematics!(
+function _density_state_from_kinematics_mean!(
     p,
     sat_idx::Int,
     pos_ii::SVector{3, Float64},
@@ -201,6 +201,33 @@ function _density_state_from_kinematics!(
         end)
     end
     return getDensity(density_model, alt, lat, lon, t, true, p)
+end
+
+# The density the staged callback and every RHS-side atmosphere sample use: the
+# model's mean state, times the opt-in GRAM perturbation factor when one is
+# installed (gram_density_perturbation.jl). With no mode installed this returns
+# the mean tuple itself, unchanged.
+function _density_state_from_kinematics!(
+    p,
+    sat_idx::Int,
+    pos_ii::SVector{3, Float64},
+    vel_ii::SVector{3, Float64},
+    current_mass_kg::Float64,
+    alt::Float64,
+    lat::Float64,
+    lon::Float64,
+    t::Float64,
+    density_model,
+    cache_cfg,
+    stats_enabled::Bool,
+    target_include_j2::Bool,
+    caches::Vector{Union{Nothing, GramTrackCache}}
+)::Tuple{Float64, Float64, SVector{3, Float64}}
+    rho, T, wind_vec = _density_state_from_kinematics_mean!(
+        p, sat_idx, pos_ii, vel_ii, current_mass_kg, alt, lat, lon, t,
+        density_model, cache_cfg, stats_enabled, target_include_j2, caches,
+    )
+    return _apply_gram_density_perturbation(p, sat_idx, t, alt, rho, T, wind_vec)
 end
 
 function _stage_environment_state(x, p, sat_idx::Int, t::Float64; write_buffers::Bool=true)
@@ -358,6 +385,17 @@ function get_density_callback(num_sats::Int, effectors::Tuple, args::SimulationC
                     true,
                     p
                 )
+            end
+            # The batch evaluators fill mean densities directly; give them the
+            # same opt-in perturbation factor the per-spacecraft path applies.
+            if p.shared_buffers.gram_density_perturbation[] !== nothing
+                @inbounds for i in 1:num_sats
+                    p.shared_buffers.densities[i], p.shared_buffers.temperatures[i], p.shared_buffers.winds[i] =
+                        _apply_gram_density_perturbation(
+                            p, i, Float64(integrator.t), alts[i],
+                            p.shared_buffers.densities[i], p.shared_buffers.temperatures[i], p.shared_buffers.winds[i],
+                        )
+                end
             end
             _write_density_time_buffers!(p, num_sats, Float64(integrator.t))
         elseif use_threads

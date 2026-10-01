@@ -1,5 +1,5 @@
 # Sampling shared by RPO search, comparison planners, retiming and replanning.
-# Existing RPOPSOConfig arguments remain compatibility contracts.
+# Sampling inputs are independent of planner configuration.
 """Return the Euclidean length of an RPO waypoint path."""
 function rpo_path_length(points)
     return hypr_path_length(points)
@@ -75,17 +75,17 @@ end
 function rpo_adaptive_sampling_min_ds_m(
     base_ds::Real,
     geometry,
-    cfg::RPOPSOConfig;
+    settings::RPOAdaptiveSamplingSettings;
     safe_distance_m::Real=0.0,
 )
     min_ds = max(Float64(base_ds), 1.0e-9)
-    cfg.adaptive_sampling_enable || return min_ds
+    settings.enabled || return min_ds
     inflated_radius = rpo_inflated_obstacle_radius_m(geometry, safe_distance_m)
     if Float64(safe_distance_m) > 0.0
-        min_ds = min(min_ds, cfg.adaptive_sampling_safe_distance_fraction * Float64(safe_distance_m))
+        min_ds = min(min_ds, settings.safe_distance_fraction * Float64(safe_distance_m))
     end
     if inflated_radius > 0.0
-        min_ds = min(min_ds, cfg.adaptive_sampling_obstacle_guard_fraction * inflated_radius)
+        min_ds = min(min_ds, settings.obstacle_guard_fraction * inflated_radius)
     end
     return max(min_ds, 1.0e-9)
 end
@@ -159,14 +159,14 @@ end
 function rpo_sample_path_polyline_adaptive(
     points,
     geometry,
-    cfg::RPOPSOConfig;
+    settings::RPOAdaptiveSamplingSettings;
     safe_distance_m::Real=0.0,
-    base_ds_m::Real=cfg.sample_ds_m,
+    base_ds_m::Real,
 )
     pts = Matrix{Float64}(points)
     size(pts, 2) <= 1 && return pts
-    min_ds = rpo_adaptive_sampling_min_ds_m(base_ds_m, geometry, cfg; safe_distance_m=safe_distance_m)
-    max_ds = max(cfg.adaptive_sampling_max_ds_m, min_ds)
+    min_ds = rpo_adaptive_sampling_min_ds_m(base_ds_m, geometry, settings; safe_distance_m=safe_distance_m)
+    max_ds = max(settings.max_ds_m, min_ds)
     samples = Matrix{Float64}[]
     @inbounds for j in 1:(size(pts, 2) - 1)
         seg = rpo_adaptive_segment_samples(
@@ -176,8 +176,8 @@ function rpo_sample_path_polyline_adaptive(
             safe_distance_m=safe_distance_m,
             min_ds_m=min_ds,
             max_ds_m=max_ds,
-            far_clearance_m=cfg.adaptive_sampling_far_clearance_m,
-            power=cfg.adaptive_sampling_power,
+            far_clearance_m=settings.far_clearance_m,
+            power=settings.power,
         )
         j > 1 && (seg = seg[:, 2:end])
         push!(samples, seg)
@@ -203,14 +203,14 @@ last sample, which no step starts from).
 function rpo_sample_path_bezier_adaptive_with_params(
     points,
     geometry,
-    cfg::RPOPSOConfig;
+    settings::RPOAdaptiveSamplingSettings;
     safe_distance_m::Real=0.0,
-    base_ds_m::Real=cfg.sample_ds_m,
+    base_ds_m::Real,
 )
     pts = Matrix{Float64}(points)
     size(pts, 2) <= 1 && return pts, zeros(size(pts, 2)), fill(NaN, size(pts, 2))
-    min_ds = rpo_adaptive_sampling_min_ds_m(base_ds_m, geometry, cfg; safe_distance_m=safe_distance_m)
-    max_ds = max(cfg.adaptive_sampling_max_ds_m, min_ds)
+    min_ds = rpo_adaptive_sampling_min_ds_m(base_ds_m, geometry, settings; safe_distance_m=safe_distance_m)
+    max_ds = max(settings.max_ds_m, min_ds)
     length_ref = max(rpo_path_length(pts), norm(pts[:, end] - pts[:, 1]), min_ds)
     samples = Vector{Vector{Float64}}()
     params = Float64[]
@@ -230,8 +230,8 @@ function rpo_sample_path_bezier_adaptive_with_params(
             clearance,
             min_ds,
             max_ds,
-            cfg.adaptive_sampling_far_clearance_m,
-            cfg.adaptive_sampling_power;
+            settings.far_clearance_m,
+            settings.power;
             safe_distance_m=safe_distance_m,
         )
         speed = max(rpo_bezier_speed_estimate(pts, work, point, t), length_ref, 1.0e-9)
@@ -272,14 +272,14 @@ end
 function rpo_sample_path_bezier_adaptive(
     points,
     geometry,
-    cfg::RPOPSOConfig;
+    settings::RPOAdaptiveSamplingSettings;
     safe_distance_m::Real=0.0,
-    base_ds_m::Real=cfg.sample_ds_m,
+    base_ds_m::Real,
 )
     samples, _, _ = rpo_sample_path_bezier_adaptive_with_params(
         points,
         geometry,
-        cfg;
+        settings;
         safe_distance_m=safe_distance_m,
         base_ds_m=base_ds_m,
     )
@@ -300,18 +300,18 @@ the curve) and any clearance already computed per sample (`NaN` where none was).
 """
 function rpo_sample_path_with_params(
     points,
-    cfg::RPOPSOConfig,
+    settings::RPOAdaptiveSamplingSettings,
     geometry;
-    safe_distance_m::Real=cfg.safe_distance_m,
-    base_ds_m::Real=cfg.sample_ds_m,
-    curve_type::Symbol=cfg.curve_type,
+    safe_distance_m::Real=0.0,
+    base_ds_m::Real,
+    curve_type::Symbol,
 )
     if curve_type == :bezier
-        if cfg.adaptive_sampling_enable
+        if settings.enabled
             return rpo_sample_path_bezier_adaptive_with_params(
                 points,
                 geometry,
-                cfg;
+                settings;
                 safe_distance_m=safe_distance_m,
                 base_ds_m=base_ds_m,
             )
@@ -321,33 +321,33 @@ function rpo_sample_path_with_params(
         params = n <= 1 ? zeros(n) : collect(range(0.0, 1.0; length=n))
         return samples, params, fill(NaN, n)
     end
-    samples = rpo_sample_path(points, cfg, geometry; safe_distance_m=safe_distance_m, base_ds_m=base_ds_m, curve_type=curve_type)
+    samples = rpo_sample_path(points, settings, geometry; safe_distance_m=safe_distance_m, base_ds_m=base_ds_m, curve_type=curve_type)
     return samples, Float64[], fill(NaN, size(samples, 2))
 end
 
 """Sample an RPO candidate path using the configured curve representation and spacing policy."""
 function rpo_sample_path(
     points,
-    cfg::RPOPSOConfig,
+    settings::RPOAdaptiveSamplingSettings,
     geometry;
-    safe_distance_m::Real=cfg.safe_distance_m,
-    base_ds_m::Real=cfg.sample_ds_m,
-    curve_type::Symbol=cfg.curve_type,
+    safe_distance_m::Real=0.0,
+    base_ds_m::Real,
+    curve_type::Symbol,
 )
-    if !cfg.adaptive_sampling_enable
+    if !settings.enabled
         return rpo_sample_path(points, base_ds_m; curve_type=curve_type)
     end
     curve_type == :bezier && return rpo_sample_path_bezier_adaptive(
         points,
         geometry,
-        cfg;
+        settings;
         safe_distance_m=safe_distance_m,
         base_ds_m=base_ds_m,
     )
     curve_type == :polyline && return rpo_sample_path_polyline_adaptive(
         points,
         geometry,
-        cfg;
+        settings;
         safe_distance_m=safe_distance_m,
         base_ds_m=base_ds_m,
     )

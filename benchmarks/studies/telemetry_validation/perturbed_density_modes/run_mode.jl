@@ -13,6 +13,8 @@
 #   otherwise -> scales (density_scale, 0, 0, 0): GRAM's density perturbation at
 #                the given scale, wind perturbation scales off (winds are the
 #                nominal mean field regardless: SPACEAGORA_GRAM_WIND_MODE=auto).
+# --dt-max-atm=S caps the in-atmosphere step at S seconds (study default 0.2 s
+# for this scenario) through SPACEAGORA_TELEMETRY_DT_MAX_ATM.
 # --tight=true tightens all four integration tolerances 10x through the study's
 # SPACEAGORA_TELEMETRY_{RELTOL,ABSTOL}_{ORBIT,ATM} hooks (which may only tighten).
 #
@@ -40,6 +42,7 @@ const SEED = parse(Int, get(OPTS, "seed", "1001"))
 const DSCALE = parse(Float64, get(OPTS, "density-scale", "1.0"))
 const N_ORBITS = parse(Int, OPTS["orbits"])
 const TIGHT = parse_bool_flag(get(OPTS, "tight", "false"))
+const DT_MAX_ATM = get(OPTS, "dt-max-atm", "")
 const MAXITERS = haskey(OPTS, "maxiters") ? parse(Int, OPTS["maxiters"]) : nothing
 const PASS_DT = get(OPTS, "pass-dt", "1.0")
 const WRITE_LOG = parse_bool_flag(get(OPTS, "log", "true"))
@@ -66,11 +69,12 @@ const TIGHT_ENV = TIGHT ? [
     "SPACEAGORA_TELEMETRY_RELTOL_ATM" => "1e-8",
     "SPACEAGORA_TELEMETRY_ABSTOL_ATM" => "1e-10",
 ] : Pair{String, String}[]
+const DT_ENV = isempty(DT_MAX_ATM) ? Pair{String, String}[] : ["SPACEAGORA_TELEMETRY_DT_MAX_ATM" => DT_MAX_ATM]
 
 function main()
     cfg, truth = run_cfg()
     TV._planet_from_name(cfg.planet_name)       # furnish kernels as a solve does
-    args = withenv(TIGHT_ENV...) do
+    args = withenv(TIGHT_ENV..., DT_ENV...) do
         TV._with_study_settings(TV._make_orbit_args(cfg, N_ORBITS); quick=false)
     end
     tmp = mktempdir()

@@ -235,3 +235,18 @@ and source-completeness gates enforce this separation. `planner_lifecycle.jl`
 owns run state, trusted validation/installation, events, failures and expiry;
 `planner_configuration.jl` owns the pilot assembly. The engine and controller call
 the neutral `SimulationLifecycle` hooks; neither dispatches on a HYPR type.
+
+## Shared metric inputs
+
+The shared path-normalization and finite-difference fuel kernels take required
+numeric keyword inputs. Distances are metres, times and specific impulse are
+seconds, mass is kilograms, and reference gravity is m/s². They do not own HYPR
+defaults or require its configuration type. The existing configuration-based
+methods remain in the same defining module through HYPR-owned forwarding in
+metric_adapters.jl, preserving current callers and calculations.
+
+Only these two kernels are independently exercised in the minimal shared-module
+test. Other metrics retain their geometry/profile dependencies. Comparison
+planners, RRT policy and configured retiming still need further separation before
+a HYPR-free installation is demonstrated. This internal change adds no root
+public API and makes no new physical fuel-model or numeric-type support claim.

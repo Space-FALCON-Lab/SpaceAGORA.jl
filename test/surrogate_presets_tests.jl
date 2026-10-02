@@ -348,3 +348,153 @@ end
         @test_throws ArgumentError SpaceAGORA.surrogate_preset_model("synthetic_near_surface";opts("1.0.0")...)
     end
 end
+
+# A control effector that only requests a touchdown event, for the composition's synthetic descent.
+mutable struct CombinedDescentTouchdown <: SpaceAGORA.AbstractControlEffectorModel
+    radius_m::Float64
+    clearance_m::Float64
+    events::Vector{Any}
+end
+SpaceAGORA.SimulationModel.ControlHooks.touchdown_spec(m::CombinedDescentTouchdown, i::Int) =
+    (terrain=SpaceAGORA.SimulationModel.NoTerrainModel(), reference_radius_m=m.radius_m, height_m=m.clearance_m,
+     on_touchdown=(t, r_p, v_p, idx) -> push!(m.events, (t=t, r=sqrt(sum(abs2, r_p)), v=sqrt(sum(abs2, v_p)))))
+SpaceAGORA.SimulationModel.ControlHooks.calcControlEffect!(::CombinedDescentTouchdown, u, p, t, i) = nothing
+SpaceAGORA.SimulationModel.ControlHooks.calcControlForceTorque(::CombinedDescentTouchdown, u, p, i, t) =
+    (SpaceAGORA.SimulationModel.StaticArrays.SVector(0.0, 0.0, 0.0), SpaceAGORA.SimulationModel.StaticArrays.SVector(0.0, 0.0, 0.0))
+
+@testset "Combined descent atmosphere" begin
+    callbacks=SpaceAGORA.SimulationModel.SimulationCallbacks
+    # Construction rules, snapshot membership and the thread-safety trait need no GRAMSuite evaluation, so stub cores
+    # check them in every environment.
+    lower_stub=SpaceAGORA.GRAMNearSurfaceAtmosphereModel(:stub_lower); upper_stub=SpaceAGORA.GRAMGridAtmosphereModel(:stub_upper)
+    stub=SpaceAGORA.CombinedAtmosphereModel(lower_stub,upper_stub;handover_height_m=60e3)
+    @test stub isa PRESET_ENV._NativeFreeSnapshotModel && stub.lower===lower_stub && stub.upper===upper_stub && stub.handover_height_m===60000.0
+    @test callbacks.density_model_threadsafe(stub)
+    for bad in (NaN,Inf,true)
+        @test_throws ArgumentError SpaceAGORA.CombinedAtmosphereModel(lower_stub,upper_stub;handover_height_m=bad)
+    end
+    for (lo,up) in ((SpaceAGORA.NoAtmosphereModel(),upper_stub),(lower_stub,SpaceAGORA.NoAtmosphereModel()))
+        err=try SpaceAGORA.CombinedAtmosphereModel(lo,up;handover_height_m=60e3) catch e e end
+        @test err isa ArgumentError && occursin("native-free snapshot",err.msg)
+    end
+    if !(isdefined(GRAMSuite,:GRAMNearSurfaceAtmosphereModel) && isdefined(GRAMSuite,:GRAMGridAtmosphereModel))
+        @test_skip "combined-model queries need GRAMSuite's native-free grid and near-surface APIs"
+    else
+        catalog_template=TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
+        mktempdir() do dir
+            # Synthetic analytic components (not Mars data), built as in the preset test sets above: a near-surface payload
+            # with flat 0.5 km terrain and a flat 3390 km areoid, and a constant global grid from 40 to 260 km.
+            near=only(filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1" && p["version"]=="1.0.0",catalog_template["presets"]))
+            payload=deepcopy(near["required_metadata"]); lev=payload["levels_km"]; g=payload["lattice"]
+            nl,ni,nj=length(lev),g["nlat"],g["nlon"]
+            payload["radii_km"]=(payload["generation_config"]["equatorial_radius_km"],payload["generation_config"]["polar_radius_km"])
+            payload["terrain"]=Dict{String,Any}("lat0_deg"=>-86.25,"lon0_deg"=>0.488,"step_deg"=>0.5,
+                "surface_height_km"=>fill(0.5,346,720),"areoid_radius_km"=>fill(3390.0,346,720))
+            payload["level_T_K"]=[220.0-2lev[a] for a in 1:nl, i in 1:ni, j in 1:nj]
+            payload["level_R"]=fill(191.0,nl,ni,nj); payload["level_lnp"]=[log(700.0)-lev[a]/11 for a in 1:nl, i in 1:ni, j in 1:nj]
+            payload["level_source"]=ones(UInt8,nl,ni,nj); payload["surface_T30_K"]=fill(214.0,ni,nj); payload["surface_T5_K"]=fill(216.0,ni,nj)
+            keys_=[(b,c) for b in -12:11 for c in 0:39]; n=length(keys_)
+            payload["q_models"]=Dict{String,Any}("band"=>first.(keys_),"cell"=>last.(keys_),"L"=>fill(1,n),"order"=>fill(1,n),
+                "phic_center"=>[7.5b+3.75 for (b,_) in keys_],"lam_center"=>[9.0c+4.5 for (_,c) in keys_],
+                "coef"=>hcat(fill(20.0,n),zeros(n,5)),"n_points"=>fill(1,n),"status"=>fill("qualified",n))
+            lower_file=joinpath(dir,"near_surface.jls"); serialize(lower_file,payload)
+            grid=deepcopy(only(filter(p->p["id"]=="odyssey_p20_frozen_v1",catalog_template["presets"]))["required_metadata"])
+            grid["grid"]=Dict("alt_km"=>[40.,260.],"lat_deg"=>[-90.,90.],"lon_deg"=>[0.,180.])
+            grid["fields"]=Dict(k=>fill(v,2,2,2) for (k,v) in zip(("density_kgm3","temperature_K","wind_ew_ms","wind_ns_ms","wind_up_ms"),(2e-9,150.,2.,3.,4.)))
+            upper_file=joinpath(dir,"grid.jls"); serialize(upper_file,grid)
+            lower=SpaceAGORA.GRAMNearSurfaceAtmosphereModel(planet="Mars",surrogate_file=lower_file)
+            upper=SpaceAGORA.GRAMGridAtmosphereModel(planet="Mars",surrogate_file=upper_file)
+            model=SpaceAGORA.CombinedAtmosphereModel(lower,upper;handover_height_m=60e3)
+            @test model isa PRESET_ENV._NativeFreeSnapshotModel && callbacks.density_model_threadsafe(model)
+            lat,lon=deg2rad(10.),deg2rad(40.)
+            # Below the handover the lower component answers; at and above it, the upper one does.
+            for h in (3000.,30000.,59999.)
+                @test SpaceAGORA.getDensity(model,h,lat,lon,0.,true)===SpaceAGORA.getDensity(lower,h,lat,lon,0.,true)
+            end
+            for h in (60000.,150000.)
+                @test SpaceAGORA.getDensity(model,h,lat,lon,0.,true)===SpaceAGORA.getDensity(upper,h,lat,lon,0.,true)
+            end
+            # Each component's own wind: none below the handover, the grid's stored wind at it.
+            below=SpaceAGORA.getDensity(model,59999.,lat,lon,0.,true); at=SpaceAGORA.getDensity(model,60000.,lat,lon,0.,true)
+            @test below[3]==zeros(3) && below[1]>0 && at[3]==[2.,3.,4.] && at[1]==2e-9
+            @test SpaceAGORA.getDensity(model,3000.,lat,lon,1e9,false,nothing)===SpaceAGORA.getDensity(model,3000.,lat,lon,0.,true)
+            # Refusals come from the selected component, with no fallback to the other one.
+            @test_throws DomainError SpaceAGORA.getDensity(model,30000.,deg2rad(86.),lon,0.,true)
+            @test_throws DomainError SpaceAGORA.getDensity(upper,30000.,lat,lon,0.,true)
+            @test_throws DomainError SpaceAGORA.getDensity(model,261000.,lat,lon,0.,true)
+            provenance=SpaceAGORA.atmosphere_provenance(model)
+            @test provenance["backend"]=="combined_native_free_snapshot" && provenance["handover_height_m"]==60000.0
+            @test provenance["lower"]==SpaceAGORA.atmosphere_provenance(lower) && provenance["upper"]==SpaceAGORA.atmosphere_provenance(upper)
+            # Concurrent queries across the handover match serial ones.
+            hs=collect(range(1000.,200000.;length=64))
+            serial=[SpaceAGORA.getDensity(model,h,lat,lon,0.,true) for h in hs]
+            @test fetch.([Threads.@spawn SpaceAGORA.getDensity(model,h,lat,lon,0.,true) for h in hs])==serial
+            # Compatibility checks read the components' recorded metadata.
+            shifted=deepcopy(grid); shifted["initial_time"]["minute"]=52; shifted["generation_config"]["initial_time"]["minute"]=52
+            serialize(joinpath(dir,"grid_shifted.jls"),shifted)
+            err=try SpaceAGORA.CombinedAtmosphereModel(lower,SpaceAGORA.GRAMGridAtmosphereModel(planet="Mars",surrogate_file=joinpath(dir,"grid_shifted.jls"));handover_height_m=60e3) catch e e end
+            @test err isa ArgumentError && occursin("different instants",err.msg)
+            other=deepcopy(grid); other["generation_config"]["equatorial_radius_km"]=3397.0
+            serialize(joinpath(dir,"grid_ellipsoid.jls"),other)
+            err=try SpaceAGORA.CombinedAtmosphereModel(lower,SpaceAGORA.GRAMGridAtmosphereModel(planet="Mars",surrogate_file=joinpath(dir,"grid_ellipsoid.jls"));handover_height_m=60e3) catch e e end
+            @test err isa ArgumentError && occursin("reference ellipsoids",err.msg)
+            for h in (30e3,260e3)
+                err=try SpaceAGORA.CombinedAtmosphereModel(lower,upper;handover_height_m=h) catch e e end
+                @test err isa ArgumentError && occursin("upper component's grid",err.msg)
+            end
+            # A synthetic descent that crosses the handover, with a touchdown 2 km above the flat synthetic terrain.
+            SM=SpaceAGORA.SimulationModel; SV=SM.StaticArrays.SVector
+            profile=deepcopy(grid); column(v)=[v[a] for a in 1:5, i in 1:2, j in 1:2]
+            profile["grid"]=Dict("alt_km"=>[40.,60.,80.,120.,260.],"lat_deg"=>[-90.,90.],"lon_deg"=>[0.,180.])
+            profile["fields"]=Dict("density_kgm3"=>column([2e-3,1.4e-4,2.5e-5,4e-7,1e-11]),"temperature_K"=>column(fill(150.,5)),
+                "wind_ew_ms"=>column(fill(30.,5)),"wind_ns_ms"=>column(fill(10.,5)),"wind_up_ms"=>column(zeros(5)))
+            serialize(joinpath(dir,"grid_profile.jls"),profile)
+            descent_model=SpaceAGORA.CombinedAtmosphereModel(lower,
+                SpaceAGORA.GRAMGridAtmosphereModel(planet="Mars",surrogate_file=joinpath(dir,"grid_profile.jls"));handover_height_m=60e3)
+            planet=SM.Mars(); direction=SV(cosd(30.0),0.0,sind(30.0))   # the ellipsoid radius is about 3391.2 km here
+            function descent(; density_model=descent_model, clearance=2000.0, tol=(1e-9,1e-11,0.5), flags=("0","0"))
+                root=SM.Link(root=true, m=1500.0, ref_area=1.0)
+                ic=SM.CartesianInitialCondition(3_491_200.0*direction, -1500.0*direction+SV(0.0,2500.0,0.0))
+                sc=SM.SpacecraftModel(SM.Joint[], [root], root, true, 1500.0, 0.0, root.inertia, 0, 0, ic, 1)
+                args=SM.SimulationConfiguration(
+                    simulation_settings=SM.SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false, save_csv=false),
+                    mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, mission_time=3000.0, number_of_orbits=1,
+                        keplerian=false, orientation_sim=false, num_steps_to_save=200),
+                    environment_model=SM.EnvironmentModel(planet=planet, EI=250.0, density_model=density_model, topography=false, wind=true,
+                        thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
+                        ephemerides_model=SM.SimpleEphemeridesModel(prime_meridian_at_reference_rad=0.0)),
+                    dynamics_model=SM.DynamicsModel([sc], (SM.InverseSquaredJ2GravityModel(), SM.AerodynamicCoefficientfM())),
+                    guidance_model=SM.GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
+                    navigation_model=SM.NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+                    control_model=SM.ControlModel(control_effectors=(CombinedDescentTouchdown(3_390_500.0, clearance, Any[]),), control_rates=[1.0]),
+                    initial_time=SM.InitialTime(year=2001, month=11, day=7, hour=11, minute=51, second=4.794789),
+                    integration_tolerances=SM.IntegrationTolerances(reltol_orbit=tol[1], abstol_orbit=tol[2], reltol_atmosphere=tol[1],
+                        abstol_atmosphere=tol[2], dt_max_orbit=tol[3], dt_max_atmosphere=tol[3]),
+                    solver_config=SM.SolverConfig(solver_mode=:tsit5))
+                sol=withenv("SPACEAGORA_DENSITY_FREEZE_PER_STEP"=>flags[1], "SPACEAGORA_VACUUM_GRAM_CACHE"=>flags[2]) do
+                    SpaceAGORA.run_simulation(args; return_solution=true)
+                end
+                return sol, only(sol.prob.p.args.control_model.control_effectors).events
+            end
+            radius(u)=sqrt(u[1]^2+u[2]^2+u[3]^2)
+            sol,events=descent()
+            @test string(sol.retcode)=="Terminated" && length(events)==1 && all(!,sol.prob.p.is_active)
+            @test radius(sol.u[1])>3_391_200.0+60e3 && isapprox(events[1].r,3_392_500.0;atol=1e-3)
+            # Trajectory density caches and per-step freezing stay bypassed: enabling them changes nothing.
+            on,events_on=descent(flags=("1","1"))
+            @test on.t==sol.t && on.u==sol.u && events_on==events
+            # Touchdown time and speed do not depend on the step-size controls.
+            for tol in ((1e-7,1e-9,2.0),(1e-11,1e-13,0.05))
+                _,e=descent(;tol)
+                @test isapprox(e[1].t,events[1].t;rtol=1e-6) && isapprox(e[1].v,events[1].v;rtol=1e-6)
+            end
+            # The atmosphere acts on the descent: without it the spacecraft reaches the surface faster.
+            _,vacuum=descent(density_model=SpaceAGORA.NoAtmosphereModel())
+            @test vacuum[1].v>events[1].v+1.0
+            # Below the lower component's minimum clearance the run fails with that component's error; nothing is extrapolated.
+            err=try descent(clearance=1.0) catch e e end
+            @test err isa DomainError && occursin("5 m",sprint(showerror,err))
+            @test !any(x->occursin("libgram",lowercase(basename(x))),Libdl.dllist())
+        end
+    end
+end

@@ -57,6 +57,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :PiecewiseExponentialAtmosphereModel, rendered = "SpaceAGORA.PiecewiseExponentialAtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :GRAMGridAtmosphereModel, rendered = "SpaceAGORA.GRAMGridAtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :GRAMNearSurfaceAtmosphereModel, rendered = "SpaceAGORA.GRAMNearSurfaceAtmosphereModel"),
+            (owner = :SpaceAGORA, symbol = :CombinedAtmosphereModel, rendered = "SpaceAGORA.CombinedAtmosphereModel"),
             (owner = :SpaceAGORA, symbol = :SurrogatePresetResolution, rendered = "SpaceAGORA.SurrogatePresetResolution"),
             (owner = :SpaceAGORA, symbol = :available_surrogate_presets, rendered = "SpaceAGORA.available_surrogate_presets"),
             (owner = :SpaceAGORA, symbol = :resolve_surrogate_preset, rendered = "SpaceAGORA.resolve_surrogate_preset"),

@@ -363,3 +363,9 @@ function atmosphere_provenance(model::GRAMGridAtmosphereModel)
     return Dict{String,Any}("backend" => "gram_grid_surrogate", "source_sha256" => model.core.source_sha256,
         "preset_status" => "user_supplied_grid_without_named_preset_contract", "above_grid" => string(model.core.above_grid))
 end
+function atmosphere_provenance(model::CombinedAtmosphereModel)
+    return Dict{String,Any}("backend" => "combined_native_free_snapshot",
+        "handover_height_m" => model.handover_height_m, "handover_reference" => "height above the reference ellipsoid",
+        "rule" => "lower component below the handover height, upper component at or above it; each keeps its own domain errors and winds",
+        "lower" => atmosphere_provenance(model.lower), "upper" => atmosphere_provenance(model.upper))
+end

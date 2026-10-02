@@ -74,7 +74,7 @@ using .SimulationModel: RobotArmHeldActuation, RobotArmJointMPCController, Robot
 using .SimulationModel: init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview
 using .SimulationModel: robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 using .SimulationModel: NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
-using .SimulationModel: GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel
+using .SimulationModel: GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel
 using .SimulationModel.EnvironmentModels: SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 using .SimulationModel: NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 using .SimulationModel: SimpleEphemeridesModel
@@ -253,6 +253,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.PiecewiseExponentialAtmosphereModel) PiecewiseExponentialAtmosphereModel
 @doc (@doc SimulationModel.GRAMGridAtmosphereModel) GRAMGridAtmosphereModel
 @doc (@doc SimulationModel.GRAMNearSurfaceAtmosphereModel) GRAMNearSurfaceAtmosphereModel
+@doc (@doc SimulationModel.CombinedAtmosphereModel) CombinedAtmosphereModel
 @doc (@doc SimulationModel.NRLMSISE00AtmosphereModel) NRLMSISE00AtmosphereModel
 @doc (@doc SimulationModel.DescentPhaseTargets) DescentPhaseTargets
 @doc (@doc SimulationModel.apollo11_descent_targets) apollo11_descent_targets
@@ -415,7 +416,7 @@ export robot_arm_joint_mpc_control, robot_arm_measured_joint_state
 export AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
 export terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 export NoAtmosphereModel, ExponentialAtmosphereModel, PiecewiseExponentialAtmosphereModel
-export GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel
+export GRAMGridAtmosphereModel, GRAMNearSurfaceAtmosphereModel, CombinedAtmosphereModel
 export SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel

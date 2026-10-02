@@ -30,6 +30,7 @@ using Printf
 using Statistics
 using TOML
 using StaticArrays
+import SPICE
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
@@ -289,6 +290,12 @@ function main()
             "hostname" => gethostname(), "cpu" => Sys.cpu_info()[1].model
         ))
     end
+    spk = try
+        [basename(string(SPICE.kdata(i, "SPK")[1])) for i in 1:SPICE.ktotal("SPK")]
+    catch err
+        ["unavailable: $err"]
+    end
+    println("SPK kernels loaded, in load order (last has priority): ", join(spk, ", "))
     @printf("done: %d cases in %.1f s\n", length(rows), t_total)
 end
 

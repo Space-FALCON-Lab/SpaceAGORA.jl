@@ -72,6 +72,7 @@ end
 # Optional, for any variant label (the label only names the output directory):
 #   XVAL_BASE=committed|as_basilisk|earth_egm96|moon_file_c20  override set to start from
 #     (defaults to the variant label when it is one of these, else committed)
+#   XVAL_J0_GM=<m3/s2>           point-mass (j0) cases use this central-body GM
 #   XVAL_GMAT_DIR=<dir>         gmat target reads its reference CSVs from <dir> (same file names)
 #   XVAL_EARTH_FIELD_FILE=<csv>  Earth J2/L=50 use this harmonics file, unmodified
 #   XVAL_MOON_FIELD_FILE=<csv>   Moon J2/L=50 use this harmonics file, unmodified
@@ -87,6 +88,10 @@ function _overrides(name::String, target::String, variant::String)
     base = get(ENV, "XVAL_BASE", variant in _BASE_VARIANTS ? variant : "committed")
     ov = _base_overrides(name, target, base)
     planet, gtag, _ = split(name, "_")
+    j0_gm = get(ENV, "XVAL_J0_GM", "")
+    if !isempty(j0_gm) && gtag == "j0"
+        ov["gravity_harmonics_gm_override_m3s2"] = parse(Float64, j0_gm)
+    end
     earth_file = get(ENV, "XVAL_EARTH_FIELD_FILE", "")
     if !isempty(earth_file) && planet == "earth" && gtag != "j0"
         ov["gravity_harmonics_file"] = earth_file

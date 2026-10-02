@@ -29,6 +29,7 @@ using Dates
 using Printf
 using Statistics
 using TOML
+using StaticArrays
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
@@ -64,7 +65,33 @@ function _resolver(target::String)
     error("unknown target $target")
 end
 
+# Optional, for any variant label (the label only names the output directory):
+#   XVAL_BASE=committed|as_basilisk|earth_egm96|moon_file_c20  override set to start from
+#     (defaults to the variant label when it is one of these, else committed)
+#   XVAL_MOON_FIELD_FILE=<csv>   Moon J2/L=50 use this harmonics file, unmodified
+#                                (its own header GM; no GM override at J2/L=50)
+#   XVAL_MOON_FIELD_GM=<m3/s2>   with XVAL_MOON_FIELD_FILE, force this GM instead
+#   XVAL_PLANETARY_KERNEL=<relpath under the SPICE dir>, e.g. spk/planets/de421.bsp
+#   XVAL_FRAME_TABLE_DIR=<dir>   body-fixed rotation replaced by GMAT's: the central
+#     body's R_spice(et) is post-multiplied by E(et) from <dir>/<Body>_E_spice_to_gmat.csv
+#     (linear interpolation in et), where R_gmat = R_spice * E was tabulated from GMAT R2025a.
+const _BASE_VARIANTS = ("committed", "as_basilisk", "earth_egm96", "moon_file_c20")
+
 function _overrides(name::String, target::String, variant::String)
+    base = get(ENV, "XVAL_BASE", variant in _BASE_VARIANTS ? variant : "committed")
+    ov = _base_overrides(name, target, base)
+    planet, gtag, _ = split(name, "_")
+    moon_file = get(ENV, "XVAL_MOON_FIELD_FILE", "")
+    if !isempty(moon_file) && planet == "moon" && gtag != "j0"
+        ov["gravity_harmonics_file"] = moon_file
+        delete!(ov, "gravity_harmonics_gm_override_m3s2")
+        gm = get(ENV, "XVAL_MOON_FIELD_GM", "")
+        isempty(gm) || (ov["gravity_harmonics_gm_override_m3s2"] = parse(Float64, gm))
+    end
+    return ov
+end
+
+function _base_overrides(name::String, target::String, variant::String)
     planet, gtag, _ = split(name, "_")
     if variant == "committed"
         return _matrix_scenario_overrides(name, Symbol(target))
@@ -94,8 +121,56 @@ function _axis_rows(errors::DataFrame, name::String, event::String)
     return sort(rows, :idx)
 end
 
+const _EPH = parentmodule(first(methods(SpaceAGORA.SimulationModel.planet_frame_lpi)))
+const _FRAME_TABLE = Ref{Any}(nothing)   # (et::Vector, E::Vector{SMatrix}) for the current case
+
+function _install_frame_table!(name::String)
+    dir = get(ENV, "XVAL_FRAME_TABLE_DIR", "")
+    if isempty(dir)
+        _FRAME_TABLE[] = nothing
+        return
+    end
+    body = first(split(name, "_")) == "moon" ? "Luna" : uppercasefirst(first(split(name, "_")))
+    rows = filter(l -> !startswith(l, "#"), readlines(joinpath(dir, "$(body)_E_spice_to_gmat.csv")))
+    vals = [parse.(Float64, split(l, ",")) for l in rows]
+    et = [v[1] for v in vals]
+    E = [SMatrix{3, 3, Float64}(permutedims(reshape(v[2:10], 3, 3))) for v in vals]
+    _FRAME_TABLE[] = (et=et, E=E, body=body)
+end
+
+function _frame_correction(et::Float64)
+    tab = _FRAME_TABLE[]
+    i = clamp(searchsortedlast(tab.et, et), 1, length(tab.et) - 1)
+    w = (et - tab.et[i]) / (tab.et[i + 1] - tab.et[i])
+    (w < -1e-6 || w > 1 + 1e-6) && error("frame table does not cover et=$et")
+    return tab.E[i] + w * (tab.E[i + 1] - tab.E[i])
+end
+
+# Replace the SPICE body-fixed rotation with an identical copy of the committed
+# implementation (simple_ephemerides.jl) that post-multiplies by the GMAT table when
+# one is installed; with no table it returns exactly what the committed code returns.
+Base.eval(_EPH, quote
+    function _spice_planet_frame_lpi(planet, et::Float64)::SMatrix{3, 3, Float64}
+        R = lock(tracked_lock(:spice_frame)) do
+            if planet.name == "Earth"
+                try
+                    return SMatrix{3, 3, Float64}(pxform("J2000", _EARTH_HIGH_PREC_BODY_FIXED_FRAME, et))
+                catch
+                    return SMatrix{3, 3, Float64}(pxform("J2000", _EARTH_FALLBACK_BODY_FIXED_FRAME, et))
+                end
+            end
+            return SMatrix{3, 3, Float64}(pxform("J2000", _spice_body_fixed_frame(planet), et))
+        end
+        tab = Main._FRAME_TABLE[]
+        tab === nothing && return R
+        planet.name == (tab.body == "Luna" ? "Moon" : tab.body) || return R
+        return R * Main._frame_correction(et)
+    end
+end)
+
 function run_case(name::String, target::String, variant::String, ref_path::String, casedir::String)
     mkpath(casedir)
+    _install_frame_table!(name)
     ic = _matrix_initial_conditions(name)
     traj = _build_time_aligned_reference(
         ref_path, _scenario_planet_name(name), casedir, name;
@@ -122,7 +197,7 @@ function run_case(name::String, target::String, variant::String, ref_path::Strin
         generate_plots=false
     )
     env = Pair{String, String}[
-        "SPACEAGORA_SPICE_PLANETARY_KERNEL_RELPATH" => _gmat_planetary_kernel_relpath(),
+        "SPACEAGORA_SPICE_PLANETARY_KERNEL_RELPATH" => get(ENV, "XVAL_PLANETARY_KERNEL", _gmat_planetary_kernel_relpath()),
         pairs(_telemetry_solver_env_overrides())...
     ]
     t_wall = @elapsed result = withenv(env...) do

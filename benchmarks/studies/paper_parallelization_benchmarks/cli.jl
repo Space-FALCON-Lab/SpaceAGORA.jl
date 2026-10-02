@@ -1388,6 +1388,89 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET), (PPB_PAPER_BUDGET, 1)],
         budget_grid_fixed = true,
     ),
+
+    # ── Route exploration (2026-10-02) ───────────────────────────────────────
+    # Plans the adaptive policy can reach but never chooses, pinned through the
+    # force_* and rhs_* modes (parallelization_performance/modes.jl) and timed
+    # beside serial, the adaptive policy and the static routes in the same run.
+    # Full budget only. Not paper phases.
+    PPBPhase(
+        id    = "X3",
+        label = "Route exploration — P3 campaign plans at the full budget",
+        cases        = ["independent_1sat_1hr"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "predictive",
+                        "force_process@w32+l1", "force_process@w32+l2", "force_process@w32+l4",
+                        "force_process@w32+l8", "force_process@w32+l15",
+                        "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_none@w1+l0+b32"],
+        mc_samples   = [256],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "X4",
+        label = "Route exploration — P4 campaign plans at the full budget",
+        cases        = ["montecarlo_heavy_aerobraking"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "predictive",
+                        "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_none@w1+l0+b32"],
+        mc_samples   = [32],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    # P5f's static routes at every split; serial, the adaptive policy and the
+    # pinned plans once at the full budget. One phase per grid because the
+    # wider plans differ with the sample count.
+    PPBPhase(
+        id    = "X5a",
+        label = "Route exploration — P5f, 8 samples of 16 spacecraft",
+        cases        = ["mcgrid_16sat_8mc"],
+        parity_cases = String[],
+        modes        = ["outer_threads", "outer_process", "outer_inner_static",
+                        "serial", "predictive", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        full_budget_modes = ["serial", "predictive", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "X5b",
+        label = "Route exploration — P5f, 16 samples of 8 spacecraft",
+        cases        = ["mcgrid_8sat_16mc"],
+        parity_cases = String[],
+        modes        = ["outer_threads", "outer_process", "outer_inner_static",
+                        "serial", "predictive", "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        full_budget_modes = ["serial", "predictive", "force_threads@w16+l0+b2", "force_threads@w8+l0+b4",
+                        "force_threads@w4+l0+b8", "force_threads@w2+l0+b16", "force_none@w1+l0+b32"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 3,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "X1",
+        label = "Route exploration — P1 RHS plans at 32 threads",
+        cases        = [_ppb_paper_size_case(4096), _ppb_paper_size_case(1024), _ppb_paper_size_case(64)],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "predictive",
+                        "rhs_serial", "rhs_satellite", "rhs_per_satellite", "rhs_flat"],
+        mc_samples   = [1],
+        repeats      = 11,
+        warmup       = 3,
+        thread_mode  = :max_only,
+    ),
 ]
 
 # ── Quick benchmark (--quick) ─────────────────────────────────────────────────

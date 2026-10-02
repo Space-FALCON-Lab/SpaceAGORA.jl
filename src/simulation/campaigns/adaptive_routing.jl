@@ -1104,6 +1104,32 @@ function _predictive_inner_curve(features::OuterRouteFeatures)::Union{Nothing, I
     return InnerSpeedupCurve(speedup; source = stem)
 end
 
+# Measurement hook, off by default: SPACEAGORA_PREDICTIVE_FORCE_PLAN set to a
+# `predictive_plan_key` (e.g. "process@w32+l4", "threads@w8+l0+b4",
+# "none@w1+l0+b32") runs that plan instead of the chosen one, so a plan the
+# margin rule never picks can be timed. An enumerated candidate is taken as the
+# planner priced it; any other plan is priced by the same `_predictive_plan`,
+# with S(b) = 1 when there is no inner-speedup curve. Unset, this returns
+# `nothing` and the campaign is planned exactly as before.
+function _predictive_forced_plan(planning::PredictivePlanning, n::Int,
+                                 config::PredictivePlannerConfig, constants,
+                                 terms::PredictiveCostTerms,
+                                 inner_curve::Union{Nothing, InnerSpeedupCurve})
+    raw = String(strip(get(ENV, "SPACEAGORA_PREDICTIVE_FORCE_PLAN", "")))
+    isempty(raw) && return nothing
+    key = _predictive_parse_plan_key(raw)
+    key === nothing && throw(ArgumentError(
+        "SPACEAGORA_PREDICTIVE_FORCE_PLAN must look like \"process@w32+l4\" or \"threads@w8+l0+b4\"; got \"$(raw)\"."))
+    i = findfirst(p -> predictive_plan_key(p) == raw, planning.plans)
+    i === nothing || return planning.plans[i]
+    route, workers, local_slots, b = key
+    contention = route === :none ? nothing :
+        _predictive_contention_constants(config, constants, route, terms.local_heap_slope)
+    inner_time = (b > 1 && inner_curve !== nothing) ? 1.0 / inner_speedup(inner_curve, b) : 1.0
+    return _predictive_plan(route, workers, local_slots, n, false, contention, config.remote_overhead;
+                            terms = terms, inner_budget = b > 1 ? b : 0, inner_time = inner_time)
+end
+
 function _run_campaign_predictive(
     f, seeds::Vector, features::OuterRouteFeatures, tuning::OuterRouteTuning; fail_fast::Bool
 )::MonteCarloResult
@@ -1145,6 +1171,8 @@ function _run_campaign_predictive(
         constants=constants, config=config, terms=terms, inner_curve=inner_curve)
     plan, leash = corrections === nothing ? (planning.chosen, :off) :
         predictive_leash(planning, get(corrections.last_plan, shape_key, nothing))
+    forced = _predictive_forced_plan(planning, n, config, constants, terms, inner_curve)
+    forced === nothing || (plan = forced)
     trace = _dispatch_trace_enabled()
     if trace
         println("[predictive] shape n=$(n) threads=$(threads) pool=$(pool_workers) " *
@@ -1165,8 +1193,16 @@ function _run_campaign_predictive(
         end
         println("[predictive] chosen $(_predictive_plan_line(planning.chosen)) " *
                 "reason=$(planning.reason) gain=$(round(planning.gain; digits=3))")
-        plan === planning.chosen ||
+        forced === nothing && plan !== planning.chosen &&
             println("[predictive] leash $(leash) -> $(_predictive_plan_line(plan))")
+        if forced !== nothing
+            println("[predictive] forced $(predictive_plan_key(forced)) makespan_exact=$(repr(forced.makespan)) " *
+                    "enumerated=$(any(p -> predictive_plan_key(p) == predictive_plan_key(forced), planning.plans))")
+            for p in planning.plans
+                println("[predictive]   exact $(predictive_plan_key(p))$(p.static_equivalent ? " static" : "") " *
+                        "makespan=$(repr(p.makespan))")
+            end
+        end
     end
 
     # A static-equivalent plan gives the guard nothing to act on: the only

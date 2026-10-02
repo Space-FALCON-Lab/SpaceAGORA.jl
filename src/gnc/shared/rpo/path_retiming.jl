@@ -11,6 +11,13 @@ safe_distance)` returns available metres; `pointwise_speed(distance, curvature)`
 returns m/s with curvature in 1/m. Policies must preserve inputs and avoid hidden
 random draws. Existing fallback-speed and maximum-step behavior are retained;
 fallback output is not a collision-free or dynamically feasible certificate.
+
+Production geometry is `RPOReferenceGeometry`, queried through NavigationHooks'
+`rpo_clearance_to_station`. The callback receives signed surface clearance,
+distance to the nearest station point, and the supplied safe distance, all in
+metres. The pointwise callback receives that policy's available distance and
+sample curvature. `max_speed_mps` caps fallback speed only; the pointwise policy
+owns any cap on its own output.
 """
 function rpo_retime_samples(
     raw_samples,
@@ -182,7 +189,15 @@ Construct an acceleration-limited profile from supplied samples and policies.
 Units and policy callback arguments match `rpo_retime_samples`; acceleration is
 m/s². Preserve the existing duplicate removal, two-point split, curve quadrature,
 clearance queries, forward/backward limits, terminal rest and fallback behavior.
-Missing (`NaN`) clearances are evaluated through the existing geometry owner.
+Production geometry is `RPOReferenceGeometry`. Missing (`NaN`) clearances use
+NavigationHooks' `rpo_clearance_distance_to_station`. The kernel reads
+`geometry.station.keepout_radius_m` and `geometry.chaser.half_extents_body`;
+their radius plus maximum half extent is the body margin. The available-distance
+callback receives signed clearance, clearance plus that margin, and the supplied
+safe distance, all in metres. This second argument reconstructs the nearest-point
+distance; its floating-point construction differs from `rpo_retime_samples`.
+The pointwise callback receives the resulting available distance and curvature.
+`max_speed_mps` caps fallback speed only; the policy owns its own output cap.
 Sampling policy and configured defaults belong to the caller. This internal
 boundary makes no broader numeric-type or physical-feasibility guarantee.
 """

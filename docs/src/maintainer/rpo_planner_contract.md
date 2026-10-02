@@ -299,8 +299,16 @@ advances along an already sampled path. The five-argument
 the acceleration-limited profile. They require explicit numeric inputs and two
 policies: `available_distance(clearance, distance, safe_distance)` and
 `pointwise_speed(available_distance, curvature)`. Distances are metres, speed
-is m/s, curvature is 1/m, time is seconds and acceleration is m/s². The existing
-shared geometry queries remain their geometry interface.
+is m/s, curvature is 1/m, time is seconds and acceleration is m/s². Production geometry is
+`RPOReferenceGeometry`. `NavigationHooks` owns the clearance queries, whose
+production methods require this type. The sampled-path kernel passes the signed
+surface clearance and nearest-station-point distance to `available_distance`.
+The profile kernel passes clearance and clearance plus the body margin, computed
+from `geometry.station.keepout_radius_m` plus the maximum component of
+`geometry.chaser.half_extents_body`. These are the same geometric distance in
+exact arithmetic, with different floating-point constructions. The third argument
+is the supplied safe distance. `pointwise_speed` receives the resulting available
+distance and the sample curvature.
 
 HYPR retains the legacy/manuscript policy distinction, reaction-time and speed
 scaling rules, collision-sampling selection, and the choice between the two
@@ -314,8 +322,10 @@ to scaling. `max_speed_mps` in the shared calculation preserves the existing
 fallback-speed handling; it does not impose an additional cap on policy output.
 The shared calculation preserves minimum-speed floors, near-duplicate handling,
 endpoint splitting, Bezier quadrature, forward/backward acceleration passes,
-terminal rest, warning behavior and the legacy step-count limit. Callbacks must
-agree with the caller's limits, preserve inputs and avoid hidden random draws.
+terminal rest and the legacy step-count limit. Warning levels, messages and
+values are preserved. The step-cap and invalid-step warnings have different
+source-derived tuple-field labels (`max_steps` and `dt_s` now name explicit
+inputs instead of configuration expressions). Callbacks must agree with the caller's limits, preserve inputs and avoid hidden random draws.
 Existing fallback paths are not a collision-free or feasibility certificate.
 
 The shared geometry and profile-evaluation helpers remain shared and unchanged,

@@ -306,6 +306,23 @@ module Planets
         return strip(get(ENV, "SPACEAGORA_SPICE_PLANETARY_KERNEL_RELPATH", ""))
     end
 
+    # Opt-in: extra text/binary PCKs loaded after each constructor's standard PCK, so
+    # their values take precedence in the kernel pool. Comma-separated; relative paths
+    # resolve against `spice_path`. Unset (the default) changes nothing. Used, e.g., to
+    # run Mars with the IAU 2009 orientation another tool uses.
+    function _furnsh_pck_overrides(spice_path::String)
+        raw = strip(get(ENV, "SPACEAGORA_SPICE_PCK_OVERRIDES", ""))
+        isempty(raw) && return nothing
+        for tok in split(raw, ',')
+            relpath = strip(tok)
+            isempty(relpath) && continue
+            path = isabspath(relpath) ? relpath : joinpath(spice_path, relpath)
+            isfile(path) || throw(ArgumentError("SPACEAGORA_SPICE_PCK_OVERRIDES: kernel not found: $path"))
+            _furnsh_once(path)
+        end
+        return nothing
+    end
+
     function _furnsh_planetary_kernel(spice_path::String)
         override_relpath = _planetary_kernel_override_relpath()
         if !isempty(override_relpath)
@@ -391,6 +408,7 @@ module Planets
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
+            _furnsh_pck_overrides(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
             # The starter-pack SPICE bundle shipped in-repo may omit the high-precision
             # Earth orientation kernels. When they are absent, runtime frame transforms
@@ -421,6 +439,7 @@ module Planets
             _furnsh_mars_pck(spice_path)
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
+            _furnsh_pck_overrides(spice_path)
             _furnsh_mars_system_kernel(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
             mars = Mars(; _spice_backed_planet_kwargs("Mars")...)
@@ -437,6 +456,7 @@ module Planets
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
+            _furnsh_pck_overrides(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
             venus = Venus(; _spice_backed_planet_kwargs("Venus")...)
             # TopographyHarmonicsWorkspace!(topo_harmonics_file, venus)
@@ -455,6 +475,7 @@ module Planets
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
+            _furnsh_pck_overrides(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
             _furnsh_first_existing(spice_path, ("spk/satellites/sat441.bsp", "spk/satellites/sat441_GRAM.bsp"))
             titan = Titan(; _spice_backed_planet_kwargs("Titan")...)
@@ -471,6 +492,7 @@ module Planets
             _furnsh_required(spice_path, "pck/pck00011.tpc")
             _furnsh_required(spice_path, "lsk/naif0012.tls")
             _furnsh_planetary_kernel(spice_path)
+            _furnsh_pck_overrides(spice_path)
             _gravity_constants_kernel_if_available(spice_path)
             _furnsh_required(spice_path, "spk/satellites/SPICELunaCurrentKernel.bpc")
             _furnsh_required(spice_path, "tf/SPICELunaFrameKernel.tf")

@@ -295,11 +295,11 @@ function main()
         ))
     end
     spk = try
-        [basename(string(SPICE.kdata(i, "SPK")[1])) for i in 1:SPICE.ktotal("SPK")]
+        [basename(string(SPICE.kdata(i, "ALL")[1])) for i in 1:SPICE.ktotal("ALL")]
     catch err
         ["unavailable: $err"]
     end
-    println("SPK kernels loaded, in load order (last has priority): ", join(spk, ", "))
+    println("SPICE kernels loaded, in load order (last has priority): ", join(spk, ", "))
     @printf("done: %d cases in %.1f s\n", length(rows), t_total)
 end
 

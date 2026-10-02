@@ -3,25 +3,7 @@ using Statistics
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
-# Include only the function/const definitions from test/gmat_scenario_matrix.jl
-# (everything before its top-level @testset blocks start), so this script does
-# not also trigger the unrelated CYGNSS testsets that file runs when included
-# whole. Boundary line was picked by hand: it's the last line before
-# `if !_parse_bool_env("SPACEAGORA_SKIP_GMAT_MATRIX", false)` / `@testset "GMAT
-# Early vs Full Error"`.
-const DEFS_ONLY_PATH = joinpath(REPO_ROOT, "scripts", "tb_matrix_debug_defs_only.jl")
-let
-    src = readlines(joinpath(REPO_ROOT, "test", "gmat_scenario_matrix.jl"))
-    boundary = findfirst(l -> occursin("SPACEAGORA_SKIP_GMAT_MATRIX", l), src)
-    boundary === nothing && error("boundary marker not found; gmat_scenario_matrix.jl structure changed")
-    open(DEFS_ONLY_PATH, "w") do io
-        for line in src[1:boundary-1]
-            println(io, line)
-        end
-    end
-end
-
-include(DEFS_ONLY_PATH)
+include(joinpath(@__DIR__, "tb_matrix_debug_defs_only.jl"))
 
 function _combined_xyz_rmse(summary::DataFrame, scenario::String)::Union{Float64, Nothing}
     rows = summary[(summary.scenario .== scenario) .& in.(summary.event, Ref(["state_x_time", "state_y_time", "state_z_time"])), :]
@@ -31,18 +13,27 @@ function _combined_xyz_rmse(summary::DataFrame, scenario::String)::Union{Float64
     return sqrt(sum(Float64.(rows.rmse_km) .^ 2))
 end
 
-function run_tb_matrix_debug()
+# The legacy GMAT report/CSV label maps to Basilisk_Examples_Full references
+# using reference_target=:gmat; see docs/quality/scenario_matrix_debug.md.
+function run_tb_matrix_debug(;
+    basilisk_runner=ScenarioMatrixDebugSupport._run_basilisk_scenario_matrix_result_once,
+    stk_runner=ScenarioMatrixDebugSupport._run_stk_scenario_matrix_result_once,
+    check_inputs=() -> ScenarioMatrixDebugSupport.require_matrix_inputs(; stk=true),
+    csv_path::AbstractString=joinpath(REPO_ROOT, "scripts", "tb_matrix_rmse_m.csv")
+)
+    # Check both reference sets before either potentially expensive solve.
+    check_inputs()
     bodies = ["earth", "mars", "venus", "moon"]
     gravity_tags = ["j0", "j2", "j50"]
     tb_tags = ["tbfalse", "tbtrue"]
 
     println("Running GMAT-target scenario matrix (this may take a while)...")
-    gmat_result = _run_gmat_scenario_matrix_result_once()
+    gmat_result = basilisk_runner()
     gmat_summary = gmat_result.summary
     println("GMAT-target matrix done. Summary rows: ", nrow(gmat_summary))
 
     println("Running STK-target scenario matrix (this may take a while)...")
-    stk_result = _run_stk_scenario_matrix_result_once()
+    stk_result = stk_runner()
     stk_summary = stk_result.summary
     println("STK-target matrix done. Summary rows: ", nrow(stk_summary))
 
@@ -70,7 +61,6 @@ function run_tb_matrix_debug()
 
     # Machine-readable CSV, in meters, full precision, for downstream reuse
     # (paper table + any future re-derivation) without rerunning the matrix.
-    csv_path = joinpath(REPO_ROOT, "scripts", "tb_matrix_rmse_m.csv")
     open(csv_path, "w") do io
         println(io, "planet,gravity,target,third_body,rmse_m")
         for body in bodies, gtag in gravity_tags, tbtag in tb_tags, target in ["GMAT", "STK"]
@@ -133,4 +123,6 @@ function run_tb_matrix_debug()
     println("=== SCRIPT DONE ===")
 end
 
-run_tb_matrix_debug()
+if abspath(PROGRAM_FILE) == @__FILE__
+    run_tb_matrix_debug()
+end

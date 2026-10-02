@@ -58,7 +58,7 @@ export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPla
 # supported way to parallelize is `SolverConfig(parallel=true)`.
 
 # 2.2. Parallel Process
-using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
+using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!, PROCESS_WARMUP
 
 ## 2.3. Simulation Engine
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
@@ -411,7 +411,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 
 
 ## 4. Declare exports
-export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!
+export ProcessPool, campaign_process_pool, ensure_process_workers!, shutdown_process_pool!, adopt_process_workers!, PROCESS_WARMUP
 export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!

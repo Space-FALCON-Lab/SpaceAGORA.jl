@@ -325,6 +325,22 @@ function _warm_gram_wrapper!(worker::Int)::Nothing
 end
 
 """
+    PROCESS_WARMUP
+
+Scoped override for the warm-up the campaign runner gives new process workers.
+`nothing` (default) warms each new worker with the campaign's own first sample;
+a zero-argument function warms with that call instead (a short representative
+run is much cheaper than a full sample of a long campaign); `false` skips the
+warm-up, leaving each worker's first-call compilation inside its first sample.
+
+    using Base.ScopedValues: with
+    with(SpaceAGORA.PROCESS_WARMUP => () -> short_run(seed)) do
+        run_adaptive_campaign(f; seeds, ...)
+    end
+"""
+const PROCESS_WARMUP = Base.ScopedValues.ScopedValue{Any}(nothing)
+
+"""
     ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing) -> Vector{Int}
 
 Grow `pool` to at least `n` bootstrapped workers (spawning new `addprocs`
@@ -352,21 +368,6 @@ dispatch. Everything `warmup_fn` references must already be resolvable on the
 worker (ordinary Distributed closure-shipping rule -- see the campaign
 dispatch closures this same pool already ships for real work).
 """
-"""
-    PROCESS_WARMUP
-
-Scoped override for the warm-up the campaign runner gives new process workers.
-`nothing` (default) warms each new worker with the campaign's own first sample;
-a zero-argument function warms with that call instead (a short representative
-run is much cheaper than a full sample of a long campaign); `false` skips the
-warm-up, leaving each worker's first-call compilation inside its first sample.
-
-    using Base.ScopedValues: with
-    with(SpaceAGORA.PROCESS_WARMUP => () -> short_run(seed)) do
-        run_adaptive_campaign(f; seeds, ...)
-    end
-"""
-const PROCESS_WARMUP = Base.ScopedValues.ScopedValue{Any}(nothing)
 
 function ensure_process_workers!(pool::ProcessPool, n::Int; warmup_fn=nothing)::Vector{Int}
     desired = max(1, n)

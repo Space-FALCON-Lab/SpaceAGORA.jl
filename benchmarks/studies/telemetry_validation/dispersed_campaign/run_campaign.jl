@@ -96,6 +96,44 @@ else
         TV._make_orbit_args(Main.OdysseyDispersedSample.member_cfg(SEEDS[1], true), ORBITS); quick=false)
     features = SC.campaign_route_features(probe_args; samples=length(SEEDS))
     tuning = SpaceAGORA.ParallelProfiles.OuterRouteTuning(trace=true)
+
+    # Provision and warm the pool before the campaign, concurrently, as the
+    # paper harness does (parallelization_performance/execution.jl, "Provision
+    # and warm the Distributed pool *before* the clock starts"). Without it the
+    # process route's own ensure_process_workers! warms each new worker by
+    # running the REAL first sample, one worker after another: with ~11-minute
+    # members that is ~6 h before the dispatch starts (job
+    # 20261002-115416-4125610, killed). The warm member is 2 orbits (one drag
+    # pass, so the pass-mode path is compiled) with a seed outside SEEDS, into a
+    # scratch directory. The route and split are still the policy's: this only
+    # sizes the pool the policy may use; if the policy does not choose the
+    # process route the pool simply idles.
+    pool_n = parse(Int, get(ENV, "SPACEAGORA_PERF_PROCS", string(length(SEEDS))))
+    warm_seed = minimum(SEEDS) - 1
+    warm = let sample_file = SAMPLE_FILE, out = joinpath(OUT, "_warmup"), s = warm_seed
+        () -> begin
+            if !isdefined(Main, :OdysseyDispersedSample)
+                SpaceAGORA.TelemetryVerification._planet_from_name("mars")
+                Base.include(Main, sample_file)
+            end
+            Base.invokelatest(Main.OdysseyDispersedSample.run_member, s, true, 2,
+                              joinpath(out, "pid$(getpid())"))
+            nothing
+        end
+    end
+    pool = SC.campaign_process_pool()
+    provision_s = @elapsed (pool_ids = SC.ensure_process_workers!(pool, pool_n))
+    warm_s = @elapsed begin
+        @sync begin
+            Threads.@spawn warm()                             # the coordinator (its own thread), for any local slots
+            for w in pool_ids
+                @async SpaceAGORA.SimulationCampaigns.Distributed.remotecall_wait(warm, w)
+            end
+        end
+    end
+    @printf("prewarm pool=%d provision=%.1f s warm=%.1f s\n", length(pool_ids), provision_s, warm_s)
+    flush(stdout)
+
     started = now(UTC)
     result = SC.run_monte_carlo(sample, SEEDS; threads=:auto, route_features=features, route_tuning=tuning)
     finished = now(UTC)
@@ -118,6 +156,8 @@ else
         "distinct_member_pids" => length(unique(skipmissing(ok.pid))),
         "coordinator_pid" => getpid(), "julia_threads" => Threads.nthreads(),
         "seeds" => SEEDS, "orbits_requested" => ORBITS,
+        "prewarm_pool_workers" => length(pool_ids), "prewarm_provision_s" => provision_s,
+        "prewarm_warm_s" => warm_s, "prewarm_seed" => warm_seed, "prewarm_orbits" => 2,
         "commit" => get(ENV, "SPACEAGORA_RUN_COMMIT", "unknown"), "host" => gethostname(),
         "env" => ENV_SNAPSHOT)
     open(io -> TOML.print(io, summary), joinpath(OUT, "campaign.toml"), "w")

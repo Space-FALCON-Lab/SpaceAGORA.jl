@@ -90,6 +90,35 @@ end
     @test P.plan_rpo!(nothing,baseline,near,MersenneTwister(1)).termination===:direct_segment_blocked
 end
 
+@testset "Lifetime refusals agree across retiming policies" begin
+    for mode in (:legacy, :manuscript), accel in (false, true)
+        planner=H.HYPRRPOPlanner(config(mode;retime_accel_limit_enable=accel))
+        constraints=P.RPOPlanningConstraints(clearance_m=.2,max_speed_mps=.5,
+            max_acceleration_mps2=accel ? .1 : nothing)
+        req=request(time_s=17.,constraints=constraints)
+        seed=742
+        accepted=P.plan_rpo!(nothing,planner,req,MersenneTwister(seed))
+        @test accepted.status===:candidate
+        endpoint=req.time_s+last(accepted.reference.t_ref_s)
+        # An exact lifetime fit is legal in either mode, at a nonzero epoch.
+        exact=request(time_s=17.,constraints=constraints,valid_until_s=endpoint)
+        fits=P.plan_rpo!(nothing,planner,exact,MersenneTwister(seed))
+        @test fits.status===:candidate
+        @test validate(exact,fits).accepted
+        @test fits.reference.t_ref_s==accepted.reference.t_ref_s
+        # The legacy retimer used to report these as failed/reference_rejected.
+        # Cover an ordinary shortage and a one-ULP shortage, with no tolerance
+        # expansion in the adapter's prospective lifetime budget.
+        for expiry in (endpoint-req.reference_dt_s, prevfloat(endpoint))
+            short=request(time_s=17.,constraints=constraints,valid_until_s=expiry)
+            result=P.plan_rpo!(nothing,planner,short,MersenneTwister(seed))
+            @test result.status===:infeasible
+            @test result.termination===:insufficient_reference_lifetime
+            @test result.reference===nothing
+        end
+    end
+end
+
 @testset "Unsupported modes, budgets and predictable failure" begin
     req=request();rng=MersenneTwister(5);before=copy(rng)
     plan(r;cfg=config(),kwargs...)=P.plan_rpo!(nothing,H.HYPRRPOPlanner(cfg;kwargs...),r,rng)

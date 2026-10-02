@@ -170,6 +170,13 @@ the unchanged physical checks; it does not retry with relaxed tolerances or choo
 a larger reserve after seeing a failure. Replacing this policy requires a new
 prospective setting and its own validation.
 
+For a smooth path with orthogonal tangential and normal acceleration, saturating
+its tangential part at `(1-f)*a_max` leaves at most
+`a_max*sqrt(1-(1-f)^2)` for turning. At the default `f=0.01`, this is about
+14.1 percent of the physical acceleration limit. This geometric estimate is
+not a guarantee for sampled velocity differences; the unchanged discrete
+validator still decides whether each candidate is admissible.
+
 ## Internal planner implementations
 
 `SpaceAGORA.DirectRPOPlanning.DirectRPOPlanner` builds a straight segment with
@@ -200,9 +207,13 @@ The optimizer receives the caller's RNG and mapped configuration. Its returned
 effective configuration, including adaptive changes, is retained and used for
 retiming. For acceleration-limited retiming the adapter calls the same profile
 construction and evaluation helpers, checking the profile duration before uniform
-array allocation. Legacy retiming retains its configured step cap. The adapter
-then applies the unchanged validator and returns `:failed/:reference_rejected`
-with the validation record if the output fails. Optimizer exceptions propagate.
+array allocation. Legacy retiming retains its configured step cap and checks
+the produced duration before constructing a candidate. Both policies report
+`:infeasible/:insufficient_reference_lifetime` when the absolute reference end
+exceeds the request lifetime, without adding a time tolerance to this planning
+budget. Equality is allowed. The adapter then applies the unchanged validator
+and returns `:failed/:reference_rejected` with the validation record for other
+output failures. Optimizer exceptions propagate.
 A `:candidate` is still subject to lifecycle-owned validation before installation.
 
 Diagnostics distinguish requested, mapped and optimizer-returned configurations;

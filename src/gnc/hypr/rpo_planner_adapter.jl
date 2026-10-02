@@ -76,7 +76,13 @@ function plan_rpo!(::Nothing, planner::HYPRRPOPlanner, request::P.RPOPlanningReq
             safe_distance_m=request.constraints.clearance_m)
     end
     length(times) <= planner.max_reference_samples || return reject(:failed, :reference_work_limit)
-    all(isfinite, positions) && all(isfinite, velocities) && !isempty(times) || return reject(:failed, :nonfinite_reference)
+    all(isfinite, times) && all(isfinite, positions) && all(isfinite, velocities) && !isempty(times) ||
+        return reject(:failed, :nonfinite_reference)
+    # Legacy retiming has no duration profile to inspect before allocation.
+    # Apply the same strict lifetime budget as acceleration-limited retiming
+    # before building a candidate, including shortages within validator roundoff.
+    request.time_s + last(times) <= request.valid_until_s ||
+        return reject(:infeasible, :insufficient_reference_lifetime)
     actual_budget = P.rpo_planning_budget(request, planner.headroom;
         position_scale_m=maximum(norm, eachcol(positions)), velocity_scale_mps=maximum(norm, eachcol(velocities)))
     actual_budget.supported || return reject(:unsupported, actual_budget.reason; diagnostics=(planning_budget=actual_budget,))

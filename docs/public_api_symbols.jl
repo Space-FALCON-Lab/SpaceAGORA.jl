@@ -5,6 +5,32 @@ using Base.Docs
 export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs
 
 const PUBLIC_API_SECTIONS = [
+    (title = "RPO planner pilot", items = [
+        (owner = :SpaceAGORA, symbol = :AbstractRPOPlanner, rendered = "SpaceAGORA.AbstractRPOPlanner"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningConstraints, rendered = "SpaceAGORA.RPOPlanningConstraints"),
+        (owner = :SpaceAGORA, symbol = :RPOValidationSettings, rendered = "SpaceAGORA.RPOValidationSettings"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningRequest, rendered = "SpaceAGORA.RPOPlanningRequest"),
+        (owner = :SpaceAGORA, symbol = :RPOReference, rendered = "SpaceAGORA.RPOReference"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningResult, rendered = "SpaceAGORA.RPOPlanningResult"),
+        (owner = :SpaceAGORA, symbol = :RPOPlannerCapabilities, rendered = "SpaceAGORA.RPOPlannerCapabilities"),
+        (owner = :SpaceAGORA, symbol = :RPOValidationResult, rendered = "SpaceAGORA.RPOValidationResult"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningHeadroom, rendered = "SpaceAGORA.RPOPlanningHeadroom"),
+        (owner = :SpaceAGORA, symbol = :planner_capabilities, rendered = "SpaceAGORA.planner_capabilities"),
+        (owner = :SpaceAGORA, symbol = :initialize_planner, rendered = "SpaceAGORA.initialize_planner"),
+        (owner = :SpaceAGORA, symbol = :plan_rpo!, rendered = "SpaceAGORA.plan_rpo!"),
+        (owner = :SpaceAGORA, symbol = :retime_rpo!, rendered = "SpaceAGORA.retime_rpo!"),
+        (owner = :SpaceAGORA, symbol = :validate_rpo_result, rendered = "SpaceAGORA.validate_rpo_result"),
+        (owner = :SpaceAGORA, symbol = :validate_rpo_capabilities, rendered = "SpaceAGORA.validate_rpo_capabilities"),
+        (owner = :SpaceAGORA, symbol = :rpo_reference_is_current, rendered = "SpaceAGORA.rpo_reference_is_current"),
+        (owner = :SpaceAGORA, symbol = :DirectRPOPlanner, rendered = "SpaceAGORA.DirectRPOPlanner"),
+        (owner = :SpaceAGORA, symbol = :HYPRRPOPlanner, rendered = "SpaceAGORA.HYPRRPOPlanner"),
+        (owner = :SpaceAGORA, symbol = :RPOPSOConfig, rendered = "SpaceAGORA.RPOPSOConfig"),
+        (owner = :SpaceAGORA, symbol = :rpo_pso_config, rendered = "SpaceAGORA.rpo_pso_config"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningEvent, rendered = "SpaceAGORA.RPOPlanningEvent"),
+        (owner = :SpaceAGORA, symbol = :RPOPlanningError, rendered = "SpaceAGORA.RPOPlanningError"),
+        (owner = :SpaceAGORA, symbol = :make_rpo_configuration, rendered = "SpaceAGORA.make_rpo_configuration"),
+        (owner = :SpaceAGORA, symbol = :rpo_run_report, rendered = "SpaceAGORA.rpo_run_report"),
+    ]),
     (
         title = "Simulation",
         items = [
@@ -23,6 +49,7 @@ const PUBLIC_API_SECTIONS = [
     (
         title = "Runtime Configuration",
         items = [
+            (owner = :SpaceAGORA, symbol = :SimulationSettings, rendered = "SpaceAGORA.SimulationSettings"),
             (owner = :SimulationEngine, symbol = :ParallelConfig, rendered = "SpaceAGORA.ParallelConfig"),
             (owner = :SimulationEngine, symbol = :SolverConfig, rendered = "SpaceAGORA.SolverConfig"),
             (owner = :SimulationEngine, symbol = :RuntimePolicyConfig, rendered = "SpaceAGORA.RuntimePolicyConfig"),

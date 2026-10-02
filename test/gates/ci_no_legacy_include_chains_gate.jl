@@ -23,6 +23,7 @@ const FORBIDDEN_REGEXES = (
 )
 
 const ALLOWED_RAW_INCLUDE_FILES = Set([
+    joinpath("src", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
     joinpath("src", "core", "simulation_model.jl"),
     joinpath("src", "environment", "physical_models.jl"),
     joinpath("src", "environment", "ephemerides", "ephemerides_models.jl"),

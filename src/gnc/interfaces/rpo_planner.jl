@@ -1,6 +1,6 @@
 """
-Internal RPO planner contracts. This module loads with Julia standard libraries
-alone. It is not yet connected to guidance or a stable top-level package API.
+RPO planner contracts. This module loads with Julia standard libraries alone.
+The opt-in public RPO pilot connects them to accepted simulation updates.
 """
 module RPOPlannerInterfaces
 

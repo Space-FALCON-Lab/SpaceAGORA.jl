@@ -1,20 +1,17 @@
 # RPO planner contract development
 
-The internal `SpaceAGORA.RPOPlannerInterfaces` module defines an initial
-algorithm-independent request, timed reference, result and pure validation API.
-It loads using Julia standard libraries without HYPR configuration. The module
-is intentionally not exported as a stable package API while the integrated
-planner pilot is being developed.
-
-Internal opt-in direct and HYPR adapters now produce this contract. They do not
-connect it to simulation callbacks, replace `RPOGuidanceModel`, or make HYPR
-optional. Existing planner, retiming and controller calculations continue
-through their existing route.
+The public opt-in [RPO pilot](../user/rpo_planner_pilot.md) connects neutral requests,
+references and results to simulation initialization and accepted guidance updates.
+The contract and direct baseline load with standard libraries without HYPR source.
+This contract-level separation does not yet make the installed package independent
+of HYPR. Existing `RPOGuidanceModel`, buffer layouts and controller mathematics
+retain their compatibility route.
 
 ```@docs
 SpaceAGORA.RPOPlannerInterfaces
 SpaceAGORA.DirectRPOPlanning
 SpaceAGORA.HYPRRPOPlanning
+SpaceAGORA.RPOPlannerLifecycle
 ```
 
 ## Data and ownership
@@ -34,8 +31,7 @@ copies its reference and diagnostics. These boundaries prevent input-array
 aliasing; they are not a sandbox for arbitrary plugin code. Integration must also
 copy the result into lifecycle-owned storage before validation and install that
 same validated copy. Later edits through a planner-held handle must not alter the
-active reference. Mutation tests for both boundaries remain lifecycle acceptance
-requirements.
+active reference. The lifecycle tests cover mutation at both boundaries.
 
 References use uniformly spaced relative times beginning at zero, with 3 by N
 position and velocity matrices. Their origin is simulation time. The existing
@@ -227,6 +223,15 @@ Both planners support truth observations in target RTN and use the common
 `initialize_planner`, `plan_rpo!` and capability interface. Neither advertises
 retiming or restart in this packet. A separate test implementation loads through
 the same extension methods. Contract and baseline tests run using standard
-libraries with no HYPR source. This is not yet optional-package installation or
-the external public pilot: callback integration, lifecycle ownership/expiry,
-restart refusal at run preparation and public assembly remain the next packet.
+libraries with no HYPR source. The public pilot adds callback integration,
+lifecycle ownership/expiry, restart refusal at run preparation and external
+assembly. Optional-package installation remains a later acceptance gate.
+
+## Lifecycle source ownership
+
+`gnc/guidance/rpo/rpo_planner_module.jl` aggregates the opt-in lifecycle and
+bounded public configuration builder. It owns no calculations. The include-chain
+and source-completeness gates enforce this separation. `planner_lifecycle.jl`
+owns run state, trusted validation/installation, events, failures and expiry;
+`planner_configuration.jl` owns the pilot assembly. The engine and controller call
+the neutral `SimulationLifecycle` hooks; neither dispatches on a HYPR type.

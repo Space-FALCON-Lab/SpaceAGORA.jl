@@ -32,7 +32,8 @@ end
 snapshots=[]
 @testset "Legacy seeded paths and effective retiming fixtures" begin
     @test P !== G
-    @test !(:AbstractRPOPlanner in names(SpaceAGORA))
+    @test :AbstractRPOPlanner in names(SpaceAGORA) # Packet 3 makes the accepted contract public.
+    @test SpaceAGORA.AbstractRPOPlanner === SpaceAGORA.RPOPlannerInterfaces.AbstractRPOPlanner
     @test !hasfield(S.RPOGuidanceModel,:planner)
     @test fieldnames(S.RPOPlanBuffer)==(:valid,:plan,:updated_at_s)
     for (mode,accel,seed) in ((:legacy,false,741),(:legacy,true,742),(:manuscript,true,743))

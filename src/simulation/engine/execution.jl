@@ -415,6 +415,9 @@ function run_simulation(
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
+    for guidance in args.guidance_model.guidance_effectors
+        SimulationLifecycle.preflight_guidance(guidance, args; isolate_state=isolate_state)
+    end
     # SolverConfig(parallel=true): re-enter under the flag's scoped environment
     # (see `_with_parallel_flag`). Inside it the flag reads as resolved, so this
     # branch is taken once; with the flag off nothing here runs.
@@ -551,6 +554,9 @@ function run_simulation(
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
+    for guidance in args.guidance_model.guidance_effectors
+        SimulationLifecycle.initialize_guidance!(guidance, u_start, p, t_start)
+    end
     p.shared_buffers.solve_segment_end_time[] = mission_end
     # prob_debug exists only to feed the NaN-probe below, which itself only
     # runs when SPACEAGORA_DEBUG_INITIAL_DERIVATIVE is set. Building it

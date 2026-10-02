@@ -19,6 +19,7 @@ end
 function rpo_fuel_proxy_from_samples(samples; tf_s, mass_kg, isp_s, g0_mps2)
     pts = Matrix{Float64}(samples)
     size(pts, 2) < 3 && return 0.0
+    size(pts, 1) >= 3 || throw(DimensionMismatch("fuel samples need at least three coordinate rows"))
     dt = max(tf_s / max(size(pts, 2) - 1, 1), 1.0e-6)
     fuel = 0.0
     @inbounds for j in 1:(size(pts, 2) - 2)

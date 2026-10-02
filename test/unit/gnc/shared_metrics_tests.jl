@@ -86,3 +86,26 @@ metric_bits(x::NamedTuple) = map(metric_bits, x)
     @test_throws MethodError G.rpo_fuel_proxy_from_samples(["x" "y";"z" "q";"a" "b"], configs[1])
     @test_throws MethodError G.rpo_path_cost_normalization_refs([1.0,2.0,3.0], configs[1])
 end
+
+@testset "Fuel proxy rejects missing coordinates before unchecked access" begin
+    K = SharedMetricsOnly
+    G = SpaceAGORA.SimulationModel.GuidanceHooks
+    cfg = SpaceAGORA.SimulationModel.RPOPSOConfig(tf_s=2.0, mass_kg=2.0, isp_s=4.0, g0_mps2=5.0)
+    inputs = (tf_s=cfg.tf_s, mass_kg=cfg.mass_kg, isp_s=cfg.isp_s, g0_mps2=cfg.g0_mps2)
+    routes = (p -> K.rpo_fuel_proxy_from_samples(p; inputs...),
+        p -> G.rpo_fuel_proxy_from_samples(p; inputs...),
+        p -> G.rpo_fuel_proxy_from_samples(p, cfg))
+    for fuel in routes
+        for rows in 0:2, columns in (3, 6)
+            @test_throws DimensionMismatch fuel(zeros(rows, columns))
+        end
+        # No finite difference is evaluated with fewer than three sample columns.
+        for rows in 0:4, columns in 0:2
+            @test fuel(zeros(rows, columns)) === 0.0
+        end
+        quadratic = [0.0 1.0 4.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
+        @test fuel(quadratic) === 0.2
+        # Additional rows have always been ignored; keep that compatibility.
+        @test fuel(vcat(quadratic, fill(NaN, 1, 3))) === 0.2
+    end
+end

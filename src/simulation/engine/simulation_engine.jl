@@ -2,6 +2,7 @@
 module SimulationEngine
 
 using ..SimulationModel
+import ..SimulationLifecycle
 import ..RuntimeServices
 import DiffEqBase
 import ADTypes: AutoFiniteDiff

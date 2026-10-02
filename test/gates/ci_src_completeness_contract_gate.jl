@@ -2,6 +2,7 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
 
 const CANONICAL_AGGREGATOR_FILES = Set([
+    joinpath("src", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
     joinpath("src", "simulation", "engine", "simulation_engine.jl"),
     joinpath("src", "simulation", "callbacks", "callbacks.jl"),
     joinpath("src", "parallel", "routing", "parallel_profiles.jl"),

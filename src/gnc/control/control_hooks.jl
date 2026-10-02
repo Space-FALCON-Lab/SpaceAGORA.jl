@@ -1,4 +1,5 @@
 module ControlHooks
+    import ...SimulationLifecycle
     using ..Structure
 
     using ..ConfigTypes: ODEParams

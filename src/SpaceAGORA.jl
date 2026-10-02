@@ -3,10 +3,16 @@ __precompile__(true)
 module SpaceAGORA
 
 ## 1. Include package modules
+# Internal contract only; runtime guidance still uses its existing path.
+include(joinpath(@__DIR__, "gnc", "interfaces", "rpo_planner.jl"))
+include(joinpath(@__DIR__, "gnc", "interfaces", "simulation_lifecycle.jl"))
 include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "parallel", "process", "parallel_process.jl"))
 include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "core", "simulation_model.jl"))
+include(joinpath(@__DIR__, "gnc", "direct_rpo", "direct_rpo_planner.jl"))
+include(joinpath(@__DIR__, "gnc", "hypr", "rpo_planner_adapter.jl"))
+include(joinpath(@__DIR__, "gnc", "guidance", "rpo", "rpo_planner_module.jl"))
 include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "simulation", "campaigns", "simulation_campaigns.jl"))
 include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
@@ -15,6 +21,35 @@ include(joinpath(@__DIR__, "assets", "odyssey_surrogate_assets.jl"))
 include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
 include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
 
+
+
+# Opt-in public RPO planner pilot.
+using .RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current
+using .DirectRPOPlanning: DirectRPOPlanner
+using .HYPRRPOPlanning: HYPRRPOPlanner
+using .SimulationModel: RPOPSOConfig, rpo_pso_config, SimulationSettings
+export SimulationSettings
+@doc "Output and checkpoint settings for a simulation. The opt-in RPO pilot refuses checkpoint writing and resume." SimulationSettings
+@doc """
+    RPOPSOConfig(; kwargs...)
+
+Existing HYPR configuration, exported for explicit `HYPRRPOPlanner` assembly.
+It controls swarm counts, geometric cost/search, adaptation and reference retiming.
+The adapter copies it, maps the request's clearance/interval, applies the declared
+planning reserve, and retains optimizer-returned settings. The public pilot example
+shows a deterministic bounded configuration; its numerical limits are not defaults
+for arbitrary missions. Existing internal constructors retain their behavior.
+""" RPOPSOConfig
+@doc """
+    rpo_pso_config(config; overrides...)
+
+Copy the existing HYPR configuration with explicit field overrides. This root alias
+preserves the existing configuration owner and calculations; pass the result to
+`HYPRRPOPlanner`. Request-owned limits and interval still apply at planning time.
+""" rpo_pso_config
+
+using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
+export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 
 ## 2. Bring needed names from package modules into the scope of SpaceAGORA.jl
 # 2.1. Parallel Profiles

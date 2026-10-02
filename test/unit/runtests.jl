@@ -5,6 +5,11 @@ using Test
 end
 
 include(joinpath(@__DIR__, "example_imports_tests.jl"))
+include("gnc/rpo_planner_contract_tests.jl")
+include("gnc/direct_rpo_planner_tests.jl")
+include("gnc/rpo_planner_adapter_tests.jl")
+include("gnc/rpo_planner_compatibility_tests.jl")
+include("gnc/rpo_planner_lifecycle_tests.jl")
 include("rpo_port_tests.jl")
 include("gnc/rpo_ownership_reproducibility_tests.jl")
 include("gnc/rpo_configurable_station_tests.jl")

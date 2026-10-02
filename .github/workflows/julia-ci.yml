@@ -678,6 +678,30 @@ jobs:
       - name: Contract suite
         run: julia --startup-file=no --project=. test/contracts/pr_runtests.jl
 
+  rpo-public-pilot:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup package dependencies
+        uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          token: ${{ github.token }}
+      - name: Prepare separate public project with preserved dependency versions
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+      - name: Public planner and custom component smoke without package downloads
+        env:
+          JULIA_PKG_OFFLINE: "true"
+        run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl
+
   documentation-release-gate:
     needs: depot
     permissions:

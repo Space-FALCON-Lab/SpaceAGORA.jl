@@ -36,7 +36,9 @@
 #   SPACEAGORA_GRAM_DENSITY_PERTURBATION        off (default) | step | pass | naive_rhs
 #   SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_DT_S   B knot spacing, s (default 1.0)
 #   SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_MAX_S  B prediction cap, s (default 7200)
-#   SPACEAGORA_GRAM_DENSITY_PERTURBATION_LOG    diagnostics CSV path (default: none)
+#   SPACEAGORA_GRAM_DENSITY_PERTURBATION_LOG    diagnostics CSV path (default: none);
+#       the value "results_directory" writes gram_density_perturbation_log.csv
+#       into the run's own SimulationSettings.results_directory
 #   SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED  0 (default) | 1
 #       Reseed each walk instance at every atmospheric entry (both modes) with
 #       _gram_pass_seed(recipe seed, pass index). GRAM draws fresh random numbers
@@ -241,6 +243,11 @@ function get_gram_density_perturbation_callback(num_sats::Int, args::SimulationC
     pass_dt = _gram_density_perturbation_pass_dt_s()
     pass_max = _gram_density_perturbation_pass_max_s()
     log_path = String(strip(get(ENV, "SPACEAGORA_GRAM_DENSITY_PERTURBATION_LOG", "")))
+    # "results_directory": write into this run's own results directory, so
+    # concurrent runs in one process (a campaign's threads route) each get
+    # their own log without a per-run ENV change.
+    log_path == "results_directory" && (log_path = joinpath(
+        args.simulation_settings.results_directory, "gram_density_perturbation_log.csv"))
     reseed = _gram_density_perturbation_pass_reseed()
     ei_m = Float64(args.environment_model.EI) * 1e3
 

@@ -87,6 +87,7 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "..", "hypr", "pso_helpers.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "pso_refinement.jl"))
     include(joinpath(@__DIR__, "..", "rrt", "rrt_connect.jl"))
+    include(joinpath(@__DIR__, "..", "hypr", "rrt_adapters.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "pso_path_planning.jl"))
     include(joinpath(@__DIR__, "rpo", "rpo_reference_trajectory.jl"))
     include(joinpath(@__DIR__, "rpo", "comparison_methods", "trajectory_optimizers.jl"))

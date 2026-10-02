@@ -157,17 +157,12 @@ function rpo_rrt_extend!(
     geometry,
     settings::RPORRTConnectSettings;
     safe_distance_m::Real,
+    edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m),
 )
     nearest_idx = rpo_rrt_nearest_index(tree, q_target)
     q_new, status = rpo_rrt_steer(tree.nodes[nearest_idx], q_target, settings.step_size_m)
     status == :trapped && return :trapped, nearest_idx
-    if !rpo_rrt_segment_is_safe(
-        tree.nodes[nearest_idx],
-        q_new,
-        geometry,
-        settings;
-        safe_distance_m=safe_distance_m,
-    )
+    if !edge_is_safe(tree.nodes[nearest_idx], q_new)
         return :trapped, nearest_idx
     end
     push!(tree.nodes, q_new)
@@ -183,6 +178,7 @@ function rpo_rrt_connect!(
     geometry,
     settings::RPORRTConnectSettings;
     safe_distance_m::Real,
+    edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m),
 )
     status = :advanced
     idx = 1
@@ -194,6 +190,7 @@ function rpo_rrt_connect!(
             geometry,
             settings;
             safe_distance_m=safe_distance_m,
+            edge_is_safe=edge_is_safe,
         )
         steps += 1
     end
@@ -216,7 +213,8 @@ function rpo_rrt_connect_join_paths(start_tree::RPORRTConnectTree, start_idx::In
 end
 
 """Randomly shortcut an RPO RRT path while preserving safety."""
-function rpo_rrt_shortcut_path(path, geometry, settings::RPORRTConnectSettings; safe_distance_m::Real, rng=Random.default_rng())
+function rpo_rrt_shortcut_path(path, geometry, settings::RPORRTConnectSettings; safe_distance_m::Real, rng=Random.default_rng(),
+    edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m))
     pts = Matrix{Float64}(path)
     size(pts, 2) <= 2 && return pts
     for _ in 1:max(0, settings.shortcut_iters)
@@ -224,13 +222,7 @@ function rpo_rrt_shortcut_path(path, geometry, settings::RPORRTConnectSettings; 
         n_pts <= 2 && break
         i = rand(rng, 1:(n_pts - 2))
         j = rand(rng, (i + 2):n_pts)
-        if rpo_rrt_segment_is_safe(
-            pts[:, i],
-            pts[:, j],
-            geometry,
-            settings;
-            safe_distance_m=safe_distance_m,
-        )
+        if edge_is_safe(pts[:, i], pts[:, j])
             keep = vcat(1:i, j:n_pts)
             candidate = pts[:, keep]
             rpo_path_length(candidate) <= rpo_path_length(pts) + 1.0e-9 && (pts = candidate)
@@ -246,6 +238,7 @@ function rpo_rrt_star_add_node!(
     geometry,
     settings::RPORRTStarSettings;
     safe_distance_m::Real,
+    edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m),
 )
     nearest_idx = rpo_rrt_nearest_index(tree, q_new)
     near_idxs = rpo_rrt_near_indices(tree, q_new, settings.neighbor_radius_m)
@@ -257,25 +250,13 @@ function rpo_rrt_star_add_node!(
         edge_cost = norm(q_new - tree.nodes[idx])
         candidate_cost = tree.costs[idx] + edge_cost
         if candidate_cost + 1.0e-9 < best_cost &&
-            rpo_rrt_segment_is_safe(
-                tree.nodes[idx],
-                q_new,
-                geometry,
-                settings;
-                safe_distance_m=safe_distance_m,
-            )
+            edge_is_safe(tree.nodes[idx], q_new)
             best_parent = idx
             best_cost = candidate_cost
         end
     end
 
-    if !rpo_rrt_segment_is_safe(
-        tree.nodes[best_parent],
-        q_new,
-        geometry,
-        settings;
-        safe_distance_m=safe_distance_m,
-    )
+    if !edge_is_safe(tree.nodes[best_parent], q_new)
         return 0
     end
 
@@ -289,13 +270,7 @@ function rpo_rrt_star_add_node!(
         idx == new_idx && continue
         candidate_cost = best_cost + norm(tree.nodes[idx] - q_new)
         if candidate_cost + 1.0e-9 < tree.costs[idx] &&
-            rpo_rrt_segment_is_safe(
-                q_new,
-                tree.nodes[idx],
-                geometry,
-                settings;
-                safe_distance_m=safe_distance_m,
-            )
+            edge_is_safe(q_new, tree.nodes[idx])
             tree.parents[idx] = new_idx
             tree.costs[idx] = candidate_cost
             rpo_rrt_refresh_subtree_costs!(tree, idx)
@@ -307,37 +282,46 @@ end
 """
 Plan an RPO path with bidirectional RRT-Connect.
 
-The connected tree path is shortcut at random (`settings.shortcut_iters`) and,
-with `post_refine` (the default), passed through the HyPR post-refinement.
+`bounds` supplies the search box. `evaluate_components(path)` returns a named
+result with `total`; `evaluate_cost(path)` returns the scalar score. The optional
+`refine_path(path)` returns `(path, cost, improved)`. No refinement runs when it
+is `nothing`. `edge_is_safe(a, b)` controls direct, extension, rewiring and
+shortcut checks; its default uses the shared RPO geometry and safety margin.
+A supplied edge predicate must be symmetric: the goal tree is joined in reverse.
+The legacy default uses direction-dependent adaptive samples and is not guaranteed
+to give the same answer in reverse. This pre-existing limitation is retained;
+`path_found` alone does not certify collision clearance in traversal order.
+Consumers needing that guarantee must supply a symmetric predicate and validate
+the returned path against their collision policy.
+Callbacks must use the same objective and constraints, preserve caller-owned
+inputs and avoid hidden random draws. The supplied `rng` owns search draws.
+Search failure retains the legacy direct-path diagnostic with `path_found=false`;
+that path must not be consumed as an accepted solution.
 """
 function rpo_rrt_connect_plan_path(
     start_rtn,
     goal_rtn,
-    geometry,
-    cfg::RPOPSOConfig;
+    geometry;
+    bounds,
+    evaluate_components,
+    evaluate_cost,
+    refine_path=nothing,
     safe_distance_m::Real=0.0,
     settings::RPORRTConnectSettings=RPORRTConnectSettings(),
     max_runtime_s::Real=Inf,
     rng=Random.default_rng(),
-    post_refine::Bool=true,
+    edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m),
 )
-    local_cfg = rpo_pso_config(cfg; curve_type=:polyline)
     start = SVector{3, Float64}(start_rtn)
     goal = SVector{3, Float64}(goal_rtn)
-    lo, hi = rpo_pso_bounds(start, goal, local_cfg)
+    lo, hi = bounds
     direct_path = hcat(collect(start), collect(goal))
     iterations_completed = 0
     start_ns = time_ns()
     max_runtime = Float64(max_runtime_s)
 
-    if rpo_rrt_segment_is_safe(
-        start,
-        goal,
-        geometry,
-        settings;
-        safe_distance_m=safe_distance_m,
-    )
-        components = rpo_normalized_path_cost_components(direct_path, geometry, local_cfg; safe_distance_m=safe_distance_m)
+    if edge_is_safe(start, goal)
+        components = evaluate_components(direct_path)
         return (
             path=direct_path,
             raw_path=direct_path,
@@ -345,7 +329,6 @@ function rpo_rrt_connect_plan_path(
             raw_cost=components.total,
             components=components,
             raw_components=components,
-            config=local_cfg,
             adaptive=(enabled=false,),
             refinement_improved=false,
             cost_history=[components.total],
@@ -379,6 +362,7 @@ function rpo_rrt_connect_plan_path(
             geometry,
             settings;
             safe_distance_m=safe_distance_m,
+            edge_is_safe=edge_is_safe,
         )
         iterations_completed = iter
         status == :trapped && continue
@@ -389,6 +373,7 @@ function rpo_rrt_connect_plan_path(
             geometry,
             settings;
             safe_distance_m=safe_distance_m,
+            edge_is_safe=edge_is_safe,
         )
         if connect_status == :reached
             start_idx = grow_from_start ? idx_a : idx_b
@@ -401,14 +386,14 @@ function rpo_rrt_connect_plan_path(
     raw_path = found_path === nothing ? direct_path : Matrix{Float64}(found_path)
     shortcut_path = found_path === nothing ?
         raw_path :
-        rpo_rrt_shortcut_path(raw_path, geometry, settings; safe_distance_m=safe_distance_m, rng=rng)
-    refined, refined_cost, improved = if post_refine
-        rpo_post_refine_path(shortcut_path, geometry, local_cfg; safe_distance_m=safe_distance_m)
+        rpo_rrt_shortcut_path(raw_path, geometry, settings; safe_distance_m=safe_distance_m, rng=rng, edge_is_safe=edge_is_safe)
+    refined, refined_cost, improved = if refine_path !== nothing
+        refine_path(shortcut_path)
     else
-        shortcut_path, rpo_path_cost(shortcut_path, geometry, local_cfg; safe_distance_m=safe_distance_m), false
+        shortcut_path, evaluate_cost(shortcut_path), false
     end
-    raw_components = rpo_normalized_path_cost_components(raw_path, geometry, local_cfg; safe_distance_m=safe_distance_m)
-    refined_components = rpo_normalized_path_cost_components(refined, geometry, local_cfg; safe_distance_m=safe_distance_m)
+    raw_components = evaluate_components(raw_path)
+    refined_components = evaluate_components(refined)
     return (
         path=refined,
         raw_path=raw_path,
@@ -416,7 +401,6 @@ function rpo_rrt_connect_plan_path(
         raw_cost=raw_components.total,
         components=refined_components,
         raw_components=raw_components,
-        config=local_cfg,
         adaptive=(enabled=false,),
         refinement_improved=improved,
         cost_history=[refined_components.total],
@@ -427,101 +411,36 @@ function rpo_rrt_connect_plan_path(
     )
 end
 
-"""Plan an RPO RRT-Connect path and refit it to Bezier control points."""
-function rpo_rrt_connect_bezier_plan_path(
-    start_rtn,
-    goal_rtn,
-    geometry,
-    cfg::RPOPSOConfig;
-    safe_distance_m::Real=0.0,
-    settings::RPORRTConnectSettings=RPORRTConnectSettings(),
-    max_runtime_s::Real=Inf,
-    rng=Random.default_rng(),
-)
-    base_plan = rpo_rrt_connect_plan_path(
-        start_rtn,
-        goal_rtn,
-        geometry,
-        cfg;
-        safe_distance_m=safe_distance_m,
-        settings=settings,
-        max_runtime_s=max_runtime_s,
-        rng=rng,
-    )
-    bezier_cfg = rpo_pso_config(cfg; curve_type=:bezier)
-    samples = rpo_sample_path(
-        base_plan.path,
-        bezier_cfg,
-        geometry;
-        safe_distance_m=safe_distance_m,
-        base_ds_m=bezier_cfg.sample_ds_m,
-        curve_type=:polyline,
-    )
-    base_controls = max(2, bezier_cfg.n_waypoints + 2)
-    max_controls = max(base_controls, min(size(samples, 2), max(base_controls + 6, size(base_plan.path, 2))))
-
-    best_path = rpo_fit_bezier_fixed_endpoints(samples, base_controls, bezier_cfg)
-    best_components = rpo_normalized_path_cost_components(best_path, geometry, bezier_cfg; safe_distance_m=safe_distance_m)
-    for n_control in (base_controls + 1):max_controls
-        candidate = rpo_fit_bezier_fixed_endpoints(samples, n_control, bezier_cfg)
-        comps = rpo_normalized_path_cost_components(candidate, geometry, bezier_cfg; safe_distance_m=safe_distance_m)
-        if comps.J_obs < best_components.J_obs - 1.0e-9 ||
-                (comps.J_obs <= best_components.J_obs + 1.0e-9 && comps.total < best_components.total)
-            best_path = candidate
-            best_components = comps
-        end
-        best_components.violation_count == 0 && break
-    end
-
-    refined, refined_cost, improved = rpo_post_refine_path(best_path, geometry, bezier_cfg; safe_distance_m=safe_distance_m)
-    refined_components = rpo_normalized_path_cost_components(refined, geometry, bezier_cfg; safe_distance_m=safe_distance_m)
-    return (
-        path=refined,
-        raw_path=base_plan.raw_path,
-        smoothed_path=best_path,
-        cost=refined_cost,
-        raw_cost=base_plan.raw_cost,
-        components=refined_components,
-        raw_components=base_plan.raw_components,
-        config=bezier_cfg,
-        adaptive=(enabled=false,),
-        refinement_improved=improved,
-        cost_history=[refined_components.total],
-        history=[base_plan.raw_path],
-        iterations=base_plan.iterations,
-        objective=refined_components.total,
-        path_found=base_plan.path_found,
-    )
-end
-
-"""Plan an RPO path with RRT* and optional shortcut smoothing."""
+"""
+Plan an RPO path with RRT* and optional shortcut smoothing.
+Uses the same explicit bounds, scoring, refinement and edge contracts as
+`rpo_rrt_connect_plan_path`. Search uses geometric edge length for rewiring;
+the supplied objective scores candidate/output paths and does not replace it.
+"""
 function rpo_rrt_star_plan_path(
     start_rtn,
     goal_rtn,
-    geometry,
-    cfg::RPOPSOConfig;
+    geometry;
+    bounds,
+    evaluate_components,
+    evaluate_cost,
+    refine_path=nothing,
     safe_distance_m::Real=0.0,
     settings::RPORRTStarSettings=RPORRTStarSettings(),
     max_runtime_s::Real=Inf,
     rng=Random.default_rng(),
+    edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m),
 )
-    local_cfg = rpo_pso_config(cfg; curve_type=:polyline)
     start = SVector{3, Float64}(start_rtn)
     goal = SVector{3, Float64}(goal_rtn)
-    lo, hi = rpo_pso_bounds(start, goal, local_cfg)
+    lo, hi = bounds
     direct_path = hcat(collect(start), collect(goal))
     iterations_completed = 0
     start_ns = time_ns()
     max_runtime = Float64(max_runtime_s)
 
-    if rpo_rrt_segment_is_safe(
-        start,
-        goal,
-        geometry,
-        settings;
-        safe_distance_m=safe_distance_m,
-    )
-        components = rpo_normalized_path_cost_components(direct_path, geometry, local_cfg; safe_distance_m=safe_distance_m)
+    if edge_is_safe(start, goal)
+        components = evaluate_components(direct_path)
         return (
             path=direct_path,
             raw_path=direct_path,
@@ -529,7 +448,6 @@ function rpo_rrt_star_plan_path(
             raw_cost=components.total,
             components=components,
             raw_components=components,
-            config=local_cfg,
             adaptive=(enabled=false,),
             refinement_improved=false,
             cost_history=[components.total],
@@ -565,24 +483,19 @@ function rpo_rrt_star_plan_path(
             geometry,
             settings;
             safe_distance_m=safe_distance_m,
+            edge_is_safe=edge_is_safe,
         )
         new_idx == 0 && continue
 
         goal_edge = norm(goal - tree.nodes[new_idx])
         if goal_edge <= settings.step_size_m &&
             tree.costs[new_idx] + goal_edge + 1.0e-9 < best_goal_cost &&
-            rpo_rrt_segment_is_safe(
-                tree.nodes[new_idx],
-                goal,
-                geometry,
-                settings;
-                safe_distance_m=safe_distance_m,
-            )
+            edge_is_safe(tree.nodes[new_idx], goal)
             best_goal_idx = new_idx
             best_goal_cost = tree.costs[new_idx] + goal_edge
             raw_candidate = hcat(rpo_rrt_tree_path(tree, best_goal_idx), collect(goal))
             push!(history, raw_candidate)
-            comps = rpo_normalized_path_cost_components(raw_candidate, geometry, local_cfg; safe_distance_m=safe_distance_m)
+            comps = evaluate_components(raw_candidate)
             push!(cost_history, comps.total)
         end
     end
@@ -603,10 +516,14 @@ function rpo_rrt_star_plan_path(
     )
     shortcut_path = best_goal_idx == 0 ?
         raw_path :
-        rpo_rrt_shortcut_path(raw_path, geometry, shortcut_settings; safe_distance_m=safe_distance_m, rng=rng)
-    refined, refined_cost, improved = rpo_post_refine_path(shortcut_path, geometry, local_cfg; safe_distance_m=safe_distance_m)
-    raw_components = rpo_normalized_path_cost_components(raw_path, geometry, local_cfg; safe_distance_m=safe_distance_m)
-    refined_components = rpo_normalized_path_cost_components(refined, geometry, local_cfg; safe_distance_m=safe_distance_m)
+        rpo_rrt_shortcut_path(raw_path, geometry, shortcut_settings; safe_distance_m=safe_distance_m, rng=rng, edge_is_safe=edge_is_safe)
+    refined, refined_cost, improved = if refine_path !== nothing
+        refine_path(shortcut_path)
+    else
+        shortcut_path, evaluate_cost(shortcut_path), false
+    end
+    raw_components = evaluate_components(raw_path)
+    refined_components = evaluate_components(refined)
     isempty(cost_history) && push!(cost_history, refined_components.total)
     isempty(history) && push!(history, raw_path)
     return (
@@ -616,7 +533,6 @@ function rpo_rrt_star_plan_path(
         raw_cost=raw_components.total,
         components=refined_components,
         raw_components=raw_components,
-        config=local_cfg,
         adaptive=(enabled=false,),
         refinement_improved=improved,
         cost_history=cost_history,

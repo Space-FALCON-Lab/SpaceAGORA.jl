@@ -250,3 +250,41 @@ test. Other metrics retain their geometry/profile dependencies. Comparison
 planners, RRT policy and configured retiming still need further separation before
 a HYPR-free installation is demonstrated. This internal change adds no root
 public API and makes no new physical fuel-model or numeric-type support claim.
+
+
+### RRT search and HYPR policy ownership
+
+RRT-Connect and RRT* have three-argument internal entry points in
+`GuidanceHooks` that accept explicit `bounds`, `evaluate_components` and
+`evaluate_cost` keywords. `evaluate_components(path)` must return a named result
+with `total`. `refine_path` is optional and returns `(path, cost, improved)`;
+`nothing` skips refinement. `edge_is_safe(a, b)` supplies the collision contract
+for direct paths, extensions, connections, rewiring and shortcuts. It must be
+symmetric because RRT-Connect reverses the goal-tree path when joining. The
+legacy default uses the existing shared RPO geometry, clearance and sampling
+settings. Adaptive samples depend on traversal direction, so the default is not
+guaranteed to give the same answer in reverse. This pre-existing limitation is
+preserved here; `path_found` alone does not certify collision clearance in
+traversal order. Consumers needing that guarantee must supply a symmetric
+predicate and validate the returned path against their collision policy. A
+change to the default sampling or goal-tree validation requires separate numerical
+review.
+
+The search still uses geometric edge length for tree costs and RRT* rewiring.
+The objective callback scores output paths and RRT* history. Callbacks must
+agree on constraints and objective, preserve caller-owned input, and avoid
+hidden random draws. Explicit `rng` controls search randomness. Failed search
+retains the legacy direct-path diagnostic with `path_found=false`; callers must
+check that flag before accepting a path. Direct safe paths bypass refinement,
+as before. A runtime budget is best-effort wall-clock termination, so seeded
+numerical comparisons use an infinite budget and fixed iteration counts.
+
+`src/gnc/hypr/rrt_adapters.jl` retains the existing four-argument configuration
+methods and result fields, including `config`. HYPR owns its search-box policy,
+objective, optional refinement, Bezier fitting, and the decision to request an
+RRT warm start. Existing public access and comparison callers remain intact.
+The three-argument core omits `config`. Standalone tests load shared geometry,
+sampling and tree operations plus RRT, without loading HYPR. The historical
+`hypr_` names on shared helpers remain for compatibility with robot-arm users.
+This separation does not establish optional HYPR package installation; that
+also requires the configured retiming and package-loading work.

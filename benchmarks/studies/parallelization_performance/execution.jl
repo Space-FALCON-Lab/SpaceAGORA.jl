@@ -656,6 +656,16 @@ function ppc_policy_columns(snap)
 end
 
 function ppc_run_worker_performance(cfg::PPCConfig)
+    # The topology snapshot is computed during precompilation and serialized
+    # into the pkgimage, so SPACEAGORA_CORE_BUDGET set on this process is never
+    # read. Apply it to the cached snapshot, changing only the core budget (a
+    # full refresh would also re-read memory under this run's cgroup).
+    budget = strip(get(ENV, "SPACEAGORA_CORE_BUDGET", ""))
+    if !isempty(budget)
+        PP = SpaceAGORA.ParallelProfiles
+        PP._TOPOLOGY_CACHE[] = merge(PP.machine_topology(), (usable_cores=parse(Int, budget), source=:override))
+        println("[equal-core-budget] usable_core_budget=$(PP.usable_core_budget()) class=$(PP._machine_parallel_class()) topology=$(PP.machine_topology())")
+    end
     catalog = ppc_case_catalog()
     case = catalog[cfg.worker_case]
     mode = ppc_mode_specs()[cfg.worker_mode]
@@ -941,7 +951,23 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
         "--outfile=$(outfile)",
         "--parity=$(parity ? 1 : 0)"
     ]
-    return Cmd(_ppc_apply_cpu_pinning(argv, cfg.cpu_pinning, threads))
+    cmd = Cmd(_ppc_apply_cpu_pinning(argv, cfg.cpu_pinning, threads))
+    # Equal-core-budget arm (SPACEAGORA_PPC_EQUAL_CORE_BUDGET=1). On a resource
+    # rung (workers == threads == b, i.e. P3/P4) the predictive planner runs b
+    # pool workers plus up to b-1 coordinator-local slots (mixed_local_slots:
+    # L = min(T-1, usable_core_budget() - W)), so it can occupy 2b-1 cores where
+    # every static route occupies b. Capping usable_core_budget() at b bounds
+    # W + L <= b. usable_core_budget() also sets _machine_parallel_class, which
+    # moves the inner-hint defaults and route candidacy; the class this
+    # (uncapped) controller resolves is pinned so the core cap is the only
+    # difference. Every other mode is left untouched.
+    if mode == "predictive" && cfg.process_workers == threads &&
+       get(ENV, "SPACEAGORA_PPC_EQUAL_CORE_BUDGET", "0") == "1"
+        cmd = addenv(cmd,
+            "SPACEAGORA_CORE_BUDGET" => string(threads),
+            "SPACEAGORA_PERF_HARDWARE_CLASS" => string(SpaceAGORA.ParallelProfiles._machine_parallel_class()))
+    end
+    return cmd
 end
 
 # Resume support: a worker's outfile is considered already done only if it

@@ -57,3 +57,25 @@ using Test
         end
     end
 end
+
+@testset "Shared metric boundary rejects an algorithm configuration dependency" begin
+    repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
+    path = joinpath(repo, "src", "gnc", "shared", "rpo", "path_metrics.jl")
+    source = read(path, String)
+    function load_metric_source(text)
+        isolated = Module(gensym(:MetricBoundary))
+        Core.eval(isolated, :(using LinearAlgebra, StaticArrays))
+        Base.include_string(isolated, text, path)
+        return isolated
+    end
+    valid = load_metric_source(source)
+    @test !isdefined(valid, :RPOPSOConfig)
+    @test isdefined(valid, :rpo_path_cost_normalization_refs)
+    @test isdefined(valid, :rpo_fuel_proxy_from_samples)
+    # The forbidden annotation exists only in this isolated fixture, never in src.
+    forbidden = source * "\nmetric_boundary_probe(points, cfg::RPOPSOConfig) = nothing\n"
+    rejected = try load_metric_source(forbidden); nothing catch error; error end
+    @test rejected isa LoadError && rejected.error isa UndefVarError
+    @test rejected isa LoadError && rejected.error isa UndefVarError && rejected.error.var === :RPOPSOConfig
+    @test !isdefined(load_metric_source(source), :RPOPSOConfig)
+end

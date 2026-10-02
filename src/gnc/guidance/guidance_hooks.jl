@@ -81,6 +81,7 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "..", "shared", "rpo", "path_sampling.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "sampling_adapters.jl"))
     include(joinpath(@__DIR__, "..", "shared", "rpo", "path_metrics.jl"))
+    include(joinpath(@__DIR__, "..", "hypr", "metric_adapters.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "path_costs.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "pso_adaptive_policy.jl"))
     include(joinpath(@__DIR__, "..", "hypr", "pso_helpers.jl"))

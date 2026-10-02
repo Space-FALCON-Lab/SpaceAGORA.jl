@@ -51,7 +51,10 @@ const ALL_SCENARIOS = [
 
 function _resolver(target::String)
     if target == "gmat"
-        return _scenario_gmat_path
+        dir = get(ENV, "XVAL_GMAT_DIR", "")
+        isempty(dir) && return _scenario_gmat_path
+        isdir(dir) || error("XVAL_GMAT_DIR=$dir is not a directory")
+        return name -> joinpath(dir, basename(_scenario_gmat_path(name)))
     elseif target == "stk"
         return _scenario_stk_path
     elseif target == "basilisk"
@@ -69,6 +72,7 @@ end
 # Optional, for any variant label (the label only names the output directory):
 #   XVAL_BASE=committed|as_basilisk|earth_egm96|moon_file_c20  override set to start from
 #     (defaults to the variant label when it is one of these, else committed)
+#   XVAL_GMAT_DIR=<dir>         gmat target reads its reference CSVs from <dir> (same file names)
 #   XVAL_EARTH_FIELD_FILE=<csv>  Earth J2/L=50 use this harmonics file, unmodified
 #   XVAL_MOON_FIELD_FILE=<csv>   Moon J2/L=50 use this harmonics file, unmodified
 #                                (its own header GM; no GM override at J2/L=50)

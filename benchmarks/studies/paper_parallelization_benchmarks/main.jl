@@ -291,6 +291,10 @@ function _ppb_run_phase(
         # is. Nothing else in the harness tests hybrid splits: B4 and B8 both pin
         # thread_mode=:single and vary workers alone.
         grid = _ppb_budget_grid(phase, ppb)
+        # SPACEAGORA_PPB_BUDGET_WORKERS=2,4,8 keeps only the rungs with those
+        # worker counts (a partial rerun of a fixed grid).
+        only = strip(get(ENV, "SPACEAGORA_PPB_BUDGET_WORKERS", ""))
+        isempty(only) || (grid = filter(p -> p[1] in parse.(Int, split(only, ",")), grid))
         runs = length(grid)
         for (w, t) in grid
             sub_dir = joinpath(phase_dir, "split_w$(lpad(w, 2, '0'))_t$(lpad(t, 2, '0'))")

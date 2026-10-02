@@ -1136,7 +1136,14 @@ function _matrix_scenario_overrides(scenario_name::String, reference_target::Sym
     # regressed those cases instead (e.g. Venus J2 STK 5.9e-6->0.024 km, Mars
     # J2 STK 2.2e-4->0.093 km), so the STK override stays scoped to J0.
     if reference_target in (:basilisk, :gmat) || gravity_tag == "j0"
-        overrides["gravity_harmonics_gm_override_m3s2"] = _MATRIX_GM_OVERRIDE_M3S2[(planet, reference_target)]
+        # STK's point-mass runs with third bodies use the potential file's header
+        # GM, the value its J2/J50 runs use and the :gmat entries above hold;
+        # only its point-mass runs without third bodies use the distinct :stk
+        # value. A full-arc check on 2026-10-02 found the single :stk value left
+        # Mars, Venus and Moon j0_tbtrue at 219, 57 and 277 m, and the file GM
+        # brings them to under 13 mm.
+        gm_key = (reference_target == :stk && gravity_tag == "j0" && endswith(scenario_name, "tbtrue")) ? :gmat : reference_target
+        overrides["gravity_harmonics_gm_override_m3s2"] = _MATRIX_GM_OVERRIDE_M3S2[(planet, gm_key)]
     end
 
     if scenario_name == "earth_j0_tbtrue"

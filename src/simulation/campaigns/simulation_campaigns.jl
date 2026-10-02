@@ -4,7 +4,7 @@ using ..ParallelProfiles
 using ..ParallelProfiles: OuterRouteFeatures, OuterRouteTuning, OuterRouteState
 using ..ParallelProfiles: select_outer_route!, record_outer_route_feedback!
 using ..ParallelProfiles: save_outer_route_state, load_outer_route_state!
-using ..ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!
+using ..ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_workers!, PROCESS_WARMUP
 import Distributed
 using Distributed: remotecall_fetch, CachingPool
 

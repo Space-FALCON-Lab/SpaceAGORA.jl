@@ -11,6 +11,9 @@ using Reexport
 isdefined(parentmodule(@__MODULE__), :RuntimeServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "simulation", "runtime_services.jl"))
 
+isdefined(parentmodule(@__MODULE__), :SimulationLifecycle) ||
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "gnc", "interfaces", "simulation_lifecycle.jl"))
+
 # --- Utils ---
 include(joinpath(@__DIR__, "..", "core", "numerics", "quaternion_utils.jl"))
 using .QuaternionMath

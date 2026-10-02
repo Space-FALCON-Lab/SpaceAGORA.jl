@@ -48,7 +48,7 @@ def main(outdir, paper):
                 "gravity": grav,
                 "third_body": tb,
                 "reference": r["target"].upper(),
-                "variant": r["variant"],
+                "variant": run,  # run directory: <target>_<variant>
                 "rms_m": repr(float(r["rms_m"])),
                 "max_m": repr(float(r["max_m"])),
                 "n_points": int(r["n_points"]),

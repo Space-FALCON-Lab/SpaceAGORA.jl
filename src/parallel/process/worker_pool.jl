@@ -335,7 +335,7 @@ warm-up, leaving each worker's first-call compilation inside its first sample.
 
     using Base.ScopedValues: with
     with(SpaceAGORA.PROCESS_WARMUP => () -> short_run(seed)) do
-        run_adaptive_campaign(f; seeds, ...)
+        run_monte_carlo(f; seeds, threads=:auto)
     end
 """
 const PROCESS_WARMUP = Base.ScopedValues.ScopedValue{Any}(nothing)

@@ -260,7 +260,7 @@ The archive's support map lists the cells.
 
 **Other limits.**
 - **1.0.0 gap.** In 1.0.0, the 75 to 80 km interval lies between this preset and the upper one, and neither covers it.
-- **1.1.0 overlap.** 1.1.0 reaches 81 km areoid height, above the upper preset's 80 km ellipsoidal floor everywhere, so both presets are defined between that floor and 81 km. A model that hands over between them is not yet provided.
+- **1.1.0 overlap.** 1.1.0 reaches 81 km areoid height, above the upper preset's 80 km ellipsoidal floor everywhere, so both presets are defined between that floor and 81 km. `CombinedAtmosphereModel` hands over between them; see [Height-based composition of two frozen atmospheres](#Height-based-composition-of-two-frozen-atmospheres).
 - The payload's terrain component holds Mars-GRAM's MOLA terrain values at its lattice nodes. Credit NASA MOLA as the archive README states.
 
 `GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
@@ -323,6 +323,44 @@ threaded evaluation; keep the arrays and metadata unchanged during a run.
 Ordinary `deepcopy` produces independent arrays, including when configuration
 isolation copies an entire run. Managed process-worker startup has separate
 native warm-up behavior and is outside this native-free adapter's scope.
+
+### Height-based composition of two frozen atmospheres
+
+`CombinedAtmosphereModel` composes two frozen, native-free atmosphere snapshots by height above the reference
+ellipsoid: below the handover the lower model answers, and at or above it the upper model does. With the published Mars
+presets it serves a descent from the upper atmosphere into the lower atmosphere:
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+lower = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.1.0")
+upper = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0")
+density_model = CombinedAtmosphereModel(lower, upper; handover_height_m=80e3)
+```
+
+- **Handover.** Hand over at 80 km above the ellipsoid, the upper preset's floor. Near-surface version 1.1.0 reaches
+  81 km areoid height, above that floor everywhere. Version 1.0.0 stops at 75 km and leaves a gap below the floor.
+- **Coverage is the components' coverage.** There is no blending, extrapolation or fallback between the two. A query
+  the selected component refuses fails with that component's `DomainError`. Below the handover, coverage stops 5 m
+  above supported terrain and excludes latitudes beyond 85 degrees, volcano flanks and positions where a component is
+  unavailable, even though the upper preset covers those columns above 80 km.
+- **Steps at the handover.** Each component returns its own wind. The near-surface preset stores none, so the wind
+  is zero below the handover and the upper preset's stored wind at and above it: the wind changes abruptly there.
+  Density and temperature can also step by the difference between the presets.
+- **Frozen state.** Both presets are frozen at the same instant. The composition adds no time evolution and has no
+  validated accuracy claim of its own; each preset's documented validation applies on its side of the handover.
+- **Compatibility checks.** The constructor rejects components whose recorded planet, frozen instant or reference
+  ellipsoid differ, and a grid component whose height range does not contain the handover. It cannot check that a
+  near-surface lower component reaches the handover, because that component's top is an areoid height. That, and
+  choosing components whose validation suits the use, are the caller's responsibility.
+- **Propagation.** The engine treats the composition like its components. To propagate below 50 km, give the
+  spacecraft a touchdown specification (see
+  [Terrain contact for a landing controller](stop_conditions.md#Terrain-contact-for-a-landing-controller)); otherwise
+  the engine's default 50 km impact stop ends the descent there. Leave margin between the touchdown height and the lower
+  component's minimum clearance (5 m for the near-surface preset): the solver can evaluate a state beyond the touchdown
+  surface before it locates the crossing, and a state below that clearance fails with the component's `DomainError`.
+- **Provenance.** `atmosphere_provenance(density_model)` records the handover rule and both presets' provenance.
+- **Components.** Only `GRAMNearSurfaceAtmosphereModel` and `GRAMGridAtmosphereModel` can be composed.
 
 ---
 

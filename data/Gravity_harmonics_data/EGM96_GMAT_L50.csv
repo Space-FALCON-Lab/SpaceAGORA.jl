@@ -4,12 +4,12 @@
 # gm_m3s2: 3.98600441500000e14
 # normalization: fully_normalized
 # citation: Lemoine, F.G., et al. (1998), "The Development of the Joint NASA GSFC and the National Imagery and Mapping Agency (NIMA) Geopotential Model EGM96," NASA/TP-1998-206861.
-# origin: GMAT R2025a data/gravity/earth/EGM96.cof (sha256 bb13b8a8993f94aae1fe631393ee55e375b1f22947354a3aac3a71bb9dab3ae4), POTFIELD header "POTFIELD360360  1 3.98600441500000E+14 6.37813630000000E+06"; RECOEF rows for degree <= 50 transcribed verbatim. This is the potential file the GMAT_Examples parity references were propagated with. It differs from egm96.csv only in C(2,0) (-4.84165143790815E-04 here vs -4.84165371736E-04 there, a tide-system difference).
+# origin: data/gravity/earth/EGM96.cof from the GMAT R2025a Linux distribution (gmat-ubuntu-x64-R2025a.tar.gz; file sha256 3e8806223250224d3c1333a010eb5c2cc5a212a56ccee4024db81b9d889db5ea), POTFIELD header "POTFIELD360360  1 3.98600441500000E+14 6.37813630000000E+06"; RECOEF rows for degree <= 50 transcribed verbatim. This is the file the GMAT_Examples Earth references were propagated with (a rerun with it reproduces Sim_Earth_J2_TBFalse.csv byte for byte). The local install's copy was edited on 2026-05-11 (C(2,0) only) and must not be used. Coefficients equal egm96.csv; this file adds the GM and radius header.
 degree,order,C,S
 0,0,0.0,0.0
 1,0,0.0,0.0
 1,1,0.0,0.0
-2,0,-4.84165143790815E-04,0.0
+2,0,-4.84165371736000E-04,0.0
 2,1,-1.86987635955000E-10,1.19528012031000E-09
 2,2,2.43914352398000E-06,-1.40016683654000E-06
 3,0,9.57254173792000E-07,0.0

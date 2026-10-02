@@ -260,8 +260,15 @@ RRT-Connect and RRT* have three-argument internal entry points in
 with `total`. `refine_path` is optional and returns `(path, cost, improved)`;
 `nothing` skips refinement. `edge_is_safe(a, b)` supplies the collision contract
 for direct paths, extensions, connections, rewiring and shortcuts. It must be
-symmetric because RRT-Connect reverses the goal-tree path when joining. Its default
-uses the existing shared RPO geometry, clearance and sampling settings.
+symmetric because RRT-Connect reverses the goal-tree path when joining. The
+legacy default uses the existing shared RPO geometry, clearance and sampling
+settings. Adaptive samples depend on traversal direction, so the default is not
+guaranteed to give the same answer in reverse. This pre-existing limitation is
+preserved here; `path_found` alone does not certify collision clearance in
+traversal order. Consumers needing that guarantee must supply a symmetric
+predicate and validate the returned path against their collision policy. A
+change to the default sampling or goal-tree validation requires separate numerical
+review.
 
 The search still uses geometric edge length for tree costs and RRT* rewiring.
 The objective callback scores output paths and RRT* history. Callbacks must

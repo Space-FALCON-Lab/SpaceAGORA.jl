@@ -91,4 +91,6 @@ end
         e
     end
     @test rejected isa LoadError && rejected.error isa UndefVarError
+    @test rejected isa LoadError && rejected.error isa UndefVarError &&
+        rejected.error.var === :RPOPSOConfig
 end

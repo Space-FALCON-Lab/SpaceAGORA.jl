@@ -287,7 +287,12 @@ result with `total`; `evaluate_cost(path)` returns the scalar score. The optiona
 `refine_path(path)` returns `(path, cost, improved)`. No refinement runs when it
 is `nothing`. `edge_is_safe(a, b)` controls direct, extension, rewiring and
 shortcut checks; its default uses the shared RPO geometry and safety margin.
-The edge predicate must be symmetric: the goal tree is joined in reverse.
+A supplied edge predicate must be symmetric: the goal tree is joined in reverse.
+The legacy default uses direction-dependent adaptive samples and is not guaranteed
+to give the same answer in reverse. This pre-existing limitation is retained;
+`path_found` alone does not certify collision clearance in traversal order.
+Consumers needing that guarantee must supply a symmetric predicate and validate
+the returned path against their collision policy.
 Callbacks must use the same objective and constraints, preserve caller-owned
 inputs and avoid hidden random draws. The supplied `rng` owns search draws.
 Search failure retains the legacy direct-path diagnostic with `path_found=false`;

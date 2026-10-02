@@ -101,6 +101,56 @@ end
     @test last(g.runtime.records).reason===:replan
 end
 
+@testset "Periodic cadence and controller-preview lifetime" begin
+    dt = 0.1
+    for stride in (1, 2, 3, 5)
+        interval = stride * dt
+        sol = run_simulation(holdargs(replan_interval_s=interval, mission_time_s=2.0);
+            return_solution=true)
+        records = only(rpo_run_report(sol).planners).records
+        installed = filter(x -> x.event === :installed && x.reason === :replan, records)
+        expected = [k * dt for k in stride:stride:19]
+        actual = [x.time_s for x in installed]
+        @test length(actual) == length(expected)
+        @test length(actual) == length(expected) &&
+            all(isapprox(a, b; atol=1e-10, rtol=0) for (a, b) in zip(actual, expected))
+        @test [x.request_id for x in installed] == collect(2:length(expected)+1)
+        println("PERIODIC_CADENCE interval=", interval, " times=", actual)
+    end
+    # Control uses the old plan before guidance replaces it at the same tick.
+    # Each lifetime covers that interval plus the full 12-step preview.
+    for (interval, lifetime) in ((0.1, 1.3), (0.2, 1.4))
+        sol = nothing
+        err = outcome(() -> (sol = run_simulation(holdargs(replan_interval_s=interval,
+            plan_validity_s=lifetime, mission_time_s=2.0); return_solution=true)))
+        @test isnothing(err)
+        if isnothing(err)
+            records = only(rpo_run_report(sol).planners).records
+            @test last(sol.t) == 2.0
+            @test count(x -> x.event === :control, records) == 19
+            @test count(x -> x.event === :failure, records) == 0
+        end
+        println("PERIODIC_LIFETIME interval=", interval, " lifetime=", lifetime,
+            " outcome=", isnothing(err) ? :completed : err.reason)
+    end
+    # The existing absolute time tolerance admits a near-boundary tick only.
+    owned, u, p, g = prepare(holdargs(replan_interval_s=0.2))
+    atol = g.validation.time_atol_s
+    S.GuidanceHooks.calcGuidanceEffect!(g, u, p, 0.2 - 2atol, 1)
+    @test g.runtime.request_id == 1
+    S.GuidanceHooks.calcGuidanceEffect!(g, u, p, 0.2 - atol/2, 1)
+    @test g.runtime.request_id == 2
+    rng = copy(g.runtime.rng)
+    S.GuidanceHooks.calcGuidanceEffect!(g, u, p, 0.2 - atol/2, 1)
+    @test g.runtime.request_id == 2
+    @test rand(copy(rng)) == rand(copy(g.runtime.rng))
+    owned, u, p, g = prepare(holdargs())
+    for tick in 1:19
+        S.GuidanceHooks.calcGuidanceEffect!(g, u, p, tick * dt, 1)
+    end
+    @test g.runtime.request_id == 1 # Infinite interval keeps background planning disabled.
+end
+
 @testset "Independent runs and ID-based streams" begin
     args=holdargs(mission_time_s=.2)
     s1=run_simulation(args;return_solution=true);s2=run_simulation(args;return_solution=true)

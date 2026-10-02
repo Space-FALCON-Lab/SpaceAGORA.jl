@@ -211,7 +211,9 @@ function S.GuidanceHooks.calcGuidanceEffect!(g::PlannerGuidance, u, p, t::Float6
         x = S.FrameTransforms.inertial_to_rtn_relative_state(a.pos,a.vel,b.pos,b.vel)
         preview = S.ControlHooks.rpo_ref_preview(g.plan_buffer.plan,
             max(0.0,t-g.plan_buffer.updated_at_s),g.reference_dt_s,1)
-        if t-r.last_planning_time >= g.replan_interval_s ||
+        # Guidance tick subtraction can round just below the requested interval.
+        # Use the same time tolerance as scheduled events, without widening expiry.
+        if t-r.last_planning_time >= g.replan_interval_s - g.validation.time_atol_s ||
                 norm(x[1:3]-preview[1:3,1]) > g.tracking_error_limit_m
             request_plan!(g,u,p,t,:replan)
         end

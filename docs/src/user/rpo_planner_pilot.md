@@ -34,7 +34,10 @@ acceleration. The 5 kg chaser carries 0.2 kg propellant and six 0.05 N thrusters
 with 60 s specific impulse. Control runs every 0.1 s with a 12-step preview,
 `Q=diag(20,20,20,2,2,2)`, `R=0.1I` and `Qf=10Q`. The default explicit Tsit5 solver
 uses orbit/quaternion absolute and relative tolerances of 1e-8 and a 0.05 s cap.
-These are pilot settings, not a certification of tracking or actuator feasibility.
+Only this default `:tsit5` route is validated for the planner lifecycle. Other
+solver modes may be accepted by the configuration type, but are outside this
+pilot; some modes omit guidance and control callbacks. These are pilot settings,
+not a certification of tracking or actuator feasibility.
 
 Both adapters retain their reviewed 1% planning reserve and independent reference
 validation. The direct baseline uses a cubic rest-to-rest law. Neither adapter
@@ -66,7 +69,11 @@ A token names one event. Duplicate delivery is ignored; different tokens at the
 same tick are distinct requests. Optional positive `replan_interval_s` or
 `tracking_error_limit_m` enable background requests. These policies operate on the
 static scene; moving obstacles and replanning around a newly changed geometry are
-outside this pilot.
+outside this pilot. Periodic and scheduled requests use the same configured
+absolute time tolerance at tick boundaries. There is no guidance tick at the
+mission end. Events without an eligible guidance tick before the end remain
+undelivered; inspect the recorded requests rather than assuming every configured
+event ran.
 
 Every failed initial, forced, background or retiming request stops this route with
 `RPOPlanningError`, which carries copied diagnostics, spacecraft/request IDs, and
@@ -79,6 +86,15 @@ through the entire preview. Repeating the last reference column cannot bypass
 expiry. `plan_validity_s` is a request lifetime, not the duration of the maneuver.
 A short plan may repeat its final sample while still valid. A long plan must fit
 inside its lifetime. Reference validity does not guarantee a stationary vehicle.
+
+The constructor accepts a lifetime as short as `12*control_dt_s`, but the first
+control update is at `control_dt_s` and needs at least `13*control_dt_s` of initial
+validity. For an interval aligned with guidance ticks, periodic replanning needs
+at least `replan_interval_s + 12*control_dt_s`, because control reads the old plan
+before the replacement. Other intervals must cover the next eligible guidance
+tick plus the preview. Without replanning, validity must reach the last control
+update plus the preview. These bounds describe consumption timing; a planner may
+require a longer lifetime to fit its maneuver.
 
 ## Ownership, reproducibility and inspection
 
@@ -114,6 +130,13 @@ Subtype `AbstractRPOPlanner`. Implement `planner_capabilities`, optionally
 times are uniform and relative to `origin_time_s`; vectors are SI target RTN,
 including the rotating-frame transport term in velocities. The contract guide
 lists validation rules. Add `retime_rpo!` only when you also declare retiming.
+
+A custom planner must support `deepcopy`, including when copied per spacecraft,
+per run and into failure reports. `initialize_planner` must return fresh state
+for each call. Use only the supplied `rng` for randomness; keep mutable runtime
+state in that returned state, with no module-level mutable state or background
+tasks. The lifecycle isolates cooperating implementations; it is not a sandbox
+for arbitrary planner code.
 
 The separate-project smoke defines a tiny test planner using only these public
 methods, including an explicit failed result. Its force example uses the existing

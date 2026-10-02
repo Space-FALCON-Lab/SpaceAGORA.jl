@@ -22,7 +22,12 @@ Defaults: station keepout 0.25 m plus largest chaser half-extent 0.15 m;
 clearance 0.2 m; speed 0.5 m/s; reference acceleration 0.5*0.05/5.2 m/s².
 The controller uses a 12-step preview. `extra_effectors` extends the existing
 force interface. Checkpoints and `isolate_state=false` are refused at startup.
-`simulation_settings`/`solver_config` may use their existing public types.
+`simulation_settings`/`solver_config` may use their existing public types. Only
+the default `:tsit5` route is validated for this lifecycle; other solver modes are
+outside the pilot. The first control update needs 13 steps of validity, although
+the constructor accepts 12; periodic replanning also needs to cover the interval
+to the next guidance tick plus the 12-step preview. Events with no eligible tick
+before the mission end remain undelivered; inspect the run report.
 This is a reference/tracking demonstration, not a certified rendezvous model.
 """
 function make_rpo_configuration(; planner::P.AbstractRPOPlanner, seed::Integer=741,

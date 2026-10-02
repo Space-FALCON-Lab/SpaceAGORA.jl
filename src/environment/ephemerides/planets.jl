@@ -314,7 +314,7 @@ module Planets
         raw = strip(get(ENV, "SPACEAGORA_SPICE_PCK_OVERRIDES", ""))
         isempty(raw) && return nothing
         for tok in split(raw, ',')
-            relpath = strip(tok)
+            relpath = String(strip(tok))
             isempty(relpath) && continue
             path = isabspath(relpath) ? relpath : joinpath(spice_path, relpath)
             isfile(path) || throw(ArgumentError("SPACEAGORA_SPICE_PCK_OVERRIDES: kernel not found: $path"))

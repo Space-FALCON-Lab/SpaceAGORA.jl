@@ -464,6 +464,7 @@ function main_paper_benchmarks()
     else
         joinpath(ppb.outdir, stamp)
     end
+    ppb.dry_run || ppc_validate_resume_budget(root, ppc_budget_condition(; cpu_pinning=ppb.cpu_pinning))
     ppb.dry_run || mkpath(root)
 
     resuming && println("[paper-benchmarks] resuming        = $(root)")

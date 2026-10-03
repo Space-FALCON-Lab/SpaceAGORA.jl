@@ -310,6 +310,10 @@ function _ppb_run_phase(
         # is. Nothing else in the harness tests hybrid splits: B4 and B8 both pin
         # thread_mode=:single and vary workers alone.
         grid = _ppb_budget_grid(phase, ppb)
+        # SPACEAGORA_PPB_BUDGET_WORKERS=2,4,8 keeps only the rungs with those
+        # worker counts (a partial rerun of a fixed grid).
+        only = strip(get(ENV, "SPACEAGORA_PPB_BUDGET_WORKERS", ""))
+        isempty(only) || (grid = filter(p -> p[1] in parse.(Int, split(only, ",")), grid))
         # Under --preview a host-sized split grid is kept whole, and so are its
         # worker counts; see _ppb_preview_budget_grid.
         worker_cap = !_ppb_preview_keeps_grid(phase)
@@ -460,6 +464,7 @@ function main_paper_benchmarks()
     else
         joinpath(ppb.outdir, stamp)
     end
+    ppb.dry_run || ppc_validate_resume_budget(root, ppc_budget_condition(; cpu_pinning=ppb.cpu_pinning))
     ppb.dry_run || mkpath(root)
 
     resuming && println("[paper-benchmarks] resuming        = $(root)")

@@ -757,6 +757,10 @@ function ppc_run_worker_performance(cfg::PPCConfig)
     if !isempty(batch.env_extra)
         env_string *= ";" * join(("$(k)=$(v)" for (k, v) in batch.env_extra), ";")
     end
+    # Keep literal launch overrides distinct from the resolved snapshot columns.
+    env_string *= ";SPACEAGORA_CORE_BUDGET=$(get(ENV, "SPACEAGORA_CORE_BUDGET", "auto"))" *
+                  ";SPACEAGORA_PERF_HARDWARE_CLASS=$(get(ENV, "SPACEAGORA_PERF_HARDWARE_CLASS", "auto"))" *
+                  ";SPACEAGORA_PPC_BUDGET_CONDITION=$(hw.budget_condition)"
     sample_results = batch.results
     total_success = all(r -> r.success, sample_results)
     sample_wall_sum = sum(r -> Float64(r.wall_time_s), sample_results)
@@ -780,6 +784,9 @@ function ppc_run_worker_performance(cfg::PPCConfig)
     push!(rows, (
         timestamp_utc=hw.timestamp_utc,
         git_commit=hw.git_commit,
+        budget_condition=hw.budget_condition,
+        core_budget=hw.core_budget,
+        hardware_class=hw.hardware_class,
         machine=hw.machine,
         julia_version=hw.julia_version,
         cpu_threads=hw.cpu_threads,
@@ -841,6 +848,7 @@ function ppc_run_worker_parity(cfg::PPCConfig)
     mode = ppc_mode_specs()[cfg.worker_mode]
     serial = ppc_mode_specs()["serial"]
     case = ppc_case_catalog()[cfg.worker_case]
+    budget_metadata = ppc_budget_metadata()
     args_ref = ppc_single_config(cfg.worker_case, cfg; seed=cfg.worker_seed, mc_index=1)
     args_cmp = deepcopy(args_ref)
     ref_result = nothing
@@ -873,6 +881,8 @@ function ppc_run_worker_parity(cfg::PPCConfig)
     if ref_ok && cmp_ok
         metrics = ppc_compare_trajectories(ref_result.solution, cmp_result.solution, args_ref; sample_count=cfg.parity_samples)
         push!(rows, merge((
+            budget_metadata...,
+            process_workers=cfg.process_workers,
             case=cfg.worker_case,
             family=case.family,
             mode=cfg.worker_mode,
@@ -884,6 +894,8 @@ function ppc_run_worker_parity(cfg::PPCConfig)
         ), metrics))
     else
         push!(rows, (
+            budget_metadata...,
+            process_workers=cfg.process_workers,
             case=cfg.worker_case,
             family=case.family,
             mode=cfg.worker_mode,
@@ -1104,32 +1116,93 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
         "--outfile=$(outfile)",
         "--parity=$(parity ? 1 : 0)"
     ]
-    cmd = Cmd(_ppc_apply_cpu_pinning(argv, cfg.cpu_pinning, threads))
+    budget = ppc_budget_context(; cpu_pinning=cfg.cpu_pinning)
+    cmd = addenv(Cmd(_ppc_apply_cpu_pinning(argv, cfg.cpu_pinning, threads)),
+                 "SPACEAGORA_PPC_BUDGET_CONDITION" => budget.condition)
+    # Equal-core-budget arm (SPACEAGORA_PPC_EQUAL_CORE_BUDGET=1). On a resource
+    # rung (workers == threads == b, i.e. P3/P4) the predictive planner runs b
+    # pool workers plus up to b-1 coordinator-local slots (mixed_local_slots:
+    # L = min(T-1, usable_core_budget() - W)), so it can occupy 2b-1 cores where
+    # every static route occupies b. Capping usable_core_budget() at b bounds
+    # W + L <= b. usable_core_budget() also sets _machine_parallel_class, which
+    # moves the inner-hint defaults and route candidacy; the class this
+    # (uncapped) controller resolves is pinned so the core cap is the only
+    # difference. Every other mode is left untouched.
+    if mode == "predictive" && cfg.process_workers == threads && budget.equal
+        cmd = addenv(cmd,
+            "SPACEAGORA_CORE_BUDGET" => string(threads),
+            "SPACEAGORA_PERF_HARDWARE_CLASS" => budget.hardware)
+    end
     extra = ppc_workload_worker_env(workload_env, case)
     return isempty(extra) ? cmd : addenv(cmd, extra...)
 end
 
-# Resume support: a worker's outfile is considered already done only if it
-# parses and has at least one row with success not missing/false — a file
-# left behind by a killed or crashed worker (empty, header-only, or a
-# `success=false` row) is treated as not done and re-run, same as if it
-# were never there. Any read/parse failure is treated the same way (re-run)
-# rather than raising, since this only gates a skip decision.
-function _ppc_worker_already_done(outfile::String)::Bool
+# Check provenance before trusting a successful row. Old CSVs cannot establish
+# whether PR199's cap was active, even when the current request has it disabled.
+# Failed, empty or unreadable points still get rerun as before.
+function _ppc_worker_already_done(outfile::String;
+                                  budget_condition::String=ppc_budget_condition())::Bool
     isfile(outfile) || return false
-    try
-        df = ppc_read_optional(outfile)
-        hasproperty(df, :success) || return false
-        successes = collect(skipmissing(df.success))
-        return !isempty(successes) && all(successes)
+    df = try
+        ppc_read_optional(outfile)
     catch
         return false
     end
+    result_key = hasproperty(df, :success) ? :success : hasproperty(df, :pass) ? :pass : nothing
+    result_key === nothing && return false
+    successful = coalesce.(df[!, result_key], false)
+    any(successful) || return false
+    required = (:budget_condition, :core_budget, :hardware_class)
+    compatible = all(k -> hasproperty(df, k), required) && all(eachrow(df[successful, :])) do row
+        !ismissing(row.budget_condition) && row.budget_condition == budget_condition &&
+        !ismissing(row.core_budget) && row.core_budget > 0 &&
+        !ismissing(row.hardware_class) && row.hardware_class in ("small", "medium", "large") &&
+        _ppc_recorded_budget_matches(row, budget_condition)
+    end
+    compatible || throw(ArgumentError(
+        "Cannot resume $(outfile): its budget condition is missing or differs from this run. " *
+        "Use a fresh output directory; legacy CSVs remain readable but cannot prove their budget condition."))
+    return all(successful)
+end
+
+# When the launch has an explicit cap, verify the recorded resolved values as
+# well as its experiment identity. Unpinned workers otherwise inherit the base
+# budget/class; taskset can legitimately change an uncapped worker's topology.
+function _ppc_recorded_budget_matches(row, condition::String)::Bool
+    startswith(condition, "v1|") || return false
+    fields = Dict(k => v for (k, v) in (split(field, '='; limit=2) for field in split(condition, '|')[2:end]))
+    capped = get(fields, "equal_core", "false") == "true" &&
+             all(k -> hasproperty(row, k) && !ismissing(row[k]), (:mode, :process_workers, :thread_count)) &&
+             row.mode == "predictive" && row.process_workers == row.thread_count
+    if capped
+        return row.core_budget == row.thread_count && row.hardware_class == fields["base_class"]
+    elseif isempty(get(fields, "cpu_pinning", ""))
+        return string(row.core_budget) == fields["base_cores"] && row.hardware_class == fields["base_class"]
+    end
+    return true
+end
+
+# Validate the entire resume tree before launching any new point. In particular,
+# an old phase encountered late must not leave earlier phases partly overwritten.
+function ppc_validate_resume_budget(root::String, condition::String)::Nothing
+    isdir(root) || return nothing
+    for (dir, _, files) in walkdir(root), file in files
+        point_file = basename(dir) == "worker_rows" &&
+                     (startswith(file, "perf_") || startswith(file, "parity_"))
+        raw_file = startswith(file, "parallelization_performance_raw_") ||
+                   startswith(file, "parallelization_trajectory_parity_") ||
+                   startswith(file, "paper_benchmarks_raw_")
+        ((point_file || raw_file) && endswith(file, ".csv")) || continue
+        _ppc_worker_already_done(joinpath(dir, file); budget_condition=condition)
+    end
+    return nothing
 end
 
 function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Function}=nothing)
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     outdir = cfg.outdir == PPC_DEFAULT_OUTDIR ? joinpath(PPC_DEFAULT_OUTDIR, stamp) : cfg.outdir
+    condition = ppc_budget_condition(; cpu_pinning=cfg.cpu_pinning)
+    ppc_validate_resume_budget(outdir, condition)
     mkpath(outdir)
     scratch = joinpath(outdir, "worker_rows")
     mkpath(scratch)
@@ -1190,7 +1263,7 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                 continue
             end
             outfile = joinpath(scratch, "perf_$(case)_$(mode)_t$(thread_count)_mc$(mc_count).csv")
-            if _ppc_worker_already_done(outfile)
+            if _ppc_worker_already_done(outfile; budget_condition=condition)
                 println("[skip] $(case) mode=$(mode) threads=$(thread_count) mc=$(mc_count) (already completed — resume)")
             else
                 cmd = ppc_worker_cmd(
@@ -1219,7 +1292,7 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     for case in parity_cases, mode in parity_modes
         thread_count = maximum(cfg.threads)
         outfile = joinpath(scratch, "parity_$(case)_$(mode)_t$(thread_count).csv")
-        if _ppc_worker_already_done(outfile)
+        if _ppc_worker_already_done(outfile; budget_condition=condition)
             println("[skip] parity $(case) mode=$(mode) threads=$(thread_count) (already completed — resume)")
         else
             cmd = ppc_worker_cmd(

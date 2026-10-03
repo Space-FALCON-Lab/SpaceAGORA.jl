@@ -637,6 +637,9 @@ end
     EM = SimulationModel.EnvironmentModels
     wind_requested = EM._environment_wind_enabled(p)
     rho, T, wind_vec = SimulationModel.getDensity(density_model, alt, lat, lon, t, wind_requested, p)
+    # Same opt-in GRAM perturbation factor as the satellite-level path; returns
+    # (rho, T, wind) unchanged when no mode is installed.
+    rho, T, wind_vec = SimulationModel.SimulationCallbacks._apply_gram_density_perturbation(p, sat_idx, t, alt, rho, T, wind_vec)
     return rho, T, EM._environment_wind(wind_requested, wind_vec)
 end
 

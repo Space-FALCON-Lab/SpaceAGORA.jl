@@ -42,6 +42,9 @@ end
 # up front whether this process will ever need GRAMSuite loaded.
 const PPC_GRAM_LIVE_CASES = (
     "multi_16_gram_live", "multi_4_gram_live", "montecarlo_mars_gram_live",
+    # P4g: the dispersed MarsGRAM aerobraking samples (per-sample seed,
+    # per-pass perturbed density).
+    "montecarlo_heavy_aerobraking_gram",
     # Matches the whole heavy_<N>sat_gram_nbody_l50 ladder via `occursin` below,
     # so new satellite counts do not need adding here.
     "gram_nbody_l50",
@@ -128,6 +131,26 @@ function _ppc_p6_gram_density_env!(args)
 end
 _ppc_p6_gram_density_env!(ARGS)
 
+"""
+    _ppc_gram_perturbation_env!(args)
+
+Turn on GRAM's perturbed density for `montecarlo_heavy_aerobraking_gram`, from
+the case name on the command line, for the same reasons as
+`_ppc_p6_gram_density_env!`: the mode is read from `SPACEAGORA_*` env when the
+callback set is built, a worker serves one `--case=X` for its lifetime, and pool
+workers inherit the coordinator's env. The values are the recommended per-pass
+mode with per-pass reseeding (`perturbed_density_modes_record_2026-10-01.md` in
+the paper repository).
+"""
+function _ppc_gram_perturbation_env!(args)
+    any(==("--case=montecarlo_heavy_aerobraking_gram"), args) || return nothing
+    ENV["SPACEAGORA_GRAM_DENSITY_PERTURBATION"] = "pass"
+    ENV["SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED"] = "1"
+    ENV["SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_DT_S"] = "1.0"
+    return nothing
+end
+_ppc_gram_perturbation_env!(ARGS)
+
 # GRAMAtmosphereModel is cached per planet (not rebuilt per call/sample): the
 # vendored GRAMSuite.jl itself dynamically (re)defines `set_library!` inside
 # its own constructor path (data/GRAMSuite.jl/GRAM Suite 2.0/Julia/generic.jl),
@@ -147,7 +170,7 @@ _ppc_p6_gram_density_env!(ARGS)
 # lock-serialized instance under threads vs. per-process isolation) is exactly
 # the "native-library contention" axis the manuscript's execution-architecture
 # contribution claims to route on.
-const _PPC_GRAM_MODEL_CACHE = Dict{String, Any}()
+const _PPC_GRAM_MODEL_CACHE = Dict{Any, Any}()
 const _PPC_GRAM_MODEL_CACHE_LOCK = ReentrantLock()
 # `get!`'s do-block form is not thread-safe against concurrent *first*
 # population: under outer_threads/full_smart with mc_samples > 1, every MC
@@ -178,6 +201,19 @@ function ppc_gram_atmosphere_model(planet_name::String)
     lock(_PPC_GRAM_MODEL_CACHE_LOCK) do
         get!(_PPC_GRAM_MODEL_CACHE, planet_name) do
             GRAMAtmosphereModel(planet_name=planet_name, initial_time=ppc_initial_time())
+        end
+    end
+end
+
+# A seeded model with GRAM's nominal density perturbation scale (wind scales
+# off), cached per (planet, seed) so a sample flown again in a later repeat
+# reuses its model. The perturbation mode clones the walk from this model's
+# recipe, so the seed is what makes samples' density draws differ.
+function ppc_gram_atmosphere_model(planet_name::String, seed::Int)
+    lock(_PPC_GRAM_MODEL_CACHE_LOCK) do
+        get!(_PPC_GRAM_MODEL_CACHE, (planet_name, seed)) do
+            GRAMAtmosphereModel(planet_name=planet_name, initial_time=ppc_initial_time(),
+                                seed=seed, gram_perturbation_scales=(1.0, 0.0, 0.0, 0.0))
         end
     end
 end
@@ -1394,6 +1430,31 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             density_model=ExponentialAtmosphereModel(mars),
             dt_max_orbit=1.0
         )
+    elseif case_name == "montecarlo_heavy_aerobraking_gram"
+        # P4g: montecarlo_heavy_aerobraking's dispersed samples flown through
+        # MarsGRAM instead of the exponential atmosphere, each sample with its own
+        # GRAM seed and the per-pass perturbed density (_ppc_gram_perturbation_env!).
+        # The initial-condition draws are the same as the exponential case's for
+        # the same (seed, mc_index). The 250 km entry interface puts the whole
+        # drag pass on GRAM, as in the Odyssey MarsGRAM reconstruction.
+        return ppc_build_config(
+            planet=mars,
+            spacecraft=[ppc_spacecraft(
+                mars;
+                ra_alt_m=4500e3 + randn(rng) * 100e3,
+                rp_alt_m=max(110e3, 135e3 + randn(rng) * 10e3),
+                i_deg=93.0,
+                omega_deg=80.0,
+                raan_deg=30.0,
+                nu_deg=180.0 + randn(rng) * 4.0
+            )],
+            mission_time_s=ppc_mission_time(cfg.profile; test=10.0, smoke=600.0, full=21600.0),
+            orientation_sim=false,
+            dynamic_effectors=(InverseSquaredGravityModel(), AerodynamicCoefficientfM()),
+            density_model=ppc_gram_atmosphere_model("mars", 1000 + mc_index),
+            dt_max_orbit=1.0,
+            ei_km=250.0
+        )
 
     # ── P6: force-model and atmosphere variants of the 4096-spacecraft thread
     #    scaling trace (figure F2) ──────────────────────────────────────────────
@@ -1665,6 +1726,8 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
     add!("heavy_1024sat_fullstack_1hr", "heavy_scaling", "1024 spacecraft, harmonics + SRP + aero + analytic density, 1hr mission")
     add!("heavy_256sat_coupled6dof_2hr", "heavy_scaling", "256 spacecraft, coupled 6-DOF with harmonics + SRP + aero, 2hr mission", orientation=true)
     add!("montecarlo_heavy_aerobraking", "heavy_scaling", "Monte Carlo Mars aerobraking, 12x longer arc per sample", montecarlo=true)
+    add!("montecarlo_heavy_aerobraking_gram", "heavy_scaling",
+         "Monte Carlo Mars aerobraking over MarsGRAM, per-sample seed, per-pass perturbed density", montecarlo=true)
     for n in (16, 32, 64, 128, 256)
         add!("heavy_$(n)sat_gram_nbody_l50", "heavy_scaling",
              "$(n) spacecraft, live GRAM atmosphere + L50 harmonics + Sun/Moon third-body gravity (native-library contention)")

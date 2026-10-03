@@ -36,7 +36,7 @@ runners explicitly, so `SPACEAGORA_SKIP_GMAT_MATRIX` does not disable them.
 
 | Diagnostic label | Maintained runner | Reference input | Existing scientific settings |
 |---|---|---|---|
-| J2 summary and legacy TB `GMAT` target | `_run_basilisk_scenario_matrix_result_once` | `data/telemetry/Basilisk_Examples_Full/*.feather` | `reference_target=:gmat` |
+| J2 summary and legacy TB `GMAT` target | `_run_basilisk_scenario_matrix_result_once` | `data/telemetry/Basilisk_Examples_Full/*.feather` | `reference_target=:basilisk` |
 | TB `STK` target | `_run_stk_scenario_matrix_result_once` | `data/telemetry/stk_results/*.csv` | `reference_target=:stk` |
 
 The TB `GMAT` console/CSV label is retained for compatibility with historical

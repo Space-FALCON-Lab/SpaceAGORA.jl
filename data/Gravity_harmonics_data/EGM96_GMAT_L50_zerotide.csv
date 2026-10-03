@@ -4,7 +4,7 @@
 # gm_m3s2: 3.98600441500000e14
 # normalization: fully_normalized
 # citation: Lemoine, F.G., et al. (1998), "The Development of the Joint NASA GSFC and the National Imagery and Mapping Agency (NIMA) Geopotential Model EGM96," NASA/TP-1998-206861.
-# origin: data/gravity/earth/EGM96.cof from the GMAT R2025a Linux distribution (gmat-ubuntu-x64-R2025a.tar.gz; file sha256 3e8806223250224d3c1333a010eb5c2cc5a212a56ccee4024db81b9d889db5ea), POTFIELD header "POTFIELD360360  1 3.98600441500000E+14 6.37813630000000E+06"; RECOEF rows for degree <= 50 transcribed verbatim. This is the file the GMAT_Examples Earth references were propagated with (a rerun with it reproduces Sim_Earth_J2_TBFalse.csv byte for byte). The local install's copy was edited on 2026-05-11 (C(2,0) only) and must not be used. Coefficients equal egm96.csv; this file adds the GM and radius header.
+# origin: data/gravity/earth/EGM96.cof from the GMAT R2025a Linux distribution (gmat-ubuntu-x64-R2025a.tar.gz; file sha256 3e8806223250224d3c1333a010eb5c2cc5a212a56ccee4024db81b9d889db5ea), POTFIELD header "POTFIELD360360  1 3.98600441500000E+14 6.37813630000000E+06"; RECOEF rows for degree <= 50 transcribed verbatim. Derived from EGM96_GMAT_L50.csv for the STK target; GMAT_Examples uses the tide-free EGM96_GMAT_L50.csv, not this file. The local install's copy was edited on 2026-05-11 (C(2,0) only) and must not be used. Coefficients equal egm96.csv except C(2,0); this file adds the GM and radius header.
 # tide_system: zero-tide; C(2,0) converted from the tide-free EGM96.cof value by the IERS 2010 permanent-tide term A0*H0*k20 = -4.200675e-09 (A0=4.4228e-8, H0=-0.31460 m, k20=0.30190); all other coefficients unchanged
 degree,order,C,S
 0,0,0.0,0.0

@@ -1239,12 +1239,30 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # native GRAM campaign is offered only the pool and serial by the policy,
         # so the process pool is the static route it is compared with; outer
         # threads, serialized by the shared GRAM lock, are left out to keep the
-        # run to about half its length. One rung, the full budget.
+        # run to about half its length. One rung, the full budget. Repeats and
+        # warm-up are declared here (11 and 2) rather than raised by
+        # SPACEAGORA_PPB_MIN_*, so P4gs below can run fewer.
+        #
+        # Serial is P4gs: its full baseline (11 repeats) was measured at
+        # aaa2df00b, before the precompile-workload fix, and P4gs re-times it at
+        # the current commit to check the two agree.
         cases        = ["montecarlo_heavy_aerobraking_gram"],
         parity_cases = String[],
-        modes        = ["serial", "outer_process", "predictive"],
+        modes        = ["outer_process", "predictive"],
         mc_samples   = [32],
-        repeats      = 5,
+        repeats      = 11,
+        warmup       = 2,
+        budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P4gs",
+        label = "Paper — Dispersed MarsGRAM Aerobraking Samples, Serial Spot Check",
+        cases        = ["montecarlo_heavy_aerobraking_gram"],
+        parity_cases = String[],
+        modes        = ["serial"],
+        mc_samples   = [32],
+        repeats      = 3,
         warmup       = 1,
         budget_grid  = [(PPB_PAPER_BUDGET, PPB_PAPER_BUDGET)],
         budget_grid_fixed = true,

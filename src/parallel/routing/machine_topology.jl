@@ -252,6 +252,22 @@ const _WORKER_MEMORY_FLOOR_BYTES = 2 * (1 << 30)
 # reported 22 GB single-process footprint at 256 spacecraft for which no
 # instrumentation, CSV or log exists anywhere in this repository, and it is
 # about eighty times what the same workload actually costs.
+#
+# MEASURED DOMAIN, and what lies outside it. Every reading behind the 2 MB is a
+# solve of at most 1800 s of mission time (60 s, 600 s and 1800 s arcs), with
+# the study's save settings (`num_steps_to_save = 20`), `return_solution`
+# left false, and at most four solves per process. Within that domain the
+# slope did not grow with arc length (1.14 MB/sat at 600 s, 0.96 MB/sat at
+# 1800 s). Longer missions, denser saving, and a sample that returns or keeps
+# its solution were not measured; no reading in the repository says how the
+# retained trajectory state grows there, so no term for it is added here, and
+# the charge may undercount such workloads. The worker's base charge is the
+# coordinator's own resident set when that is larger than the floor, which
+# covers a coordinator that already holds such solutions, but not a worker
+# that builds them. An operator running long missions that keep solutions on
+# a tight memory budget should set `SPACEAGORA_GRAM_SAT_MEMORY_MB` or
+# `SPACEAGORA_PERF_WORKER_MEMORY_GB` from a measured worker footprint
+# (benchmarks/studies/gram_memory_footprint measures one).
 const _GRAM_SAT_MEMORY_BYTES_BY_PATH = (
     point = 2 * (1 << 20),
     freeze_per_step = 2 * (1 << 20),

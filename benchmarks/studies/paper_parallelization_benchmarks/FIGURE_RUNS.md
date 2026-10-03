@@ -498,6 +498,56 @@ overnight slot, and do not schedule anything else on the machine during it.
 
 ---
 
+## Precompile workload
+
+Every point is a fresh Julia process, and a campaign point's pool workers are
+too; each compiles its solver specializations before it can time anything.
+`workload/` builds a package image holding them for every P1-P6p point except
+the two native-GRAM traces, and the harness loads it into every worker when
+asked. It is off by default: with the image loaded the timed repeats measured 1 to 4
+percent slower on four of five points (table below), and the default for
+benchmark timing is the configuration the archived runs used. The cause is code
+placement: the image holds the same compiled specializations as a stock worker
+builds, but loaded from the image the right-hand side's hot functions sit up to
+50 MiB apart instead of within 0.5 MiB, and the shift that follows changes from
+one build of the image to the next (P3 outer_process: +3.6%, -1.9% and +0.2% on
+three builds; P1: +0.7%, +1.0% and +3.7%). It is not the CPU target or the
+compile flags, which match. No fix keeps the startup saving, so it stays opt-in
+(`workload/README.md`, "Why the timed repeats move"). In short:
+
+- **Build**: `bash benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh`
+  (3 m 40 s and 9.3 GB peak on the workstation, MEASURED). Rebuild after any
+  change to `src/` or to the harness files; a stale image is never used.
+- **Use**: opt-in. `SPACEAGORA_PPB_WORKLOAD=auto` uses a current image and
+  falls back without one; `SPACEAGORA_PPB_WORKLOAD=1` makes a missing or stale
+  image an error. The controller prints `precompile_workload=<env>` or
+  `precompile_workload=off` at the start of each run. Remote jobs build it once
+  per job only when asked (`spaceagora-remote push --workload auto|on|off`,
+  default `off`).
+- **Default**: off (`SPACEAGORA_PPB_WORKLOAD=0`). Rows measured with and without
+  the image are not comparable and must not share a figure.
+
+Measured on the workstation (MEASURED, medians over three alternating launches
+per variant, `workload/results/space-falcon-1_20260924/workload_validation.csv`):
+
+| Point (threads x workers) | Worker wall, stock / workload | Timed median shift |
+|---|---|---|
+| P1 1 spacecraft, serial, 8 threads | 76.5 / 47.1 s (1.6x) | +0.7% |
+| P2 4096 spacecraft, inner_only, 8 threads | 49.2 / 25.3 s (1.9x) | +4.6% (launch spread -9.5% to +14.1%) |
+| P3 outer_process, 256 samples, 4 x 4 | 151.8 / 42.9 s (3.5x) | +3.6% |
+| P3 policy_v2, 256 samples, 4 x 4 | 150.1 / 41.0 s (3.7x) | +3.9% |
+| P5 mcgrid_16sat_8mc, outer_inner_static, 4 x 2 | 78.3 / 28.8 s (2.7x) | +1.9% |
+
+Final states and step times are byte-identical with and without the image. The
+timed repeats run 1-4% slower with it (same allocations, same GC; the time is in
+the samples' compute), so **a run's rows are comparable only with rows measured
+the same way**: do not compare a run that used the workload against one that did
+not, including the archived runs cited below, which did not. Set
+`SPACEAGORA_PPB_WORKLOAD=0` for a run that must line up with them. The
+durations quoted below were measured without it.
+
+---
+
 ## The benchmark-box sequence
 
 ```bash
@@ -505,9 +555,12 @@ bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh tr
 bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh trx50 --execute  # offer each step in turn
 ```
 
-Six steps, ordered, non-overlapping. The ordering is load-bearing: the
+Nine steps, ordered, non-overlapping. The ordering is load-bearing: the
 calibration is itself a timed measurement, the targeted points gate the
 eleven-hour run, and the converged arm consumes the store the cold arm produced.
+Step 7, P7, and steps 8 and 9, P5f, were added after the other six and are
+independent of them; they run last so that they never delay or disturb the
+figures already planned.
 
 Three facts about the interface that are easy to get wrong, all confirmed by
 reading `scripts/remote/spaceagora-remote`:
@@ -687,6 +740,125 @@ A benchmark run lands in a gitignored `output/` directory inside a worktree, so
 a reboot, a `git clean` or a deleted worktree takes it with it. Archive each run
 as soon as it is pulled, not at the end of the campaign.
 
+### Step 7 — P7, one spacecraft on short missions
+
+P1's modes and thread axis on three one-spacecraft cases over one orbit
+(`CASES.md`, "P7"), from a cold store as step 3 is, 11 repeats declared in the
+phase:
+
+```bash
+ssh trx50 'mv ~/spaceagora_remote/policy_state ~/spaceagora_remote/policy_state_bak_$(date -u +%Y%m%d_%H%M%S); mkdir -p ~/spaceagora_remote/policy_state' \
+  && scripts/remote/spaceagora-remote push --remote trx50 --threads 1,2,4,8,16,32 --process-workers 32 \
+       -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+          --phases=P7 --threads=1,2,4,8,16,32 --process-workers=32
+```
+
+`--threads` is the same list step 3 passes; P7's `:max_only` axis runs only its
+maximum, 32, which is how P1 gets its one thread count too.
+
+**Duration: about 13 min plus the timed repeats.** DERIVED — 18 points (three
+cases, six modes, one thread count) at the 42 s per-point fixed cost in the
+ledger below. The repeats themselves are sub-second solves on this box by
+construction, but what a route's setup adds to each one has not been measured
+there, which is the phase's question.
+
+Pull as in step 6, then:
+
+```bash
+python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
+  --machine trx50 --store cold      --notes 'P7, one spacecraft short missions, 11 repeats, cold store'
+```
+
+### Steps 8 and 9 — P5f, the full-machine Monte Carlo phase
+
+P5's two workloads with the static routes at every split of 32 and `predictive`
+(R7) once per case at `--threads=32 --process-workers=32`, no split imposed
+(`CASES.md`, "P5f"). Eleven repeats are declared in the phase. Step 8 is from a
+cold store; step 9 restores the same converged snapshot step 4 does, so P5f's
+converged arm and P5's are measured from one store state (see "What is not
+settled" about that snapshot):
+
+```bash
+# step 8, cold store
+ssh trx50 'mv ~/spaceagora_remote/policy_state ~/spaceagora_remote/policy_state_bak_$(date -u +%Y%m%d_%H%M%S); mkdir -p ~/spaceagora_remote/policy_state' \
+  && scripts/remote/spaceagora-remote push --remote trx50 --threads 1,2,4,8,16,32 --process-workers 32 \
+       -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+          --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32
+
+# step 9, converged store
+ssh trx50 'rm -rf ~/spaceagora_remote/policy_state && cp -a ~/spaceagora_remote/policy_state_converged_20260918 ~/spaceagora_remote/policy_state' \
+  && scripts/remote/spaceagora-remote push --remote trx50 --threads 1,2,4,8,16,32 --process-workers 32 \
+       -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+          --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32
+```
+
+`--threads` does not set P5f's axis (the splits pin their own thread counts, and
+the full-budget run uses the budget); it is passed for the same command shape as
+the other steps.
+
+**Duration: about 1h25m per arm plus the two full-budget points.** DERIVED from
+the step 3 run's raw CSV: P5's `serial`, `outer_threads`, `outer_process` and
+`outer_inner_static` rows, the 48 points P5f repeats, summed to 2797 s of timed
+repeats at 11 each; one warm-up per point makes that about 3050 s, and the 42 s
+per-point fixed cost adds 2016 s. The same run's `policy_v2` rows took 15 863 s
+of timed repeats, which is why P5 as a whole took 6h44m and P5f should not. The
+two `predictive` points at the full budget have never been run on this box and
+are not in the estimate.
+
+Pull as in step 6, then archive each arm with the store it ran under:
+
+```bash
+python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
+  --machine trx50 --store cold      --notes 'P5f, full machine, 11 repeats, cold store'
+python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+  --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
+  --machine trx50 --store converged --notes 'P5f, full machine, 11 repeats, converged store'
+```
+
+Score the adaptive rows with
+`python3 scripts/check_policy_criterion.py <run dir> --adaptive predictive`,
+which for P5f compares each full-budget row with the best static route over
+every split of the same budget.
+
+## P5f on the workstation
+
+```bash
+bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh workstation-p5f            # describe
+bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh workstation-p5f --execute  # cold arm
+P5F_CONVERGED_STORE=output/parallel_policy_state_backup_<stamp> \
+  bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh workstation-p5f --execute  # cold, then converged
+```
+
+The cold arm handles the store exactly as the F4 arm does: calibrate at 12
+threads, move `output/parallel_policy_state/` aside to a dated backup, calibrate
+again into the empty store, then
+
+```bash
+OPENBLAS_NUM_THREADS=1 GKSwstype=100 julia --project=. \
+  benchmarks/studies/paper_parallelization_benchmarks.jl \
+  --phases=P5f --threads=1,2,4,8,12 --process-workers=12
+```
+
+The static routes run at the six splits of 12 and `predictive` once per case at
+`--threads=12 --process-workers=12`. The converged arm needs a store that has
+already run these workloads under an adaptive mode on this machine, which is
+what the F4 arm (P3+P5, every mode) leaves behind; `P5F_CONVERGED_STORE` names
+it, typically the dated backup the cold arm's `cold_store` step just moved
+aside. The target moves the cold arm's store aside in turn, copies the named
+store in, and runs the same command again. Without `P5F_CONVERGED_STORE` the
+converged arm is described and skipped. Archive each arm with `--machine
+workstation` and the matching `--store`.
+
+**Duration: about 2 h per arm plus the two full-budget points.** DERIVED from
+the workstation's P5 run of 2026-09-15 (5 repeats, the report cited in the
+ledger): the 48 points P5f repeats took 1370 s of timed repeats, 274 s per
+repeat across them, so 12 campaigns each (11 repeats and one warm-up) is about
+3290 s; the phase's 6809 s over 60 points less its timed repeats and warm-ups
+leaves 83 s of fixed cost per point, 3980 s over 48. The `--preview` smoke of
+2026-09-25 is not an estimate of either: it runs two repeats.
+
 ---
 
 ## Provenance ledger
@@ -716,6 +888,14 @@ Every number in this document, and what it rests on.
 | P6 / P6p duration | ~2h10m / ~4h20m | DERIVED | 42 s per point + 4 × the predicted solves |
 | P5 on the workstation | 1h53m29s at 5 repeats | SOURCED | `paper_benchmarks/20260915_181642/paper_benchmarks_report_20260915_181642.md` |
 | Workstation arm duration | 5–7 h | DERIVED | P5 doubled for 11 repeats, plus an unmeasured P3 bounded below by the box's 1h3m43s |
+| P7 mission | 5 702 s | DERIVED | two-body period of P1's spacecraft's orbit, a = 6 898 136.6 m, μ = 3.98600436233e14 m³/s² (built-in Earth), 5 701.76 s rounded; `PPC_P7_MISSION_S` |
+| P7 duration | ~13 min + repeats | DERIVED | 18 points × the 42 s per-point fixed cost above |
+| P5f static points, benchmark box | 2797 s timed at 11 repeats | SOURCED | `paper_benchmarks_trx50_cold11/20260918_162845/paper_benchmarks_raw_20260918_162845.csv`, P5, modes serial/outer_threads/outer_process/outer_inner_static, `wall_time_s` summed |
+| P5 `policy_v2` timed repeats, benchmark box | 15 863 s | SOURCED | same CSV, P5, `policy_v2` |
+| P5f duration, benchmark box | ~1h25m + 2 adaptive points | DERIVED | 2797 s × 12/11 + 48 × 42 s |
+| P5f static points, workstation | 1370 s timed at 5 repeats | SOURCED | `paper_benchmarks/20260915_181642/paper_benchmarks_raw_20260915_181642.csv`, P5, same four modes |
+| Per-point fixed cost, workstation P5 | 83 s | DERIVED | (6809 s − 1512 s × 6/5) ÷ 60 points |
+| P5f duration, workstation | ~2 h + 2 adaptive points | DERIVED | 1370 s ÷ 5 × 12 + 48 × 83 s |
 
 ## What is not settled
 

@@ -6,8 +6,9 @@ by default, on one lock (`RuntimeServices.GRAM_LOCK`, which is the same object a
 as SpaceAGORA's own SPICE bindings, so the two cannot be separated). A threaded
 constellation therefore does not scale on a GRAM atmosphere: the threads queue.
 
-`SPACEAGORA_GRAM_ISOLATED_POOL` is the alternative that has been in the tree,
-default off, since its SPICE-corruption crash was root-caused and fixed. It
+`SPACEAGORA_GRAM_ISOLATED_POOL` is the alternative introduced after its
+SPICE-corruption crash was root-caused and fixed. It now defaults to `auto`
+with the wind-history guard described below. It
 replaces the one shared `GRAMAtmosphereModel` with `workers` independent
 `deepcopy`ed models, each behind its own `ReentrantLock`, and evaluates a batch
 of satellites across them. Nothing had measured it, and nothing had checked that
@@ -19,17 +20,25 @@ This page records what the measurement found. The scripts are in
 
 ## Is the pool bit-identical to the locked path?
 
-Yes, and it has to be, because the alternative is that native GRAM's returned
-density depends on the sequence of calls an instance has seen — which would make
-*any* concurrency change to this path a dynamics change.
+The retained identity comparisons cover nominal winds. They do not establish
+identity under perturbed winds. Native density and temperature read the mean
+field, but perturbed winds follow a random walk over each instance's query
+history. The pinned GRAMSuite wrapper resolves its default `auto` wind mode to
+`perturbed`, not `nominal`.
 
-It does not. `GRAMSuite._gram_density_state_native` reads `atmos.density`, the
-mean field, not `perturbedDensity`, and `_gram_wind_mode()` resolves to
-`:nominal` by default, so the returned state is a function of position, time and
-epoch alone. GRAM's per-call perturbation random walk advances, but nothing in
-the returned tuple reads it.
+Automatic pooling declines any wind-requesting batch whose core reports
+history-dependent winds, before constructing or warming worker models. Both the
+density callback and look-ahead cache then fall back to the locked batch route.
+This also preserves stored wind diagnostics when a caller requests winds that
+the force model does not use. Nominal winds and queries with `wind=false` retain
+the existing pool eligibility. Unknown raw cores are treated conservatively.
 
-Three pieces of evidence, all exact comparisons on the `reinterpret`ed bits,
+Explicit `SPACEAGORA_GRAM_ISOLATED_POOL=on` bypasses this wind-history guard:
+it opts into separate instance histories and can change winds and trajectories
+with pool width or thread count. It is not a reproducibility-preserving speed
+switch under perturbed winds. No atmosphere mode or seed is changed by routing.
+
+Three retained nominal-wind comparisons use exact `reinterpret`ed bits,
 never a tolerance:
 
 | Check | What it compares | Result |
@@ -49,8 +58,8 @@ component of every spacecraft, raw `Float64`, `cmp`ed byte for byte):
 | 64 spacecraft, look-ahead, locked vs pool width 8, 8 threads | 98 496 | identical |
 | the WS11 reference case (`ppc_constellation`, EI 120 km), locked vs pool width 4 | 98 496 | identical |
 
-The locked dump is also identical between the 4-thread and the 8-thread run, so
-the thread count is not moving the trajectory either.
+The retained locked dump also matches between 4 and 8 threads for those
+nominal-wind cases. This does not establish perturbed-wind identity.
 
 One real difference was found and fixed, and it was not a rounding difference.
 The locked scalar path floors altitude at `-30.0` m before calling GRAM
@@ -64,11 +73,10 @@ the same floor. `src/simulation/callbacks/density_callbacks/gram_process_batch.j
 sends unclamped altitudes to the process-backed density service the same way and
 has not been changed here.
 
-The fix cannot move any shipped trajectory, for a reason stronger than the
-dumps: the pool is off by default, and with it off `_gram_isolated_pool_batch_eval!`
-returns before it reaches the clamped line at all. The dumps above were taken
-before and after the change and compared byte for byte anyway, with the pool
-both off and on.
+At the time of the clamp correction the pool default was off. The retained
+dumps above were compared before and after that correction with the pool both
+off and on. The current automatic default additionally obeys the wind-history
+guard described above.
 
 ## Is the pool faster?
 
@@ -158,7 +166,8 @@ threaded fan-out has a fixed per-invocation cost, and at 256 spacecraft the
 ### What ships
 
 `SPACEAGORA_GRAM_ISOLATED_POOL` now defaults to `auto` rather than `off`, at a
-threshold of 1024 and a width capped at 4. Each of those three numbers is
+threshold of 1024 and a width capped at 4, subject to the wind-history guard.
+Each of those three numbers is
 SOURCED from the table above and argued where it is defined, in
 `density_callbacks/config.jl`: 1024 because 256 loses in every cell measured and
 1024 wins at 4 and 8 threads in both density paths; 4 because it is the fastest
@@ -186,8 +195,7 @@ to that rather than to the spacecraft count. With the guard that case is 0.96x,
 within the run-to-run spread, and the 1024-spacecraft in-atmosphere win is
 unchanged at 1.77x and 1.19x.
 
-The defaults are bit-identical to the old ones where they change behavior, which
-is the only claim that matters here: a 1024-spacecraft freeze-per-step run and a
+The retained nominal-wind default comparisons were bit-identical: a 1024-spacecraft freeze-per-step run and a
 1024-spacecraft look-ahead run, each dumped with the pool explicitly off and then
 with nothing set at all, are byte for byte the same (1 573 056 bytes each), and
 so is the 64-spacecraft reference case, which the new threshold leaves on the
@@ -425,3 +433,137 @@ The other two approaches in the same finding are not ruled out by this argument:
 batching several satellites' track requests into one locked native call, and
 prefetching the next segment before expiry, both leave the sampled points
 untouched. Neither is implemented here.
+
+## Pool-worker memory growth
+
+P6p (trace 6, `aero_4096sat_l50_gram_process_100s`, 4096 one-spacecraft samples
+on the `outer_process` route) was killed twice on TRX50 by its memory cap: in job
+`20260924-040915-1806822` at pool width 16, with 21 Julia processes holding
+233 GB (about 11 GB each), and earlier, with no heap-size hint, at width 8 with
+one process at 30 GB. The pool workers were launched with a
+`--heap-size-hint` (section 5 of `heap_contention.md`; the harness's own
+`addprocs` site, `_ppc_pool_worker_exeflags`, does pass it, and the flag is on
+the worker's command line in the pool run below). The hint did not help, because
+the growth is not on the Julia heap.
+
+### Where the growth comes from
+
+The harness cached one Earth `GRAMAtmosphereModel` per process, built at
+GRAMSuite's default construction epoch, while every harness case flies from
+2020-01-01. `run_simulation` aligns a GRAM model to the run's `initial_time`
+before running (`with_density_model_epoch`), and a model at another epoch is
+rebuilt there. So every sample constructed a fresh native atmosphere, re-reading
+MERRA2, and discarded it at the end of the run. A native atmosphere is freed only
+by its wrapper's finalizer (`GRAM Suite 2.0/Julia/types.jl`, `Atmosphere`), that
+is, only when the Julia collector runs and finds it unreferenced. The collector
+paces itself on the Julia heap, which a discarded atmosphere barely touches, so
+it had no reason to run.
+
+Measured with `benchmarks/studies/gram_thread_scaling/worker_growth.jl`: one
+process running exactly what a pool worker runs per sample (case configuration,
+`outer_process` mode environment, `run_simulation`), one thread, `full` profile,
+under a 16 GiB cgroup cap on this workstation. Growth rates are taken from
+sample 2 to the last sample before the process's first collection; the
+atmosphere count is exact (a counting finalizer on every atmosphere a run
+builds). Result files are `results/worker_growth_before_*.csv` and
+`results/worker_growth_after_*.csv`; in the `before` files, `model=harness`
+means the harness's model as it was then built, at the default epoch.
+
+| Arm (code before the fix) | RSS / sample | GC-live / sample | malloc in use / sample | Outcome |
+|---|---|---|---|---|
+| trace 6, no hint | 105.7 MB | 1.20 MB | 143.9 MB | killed by the 16 GiB cap after sample 204; one collection near sample 77 finalized 77 atmospheres, RSS still 10.2 GB at sample 100 |
+| trace 6, `--heap-size-hint=7.4G` (TRX50's width-16 value) | 106.8 MB | 1.26 MB | 143.9 MB | killed after sample 147 with **no collection at all**; 147 atmospheres alive |
+| trace 6, `--heap-size-hint=2G` | 106.3 MB | 1.26 MB | 143.9 MB | one collection near sample 145 (144 finalized); RSS stayed at 16.7 GB; killed after sample 155 |
+| previous trace-6 definition (500-550 km, 120 km interface), no hint | 106.3 MB | 1.11 MB | 143.8 MB | killed after sample 226 |
+| trace 6, full collection after every sample | 0.001 MB | 0.000 MB | 0.26 MB | 400 samples, RSS flat at 1.69 GB; every atmosphere finalized |
+| trace 6, one model built at the run epoch and reused | flat (1.78 GB after 400) | periodic | flat | 400 samples, no atmosphere built |
+
+So, separating the four hypotheses: the growth is native (b), about 106 MB
+resident and 144 MB of malloc per sample, one discarded Earth atmosphere each;
+the Julia heap grows about 1.2 MB per sample and is not the problem (a); nothing
+is retained per sample once the atmospheres are finalized (c), since a full
+collection after each sample keeps RSS flat; and the hint is passed (d) but
+cannot bound memory the collector does not see. Two further observations: the
+glibc arena does not return memory freed by a collection to the system (the
+no-hint and 2G arms kept their resident size after collecting), so collecting
+late does not undo the peak; and with a collection after every sample, malloc
+in use still rises by 0.26 MB per rebuilt atmosphere, a small native residue per
+construction that was not investigated further.
+
+The earlier single-worker record for the previous definition (growth of a few
+MB over 30 samples) came from `worker_rss.jl`, whose `stage!` helper runs
+`GC.gc()` twice every ten samples; those collections finalized the discarded
+atmospheres, which is why it did not see this.
+
+DERIVED, not measured: at width 16 each worker serves about 770 samples of the
+phase (three repeats of 4096 plus warm-up, over 16 workers), and the TRX50
+workers' 11 GB each is what about 100 outstanding Earth atmospheres at 106 MB
+hold. That is consistent with this mechanism; the TRX50 run itself recorded no
+atmosphere counts.
+
+Separately, rebuilding was also most of each sample's cost: median sample wall
+time 40.9 ms rebuilding against 3.6 ms reusing one model.
+
+### What changed
+
+1. The harness builds its cached GRAM model at the harness epoch
+   (`ppc_gram_atmosphere_model` in `parallelization_performance/cases.jl`, with
+   `ppc_initial_time()` shared with `ppc_build_config`), so the epoch alignment
+   returns the cached model and no sample builds an atmosphere.
+2. The GRAM extension counts native atmospheres it constructs and those
+   finalized, and `run_simulation` calls
+   `collect_unreferenced_gram_atmospheres!()` after every run, successful or
+   not. It runs one full collection once `SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT`
+   (default 8; `0` or `off` disables) more atmospheres are alive than right after
+   its previous collection. This covers any other caller that discards a GRAM
+   model per run (a changed epoch, or `isolate_state=true`, whose `deepcopy`
+   builds a new native atmosphere). The default is DERIVED from an ASSUMED budget
+   of about 1 GB of discarded atmospheres per process at the measured 106 MB
+   each.
+
+Neither changes what a run computes. Full state histories (every step time and
+state, `worker_growth.jl --dump-dir`) of all samples are byte-identical across
+arms (`results/worker_growth_byte_identity.csv`):
+
+| Arm | Samples | Identical to reference |
+|---|---|---|
+| reference: before, rebuilt per sample, full collection after every sample | 400 | — |
+| before, rebuilt per sample, no forced collection | 100 | 100 |
+| before, one model at the run epoch reused, forward order | 400 | 400 |
+| before, one model reused, samples in reverse order | 400 | 400 |
+| after, harness model | 400 | 400 |
+| after, rebuilt per sample, collection limit 8 | 400 | 400 |
+
+The reverse-order arm is the check that a reused native atmosphere carries no
+state from one sample into the next: every sample follows a different
+predecessor than in the forward arm and matches the reference byte for byte.
+
+### After the fix (measured)
+
+| Arm | RSS at sample 2 → last (peak) | Per-sample elapsed | Median sample wall |
+|---|---|---|---|
+| trace 6, 400 samples | 1774 → 1803 MB (1880) | 4.37 ms | 3.6 ms |
+| trace 6, `--heap-size-hint=7.4G`, 400 samples | 1830 → 1800 MB (1845) | 5.29 ms | 3.6 ms |
+| previous definition, 400 samples | 1784 → 1783 MB (1813) | 4.84 ms | 3.3 ms |
+| rebuilt per sample, collection limit 8, 400 samples | 1933 → 2510 MB (2533) | 82.6 ms | 30.7 ms |
+| rebuilt per sample, collection off, 100 samples | 1937 → 9402 MB | 44.4 ms | 40.8 ms |
+
+Through the harness's real pool path (`heap_contention/pool_rss_probe.jl`, one
+`outer_process` worker, 1500 trace-6 samples; `results/worker_growth_pool_after.csv`),
+the worker ran with `--heap-size-hint=4.0G` and its RSS went from 1883 MB at the
+start of the batch to 1887 MB at the end; the batch took 6.378 s, 4.25 ms per
+sample.
+
+Wall time, samples 2-100 of the same process shape: 42.82 ms per sample before
+(`worker_growth_before_dump_rebuild_nogc.csv`), 4.74 ms after
+(`worker_growth_after_harness.csv`), a ratio of 9.0. This changes what P6p trace
+6 measures: its samples no longer pay a native atmosphere construction and a
+MERRA2 read each, so trace-6 rows taken before this change are not comparable
+with rows taken after it.
+
+The collection limit is a safety net, not free: a full collection took 387 to
+409 ms (median 394 ms) in this process, so a caller that does discard an
+atmosphere per run pays up to about 49 ms per run at the default limit (394 ms
+over 8 runs, derived; the measured difference above is 81.8 against 44.4 ms per
+sample, samples 2-100). Raising the limit trades that time for
+memory at about 106 MB per Earth atmosphere.

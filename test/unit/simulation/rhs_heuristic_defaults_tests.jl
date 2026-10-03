@@ -42,11 +42,13 @@ end
 # A single gravitational-harmonics effector is what makes this the
 # `single_harmonics_flat` shape. Degree 8 rather than 50: the route decision
 # does not read the degree, and the file parse is the expensive part.
-function rhd_config(n_sats::Int; aero::Bool=false)
+function rhd_config(n_sats::Int; aero::Bool=false, effectors=nothing)
     planet = Earth()
     gravity = isfile(RHD_HARMONICS_FILE) ?
         GravitationalHarmonicsModel(8, 8, RHD_HARMONICS_FILE, planet) :
         InverseSquaredJ2GravityModel()
+    stack = effectors === nothing ?
+        (aero ? (gravity, AerodynamicCoefficientfM()) : (gravity,)) : effectors(gravity, planet)
     return SimulationConfiguration(
         simulation_settings=SimulationSettings(
             results=false, verbose=false, generate_plots=false, normalize=false, save_csv=false
@@ -62,8 +64,7 @@ function rhd_config(n_sats::Int; aero::Bool=false)
             thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
             topography=false, wind=false
         ),
-        dynamics_model=DynamicsModel([rhd_spacecraft(planet, i) for i in 1:n_sats],
-            aero ? (gravity, AerodynamicCoefficientfM()) : (gravity,)),
+        dynamics_model=DynamicsModel([rhd_spacecraft(planet, i) for i in 1:n_sats], stack),
         guidance_model=GuidanceModel(guidance_effectors=(), guidance_rates=Float64[]),
         navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
         control_model=ControlModel(control_effectors=(), control_rates=Float64[]),
@@ -88,10 +89,12 @@ rhd_env(budget::Int, extra...) = vcat(Pair{String, Union{Nothing, String}}[
     "SPACEAGORA_HARMONICS_FLAT_MIN_SATS_PER_WORKER" => nothing,
     "SPACEAGORA_EFFECTOR_FLAT_MIN_SATS" => nothing,
     "SPACEAGORA_RHS_BATCH_PARALLEL" => nothing,
+    "SPACEAGORA_EFFECTOR_FLAT_MIN_THREAD_BUDGET" => nothing,
+    "SPACEAGORA_AUTO_THREAD_MIN_BUDGET" => nothing,
 ], collect(Pair{String, Union{Nothing, String}}, extra))
 
-function rhd_plan(n_sats::Int, budget::Int, extra...; aero::Bool=false)
-    args = rhd_config(n_sats; aero=aero)
+function rhd_plan(n_sats::Int, budget::Int, extra...; aero::Bool=false, effectors=nothing)
+    args = rhd_config(n_sats; aero=aero, effectors=effectors)
     p = SE_RHD.ODEParams(n_sats=n_sats, args=args)
     SE_RHD._initialize_heat_rate_buffers!(p)
     SE_RHD._initialize_harmonics_workspace_buffers!(p)
@@ -164,16 +167,73 @@ end
     # The generic flat branch, reached by a two-effector stack with no batched
     # pre-pass kernel. Measured 2.89x behind the satellite batch at 64
     # spacecraft on 8 threads before the floor.
-    if Threads.nthreads() < 4
-        # Below 4 the flat queue's own thread-budget floor routes to the batch
-        # before the branch under test is reached.
-        @test_skip "needs julia --threads>=4"
+    if Threads.nthreads() < 2
+        # A pre-pass-only stack reaches the generic branch from a budget of
+        # two; below that it takes the budget-one admission instead.
+        @test_skip "needs julia --threads>=2"
     else
         wide = min(8, Threads.nthreads())
         plan = rhd_plan(64, wide; aero=true)
         @test plan.mode == :satellite_batch
         plan_legacy = rhd_plan(64, wide, "SPACEAGORA_HARMONICS_FLAT_MIN_SATS_PER_WORKER" => "1"; aero=true)
         @test plan_legacy.mode == :flat_constellation_effector_queue
+    end
+end
+
+@testset "pre-pass-only stacks keep the flat route below the queue's thread floor" begin
+    # The flat queue's thread-budget floor (SPACEAGORA_EFFECTOR_FLAT_MIN_THREAD_BUDGET,
+    # default 4) used to send every multi-effector stack to the satellite
+    # batch at budgets 2 and 3, while budget 1 took the flat route through the
+    # pre-pass admission and budget 4 through the generic branch. For a stack
+    # whose effectors are all pre-passed that made two threads slower than one
+    # on the 4096-spacecraft P6 traces (docs/architecture/rhs_heuristic_defaults.md).
+    # The stacks are the P6 traces' own: harmonics + SRP + Sun/Moon n-body, and
+    # harmonics + fM aerodynamics in an exponential atmosphere.
+    if Threads.nthreads() < 2
+        @test_skip "needs julia --threads>=2 to reach a budget of two"
+        return
+    end
+    srp_nbody = (gravity, planet) -> (
+        gravity,
+        SolarRadiationPressureModel(1.2, 12.0),
+        NBodyGravityModel(body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet),
+    )
+    # 256 satellites: above the default satellites-per-worker floor (64) at
+    # budgets 2 and 3, which the harmonics + aerodynamics stack still has to
+    # pass on the generic branch.
+    n_sats = 256
+    budgets = Threads.nthreads() >= 3 ? (2, 3) : (2,)
+    for budget in budgets
+        forces = rhd_plan(n_sats, budget; effectors=srp_nbody)
+        @test forces.mode === :flat_constellation_effector_queue
+        @test forces.allotment == budget
+        @test forces.effector_decision.use_threads == false
+
+        aero = rhd_plan(n_sats, budget; aero=true)
+        @test aero.mode === :flat_constellation_effector_queue
+        @test aero.allotment == budget
+        @test aero.effector_decision.use_threads == false
+
+        # One effector outside the pre-passes and the queue itself would run,
+        # so the floor still applies: the per-link-atmosphere fM variant
+        # samples the atmosphere per link and stays on the queue.
+        mixed = rhd_plan(n_sats, budget;
+            effectors=(g, pl) -> (srp_nbody(g, pl)..., AerodynamicCoefficientfM(per_link_atmosphere=true)))
+        @test mixed.mode === :satellite_batch
+
+        # The floor still governs that stack, and lowering it still admits it.
+        lowered = rhd_plan(n_sats, budget, "SPACEAGORA_EFFECTOR_FLAT_MIN_THREAD_BUDGET" => "2";
+            effectors=(g, pl) -> (srp_nbody(g, pl)..., AerodynamicCoefficientfM(per_link_atmosphere=true)))
+        @test lowered.mode === :flat_constellation_effector_queue
+    end
+
+    # The harmonics + aerodynamics stack still passes the satellites-per-worker
+    # floor on the generic branch, as it does at budget 4: one satellite below
+    # two workers' worth is the satellite batch. Only with the harmonics file:
+    # the inverse-square fallback is a batched kernel, which the floor exempts.
+    if isfile(RHD_HARMONICS_FILE)
+        below = rhd_plan(2 * 64 - 1, 2; aero=true)
+        @test below.mode === :satellite_batch
     end
 end
 

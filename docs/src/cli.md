@@ -181,8 +181,11 @@ julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets check --pr
 ```
 
 `list` reads the catalog without downloading. `fetch` downloads only the selected
-version and verifies its bytes. `check` uses installed data offline and validates
-the grid schema, coordinates and generation settings. `--file=<path>` selects
+version and verifies its bytes. The same commands take
+`--preset=mars_global_upper_p20_frozen_v1 --version=1.0.0` for the global upper
+atmosphere preset and `--preset=mars_global_near_surface_p20_frozen_v1 --version=1.1.0`
+(or `--version=1.0.0`) for the near-surface preset. `check` uses installed data offline and validates
+the payload schema, coordinates or domain limits, and generation settings. `--file=<path>` selects
 an explicit exact-byte copy; an invalid path never falls back to retrieval.
 `fetch --offline` verifies an installed artifact without network access.
 Both `--preset=<id>` and `--preset <id>` forms are accepted, likewise `version`
@@ -193,3 +196,5 @@ These commands do not build or initialize native GRAM. Normal Odyssey example
 startup performs preset retrieval itself, so the commands above are optional
 inspection/prefetch tools. The unqualified `assets check` remains an inventory
 of repository-local asset roots and catalogs, not proof that a grid is valid.
+The printed `runtime_wrapper_revision` is the GRAMSuite revision used when the
+preset was generated; the environment's own pin is in its `Project.toml`.

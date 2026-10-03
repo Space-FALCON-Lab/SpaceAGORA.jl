@@ -389,6 +389,14 @@ tight override (e.g. `SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT=500M`) on this
 box to at least confirm Julia's collector visibly respects a hint set below
 where RSS would otherwise land -- neither was run here.
 
+**Correction, later measurement.** The P6p growth this section attributes to
+Julia's collector was not on the Julia heap: every trace-6 sample rebuilt a
+native GRAM atmosphere that only a finalizer frees, about 106 MB resident per
+sample, and a worker with a 7.4 GB hint ran 147 samples without a single
+collection. The hint is passed but cannot bound that memory. See
+`gram_thread_scaling.md`, "Pool-worker memory growth", for the measurements and
+the fix.
+
 ## What to run on TRX50 (16+ threads)
 
 This box cannot reproduce the 16+-thread regime where the crossover in the

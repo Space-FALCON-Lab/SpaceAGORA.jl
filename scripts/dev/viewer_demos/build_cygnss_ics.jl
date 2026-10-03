@@ -246,7 +246,7 @@ that CelesTrak distributes are generated against.
 """
 function tle_state(record::TleRecord, jd_epoch_utc::Float64)
     tle = read_tles(record.name * "\n" * record.line1 * "\n" * record.line2)[1]
-    prop = sgp4_init(tle; sgp4c = sgp4c_wgs84)
+    prop = sgp4_init(tle; sgp4c = SGP4C_WGS84)
     jd_tle = tle_epoch(tle)
     dt_min = (jd_epoch_utc - jd_tle) * 1440.0
     r_teme_km, v_teme_kms = sgp4!(prop, dt_min)

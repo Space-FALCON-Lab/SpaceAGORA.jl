@@ -91,6 +91,19 @@ case "${POINT:?set POINT}" in
     WARMUP=3 run montecarlo_heavy_aerobraking predictive    16 16 32 p4_16
     WARMUP=3 run montecarlo_heavy_aerobraking outer_process 16 16 32 p4_16
     WARMUP=3 run montecarlo_heavy_aerobraking policy_v2     16 16 32 p4_16 ;;
+  p34_locals_ws) # cold store: p34_locals at widths that fit a 12-core workstation
+    WARMUP=3 run independent_1sat_1hr predictive    12 12 256 p3_12
+    WARMUP=3 run independent_1sat_1hr outer_process 12 12 256 p3_12
+    WARMUP=3 run independent_1sat_1hr policy_v2     12 12 256 p3_12
+    WARMUP=3 run montecarlo_heavy_aerobraking predictive    4  4 32 p4_4
+    WARMUP=3 run montecarlo_heavy_aerobraking outer_process 4  4 32 p4_4
+    WARMUP=3 run montecarlo_heavy_aerobraking policy_v2     4  4 32 p4_4
+    WARMUP=3 run montecarlo_heavy_aerobraking predictive    8  8 32 p4_8
+    WARMUP=3 run montecarlo_heavy_aerobraking outer_process 8  8 32 p4_8
+    WARMUP=3 run montecarlo_heavy_aerobraking policy_v2     8  8 32 p4_8
+    WARMUP=3 run montecarlo_heavy_aerobraking predictive    12 12 32 p4_12
+    WARMUP=3 run montecarlo_heavy_aerobraking outer_process 12 12 32 p4_12
+    WARMUP=3 run montecarlo_heavy_aerobraking policy_v2     12 12 32 p4_12 ;;
   *) echo "unknown POINT=$POINT"; exit 2 ;;
 esac
 echo "[targeted] done -> $OUT"; ls "$OUT"

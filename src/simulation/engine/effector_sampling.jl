@@ -81,8 +81,8 @@ end
     # effectors (the `AerodynamicCoefficientfM` path taken outside flat-mode
     # atmosphere prefill) call straight into this function with
     # write_buffers=false, bypassing that path entirely.
-    # A fixed grid still varies with position and must check its spatial domain.
-    if cb_env.density_freeze_per_step && !(density_model isa SimulationModel.EnvironmentModels.GRAMGridAtmosphereModel)
+    # A native-free snapshot still varies with position and must check its spatial domain.
+    if cb_env.density_freeze_per_step && !(density_model isa SimulationModel.EnvironmentModels._NativeFreeSnapshotModel)
         times = p.shared_buffers.density_sample_t
         if sat_idx <= length(times) && isfinite(times[sat_idx])
             rho = sat_idx <= length(p.shared_buffers.densities) ? p.shared_buffers.densities[sat_idx] : 0.0
@@ -171,7 +171,7 @@ function _uniform_light_density_model(p, num_sats::Int)
     )
     model === nothing && return nothing
     callbacks.density_model_work_is_heavy(model) && return nothing
-    model isa SimulationModel.EnvironmentModels.GRAMGridAtmosphereModel && return nothing
+    model isa SimulationModel.EnvironmentModels._NativeFreeSnapshotModel && return nothing
     callbacks._gram_track_cache_enabled(cb_env.gram_track_cache, model) && return nothing
     return model
 end
@@ -197,9 +197,10 @@ function _fill_uniform_light_atmosphere!(
         view(lats, 1:num_sats),
         view(lons, 1:num_sats),
         t,
-        true,
+        SimulationModel.EnvironmentModels._environment_wind_enabled(p),
         p,
     )
+    SimulationModel.EnvironmentModels._zero_environment_winds!(p, view(sb.winds, 1:num_sats))
     SimulationModel.SimulationCallbacks._write_density_time_buffers!(p, num_sats, t)
     return nothing
 end
@@ -231,12 +232,12 @@ end
 end
 
 @inline function sample_buffered_atmosphere(x, p, sat_idx::Int, t::Float64)::AtmosphereSample
-    # Time alone does not identify a grid query: solver stages can share a time
-    # and have different positions, including outside grid bounds. Concurrent
-    # effectors may call this path for one satellite, so leave writes to the
-    # callback/prefill owners when bypassing the buffer for a read-only grid.
+    # Time alone does not identify a snapshot query: solver stages can share a
+    # time and have different positions, including outside the snapshot's domain.
+    # Concurrent effectors may call this path for one satellite, so leave writes to
+    # the callback/prefill owners when bypassing the buffer for a read-only snapshot.
     density_model = SimulationModel.SimulationCallbacks._density_model_for_sat(p, sat_idx)
-    if density_model isa SimulationModel.EnvironmentModels.GRAMGridAtmosphereModel
+    if density_model isa SimulationModel.EnvironmentModels._NativeFreeSnapshotModel
         return sample_atmosphere(x, p, sat_idx, t; write_buffers=false)
     end
     if !_buffered_atmosphere_valid(p, sat_idx, t)

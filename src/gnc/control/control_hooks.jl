@@ -1,4 +1,5 @@
 module ControlHooks
+    import ...SimulationLifecycle
     using ..Structure
 
     using ..ConfigTypes: ODEParams
@@ -15,7 +16,7 @@ module ControlHooks
     using ..AbstractTypes: AbstractTerrainModel
     using ..TerrainModels: NoTerrainModel, DEMTerrainModel
     using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
-    using ..EnvironmentModels: getDensity
+    using ..EnvironmentModels: getDensity, _environment_wind
     using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
     using ..ReferenceSystems
     using ..LinearAlgebra
@@ -33,7 +34,7 @@ module ControlHooks
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
     export ApolloDescentControlConfig, ApolloDescentControlModel, ApolloDescentControlState, attitude_error_vector
     export RpoLQMPCController, init_rpo_lqmpc, rpo_lqmpc_control
-    export RPOHeldActuation, RPOMPCControlModel
+    export RPOControlCommandLog, RPOHeldActuation, RPOMPCControlModel
     export MagneticMomentumManagerModel
     export RobotArmHeldActuation, RobotArmJointMPCController, RobotArmControlEffector
     export init_robot_arm_joint_mpc, robot_arm_joint_mpc_reference_preview

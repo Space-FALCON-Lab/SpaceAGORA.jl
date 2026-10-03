@@ -49,14 +49,23 @@ The station model and controller are a demonstration, not an ISS flight model.
 
 Start with the short hop:
 
+Prepare the optional HYPR companion environment once from the repository root:
+
+```text
+julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+```
+
+These HYPR examples load `SpaceAGORAHYPR` before their common helper activates
+the root project. Baseline examples continue to use `--project=.`.
+
 ```sh
-SPACEAGORA_DEMO_SMOKE=1 julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
+SPACEAGORA_DEMO_SMOKE=1 julia --project=examples/rpo_planner_env scripts/dev/viewer_demos/iss_hypr.jl
 ```
 
 Run the complete approach by omitting the environment variable:
 
 ```sh
-julia --project=. scripts/dev/viewer_demos/iss_hypr.jl
+julia --project=examples/rpo_planner_env scripts/dev/viewer_demos/iss_hypr.jl
 ```
 
 The script prints the HTML path under `output/viewer_demos/iss_hypr_<inputs digest>/`.

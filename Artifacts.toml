@@ -13,3 +13,27 @@ lazy = true
     [[odyssey_p20_scenario_v1_1_0_0.download]]
     sha256 = "1e612bf0dd760cde026f23bfec4202e2a6de8b687e28f28de1cc25e622c71582"
     url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-odyssey-p20-1.0.0/odyssey_p20_scenario_v1-1.0.0.tar.gz"
+
+[mars_global_upper_p20_frozen_v1_1_0_0]
+git-tree-sha1 = "205d02e06326acf242d15e89a5c598a8fcf5bfb3"
+lazy = true
+
+    [[mars_global_upper_p20_frozen_v1_1_0_0.download]]
+    sha256 = "de98aeb8523b9ed34e0f49ede672952576b8f4469b591116765bb461a85dd887"
+    url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-mars-global-upper-p20-1.0.0/mars_global_upper_p20_frozen_v1-1.0.0.tar.gz"
+
+[mars_global_near_surface_p20_frozen_v1_1_0_0]
+git-tree-sha1 = "51b5aae21b42515d45b9e7aba821c28aca7389a5"
+lazy = true
+
+    [[mars_global_near_surface_p20_frozen_v1_1_0_0.download]]
+    sha256 = "f0fa4a4cd05b747cef77f723bdb2a1a9697d8b824ee8b6159095c0bcb9212b37"
+    url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-mars-global-near-surface-p20-1.0.0/mars_global_near_surface_p20_frozen_v1-1.0.0.tar.gz"
+
+[mars_global_near_surface_p20_frozen_v1_1_1_0]
+git-tree-sha1 = "19bd3b55915f05b4e437510d1d66dc751852fb07"
+lazy = true
+
+    [[mars_global_near_surface_p20_frozen_v1_1_1_0.download]]
+    sha256 = "3b3a7832cab9941d75104f7e797686c53d5d45b3bf1af33bdcbc2add6d3e0f15"
+    url = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl/releases/download/surrogate-mars-global-near-surface-p20-1.1.0/mars_global_near_surface_p20_frozen_v1-1.1.0.tar.gz"

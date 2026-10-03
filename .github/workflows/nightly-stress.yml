@@ -34,6 +34,8 @@ on:
 
 # One live run per pull request (or per branch for schedule/push): a new
 # push cancels the stale run of the same PR instead of competing with it.
+# Setup (.github/actions/setup) restores the depot cache that Julia CI's `depot`
+# job fills and never saves one of its own.
 concurrency:
   group: nightly-stress-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -50,33 +52,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
           fetch-depth: 0
 
-      - name: Load pinned dev GRAMSuite revision
-        env:
-          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: bash .github/scripts/update_gramsuite_submodule.sh dev
-
-      - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+      - name: Setup
+        uses: ./.github/actions/setup
         with:
-          version: "1.12"
-
-      - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
-
-      - name: Instantiate vendored GRAMSuite
-        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
-
-      - name: GRAMSuite load smoke
-        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
-
-      - name: Instantiate
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh --clean
+          gram: native
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Fetch base ref (PR only)
         if: github.event_name == 'pull_request'
@@ -136,33 +122,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+          # This checkout needs only this repository, including on Dependabot runs.
+          token: ${{ github.token }}
+          # GRAM retrieval supplies its own scoped credential explicitly.
+          persist-credentials: false
           fetch-depth: 0
 
-      - name: Load pinned dev GRAMSuite revision
-        env:
-          GH_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-        run: bash .github/scripts/update_gramsuite_submodule.sh dev
-
-      - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+      - name: Setup
+        uses: ./.github/actions/setup
         with:
-          version: "1.12"
-
-      - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
-
-      - name: Instantiate vendored GRAMSuite
-        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using Pkg; Pkg.instantiate()'
-
-      - name: GRAMSuite load smoke
-        run: julia --startup-file=no --project=data/GRAMSuite.jl -e 'using GRAMSuite; println("gramsuite_load_ok")'
-
-      - name: Instantiate
-        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Ensure native GRAM build
-        run: ./scripts/ensure_gram_native.sh --clean
+          gram: native
+          token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       - name: Fetch base ref (PR only)
         if: github.event_name == 'pull_request'

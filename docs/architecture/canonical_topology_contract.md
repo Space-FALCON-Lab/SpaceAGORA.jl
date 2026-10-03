@@ -14,6 +14,10 @@ This contract defines canonical ownership for the topology cleanup that answers 
 5. Mission configuration ownership: initial-state definitions live with the
    spacecraft model (`src/vehicle/spacecraft/model.jl`); plans, schedules, and
    aerobraking policy live under `src/mission/operations/*`.
+   One-run scenario configuration lives under `src/simulation/config/`; the existing
+   spacecraft collection and selected effectors are defined in
+   `constellation_configuration.jl`, retaining the `SpacecraftModels.DynamicsModel`
+   identity. Physical spacecraft assembly remains under vehicle.
 6. Simulation execution ownership belongs to `src/simulation/engine/*`; legacy `src/simulation/events/*`, `src/simulation/execution/*`, and `src/simulation/solver_orchestration/*` are retired.
 7. Shared runtime serialization services are owned by `src/simulation/runtime_services.jl`, not by `SimulationModel`.
 8. Actuator ownership: thruster-specific hooks live in

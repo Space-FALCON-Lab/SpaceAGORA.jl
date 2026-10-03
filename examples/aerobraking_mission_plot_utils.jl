@@ -219,6 +219,13 @@ function _mars_odyssey_initial_condition_from_spice(initial_time::InitialTime, s
     return _spice_initial_condition_from_config(initial_time, spice_path, MARS_ODYSSEY_SPICE_CONFIG)
 end
 
+# Non-SPICE result consumers share a loading boundary; event tables keep their
+# separate schemas and SPICE readers retain their kernel-furnishing order.
+function _read_simulation_results(csv_path::String)::DataFrame
+    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
+    return CSV.read(csv_path, DataFrame)
+end
+
 function _require_float_column(df::DataFrame, name::Symbol)::Vector{Float64}
     return Float64.(df[!, name])
 end
@@ -247,9 +254,7 @@ function _interval_touches_correction(t0::Float64, t1::Float64, correction_times
 end
 
 function _derive_orbit_extrema_from_results(csv_path::String, planet)
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
-
-    df = CSV.read(csv_path, DataFrame)
+    df = _read_simulation_results(csv_path)
     nrow(df) >= 3 || throw(ArgumentError("Need at least 3 saved samples to derive periapsis/apoapsis extrema."))
 
     time_s = _require_float_column(df, :time)
@@ -942,9 +947,8 @@ end
 function _save_drag_along_velocity_plot(args::SimulationConfiguration)
     results_dir = args.simulation_settings.results_directory
     csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
 
-    df = CSV.read(csv_path, DataFrame)
+    df = _read_simulation_results(csv_path)
     altitude_m = _require_float_column(df, :sc1_altitude)
     vel_x = _require_float_column(df, :sc1_vel_1)
     vel_y = _require_float_column(df, :sc1_vel_2)
@@ -1000,9 +1004,8 @@ end
 function _save_aero_sideways_components_plot(args::SimulationConfiguration)
     results_dir = args.simulation_settings.results_directory
     csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
 
-    df = CSV.read(csv_path, DataFrame)
+    df = _read_simulation_results(csv_path)
     altitude_m = _require_float_column(df, :sc1_altitude)
     vel_x = _require_float_column(df, :sc1_vel_1)
     vel_y = _require_float_column(df, :sc1_vel_2)
@@ -1076,30 +1079,24 @@ function _save_aero_sideways_components_plot(args::SimulationConfiguration)
     return plot_path
 end
 
-function _simulation_position_samples(args::SimulationConfiguration)
-    results_dir = args.simulation_settings.results_directory
-    csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
-
-    df = CSV.read(csv_path, DataFrame)
+# Keep each request limited to its own three columns and convert metres to
+# kilometres (or metres/second to kilometres/second) after Float64 conversion.
+function _simulation_vector_samples(args::SimulationConfiguration, columns::NTuple{3,Symbol})
+    csv_path = joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
+    df = _read_simulation_results(csv_path)
     time_s = _require_float_column(df, :time)
-    sim_x_km = _require_float_column(df, :sc1_pos_1) ./ 1e3
-    sim_y_km = _require_float_column(df, :sc1_pos_2) ./ 1e3
-    sim_z_km = _require_float_column(df, :sc1_pos_3) ./ 1e3
-    return time_s, sim_x_km, sim_y_km, sim_z_km
+    x = _require_float_column(df, columns[1]) ./ 1e3
+    y = _require_float_column(df, columns[2]) ./ 1e3
+    z = _require_float_column(df, columns[3]) ./ 1e3
+    return time_s, x, y, z
+end
+
+function _simulation_position_samples(args::SimulationConfiguration)
+    return _simulation_vector_samples(args, (:sc1_pos_1, :sc1_pos_2, :sc1_pos_3))
 end
 
 function _simulation_velocity_samples(args::SimulationConfiguration)
-    results_dir = args.simulation_settings.results_directory
-    csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
-
-    df = CSV.read(csv_path, DataFrame)
-    time_s = _require_float_column(df, :time)
-    sim_vx_kms = _require_float_column(df, :sc1_vel_1) ./ 1e3
-    sim_vy_kms = _require_float_column(df, :sc1_vel_2) ./ 1e3
-    sim_vz_kms = _require_float_column(df, :sc1_vel_3) ./ 1e3
-    return time_s, sim_vx_kms, sim_vy_kms, sim_vz_kms
+    return _simulation_vector_samples(args, (:sc1_vel_1, :sc1_vel_2, :sc1_vel_3))
 end
 
 function _orbital_elements_from_state_samples(
@@ -1286,8 +1283,7 @@ end
 function _trajectory_marker_times(args::SimulationConfiguration)
     results_dir = args.simulation_settings.results_directory
     csv_path = joinpath(results_dir, "simulation_results.csv")
-    isfile(csv_path) || throw(ArgumentError("Simulation results CSV not found at $(abspath(csv_path))."))
-    df = CSV.read(csv_path, DataFrame)
+    df = _read_simulation_results(csv_path)
     time_s = _require_float_column(df, :time)
     altitude_m = _require_float_column(df, :sc1_altitude)
 

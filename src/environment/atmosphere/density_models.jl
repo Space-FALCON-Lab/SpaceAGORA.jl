@@ -482,6 +482,118 @@ const _CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN = Ref{Function}(
 clear_gram_static_grid_cache!() = _CLEAR_GRAM_STATIC_GRID_CACHE_FN[]()
 clear_gram_offline_surrogate_cache!() = _CLEAR_GRAM_OFFLINE_SURROGATE_CACHE_FN[]()
 
+# Native GRAM atmospheres are freed by a finalizer, and the Julia collector
+# paces itself on the Julia heap alone, so it cannot see how much native memory
+# an unreferenced atmosphere is holding (about 106 MB resident for Earth). A
+# process that builds one per run -- an epoch-realigned model, a deepcopied
+# isolated configuration -- therefore accumulates them faster than the collector
+# gets around to finalizing them. `run_simulation` calls this after every run;
+# the extension runs a full collection once enough more native atmospheres are
+# alive than right after the last one it ran (SPACEAGORA_GRAM_NATIVE_COLLECT_LIMIT).
+# Returns whether it collected. A no-op without the extension.
+const _COLLECT_UNREFERENCED_GRAM_ATMOSPHERES_FN = Ref{Function}(() -> false)
+collect_unreferenced_gram_atmospheres!()::Bool = _COLLECT_UNREFERENCED_GRAM_ATMOSPHERES_FN[]()
+
+# Unknown raw cores are conservatively treated as history-dependent. The
+# GRAMSuite extension owns the actual wind-mode policy; do not duplicate its
+# environment parsing here or infer determinism from the wrapper type.
+@inline _gram_core_wind_is_history_dependent(_core)::Bool = true
+
+"""
+    density_model_history_dependent(model) -> Bool
+
+Whether the values `model` returns depend on the order and number of earlier
+queries on the same instance, not only on the query itself. True for a native
+GRAM model whose requested winds are perturbed: GRAM advances a correlated
+random walk on every native update, so each query changes what the next one
+returns. Density and temperature come from the mean state and do not.
+
+Callers that may issue queries in a scheduling-dependent order (threaded RHS
+evaluation or threaded callbacks) use this to fall back to a single, ordered
+query stream. The default is `false`.
+"""
+density_model_history_dependent(::Any)::Bool = false
+density_model_history_dependent(model::GRAMAtmosphereModel)::Bool =
+    _gram_core_wind_is_history_dependent(model.core)
+# A surrogate answers in-grid queries from its fixed table, with no native call.
+# It reaches its native base model routinely only below a configured
+# `point_fallback_below_m`, and it is history-dependent only then (and only if
+# the base model is). The default surrogates of Earth, Mars and Venus configure
+# no fallback altitude. A query outside the table's grid also falls back to
+# native GRAM, but that is an exceptional, warn-once path, and is not treated as
+# making the run history-dependent: such a run keeps per-stage sampling and a
+# threaded callback, independent of the explicit freeze policy.
+density_model_history_dependent(model::GRAMAtmosphereModelSurrogate)::Bool =
+    model.point_fallback_below_m !== nothing &&
+    density_model_history_dependent(model.base_model)
+
+"""
+    reset_density_model_history!(model) -> Bool
+
+Return a history-dependent density model to the state it had right after
+construction, so that the next query starts a fresh random walk from the
+configured seed. Returns whether a reset was applied. The default is a no-op
+returning `false`; the GRAMSuite extension implements it for native GRAM.
+
+`run_simulation` calls this on a history-dependent run's density models
+immediately before the solve, after every pre-solve probe, so that a run's
+perturbed winds do not depend on what earlier runs or calibration passes
+queried on the same instance. A reseeded native model is back in its
+first-update state, whose one-time initialization must not run concurrently on
+several instances, so the caller warms each reseeded native model serially
+afterwards (`SimulationEngine._reset_density_model_histories!`).
+"""
+reset_density_model_history!(::Any)::Bool = false
+reset_density_model_history!(model::GRAMAtmosphereModelSurrogate)::Bool =
+    reset_density_model_history!(model.base_model)
+
+"""
+    _environment_wind_enabled(p) -> Bool
+
+Whether the run's `EnvironmentModel.wind` asks for atmospheric winds. With
+`wind = false` a simulation treats the atmosphere as co-rotating with the
+planet: every density query it makes passes `wind=false`, and the wind it hands
+to aerodynamics, guidance and the saved `wind` field is zero
+(`_environment_wind`).
+
+The masking is needed because a model's own `wind` argument is not a zero-wind
+switch for every model. For native GRAM the pinned wrapper returns *nominal*
+(mean) winds when `wind=false` and the mode selected by
+`SPACEAGORA_GRAM_WIND_MODE` otherwise; grid snapshots return their stored winds
+either way. The analytic models return zero wind regardless.
+
+A parameter object without the field (a test double) keeps the historical
+behavior of requesting winds.
+"""
+@inline function _environment_wind_enabled(p)::Bool
+    env = p.args.environment_model
+    return hasproperty(env, :wind) ? Bool(getproperty(env, :wind)) : true
+end
+
+"""
+    _environment_wind(p, wind_vec) -> SVector{3, Float64}
+    _environment_wind(enabled::Bool, wind_vec) -> SVector{3, Float64}
+
+`wind_vec` when the run's winds are enabled, otherwise zero. See
+`_environment_wind_enabled`.
+"""
+@inline _environment_wind(enabled::Bool, wind_vec)::SVector{3, Float64} =
+    enabled ? wind_vec : SVector{3, Float64}(0.0, 0.0, 0.0)
+@inline _environment_wind(p, wind_vec)::SVector{3, Float64} =
+    _environment_wind(_environment_wind_enabled(p), wind_vec)
+
+"""
+    _zero_environment_winds!(p, winds) -> winds
+
+Zero every entry of `winds` when the run's winds are disabled; a no-op
+otherwise. Used after batch density queries that write a whole wind buffer.
+"""
+@inline function _zero_environment_winds!(p, winds::AbstractVector{SVector{3, Float64}})
+    _environment_wind_enabled(p) && return winds
+    fill!(winds, SVector{3, Float64}(0.0, 0.0, 0.0))
+    return winds
+end
+
 function _gram_core_density_state(
     _core,
     _h::Float64,

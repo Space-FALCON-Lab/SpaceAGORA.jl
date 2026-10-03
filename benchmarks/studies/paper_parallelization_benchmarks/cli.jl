@@ -49,7 +49,32 @@ Base.@kwdef struct PPBPhase
     # worker cap still applies, because that one is a memory limit, not a
     # portability rescale.
     budget_grid_fixed::Bool    = false
+    # Modes run ONCE at the grid's full budget instead of once per split:
+    # `threads = process_workers = ` the budget (see `_ppb_full_budget`), so the
+    # mode is handed the whole machine and chooses its own split, the way a user
+    # would run it. Every name here must also be in `modes`, which stays the
+    # list of everything the phase runs (the precompile workload and
+    # --lean-modes read it); the per-split runs take `modes` minus these. Empty
+    # for every phase but P5f, and meaningless without a budget_grid.
+    full_budget_modes::Vector{String} = String[]
 end
+
+# A copy of `phase` with the named fields replaced. Every derived phase (lean,
+# preview, caps, floors) is built through this, so a field added to PPBPhase
+# is carried through them rather than silently reset to its default.
+_ppb_phase_with(phase::PPBPhase; kw...) =
+    PPBPhase(; (f => get(kw, f, getfield(phase, f)) for f in fieldnames(PPBPhase))...)
+
+# The per-split modes and the full-budget modes of a phase. A full-budget mode
+# that --lean-modes trimmed from `modes` is not run at all.
+_ppb_full_budget_modes(phase::PPBPhase)::Vector{String} =
+    [m for m in phase.modes if m in phase.full_budget_modes]
+_ppb_split_modes(phase::PPBPhase)::Vector{String} =
+    [m for m in phase.modes if !(m in phase.full_budget_modes)]
+
+# A grid whose entries all spend the same total: every split of one budget.
+_ppb_is_split_grid(grid::Vector{Tuple{Int, Int}})::Bool =
+    !isempty(grid) && allequal(w * t for (w, t) in grid)
 
 Base.@kwdef struct PPBConfig
     phases::Vector{String}  = String[]
@@ -143,20 +168,7 @@ function _ppb_lean_phase(phase::PPBPhase)::PPBPhase
     isempty(modes) && return phase
     modes == phase.modes && return phase
     println("[paper-benchmarks] phase $(phase.id): lean modes -> $(join(modes, ", "))")
-    return PPBPhase(
-        id            = phase.id,
-        label         = phase.label,
-        cases         = phase.cases,
-        parity_cases  = phase.parity_cases,
-        modes         = modes,
-        mc_samples    = phase.mc_samples,
-        repeats       = phase.repeats,
-        warmup        = phase.warmup,
-        thread_mode   = phase.thread_mode,
-        worker_ladder = phase.worker_ladder,
-        budget_grid   = phase.budget_grid,
-        budget_grid_fixed = phase.budget_grid_fixed,
-    )
+    return _ppb_phase_with(phase; modes = modes)
 end
 
 # Preview mode: caps N_sat at 64, MC samples at 16, workers at 4, repeats at 2.
@@ -217,21 +229,32 @@ function _ppb_preview_phase(phase::PPBPhase)::PPBPhase
     isempty(samples) && (samples = [1])
     workers = filter(w -> w <= PPB_PREVIEW_MAX_WORKERS, phase.worker_ladder)
     isempty(workers) && !isempty(phase.worker_ladder) && (workers = [1, 2])
-    return PPBPhase(
-        id            = phase.id,
+    return _ppb_phase_with(phase;
         label         = phase.label * " [preview]",
         cases         = cases,
         parity_cases  = parity,
-        modes         = phase.modes,
         mc_samples    = samples,
         repeats       = PPB_PREVIEW_REPEATS,
         warmup        = PPB_PREVIEW_WARMUP,
-        thread_mode   = phase.thread_mode,
         worker_ladder = workers,
-        budget_grid   = filter(p -> p[1] * p[2] <= PPB_PREVIEW_MAX_WORKERS, phase.budget_grid),
-        budget_grid_fixed = phase.budget_grid_fixed,
+        budget_grid   = _ppb_preview_budget_grid(phase),
     )
 end
+
+# A host-sized split grid (budget_grid_fixed, every entry one split of the same
+# budget: P5, P5f) is kept whole under --preview, and its runs are not held to
+# PPB_PREVIEW_MAX_WORKERS (see `_ppb_preview_caps_workers`). The preview cap
+# exists to fit a grid declared against a 32-core box onto a laptop; this grid
+# is already the host's own budget, and filtering it to products of at most 4
+# emptied it on any host above 4 cores, so the phase ran as one unsplit run
+# that measured none of its axis. Every other grid keeps the preview filter.
+function _ppb_preview_budget_grid(phase::PPBPhase)::Vector{Tuple{Int, Int}}
+    _ppb_preview_keeps_grid(phase) && return phase.budget_grid
+    return filter(p -> p[1] * p[2] <= PPB_PREVIEW_MAX_WORKERS, phase.budget_grid)
+end
+
+_ppb_preview_keeps_grid(phase::PPBPhase)::Bool =
+    phase.budget_grid_fixed && _ppb_is_split_grid(phase.budget_grid)
 
 
 # ── Paper routing figures (P1-P5) ─────────────────────────────────────────────
@@ -350,6 +373,30 @@ _ppb_p6_l20_case(n::Int=PPB_P6_N_SAT)   = "gravity_$(n)sat_l20_vacuum_$(PPB_P6_L
 _ppb_p6_nbody_case(n::Int=PPB_P6_N_SAT) = "gravity_$(n)sat_l50_srp_nbody_vacuum_$(PPB_P6_VACUUM_MISSION_S)s"
 _ppb_p6_aero_case(variant::String, n::Int=PPB_P6_N_SAT) =
     "aero_$(n)sat_l50_$(variant)_$(PPB_P6_AERO_MISSION_S)s"
+
+# ── P7: one spacecraft, short missions ───────────────────────────────────────
+#
+# The only one-spacecraft, one-simulation point in P1-P6 is P1's bottom rung, a
+# 4 150 000 s pure-gravity mission sized to clear the 3 s floor, and there every
+# route resolved to serial execution. P7 is the other end: one spacecraft, about
+# one orbit, the full thread budget, so a route's fixed setup (planning, the
+# campaign machinery, calibration probes) is a large share of the wall time and
+# the table reads as "what does choosing a route cost when there is nothing to
+# parallelize". Its serial baselines are under the floor by design; the absolute
+# difference from serial in seconds is the result, not the speedup ratio.
+#
+# Three rows, one force model each, iso-mission (PPC_P7_MISSION_S, derived in
+# cases.jl from the orbit P1's spacecraft flies): P1's degree-50 vacuum physics,
+# P6 trace 3's degree 50 + SRP + third body, and P6 trace 4's degree 50 +
+# exponential-atmosphere aero on an orbit inside the atmosphere. The case
+# catalog's P7 block says why the aero row keeps this duration instead of trace
+# 4's 100 s.
+const PPB_P7_MISSION_S = PPC_P7_MISSION_S
+const PPB_P7_CASES = [
+    "gravity_1sat_l50_vacuum_$(PPB_P7_MISSION_S)s",
+    "gravity_1sat_l50_srp_nbody_vacuum_$(PPB_P7_MISSION_S)s",
+    "aero_1sat_l50_expatm_$(PPB_P7_MISSION_S)s",
+]
 
 # ── Phase catalog ─────────────────────────────────────────────────────────────
 
@@ -1200,6 +1247,32 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         budget_grid_fixed = true,
     ),
     PPBPhase(
+        id    = "P5f",
+        label = "Paper — Monte Carlo over Constellations, Full Machine",
+        # P5 runs every mode once per split, so its adaptive arms were always
+        # told the split and chose only a route within it. P5f asks the other
+        # question: handed the whole budget and no split, does R7 land within
+        # the criterion of the best static allocation over every route AND every
+        # split? The static modes run exactly as in P5 (every split of the same
+        # budget); predictive runs once per case at the full budget, with
+        # --threads and --process-workers both set to it (`_ppb_full_budget`).
+        # policy_v2 is not run here: R6 is scored against its given split in P5.
+        cases        = ["mcgrid_16sat_8mc", "mcgrid_8sat_16mc"],
+        parity_cases = String[],
+        modes        = ["serial", "outer_threads", "outer_process", "outer_inner_static", "predictive"],
+        full_budget_modes = ["predictive"],
+        mc_samples   = [1],
+        # Declared here rather than raised by SPACEAGORA_PPB_MIN_REPEATS, as P7
+        # does: the full-budget row is one median per case with nothing beside
+        # it, so the phase should not depend on the launcher remembering the
+        # floor. The warm-up is P5's, and SPACEAGORA_PPB_MIN_WARMUP raises it
+        # the same way.
+        repeats      = 11,
+        warmup       = 1,
+        budget_grid  = _ppb_paper_split_grid(),
+        budget_grid_fixed = true,
+    ),
+    PPBPhase(
         id    = "P6",
         label = "Paper — Thread Scaling at 4096 Spacecraft, Force-Model and Atmosphere Variants",
         # Traces 1-5. Trace 2 comes from _ppb_paper_size_case so the rung is the
@@ -1257,6 +1330,26 @@ const PAPER_BENCHMARK_PHASES = PPBPhase[
         # PPBPhase.budget_grid_fixed.
         budget_grid  = [(w, 1) for w in _ppb_paper_budget_ladder()],
         budget_grid_fixed = true,
+    ),
+    PPBPhase(
+        id    = "P7",
+        label = "Paper — Single Satellite, Short Missions",
+        # See the P7 block above the phase catalog.
+        cases        = PPB_P7_CASES,
+        # No parity case: P1 carries the P-series parity check, and these force
+        # models are parity-checked at their own sizes by B10 and B11.
+        parity_cases = String[],
+        # P1's modes and thread axis exactly, so a P7 row and P1's one-spacecraft
+        # row are the same comparison at a different amount of work.
+        modes        = ["serial", "outer_threads", "inner_only", "outer_inner_static", "policy_v2", "predictive"],
+        mc_samples   = [1],
+        # Eleven here rather than P1's three raised by SPACEAGORA_PPB_MIN_REPEATS:
+        # a sub-second point is the one most exposed to scheduler noise, and the
+        # phase should not depend on the launcher remembering the floor. The
+        # floor only raises a count, so it leaves this one alone.
+        repeats      = 11,
+        warmup       = 1,
+        thread_mode  = :max_only,
     ),
 ]
 

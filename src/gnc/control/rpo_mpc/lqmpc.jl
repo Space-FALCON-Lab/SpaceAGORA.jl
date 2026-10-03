@@ -158,7 +158,11 @@ function rpo_ref_preview(plan::RPOPlan, t_elapsed_s::Real, dt::Real, horizon::In
     out = zeros(nx, horizon + 1)
     n_ref = size(plan.r_ref_rtn, 2)
     n_ref == 0 && return out
-    start_idx = clamp(Int(floor(Float64(t_elapsed_s) / max(Float64(dt), 1.0e-9))) + 1, 1, n_ref)
+    # Updates fall on multiples of dt, but t/dt can land just below an integer
+    # in floating point (16.2 / 0.1 = 161.99999999999997); flooring that would
+    # hand the tracker the previous sample, a reference one step behind.
+    steps = Float64(t_elapsed_s) / max(Float64(dt), 1.0e-9)
+    start_idx = clamp(Int(floor(steps + 1.0e-6)) + 1, 1, n_ref)
     for j in 0:horizon
         idx = min(start_idx + j, n_ref)
         out[1:3, j + 1] .= plan.r_ref_rtn[:, idx]

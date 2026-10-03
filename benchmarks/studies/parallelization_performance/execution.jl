@@ -3,12 +3,29 @@ function ppc_solve_once(args, cfg::PPCConfig)
     # Calling the config-taking API here would reapply those values by mutating
     # process-global ENV for every solve, which is unsafe when samples run on
     # multiple threads.
-    return SimulationEngine.run_simulation(
+    result = SimulationEngine.run_simulation(
         args;
         isolate_state=false,
         return_solution=true,
         return_solver_metadata=true
     )
+    ppc_startup_trace("first_solve")
+    return result
+end
+
+# SPACEAGORA_PPC_DUMP_STATE_DIR=<dir>: write each successful sample's step times
+# and final state, as raw Float64, to <dir>. For byte-for-byte comparison of two
+# runs of the same point (the precompile workload's validation compares a run
+# with the workload against one without). Off by default.
+function _ppc_dump_state(case_name::String, sample_idx::Int, sample_seed::Int, sol)
+    dir = get(ENV, "SPACEAGORA_PPC_DUMP_STATE_DIR", "")
+    isempty(dir) && return nothing
+    mkpath(dir)
+    open(joinpath(dir, "state_$(case_name)_i$(sample_idx)_s$(sample_seed).bin"), "w") do io
+        write(io, Float64.(sol.t))
+        isempty(sol.u) || write(io, Float64[x for x in sol.u[end]])
+    end
+    return nothing
 end
 
 @inline function ppc_solve_success(sol)::Bool
@@ -31,7 +48,20 @@ function ppc_terminal_metrics(sol)
     )
 end
 
+# The inner thread budget this sample runs under, as the engine will resolve it
+# (SPACEAGORA_INNER_THREAD_BUDGET clamped to the thread pool, or the whole pool
+# when unset). Read at the start of the sample, which is where a campaign
+# runner's declared per-sample budget is in force; 0 if it cannot be read.
+function _ppc_sample_inner_budget()::Int
+    try
+        return Int(SpaceAGORA.SimulationModel.ParallelPolicy.effective_inner_thread_budget())
+    catch
+        return 0
+    end
+end
+
 function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int, sample_seed::Int)
+    inner_budget = _ppc_sample_inner_budget()
     args = ppc_single_config(case_name, cfg; seed=sample_seed, mc_index=sample_idx)
     timed = @timed begin
         try
@@ -43,6 +73,7 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
     end
     if timed.value.ok && timed.value.result !== nothing
         sol = timed.value.result.solution
+        _ppc_dump_state(case_name, sample_idx, sample_seed, sol)
         return (
             success=true,
             retcode=string(sol.retcode),
@@ -52,6 +83,7 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
             terminal=ppc_terminal_metrics(sol),
             error_type="",
             error_message="",
+            inner_thread_budget=inner_budget,
             # Taken from the solve's own return value rather than by calling
             # policy_telemetry_snapshot() out here. _active_policy_context()
             # resolves through task-local storage first, and the engine runs the
@@ -74,6 +106,7 @@ function ppc_run_sample_once(case_name::String, cfg::PPCConfig, sample_idx::Int,
         terminal=(terminal_time_s=missing, pos_norm_m=missing, vel_norm_mps=missing, mass_kg=missing),
         error_type=retcode,
         error_message=errmsg,
+        inner_thread_budget=inner_budget,
         policy=nothing
     )
 end
@@ -110,37 +143,45 @@ function ppc_ensure_process_workers!(n::Int)::Vector{Int}
     if current_external < desired
         add_count = desired - current_external
         new_workers = addprocs(add_count; exeflags=_ppc_pool_worker_exeflags(desired))
+        # GRAMSuite goes onto the pool exactly when this process has it, i.e.
+        # when this process's case builds a live GRAM atmosphere: cases.jl loads
+        # it at include time from the --case on the command line, which a
+        # Distributed worker does not see (addprocs does not pass ARGS on), so
+        # the answer has to be carried over from here.
+        #
+        # This used to load it on every pool worker unconditionally, on the
+        # reasoning that it was cheap. It is not cheap once the worker has
+        # precompiled solver code to lose: the GRAM extension's methods
+        # invalidate SpaceAGORA's compiled solve path, and with the paper
+        # harness's precompile workload loaded a pool worker's first
+        # non-GRAM sample took 19.9 s with GRAMSuite loaded against 1.9 s
+        # without (independent_1sat_1hr, one worker, this workstation). Only
+        # startup changes; a worker whose case never builds a GRAM model never
+        # calls into GRAMSuite.
+        load_gram = Base.get_extension(SpaceAGORA, :SpaceAGORAGRAMSuiteExt) !== nothing
         @sync for w in new_workers
-            @async remotecall_wait(w, PPC_REPO_ROOT) do repo_root
+            @async remotecall_wait(w, PPC_REPO_ROOT, load_gram) do repo_root, load_gram
                 study_dir = joinpath(repo_root, "benchmarks", "studies", "parallelization_performance")
                 include(joinpath(study_dir, "cli.jl"))
                 include(joinpath(study_dir, "modes.jl"))
                 include(joinpath(study_dir, "cases.jl"))
                 include(joinpath(study_dir, "trajectory_parity.jl"))
                 include(joinpath(study_dir, "execution.jl"))
-                # cases.jl's own eager-GRAM-load check inspects ARGS to decide
-                # whether this process will run a GRAM-live case (see
-                # PPC_GRAM_LIVE_CASES) -- but a Distributed worker started via
-                # addprocs doesn't inherit the launching process's command-line
-                # ARGS, so that check silently never fires here, and GRAM-live
-                # cases dispatched under outer_process crash with `MethodError:
-                # no method matching GRAMAtmosphereModel(; planet_name::String)`
-                # the same way the world-age bug did before that check existed.
-                # Distributed workers are only ever spawned for outer_process
-                # batches, so eagerly loading GRAMSuite unconditionally here
-                # (rather than threading "does this case need it" through) is
-                # cheap relative to the alternative of getting it wrong.
-                # @eval, not invokelatest: `Base.invokelatest(f)` only defers
-                # the *call*, but evaluating the bare identifier
-                # `ppc_ensure_gramsuite_loaded!` to get `f` in the first place
-                # still happens in this closure's original (pre-`include`)
-                # world, so it throws the same `UndefVarError` before
-                # invokelatest ever runs. @eval re-resolves the whole
+                # A GRAM-live case dispatched under outer_process needs GRAMSuite
+                # on the worker, or it crashes with `MethodError: no method
+                # matching GRAMAtmosphereModel(; planet_name::String)` (the
+                # extension never attached). @eval, not invokelatest:
+                # `Base.invokelatest(f)` only defers the *call*, but evaluating
+                # the bare identifier `ppc_ensure_gramsuite_loaded!` to get `f`
+                # in the first place still happens in this closure's original
+                # (pre-`include`) world, so it throws the same `UndefVarError`
+                # before invokelatest ever runs. @eval re-resolves the whole
                 # expression, name lookup included, fresh against the current
                 # global bindings -- the same reason ppc_ensure_gramsuite_loaded!
                 # itself uses `@eval import GRAMSuite` rather than a plain
                 # `import`.
-                @eval ppc_ensure_gramsuite_loaded!()
+                load_gram && @eval ppc_ensure_gramsuite_loaded!()
+                @eval ppc_startup_trace("loaded")
                 nothing
             end
         end
@@ -330,6 +371,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         end
     end
     GC.gc()
+    ppc_startup_trace("timed_start")
     batch_started = time()
     results = Vector{Any}(undef, sample_count)
     actual_backend = "serial"
@@ -391,6 +433,7 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
         # every backend-conditional pair (the inner budget among them).
         mode=mode,
         env_extra=Pair{String, String}[],
+        adaptive_allocation="",
         policy=ppc_policy_columns(
             isempty(results) ? nothing :
                 (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
@@ -575,6 +618,7 @@ function ppc_run_adaptive_batch(
         end
     end
     GC.gc()
+    ppc_startup_trace("timed_start")
     batch_started = time()
     r = withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=1)...,
                 "SPACEAGORA_OUTER_ROUTE_STATE_PATH" => state_path) do
@@ -599,6 +643,7 @@ function ppc_run_adaptive_batch(
     scope = r.local_slots > 0 ?
         "adaptive_mixed_w$(r.threads - r.local_slots)_l$(r.local_slots)_sample_batch" :
         "adaptive_$(r.route)_sample_batch"
+    allocation = ppc_adaptive_allocation(r, results)
     return (
         results=results,
         batch_wall_time_s=batch_wall,
@@ -607,11 +652,32 @@ function ppc_run_adaptive_batch(
         outer_tasks=r.threads,
         mode=mode,
         env_extra=env_extra,
+        adaptive_allocation=allocation,
         policy=ppc_policy_columns(
             isempty(results) ? nothing :
                 (results[end] isa NamedTuple && haskey(results[end], :policy) ? results[end].policy : nothing)
         )
     )
+end
+
+"""
+    ppc_adaptive_allocation(r, results) -> String
+
+What an adaptive campaign actually ran, as one string for the row's
+`adaptive_allocation` column: `<route>:w<W>+l<L>:b<B>` with `W` the concurrent
+consumers apart from the coordinator's local slots (thread tasks for the
+threads route, pool worker processes for the process route, 1 for none), `L`
+the local slots that ran beside a pool, and `B` the largest inner thread budget
+any sample ran under (pool workers are one-thread processes, so a pool sample
+reports 1). Read from the runner's own result and from the samples, not from
+the plan, so a guard that closed consumers mid-campaign shows what remained.
+"""
+function ppc_adaptive_allocation(r, results)::String
+    local_slots = max(0, Int(r.local_slots))
+    workers = max(1, Int(r.threads) - local_slots)
+    budgets = [Int(get(x, :inner_thread_budget, 0)) for x in results if x isa NamedTuple]
+    b = isempty(budgets) ? 0 : maximum(budgets)
+    return "$(r.route):w$(workers)+l$(local_slots):b$(b)"
 end
 
 # What the router actually decided during the timed batch.
@@ -754,6 +820,8 @@ function ppc_run_worker_performance(cfg::PPCConfig)
         sample_gc_time_sum_s=sample_gc_sum,
         sample_alloc_mb_sum=sample_alloc_mb,
         execution_scope=batch.execution_scope,
+        # Empty for the pinned modes; see ppc_adaptive_allocation.
+        adaptive_allocation=batch.adaptive_allocation,
         outer_backend_actual=batch.actual_backend,
         outer_tasks=samples,
         throughput_samples_per_s=throughput,
@@ -922,7 +990,102 @@ function _ppc_worker_gc_flags(cfg::PPCConfig)::Vector{String}
     return flags
 end
 
-function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int, repeat::Int, seed::Int, mc_samples::Int, outfile::String, parity::Bool, repeats::Int=1)
+# ── Precompile workload ──────────────────────────────────────────────────────
+#
+# Every point is a fresh Julia process, and so is every process-pool worker, so
+# each one pays package loading plus compilation of the solver specializations
+# it is about to run before it can time anything. The paper harness's precompile
+# workload (benchmarks/studies/paper_parallelization_benchmarks/workload, built
+# with its build_workload.sh) holds those specializations in a package image;
+# a worker that loads it skips most of that compilation. See the README there
+# for what it covers and the measured effect.
+#
+# The workload's environment is STACKED behind the repository project rather
+# than replacing it: a worker keeps --project=<repo>, so it loads the same
+# SpaceAGORA image, resolves every other package the same way and has the same
+# active project (which the runtime's process pool and state paths key on) as a
+# worker launched without the workload. The environment only adds the workload
+# package, found second on JULIA_LOAD_PATH.
+#
+#   SPACEAGORA_PPB_WORKLOAD      0/off (default): never use it; auto: use the
+#                                image when it is built and current, otherwise
+#                                warn and run without it; 1/on: fail if it is
+#                                not built and current. Off by default because
+#                                the image shifts timed repeats by a few percent
+#                                (code placement; see the workload README).
+#   SPACEAGORA_PPB_WORKLOAD_ENV  the workload environment (default
+#                                output/paper_workload/env in this checkout).
+
+ppc_workload_default_env() = joinpath(PPC_REPO_ROOT, "output", "paper_workload", "env")
+
+# Cases a worker runs without the workload: the native-GRAM cases, which the
+# workload leaves out (see ppb_workload_excluded in the workload's points.jl).
+ppc_workload_skips_case(case::AbstractString) = any(c -> occursin(c, case), PPC_GRAM_LIVE_CASES)
+
+# The worker's load path: the controller's, with the workload environment
+# inserted right after the active project.
+function ppc_workload_load_path(env::AbstractString)::String
+    pathsep = Sys.iswindows() ? ";" : ":"
+    raw = strip(get(ENV, "JULIA_LOAD_PATH", ""))
+    entries = isempty(raw) ? ["@", "@v#.#", "@stdlib"] : String.(split(raw, pathsep))
+    # A trailing empty entry in JULIA_LOAD_PATH means "append the defaults".
+    if !isempty(entries) && isempty(last(entries))
+        entries = vcat(entries[1:end-1], ["@", "@v#.#", "@stdlib"])
+    end
+    entries = unique(filter(!=(String(env)), entries))
+    at = findfirst(==("@"), entries)
+    at === nothing ? pushfirst!(entries, String(env)) : insert!(entries, at + 1, String(env))
+    return join(entries, pathsep)
+end
+
+const _PPC_WORKLOAD_ENV_CHECKED = Dict{String, Bool}()
+
+"""
+    ppc_workload_env() -> Union{Nothing, String}
+
+The workload environment the controller should launch workers with, or `nothing`
+to launch them without it. Checked once per controller process and environment
+path, in a subprocess started exactly the way a worker is (same project, same
+stacked load path), by asking whether the workload package's image is current
+for it -- which also fails when SpaceAGORA or any other dependency has changed
+since the image was built.
+"""
+function ppc_workload_env()::Union{Nothing, String}
+    setting = lowercase(strip(get(ENV, "SPACEAGORA_PPB_WORKLOAD", "0")))
+    setting in ("0", "off", "false", "no") && return nothing
+    required = setting in ("1", "on", "true", "yes")
+    env_raw = strip(get(ENV, "SPACEAGORA_PPB_WORKLOAD_ENV", ""))
+    env = abspath(isempty(env_raw) ? ppc_workload_default_env() : String(env_raw))
+    fresh = get!(_PPC_WORKLOAD_ENV_CHECKED, env) do
+        isfile(joinpath(env, "Project.toml")) || return false
+        julia_bin = Base.julia_cmd().exec[1]
+        probe = "exit(let id = Base.identify_package(\"$(PPC_WORKLOAD_PACKAGE)\"); " *
+                "id !== nothing && Base.isprecompiled(id) end ? 0 : 3)"
+        cmd = addenv(`$(julia_bin) --startup-file=no --project=$(PPC_REPO_ROOT) -e $(probe)`,
+                     "JULIA_LOAD_PATH" => ppc_workload_load_path(env))
+        return success(pipeline(cmd; stdout=devnull, stderr=devnull))
+    end
+    fresh && return env
+    msg = "Precompile workload image not built or not current for $(env); " *
+          "build it with benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh"
+    required && throw(ErrorException(msg * " (SPACEAGORA_PPB_WORKLOAD=$(setting))."))
+    setting == "auto" && isfile(joinpath(env, "Project.toml")) && @warn msg * "; running without it."
+    return nothing
+end
+
+# Environment a worker for `case` is launched with when the workload is in use.
+function ppc_workload_worker_env(workload_env::Union{Nothing, String}, case::AbstractString)
+    (workload_env === nothing || ppc_workload_skips_case(case)) && return Pair{String, String}[]
+    return [
+        "JULIA_LOAD_PATH" => ppc_workload_load_path(workload_env),
+        "SPACEAGORA_PPC_WORKLOAD" => "1",
+        # The runtime's own process pool, should a campaign grow one here.
+        "SPACEAGORA_PROCESS_WORKER_PRELOAD" => PPC_WORKLOAD_PACKAGE,
+    ]
+end
+
+function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int, repeat::Int, seed::Int, mc_samples::Int, outfile::String, parity::Bool, repeats::Int=1,
+                        workload_env::Union{Nothing, String}=nothing)
     julia_bin = Base.julia_cmd().exec[1]
     argv = String[
         julia_bin,
@@ -967,7 +1130,8 @@ function ppc_worker_cmd(cfg::PPCConfig; case::String, mode::String, threads::Int
             "SPACEAGORA_CORE_BUDGET" => string(threads),
             "SPACEAGORA_PERF_HARDWARE_CLASS" => string(SpaceAGORA.ParallelProfiles._machine_parallel_class()))
     end
-    return cmd
+    extra = ppc_workload_worker_env(workload_env, case)
+    return isempty(extra) ? cmd : addenv(cmd, extra...)
 end
 
 # Resume support: a worker's outfile is considered already done only if it
@@ -1013,12 +1177,14 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     # ppc_assert_machine_quiet! -- this is the check whose absence let an entire
     # 115-point run be collected against another user's 26-hour job.
     ppc_assert_machine_quiet!()
+    workload_env = ppc_workload_env()
     println("[parallelization-performance] profile=$(cfg.profile) outdir=$(outdir)")
     println("[parallelization-performance] load=$(round(ppc_load_average(); digits=2)) " *
             "headroom=$(round(100 * ppc_load_headroom(); digits=0))% " *
             "cores=$(_ppc_physical_core_count())")
     println("[parallelization-performance] cases=$(join(cases, ","))")
     println("[parallelization-performance] modes=$(join(cfg.modes, ","))")
+    println("[parallelization-performance] precompile_workload=$(workload_env === nothing ? "off" : workload_env)")
 
     perf_paths = String[]
     for case in cases
@@ -1062,7 +1228,8 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                     seed=cfg.seed + 1,
                     mc_samples=mc_count,
                     outfile=outfile,
-                    parity=false
+                    parity=false,
+                    workload_env=workload_env
                 )
                 println("[run] $(case) mode=$(mode) threads=$(thread_count) repeats=$(cfg.repeats) mc=$(mc_count)")
                 run(cmd)
@@ -1089,7 +1256,8 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                 seed=cfg.seed,
                 mc_samples=1,
                 outfile=outfile,
-                parity=true
+                parity=true,
+                workload_env=workload_env
             )
             println("[parity] $(case) mode=$(mode) threads=$(thread_count)")
             run(cmd)

@@ -202,6 +202,25 @@ function _warm_gram_pool_model!(
 end
 
 """
+    _rewarm_reseeded_gram_model!(model)
+
+Warm `model` again after its native perturbation model was reseeded
+(`EnvironmentModels.reset_density_model_history!`). GRAM's `setSeed` marks the
+atmosphere uninitialized, so without this the next update re-takes the one-time
+initialization branch that reaches CSPICE, and pool workers or per-satellite
+instances taking it concurrently reintroduce the abort that
+[`_warm_gram_pool_model!`](@ref) prevents. The same warm query is issued, so a
+reseeded pool or per-satellite instance is again identical to a freshly built
+one. It runs under the process-wide GRAM lock as well as the instance's own.
+"""
+function _rewarm_reseeded_gram_model!(model::EnvironmentModels.GRAMAtmosphereModel)
+    lock(tracked_lock(:gram_density)) do
+        _warm_gram_pool_model!(model, model)
+    end
+    return nothing
+end
+
+"""
     _gram_isolated_pool_native_count(hs, p) -> Int
 
 How many of the staged altitudes would actually reach native GRAM.
@@ -218,8 +237,9 @@ gate ever runs.
 
 One pass over the staged altitudes, on the thread that is about to dispatch, is
 enough to see that coming. Nothing it decides changes a returned value: both
-arms compute the same vacuum and polyfit results for those items, and the pool
-has been proved bit-identical to the locked path for the rest.
+arms compute the same vacuum and polyfit results for those items. Nominal-wind
+comparisons found bit identity for the remaining items.
+The automatic route separately excludes history-dependent wind requests.
 """
 @inline function _gram_isolated_pool_native_count(hs::AbstractVector{<:Real}, p)::Int
     EI = p.args.environment_model.EI * 1e3
@@ -232,6 +252,32 @@ has been proved bit-identical to the locked path for the rest.
         count += 1
     end
     return count
+end
+
+"""
+    _gram_pool_declines_history_dependent_winds(mode, wind, density_model) -> Bool
+
+The wind-history rule shared by both native-GRAM pools (the in-process isolated
+pool and the process-backed density service). Each pool runs separate native
+instances, and GRAM's perturbed winds are a random walk over each instance's own
+call history, so pooled winds cannot reproduce the single locked instance's.
+
+- `:auto` declines a batch that requests winds (`wind=true`) when
+  `EnvironmentModels._gram_core_wind_is_history_dependent(core)` holds.
+  Density-only batches (`wind=false`, e.g. `EnvironmentModel.wind = false`)
+  and nominal-wind batches stay eligible.
+- `:on` never declines on this ground: an explicit opt-in accepts separate
+  stochastic histories, and wind results can then depend on pool width.
+- `:off` is not a pool mode that reaches this check; it returns `false`.
+"""
+@inline function _gram_pool_declines_history_dependent_winds(
+    mode::Symbol,
+    wind::Bool,
+    density_model::EnvironmentModels.GRAMAtmosphereModel,
+)::Bool
+    mode === :auto || return false
+    wind || return false
+    return EnvironmentModels._gram_core_wind_is_history_dependent(density_model.core)
 end
 
 @inline function _gram_isolated_pool_batch_eval!(
@@ -266,6 +312,12 @@ function _gram_isolated_pool_batch_eval!(
     n = length(hs)
     env = _callback_env_config(p)
     _gram_isolated_pool_enabled(env, n) || return false
+    # Separate instances advance separate wind histories. Under automatic
+    # routing, decline before constructing/warming clones or writing outputs.
+    # Both the accepted-step and look-ahead callers then use the locked batch.
+    _gram_pool_declines_history_dependent_winds(
+        env.gram_isolated_pool_mode, wind, density_model
+    ) && return false
     length(rhos) == n || return false
     length(Ts) == n || return false
     length(winds) == n || return false

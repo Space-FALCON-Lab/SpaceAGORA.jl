@@ -1,5 +1,8 @@
 """Collect scripts/xval_fullarc.jl output into the paper's CSV deliverables.
 
+Requires Python 3.11+ (stdlib tomllib), or tomli on older Python.
+The CSV/Arrow export additionally requires pandas and pyarrow.
+
 Usage:
     python3 scripts/xval_fullarc_export.py <xval outdir> <paper repo root>
 
@@ -24,6 +27,14 @@ from pathlib import Path
 import re
 import os
 import sys
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError as exc:
+        raise ImportError("Manifest validation requires Python 3.11+ or the tomli package") from exc
 
 
 PRIMARY = {"gmat_committed": "GMAT", "stk_committed": "STK"}
@@ -56,6 +67,104 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def declared_input(declared_path, inputs, label):
+    """Bind a declared file to one recorded identity without requiring old inputs.
+
+    Schema 1 records absolute input paths but no original repository root. For a
+    relative declaration, compare whole trailing path components, independently
+    of the exporter's current directory. Ambiguous matches and parent traversal
+    are rejected. This checks recorded consistency, not unavailable input bytes.
+    """
+    require(isinstance(declared_path, str) and declared_path and "\0" not in declared_path,
+            f"Invalid {label} path")
+    path = Path(declared_path)
+    if path.is_absolute():
+        normalized = os.path.normpath(declared_path)
+        matches = [item for item in inputs if os.path.normpath(item["path"]) == normalized]
+    else:
+        require(path.parts and ".." not in path.parts, f"Invalid relative {label} path")
+        matches = [item for item in inputs if Path(item["path"]).parts[-len(path.parts):] == path.parts]
+    require(len(matches) == 1, f"Missing or ambiguous {label} input identity")
+    return matches[0]
+
+
+def validate_configuration(case, row, manifest_path):
+    """Reconcile the producer's effective configuration and retained evidence."""
+    model = case["model"]
+    model_keys = {"name", "planet", "gravity_model", "gravity_harmonics_degree",
+                  "gravity_harmonics_order", "gravity_harmonics_file", "nbody_bodies",
+                  "orbit_altitude_mode", "kind", "comparison_mode", "events", "telemetry",
+                  "telemetry_columns", "max_points_quick", "max_points_full", "min_eval_points",
+                  "units", "tolerances_quick", "tolerances_full", "initial_time", "spacecraft",
+                  "atmosphere_truth", "calibration", "drag_enabled", "EI_km"}
+    require(isinstance(model, dict) and model_keys <= model.keys(),
+            "Missing substantive model configuration")
+    for key in ("name", "planet", "gravity_model", "orbit_altitude_mode", "kind",
+                "comparison_mode", "telemetry"):
+        require(isinstance(model[key], str) and bool(model[key]), f"Invalid model {key}")
+    for key in ("telemetry_columns", "units", "tolerances_quick", "tolerances_full",
+                "initial_time", "spacecraft", "atmosphere_truth", "calibration"):
+        require(isinstance(model[key], dict) and bool(model[key]), f"Invalid model {key}")
+    for key in ("max_points_quick", "max_points_full", "min_eval_points"):
+        require(type(model[key]) is int and model[key] > 0, f"Invalid model {key}")
+    require(type(model["drag_enabled"]) is bool, "Invalid model drag_enabled")
+    require(type(model["EI_km"]) in (int, float) and math.isfinite(model["EI_km"]) and model["EI_km"] >= 0,
+            "Invalid model EI_km")
+    events = model["events"]
+    require(isinstance(events, list) and events and all(isinstance(event, str) and event for event in events),
+            "Invalid model events")
+    require(model["name"] == row["scenario"] and model["planet"] == split_scenario(row["scenario"])[0],
+            "Model scenario/planet mismatch")
+    degree, order = model["gravity_harmonics_degree"], model["gravity_harmonics_order"]
+    require(type(degree) is int and type(order) is int and 0 <= order <= degree,
+            "Invalid model gravity degree/order")
+    field = model["gravity_harmonics_file"]
+    require(isinstance(field, str), "Invalid model gravity file")
+    bodies = model["nbody_bodies"]
+    require(isinstance(bodies, list) and all(isinstance(body, str) and body for body in bodies),
+            "Invalid model third bodies")
+    with manifest_path.open("rb") as stream:
+        manifest = tomllib.load(stream)
+    scenarios = manifest.get("scenarios")
+    require(isinstance(scenarios, list) and len(scenarios) == 1 and scenarios[0] == model,
+            "Manifest and recorded model differ")
+    require(int(row["gravity_degree"]) == degree and int(row["gravity_order"]) == order,
+            "Result and model gravity degree/order differ")
+    require(row["gravity_file"] == field, "Result and model gravity file differ")
+    require(row["nbody_bodies"] == "+".join(bodies), "Result and model third bodies differ")
+    gm_key = "gravity_harmonics_gm_override_m3s2"
+    row_gm = float(row["gm_override_m3s2"]) if row["gm_override_m3s2"] else math.nan
+    if gm_key in model:
+        gm = model[gm_key]
+        require(type(gm) in (int, float) and math.isfinite(gm) and gm > 0,
+                "Invalid model GM override")
+        require(row_gm == gm, "Result and model GM override differ")
+    else:
+        require(math.isnan(row_gm), "Result has an unrecorded GM override")
+    # Telemetry verification needs the harmonics file for nonzero degree OR an
+    # explicit GM override. Only a point mass without that override is exempt.
+    if field:
+        declared_input(field, case["inputs"], "gravity file")
+    else:
+        require(degree == 0 and gm_key not in model, "Model requires a declared gravity file")
+
+    environment = case["solver_environment"]
+    numeric_keys = {"SPACEAGORA_TELEMETRY_DT_MAX_ORBIT", "SPACEAGORA_TELEMETRY_RELTOL_ORBIT",
+                    "SPACEAGORA_TELEMETRY_ABSTOL_ORBIT", "SPACEAGORA_TELEMETRY_RELTOL_ATM",
+                    "SPACEAGORA_TELEMETRY_ABSTOL_ATM"}
+    mode_key = "SPACEAGORA_TELEMETRY_SOLVER_MODE"
+    kernel_key = "SPACEAGORA_SPICE_PLANETARY_KERNEL_RELPATH"
+    require(isinstance(environment, dict) and numeric_keys | {mode_key, kernel_key} <= environment.keys(),
+            "Missing substantive solver configuration")
+    for key in numeric_keys | {mode_key, kernel_key}:
+        require(isinstance(environment[key], str) and bool(environment[key]), f"Invalid solver {key}")
+    for key in numeric_keys:
+        value = float(environment[key])
+        require(math.isfinite(value) and value > 0, f"Invalid solver {key}")
+    require(declared_input(environment[kernel_key], case["inputs"], "planetary kernel") ==
+            case["planetary_kernel"], "Solver planetary-kernel selector mismatch")
+
+
 def validate_run(runpath, *, primary=False):
     """Validate recorded identity and retained outputs before writing any export.
 
@@ -86,12 +195,14 @@ def validate_run(runpath, *, primary=False):
             require(case[key] == digest(runpath / row["scenario"] / suffix), f"{suffix} checksum mismatch")
         require(bool(case["inputs"]) and bool(case["kernels"]), "Missing input/kernel identities")
         for item in case["inputs"] + case["kernels"]:
-            require(bool(item["path"]) and re.fullmatch(r"[a-f0-9]{64}", item["sha256"]),
+            require(isinstance(item["path"], str) and Path(item["path"]).is_absolute() and
+                    "\0" not in item["path"] and isinstance(item["sha256"], str) and
+                    re.fullmatch(r"[a-f0-9]{64}", item["sha256"]),
                     "Invalid input identity")
         require(case["inputs"][0]["path"] == row["reference_path"], "Reference identity mismatch")
         require(case["planetary_kernel"] in case["inputs"] and
                 case["planetary_kernel"] in case["kernels"], "Planetary-kernel identity mismatch")
-        require(bool(case["solver_environment"]) and bool(case["model"]), "Missing effective configuration")
+        validate_configuration(case, row, runpath / row["scenario"] / "manifest.toml")
         require(case["solver_retcode"] == row["solver_retcode"], "Solver status mismatch")
         if primary:
             require(row["solver_retcode"] in ("Success", "ReturnCode.Success"), "Unsuccessful primary solve")
